@@ -1,0 +1,12 @@
+pandas
+numpy
+ccxt
+ta-lib
+scikit-learn
+streamlit
+plotly
+feedparser
+textblob
+nltk
+requests
+python-dotenv
