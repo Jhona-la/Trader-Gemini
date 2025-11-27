@@ -523,6 +523,16 @@ class MLStrategy(Strategy):
                 self.events_queue.put(SignalEvent(3, self.symbol, timestamp, 'LONG', strength=strength, atr=current_atr))
                 print(f"  → LONG signal (strength={strength:.2f}, threshold={entry_threshold:.2f}, 1h_trend={trend_1h})")
             
+            # SHORT Entry: If return is significantly negative
+            elif adjusted_return < -entry_threshold:
+                strength = min(abs(adjusted_return) / 2.0, 1.0)
+                # Boost strength if aligned with downtrend
+                if trend_1h == 'DOWN':
+                    strength = min(strength + 0.2, 1.0)
+                    
+                self.events_queue.put(SignalEvent(3, self.symbol, timestamp, 'SHORT', strength=strength, atr=current_atr))
+                print(f"  → SHORT signal (strength={strength:.2f}, threshold=-{entry_threshold:.2f}, 1h_trend={trend_1h})")
+            
             # Exit threshold: Expect loss > -0.5% (Relaxed from -0.3% for crypto volatility)
             elif adjusted_return < -0.5:
                 # HOLDING PERIOD CHECK: Don't exit too early unless drop is severe
