@@ -3,14 +3,25 @@ import pandas as pd
 import time
 from .data_provider import DataProvider
 from core.events import MarketEvent
+from config import Config  # Import Config
 
 class BinanceData(DataProvider):
     def __init__(self, events_queue, symbol_list):
         self.events_queue = events_queue
         self.symbol_list = symbol_list
         
-        # Initialize CCXT Binance client
-        self.exchange = ccxt.binance()
+        # Initialize CCXT Binance client with Config options
+        options = {'adjustForTimeDifference': True}
+        if Config.BINANCE_USE_FUTURES:
+            options['defaultType'] = 'future'
+            
+        self.exchange = ccxt.binance({'options': options})
+        
+        # Enable Demo/Testnet if configured
+        if hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO:
+            self.exchange.enable_demo_trading(True)
+        elif Config.BINANCE_USE_TESTNET:
+            self.exchange.set_sandbox_mode(True)
         
         # Storage for latest bars
         self.latest_data = {s: [] for s in symbol_list}
