@@ -131,3 +131,26 @@ class BinanceExecutor:
                     estimated_cost = 1000.0
                 self.portfolio.release_cash(estimated_cost)
                 print(f"  💰 Released ${estimated_cost:.2f} reserved cash")
+
+    def get_balance(self):
+        """
+        Fetches the current USDT balance from Binance Futures.
+        Returns float or None if failed.
+        """
+        try:
+            # For Futures, fetch_balance(params={'type': 'future'}) is often handled by defaultType
+            balance = self.exchange.fetch_balance()
+            
+            # In Futures, we look for USDT
+            if 'USDT' in balance:
+                total = balance['USDT']['total']
+                free = balance['USDT']['free']
+                print(f"💰 Binance Futures Balance: ${total:.2f} (Free: ${free:.2f})")
+                return total
+            else:
+                print("⚠️  USDT not found in balance response.")
+                return None
+                
+        except Exception as e:
+            print(f"⚠️  Failed to fetch balance: {e}")
+            return None
