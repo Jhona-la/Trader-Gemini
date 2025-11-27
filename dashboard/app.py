@@ -140,21 +140,42 @@ with tab_live:
         else:
             st.info("💤 No active positions. Waiting for signals...")
             
-    # Session Chart (Fast)
+    # Session Chart - ENHANCED WITH HISTORICAL DATA
     st.subheader("Session Performance")
     @st.cache_data(ttl=10)
     def load_session_data():
         try:
+            dfs = []
+            
+            # Load historical data (if exists)
+            historical_path = os.path.join(Config.DATA_DIR, "status_historical.csv")
+            if os.path.exists(historical_path):
+                try:
+                    df_hist = pd.read_csv(historical_path, usecols=['timestamp', 'total_equity'])
+                    df_hist['timestamp'] = pd.to_datetime(df_hist['timestamp'])
+                    dfs.append(df_hist)
+                except Exception as e:
+                    print(f"Warning: Could not load historical data: {e}")
+            
+           # Load current data
             if os.path.exists(STATUS_PATH):
-                df = pd.read_csv(STATUS_PATH, usecols=['timestamp', 'total_equity'])
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-                return df.tail(500)
-        except: pass
+                df_curr = pd.read_csv(STATUS_PATH, usecols=['timestamp', 'total_equity'])
+                df_curr['timestamp'] = pd.to_datetime(df_curr['timestamp'])
+                dfs.append(df_curr)
+            
+            # Combine and return
+            if dfs:
+                df_combined = pd.concat(dfs, ignore_index=True)
+                df_combined = df_combined.sort_values('timestamp')
+                # Keep last 1000 points for performance
+                return df_combined.tail(1000)
+        except Exception as e:
+            print(f"Error loading session data: {e}")
         return pd.DataFrame()
 
     session_df = load_session_data()
     if not session_df.empty:
-        fig = px.area(session_df, x='timestamp', y='total_equity', title="Equity Curve (Last 8 Hours)")
+        fig = px.area(session_df, x='timestamp', y='total_equity', title="Equity Curve (Complete History)")
         fig.update_layout(height=350, margin=dict(l=20, r=20, t=40, b=20))
         st.plotly_chart(fig, use_container_width=True)
 

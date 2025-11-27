@@ -301,8 +301,11 @@ def main():
                 event = events_queue.get()
                 engine.process_event(event)
             
-            # --- DASHBOARD UPDATE ---
-            # Write status to CSV for Streamlit
+            # --- DASHBOARD UPDATE (SMART CONDITIONAL LOGGING) ---
+            # Only save to CSV when something important happens:
+            # 1. Positions changed (opened/closed)
+            # 2. Equity moved > $10
+            # 3. Every 60 seconds (backup for equity curve)
             try:
                 # Calculate totals
                 total_equity = portfolio.get_total_equity()
@@ -310,27 +313,64 @@ def main():
                 realized_pnl = portfolio.realized_pnl
                 unrealized_pnl = total_equity - portfolio.initial_capital - realized_pnl
                 
-                # Format positions for CSV
-                positions_str = str(portfolio.positions).replace("'", '"')
+                # Track state changes
+                if not hasattr(portfolio, '_last_log_time'):
+                    portfolio._last_log_time = 0
+                    portfolio._last_equity = total_equity
+                    portfolio._last_positions_count = 0
                 
-                # Create DataFrame
-                status_data = {
-                    'timestamp': [datetime.now()],
-                    'total_equity': [total_equity],
-                    'cash': [cash],
-                    'realized_pnl': [realized_pnl],
-                    'unrealized_pnl': [unrealized_pnl],
-                    'positions': [positions_str]
-                }
+                # Count open positions
+                open_positions = sum(1 for pos in portfolio.positions.values() if pos['quantity'] != 0)
                 
-                # 1. Append to CSV (Historical Data)
-                df_status = pd.DataFrame(status_data)
-                status_path = os.path.join(Config.DATA_DIR, "status.csv")
+                # Determine if we should log
+                should_log = False
+                log_reason = ""
+                
+                # Reason 1: Position count changed
+                if open_positions != portfolio._last_positions_count:
+                    should_log = True
+                    log_reason = f"Positions: {portfolio._last_positions_count} → {open_positions}"
+                
+                # Reason 2: Equity moved > $10
+                elif abs(total_equity - portfolio._last_equity) > 10:
+                    should_log = True
+                    log_reason = f"Equity: ${portfolio._last_equity:.2f} → ${total_equity:.2f}"
+                
+                # Reason 3: 60 seconds elapsed (backup)
+                elif time.time() - portfolio._last_log_time > 60:
+                    should_log = True
+                    log_reason = "60s interval (backup)"
+                
+                if should_log:
+                    # Format positions for CSV
+                    positions_str = str(portfolio.positions).replace("'", '"')
+                    
+                    # Create DataFrame
+                    status_data = {
+                        'timestamp': [datetime.now()],
+                        'total_equity': [total_equity],
+                        'cash': [cash],
+                        'realized_pnl': [realized_pnl],
+                        'unrealized_pnl': [unrealized_pnl],
+                        'positions': [positions_str]
+                    }
+                    
+                    # 1. Append to CSV (Historical Data)
+                    df_status = pd.DataFrame(status_data)
+                    status_path = os.path.join(Config.DATA_DIR, "status.csv")
                 
                 if os.path.exists(status_path):
                     df_status.to_csv(status_path, mode='a', header=False, index=False)
                 else:
                     df_status.to_csv(status_path, index=False)
+                
+                # Update tracking variables
+                portfolio._last_log_time = time.time()
+                portfolio._last_equity = total_equity
+                portfolio._last_positions_count = open_positions
+                
+                # Print log reason (for debugging)
+                print(f"📊 CSV Logged: {log_reason}")
                 
                 # 2. Write to JSON (Real-Time Data - Lightweight)
                 import json
