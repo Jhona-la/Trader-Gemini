@@ -26,6 +26,9 @@ class BinanceData(DataProvider):
                 'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
                 'fapiPrivate': 'https://testnet.binancefuture.com/fapi/v1',
                 'fapiData': 'https://testnet.binancefuture.com/fapi/v1',
+                'dapiPublic': 'https://testnet.binancefuture.com/dapi/v1',
+                'dapiPrivate': 'https://testnet.binancefuture.com/dapi/v1',
+                'dapiData': 'https://testnet.binancefuture.com/dapi/v1',
                 'sapi': 'https://testnet.binance.vision/api/v3',
             }
         elif Config.BINANCE_USE_TESTNET:

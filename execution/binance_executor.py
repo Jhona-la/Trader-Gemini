@@ -52,6 +52,9 @@ class BinanceExecutor:
                 'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
                 'fapiPrivate': 'https://testnet.binancefuture.com/fapi/v1',
                 'fapiData': 'https://testnet.binancefuture.com/fapi/v1',
+                'dapiPublic': 'https://testnet.binancefuture.com/dapi/v1',
+                'dapiPrivate': 'https://testnet.binancefuture.com/dapi/v1',
+                'dapiData': 'https://testnet.binancefuture.com/dapi/v1',
                 'sapi': 'https://testnet.binance.vision/api/v3', # Fallback for some endpoints
             }
             print(f"Binance Executor: Running in {mode_description} mode (Manual URL Config).")
