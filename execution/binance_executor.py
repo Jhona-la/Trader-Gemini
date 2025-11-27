@@ -65,24 +65,11 @@ class BinanceExecutor:
             print(f"Binance Executor: Running in {mode_description} mode.")
             
         # Set Leverage for Futures
+        # NOTE: Leverage endpoint not available on Testnet
+        # Configure leverage manually in Binance Demo UI
         if Config.BINANCE_USE_FUTURES:
-            print(f"Binance Executor: FUTURES MODE ENABLED (Leverage {Config.BINANCE_LEVERAGE}x)")
-            # Note: Leverage setting via API might require specific permissions or be done manually on UI first
-            # We attempt to set it here for supported pairs
-            try:
-                # Iterate through active pairs to set leverage
-                print(f"Binance Executor: Setting leverage to {Config.BINANCE_LEVERAGE}x for all pairs...")
-                for symbol in Config.TRADING_PAIRS:
-                    try:
-                        # CCXT unified method for setting leverage
-                        # market type is 'future' by default due to options
-                        self.exchange.set_leverage(Config.BINANCE_LEVERAGE, symbol)
-                        # print(f\"  ✅ Leverage set to {Config.BINANCE_LEVERAGE}x for {symbol}\")
-                    except Exception as e:
-                        # Some pairs might not support it or require margin mode change first
-                        print(f"  ⚠️ Failed to set leverage for {symbol}: {e}")
-            except Exception as e:
-                print(f"Warning: Could not set leverage automatically: {e}")
+            print(f"Binance Executor: FUTURES MODE ENABLED")
+            print(f"  → Using server-side leverage (configure in Binance Demo UI)")
 
     def execute_order(self, event):
         """
