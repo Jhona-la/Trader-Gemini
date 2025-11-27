@@ -213,18 +213,6 @@ def main():
     # Priority 1: ML Strategies (most sophisticated - regime aware)
     for strat in ml_strategies:
         engine.register_strategy(strat)
-    
-    # Priority 2: Statistical (pairs trading - niche use case)
-    engine.register_strategy(stat_strategy_crypto)
-    
-    # Priority 3: Pattern Recognition (High probability setups)
-    engine.register_strategy(pattern_strategy)
-    
-    # Priority 4: Technical (simplest - mean reversion backup)
-    engine.register_strategy(tech_strategy_crypto)
-    
-    # 8. Register Portfolio & Risk Manager
-    engine.register_portfolio(portfolio)
     engine.register_risk_manager(risk_manager)
     
     # Graceful Shutdown Setup
