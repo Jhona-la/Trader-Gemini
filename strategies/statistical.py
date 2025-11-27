@@ -113,9 +113,10 @@ class StatisticalStrategy(Strategy):
                         z_diff = abs(z_score) - self.z_entry
                         strength = min(1.0, 0.5 + (z_diff * 0.2))
                         
-                        print(f"ENTRY LONG SPREAD: Buy {y_sym} (Z={z_score:.2f}, Strength={strength:.2f}, 1h Trend: {trend_y})")
+                        
+                        print(f"ENTRY LONG SPREAD: Buy {y_sym}, Short {x_sym} (Z={z_score:.2f}, Strength={strength:.2f}, 1h Trend: {trend_y})")
                         self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'LONG', strength=strength, atr=atr_y))
-                        # self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'SHORT', strength=1.0))  # DISABLED
+                        self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'SHORT', strength=strength, atr=atr_x))  # ENABLED
                         self.invested = 1
                         
                 elif z_score > self.z_entry:
@@ -128,8 +129,8 @@ class StatisticalStrategy(Strategy):
                         z_diff = abs(z_score) - self.z_entry
                         strength = min(1.0, 0.5 + (z_diff * 0.2))
                         
-                        print(f"ENTRY POTENTIAL SHORT SPREAD: Buy {x_sym} (Z={z_score:.2f}, Strength={strength:.2f}, 1h Trend: {trend_x})")
-                        # self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'SHORT', strength=1.0))  # DISABLED
+                        print(f"ENTRY SHORT SPREAD: Short {y_sym}, Buy {x_sym} (Z={z_score:.2f}, Strength={strength:.2f}, 1h Trend: {trend_x})")
+                        self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'SHORT', strength=strength, atr=atr_y))  # ENABLED
                         self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'LONG', strength=strength, atr=atr_x))
                         self.invested = -1
 
@@ -141,7 +142,7 @@ class StatisticalStrategy(Strategy):
                     print(f"EXIT LONG SPREAD")
                     # FIXED: Use EXIT to close positions, not reverse signals
                     self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'EXIT', strength=1.0))  # Close Y long
-                    self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'EXIT', strength=1.0))  # Close X short (if we had it)
+                    self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'EXIT', strength=1.0))  # Close X short
                     self.invested = 0
 
             elif self.invested == -1:
@@ -149,6 +150,7 @@ class StatisticalStrategy(Strategy):
                 if z_score <= self.z_exit:
                     print(f"EXIT SHORT SPREAD")
                     # FIXED: Use EXIT to close positions
+                    self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'EXIT', strength=1.0))  # Close Y short
                     self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'EXIT', strength=1.0))  # Close X long
                     self.invested = 0
 
