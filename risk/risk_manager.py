@@ -236,82 +236,153 @@ class RiskManager:
         
         for symbol, pos in portfolio.positions.items():
             qty = pos['quantity']
-            if qty <= 0:
+            if qty == 0:  # Changed from <= to allow SHORT positions (qty < 0)
                 continue
                 
             current_price = pos['current_price']
             entry_price = pos['avg_price']
-            hwm = pos.get('high_water_mark', entry_price)
             
             if current_price == 0 or entry_price == 0:
                 continue
             
-            # Calculate unrealized profit %
-            unrealized_pnl_pct = ((current_price - entry_price) / entry_price) * 100
-            
-            # TAKE PROFIT LEVELS SYSTEM
-            if unrealized_pnl_pct >= 3.0:
-                # TP3: Very tight trailing (10% of gain from HWM)
-                gain_from_entry = hwm - entry_price
-                trail_distance = gain_from_entry * 0.1  # Very tight
-                stop_price = hwm - trail_distance
+            # ===============================
+            # LONG POSITION (qty > 0)
+            # ===============================
+            if qty > 0:
+                hwm = pos.get('high_water_mark', entry_price)
                 
-                if current_price < stop_price:
-                    print(f"💰 TP3 Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f}, HWM: {hwm:.4f} (Profit: +{unrealized_pnl_pct:.2f}%)")
-                    sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
-                    stop_signals.append(sig)
+                # Calculate unrealized profit %
+                unrealized_pnl_pct = ((current_price - entry_price) / entry_price) * 100
+                
+                # TAKE PROFIT LEVELS SYSTEM
+                if unrealized_pnl_pct >= 3.0:
+                    # TP3: Very tight trailing (10% of gain from HWM)
+                    gain_from_entry = hwm - entry_price
+                    trail_distance = gain_from_entry * 0.1  # Very tight
+                    stop_price = hwm - trail_distance
                     
-            elif unrealized_pnl_pct >= 2.0:
-                # TP2: Tighter trailing (25% of gain from HWM)
-                gain_from_entry = hwm - entry_price
-                trail_distance = gain_from_entry * 0.25
-                stop_price = hwm - trail_distance
-                
-                # Minimum at +1.5% to lock some profit
-                min_stop = entry_price * 1.015
-                stop_price = max(stop_price, min_stop)
-                
-                if current_price < stop_price:
-                    print(f"💰 TP2 Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f}, HWM: {hwm:.4f} (Profit: +{unrealized_pnl_pct:.2f}%)")
-                    sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
-                    stop_signals.append(sig)
+                    if current_price < stop_price:
+                        print(f"💰 TP3 Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f}, HWM: {hwm:.4f} (Profit: +{unrealized_pnl_pct:.2f}%)")
+                        sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
+                        stop_signals.append(sig)
+                        
+                elif unrealized_pnl_pct >= 2.0:
+                    # TP2: Tighter trailing (25% of gain from HWM)
+                    gain_from_entry = hwm - entry_price
+                    trail_distance = gain_from_entry * 0.25
+                    stop_price = hwm - trail_distance
                     
-            elif unrealized_pnl_pct >= 1.0:
-                # TP1: Standard trailing (50% of gain from HWM)
-                gain_from_entry = hwm - entry_price
-                trail_distance = gain_from_entry * 0.5
-                stop_price = hwm - trail_distance
-                
-                # Ensure stop is at least at breakeven + commission + slippage
-                # Binance Fees: ~0.1% maker + 0.1% taker = 0.2% round trip
-                # We set buffer to 0.3% to be safe
-                breakeven_stop = entry_price * 1.003  # Breakeven + 0.3%
-                stop_price = max(stop_price, breakeven_stop)
-                
-                if current_price < stop_price:
-                    print(f"💰 TP1 Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f}, HWM: {hwm:.4f} (Profit: +{unrealized_pnl_pct:.2f}%)")
-                    sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
-                    stop_signals.append(sig)
+                    # Minimum at +1.5% to lock some profit
+                    min_stop = entry_price * 1.015
+                    stop_price = max(stop_price, min_stop)
+                    
+                    if current_price < stop_price:
+                        print(f"💰 TP2 Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f}, HWM: {hwm:.4f} (Profit: +{unrealized_pnl_pct:.2f}%)")
+                        sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
+                        stop_signals.append(sig)
+                        
+                elif unrealized_pnl_pct >= 1.0:
+                    # TP1: Standard trailing (50% of gain from HWM)
+                    gain_from_entry = hwm - entry_price
+                    trail_distance = gain_from_entry * 0.5
+                    stop_price = hwm - trail_distance
+                    
+                    # Ensure stop is at least at breakeven + commission + slippage
+                    # Binance Fees: ~0.1% maker + 0.1% taker = 0.2% round trip
+                    # We set buffer to 0.3% to be safe
+                    breakeven_stop = entry_price * 1.003  # Breakeven + 0.3%
+                    stop_price = max(stop_price, breakeven_stop)
+                    
+                    if current_price < stop_price:
+                        print(f"💰 TP1 Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f}, HWM: {hwm:.4f} (Profit: +{unrealized_pnl_pct:.2f}%)")
+                        sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
+                        stop_signals.append(sig)
 
-            elif unrealized_pnl_pct >= 0.6:
-                # MICRO-TREND CAPTURE (Scalping Mode)
-                # If we are up +0.6%, don't let it go back to breakeven (+0.3%)
-                # Lock in at least +0.4%
-                stop_price = entry_price * 1.004
-                
-                if current_price < stop_price:
-                    print(f"⚡ Micro-Scalp Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f} (Profit: +{unrealized_pnl_pct:.2f}%)")
-                    sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
-                    stop_signals.append(sig)
+                elif unrealized_pnl_pct >= 0.6:
+                    # MICRO-TREND CAPTURE (Scalping Mode)
+                    # If we are up +0.6%, don't let it go back to breakeven (+0.3%)
+                    # Lock in at least +0.4%
+                    stop_price = entry_price * 1.004
                     
-            else:
-                # Not yet profitable: Use standard stop loss
-                stop_distance = pos.get('stop_distance', current_price * 0.02)  # 2% default
-                stop_price = entry_price - stop_distance
+                    if current_price < stop_price:
+                        print(f"⚡ Micro-Scalp Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f} (Profit: +{unrealized_pnl_pct:.2f}%)")
+                        sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
+                        stop_signals.append(sig)
+                        
+                else:
+                    # Not yet profitable: Use standard stop loss
+                    stop_distance = pos.get('stop_distance', current_price * 0.02)  # 2% default
+                    stop_price = entry_price - stop_distance
+                    
+                    if current_price < stop_price:
+                        print(f"🛑 Stop Loss Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f}, Stop: {stop_price:.4f} (Loss: {unrealized_pnl_pct:.2f}%)")
+                        sig = SignalEvent("RISK_MGR", symbol, datetime.now(), 'EXIT', strength=1.0)
+                        stop_signals.append(sig)
+            
+            # ===============================
+            # SHORT POSITION (qty < 0)
+            # ===============================
+            elif qty < 0:
+                lwm = pos.get('low_water_mark', entry_price)
                 
-                if current_price < stop_price:
-                    print(f"🛑 Stop Loss Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f}, Stop: {stop_price:.4f} (Loss: {unrealized_pnl_pct:.2f}%)")
-                    sig = SignalEvent("RISK_MGR", symbol, datetime.now(), 'EXIT', strength=1.0)
-                    stop_signals.append(sig)
+                # For SHORT: profit when price goes DOWN
+                unrealized_pnl_pct = ((entry_price - current_price) / entry_price) * 100
+                
+                # TAKE PROFIT LEVELS SYSTEM FOR SHORT
+                if unrealized_pnl_pct >= 3.0:
+                    # TP3: Very tight trailing (10% of gain from LWM)
+                    gain_from_entry = entry_price - lwm
+                    trail_distance = gain_from_entry * 0.1
+                    stop_price = lwm + trail_distance  # Price rising from LWM
+                    
+                    if current_price > stop_price:
+                        print(f"💰 SHORT TP3 Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f}, LWM: {lwm:.4f} (Profit: +{unrealized_pnl_pct:.2f}%)")
+                        sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
+                        stop_signals.append(sig)
+                
+                elif unrealized_pnl_pct >= 2.0:
+                    # TP2: Tighter trailing (25% of gain)
+                    gain_from_entry = entry_price - lwm
+                    trail_distance = gain_from_entry * 0.25
+                    stop_price = lwm + trail_distance
+                    min_stop = entry_price * 0.985  # Lock at least 1.5% profit
+                    stop_price = min(stop_price, min_stop)
+                    
+                    if current_price > stop_price:
+                        print(f"💰 SHORT TP2 Hit for {symbol}! Profit: +{unrealized_pnl_pct:.2f}%")
+                        sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
+                        stop_signals.append(sig)
+                
+                elif unrealized_pnl_pct >= 1.0:
+                    # TP1: Standard trailing (50% of gain)
+                    gain_from_entry = entry_price - lwm
+                    trail_distance = gain_from_entry * 0.5
+                    stop_price = lwm + trail_distance
+                    breakeven_stop = entry_price * 0.997  # Breakeven - 0.3%
+                    stop_price = min(stop_price, breakeven_stop)
+                    
+                    if current_price > stop_price:
+                        print(f"💰 SHORT TP1 Hit for {symbol}! Profit: +{unrealized_pnl_pct:.2f}%")
+                        sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
+                        stop_signals.append(sig)
+                
+                elif unrealized_pnl_pct >= 0.6:
+                    # Micro-scalp (0.6% profit, lock +0.4%)
+                    stop_price = entry_price * 0.996  # Lock +0.4%
+                    
+                    if current_price > stop_price:
+                        print(f"⚡ SHORT Micro-Scalp Hit for {symbol}! Profit: +{unrealized_pnl_pct:.2f}%")
+                        sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
+                        stop_signals.append(sig)
+                
+                else:
+                    # Stop Loss (not profitable, price rising = loss for SHORT)
+                    stop_distance = pos.get('stop_distance', current_price * 0.02)
+                    stop_price = entry_price + stop_distance  # Price rising = loss
+                    
+                    if current_price > stop_price:
+                        print(f"🛑 SHORT Stop Loss Hit for {symbol}! Price: {current_price:.4f}, Entry: {entry_price:.4f} (Loss: {unrealized_pnl_pct:.2f}%)")
+                        sig = SignalEvent("RISK_MGR", symbol, datetime.now(), 'EXIT', strength=1.0)
+                        stop_signals.append(sig)
                 
         return stop_signals
