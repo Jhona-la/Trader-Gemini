@@ -40,14 +40,19 @@ class PatternStrategy(Strategy):
                 # 1. Detect Patterns (TA-Lib returns 100 for Bullish, -100 for Bearish, 0 for None)
                 engulfing = talib.CDLENGULFING(opens, highs, lows, closes)
                 hammer = talib.CDLHAMMER(opens, highs, lows, closes)
+                shooting_star = talib.CDLSHOOTINGSTAR(opens, highs, lows, closes)
                 morning_star = talib.CDLMORNINGSTAR(opens, highs, lows, closes)
+                evening_star = talib.CDLEVENINGSTAR(opens, highs, lows, closes)
                 
                 # Check last candle for pattern
-                is_engulfing = engulfing[-1] == 100
+                is_bullish_engulfing = engulfing[-1] == 100
+                is_bearish_engulfing = engulfing[-1] == -100
                 is_hammer = hammer[-1] == 100
+                is_shooting_star = shooting_star[-1] == 100
                 is_morning_star = morning_star[-1] == 100
+                is_evening_star = evening_star[-1] == 100
                 
-                if not (is_engulfing or is_hammer or is_morning_star):
+                if not (is_bullish_engulfing or is_bearish_engulfing or is_hammer or is_shooting_star or is_morning_star or is_evening_star):
                     continue
                     
                 # 2. Context Filters
@@ -72,7 +77,7 @@ class PatternStrategy(Strategy):
                 strength = 0.0
                 
                 if trend_1h == 'UP':
-                    if is_engulfing and rsi < 60:
+                    if is_bullish_engulfing and rsi < 60:
                         signal_type = 'LONG'
                         pattern_name = "Bullish Engulfing"
                         strength = 0.8
@@ -83,6 +88,20 @@ class PatternStrategy(Strategy):
                     elif is_morning_star and rsi < 45:
                         signal_type = 'LONG'
                         pattern_name = "Morning Star"
+                        strength = 0.9
+                
+                elif trend_1h == 'DOWN':
+                    if is_bearish_engulfing and rsi > 40:
+                        signal_type = 'SHORT'
+                        pattern_name = "Bearish Engulfing"
+                        strength = 0.8
+                    elif is_shooting_star and rsi > 55:
+                        signal_type = 'SHORT'
+                        pattern_name = "Shooting Star"
+                        strength = 0.7
+                    elif is_evening_star and rsi > 55:
+                        signal_type = 'SHORT'
+                        pattern_name = "Evening Star"
                         strength = 0.9
                 
                 # 4. Emit Signal
