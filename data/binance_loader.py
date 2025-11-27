@@ -19,7 +19,11 @@ class BinanceData(DataProvider):
         
         # Enable Demo/Testnet if configured
         if hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO:
-            self.exchange.set_sandbox_mode(True)
+            # MANUAL CONFIGURATION for Futures Demo (set_sandbox_mode is deprecated for futures)
+            self.exchange.urls['api'] = {
+                'public': 'https://testnet.binancefuture.com/fapi/v1',
+                'private': 'https://testnet.binancefuture.com/fapi/v1',
+            }
         elif Config.BINANCE_USE_TESTNET:
             self.exchange.set_sandbox_mode(True)
         

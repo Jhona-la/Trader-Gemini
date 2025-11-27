@@ -45,9 +45,12 @@ class BinanceExecutor:
         
         # Habilitar el modo correspondiente
         if hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO:
-            # Use standard CCXT sandbox mode for Futures Demo
-            self.exchange.set_sandbox_mode(True)
-            print(f"Binance Executor: Running in {mode_description} mode.")
+            # MANUAL CONFIGURATION for Futures Demo (set_sandbox_mode is deprecated for futures)
+            self.exchange.urls['api'] = {
+                'public': 'https://testnet.binancefuture.com/fapi/v1',
+                'private': 'https://testnet.binancefuture.com/fapi/v1',
+            }
+            print(f"Binance Executor: Running in {mode_description} mode (Manual URL Config).")
         elif Config.BINANCE_USE_TESTNET:
             self.exchange.set_sandbox_mode(True)
             print(f"Binance Executor: Running in {mode_description} mode.")
