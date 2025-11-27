@@ -19,7 +19,7 @@ class BinanceData(DataProvider):
         
         # Enable Demo/Testnet if configured
         if hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO:
-            self.exchange.enable_demo_trading(True)
+            self.exchange.set_sandbox_mode(True)
         elif Config.BINANCE_USE_TESTNET:
             self.exchange.set_sandbox_mode(True)
         

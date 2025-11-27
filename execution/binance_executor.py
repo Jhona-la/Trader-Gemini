@@ -45,7 +45,8 @@ class BinanceExecutor:
         
         # Habilitar el modo correspondiente
         if hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO:
-            self.exchange.enable_demo_trading(True)
+            # Use standard CCXT sandbox mode for Futures Demo
+            self.exchange.set_sandbox_mode(True)
             print(f"Binance Executor: Running in {mode_description} mode.")
         elif Config.BINANCE_USE_TESTNET:
             self.exchange.set_sandbox_mode(True)
