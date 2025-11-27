@@ -95,19 +95,26 @@ class RiskManager:
                     return None
         
         # 1. Determine Quantity based on Signal Type
-        if signal_event.signal_type in ['EXIT', 'SHORT']:
-            # EXIT/SHORT means close existing position
-            # We must sell the EXACT quantity we hold
+        
+        # === EXIT: Close any existing position ===
+        if signal_event.signal_type == 'EXIT':
             if self.portfolio and signal_event.symbol in self.portfolio.positions:
-                quantity = self.portfolio.positions[signal_event.symbol]['quantity']
-                dollar_size = quantity * current_price
-                if quantity <= 0:
+                existing_qty = self.portfolio.positions[signal_event.symbol]['quantity']
+                
+                if existing_qty == 0:
                     print(f"⚠️  Risk Manager: Ignore EXIT for {signal_event.symbol} - No position.")
                     return None
+                
+                # Determine direction based on current position
+                quantity = abs(existing_qty)
+                direction = 'SELL' if existing_qty > 0 else 'BUY'
+                dollar_size = quantity * current_price
             else:
                 print(f"⚠️  Risk Manager: Ignore EXIT for {signal_event.symbol} - Portfolio data missing.")
                 return None
-        else:
+        
+        # === LONG: Open long position ===
+        elif signal_event.signal_type == 'LONG':
             # LONG means open new position -> Calculate Size
             dollar_size = self.size_position(signal_event, current_price)
             
@@ -125,10 +132,53 @@ class RiskManager:
             
             if quantity <= 0:
                 return None
+            
+            direction = 'BUY'
         
-        # 3. VALIDATE & RESERVE CASH (NEW)
-        if self.portfolio and signal_event.signal_type == 'LONG':
-            # BUY orders need cash
+        # === SHORT: Open short position ===
+        elif signal_event.signal_type == 'SHORT':
+            # Check max positions
+            if self.portfolio:
+                open_positions = sum(1 for pos in self.portfolio.positions.values() if pos['quantity'] != 0)
+                if open_positions >= self.max_concurrent_positions:
+                    print(f"⚠️  Risk Manager: Max {self.max_concurrent_positions} positions reached. SHORT rejected.")
+                    return None
+            
+            # Check cooldown
+            if signal_event.symbol in self.cooldowns:
+                if signal_event.datetime < self.cooldowns[signal_event.symbol]:
+                    print(f"❄️  Risk Manager: Cooldown active for {signal_event.symbol}. Skipping SHORT.")
+                    return None
+                else:
+                    del self.cooldowns[signal_event.symbol]
+            
+            # Size the SHORT position (same as LONG)
+            dollar_size = self.size_position(signal_event, current_price)
+            
+            if current_price == 0:
+                return None
+            
+            quantity = dollar_size / current_price
+            
+            # Rounding
+            if 'USDT' in signal_event.symbol:
+                quantity = round(quantity, 5)
+            else:
+                quantity = int(quantity)
+            
+            if quantity <= 0:
+                return None
+            
+            # In Futures, SELL opens SHORT
+            direction = 'SELL'
+        
+        else:
+            print(f"⚠️  Risk Manager: Unknown signal type: {signal_event.signal_type}")
+            return None
+        
+        # 3. VALIDATE & RESERVE CASH (Both LONG and SHORT need margin in Futures)
+        if self.portfolio and signal_event.signal_type in ['LONG', 'SHORT']:
+            # Both BUY and SELL orders need cash/margin in Futures
             available = self.portfolio.get_available_cash()
             
             # MINIMUM ORDER SIZE CHECK (Binance requires ~$5)
@@ -145,32 +195,23 @@ class RiskManager:
                 print(f"⚠️  Risk Manager: Failed to reserve ${dollar_size:.2f}")
                 return None
 
-        # 4. Create Order
-        order_type = 'MKT'
-        
-        # Map signal type to order direction
-        if signal_event.signal_type == 'LONG':
-            direction = 'BUY'
-        elif signal_event.signal_type in ['EXIT', 'SHORT']:
-            # EXIT means close a long position = SELL
-            direction = 'SELL'
-            
-            # ACTIVATE COOLDOWN ON EXIT
+        # 4. ACTIVATE COOLDOWN ON EXIT
+        if signal_event.signal_type == 'EXIT':
             # OPTIMIZED COOLDOWN: Faster re-entry for more opportunities
             cooldown_duration = self.base_cooldown_minutes
             if self.current_regime == 'TRENDING_BULL':
-                cooldown_duration = 3   # Very aggressive in bull runs (was 5)
+                cooldown_duration = 3   # Very aggressive in bull runs
             elif self.current_regime == 'CHOPPY':
-                cooldown_duration = 10  # Moderate in chop (was 30)
+                cooldown_duration = 10  # Moderate in chop
             elif self.current_regime == 'TRENDING_BEAR':
-                cooldown_duration = 20  # Conservative in bear (was 60)
+                cooldown_duration = 20  # Conservative in bear
                 
             from datetime import timedelta
             self.cooldowns[signal_event.symbol] = signal_event.datetime + timedelta(minutes=cooldown_duration)
             print(f"❄️  Risk Manager: Cooldown activated for {signal_event.symbol} ({cooldown_duration}m) until {self.cooldowns[signal_event.symbol]}")
-        else:
-            print(f"⚠️  Risk Manager: Unknown signal type: {signal_event.signal_type}")
-            return None
+        
+        # 5. Create Order
+        order_type = 'MKT'
         
         print(f"✅ Risk Manager: Approved {direction} {quantity} {signal_event.symbol} (${dollar_size:.2f})")
         

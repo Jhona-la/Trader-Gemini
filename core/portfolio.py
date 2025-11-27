@@ -105,16 +105,30 @@ class Portfolio:
     def update_market_price(self, symbol, price):
         """
         Helper to update current price of a symbol for PnL calculation.
-        Also updates High Water Mark for Trailing Stops.
+        Updates HWM for LONG positions, LWM for SHORT positions.
         """
         if symbol not in self.positions:
-            self.positions[symbol] = {'quantity': 0, 'avg_price': 0, 'current_price': price, 'high_water_mark': price, 'stop_distance': 0}
+            self.positions[symbol] = {
+                'quantity': 0, 
+                'avg_price': 0, 
+                'current_price': price, 
+                'high_water_mark': price, 
+                'low_water_mark': price,
+                'stop_distance': 0
+            }
         else:
             self.positions[symbol]['current_price'] = price
-            # Update High Water Mark if we have a position
+            
+            # Update High Water Mark for LONG positions
             if self.positions[symbol]['quantity'] > 0:
                 if price > self.positions[symbol].get('high_water_mark', 0):
                     self.positions[symbol]['high_water_mark'] = price
+            
+            # Update Low Water Mark for SHORT positions
+            elif self.positions[symbol]['quantity'] < 0:
+                lwm = self.positions[symbol].get('low_water_mark', price)
+                if price < lwm:
+                    self.positions[symbol]['low_water_mark'] = price
         
         if self.auto_save:
             self.save_status()
@@ -137,78 +151,154 @@ class Portfolio:
             fill_price = event.fill_cost / event.quantity if event.quantity > 0 else 0
             
             if event.direction == 'BUY':
-                # Release pending cash (it's now confirmed spent)
-                with self._cash_lock:
-                    self.current_cash -= fill_cost
-                    self.pending_cash = max(0, self.pending_cash - fill_cost)
+                # BUY can be: Close SHORT or Open LONG
+                pos = self.positions.get(event.symbol, {'quantity': 0, 'avg_price': 0})
                 
-                # Update Avg Price
-                if event.symbol not in self.positions:
-                    self.positions[event.symbol] = {
-                        'quantity': 0, 
-                        'avg_price': 0, 
-                        'current_price': 0, 
-                        'high_water_mark': 0, 
-                        'stop_distance': 0,
-                        'opener_strategy_id': getattr(event, 'strategy_id', None) # Track who opened it
-                    }
+                if pos['quantity'] < 0:
+                    # === CLOSING SHORT POSITION ===
+                    # PnL = (entry_price - exit_price) * quantity
+                    entry_price = pos['avg_price']
+                    exit_price = fill_price
+                    pnl = (entry_price - exit_price) * event.quantity
+                    
+                    self.realized_pnl += pnl
+                    
+                    # Update position
+                    pos['quantity'] += event.quantity  # Add to negative (closes it)
+                    
+                    # Strategy performance tracking
+                    strat_id = getattr(event, 'strategy_id', None) or pos.get('opener_strategy_id', 'Unknown')
+                    if strat_id not in self.strategy_performance:
+                        self.strategy_performance[strat_id] = {'pnl': 0.0, 'wins': 0, 'losses': 0, 'trades': 0}
+                    
+                    self.strategy_performance[strat_id]['pnl'] += pnl
+                    self.strategy_performance[strat_id]['trades'] += 1
+                    if pnl > 0:
+                        self.strategy_performance[strat_id]['wins'] += 1
+                    elif pnl < 0:
+                        self.strategy_performance[strat_id]['losses'] += 1
+                    
+                    print(f"📈 SHORT Closed: {event.symbol} PnL=${pnl:.2f} (Entry: ${entry_price:.4f}, Exit: ${exit_price:.4f})")
+                    
+                    # Reset LWM if fully closed
+                    if abs(pos['quantity']) < 0.00001:
+                        pos['quantity'] = 0
+                        pos['low_water_mark'] = 0
+                        pos['stop_distance'] = 0
+                    
+                    # Don't deduct cash (Futures margin-based)
+                    with self._cash_lock:
+                        self.pending_cash = max(0, self.pending_cash - fill_cost)
                 
-                pos = self.positions[event.symbol]
-                # If opening new position (was 0), update opener
-                if pos['quantity'] == 0:
-                     pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
-                
-                total_cost = (pos['quantity'] * pos['avg_price']) + fill_cost
-                total_qty = pos['quantity'] + event.quantity
-                
-                if total_qty > 0:
-                    pos['avg_price'] = total_cost / total_qty
-                pos['quantity'] = total_qty
-                
-                # PYRAMIDING FIX: Update HWM only if new fill is higher
-                # Don't reset HWM when adding to existing position
-                pos['high_water_mark'] = max(pos.get('high_water_mark', 0), fill_price)
+                else:
+                    # === OPENING/ADDING LONG POSITION ===
+                    # Release pending cash (it's now confirmed spent)
+                    with self._cash_lock:
+                        self.current_cash -= fill_cost
+                        self.pending_cash = max(0, self.pending_cash - fill_cost)
+                    
+                    # Update Avg Price
+                    if event.symbol not in self.positions:
+                        self.positions[event.symbol] = {
+                            'quantity': 0, 
+                            'avg_price': 0, 
+                            'current_price': 0, 
+                            'high_water_mark': 0, 
+                            'low_water_mark': 0,
+                            'stop_distance': 0,
+                            'opener_strategy_id': getattr(event, 'strategy_id', None)
+                        }
+                    
+                    pos = self.positions[event.symbol]
+                    # If opening new position (was 0), update opener
+                    if pos['quantity'] == 0:
+                         pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
+                    
+                    total_cost = (pos['quantity'] * pos['avg_price']) + fill_cost
+                    total_qty = pos['quantity'] + event.quantity
+                    
+                    if total_qty > 0:
+                        pos['avg_price'] = total_cost / total_qty
+                    pos['quantity'] = total_qty
+                    
+                    # PYRAMIDING FIX: Update HWM only if new fill is higher
+                    pos['high_water_mark'] = max(pos.get('high_water_mark', 0), fill_price)
                 
             elif event.direction == 'SELL':
-                self.current_cash += fill_cost
-                
-                # Calculate Realized PnL
+                # SELL can be: Close LONG or Open SHORT
                 pos = self.positions.get(event.symbol, {'quantity': 0, 'avg_price': 0})
-                cost_basis = event.quantity * pos['avg_price']
-                pnl = fill_cost - cost_basis
-                self.realized_pnl += pnl
                 
-                # Update Strategy Performance
-                strat_id = getattr(event, 'strategy_id', None)
-                
-                # If strategy_id is missing (Risk Manager or Manual Close), use the opener
-                if not strat_id and 'opener_strategy_id' in pos:
-                    strat_id = pos['opener_strategy_id']
-                    print(f"ℹ️  Attributing Risk/Manual Exit to Strategy {strat_id}")
-                
-                if not strat_id:
-                    strat_id = 'Unknown'
-
-                if strat_id not in self.strategy_performance:
-                    self.strategy_performance[strat_id] = {'pnl': 0.0, 'wins': 0, 'losses': 0, 'trades': 0}
-                
-                self.strategy_performance[strat_id]['pnl'] += pnl
-                self.strategy_performance[strat_id]['trades'] += 1
-                if pnl > 0:
-                    self.strategy_performance[strat_id]['wins'] += 1
-                elif pnl < 0:
-                    self.strategy_performance[strat_id]['losses'] += 1
+                if pos['quantity'] > 0:
+                    # === CLOSING LONG POSITION ===
+                    self.current_cash += fill_cost
                     
-                print(f"💰 PnL Update: Strategy {strat_id} PnL: ${pnl:.2f} (Total: ${self.strategy_performance[strat_id]['pnl']:.2f})")
+                    # Calculate Realized PnL
+                    cost_basis = event.quantity * pos['avg_price']
+                    pnl = fill_cost - cost_basis
+                    self.realized_pnl += pnl
+                    
+                    # Update Strategy Performance
+                    strat_id = getattr(event, 'strategy_id', None)
+                    
+                    # If strategy_id is missing, use the opener
+                    if not strat_id and 'opener_strategy_id' in pos:
+                        strat_id = pos['opener_strategy_id']
+                        print(f"ℹ️  Attributing Risk/Manual Exit to Strategy {strat_id}")
+                    
+                    if not strat_id:
+                        strat_id = 'Unknown'
+
+                    if strat_id not in self.strategy_performance:
+                        self.strategy_performance[strat_id] = {'pnl': 0.0, 'wins': 0, 'losses': 0, 'trades': 0}
+                    
+                    self.strategy_performance[strat_id]['pnl'] += pnl
+                    self.strategy_performance[strat_id]['trades'] += 1
+                    if pnl > 0:
+                        self.strategy_performance[strat_id]['wins'] += 1
+                    elif pnl < 0:
+                        self.strategy_performance[strat_id]['losses'] += 1
+                        
+                    print(f"💰 LONG Closed: {event.symbol} PnL=${pnl:.2f} (Strategy: {strat_id})")
+                    
+                    pos['quantity'] -= event.quantity
+                    # Avg price doesn't change on sell (FIFO/Weighted Avg assumption)
+                    
+                    # Reset HWM if closed
+                    if pos['quantity'] <= 0.00001: # Float tolerance
+                        pos['quantity'] = 0
+                        pos['high_water_mark'] = 0
+                        pos['stop_distance'] = 0
                 
-                pos['quantity'] -= event.quantity
-                # Avg price doesn't change on sell (FIFO/Weighted Avg assumption)
-                
-                # Reset HWM if closed
-                if pos['quantity'] <= 0.00001: # Float tolerance
-                    pos['quantity'] = 0
-                    pos['high_water_mark'] = 0
-                    pos['stop_distance'] = 0
+                else:
+                    # === OPENING SHORT POSITION ===
+                    # In Futures, SELL with no position = open SHORT
+                    # We DON'T receive actual cash (margin-based trading)
+                    
+                    # Initialize position if needed
+                    if event.symbol not in self.positions:
+                        self.positions[event.symbol] = {
+                            'quantity': 0,
+                            'avg_price': 0,
+                            'current_price': 0,
+                            'high_water_mark': 0,
+                            'low_water_mark': 0,
+                            'stop_distance': 0,
+                            'opener_strategy_id': getattr(event, 'strategy_id', None)
+                        }
+                    
+                    pos = self.positions[event.symbol]
+                    
+                    # Set negative quantity for SHORT
+                    pos['quantity'] = -event.quantity
+                    pos['avg_price'] = fill_price
+                    pos['low_water_mark'] = fill_price  # Track lowest price for trailing
+                    pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
+                    
+                    # Release pending cash since order executed
+                    with self._cash_lock:
+                        self.pending_cash = max(0, self.pending_cash - fill_cost)
+                    
+                    print(f"📉 SHORT Opened: {event.symbol} @ ${fill_price:.4f} (Qty: {event.quantity})")
             
             # Log Trade
             self.log_to_csv({
