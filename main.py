@@ -207,14 +207,17 @@ def main():
     engine.register_execution_handler(binance_executor)
     
     # SYNC PORTFOLIO WITH BINANCE DEMO BALANCE
-    print("🔄 Syncing Portfolio with Binance Demo Balance...")
-    initial_balance = binance_executor.get_balance()
-    if initial_balance is not None:
-        portfolio.current_cash = initial_balance
-        portfolio.initial_capital = initial_balance
-        print(f"✅ Portfolio Synced: ${portfolio.current_cash:.2f}")
-    else:
-        print(f"⚠️  Could not sync balance. Using default: ${portfolio.current_cash:.2f}")
+    # NOTE: Disabled for Futures Testnet - the balance endpoint returns 404 on testnet
+    # The bot will use the configured initial_capital instead
+    # print("🔄 Syncing Portfolio with Binance Demo Balance...")
+    # initial_balance = binance_executor.get_balance()
+    # if initial_balance is not None:
+    #     portfolio.current_cash = initial_balance
+    #     portfolio.initial_capital = initial_balance
+    #     print(f"✅ Portfolio Synced: ${portfolio.current_cash:.2f}")
+    # else:
+    #     print(f"⚠️  Could not sync balance. Using default: ${portfolio.current_cash:.2f}")
+    print(f"💰 Starting with configured capital: ${portfolio.current_cash:.2f}")
     
     # 7. Register Strategies in OPTIMAL ORDER (Crypto only)
     # STRATEGY COLLABORATION FIX: Most sophisticated first, simplest last
