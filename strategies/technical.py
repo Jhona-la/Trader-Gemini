@@ -183,6 +183,7 @@ class TechnicalStrategy(Strategy):
                 # 2. MOMENTUM BREAKOUT ENTRY (Already calculated above)
                 # is_breakout = ...
                 
+                # ENTRY LONG
                 if (is_pullback or (is_breakout and trend_1h == 'UP')) and not self.bought[s]:
                     # MULTI-TIMEFRAME FILTER: Only trade if weighted confluence >= +0.5
                     # (Majority agreement, with longer timeframes having more influence)
@@ -223,8 +224,27 @@ class TechnicalStrategy(Strategy):
                         self.events_queue.put(signal)
                         self.bought[s] = True
                 
-                # SELL (close long) when overbought OR trend reverses
-                elif self.bought[s]:
+                # ENTRY SHORT (Downtrend + Overbought)
+                elif not in_uptrend and current_rsi > dynamic_rsi_sell and not self.bought[s]:
+                    # Only SHORT if 1h trend is also DOWN or NEUTRAL
+                    if trend_1h == 'UP':
+                        print(f"  ⏭️  Skipping SHORT {s}: 1h Trend is UP (Counter-trend)")
+                    else:
+                        # Dynamic strength for SHORT
+                        rsi_diff = max(0, current_rsi - dynamic_rsi_sell)
+                        strength = min(1.0, 0.5 + (rsi_diff * 0.02))
+                        
+                        # Volume boost
+                        if volume_ratio > 1.5:
+                            strength = min(1.0, strength * 1.2)
+                        
+                        print(f"✅ SHORT SIGNAL! {s} RSI:{current_rsi:.2f} (Downtrend, Overbought, Strength={strength:.2f})")
+                        signal = SignalEvent(1, s, timestamp, 'SHORT', strength=strength, atr=current_atr)
+                        self.events_queue.put(signal)
+                        self.bought[s] = True
+                
+                # EXIT LONG (overbought or trend reverses)
+                elif self.bought[s] and in_uptrend:
                     if current_rsi > dynamic_rsi_sell:
                         print(f"SELL SIGNAL! {s} RSI: {current_rsi} (Overbought, Threshold={dynamic_rsi_sell})")
                         signal = SignalEvent(1, s, timestamp, 'EXIT', strength=1.0)
@@ -235,5 +255,17 @@ class TechnicalStrategy(Strategy):
                         signal = SignalEvent(1, s, timestamp, 'EXIT', strength=1.0)
                         self.events_queue.put(signal)
                         self.bought[s] = False
-
+                
+                # EXIT SHORT (oversold or trend reverses)
+                elif self.bought[s] and not in_uptrend:
+                    if current_rsi < dynamic_rsi_buy:
+                        print(f"COVER SHORT SIGNAL! {s} RSI: {current_rsi} (Oversold, Threshold={dynamic_rsi_buy})")
+                        signal = SignalEvent(1, s, timestamp, 'EXIT', strength=1.0)
+                        self.events_queue.put(signal)
+                        self.bought[s] = False
+                    elif in_uptrend:
+                        print(f"COVER SHORT SIGNAL! {s} Trend reversed (EMA 50 > EMA 200)")
+                        signal = SignalEvent(1, s, timestamp, 'EXIT', strength=1.0)
+                        self.events_queue.put(signal)
+                        self.bought[s] = False
 
