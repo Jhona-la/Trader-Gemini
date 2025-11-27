@@ -49,6 +49,10 @@ class BinanceExecutor:
             self.exchange.urls['api'] = {
                 'public': 'https://testnet.binancefuture.com/fapi/v1',
                 'private': 'https://testnet.binancefuture.com/fapi/v1',
+                'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
+                'fapiPrivate': 'https://testnet.binancefuture.com/fapi/v1',
+                'fapiData': 'https://testnet.binancefuture.com/fapi/v1',
+                'sapi': 'https://testnet.binance.vision/api/v3', # Fallback for some endpoints
             }
             print(f"Binance Executor: Running in {mode_description} mode (Manual URL Config).")
         elif Config.BINANCE_USE_TESTNET:

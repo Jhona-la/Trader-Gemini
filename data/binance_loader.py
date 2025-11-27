@@ -23,6 +23,10 @@ class BinanceData(DataProvider):
             self.exchange.urls['api'] = {
                 'public': 'https://testnet.binancefuture.com/fapi/v1',
                 'private': 'https://testnet.binancefuture.com/fapi/v1',
+                'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
+                'fapiPrivate': 'https://testnet.binancefuture.com/fapi/v1',
+                'fapiData': 'https://testnet.binancefuture.com/fapi/v1',
+                'sapi': 'https://testnet.binance.vision/api/v3',
             }
         elif Config.BINANCE_USE_TESTNET:
             self.exchange.set_sandbox_mode(True)
