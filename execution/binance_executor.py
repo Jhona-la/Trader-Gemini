@@ -85,6 +85,29 @@ class BinanceExecutor:
         if Config.BINANCE_USE_FUTURES:
             logger.info("Binance Executor: FUTURES MODE ENABLED")
             logger.info("  → Using server-side leverage (configure in Binance Demo UI)")
+        
+        # ===================================================================
+        # Create permanent Spot exchange instance for balance queries
+        # ===================================================================
+        # Spot Testnet uses different URLs from Futures Testnet
+        # We maintain a separate exchange for Spot queries
+        if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
+            self.spot_exchange = ccxt.binance({
+                'apiKey': api_key,
+                'secret': secret_key,
+                'enableRateLimit': True,
+                'options': {
+                    'defaultType': 'spot',
+                    'adjustForTimeDifference': True,
+                }
+            })
+            # Set Spot Testnet URLs (testnet.binance.vision)
+            self.spot_exchange.set_sandbox_mode(True)
+            logger.info("  → Spot exchange initialized for Testnet")
+        else:
+            # In production, we can use the same exchange for both
+            self.spot_exchange = self.exchange
+            logger.info("  → Using main exchange for Spot queries (Production mode)")
 
     def execute_order(self, event):
         """
@@ -453,26 +476,8 @@ class BinanceExecutor:
         # 3. Spot - ACCOUNT INFORMATION
         # ===================================================================
         try:
-            # Spot requires DIFFERENT Testnet URLs from Futures
-            # We need to create a separate exchange instance for Spot
-            if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
-                # Create temporary Spot exchange for Testnet
-                spot_exchange = ccxt.binance({
-                    'apiKey': self.exchange.apiKey,
-                    'secret': self.exchange.secret,
-                    'enableRateLimit': True,
-                    'options': {
-                        'defaultType': 'spot',
-                        'adjustForTimeDifference': True,
-                    }
-                })
-                # Set Spot Testnet URLs
-                spot_exchange.set_sandbox_mode(True)  # This sets testnet.binance.vision
-                
-                response = spot_exchange.fetch_balance()
-            else:
-                # Production mode - use main exchange
-                response = self.exchange.fetch_balance()
+            # Use the permanent Spot exchange instance
+            response = self.spot_exchange.fetch_balance()
             
             # Calculate total estimated value
             total_usdt = 0.0
