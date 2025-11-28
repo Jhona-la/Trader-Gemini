@@ -48,34 +48,11 @@ class BinanceExecutor:
         })
         
         # Habilitar el modo correspondiente
-        # Habilitar el modo correspondiente
         if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
-            # MANUAL CONFIGURATION for Futures Demo (Robust way)
-            # We enforce these URLs to avoid CCXT missing endpoints like fapiPrivateV2
-            # MANUAL CONFIGURATION for Futures Demo (Robust way)
-            # We enforce these URLs to avoid CCXT missing endpoints like fapiPrivateV2
-            custom_urls = {
-                'public': 'https://testnet.binancefuture.com/fapi/v1',
-                'private': 'https://testnet.binancefuture.com/fapi/v1',
-                'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
-                'fapiPrivate': 'https://testnet.binancefuture.com/fapi/v1',
-                'fapiPrivateV2': 'https://testnet.binancefuture.com/fapi/v2', # Explicitly added
-                'fapiData': 'https://testnet.binancefuture.com/fapi/v1',
-                'dapiPublic': 'https://testnet.binancefuture.com/dapi/v1',
-                'dapiPrivate': 'https://testnet.binancefuture.com/dapi/v1',
-                'dapiData': 'https://testnet.binancefuture.com/dapi/v1',
-                'sapi': 'https://testnet.binance.vision/api/v3', 
-            }
-            
-            # Set BOTH 'api' and 'test' URLs to ensure CCXT finds them regardless of mode
-            self.exchange.urls['api'] = custom_urls
-            self.exchange.urls['test'] = custom_urls
-            
-            # We do NOT call set_sandbox_mode(True) because we manually set the URLs
-            # This prevents CCXT from overwriting our custom map with incomplete defaults
-            # We do NOT call set_sandbox_mode(True) because we manually set the URLs
-            # This prevents CCXT from overwriting our custom map with incomplete defaults
-            logger.info(f"Binance Executor: Running in {mode_description} mode (Manual URL Config)")
+            # CRITICAL: Use set_sandbox_mode for Testnet (per CCXT documentation)
+            # This correctly configures ALL Futures Testnet URLs
+            self.exchange.set_sandbox_mode(True)
+            logger.info(f"Binance Executor: Running in {mode_description} mode (Testnet)")
         else:
             logger.info(f"Binance Executor: Running in {mode_description} mode")
             
@@ -129,70 +106,28 @@ class BinanceExecutor:
             quantity = event.quantity
             order_type = event.order_type.lower() # 'market' or 'limit'
             
-            # Execute Order
+            # Execute Order using CCXT unified API
             if order_type == 'mkt':
                 order_type = 'market'
-                
-            # Use Raw API for Futures Testnet reliability
-            # CCXT create_order sometimes hits Spot endpoints in this mixed mode
-            try:
-                if Config.BINANCE_USE_FUTURES:
-                    # Map parameters to raw API format
-                    params = {
-                        'symbol': symbol.replace('/', ''), # BTC/USDT -> BTCUSDT
-                        'side': side.upper(),
-                        'type': order_type.upper(),
-                        'quantity': quantity,
-                    }
-                    
-                    # Log attempt
-                    logger.info(f"Executing Raw Order: {params}")
-                    
-                    # Execute
-                    response = self.exchange.fapiPrivatePostOrder(params)
-                    
-                    # Parse Raw Response
-                    # { 'orderId': ..., 'status': 'NEW', 'avgPrice': '0.00', ... }
-                    # Note: Market orders usually fill immediately, but avgPrice might be 0 initially in response?
-                    # Actually for market orders, response usually contains 'cumQuote' and 'executedQty'
-                    
-                    fill_price = float(response.get('avgPrice', 0))
-                    if fill_price == 0 and float(response.get('executedQty', 0)) > 0:
-                         # Calculate from cumQuote if avgPrice is 0 (common in immediate response)
-                         fill_price = float(response.get('cumQuote', 0)) / float(response.get('executedQty'))
-                         
-                    order = {
-                        'id': response['orderId'],
-                        'filled': float(response['executedQty']),
-                        'average': fill_price,
-                        'cost': float(response['cumQuote']),
-                        'fee': 0 # Fee info usually in a separate stream or trade endpoint
-                    }
-                    
-                else:
-                    # Standard CCXT for Spot (if ever used)
-                    order = self.exchange.create_order(symbol, order_type, side, quantity)
             
-                # Log Success
-                print(f"Order Filled: {order['id']} - {side} {order['filled']} @ {order['average']}")
-                
-                # Create Fill Event
-                fill_event = FillEvent(
-                    timeindex=None,
-                    symbol=symbol,
-                    exchange='BINANCE',
-                    quantity=order['filled'],
-                    direction=event.direction,
-                    fill_cost=order['cost'],
-                    commission=order.get('fee', None),
-                    strategy_id=event.strategy_id  # PASS strategy_id from OrderEvent
-                )
-                self.events_queue.put(fill_event)
-                
-            except Exception as e:
-                print(f"Binance Execution Error: {e}")
-                # Re-raise to trigger the catch block below for cash release
-                raise e
+            # Use standard CCXT method (works correctly with set_sandbox_mode)
+            order = self.exchange.create_order(symbol, order_type, side, quantity)
+            
+            # Log Success
+            print(f"Order Filled: {order['id']} - {side} {order['filled']} @ {order['average']}")
+            
+            # Create Fill Event
+            fill_event = FillEvent(
+                timeindex=None,
+                symbol=symbol,
+                exchange='BINANCE',
+                quantity=order['filled'],
+                direction=event.direction,
+                fill_cost=order['cost'],
+                commission=order.get('fee', None),
+                strategy_id=event.strategy_id  # PASS strategy_id from OrderEvent
+            )
+            self.events_queue.put(fill_event)
             
         except Exception as e:
             print(f"Binance Execution Error: {e}")
