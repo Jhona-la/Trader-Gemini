@@ -52,15 +52,17 @@ class RiskManager:
         # 0. Check max concurrent positions
         if self.portfolio:
             open_positions = sum(1 for pos in self.portfolio.positions.values() if pos['quantity'] != 0)
-            if open_positions >= self.max_concurrent_positions and signal_event.signal_type == 'LONG':
+            # FIXED: Apply limit to BOTH Long and Short signals
+            if open_positions >= self.max_concurrent_positions and signal_event.signal_type in ['LONG', 'SHORT']:
                 print(f"⚠️  Risk Manager: Max {self.max_concurrent_positions} positions reached. Signal rejected.")
                 return None
         
         # 0.5 Check Cooldowns (Churn Prevention)
-        if signal_event.signal_type == 'LONG':
+        # FIXED: Apply cooldown to both directions
+        if signal_event.signal_type in ['LONG', 'SHORT']:
             if signal_event.symbol in self.cooldowns:
                 if signal_event.datetime < self.cooldowns[signal_event.symbol]:
-                    print(f"❄️  Risk Manager: Cooldown active for {signal_event.symbol}. Skipping LONG.")
+                    print(f"❄️  Risk Manager: Cooldown active for {signal_event.symbol}. Skipping {signal_event.signal_type}.")
                     return None
                 else:
                     # Cooldown expired
