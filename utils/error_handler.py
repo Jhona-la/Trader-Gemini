@@ -115,12 +115,8 @@ def handle_order_error(error, symbol, direction, quantity):
     """
     error_str = str(error)
     
-    # Suppress known harmless errors in Testnet Futures mode
-    # CCXT tries to fetch Spot balance even when we use Raw Futures API
-    if 'capital/config/getall' in error_str and '404' in error_str:
-        # This is CCXT trying to sync balance via Spot endpoint
-        # Safe to ignore in Futures-only mode
-        return
+    # DO NOT SUPPRESS - All order execution errors are critical
+    # Previous suppression of capital/config/getall was hiding real execution failures
     
     code, msg = parse_binance_error(error)
     
