@@ -316,23 +316,37 @@ class BinanceExecutor:
         try:
             if Config.BINANCE_USE_FUTURES:
                 # Fetch positions from Futures API
-                # Endpoint: GET /fapi/v2/positionRisk
-                positions = self.exchange.fapiPrivateV2GetPositionRisk()
+                # We use the standard CCXT method which handles endpoints automatically
+                try:
+                    # Try standard fetch_positions (usually maps to v2/positionRisk)
+                    positions = self.exchange.fetch_positions()
+                except Exception as e:
+                    logger.warning(f"Standard fetch_positions failed: {e}. Trying raw v2 endpoint...")
+                    # Fallback: Ensure URL exists and try raw
+                    if 'fapiPrivateV2' not in self.exchange.urls['api']:
+                        self.exchange.urls['api']['fapiPrivateV2'] = self.exchange.urls['api']['fapiPrivate'].replace('v1', 'v2')
+                        if 'test' in self.exchange.urls:
+                            self.exchange.urls['test']['fapiPrivateV2'] = self.exchange.urls['test']['fapiPrivate'].replace('v1', 'v2')
+                    
+                    positions = self.exchange.fapiPrivateV2GetPositionRisk()
                 
                 synced_count = 0
                 for pos in positions:
-                    symbol = pos['symbol']
-                    amt = float(pos['positionAmt'])
-                    entry_price = float(pos['entryPrice'])
+                    # CCXT fetch_positions returns a unified structure
+                    # Raw API returns a different structure. We need to handle both.
+                    
+                    # Check if it's CCXT structure (has 'info') or Raw
+                    is_ccxt_struct = 'info' in pos
+                    raw_pos = pos['info'] if is_ccxt_struct else pos
+                    
+                    symbol = raw_pos['symbol']
+                    amt = float(raw_pos['positionAmt'])
+                    entry_price = float(raw_pos['entryPrice'])
                     
                     # Only care about non-zero positions
                     if abs(amt) > 0:
                         # Update local portfolio
                         # Convert symbol format if needed (BTCUSDT -> BTC/USDT)
-                        # CCXT usually handles this, but raw endpoint returns 'BTCUSDT'
-                        # We need to map it back to our internal format 'BTC/USDT'
-                        
-                        # Simple mapping attempt
                         internal_symbol = symbol
                         if not '/' in symbol and symbol.endswith('USDT'):
                             base = symbol[:-4]
