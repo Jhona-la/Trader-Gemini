@@ -18,9 +18,10 @@ class BinanceData(DataProvider):
         self.exchange = ccxt.binance({'options': options})
         
         # Enable Demo/Testnet if configured
-        if hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO:
-            # MANUAL CONFIGURATION for Futures Demo (set_sandbox_mode is deprecated for futures)
-            self.exchange.urls['api'] = {
+        if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
+            # MANUAL CONFIGURATION for Futures Testnet/Demo
+            # Matches logic in binance_executor.py for consistency
+            custom_urls = {
                 'public': 'https://testnet.binancefuture.com/fapi/v1',
                 'private': 'https://testnet.binancefuture.com/fapi/v1',
                 'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
@@ -31,8 +32,9 @@ class BinanceData(DataProvider):
                 'dapiData': 'https://testnet.binancefuture.com/dapi/v1',
                 'sapi': 'https://testnet.binance.vision/api/v3',
             }
-        elif Config.BINANCE_USE_TESTNET:
-            self.exchange.set_sandbox_mode(True)
+            self.exchange.urls['api'] = custom_urls
+            self.exchange.urls['test'] = custom_urls
+            print("Binance Loader: Configured for Testnet/Demo (Manual URLs)")
         
         # Storage for latest bars
         self.latest_data = {s: [] for s in symbol_list}
@@ -136,7 +138,9 @@ class BinanceData(DataProvider):
         Returns the last N bars from the latest_symbol list.
         """
         try:
-            bars_list = self.latest_data[symbol]
+            # ZERO-TRUST: Return a DEEP COPY to prevent strategies from corrupting shared data
+            import copy
+            bars_list = copy.deepcopy(self.latest_data[symbol])
         except KeyError:
             print("That symbol is not available in the historical data set.")
             raise
@@ -180,7 +184,10 @@ class BinanceData(DataProvider):
                 }
                 
                 # Avoid duplicates (simple check)
-                if not self.latest_data[s] or self.latest_data[s][-1]['datetime'] != timestamp:
+                if not self.latest_data[s]:
+                    self.latest_data[s].append(bar_data)
+                elif self.latest_data[s][-1]['datetime'] != timestamp:
+                    # New bar detected
                     self.latest_data[s].append(bar_data)
                     
                     # RAM OPTIMIZATION: Limit buffer size to prevent memory growth
@@ -189,6 +196,15 @@ class BinanceData(DataProvider):
                     
                     print(f"New Bar for {s}: {timestamp} - Close: {bar_data['close']}")
                     self.events_queue.put(MarketEvent())
+                else:
+                    # SAME BAR: Update it in place! (CRITICAL FIX)
+                    # Previously we ignored updates, so we only had the "Open" price stored as "Close"
+                    self.latest_data[s][-1] = bar_data
+                    # We don't necessarily need to fire a MarketEvent on every tick update to avoid spam,
+                    # but for real-time ML, we might want to.
+                    # For now, let's fire it so strategies see the price moving.
+                    # self.events_queue.put(MarketEvent()) # Uncomment if we want tick-level updates
+                    pass
                 
                 # MULTI-TIMEFRAME: Also update 1h candles
                 # Fetch 1h candle (limit=2 to get latest closed or current open)

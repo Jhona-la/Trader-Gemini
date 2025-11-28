@@ -59,8 +59,14 @@ class Engine:
         """
         if event.type == 'MARKET':
             # Notify strategies of new data
+            # Notify strategies of new data
             for strategy in self.strategies:
-                strategy.calculate_signals(event)
+                try:
+                    strategy.calculate_signals(event)
+                except Exception as e:
+                    print(f"⚠️  Strategy Error ({strategy.__class__.__name__}): {e}")
+                    # import traceback
+                    # traceback.print_exc()
             # Notify portfolio to update positions (mark-to-market)
             if self.portfolio:
                 # MarketEvent is generic, so we update all symbols

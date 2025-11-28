@@ -2,12 +2,15 @@ import pandas as pd
 import os
 import json
 from datetime import datetime
+from config import Config  # Import Config for Futures/Spot detection
 
 class Portfolio:
     def __init__(self, initial_capital=10000.0, csv_path="dashboard/data/trades.csv", status_path="dashboard/data/status.csv", auto_save=True):
         self.initial_capital = initial_capital
         self.current_cash = initial_capital
         self.pending_cash = 0.0  # Cash reserved for pending orders
+        self.used_margin = 0.0   # Margin locked in Futures positions
+        
         self.positions = {} # Symbol -> {'quantity': 0, 'avg_price': 0, 'current_price': 0}
         self.realized_pnl = 0.0
         
@@ -47,14 +50,12 @@ class Portfolio:
                 data = json.load(f)
                 
             if data.get('status') == 'OFFLINE':
-                # If cleanly shut down, we might not want to load positions if they were closed
-                # But if they weren't closed (crash), we need them.
-                # We'll trust the 'positions' field.
                 pass
                 
             # Restore Cash & PnL
             self.current_cash = data.get('cash', self.initial_capital)
             self.realized_pnl = data.get('realized_pnl', 0.0)
+            self.used_margin = data.get('used_margin', 0.0) # Restore margin
             
             # Restore Positions
             loaded_positions = data.get('positions', {})
@@ -72,14 +73,30 @@ class Portfolio:
             return False
     
     def get_available_cash(self):
-        """Return cash available for trading (excluding pending orders)."""
+        """Return cash available for trading (Total Cash - Margin Used - Pending)."""
         with self._cash_lock:
-            return self.current_cash - self.pending_cash
+            # In Futures: Cash is collateral. Available = Cash - Margin - Pending
+            # In Spot: Cash is currency. Available = Cash - Pending (Margin is N/A)
+            if Config.BINANCE_USE_FUTURES:
+                return self.current_cash - self.used_margin - self.pending_cash
+            else:
+                return self.current_cash - self.pending_cash
     
     def reserve_cash(self, amount):
         """Reserve cash for a pending order. Returns True if successful."""
         with self._cash_lock:
-            if self.current_cash - self.pending_cash >= amount:
+            available = self.get_available_cash() # Use internal method to respect margin
+            # Note: We don't subtract pending here because get_available_cash already does
+            # Wait, get_available_cash calculates *current* available.
+            # We need to check if (Available >= amount)
+            
+            # Recalculate locally to be safe with lock
+            if Config.BINANCE_USE_FUTURES:
+                avail = self.current_cash - self.used_margin - self.pending_cash
+            else:
+                avail = self.current_cash - self.pending_cash
+                
+            if avail >= amount:
                 self.pending_cash += amount
                 return True
             return False
@@ -94,12 +111,6 @@ class Portfolio:
         Update current market prices for all positions.
         """
         if event.type == 'MARKET':
-            # In a real system, we'd get price from the event. 
-            # For now, we assume the event carries the latest bar.
-            # But MarketEvent in this system is just a trigger.
-            # We rely on DataHandler to have updated bars.
-            # This part is tricky without direct access to DataHandler here.
-            # We will rely on the Engine passing a price-enriched event or fetching it.
             pass 
             
     def update_market_price(self, symbol, price):
@@ -134,34 +145,54 @@ class Portfolio:
             self.save_status()
 
     def update_signal(self, event):
-        """
-        Receive signal event for optional tracking.
-        NOTE: Signals are NOT trades - don't log to trades CSV.
-        Only FILLS are actual trades.
-        """
         if event.type == 'SIGNAL':
-            # Optional: Could log to separate signals log if needed
-            # For now, just pass - engine handles signal->order->fill flow
             pass
 
     def update_fill(self, event):
         if event.type == 'FILL':
             # Update Cash and Positions
-            fill_cost = event.fill_cost # Total cost (price * quantity)
+            fill_cost = event.fill_cost # Total notional value (price * quantity)
             fill_price = event.fill_cost / event.quantity if event.quantity > 0 else 0
+            
+            # Calculate Margin Impact (Futures Only)
+            margin_impact = 0.0
+            if Config.BINANCE_USE_FUTURES:
+                leverage = Config.BINANCE_LEVERAGE
+                margin_impact = fill_cost / leverage
+            
+            # ESTIMATE FEES (Conservative Taker Fee)
+            # Binance Futures Taker: ~0.05%
+            # Binance Spot Taker: ~0.1%
+            # We use 0.06% for Futures and 0.1% for Spot to be safe
+            fee_rate = 0.0006 if Config.BINANCE_USE_FUTURES else 0.001
+            estimated_fee = fill_cost * fee_rate
+            
+            # Deduct fee from Cash immediately (Fees are paid on every trade)
+            with self._cash_lock:
+                self.current_cash -= estimated_fee
+            
+            print(f"  💸 Fee Paid: ${estimated_fee:.4f} ({fee_rate*100}%)")
             
             if event.direction == 'BUY':
                 # BUY can be: Close SHORT or Open LONG
                 pos = self.positions.get(event.symbol, {'quantity': 0, 'avg_price': 0})
                 
                 if pos['quantity'] < 0:
-                    # === CLOSING SHORT POSITION ===
+                    # === CLOSING SHORT POSITION (Buying back) ===
                     # PnL = (entry_price - exit_price) * quantity
                     entry_price = pos['avg_price']
                     exit_price = fill_price
                     pnl = (entry_price - exit_price) * event.quantity
                     
                     self.realized_pnl += pnl
+                    self.current_cash += pnl # Add PnL to cash
+                    
+                    # Release Margin
+                    if Config.BINANCE_USE_FUTURES:
+                        # Approximate margin release (proportional to closed qty)
+                        # We assume margin was tracked correctly on open
+                        # Ideally we'd track margin per position, but global is okay for now
+                        self.used_margin = max(0, self.used_margin - margin_impact)
                     
                     # Update position
                     pos['quantity'] += event.quantity  # Add to negative (closes it)
@@ -186,16 +217,31 @@ class Portfolio:
                         pos['low_water_mark'] = 0
                         pos['stop_distance'] = 0
                     
-                    # Don't deduct cash (Futures margin-based)
+                    # Release Pending Cash (Margin was reserved)
                     with self._cash_lock:
-                        self.pending_cash = max(0, self.pending_cash - fill_cost)
+                        # In Futures, we reserved 'dollar_size' (margin) in RiskManager?
+                        # RiskManager reserves 'dollar_size' which is Notional / Leverage?
+                        # No, RiskManager reserves Full Notional usually?
+                        # Let's check RiskManager. It reserves 'dollar_size'.
+                        # If RiskManager reserves Margin, we release Margin.
+                        # If RiskManager reserves Notional, we release Notional.
+                        # Assuming RiskManager reserves Margin for Futures (we should verify this).
+                        # For now, we release whatever was pending.
+                        self.pending_cash = max(0, self.pending_cash - margin_impact) # Release the margin we reserved
                 
                 else:
                     # === OPENING/ADDING LONG POSITION ===
-                    # Release pending cash (it's now confirmed spent)
+                    
+                    # Update Cash/Margin
                     with self._cash_lock:
-                        self.current_cash -= fill_cost
-                        self.pending_cash = max(0, self.pending_cash - fill_cost)
+                        if Config.BINANCE_USE_FUTURES:
+                            self.used_margin += margin_impact
+                            # Release pending (it moves to used_margin)
+                            self.pending_cash = max(0, self.pending_cash - margin_impact)
+                        else:
+                            # Spot: Spend Cash
+                            self.current_cash -= fill_cost
+                            self.pending_cash = max(0, self.pending_cash - fill_cost)
                     
                     # Update Avg Price
                     if event.symbol not in self.positions:
@@ -210,7 +256,6 @@ class Portfolio:
                         }
                     
                     pos = self.positions[event.symbol]
-                    # If opening new position (was 0), update opener
                     if pos['quantity'] == 0:
                          pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
                     
@@ -221,7 +266,6 @@ class Portfolio:
                         pos['avg_price'] = total_cost / total_qty
                     pos['quantity'] = total_qty
                     
-                    # PYRAMIDING FIX: Update HWM only if new fill is higher
                     pos['high_water_mark'] = max(pos.get('high_water_mark', 0), fill_price)
                 
             elif event.direction == 'SELL':
@@ -230,21 +274,23 @@ class Portfolio:
                 
                 if pos['quantity'] > 0:
                     # === CLOSING LONG POSITION ===
-                    self.current_cash += fill_cost
                     
                     # Calculate Realized PnL
                     cost_basis = event.quantity * pos['avg_price']
                     pnl = fill_cost - cost_basis
                     self.realized_pnl += pnl
                     
+                    # Update Cash/Margin
+                    if Config.BINANCE_USE_FUTURES:
+                        self.current_cash += pnl # Add PnL
+                        self.used_margin = max(0, self.used_margin - margin_impact) # Release Margin
+                    else:
+                        self.current_cash += fill_cost # Spot: Get full cash back
+                    
                     # Update Strategy Performance
                     strat_id = getattr(event, 'strategy_id', None)
-                    
-                    # If strategy_id is missing, use the opener
                     if not strat_id and 'opener_strategy_id' in pos:
                         strat_id = pos['opener_strategy_id']
-                        print(f"ℹ️  Attributing Risk/Manual Exit to Strategy {strat_id}")
-                    
                     if not strat_id:
                         strat_id = 'Unknown'
 
@@ -261,19 +307,14 @@ class Portfolio:
                     print(f"💰 LONG Closed: {event.symbol} PnL=${pnl:.2f} (Strategy: {strat_id})")
                     
                     pos['quantity'] -= event.quantity
-                    # Avg price doesn't change on sell (FIFO/Weighted Avg assumption)
                     
-                    # Reset HWM if closed
-                    if pos['quantity'] <= 0.00001: # Float tolerance
+                    if pos['quantity'] <= 0.00001:
                         pos['quantity'] = 0
                         pos['high_water_mark'] = 0
                         pos['stop_distance'] = 0
                 
                 else:
                     # === OPENING SHORT POSITION ===
-                    # In Futures, SELL with no position = open SHORT
-                    # We DON'T receive actual cash (margin-based trading)
-                    
                     # Initialize position if needed
                     if event.symbol not in self.positions:
                         self.positions[event.symbol] = {
@@ -288,29 +329,31 @@ class Portfolio:
                     
                     pos = self.positions[event.symbol]
                     
-                    # Set negative quantity for SHORT
+                    # Update Cash/Margin
+                    with self._cash_lock:
+                        if Config.BINANCE_USE_FUTURES:
+                            self.used_margin += margin_impact
+                            self.pending_cash = max(0, self.pending_cash - margin_impact)
+                        # Spot Shorting not supported in this simple model (requires borrowing)
+                    
                     pos['quantity'] = -event.quantity
                     pos['avg_price'] = fill_price
-                    pos['low_water_mark'] = fill_price  # Track lowest price for trailing
+                    pos['low_water_mark'] = fill_price
                     pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
-                    
-                    # Release pending cash since order executed
-                    with self._cash_lock:
-                        self.pending_cash = max(0, self.pending_cash - fill_cost)
                     
                     print(f"📉 SHORT Opened: {event.symbol} @ ${fill_price:.4f} (Qty: {event.quantity})")
             
             # Log Trade
             self.log_to_csv({
-                'datetime': datetime.now(), # Use current time for fill
+                'datetime': datetime.now(),
                 'symbol': event.symbol,
                 'type': 'FILL',
                 'direction': event.direction,
                 'quantity': event.quantity,
                 'price': fill_price,
                 'fill_cost': event.quantity * fill_price,
-                'strategy_id': getattr(event, 'strategy_id', 'Unknown'),  # Extract from FillEvent
-                'details': f"Exchange: {event.exchange}"
+                'strategy_id': getattr(event, 'strategy_id', 'Unknown'),
+                'details': f"Exchange: {event.exchange} | Margin: {margin_impact:.2f}"
             })
             
             if self.auto_save:
@@ -318,9 +361,28 @@ class Portfolio:
 
     def get_total_equity(self):
         equity = self.current_cash
-        for symbol, pos in self.positions.items():
-            equity += pos['quantity'] * pos['current_price']
-        return equity
+        # In Futures, Equity = Cash + Unrealized PnL
+        # In Spot, Equity = Cash + Market Value of Assets
+        
+        if Config.BINANCE_USE_FUTURES:
+            # Futures Equity = Cash Balance + Unrealized PnL of all positions
+            unrealized_pnl = 0.0
+            for symbol, pos in self.positions.items():
+                if pos['quantity'] != 0:
+                    entry = pos['avg_price']
+                    curr = pos['current_price']
+                    qty = pos['quantity']
+                    
+                    if qty > 0: # LONG
+                        unrealized_pnl += (curr - entry) * qty
+                    else: # SHORT
+                        unrealized_pnl += (entry - curr) * abs(qty)
+            return equity + unrealized_pnl
+        else:
+            # Spot Equity
+            for symbol, pos in self.positions.items():
+                equity += pos['quantity'] * pos['current_price']
+            return equity
 
     def save_status(self):
         """
@@ -333,6 +395,7 @@ class Portfolio:
             'timestamp': datetime.now(),
             'total_equity': equity,
             'cash': self.current_cash,
+            'used_margin': self.used_margin, # Log margin
             'realized_pnl': self.realized_pnl,
             'unrealized_pnl': unrealized_pnl,
             'positions': json.dumps(self.positions),

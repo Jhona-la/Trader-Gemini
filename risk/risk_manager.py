@@ -139,6 +139,13 @@ class RiskManager:
         
         # === SHORT: Open short position ===
         elif signal_event.signal_type == 'SHORT':
+            # CRITICAL CHECK: Spot Trading does not support "Shorting" (selling without owning)
+            # unless using Margin Mode (Cross/Isolated) which requires borrowing.
+            # For safety in this bot version, we BLOCK Shorting in Spot Mode.
+            if not Config.BINANCE_USE_FUTURES:
+                print(f"⚠️  Risk Manager: SHORT signal rejected. Spot Trading does not support direct shorting (requires Futures).")
+                return None
+
             # Check max positions
             if self.portfolio:
                 open_positions = sum(1 for pos in self.portfolio.positions.values() if pos['quantity'] != 0)
