@@ -46,23 +46,25 @@ class BinanceExecutor:
         })
         
         # Habilitar el modo correspondiente
-        if hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO:
-            # MANUAL CONFIGURATION for Futures Demo (set_sandbox_mode is deprecated for futures)
+        # Habilitar el modo correspondiente
+        if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
+            # MANUAL CONFIGURATION for Futures Demo (Robust way)
+            # We enforce these URLs to avoid CCXT missing endpoints like fapiPrivateV2
             self.exchange.urls['api'] = {
                 'public': 'https://testnet.binancefuture.com/fapi/v1',
                 'private': 'https://testnet.binancefuture.com/fapi/v1',
                 'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
                 'fapiPrivate': 'https://testnet.binancefuture.com/fapi/v1',
+                'fapiPrivateV2': 'https://testnet.binancefuture.com/fapi/v2', # Explicitly added
                 'fapiData': 'https://testnet.binancefuture.com/fapi/v1',
                 'dapiPublic': 'https://testnet.binancefuture.com/dapi/v1',
                 'dapiPrivate': 'https://testnet.binancefuture.com/dapi/v1',
                 'dapiData': 'https://testnet.binancefuture.com/dapi/v1',
-                'sapi': 'https://testnet.binance.vision/api/v3', # Fallback for some endpoints
+                'sapi': 'https://testnet.binance.vision/api/v3', 
             }
+            # We do NOT call set_sandbox_mode(True) because we manually set the URLs
+            # This prevents CCXT from overwriting our custom map with incomplete defaults
             logger.info(f"Binance Executor: Running in {mode_description} mode (Manual URL Config)")
-        elif Config.BINANCE_USE_TESTNET:
-            self.exchange.set_sandbox_mode(True)
-            logger.info(f"Binance Executor: Running in {mode_description} mode")
         else:
             logger.info(f"Binance Executor: Running in {mode_description} mode")
             
@@ -283,5 +285,66 @@ class BinanceExecutor:
             return None
                 
         except Exception as e:
-            print(f"⚠️  Failed to fetch Futures balance: {e}")
+            handle_balance_error(e)
             return None
+
+    def sync_portfolio_state(self, portfolio):
+        """
+        Synchronize local portfolio with actual Binance state.
+        1. Sync Balance
+        2. Sync Open Positions
+        """
+        logger.info("🔄 Syncing Portfolio with Binance State...")
+        
+        # 1. Sync Balance
+        balance = self.get_balance()
+        if balance is not None:
+            portfolio.current_cash = balance
+            portfolio.initial_capital = balance # Reset initial capital to current for session PnL
+            logger.info(f"✅ Balance Synced: ${balance:.2f}")
+        
+        # 2. Sync Positions
+        try:
+            if Config.BINANCE_USE_FUTURES:
+                # Fetch positions from Futures API
+                # Endpoint: GET /fapi/v2/positionRisk
+                positions = self.exchange.fapiPrivateV2GetPositionRisk()
+                
+                synced_count = 0
+                for pos in positions:
+                    symbol = pos['symbol']
+                    amt = float(pos['positionAmt'])
+                    entry_price = float(pos['entryPrice'])
+                    
+                    # Only care about non-zero positions
+                    if abs(amt) > 0:
+                        # Update local portfolio
+                        # Convert symbol format if needed (BTCUSDT -> BTC/USDT)
+                        # CCXT usually handles this, but raw endpoint returns 'BTCUSDT'
+                        # We need to map it back to our internal format 'BTC/USDT'
+                        
+                        # Simple mapping attempt
+                        internal_symbol = symbol
+                        if not '/' in symbol and symbol.endswith('USDT'):
+                            base = symbol[:-4]
+                            internal_symbol = f"{base}/USDT"
+                        
+                        portfolio.positions[internal_symbol] = {
+                            'quantity': amt,
+                            'avg_price': entry_price,
+                            'current_price': entry_price # Will be updated by data feed
+                        }
+                        synced_count += 1
+                        logger.info(f"  👉 Found Position: {internal_symbol} {amt} @ ${entry_price:.2f}")
+                
+                if synced_count > 0:
+                    logger.info(f"✅ Synced {synced_count} open positions from Binance Futures.")
+                else:
+                    logger.info("✅ No open positions found on Binance.")
+                    
+            else:
+                # Spot Position Sync (Not implemented for now as we focus on Futures)
+                pass
+                
+        except Exception as e:
+            logger.error(f"⚠️  Failed to sync positions: {e}")

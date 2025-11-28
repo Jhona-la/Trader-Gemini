@@ -190,10 +190,11 @@ def main():
     )
     
     # CRASH RECOVERY: Try to restore state from live_status.json
-    live_status_path = os.path.join(Config.DATA_DIR, "live_status.json")
-    if os.path.exists(live_status_path):
-        print(f"🔄 Checking for previous session state in {live_status_path}...")
-        portfolio.load_portfolio_state(live_status_path)
+    # DISABLED: User requested to rely on Binance as source of truth
+    # live_status_path = os.path.join(Config.DATA_DIR, "live_status.json")
+    # if os.path.exists(live_status_path):
+    #     print(f"🔄 Checking for previous session state in {live_status_path}...")
+    #     portfolio.load_portfolio_state(live_status_path)
         
     risk_manager = RiskManager(max_concurrent_positions=5, portfolio=portfolio)
 
@@ -206,15 +207,9 @@ def main():
     binance_executor = BinanceExecutor(events_queue, portfolio=portfolio)
     engine.register_execution_handler(binance_executor)
     
-    # SYNC PORTFOLIO WITH BINANCE DEMO BALANCE
-    print("🔄 Syncing Portfolio with Binance Demo Balance...")
-    initial_balance = binance_executor.get_balance()
-    if initial_balance is not None:
-        portfolio.current_cash = initial_balance
-        portfolio.initial_capital = initial_balance
-        print(f"✅ Portfolio Synced: ${portfolio.current_cash:.2f}")
-    else:
-        print(f"⚠️  Could not sync balance. Using default: ${portfolio.current_cash:.2f}")
+    # SYNC PORTFOLIO WITH BINANCE (Balance + Positions)
+    # This replaces the local JSON state restoration
+    binance_executor.sync_portfolio_state(portfolio)
     
     # Priority 1: ML Strategies (most sophisticated - regime aware)
     for strat in ml_strategies:
