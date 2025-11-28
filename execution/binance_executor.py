@@ -316,6 +316,15 @@ class BinanceExecutor:
         Returns float or None if failed.
         """
         try:
+            # Ensure URL exists for Testnet (Runtime Fix)
+            if Config.BINANCE_USE_FUTURES and ((hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET):
+                if 'fapiPrivateV2' not in self.exchange.urls['api']:
+                    # Inject v2 URL if missing
+                    v1_url = self.exchange.urls['api'].get('fapiPrivate', 'https://testnet.binancefuture.com/fapi/v1')
+                    self.exchange.urls['api']['fapiPrivateV2'] = v1_url.replace('v1', 'v2')
+                    if 'test' in self.exchange.urls:
+                         self.exchange.urls['test']['fapiPrivateV2'] = self.exchange.urls['api']['fapiPrivateV2']
+            
             # For Futures, use fapiPrivateV2GetBalance (Futures Account Balance V2)
             # This is the correct endpoint for USDT-M Futures
             response = self.exchange.fapiPrivateV2GetBalance()
