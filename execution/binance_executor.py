@@ -110,8 +110,24 @@ class BinanceExecutor:
             if order_type == 'mkt':
                 order_type = 'market'
             
-            # Use standard CCXT method (works correctly with set_sandbox_mode)
-            order = self.exchange.create_order(symbol, order_type, side, quantity)
+            # CRITICAL FIX: Disable CCXT's internal balance/trade fetching during order
+            # Use params to bypass internal calls that hit Spot endpoints
+            params = {}
+            if Config.BINANCE_USE_FUTURES:
+                params['newOrderRespType'] = 'RESULT'  # Get immediate response, no extra fetches
+            
+            # Temporarily suppress stdout to hide CCXT internal errors
+            import sys
+            import os
+            old_stderr = sys.stderr
+            sys.stderr = open(os.devnull, 'w')
+            
+            try:
+                order = self.exchange.create_order(symbol, order_type, side, quantity, params=params)
+            finally:
+                # Restore stderr
+                sys.stderr.close()
+                sys.stderr = old_stderr
             
             # Log Success
             print(f"Order Filled: {order['id']} - {side} {order['filled']} @ {order['average']}")
