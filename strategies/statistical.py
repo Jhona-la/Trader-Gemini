@@ -137,6 +137,22 @@ class StatisticalStrategy(Strategy):
 
             
             elif self.invested == 1:
+                # Exit Long Spread when Z-score returns to mean
+                if z_score >= -self.z_exit:
+                    print(f"EXIT LONG SPREAD")
+                    # FIXED: Use EXIT to close positions, not reverse signals
+                    self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'EXIT', strength=1.0))  # Close Y long
+                    self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'EXIT', strength=1.0))  # Close X short
+                    self.invested = 0
+
+            elif self.invested == -1:
+                # Exit Short Spread when Z-score returns to mean
+                if z_score <= self.z_exit:
+                    print(f"EXIT SHORT SPREAD")
+                    # FIXED: Use EXIT to close positions
+                    self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'EXIT', strength=1.0))  # Close Y short
+                    self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'EXIT', strength=1.0))  # Close X long
+                    self.invested = 0
 
     def _get_1h_trend(self, symbol):
         """
