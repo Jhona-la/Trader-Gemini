@@ -50,7 +50,9 @@ class BinanceExecutor:
         if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
             # MANUAL CONFIGURATION for Futures Demo (Robust way)
             # We enforce these URLs to avoid CCXT missing endpoints like fapiPrivateV2
-            self.exchange.urls['api'] = {
+            # MANUAL CONFIGURATION for Futures Demo (Robust way)
+            # We enforce these URLs to avoid CCXT missing endpoints like fapiPrivateV2
+            custom_urls = {
                 'public': 'https://testnet.binancefuture.com/fapi/v1',
                 'private': 'https://testnet.binancefuture.com/fapi/v1',
                 'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
@@ -62,6 +64,13 @@ class BinanceExecutor:
                 'dapiData': 'https://testnet.binancefuture.com/dapi/v1',
                 'sapi': 'https://testnet.binance.vision/api/v3', 
             }
+            
+            # Set BOTH 'api' and 'test' URLs to ensure CCXT finds them regardless of mode
+            self.exchange.urls['api'] = custom_urls
+            self.exchange.urls['test'] = custom_urls
+            
+            # We do NOT call set_sandbox_mode(True) because we manually set the URLs
+            # This prevents CCXT from overwriting our custom map with incomplete defaults
             # We do NOT call set_sandbox_mode(True) because we manually set the URLs
             # This prevents CCXT from overwriting our custom map with incomplete defaults
             logger.info(f"Binance Executor: Running in {mode_description} mode (Manual URL Config)")
