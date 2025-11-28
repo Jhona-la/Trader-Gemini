@@ -178,26 +178,49 @@ class BinanceExecutor:
             if order_type == 'mkt':
                 order_type = 'market'
             
-            # Use standard CCXT method with manual URLs configured above
-            params = {}
-            if Config.BINANCE_USE_FUTURES:
-                params['newOrderRespType'] = 'RESULT'  # Get immediate execution details
-                
-            order = self.exchange.create_order(symbol, order_type, side, quantity, params=params)
+            # 1. Prepare Symbol and Quantity
+            market = self.exchange.market(symbol)
+            symbol_id = market['id']
+            
+            # Ensure quantity precision (CRITICAL for Futures)
+            # CCXT amount_to_precision returns a string
+            qty_str = self.exchange.amount_to_precision(symbol, quantity)
+            
+            # 2. Build Parameters for Raw API
+            params = {
+                'symbol': symbol_id,
+                'side': side.upper(),
+                'type': order_type.upper(),
+                'quantity': qty_str,
+                'newOrderRespType': 'RESULT'
+            }
+            
+            # 3. Execute using Raw API (Bypass CCXT create_order internals)
+            # This avoids the 'capital/config/getall' 404 error
+            logger.info(f"  🚀 Sending Raw Futures Order: {side.upper()} {qty_str} {symbol}")
+            order = self.exchange.fapiPrivatePostOrder(params)
+            
+            # 4. Parse Response (Raw API returns different structure than CCXT unified)
+            # Binance Futures Raw Response:
+            # {'orderId': 123, 'symbol': 'BTCUSDT', 'status': 'FILLED', 'avgPrice': '90000', 'executedQty': '0.1', ...}
+            
+            fill_price = float(order.get('avgPrice', 0.0))
+            filled_qty = float(order.get('executedQty', 0.0))
+            order_id = str(order.get('orderId', ''))
             
             # Log Success
-            print(f"Order Filled: {order['id']} - {side} {order['filled']} @ {order['average']}")
+            print(f"Order Filled: {order_id} - {side} {filled_qty} @ {fill_price}")
             
             # Create Fill Event
             fill_event = FillEvent(
                 timeindex=None,
                 symbol=symbol,
                 exchange='BINANCE',
-                quantity=order['filled'],
+                quantity=filled_qty,
                 direction=event.direction,
-                fill_cost=order['cost'],
-                commission=order.get('fee', None),
-                strategy_id=event.strategy_id  # PASS strategy_id from OrderEvent
+                fill_cost=filled_qty * fill_price,
+                commission=None, # Fee info might be in a separate field or trade stream
+                strategy_id=event.strategy_id
             )
             self.events_queue.put(fill_event)
             
