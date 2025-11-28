@@ -202,27 +202,6 @@ def main():
     engine.register_data_handler(binance_data)
     # engine.register_data_handler(ibkr_data)  # Disabled - crypto only
     
-    # 6. Register Execution Handler
-    binance_executor = BinanceExecutor(events_queue, portfolio=portfolio)
-    engine.register_execution_handler(binance_executor)
-    
-    # SYNC PORTFOLIO WITH BINANCE DEMO BALANCE
-    # NOTE: Disabled for Futures Testnet - the balance endpoint returns 404 on testnet
-    # The bot will use the configured initial_capital instead
-    # print("🔄 Syncing Portfolio with Binance Demo Balance...")
-    # initial_balance = binance_executor.get_balance()
-    # if initial_balance is not None:
-    #     portfolio.current_cash = initial_balance
-    #     portfolio.initial_capital = initial_balance
-    #     print(f"✅ Portfolio Synced: ${portfolio.current_cash:.2f}")
-    # else:
-    #     print(f"⚠️  Could not sync balance. Using default: ${portfolio.current_cash:.2f}")
-    print(f"💰 Starting with configured capital: ${portfolio.current_cash:.2f}")
-    
-    # 7. Register Strategies in OPTIMAL ORDER (Crypto only)
-    # STRATEGY COLLABORATION FIX: Most sophisticated first, simplest last
-    # This ensures ML gets first chance at trades, Tech fills gaps
-    
     # Priority 1: ML Strategies (most sophisticated - regime aware)
     for strat in ml_strategies:
         engine.register_strategy(strat)
