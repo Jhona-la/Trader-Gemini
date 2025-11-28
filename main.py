@@ -219,6 +219,18 @@ def main():
     # Priority 1: ML Strategies (most sophisticated - regime aware)
     for strat in ml_strategies:
         engine.register_strategy(strat)
+        
+    # Priority 2: Technical Strategy (Trend Following & Breakouts)
+    engine.register_strategy(tech_strategy_crypto)
+    
+    # Priority 3: Statistical Strategy (Pairs Trading)
+    engine.register_strategy(stat_strategy_crypto)
+    
+    # Priority 4: Pattern Strategy (Candlestick Reversals)
+    engine.register_strategy(pattern_strategy)
+    
+    print(f"✅ Registered {len(ml_strategies) + 3} strategies in the Engine.")
+    
     engine.register_risk_manager(risk_manager)
     
     # Graceful Shutdown Setup (AFTER binance_executor is created)
