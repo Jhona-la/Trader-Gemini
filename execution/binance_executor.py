@@ -17,6 +17,8 @@ class BinanceExecutor:
         # Configure Exchange
         options = {
             'adjustForTimeDifference': True,
+            'fetchBalance': False,  # Disable auto balance fetch to prevent Spot endpoint calls
+            'fetchMyTrades': False,  # Disable auto trade fetch
         }
         
         if Config.BINANCE_USE_FUTURES:
@@ -259,6 +261,51 @@ class BinanceExecutor:
         if event.type != 'ORDER':
             return
 
+        # Check if symbol is supported by this executor (Crypto only)
+        if '/' not in event.symbol: # Simple check, assuming Stocks don't have '/':
+            return
+
+        logger.info(f"Executing: {event.direction} {event.quantity} {event.symbol}")
+        
+        try:
+            # Map direction to side
+            side = 'buy' if event.direction == 'BUY' else 'sell'
+            symbol = event.symbol
+            quantity = event.quantity
+            order_type = event.order_type.lower() # 'market' or 'limit'
+            
+            # Execute Order
+            if order_type == 'mkt':
+                order_type = 'market'
+                
+            order = self.exchange.create_order(symbol, order_type, side, quantity)
+            
+            # Log Success
+            fill_price = order.get('average', 0) or 0
+            logger.info(f"✅ Order Filled: {order['id']} - {side.upper()} {order['filled']} {symbol} @ ${fill_price:.2f}")
+            
+            # Create Fill Event
+            fill_event = FillEvent(
+                timeindex=None,
+                symbol=symbol,
+                exchange='BINANCE',
+                quantity=order['filled'],
+                direction=event.direction,
+                fill_cost=order['cost'],
+                commission=order.get('fee', None),
+                strategy_id=event.strategy_id  # PASS strategy_id from OrderEvent
+            )
+            self.events_queue.put(fill_event)
+            
+        except Exception as e:
+            # Binance-specific error handling
+            handle_order_error(e, event.symbol, event.direction, event.quantity)
+            
+            # RELEASE RESERVED CASH on failure
+            if self.portfolio and event.direction == 'BUY':
+                estimated_cost = event.quantity * (fill_price if 'fill_price' in locals() else 0)
+                # Fallback: use quantity as approximate cost if price unknown
+                if estimated_cost == 0:
                     # Rough estimate from Risk Manager's $1000 default
                     estimated_cost = 1000.0
                 self.portfolio.release_cash(estimated_cost)
