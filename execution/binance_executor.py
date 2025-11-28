@@ -311,41 +311,130 @@ class BinanceExecutor:
                 self.portfolio.release_cash(estimated_cost)
                 logger.warning(f"Released ${estimated_cost:.2f} reserved cash due to order failure")
 
-    def get_balance(self):
+    def get_all_balances(self):
         """
-        Fetches the current USDT balance from Binance Futures.
-        Uses the correct Futures endpoint: GET /fapi/v2/balance
-        Returns float or None if failed.
+        Fetches and displays balances from all Binance wallets:
+        1. USDT-M Futures (USDT-Ⓜ)
+        2. COIN-M Futures (COIN-Ⓜ)
+        3. Spot (Balance Estimado)
+        
+        Returns the primary USDT-M balance for portfolio sync, or None if failed.
         """
+        print("\n" + "="*60)
+        print("💰 BINANCE ACCOUNT BALANCES")
+        print("="*60)
+        
+        primary_balance = None
+        
+        # 1. USDT-M Futures Balance (Primary for this bot)
         try:
             # Ensure URL exists for Testnet (Runtime Fix)
             if Config.BINANCE_USE_FUTURES and ((hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET):
                 if 'fapiPrivateV2' not in self.exchange.urls['api']:
-                    # Inject v2 URL if missing
                     v1_url = self.exchange.urls['api'].get('fapiPrivate', 'https://testnet.binancefuture.com/fapi/v1')
                     self.exchange.urls['api']['fapiPrivateV2'] = v1_url.replace('v1', 'v2')
                     if 'test' in self.exchange.urls:
                          self.exchange.urls['test']['fapiPrivateV2'] = self.exchange.urls['api']['fapiPrivateV2']
             
-            # For Futures, use fapiPrivateV2GetBalance (Futures Account Balance V2)
-            # This is the correct endpoint for USDT-M Futures
+            # GET /fapi/v2/balance
             response = self.exchange.fapiPrivateV2GetBalance()
             
-            # Response is a list of assets
-            # Find USDT in the list
             for asset in response:
                 if asset['asset'] == 'USDT':
                     balance = float(asset['balance'])
                     available = float(asset['availableBalance'])
-                    print(f"💰 Binance Futures Balance: ${balance:.2f} (Available: ${available:.2f})")
-                    return balance
-            
-            print("⚠️  USDT not found in Futures balance response.")
-            return None
-                
+                    cross_unpnl = float(asset['crossUnPnl'])
+                    
+                    print(f"📊 USDT-Ⓜ Futures:")
+                    print(f"   Balance:    ${balance:,.2f}")
+                    print(f"   Available:  ${available:,.2f}")
+                    print(f"   UnPnL:      ${cross_unpnl:+,.2f}")
+                    
+                    primary_balance = balance
+                    break
+                    
         except Exception as e:
-            handle_balance_error(e)
-            return None
+            logger.warning(f"Could not fetch USDT-M Futures balance: {e}")
+            print(f"⚠ USDT-Ⓜ Futures: Not available")
+        
+        # 2. COIN-M Futures Balance
+        try:
+            # Ensure COIN-M URL exists
+            if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
+                if 'dapiPrivate' not in self.exchange.urls['api']:
+                    self.exchange.urls['api']['dapiPrivate'] = 'https://testnet.binancefuture.com/dapi/v1'
+                    if 'test' in self.exchange.urls:
+                        self.exchange.urls['test']['dapiPrivate'] = self.exchange.urls['api']['dapiPrivate']
+            
+            # GET /dapi/v1/balance
+            response = self.exchange.dapiPrivateGetBalance()
+            
+            # Find primary coin balances (BTC, ETH, etc.)
+            total_btc_value = 0.0
+            coin_balances = []
+            
+            for asset in response:
+                balance = float(asset.get('balance', 0))
+                if balance > 0:
+                    coin_balances.append(f"{asset['asset']}: {balance}")
+                    # Rough estimation (would need price conversion for accuracy)
+                    if asset['asset'] == 'BTC':
+                        total_btc_value += balance
+            
+            if coin_balances:
+                print(f"\n📊 COIN-Ⓜ Futures:")
+                for cb in coin_balances[:3]:  # Show top 3
+                    print(f"   {cb}")
+            else:
+                print(f"\n📊 COIN-Ⓜ Futures: No balances")
+                    
+        except Exception as e:
+            logger.warning(f"Could not fetch COIN-M Futures balance: {e}")
+            print(f"\n📊 COIN-Ⓜ Futures: Not available")
+        
+        # 3. Spot Balance (Balance Estimado)
+        try:
+            # For Testnet, Spot endpoint is different
+            # GET /api/v3/account
+            response = self.exchange.fetch_balance()
+            
+            # Calculate total estimated value in USDT
+            total_usdt = 0.0
+            spot_balances = []
+            
+            for asset, amounts in response['total'].items():
+                if amounts > 0:
+                    if asset == 'USDT':
+                        total_usdt += amounts
+                    spot_balances.append(f"{asset}: {amounts}")
+            
+            print(f"\n📊 Spot (Balance Estimado):")
+            if total_usdt > 0:
+                print(f"   USDT:       ${total_usdt:,.2f}")
+            
+            # Show other assets if any
+            other_assets = [sb for sb in spot_balances if not sb.startswith('USDT')]
+            if other_assets:
+                for asset in other_assets[:3]:  # Top 3
+                    print(f"   {asset}")
+            
+            if not spot_balances:
+                print(f"   No balances")
+                    
+        except Exception as e:
+            logger.warning(f"Could not fetch Spot balance: {e}")
+            print(f"\n📊 Spot: Not available")
+        
+        print("="*60 + "\n")
+        
+        return primary_balance
+    
+    def get_balance(self):
+        """
+        Legacy method for compatibility.
+        Calls get_all_balances and returns primary USDT-M balance.
+        """
+        return self.get_all_balances()
 
     def sync_portfolio_state(self, portfolio):
         """
