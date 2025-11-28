@@ -8,7 +8,7 @@ class StatisticalStrategy(Strategy):
     """
     Pairs Trading Strategy based on Cointegration / Mean Reversion of the Spread.
     """
-    def __init__(self, data_provider, events_queue, pair=('ETH/USDT', 'BTC/USDT'), window=20, z_entry=2.0, z_exit=0.0):
+    def __init__(self, data_provider, events_queue, pair=('ETH/USDT', 'BTC/USDT'), window=20, z_entry=1.5, z_exit=0.0):
         self.data_provider = data_provider
         self.events_queue = events_queue
         self.pair = pair # Tuple of two symbols (Y, X) where Spread = Y - beta*X or Ratio = Y/X
