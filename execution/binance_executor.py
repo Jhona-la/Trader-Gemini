@@ -102,6 +102,57 @@ class BinanceExecutor:
             # In production, we can use the same exchange for both
             self.spot_exchange = self.exchange
             logger.info("  → Using main exchange for Spot queries (Production mode)")
+            
+        # ===================================================================
+        # INITIALIZE ACCOUNT SETTINGS (Best Practices)
+        # ===================================================================
+        if Config.BINANCE_USE_FUTURES:
+            self._initialize_futures_settings()
+
+    def _initialize_futures_settings(self):
+        """
+        Enforces One-Way Mode and Margin Type (Isolated) to match bot logic.
+        """
+        logger.info("Binance Executor: Initializing Futures Account Settings...")
+        try:
+            # 1. Set Position Mode to One-Way (Dual Side Position = False)
+            # We use One-Way mode because our RiskManager assumes simple Buy/Sell
+            # If account is in Hedge Mode, create_order fails without positionSide
+            try:
+                # 'true' = Hedge Mode, 'false' = One-Way Mode
+                self.exchange.fapiPrivatePostPositionSideDual({'dualSidePosition': 'false'})
+                logger.info("  ✅ Position Mode set to ONE-WAY")
+            except Exception as e:
+                if "No need to change" in str(e):
+                    logger.info("  ✅ Position Mode already ONE-WAY")
+                else:
+                    logger.warning(f"  ⚠️ Could not set Position Mode: {e}")
+
+            # 2. Set Margin Type for all pairs
+            # We iterate through configured pairs to set them to ISOLATED
+            # This protects the wallet balance
+            logger.info(f"  ⏳ Setting Margin Type to {Config.BINANCE_MARGIN_TYPE} for {len(Config.TRADING_PAIRS)} pairs...")
+            for symbol in Config.TRADING_PAIRS:
+                try:
+                    # Convert symbol to ID (ETH/USDT -> ETHUSDT) for the API
+                    market = self.exchange.market(symbol)
+                    symbol_id = market['id']
+                    
+                    self.exchange.fapiPrivatePostMarginType({
+                        'symbol': symbol_id,
+                        'marginType': Config.BINANCE_MARGIN_TYPE.upper() # ISOLATED or CROSS
+                    })
+                except Exception as e:
+                    if "No need to change" in str(e):
+                        pass # Already set
+                    else:
+                        # Log only critical errors, ignore "No need to change"
+                        # logger.warning(f"  ⚠️ Could not set Margin Type for {symbol}: {e}")
+                        pass
+            logger.info("  ✅ Margin Types Configured")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize Futures settings: {e}")
 
     def execute_order(self, event):
         """
