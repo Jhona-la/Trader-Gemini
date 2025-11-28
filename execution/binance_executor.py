@@ -453,38 +453,86 @@ class BinanceExecutor:
         # 3. Spot - ACCOUNT INFORMATION
         # ===================================================================
         try:
-            # Use Raw API to avoid Spot endpoint issues in Testnet
-            # For Testnet, this will likely fail (404), which is expected
-            response = self.exchange.privateGetAccount()
+            # Spot requires DIFFERENT Testnet URLs from Futures
+            # We need to create a separate exchange instance for Spot
+            if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
+                # Create temporary Spot exchange for Testnet
+                spot_exchange = ccxt.binance({
+                    'apiKey': self.exchange.apiKey,
+                    'secret': self.exchange.secret,
+                    'enableRateLimit': True,
+                    'options': {
+                        'defaultType': 'spot',
+                        'adjustForTimeDifference': True,
+                    }
+                })
+                # Set Spot Testnet URLs
+                spot_exchange.set_sandbox_mode(True)  # This sets testnet.binance.vision
+                
+                response = spot_exchange.fetch_balance()
+            else:
+                # Production mode - use main exchange
+                response = self.exchange.fetch_balance()
             
-            total_btc = float(response.get('totalAssetOfBtc', 0))
-            can_trade = response.get('canTrade', False)
-            can_withdraw = response.get('canWithdraw', False)
+            # Calculate total estimated value
+            total_usdt = 0.0
+            total_btc = 0.0
+            non_zero_balances = []
+            
+            for asset, amounts in response['total'].items():
+                if amounts > 0:
+                    if asset == 'USDT':
+                        total_usdt += amounts
+                    elif asset == 'BTC':
+                        total_btc += amounts
+                    non_zero_balances.append({
+                        'asset': asset,
+                        'free': response['free'].get(asset, 0),
+                        'locked': response['used'].get(asset, 0),
+                        'total': amounts
+                    })
             
             print(f"\n📊 SPOT (Balance Estimado)")
             print("-" * 70)
-            print(f"  ₿  Total (BTC):    {total_btc:>12.8f}")
-            print(f"  🔓 Can Trade:      {'✅ Yes' if can_trade else '❌ No'}")
-            print(f"  💸 Can Withdraw:   {'✅ Yes' if can_withdraw else '❌ No'}")
             
-            # Show non-zero balances
-            balances = response.get('balances', [])
-            non_zero = [b for b in balances if float(b.get('free', 0)) > 0 or float(b.get('locked', 0)) > 0]
-            
-            if non_zero[:5]:  # Top 5
-                print(f"\n  💰 Assets:")
-                for b in non_zero[:5]:
+            if total_usdt > 0 or total_btc > 0:
+                if total_usdt > 0:
+                    print(f"  💵 USDT Total:     ${total_usdt:>15,.2f}")
+                if total_btc > 0:
+                    print(f"  ₿  BTC Total:      {total_btc:>16.8f}")
+           
+            # Show top non-zero balances
+            if non_zero_balances:
+                # Sort by total value (descending)
+                sorted_balances = sorted(non_zero_balances, key=lambda x: x['total'], reverse=True)
+                
+                print(f"\n  💰 Assets ({len(non_zero_balances)} total):")
+                for b in sorted_balances[:5]:  # Top 5
                     asset = b['asset']
-                    free = float(b['free'])
-                    locked = float(b['locked'])
-                    total = free + locked
+                    free = b['free']
+                    locked = b['locked']
+                    total = b['total']
                     print(f"     {asset:8} Free: {free:>12,.4f} | Locked: {locked:>12,.4f} | Total: {total:>12,.4f}")
+                
+                if len(non_zero_balances) > 5:
+                    print(f"     ... and {len(non_zero_balances) - 5} more")
+            else:
+                print(f"  No balances")
                     
         except Exception as e:
-            # Expected to fail in Testnet Futures mode
-            print(f"\n📊 SPOT (Balance Estimado)")
-            print("-" * 70)
-            print(f"  Not available (Testnet Futures mode)")
+            # Log the specific error for debugging
+            error_msg = str(e)
+            if 'testnet.binancefuture.com' in error_msg or '404' in error_msg:
+                logger.debug(f"Spot query hit Futures server (expected in Futures-only mode): {e}")
+                print(f"\n📊 SPOT (Balance Estimado)")
+                print("-" * 70)
+                print(f"  Not available (Futures Testnet - different server)")
+            else:
+                logger.warning(f"Could not fetch Spot balance: {e}")
+                print(f"\n📊 SPOT (Balance Estimado)")
+                print("-" * 70)
+                print(f"  Error: {error_msg[:50]}...")
+        
         
         print("=" * 70 + "\n")
         
