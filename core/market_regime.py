@@ -75,7 +75,7 @@ class MarketRegimeDetector:
             return regime
             
         except Exception as e:
-            print(f"⚠️  Regime Detector Error for {symbol}: {e}")
+            print(f"[WARN] Regime Detector Error for {symbol}: {e}")
             # Return last known or safe default
             return self.last_regime.get(symbol, 'RANGING')
     
