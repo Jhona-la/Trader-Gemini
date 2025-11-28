@@ -49,12 +49,29 @@ class BinanceExecutor:
         
         # Habilitar el modo correspondiente
         if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
-            # CRITICAL: Use set_sandbox_mode for Testnet (per CCXT documentation)
-            # This correctly configures ALL Futures Testnet URLs
-            self.exchange.set_sandbox_mode(True)
-            logger.info(f"Binance Executor: Running in {mode_description} mode (Testnet)")
+            # CRITICAL: Manual URL configuration for Futures Testnet
+            # DO NOT use set_sandbox_mode() as it overwrites these URLs
+            # Per CCXT docs: use EITHER set_sandbox_mode() OR manual URLs, not both
+            custom_urls = {
+                'public': 'https://testnet.binancefuture.com/fapi/v1',
+                'private': 'https://testnet.binancefuture.com/fapi/v1',
+                'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
+                'fapiPrivate': 'https://testnet.binancefuture.com/fapi/v1',
+                'fapiPrivateV2': 'https://testnet.binancefuture.com/fapi/v2',
+                'fapiData': 'https://testnet.binancefuture.com/fapi/v1',
+                'dapiPublic': 'https://testnet.binancefuture.com/dapi/v1',
+                'dapiPrivate': 'https://testnet.binancefuture.com/dapi/v1',
+                'dapiData': 'https://testnet.binancefuture.com/dapi/v1',
+            }
+            
+            # Set BOTH 'api' and 'test' URLs
+            self.exchange.urls['api'] = custom_urls
+            self.exchange.urls['test'] = custom_urls
+            
+            logger.info(f"Binance Executor: Running in {mode_description} mode (Manual Futures URLs)")
         else:
             logger.info(f"Binance Executor: Running in {mode_description} mode")
+
             
         # Set Leverage for Futures
         # NOTE: Leverage endpoint not available on Testnet
@@ -110,24 +127,8 @@ class BinanceExecutor:
             if order_type == 'mkt':
                 order_type = 'market'
             
-            # CRITICAL FIX: Disable CCXT's internal balance/trade fetching during order
-            # Use params to bypass internal calls that hit Spot endpoints
-            params = {}
-            if Config.BINANCE_USE_FUTURES:
-                params['newOrderRespType'] = 'RESULT'  # Get immediate response, no extra fetches
-            
-            # Temporarily suppress stdout to hide CCXT internal errors
-            import sys
-            import os
-            old_stderr = sys.stderr
-            sys.stderr = open(os.devnull, 'w')
-            
-            try:
-                order = self.exchange.create_order(symbol, order_type, side, quantity, params=params)
-            finally:
-                # Restore stderr
-                sys.stderr.close()
-                sys.stderr = old_stderr
+            # Use standard CCXT method with manual URLs configured above
+            order = self.exchange.create_order(symbol, order_type, side, quantity)
             
             # Log Success
             print(f"Order Filled: {order['id']} - {side} {order['filled']} @ {order['average']}")
