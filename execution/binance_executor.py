@@ -313,51 +313,108 @@ class BinanceExecutor:
 
     def get_all_balances(self):
         """
-        Fetches and displays balances from all Binance wallets:
-        1. USDT-M Futures (USDT-Ⓜ)
-        2. COIN-M Futures (COIN-Ⓜ)
+        Fetches and displays COMPLETE account information from all Binance wallets:
+        1. USDT-M Futures (USDT-Ⓜ) - Full Account Info
+        2. COIN-M Futures (COIN-Ⓜ) - Full Account Info
         3. Spot (Balance Estimado)
         
-        Returns the primary USDT-M balance for portfolio sync, or None if failed.
+        Returns the primary USDT-M total wallet balance for portfolio sync.
         """
-        print("\n" + "="*60)
-        print("💰 BINANCE ACCOUNT BALANCES")
-        print("="*60)
+        print("\n" + "=" * 70)
+        print("💰 BINANCE ACCOUNT - COMPLETE ANALYSIS")
+        print("=" * 70)
         
         primary_balance = None
         
-        # 1. USDT-M Futures Balance (Primary for this bot)
+        # ===================================================================
+        # 1. USDT-M Futures - COMPLETE ACCOUNT INFORMATION
+        # ===================================================================
         try:
-            # Ensure URL exists for Testnet (Runtime Fix)
+            # Ensure URLs exist
             if Config.BINANCE_USE_FUTURES and ((hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET):
-                if 'fapiPrivateV2' not in self.exchange.urls['api']:
+                if 'fapiPrivateV3' not in self.exchange.urls['api']:
                     v1_url = self.exchange.urls['api'].get('fapiPrivate', 'https://testnet.binancefuture.com/fapi/v1')
-                    self.exchange.urls['api']['fapiPrivateV2'] = v1_url.replace('v1', 'v2')
+                    self.exchange.urls['api']['fapiPrivateV3'] = v1_url.replace('v1', 'v3')
                     if 'test' in self.exchange.urls:
-                         self.exchange.urls['test']['fapiPrivateV2'] = self.exchange.urls['api']['fapiPrivateV2']
+                        self.exchange.urls['test']['fapiPrivateV3'] = self.exchange.urls['api']['fapiPrivateV3']
             
-            # GET /fapi/v2/balance
-            response = self.exchange.fapiPrivateV2GetBalance()
+            # GET /fapi/v3/account - COMPLETE ACCOUNT INFORMATION
+            account_info = self.exchange.fapiPrivateV3GetAccount()
             
-            for asset in response:
-                if asset['asset'] == 'USDT':
-                    balance = float(asset['balance'])
-                    available = float(asset['availableBalance'])
-                    cross_unpnl = float(asset['crossUnPnl'])
+            # Extract critical metrics
+            total_wallet = float(account_info.get('totalWalletBalance', 0))
+            total_margin = float(account_info.get('totalMarginBalance', 0))
+            total_unpnl = float(account_info.get('totalUnrealizedProfit', 0))
+            available = float(account_info.get('availableBalance', 0))
+            total_init_margin = float(account_info.get('totalInitialMargin', 0))
+            total_maint_margin = float(account_info.get('totalMaintMargin', 0))
+            total_pos_margin = float(account_info.get('totalPositionInitialMargin', 0))
+            total_order_margin = float(account_info.get('totalOpenOrderInitialMargin', 0))
+            max_withdraw = float(account_info.get('maxWithdrawAmount', 0))
+            
+            # Calculate margin ratio (risk indicator)
+            margin_ratio = 0
+            if total_margin > 0 and total_maint_margin > 0:
+                margin_ratio = (total_maint_margin / total_margin) * 100
+            
+            print("\n📊 USDT-Ⓜ FUTURES - COMPLETE ACCOUNT STATUS")
+            print("-" * 70)
+            print(f"  💵 Wallet Balance:       ${total_wallet:>15,.2f}")
+            print(f"  📈 Margin Balance:       ${total_margin:>15,.2f}")
+            print(f"  💰 Available Balance:    ${available:>15,.2f}")
+            print(f"  🎯 Max Withdraw:         ${max_withdraw:>15,.2f}")
+            print(f"  {'📉' if total_unpnl < 0 else ' 📈'} Unrealized PnL:       ${total_unpnl:>15,.2f}")
+            print(f"\n  ⚠️  MARGIN METRICS:")
+            print(f"     Initial Margin:       ${total_init_margin:>15,.2f}")
+            print(f"     Maintenance Margin:   ${total_maint_margin:>15,.2f}")
+            print(f"     Position Margin:      ${total_pos_margin:>15,.2f}")
+            print(f"     Order Margin:         ${total_order_margin:>15,.2f}")
+            if total_maint_margin > 0:
+                print(f"     🚨 Margin Ratio:      {margin_ratio:>16,.2f}%")
+            
+            # Show positions if any
+            positions = account_info.get('positions', [])
+            active_positions = [p for p in positions if float(p.get('positionAmt', 0)) != 0]
+            
+            if active_positions:
+                print(f"\n  📍 OPEN POSITIONS ({len(active_positions)}):")
+                for pos in active_positions:
+                    symbol = pos['symbol']
+                    amt = float(pos['positionAmt'])
+                    entry_price = float(pos.get('entryPrice', 0))
+                    unpnl = float(pos.get('unrealizedProfit', 0))
+                    notional = float(pos.get('notional', 0))
+                    leverage = pos.get('leverage', 'N/A')
+                    isolated = pos.get('isolated', False)
+                    margin_type = "Isolated" if isolated else "Cross"
                     
-                    print(f"📊 USDT-Ⓜ Futures:")
-                    print(f"   Balance:    ${balance:,.2f}")
-                    print(f"   Available:  ${available:,.2f}")
-                    print(f"   UnPnL:      ${cross_unpnl:+,.2f}")
+                    side = "LONG" if amt > 0 else "SHORT"
+                    color = "🟢" if unpnl >= 0 else "🔴"
                     
-                    primary_balance = balance
-                    break
-                    
+                    print(f"     {color} {symbol:12} {side:5} {abs(amt):>10.4f} @ ${entry_price:<10,.2f}")
+                    print(f"        Leverage: {leverage}x | {margin_type} | PnL: ${unpnl:+,.2f} | Notional: ${abs(notional):,.2f}")
+            else:
+                print(f"\n  📍 No open positions")
+            
+            primary_balance = total_wallet
+            
         except Exception as e:
-            logger.warning(f"Could not fetch USDT-M Futures balance: {e}")
-            print(f"⚠ USDT-Ⓜ Futures: Not available")
+            logger.warning(f"Could not fetch USDT-M Futures account info: {e}")
+            print("\n⚠ USDT-Ⓜ Futures: Error fetching data")
+            # Fallback to balance-only
+            try:
+                response = self.exchange.fapiPrivateV2GetBalance()
+                for asset in response:
+                    if asset['asset'] == 'USDT':
+                        primary_balance = float(asset['balance'])
+                        print(f"  (Fallback) Balance: ${primary_balance:,.2f}")
+                        break
+            except:
+                pass
         
-        # 2. COIN-M Futures Balance
+        # ===================================================================
+        # 2. COIN-M Futures - ACCOUNT INFORMATION
+        # ===================================================================
         try:
             # Ensure COIN-M URL exists
             if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
@@ -367,65 +424,69 @@ class BinanceExecutor:
                         self.exchange.urls['test']['dapiPrivate'] = self.exchange.urls['api']['dapiPrivate']
             
             # GET /dapi/v1/balance
-            response = self.exchange.dapiPrivateGetBalance()
+            coin_balances = self.exchange.dapiPrivateGetBalance()
             
-            # Find primary coin balances (BTC, ETH, etc.)
-            total_btc_value = 0.0
-            coin_balances = []
+            has_coin_balance = False
+            print(f"\n📊 COIN-Ⓜ FUTURES")
+            print("-" * 70)
             
-            for asset in response:
-                balance = float(asset.get('balance', 0))
+            for asset_info in coin_balances:
+                balance = float(asset_info.get('balance', 0))
                 if balance > 0:
-                    coin_balances.append(f"{asset['asset']}: {balance}")
-                    # Rough estimation (would need price conversion for accuracy)
-                    if asset['asset'] == 'BTC':
-                        total_btc_value += balance
+                    asset = asset_info['asset']
+                    available = float(asset_info.get('availableBalance', 0))
+                    cross_unpnl = float(asset_info.get('crossUnPnl', 0))
+                    
+                    print(f"  💎 {asset:8} Balance: {balance:>12.6f} | Available: {available:>12.6f} | UnPnL: {cross_unpnl:+.6f}")
+                    has_coin_balance = True
             
-            if coin_balances:
-                print(f"\n📊 COIN-Ⓜ Futures:")
-                for cb in coin_balances[:3]:  # Show top 3
-                    print(f"   {cb}")
-            else:
-                print(f"\n📊 COIN-Ⓜ Futures: No balances")
+            if not has_coin_balance:
+                print(f"  No balances")
                     
         except Exception as e:
-            logger.warning(f"Could not fetch COIN-M Futures balance: {e}")
-            print(f"\n📊 COIN-Ⓜ Futures: Not available")
+            logger.warning(f"Could not fetch COIN-M Futures info: {e}")
+            print(f"\n📊 COIN-Ⓜ FUTURES")
+            print("-" * 70)
+            print(f"  Error fetching data")
         
-        # 3. Spot Balance (Balance Estimado)
+        # ===================================================================
+        # 3. Spot - ACCOUNT INFORMATION
+        # ===================================================================
         try:
-            # For Testnet, Spot endpoint is different
-            # GET /api/v3/account
-            response = self.exchange.fetch_balance()
+            # Use Raw API to avoid Spot endpoint issues in Testnet
+            # For Testnet, this will likely fail (404), which is expected
+            response = self.exchange.privateGetAccount()
             
-            # Calculate total estimated value in USDT
-            total_usdt = 0.0
-            spot_balances = []
+            total_btc = float(response.get('totalAssetOfBtc', 0))
+            can_trade = response.get('canTrade', False)
+            can_withdraw = response.get('canWithdraw', False)
             
-            for asset, amounts in response['total'].items():
-                if amounts > 0:
-                    if asset == 'USDT':
-                        total_usdt += amounts
-                    spot_balances.append(f"{asset}: {amounts}")
+            print(f"\n📊 SPOT (Balance Estimado)")
+            print("-" * 70)
+            print(f"  ₿  Total (BTC):    {total_btc:>12.8f}")
+            print(f"  🔓 Can Trade:      {'✅ Yes' if can_trade else '❌ No'}")
+            print(f"  💸 Can Withdraw:   {'✅ Yes' if can_withdraw else '❌ No'}")
             
-            print(f"\n📊 Spot (Balance Estimado):")
-            if total_usdt > 0:
-                print(f"   USDT:       ${total_usdt:,.2f}")
+            # Show non-zero balances
+            balances = response.get('balances', [])
+            non_zero = [b for b in balances if float(b.get('free', 0)) > 0 or float(b.get('locked', 0)) > 0]
             
-            # Show other assets if any
-            other_assets = [sb for sb in spot_balances if not sb.startswith('USDT')]
-            if other_assets:
-                for asset in other_assets[:3]:  # Top 3
-                    print(f"   {asset}")
-            
-            if not spot_balances:
-                print(f"   No balances")
+            if non_zero[:5]:  # Top 5
+                print(f"\n  💰 Assets:")
+                for b in non_zero[:5]:
+                    asset = b['asset']
+                    free = float(b['free'])
+                    locked = float(b['locked'])
+                    total = free + locked
+                    print(f"     {asset:8} Free: {free:>12,.4f} | Locked: {locked:>12,.4f} | Total: {total:>12,.4f}")
                     
         except Exception as e:
-            logger.warning(f"Could not fetch Spot balance: {e}")
-            print(f"\n📊 Spot: Not available")
+            # Expected to fail in Testnet Futures mode
+            print(f"\n📊 SPOT (Balance Estimado)")
+            print("-" * 70)
+            print(f"  Not available (Testnet Futures mode)")
         
-        print("="*60 + "\n")
+        print("=" * 70 + "\n")
         
         return primary_balance
     
