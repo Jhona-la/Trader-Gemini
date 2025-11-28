@@ -202,12 +202,26 @@ def main():
     engine.register_data_handler(binance_data)
     # engine.register_data_handler(ibkr_data)  # Disabled - crypto only
     
+    # 6. Register Execution Handler
+    binance_executor = BinanceExecutor(events_queue, portfolio=portfolio)
+    engine.register_execution_handler(binance_executor)
+    
+    # SYNC PORTFOLIO WITH BINANCE DEMO BALANCE
+    print("🔄 Syncing Portfolio with Binance Demo Balance...")
+    initial_balance = binance_executor.get_balance()
+    if initial_balance is not None:
+        portfolio.current_cash = initial_balance
+        portfolio.initial_capital = initial_balance
+        print(f"✅ Portfolio Synced: ${portfolio.current_cash:.2f}")
+    else:
+        print(f"⚠️  Could not sync balance. Using default: ${portfolio.current_cash:.2f}")
+    
     # Priority 1: ML Strategies (most sophisticated - regime aware)
     for strat in ml_strategies:
         engine.register_strategy(strat)
     engine.register_risk_manager(risk_manager)
     
-    # Graceful Shutdown Setup
+    # Graceful Shutdown Setup (AFTER binance_executor is created)
     def signal_handler(sig, frame):
         close_all_positions(portfolio, binance_executor, crypto_symbols)
         sys.exit(0)
