@@ -4,13 +4,25 @@ from core.events import FillEvent
 from utils.logger import logger
 from utils.error_handler import retry_on_api_error, handle_balance_error, handle_order_error
 
-
 class BinanceExecutor:
     """
     Handles execution of orders on Binance via CCXT.
     Supports both Spot and Testnet.
     """
     def __init__(self, events_queue, portfolio=None):
+        self.events_queue = events_queue
+        self.portfolio = portfolio  # Reference for cash release on failure
+        
+        # Configure Exchange
+        options = {
+            'adjustForTimeDifference': True,
+            'fetchBalance': False,  # Disable auto balance fetch to prevent Spot endpoint calls
+            'fetchMyTrades': False,  # Disable auto trade fetch
+        }
+        
+        if Config.BINANCE_USE_FUTURES:
+            options['defaultType'] = 'future'
+        else:
             options['defaultType'] = 'spot'
         
         # Determinar qué API keys usar según el modo
@@ -35,32 +47,111 @@ class BinanceExecutor:
         })
         
         # Habilitar el modo correspondiente
-        if hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO:
-            # MANUAL CONFIGURATION for Futures Demo (set_sandbox_mode is deprecated for futures)
-            self.exchange.urls['api'] = {
+        if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
+            # CRITICAL: Manual URL configuration for Futures Testnet
+            # DO NOT use set_sandbox_mode() as it overwrites these URLs
+            # Per CCXT docs: use EITHER set_sandbox_mode() OR manual URLs, not both
+            custom_urls = {
                 'public': 'https://testnet.binancefuture.com/fapi/v1',
                 'private': 'https://testnet.binancefuture.com/fapi/v1',
                 'fapiPublic': 'https://testnet.binancefuture.com/fapi/v1',
                 'fapiPrivate': 'https://testnet.binancefuture.com/fapi/v1',
+                'fapiPrivateV2': 'https://testnet.binancefuture.com/fapi/v2',
                 'fapiData': 'https://testnet.binancefuture.com/fapi/v1',
                 'dapiPublic': 'https://testnet.binancefuture.com/dapi/v1',
                 'dapiPrivate': 'https://testnet.binancefuture.com/dapi/v1',
                 'dapiData': 'https://testnet.binancefuture.com/dapi/v1',
-                'sapi': 'https://testnet.binance.vision/api/v3', # Fallback for some endpoints
             }
-            print(f"Binance Executor: Running in {mode_description} mode (Manual URL Config).")
-        elif Config.BINANCE_USE_TESTNET:
-            self.exchange.set_sandbox_mode(True)
-            print(f"Binance Executor: Running in {mode_description} mode.")
+            
+            # Set BOTH 'api' and 'test' URLs
+            self.exchange.urls['api'] = custom_urls
+            self.exchange.urls['test'] = custom_urls
+            
+            logger.info(f"Binance Executor: Running in {mode_description} mode (Manual Futures URLs)")
         else:
-            print(f"Binance Executor: Running in {mode_description} mode.")
+            logger.info(f"Binance Executor: Running in {mode_description} mode")
+
             
         # Set Leverage for Futures
         # NOTE: Leverage endpoint not available on Testnet
         # Configure leverage manually in Binance Demo UI
         if Config.BINANCE_USE_FUTURES:
-            print(f"Binance Executor: FUTURES MODE ENABLED")
-            print(f"  → Using server-side leverage (configure in Binance Demo UI)")
+            logger.info("Binance Executor: FUTURES MODE ENABLED")
+            logger.info("  → Using server-side leverage (configure in Binance Demo UI)")
+        
+        # ===================================================================
+        # Create permanent Spot exchange instance for balance queries
+        # ===================================================================
+        # Spot Testnet uses different URLs from Futures Testnet
+        # We maintain a separate exchange for Spot queries
+        if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
+            self.spot_exchange = ccxt.binance({
+                'apiKey': api_key,
+                'secret': secret_key,
+                'enableRateLimit': True,
+                'options': {
+                    'defaultType': 'spot',
+                    'adjustForTimeDifference': True,
+                }
+            })
+            # Set Spot Testnet URLs (testnet.binance.vision)
+            self.spot_exchange.set_sandbox_mode(True)
+            logger.info("  → Spot exchange initialized for Testnet")
+        else:
+            # In production, we can use the same exchange for both
+            self.spot_exchange = self.exchange
+            logger.info("  → Using main exchange for Spot queries (Production mode)")
+            
+        # ===================================================================
+        # INITIALIZE ACCOUNT SETTINGS (Best Practices)
+        # ===================================================================
+        if Config.BINANCE_USE_FUTURES:
+            self._initialize_futures_settings()
+
+    def _initialize_futures_settings(self):
+        """
+        Enforces One-Way Mode and Margin Type (Isolated) to match bot logic.
+        """
+        logger.info("Binance Executor: Initializing Futures Account Settings...")
+        try:
+            # 1. Set Position Mode to One-Way (Dual Side Position = False)
+            # We use One-Way mode because our RiskManager assumes simple Buy/Sell
+            # If account is in Hedge Mode, create_order fails without positionSide
+            try:
+                # 'true' = Hedge Mode, 'false' = One-Way Mode
+                self.exchange.fapiPrivatePostPositionSideDual({'dualSidePosition': 'false'})
+                logger.info("  ✅ Position Mode set to ONE-WAY")
+            except Exception as e:
+                if "No need to change" in str(e):
+                    logger.info("  ✅ Position Mode already ONE-WAY")
+                else:
+                    logger.warning(f"  ⚠️ Could not set Position Mode: {e}")
+
+            # 2. Set Margin Type for all pairs
+            # We iterate through configured pairs to set them to ISOLATED
+            # This protects the wallet balance
+            logger.info(f"  ⏳ Setting Margin Type to {Config.BINANCE_MARGIN_TYPE} for {len(Config.TRADING_PAIRS)} pairs...")
+            for symbol in Config.TRADING_PAIRS:
+                try:
+                    # Convert symbol to ID (ETH/USDT -> ETHUSDT) for the API
+                    market = self.exchange.market(symbol)
+                    symbol_id = market['id']
+                    
+                    self.exchange.fapiPrivatePostMarginType({
+                        'symbol': symbol_id,
+                        'marginType': Config.BINANCE_MARGIN_TYPE.upper() # ISOLATED or CROSS
+                    })
+                except Exception as e:
+                    if "No need to change" in str(e):
+                        pass # Already set
+                    else:
+                        # Log only critical errors, ignore "No need to change"
+                        # logger.warning(f"  ⚠️ Could not set Margin Type for {symbol}: {e}")
+                        pass
+            logger.info("  ✅ Margin Types Configured")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize Futures settings: {e}")
 
     def execute_order(self, event):
         """
@@ -85,23 +176,51 @@ class BinanceExecutor:
             # Execute Order
             if order_type == 'mkt':
                 order_type = 'market'
-                
-            order = self.exchange.create_order(symbol, order_type, side, quantity)
+            
+            # 1. Prepare Symbol and Quantity
+            market = self.exchange.market(symbol)
+            symbol_id = market['id']
+            
+            # Ensure quantity precision (CRITICAL for Futures)
+            # CCXT amount_to_precision returns a string
+            qty_str = self.exchange.amount_to_precision(symbol, quantity)
+            
+            # 2. Build Parameters for Raw API
+            params = {
+                'symbol': symbol_id,
+                'side': side.upper(),
+                'type': order_type.upper(),
+                'quantity': qty_str,
+                'newOrderRespType': 'RESULT',
+                'recvWindow': 60000  # Generous window for network latency
+            }
+            
+            # 3. Execute using Raw API (Bypass CCXT create_order internals)
+            # This avoids the 'capital/config/getall' 404 error
+            logger.info(f"  🚀 Sending Raw Futures Order: {side.upper()} {qty_str} {symbol}")
+            order = self.exchange.fapiPrivatePostOrder(params)
+            
+            # 4. Parse Response (Raw API returns different structure than CCXT unified)
+            # Binance Futures Raw Response:
+            # {'orderId': 123, 'symbol': 'BTCUSDT', 'status': 'FILLED', 'avgPrice': '90000', 'executedQty': '0.1', ...}
+            
+            fill_price = float(order.get('avgPrice', 0.0))
+            filled_qty = float(order.get('executedQty', 0.0))
+            order_id = str(order.get('orderId', ''))
             
             # Log Success
-            fill_price = order.get('average', 0) or 0
-            logger.info(f"✅ Order Filled: {order['id']} - {side.upper()} {order['filled']} {symbol} @ ${fill_price:.2f}")
+            logger.info(f"✅ Order Filled: {order_id} - {side.upper()} {filled_qty} @ {fill_price}")
             
             # Create Fill Event
             fill_event = FillEvent(
                 timeindex=None,
                 symbol=symbol,
                 exchange='BINANCE',
-                quantity=order['filled'],
+                quantity=filled_qty,
                 direction=event.direction,
-                fill_cost=order['cost'],
-                commission=order.get('fee', None),
-                strategy_id=event.strategy_id  # PASS strategy_id from OrderEvent
+                fill_cost=filled_qty * fill_price,
+                commission=None, # Fee info might be in a separate field or trade stream
+                strategy_id=event.strategy_id
             )
             self.events_queue.put(fill_event)
             
