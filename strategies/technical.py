@@ -153,7 +153,7 @@ class TechnicalStrategy(Strategy):
                 confluence += 0.30 if rsi_1h < 50 else -0.30      # 1h: 30% weight
 
                 # PRINT TECH STATS (User Request)
-                print(f"📈 Tech Strategy {s}: RSI={current_rsi:.1f} (5m:{rsi_5m:.1f} 15m:{rsi_15m:.1f}) Trend={'UP' if in_uptrend else 'DOWN'} (1h:{trend_1h}) ADX={current_adx:.1f} Confluence={confluence:+.2f}")
+                print(f"[TECH] Strategy {s}: RSI={current_rsi:.1f} (5m:{rsi_5m:.1f} 15m:{rsi_15m:.1f}) Trend={'UP' if in_uptrend else 'DOWN'} (1h:{trend_1h}) ADX={current_adx:.1f} Confluence={confluence:+.2f}")
 
                 # ADAPTIVE RSI THRESHOLDS: Adjust based on volatility
                 current_price = bars[-1]['close']
@@ -188,15 +188,15 @@ class TechnicalStrategy(Strategy):
                     # MULTI-TIMEFRAME FILTER: Only trade if weighted confluence >= +0.5
                     # (Majority agreement, with longer timeframes having more influence)
                     if confluence < 0.5:
-                        print(f"  ⏭️  Skipping {s}: Weak confluence ({confluence:+.2f}/+1.0) - timeframes disagree")
+                        print(f"  >> Skipping {s}: Weak confluence ({confluence:+.2f}/+1.0) - timeframes disagree")
                     # Filter: Only take trade if 1h trend is also UP or Neutral
                     elif trend_1h == 'DOWN':
-                        print(f"  ⏭️  Skipping {s}: 1h Trend is DOWN (Counter-trend)")
+                        print(f"  >> Skipping {s}: 1h Trend is DOWN (Counter-trend)")
                     else:
                         # DYNAMIC STRENGTH: Scale based on signal type
                         if is_breakout:
                             strength = 1.0 # Breakouts are high conviction
-                            print(f"🚀 BREAKOUT Signal for {s}: RSI={current_rsi:.1f} Vol={volume_ratio:.1f}x")
+                            print(f"[!!] BREAKOUT Signal for {s}: RSI={current_rsi:.1f} Vol={volume_ratio:.1f}x")
                         else:
                             # Pullback strength based on RSI depth
                             rsi_diff = max(0, dynamic_rsi_buy - current_rsi)

@@ -117,5 +117,5 @@ class PatternStrategy(Strategy):
                     # Calculate ATR for risk management
                     atr = talib.ATR(highs, lows, closes, timeperiod=14)[-1]
                     
-                    print(f"🕯️ Pattern Strategy {s}: {pattern_name} detected! (RSI={rsi:.1f}, 1h={trend_1h})")
+                    print(f"[PATTERN] Strategy {s}: {pattern_name} detected! (RSI={rsi:.1f}, 1h={trend_1h})")
                     self.events_queue.put(SignalEvent(4, s, timestamp, signal_type, strength=strength, atr=atr))

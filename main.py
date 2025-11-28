@@ -160,7 +160,7 @@ def main():
     # Market Regime Detector
     from core.market_regime import MarketRegimeDetector
     regime_detector = MarketRegimeDetector()
-    print("✅ Market Regime Detector initialized")
+    print("[OK] Market Regime Detector initialized")
     
     # 3. Initialize Strategies (CRYPTO ONLY)
     # A. Technical Strategy (RSI)
@@ -224,7 +224,7 @@ def main():
     # Priority 4: Pattern Strategy (Candlestick Reversals)
     engine.register_strategy(pattern_strategy)
     
-    print(f"✅ Registered {len(ml_strategies) + 3} strategies in the Engine.")
+    print(f"[OK] Registered {len(ml_strategies) + 3} strategies in the Engine.")
     
     engine.register_risk_manager(risk_manager)
     

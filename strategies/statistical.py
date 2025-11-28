@@ -105,7 +105,7 @@ class StatisticalStrategy(Strategy):
                     # Check Trend for Y (ETH)
                     trend_y = self._get_1h_trend(y_sym)
                     if trend_y == 'DOWN':
-                        print(f"  ⏭️  Stat Skip {y_sym}: 1h Trend is DOWN")
+                        print(f"  >> Stat Skip {y_sym}: 1h Trend is DOWN")
                     else:
                         # DYNAMIC STRENGTH: Scale based on Z-Score magnitude
                         # Z=2.0 -> 0.5 strength
@@ -123,7 +123,7 @@ class StatisticalStrategy(Strategy):
                     # Check Trend for X (BTC)
                     trend_x = self._get_1h_trend(x_sym)
                     if trend_x == 'DOWN':
-                        print(f"  ⏭️  Stat Skip {x_sym}: 1h Trend is DOWN")
+                        print(f"  >> Stat Skip {x_sym}: 1h Trend is DOWN")
                     else:
                         # DYNAMIC STRENGTH
                         z_diff = abs(z_score) - self.z_entry
