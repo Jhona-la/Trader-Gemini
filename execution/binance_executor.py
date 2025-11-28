@@ -1,6 +1,8 @@
 import ccxt
 from config import Config
 from core.events import FillEvent
+from utils.logger import logger
+from utils.error_handler import retry_on_api_error, handle_balance_error, handle_order_error
 
 
 class BinanceExecutor:
@@ -57,19 +59,19 @@ class BinanceExecutor:
                 'dapiData': 'https://testnet.binancefuture.com/dapi/v1',
                 'sapi': 'https://testnet.binance.vision/api/v3', # Fallback for some endpoints
             }
-            print(f"Binance Executor: Running in {mode_description} mode (Manual URL Config).")
+            logger.info(f"Binance Executor: Running in {mode_description} mode (Manual URL Config)")
         elif Config.BINANCE_USE_TESTNET:
             self.exchange.set_sandbox_mode(True)
-            print(f"Binance Executor: Running in {mode_description} mode.")
+            logger.info(f"Binance Executor: Running in {mode_description} mode")
         else:
-            print(f"Binance Executor: Running in {mode_description} mode.")
+            logger.info(f"Binance Executor: Running in {mode_description} mode")
             
         # Set Leverage for Futures
         # NOTE: Leverage endpoint not available on Testnet
         # Configure leverage manually in Binance Demo UI
         if Config.BINANCE_USE_FUTURES:
-            print(f"Binance Executor: FUTURES MODE ENABLED")
-            print(f"  → Using server-side leverage (configure in Binance Demo UI)")
+            logger.info("Binance Executor: FUTURES MODE ENABLED")
+            logger.info("  → Using server-side leverage (configure in Binance Demo UI)")
 
     def execute_order(self, event):
         """
@@ -211,7 +213,7 @@ class BinanceExecutor:
         if '/' not in event.symbol: # Simple check, assuming Stocks don't have '/':
             return
 
-        print(f"Binance Executing: {event.direction} {event.quantity} {event.symbol}")
+        logger.info(f"Executing: {event.direction} {event.quantity} {event.symbol}")
         
         try:
             # Map direction to side
@@ -227,13 +229,10 @@ class BinanceExecutor:
             order = self.exchange.create_order(symbol, order_type, side, quantity)
             
             # Log Success
-            print(f"Order Filled: {order['id']} - {side} {order['filled']} @ {order['average']}")
+            fill_price = order.get('average', 0) or 0
+            logger.info(f"✅ Order Filled: {order['id']} - {side.upper()} {order['filled']} {symbol} @ ${fill_price:.2f}")
             
             # Create Fill Event
-            fill_price = order.get('average', 0)
-            if fill_price is None: 
-                fill_price = 0
-            
             fill_event = FillEvent(
                 timeindex=None,
                 symbol=symbol,
@@ -247,7 +246,8 @@ class BinanceExecutor:
             self.events_queue.put(fill_event)
             
         except Exception as e:
-            print(f"Binance Execution Error: {e}")
+            # Binance-specific error handling
+            handle_order_error(e, event.symbol, event.direction, event.quantity)
             
             # RELEASE RESERVED CASH on failure
             if self.portfolio and event.direction == 'BUY':
@@ -257,7 +257,7 @@ class BinanceExecutor:
                     # Rough estimate from Risk Manager's $1000 default
                     estimated_cost = 1000.0
                 self.portfolio.release_cash(estimated_cost)
-                print(f"  💰 Released ${estimated_cost:.2f} reserved cash")
+                logger.warning(f"Released ${estimated_cost:.2f} reserved cash due to order failure")
 
     def get_balance(self):
         """
