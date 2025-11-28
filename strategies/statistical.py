@@ -3,25 +3,6 @@ import pandas as pd
 import talib # Added for trend calculation
 from .strategy import Strategy
 from core.events import SignalEvent
-
-class StatisticalStrategy(Strategy):
-    """
-    Pairs Trading Strategy based on Cointegration / Mean Reversion of the Spread.
-    """
-    def __init__(self, data_provider, events_queue, pair=('ETH/USDT', 'BTC/USDT'), window=20, z_entry=2.0, z_exit=0.0):
-        self.data_provider = data_provider
-        self.events_queue = events_queue
-        self.pair = pair # Tuple of two symbols (Y, X) where Spread = Y - beta*X or Ratio = Y/X
-        self.window = window
-        self.z_entry = z_entry
-        self.z_exit = z_exit
-        self.invested = 0 # 0 = None, 1 = Long Spread, -1 = Short Spread
-        self.last_processed_time = None
-
-    def calculate_signals(self, event):
-        if event.type == 'MARKET':
-            # Get latest bars for both assets
-            y_sym, x_sym = self.pair
             
             # We need enough history to calculate Z-Score
             try:
@@ -94,18 +75,18 @@ class StatisticalStrategy(Strategy):
             # Long Spread = Buy Y, Sell X (Expect ratio to go up)
             # Short Spread = Sell Y, Buy X (Expect ratio to go down)
             
-            # Filter: Don't mean revert if Trend is too strong (ADX > 30)
-            if ratio_adx > 30:
-                # Unless Z-Score is EXTREME (e.g. > 4), then maybe it's a climax
-                if abs(z_score) < 4.0:
-                    return
+            # AGGRESSIVE MODE: Removed ADX filter to trade more
+            # if ratio_adx > 30:  # DISABLED
+            #     if abs(z_score) < 4.0:
+            #         return
+            pass  # Trade regardless of trend strength
 
             if self.invested == 0:
                 if z_score < -self.z_entry:
-                    # Check Trend for Y (ETH)
+                    # AGGRESSIVE MODE: Removed trend filter
                     trend_y = self._get_1h_trend(y_sym)
-                    if trend_y == 'DOWN':
-                        print(f"  >> Stat Skip {y_sym}: 1h Trend is DOWN")
+                    if False:  # Disabled
+                        pass
                     else:
                         # DYNAMIC STRENGTH: Scale based on Z-Score magnitude
                         # Z=2.0 -> 0.5 strength
@@ -120,10 +101,10 @@ class StatisticalStrategy(Strategy):
                         self.invested = 1
                         
                 elif z_score > self.z_entry:
-                    # Check Trend for X (BTC)
+                    # AGGRESSIVE MODE: Removed trend filter
                     trend_x = self._get_1h_trend(x_sym)
-                    if trend_x == 'DOWN':
-                        print(f"  >> Stat Skip {x_sym}: 1h Trend is DOWN")
+                    if False:  # Disabled
+                        pass
                     else:
                         # DYNAMIC STRENGTH
                         z_diff = abs(z_score) - self.z_entry

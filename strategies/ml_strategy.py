@@ -459,20 +459,6 @@ class MLStrategy(Strategy):
             xgb_prediction = self.xgb_model.predict(last_row)[0]
             
             # Weighted Average of Predicted Returns
-            ensemble_return = (self.rf_weight * rf_prediction) + (self.xgb_weight * xgb_prediction)
-            
-            # Direction based on sign of predicted return
-            ensemble_direction = 'UP' if ensemble_return > 0 else 'DOWN'
-            
-            # PRINT ML CONCLUSIONS (User Request)
-            # Only print if return is significant to avoid spam
-            if abs(ensemble_return) > 0.05:
-                # Extract 5m/15m features for display
-                rsi_5m_val = last_row['rsi_5m'].values[0] if 'rsi_5m' in last_row else 0
-                rsi_15m_val = last_row['rsi_15m'].values[0] if 'rsi_15m' in last_row else 0
-                
-                print(f"🤖 ML Strategy {self.symbol}: Pred={ensemble_return:.2f}% ({ensemble_direction}) | RF={rf_prediction:.2f} XGB={xgb_prediction:.2f} | Regime={regime} | 5m_RSI={rsi_5m_val:.1f} 15m_RSI={rsi_15m_val:.1f}")
-
             # Store prediction
             self.prediction_history.append({
                 'rf_pred': rf_prediction,
