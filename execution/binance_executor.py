@@ -294,7 +294,7 @@ class BinanceExecutor:
         1. Sync Balance
         2. Sync Open Positions
         """
-        logger.info("🔄 Syncing Portfolio with Binance State...")
+        logger.info("Syncing Portfolio with Binance State...")
         
         # 1. Sync Balance
         balance = self.get_balance()
@@ -335,16 +335,16 @@ class BinanceExecutor:
                             'current_price': entry_price # Will be updated by data feed
                         }
                         synced_count += 1
-                        logger.info(f"  👉 Found Position: {internal_symbol} {amt} @ ${entry_price:.2f}")
+                        logger.info(f"  -> Found Position: {internal_symbol} {amt} @ ${entry_price:.2f}")
                 
                 if synced_count > 0:
-                    logger.info(f"✅ Synced {synced_count} open positions from Binance Futures.")
+                    logger.info(f"Synced {synced_count} open positions from Binance Futures.")
                 else:
-                    logger.info("✅ No open positions found on Binance.")
+                    logger.info("No open positions found on Binance.")
                     
             else:
                 # Spot Position Sync (Not implemented for now as we focus on Futures)
                 pass
                 
         except Exception as e:
-            logger.error(f"⚠️  Failed to sync positions: {e}")
+            logger.error(f"Failed to sync positions: {e}")
