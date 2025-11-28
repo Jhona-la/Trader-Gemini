@@ -108,27 +108,66 @@ class BinanceExecutor:
             if order_type == 'mkt':
                 order_type = 'market'
                 
-            order = self.exchange.create_order(symbol, order_type, side, quantity)
+            # Use Raw API for Futures Testnet reliability
+            # CCXT create_order sometimes hits Spot endpoints in this mixed mode
+            try:
+                if Config.BINANCE_USE_FUTURES:
+                    # Map parameters to raw API format
+                    params = {
+                        'symbol': symbol.replace('/', ''), # BTC/USDT -> BTCUSDT
+                        'side': side.upper(),
+                        'type': order_type.upper(),
+                        'quantity': quantity,
+                    }
+                    
+                    # Log attempt
+                    logger.info(f"Executing Raw Order: {params}")
+                    
+                    # Execute
+                    response = self.exchange.fapiPrivatePostOrder(params)
+                    
+                    # Parse Raw Response
+                    # { 'orderId': ..., 'status': 'NEW', 'avgPrice': '0.00', ... }
+                    # Note: Market orders usually fill immediately, but avgPrice might be 0 initially in response?
+                    # Actually for market orders, response usually contains 'cumQuote' and 'executedQty'
+                    
+                    fill_price = float(response.get('avgPrice', 0))
+                    if fill_price == 0 and float(response.get('executedQty', 0)) > 0:
+                         # Calculate from cumQuote if avgPrice is 0 (common in immediate response)
+                         fill_price = float(response.get('cumQuote', 0)) / float(response.get('executedQty'))
+                         
+                    order = {
+                        'id': response['orderId'],
+                        'filled': float(response['executedQty']),
+                        'average': fill_price,
+                        'cost': float(response['cumQuote']),
+                        'fee': 0 # Fee info usually in a separate stream or trade endpoint
+                    }
+                    
+                else:
+                    # Standard CCXT for Spot (if ever used)
+                    order = self.exchange.create_order(symbol, order_type, side, quantity)
             
-            # Log Success
-            print(f"Order Filled: {order['id']} - {side} {order['filled']} @ {order['average']}")
-            
-            # Create Fill Event
-            fill_price = order.get('average', 0)
-            if fill_price is None: 
-                fill_price = 0
-            
-            fill_event = FillEvent(
-                timeindex=None,
-                symbol=symbol,
-                exchange='BINANCE',
-                quantity=order['filled'],
-                direction=event.direction,
-                fill_cost=order['cost'],
-                commission=order.get('fee', None),
-                strategy_id=event.strategy_id  # PASS strategy_id from OrderEvent
-            )
-            self.events_queue.put(fill_event)
+                # Log Success
+                print(f"Order Filled: {order['id']} - {side} {order['filled']} @ {order['average']}")
+                
+                # Create Fill Event
+                fill_event = FillEvent(
+                    timeindex=None,
+                    symbol=symbol,
+                    exchange='BINANCE',
+                    quantity=order['filled'],
+                    direction=event.direction,
+                    fill_cost=order['cost'],
+                    commission=order.get('fee', None),
+                    strategy_id=event.strategy_id  # PASS strategy_id from OrderEvent
+                )
+                self.events_queue.put(fill_event)
+                
+            except Exception as e:
+                print(f"Binance Execution Error: {e}")
+                # Re-raise to trigger the catch block below for cash release
+                raise e
             
         except Exception as e:
             print(f"Binance Execution Error: {e}")
