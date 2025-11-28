@@ -179,7 +179,11 @@ class BinanceExecutor:
                 order_type = 'market'
             
             # Use standard CCXT method with manual URLs configured above
-            order = self.exchange.create_order(symbol, order_type, side, quantity)
+            params = {}
+            if Config.BINANCE_USE_FUTURES:
+                params['newOrderRespType'] = 'RESULT'  # Get immediate execution details
+                
+            order = self.exchange.create_order(symbol, order_type, side, quantity, params=params)
             
             # Log Success
             print(f"Order Filled: {order['id']} - {side} {order['filled']} @ {order['average']}")
