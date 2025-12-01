@@ -29,16 +29,20 @@ class TechnicalStrategy(Strategy):
                 # Extract close prices
                 closes = np.array([b['close'] for b in bars])
                 
+                # CRITICAL FIX: Use CLOSED candle ([-2]) for indicators to avoid Repainting/Lookahead Bias
+                # If we use [-1], the signal might flash ON and OFF during the candle.
+                # We want confirmed signals.
+                
                 # Calculate RSI
                 rsi = talib.RSI(closes, timeperiod=self.rsi_period)
-                current_rsi = rsi[-1]
+                current_rsi = rsi[-2] # Use last CLOSED candle
                 
                 # TREND FILTER: Calculate EMA 50 and EMA 200
                 ema_50 = talib.EMA(closes, timeperiod=50)
                 ema_200 = talib.EMA(closes, timeperiod=200)
                 
-                # Trend determination: Uptrend if EMA 50 > EMA 200
-                in_uptrend = ema_50[-1] > ema_200[-1]
+                # Trend determination: Uptrend if EMA 50 > EMA 200 (on closed candle)
+                in_uptrend = ema_50[-2] > ema_200[-2]
                 
                 timestamp = bars[-1]['datetime']
 
@@ -52,16 +56,16 @@ class TechnicalStrategy(Strategy):
                 highs = np.array([b['high'] for b in bars])
                 lows = np.array([b['low'] for b in bars])
                 adx = talib.ADX(highs, lows, closes, timeperiod=14)
-                current_adx = adx[-1] if len(adx) > 0 else 20
+                current_adx = adx[-2] if len(adx) > 1 else 20 # Last CLOSED candle
                 
                 # Calculate ATR for volatility-based sizing
                 atr = talib.ATR(highs, lows, closes, timeperiod=14)
-                current_atr = atr[-1] if len(atr) > 0 else 0
-
+                current_atr = atr[-2] if len(atr) > 1 else 0 # Last CLOSED candle
+                
                 # VOLUME CONFIRMATION: Check if volume supports signal
                 volumes = np.array([b['volume'] for b in bars])
-                volume_ma = talib.SMA(volumes, timeperiod=20)[-1]
-                current_volume = bars[-1]['volume']
+                volume_ma = talib.SMA(volumes, timeperiod=20)[-2]
+                current_volume = bars[-2]['volume'] # Last CLOSED volume
                 volume_ratio = current_volume / volume_ma if volume_ma > 0 else 1.0
                 
                 # MOMENTUM BREAKOUT CHECK (Before ADX Filter)
