@@ -193,10 +193,7 @@ def main():
         ml_strat = MLStrategy(binance_data, events_queue, symbol=symbol, sentiment_loader=sentiment_loader)
         ml_strategies.append(ml_strat)
     
-    # 4. Initialize Portfolio & Risk
-    # Portfolio already initialized above for Strategy use
-    
-    # CRASH RECOVERY: Try to restore state from live_status.json
+    # CRASH RECOVERY DISABLED: Now syncing with Binance as source of truth
     
     # CRASH RECOVERY: Try to restore state from live_status.json
     # DISABLED: User requested to rely on Binance as source of truth
@@ -380,21 +377,21 @@ def main():
                     # 1. Append to CSV (Historical Data)
                     df_status = pd.DataFrame(status_data)
                     status_path = os.path.join(Config.DATA_DIR, "status.csv")
+                    
+                    if os.path.exists(status_path):
+                        df_status.to_csv(status_path, mode='a', header=False, index=False)
+                    else:
+                        df_status.to_csv(status_path, index=False)
+                    
+                    # Update tracking variables
+                    portfolio._last_log_time = time.time()
+                    portfolio._last_equity = total_equity
+                    portfolio._last_positions_count = open_positions
+                    
+                    # Print log reason (for debugging)
+                    print(f"📊 CSV Logged: {log_reason}")
                 
-                if os.path.exists(status_path):
-                    df_status.to_csv(status_path, mode='a', header=False, index=False)
-                else:
-                    df_status.to_csv(status_path, index=False)
-                
-                # Update tracking variables
-                portfolio._last_log_time = time.time()
-                portfolio._last_equity = total_equity
-                portfolio._last_positions_count = open_positions
-                
-                # Print log reason (for debugging)
-                print(f"📊 CSV Logged: {log_reason}")
-                
-                # 2. Write to JSON (Real-Time Data - Lightweight)
+                # 2. Write to JSON (Real-Time Data - Lightweight) - ALWAYS updated
                 import json
                 live_status = {
                     'timestamp': str(datetime.now()),
