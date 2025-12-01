@@ -1,10 +1,6 @@
 @echo off
-echo ========================================
-echo  TRADER GEMINI - FUTURES INSTANCE
-echo ========================================
-echo Starting Futures Trading Bot...
-echo.
-
-.\.venv\Scripts\python.exe main.py
-
+cd /d "%~dp0"
+call .venv\Scripts\activate
+echo 🔵 STARTING TRADER GEMINI - FUTURES MODE
+python main.py --mode futures
 pause

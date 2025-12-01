@@ -145,6 +145,7 @@ def close_all_positions(portfolio, executor, crypto_symbols):
     
     # 1. Override Configuration based on CLI Argument
     if args.mode:
+        os.environ['BOT_MODE'] = args.mode # Set env var for logger
         if args.mode == 'futures':
             print("🔵 MODE: FUTURES (Override from CLI)")
             Config.BINANCE_USE_FUTURES = True

@@ -389,31 +389,6 @@ class BinanceExecutor:
             print(f"  Error fetching data")
         
         # ===================================================================
-        # 3. Spot - ACCOUNT INFORMATION
-        # ===================================================================
-        try:
-            # Use the permanent Spot exchange instance
-            response = self.spot_exchange.fetch_balance()
-            
-            # Calculate total estimated value
-            total_usdt = 0.0
-            total_btc = 0.0
-            non_zero_balances = []
-            
-            for asset, amounts in response['total'].items():
-                if amounts > 0:
-                    if asset == 'USDT':
-                        total_usdt += amounts
-                    elif asset == 'BTC':
-                        total_btc += amounts
-                    non_zero_balances.append({
-                        'asset': asset,
-                        'free': response['free'].get(asset, 0),
-                        'locked': response['used'].get(asset, 0),
-                        'total': amounts
-                    })
-            
-            print(f"\n📊 SPOT (Balance Estimado)")
             print("-" * 70)
             
             if total_usdt > 0 or total_btc > 0:

@@ -41,7 +41,14 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     console_handler.setFormatter(console_format)
     
     # File Handler (rotating, max 10MB per file, keep 5 backups)
-    log_file = os.path.join(log_dir, f'bot_{datetime.now().strftime("%Y%m%d")}.log')
+    # Allow suffix for Spot/Futures separation
+    suffix = os.getenv('BOT_MODE', '') # e.g. 'spot' or 'futures'
+    if suffix:
+        filename = f'bot_{suffix}_{datetime.now().strftime("%Y%m%d")}.log'
+    else:
+        filename = f'bot_{datetime.now().strftime("%Y%m%d")}.log'
+        
+    log_file = os.path.join(log_dir, filename)
     file_handler = RotatingFileHandler(
         log_file,
         maxBytes=10*1024*1024,  # 10 MB
