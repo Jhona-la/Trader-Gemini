@@ -112,11 +112,19 @@ class MLStrategy(Strategy):
         df['macd_signal'] = macdsignal
         df['macd_hist'] = macdhist
         
-        # Add Bollinger Bands
+        # Add Bollinger Bands (STATIONARY FEATURES ONLY)
         upper, middle, lower = talib.BBANDS(df['close'].values, timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
-        df['bb_upper'] = upper
-        df['bb_lower'] = lower
+        # REMOVED: bb_upper, bb_lower (Absolute prices confuse the model)
+        # ADDED: %B (Percent B) - Position of price within bands
+        # (Price - Lower) / (Upper - Lower)
         df['bb_width'] = (upper - lower) / middle
+        df['bb_pct_b'] = (df['close'] - lower) / (upper - lower)
+        
+        # Add EMA Distances (Relative Trend)
+        ema_20 = talib.EMA(df['close'].values, timeperiod=20)
+        ema_50 = talib.EMA(df['close'].values, timeperiod=50)
+        df['dist_ema_20'] = (df['close'] - ema_20) / ema_20
+        df['dist_ema_50'] = (df['close'] - ema_50) / ema_50
         
         # Add ATR (Volatility)
         df['atr'] = talib.ATR(df['high'].values, df['low'].values, df['close'].values, timeperiod=14)
@@ -128,10 +136,10 @@ class MLStrategy(Strategy):
         df['volume_sma'] = talib.SMA(df['volume'].values, timeperiod=20)
         df['volume_rel'] = df['volume'] / df['volume_sma']
         
-        # CRYPTO-SPECIFIC FEATURES (for better crypto predictions)
-        # On-Balance Volume (important for crypto volume analysis)
-        df['obv'] = talib.OBV(df['close'].values, df['volume'].values)
-        df['obv_ema'] = talib.EMA(df['obv'].values, timeperiod=20)
+        # CRYPTO-SPECIFIC FEATURES (Sanitized)
+        # On-Balance Volume (Use Slope/Change, NOT raw value)
+        obv = talib.OBV(df['close'].values, df['volume'].values)
+        df['obv_roc'] = pd.Series(obv).pct_change(periods=5) # 5-bar ROC of OBV
         
         # Money Flow Index (buying/selling pressure)
         df['mfi'] = talib.MFI(df['high'].values, df['low'].values, 
