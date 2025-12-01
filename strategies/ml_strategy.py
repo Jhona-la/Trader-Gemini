@@ -267,7 +267,9 @@ class MLStrategy(Strategy):
                 # Create Targets (Shifted Returns)
                 # We want to predict the NEXT 5-minute return
                 # Target = (Close[t+5] - Close[t]) / Close[t]
-                df['target'] = df['close'].shift(-5).pct_change(periods=5).shift(-5) # Look ahead 5 bars
+                # FIXED: Was using df['close'].shift(-5).pct_change(periods=5).shift(-5) which double-shifted!
+                # Correct formula:
+                df['target'] = (df['close'].shift(-5) - df['close']) / df['close']
                 
                 # Drop NaNs created by shifting
                 df.dropna(inplace=True)

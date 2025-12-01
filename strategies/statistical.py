@@ -104,6 +104,10 @@ class StatisticalStrategy(Strategy):
             # Check Portfolio for actual positions (Source of Truth)
             # We need to know if we are currently holding the pair
             # This is more robust than a local 'invested' flag
+            if not self.portfolio:
+                print("❌ STAT STRATEGY ERROR: Portfolio not initialized!")
+                return
+                
             pos_y = self.portfolio.positions.get(y_sym, {'quantity': 0})
             pos_x = self.portfolio.positions.get(x_sym, {'quantity': 0})
             

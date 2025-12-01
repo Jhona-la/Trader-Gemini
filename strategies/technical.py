@@ -149,8 +149,7 @@ class TechnicalStrategy(Strategy):
                 confluence += 0.25 if rsi_5m < 50 else -0.25      # 5m: 25% weight
                 confluence += 0.30 if rsi_15m < 50 else -0.30     # 15m: 30% weight
                 confluence += 0.30 if rsi_1h < 50 else -0.30      # 1h: 30% weight
-
-                confluence += 0.30 if rsi_1h < 50 else -0.30      # 1h: 30% weight
+                # Total: 100% weight distributed across all timeframes
 
                 # PRINT TECH STATS (User Request)
                 print(f"[TECH] Strategy {s}: RSI={current_rsi:.1f} (5m:{rsi_5m:.1f} 15m:{rsi_15m:.1f}) Trend={'UP' if in_uptrend else 'DOWN'} (1h:{trend_1h}) ADX={current_adx:.1f} Confluence={confluence:+.2f}")

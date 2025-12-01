@@ -1,5 +1,4 @@
 from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
-from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
 import queue
 import time
 
@@ -15,8 +14,6 @@ class Engine:
         self.execution_handler = None
         self.portfolio = None
         self.risk_manager = None
-        self.running = True
-        
         self.running = True
         
         # STRATEGY COORDINATION:
@@ -58,7 +55,6 @@ class Engine:
         Route the event to the appropriate components.
         """
         if event.type == 'MARKET':
-            # Notify strategies of new data
             # Notify strategies of new data
             # Notify strategies of new data
             # STRATEGY ORCHESTRATION: Selectively run strategies based on Regime
