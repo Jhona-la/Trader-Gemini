@@ -260,38 +260,64 @@ class MLStrategy(Strategy):
         self.bars_since_train += 1
         
         if not self.is_trained or self.bars_since_train >= self.retrain_interval:
-            print(f"🧠 ML Strategy: Retraining models for {self.symbol}...")
-            try:
-                df = self._prepare_features(bars)
-                
-                # Create Targets (Shifted Returns)
-                # We want to predict the NEXT 5-minute return
-                # Target = (Close[t+5] - Close[t]) / Close[t]
-                # FIXED: Was using df['close'].shift(-5).pct_change(periods=5).shift(-5) which double-shifted!
-                # Correct formula:
-                df['target'] = (df['close'].shift(-5) - df['close']) / df['close']
-                
-                # Drop NaNs created by shifting
-                df.dropna(inplace=True)
-                
-                if len(df) > 100:
-                    # Features (X) and Target (y)
-                    feature_cols = [c for c in df.columns if c not in ['target', 'datetime', 'symbol', 'open', 'high', 'low', 'close', 'volume']]
-                    X = df[feature_cols]
-                    y = df['target'] * 100 # Scale to percentage
-                    
-                    # TRAIN MODELS (The Missing Link!)
-                    self.rf_model.fit(X, y)
-                    self.xgb_model.fit(X, y)
-                    
-                    self.is_trained = True
-                    self.bars_since_train = 0
-                    print(f"✅ ML Strategy: Training Complete. (Rows: {len(df)})")
-                else:
-                    print("⚠️  ML Strategy: Not enough data after processing to train.")
-            except Exception as e:
-                print(f"❌ ML Strategy Training Failed: {e}")
+            # Check if training is already in progress
+            if hasattr(self, 'training_thread') and self.training_thread.is_alive():
+                # print(f"⏳ ML Strategy: Training already in progress for {self.symbol}...")
                 return
+
+            print(f"🧠 ML Strategy: Starting background training for {self.symbol}...")
+            
+            # Define training function to run in thread
+            def train_models_background(bars_data):
+                try:
+                    df = self._prepare_features(bars_data)
+                    
+                    # Create Targets (Shifted Returns)
+                    df['target'] = (df['close'].shift(-5) - df['close']) / df['close']
+                    df.dropna(inplace=True)
+                    
+                    if len(df) > 100:
+                        feature_cols = [c for c in df.columns if c not in ['target', 'datetime', 'symbol', 'open', 'high', 'low', 'close', 'volume']]
+                        X = df[feature_cols]
+                        y = df['target'] * 100 
+                        
+                        # Train new models
+                        new_rf = RandomForestRegressor(
+                            n_estimators=200, max_depth=8, min_samples_split=10, 
+                            min_samples_leaf=4, max_features='sqrt', n_jobs=1, # n_jobs=1 to avoid thread contention
+                            random_state=42
+                        )
+                        new_xgb = XGBRegressor(
+                            n_estimators=200, max_depth=6, learning_rate=0.05, 
+                            subsample=0.8, colsample_bytree=0.8, min_child_weight=3, 
+                            tree_method='hist', n_jobs=1, # n_jobs=1 to avoid thread contention
+                            random_state=42
+                        )
+                        
+                        new_rf.fit(X, y)
+                        new_xgb.fit(X, y)
+                        
+                        # Atomic swap
+                        self.rf_model = new_rf
+                        self.xgb_model = new_xgb
+                        self.is_trained = True
+                        self.bars_since_train = 0
+                        print(f"✅ ML Strategy: Background Training Complete for {self.symbol}. (Rows: {len(df)})")
+                    else:
+                        print("⚠️  ML Strategy: Not enough data for background training.")
+                except Exception as e:
+                    print(f"❌ ML Strategy Background Training Failed: {e}")
+
+            # Start training thread
+            import threading
+            # Copy bars to avoid race conditions if main thread modifies list (though list is replaced in loader)
+            # Deep copy might be slow, shallow copy of list is usually enough if dicts inside aren't mutated
+            import copy
+            bars_copy = copy.deepcopy(bars) 
+            
+            self.training_thread = threading.Thread(target=train_models_background, args=(bars_copy,))
+            self.training_thread.daemon = True # Daemon thread dies if main program exits
+            self.training_thread.start()
 
         # 3. INFERENCE (PREDICTION)
         if not self.is_trained:
