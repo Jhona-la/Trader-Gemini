@@ -151,11 +151,9 @@ class RiskManager:
                 
             quantity = dollar_size / current_price
             
-            # Rounding (Crypto usually allows decimals, Stocks integer)
-            if 'USDT' in signal_event.symbol:
-                quantity = round(quantity, 5)
-            else:
-                quantity = int(quantity)
+            # FIXED: Do NOT round here. Pass float to Executor.
+            # Executor uses ccxt.amount_to_precision() which is the source of truth.
+            # Rounding here causes bugs (e.g. int(0.5 ETH) = 0).
             
             if quantity <= 0:
                 return None
@@ -194,11 +192,7 @@ class RiskManager:
             
             quantity = dollar_size / current_price
             
-            # Rounding
-            if 'USDT' in signal_event.symbol:
-                quantity = round(quantity, 5)
-            else:
-                quantity = int(quantity)
+            # FIXED: Do NOT round here. Pass float to Executor.
             
             if quantity <= 0:
                 return None

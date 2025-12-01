@@ -479,7 +479,8 @@ def close_all_positions(portfolio, executor, crypto_symbols):
             # ------------------------
             
             # Sleep to respect API limits but allow faster reaction
-            time.sleep(5) 
+            # FIXED: Reduced from 5s to 1s to prevent signal staleness (TTL 10s)
+            time.sleep(1) 
             
     except KeyboardInterrupt:
         print("Stopping Trader Gemini...")

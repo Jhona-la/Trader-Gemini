@@ -109,9 +109,9 @@ class BinanceData(DataProvider):
         """
         Fetches ~200 hours of historical data (1h candles) for trend analysis.
         """
-        print("Fetching 1h historical data from Binance (200 hours)...")
+        print("Fetching 1h historical data from Binance (250 hours)...")
         limit = 500
-        hours = 200
+        hours = 250 # FIXED: Increased from 200 to 250 to ensure >200 closed candles for EMA-200
         
         for s in self.symbol_list:
             try:
