@@ -340,13 +340,28 @@ class MLStrategy(Strategy):
             # Dynamic Threshold based on Volatility/Regime
             entry_threshold = 0.15 # Base threshold (0.15% move)
             
-            # 1h Trend Filter
+            # 1h Trend Filter (Robust EMA Logic)
             trend_1h = 'NEUTRAL'
-            # (Simplified 1h trend check)
-            if 'rsi_1h' in last_row.columns:
-                rsi_1h = last_row['rsi_1h'].values[0]
-                if rsi_1h > 55: trend_1h = 'UP'
-                elif rsi_1h < 45: trend_1h = 'DOWN'
+            try:
+                # Use the 1h features we already calculated if available
+                if 'macd_1h' in last_row.columns:
+                    # We don't have EMAs in the dataframe, so let's calculate them quickly from 1h bars
+                    bars_1h = self.data_provider.get_latest_bars_1h(self.symbol, n=210)
+                    if len(bars_1h) >= 200:
+                        closes_1h = np.array([b['close'] for b in bars_1h[:-1]]) # Closed candles
+                        ema_50 = talib.EMA(closes_1h, timeperiod=50)[-1]
+                        ema_200 = talib.EMA(closes_1h, timeperiod=200)[-1]
+                        
+                        if ema_50 > ema_200:
+                            trend_1h = 'UP'
+                        else:
+                            trend_1h = 'DOWN'
+            except:
+                # Fallback to RSI check if EMA fails
+                if 'rsi_1h' in last_row.columns:
+                    rsi_1h = last_row['rsi_1h'].values[0]
+                    if rsi_1h > 55: trend_1h = 'UP'
+                    elif rsi_1h < 45: trend_1h = 'DOWN'
             
             # Logic
             if ensemble_return > entry_threshold:
