@@ -20,6 +20,8 @@ class Config:
     BINANCE_DEMO_SECRET_KEY = os.getenv("BINANCE_DEMO_SECRET_KEY", "")
     
     # === BINANCE FUTURES SETTINGS ===
+    # Default: USDT-Margined Futures (standard). 
+    # For COIN-Margined, code modifications in binance_executor would be needed (defaultType='delivery').
     BINANCE_USE_FUTURES = True  # Set to True to trade on Binance Futures instead of Spot
     BINANCE_LEVERAGE = 20  # Leverage for Futures trading (AGGRESSIVE: 20x)
     BINANCE_MARGIN_TYPE = "ISOLATED"  # Options: "ISOLATED" or "CROSS"

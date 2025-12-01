@@ -11,11 +11,15 @@ class BinanceData(DataProvider):
         self.symbol_list = symbol_list
         
         # Initialize CCXT Binance client with Config options
-        options = {'adjustForTimeDifference': True}
-        if Config.BINANCE_USE_FUTURES:
-            options['defaultType'] = 'future'
+        options = {
+            'adjustForTimeDifference': True,
+            'defaultType': 'future' if Config.BINANCE_USE_FUTURES else 'spot'
+        }
             
-        self.exchange = ccxt.binance({'options': options})
+        self.exchange = ccxt.binance({
+            'options': options,
+            'enableRateLimit': True  # CRITICAL: Prevent IP bans
+        })
         
         # Enable Demo/Testnet if configured
         if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:

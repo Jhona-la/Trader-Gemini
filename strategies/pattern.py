@@ -44,13 +44,15 @@ class PatternStrategy(Strategy):
                 morning_star = talib.CDLMORNINGSTAR(opens, highs, lows, closes)
                 evening_star = talib.CDLEVENINGSTAR(opens, highs, lows, closes)
                 
-                # Check last candle for pattern
-                is_bullish_engulfing = engulfing[-1] == 100
-                is_bearish_engulfing = engulfing[-1] == -100
-                is_hammer = hammer[-1] == 100
-                is_shooting_star = shooting_star[-1] == 100
-                is_morning_star = morning_star[-1] == 100
-                is_evening_star = evening_star[-1] == 100
+                # Check LAST CLOSED candle for pattern ([-2])
+                # We do NOT use [-1] because it is the current OPEN candle and the pattern might disappear before close.
+                # Using [-2] ensures the pattern is confirmed.
+                is_bullish_engulfing = engulfing[-2] == 100
+                is_bearish_engulfing = engulfing[-2] == -100
+                is_hammer = hammer[-2] == 100
+                is_shooting_star = shooting_star[-2] == 100
+                is_morning_star = morning_star[-2] == 100
+                is_evening_star = evening_star[-2] == 100
                 
                 if not (is_bullish_engulfing or is_bearish_engulfing or is_hammer or is_shooting_star or is_morning_star or is_evening_star):
                     continue
