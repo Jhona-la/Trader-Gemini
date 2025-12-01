@@ -228,25 +228,19 @@ class RiskManager:
             if not self.portfolio.reserve_cash(dollar_size):
                 print(f"⚠️  Risk Manager: Failed to reserve ${dollar_size:.2f}")
                 return None
-
-        # 4. ACTIVATE COOLDOWN ON EXIT
-        if signal_event.signal_type == 'EXIT':
-            # OPTIMIZED COOLDOWN: Faster re-entry for more opportunities
-            # But we must respect the regime to avoid chop
-            cooldown_duration = self.base_cooldown_minutes
-            
-            if self.current_regime == 'TRENDING_BULL':
-                cooldown_duration = 2   # Very aggressive in bull runs (buy dips fast)
-            elif self.current_regime == 'TRENDING_BEAR':
-                cooldown_duration = 2   # Very aggressive in bear runs (sell rallies fast)
+                cooldown_duration = 2   # Very aggressive in bear runs
             elif self.current_regime == 'CHOPPY':
                 cooldown_duration = 15  # Stay out longer in chop
             elif self.current_regime == 'RANGING':
                 cooldown_duration = 5   # Standard for mean reversion
+        else:
+            # ENTRY Cooldown (Debounce): Prevent double-entry on rapid signals
+            # 1 minute is enough to wait for fill and portfolio update
+            cooldown_duration = 1
                 
-            from datetime import timedelta
-            self.cooldowns[signal_event.symbol] = signal_event.datetime + timedelta(minutes=cooldown_duration)
-            print(f"❄️  Risk Manager: Cooldown activated for {signal_event.symbol} ({cooldown_duration}m) until {self.cooldowns[signal_event.symbol]}")
+        from datetime import timedelta
+        self.cooldowns[signal_event.symbol] = signal_event.datetime + timedelta(minutes=cooldown_duration)
+        print(f"❄️  Risk Manager: Cooldown activated for {signal_event.symbol} ({cooldown_duration}m) until {self.cooldowns[signal_event.symbol]}")
         
         # 5. Create Order
         order_type = 'MKT'
