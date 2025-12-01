@@ -136,16 +136,45 @@ def close_all_positions(portfolio, executor, crypto_symbols):
     print("="*50)
     print("🔒 Shutdown complete. All data saved.")
 
-def main():
+    import argparse
+    
+    # 0. Parse Command Line Arguments
+    parser = argparse.ArgumentParser(description='Trader Gemini Bot')
+    parser.add_argument('--mode', type=str, choices=['spot', 'futures'], help='Trading mode: spot or futures')
+    args = parser.parse_args()
+    
+    # 1. Override Configuration based on CLI Argument
+    if args.mode:
+        if args.mode == 'futures':
+            print("🔵 MODE: FUTURES (Override from CLI)")
+            Config.BINANCE_USE_FUTURES = True
+        elif args.mode == 'spot':
+            print("🟡 MODE: SPOT (Override from CLI)")
+            Config.BINANCE_USE_FUTURES = False
+            
+    # 2. Dynamic Data Directory & Pairs Update (Crucial for Dual Terminal)
+    if Config.BINANCE_USE_FUTURES:
+        Config.DATA_DIR = "dashboard/data/futures"
+        Config.TRADING_PAIRS = Config.CRYPTO_FUTURES_PAIRS
+        print(f"📂 Data Directory: {Config.DATA_DIR}")
+    else:
+        Config.DATA_DIR = "dashboard/data/spot"
+        Config.TRADING_PAIRS = Config.CRYPTO_SPOT_PAIRS
+        print(f"📂 Data Directory: {Config.DATA_DIR}")
+        
+    # Ensure directory exists
+    if not os.path.exists(Config.DATA_DIR):
+        os.makedirs(Config.DATA_DIR, exist_ok=True)
+
     print("Starting Trader Gemini...")
     
     # NOTE: status.csv is NOT deleted on startup to preserve historical dashboard data
     # The file will continuously grow with historical snapshots
     
-    # 1. Create Event Queue
+    # 3. Create Event Queue
     events_queue = queue.Queue()
     
-    # 2. Initialize Data Handlers
+    # 4. Initialize Data Handlers
     # Binance (Crypto)
     crypto_symbols = Config.TRADING_PAIRS
     binance_data = BinanceData(events_queue, crypto_symbols)
