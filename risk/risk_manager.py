@@ -30,13 +30,38 @@ class RiskManager:
         Risk Amount = Capital * Max Risk %
         Position Size = Risk Amount / (Price * Stop Loss %)
         """
+        # CRITICAL FIX: Use actual portfolio capital if available
+        if self.portfolio:
+            # Use Total Equity (Cash + Unrealized PnL) for sizing
+            # This allows compounding gains and shrinking on losses
+            capital = self.portfolio.get_total_equity()
+        else:
+            capital = self.current_capital # Fallback (should not happen in prod)
+
         # Default: 15% of capital per trade (Aggressive sizing for crypto)
-        target_exposure = self.current_capital * 0.15 
+        # Dynamic Scaling:
+        # If Capital < 1000: Use 20% (to grow faster)
+        # If Capital > 10000: Use 10% (to preserve wealth)
+        if capital < 1000:
+            base_pct = 0.20
+        elif capital > 10000:
+            base_pct = 0.10
+        else:
+            base_pct = 0.15
+            
+        target_exposure = capital * base_pct
         
         # Volatility Sizing (ATR)
         if hasattr(signal_event, 'atr') and signal_event.atr is not None and signal_event.atr > 0:
-            risk_amount = self.current_capital * self.max_risk_per_trade
+            # Risk 1% of capital per trade
+            risk_amount = capital * self.max_risk_per_trade
             stop_distance = signal_event.atr * 2.0
+            # Position = Risk / StopDistance
+            # e.g. Risk $100, Stop $50 away -> Buy 2 units
+            if stop_distance > 0:
+                vol_adjusted_size = (risk_amount / stop_distance) * current_price
+                # Cap at 2x target exposure to prevent massive leverage on low vol
+                target_exposure = min(vol_adjusted_size, target_exposure * 2.0)
         
         # Adjust by signal strength (Kelly Criterion-lite)
         if hasattr(signal_event, 'strength'):

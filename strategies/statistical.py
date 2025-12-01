@@ -97,10 +97,18 @@ class StatisticalStrategy(Strategy):
                 # Short Spread = Sell Y, Buy X (Expect ratio to go down)
                 
                 # Filter: Don't mean revert if Trend is too strong (ADX > 30)
-                if ratio_adx > 30:
-                    # Unless Z-Score is EXTREME (e.g. > 4), then maybe it's a climax
-                    if abs(z_score) < 4.0:
-                        return
+                # DYNAMIC Z-SCORE: If trend is strong, require higher Z-score to enter (don't catch falling knife)
+                effective_z_entry = self.z_entry
+                
+                if ratio_adx > 25:
+                    effective_z_entry = self.z_entry * 1.5 # Require 2.25 sigma if trending
+                    print(f"  ⚠️ Strong Trend in Spread (ADX={ratio_adx:.1f}). Widening bands to {effective_z_entry:.2f}")
+                
+                if ratio_adx > 40:
+                     # Extreme trend, block mean reversion unless extreme extension
+                     effective_z_entry = 4.0
+                     
+                # Check Portfolio for actual positions (Source of Truth)
 
                 # Check Portfolio for actual positions (Source of Truth)
                 # We need to know if we are currently holding the pair
@@ -145,7 +153,7 @@ class StatisticalStrategy(Strategy):
                     return # Stop processing
 
                 if self.invested == 0:
-                    if z_score < -self.z_entry:
+                    if z_score < -effective_z_entry:
                         # Check Trend for Y (ETH)
                         trend_y = self._get_1h_trend(y_sym)
                         if trend_y == 'DOWN':
@@ -160,7 +168,7 @@ class StatisticalStrategy(Strategy):
                             self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'SHORT', strength=strength, atr=atr_x))
                             # self.invested = 1 # Wait for fill
                             
-                    elif z_score > self.z_entry:
+                    elif z_score > effective_z_entry:
                         # Check Trend for X (BTC)
                         trend_x = self._get_1h_trend(x_sym)
                         if trend_x == 'DOWN':
