@@ -66,28 +66,35 @@ class Engine:
             for strategy in self.strategies:
                 try:
                     # ORCHESTRATION LOGIC
+                    # ORCHESTRATION LOGIC (STRICT GATING)
                     strat_name = strategy.__class__.__name__
                     should_run = True
                     
-                    if current_regime == 'TRENDING_BULL':
-                        # In strong Bull trends, avoid Mean Reversion (Statistical)
-                        if 'Statistical' in strat_name:
+                    if current_regime == 'TRENDING_BULL' or current_regime == 'TRENDING_BEAR':
+                        # TRENDING MARKETS:
+                        # ✅ ALLOW: MLStrategy (Trend Following), PatternStrategy (Continuation)
+                        # ❌ BLOCK: StatisticalStrategy (Mean Reversion), TechnicalStrategy (RSI Reversion)
+                        if 'Statistical' in strat_name or 'Technical' in strat_name:
                             should_run = False
+                            # print(f"  🛑 Blocking {strat_name} in {current_regime} (Trend Mode)")
                     
-                    elif current_regime == 'TRENDING_BEAR':
-                        # In strong Bear trends, avoid Mean Reversion
-                        if 'Statistical' in strat_name:
+                    elif current_regime == 'RANGING':
+                        # SIDEWAYS MARKETS:
+                        # ✅ ALLOW: StatisticalStrategy (Pairs), TechnicalStrategy (RSI Reversion)
+                        # ❌ BLOCK: MLStrategy (Trend Following - Whipsaw Risk)
+                        if 'MLStrategy' in strat_name:
+                            should_run = False
+                            # print(f"  🛑 Blocking {strat_name} in {current_regime} (Range Mode)")
+                            
+                    elif current_regime == 'CHOPPY':
+                        # UNCERTAIN MARKETS:
+                        # ✅ ALLOW: TechnicalStrategy (Scalping), PatternStrategy (Short-term)
+                        # ❌ BLOCK: MLStrategy, StatisticalStrategy (Too risky)
+                        if 'MLStrategy' in strat_name or 'Statistical' in strat_name:
                             should_run = False
                             
-                    elif current_regime == 'RANGING':
-                        # In Ranging markets, Trend Following (ML/Technical) might struggle
-                        # But ML is adaptive, so we keep it. Technical might be choppy.
-                        pass
-                        
                     if should_run:
                         strategy.calculate_signals(event)
-                    # else:
-                        # print(f"  💤 Skipping {strat_name} in {current_regime}")
                         
                 except Exception as e:
                     print(f"⚠️  Strategy Error ({strategy.__class__.__name__}): {e}")
