@@ -238,11 +238,14 @@ class MLStrategy(Strategy):
         # Longer timeframes are more reliable (1h > 15m > 5m > 1m)
         # Returns: -1.0 (all bearish) to +1.0 (all bullish)
         # VECTORIZED for pandas Series compatibility
+        # CRITICAL FIX: Corrected inverted logic (was x < 50, now x > 50)
+        # RSI > 50 = Bullish → LONG signal (+)
+        # RSI < 50 = Bearish → SHORT signal (-)
         confluence = 0.0
-        confluence += df['rsi'].apply(lambda x: 0.15 if x < 50 else -0.15)  # 1m: 15% weight
-        confluence += df.get('rsi_5m', pd.Series([50] * len(df))).apply(lambda x: 0.25 if x < 50 else -0.25)  # 5m: 25%
-        confluence += df.get('rsi_15m', pd.Series([50] * len(df))).apply(lambda x: 0.30 if x < 50 else -0.30)  # 15m: 30%
-        confluence += df.get('rsi_1h', pd.Series([50] * len(df))).apply(lambda x: 0.30 if x < 50 else -0.30)   # 1h: 30%
+        confluence += df['rsi'].apply(lambda x: 0.15 if x > 50 else -0.15)  # 1m: 15% weight
+        confluence += df.get('rsi_5m', pd.Series([50] * len(df))).apply(lambda x: 0.25 if x > 50 else -0.25)  # 5m: 25%
+        confluence += df.get('rsi_15m', pd.Series([50] * len(df))).apply(lambda x: 0.30 if x > 50 else -0.30)  # 15m: 30%
+        confluence += df.get('rsi_1h', pd.Series([50] * len(df))).apply(lambda x: 0.30 if x > 50 else -0.30)   # 1h: 30%
         df['confluence_score'] = confluence
         
         # Drop unused columns that might cause NaNs

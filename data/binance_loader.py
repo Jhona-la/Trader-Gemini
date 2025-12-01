@@ -212,9 +212,12 @@ class BinanceData(DataProvider):
                 }
                 
                 # Avoid duplicates (simple check)
+                # CRITICAL FIX: Entire if-else MUST be inside lock to prevent race conditions
+                is_new_bar = False
                 with self._data_lock:
                     if not self.latest_data[s]:
                         self.latest_data[s].append(bar_data)
+                        is_new_bar = True
                     elif self.latest_data[s][-1]['datetime'] != timestamp:
                         # New bar detected
                         self.latest_data[s].append(bar_data)
@@ -222,18 +225,18 @@ class BinanceData(DataProvider):
                         # RAM OPTIMIZATION: Limit buffer size to prevent memory growth
                         if len(self.latest_data[s]) > 2000:
                             self.latest_data[s] = self.latest_data[s][-2000:]
-                    
+                        
+                        is_new_bar = True
+                    else:
+                        # SAME BAR: Update it in place! (NOW INSIDE LOCK)
+                        # Previously this was OUTSIDE the lock, causing race conditions
+                        self.latest_data[s][-1] = bar_data
+                        is_new_bar = False
+                
+                # Print and event OUTSIDE lock (don't hold lock during I/O)
+                if is_new_bar:
                     print(f"New Bar for {s}: {timestamp} - Close: {bar_data['close']}")
                     self.events_queue.put(MarketEvent())
-                else:
-                    # SAME BAR: Update it in place! (CRITICAL FIX)
-                    # Previously we ignored updates, so we only had the "Open" price stored as "Close"
-                    self.latest_data[s][-1] = bar_data
-                    # We don't necessarily need to fire a MarketEvent on every tick update to avoid spam,
-                    # but for real-time ML, we might want to.
-                    # For now, let's fire it so strategies see the price moving.
-                    # self.events_queue.put(MarketEvent()) # Uncomment if we want tick-level updates
-                    pass
                 
                 # MULTI-TIMEFRAME: Also update 1h candles
                 # Fetch 1h candle (limit=2 to get latest closed or current open)
