@@ -47,11 +47,34 @@ class BinanceData(DataProvider):
         self.latest_data_5m = {s: [] for s in symbol_list}  # NEW: 5m candles storage
         self.latest_data_15m = {s: [] for s in symbol_list}  # NEW: 15m candles storage
         
+        # Thread Safety Lock
+        import threading
+        self._data_lock = threading.Lock()
+        
         # Fetch initial history at startup
         self.fetch_initial_history()
         self.fetch_initial_history_1h()
         self.fetch_initial_history_5m()  # NEW
         self.fetch_initial_history_15m()  # NEW
+
+    # ... (fetch methods remain same, but we should lock inside them if they were called concurrently, 
+    # but they are called in init so it's fine. The critical part is update_bars vs get_latest_bars)
+
+    def get_latest_bars(self, symbol, n=1):
+        """
+        Returns the last N bars from the latest_symbol list.
+        Thread-safe deep copy.
+        """
+        try:
+            with self._data_lock:
+                # ZERO-TRUST: Return a DEEP COPY to prevent strategies from corrupting shared data
+                import copy
+                bars_list = copy.deepcopy(self.latest_data[symbol])
+        except KeyError:
+            print("That symbol is not available in the historical data set.")
+            raise
+        
+        return bars_list[-n:]
 
     def fetch_initial_history(self):
         """
@@ -189,15 +212,16 @@ class BinanceData(DataProvider):
                 }
                 
                 # Avoid duplicates (simple check)
-                if not self.latest_data[s]:
-                    self.latest_data[s].append(bar_data)
-                elif self.latest_data[s][-1]['datetime'] != timestamp:
-                    # New bar detected
-                    self.latest_data[s].append(bar_data)
-                    
-                    # RAM OPTIMIZATION: Limit buffer size to prevent memory growth
-                    if len(self.latest_data[s]) > 2000:
-                        self.latest_data[s] = self.latest_data[s][-2000:]
+                with self._data_lock:
+                    if not self.latest_data[s]:
+                        self.latest_data[s].append(bar_data)
+                    elif self.latest_data[s][-1]['datetime'] != timestamp:
+                        # New bar detected
+                        self.latest_data[s].append(bar_data)
+                        
+                        # RAM OPTIMIZATION: Limit buffer size to prevent memory growth
+                        if len(self.latest_data[s]) > 2000:
+                            self.latest_data[s] = self.latest_data[s][-2000:]
                     
                     print(f"New Bar for {s}: {timestamp} - Close: {bar_data['close']}")
                     self.events_queue.put(MarketEvent())

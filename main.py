@@ -276,8 +276,21 @@ def close_all_positions(portfolio, executor, crypto_symbols):
     signal.signal(signal.SIGINT, signal_handler)
     
     # 9. Run Loop
+    # PERIODIC SYNC: Track time for balance synchronization
+    import time as time_module
+    last_sync_time = time_module.time()
+    SYNC_INTERVAL = 3600  # 60 minutes in seconds
+    
     try:
         while True:
+            # PERIODIC BALANCE SYNC (Every 60 minutes)
+            # This prevents drift due to Funding Fees in Futures
+            current_time = time_module.time()
+            if current_time - last_sync_time >= SYNC_INTERVAL:
+                print("\n🔄 Periodic Balance Sync (60min interval)...")
+                binance_executor.sync_portfolio_state(portfolio)
+                last_sync_time = current_time
+            
             # Update Data (Crypto only)
             binance_data.update_bars()
             # ibkr_data.update_bars()  # Disabled - crypto only

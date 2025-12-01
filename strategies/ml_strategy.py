@@ -289,7 +289,21 @@ class MLStrategy(Strategy):
                     df = self._prepare_features(bars_data)
                     
                     # Create Targets (Shifted Returns)
-                    df['target'] = (df['close'].shift(-5) - df['close']) / df['close']
+                    # CRITICAL FIX: Target is NET PROFIT, not just price movement.
+                    # We subtract 0.2% (0.002) to account for round-trip fees + slippage.
+                    # If price moves +0.1%, target is -0.1% (Loss). Model learns to avoid small moves.
+                    raw_return = (df['close'].shift(-5) - df['close']) / df['close']
+                    
+                    # For LONG: Target = Return - Fees
+                    # For SHORT: Target = -Return - Fees (But we train regression on magnitude, so we handle sign later)
+                    # Actually, for regression we want to predict raw return, but we filter labels?
+                    # Better: We predict raw return, but we penalize small returns during training?
+                    # No, standard regression is fine, but we must set ENTRY THRESHOLD high enough.
+                    # BUT user says model is "dumb". Let's try to make the target "Risk-Adjusted Return".
+                    
+                    # Let's keep raw return but subtract a "cost of business" bias
+                    # This shifts the distribution so 0.0 becomes -0.002
+                    df['target'] = raw_return - 0.002 # Subtract 0.2% cost bias
                     df.dropna(inplace=True)
                     
                     if len(df) > 100:
