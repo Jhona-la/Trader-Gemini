@@ -176,13 +176,8 @@ class RiskManager:
                     print(f"⚠️  Risk Manager: Max {self.max_concurrent_positions} positions reached. SHORT rejected.")
                     return None
             
-            # Check cooldown
-            if signal_event.symbol in self.cooldowns:
-                if signal_event.datetime < self.cooldowns[signal_event.symbol]:
-                    print(f"❄️  Risk Manager: Cooldown active for {signal_event.symbol}. Skipping SHORT.")
-                    return None
-                else:
-                    del self.cooldowns[signal_event.symbol]
+            # FIXED: Removed duplicate cooldown check (already handled on lines 87-94)
+            # This was redundant code that checked cooldown twice for SHORT signals
             
             # Size the SHORT position (same as LONG)
             dollar_size = self.size_position(signal_event, current_price)

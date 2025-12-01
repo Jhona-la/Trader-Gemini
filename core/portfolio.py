@@ -211,23 +211,18 @@ class Portfolio:
                     
                     print(f"📈 SHORT Closed: {event.symbol} PnL=${pnl:.2f} (Entry: ${entry_price:.4f}, Exit: ${exit_price:.4f})")
                     
-                    # Reset LWM if fully closed
-                    if abs(pos['quantity']) < 0.00001:
+                    # FIXED: Value-based dust detection (consistent with close_position method)
+                    # Check if remaining position is worth less than $1
+                    position_value = abs(pos['quantity']) * pos.get('current_price', exit_price)
+                    if position_value < 1.0:  # Less than $1 = dust
                         pos['quantity'] = 0
                         pos['low_water_mark'] = 0
                         pos['stop_distance'] = 0
                     
-                    # Release Pending Cash (Margin was reserved)
-                    with self._cash_lock:
-                        # In Futures, we reserved 'dollar_size' (margin) in RiskManager?
-                        # RiskManager reserves 'dollar_size' which is Notional / Leverage?
-                        # No, RiskManager reserves Full Notional usually?
-                        # Let's check RiskManager. It reserves 'dollar_size'.
-                        # If RiskManager reserves Margin, we release Margin.
-                        # If RiskManager reserves Notional, we release Notional.
-                        # Assuming RiskManager reserves Margin for Futures (we should verify this).
-                        # For now, we release whatever was pending.
-                        self.pending_cash = max(0, self.pending_cash - margin_impact) # Release the margin we reserved
+                    # CRITICAL FIX: Removed incorrect line that was:
+                    # self.pending_cash = max(0, self.pending_cash - margin_impact)
+                    # Margin is already released from used_margin on line 195 above.
+                    # This line was redundant and caused margin accounting errors.
                 
                 else:
                     # === OPENING/ADDING LONG POSITION ===
@@ -308,7 +303,9 @@ class Portfolio:
                     
                     pos['quantity'] -= event.quantity
                     
-                    if pos['quantity'] <= 0.00001:
+                    # FIXED: Value-based dust detection (consistent with close_position method)
+                    position_value = pos['quantity'] * pos.get('current_price', fill_price)
+                    if position_value < 1.0:  # Less than $1 = dust
                         pos['quantity'] = 0
                         pos['high_water_mark'] = 0
                         pos['stop_distance'] = 0
