@@ -207,13 +207,17 @@ class RiskManager:
         # 4. ACTIVATE COOLDOWN ON EXIT
         if signal_event.signal_type == 'EXIT':
             # OPTIMIZED COOLDOWN: Faster re-entry for more opportunities
+            # But we must respect the regime to avoid chop
             cooldown_duration = self.base_cooldown_minutes
+            
             if self.current_regime == 'TRENDING_BULL':
-                cooldown_duration = 3   # Very aggressive in bull runs
-            elif self.current_regime == 'CHOPPY':
-                cooldown_duration = 10  # Moderate in chop
+                cooldown_duration = 2   # Very aggressive in bull runs (buy dips fast)
             elif self.current_regime == 'TRENDING_BEAR':
-                cooldown_duration = 20  # Conservative in bear
+                cooldown_duration = 2   # Very aggressive in bear runs (sell rallies fast)
+            elif self.current_regime == 'CHOPPY':
+                cooldown_duration = 15  # Stay out longer in chop
+            elif self.current_regime == 'RANGING':
+                cooldown_duration = 5   # Standard for mean reversion
                 
             from datetime import timedelta
             self.cooldowns[signal_event.symbol] = signal_event.datetime + timedelta(minutes=cooldown_duration)
