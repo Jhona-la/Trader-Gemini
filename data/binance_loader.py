@@ -18,7 +18,8 @@ class BinanceData(DataProvider):
             
         self.exchange = ccxt.binance({
             'options': options,
-            'enableRateLimit': True  # CRITICAL: Prevent IP bans
+            'enableRateLimit': True,  # CRITICAL: Prevent IP bans
+            'timeout': 10000          # CRITICAL: 10s timeout to prevent freezing
         })
         
         # Enable Demo/Testnet if configured

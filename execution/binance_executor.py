@@ -43,6 +43,7 @@ class BinanceExecutor:
             'apiKey': api_key,
             'secret': secret_key,
             'enableRateLimit': True,
+            'timeout': 10000, # CRITICAL: 10s timeout
             'options': options
         })
         

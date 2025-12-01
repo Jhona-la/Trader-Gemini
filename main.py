@@ -186,6 +186,7 @@ def close_all_positions(portfolio, executor, crypto_symbols):
     
     # Sentiment Analysis
     sentiment_loader = SentimentLoader()
+    sentiment_loader.start_background_thread() # Start non-blocking updates
     
     # Market Regime Detector
     from core.market_regime import MarketRegimeDetector

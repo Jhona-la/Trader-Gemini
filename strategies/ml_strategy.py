@@ -372,7 +372,9 @@ class MLStrategy(Strategy):
 
             # 4. SIGNAL GENERATION
             # Dynamic Threshold based on Volatility/Regime
-            entry_threshold = 0.15 # Base threshold (0.15% move)
+            # CRITICAL UPDATE: Increased from 0.15% to 0.25% to cover Fees (0.10%) + Slippage (0.04%)
+            # Net Target: 0.25% - 0.14% = 0.11% Profit per trade
+            entry_threshold = 0.25 # Base threshold (0.25% move)
             
             # 1h Trend Filter (Robust EMA Logic)
             trend_1h = 'NEUTRAL'
