@@ -328,7 +328,9 @@ class MLStrategy(Strategy):
             # Sentiment Adjustment
             sentiment_score = 0
             if self.sentiment_loader:
-                sentiment_score = self.sentiment_loader.get_sentiment(self.symbol)
+                # CRITICAL FIX: get_sentiment() takes no parameters (it returns overall market sentiment)
+                # Previously was calling with self.symbol which caused TypeError
+                sentiment_score = self.sentiment_loader.get_sentiment()
                 if sentiment_score > 0.2:
                     ensemble_return += 0.1
                 elif sentiment_score < -0.2:
