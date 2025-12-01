@@ -223,14 +223,17 @@ def close_all_positions(portfolio, executor, crypto_symbols):
         ml_strat = MLStrategy(binance_data, events_queue, symbol=symbol, sentiment_loader=sentiment_loader)
         ml_strategies.append(ml_strat)
     
-    # CRASH RECOVERY DISABLED: Now syncing with Binance as source of truth
-    
-    # CRASH RECOVERY: Try to restore state from live_status.json
-    # DISABLED: User requested to rely on Binance as source of truth
-    # live_status_path = os.path.join(Config.DATA_DIR, "live_status.json")
-    # if os.path.exists(live_status_path):
-    #     print(f"🔄 Checking for previous session state in {live_status_path}...")
-    #     portfolio.load_portfolio_state(live_status_path)
+    # CRASH RECOVERY: Restore state from status.json (Metadata: HWM, Strategy IDs)
+    # We do this BEFORE syncing with Binance to preserve local metadata that Binance doesn't have.
+    json_status_path = os.path.join(Config.DATA_DIR, "status.json")
+    if os.path.exists(json_status_path):
+        print(f"🔄 Checking for previous session state in {json_status_path}...")
+        if portfolio.load_portfolio_state(json_status_path):
+            print("✅ Local state restored (Metadata preserved). Now syncing with Binance...")
+        else:
+            print("⚠️ Failed to load local state. Starting fresh.")
+    else:
+        print("ℹ️ No previous state found. Starting fresh.")
         
     risk_manager = RiskManager(max_concurrent_positions=5, portfolio=portfolio)
 

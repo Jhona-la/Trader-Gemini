@@ -386,26 +386,46 @@ class Portfolio:
 
     def save_status(self):
         """
-        Save current portfolio state to CSV for Dashboard.
+        Save current portfolio state to CSV for Dashboard AND JSON for Crash Recovery.
         """
         equity = self.get_total_equity()
         unrealized_pnl = equity - self.initial_capital - self.realized_pnl
         
-        status = {
-            'timestamp': datetime.now(),
+        # 1. Prepare State Data
+        state_data = {
+            'timestamp': datetime.now().isoformat(),
             'total_equity': equity,
             'cash': self.current_cash,
-            'used_margin': self.used_margin, # Log margin
+            'used_margin': self.used_margin,
             'realized_pnl': self.realized_pnl,
             'unrealized_pnl': unrealized_pnl,
-            'positions': json.dumps(self.positions),
-            'strategy_performance': json.dumps(self.strategy_performance)
+            'positions': self.positions, # Raw dict
+            'strategy_performance': self.strategy_performance # Raw dict
         }
         
+        # 2. Save Atomic JSON (For Recovery)
+        # We save to a dedicated JSON file that matches what load_portfolio_state expects
+        json_path = self.status_path.replace('.csv', '.json')
+        try:
+            with open(json_path, 'w') as f:
+                json.dump(state_data, f, indent=4)
+        except Exception as e:
+            print(f"⚠️ Failed to save portfolio state JSON: {e}")
+        
+        # 3. Save CSV (For Dashboard History)
+        # Flatten dicts for CSV
+        csv_data = state_data.copy()
+        csv_data['timestamp'] = datetime.now() # Use datetime object for pandas
+        csv_data['positions'] = json.dumps(self.positions)
+        csv_data['strategy_performance'] = json.dumps(self.strategy_performance)
+        
         # Append to status history
-        df = pd.DataFrame([status])
+        df = pd.DataFrame([csv_data])
         header = not os.path.exists(self.status_path)
-        df.to_csv(self.status_path, mode='a', header=header, index=False)
+        try:
+            df.to_csv(self.status_path, mode='a', header=header, index=False)
+        except Exception as e:
+            print(f"⚠️ Failed to save status CSV: {e}")
 
     def log_to_csv(self, data):
         df = pd.DataFrame([data])
