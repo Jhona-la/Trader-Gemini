@@ -236,6 +236,11 @@ class TechnicalStrategy(Strategy):
                         # Volume boost
                         if volume_ratio > 1.5:
                             strength = min(1.0, strength * 1.2)
+                            
+                        print(f"✅ SELL SIGNAL! {s} RSI:{current_rsi:.2f} Adaptive_Threshold:{dynamic_rsi_sell} (Strength={strength:.2f})")
+                        signal = SignalEvent(1, s, timestamp, 'SHORT', strength=strength, atr=current_atr)
+                        self.events_queue.put(signal)
+                        self.bought[s] = True # Mark as invested (short)
                         
                 # EXIT SHORT (oversold or trend reverses)
                 elif self.bought[s] and not in_uptrend:

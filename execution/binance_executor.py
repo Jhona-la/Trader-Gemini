@@ -195,10 +195,22 @@ class BinanceExecutor:
                 'recvWindow': 60000  # Generous window for network latency
             }
             
-            # 3. Execute using Raw API (Bypass CCXT create_order internals)
-            # This avoids the 'capital/config/getall' 404 error
-            logger.info(f"  🚀 Sending Raw Futures Order: {side.upper()} {qty_str} {symbol}")
-            order = self.exchange.fapiPrivatePostOrder(params)
+            # 3. Execute using Raw API (Futures) or Standard CCXT (Spot)
+            if Config.BINANCE_USE_FUTURES:
+                # FUTURES: Use Raw API to bypass potential CCXT issues with Testnet URLs
+                logger.info(f"  🚀 Sending Raw Futures Order: {side.upper()} {qty_str} {symbol}")
+                order = self.exchange.fapiPrivatePostOrder(params)
+            else:
+                # SPOT: Use standard CCXT create_order
+                # CCXT handles the endpoint selection automatically based on 'defaultType': 'spot'
+                logger.info(f"  🚀 Sending Spot Order: {side.upper()} {qty_str} {symbol}")
+                order = self.exchange.create_order(symbol, 'market', side, quantity)
+                # Normalize response to match Raw API structure for parsing below
+                # CCXT returns a unified structure, so we might need to adjust parsing logic
+                # But for simplicity, let's rely on CCXT's unified response if possible, 
+                # OR just use the raw 'info' field if available.
+                if 'info' in order:
+                    order = order['info'] # Use raw response for consistent parsing below
             
             # 4. Parse Response (Raw API returns different structure than CCXT unified)
             # Binance Futures Raw Response:
