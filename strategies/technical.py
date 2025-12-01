@@ -143,6 +143,25 @@ class TechnicalStrategy(Strategy):
                             else:
                                 trend_1h = 'DOWN'
                             
+                            # Calculate 1h RSI for confluence
+                            rsi_1h = talib.RSI(closes_1h, timeperiod=14)[-1]
+                except:
+                    pass
+
+                confluence = 0.0
+                # CRITICAL FIX: Corrected inverted logic (was x < 50, now x > 50)
+                # RSI > 50 = Bullish → LONG signal (+)
+                # RSI < 50 = Bearish → SHORT signal (-)
+                confluence += 0.15 if current_rsi > 50 else -0.15  # 1m: 15% weight
+                confluence += 0.25 if rsi_5m > 50 else -0.25      # 5m: 25% weight
+                confluence += 0.30 if rsi_15m > 50 else -0.30     # 15m: 30% weight
+                confluence += 0.30 if rsi_1h > 50 else -0.30      # 1h: 30% weight
+                # Total: 100% weight distributed across all timeframes
+
+                # PRINT TECH STATS (User Request)
+                print(f"[TECH] Strategy {s}: RSI={current_rsi:.1f} (5m:{rsi_5m:.1f} 15m:{rsi_15m:.1f}) Trend={'UP' if in_uptrend else 'DOWN'} (1h:{trend_1h}) ADX={current_adx:.1f} Confluence={confluence:+.2f}")
+
+                # ADAPTIVE RSI THRESHOLDS: Adjust based on volatility
                 current_price = bars[-1]['close']
                 atr_pct = (current_atr / current_price) * 100 if current_price > 0 else 0.5
                 
