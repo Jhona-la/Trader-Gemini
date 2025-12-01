@@ -55,24 +55,46 @@ class MarketRegimeDetector:
             current_price = closes_1m[-1]
             atr_pct = (atr / current_price) * 100 if current_price > 0 else 0.5
             
-            # 4. Regime Classification
+            # 4. Regime Classification (Raw)
             if adx > 25:
                 # Strong trend
                 if is_bullish:
-                    regime = 'TRENDING_BULL'
+                    raw_regime = 'TRENDING_BULL'
                 else:
-                    regime = 'TRENDING_BEAR'
+                    raw_regime = 'TRENDING_BEAR'
             elif adx < 20:
                 # Weak trend = ranging
-                regime = 'RANGING'
+                raw_regime = 'RANGING'
             else:
                 # ADX 20-25: uncertain/choppy
-                regime = 'CHOPPY'
+                raw_regime = 'CHOPPY'
+            
+            # 5. HYSTERESIS (Smoothing)
+            # Prevent flickering by requiring confirmation
+            # We store a history of raw regimes
+            if not hasattr(self, 'regime_history'):
+                self.regime_history = {}
+            
+            if symbol not in self.regime_history:
+                self.regime_history[symbol] = []
+            
+            self.regime_history[symbol].append(raw_regime)
+            if len(self.regime_history[symbol]) > 3:
+                self.regime_history[symbol].pop(0)
+            
+            # Only switch if last 3 readings are identical
+            # Otherwise keep previous regime
+            if len(self.regime_history[symbol]) == 3 and \
+               self.regime_history[symbol][0] == self.regime_history[symbol][1] == self.regime_history[symbol][2]:
+                final_regime = raw_regime
+            else:
+                # Fallback to last confirmed regime, or current raw if none
+                final_regime = self.last_regime.get(symbol, raw_regime)
             
             # Cache result
-            self.last_regime[symbol] = regime
+            self.last_regime[symbol] = final_regime
             
-            return regime
+            return final_regime
             
         except Exception as e:
             print(f"[WARN] Regime Detector Error for {symbol}: {e}")

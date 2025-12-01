@@ -116,6 +116,18 @@ class Engine:
                                 continue
 
         elif event.type == 'SIGNAL':
+            # 0. TTL CHECK (Time To Live)
+            # Prevent processing stale signals (older than 10s)
+            # This protects against system lag causing execution at wrong prices
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            # Assuming event.datetime is datetime object. If not, we skip check or parse.
+            if isinstance(event.datetime, datetime):
+                age = (now - event.datetime).total_seconds()
+                if age > 10:
+                    print(f"⚠️  Engine: Discarding STALE signal for {event.symbol} (Age: {age:.1f}s > 10s)")
+                    return
+
             # 1. Log Signal
             if self.portfolio:
                 self.portfolio.update_signal(event)

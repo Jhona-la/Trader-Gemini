@@ -136,6 +136,14 @@ class MLStrategy(Strategy):
         df['volume_sma'] = talib.SMA(df['volume'].values, timeperiod=20)
         df['volume_rel'] = df['volume'] / df['volume_sma']
         
+        # FEATURE CLIPPING (Robustness against Flash Crashes/Pumps)
+        # Limit relative features to reasonable bounds (+/- 20%)
+        # This prevents the model from seeing "impossible" values during extreme volatility
+        clip_cols = ['dist_ema_20', 'dist_ema_50', 'returns', 'momentum']
+        for c in clip_cols:
+            if c in df.columns:
+                df[c] = df[c].clip(lower=-0.2, upper=0.2)
+        
         # CRYPTO-SPECIFIC FEATURES (Sanitized)
         # On-Balance Volume (Use Slope/Change, NOT raw value)
         obv = talib.OBV(df['close'].values, df['volume'].values)
