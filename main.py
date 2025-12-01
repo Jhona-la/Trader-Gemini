@@ -167,7 +167,19 @@ def main():
     tech_strategy_crypto = TechnicalStrategy(binance_data, events_queue)
     
     # B. Statistical Strategy (Pairs Trading - Crypto only)
-    stat_strategy_crypto = StatisticalStrategy(binance_data, events_queue, pair=('ETH/USDT', 'BTC/USDT'))
+    # Note: Portfolio is initialized later, so we might need to pass it after init or reorder
+    # Let's reorder: Initialize Portfolio FIRST, then Strategies.
+    
+    # 4. Initialize Portfolio & Risk (Moved UP)
+    # FIX: Pass dynamic paths from Config so it uses 'futures' folder when in Futures mode
+    portfolio = Portfolio(
+        initial_capital=10000.0,
+        csv_path=os.path.join(Config.DATA_DIR, "trades.csv"),
+        status_path=os.path.join(Config.DATA_DIR, "status.csv")
+    )
+    
+    # Now we can initialize strategies that need portfolio
+    stat_strategy_crypto = StatisticalStrategy(binance_data, events_queue, portfolio=portfolio, pair=('ETH/USDT', 'BTC/USDT'))
     
     # C. Pattern Recognition Strategy (Candlestick Patterns)
     pattern_strategy = PatternStrategy(binance_data, events_queue)
@@ -182,12 +194,9 @@ def main():
         ml_strategies.append(ml_strat)
     
     # 4. Initialize Portfolio & Risk
-    # FIX: Pass dynamic paths from Config so it uses 'futures' folder when in Futures mode
-    portfolio = Portfolio(
-        initial_capital=10000.0,
-        csv_path=os.path.join(Config.DATA_DIR, "trades.csv"),
-        status_path=os.path.join(Config.DATA_DIR, "status.csv")
-    )
+    # Portfolio already initialized above for Strategy use
+    
+    # CRASH RECOVERY: Try to restore state from live_status.json
     
     # CRASH RECOVERY: Try to restore state from live_status.json
     # DISABLED: User requested to rely on Binance as source of truth

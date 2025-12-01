@@ -60,9 +60,39 @@ class Engine:
         if event.type == 'MARKET':
             # Notify strategies of new data
             # Notify strategies of new data
+            # Notify strategies of new data
+            # STRATEGY ORCHESTRATION: Selectively run strategies based on Regime
+            # We access regime from RiskManager (which is updated by Main)
+            current_regime = 'RANGING'
+            if self.risk_manager and hasattr(self.risk_manager, 'current_regime'):
+                current_regime = self.risk_manager.current_regime
+            
             for strategy in self.strategies:
                 try:
-                    strategy.calculate_signals(event)
+                    # ORCHESTRATION LOGIC
+                    strat_name = strategy.__class__.__name__
+                    should_run = True
+                    
+                    if current_regime == 'TRENDING_BULL':
+                        # In strong Bull trends, avoid Mean Reversion (Statistical)
+                        if 'Statistical' in strat_name:
+                            should_run = False
+                    
+                    elif current_regime == 'TRENDING_BEAR':
+                        # In strong Bear trends, avoid Mean Reversion
+                        if 'Statistical' in strat_name:
+                            should_run = False
+                            
+                    elif current_regime == 'RANGING':
+                        # In Ranging markets, Trend Following (ML/Technical) might struggle
+                        # But ML is adaptive, so we keep it. Technical might be choppy.
+                        pass
+                        
+                    if should_run:
+                        strategy.calculate_signals(event)
+                    # else:
+                        # print(f"  💤 Skipping {strat_name} in {current_regime}")
+                        
                 except Exception as e:
                     print(f"⚠️  Strategy Error ({strategy.__class__.__name__}): {e}")
                     # import traceback

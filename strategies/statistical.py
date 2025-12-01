@@ -8,9 +8,10 @@ class StatisticalStrategy(Strategy):
     """
     Pairs Trading Strategy based on Cointegration / Mean Reversion of the Spread.
     """
-    def __init__(self, data_provider, events_queue, pair=('ETH/USDT', 'BTC/USDT'), window=20, z_entry=1.5, z_exit=0.0):
+    def __init__(self, data_provider, events_queue, portfolio=None, pair=('ETH/USDT', 'BTC/USDT'), window=20, z_entry=1.5, z_exit=0.0):
         self.data_provider = data_provider
         self.events_queue = events_queue
+        self.portfolio = portfolio # Needed for state tracking
         self.pair = pair # Tuple of two symbols (Y, X) where Spread = Y - beta*X or Ratio = Y/X
         self.window = window
         self.z_entry = z_entry
@@ -100,6 +101,44 @@ class StatisticalStrategy(Strategy):
                 if abs(z_score) < 4.0:
                     return
 
+            # Check Portfolio for actual positions (Source of Truth)
+            # We need to know if we are currently holding the pair
+            # This is more robust than a local 'invested' flag
+            pos_y = self.portfolio.positions.get(y_sym, {'quantity': 0})
+            pos_x = self.portfolio.positions.get(x_sym, {'quantity': 0})
+            
+            qty_y = pos_y['quantity']
+            qty_x = pos_x['quantity']
+            
+            # Determine current state based on portfolio
+            current_state = 0
+            is_broken_state = False
+            
+            if qty_y > 0 and qty_x < 0:
+                current_state = 1 # Long Spread (Long Y, Short X)
+            elif qty_y < 0 and qty_x > 0:
+                current_state = -1 # Short Spread (Short Y, Long X)
+            elif qty_y != 0 or qty_x != 0:
+                # One is zero, the other is not -> BROKEN STATE (Naked position)
+                # Or both same direction (unlikely but possible error)
+                is_broken_state = True
+                print(f"⚠️  STAT STRATEGY BROKEN STATE: {y_sym}={qty_y}, {x_sym}={qty_x}")
+            
+            # Update local state to match reality
+            self.invested = current_state
+
+            # EMERGENCY HANDLING FOR BROKEN STATE
+            if is_broken_state:
+                # We have a naked position. We should close it to reset.
+                # This prevents the strategy from thinking it's flat and entering again.
+                if qty_y != 0:
+                    print(f"  🚑 Closing naked leg {y_sym}")
+                    self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'EXIT', strength=1.0))
+                if qty_x != 0:
+                    print(f"  🚑 Closing naked leg {x_sym}")
+                    self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'EXIT', strength=1.0))
+                return # Stop processing
+
             if self.invested == 0:
                 if z_score < -self.z_entry:
                     # Check Trend for Y (ETH)
@@ -108,16 +147,13 @@ class StatisticalStrategy(Strategy):
                         print(f"  >> Stat Skip {y_sym}: 1h Trend is DOWN")
                     else:
                         # DYNAMIC STRENGTH: Scale based on Z-Score magnitude
-                        # Z=2.0 -> 0.5 strength
-                        # Z=4.0 -> 0.9 strength
                         z_diff = abs(z_score) - self.z_entry
                         strength = min(1.0, 0.5 + (z_diff * 0.2))
                         
-                        
                         print(f"ENTRY LONG SPREAD: Buy {y_sym}, Short {x_sym} (Z={z_score:.2f}, Strength={strength:.2f}, 1h Trend: {trend_y})")
                         self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'LONG', strength=strength, atr=atr_y))
-                        self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'SHORT', strength=strength, atr=atr_x))  # ENABLED
-                        self.invested = 1
+                        self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'SHORT', strength=strength, atr=atr_x))
+                        # self.invested = 1 # Wait for fill
                         
                 elif z_score > self.z_entry:
                     # Check Trend for X (BTC)
@@ -130,29 +166,23 @@ class StatisticalStrategy(Strategy):
                         strength = min(1.0, 0.5 + (z_diff * 0.2))
                         
                         print(f"ENTRY SHORT SPREAD: Short {y_sym}, Buy {x_sym} (Z={z_score:.2f}, Strength={strength:.2f}, 1h Trend: {trend_x})")
-                        self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'SHORT', strength=strength, atr=atr_y))  # ENABLED
+                        self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'SHORT', strength=strength, atr=atr_y))
                         self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'LONG', strength=strength, atr=atr_x))
-                        self.invested = -1
+                        # self.invested = -1 # Wait for fill
 
-
-            
             elif self.invested == 1:
                 # Exit Long Spread when Z-score returns to mean
                 if z_score >= -self.z_exit:
-                    print(f"EXIT LONG SPREAD")
-                    # FIXED: Use EXIT to close positions, not reverse signals
-                    self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'EXIT', strength=1.0))  # Close Y long
-                    self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'EXIT', strength=1.0))  # Close X short
-                    self.invested = 0
+                    print(f"EXIT LONG SPREAD (Z={z_score:.2f})")
+                    self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'EXIT', strength=1.0))
+                    self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'EXIT', strength=1.0))
 
             elif self.invested == -1:
                 # Exit Short Spread when Z-score returns to mean
                 if z_score <= self.z_exit:
-                    print(f"EXIT SHORT SPREAD")
-                    # FIXED: Use EXIT to close positions
-                    self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'EXIT', strength=1.0))  # Close Y short
-                    self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'EXIT', strength=1.0))  # Close X long
-                    self.invested = 0
+                    print(f"EXIT SHORT SPREAD (Z={z_score:.2f})")
+                    self.events_queue.put(SignalEvent(2, y_sym, timestamp, 'EXIT', strength=1.0))
+                    self.events_queue.put(SignalEvent(2, x_sym, timestamp, 'EXIT', strength=1.0))
 
     def _get_1h_trend(self, symbol):
         """
