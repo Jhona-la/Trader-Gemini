@@ -526,11 +526,19 @@ class BinanceExecutor:
                             'avg_price': entry_price,
                             'current_price': entry_price # Will be updated by data feed
                         }
+                        
+                        # CRITICAL: Reconstruct Used Margin
+                        # Margin = Notional Value / Leverage
+                        # We assume Config.BINANCE_LEVERAGE is correct for all pairs
+                        position_value = abs(amt * entry_price)
+                        margin_required = position_value / Config.BINANCE_LEVERAGE
+                        portfolio.used_margin += margin_required
+                        
                         synced_count += 1
-                        logger.info(f"  -> Found Position: {internal_symbol} {amt} @ ${entry_price:.2f}")
+                        logger.info(f"  -> Found Position: {internal_symbol} {amt} @ ${entry_price:.2f} (Margin: ${margin_required:.2f})")
                 
                 if synced_count > 0:
-                    logger.info(f"Synced {synced_count} open positions from Binance Futures.")
+                    logger.info(f"Synced {synced_count} open positions. Total Used Margin: ${portfolio.used_margin:.2f}")
                 else:
                     logger.info("No open positions found on Binance.")
                     
