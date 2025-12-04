@@ -1,4 +1,5 @@
 import time
+import asyncio
 import queue
 import signal
 import sys
@@ -19,13 +20,14 @@ from core.events import OrderEvent, SignalEvent, MarketEvent
 from risk.risk_manager import RiskManager
 from execution.binance_executor import BinanceExecutor
 from data.sentiment_loader import SentimentLoader
+from utils.logger import logger
 
 def close_all_positions(portfolio, executor, crypto_symbols):
     """
     Emergency close all open positions.
     Called when bot is stopped (Ctrl+C).
     """
-    print("\n🛑 Shutdown signal received. Closing all open positions...")
+    logger.info("🛑 Shutdown signal received. Closing all open positions...")
     
     closed_count = 0
     for symbol, pos in portfolio.positions.items():
@@ -38,7 +40,7 @@ def close_all_positions(portfolio, executor, crypto_symbols):
                 direction = 'BUY'
                 quantity = abs(pos['quantity'])
             
-            print(f"  Closing {symbol}: {direction} {quantity} @ Market")
+            logger.info(f"  Closing {symbol}: {direction} {quantity} @ Market")
             
             # Create market order to close
             order = OrderEvent(symbol, 'MARKET', quantity, direction)
@@ -47,42 +49,53 @@ def close_all_positions(portfolio, executor, crypto_symbols):
             try:
                 executor.execute_order(order)
                 closed_count += 1
+            except ccxt.NetworkError as e:
+                logger.warning(f"  ⚠️  Network error closing {symbol}: {e}")
+                logger.warning(f"      Continuing with other positions...")
+            except ccxt.ExchangeError as e:
+                logger.warning(f"  ⚠️  Exchange error closing {symbol}: {e}")
             except Exception as e:
-                print(f"  ⚠️  Failed to close {symbol}: {e}")
+                logger.error(f"  ⚠️  Unexpected error closing {symbol}: {e}")
     
     if closed_count > 0:
-        print(f"✅ Closed {closed_count} position(s). Waiting 2 seconds for settlement...")
+        logger.info(f"✅ Closed {closed_count} position(s). Waiting 2 seconds for settlement...")
         time.sleep(2)
     else:
-        print("✅ No open positions to close.")
+        logger.info("✅ No open positions to close.")
     
-    print("\n" + "="*50)
-    print("📊 SESSION SUMMARY")
-    print("="*50)
+    logger.info("="*50)
+    logger.info("📊 SESSION SUMMARY")
+    logger.info("="*50)
     
     # Calculate Session Stats
     total_equity = portfolio.get_total_equity()
     pnl = total_equity - portfolio.initial_capital
     pnl_pct = (pnl / portfolio.initial_capital) * 100
     
-    print(f"💰 Final Equity:   ${total_equity:,.2f}")
-    print(f"📈 Total PnL:      ${pnl:,.2f} ({pnl_pct:+.2f}%)")
-    print(f"💵 Cash Balance:   ${portfolio.current_cash:,.2f}")
-    print("-" * 50)
+    logger.info(f"💰 Final Equity:   ${total_equity:,.2f}")
+    logger.info(f"📈 Total PnL:      ${pnl:,.2f} ({pnl_pct:+.2f}%)")
+    logger.info(f"💵 Cash Balance:   ${portfolio.current_cash:,.2f}")
+    logger.info("-" * 50)
     
     # Show recent trades if any
     try:
         if os.path.exists(portfolio.csv_path):
             df = pd.read_csv(portfolio.csv_path)
             if not df.empty:
-                print(f"📝 Total Trades:   {len(df)}")
-                print("\nLast 5 Trades:")
-                print(df.tail(5)[['symbol', 'direction', 'quantity', 'price']].to_string(index=False))
+                logger.info(f"📝 Total Trades:   {len(df)}")
+                logger.info("\nLast 5 Trades:")
+                logger.info("\n" + df.tail(5)[['symbol', 'direction', 'quantity', 'price']].to_string(index=False))
+    except FileNotFoundError:
+        logger.info("No trade history file found (this is normal for new sessions)")
+    except pd.errors.EmptyDataError:
+        logger.warning("Trade history file is empty")
+    except KeyError as e:
+        logger.error(f"Trade history file missing required columns: {e}")
     except Exception as e:
-        print(f"Could not load trade history: {e}")
+        logger.error(f"Could not load trade history: {e}")
     
     # FORCE SAVE: Write final dashboard snapshot
-    print("\n💾 Saving session data...")
+    logger.info("💾 Saving session data...")
     try:
         # Save final status snapshot
         status_data = {
@@ -101,16 +114,25 @@ def close_all_positions(portfolio, executor, crypto_symbols):
         else:
             df_status.to_csv(status_path, index=False)
         
-        print("✅ Dashboard data saved")
+        logger.info("✅ Dashboard data saved")
+    except (FileNotFoundError, PermissionError) as e:
+        logger.error(f"⚠️  Could not save dashboard data: File system error - {e}")
+    except pd.errors.ParserError as e:
+        logger.error(f"⚠️  Could not save dashboard data: CSV format error - {e}")
     except Exception as e:
-        print(f"⚠️  Could not save dashboard data: {e}")
+        logger.error(f"⚠️  Could not save dashboard data: {e}")
     
     # CLEANUP: Free memory
-    print("🧹 Cleaning up memory...")
+    logger.info("🧹 Cleaning up memory...")
     try:
         # Clear large data buffers (helps OS reclaim memory faster)
         if hasattr(portfolio, 'positions'):
             portfolio.positions.clear()
+            
+        # Close Database Connection
+        if hasattr(portfolio, 'db'):
+            portfolio.db.close()
+            logger.info("✅ Database connection closed.")
             
         # UPDATE DASHBOARD STATUS TO OFFLINE
         import json
@@ -129,13 +151,18 @@ def close_all_positions(portfolio, executor, crypto_symbols):
         with open(live_status_path, "w") as f:
             json.dump(live_status, f)
             
-        print("✅ Memory cleanup complete & Dashboard set to OFFLINE")
+        logger.info("✅ Memory cleanup complete & Dashboard set to OFFLINE")
+    except (FileNotFoundError, PermissionError) as e:
+        logger.error(f"⚠️  Cleanup error: File access issue - {e}")
+    except json.JSONDecodeError as e:
+        logger.error(f"⚠️  Cleanup error: JSON formatting issue - {e}")
     except Exception as e:
-        print(f"⚠️  Cleanup error: {e}")
+        logger.error(f"⚠️  Cleanup error: {e}")
         
-    print("="*50)
-    print("🔒 Shutdown complete. All data saved.")
+    logger.info("="*50)
+    logger.info("🔒 Shutdown complete. All data saved.")
 
+async def main():
     import argparse
     
     # 0. Parse Command Line Arguments
@@ -147,27 +174,27 @@ def close_all_positions(portfolio, executor, crypto_symbols):
     if args.mode:
         os.environ['BOT_MODE'] = args.mode # Set env var for logger
         if args.mode == 'futures':
-            print("🔵 MODE: FUTURES (Override from CLI)")
+            logger.info("🔵 MODE: FUTURES (Override from CLI)")
             Config.BINANCE_USE_FUTURES = True
         elif args.mode == 'spot':
-            print("🟡 MODE: SPOT (Override from CLI)")
+            logger.info("🟡 MODE: SPOT (Override from CLI)")
             Config.BINANCE_USE_FUTURES = False
             
     # 2. Dynamic Data Directory & Pairs Update (Crucial for Dual Terminal)
     if Config.BINANCE_USE_FUTURES:
         Config.DATA_DIR = "dashboard/data/futures"
         Config.TRADING_PAIRS = Config.CRYPTO_FUTURES_PAIRS
-        print(f"📂 Data Directory: {Config.DATA_DIR}")
+        logger.info(f"📂 Data Directory: {Config.DATA_DIR}")
     else:
         Config.DATA_DIR = "dashboard/data/spot"
         Config.TRADING_PAIRS = Config.CRYPTO_SPOT_PAIRS
-        print(f"📂 Data Directory: {Config.DATA_DIR}")
+        logger.info(f"📂 Data Directory: {Config.DATA_DIR}")
         
     # Ensure directory exists
     if not os.path.exists(Config.DATA_DIR):
         os.makedirs(Config.DATA_DIR, exist_ok=True)
 
-    print("Starting Trader Gemini...")
+    logger.info("Starting Trader Gemini...")
     
     # NOTE: status.csv is NOT deleted on startup to preserve historical dashboard data
     # The file will continuously grow with historical snapshots
@@ -180,6 +207,10 @@ def close_all_positions(portfolio, executor, crypto_symbols):
     crypto_symbols = Config.TRADING_PAIRS
     binance_data = BinanceData(events_queue, crypto_symbols)
     
+    # Start WebSocket in background
+    socket_task = asyncio.create_task(binance_data.start_socket())
+    logger.info("🚀 WebSocket Task Started")
+    
     # IBKR (Disabled - Crypto-only focus for better win rate)
     # ibkr_symbols = Config.STOCKS + Config.FOREX
     # ibkr_data = IBKRData(events_queue, ibkr_symbols)
@@ -191,7 +222,7 @@ def close_all_positions(portfolio, executor, crypto_symbols):
     # Market Regime Detector
     from core.market_regime import MarketRegimeDetector
     regime_detector = MarketRegimeDetector()
-    print("[OK] Market Regime Detector initialized")
+    logger.info("[OK] Market Regime Detector initialized")
     
     # 3. Initialize Strategies (CRYPTO ONLY)
     # A. Technical Strategy (RSI)
@@ -219,22 +250,17 @@ def close_all_positions(portfolio, executor, crypto_symbols):
     ml_strategies = []
     
     # Crypto ML Strategies only (with Sentiment)
-    print(f"Initializing ML Strategies for {len(crypto_symbols)} crypto pairs...")
+    logger.info(f"Initializing ML Strategies for {len(crypto_symbols)} crypto pairs...")
     for symbol in crypto_symbols:
         ml_strat = MLStrategy(binance_data, events_queue, symbol=symbol, sentiment_loader=sentiment_loader)
         ml_strategies.append(ml_strat)
     
-    # CRASH RECOVERY: Restore state from status.json (Metadata: HWM, Strategy IDs)
-    # We do this BEFORE syncing with Binance to preserve local metadata that Binance doesn't have.
-    json_status_path = os.path.join(Config.DATA_DIR, "status.json")
-    if os.path.exists(json_status_path):
-        print(f"🔄 Checking for previous session state in {json_status_path}...")
-        if portfolio.load_portfolio_state(json_status_path):
-            print("✅ Local state restored (Metadata preserved). Now syncing with Binance...")
-        else:
-            print("⚠️ Failed to load local state. Starting fresh.")
+    # CRASH RECOVERY: Restore state from SQLite Database
+    logger.info("🔄 Checking for previous session state in Database...")
+    if portfolio.restore_state_from_db():
+        logger.info("✅ Local state restored from DB. Now syncing with Binance...")
     else:
-        print("ℹ️ No previous state found. Starting fresh.")
+        logger.warning("⚠️ Failed to load local state from DB. Starting fresh.")
         
     risk_manager = RiskManager(max_concurrent_positions=5, portfolio=portfolio)
 
@@ -264,7 +290,7 @@ def close_all_positions(portfolio, executor, crypto_symbols):
     # Priority 4: Pattern Strategy (Candlestick Reversals)
     engine.register_strategy(pattern_strategy)
     
-    print(f"[OK] Registered {len(ml_strategies) + 3} strategies in the Engine.")
+    logger.info(f"[OK] Registered {len(ml_strategies) + 3} strategies in the Engine.")
     
     engine.register_risk_manager(risk_manager)
     
@@ -287,7 +313,7 @@ def close_all_positions(portfolio, executor, crypto_symbols):
             # This prevents drift due to Funding Fees in Futures
             current_time = time_module.time()
             if current_time - last_sync_time >= SYNC_INTERVAL:
-                print("\n🔄 Periodic Balance Sync (60min interval)...")
+                logger.info("🔄 Periodic Balance Sync (60min interval)...")
                 binance_executor.sync_portfolio_state(portfolio)
                 last_sync_time = current_time
             
@@ -328,7 +354,7 @@ def close_all_positions(portfolio, executor, crypto_symbols):
                     
                     if risk_manager.loop_count % 10 == 0:
                         advice = regime_detector.get_regime_advice(market_regime)
-                        print(f"📊 Market Regime: {market_regime} - {advice['description']}")
+                        logger.info(f"📊 Market Regime: {market_regime} - {advice['description']}")
                     
                     # Store regime for strategies to access
                     risk_manager.current_regime = market_regime
@@ -340,7 +366,7 @@ def close_all_positions(portfolio, executor, crypto_symbols):
             # Check Trailing Stops & Take Profit Levels
             stop_signals = risk_manager.check_stops(portfolio, binance_data)
             for sig in stop_signals:
-                print(f"Risk Manager: Triggering Stop Loss for {sig.symbol}")
+                logger.info(f"Risk Manager: Triggering Stop Loss for {sig.symbol}")
                 events_queue.put(sig)
             
             # Check for Manual Close Signals from Dashboard
@@ -352,15 +378,19 @@ def close_all_positions(portfolio, executor, crypto_symbols):
                     
                     if manual_symbol and manual_symbol in portfolio.positions:
                         if portfolio.positions[manual_symbol]['quantity'] > 0:
-                            print(f"📲 Dashboard: Manual close requested for {manual_symbol}")
+                            logger.info(f"📲 Dashboard: Manual close requested for {manual_symbol}")
                             # Create EXIT signal
                             manual_close_signal = SignalEvent("DASHBOARD", manual_symbol, datetime.now(), 'EXIT', strength=1.0)
                             events_queue.put(manual_close_signal)
                     
                     # Delete the file after reading
                     os.remove(manual_close_path)
+                except FileNotFoundError:
+                    pass  # File was already removed, ignore
+                except PermissionError as e:
+                    logger.error(f"Error processing manual close: Permission denied - {e}")
                 except Exception as e:
-                    print(f"Error processing manual close: {e}")
+                    logger.error(f"Error processing manual close: {e}")
             
             # Process Events
             while not events_queue.empty():
@@ -384,11 +414,12 @@ def close_all_positions(portfolio, executor, crypto_symbols):
                     portfolio._last_log_time = 0
                     portfolio._last_equity = total_equity
                     portfolio._last_positions_count = 0
+                    portfolio._last_dashboard_update = 0  # NEW: Separate timer for dashboard
                 
                 # Count open positions
                 open_positions = sum(1 for pos in portfolio.positions.values() if pos['quantity'] != 0)
                 
-                # Determine if we should log
+                # Determine if we should log TO CSV
                 should_log = False
                 log_reason = ""
                 
@@ -436,69 +467,90 @@ def close_all_positions(portfolio, executor, crypto_symbols):
                     portfolio._last_positions_count = open_positions
                     
                     # Print log reason (for debugging)
-                    print(f"📊 CSV Logged: {log_reason}")
+                    logger.info(f"📊 CSV Logged: {log_reason}")
                 
-                # 2. Write to JSON (Real-Time Data - Lightweight) - ALWAYS updated
-                import json
-                live_status = {
-                    'timestamp': str(datetime.now()),
-                    'status': 'ONLINE', # Explicitly set online
-                    'total_equity': total_equity,
-                    'cash': cash,
-                    'realized_pnl': realized_pnl,
-                    'unrealized_pnl': unrealized_pnl,
-                    'positions': portfolio.positions,
-                    'regime': risk_manager.current_regime if hasattr(risk_manager, 'current_regime') else 'UNKNOWN'
-                }
-                
-                live_status_path = os.path.join(Config.DATA_DIR, "live_status.json")
-                with open(live_status_path, "w") as f:
-                    json.dump(live_status, f)
+                # 2. Write to JSON (Real-Time Data) - UPDATE EVERY 10 SECONDS (Independent)
+                # BUG FIX: This was inside the "if should_log" block, causing stale dashboard data
+                current_time_dashboard = time.time()
+                if current_time_dashboard - portfolio._last_dashboard_update >= 10:
+                    import json
+                    live_status = {
+                        'timestamp': str(datetime.now()),
+                        'status': 'ONLINE', # Explicitly set online
+                        'total_equity': total_equity,
+                        'cash': cash,
+                        'realized_pnl': realized_pnl,
+                        'unrealized_pnl': unrealized_pnl,
+                        'positions': portfolio.positions,
+                        'regime': risk_manager.current_regime if hasattr(risk_manager, 'current_regime') else 'UNKNOWN'
+                    }
                     
-                # 3. Save Market Data for Charts (NEW)
-                # We save data for: Active Positions + BTC/USDT (Market Leader)
-                market_data = {}
-                symbols_to_chart = list(portfolio.positions.keys())
-                
-                # Always include BTC/USDT for reference
-                if 'BTC/USDT' not in symbols_to_chart:
-                    symbols_to_chart.append('BTC/USDT')
-                
-                for sym in symbols_to_chart:
-                    # Get latest 100 bars
-                    # Note: binance_data might use different keys if not normalized? 
-                    # But we initialized it with Config.TRADING_PAIRS which has BTC/USDT
-                    bars = binance_data.get_latest_bars(sym, n=100)
-                    if bars:
-                        # Convert datetime objects to string for JSON serialization
-                        serializable_bars = []
-                        for b in bars:
-                            bar_copy = b.copy()
-                            bar_copy['datetime'] = str(b['datetime'])
-                            serializable_bars.append(bar_copy)
-                        market_data[sym] = serializable_bars
-                    else:
-                        # print(f"DEBUG: No bars found for {sym}")
-                        pass
-                
-                market_data_path = os.path.join(Config.DATA_DIR, "market_data.json")
-                with open(market_data_path, "w") as f:
-                    json.dump(market_data, f)
-                
-                # print(f"DEBUG: Saved market data for {len(market_data)} symbols to {market_data_path}")
+                    live_status_path = os.path.join(Config.DATA_DIR, "live_status.json")
+                    with open(live_status_path, "w") as f:
+                        json.dump(live_status, f)
                     
+                    portfolio._last_dashboard_update = current_time_dashboard
+                        
+                    # 3. Save Market Data for Charts (NEW)
+                    # We save data for: Active Positions + BTC/USDT (Market Leader)
+                    market_data = {}
+                    symbols_to_chart = list(portfolio.positions.keys())
+                    
+                    # Always include BTC/USDT for reference
+                    if 'BTC/USDT' not in symbols_to_chart:
+                        symbols_to_chart.append('BTC/USDT')
+                    
+                    for sym in symbols_to_chart:
+                        # Get latest 100 bars
+                        # Note: binance_data might use different keys if not normalized? 
+                        # But we initialized it with Config.TRADING_PAIRS which has BTC/USDT
+                        bars = binance_data.get_latest_bars(sym, n=100)
+                        if bars:
+                            # Convert datetime objects to string for JSON serialization
+                            serializable_bars = []
+                            for b in bars:
+                                bar_copy = b.copy()
+                                bar_copy['datetime'] = str(b['datetime'])
+                                serializable_bars.append(bar_copy)
+                            market_data[sym] = serializable_bars
+                        else:
+                            # print(f"DEBUG: No bars found for {sym}")
+                            pass
+                    
+                    market_data_path = os.path.join(Config.DATA_DIR, "market_data.json")
+                    with open(market_data_path, "w") as f:
+                        json.dump(market_data, f)
+                    
+                    # print(f"DEBUG: Saved market data for {len(market_data)} symbols to {market_data_path}")
+                        
+            except (FileNotFoundError, PermissionError) as e:
+                logger.error(f"Error updating dashboard CSV: File system error - {e}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Error updating dashboard CSV: JSON error - {e}")
+            except KeyError as e:
+                logger.error(f"Error updating dashboard CSV: Missing data key - {e}")
             except Exception as e:
-                print(f"Error updating dashboard CSV: {e}")
+                logger.error(f"Error updating dashboard CSV: {e}")
             # ------------------------
             
             # Sleep to respect API limits but allow faster reaction
             # FIXED: Reduced from 5s to 1s to prevent signal staleness (TTL 10s)
-            time.sleep(1) 
+            # Sleep to respect API limits but allow faster reaction
+            # FIXED: Reduced from 5s to 1s to prevent signal staleness (TTL 10s)
+            await asyncio.sleep(1) 
             
-    except KeyboardInterrupt:
-        print("Stopping Trader Gemini...")
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.info("Stopping Trader Gemini...")
+        
+        # Stop WebSocket
+        if binance_data:
+            await binance_data.stop_socket()
+            
         close_all_positions(portfolio, binance_executor, crypto_symbols)
         engine.stop()
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass # Handled inside main

@@ -38,7 +38,25 @@ mode_label = "FUTURES (20x) 🚀" if is_futures else "SPOT 🛡️"
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Control Panel")
-    st.info(f"Mode: **{mode_label}**")
+    
+    # DYNAMIC MODE SELECTOR
+    selected_mode = st.radio("Select Market:", ["FUTURES 🚀", "SPOT 🛡️"], index=0 if is_futures else 1)
+    
+    if "FUTURES" in selected_mode:
+        DATA_DIR = "dashboard/data/futures"
+        is_futures = True
+        mode_label = "FUTURES (20x)"
+    else:
+        DATA_DIR = "dashboard/data/spot"
+        is_futures = False
+        mode_label = "SPOT"
+        
+    # Update paths based on selection
+    LIVE_STATUS_PATH = os.path.join(DATA_DIR, "live_status.json")
+    TRADES_PATH = os.path.join(DATA_DIR, "trades.csv")
+    STATUS_PATH = os.path.join(DATA_DIR, "status.csv")
+    
+    st.info(f"Viewing: **{mode_label}**")
     auto_refresh = st.checkbox("Enable Auto-Refresh (5s)", value=True)
     show_history = st.checkbox("Load Full History", value=True)
     
@@ -193,7 +211,7 @@ with tab_analytics:
                 if 'direction' not in df.columns or 'symbol' not in df.columns:
                     return {}
                     
-                strategy_pnl = {}
+                strategy_stats = {}
                 
                 for symbol in df['symbol'].unique():
                     symbol_trades = df[df['symbol'] == symbol].sort_values('datetime') if 'datetime' in df.columns else df[df['symbol'] == symbol]
@@ -212,14 +230,21 @@ with tab_analytics:
                                 match_qty = min(buy_qty, remaining_sell)
                                 pnl = match_qty * (sell_price - buy_price)
                                 
-                                if strat_id not in strategy_pnl:
-                                    strategy_pnl[strat_id] = {'pnl': 0, 'wins': 0, 'losses': 0}
+                                if strat_id not in strategy_stats:
+                                    strategy_stats[strat_id] = {
+                                        'pnl': 0.0, 'wins': 0, 'losses': 0, 
+                                        'gross_win': 0.0, 'gross_loss': 0.0, 'trades': 0
+                                    }
                                 
-                                strategy_pnl[strat_id]['pnl'] += pnl
+                                strategy_stats[strat_id]['pnl'] += pnl
+                                strategy_stats[strat_id]['trades'] += 1
+                                
                                 if pnl > 0:
-                                    strategy_pnl[strat_id]['wins'] += 1
+                                    strategy_stats[strat_id]['wins'] += 1
+                                    strategy_stats[strat_id]['gross_win'] += pnl
                                 else:
-                                    strategy_pnl[strat_id]['losses'] += 1
+                                    strategy_stats[strat_id]['losses'] += 1
+                                    strategy_stats[strat_id]['gross_loss'] += abs(pnl)
                                 
                                 if match_qty == buy_qty:
                                     buy_queue.pop(0)
@@ -228,7 +253,7 @@ with tab_analytics:
                                 
                                 remaining_sell -= match_qty
                 
-                return strategy_pnl
+                return strategy_stats
         except Exception as e:
             st.error(f"Error: {e}")
         return {}
@@ -236,6 +261,30 @@ with tab_analytics:
     strat_perf = load_strategy_performance()
     
     if strat_perf:
+        # Calculate Global Metrics
+        total_pnl = sum(d['pnl'] for d in strat_perf.values())
+        total_wins = sum(d['wins'] for d in strat_perf.values())
+        total_losses = sum(d['losses'] for d in strat_perf.values())
+        total_trades = total_wins + total_losses
+        
+        global_win_rate = (total_wins / total_trades * 100) if total_trades > 0 else 0
+        
+        total_gross_win = sum(d['gross_win'] for d in strat_perf.values())
+        total_gross_loss = sum(d['gross_loss'] for d in strat_perf.values())
+        profit_factor = (total_gross_win / total_gross_loss) if total_gross_loss > 0 else float('inf') if total_gross_win > 0 else 0
+
+        # Display Global Metrics
+        st.markdown("### 🌍 Global Performance")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("🏆 Win Rate", f"{global_win_rate:.1f}%")
+        m2.metric("📊 Profit Factor", f"{profit_factor:.2f}")
+        m3.metric("🔢 Total Trades", f"{total_trades}")
+        m4.metric("💰 Net PnL", f"${total_pnl:,.2f}", delta=f"{total_pnl:,.2f}")
+        
+        st.divider()
+
+        # Strategy Table
+        st.markdown("### 🧠 Strategy Breakdown")
         strat_data = []
         for strat, data in strat_perf.items():
             strat_name = {
@@ -243,27 +292,41 @@ with tab_analytics:
                 1: 'Technical', 2: 'Statistical', 3: 'ML'
             }.get(strat, f'Strategy {strat}')
             
+            trades = data['trades']
+            win_rate = (data['wins'] / trades * 100) if trades > 0 else 0
+            avg_win = (data['gross_win'] / data['wins']) if data['wins'] > 0 else 0
+            avg_loss = (data['gross_loss'] / data['losses']) if data['losses'] > 0 else 0
+            
             strat_data.append({
                 'Strategy': strat_name, 
                 'PnL': data['pnl'],
-                'Wins': data['wins'],
-                'Losses': data['losses']
+                'Win Rate': win_rate,
+                'Trades': trades,
+                'Avg Win': avg_win,
+                'Avg Loss': avg_loss,
+                'Profit Factor': (data['gross_win'] / data['gross_loss']) if data['gross_loss'] > 0 else float('inf')
             })
         
         df_strat = pd.DataFrame(strat_data).sort_values('PnL', ascending=False)
         
-        col1, col2 = st.columns([1, 2])
+        col1, col2 = st.columns([2, 1])
         
         with col1:
             st.dataframe(
-                df_strat.style.format({'PnL': '${:,.2f}'}),
+                df_strat.style.format({
+                    'PnL': '${:,.2f}',
+                    'Win Rate': '{:.1f}%',
+                    'Avg Win': '${:,.2f}',
+                    'Avg Loss': '${:,.2f}',
+                    'Profit Factor': '{:.2f}'
+                }),
                 use_container_width=True,
                 hide_index=True
             )
             
         with col2:
-            fig_bar = px.bar(df_strat, x='Strategy', y='PnL', color='PnL', 
-                             color_continuous_scale='RdYlGn', title="PnL by Strategy")
+            fig_bar = px.bar(df_strat, x='Strategy', y='Win Rate', color='PnL', 
+                             color_continuous_scale='RdYlGn', title="Win Rate by Strategy")
             st.plotly_chart(fig_bar, use_container_width=True)
     else:
         st.info("No strategy performance data available yet.")

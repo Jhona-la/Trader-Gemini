@@ -71,7 +71,8 @@ class PatternStrategy(Strategy):
                     pass
                 
                 # RSI Filter (Don't buy at top)
-                rsi = talib.RSI(closes, timeperiod=14)[-1]
+                # BUG #59 FIX: Use [-2] (closed candle) to match pattern detection logic
+                rsi = talib.RSI(closes, timeperiod=14)[-2]
                 
                 # 3. Signal Logic
                 signal_type = None

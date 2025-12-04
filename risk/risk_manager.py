@@ -272,11 +272,15 @@ class RiskManager:
             if qty > 0:
                 hwm = pos.get('high_water_mark', entry_price)
                 
-                # Calculate unrealized profit %
+                # Calculate unrealized profit % (CURRENT price)
                 unrealized_pnl_pct = ((current_price - entry_price) / entry_price) * 100
                 
-                # TAKE PROFIT LEVELS SYSTEM
-                if unrealized_pnl_pct >= 3.0:
+                # BUG FIX: Calculate PEAK profit % (from HWM) to determine TP level
+                # This ensures TP trailing stops work even when price retraces from peak
+                peak_pnl_pct = ((hwm - entry_price) / entry_price) * 100
+                
+                # TAKE PROFIT LEVELS SYSTEM (based on PEAK profit)
+                if peak_pnl_pct >= 3.0:
                     # TP3: Very tight trailing (10% of gain from HWM)
                     gain_from_entry = hwm - entry_price
                     trail_distance = gain_from_entry * 0.1  # Very tight
@@ -287,7 +291,7 @@ class RiskManager:
                         sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
                         stop_signals.append(sig)
                         
-                elif unrealized_pnl_pct >= 2.0:
+                elif peak_pnl_pct >= 2.0:
                     # TP2: Tighter trailing (25% of gain from HWM)
                     gain_from_entry = hwm - entry_price
                     trail_distance = gain_from_entry * 0.25
@@ -302,8 +306,9 @@ class RiskManager:
                         sig = SignalEvent("TP_MANAGER", symbol, datetime.now(), 'EXIT', strength=1.0)
                         stop_signals.append(sig)
                         
-                elif unrealized_pnl_pct >= 1.0:
+                elif peak_pnl_pct >= 1.0:
                     # TP1: Standard trailing (50% of gain from HWM)
+                    # BUG FIX: Now activates if we PEAKED >= 1%, even if current price dropped below 1%
                     gain_from_entry = hwm - entry_price
                     trail_distance = gain_from_entry * 0.5
                     stop_price = hwm - trail_distance

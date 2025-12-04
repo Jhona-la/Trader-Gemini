@@ -42,43 +42,57 @@ class StatisticalStrategy(Strategy):
                     return
                 self.last_processed_time = current_time
 
-                # Extract closes
-                y_closes = np.array([b['close'] for b in bars_y])
-                x_closes = np.array([b['close'] for b in bars_x])
+                # BUG #55 FIX: Ensure data alignment and correct Ratio High/Low calculation
+                # 1. Align Data by Timestamp (Crucial for correlation/cointegration)
+                # We iterate backwards and only keep matching timestamps
+                aligned_y = []
+                aligned_x = []
                 
-                # Calculate Ratio (Simple version of spread for crypto pairs)
-                # In a real model, we would calculate dynamic beta using OLS/Kalman Filter
-                ratios = y_closes / x_closes
+                # Create dicts for O(1) lookup
+                y_dict = {b['datetime']: b for b in bars_y}
+                x_dict = {b['datetime']: b for b in bars_x}
                 
-                # Calculate Z-Score
-                mean = np.mean(ratios)
-                std = np.std(ratios, ddof=1)  # Use sample std (Bessel's correction) for finance
+                common_timestamps = sorted(list(set(y_dict.keys()) & set(x_dict.keys())))
                 
-                if std == 0:
-                    return
-
-                current_ratio = ratios[-1]
-                z_score = (current_ratio - mean) / std
+                if len(common_timestamps) < self.window:
+                    return # Not enough overlapping data
                 
-                # Calculate Ratio ADX to detect strong trends in the spread
-                # Synthetic High/Low for Ratio
-                # Ratio High = High Y / Low X (Max numerator, Min denominator)
-                # Ratio Low = Low Y / High X (Min numerator, Max denominator)
-                highs_y = np.array([b['high'] for b in bars_y])
-                lows_y = np.array([b['low'] for b in bars_y])
-                highs_x = np.array([b['high'] for b in bars_x])
-                lows_x = np.array([b['low'] for b in bars_x])
+                # Reconstruct aligned lists
+                bars_y_aligned = [y_dict[ts] for ts in common_timestamps]
+                bars_x_aligned = [x_dict[ts] for ts in common_timestamps]
                 
+                # Extract aligned arrays
+                closes_y = np.array([b['close'] for b in bars_y_aligned])
+                closes_x = np.array([b['close'] for b in bars_x_aligned])
+                highs_y = np.array([b['high'] for b in bars_y_aligned])
+                lows_y = np.array([b['low'] for b in bars_y_aligned])
+                highs_x = np.array([b['high'] for b in bars_x_aligned])
+                lows_x = np.array([b['low'] for b in bars_x_aligned])
+                
+                # Calculate Ratio
+                ratios = closes_y / closes_x
+                
+                # Calculate Ratio High/Low correctly
+                # Ratio High = Max possible value (High Y / Low X)
+                # Ratio Low = Min possible value (Low Y / High X)
                 ratio_highs = highs_y / lows_x
                 ratio_lows = lows_y / highs_x
-                ratio_closes = ratios # Already calculated
                 
-                # Calculate Ratio ADX (may return NaN if insufficient data)
-                ratio_adx = talib.ADX(ratio_highs, ratio_lows, ratio_closes, timeperiod=14)[-1]
+                # Safety: Ensure Low <= High (Floating point issues or bad data could violate this)
+                # If Low > High, swap them
+                mask = ratio_lows > ratio_highs
+                if np.any(mask):
+                    ratio_lows[mask], ratio_highs[mask] = ratio_highs[mask], ratio_lows[mask]
                 
-                # Handle NaN: If ADX can't be calculated (not enough data), default to 0 (ranging)
+                # Calculate Ratio ADX
+                try:
+                    ratio_adx = talib.ADX(ratio_highs, ratio_lows, ratios, timeperiod=14)[-1]
+                except Exception:
+                    ratio_adx = 0
+                
+                # Handle NaN
                 if np.isnan(ratio_adx):
-                    ratio_adx = 0  # Assume ranging market if not enough data
+                    ratio_adx = 0
                 
                 # Calculate ATR for volatility-based sizing
                 # We use the ATR of the asset we are buying (Y or X)
@@ -89,6 +103,12 @@ class StatisticalStrategy(Strategy):
                 atr_x = talib.ATR(highs_x, lows_x, closes_x, timeperiod=14)[-1]
                 timestamp = bars_y[-1]['datetime']
 
+                # Calculate Z-Score
+                spread = closes_y / closes_x
+                mean_spread = np.mean(spread)
+                std_spread = np.std(spread)
+                z_score = (spread[-1] - mean_spread) / std_spread if std_spread != 0 else 0
+                
                 # PRINT STATS TO TERMINAL (User Request)
                 print(f"📊 Stat Strategy {self.pair}: Z-Score={z_score:.2f} Ratio_ADX={ratio_adx:.1f}")
 

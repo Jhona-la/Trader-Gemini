@@ -4,6 +4,9 @@ import time
 from .data_provider import DataProvider
 from core.events import MarketEvent
 from config import Config  # Import Config
+from utils.logger import logger
+import asyncio
+from binance import AsyncClient, BinanceSocketManager
 
 class BinanceData(DataProvider):
     def __init__(self, events_queue, symbol_list):
@@ -39,7 +42,7 @@ class BinanceData(DataProvider):
             }
             self.exchange.urls['api'] = custom_urls
             self.exchange.urls['test'] = custom_urls
-            print("Binance Loader: Configured for Testnet/Demo (Manual URLs)")
+            logger.info("Binance Loader: Configured for Testnet/Demo (Manual URLs)")
         
         # Storage for latest bars
         self.latest_data = {s: [] for s in symbol_list}
@@ -55,7 +58,14 @@ class BinanceData(DataProvider):
         self.fetch_initial_history()
         self.fetch_initial_history_1h()
         self.fetch_initial_history_5m()  # NEW
+        self.fetch_initial_history_5m()  # NEW
         self.fetch_initial_history_15m()  # NEW
+        
+        # Async Client & Socket Manager placeholders
+        self.client = None
+        self.bsm = None
+        self.socket = None
+        self.socket_task = None
 
     # ... (fetch methods remain same, but we should lock inside them if they were called concurrently, 
     # but they are called in init so it's fine. The critical part is update_bars vs get_latest_bars)
@@ -71,7 +81,7 @@ class BinanceData(DataProvider):
                 import copy
                 bars_list = copy.deepcopy(self.latest_data[symbol])
         except KeyError:
-            print("That symbol is not available in the historical data set.")
+            logger.warning("That symbol is not available in the historical data set.")
             raise
         
         return bars_list[-n:]
@@ -81,7 +91,7 @@ class BinanceData(DataProvider):
         Fetches ~25 hours of historical data (1m candles) from Binance API.
         Optimized for RAM usage while maintaining sufficient data for ML training (~1500 bars).
         """
-        print("Fetching historical data from Binance (42 hours)...")
+        logger.info("Fetching historical data from Binance (42 hours)...")
         limit = 1000
         hours = 42  # ENHANCED: Increased from 25 to 42 hours (~2520 bars) to support ML training with 2500 bars
         total_candles = hours * 60
@@ -123,16 +133,16 @@ class BinanceData(DataProvider):
                 
                 # RAM OPTIMIZATION: Keep only last 2000 bars maximum
                 self.latest_data[s] = processed_bars[-2000:]
-                print(f"Loaded {len(self.latest_data[s])} historical bars for {s}")
+                logger.info(f"Loaded {len(self.latest_data[s])} historical bars for {s}")
                 
             except Exception as e:
-                print(f"Failed to fetch history for {s}: {e}")
+                logger.error(f"Failed to fetch history for {s}: {e}")
 
     def fetch_initial_history_1h(self):
         """
         Fetches ~200 hours of historical data (1h candles) for trend analysis.
         """
-        print("Fetching 1h historical data from Binance (250 hours)...")
+        logger.info("Fetching 1h historical data from Binance (250 hours)...")
         limit = 500
         hours = 250 # FIXED: Increased from 200 to 250 to ensure >200 closed candles for EMA-200
         
@@ -156,10 +166,10 @@ class BinanceData(DataProvider):
                     })
                 
                 self.latest_data_1h[s] = processed_bars
-                print(f"Loaded {len(self.latest_data_1h[s])} 1h bars for {s}")
+                logger.info(f"Loaded {len(self.latest_data_1h[s])} 1h bars for {s}")
                 
             except Exception as e:
-                print(f"Failed to fetch 1h history for {s}: {e}")
+                logger.error(f"Failed to fetch 1h history for {s}: {e}")
 
     def get_latest_bars(self, symbol, n=1):
         """
@@ -170,7 +180,7 @@ class BinanceData(DataProvider):
             import copy
             bars_list = copy.deepcopy(self.latest_data[symbol])
         except KeyError:
-            print("That symbol is not available in the historical data set.")
+            logger.warning("That symbol is not available in the historical data set.")
             raise
         
         return bars_list[-n:]
@@ -182,7 +192,7 @@ class BinanceData(DataProvider):
         try:
             bars_list = self.latest_data_1h[symbol]
         except KeyError:
-            print("That symbol is not available in the 1h data set.")
+            logger.warning("That symbol is not available in the 1h data set.")
             raise
         
         return bars_list[-n:]
@@ -235,7 +245,7 @@ class BinanceData(DataProvider):
                 
                 # Print and event OUTSIDE lock (don't hold lock during I/O)
                 if is_new_bar:
-                    print(f"New Bar for {s}: {timestamp} - Close: {bar_data['close']}")
+                    logger.info(f"New Bar for {s}: {timestamp} - Close: {bar_data['close']}")
                     self.events_queue.put(MarketEvent())
                 
                 # MULTI-TIMEFRAME: Also update 1h candles
@@ -321,14 +331,14 @@ class BinanceData(DataProvider):
                             self.latest_data_15m[s] = self.latest_data_15m[s][-150:]
                     
             except Exception as e:
-                print(f"Error fetching data for {s}: {e}")
+                logger.error(f"Error fetching data for {s}: {e}")
 
     def fetch_initial_history_5m(self):
         """
         Fetches 5-minute candles for multi-timeframe analysis.
         Loads last 150 bars (~12.5 hours) to support ML features.
         """
-        print("Fetching 5m historical data from Binance...")
+        logger.info("Fetching 5m historical data from Binance...")
         limit = 150  # Get 150 x 5m bars = 750 minutes = 12.5 hours
         
         for s in self.symbol_list:
@@ -349,20 +359,20 @@ class BinanceData(DataProvider):
                     })
                 
                 self.latest_data_5m[s] = processed_bars
-                print(f"Loaded {len(self.latest_data_5m[s])} 5m bars for {s}")
+                logger.info(f"Loaded {len(self.latest_data_5m[s])} 5m bars for {s}")
                 
                 # Rate limit
                 time.sleep(0.2)
                 
             except Exception as e:
-                print(f"Failed to fetch 5m history for {s}: {e}")
+                logger.error(f"Failed to fetch 5m history for {s}: {e}")
     
     def fetch_initial_history_15m(self):
         """
         Fetches 15-minute candles for multi-timeframe analysis.
         Loads last 100 bars (~25 hours) to support ML features.
         """
-        print("Fetching 15m historical data from Binance...")
+        logger.info("Fetching 15m historical data from Binance...")
         limit = 100  # Get 100 x 15m bars = 1500 minutes = 25 hours
         
         for s in self.symbol_list:
@@ -383,13 +393,13 @@ class BinanceData(DataProvider):
                     })
                 
                 self.latest_data_15m[s] = processed_bars
-                print(f"Loaded {len(self.latest_data_15m[s])} 15m bars for {s}")
+                logger.info(f"Loaded {len(self.latest_data_15m[s])} 15m bars for {s}")
                 
                 # Rate limit
                 time.sleep(0.2)
                 
             except Exception as e:
-                print(f"Failed to fetch 15m history for {s}: {e}")
+                logger.error(f"Failed to fetch 15m history for {s}: {e}")
     
     def get_latest_bars_5m(self, symbol, n=20):
         """
@@ -410,3 +420,119 @@ class BinanceData(DataProvider):
             return self.latest_data_15m.get(symbol, [])[-n:]
         except:
             return []
+
+    async def start_socket(self):
+        """
+        Starts the WebSocket connection for real-time data updates.
+        """
+        logger.info("Starting Binance WebSocket...")
+        
+        # Initialize Async Client
+        api_key = Config.BINANCE_API_KEY
+        api_secret = Config.BINANCE_SECRET_KEY
+        
+        # Handle Testnet/Demo keys
+        if Config.BINANCE_USE_TESTNET:
+            api_key = Config.BINANCE_TESTNET_API_KEY
+            api_secret = Config.BINANCE_TESTNET_SECRET_KEY
+        elif hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO:
+             api_key = Config.BINANCE_DEMO_API_KEY
+             api_secret = Config.BINANCE_DEMO_SECRET_KEY
+             
+        self.client = await AsyncClient.create(api_key, api_secret, testnet=Config.BINANCE_USE_TESTNET)
+        self.bsm = BinanceSocketManager(self.client)
+        
+        # Create streams for all symbols
+        # kline_1m is the stream name for 1-minute candles
+        streams = [f"{s.lower().replace('/', '')}@kline_1m" for s in self.symbol_list]
+        
+        logger.info(f"Subscribing to streams: {streams}")
+        self.socket = self.bsm.multiplex_socket(streams)
+        
+        async with self.socket as tscm:
+            while True:
+                msg = await tscm.recv()
+                await self.process_socket_message(msg)
+
+    async def process_socket_message(self, msg):
+        """
+        Processes incoming WebSocket messages.
+        """
+        try:
+            if 'data' not in msg:
+                return
+                
+            data = msg['data']
+            # Parse kline data
+            # Event type: e, Event time: E, Symbol: s, Kline: k
+            kline = data['k']
+            symbol = kline['s'] # e.g. BTCUSDT
+            
+            # Convert symbol back to internal format if needed
+            # Our internal format might be BTC/USDT or BTCUSDT. 
+            # Let's try to match it to self.symbol_list
+            internal_symbol = symbol
+            if symbol not in self.symbol_list:
+                # Try adding slash
+                if symbol.endswith('USDT'):
+                    test_sym = f"{symbol[:-4]}/USDT"
+                    if test_sym in self.symbol_list:
+                        internal_symbol = test_sym
+            
+            is_closed = kline['x'] # Boolean: Is this kline closed?
+            
+            # Extract data
+            timestamp = pd.to_datetime(kline['t'], unit='ms')
+            open_price = float(kline['o'])
+            high_price = float(kline['h'])
+            low_price = float(kline['l'])
+            close_price = float(kline['c'])
+            volume = float(kline['v'])
+            
+            bar_data = {
+                'symbol': internal_symbol,
+                'datetime': timestamp,
+                'open': open_price,
+                'high': high_price,
+                'low': low_price,
+                'close': close_price,
+                'volume': volume
+            }
+            
+            # Update latest_data (Thread-Safe)
+            is_new_bar = False
+            with self._data_lock:
+                if not self.latest_data[internal_symbol]:
+                    self.latest_data[internal_symbol].append(bar_data)
+                    is_new_bar = True
+                elif self.latest_data[internal_symbol][-1]['datetime'] != timestamp:
+                    # New bar
+                    self.latest_data[internal_symbol].append(bar_data)
+                    # Limit buffer
+                    if len(self.latest_data[internal_symbol]) > 2000:
+                        self.latest_data[internal_symbol] = self.latest_data[internal_symbol][-2000:]
+                    is_new_bar = True
+                else:
+                    # Update current bar
+                    self.latest_data[internal_symbol][-1] = bar_data
+            
+            # Trigger Market Event on every tick (or just on close?)
+            # For HFT/Scalping, we want every tick.
+            # But to avoid spamming the event loop, maybe only on significant changes?
+            # For now, let's trigger on every update but log only on new bar or close.
+            
+            self.events_queue.put(MarketEvent())
+            
+            if is_closed:
+                logger.info(f"🌊 WebSocket Closed Bar: {internal_symbol} @ {close_price}")
+                
+        except Exception as e:
+            logger.error(f"WebSocket Message Error: {e}")
+
+    async def stop_socket(self):
+        """
+        Stops the WebSocket and closes the client.
+        """
+        if self.client:
+            await self.client.close_connection()
+            logger.info("Binance WebSocket Client Closed.")

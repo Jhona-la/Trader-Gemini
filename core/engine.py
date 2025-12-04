@@ -66,44 +66,38 @@ class Engine:
             for strategy in self.strategies:
                 try:
                     # ORCHESTRATION LOGIC
-                    # ORCHESTRATION LOGIC (STRICT GATING)
                     strat_name = strategy.__class__.__name__
-                    should_run = True
+                    should_run = True # BUG FIX: Define default state
                     
-                    if current_regime == 'TRENDING_BULL' or current_regime == 'TRENDING_BEAR':
-                        # TRENDING MARKETS:
-                        # ✅ ALLOW: MLStrategy (Trend Following), PatternStrategy (Continuation)
-                        # ❌ BLOCK: StatisticalStrategy (Mean Reversion), TechnicalStrategy (RSI Reversion)
-                        if 'Statistical' in strat_name or 'Technical' in strat_name:
-                            should_run = False
-                            # print(f"  🛑 Blocking {strat_name} in {current_regime} (Trend Mode)")
+                    # BUG #51 FIX: Removed strict gating. Strategies should self-regulate.
+                    # Strict blocking caused the bot to miss opportunities in mixed regimes
+                    # (e.g. BTC trending but ALTS ranging).
+                    # Strategies like MLStrategy and TechnicalStrategy already have internal ADX filters.
                     
-                    elif current_regime == 'RANGING':
-                        # SIDEWAYS MARKETS:
-                        # ✅ ALLOW: StatisticalStrategy (Pairs), TechnicalStrategy (RSI Reversion)
-                        # ❌ BLOCK: MLStrategy (Trend Following - Whipsaw Risk)
-                        if 'MLStrategy' in strat_name:
-                            should_run = False
-                            # print(f"  🛑 Blocking {strat_name} in {current_regime} (Range Mode)")
-                            
-                    elif current_regime == 'CHOPPY':
-                        # UNCERTAIN MARKETS:
-                        # ✅ ALLOW: TechnicalStrategy (Scalping), PatternStrategy (Short-term)
-                        # ❌ BLOCK: MLStrategy, StatisticalStrategy (Too risky)
-                        if 'MLStrategy' in strat_name or 'Statistical' in strat_name:
-                            should_run = False
-                            
+                    # We still pass the global regime for context, but don't force block.
+                    # Exception: Statistical Strategy (Pairs) is dangerous in strong trends, so we keep a soft check.
+                    
+                    if 'Statistical' in strat_name and (current_regime == 'TRENDING_BULL' or current_regime == 'TRENDING_BEAR'):
+                         # Check internal ADX of the pair before blocking? 
+                         # For now, we trust the strategy's internal logic (it has ADX check).
+                         pass
+
                     if should_run:
                         strategy.calculate_signals(event)
                         
                 except Exception as e:
                     print(f"⚠️  Strategy Error ({strategy.__class__.__name__}): {e}")
-                    # import traceback
-                    # traceback.print_exc()
+                    
+            # LAYER 1: Portfolio Exit Monitoring (Safety Net)
+            # Check all open positions and force exits if thresholds are breached
+            if self.portfolio and len(self.data_handlers) > 0:
+                try:
+                    self.portfolio.check_exits(self.data_handlers[0], self.events)
+                except Exception as e:
+                    print(f"⚠️  Portfolio Exit Check Error: {e}")
+                    
             # Notify portfolio to update positions (mark-to-market)
             if self.portfolio:
-                # MarketEvent is generic, so we update all symbols
-                # We iterate over data handlers to get symbols
                 for dh in self.data_handlers:
                     if hasattr(dh, 'symbol_list'):
                         for symbol in dh.symbol_list:
@@ -119,13 +113,26 @@ class Engine:
             # 0. TTL CHECK (Time To Live)
             # Prevent processing stale signals (older than 10s)
             # This protects against system lag causing execution at wrong prices
-            from datetime import datetime, timedelta
-            now = datetime.now()
-            # Assuming event.datetime is datetime object. If not, we skip check or parse.
+            # 0. TTL CHECK (Time To Live)
+            # Prevent processing stale signals (older than 10s)
+            # BUG #53 FIX: Timezone-aware comparison
+            from datetime import datetime, timedelta, timezone
+            now_utc = datetime.now(timezone.utc)
+            
+            # Ensure event.datetime is timezone-aware UTC
             if isinstance(event.datetime, datetime):
-                age = (now - event.datetime).total_seconds()
-                if age > 10:
-                    print(f"⚠️  Engine: Discarding STALE signal for {event.symbol} (Age: {age:.1f}s > 10s)")
+                event_dt = event.datetime
+                if event_dt.tzinfo is None:
+                    # Assume UTC if naive, or use local if that's what your system does.
+                    # Best practice: Convert everything to UTC.
+                    event_dt = event_dt.replace(tzinfo=timezone.utc)
+                
+                # Calculate age
+                age = (now_utc - event_dt).total_seconds()
+                
+                # Allow slightly larger window (30s) to account for network/processing lag
+                if age > 30:
+                    print(f"⚠️  Engine: Discarding STALE signal for {event.symbol} (Age: {age:.1f}s > 30s)")
                     return
 
             # 1. Log Signal
@@ -140,14 +147,17 @@ class Engine:
                 
                 # Simplified: Assume we can get price from the first data handler that has it
                 price = 0
-                for dh in self.data_handlers:
-                    try:
-                        bars = dh.get_latest_bars(event.symbol, n=1)
-                        if bars:
-                            price = bars[-1]['close']
-                            break
-                    except:
-                        continue
+                # BUG #52 FIX: Optimized price fetching
+                # Instead of looping through all handlers, use the one that matches the symbol
+                # Or better, pass price in SignalEvent (which we should do in future)
+                price = 0
+                
+                # Try to get price from the first handler that has it
+                if self.data_handlers:
+                    dh = self.data_handlers[0] # Usually only one handler (BinanceLoader)
+                    bars = dh.get_latest_bars(event.symbol, n=1)
+                    if bars:
+                        price = bars[-1]['close']
                 
                 order_event = self.risk_manager.generate_order(event, price)
                 if order_event:

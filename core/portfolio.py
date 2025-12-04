@@ -3,6 +3,8 @@ import os
 import json
 from datetime import datetime
 from config import Config  # Import Config for Futures/Spot detection
+from data.database import DatabaseHandler
+from utils.logger import logger
 
 class Portfolio:
     def __init__(self, initial_capital=10000.0, csv_path="dashboard/data/trades.csv", status_path="dashboard/data/status.csv", auto_save=True):
@@ -36,6 +38,33 @@ class Portfolio:
             
         # Create initial status file
         self.save_status()
+        
+        # Initialize Database
+        self.db = DatabaseHandler()
+        
+    def restore_state_from_db(self):
+        """
+        Restore portfolio state (positions) from SQLite database.
+        Used for crash recovery.
+        """
+        try:
+            # Restore Positions
+            db_positions = self.db.get_open_positions()
+            if db_positions:
+                self.positions = db_positions
+                logger.info(f"🔄 RESTORED {len(self.positions)} active positions from DB.")
+                for sym, pos in self.positions.items():
+                    logger.info(f"   - {sym}: {pos['quantity']} @ ${pos['entry_price']:.4f}")
+                    # Map entry_price to avg_price for internal consistency
+                    if 'avg_price' not in pos:
+                        pos['avg_price'] = pos['entry_price']
+            else:
+                logger.info("✅ No active positions found in DB.")
+                
+            return True
+        except Exception as e:
+            logger.error(f"⚠️  Failed to restore portfolio state from DB: {e}")
+            return False
         
     def load_portfolio_state(self, state_path):
         """
@@ -81,6 +110,53 @@ class Portfolio:
                 return self.current_cash - self.used_margin - self.pending_cash
             else:
                 return self.current_cash - self.pending_cash
+
+    @property
+    def unrealized_pnl(self):
+        """
+        Calculate total unrealized PnL from all open positions.
+        """
+        pnl = 0.0
+        for symbol, pos in self.positions.items():
+            qty = pos['quantity']
+            if qty != 0:
+                avg_price = pos['avg_price']
+                current_price = pos.get('current_price', avg_price)
+                # PnL = (Current - Avg) * Qty
+                # Works for both LONG (Qty > 0) and SHORT (Qty < 0)
+                pnl += (current_price - avg_price) * qty
+        return pnl
+
+    def get_total_equity(self):
+        """
+        Return Total Equity = Cash + Unrealized PnL of all open positions.
+        Used by RiskManager for position sizing.
+        """
+        equity = self.current_cash
+        
+        # Add Unrealized PnL from open positions
+        for symbol, pos in self.positions.items():
+            qty = pos['quantity']
+            if qty != 0:
+                avg_price = pos['avg_price']
+                current_price = pos.get('current_price')
+                
+                # Safety check: Ensure both prices are valid numbers
+                if current_price is None:
+                    current_price = 0.0
+                if avg_price is None:
+                    avg_price = 0.0
+                    
+                # If we have no price data, assume 0 PnL change (use avg as current)
+                if current_price == 0 and avg_price > 0:
+                    current_price = avg_price
+                
+                # PnL = (Current - Avg) * Qty
+                # Works for both LONG (Qty > 0) and SHORT (Qty < 0)
+                unrealized_pnl = (current_price - avg_price) * qty
+                equity += unrealized_pnl
+                
+        return equity
     
     def reserve_cash(self, amount):
         """Reserve cash for a pending order. Returns True if successful."""
@@ -143,6 +219,22 @@ class Portfolio:
         
         if self.auto_save:
             self.save_status()
+            
+        # Update DB (Snapshot for crash recovery)
+        if symbol in self.positions:
+            pos = self.positions[symbol]
+            # Calculate Unrealized PnL for DB
+            qty = pos['quantity']
+            avg = pos['avg_price']
+            pnl = (price - avg) * qty if qty != 0 else 0
+            
+            self.db.update_position(
+                symbol=symbol,
+                quantity=qty,
+                entry_price=avg,
+                current_price=price,
+                pnl=pnl
+            )
 
     def update_signal(self, event):
         if event.type == 'SIGNAL':
@@ -171,7 +263,11 @@ class Portfolio:
             with self._cash_lock:
                 self.current_cash -= estimated_fee
             
-            print(f"  💸 Fee Paid: ${estimated_fee:.4f} ({fee_rate*100}%)")
+            # Deduct fee from Cash immediately (Fees are paid on every trade)
+            with self._cash_lock:
+                self.current_cash -= estimated_fee
+            
+            logger.info(f"  💸 Fee Paid: ${estimated_fee:.4f} ({fee_rate*100}%)")
             
             if event.direction == 'BUY':
                 # BUY can be: Close SHORT or Open LONG
@@ -209,7 +305,12 @@ class Portfolio:
                     elif pnl < 0:
                         self.strategy_performance[strat_id]['losses'] += 1
                     
-                    print(f"📈 SHORT Closed: {event.symbol} PnL=${pnl:.2f} (Entry: ${entry_price:.4f}, Exit: ${exit_price:.4f})")
+                    if pnl > 0:
+                        self.strategy_performance[strat_id]['wins'] += 1
+                    elif pnl < 0:
+                        self.strategy_performance[strat_id]['losses'] += 1
+                    
+                    logger.info(f"📈 SHORT Closed: {event.symbol} PnL=${pnl:.2f} (Entry: ${entry_price:.4f}, Exit: ${exit_price:.4f})")
                     
                     # FIXED: Value-based dust detection (consistent with close_position method)
                     # Check if remaining position is worth less than $1
@@ -299,7 +400,12 @@ class Portfolio:
                     elif pnl < 0:
                         self.strategy_performance[strat_id]['losses'] += 1
                         
-                    print(f"💰 LONG Closed: {event.symbol} PnL=${pnl:.2f} (Strategy: {strat_id})")
+                    if pnl > 0:
+                        self.strategy_performance[strat_id]['wins'] += 1
+                    elif pnl < 0:
+                        self.strategy_performance[strat_id]['losses'] += 1
+                        
+                    logger.info(f"💰 LONG Closed: {event.symbol} PnL=${pnl:.2f} (Strategy: {strat_id})")
                     
                     pos['quantity'] -= event.quantity
                     
@@ -338,7 +444,9 @@ class Portfolio:
                     pos['low_water_mark'] = fill_price
                     pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
                     
-                    print(f"📉 SHORT Opened: {event.symbol} @ ${fill_price:.4f} (Qty: {event.quantity})")
+                    pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
+                    
+                    logger.info(f"📉 SHORT Opened: {event.symbol} @ ${fill_price:.4f} (Qty: {event.quantity})")
             
             # Log Trade
             self.log_to_csv({
@@ -353,33 +461,31 @@ class Portfolio:
                 'details': f"Exchange: {event.exchange} | Margin: {margin_impact:.2f}"
             })
             
+            # Log Trade to DB
+            self.db.log_trade({
+                'symbol': event.symbol,
+                'side': event.direction,
+                'quantity': event.quantity,
+                'price': fill_price,
+                'timestamp': datetime.now(),
+                'order_type': 'MARKET', # Assuming market for now
+                'strategy_id': getattr(event, 'strategy_id', 'Unknown'),
+                'pnl': 0.0, # PnL is calculated on close, but we log the trade execution here
+                'commission': estimated_fee
+            })
+            
+            # Update Position in DB
+            pos = self.positions[event.symbol]
+            self.db.update_position(
+                symbol=event.symbol,
+                quantity=pos['quantity'],
+                entry_price=pos['avg_price'],
+                current_price=fill_price,
+                pnl=0.0 # Reset PnL on new trade execution until price update
+            )
+            
             if self.auto_save:
                 self.save_status()
-
-    def get_total_equity(self):
-        equity = self.current_cash
-        # In Futures, Equity = Cash + Unrealized PnL
-        # In Spot, Equity = Cash + Market Value of Assets
-        
-        if Config.BINANCE_USE_FUTURES:
-            # Futures Equity = Cash Balance + Unrealized PnL of all positions
-            unrealized_pnl = 0.0
-            for symbol, pos in self.positions.items():
-                if pos['quantity'] != 0:
-                    entry = pos['avg_price']
-                    curr = pos['current_price']
-                    qty = pos['quantity']
-                    
-                    if qty > 0: # LONG
-                        unrealized_pnl += (curr - entry) * qty
-                    else: # SHORT
-                        unrealized_pnl += (entry - curr) * abs(qty)
-            return equity + unrealized_pnl
-        else:
-            # Spot Equity
-            for symbol, pos in self.positions.items():
-                equity += pos['quantity'] * pos['current_price']
-            return equity
 
     def save_status(self):
         """
@@ -424,7 +530,72 @@ class Portfolio:
         except Exception as e:
             print(f"⚠️ Failed to save status CSV: {e}")
 
+
+    def check_exits(self, data_provider, events_queue):
+        """
+        LAYER 1: Portfolio-based exit monitoring.
+        Checks all open positions and generates EXIT signals based on PnL thresholds.
+        This is a safety net that runs regardless of strategy logic.
+        
+        Thresholds:
+        - Stop Loss: -0.3% (cut losses quickly)
+        - Take Profit: +0.8% (lock in profits)
+        - Trailing Stop: -0.2% from peak (protect profits)
+        """
+        from core.events import SignalEvent
+        from datetime import datetime
+        
+        for symbol, position in self.positions.items():
+            # Skip if no position
+            if position['quantity'] == 0:
+                continue
+                
+            current_price = position.get('current_price', 0)
+            entry_price = position.get('avg_price', 0)
+            quantity = position['quantity']
+            
+            # Skip if price not available
+            if current_price == 0 or entry_price == 0:
+                continue
+            
+            # Calculate PnL percentage
+            if quantity > 0:  # LONG position
+                pnl_pct = (current_price - entry_price) / entry_price
+                hwm = position.get('high_water_mark', current_price)
+                drawdown_from_peak = (current_price - hwm) / hwm
+                
+                # LONG Exit Conditions
+                if pnl_pct < -0.003:  # Stop Loss: -0.3%
+                    print(f"🛑 STOP LOSS triggered for {symbol}: {pnl_pct*100:.2f}%")
+                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='stop_loss'))
+                    
+                elif pnl_pct > 0.008:  # Take Profit: +0.8%
+                    print(f"💰 TAKE PROFIT triggered for {symbol}: {pnl_pct*100:.2f}%")
+                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='take_profit'))
+                    
+                elif drawdown_from_peak < -0.002 and pnl_pct > 0.002:  # Trailing Stop: -0.2% from peak (only if in profit)
+                    print(f"📉 TRAILING STOP triggered for {symbol}: Peak {hwm:.4f}, Now {current_price:.4f}")
+                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='trailing_stop'))
+                    
+            elif quantity < 0:  # SHORT position
+                pnl_pct = (entry_price - current_price) / entry_price
+                lwm = position.get('low_water_mark', current_price)
+                drawup_from_low = (lwm - current_price) / lwm
+                
+                # SHORT Exit Conditions
+                if pnl_pct < -0.003:  # Stop Loss: -0.3%
+                    print(f"🛑 STOP LOSS triggered for SHORT {symbol}: {pnl_pct*100:.2f}%")
+                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='stop_loss'))
+                    
+                elif pnl_pct > 0.008:  # Take Profit: +0.8%
+                    print(f"💰 TAKE PROFIT triggered for SHORT {symbol}: {pnl_pct*100:.2f}%")
+                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='take_profit'))
+                    
+                elif drawup_from_low < -0.002 and pnl_pct > 0.002:  # Trailing Stop
+                    print(f"📈 TRAILING STOP triggered for SHORT {symbol}: Low {lwm:.4f}, Now {current_price:.4f}")
+                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='trailing_stop'))
+
     def log_to_csv(self, data):
         df = pd.DataFrame([data])
         df.to_csv(self.csv_path, mode='a', header=False, index=False)
-        print(f"Logged: {data}")
+        # logger.info(f"Logged: {data}")

@@ -10,3 +10,4 @@ textblob
 nltk
 requests
 python-dotenv
+python-binance
