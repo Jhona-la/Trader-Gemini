@@ -1,9 +1,20 @@
+# 🚫 [Trader Gemini] Git Exclusion List
+
+# Environment and Credentials
+.env
+.env.*
+*.env
+secrets.json
+*.key
+*.pem
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+env/
 build/
 develop-eggs/
 dist/
@@ -24,42 +35,28 @@ wheels/
 .venv/
 venv/
 ENV/
-env/
 
-# IDE
+# Logs and Data (Sensitive Production Info)
+logs/
+data/
+dashboard/data/
+*.log
+*.csv
+*.json
+!**/.gitkeep
+
+# Models (Heavy and Dynamic)
+models/
+*.joblib
+*.pkl
+
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# Environment variables
-.env
-
-# Data files (CSV, JSON logs)
-dashboard/data/
-*.csv
-*.json
-live_status.json
-
-# Model files
-*.pkl
-*.joblib
-*.h5
-*.model
-
-# Logs
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Jupyter Notebooks
-.ipynb_checkpoints/
-*.ipynb
-
-# Temporary files
-*.tmp
-*.bak
-*.BAK
+# Project Specific
+production_reset.py
+flight_diagnostic.py
+tests/test_production_integrity.py

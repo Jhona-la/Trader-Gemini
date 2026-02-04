@@ -118,7 +118,12 @@ def test_tp1_forensic():
                 os.remove(file)
         db_path = os.path.join(Config.DATA_DIR, "trader_gemini.db")
         if os.path.exists(db_path):
-            os.remove(db_path)
+            try:
+                import time
+                time.sleep(0.1)
+                os.remove(db_path)
+            except PermissionError:
+                pass
 
 if __name__ == '__main__':
     success = test_tp1_forensic()

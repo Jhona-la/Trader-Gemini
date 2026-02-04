@@ -1,10 +1,19 @@
+
 import pandas as pd
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from config import Config  # Import Config for Futures/Spot detection
-from data.database import DatabaseHandler
+from core.enums import EventType, SignalType, OrderSide, OrderType, TradeDirection, TradeStatus
+from core.data_handler import get_data_handler
+from utils.analytics import AnalyticsEngine
 from utils.logger import logger
+from utils.transparent_logger import TransparentLogger
+from utils.debug_tracer import trace_execution
+from utils.position_cleaner import position_cleaner
+from utils.notifier import Notifier
+from utils.session_manager import get_session_manager
+from utils.data_manager import DatabaseHandler
 
 class Portfolio:
     def __init__(self, initial_capital=10000.0, csv_path="dashboard/data/trades.csv", status_path="dashboard/data/status.csv", auto_save=True):
@@ -26,7 +35,7 @@ class Portfolio:
         
         # Thread safety for cash operations
         import threading
-        self._cash_lock = threading.Lock()
+        self._cash_lock = threading.RLock()
         
         # Ensure directory exists
         os.makedirs(os.path.dirname(self.csv_path), exist_ok=True)
@@ -101,6 +110,7 @@ class Portfolio:
             print(f"⚠️  Failed to restore portfolio state: {e}")
             return False
     
+    @trace_execution
     def get_available_cash(self):
         """Return cash available for trading (Total Cash - Margin Used - Pending)."""
         with self._cash_lock:
@@ -158,6 +168,7 @@ class Portfolio:
                 
         return equity
     
+    @trace_execution
     def reserve_cash(self, amount):
         """Reserve cash for a pending order. Returns True if successful."""
         with self._cash_lock:
@@ -186,7 +197,7 @@ class Portfolio:
         """
         Update current market prices for all positions.
         """
-        if event.type == 'MARKET':
+        if event.type == EventType.MARKET:
             pass 
             
     def update_market_price(self, symbol, price):
@@ -236,12 +247,13 @@ class Portfolio:
                 pnl=pnl
             )
 
+    @trace_execution
     def update_signal(self, event):
-        if event.type == 'SIGNAL':
+        if event.type == EventType.SIGNAL:
             pass
 
     def update_fill(self, event):
-        if event.type == 'FILL':
+        if event.type == EventType.FILL:
             # Update Cash and Positions
             fill_cost = event.fill_cost # Total notional value (price * quantity)
             fill_price = event.fill_cost / event.quantity if event.quantity > 0 else 0
@@ -259,67 +271,71 @@ class Portfolio:
             fee_rate = 0.0006 if Config.BINANCE_USE_FUTURES else 0.001
             estimated_fee = fill_cost * fee_rate
             
-            # Deduct fee from Cash immediately (Fees are paid on every trade)
-            with self._cash_lock:
-                self.current_cash -= estimated_fee
-            
-            # Deduct fee from Cash immediately (Fees are paid on every trade)
+            # Deduct fee from Cash immediately (Atomic & Single Deduction)
             with self._cash_lock:
                 self.current_cash -= estimated_fee
             
             logger.info(f"  💸 Fee Paid: ${estimated_fee:.4f} ({fee_rate*100}%)")
             
-            if event.direction == 'BUY':
+            if event.direction == OrderSide.BUY:
                 # BUY can be: Close SHORT or Open LONG
                 pos = self.positions.get(event.symbol, {'quantity': 0, 'avg_price': 0})
                 
                 if pos['quantity'] < 0:
-                    # === CLOSING SHORT POSITION (Buying back) ===
-                    # PnL = (entry_price - exit_price) * quantity
+                    # === CLOSING SHORT (and potentially FLIPPING) ===
+                    short_qty = abs(pos['quantity'])
+                    closed_qty = min(short_qty, event.quantity)
+                    new_long_qty = max(0, event.quantity - closed_qty)
+                    
+                    # 1. Calculate PnL for the closed portion
                     entry_price = pos['avg_price']
                     exit_price = fill_price
-                    pnl = (entry_price - exit_price) * event.quantity
+                    pnl = (entry_price - exit_price) * closed_qty
                     
                     self.realized_pnl += pnl
-                    self.current_cash += pnl # Add PnL to cash
+                    with self._cash_lock:
+                         self.current_cash += pnl
                     
-                    # Release Margin
+                    # 2. Release Margin for closed portion
                     if Config.BINANCE_USE_FUTURES:
-                        # Approximate margin release (proportional to closed qty)
-                        # We assume margin was tracked correctly on open
-                        # Ideally we'd track margin per position, but global is okay for now
-                        self.used_margin = max(0, self.used_margin - margin_impact)
+                        # Proportional margin release
+                        closed_margin = (closed_qty * fill_price) / Config.BINANCE_LEVERAGE
+                        self.used_margin = max(0, self.used_margin - closed_margin)
                     
-                    # Update position
-                    pos['quantity'] += event.quantity  # Add to negative (closes it)
-                    
-                    # Strategy performance tracking
+                    # 3. Update Performance
                     strat_id = getattr(event, 'strategy_id', None) or pos.get('opener_strategy_id', 'Unknown')
                     if strat_id not in self.strategy_performance:
                         self.strategy_performance[strat_id] = {'pnl': 0.0, 'wins': 0, 'losses': 0, 'trades': 0}
-                    
                     self.strategy_performance[strat_id]['pnl'] += pnl
                     self.strategy_performance[strat_id]['trades'] += 1
-                    if pnl > 0:
-                        self.strategy_performance[strat_id]['wins'] += 1
-                    elif pnl < 0:
-                        self.strategy_performance[strat_id]['losses'] += 1
+                    if pnl > 0: self.strategy_performance[strat_id]['wins'] += 1
+                    elif pnl < 0: self.strategy_performance[strat_id]['losses'] += 1
                     
-                    if pnl > 0:
-                        self.strategy_performance[strat_id]['wins'] += 1
-                    elif pnl < 0:
-                        self.strategy_performance[strat_id]['losses'] += 1
+                    logger.info(f"📈 SHORT Closed: {event.symbol} PnL=${pnl:.2f} (Qty: {closed_qty})")
                     
-                    logger.info(f"📈 SHORT Closed: {event.symbol} PnL=${pnl:.2f} (Entry: ${entry_price:.4f}, Exit: ${exit_price:.4f})")
-                    
-                    # FIXED: Value-based dust detection (consistent with close_position method)
-                    # Check if remaining position is worth less than $1
-                    position_value = abs(pos['quantity']) * pos.get('current_price', exit_price)
-                    if position_value < 1.0:  # Less than $1 = dust
+                    # 4. Handle FLIP (Opening NEW LONG leg)
+                    if new_long_qty > 0:
+                        pos['quantity'] = new_long_qty
+                        pos['avg_price'] = fill_price
+                        pos['high_water_mark'] = fill_price
+                        pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
+                        
+                        # Add margin for the NEW leg
+                        if Config.BINANCE_USE_FUTURES:
+                            new_margin = (new_long_qty * fill_price) / Config.BINANCE_LEVERAGE
+                            with self._cash_lock:
+                                self.used_margin += new_margin
+                                self.pending_cash = max(0, self.pending_cash - new_margin)
+                        
+                        logger.info(f"🔄 FLIP: SHORT -> LONG {event.symbol} (New Qty: {new_long_qty} @ ${fill_price:.2f})")
+                    else:
                         pos['quantity'] = 0
-                        pos['low_water_mark'] = 0
-                        pos['stop_distance'] = 0
-                    
+                        pos['avg_price'] = 0
+                        position_cleaner.clean_position(event.symbol, pos)
+
+                    # REPORTING
+                    self.log_trade_report(event, pnl=pnl, fill_price=exit_price)
+
                     # CRITICAL FIX: Removed incorrect line that was:
                     # self.pending_cash = max(0, self.pending_cash - margin_impact)
                     # Margin is already released from used_margin on line 195 above.
@@ -363,58 +379,66 @@ class Portfolio:
                     pos['quantity'] = total_qty
                     
                     pos['high_water_mark'] = max(pos.get('high_water_mark', 0), fill_price)
+                    
+                    # REPORTING (Entry)
+                    self.log_trade_report(event, pnl=None, fill_price=fill_price)
                 
-            elif event.direction == 'SELL':
+            elif event.direction == OrderSide.SELL:
                 # SELL can be: Close LONG or Open SHORT
                 pos = self.positions.get(event.symbol, {'quantity': 0, 'avg_price': 0})
                 
                 if pos['quantity'] > 0:
-                    # === CLOSING LONG POSITION ===
+                    # === CLOSING LONG (and potentially FLIPPING) ===
+                    long_qty = pos['quantity']
+                    closed_qty = min(long_qty, event.quantity)
+                    new_short_qty = max(0, event.quantity - closed_qty)
                     
-                    # Calculate Realized PnL
-                    cost_basis = event.quantity * pos['avg_price']
-                    pnl = fill_cost - cost_basis
+                    # 1. Calculate PnL for closed portion
+                    pnl = (fill_price - pos['avg_price']) * closed_qty
                     self.realized_pnl += pnl
                     
-                    # Update Cash/Margin
+                    # 2. Update Cash/Margin
                     if Config.BINANCE_USE_FUTURES:
-                        self.current_cash += pnl # Add PnL
-                        self.used_margin = max(0, self.used_margin - margin_impact) # Release Margin
+                        with self._cash_lock:
+                             self.current_cash += pnl
+                        closed_margin = (closed_qty * fill_price) / Config.BINANCE_LEVERAGE
+                        self.used_margin = max(0, self.used_margin - closed_margin)
                     else:
-                        self.current_cash += fill_cost # Spot: Get full cash back
+                        with self._cash_lock:
+                             self.current_cash += (closed_qty * fill_price)
                     
-                    # Update Strategy Performance
-                    strat_id = getattr(event, 'strategy_id', None)
-                    if not strat_id and 'opener_strategy_id' in pos:
-                        strat_id = pos['opener_strategy_id']
-                    if not strat_id:
-                        strat_id = 'Unknown'
-
+                    # 3. Update Performance
+                    strat_id = getattr(event, 'strategy_id', None) or pos.get('opener_strategy_id', 'Unknown')
                     if strat_id not in self.strategy_performance:
                         self.strategy_performance[strat_id] = {'pnl': 0.0, 'wins': 0, 'losses': 0, 'trades': 0}
-                    
                     self.strategy_performance[strat_id]['pnl'] += pnl
                     self.strategy_performance[strat_id]['trades'] += 1
-                    if pnl > 0:
-                        self.strategy_performance[strat_id]['wins'] += 1
-                    elif pnl < 0:
-                        self.strategy_performance[strat_id]['losses'] += 1
+                    if pnl > 0: self.strategy_performance[strat_id]['wins'] += 1
+                    elif pnl < 0: self.strategy_performance[strat_id]['losses'] += 1
                         
-                    if pnl > 0:
-                        self.strategy_performance[strat_id]['wins'] += 1
-                    elif pnl < 0:
-                        self.strategy_performance[strat_id]['losses'] += 1
+                    logger.info(f"💰 LONG Closed: {event.symbol} PnL=${pnl:.2f} (Qty: {closed_qty})")
+                    
+                    # 4. Handle FLIP (Opening NEW SHORT leg)
+                    if new_short_qty > 0:
+                        pos['quantity'] = -new_short_qty
+                        pos['avg_price'] = fill_price
+                        pos['low_water_mark'] = fill_price
+                        pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
                         
-                    logger.info(f"💰 LONG Closed: {event.symbol} PnL=${pnl:.2f} (Strategy: {strat_id})")
-                    
-                    pos['quantity'] -= event.quantity
-                    
-                    # FIXED: Value-based dust detection (consistent with close_position method)
-                    position_value = pos['quantity'] * pos.get('current_price', fill_price)
-                    if position_value < 1.0:  # Less than $1 = dust
+                        if Config.BINANCE_USE_FUTURES:
+                            new_margin = (new_short_qty * fill_price) / Config.BINANCE_LEVERAGE
+                            with self._cash_lock:
+                                self.used_margin += new_margin
+                                self.pending_cash = max(0, self.pending_cash - new_margin)
+                        
+                        logger.info(f"🔄 FLIP: LONG -> SHORT {event.symbol} (New Qty: {new_short_qty} @ ${fill_price:.2f})")
+                    else:
                         pos['quantity'] = 0
-                        pos['high_water_mark'] = 0
-                        pos['stop_distance'] = 0
+                        pos['avg_price'] = 0
+                        position_cleaner.clean_position(event.symbol, pos)
+                        
+                    # REPORTING
+                    self.log_trade_report(event, pnl=pnl, fill_price=fill_price)
                 
                 else:
                     # === OPENING SHORT POSITION ===
@@ -444,15 +468,16 @@ class Portfolio:
                     pos['low_water_mark'] = fill_price
                     pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
                     
-                    pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
-                    
                     logger.info(f"📉 SHORT Opened: {event.symbol} @ ${fill_price:.4f} (Qty: {event.quantity})")
+                    
+                    # REPORTING (Entry)
+                    self.log_trade_report(event, pnl=None, fill_price=fill_price)
             
             # Log Trade
             self.log_to_csv({
-                'datetime': datetime.now(),
+                'datetime': datetime.now(timezone.utc),
                 'symbol': event.symbol,
-                'type': 'FILL',
+                'type': EventType.FILL,
                 'direction': event.direction,
                 'quantity': event.quantity,
                 'price': fill_price,
@@ -462,65 +487,104 @@ class Portfolio:
             })
             
             # Log Trade to DB
-            self.db.log_trade({
+            # ATOMIC DB UPDATE (Rule 5.2)
+            pos = self.positions[event.symbol]
+            
+            trade_payload = {
                 'symbol': event.symbol,
                 'side': event.direction,
                 'quantity': event.quantity,
                 'price': fill_price,
-                'timestamp': datetime.now(),
-                'order_type': 'MARKET', # Assuming market for now
+                'timestamp': datetime.now(timezone.utc),
+                'order_type': OrderType.MARKET,
                 'strategy_id': getattr(event, 'strategy_id', 'Unknown'),
-                'pnl': 0.0, # PnL is calculated on close, but we log the trade execution here
+                'pnl': 0.0, # Filled PnL (realized) could be passed here if calculated
                 'commission': estimated_fee
-            })
+            }
             
-            # Update Position in DB
-            pos = self.positions[event.symbol]
-            self.db.update_position(
-                symbol=event.symbol,
-                quantity=pos['quantity'],
-                entry_price=pos['avg_price'],
-                current_price=fill_price,
-                pnl=0.0 # Reset PnL on new trade execution until price update
-            )
+            position_payload = {
+                'symbol': event.symbol,
+                'quantity': pos['quantity'],
+                'entry_price': pos['avg_price'],
+                'current_price': fill_price,
+                'pnl': 0.0
+            }
+            
+            self.db.log_fill_event_atomic(trade_payload, position_payload)
             
             if self.auto_save:
                 self.save_status()
 
+    def close(self):
+        """
+        Graceful shutdown for portfolio resources.
+        """
+        logger.info("Portfolio: Closing database connections...")
+        if hasattr(self, 'db') and self.db:
+            self.db.close()
+        logger.info("✅ Portfolio: Shutdown complete.")
+
     def save_status(self):
         """
-        Save current portfolio state to CSV for Dashboard AND JSON for Crash Recovery.
+        Save current portfolio state using DataHandler (Phase 5).
+        Includes pre-calculated analytics for Dashboard efficiency.
         """
         equity = self.get_total_equity()
         unrealized_pnl = equity - self.initial_capital - self.realized_pnl
         
-        # 1. Prepare State Data
-        state_data = {
-            'timestamp': datetime.now().isoformat(),
+        # Get Session Info
+        session_mgr = get_session_manager()
+        session_id = session_mgr.get_session_id() if session_mgr else None
+        
+        # 0. Pre-calculate Analytics (Phase 5 Efficiency)
+        # Load recent history strictly for these calculations
+        metrics = {}
+        try:
+            # We need history to calc sharpe, but Expectancy uses trades
+            # For now, let's load minimal history if possible or calculate from what we have
+            # Ideally this should be optimized, but using AnalyticsEngine directly is robust
+            if hasattr(self, 'history_df') and not self.history_df.empty:
+               metrics = AnalyticsEngine.calculate_metrics(self.history_df)
+               
+            # Load trades for Expectancy
+            trades_path = os.path.join(os.path.dirname(self.status_path), "trades.csv")
+            if os.path.exists(trades_path):
+                trades_df = pd.read_csv(trades_path)
+                exp_stats = AnalyticsEngine.calculate_expectancy(trades_df)
+                metrics.update(exp_stats)
+        except Exception as e:
+            logger.warning(f"⚠️ Analytics pre-calc failed: {e}")
+        
+        # 1. Prepare JSON Data (Structured Schema)
+        json_data = {
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'session_id': session_id,
             'total_equity': equity,
             'cash': self.current_cash,
-            'used_margin': self.used_margin,
             'realized_pnl': self.realized_pnl,
             'unrealized_pnl': unrealized_pnl,
-            'positions': self.positions, # Raw dict
-            'strategy_performance': self.strategy_performance # Raw dict
+            'positions': self.positions,
+            'performance_metrics': metrics,  # New Phase 5 Field
+            'last_heartbeat': datetime.now(timezone.utc).isoformat()
         }
         
-        # 2. Save Atomic JSON (For Recovery)
-        # We save to a dedicated JSON file that matches what load_portfolio_state expects
-        json_path = self.status_path.replace('.csv', '.json')
-        try:
-            with open(json_path, 'w') as f:
-                json.dump(state_data, f, indent=4)
-        except Exception as e:
-            print(f"⚠️ Failed to save portfolio state JSON: {e}")
+        # 2. Atomic Save via DataHandler
+        handler = get_data_handler()
+        # Phase 6 Fix: Use consistent name 'live_status.json' for dashboard prioritization
+        json_path = os.path.join(os.path.dirname(self.status_path), "live_status.json")
+        handler.save_live_status(json_path, json_data)
         
-        # 3. Save CSV (For Dashboard History)
+        # 3. Save CSV (Legacy Support & Chart History)
         # Flatten dicts for CSV
-        csv_data = state_data.copy()
-        csv_data['timestamp'] = datetime.now() # Use datetime object for pandas
-        csv_data['positions'] = json.dumps(self.positions)
-        csv_data['strategy_performance'] = json.dumps(self.strategy_performance)
+        csv_data = {
+            'timestamp': datetime.now(timezone.utc),
+            'total_equity': equity,
+            'cash': self.current_cash,
+            'realized_pnl': self.realized_pnl,
+            'positions': json.dumps(self.positions),
+            'strategy_performance': json.dumps(self.strategy_performance),
+            'session_id': session_id
+        }
         
         # Append to status history
         df = pd.DataFrame([csv_data])
@@ -528,9 +592,25 @@ class Portfolio:
         try:
             df.to_csv(self.status_path, mode='a', header=header, index=False)
         except Exception as e:
-            print(f"⚠️ Failed to save status CSV: {e}")
+            logger.error(f"⚠️ Failed to save status CSV: {e}")
+            
+        # 4. Session Copy (Optional)
+        session_path = session_mgr.get_session_path() if session_mgr else None
+        if session_path and session_path != os.path.dirname(self.status_path):
+            try:
+                # Also save JSON to session
+                session_json = os.path.join(session_path, "live_status.json")
+                handler.save_live_status(session_json, json_data)
+                
+                # And CSV
+                session_csv = os.path.join(session_path, "status.csv")
+                s_header = not os.path.exists(session_csv)
+                df.to_csv(session_csv, mode='a', header=s_header, index=False)
+            except:
+                pass
 
 
+    @trace_execution
     def check_exits(self, data_provider, events_queue):
         """
         LAYER 1: Portfolio-based exit monitoring.
@@ -567,15 +647,18 @@ class Portfolio:
                 # LONG Exit Conditions
                 if pnl_pct < -0.003:  # Stop Loss: -0.3%
                     print(f"🛑 STOP LOSS triggered for {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='stop_loss'))
+                    from datetime import timezone
+                    events_queue.put(SignalEvent("99", symbol, datetime.now(timezone.utc), SignalType.EXIT, strength=1.0))
                     
                 elif pnl_pct > 0.008:  # Take Profit: +0.8%
                     print(f"💰 TAKE PROFIT triggered for {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='take_profit'))
+                    from datetime import timezone
+                    events_queue.put(SignalEvent("99", symbol, datetime.now(timezone.utc), SignalType.EXIT, strength=1.0))
                     
                 elif drawdown_from_peak < -0.002 and pnl_pct > 0.002:  # Trailing Stop: -0.2% from peak (only if in profit)
                     print(f"📉 TRAILING STOP triggered for {symbol}: Peak {hwm:.4f}, Now {current_price:.4f}")
-                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='trailing_stop'))
+                    from datetime import timezone
+                    events_queue.put(SignalEvent("99", symbol, datetime.now(timezone.utc), SignalType.EXIT, strength=1.0))
                     
             elif quantity < 0:  # SHORT position
                 pnl_pct = (entry_price - current_price) / entry_price
@@ -585,15 +668,68 @@ class Portfolio:
                 # SHORT Exit Conditions
                 if pnl_pct < -0.003:  # Stop Loss: -0.3%
                     print(f"🛑 STOP LOSS triggered for SHORT {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='stop_loss'))
+                    from datetime import timezone
+                    events_queue.put(SignalEvent("99", symbol, datetime.now(timezone.utc), SignalType.EXIT, strength=1.0))
                     
                 elif pnl_pct > 0.008:  # Take Profit: +0.8%
                     print(f"💰 TAKE PROFIT triggered for SHORT {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='take_profit'))
+                    from datetime import timezone
+                    events_queue.put(SignalEvent("99", symbol, datetime.now(timezone.utc), SignalType.EXIT, strength=1.0))
                     
                 elif drawup_from_low < -0.002 and pnl_pct > 0.002:  # Trailing Stop
                     print(f"📈 TRAILING STOP triggered for SHORT {symbol}: Low {lwm:.4f}, Now {current_price:.4f}")
-                    events_queue.put(SignalEvent(99, symbol, datetime.now(), 'EXIT', reason='trailing_stop'))
+                    from datetime import timezone
+                    events_queue.put(SignalEvent("99", symbol, datetime.now(timezone.utc), SignalType.EXIT, strength=1.0))
+
+    def log_trade_report(self, event, pnl=None, fill_price=0):
+        """
+        Prints a real-time report of the trade execution, Win Rate, and Balance.
+        Requested by User: "cada que compre y venda me vaya informando sobre el winrate... y pnl y balance"
+        """
+        try:
+            # 1. Global Performance Stats
+            total_wins = 0
+            total_losses = 0
+            total_trades = 0
+            
+            for strat, data in self.strategy_performance.items():
+                total_wins += data['wins']
+                total_losses += data['losses']
+                total_trades += data['trades']
+            
+            win_rate = (total_wins / total_trades * 100) if total_trades > 0 else 0.0
+            
+            # 2. Balance Stats
+            equity = self.get_total_equity()
+            balance_delta = equity - self.initial_capital
+            balance_pct = (balance_delta / self.initial_capital) * 100
+            
+            # 3. Formatting
+            direction_icon = "🟢 BUY" if event.direction == OrderSide.BUY else "🔴 SELL"
+            pnl_str = f"+${pnl:.2f}" if pnl and pnl > 0 else (f"-${abs(pnl):.2f}" if pnl else "N/A")
+            pnl_color = "🟢" if pnl and pnl > 0 else ("🔴" if pnl and pnl < 0 else "⚪")
+            
+            print("\n📢 ================= [ TRADE EXECUTION ] =================", flush=True)
+            print(f"   {direction_icon} {event.symbol} @ ${fill_price:.4f} (Qty: {event.quantity})", flush=True)
+            if pnl is not None:
+                print(f"   💰 PnL Realized: {pnl_color} {pnl_str}", flush=True)
+            
+            print(f"   🏆 Win Rate:     {win_rate:.1f}% ({total_wins} Wins / {total_losses} Losses)", flush=True)
+            print(f"   💵 Net Equity:   ${equity:.2f} ({'+' if balance_delta >=0 else ''}{balance_pct:.2f}%)", flush=True)
+            print("========================================================\n", flush=True)
+            
+            # --- NOTIFICACIÓN EXTERNA (Phase 4) ---
+            Notifier.notify_trade(
+                symbol=event.symbol,
+                direction=event.direction,
+                price=fill_price,
+                qty=event.quantity,
+                pnl=pnl,
+                winrate=win_rate
+            )
+            
+        except Exception as e:
+            print(f"⚠️ Report Error: {e}")
 
     def log_to_csv(self, data):
         df = pd.DataFrame([data])

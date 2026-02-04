@@ -1,0 +1,141 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.0.1, pluggy-1.6.0
+rootdir: C:\Users\jhona\Documents\Proyectos\Trader Gemini
+collected 15 items / 10 errors
+
+=================================== ERRORS ====================================
+___________ ERROR collecting tests/test_binance_loader_refactor.py ____________
+tests\test_binance_loader_refactor.py:3: in <module>
+    from data.binance_loader import BinanceData
+data\binance_loader.py:8: in <module>
+    from config import Config  # Import Config
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+config.py:9: in <module>
+    class Config:
+config.py:71: in Config
+    CRYPTO_SPOT_PAIRS = [s for s in CRYPTO_SPOT_PAIRS if s not in EXCLUDED_SYMBOLS]
+                                                                  ^^^^^^^^^^^^^^^^
+E   NameError: name 'EXCLUDED_SYMBOLS' is not defined
+_______________ ERROR collecting tests/test_connectivity_v2.py ________________
+tests\test_connectivity_v2.py:10: in <module>
+    from data.binance_loader import BinanceData
+data\binance_loader.py:8: in <module>
+    from config import Config  # Import Config
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+config.py:9: in <module>
+    class Config:
+config.py:71: in Config
+    CRYPTO_SPOT_PAIRS = [s for s in CRYPTO_SPOT_PAIRS if s not in EXCLUDED_SYMBOLS]
+                                                                  ^^^^^^^^^^^^^^^^
+E   NameError: name 'EXCLUDED_SYMBOLS' is not defined
+___________________ ERROR collecting tests/test_database.py ___________________
+tests\test_database.py:20: in <module>
+    from data.database import DatabaseHandler
+data\database.py:5: in <module>
+    from config import Config
+config.py:9: in <module>
+    class Config:
+config.py:71: in Config
+    CRYPTO_SPOT_PAIRS = [s for s in CRYPTO_SPOT_PAIRS if s not in EXCLUDED_SYMBOLS]
+                                                                  ^^^^^^^^^^^^^^^^
+E   NameError: name 'EXCLUDED_SYMBOLS' is not defined
+____________________ ERROR collecting tests/test_exits.py _____________________
+tests\test_exits.py:20: in <module>
+    from risk.risk_manager import RiskManager
+risk\risk_manager.py:2: in <module>
+    from config import Config
+config.py:9: in <module>
+    class Config:
+config.py:71: in Config
+    CRYPTO_SPOT_PAIRS = [s for s in CRYPTO_SPOT_PAIRS if s not in EXCLUDED_SYMBOLS]
+                                                                  ^^^^^^^^^^^^^^^^
+E   NameError: name 'EXCLUDED_SYMBOLS' is not defined
+_________________ ERROR collecting tests/test_persistence.py __________________
+tests\test_persistence.py:6: in <module>
+    from data.database import DatabaseHandler
+data\database.py:5: in <module>
+    from config import Config
+config.py:9: in <module>
+    class Config:
+config.py:71: in Config
+    CRYPTO_SPOT_PAIRS = [s for s in CRYPTO_SPOT_PAIRS if s not in EXCLUDED_SYMBOLS]
+                                                                  ^^^^^^^^^^^^^^^^
+E   NameError: name 'EXCLUDED_SYMBOLS' is not defined
+___________________ ERROR collecting tests/test_recovery.py ___________________
+tests\test_recovery.py:19: in <module>
+    from core.portfolio import Portfolio
+core\portfolio.py:5: in <module>
+    from config import Config  # Import Config for Futures/Spot detection
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+config.py:9: in <module>
+    class Config:
+config.py:71: in Config
+    CRYPTO_SPOT_PAIRS = [s for s in CRYPTO_SPOT_PAIRS if s not in EXCLUDED_SYMBOLS]
+                                                                  ^^^^^^^^^^^^^^^^
+E   NameError: name 'EXCLUDED_SYMBOLS' is not defined
+_________________ ERROR collecting tests/test_risk_engine.py __________________
+tests\test_risk_engine.py:21: in <module>
+    from risk.risk_manager import RiskManager
+risk\risk_manager.py:2: in <module>
+    from config import Config
+config.py:9: in <module>
+    class Config:
+config.py:71: in Config
+    CRYPTO_SPOT_PAIRS = [s for s in CRYPTO_SPOT_PAIRS if s not in EXCLUDED_SYMBOLS]
+                                                                  ^^^^^^^^^^^^^^^^
+E   NameError: name 'EXCLUDED_SYMBOLS' is not defined
+_________________ ERROR collecting tests/test_risk_manager.py _________________
+tests\test_risk_manager.py:4: in <module>
+    from risk.risk_manager import RiskManager
+risk\risk_manager.py:2: in <module>
+    from config import Config
+config.py:9: in <module>
+    class Config:
+config.py:71: in Config
+    CRYPTO_SPOT_PAIRS = [s for s in CRYPTO_SPOT_PAIRS if s not in EXCLUDED_SYMBOLS]
+                                                                  ^^^^^^^^^^^^^^^^
+E   NameError: name 'EXCLUDED_SYMBOLS' is not defined
+__________________ ERROR collecting tests/test_timestamps.py __________________
+tests\test_timestamps.py:5: in <module>
+    from config import Config
+config.py:9: in <module>
+    class Config:
+config.py:71: in Config
+    CRYPTO_SPOT_PAIRS = [s for s in CRYPTO_SPOT_PAIRS if s not in EXCLUDED_SYMBOLS]
+                                                                  ^^^^^^^^^^^^^^^^
+E   NameError: name 'EXCLUDED_SYMBOLS' is not defined
+_________________ ERROR collecting tests/test_tp1_forensic.py _________________
+tests\test_tp1_forensic.py:13: in <module>
+    from risk.risk_manager import RiskManager
+risk\risk_manager.py:2: in <module>
+    from config import Config
+config.py:9: in <module>
+    class Config:
+config.py:71: in Config
+    CRYPTO_SPOT_PAIRS = [s for s in CRYPTO_SPOT_PAIRS if s not in EXCLUDED_SYMBOLS]
+                                                                  ^^^^^^^^^^^^^^^^
+E   NameError: name 'EXCLUDED_SYMBOLS' is not defined
+============================== warnings summary ===============================
+.venv\Lib\site-packages\binance\ws\websocket_api.py:4
+.venv\Lib\site-packages\binance\ws\websocket_api.py:4
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\binance\ws\websocket_api.py:4: DeprecationWarning: websockets.WebSocketClientProtocol is deprecated
+    from websockets import WebSocketClientProtocol  # type: ignore
+
+.venv\Lib\site-packages\websockets\legacy\__init__.py:6
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\websockets\legacy\__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+ERROR tests/test_binance_loader_refactor.py - NameError: name 'EXCLUDED_SYMBO...
+ERROR tests/test_connectivity_v2.py - NameError: name 'EXCLUDED_SYMBOLS' is n...
+ERROR tests/test_database.py - NameError: name 'EXCLUDED_SYMBOLS' is not defined
+ERROR tests/test_exits.py - NameError: name 'EXCLUDED_SYMBOLS' is not defined
+ERROR tests/test_persistence.py - NameError: name 'EXCLUDED_SYMBOLS' is not d...
+ERROR tests/test_recovery.py - NameError: name 'EXCLUDED_SYMBOLS' is not defined
+ERROR tests/test_risk_engine.py - NameError: name 'EXCLUDED_SYMBOLS' is not d...
+ERROR tests/test_risk_manager.py - NameError: name 'EXCLUDED_SYMBOLS' is not ...
+ERROR tests/test_timestamps.py - NameError: name 'EXCLUDED_SYMBOLS' is not de...
+ERROR tests/test_tp1_forensic.py - NameError: name 'EXCLUDED_SYMBOLS' is not ...
+!!!!!!!!!!!!!!!!!! Interrupted: 10 errors during collection !!!!!!!!!!!!!!!!!!!
+======================= 3 warnings, 10 errors in 1.80s ========================

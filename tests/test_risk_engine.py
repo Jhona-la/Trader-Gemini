@@ -12,7 +12,7 @@ Tests for:
 import sys
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add parent directory to path
 project_root = Path(__file__).parent.parent
@@ -41,7 +41,7 @@ def test_position_sizing():
         signal = SignalEvent(
             strategy_id="TestStrategy",
             symbol="BTC/USDT",
-            datetime=datetime.now(),
+            datetime=datetime.now(timezone.utc),
             signal_type="LONG",
             strength=1.0
         )
@@ -86,7 +86,12 @@ def test_position_sizing():
                 os.remove(file)
         db_path = os.path.join(Config.DATA_DIR, "trader_gemini.db")
         if os.path.exists(db_path):
-            os.remove(db_path)
+            try:
+                import time
+                time.sleep(0.1)
+                os.remove(db_path)
+            except PermissionError:
+                pass
 
 def test_max_concurrent_positions():
     """Test max concurrent positions enforcement"""
@@ -116,7 +121,7 @@ def test_max_concurrent_positions():
         signal = SignalEvent(
             strategy_id="TestStrategy",
             symbol="AVAX/USDT",
-            datetime=datetime.now(),
+            datetime=datetime.now(timezone.utc),
             signal_type="LONG",
             strength=1.0
         )
@@ -130,7 +135,7 @@ def test_max_concurrent_positions():
         exit_signal = SignalEvent(
             strategy_id="TestStrategy",
             symbol="BTC/USDT",
-            datetime=datetime.now(),
+            datetime=datetime.now(timezone.utc),
             signal_type="EXIT",
             strength=1.0
         )
@@ -156,7 +161,12 @@ def test_max_concurrent_positions():
                 os.remove(file)
         db_path = os.path.join(Config.DATA_DIR, "trader_gemini.db")
         if os.path.exists(db_path):
-            os.remove(db_path)
+            try:
+                import time
+                time.sleep(0.1)
+                os.remove(db_path)
+            except PermissionError:
+                pass
 
 def test_risk_per_trade():
     """Test max risk per trade enforcement"""
@@ -186,7 +196,7 @@ def test_risk_per_trade():
         signal = SignalEvent(
             strategy_id="TestStrategy",
             symbol="BTC/USDT",
-            datetime=datetime.now(),
+            datetime=datetime.now(timezone.utc),
             signal_type="LONG",
             strength=1.0
         )
@@ -219,7 +229,12 @@ def test_risk_per_trade():
                 os.remove(file)
         db_path = os.path.join(Config.DATA_DIR, "trader_gemini.db")
         if os.path.exists(db_path):
-            os.remove(db_path)
+            try:
+                import time
+                time.sleep(0.1)
+                os.remove(db_path)
+            except PermissionError:
+                pass
 
 def test_stop_loss_calculations():
     """Test stop-loss trigger calculations"""
@@ -303,7 +318,12 @@ def test_stop_loss_calculations():
                 os.remove(file)
         db_path = os.path.join(Config.DATA_DIR, "trader_gemini.db")
         if os.path.exists(db_path):
-            os.remove(db_path)
+            try:
+                import time
+                time.sleep(0.1)
+                os.remove(db_path)
+            except PermissionError:
+                pass
 
 def test_minimum_order_size():
     """Test minimum order size enforcement"""
@@ -322,7 +342,7 @@ def test_minimum_order_size():
         signal = SignalEvent(
             strategy_id="TestStrategy",
             symbol="BTC/USDT",
-            datetime=datetime.now(),
+            datetime=datetime.now(timezone.utc),
             signal_type="LONG",
             strength=0.0003  # Very weak signal
         )
@@ -359,7 +379,12 @@ def test_minimum_order_size():
                 os.remove(file)
         db_path = os.path.join(Config.DATA_DIR, "trader_gemini.db")
         if os.path.exists(db_path):
-            os.remove(db_path)
+            try:
+                import time
+                time.sleep(0.1)
+                os.remove(db_path)
+            except PermissionError:
+                pass
 
 def run_all_tests():
     """Run all risk engine tests"""

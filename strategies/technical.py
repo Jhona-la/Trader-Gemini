@@ -1,264 +1,420 @@
-import talib
-import numpy as np
-from .strategy import Strategy
-from core.events import SignalEvent
+"""
+Estrategia Técnica HÍBRIDA - Optimized for $12→$50 Scalping
+Combina simplicidad del scalping con robustez del análisis técnico avanzado
+"""
 
-class TechnicalStrategy(Strategy):
+import numpy as np
+import pandas as pd
+import talib
+from core.events import SignalEvent
+from core.enums import SignalType
+from datetime import datetime, timezone
+from config import Config
+
+class HybridScalpingStrategy:
+    """
+    Estrategia híbrida que combina:
+    - Velocidad y simplicidad del scalping
+    - Análisis multi-timeframe del código original  
+    - Filtros de tendencia robustos
+    - TP/SL definidos para scalping
+    """
+    
     def __init__(self, data_provider, events_queue):
         self.data_provider = data_provider
         self.events_queue = events_queue
+        self.strategy_id = "HYBRID_SCALPING"
         
-        # RELAXED THRESHOLDS: Allow more opportunities while maintaining trend filter
-        # RSI 45 allows entry on pullbacks in uptrends (was 30, too restrictive)
-        # RSI 35/70 - More selective to avoid chop
-        self.rsi_period = 14
-        self.rsi_buy = 35  # Was 45 - Stricter entry
-        self.rsi_sell = 70 # Was 65 - Let winners run slightly more
-        self.symbol_list = data_provider.symbol_list
-        self.bought = {s: False for s in self.symbol_list}
-        self.last_processed_times = {s: None for s in self.symbol_list}
+        # Parámetros centralizados en Config.Strategies
+        self.BB_PERIOD = getattr(Config.Strategies, 'TECH_BB_PERIOD', 20)
+        self.BB_STD = getattr(Config.Strategies, 'TECH_BB_STD', 2.0)
+        
+        self.RSI_PERIOD = getattr(Config.Strategies, 'TECH_RSI_PERIOD', 14)
+        self.RSI_OVERBOUGHT = getattr(Config.Strategies, 'TECH_RSI_SELL', 70)
+        self.RSI_OVERSOLD = getattr(Config.Strategies, 'TECH_RSI_BUY', 30)
+        
+        self.MACD_FAST = 12
+        self.MACD_SLOW = 26
+        self.MACD_SIGNAL = 9
+        
+        # TP/SL centralizados
+        self.TP_PCT = getattr(Config.Strategies, 'TECH_TP_PCT', 0.015)
+        self.SL_PCT = getattr(Config.Strategies, 'TECH_SL_PCT', 0.02)
+        
+        # Filtro de tendencia centralizado
+        self.EMA_FAST = getattr(Config.Strategies, 'TECH_EMA_FAST', 20)
+        self.EMA_SLOW = getattr(Config.Strategies, 'TECH_EMA_SLOW', 50)
+        
+        # Mejora del ORIGINAL: Multi-timeframe
+        self.MULTI_TIMEFRAME_WEIGHTS = {
+            '5m': 0.4,   # Peso principal (timeframe de trading)
+            '15m': 0.3,  # Confirmación
+            '1h': 0.3    # Dirección general
+        }
+        
+        # Estado (del ORIGINAL)
+        self.bought = {}
+        self.last_processed_times = {}
+        self.last_trade_times = {} # FOR COOLDOWNS (Rule 4.1)
+
+    def calculate_indicators(self, df, timeframe='5m'):
+        """Calcular indicadores para un timeframe específico - COMBINADO"""
+        # Bollinger Bands (del SCALPING)
+        df['bb_middle'] = df['close'].rolling(self.BB_PERIOD).mean()
+        df['bb_std'] = df['close'].rolling(self.BB_PERIOD).std()
+        df['bb_upper'] = df['bb_middle'] + (self.BB_STD * df['bb_std'])
+        df['bb_lower'] = df['bb_middle'] - (self.BB_STD * df['bb_std'])
+        
+        # RSI (común a ambos)
+        df['rsi'] = talib.RSI(df['close'], timeperiod=self.RSI_PERIOD)
+        
+        # MACD (del SCALPING)
+        df['macd'], df['macd_signal'], df['macd_hist'] = talib.MACD(
+            df['close'], 
+            fastperiod=self.MACD_FAST,
+            slowperiod=self.MACD_SLOW, 
+            signalperiod=self.MACD_SIGNAL
+        )
+        
+        # MEJORA del ORIGINAL: EMAs para tendencia
+        df['ema_fast'] = talib.EMA(df['close'], timeperiod=self.EMA_FAST)
+        df['ema_slow'] = talib.EMA(df['close'], timeperiod=self.EMA_SLOW)
+        df['in_uptrend'] = df['ema_fast'] > df['ema_slow']
+        
+        # Volume (común)
+        df['volume_ma'] = df['volume'].rolling(20).mean()
+        df['volume_ratio'] = df['volume'] / df['volume_ma']
+        
+        # ATR para volatilidad (común)
+        df['atr'] = talib.ATR(df['high'], df['low'], df['close'], timeperiod=14)
+        
+        # ADX por solicitud del usuario (Tendencia > 25)
+        df['adx'] = talib.ADX(df['high'], df['low'], df['close'], timeperiod=14)
+
+        return df
+
+    def get_multi_timeframe_data(self, symbol):
+        """MEJORA del ORIGINAL: Análisis multi-timeframe simplificado"""
+        timeframe_data = {}
+        
+        # Timeframe principal (5m)
+        try:
+            bars_5m = self.data_provider.get_latest_bars(symbol, n=50)
+            if len(bars_5m) >= 30:
+                df_5m = self._bars_to_dataframe(bars_5m)
+                df_5m = self.calculate_indicators(df_5m, '5m')
+                timeframe_data['5m'] = df_5m
+        except:
+            pass
+        
+        # Timeframe 15m (confirmación)
+        try:
+            bars_15m = self.data_provider.get_latest_bars_15m(symbol, n=30)
+            if len(bars_15m) >= 20:
+                df_15m = self._bars_to_dataframe(bars_15m)
+                df_15m = self.calculate_indicators(df_15m, '15m')
+                timeframe_data['15m'] = df_15m
+        except:
+            pass
+        
+        # Timeframe 1h (tendencia general)
+        try:
+            bars_1h = self.data_provider.get_latest_bars_1h(symbol, n=50)
+            if len(bars_1h) >= 30:
+                df_1h = self._bars_to_dataframe(bars_1h)
+                df_1h = self.calculate_indicators(df_1h, '1h')
+                timeframe_data['1h'] = df_1h
+        except:
+            pass
+        
+        return timeframe_data
+
+    def _bars_to_dataframe(self, bars):
+        """Convertir bars a DataFrame - Útil para ambos enfoques"""
+        data = []
+        for b in bars:
+            data.append({
+                'datetime': b['datetime'],
+                'open': b['open'],
+                'high': b['high'], 
+                'low': b['low'],
+                'close': b['close'],
+                'volume': b['volume']
+            })
+        return pd.DataFrame(data)
+
+    def calculate_multi_timeframe_confluence(self, timeframe_data):
+        """MEJORA del ORIGINAL: Confluence simplificado"""
+        confluence_score = 0.0
+        total_weight = 0.0
+        
+        for tf, weight in self.MULTI_TIMEFRAME_WEIGHTS.items():
+            if tf in timeframe_data:
+                df = timeframe_data[tf]
+                if len(df) > 0:
+                    last = df.iloc[-1]
+                    
+                    # Puntuación basada en tendencia y momentum
+                    tf_score = 0.0
+                    
+                    # Bonus por alineación con tendencia
+                    if last['in_uptrend']:
+                        tf_score += 0.3
+                    
+                    # Bonus por RSI saludable (40-60)
+                    if 40 <= last['rsi'] <= 60:
+                        tf_score += 0.2
+                    # Bonus extra por RSI en extremos con tendencia
+                    elif last['in_uptrend'] and last['rsi'] < 40:
+                        tf_score += 0.3  # Pullback en uptrend
+                    elif not last['in_uptrend'] and last['rsi'] > 60:
+                        tf_score += 0.3  # Rally en downtrend
+                    
+                    # Bonus por volumen
+                    if last['volume_ratio'] > 1.5:
+                        tf_score += 0.2
+                    
+                    confluence_score += tf_score * weight
+                    total_weight += weight
+        
+        # Normalizar a 0-1
+        if total_weight > 0:
+            confluence_score /= total_weight
+        
+        return min(confluence_score, 1.0)
+
+    def detect_scalping_setup(self, df_5m):
+        """Detección de setups de scalping - del SCALPING mejorado"""
+        if len(df_5m) < 2:
+            return None
+        
+        last = df_5m.iloc[-1]
+        prev = df_5m.iloc[-2]
+        
+        # MEJORA: Combinar mean reversion y momentum
+        setups = {
+            'long_mean_rev': False,
+            'short_mean_rev': False, 
+            'long_momentum': False,
+            'short_momentum': False,
+            'rsi': last['rsi'],
+            'volume_ratio': last['volume_ratio'],
+            'in_uptrend': last['in_uptrend'],
+            'bb_position': (last['close'] - last['bb_lower']) / (last['bb_upper'] - last['bb_lower']) if (last['bb_upper'] - last['bb_lower']) > 0 else 0.5
+        }
+        
+        # 1. MEAN REVERSION (del SCALPING)
+        price_at_lower = last['close'] <= last['bb_lower']
+        price_at_upper = last['close'] >= last['bb_upper']
+        rsi_oversold = last['rsi'] < self.RSI_OVERSOLD
+        rsi_overbought = last['rsi'] > self.RSI_OVERBOUGHT
+        high_volume = last['volume_ratio'] > 1.5
+        
+        # MEJORA: Requerir alineación con tendencia para mean reversion
+        setups['long_mean_rev'] = price_at_lower and rsi_oversold and high_volume and last['in_uptrend']
+        setups['short_mean_rev'] = price_at_upper and rsi_overbought and high_volume and not last['in_uptrend']
+        
+        # 2. MOMENTUM (del SCALPING + filtro tendencia)
+        macd_bullish = last['macd'] > last['macd_signal'] and last['macd_hist'] > 0
+        macd_bearish = last['macd'] < last['macd_signal'] and last['macd_hist'] < 0
+        volume_increasing = last['volume'] > prev['volume']
+        
+        # MEJORA: Momentum solo en dirección de tendencia
+        rsi_momentum_zone = 40 < last['rsi'] < 60
+        
+        setups['long_momentum'] = macd_bullish and rsi_momentum_zone and volume_increasing and last['in_uptrend']
+        setups['short_momentum'] = macd_bearish and rsi_momentum_zone and volume_increasing and not last['in_uptrend']
+        
+        return setups
+
+    def calculate_signal_strength(self, setups, confluence_score, volatility):
+        """Cálculo de fuerza de señal COMBINADO"""
+        strength = 0.0
+        
+        # BASE SCORE por tipo de setup
+        if setups['long_mean_rev'] or setups['short_mean_rev']:
+            strength += 0.6  # Mean reversion tiene mayor convicción
+            
+            # Bonus por RSI extremo
+            if setups['rsi'] < 25 or setups['rsi'] > 75:
+                strength += 0.15
+            
+        elif setups['long_momentum'] or setups['short_momentum']:
+            strength += 0.4  # Momentum tiene menor convicción en scalping
+        
+        # MEJORA del ORIGINAL: Multi-timeframe confluence
+        strength += confluence_score * 0.3
+        
+        # MEJORA del ORIGINAL: Volume boost
+        if setups['volume_ratio'] > 2.0:
+            strength += 0.1
+        elif setups['volume_ratio'] > 1.5:
+            strength += 0.05
+        
+        # Penalty por alta volatilidad (del SCALPING)
+        if volatility > 0.025:
+            strength *= 0.7
+        elif volatility > 0.015:
+            strength *= 0.9
+        
+        return min(strength, 1.0)
+
+    def generate_signals(self):
+        """Generación de señales HÍBRIDA"""
+        symbols = self.data_provider.symbol_list
+        
+        for symbol in symbols:
+            try:
+                # MEJORA del ORIGINAL: Deduplicación
+                current_time = datetime.now(timezone.utc)
+                dedupe_key = f"{symbol}-{current_time.minute//5}"  # Agrupar por bloques de 5min
+                
+                if self.last_processed_times.get(dedupe_key):
+                    continue
+                self.last_processed_times[dedupe_key] = True
+                
+                # --- XRP SPECIFIC COOLDOWN (Rule 4.1) ---
+                if 'XRP' in symbol:
+                    last_trade = self.last_trade_times.get(symbol, 0)
+                    if (current_time.timestamp() - last_trade) < 3600: # 60 minutes
+                        continue
+                
+                # 1. Obtener datos multi-timeframe (MEJORA del ORIGINAL)
+                timeframe_data = self.get_multi_timeframe_data(symbol)
+                
+                if '5m' not in timeframe_data:
+                    continue
+                
+                df_5m = timeframe_data['5m']
+                if len(df_5m) < 5:
+                    continue
+                
+                # 2. Calcular confluence multi-timeframe (MEJORA del ORIGINAL)
+                confluence_score = self.calculate_multi_timeframe_confluence(timeframe_data)
+                
+                # 3. Detectar setups en 5m (del SCALPING)
+                setups = self.detect_scalping_setup(df_5m)
+                if not setups:
+                    continue
+                
+                # 4. Calcular volatilidad
+                volatility = df_5m.iloc[-1]['atr'] / df_5m.iloc[-1]['close']
+                
+                # 5. Determinar dirección
+                signal_type = None
+                if setups['long_mean_rev'] or setups['long_momentum']:
+                    signal_type = SignalType.LONG
+                elif setups['short_mean_rev'] or setups['short_momentum']:
+                    signal_type = SignalType.SHORT
+                
+                if signal_type is None:
+                    continue
+                
+                # --- XRP TREND ALIGNMENT (Rule 4.3) ---
+                if 'XRP' in symbol:
+                    # Enforce alignment with 1h trend for XRP
+                    if '1h' in timeframe_data:
+                        last_1h = timeframe_data['1h'].iloc[-1]
+                        # trend_1h logic from ml_strategy logic or similar:
+                        # HybridScalpingStrategy also has in_uptrend for 1h
+                        trend_1h = 1 if last_1h['in_uptrend'] else -1
+                        if (signal_type == SignalType.LONG and trend_1h < 0) or \
+                           (signal_type == SignalType.SHORT and trend_1h > 0):
+                            continue
+                
+                # 6. Calcular fuerza (COMBINADO)
+                strength = self.calculate_signal_strength(setups, confluence_score, volatility)
+                
+                # OPTIMIZACIÓN DE FRECUENCIA (Quality over Quantity)
+                # 1. Filtro ADX > 25 (Evitar mercados planos)
+                current_adx = df_5m.iloc[-1]['adx']
+                if current_adx < 25:
+                    # Permitir solo si RSI es extremo (Mean Reversion puro en rango)
+                    # Si no es extremo y ADX < 25 -> Ignorar
+                    is_rsi_extreme = setups['rsi'] < 25 or setups['rsi'] > 75
+                    if not is_rsi_extreme:
+                        continue
+                
+                # 2. Umbral aumentado (0.6 -> 0.7)
+                if strength < 0.7:
+                    continue
+                
+                # 7. Verificar si ya estamos en posición (del ORIGINAL)
+                if symbol not in self.bought:
+                    self.bought[symbol] = False
+                
+                # --- INTELLIGENT REVERSE DETECTION (Phase 5) ---
+                if self.bought[symbol]:
+                    existing_pos = self.data_provider.get_active_positions().get(symbol, {'quantity': 0})
+                    current_qty = existing_pos['quantity']
+                    
+                    # Check for Strong Opposite Signal
+                    is_currently_long = current_qty > 0
+                    is_currently_short = current_qty < 0
+                    
+                    strong_reverse = False
+                    if is_currently_long and (setups['short_mean_rev'] or setups['short_momentum']) and strength > 0.8:
+                        strong_reverse = True
+                        signal_type = SignalType.REVERSE
+                    elif is_currently_short and (setups['long_mean_rev'] or setups['long_momentum']) and strength > 0.8:
+                        strong_reverse = True
+                        signal_type = SignalType.REVERSE
+                    
+                    if strong_reverse:
+                        logger.info(f"🔄 [{symbol}] STRONG REVERSE detected (Strength: {strength:.2f}). Triggering Flip.")
+                        # Proceed to create SIGNAL (REVERSE) below
+                    else:
+                        # Standard Exit Logic...
+                        current_rsi = setups['rsi']
+                        if (current_qty > 0 and current_rsi > 70) or \
+                           (current_qty < 0 and current_rsi < 30):
+                            # Señal de salida
+                            exit_signal = SignalEvent(
+                                strategy_id=self.strategy_id,
+                                symbol=symbol,
+                                datetime=current_time,
+                                signal_type=SignalType.EXIT,
+                                strength=1.0
+                            )
+                            self.events_queue.put(exit_signal)
+                            self.bought[symbol] = False
+                            print(f"🔄 EXIT {symbol}: RSI extremo ({current_rsi:.1f})")
+                        continue
+                
+                # 8. Crear señal de entrada
+                signal = SignalEvent(
+                    strategy_id=self.strategy_id,
+                    symbol=symbol,
+                    datetime=current_time,
+                    signal_type=signal_type,
+                    strength=strength,
+                    atr=df_5m.iloc[-1]['atr']
+                )
+                
+                # METADATOS para Risk Manager (del SCALPING)
+                signal.tp_pct = self.TP_PCT * 100
+                signal.sl_pct = self.SL_PCT * 100
+                signal.current_price = df_5m.iloc[-1]['close']
+                
+                # MEJORA: Información multi-timeframe para Risk Manager
+                signal.multi_timeframe_score = confluence_score
+                signal.trend_direction = "UP" if setups['in_uptrend'] else "DOWN"
+                
+                # 9. Update last trade time and finalize
+                self.last_trade_times[symbol] = current_time.timestamp()
+                self.events_queue.put(signal)
+                self.bought[symbol] = True
+                
+                # LOG detallado (COMBINADO)
+                setup_type = "MEAN_REV" if (setups['long_mean_rev'] or setups['short_mean_rev']) else "MOMENTUM"
+                print(f"✅ {signal_type.name} {symbol}: Strength={strength:.2f}, "
+                      f"Setup={setup_type}, RSI={setups['rsi']:.1f}, "
+                      f"Confluence={confluence_score:.2f}, Vol={setups['volume_ratio']:.1f}x")
+                
+            except Exception as e:
+                print(f"❌ Error processing {symbol}: {e}")
+                continue
 
     def calculate_signals(self, event):
-        if event.type == 'MARKET':
-            for s in self.symbol_list:
-                # Get enough bars for EMA 200
-                bars = self.data_provider.get_latest_bars(s, n=210)
-                if len(bars) < 210:
-                    continue  # Skip this symbol, continue with next one
-
-                # Extract close prices
-                closes = np.array([b['close'] for b in bars])
-                
-                # CRITICAL FIX: Use CLOSED candle ([-2]) for indicators to avoid Repainting/Lookahead Bias
-                # If we use [-1], the signal might flash ON and OFF during the candle.
-                # We want confirmed signals.
-                
-                # Calculate RSI
-                rsi = talib.RSI(closes, timeperiod=self.rsi_period)
-                current_rsi = rsi[-2] # Use last CLOSED candle
-                
-                # TREND FILTER: Calculate EMA 50 and EMA 200
-                ema_50 = talib.EMA(closes, timeperiod=50)
-                ema_200 = talib.EMA(closes, timeperiod=200)
-                
-                # Trend determination: Uptrend if EMA 50 > EMA 200 (on closed candle)
-                in_uptrend = ema_50[-2] > ema_200[-2]
-                
-                timestamp = bars[-1]['datetime']
-
-                # Deduplication
-                if self.last_processed_times[s] == timestamp:
-                    continue
-                self.last_processed_times[s] = timestamp
-                
-                # STRATEGY COLLABORATION: Regime Detection
-                # Calculate ADX to detect trend strength
-                highs = np.array([b['high'] for b in bars])
-                lows = np.array([b['low'] for b in bars])
-                adx = talib.ADX(highs, lows, closes, timeperiod=14)
-                current_adx = adx[-2] if len(adx) > 1 else 20 # Last CLOSED candle
-                
-                # Calculate ATR for volatility-based sizing
-                atr = talib.ATR(highs, lows, closes, timeperiod=14)
-                current_atr = atr[-2] if len(atr) > 1 else 0 # Last CLOSED candle
-                
-                # VOLUME CONFIRMATION: Check if volume supports signal
-                volumes = np.array([b['volume'] for b in bars])
-                volume_ma = talib.SMA(volumes, timeperiod=20)[-2]
-                current_volume = bars[-2]['volume'] # Last CLOSED volume
-                volume_ratio = current_volume / volume_ma if volume_ma > 0 else 1.0
-                
-                # MOMENTUM BREAKOUT CHECK (Before ADX Filter)
-                # If ADX > 25 (Strong Trend) AND RSI is healthy (50-70) AND Volume Surge
-                # We want to capture this move, not skip it!
-                is_breakout = (current_adx > 25 and 
-                               50 < current_rsi < 70 and 
-                               volume_ratio > 1.5)
-                
-                # DYNAMIC RSI THRESHOLDS (Regime Adaptive)
-                # User Request: "Keep moving with the trend"
-                
-                current_rsi_buy = self.rsi_buy
-                current_rsi_sell = self.rsi_sell
-                
-                if current_adx > 25:
-                    # TRENDING REGIME: Aggressive Entries on Pullbacks
-                    # In strong trends, RSI rarely drops to 35. We enter on shallow pullbacks.
-                    if in_uptrend:
-                        current_rsi_buy = 50  # Buy shallow dips (was 35)
-                        current_rsi_sell = 75 # Let winners run (was 70)
-                        # print(f"  🚀 {s}: Trending Bull (ADX {current_adx:.1f}) - Aggressive Entry < {current_rsi_buy}")
-                    else:
-                        # Downtrend logic (if we were shorting, but we focus on Longs for now)
-                        pass
-                else:
-                    # RANGING REGIME: Conservative Mean Reversion
-                    # Market is choppy, require deep value
-                    current_rsi_buy = 35
-                    current_rsi_sell = 70
-                    # print(f"  🦀 {s}: Ranging (ADX {current_adx:.1f}) - Conservative Entry < {current_rsi_buy}")
-
-                # Skip strong trending markets ONLY if we are counter-trend trading (which we aren't)
-                # We removed the 'continue' block here to allow Trend Following.
-
-                # MULTI-TIMEFRAME ANALYSIS: 5m, 15m, 1h
-                # Calculate RSI on multiple timeframes for confluence
-                rsi_5m = 50  # Default neutral
-                rsi_15m = 50
-                rsi_1h = 50
-                
-                try:
-                    # 5m timeframe
-                    bars_5m = self.data_provider.get_latest_bars_5m(s, n=30)
-                    if len(bars_5m) >= 14:
-                        closes_5m = np.array([b['close'] for b in bars_5m])
-                        rsi_5m = talib.RSI(closes_5m, timeperiod=14)[-1]
-                except:
-                    pass
-                
-                try:
-                    # 15m timeframe
-                    bars_15m = self.data_provider.get_latest_bars_15m(s, n=30)
-                    if len(bars_15m) >= 14:
-                        closes_15m = np.array([b['close'] for b in bars_15m])
-                        rsi_15m = talib.RSI(closes_15m, timeperiod=14)[-1]
-                except:
-                    pass
-                # Result: -1.0 (all overbought) to +1.0 (all oversold)
-                
-                # 1h Trend (Restored)
-                trend_1h = 'NEUTRAL'
-                try:
-                    bars_1h = self.data_provider.get_latest_bars_1h(s, n=210)
-                    if len(bars_1h) >= 200:
-                        # Exclude last bar (current open candle)
-                        closes_1h = np.array([b['close'] for b in bars_1h[:-1]])
-                        
-                        if len(closes_1h) >= 200:
-                            ema_50_1h = talib.EMA(closes_1h, timeperiod=50)[-1]
-                            ema_200_1h = talib.EMA(closes_1h, timeperiod=200)[-1]
-                            
-                            if ema_50_1h > ema_200_1h:
-                                trend_1h = 'UP'
-                            else:
-                                trend_1h = 'DOWN'
-                            
-                            # Calculate 1h RSI for confluence
-                            rsi_1h = talib.RSI(closes_1h, timeperiod=14)[-1]
-                except:
-                    pass
-
-                confluence = 0.0
-                # CRITICAL FIX: Corrected inverted logic (was x < 50, now x > 50)
-                # RSI > 50 = Bullish → LONG signal (+)
-                # RSI < 50 = Bearish → SHORT signal (-)
-                confluence += 0.15 if current_rsi > 50 else -0.15  # 1m: 15% weight
-                confluence += 0.25 if rsi_5m > 50 else -0.25      # 5m: 25% weight
-                confluence += 0.30 if rsi_15m > 50 else -0.30     # 15m: 30% weight
-                confluence += 0.30 if rsi_1h > 50 else -0.30      # 1h: 30% weight
-                # Total: 100% weight distributed across all timeframes
-
-                # PRINT TECH STATS (User Request)
-                print(f"[TECH] Strategy {s}: RSI={current_rsi:.1f} (5m:{rsi_5m:.1f} 15m:{rsi_15m:.1f}) Trend={'UP' if in_uptrend else 'DOWN'} (1h:{trend_1h}) ADX={current_adx:.1f} Confluence={confluence:+.2f}")
-
-                # ADAPTIVE RSI THRESHOLDS: Adjust based on volatility
-                current_price = bars[-1]['close']
-                atr_pct = (current_atr / current_price) * 100 if current_price > 0 else 0.5
-                
-                # High volatility -> More aggressive (higher RSI threshold)
-                # Low volatility -> Conservative (lower RSI threshold)
-                if atr_pct > 1.0:  # High volatility
-                    dynamic_rsi_buy = 50  # Buy on moderate pullback
-                    dynamic_rsi_sell = 60  # Take profit earlier
-                elif atr_pct > 0.5:  # Medium volatility
-                    dynamic_rsi_buy = self.rsi_buy  # Use default (45)
-                    dynamic_rsi_sell = self.rsi_sell  # Use default (65)
-                else:  # Low volatility
-                    dynamic_rsi_buy = 40  # Wait for deeper pullback
-                    dynamic_rsi_sell = 70  # Let it run longer
-                
-                # VOLUME CONFIRMATION (Calculated above)
-
-                # IMPROVED: Proper position management with trend filter
-                # BUY when RSI pullback AND in uptrend (ranging/weak trend markets only)
-                # AND 1h Trend is UP or NEUTRAL (Multi-timeframe confirmation)
-                
-                # 1. RSI PULLBACK ENTRY (Standard)
-                is_pullback = current_rsi < dynamic_rsi_buy and in_uptrend
-                
-                # 2. MOMENTUM BREAKOUT ENTRY (Already calculated above)
-                # is_breakout = ...
-                
-                # ENTRY LONG
-                if (is_pullback or is_breakout) and not self.bought[s]:
-                    # AGGRESSIVE MODE: Much lower confluence threshold (user requested)
-                    # Changed from 0.5 to -0.3 to allow trading in any direction
-                    if confluence < -0.3:
-                        print(f"  >> Skipping {s}: Weak confluence ({confluence:+.2f}) - extreme disagreement")
-                    # REMOVED 1h trend filter for more aggressive trading
-                    elif False:  # Disabled
-                        pass
-                    else:
-                        # DYNAMIC STRENGTH: Scale based on signal type
-                        if is_breakout:
-                            strength = 1.0 # Breakouts are high conviction
-                            print(f"[!!] BREAKOUT Signal for {s}: RSI={current_rsi:.1f} Vol={volume_ratio:.1f}x")
-                        else:
-                            # Pullback strength based on RSI depth
-                            rsi_diff = max(0, dynamic_rsi_buy - current_rsi)
-                            strength = min(1.0, 0.5 + (rsi_diff * 0.02))
-                        
-                        # VOLUME BOOST: Increase strength if high volume
-                        if volume_ratio > 1.5:
-                            strength = min(1.0, strength * 1.2)
-                            print(f"  📈 Volume Boost: {volume_ratio:.2f}x avg (strength +20%)")
-                        elif volume_ratio < 0.7:
-                            # Reduce strength if low volume (weak signal)
-                            strength *= 0.8
-                            print(f"  📉 Low Volume: {volume_ratio:.2f}x avg (strength -20%)")
-                        
-                        # CONFLUENCE BOOST: Higher confluence = Higher strength
-                        if confluence >= 0.9:  # Near perfect agreement
-                            strength = min(1.0, strength * 1.3)  # Perfect confluence +30%
-                            print(f"  ✨ Perfect Confluence {confluence:+.2f}: All timeframes agree (strength +30%)")
-                        elif confluence >= 0.7:  # Strong agreement
-                            strength = min(1.0, strength * 1.15)  # Strong confluence +15%
-                            print(f"  🌟 Strong Confluence {confluence:+.2f} (strength +15%)")
-                        
-                        print(f"✅ BUY SIGNAL! {s} RSI:{current_rsi:.2f} Adaptive_Threshold:{dynamic_rsi_buy} (Strength={strength:.2f}, ATR%={atr_pct:.2f}, Vol={volume_ratio:.2f}x)")
-                        signal = SignalEvent(1, s, timestamp, 'LONG', strength=strength, atr=current_atr)
-                        self.events_queue.put(signal)
-                        self.bought[s] = True
-                
-                # ENTRY SHORT (Downtrend + Overbought)
-                elif not in_uptrend and current_rsi > dynamic_rsi_sell and not self.bought[s]:
-                    # Only SHORT if 1h trend is also DOWN or NEUTRAL
-                    if trend_1h == 'UP':
-                        print(f"  ⏭️  Skipping SHORT {s}: 1h Trend is UP (Counter-trend)")
-                    else:
-                        # Dynamic strength for SHORT
-                        rsi_diff = max(0, current_rsi - dynamic_rsi_sell)
-                        strength = min(1.0, 0.5 + (rsi_diff * 0.02))
-                        
-                        # Volume boost
-                        if volume_ratio > 1.5:
-                            strength = min(1.0, strength * 1.2)
-                            
-                        print(f"✅ SELL SIGNAL! {s} RSI:{current_rsi:.2f} Adaptive_Threshold:{dynamic_rsi_sell} (Strength={strength:.2f})")
-                        signal = SignalEvent(1, s, timestamp, 'SHORT', strength=strength, atr=current_atr)
-                        self.events_queue.put(signal)
-                        self.bought[s] = True # Mark as invested (short)
-                        
-                # EXIT SHORT (oversold or trend reverses)
-                elif self.bought[s] and not in_uptrend:
-                    if current_rsi < dynamic_rsi_buy:
-                        print(f"COVER SHORT SIGNAL! {s} RSI: {current_rsi} (Oversold, Threshold={dynamic_rsi_buy})")
-                        signal = SignalEvent(1, s, timestamp, 'EXIT', strength=1.0)
-                        self.events_queue.put(signal)
-                        self.bought[s] = False
-                    elif in_uptrend:
-                        print(f"COVER SHORT SIGNAL! {s} Trend reversed (EMA 50 > EMA 200)")
-                        signal = SignalEvent(1, s, timestamp, 'EXIT', strength=1.0)
-                        self.events_queue.put(signal)
-                        self.bought[s] = False
-
+        """Wrapper para integración con framework existente"""
+        self.generate_signals()

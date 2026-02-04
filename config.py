@@ -1,11 +1,22 @@
 import os
 import sys
 from dotenv import load_dotenv
+from core.enums import TimeFrame
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file (Phase 6 Absolute Path Fix)
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+load_dotenv(env_path)
+
+# EXCLUSION LIST (Pairs with known data issues) - Defined globally for accessibility
+# Reference: Master Bible v2.0.1 Phase 2.6
+EXCLUDED_SYMBOLS_GLOBAL = ['SHIB/USDT', 'PEPE/USDT', 'BONK/USDT']
 
 class Config:
+    # ========================================================================
+    # GLOBAL SETTINGS
+    # ========================================================================
+    DEBUG_TRACE_ENABLED = False
+
     # ========================================================================
     # BINANCE API CREDENTIALS (Loaded from .env file)
     # ========================================================================
@@ -15,30 +26,35 @@ class Config:
     BINANCE_SECRET_KEY = os.getenv('BINANCE_SECRET_KEY', '')
     
     # Binance Testnet (Spot)
-    BINANCE_USE_TESTNET = True  # Hardcoded to True for safety
+    BINANCE_USE_TESTNET = os.getenv('BINANCE_USE_TESTNET', 'False').lower() == 'true'
     BINANCE_TESTNET_API_KEY = os.getenv('BINANCE_TESTNET_API_KEY')
     BINANCE_TESTNET_SECRET_KEY = os.getenv('BINANCE_TESTNET_SECRET_KEY')
     
     # Binance Demo Trading (Futures with virtual capital)
-    BINANCE_USE_DEMO = True  # Enable Demo Trading
+    BINANCE_USE_DEMO = os.getenv('BINANCE_USE_DEMO', 'False').lower() == 'true'
     BINANCE_DEMO_API_KEY = os.getenv('BINANCE_DEMO_API_KEY')
     BINANCE_DEMO_SECRET_KEY = os.getenv('BINANCE_DEMO_SECRET_KEY')
-
     
     # === BINANCE FUTURES SETTINGS ===
     # Default: USDT-Margined Futures (standard). 
     # For COIN-Margined, code modifications in binance_executor would be needed (defaultType='delivery').
     # BUG #33 FIX: Changed default to False to allow Spot mode. CLI --mode argument will override this.
-    BINANCE_USE_FUTURES = False  # Set to True to trade on Binance Futures instead of Spot
-    BINANCE_LEVERAGE = 20  # Leverage for Futures trading (AGGRESSIVE: 20x)
+    BINANCE_USE_FUTURES = True  # Set to True to trade on Binance Futures instead of Spot
+    BINANCE_LEVERAGE = 3  # Leverage for Futures trading (CONTROLLED: 3x for $15)
     BINANCE_MARGIN_TYPE = "ISOLATED"  # Options: "ISOLATED" or "CROSS"
+    BINANCE_TAKER_FEE_BNB = 0.000375 # 0.0375% (with BNB discount)
+    
+    # Symbols format standardization (Phase 6 Fix)
+    # The API expects SYMBOLUSDT, but we prefer SYMBOL/USDT for UI.
+    # We will enforce '/' in Config and remove it in API calls.
+    @staticmethod
+    def get_clean_pairs(pairs_list):
+        return [p.replace('/', '') for p in pairs_list]
     
     # Dynamic Data Directory (Separate Spot & Futures)
-    if BINANCE_USE_FUTURES:
-        DATA_DIR = "dashboard/data/futures"
-    else:
-        DATA_DIR = "dashboard/data/spot"  # Explicitly separate Spot data
-        
+    # Default base. main.py will override this to 'dashboard/data/futures' or 'spot'
+    DATA_DIR = "dashboard/data/futures" 
+    
     # Ensure directory exists
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -50,18 +66,23 @@ class Config:
 
     # === TRADING PAIRS CONFIGURATION ===
     
+    # Expose global exclusion list as class attribute
+    EXCLUDED_SYMBOLS = EXCLUDED_SYMBOLS_GLOBAL
+
     # SPOT Trading Pairs (All available in Binance Spot)
-    CRYPTO_SPOT_PAIRS = [
+    # NOTE: EXCLUDED pairs are filtered out by DataProvider
+    _RAW_SPOT_PAIRS = [
         # Top 10 Major Coins
         "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
-        "DOGE/USDT", "ADA/USDT", "DOT/USDT", "SHIB/USDT", "PEPE/USDT",
+        "DOGE/USDT", "ADA/USDT", "DOT/USDT",
         
         # High Volume Altcoins
         "AVAX/USDT", "LINK/USDT", "UNI/USDT", "ATOM/USDT",
-        "LTC/USDT", "ETC/USDT", "FLOKI/USDT", "BONK/USDT", "WIF/USDT",
+        "LTC/USDT", "ETC/USDT", "FLOKI/USDT", "WIF/USDT",
         "AAVE/USDT", "COMP/USDT", "SAND/USDT", "MANA/USDT"
     ]
-    # Total: 23 pairs
+    # Filter Exclusion List
+    CRYPTO_SPOT_PAIRS = [s for s in _RAW_SPOT_PAIRS if s not in EXCLUDED_SYMBOLS_GLOBAL]
     
     # BUG FIX #13: Binance Testnet SPOT has LIMITED pairs available
     # Only basic major coins work in Testnet SPOT
@@ -77,47 +98,211 @@ class Config:
     CRYPTO_FUTURES_PAIRS = [
         # Top Tier (Major coins - 100% available)
         "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
-        "DOGE/USDT", "ADA/USDT", "DOT/USDT",
+        "DOGE/USDT", "ADA/USDT", "DOT/USDT", "LTC/USDT",
         
-        # High Volume Altcoins (verified in Demo Trading)
+        # High Volume Altcoins & Trending Assets (Verified for Futures)
         "AVAX/USDT", "LINK/USDT", "UNI/USDT", "ATOM/USDT",
-        "LTC/USDT", "ETC/USDT", "AAVE/USDT", "COMP/USDT", 
-        "SAND/USDT", "MANA/USDT", "WIF/USDT"
+        "NEAR/USDT", "SUI/USDT", "POL/USDT", "TIA/USDT",
+        "OP/USDT", "ARB/USDT", "INJ/USDT", "FTM/USDT",
+        "WIF/USDT", "RENDER/USDT", "ETC/USDT"
     ]
-    # Total: 19 pairs (all Demo Trading compatible)
+    # Total: 24 pairs (optimized for liquidity and volatility)
     
     # Auto-select correct pairs based on mode
     # BUG #14 FIX: Binance Testnet SPOT is UNRELIABLE (most pairs don't exist)
     # Solution: SPOT only works in PRODUCTION, Testnet/Demo users should use FUTURES
-    if BINANCE_USE_FUTURES:
-        TRADING_PAIRS = CRYPTO_FUTURES_PAIRS  # 19 pairs for Futures
-    else:
-        # SPOT mode - but WARN if trying to use in Testnet
-        TRADING_PAIRS = BINANCE_TESTNET_SPOT_PAIRS  # Start with limited pairs
-        # If user has real API keys (not demo/testnet), allow full pairs
-        if BINANCE_API_KEY and not ("test" in BINANCE_API_KEY.lower() or "demo" in BINANCE_API_KEY.lower()):
-            TRADING_PAIRS = CRYPTO_SPOT_PAIRS  # 23 pairs for Production SPOT
-    
-    # STOCKS (Disabled - crypto only)
-    STOCKS = []
-    
-    # FOREX (Disabled - crypto only)  
-    FOREX = []
+    # SINGLE SOURCE OF TRUTH: Initial capital for $15 micro-scalping strategy
+    INITIAL_CAPITAL = 15.0  # Base capital for sizing and HWM
 
+    # === TRADING SETTINGS ===
+    TIMEFRAME = TimeFrame.M1  # M1 Timeframe (Microscalping)
+    MAX_SIGNAL_AGE = 60       # 60s for M1 timeframe to allow for fast execution
+    
+    # MULTI-SYMBOL EXPANSION: Top Liquidity Assets for Scalping
+    TRADING_PAIRS = [
+        "BTC/USDT", "ETH/USDT", "SOL/USDT", 
+        "DOGE/USDT", "XRP/USDT", "BNB/USDT", "ADA/USDT"
+    ]
+    
+    # Risk settings for Multi-Symbol Coordination
+    MAX_CONCURRENT_POSITIONS = 3  # Maximum simultaneous trades for $15 account
+    COOLDOWN_PERIOD_SECONDS = 1800 # 30 minutes between trades on same symbol
+    MAX_POSITIONS_PER_SYMBOL = 1   # One layer per symbol for safety
+    
+    # Position Sizing Configuration
+    POSITION_SIZE_MICRO_ACCOUNT = 0.40   # 40% for <$50 capital (Aggressive to grow)
+    POSITION_SIZE_SMALL_ACCOUNT = 0.20   # 20% - Aggressive growth for small accounts
+    
+    # Trade Validation Thresholds
+    MIN_PROFIT_AFTER_FEES = 0.003  # 0.3% minimum net profit
+    MIN_RR_RATIO = 1.5             # 1.5:1 R:R minimum
+    
     # Risk Management
     MAX_RISK_PER_TRADE = 0.01  # 1% of capital
     STOP_LOSS_PCT = 0.02       # 2% stop loss
     
-    # BUG #47 FIX: Position Sizing Configuration (moved from risk_manager.py)
-    # Dynamic position sizing based on account size
-    POSITION_SIZE_SMALL_THRESHOLD = 1000   # Capital < $1000 = Small account
-    POSITION_SIZE_LARGE_THRESHOLD = 10000  # Capital > $10000 = Large account
+    # === INTELLIGENT REVERSE (FLIPPING) PARAMETERS (Phase 5) ===
+    # PROFESSOR METHOD:
+    # QUÉ: Umbrales de viabilidad para el cambio de dirección táctico.
+    # POR QUÉ: Evita "whipsaws" (ser sierra) en mercados picados/laterales.
+    # PARA QUÉ: Garantizar que el Flip tenga un valor esperado positivo real.
+    FLIP_MIN_ATR_PCT = 0.005      # 0.5% ATR mínimo para autorizar Flip
+    FLIP_MIN_POTENTIAL_RR = 2.0    # R:R esperado para la nueva dirección
+    FLIP_MAX_DAILY_COUNT = 1       # Máximas reversiones por símbolo al día (Recomendación final)
+    FLIP_COST_THRESHOLD = 0.002    # 0.2% max cost (Fees + Slippage)
+    FLIP_COOLDOWN_SECONDS = 300    # 5 min de espera tras un Flip exitoso
     
-    # Position size as % of capital per trade
-    POSITION_SIZE_SMALL_ACCOUNT = 0.20   # 20% - Aggressive growth for small accounts
-    POSITION_SIZE_MEDIUM_ACCOUNT = 0.15  # 15% - Balanced for medium accounts
-    POSITION_SIZE_LARGE_ACCOUNT = 0.10   # 10% - Conservative wealth preservation
+    # Position Sizing Thresholds
+    POSITION_SIZE_SMALL_THRESHOLD = 1000   
+    POSITION_SIZE_LARGE_THRESHOLD = 10000  
+    POSITION_SIZE_MEDIUM_ACCOUNT = 0.15  
+    POSITION_SIZE_LARGE_ACCOUNT = 0.10   
+    
+    # Strategy Filters (Restored)
+    PATTERN_BULLISH_RSI_MAX = 60
+    PATTERN_BEARISH_RSI_MIN = 40
+    STAT_WINDOW = 20
+    STAT_Z_ENTRY = 1.5
+    STAT_Z_EXIT = 0.0
 
+    # === STRATEGY SETTINGS (Nesting required by loader) ===
+    class Strategies:
+        # Technical Strategy settings
+        TECH_RSI_PERIOD = 14
+        TECH_RSI_BUY = 35    
+        TECH_RSI_SELL = 70   
+        TECH_EMA_FAST = 20 # SHORT-TERM (Changed from 50)
+        TECH_EMA_SLOW = 50 # MEDIUM-TERM (Changed from 200)
+        TECH_ADX_THRESHOLD = 25
+        TECH_BB_PERIOD = 20
+        TECH_BB_STD = 2.0
+        TECH_TP_PCT = 0.015
+        TECH_SL_PCT = 0.02
+        
+        # ML Strategy settings
+        ML_RETRAIN_INTERVAL = 240   
+        ML_MIN_CONFIDENCE = 0.015   
+        ML_LOOKBACK_BARS = 5000     
+        ML_INCREMENTAL_UPDATE_BARS = 30 
+        ML_ORACLE_VERBOSE = False   
+
+    # ========================================================================
+    # === OBSERVABILITY & ANALYTICS (Phase 4) ===
+    # ========================================================================
+    class Observability:
+        # --- TELEGRAM ---
+        TELEGRAM_ENABLED = os.getenv('TELEGRAM_ENABLED', 'False').lower() == 'true'
+        TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+        TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+        
+        # --- EMAIL (SMTP) ---
+        EMAIL_ENABLED = os.getenv('EMAIL_ENABLED', 'False').lower() == 'true'
+        SMTP_SERVER = os.getenv('EMAIL_SMTP_SERVER', 'smtp.gmail.com')
+        SMTP_PORT = int(os.getenv('EMAIL_SMTP_PORT', 587))
+        EMAIL_USER = os.getenv('EMAIL_FROM', '')
+        EMAIL_PASS = os.getenv('EMAIL_PASSWORD', '')
+        EMAIL_RECEIVER = os.getenv('EMAIL_TO', '')
+        
+        # --- THRESHOLDS & ALERTS ---
+        ALERT_MAX_DRAWDOWN = 0.05      # 5% Drawdown triggers warning
+        ALERT_MIN_SHARPE = 1.2         # Sharpe < 1.2 triggers warning
+        ALERT_CRITICAL_ERRORS = True   # Alertas por fallos de API/Engine
+        
+        # --- REPORTING ---
+        PDF_REPORTS_ENABLED = True
+        REPORT_FREQUENCY_DAYS = 1      # Daily reports
+        
+        # --- PRIORITIES ---
+        MIN_LOG_LEVEL_NOTIFY = 2 # 2=Warning
+
+    class Analytics:
+        RISK_FREE_RATE = 0.02 
+        TRADING_DAYS = 365
+        SORTINO_MIN_RETURN = 0.0
+        WINRATE_LOOKBACK_TRADES = 50
+
+    # ========================================================================
+    # === GLOBAL SETTINGS ===
+    # ========================================================================
+    DEBUG_TRACE_ENABLED = False
+    #DEBUG_TRACE_ENABLED = True hace un seguimiento microscópico de todo lo que hace el bot. 
+    #Lo que hace: Imprime en la consola cada vez que el código ENTRA ([ENTER]) y SALE ([EXIT]) de una función importante, y cuánto tiempo tardó.
+    #Para qué sirve: Para encontrar "cuellos de botella" (funciones que tardan demasiado) o ver exactamente en qué línea se congela el programa.
+    #Problema: Genera miles de líneas de texto por segundo, llenando la terminal de "ruido" y dificultando ver lo importante (precios, señales, errores).
+    #Recomendación: Mantenlo en False (Apagado) para operar. Solo enciéndelo (True) si el bot se clava y no sabes por qué.
+    
+    # ========================================================================
+    # === SNIPER STRATEGY SETTINGS (ALL OR NOTHING PROTOCOL) ===
+    # ========================================================================
+    class Sniper:
+        """
+        HIGH-RISK configuration for $12 → $240 target.
+        WARNING: This configuration has ~99% probability of total loss.
+        """
+        # ENABLED FLAG - Set to True to activate Sniper mode
+        ENABLED = True
+        
+        # MAINNET SWITCH - Set to True for REAL trading after 3 successful testnet trades
+        USE_MAINNET = False  # CRITICAL: Keep False until ready
+        
+        # WHITELIST - Only ultra-high liquidity pairs (low spread)
+        WHITELIST = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
+        
+        # DYNAMIC LEVERAGE (ATR-based)
+        MIN_LEVERAGE = 3
+        MAX_LEVERAGE = 8
+        DEFAULT_LEVERAGE = 5
+        
+        # FEES (Binance Futures)
+        TAKER_FEE = 0.0005  # 0.05%
+        MAKER_FEE = 0.0002  # 0.02%
+        
+        # TRADE VALIDATION
+        MIN_RR_RATIO = 2.0       # Minimum Risk/Reward ratio
+        MIN_PROFIT_AFTER_FEES = 0.005  # 0.5% minimum net profit
+        
+        # VOLUME ANOMALY DETECTION (Whale detection)
+        VOLUME_LOOKBACK_BARS = 1440  # 24h of 1m candles
+        VOLUME_SIGMA_THRESHOLD = 3.0  # 3 standard deviations
+        STAT_Z_ENTRY = 2.0  # Entry Threshold (Standard Deviations)
+        STAT_Z_EXIT = 0.0   # Exit Threshold (Mean Reversion)
+        
+        # Phase 6: Permissive Mode (Demo Competition)
+        PERMISSIVE_MODE = True  # Enable lower thresholds in Demo
+        PERMISSIVE_CONFIDENCE_THRESHOLD = 0.60 # Lower barrier for entry
+        DEMO_EQUAL_WEIGHTING = 0.05 # 5% Fixed Size for fair comparison
+        # ORDER BOOK ANALYSIS
+        ORDERBOOK_DEPTH = 20  # Levels to analyze
+        IMBALANCE_THRESHOLD = 0.3  # 30% imbalance for signal
+        MAX_SPREAD_PCT = 0.05  # Skip if spread > 0.05%
+        
+        # CONFLUENCE REQUIREMENTS
+        CONFLUENCE_THRESHOLD = 4  # All 4 layers must pass
+        
+        # TECHNICAL INDICATORS (Layer A)
+        RSI_PERIOD = 14
+        RSI_OVERSOLD = 30
+        RSI_OVERBOUGHT = 70
+        MACD_FAST = 12
+        MACD_SLOW = 26
+        MACD_SIGNAL = 9
+        BB_PERIOD = 20
+        BB_STD = 2.0
+        
+        # SESSION HOURS (UTC) - Volatility Filter
+        ACTIVE_SESSIONS = {
+            'london_open': 8,
+            'london_close': 16,
+            'ny_open': 13,
+            'ny_close': 21
+        }
+        REQUIRE_ACTIVE_SESSION = True  # Only trade during London/NY
+        
+        # COMPOUNDING
+        COMPOUND_PROFITS = True  # Reinvest 100% of profits
+        
+        # TESTNET VALIDATION
+        TESTNET_TRADES_REQUIRED = 3  # Successful trades before MAINNET
 
 # ============================================================================
 # CONFIGURATION VALIDATION (Fail Fast on Missing Credentials)
@@ -126,7 +311,6 @@ def validate_config():
     """
     Validates that required API credentials are present.
     Fails fast with clear error messages if configuration is incomplete.
-    This prevents the bot from starting with missing/invalid credentials.
     """
     errors = []
     
@@ -134,72 +318,42 @@ def validate_config():
     if not os.path.exists('.env'):
         errors.append("❌ ERROR: .env file not found!")
         errors.append("   → Solution: Copy .env.example to .env and fill in your API keys")
-        errors.append("   → Command: copy .env.example .env  (Windows)")
-        errors.append("   →          cp .env.example .env    (Linux/Mac)")
     
     # Determine which keys are required based on mode
     if Config.BINANCE_USE_DEMO or Config.BINANCE_USE_TESTNET:
-        # Demo/Testnet mode - check for demo keys
         if not Config.BINANCE_USE_FUTURES:
-            # Spot Testnet mode
             if not Config.BINANCE_TESTNET_API_KEY:
                 errors.append("❌ ERROR: BINANCE_TESTNET_API_KEY not found in .env")
-                errors.append("   → Required for Spot Testnet mode")
-            if not Config.BINANCE_TESTNET_SECRET_KEY:
-                errors.append("❌ ERROR: BINANCE_TESTNET_SECRET_KEY not found in .env")
         else:
-            # Futures Demo mode
             if not Config.BINANCE_DEMO_API_KEY:
                 errors.append("❌ ERROR: BINANCE_DEMO_API_KEY not found in .env")
-                errors.append("   → Required for Futures Demo mode")
-            if not Config.BINANCE_DEMO_SECRET_KEY:
-                errors.append("❌ ERROR: BINANCE_DEMO_SECRET_KEY not found in .env")
     else:
-        # Production mode - check for real keys
         if not Config.BINANCE_API_KEY:
             errors.append("❌ ERROR: BINANCE_API_KEY not found in .env")
-            errors.append("   → Required for PRODUCTION mode")
-        if not Config.BINANCE_SECRET_KEY:
-            errors.append("❌ ERROR: BINANCE_SECRET_KEY not found in .env")
     
-    # Configuration warnings (non-fatal but important)
+    # Configuration warnings
     warnings = []
-    
     if Config.BINANCE_LEVERAGE > 25:
         warnings.append(f"⚠️  WARNING: Leverage set to {Config.BINANCE_LEVERAGE}x (exceeds recommended 25x)")
-        warnings.append("   → High leverage = High risk of liquidation")
     
     if Config.MAX_RISK_PER_TRADE > 0.05:
-        warnings.append(f"⚠️  WARNING: Risk per trade is {Config.MAX_RISK_PER_TRADE*100}% (exceeds recommended 5%)")
-        warnings.append("   → High risk percentage can lead to rapid capital depletion")
+        warnings.append(f"⚠️  WARNING: Risk per trade is {Config.MAX_RISK_PER_TRADE*100}%")
     
-    if Config.BINANCE_USE_FUTURES and len(Config.CRYPTO_FUTURES_PAIRS) == 0:
-        errors.append("❌ ERROR: FUTURES mode enabled but no futures pairs configured")
-    
-    # Print all errors and warnings
+    # Print all
     if warnings:
         print("\n" + "="*70)
         print("⚠️  CONFIGURATION WARNINGS")
-        print("="*70)
-        for warning in warnings:
-            print(warning)
+        for warning in warnings: print(warning)
         print("="*70 + "\n")
     
     if errors:
         print("\n" + "="*70)
         print("🚨 CONFIGURATION ERRORS - BOT CANNOT START")
+        for error in errors: print(error)
         print("="*70)
-        for error in errors:
-            print(error)
-        print("="*70)
-        print("\n💡 QUICK FIX:")
-        print("   1. Ensure .env file exists in project root")
-        print("   2. Copy from template: copy .env.example .env")
-        print("   3. Edit .env and add your API keys")
-        print("   4. Restart the bot\n")
-        sys.exit(1)  # Exit with error code
+        sys.exit(1)
     
     return True
 
-# Run validation on import (fails fast if config invalid)
+# Run validation on import
 validate_config()

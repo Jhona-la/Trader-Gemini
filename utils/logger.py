@@ -1,23 +1,48 @@
 """
 Professional logging configuration for Trader Gemini
-Replaces print() statements with structured logging
+Replaces print() statements with structured logging (JSON)
 """
 import logging
+import json
+import traceback
 from logging.handlers import RotatingFileHandler
 import os
 from datetime import datetime
 
+class JSONFormatter(logging.Formatter):
+    """
+    Custom formatter to output logs in JSON format for machine ingestion (Splunk/ELK).
+    """
+    def format(self, record):
+        log_record = {
+            "timestamp": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno,
+            "path": record.pathname 
+        }
+        
+        # Include exception info if present
+        if record.exc_info:
+            log_record["exception"] = self.formatException(record.exc_info)
+            
+        # Include stack trace if present
+        if record.stack_info:
+            log_record["stack_trace"] = self.formatStack(record.stack_info)
+            
+        return json.dumps(log_record)
 
 def setup_logger(name='trader_gemini', log_dir='logs'):
     """
     Setup professional logger with rotating file handler
     
     Levels:
-    - DEBUG: Detailed diagnostic info
-    - INFO: General informational messages
-    - WARNING: Warning messages (non-critical issues)
-    - ERROR: Error messages (failures)
-    - CRITICAL: Critical errors (system shutdown)
+    - CONSOLE: INFO+ (Text format)
+    - FILE (MAIN): DEBUG+ (JSON format)
+    - FILE (ERROR): ERROR+ (JSON format)
     """
     # Create logs directory if it doesn't exist
     if not os.path.exists(log_dir):
@@ -25,13 +50,13 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     
     # Create logger
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)  # Capture INFO and above
+    logger.setLevel(logging.DEBUG)  # Capture everything, handlers will filter
     
     # Prevent duplicate handlers if logger already exists
     if logger.handlers:
         return logger
     
-    # Console Handler (for terminal output)
+    # 1. Console Handler (Human Readable)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_format = logging.Formatter(
@@ -40,33 +65,78 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     )
     console_handler.setFormatter(console_format)
     
-    # File Handler (rotating, max 10MB per file, keep 5 backups)
-    # Allow suffix for Spot/Futures separation
+    # Determine filenames based on mode
     suffix = os.getenv('BOT_MODE', '') # e.g. 'spot' or 'futures'
+    date_str = datetime.now().strftime("%Y%m%d")
+    
     if suffix:
-        filename = f'bot_{suffix}_{datetime.now().strftime("%Y%m%d")}.log'
+        main_log_name = f'bot_{suffix}_{date_str}.json'
+        error_log_name = f'error_{suffix}_{date_str}.json'
     else:
-        filename = f'bot_{datetime.now().strftime("%Y%m%d")}.log'
+        main_log_name = f'bot_{date_str}.json'
+        error_log_name = f'error_{date_str}.json'
         
-    log_file = os.path.join(log_dir, filename)
+    main_log_path = os.path.join(log_dir, main_log_name)
+    error_log_path = os.path.join(log_dir, error_log_name)
+
+    # 2. Main File Handler (JSON, DEBUG+)
     file_handler = RotatingFileHandler(
-        log_file,
+        main_log_path,
         maxBytes=10*1024*1024,  # 10 MB
         backupCount=5,
         encoding='utf-8'
     )
-    file_handler.setLevel(logging.DEBUG)  # Capture everything to file
-    file_format = logging.Formatter(
-        '%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(JSONFormatter(datefmt='%Y-%m-%d %H:%M:%S'))
+    
+    # 3. Error File Handler (JSON, ERROR+)
+    error_handler = RotatingFileHandler(
+        error_log_path,
+        maxBytes=10*1024*1024,  # 10 MB
+        backupCount=5,
+        encoding='utf-8'
     )
-    file_handler.setFormatter(file_format)
+    error_handler.setLevel(logging.ERROR) # Only ERROR and CRITICAL
+    error_handler.setFormatter(JSONFormatter(datefmt='%Y-%m-%d %H:%M:%S'))
     
     # Add handlers
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
+    logger.addHandler(error_handler)
+    
+    # Phase 6: Cleanup old logs (>7 days)
+    cleanup_old_logs(log_dir, days=7)
     
     return logger
+
+
+def cleanup_old_logs(log_dir: str, days: int = 7):
+    """
+    Remove log files older than specified days.
+    """
+    import glob
+    from datetime import timedelta
+    
+    try:
+        cutoff = datetime.now() - timedelta(days=days)
+        pattern = os.path.join(log_dir, "*.json")
+        
+        for log_file in glob.glob(pattern):
+            try:
+                # Extract date from filename (bot_20260203.json)
+                basename = os.path.basename(log_file)
+                # Try to find date in filename
+                for part in basename.split('_'):
+                    if part.replace('.json', '').isdigit() and len(part.replace('.json', '')) == 8:
+                        date_str = part.replace('.json', '')
+                        file_date = datetime.strptime(date_str, "%Y%m%d")
+                        if file_date < cutoff:
+                            os.remove(log_file)
+                            break
+            except:
+                pass  # Skip files that don't match expected format
+    except Exception:
+        pass  # Silent fail - log cleanup is not critical
 
 
 # Create default logger for import
@@ -75,6 +145,7 @@ logger = setup_logger()
 
 def log_trade(symbol, direction, quantity, price, strategy='Unknown'):
     """Helper to log trade execution"""
+    # This renders nicely in console text format
     logger.info(f"TRADE: {direction} {quantity} {symbol} @ ${price:.2f} (Strategy: {strategy})")
 
 

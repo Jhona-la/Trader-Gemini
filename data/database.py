@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from config import Config
 from utils.logger import logger
@@ -17,8 +17,28 @@ class DatabaseHandler:
         """
         try:
             if self.conn is None:
-                self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+                # FIXED: Python 3.12 Compatibility (Rule 5.1)
+                # Register explicit adapters for datetime
+                import sqlite3
+                sqlite3.register_adapter(datetime, lambda x: x.isoformat())
+                
+                # Check if converters already registered to avoid errors in some envs
+                try:
+                    sqlite3.register_converter("timestamp", lambda x: datetime.fromisoformat(x.decode()))
+                    sqlite3.register_converter("datetime", lambda x: datetime.fromisoformat(x.decode()))
+                except:
+                    pass
+                
+                self.conn = sqlite3.connect(
+                    self.db_path, 
+                    check_same_thread=False,
+                    detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
+                )
                 self.conn.row_factory = sqlite3.Row  # Return rows as dictionaries
+                
+                # OPTIMIZATION: Enable WAL Mode for high concurrency (Rule 5.1)
+                self.conn.execute("PRAGMA journal_mode=WAL;")
+                self.conn.execute("PRAGMA synchronous=NORMAL;")
             return self.conn
         except sqlite3.Error as e:
             logger.error(f"Database connection error: {e}")
@@ -114,7 +134,7 @@ class DatabaseHandler:
                 trade_dict.get('side'),
                 trade_dict.get('quantity'),
                 trade_dict.get('price'),
-                trade_dict.get('timestamp', datetime.now()),
+                trade_dict.get('timestamp', datetime.now(timezone.utc)),
                 trade_dict.get('order_type', 'MARKET'),
                 trade_dict.get('strategy_id', 'UNKNOWN'),
                 trade_dict.get('pnl', 0.0),
@@ -173,7 +193,7 @@ class DatabaseHandler:
                         unrealized_pnl=excluded.unrealized_pnl,
                         timestamp=excluded.timestamp
                 ''', (
-                    symbol, quantity, entry_price, current_price, pnl, datetime.now()
+                    symbol, quantity, entry_price, current_price, pnl, datetime.now(timezone.utc)
                 ))
             
             conn.commit()
@@ -218,11 +238,73 @@ class DatabaseHandler:
             cursor.execute('''
                 INSERT INTO errors (module, message, severity, timestamp)
                 VALUES (?, ?, ?, ?)
-            ''', (module, str(message), severity, datetime.now()))
+            ''', (module, str(message), severity, datetime.now(timezone.utc)))
             conn.commit()
         except sqlite3.Error as e:
             # Fallback to file logger if DB fails
             logger.error(f"Failed to log error to DB: {e}")
+
+    def log_fill_event_atomic(self, trade_dict, position_dict):
+        """
+        ATOMIC OPERATION (Rule 5.2):
+        Logs trade and updates position in a SINGLE transaction.
+        Ensures data consistency if bot crashes immediately after trade.
+        """
+        conn = self.get_connection()
+        if not conn: return
+
+        try:
+            cursor = conn.cursor()
+            
+            # 1. Log Trade
+            cursor.execute('''
+                INSERT INTO trades (symbol, side, quantity, price, timestamp, order_type, strategy_id, pnl, commission)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                trade_dict.get('symbol'),
+                trade_dict.get('side'),
+                trade_dict.get('quantity'),
+                trade_dict.get('price'),
+                trade_dict.get('timestamp', datetime.now(timezone.utc)),
+                trade_dict.get('order_type', 'MARKET'),
+                trade_dict.get('strategy_id', 'UNKNOWN'),
+                trade_dict.get('pnl', 0.0),
+                trade_dict.get('commission', 0.0)
+            ))
+            
+            # 2. Update Position
+            symbol = position_dict['symbol']
+            quantity = position_dict['quantity']
+            
+            if quantity == 0:
+                # Close position
+                cursor.execute("DELETE FROM positions WHERE symbol = ?", (symbol,))
+            else:
+                # Upsert
+                cursor.execute('''
+                    INSERT INTO positions (symbol, quantity, entry_price, current_price, unrealized_pnl, timestamp, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'OPEN')
+                    ON CONFLICT(symbol) DO UPDATE SET
+                        quantity=excluded.quantity,
+                        entry_price=excluded.entry_price,
+                        current_price=excluded.current_price,
+                        unrealized_pnl=excluded.unrealized_pnl,
+                        timestamp=excluded.timestamp
+                ''', (
+                    symbol, 
+                    quantity, 
+                    position_dict['entry_price'], 
+                    position_dict['current_price'], 
+                    position_dict.get('pnl', 0.0), # unrealized pnl
+                    datetime.now(timezone.utc)
+                ))
+            
+            conn.commit()
+            # logger.info(f"✅ Atomic DB Update: {symbol} Trade Logged & Position Updated")
+            
+        except sqlite3.Error as e:
+            logger.error(f"⚠️ FATAL: Atomic DB Update failed: {e}")
+            conn.rollback()
 
     def close(self):
         if self.conn:

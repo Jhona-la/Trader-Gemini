@@ -1,8 +1,10 @@
 import ccxt
+from datetime import datetime, timezone
 from config import Config
 from core.events import FillEvent
 from utils.logger import logger
 from utils.error_handler import retry_on_api_error, handle_balance_error, handle_order_error
+from utils.debug_tracer import trace_execution
 
 class BinanceExecutor:
     """
@@ -55,50 +57,12 @@ class BinanceExecutor:
             'options': options
         })
         
-        # Habilitar el modo correspondiente
+        # Habilitar el modo correspondiente (Standardized Phase 6)
         if (hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET:
-            # CRITICAL: Manual URL configuration for Testnet
-            # BUG #18 FIX: CCXT requires ALL keys (fapi, dapi, public) to be present
-            
-            # 1. Define Base URLs
-            # BUG #30 FIX: Updated to official 2024 Binance Testnet URLs
-            spot_testnet_base = 'https://testnet.binance.vision/api'
-            futures_testnet_base = 'https://demo-fapi.binance.com'  # Official USD-M Testnet URL
-            delivery_testnet_base = 'https://testnet.binancefuture.com'  # COIN-M Testnet URL
-            
-            custom_urls = {
-                # SPOT (Standard)
-                'public': f'{spot_testnet_base}/v3',
-                'private': f'{spot_testnet_base}/v3',
-                'api': {
-                    'public': f'{spot_testnet_base}/v3',
-                    'private': f'{spot_testnet_base}/v3',
-                },
-                
-                # FUTURES (USD-M) - BUG #30 FIX: Proper endpoint paths
-                'fapiPublic': f'{futures_testnet_base}/fapi/v1',
-                'fapiPrivate': f'{futures_testnet_base}/fapi/v1',
-                'fapiData': f'{futures_testnet_base}/fapi/v1',
-                'fapiPrivateV2': f'{futures_testnet_base}/fapi/v2',
-                # BUG #23 FIX: Add V3 endpoint for account info queries
-                'fapiPrivateV3': f'{futures_testnet_base}/fapi/v3',
-                
-                # DELIVERY (COIN-M) - BUG #30 FIX: Proper endpoint paths
-                'dapiPublic': f'{delivery_testnet_base}/dapi/v1',
-                'dapiPrivate': f'{delivery_testnet_base}/dapi/v1',
-                'dapiData': f'{delivery_testnet_base}/dapi/v1',
-                
-                # SAPI
-                'sapi': f'{spot_testnet_base}/v3',
-            }
-            
-            # Set BOTH 'api' and 'test' URLs
-            self.exchange.urls['api'] = custom_urls
-            self.exchange.urls['test'] = custom_urls
-            
-            logger.info(f"Binance Executor: Running in {mode_description} mode (Unified Testnet URLs)")
+            self.exchange.set_sandbox_mode(True)
+            logger.info(f"🚀 Binance Executor: Running in {mode_description} (Sandbox Mode Active)")
         else:
-            logger.info(f"Binance Executor: Running in {mode_description} mode")
+            logger.info(f"🚀 Binance Executor: Running in {mode_description} (Live Mode ACTIVE)")
 
             
         # Set Leverage for Futures
@@ -118,6 +82,7 @@ class BinanceExecutor:
                 'apiKey': api_key,
                 'secret': secret_key,
                 'enableRateLimit': True,
+                'timeout': 10000, # CRITICAL: 10s timeout
                 'options': {
                     'defaultType': 'spot',
                     'adjustForTimeDifference': True,
@@ -232,6 +197,7 @@ class BinanceExecutor:
             logger.error(f"❌ Unexpected error initializing Futures settings: {e}")
             logger.error("   Please report this error with the full traceback")
 
+    @trace_execution
     def execute_order(self, event):
         """
         Executes an OrderEvent.
@@ -276,8 +242,25 @@ class BinanceExecutor:
                 'type': order_type.upper(),
                 'quantity': qty_str,
                 'newOrderRespType': 'RESULT',
-                'recvWindow': 60000  # Generous window for network latency
+                'recvWindow': 60000
             }
+            
+            # MAKER-ONLY LOGIC (Micro-Scalping Optimization)
+            if order_type.upper() == 'LIMIT':
+                # Force Post-Only to ensure Maker rebate (no Taker fees)
+                if Config.BINANCE_USE_FUTURES:
+                    params['timeInForce'] = 'GTX' # Post Only for Futures
+                    # Ensure price is set
+                    price_str = self.exchange.price_to_precision(symbol, event.price)
+                    params['price'] = price_str
+                    logger.info(f"  🛑 Maker Order (GTX): Limit @ {price_str}")
+                else:
+                    # For Spot, use LIMIT_MAKER type
+                    params['type'] = 'LIMIT_MAKER'
+                    price_str = self.exchange.price_to_precision(symbol, event.price)
+                    params['price'] = price_str
+                    logger.info(f"  🛑 Maker Order (Spot): Limit Maker @ {price_str}")
+
             
             # 3. Execute using Raw API (Futures) or Standard CCXT (Spot)
             if Config.BINANCE_USE_FUTURES:
@@ -309,7 +292,7 @@ class BinanceExecutor:
             
             # Create Fill Event
             fill_event = FillEvent(
-                timeindex=None,
+                timeindex=datetime.now(timezone.utc),
                 symbol=symbol,
                 exchange='BINANCE',
                 quantity=filled_qty,
@@ -325,7 +308,9 @@ class BinanceExecutor:
             # Only for ENTRY orders (BUY/SELL), not for EXIT orders
             if Config.BINANCE_USE_FUTURES and event.direction in ['BUY', 'SELL']:
                 try:
-                    self._place_protective_orders(symbol_id, side, filled_qty, fill_price)
+                    sl_pct = getattr(event, 'sl_pct', 0.003)
+                    tp_pct = getattr(event, 'tp_pct', 0.008)
+                    self._place_protective_orders(symbol_id, side, filled_qty, fill_price, sl_pct, tp_pct)
                 except ccxt.InsufficientFunds as e:
                     logger.warning(f"⚠️ Insufficient margin for protective orders: {e}")
                 except ccxt.InvalidOrder as e:
@@ -347,7 +332,7 @@ class BinanceExecutor:
                 self.portfolio.release_cash(estimated_cost)
                 logger.warning(f"Released ${estimated_cost:.2f} reserved cash due to order failure")
     
-    def _place_protective_orders(self, symbol_id, side, quantity, entry_price):
+    def _place_protective_orders(self, symbol_id, side, quantity, entry_price, sl_pct, tp_pct):
         """
         LAYER 3: Place stop-loss and take-profit orders on Binance servers.
         These act as failsafe if the bot crashes or loses connection.
@@ -357,15 +342,17 @@ class BinanceExecutor:
             side: 'BUY' or 'SELL' (direction of the ENTRY order)
             quantity: Position size
             entry_price: Entry price
+            sl_pct: Stop Loss percentage
+            tp_pct: Take Profit percentage
         """
         # Calculate stop and target prices
         if side.upper() == 'BUY':  # LONG position
-            stop_price = entry_price * 0.997  # -0.3% stop loss
-            target_price = entry_price * 1.008  # +0.8% take profit
+            stop_price = entry_price * (1 - sl_pct)
+            target_price = entry_price * (1 + tp_pct)
             stop_side = 'SELL'  # Close LONG with SELL
         else:  # SHORT position
-            stop_price = entry_price * 1.003  # +0.3% stop loss (price goes up)
-            target_price = entry_price * 0.992  # -0.8% take profit (price goes down)
+            stop_price = entry_price * (1 + sl_pct)
+            target_price = entry_price * (1 - tp_pct)
             stop_side = 'BUY'  # Close SHORT with BUY
         
         # Format prices to exchange precision
@@ -432,7 +419,7 @@ class BinanceExecutor:
         try:
             # SKIP Futures check if we are in SPOT TESTNET mode (Keys are not compatible)
             if Config.BINANCE_USE_TESTNET and not Config.BINANCE_USE_FUTURES:
-                raise Exception("Skipping Futures check in Spot Testnet (Keys incompatible)")
+                raise ccxt.ExchangeError("Skipping Futures check in Spot Testnet (Keys incompatible)")
 
             # Ensure URLs exist
             if Config.BINANCE_USE_FUTURES and ((hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET):
@@ -536,7 +523,7 @@ class BinanceExecutor:
             
             # SKIP COIN-M check if we are in SPOT TESTNET mode
             if Config.BINANCE_USE_TESTNET and not Config.BINANCE_USE_FUTURES:
-                raise Exception("Skipping COIN-M check in Spot Testnet")
+                raise ccxt.ExchangeError("Skipping COIN-M check in Spot Testnet")
 
             # GET /dapi/v1/balance
             coin_balances = self.exchange.dapiPrivateGetBalance()
@@ -673,9 +660,18 @@ class BinanceExecutor:
                         # Update local portfolio
                         # Convert symbol format if needed (BTCUSDT -> BTC/USDT)
                         internal_symbol = symbol
-                        if not '/' in symbol and symbol.endswith('USDT'):
-                            base = symbol[:-4]
-                            internal_symbol = f"{base}/USDT"
+                        if not '/' in symbol:
+                            if symbol.endswith('USDT'):
+                                internal_symbol = f"{symbol[:-4]}/USDT"
+                            else:
+                                # Generic fallback
+                                internal_symbol = symbol 
+                        
+                        # Handle CCXT unified symbol mapping for Futures
+                        # CCXT often uses SYMBOL:USDT format
+                        if ':' in internal_symbol:
+                            base_part = internal_symbol.split(':')[0]
+                            internal_symbol = base_part
                         
                         portfolio.positions[internal_symbol] = {
                             'quantity': amt,
@@ -733,9 +729,11 @@ class BinanceExecutor:
                                 # Fetch current price for this asset
                                 try:
                                     ticker = self.spot_exchange.fetch_ticker(internal_symbol) if hasattr(self, 'spot_exchange') else self.exchange.fetch_ticker(internal_symbol)
-                                    current_price = ticker['last']
+                                    current_price = ticker.get('last')
+                                    if current_price is None:
+                                        current_price = 0.0
                                 except:
-                                    current_price = 0  # If we can't get price, set to 0 (will be updated by data feed)
+                                    current_price = 0.0  # If we can't get price, set to 0
                                 
                                 # Add to portfolio as a "position" (quantity of asset held)
                                 portfolio.positions[internal_symbol] = {

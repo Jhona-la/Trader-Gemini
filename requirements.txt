@@ -11,3 +11,13 @@ nltk
 requests
 python-dotenv
 python-binance
+pytest
+pytest-mock
+pytest-cov
+freezegun
+responses
+xgboost
+prometheus_client
+hurst
+scipy
+psutil

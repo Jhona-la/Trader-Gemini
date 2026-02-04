@@ -55,8 +55,14 @@ class MarketRegimeDetector:
             current_price = closes_1m[-1]
             atr_pct = (atr / current_price) * 100 if current_price > 0 else 0.5
             
-            # 4. Regime Classification (Raw)
-            if adx > 25:
+            # 4. Regime Classification (Raw with ZOMBIE Detection)
+            # FIXED: Zombie Market Detection (Rule 3.2)
+            # If price stayed the same for the last 10 bars, it's a zombie market (Demo/Flat)
+            recent_highs = highs_1m[-10:]
+            recent_lows = lows_1m[-10:]
+            if np.max(recent_highs) == np.min(recent_lows):
+                raw_regime = 'ZOMBIE'
+            elif adx > 25:
                 # Strong trend
                 if is_bullish:
                     raw_regime = 'TRENDING_BULL'
@@ -127,6 +133,11 @@ class MarketRegimeDetector:
                 'preferred_strategy': 'TECHNICAL',
                 'position_size_multiplier': 0.5,
                 'description': 'Uncertain - Reduce size'
+            },
+            'ZOMBIE': {
+                'preferred_strategy': 'NONE',
+                'position_size_multiplier': 0.0,
+                'description': 'Flat/Frozen Market - Protection Active'
             }
         }
         

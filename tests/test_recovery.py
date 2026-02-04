@@ -10,7 +10,7 @@ Tests the integration between Portfolio class and DatabaseHandler:
 import sys
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add parent directory to path
 project_root = Path(__file__).parent.parent
@@ -39,14 +39,14 @@ def test_portfolio_db_integration():
     try:
         # Simulate BUY trade
         buy_event = FillEvent(
-            timeindex=datetime.now(),
+            timeindex=datetime.now(timezone.utc),
             symbol='BTC/USDT',
             exchange='BINANCE',
             quantity=0.01,
             direction='BUY',
-            fill_cost=500.0  # 0.01 BTC @ $50,000
+            fill_cost=500.0,  # 0.01 BTC @ $50,000
+            strategy_id='TestStrategy'
         )
-        buy_event.strategy_id = 'TestStrategy'
         
         print("\n  📊 Executing BUY trade...")
         portfolio.update_fill(buy_event)
@@ -69,7 +69,7 @@ def test_portfolio_db_integration():
         
         # Simulate SELL trade (close position)
         sell_event = FillEvent(
-            timeindex=datetime.now(),
+            timeindex=datetime.now(timezone.utc),
             symbol='BTC/USDT',
             exchange='BINANCE',
             quantity=0.01,
@@ -114,9 +114,13 @@ def test_portfolio_db_integration():
                 os.remove(file)
         
         # Remove test database
+        # Remove test database
         test_db_path = os.path.join(Config.DATA_DIR, "trader_gemini.db")
         if os.path.exists(test_db_path):
-            os.remove(test_db_path)
+            try:
+                os.remove(test_db_path)
+            except PermissionError:
+                pass
 
 def test_crash_recovery_with_portfolio():
     """Test crash recovery using Portfolio restoration"""
@@ -137,24 +141,24 @@ def test_crash_recovery_with_portfolio():
     try:
         # Open two positions
         buy_btc = FillEvent(
-            timeindex=datetime.now(),
+            timeindex=datetime.now(timezone.utc),
             symbol='BTC/USDT',
             exchange='BINANCE',
             quantity=0.01,
             direction='BUY',
-            fill_cost=500.0
+            fill_cost=500.0,
+            strategy_id='Strategy1'
         )
-        buy_btc.strategy_id = 'Strategy1'
         
         buy_eth = FillEvent(
-            timeindex=datetime.now(),
+            timeindex=datetime.now(timezone.utc),
             symbol='ETH/USDT',
             exchange='BINANCE',
             quantity=0.5,
             direction='BUY',
-            fill_cost=1500.0
+            fill_cost=1500.0,
+            strategy_id='Strategy2'
         )
-        buy_eth.strategy_id = 'Strategy2'
         
         portfolio1.update_fill(buy_btc)
         portfolio1.update_fill(buy_eth)
@@ -208,7 +212,12 @@ def test_crash_recovery_with_portfolio():
         
         test_db_path = os.path.join(Config.DATA_DIR, "trader_gemini.db")
         if os.path.exists(test_db_path):
-            os.remove(test_db_path)
+            import time
+            try:
+                time.sleep(0.1)
+                os.remove(test_db_path)
+            except PermissionError:
+                 pass
 
 def run_all_tests():
     """Run all integration tests"""

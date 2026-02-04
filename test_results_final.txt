@@ -1,0 +1,269 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\jhona\Documents\Proyectos\Trader Gemini
+plugins: asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 50 items
+
+tests/test_binance_loader_refactor.py::TestBinanceLoader::test_fetch_initial_history PASSED [  2%]
+tests/test_connectivity_v2.py::test_websocket PASSED                     [  4%]
+tests/test_database.py::test_database_initialization PASSED              [  6%]
+tests/test_database.py::test_trade_logging PASSED                        [  8%]
+tests/test_database.py::test_position_persistence PASSED                 [ 10%]
+tests/test_database.py::test_crash_recovery_simulation PASSED            [ 12%]
+tests/test_exits.py::test_tp1_trailing_stop PASSED                       [ 14%]
+tests/test_exits.py::test_tp2_trailing_stop PASSED                       [ 16%]
+tests/test_exits.py::test_tp3_trailing_stop PASSED                       [ 18%]
+tests/test_exits.py::test_stop_loss PASSED                               [ 20%]
+tests/test_exits.py::test_hwm_tracking PASSED                            [ 22%]
+tests/test_integrity.py::test_core_imports PASSED                        [ 24%]
+tests/test_integrity.py::test_no_syntax_errors PASSED                    [ 26%]
+tests/test_math.py::TestSafeDiv::test_array_division PASSED              [ 28%]
+tests/test_math.py::TestSafeDiv::test_inf_handling PASSED                [ 30%]
+tests/test_math.py::TestSafeDiv::test_pandas_series_division PASSED      [ 32%]
+tests/test_math.py::TestSafeDiv::test_scalar_division PASSED             [ 34%]
+tests/test_persistence.py::TestPersistence::test_atomic_persistence_and_recovery PASSED [ 36%]
+tests/test_persistence.py::TestPersistence::test_close_position_persistence PASSED [ 38%]
+tests/test_persistence.py::TestPersistence::test_wal_mode_enabled PASSED [ 40%]
+tests/test_recovery.py::test_portfolio_db_integration PASSED             [ 42%]
+tests/test_recovery.py::test_crash_recovery_with_portfolio PASSED        [ 44%]
+tests/test_risk_engine.py::test_position_sizing PASSED                   [ 46%]
+tests/test_risk_engine.py::test_max_concurrent_positions PASSED          [ 48%]
+tests/test_risk_engine.py::test_risk_per_trade PASSED                    [ 50%]
+tests/test_risk_engine.py::test_stop_loss_calculations PASSED            [ 52%]
+tests/test_risk_engine.py::test_minimum_order_size PASSED                [ 54%]
+tests/test_risk_manager.py::TestRiskManager::test_atr_volatility_sizing PASSED [ 56%]
+tests/test_risk_manager.py::TestRiskManager::test_balance_check PASSED   [ 58%]
+tests/test_risk_manager.py::TestRiskManager::test_kill_switch_activation PASSED [ 60%]
+tests/test_risk_manager.py::TestRiskManager::test_multi_level_stops PASSED [ 62%]
+tests/test_risk_manager.py::TestRiskManager::test_order_rejection_on_kill_switch PASSED [ 64%]
+tests/test_risk_manager.py::TestRiskManager::test_position_sizing_tiers PASSED [ 66%]
+tests/test_risk_manager.py::TestRiskManager::test_short_rejection_spot_mode PASSED [ 68%]
+tests/test_strategies.py::test_rsi_calculation PASSED                    [ 70%]
+tests/test_strategies.py::test_macd_calculation PASSED                   [ 72%]
+tests/test_strategies.py::test_bollinger_bands PASSED                    [ 74%]
+tests/test_strategies.py::test_atr_calculation PASSED                    [ 76%]
+tests/test_strategies.py::test_ml_confluence_scoring PASSED              [ 78%]
+tests/test_timestamps.py::TestTimestamps::test_engine_ttl_logic PASSED   [ 80%]
+tests/test_timestamps.py::TestTimestamps::test_ensure_utc_aware_naive_raises PASSED [ 82%]
+tests/test_timestamps.py::TestTimestamps::test_ensure_utc_aware_valid PASSED [ 84%]
+tests/test_timestamps.py::TestTimestamps::test_ensure_utc_aware_wrong_tz_raises PASSED [ 86%]
+tests/test_timestamps.py::TestTimestamps::test_signal_event_immutability PASSED [ 88%]
+tests/test_timestamps.py::TestTimestamps::test_signal_event_requires_utc_aware PASSED [ 90%]
+tests/test_tp1_forensic.py::test_tp1_forensic PASSED                     [ 92%]
+tests/test_validation.py::test_no_hardcoded_secrets PASSED               [ 94%]
+tests/test_validation.py::test_env_file_exists PASSED                    [ 96%]
+tests/test_validation.py::test_config_validation PASSED                  [ 98%]
+tests/test_validation.py::test_exception_handling PASSED                 [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\binance\ws\websocket_api.py:4
+.venv\Lib\site-packages\binance\ws\websocket_api.py:4
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\binance\ws\websocket_api.py:4: DeprecationWarning: websockets.WebSocketClientProtocol is deprecated
+    from websockets import WebSocketClientProtocol  # type: ignore
+
+.venv\Lib\site-packages\websockets\legacy\__init__.py:6
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\websockets\legacy\__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+tests/test_database.py::test_database_initialization
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_database.py::test_database_initialization returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_database.py::test_trade_logging
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\data\database.py:113: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute('''
+
+tests/test_database.py::test_trade_logging
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_database.py::test_trade_logging returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_database.py::test_position_persistence
+tests/test_database.py::test_crash_recovery_simulation
+tests/test_database.py::test_crash_recovery_simulation
+tests/test_database.py::test_crash_recovery_simulation
+tests/test_exits.py::test_hwm_tracking
+tests/test_exits.py::test_hwm_tracking
+tests/test_persistence.py::TestPersistence::test_close_position_persistence
+tests/test_recovery.py::test_portfolio_db_integration
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\data\database.py:170: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute('''
+
+tests/test_database.py::test_position_persistence
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_database.py::test_position_persistence returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_database.py::test_crash_recovery_simulation
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_database.py::test_crash_recovery_simulation returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_exits.py::test_tp1_trailing_stop
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_exits.py::test_tp1_trailing_stop returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_exits.py::test_tp2_trailing_stop
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_exits.py::test_tp2_trailing_stop returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_exits.py::test_tp3_trailing_stop
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_exits.py::test_tp3_trailing_stop returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_exits.py::test_stop_loss
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_exits.py::test_stop_loss returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_exits.py::test_hwm_tracking
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_exits.py::test_hwm_tracking returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_integrity.py::test_core_imports
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_integrity.py::test_core_imports returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_integrity.py::test_no_syntax_errors
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_integrity.py::test_no_syntax_errors returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_persistence.py::TestPersistence::test_atomic_persistence_and_recovery
+tests/test_persistence.py::TestPersistence::test_close_position_persistence
+tests/test_recovery.py::test_portfolio_db_integration
+tests/test_recovery.py::test_crash_recovery_with_portfolio
+tests/test_recovery.py::test_crash_recovery_with_portfolio
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\data\database.py:244: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute('''
+
+tests/test_persistence.py::TestPersistence::test_atomic_persistence_and_recovery
+tests/test_recovery.py::test_portfolio_db_integration
+tests/test_recovery.py::test_crash_recovery_with_portfolio
+tests/test_recovery.py::test_crash_recovery_with_portfolio
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\data\database.py:268: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute('''
+
+tests/test_recovery.py::test_portfolio_db_integration
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_recovery.py::test_portfolio_db_integration returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_recovery.py::test_crash_recovery_with_portfolio
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_recovery.py::test_crash_recovery_with_portfolio returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_risk_engine.py::test_position_sizing
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_risk_engine.py::test_position_sizing returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_risk_engine.py::test_max_concurrent_positions
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_risk_engine.py::test_max_concurrent_positions returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_risk_engine.py::test_risk_per_trade
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_risk_engine.py::test_risk_per_trade returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_risk_engine.py::test_stop_loss_calculations
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_risk_engine.py::test_stop_loss_calculations returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_risk_engine.py::test_minimum_order_size
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_risk_engine.py::test_minimum_order_size returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_strategies.py::test_rsi_calculation
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_strategies.py::test_rsi_calculation returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_strategies.py::test_macd_calculation
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_strategies.py::test_macd_calculation returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_strategies.py::test_bollinger_bands
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_strategies.py::test_bollinger_bands returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_strategies.py::test_atr_calculation
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_strategies.py::test_atr_calculation returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_strategies.py::test_ml_confluence_scoring
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_strategies.py::test_ml_confluence_scoring returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_tp1_forensic.py::test_tp1_forensic
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_tp1_forensic.py::test_tp1_forensic returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_validation.py::test_no_hardcoded_secrets
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_validation.py::test_no_hardcoded_secrets returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_validation.py::test_env_file_exists
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_validation.py::test_env_file_exists returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_validation.py::test_config_validation
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_validation.py::test_config_validation returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_validation.py::test_exception_handling
+  C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_validation.py::test_exception_handling returned <class 'bool'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+====================== 50 passed, 49 warnings in 28.66s =======================

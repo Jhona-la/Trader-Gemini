@@ -1,90 +1,154 @@
+"""
+Core Events Module - Immutable event types for the trading system.
+All events are frozen dataclasses to prevent race conditions.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Optional, Dict, Any
+from utils.time_helpers import ensure_utc_aware
+from core.enums import EventType, SignalType, OrderSide, OrderType
+
+
+@dataclass(frozen=True)
 class Event:
     """
     Base class for all events.
+    Events are immutable after creation to prevent race conditions.
     """
     pass
 
+
+@dataclass(frozen=True)
 class MarketEvent(Event):
     """
     Handles the event of receiving a new market update with corresponding bars.
     """
-    def __init__(self):
-        self.type = 'MARKET'
+    symbol: str = ""  # Optional: which symbol triggered the event
+    type: EventType = field(default=EventType.MARKET, init=False)
 
+
+@dataclass(frozen=True)
 class SignalEvent(Event):
     """
     Handles the event of sending a Signal from a Strategy object.
     This is received by a Portfolio object and acted upon.
     """
-    def __init__(self, strategy_id, symbol, datetime, signal_type, strength=1.0, atr=None):
-        """
-        Parameters:
-        strategy_id - The unique identifier for the strategy that generated the signal.
-        symbol - The ticker symbol, e.g. 'BTC/USDT'.
-        datetime - The timestamp at which the signal was generated.
-        signal_type - 'LONG' or 'SHORT'.
-        strength - Strength of the signal (0.0 to 1.0) for sizing.
-        atr - Average True Range for volatility sizing.
-        """
-        self.type = 'SIGNAL'
-        self.strategy_id = strategy_id
-        self.symbol = symbol
-        self.datetime = datetime
-        self.signal_type = signal_type
-        self.strength = strength
-        self.atr = atr
+    strategy_id: str
+    symbol: str
+    datetime: datetime
+    signal_type: SignalType  # ✅ FIXED: Use enum instead of str
+    strength: float = 1.0
+    atr: Optional[float] = None
+    
+    # Optional metadata for risk manager
+    tp_pct: Optional[float] = None
+    sl_pct: Optional[float] = None
+    current_price: Optional[float] = None
+    leverage: Optional[int] = None  # Added for strategies to specify leverage
+    
+    type: EventType = field(default=EventType.SIGNAL, init=False)
 
+    def __post_init__(self):
+        """Validate datetime is UTC-aware"""
+        try:
+            ensure_utc_aware(self.datetime)
+        except ValueError as e:
+            raise ValueError(f"SignalEvent validation failed: {e}")
+
+
+@dataclass(frozen=True)
 class OrderEvent(Event):
     """
     Handles the event of sending an Order to an execution system.
-    The order contains a symbol (e.g. GOOG), a type (market or limit),
-    quantity and a direction.
     """
-    def __init__(self, symbol, order_type, quantity, direction, strategy_id=None):
-        """
-        Parameters:
-        symbol - The instrument to trade.
-        order_type - 'MKT' or 'LMT' for Market or Limit.
-        quantity - Non-negative integer for quantity.
-        direction - 'BUY' or 'SELL'.
-        strategy_id - ID of the strategy that generated the order.
-        """
-        self.type = 'ORDER'
-        self.symbol = symbol
-        self.order_type = order_type
-        self.quantity = quantity
-        self.direction = direction
-        self.strategy_id = strategy_id
+    symbol: str
+    order_type: OrderType  # ✅ FIXED: Use enum instead of str
+    quantity: float
+    direction: OrderSide   # ✅ FIXED: Use enum instead of str
+    strategy_id: Optional[str] = None
+    
+    # Optional order parameters
+    price: Optional[float] = None  # For limit orders
+    stop_price: Optional[float] = None  # For stop orders
+    sl_pct: Optional[float] = None  # NEW: Protective stop loss %
+    tp_pct: Optional[float] = None  # NEW: Protective take profit %
+    
+    type: EventType = field(default=EventType.ORDER, init=False)
 
     def print_order(self):
-        print(f"Order: Symbol={self.symbol}, Type={self.order_type}, Quantity={self.quantity}, Direction={self.direction}")
+        """Debug print for order details"""
+        print(
+            f"Order: Symbol={self.symbol}, Type={self.order_type.name}, "
+            f"Quantity={self.quantity:.6f}, Direction={self.direction.name}"
+        )
+    
+    def __str__(self):
+        return (
+            f"OrderEvent({self.direction.name} {self.quantity:.6f} {self.symbol} "
+            f"@ {self.order_type.name})"
+        )
 
+
+@dataclass(frozen=True)
 class FillEvent(Event):
     """
-    Encapsulates the notion of a Filled Order, as returned
-    from a brokerage. Stores the quantity of an instrument
-    actually filled and at what price. In addition, stores
-    the commission of the trade from the brokerage.
+    Encapsulates the notion of a Filled Order.
     """
-    def __init__(self, timeindex, symbol, exchange, quantity, 
-                 direction, fill_cost, commission=None, strategy_id=None):
-        """
-        Parameters:
-        timeindex - The bar-resolution when the order was filled.
-        symbol - The instrument which was filled.
-        exchange - The exchange where the order was filled.
-        quantity - The filled quantity.
-        direction - The direction of fill ('BUY' or 'SELL').
-        fill_cost - The holdings value in dollars.
-        commission - An optional commission sent from IB/Binance.
-        strategy_id - ID of the strategy that generated the trade.
-        """
-        self.type = 'FILL'
-        self.timeindex = timeindex
-        self.symbol = symbol
-        self.exchange = exchange
-        self.quantity = quantity
-        self.direction = direction
-        self.fill_cost = fill_cost
-        self.commission = commission
-        self.strategy_id = strategy_id
+    timeindex: datetime
+    symbol: str
+    exchange: str
+    quantity: float
+    direction: OrderSide  # ✅ FIXED: Use enum instead of str
+    fill_cost: float
+    commission: Optional[float] = None
+    strategy_id: Optional[str] = None
+    
+    # Additional fill info
+    fill_price: Optional[float] = None  # Actual fill price
+    order_id: Optional[str] = None      # Exchange order ID
+    
+    type: EventType = field(default=EventType.FILL, init=False)
+    
+    def __post_init__(self):
+        """Validate that timeindex is UTC-aware"""
+        try:
+            ensure_utc_aware(self.timeindex)
+        except ValueError as e:
+            raise ValueError(f"FillEvent validation failed: {e}")  # ✅ FIXED typo
+    
+    def __str__(self):
+        return (
+            f"FillEvent({self.direction.name} {self.quantity:.6f} {self.symbol} "
+            f"@ ${self.fill_cost:.2f})"
+        )
+
+
+@dataclass(frozen=True)
+class TradeAuditEvent(Event):
+    """
+    Audit event for tracking trade decisions and outcomes.
+    Used by pattern strategy for performance analysis.
+    """
+    strategy_id: str
+    symbol: str
+    timestamp: datetime
+    action: str  # "SIGNAL", "ENTRY", "EXIT", "SKIP"
+    reason: str  # Human-readable reason
+    price: Optional[float] = None
+    pnl: Optional[float] = None
+    details: Optional[Dict[str, Any]] = None  # ✅ IMPROVED: Dict instead of str
+    
+    # ✅ FIXED: Use dedicated AUDIT type
+    type: EventType = field(default=EventType.AUDIT, init=False)
+    
+    def __post_init__(self):
+        """Validate timestamp is UTC-aware"""
+        try:
+            ensure_utc_aware(self.timestamp)
+        except ValueError as e:
+            raise ValueError(f"TradeAuditEvent validation failed: {e}")
+    
+    def __str__(self):
+        pnl_str = f" PnL=${self.pnl:.2f}" if self.pnl else ""
+        return f"Audit({self.action} {self.symbol}{pnl_str}: {self.reason})"

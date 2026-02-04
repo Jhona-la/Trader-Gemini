@@ -14,6 +14,9 @@ from utils.logger import setup_logger
 # Setup logger
 logger = setup_logger('test_connectivity')
 
+import pytest
+
+@pytest.mark.asyncio
 async def test_websocket():
     logger.info("Testing WebSocket Connectivity...")
     
