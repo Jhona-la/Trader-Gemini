@@ -14,98 +14,149 @@ class MarketRegimeDetector:
     
     def __init__(self):
         self.last_regime = {}  # Per-symbol regime cache
+        self.global_regime = 'UNKNOWN'
+        self.market_breadth = {'sentiment': 'UNKNOWN', 'bull_pct': 0.0, 'bear_pct': 0.0}
+        self.regime_history = {}
+        self.last_hurst = 0.5
     
-    def detect_regime(self, symbol, bars_1m, bars_1h):
+    def detect_regime(self, symbol, bars_1m, bars_5m=None, bars_15m=None, bars_1h=None):
         """
-        Detect current market regime for a symbol.
-        
-        Parameters:
-        - symbol: Trading pair
-        - bars_1m: 1-minute bars (for ADX)
-        - bars_1h: 1-hour bars (for trend direction)
-        
-        Returns: String regime ('TRENDING_BULL', 'TRENDING_BEAR', 'RANGING', 'CHOPPY')
+        Detect current market regime for a symbol with MTF Confluence.
         """
         try:
             # Validate input
-            if len(bars_1m) < 50 or len(bars_1h) < 200:
-                # Not enough data, return last known or default
+            if len(bars_1m) < 50:
                 return self.last_regime.get(symbol, 'RANGING')
             
-            # 1. Calculate ADX from 1m bars (trend strength)
-            closes_1m = np.array([b['close'] for b in bars_1m])
-            highs_1m = np.array([b['high'] for b in bars_1m])
-            lows_1m = np.array([b['low'] for b in bars_1m])
+            # 1. MTF Trend Filter (5m & 15m)
+            # PROFESSOR METHOD:
+            # QUÉ: Filtro de confluencia Multi-Timeframe.
+            # POR QUÉ: Evita entradas M1 en contra de la fuerza M5/M15.
+            mtf_bias = 0 # 1=Bull, -1=Bear, 0=Neutral
+            
+            if bars_5m and len(bars_5m) >= 20:
+                c5m = np.array([b['close'] for b in bars_5m], dtype=np.float64)
+                ema20_5m = talib.EMA(c5m, timeperiod=20)[-1]
+                mtf_bias += 1 if c5m[-1] > ema20_5m else -1
+                
+            if bars_15m and len(bars_15m) >= 20:
+                c15m = np.array([b['close'] for b in bars_15m], dtype=np.float64)
+                ema20_15m = talib.EMA(c15m, timeperiod=20)[-1]
+                mtf_bias += 1 if c15m[-1] > ema20_15m else -1
+
+            # 2. ADX & Metrics (1m)
+            closes_1m = np.array([b['close'] for b in bars_1m], dtype=np.float64)
+            highs_1m = np.array([b['high'] for b in bars_1m], dtype=np.float64)
+            lows_1m = np.array([b['low'] for b in bars_1m], dtype=np.float64)
             
             adx = talib.ADX(highs_1m, lows_1m, closes_1m, timeperiod=14)[-1]
             
-            # 2. Calculate trend direction from 1h bars (use closed candles only)
-            closes_1h = np.array([b['close'] for b in bars_1h[:-1]])  # Exclude current open candle
+            # 3. Trend Direction (1h)
+            is_bullish = True
+            if bars_1h and len(bars_1h) >= 50:
+                closes_1h = np.array([b['close'] for b in bars_1h], dtype=np.float64)
+                ema50_1h = talib.EMA(closes_1h, timeperiod=50)[-1]
+                is_bullish = closes_1h[-1] > ema50_1h
             
-            if len(closes_1h) >= 200:
-                ema_50_1h = talib.EMA(closes_1h, timeperiod=50)[-1]
-                ema_200_1h = talib.EMA(closes_1h, timeperiod=200)[-1]
-                is_bullish = ema_50_1h > ema_200_1h
-            else:
-                # Fallback: use simple comparison
-                is_bullish = closes_1h[-1] > closes_1h[-50]
+            # 4. Hurst (1m)
+            from utils.statistics_pro import StatisticsPro
+            hurst = StatisticsPro.calculate_hurst_exponent(closes_1m[-100:]) if len(closes_1m) >= 100 else 0.5
+            self.last_hurst = hurst
+
+            # 5. Logic
+            raw_regime = 'CHOPPY'
             
-            # 3. Calculate volatility (ATR %)
-            atr = talib.ATR(highs_1m, lows_1m, closes_1m, timeperiod=14)[-1]
-            current_price = closes_1m[-1]
-            atr_pct = (atr / current_price) * 100 if current_price > 0 else 0.5
-            
-            # 4. Regime Classification (Raw with ZOMBIE Detection)
-            # FIXED: Zombie Market Detection (Rule 3.2)
-            # If price stayed the same for the last 10 bars, it's a zombie market (Demo/Flat)
-            recent_highs = highs_1m[-10:]
-            recent_lows = lows_1m[-10:]
-            if np.max(recent_highs) == np.min(recent_lows):
-                raw_regime = 'ZOMBIE'
-            elif adx > 25:
-                # Strong trend
-                if is_bullish:
+            if adx > 25:
+                if is_bullish and mtf_bias >= 0:
                     raw_regime = 'TRENDING_BULL'
-                else:
+                elif not is_bullish and mtf_bias <= 0:
                     raw_regime = 'TRENDING_BEAR'
             elif adx < 20:
-                # Weak trend = ranging
                 raw_regime = 'RANGING'
-            else:
-                # ADX 20-25: uncertain/choppy
-                raw_regime = 'CHOPPY'
-            
-            # 5. HYSTERESIS (Smoothing)
-            # Prevent flickering by requiring confirmation
-            # We store a history of raw regimes
-            if not hasattr(self, 'regime_history'):
-                self.regime_history = {}
-            
-            if symbol not in self.regime_history:
-                self.regime_history[symbol] = []
-            
+                if hurst < 0.4: raw_regime = 'MEAN_REVERTING'
+
+            # Hysteresis
+            if symbol not in self.regime_history: self.regime_history[symbol] = []
             self.regime_history[symbol].append(raw_regime)
-            if len(self.regime_history[symbol]) > 3:
-                self.regime_history[symbol].pop(0)
+            if len(self.regime_history[symbol]) > 3: self.regime_history[symbol].pop(0)
             
-            # Only switch if last 3 readings are identical
-            # Otherwise keep previous regime
-            if len(self.regime_history[symbol]) == 3 and \
-               self.regime_history[symbol][0] == self.regime_history[symbol][1] == self.regime_history[symbol][2]:
+            if len(self.regime_history[symbol]) == 3 and all(x == raw_regime for x in self.regime_history[symbol]):
                 final_regime = raw_regime
             else:
-                # Fallback to last confirmed regime, or current raw if none
                 final_regime = self.last_regime.get(symbol, raw_regime)
             
-            # Cache result
             self.last_regime[symbol] = final_regime
-            
             return final_regime
             
         except Exception as e:
-            print(f"[WARN] Regime Detector Error for {symbol}: {e}")
-            # Return last known or safe default
+            logger.error(f"Regime Error {symbol}: {e}")
             return self.last_regime.get(symbol, 'RANGING')
+
+    def calculate_market_context(self, active_symbols_data: Dict[str, Dict]):
+        """
+        SOVEREIGN MARKET CONTEXT (Swarm Intelligence).
+        QUÉ: Calcula el sentimiento agregado de la canasta Elite.
+        POR QUÉ: Evita dependencia de un solo símbolo y mide la amplitud real del mercado.
+        
+        active_symbols_data: {
+            'BTC/USDT': {'1m': bars, '5m': bars, '1h': bars},
+            ...
+        }
+        """
+        regimes = []
+        
+        for symbol, data in active_symbols_data.items():
+            r = self.detect_regime(
+                symbol, 
+                data.get('1m', []), 
+                data.get('5m', []), 
+                data.get('15m', []), 
+                data.get('1h', [])
+            )
+            regimes.append(r)
+            
+        if not regimes:
+            return self.market_breadth
+            
+        # Stats
+        total = len(regimes)
+        bulls = regimes.count('TRENDING_BULL')
+        bears = regimes.count('TRENDING_BEAR')
+        
+        bull_pct = (bulls / total)
+        bear_pct = (bears / total)
+        
+        # Determine Aggregate Sentiment
+        # Phase 8.1 Rule: Consensus > 60%
+        if bear_pct >= 0.60:
+            sentiment = 'TRENDING_BEAR'
+        elif bull_pct >= 0.60:
+            sentiment = 'TRENDING_BULL'
+        else:
+            sentiment = 'MIXED'
+            
+        self.global_regime = sentiment # For backwards compatibility
+        self.market_breadth = {
+            'sentiment': sentiment,
+            'bull_pct': bull_pct,
+            'bear_pct': bear_pct,
+            'regime_count': total
+        }
+        
+        # LOGGING INSTITUCIONAL
+        if sentiment == 'TRENDING_BEAR':
+            logger.warning(f"🚨 [Sovereign Context] MARKET PANIC: {bear_pct:.0%} of assets are Bearish. Veto Active.")
+        elif sentiment == 'TRENDING_BULL':
+            logger.info(f"🐂 [Sovereign Context] MARKET FRENZY: {bull_pct:.0%} of assets are Bullish.")
+            
+        return self.market_breadth
+
+    def detect_global_regime(self, btc_bars_1m, btc_bars_5m, btc_bars_1h):
+        """
+        DEPRECATED: Use calculate_market_context for breadth-based analysis.
+        Kept for transition.
+        """
+        return self.detect_regime('BTC/USDT', btc_bars_1m, btc_bars_5m, None, btc_bars_1h)
     
     def get_regime_advice(self, regime):
         """
@@ -120,7 +171,7 @@ class MarketRegimeDetector:
                 'description': 'Strong uptrend - ML aggressive'
             },
             'TRENDING_BEAR': {
-                'preferred_strategy': 'NONE',
+                'preferred_strategy': 'NONE', # Or Short ML
                 'position_size_multiplier': 0.0,
                 'description': 'Strong downtrend - CASH'
             },

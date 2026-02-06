@@ -26,6 +26,7 @@ from core.enums import SignalType
 from config import Config
 from utils.logger import logger
 from utils.safe_leverage import safe_leverage_calculator
+from core.neural_bridge import neural_bridge
 
 
 class SniperStrategy(Strategy):
@@ -40,35 +41,33 @@ class SniperStrategy(Strategy):
         self.executor = executor
         self.portfolio = portfolio  # NEW: For dynamic capital
         
-        # Whitelist filter
-        self.whitelist = Config.Sniper.WHITELIST
-        self.symbol_list = [s for s in data_provider.symbol_list if s in self.whitelist]
+        # Whitelist filter (Disabled - Now using Dynamic Basket)
+        self.whitelist = getattr(Config.Sniper, 'WHITELIST', [])
+        # self.symbol_list = [s for s in data_provider.symbol_list if s in self.whitelist]
         
         # State tracking
         self.last_signal_time = {}
         self.signal_count = 0
         
-        logger.info(f"🎯 SNIPER STRATEGY INITIALIZED (SCALPING MODE)")
-        logger.info(f"   Whitelist: {self.whitelist}")
-        logger.info(f"   Symbols Active: {len(self.symbol_list)}")
+        logger.info(f"🎯 SNIPER STRATEGY INITIALIZED (ADAPTIVE MODE)")
     
     def calculate_signals(self, event):
         """Main signal generation loop."""
         if not Config.Sniper.ENABLED:
             return
         
-        # Session filter (optional)
+        # Session filter
         if Config.Sniper.REQUIRE_ACTIVE_SESSION and not self._is_active_session():
             return
         
-        for symbol in self.symbol_list:
+        # OMNI-ADAPTIVE: Sniper now trades whatever is in the active basket
+        for symbol in self.data_provider.symbol_list:
             try:
-                # 0. Local Cooldown Check to prevent spamming the queue
+                # 0. Local Cooldown Check
                 now = datetime.now(timezone.utc)
                 if symbol in self.last_signal_time:
                     if (now - self.last_signal_time[symbol]).total_seconds() < 30:
                         continue
-                        
                 signal = self._analyze_symbol(symbol)
                 if signal:
                     self.events_queue.put(signal)
@@ -117,6 +116,39 @@ class SniperStrategy(Strategy):
             return None
         
         # =====================================================================
+        # PHASE 8: NEURAL BRIDGE CROSS-VALIDATION
+        # =====================================================================
+        ml_insight = neural_bridge.query_insight(symbol, "ML_ENSEMBLE")
+        if ml_insight:
+            ml_dir = ml_insight.get('direction')
+            ml_conf = ml_insight.get('confidence', 0.0)
+            
+            # Bloquear si la IA detecta dirección opuesta con fuerza (>0.55)
+            if ml_dir != layer_a_direction and ml_conf > 0.55:
+                # logger.info(f"🧠 [BRIDGE] Sniper Blocked: ML sees {ml_dir} ({ml_conf:.2f})")
+                return None
+            
+            # Bonus de fuerza si la IA está de acuerdo
+            if ml_dir == layer_a_direction:
+                layer_a_score += 0.5
+
+        # --- STATISTICAL SYNC ---
+        stat_insight = neural_bridge.query_insight(symbol, "STAT_SPREAD")
+        if stat_insight:
+            stat_dir = stat_insight.get('direction')
+            stat_z = stat_insight.get('z_score', 0.0)
+            
+            # Si el motor estadístico ve una reversión fuerte en contra, precaución
+            if stat_dir != layer_a_direction and abs(stat_z) > 2.0:
+                # logger.warning(f"🧠 [BRIDGE] Sniper Blocked: Stat sees Mean Reversion {stat_dir} (Z={stat_z:.1f})")
+                return None
+            
+            # Si ambos coinciden en dirección con sobre-extensión
+            if stat_dir == layer_a_direction and abs(stat_z) > 1.5:
+                layer_a_score += 0.5
+                # logger.info(f"🧠 [BRIDGE] Sniper Buff: Stat alignment {stat_dir} (Z={stat_z:.1f})")
+        
+        # ================= ====================================================
         # LAYER B: Volume Confirmation (BONUS, not blocking)
         # =====================================================================
         volume_result = self._analyze_volume(volumes)
@@ -159,6 +191,18 @@ class SniperStrategy(Strategy):
         strength = min(1.0, (layer_a_score / 3) * volume_bonus)
         signal_type = SignalType.LONG if layer_a_direction == 'LONG' else SignalType.SHORT
         
+        # Phase 8: Neural Bridge Publication (Master conviction)
+        neural_bridge.publish_insight(
+            strategy_id="SNIPER_CORE",
+            symbol=symbol,
+            insight={
+                'confidence': strength,
+                'direction': 'LONG' if layer_a_direction == 'LONG' else 'SHORT',
+                'technical_score': layer_a_score,
+                'volume_boost': volume_bonus > 1.0
+            }
+        )
+
         # Calculate percentages
         tp_pct_val = abs(target_price - current_price) / current_price * 100
         sl_pct_val = abs(current_price - stop_price) / current_price * 100

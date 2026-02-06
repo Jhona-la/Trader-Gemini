@@ -10,7 +10,9 @@
 | Estrategia | Archivo | Tipo | Estado |
 |------------|---------|------|--------|
 | **Hybrid Scalping** | `technical.py` | Principal | ✅ Producción |
-| **ML Pattern** | `ml_strategy.py` | Experimental | ⚠️ Testing |
+| **Statistical** | `statistical.py` | Mean Reversion | ✅ Blindada (Ph 7) |
+| **ML Pattern** | `ml_strategy.py` | Ensemble Predictor | ✅ Activa (Ph 8) |
+| **Shadow Optimizer**| `shadow_optimizer.py`| Meta-Optimization | ✅ Bounded (Ph 9) |
 
 ---
 
@@ -409,5 +411,47 @@ logger.info(f"📐 TP: {tp_pct*100:.2f}% | SL: {sl_pct*100:.2f}%")
 
 ---
 
-> **Última actualización:** 2026-02-03
+---
+
+## 📊 Estrategia: Statistical (Adaptive Z-Score)
+
+### QUÉ es
+Un sistema de reversión a la media (Mean Reversion) que opera el ratio entre pares correlacionados (ej: ETH/BTC) o spreads de volatilidad.
+
+### POR QUÉ Adaptive
+El Z-Score estático es peligroso durante Flash Crashes. El **Adaptive Z-Score** sincroniza el umbral de entrada con la volatilidad relativa.
+
+### CÓMO funciona (Phase 7 Shield)
+1. **VolRatio:** Calcula $\sigma_{short} / \sigma_{long}$. Si la volatilidad corta explota, el Z de entrada sube automáticamente.
+2. **Hurst Filter:** Si el Exponente de Hurst > 0.6 (Tendencia fuerte), la entrada se penaliza o bloquea.
+3. **Neural Sync:** Publica su convicción al `NeuralBridge` para que el Sniper no compre en controtendencia.
+
+---
+
+## 🧠 Neural Bridge (Shared Intelligence)
+
+### QUÉ
+Un búfer central de "Insights" que permite comunicación cruzada entre todas las estrategias.
+
+### PARA QUÉ
+Evitar señales contradictorias. Por ejemplo, si el Sniper ve un LONG pero la IA detecta un cambio de tendencia bajista, el Bridge bloquea la orden para salvar los **$13.50**.
+
+---
+
+## 🤖 Shadow Optimizer (Phase 9)
+
+### QUÉ
+Motor de auto-mejora basado en simulación dominical.
+
+### Lógica de Rangos Acotados
+El bot solo puede sugerir cambios dentro de un "Sandbox Seguro":
+- **RSI Buy:** 30 a 35 (Nunca menor a 30).
+- **Z-Score:** 1.5 a 2.5 (Nunca menor a 1.5).
+
+### CUÁNDO se usa
+Idealmente cada domingo para ajustar parámetros según la volatilidad de la semana anterior.
+
+---
+
+> **Última actualización:** 2026-02-04 (Neural Era)
 > **Autor:** Sistema Trader Gemini - Documentación Automática

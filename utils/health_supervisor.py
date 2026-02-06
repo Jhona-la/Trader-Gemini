@@ -1,8 +1,11 @@
 import threading
 import time
-import json
+try:
+    import ujson as json
+except ImportError:
+    import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from utils.logger import logger
 from core.data_handler import get_data_handler
 from core.api_manager import get_api_manager
@@ -51,7 +54,7 @@ class HealthSupervisor(threading.Thread):
         self.running = False
         
     def _perform_triple_check(self):
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
         
         # 1. State A: API (Real)
         # Force a fresh fetch if possible, or use cached if recent
@@ -121,7 +124,13 @@ class HealthSupervisor(threading.Thread):
             ui_latency = (time.time() - ui_ts)
             if ui_latency > 10: # Phase 6 Final: Record spikes > 10s
                 notes.append(f"⏱️ LATENCY SPIKE DETECTED ({int(ui_latency)}s)")
-                logger.warning(f"⚠️ [HEALTH] The Pulse: High latency detected ({ui_latency:.1f}s)")
+                
+                # MODO PROFESOR: Si la latencia es extrema (> 1000s), probablemente el Dashboard está APAGADO.
+                # No lanzamos alarma de "High Latency" si es evidente que es por desconexión.
+                if ui_latency > 300:
+                    notes.append("🖥️ DASHBOARD OFFLINE")
+                else:
+                    logger.warning(f"⚠️ [HEALTH] The Pulse: High latency detected ({ui_latency:.1f}s)")
             
             if ui_latency > 120: # 2 mins no UI update
                 notes.append(f"UI Stale ({int(ui_latency)}s)")

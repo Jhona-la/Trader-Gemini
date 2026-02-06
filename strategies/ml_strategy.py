@@ -15,12 +15,24 @@ Características avanzadas:
 - ✅ Arquitectura asíncrona optimizada para alta frecuencia
 """
 
-# ⚠️ CRITICAL: Suprimir warnings ANTES de importar sklearn/xgboost
-# El warning de sklearn.utils.parallel.delayed se emite durante ejecución
+# ⚠️ CRITICAL: Suprimir warnings TOTALMENTE para evitar ruido en consola
+import os
 import warnings
-warnings.filterwarnings('ignore', message='.*sklearn.utils.parallel.delayed.*', category=UserWarning)
-warnings.filterwarnings('ignore', module='sklearn.utils.parallel')
+
+# Disable fragmentation warnings and sklearn parallel noise
+os.environ['PYTHONWARNINGS'] = 'ignore'
+os.environ['PYTHONNOUSERSITE'] = '1'
 warnings.filterwarnings('ignore')
+try:
+    from pandas.errors import PerformanceWarning
+    warnings.filterwarnings('ignore', category=PerformanceWarning)
+except:
+    pass
+warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', message='.*sklearn.utils.parallel.delayed.*')
+
+import numpy as np
+import pandas as pd
 
 import pandas as pd
 import numpy as np
@@ -40,13 +52,26 @@ from core.transparent_logger import monitor_log
 from utils.debug_tracer import trace_execution
 from utils.thread_monitor import monitor
 from concurrent.futures import ThreadPoolExecutor
+from core.neural_bridge import neural_bridge
 import threading
 import copy
 from collections import deque, Counter
-import json
+try:
+    import ujson as json
+except ImportError:
+    import json
 import joblib
-import os
 import time
+import gc
+from data.feature_store import FeatureStore
+from core.ml_governance import MLGovernance
+
+# --- OPTIMIZACIÓN DE RECURSOS (Rule 3.3) ---
+# MODO PROFESOR: Limitador global de entrenamiento.
+# QUÉ: Semáforo para controlar cuántas estrategias entrenan simultáneamente.
+# POR QUÉ: Con 24 símbolos, n_jobs=-1 causa agotamiento de RAM instantáneo (97%+).
+# PARA QUÉ: Estabilizar el sistema y permitir que el trading continúe sin lag.
+TRAINING_LIMITER = threading.BoundedSemaphore(value=2) 
 
 class MLStrategyHybridUltimate(Strategy):
     """
@@ -55,7 +80,7 @@ class MLStrategyHybridUltimate(Strategy):
     """
     
     def __init__(self, data_provider, events_queue, symbol='BTC/USDT', 
-                 lookback=50, sentiment_loader=None, portfolio=None):
+                 lookback=50, sentiment_loader=None, portfolio=None, risk_manager=None):
         
         # ============================================================
         # ✅ CORE CONFIGURATION - OPTIMIZADO PARA CRECIMIENTO RÁPIDO
@@ -68,6 +93,7 @@ class MLStrategyHybridUltimate(Strategy):
         self._feature_cols = [] # Ensure initialized
         self.sentiment_loader = sentiment_loader
         self.portfolio = portfolio
+        self.risk_manager = risk_manager # Regime Leader Link
         self.strategy_id = "ML_HYBRID_ULTIMATE_V2"
         
         # === ASYNC EXECUTOR OPTIMIZADO ===
@@ -162,8 +188,12 @@ class MLStrategyHybridUltimate(Strategy):
         self.models_dir = ".models"
         os.makedirs(self.models_dir, exist_ok=True)
         
-        # Cargar modelos previos si existen
-        self._load_models()
+        # === [PHASE 12] GOVERNANCE & FEATURE STORE ===
+        self.feature_store = FeatureStore()
+        self.ml_governance = MLGovernance()
+        
+        # Cargar modelos previos si existen (Prioridad: MLGovernance)
+        self._load_governed_model()
         
         # ============================================================
         # ✅ DETECCIÓN DE RÉGIMEN DE MERCADO AVANZADA
@@ -197,6 +227,7 @@ class MLStrategyHybridUltimate(Strategy):
         # ============================================================
         # ✅ STATE MANAGEMENT Y THREAD SAFETY
         # ============================================================
+        self.running = True
         self._state_lock = threading.Lock()
         self._feature_cols = None
         self._training_thread = None
@@ -212,6 +243,10 @@ class MLStrategyHybridUltimate(Strategy):
         self.losing_trades = 0
         self.max_win_streak = 0
         self.max_loss_streak = 0
+        
+        # Win Rate / Payoff tracking for Kelly
+        self.rolling_win_rate = deque(maxlen=20)
+        self.rolling_payoff = deque(maxlen=20) # Avg Win / Avg Loss
         
         self.signals_by_regime = {
             'TRENDING': 0, 'RANGING': 0, 'VOLATILE': 0, 'MIXED': 0, 'UNKNOWN': 0
@@ -229,6 +264,10 @@ class MLStrategyHybridUltimate(Strategy):
         self.kelly_fraction = 0.5  # Fracción de Kelly para riesgo controlado
         self.base_position_size = 0.95  # Usar 95% del capital para crecimiento rápido
         
+        # Phase 5: Dynamic Math Utils
+        from utils.statistics_pro import StatisticsPro
+        self.stats_pro = StatisticsPro()
+        
         # Meta de 12 USD a 100K USD
         self.initial_capital = 12.0
         self.target_capital = 100000.0
@@ -237,6 +276,44 @@ class MLStrategyHybridUltimate(Strategy):
         logger.info(f"🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR {symbol}")
         logger.info(f"🎯 OBJECTIVE: ${self.initial_capital} → ${self.target_capital}")
         logger.info(f"⚙️  Mode: Exponential Growth (Aggressive with Risk Control)")
+        
+    def _calculate_dynamic_sizing(self, confidence, volatility):
+        """
+        Phase 5: Dynamic Kelly Criterion Sizing
+        Size = Kelly% * Confidence_Scaler * Volatility_Scaler
+        """
+        try:
+            # 1. Calculate Base Kelly
+            if len(self.rolling_win_rate) < 5:
+                # Cold start: Use conservative fixed
+                kelly_pct = 0.25 
+            else:
+                wr = np.mean(self.rolling_win_rate)
+                avg_win = np.mean([p for p in self.rolling_payoff if p > 0]) if any(p > 0 for p in self.rolling_payoff) else 0.01
+                avg_loss = abs(np.mean([p for p in self.rolling_payoff if p < 0])) if any(p < 0 for p in self.rolling_payoff) else 0.005
+                
+                kelly_pct = self.stats_pro.calculate_kelly_criterion(wr, avg_win, avg_loss)
+            
+            # 2. Apply Fractional Kelly (Safety)
+            safe_kelly = kelly_pct * self.kelly_fraction
+            
+            # 3. Scale by Prediction Confidence (Higher conf -> Higher size)
+            # Normalize confidence (0.5 to 1.0) -> (0.0 to 1.0)
+            conf_scaler = max(0.0, (confidence - 0.5) * 2) 
+            
+            # 4. Scale by Volatility (Inverse Volatility Sizing)
+            # If Volatility is high, reduce size to keep $ Risk constant
+            # Reference volatility: 0.005 (0.5%) per bars
+            vol_scaler = min(1.5, 0.005 / max(0.001, volatility))
+            
+            final_size = min(0.95, safe_kelly * conf_scaler * vol_scaler)
+            
+            # print(f"  💰 Dynamic Sizing: K={kelly_pct:.2f} -> Safe={safe_kelly:.2f} * Conf={conf_scaler:.2f} * Vol={vol_scaler:.2f} = {final_size:.2f}")
+            return max(0.1, final_size) # Min 10%
+            
+        except Exception as e:
+            logger.error(f"Sizing error: {e}")
+            return 0.1
 
     # ============================================================
     # ✅ DETECCIÓN DE RÉGIMEN MEJORADA CON SUAVIZADO
@@ -384,6 +461,9 @@ class MLStrategyHybridUltimate(Strategy):
                 self._adjust_all_parameters_by_regime(smoothed_regime)
                 
                 if old_regime != smoothed_regime:
+                    # ORCHESTRATION (Phase 12): Push Global Regime if this is the Leader
+                    if self.risk_manager:
+                        self.risk_manager.update_regime(smoothed_regime)
                     # --- NARRATIVA CONCEPTUAL Y ESTADÍSTICA ---
                     descriptions = {
                         "TRENDING": "Directional bias confirmed. Momentum engines active.",
@@ -490,128 +570,169 @@ class MLStrategyHybridUltimate(Strategy):
             
         df = pd.DataFrame(bars)
         
-        # Convertir a numérico
+        # === [PHASE 12] FEATURE STORE LOOKUP ===
+        # Si tenemos un bloque grande de datos (entrenamiento), intentamos recuperar de cache
+        if len(df) > 100:
+            try:
+                start_ts = df['datetime'].min()
+                end_ts = df['datetime'].max()
+                cached_df = self.feature_store.get_features(self.symbol, start_ts, end_ts)
+                if not cached_df.empty and len(cached_df) >= len(df) * 0.9:
+                    # Mezclamos OHLCV original con las features del cache
+                    full_df = pd.concat([df.set_index('datetime'), cached_df], axis=1)
+                    # Eliminamos duplicados y retornamos
+                    return full_df.reset_index()
+            except Exception as e:
+                logger.warning(f"FeatureStore retrieval skipped: {e}")
+
+        # Si no hay cache or es tiempo real, calculamos...
+        
+        # Convertir a numérico y optimizar RAM (Rule 3.5)
+        # PROFESSOR METHOD: Downcasting agresivo para ahorrar 50-70% RAM.
+        
+        # OPTIMIZATION: Use dict batching for new columns to avoid fragmentation
+        new_features = {}
+        
+        # 1. Base transformations
         numeric_cols = ['close', 'open', 'high', 'low', 'volume']
+        # Note: df is already created from bars list, so we modify in place but careful with copies
+        # Efficient typing
         for col in numeric_cols:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+                df[col] = pd.to_numeric(df[col], errors='coerce', downcast='float')
         
         if len(df) < 50:
             return pd.DataFrame()
-        
+
+        # Helper for efficient array access (CRITICAL: TA-Lib requires float64/double)
+        close = df['close'].values.astype(np.float64)
+        high = df['high'].values.astype(np.float64)
+        low = df['low'].values.astype(np.float64)
+        open_ = df['open'].values.astype(np.float64)
+        volume = df['volume'].values.astype(np.float64)
+
         # ==================== PRICE ACTION ====================
-        df['returns_1'] = df['close'].pct_change(1)
-        df['returns_3'] = df['close'].pct_change(3)
-        df['returns_5'] = df['close'].pct_change(5)
-        df['returns_10'] = df['close'].pct_change(10)
+        new_features['returns_1'] = df['close'].pct_change(1)
+        new_features['returns_3'] = df['close'].pct_change(3)
+        new_features['returns_5'] = df['close'].pct_change(5)
+        new_features['returns_10'] = df['close'].pct_change(10)
         
-        # High-Low ratios
-        df['hl_range'] = (df['high'] - df['low']) / df['close']
-        df['oc_range'] = abs(df['close'] - df['open']) / df['close']
-        df['close_position'] = safe_div(df['close'] - df['low'], df['high'] - df['low'], 0.5)
+        # High-Low ratios (Vectorized)
+        new_features['hl_range'] = (df['high'] - df['low']) / df['close']
+        new_features['oc_range'] = abs(df['close'] - df['open']) / df['close']
+        new_features['close_position'] = safe_div(df['close'] - df['low'], df['high'] - df['low'], 0.5)
         
         # Body to wick ratio
-        upper_wick = df['high'] - df[['open', 'close']].max(axis=1)
-        lower_wick = df[['open', 'close']].min(axis=1) - df['low']
-        df['body_to_wick'] = safe_div(abs(df['close'] - df['open']), upper_wick + lower_wick, 1.0)
+        upper_wick = df['high'] - np.maximum(df['open'], df['close'])
+        lower_wick = np.minimum(df['open'], df['close']) - df['low']
+        new_features['body_to_wick'] = safe_div(abs(df['close'] - df['open']), upper_wick + lower_wick, 1.0)
         
         # ==================== MOMENTUM COMPLETO ====================
         for period in [3, 5, 8, 13, 21, 34]:
-            df[f'momentum_{period}'] = df['close'] / df['close'].shift(period) - 1
+            new_features[f'momentum_{period}'] = df['close'] / df['close'].shift(period) - 1
         
-        # Rate of Change multi-periodo
-        df['roc_5'] = df['close'].pct_change(5)
-        df['roc_10'] = df['close'].pct_change(10)
-        df['roc_20'] = df['close'].pct_change(20)
+        new_features['roc_5'] = df['close'].pct_change(5)
+        new_features['roc_10'] = df['close'].pct_change(10)
+        new_features['roc_20'] = df['close'].pct_change(20)
         
         # ==================== INDICADORES TÉCNICOS ====================
-        # RSI multi-periodo
-        df['rsi_7'] = talib.RSI(df['close'].values, timeperiod=7)
-        df['rsi_14'] = talib.RSI(df['close'].values, timeperiod=14)
-        df['rsi_21'] = talib.RSI(df['close'].values, timeperiod=21)
+        # RSIs
+        new_features['rsi_7'] = talib.RSI(close, timeperiod=7)
+        new_features['rsi_14'] = talib.RSI(close, timeperiod=14)
+        new_features['rsi_21'] = talib.RSI(close, timeperiod=21)
         
-        # ATR y volatilidad
-        df['atr'] = talib.ATR(df['high'].values, df['low'].values, df['close'].values, timeperiod=14)
-        df['atr_pct'] = safe_div(df['atr'], df['close']) * 100
-        df['natr'] = talib.NATR(df['high'].values, df['low'].values, df['close'].values, timeperiod=14)
+        # ATR / ADX
+        new_features['atr'] = talib.ATR(high, low, close, timeperiod=14)
+        new_features['atr_pct'] = safe_div(new_features['atr'], df['close']) * 100
+        new_features['natr'] = talib.NATR(high, low, close, timeperiod=14)
         
-        # ADX y tendencia
-        df['adx'] = talib.ADX(df['high'].values, df['low'].values, df['close'].values, timeperiod=14)
-        df['plus_di'] = talib.PLUS_DI(df['high'].values, df['low'].values, df['close'].values, timeperiod=14)
-        df['minus_di'] = talib.MINUS_DI(df['high'].values, df['low'].values, df['close'].values, timeperiod=14)
+        new_features['adx'] = talib.ADX(high, low, close, timeperiod=14)
+        new_features['plus_di'] = talib.PLUS_DI(high, low, close, timeperiod=14)
+        new_features['minus_di'] = talib.MINUS_DI(high, low, close, timeperiod=14)
         
-        # MACD completo
-        macd, macd_signal, macd_hist = talib.MACD(df['close'].values, 
-                                                  fastperiod=12, slowperiod=26, signalperiod=9)
-        df['macd'] = macd
-        df['macd_signal'] = macd_signal
-        df['macd_hist'] = macd_hist
-        df['macd_hist_change'] = pd.Series(macd_hist).diff()
-        df['macd_slope'] = pd.Series(macd_hist).diff(3)
+        # MACD
+        macd, macd_signal, macd_hist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
+        new_features['macd'] = macd
+        new_features['macd_signal'] = macd_signal
+        new_features['macd_hist'] = macd_hist
+        new_features['macd_hist_change'] = pd.Series(macd_hist).diff()
+        new_features['macd_slope'] = pd.Series(macd_hist).diff(3)
         
-        # Bollinger Bands
-        upper, middle, lower = talib.BBANDS(df['close'].values, timeperiod=20, nbdevup=2, nbdevdn=2)
-        df['bb_upper'] = upper
-        df['bb_middle'] = middle
-        df['bb_lower'] = lower
-        df['bb_position'] = safe_div(df['close'] - lower, upper - lower, 0.5)
-        df['bb_width'] = safe_div(upper - lower, middle)
-        df['bb_squeeze'] = (df['bb_width'] < df['bb_width'].rolling(20).mean() * 0.5).astype(int)
+        # Bollinger
+        upper, middle, lower_band = talib.BBANDS(close, timeperiod=20, nbdevup=2, nbdevdn=2)
+        new_features['bb_upper'] = upper
+        new_features['bb_middle'] = middle
+        new_features['bb_lower'] = lower_band
+        new_features['bb_position'] = safe_div(close - lower_band, upper - lower_band, 0.5)
+        new_features['bb_width'] = safe_div(upper - lower_band, middle)
+        # Squeeze logic requires rolling mean of bb_width, do it later or inline
         
         # Stochastic
-        slowk, slowd = talib.STOCH(df['high'].values, df['low'].values, df['close'].values,
-                                   fastk_period=14, slowk_period=3, slowd_period=3)
-        df['stoch_k'] = slowk
-        df['stoch_d'] = slowd
-        df['stoch_cross'] = np.where(slowk > slowd, 1, -1)
+        slowk, slowd = talib.STOCH(high, low, close, fastk_period=14, slowk_period=3, slowd_period=3)
+        new_features['stoch_k'] = slowk
+        new_features['stoch_d'] = slowd
+        new_features['stoch_cross'] = np.where(slowk > slowd, 1, -1)
         
-        # MFI (Money Flow Index)
-        df['mfi'] = talib.MFI(df['high'].values, df['low'].values, df['close'].values, 
-                              df['volume'].values, timeperiod=14)
+        # MFI / CCI
+        new_features['mfi'] = talib.MFI(high, low, close, volume, timeperiod=14)
+        new_features['cci'] = talib.CCI(high, low, close, timeperiod=20)
         
-        # CCI (Commodity Channel Index)
-        df['cci'] = talib.CCI(df['high'].values, df['low'].values, df['close'].values, timeperiod=20)
-        
-        # ==================== MOVING AVERAGES ====================
         # EMAs
         periods = [5, 10, 20, 50, 100, 200]
         for period in periods:
             if len(df) >= period:
-                df[f'ema_{period}'] = talib.EMA(df['close'].values, timeperiod=period)
-                df[f'dist_ema_{period}'] = safe_div(df['close'] - df[f'ema_{period}'], df[f'ema_{period}'])
+                ema = talib.EMA(close, timeperiod=period)
+                new_features[f'ema_{period}'] = ema
+                new_features[f'dist_ema_{period}'] = safe_div(close - ema, ema)
         
-        # SMA
+        # SMAs
         for period in [20, 50]:
             if len(df) >= period:
-                df[f'sma_{period}'] = talib.SMA(df['close'].values, timeperiod=period)
+                new_features[f'sma_{period}'] = talib.SMA(close, timeperiod=period)
         
-        # Crossovers
-        df['ema_5_20_cross'] = np.where(df['ema_5'] > df['ema_20'], 1, -1)
-        df['ema_20_50_cross'] = np.where(df['ema_20'] > df['ema_50'], 1, -1)
-        df['ema_50_200_cross'] = np.where(df['ema_50'] > df['ema_200'], 1, -1)
+        # Volume
+        new_features['volume_sma_20'] = talib.SMA(volume, timeperiod=20)
+        new_features['volume_ratio'] = safe_div(df['volume'], new_features['volume_sma_20'])
         
-        # ==================== VOLUME ANALYSIS ====================
-        df['volume_sma_20'] = talib.SMA(df['volume'].values, timeperiod=20)
-        df['volume_ratio'] = safe_div(df['volume'], df['volume_sma_20'])
-        df['volume_zscore'] = (df['volume'] - df['volume'].rolling(20).mean()) / df['volume'].rolling(20).std()
-        df['volume_momentum'] = df['volume'].pct_change(5)
+        # OBV
+        new_features['obv'] = talib.OBV(close, volume)
+        new_features['obv_sma'] = talib.SMA(new_features['obv'], timeperiod=20)
+        new_features['obv_ratio'] = safe_div(new_features['obv'], new_features['obv_sma'], 1.0)
         
-        # OBV y variantes
-        obv = talib.OBV(df['close'].values, df['volume'].values)
-        df['obv'] = obv
-        df['obv_ema'] = talib.EMA(obv, timeperiod=20)
-        df['obv_ratio'] = safe_div(obv, df['obv_ema'])
-        df['obv_slope'] = pd.Series(obv).diff(5)
+        # Volatility 10
+        new_features['volatility_10'] = pd.Series(close).pct_change().rolling(10).std() * 100
         
-        # ==================== VOLATILITY FEATURES ====================
-        df['volatility_10'] = df['returns_1'].rolling(10).std()
-        df['volatility_20'] = df['returns_1'].rolling(20).std()
-        df['volatility_ratio'] = safe_div(df['volatility_10'], df['volatility_20'])
-        
-        # Garman-Klass volatility
+        # Garman-Klass
         log_hl = np.log(df['high'] / df['low']) ** 2
         log_co = np.log(df['close'] / df['open']) ** 2
-        df['gk_vol'] = 0.5 * log_hl - (2 * np.log(2) - 1) * log_co
+        new_features['gk_vol'] = 0.5 * log_hl - (2 * np.log(2) - 1) * log_co
+
+        # --- MERGE BATCH ---
+        # This is where we save memory vs repeated assignment
+        features_df = pd.DataFrame(new_features, index=df.index)
+        df = pd.concat([df, features_df], axis=1)
+
+        # Post-merge complex calculations (that depend on new features)
+        df['bb_squeeze'] = (df['bb_width'] < df['bb_width'].rolling(20).mean() * 0.5).astype(int)
+        
+        # Crossovers (Now accessing calculated EMAs)
+        # Note: We must handle missing columns if data too short
+        if 'ema_5' in df and 'ema_20' in df:
+            df['ema_5_20_cross'] = np.where(df['ema_5'] > df['ema_20'], 1, -1)
+        else:
+             df['ema_5_20_cross'] = 0
+             
+        if 'ema_20' in df and 'ema_50' in df:
+            df['ema_20_50_cross'] = np.where(df['ema_20'] > df['ema_50'], 1, -1)
+        else:
+            df['ema_20_50_cross'] = 0
+            
+        if 'ema_50' in df and 'ema_200' in df:
+             df['ema_50_200_cross'] = np.where(df['ema_50'] > df['ema_200'], 1, -1)
+        else:
+             df['ema_50_200_cross'] = 0
+
+        # ... (Rest of logic continues, assuming columns exist)
         
         # ==================== PATTERN RECOGNITION ====================
         # Consecutive moves
@@ -696,36 +817,56 @@ class MLStrategyHybridUltimate(Strategy):
                 
             if bars_1h and len(bars_1h) >= 14:
                 closes_1h = np.array([float(b['close']) for b in bars_1h])
-                df['rsi_1h'] = talib.RSI(closes_1h, timeperiod=14)[-1]
-                df['momentum_1h'] = (closes_1h[-1] / closes_1h[-10] - 1) if len(closes_1h) >= 10 else 0
+                
+                # DEFRAGMENTATION FIX: Batch assignments in a dict
+                h1_features = {}
+                h1_features['rsi_1h'] = talib.RSI(closes_1h, timeperiod=14)[-1]
+                h1_features['momentum_1h'] = (closes_1h[-1] / closes_1h[-10] - 1) if len(closes_1h) >= 10 else 0
                 
                 # Tendencia 1h
                 if len(closes_1h) >= 50:
                     ema_50_1h = talib.EMA(closes_1h, timeperiod=50)[-1]
                     ema_200_1h = talib.EMA(closes_1h, timeperiod=200)[-1] if len(closes_1h) >= 200 else ema_50_1h
-                    df['trend_1h'] = 1 if ema_50_1h > ema_200_1h else -1
-                    df['trend_1h_strength'] = abs(ema_50_1h - ema_200_1h) / ema_200_1h
+                    h1_features['trend_1h'] = 1 if ema_50_1h > ema_200_1h else -1
+                    h1_features['trend_1h_strength'] = abs(ema_50_1h - ema_200_1h) / ema_200_1h
                 else:
-                    df['trend_1h'] = 0
-                    df['trend_1h_strength'] = 0
+                    h1_features['trend_1h'] = 0
+                    h1_features['trend_1h_strength'] = 0
+                
+                # Apply batch
+                for k, v in h1_features.items():
+                    df[k] = v
             else:
-                df['rsi_1h'] = 50.0
-                df['momentum_1h'] = 0.0
-                df['trend_1h'] = 0
-                df['trend_1h_strength'] = 0
-        except:
-            df['rsi_1h'] = 50.0
-            df['momentum_1h'] = 0.0
-            df['trend_1h'] = 0
-            df['trend_1h_strength'] = 0
+                default_h1 = {'rsi_1h': 50.0, 'momentum_1h': 0.0, 'trend_1h': 0, 'trend_1h_strength': 0}
+                for k, v in default_h1.items():
+                    df[k] = v
+            
+            # Consolidate after H1 features
+            df = df.copy()
+        except Exception:
+            for k in ['rsi_1h', 'momentum_1h', 'trend_1h', 'trend_1h_strength']:
+                df[k] = 0.0
+            df = df.copy()
         
         # ==================== SENTIMENT INTEGRATION ====================
         if self.sentiment_loader:
             try:
                 sentiment = self.sentiment_loader.get_sentiment(self.symbol)
-                df['sentiment'] = float(sentiment) if sentiment is not None else 0.0
-                df['sentiment_change'] = df['sentiment'].diff().fillna(0)
-                df['sentiment_momentum'] = df['sentiment_change'].rolling(5).mean()
+                # DEFRAGMENTATION FIX: Create new columns in a batch if possible or copy
+                new_cols = {}
+                new_cols['sentiment'] = float(sentiment) if sentiment is not None else 0.0
+                
+                # Use temp series for calculations to avoid fragmented assignments
+                s_sent = pd.Series(new_cols['sentiment'], index=df.index)
+                new_cols['sentiment_change'] = s_sent.diff().fillna(0)
+                new_cols['sentiment_momentum'] = new_cols['sentiment_change'].rolling(5).mean()
+                
+                # Batch update
+                for k, v in new_cols.items():
+                    df[k] = v
+                
+                # Standardize to avoid further fragmentation
+                df = df.copy()
             except:
                 df['sentiment'] = 0.0
                 df['sentiment_change'] = 0.0
@@ -762,9 +903,16 @@ class MLStrategyHybridUltimate(Strategy):
         
         df.loc[:, 'confluence_score'] = confluence
         
-        # ==================== VALIDACIÓN Y LIMPIEZA ====================
         df = self._validate_features(df)
-        
+
+        # ==================== [PHASE 12] FEATURE STORE SAVE ====================
+        # Solo guardamos si no es una inferencia de una sola vela (para ahorrar I/O)
+        if len(df) > 1:
+            try:
+                self.feature_store.store_features(self.symbol, df)
+            except Exception as e:
+                logger.debug(f"FeatureStore storage skipped: {e}")
+
         return df
 
     def _validate_features(self, df):
@@ -783,7 +931,13 @@ class MLStrategyHybridUltimate(Strategy):
         
         # Clipping específico por tipo de feature
         numeric_cols = df.select_dtypes(include=[np.number]).columns
+        # Exempt OHLCV and other essential non-feature columns
+        exempt_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'open_time', 'close_time']
+        
         for col in numeric_cols:
+            if col in exempt_cols:
+                continue
+                
             if 'rsi' in col or 'mfi' in col:
                 df[col] = df[col].clip(0, 100)
             elif 'stoch' in col or 'bb_position' in col or 'close_position' in col:
@@ -797,7 +951,7 @@ class MLStrategyHybridUltimate(Strategy):
             elif 'confluence' in col:
                 df[col] = df[col].clip(-1, 1)
             else:
-                # Clipping general
+                # Clipping general (Z-scores, changes, etc.)
                 df[col] = df[col].clip(-5, 5)
         
         # Llenar NaN restantes
@@ -813,6 +967,8 @@ class MLStrategyHybridUltimate(Strategy):
         """
         Creación de labels con targets adaptativos por volatilidad
         """
+        # CRITICAL PERFORMANCE: Ensure dataframe is consolidated before looping or adding labels
+        df = df.copy()
         labels = []
         
         for i in range(len(df)):
@@ -892,6 +1048,8 @@ class MLStrategyHybridUltimate(Strategy):
         while len(labels) < len(df):
             labels.append(0)
             
+        # DEFRAGMENTATION: Copy before adding new column to large DF
+        df = df.copy()
         df['label'] = labels[:len(df)]
         return df
 
@@ -935,7 +1093,7 @@ class MLStrategyHybridUltimate(Strategy):
         
         tp_mean = self.BASE_TP_TARGET * mult
         label_counts = df['label'].value_counts().to_dict()
-        logger.info(f"🔍 DEBUG ML: Rows={len(df)}, AvgVol={vol_mean:.4f}%, mult={mult:.2f}, Est.Target={tp_mean:.4f}, Labels={label_counts}")
+        logger.info(f"🔍 DEBUG ML [{self.symbol}]: Rows={len(df)}, AvgVol={vol_mean:.4f}%, mult={mult:.2f}, Est.Target={tp_mean:.4f}, Labels={label_counts}")
         
         df_signals = df[df['label'] != 0]
         
@@ -1045,10 +1203,10 @@ class MLStrategyHybridUltimate(Strategy):
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
             y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
             
-            # Scaling
+            # Scaling & Memory Optimization (Rule 3.6)
             scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train)
-            X_test_scaled = scaler.transform(X_test)
+            X_train_scaled = scaler.fit_transform(X_train).astype('float32')
+            X_test_scaled = scaler.transform(X_test).astype('float32')
             
             # 1. Random Forest (Paralelización completa)
             rf = RandomForestClassifier(
@@ -1057,7 +1215,7 @@ class MLStrategyHybridUltimate(Strategy):
                 min_samples_split=min_samples_split,
                 min_samples_leaf=3,
                 max_features='sqrt',
-                n_jobs=-1,  # Utilizar todos los núcleos
+                n_jobs=1,   # Optimización: n_jobs=1 para evitar explosión de RAM con 24 símbolos
                 random_state=42 + self.training_iteration,
                 class_weight='balanced'
             )
@@ -1072,7 +1230,7 @@ class MLStrategyHybridUltimate(Strategy):
                 learning_rate=learning_rate,
                 subsample=subsample,
                 colsample_bytree=0.8,
-                n_jobs=-1,            # Paralelización
+                n_jobs=1,             # Optimización: n_jobs=1 para estabilidad de recursos
                 tree_method='hist',   # MÁXIMA VELOCIDAD
                 random_state=42 + self.training_iteration,
                 use_label_encoder=False,
@@ -1086,6 +1244,7 @@ class MLStrategyHybridUltimate(Strategy):
                 try:
                     if hasattr(self.xgb_model, 'feature_names_in_') and list(self.xgb_model.feature_names_in_) == list(feature_cols):
                         prev_xgb = self.xgb_model
+                        logger.info(f"🔄 [{self.symbol}] Resuming learning from previous XGBoost model (Incremental).")
                     else:
                         logger.debug(f"🔄 [{self.symbol}] Feature mismatch for incremental learning. Resetting XGB.")
                 except:
@@ -1095,15 +1254,24 @@ class MLStrategyHybridUltimate(Strategy):
             xgb_score = xgb.score(X_test_scaled, y_test)
             cv_scores['xgb'].append(xgb_score)
             
-            # 3. Gradient Boosting (Warm Start)
-            gb = GradientBoostingClassifier(
-                n_estimators=n_estimators,
-                max_depth=max_depth_gb,
-                learning_rate=learning_rate,
-                subsample=subsample,
-                random_state=42 + self.training_iteration,
-                warm_start=True
-            )
+            # 3. Gradient Boosting (Persistent Warm Start - Rule 3.7)
+            # PROFESSOR METHOD: Reuse GB instance to accumulate knowledge.
+            gb = None
+            if hasattr(self, 'gb_model') and self.gb_model is not None:
+                gb = self.gb_model
+                # Incrementar n_estimators para permitir warm_start real
+                gb.n_estimators += 5 
+                logger.debug(f"🔄 [{self.symbol}] Resuming GB with {gb.n_estimators} estimators (Warm Start).")
+            else:
+                gb = GradientBoostingClassifier(
+                    n_estimators=n_estimators,
+                    max_depth=max_depth_gb,
+                    learning_rate=learning_rate,
+                    subsample=subsample,
+                    random_state=42 + self.training_iteration,
+                    warm_start=True
+                )
+            
             gb.fit(X_train_scaled, y_train)
             gb_score = gb.score(X_test_scaled, y_test)
             cv_scores['gb'].append(gb_score)
@@ -1116,6 +1284,10 @@ class MLStrategyHybridUltimate(Strategy):
                 best_models['xgb'] = xgb
                 best_models['gb'] = gb
                 best_scaler = scaler
+            
+            # 🧹 Fold Cleanup (Rule 3.6)
+            del X_train_scaled, X_test_scaled, X_train, X_test
+            gc.collect()
         
         # Calcular scores
         avg_rf = np.mean(cv_scores['rf'])
@@ -1135,11 +1307,11 @@ class MLStrategyHybridUltimate(Strategy):
         }
         
         logger.info(
-            f"📊 CV Scores - RF: {avg_rf:.3f}, XGB: {avg_xgb:.3f}, "
+            f"📊 [{self.symbol}] CV Scores - RF: {avg_rf:.3f}, XGB: {avg_xgb:.3f}, "
             f"GB: {avg_gb:.3f}, Ensemble: {ensemble_score:.3f}"
         )
         logger.info(
-            f"📊 Regime: {self.market_regime}, Aggressiveness: {self.aggressiveness_factor:.2f}"
+            f"📊 [{self.symbol}] Regime: {self.market_regime}, Aggressiveness: {self.aggressiveness_factor:.2f}"
         )
         
         if ensemble_score >= self.MIN_MODEL_ACCURACY:
@@ -1312,12 +1484,46 @@ class MLStrategyHybridUltimate(Strategy):
                 models_ready = all([self.rf_model, self.xgb_model, self.gb_model])
                 feature_cols = self._feature_cols
 
+            # -------------------------------------------------------------------------
+            # ✅ CROSS-POLLINATION (Phase 7): Read Math Stats from Portfolio
+            # -------------------------------------------------------------------------
+            math_hurst = 0.5
+            if self.portfolio and hasattr(self.portfolio, 'math_stats'):
+                math_hurst = self.portfolio.math_stats.get('hurst', 0.5)
+                
             if not models_ready:
                 self.oracle_log_count += 1
-                if self.oracle_log_count % 5 == 0:
-                    oracle_msg = f"🔮 [ML ORACLE] {self.symbol} | STATUS: INITIALIZING/TRAINING"
-                    if Config.Strategies.ML_ORACLE_VERBOSE:
-                        oracle_msg += f"\n   Data Health -> RSI: {rsi:.1f} | VolRatio: {vol_ratio:.2f} | ATR%: {atr_pct*100:.3f}%"
+                # Log immediately on first check, then periodically to reduce spam
+                if self.oracle_log_count == 1 or self.oracle_log_count % 10 == 0:
+                    # Determine Concept/Context based on Regime
+                    if self.market_regime == "ZOMBIE":
+                        concept = "Zombie market detected. Stagnant price action."
+                    elif self.market_regime == "RANGING":
+                        concept = "Mean Reversion active. Hunting overextensions."
+                    elif self.market_regime == "TRENDING":
+                        concept = "Trend Following active. Riding momentum."
+                    elif self.market_regime == "VOLATILE":
+                        concept = "High Volatility. Defensive stops & wide targets."
+                    else:
+                        concept = "Analyzing market structure..."
+
+                    # Prepare Enhanced Stats for Visibility during Training
+                    z_score = current_row.get('volume_zscore', 0)
+                    adx = current_row.get('adx', 0)
+                    trend_power = current_row.get('trend_power', 0) 
+
+                    oracle_msg = (
+                        f"\n🔮 [UNIFIED ORACLE] {self.symbol} | TRAINING | Last CV: {self.last_training_score:.3f}\n"
+                        f"   Engines Passing: 0/3 | Threshold: {self.consensus_threshold}\n"
+                        f"   Scores  -> ML: {self.last_training_score:.2f} | SENT: 0.00 | TECH: 0.00\n"
+                        f"   Horizon -> H5: 0.00 | H15: 0.00 | H30: 0.00\n"
+                        f"   Verdict -> Direction: TRAINING | Final Conf: 0.00 (Gap: 1.00)\n"
+                        f"   Phase: {self.market_regime} ({self.regime_confidence*100:.1f}%)\n"
+                        f"   Concept: {concept} (Models Compiling)\n"
+                        f"   Stats: ADX={adx:.1f} | ATR%={atr_pct*100:.2f}% | Trend={trend_power:.2f} | Z-Score={z_score:.2f}\n"
+                        f"   Math: Hurst={math_hurst:.2f} (Portfolio Sync)\n"
+                        f"   Confidence: 0.0% | Strategy: Waiting for AI models..."
+                    )
                     logger.info(oracle_msg)
                 return
 
@@ -1421,6 +1627,13 @@ class MLStrategyHybridUltimate(Strategy):
             if atr_pct > 0.03: tp_target *= 1.3; sl_target *= 1.3
             elif atr_pct < 0.01: tp_target *= 0.8; sl_target *= 0.8
 
+            # PHASE 9.2: Adaptive TTL (Prediction Horizon Sync)
+            # Default lookup: 30 bars (5m = 150s, 1m = 30s)
+            # We use 70% of our lookahead bars as patience.
+            prediction_ttl = int(self.LOOKAHEAD_BARS * 60 * 0.7) # e.g. 30 bars * 60s * 0.7 = 1260s
+            # Clamp between 30s and 300s for safety in scalping
+            final_ttl = max(30, min(300, prediction_ttl))
+
             # FIXED: Create SignalEvent with ALL metadata in constructor (frozen dataclass)
             signal = SignalEvent(
                 strategy_id=self.strategy_id,
@@ -1431,7 +1644,8 @@ class MLStrategyHybridUltimate(Strategy):
                 atr=current_row['atr'], # FIXED: Use current_row
                 tp_pct=tp_target * 100,
                 sl_pct=sl_target * 100,
-                current_price=current_row['close']
+                current_price=current_row['close'],
+                ttl=final_ttl
             )
             
             # ============ REGISTRAR Y ENVIAR ============
@@ -1453,6 +1667,18 @@ class MLStrategyHybridUltimate(Strategy):
             self._log_ml_signal(signal_type, confidence, confluence, df, 
                                rf_proba, xgb_proba, gb_proba)
             
+            # Neural Bridge Publication (Base Logic Fallback)
+            if not hasattr(self, 'engines_active'): # If not UniversalEnsemble
+                neural_bridge.publish_insight(
+                    strategy_id="ML_ORACLE",
+                    symbol=self.symbol,
+                    insight={
+                        'confidence': confidence,
+                        'direction': 'LONG' if predicted_class == 1 else 'SHORT',
+                        'confluence': confluence
+                    }
+                )
+
             self.events_queue.put(signal)
             
             if len(self.performance_history) >= 15:
@@ -1627,6 +1853,9 @@ class MLStrategyHybridUltimate(Strategy):
 
     def _async_process(self, event):
         """Procesamiento en background"""
+        if not self.running:
+            return
+            
         monitor.register_thread(f"ML_{event.symbol}")
         
         try:
@@ -1641,6 +1870,7 @@ class MLStrategyHybridUltimate(Strategy):
                 if self.loop_count % 10 == 0:
                     logger.warning(f"⚠️ [{self.symbol}] Waiting for data: {num_bars}/{self.min_bars_to_train} bars.")
                 return
+
             
             # Initial Feature Initialization (Rule 2.3)
             # Preparamos features una vez para inicializar _feature_cols antes del primer training
@@ -1665,15 +1895,19 @@ class MLStrategyHybridUltimate(Strategy):
                 self.bars_since_train += 1
                 self.bars_since_incremental += 1
                 
-                # Update incremental cada X velas (ej. 30)
-                needs_incremental = self.bars_since_incremental >= Config.Strategies.ML_INCREMENTAL_UPDATE_BARS
-                needs_full = (not self.is_trained or self.bars_since_train >= self.retrain_interval)
-                
+                # Check if a training thread is already active
                 is_training = (hasattr(self, '_training_thread') and 
                                self._training_thread and self._training_thread.is_alive())
-            
-            if (needs_full or needs_incremental) and not is_training:
-                train_type = "Full" if needs_full else "Incremental"
+
+                # Update incremental cada X velas (ej. 30)
+                needs_incremental = self.bars_since_incremental >= Config.Strategies.ML_INCREMENTAL_UPDATE_BARS
+                should_train_full = (
+                    (self.bars_since_train >= self.retrain_interval) or
+                    (not self.is_trained)
+                ) and (not is_training)
+                
+            if (should_train_full or needs_incremental) and not is_training:
+                train_type = "Full" if should_train_full else "Incremental"
                 logger.info(f"🔄 {train_type} training triggered for {self.symbol}")
                 self._launch_training(bars, train_type)
             
@@ -1689,75 +1923,87 @@ class MLStrategyHybridUltimate(Strategy):
     def _launch_training(self, bars, train_type="Full"):
         """Lanzar entrenamiento en thread separado"""
         def train_bg(bars_data, t_type):
-            monitor.register_thread(f"ML_Train_{self.symbol}")
-            start_time = time.time()
-            
-            try:
-                logger.info(f"🔄 Starting {t_type} training #{self.training_iteration + 1} for {self.symbol}...")
+            """Core training routine with concurrency control."""
+            with TRAINING_LIMITER:
+                monitor.register_thread(f"ML_Train_{self.symbol}")
+                start_time = time.time()
                 
-                df = self._prepare_features(bars_data, regime_aware=True)
-                result, score = self._train_with_cross_validation(df)
-                
-                if result:
-                    models, scaler, feature_cols = result
-                    
-                    # ✅ GUARDIA DE CALIDAD (Rule 3.3)
-                    # PROFESSOR METHOD:
-                    # QUÉ: Filtro de persistencia basado en performance diferencial.
-                    # POR QUÉ: Evita que un entrenamiento malo o ruidoso degrade la inteligencia del sistema.
-                    # CÓMO: Comparamos el nuevo score contra el 98% del anterior (umbral de tolerancia).
-                    if self.is_trained:
-                        if score < (self.last_training_score * 0.98):
-                            logger.warning(
-                                f"🛡️ [Quality Guard] Rejected model update for {self.symbol}.\n"
-                                f"   Current Score: {score:.4f} | Previous Score: {self.last_training_score:.4f}\n"
-                                f"   Reason: Performance degradation exceeds 2% threshold."
-                            )
-                            # NO actualizamos, pero limpiamos flag de entrenamiento
-                            with self._state_lock:
-                                self.bars_since_train = 0
-                            return
-
-                    with self._state_lock:
-                        # Guardar los 3 modelos
-                        self.rf_model = models['rf']
-                        self.xgb_model = models['xgb']
-                        self.gb_model = models['gb']
-                        self.scaler = scaler
-                        cleaned_feature_cols = [col for col in feature_cols if col is not None]
-                        self._feature_cols = cleaned_feature_cols
-                        self.is_trained = True
-                        self.bars_since_train = 0
-                        self.last_training_score = score
-                        self.last_training_time = datetime.now(timezone.utc)
-                        self.training_iteration += 1
-                        self.bars_since_incremental = 0
-                    
-                    # 📊 PERSISTENCIA INTELIGENTE (Rule 3.4)
-                    self._save_models()
-                    
-                    duration = time.time() - start_time
-                    logger.info(
-                        f"✨✨✨ [ML {self.symbol}] {t_type.upper()} TRAINING FINISHED ✨✨✨\n"
-                        f"   Result: SUCCESS #{self.training_iteration} | Score: {score:.3f} | Total Time: {duration:.1f}s\n"
-                        f"   Features Used: {len(feature_cols)} | Quality Guard: PASSED"
-                    )
-                else:
-                    # Even if training result is None (score below threshold),
-                    # we must mark it as trained to avoid infinite re-train loops every minute.
-                    # It will try again in the next retrain_interval.
-                    with self._state_lock:
-                        self.is_trained = True 
-                        self.bars_since_train = 0
-                        self.last_training_score = score
+                try:
+                    if not self.running:
+                        logger.debug(f"ML Training for {self.symbol} aborted: shutdown signal received.")
+                        return
                         
-                    logger.warning(
-                        f"⚠️ ML {self.symbol} training failed (Score: {score:.3f} < {self.MIN_MODEL_ACCURACY}). "
-                        "Marking as trained to wait for next interval."
-                    )
+                    logger.info(f"🔄 Starting {t_type} training #{self.training_iteration + 1} for {self.symbol}...")
                     
-            except Exception as e:
-                logger.error(f"ML Training error {self.symbol}: {e}", exc_info=True)
+                    df = self._prepare_features(bars_data, regime_aware=True)
+                    result, score = self._train_with_cross_validation(df)
+                    
+                    if result:
+                        models, scaler, feature_cols = result
+                        
+                        # ✅ GUARDIA DE CALIDAD (Rule 3.3)
+                        # PROFESSOR METHOD:
+                        # QUÉ: Filtro de persistencia basado en performance diferencial.
+                        # POR QUÉ: Evita que un entrenamiento malo o ruidoso degrade la inteligencia del sistema.
+                        # CÓMO: Comparamos el nuevo score contra el 98% del anterior (umbral de tolerancia).
+                        if self.is_trained:
+                            if score < (self.last_training_score * 0.98):
+                                logger.warning(
+                                    f"🛡️ [Quality Guard] Rejected model update for {self.symbol}.\n"
+                                    f"   Current Score: {score:.4f} | Previous Score: {self.last_training_score:.4f}\n"
+                                    f"   Reason: Performance degradation exceeds 2% threshold."
+                                )
+                                # NO actualizamos, pero limpiamos flag de entrenamiento
+                                with self._state_lock:
+                                    self.bars_since_train = 0
+                                return
+
+                        if not self.running:
+                            return
+                            
+                        with self._state_lock:
+                            # Guardar los 3 modelos
+                            self.rf_model = models['rf']
+                            self.xgb_model = models['xgb']
+                            self.gb_model = models['gb']
+                            self.scaler = scaler
+                            cleaned_feature_cols = [col for col in feature_cols if col is not None]
+                            self._feature_cols = cleaned_feature_cols
+                            self.is_trained = True
+                            self.bars_since_train = 0
+                            self.last_training_score = score
+                            self.last_training_time = datetime.now(timezone.utc)
+                            self.training_iteration += 1
+                            self.bars_since_incremental = 0
+                        
+                        # 📊 PERSISTENCIA INTELIGENTE (Rule 3.4)
+                        self._save_models()
+                        
+                        duration = time.time() - start_time
+                        logger.info(
+                            f"✨✨✨ [ML {self.symbol}] {t_type.upper()} TRAINING FINISHED ✨✨✨\n"
+                            f"   Result: SUCCESS #{self.training_iteration} | Score: {score:.3f} | Total Time: {duration:.1f}s\n"
+                            f"   Features Used: {len(feature_cols)} | Quality Guard: PASSED"
+                        )
+                    else:
+                        # Even if training result is None (score below threshold),
+                        # we must mark it as trained to avoid infinite re-train loops every minute.
+                        # It will try again in the next retrain_interval.
+                        with self._state_lock:
+                            self.is_trained = True 
+                            self.bars_since_train = 0
+                            self.last_training_score = score
+                            
+                        logger.warning(
+                            f"⚠️ ML {self.symbol} training failed (Score: {score:.3f} < {self.MIN_MODEL_ACCURACY}). "
+                            "Marking as trained to wait for next interval."
+                        )
+                        
+                except Exception as e:
+                    logger.error(f"ML Training error {self.symbol}: {e}", exc_info=True)
+                finally:
+                    # MODO PROFESOR: Liberar RAM agresivamente
+                    gc.collect()
         
         self._training_thread = threading.Thread(
             target=train_bg, 
@@ -1765,6 +2011,22 @@ class MLStrategyHybridUltimate(Strategy):
             daemon=True
         )
         self._training_thread.start()
+
+    def stop(self):
+        """
+        Signal the strategy to stop processing and cleanup resources.
+        """
+        logger.info(f"🛑 [ML {self.symbol}] Stopping strategy...")
+        self.running = False
+        
+        # Shutdown thread pool executor
+        try:
+            self.executor.shutdown(wait=False)
+        except Exception as e:
+            logger.debug(f"Error shutting down executor: {e}")
+        
+        # We don't force-join the training thread here to avoid hanging the main shutdown,
+        # but the running flag inside the training thread will handle the early exit.
 
     # ============================================================
     # ✅ GESTIÓN DE TRADES Y ACTUALIZACIÓN DE PERFORMANCE
@@ -1812,17 +2074,16 @@ class MLStrategyHybridUltimate(Strategy):
     
     def _save_models(self):
         """Guardar modelos y scaler con sistema de rotación backup (Rule 3.4)"""
+        import joblib
         try:
             symbol_path = self.symbol.replace("/", "_")
             model_file = os.path.join(self.models_dir, f"models_{symbol_path}.joblib")
             
-            # Sistema de Backup Rotativo (Mantener 3 últimas versiones)
+            # Sistema de Backup Rotativo
             if os.path.exists(model_file):
-                v2_path = model_file + ".v2"
                 old_path = model_file + ".old"
                 if os.path.exists(old_path):
-                    if os.path.exists(v2_path): os.remove(v2_path)
-                    os.rename(old_path, v2_path)
+                    os.remove(old_path)
                 os.rename(model_file, old_path)
 
             with self._state_lock:
@@ -1838,10 +2099,68 @@ class MLStrategyHybridUltimate(Strategy):
                     'timestamp': datetime.now(timezone.utc)
                 }
             
-            joblib.dump(state, model_file, compress=3)
-            logger.info(f"💾 [{self.symbol}] Models persisted with rotation backup (3 versions).")
+            joblib.dump(state, model_file, compress=5)
+            
+            # === [PHASE 12] REGISTRO EN GOBERNANZA ===
+            # Exportamos componentes individuales para el registry
+            reg_dir = os.path.join(self.models_dir, f"registry_{symbol_path}")
+            os.makedirs(reg_dir, exist_ok=True)
+            
+            comp_paths = {
+                'rf': os.path.join(reg_dir, "rf.joblib"),
+                'xgb': os.path.join(reg_dir, "xgb.joblib"),
+                'gb': os.path.join(reg_dir, "gb.joblib"),
+                'scaler': os.path.join(reg_dir, "scaler.joblib")
+            }
+            
+            joblib.dump(self.rf_model, comp_paths['rf'])
+            joblib.dump(self.xgb_model, comp_paths['xgb'])
+            joblib.dump(self.gb_model, comp_paths['gb'])
+            joblib.dump(self.scaler, comp_paths['scaler'])
+            
+            metrics = {
+                'sharpe': self.last_training_score,
+                'win_rate': 0.0
+            }
+            if len(self.performance_history) > 0:
+                win_rate = len([p for p in self.performance_history if p > 0]) / len(self.performance_history)
+                metrics['win_rate'] = win_rate * 100
+
+            self.ml_governance.register_model(self.symbol, metrics, comp_paths)
+            
+            logger.info(f"💾 [{self.symbol}] Models persisted and registered in Governance.")
         except Exception as e:
             logger.error(f"Error saving models for {self.symbol}: {e}")
+    def _load_governed_model(self):
+        """
+        👨‍🏫 MODO PROFESOR:
+        QUÉ: Carga inteligente de modelos certificados.
+        POR QUÉ: Priorizamos modelos que han pasado el Quality Gate de la gobernanza.
+        """
+        import joblib
+        gov_model = self.ml_governance.get_production_model(self.symbol)
+        if gov_model:
+            try:
+                path = gov_model['path']
+                self.rf_model = joblib.load(os.path.join(path, "rf.joblib"))
+                self.xgb_model = joblib.load(os.path.join(path, "xgb.joblib"))
+                self.gb_model = joblib.load(os.path.join(path, "gb.joblib"))
+                self.scaler = joblib.load(os.path.join(path, "scaler.joblib"))
+                
+                # Cargar columnas (buscamos en models_dir original por ahora o el último cache)
+                cols_path = os.path.join(self.models_dir, f"features_{self.symbol.replace('/', '_')}.json")
+                if os.path.exists(cols_path):
+                    with open(cols_path, 'r') as f:
+                        self._feature_cols = json.load(f)
+                
+                self.is_trained = True
+                logger.info(f"🏆 [{self.symbol}] Cargado modelo de PRODUCCIÓN v{gov_model['version']} (Sharpe: {gov_model['sharpe']:.2f})")
+                return True
+            except Exception as e:
+                logger.error(f"❌ Error cargando modelo de gobernanza: {e}")
+        
+        # Fallback a carga tradicional si no hay modelo de gobernanza
+        return self._load_models()
 
     def _load_models(self):
         """Cargar modelos desde el disco para operatividad instantánea"""
@@ -2164,8 +2483,8 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
     """
     
     # Consensus threshold (UNIFIED)
-    ENSEMBLE_CONSENSUS_THRESHOLD = 0.60
-    MIN_ENGINES_REQUIRED = 2  # At least 2 of 3 must agree
+    ENSEMBLE_CONSENSUS_THRESHOLD = 0.75
+    MIN_ENGINES_REQUIRED = 2      # Requires at least 2 engines to agree (ML+TECH, ML+SNT, etc)
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2180,10 +2499,165 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             'technical': 0.0
         }
         self.engines_active = 0
+        self.consensus_threshold = 0.60
         
         logger.info(f"🟢 [{self.symbol}] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED")
         logger.info(f"   Consensus Threshold: {self.ENSEMBLE_CONSENSUS_THRESHOLD}")
         logger.info(f"   Min Engines Required: {self.MIN_ENGINES_REQUIRED}/3")
+
+    def _run_inference(self):
+        """
+        🔮 UNIVERSAL ENSEMBLE INFERENCE
+        Overridden to force 3-engine consensus and bridge validation.
+        """
+        try:
+            self.analysis_stats['total'] += 1
+            if not self._check_circuit_breaker():
+                return
+            
+            # 1. Data Preparation
+            bars = self.data_provider.get_latest_bars(self.symbol, n=250)
+            df = self._prepare_features(bars, regime_aware=True)
+            if df.empty or len(df) < 5: return
+
+            current_row = df.iloc[-1]
+            atr_pct = current_row['atr_pct'] / 100
+            vol_ratio = current_row.get('volume_ratio', 0)
+
+            # 2. Model Availability
+            with self._state_lock:
+                models_ready = all([self.rf_model, self.xgb_model, self.gb_model])
+                feature_cols = self._feature_cols
+
+            if not models_ready:
+                return
+
+            # 3. Aligned Feature Matrix
+            if hasattr(self.scaler, 'feature_names_in_'):
+                final_features = self.scaler.feature_names_in_
+                X_pred_aligned = pd.DataFrame(columns=final_features)
+                for col in final_features:
+                    X_pred_aligned[col] = df[col].iloc[[-1]].values if col in df.columns else 0.0
+                X_pred = X_pred_aligned
+            else:
+                X_pred = df[feature_cols].iloc[[-1]]
+                
+            X_scaled = self.scaler.transform(X_pred)
+            rf_proba = self.rf_model.predict_proba(X_scaled)[0]
+            xgb_proba = self.xgb_model.predict_proba(X_scaled)[0]
+            gb_proba = self.gb_model.predict_proba(X_scaled)[0]
+            
+            ensemble_proba = (rf_proba * self.base_rf_weight + 
+                             xgb_proba * self.base_xgb_weight + 
+                             gb_proba * self.base_gb_weight)
+            
+            classes = self.rf_model.classes_
+            pred_idx = np.argmax(ensemble_proba)
+            raw_confidence = ensemble_proba[pred_idx]
+            direction = self._label_mapping.get(classes[pred_idx], classes[pred_idx])
+            
+            # ============================================================
+            # 🎯 3-ENGINE ORGANIC CONFLUENCE (The Heart of Phase 8)
+            # ============================================================
+            final_confidence, engines_passing, is_valid, multi_horizon = self.compute_organic_confluence(
+                df, direction, rf_proba, xgb_proba, gb_proba
+            )
+            
+            # 4. ORACLE REPORT (Universal Multi-Engine View)
+            gap = self.consensus_threshold - final_confidence
+            ready_status = "READY" if is_valid else "SCANNING"
+            
+            # Extract Horizon Details
+            h5 = multi_horizon.get('h5', 0)
+            h15 = multi_horizon.get('h15', 0)
+            h30 = multi_horizon.get('h30', 0)
+
+            # Prepare Enhanced Stats
+            z_score = current_row.get('volume_zscore', 0)
+            adx = current_row.get('adx', 0)
+            trend_power = current_row.get('trend_power', 0) 
+            
+            # Determine Concept/Context based on Regime
+            if self.market_regime == "ZOMBIE":
+                concept = "Zombie market detected. Stagnant price action. Protection active."
+            elif self.market_regime == "RANGING":
+                concept = "Mean Reversion active. Hunting overextensions."
+            elif self.market_regime == "TRENDING":
+                concept = "Trend Following active. Riding momentum."
+            elif self.market_regime == "VOLATILE":
+                concept = "High Volatility. Defensive stops & wide targets."
+            else:
+                concept = "Analyzing market structure..."
+
+            oracle_msg = (
+                f"\n🔮 [UNIFIED ORACLE] {self.symbol} | {ready_status}\n"
+                f"   Engines Passing: {engines_passing}/3 | Threshold: {self.consensus_threshold}\n"
+                f"   Scores  -> ML: {self.engine_scores['ml']:.2f} | SENT: {self.engine_scores['sentiment']:.2f} | TECH: {self.engine_scores['technical']:.2f}\n"
+                f"   Horizon -> H5: {h5:.2f} | H15: {h15:.2f} | H30: {h30:.2f}\n"
+                f"   Verdict -> Direction: {direction} | Final Conf: {final_confidence:.2f} (Gap: {gap:.2f})\n"
+                f"   Phase: {self.market_regime} ({self.regime_confidence*100:.1f}%)\n"
+                f"   Concept: {concept}\n"
+                f"   Stats: ADX={adx:.1f} | ATR%={atr_pct*100:.2f}% | Trend={trend_power:.2f} | Z-Score={z_score:.2f}\n"
+                f"   Confidence: {final_confidence*100:.1f}% | Strategy: Adaptive targets enabled."
+            )
+            logger.info(oracle_msg)
+
+
+            # 5. ROBUSTNESS FILTERS
+            if atr_pct > self.MAX_ATR_PCT * 1.5:
+                logger.warning(f"⛔ [FILTER] {self.symbol} Rejected: Extreme Volatility (ATR: {atr_pct:.2%})")
+                return
+            
+            min_vol = 0.2 if Config.BINANCE_USE_TESTNET else self.MIN_VOLUME_RATIO
+            if vol_ratio < min_vol:
+                logger.warning(f"⛔ [FILTER] {self.symbol} Rejected: Low Volume (Ratio: {vol_ratio:.2f} < {min_vol})")
+                return
+            
+            if not is_valid:
+                self.analysis_stats['filtered_conf'] += 1
+                return
+
+            # 6. SIGNAL CREATION
+            signal_type = SignalType.LONG if direction == 1 else SignalType.SHORT
+            tp_target = self.current_tp_target
+            sl_target = self.current_sl_target
+            
+            # Volatility adjustments
+            if atr_pct > 0.03: tp_target *= 1.3; sl_target *= 1.3
+            elif atr_pct < 0.01: tp_target *= 0.8; sl_target *= 0.8
+
+            signal = SignalEvent(
+                strategy_id=self.strategy_id,
+                symbol=self.symbol,
+                datetime=datetime.now(timezone.utc),
+                signal_type=signal_type,
+                strength=final_confidence,
+                atr=current_row['atr'],
+                tp_pct=tp_target * 100,
+                sl_pct=sl_target * 100,
+                current_price=current_row['close']
+            )
+            
+            # 7. LOGGING & SUBMISSION
+            self.performance_history.append(0)
+            self.signal_history.append({
+                'timestamp': datetime.now(timezone.utc),
+                'type': signal_type,
+                'confidence': final_confidence,
+                'engines': engines_passing,
+                'price': current_row['close']
+            })
+            
+            logger.info(f"✨ [UNIVERSAL ENSEMBLE] Signal Generated: {signal_type.name} {self.symbol}")
+            self.events_queue.put(signal)
+            
+            if len(self.performance_history) >= 15:
+                self._update_model_weights()
+            
+            self._last_prediction_time = datetime.now(timezone.utc)
+            
+        except Exception as e:
+            logger.error(f"Universal Ensemble Inference error {self.symbol}: {e}", exc_info=True)
     
     def _compute_ml_engine_score(self, rf_proba, xgb_proba, gb_proba, direction: int) -> float:
         """
@@ -2285,18 +2759,53 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                                    rf_proba, xgb_proba, gb_proba) -> tuple:
         """
         🎯 ORGANIC CONFLUENCE CALCULATOR
-        
-        Returns:
-            (final_confidence, engines_passing, is_valid)
+        Returns: (final_confidence, engines_passing, is_valid, multi_horizon)
         """
-        # Calculate each engine score
+        # 1. Calculate each engine score
         ml_score = self._compute_ml_engine_score(rf_proba, xgb_proba, gb_proba, direction)
         sentiment_score = self._compute_sentiment_engine_score(df)
         technical_score = self._compute_technical_engine_score(df, direction)
         
+        # 2. Dynamic Threshold Logic (World Awareness)
+        # PROFESSOR METHOD: adaptamos el rigor según la liquidez global.
+        ls = getattr(self, 'market_context', {}).get('liquidity_score', 0.8)
+        
+        # Base is the user's setting (0.75)
+        # If LS is low (dead zone), we demand extreme confluence (0.82)
+        base_t = self.ENSEMBLE_CONSENSUS_THRESHOLD
+        
+        if ls >= 0.85:   # PRIME (London/NY)
+            dynamic_threshold = base_t
+        elif ls >= 0.65: # MID (Tokyo)
+            dynamic_threshold = max(base_t, 0.78)
+        elif ls >= 0.50: # LOW (Sydney)
+            dynamic_threshold = max(base_t, 0.80)
+        else:            # DEAD ZONE (22:00-00:00 UTC)
+            dynamic_threshold = max(base_t, 0.82)
+            
+        self.consensus_threshold = dynamic_threshold # Update for oracle logging
+        
+        # ============================================================
+        # ⏳ SYNTHETIC MULTI-HORIZON LOGIC (H5, H15, H30)
+        # ============================================================
+        # H5 (Short): Momentum-heavy (Tech + Sent)
+        h5_score = (technical_score * 0.6) + (sentiment_score * 0.4)
+        
+        # H15 (Mid): Pure consensus
+        h15_score = (ml_score * 0.34) + (technical_score * 0.33) + (sentiment_score * 0.33)
+        
+        # H30 (Full): ML Dominant (Original Model Horizon)
+        h30_score = (ml_score * 0.7) + (((technical_score + sentiment_score) / 2) * 0.3)
+        
+        multi_horizon = {
+            'h5': max(0.0, min(1.0, h5_score)),
+            'h15': max(0.0, min(1.0, h15_score)),
+            'h30': max(0.0, min(1.0, h30_score))
+        }
+
         # Count engines passing threshold
         engines_passing = sum(1 for score in [ml_score, sentiment_score, technical_score]
-                             if score >= self.ENSEMBLE_CONSENSUS_THRESHOLD)
+                             if score >= dynamic_threshold)
         
         # Calculate weighted final confidence
         # ML has higher weight as it's the primary engine
@@ -2314,7 +2823,20 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
         self.engines_active = engines_passing
         is_valid = engines_passing >= self.MIN_ENGINES_REQUIRED
         
-        return final_confidence, engines_passing, is_valid
+        # Phase 8: Neural Bridge Publication
+        neural_bridge.publish_insight(
+            strategy_id="ML_ENSEMBLE",
+            symbol=self.symbol,
+            insight={
+                'confidence': final_confidence,
+                'direction': 'LONG' if direction == 1 else 'SHORT',
+                'engines_passing': engines_passing,
+                'horizons': multi_horizon
+            }
+        )
+        
+        return final_confidence, engines_passing, is_valid, multi_horizon
+
     
     def get_ensemble_status(self) -> dict:
         """Get current ensemble engine status."""

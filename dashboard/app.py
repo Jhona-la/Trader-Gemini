@@ -182,7 +182,16 @@ def load_trades(data_dir: str) -> pd.DataFrame:
     if not os.path.exists(path):
         return pd.DataFrame()
     try:
-        return pd.read_csv(path)
+        df = pd.read_csv(path)
+        # Standardize column names
+        if 'timestamp' in df.columns and 'datetime' not in df.columns:
+            df.rename(columns={'timestamp': 'datetime'}, inplace=True)
+            
+        # Ensure datetime is actually datetime object
+        if 'datetime' in df.columns:
+            df['datetime'] = pd.to_datetime(df['datetime'])
+            
+        return df
     except:
         return pd.DataFrame()
 
@@ -222,6 +231,22 @@ def load_health_logs(limit: int = 20) -> list:
         return logs
     except:
         return []
+
+def load_system_metrics(data_dir: str) -> dict:
+    """Load latest system metrics from SystemMonitor."""
+    path = os.path.join(data_dir, "system_health.json")
+    # Also try root
+    root_path = "dashboard/data/system_health.json"
+    
+    final_path = path if os.path.exists(path) else (root_path if os.path.exists(root_path) else None)
+    
+    if final_path:
+        try:
+            with open(final_path, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
 
 def list_sessions(data_dir: str, limit: int = 10) -> list:
     """List available sessions sorted by latest activity."""
@@ -447,7 +472,7 @@ if active_data_dir:
         current_equity = st.session_state.equity_live if st.session_state.equity_live > 0 else equity
         integrity_data = {
             "timestamp_epoch": time.time(),
-            "timestamp_iso": datetime.utcnow().isoformat(),
+            "timestamp_iso": datetime.now(timezone.utc).isoformat(),
             "displayed_equity": current_equity,
             "session_id": selected_session['id'] if selected_session else "LIVE"
         }
@@ -601,9 +626,83 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # ------------------------------------------------------------------------------
 # TAB 1: LIVE MONITOR
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# TAB 1: LIVE MONITOR
+# ------------------------------------------------------------------------------
 with tab1:
-    col_chart, col_positions = st.columns([3, 1])
+    # Column layout: Chart (Main) | Positions (Right) | Math Stats (Far Right)
+    col_chart, col_positions, col_stats = st.columns([3, 1, 1])
     
+    with col_stats:
+        st.subheader("🧮 Math Core")
+        
+        # Retrieve latest Math stats from status (if available)
+        # We expect 'math_stats' or similar in status.json from the bot
+        math_stats = status.get('math_stats', {})
+        
+        # 1. Hurst Exponent
+        hurst = math_stats.get('hurst', 0.5)
+        h_color = "red" if hurst == 0.5 else "green" 
+        h_label = "🎲 RANDOM"
+        if hurst < 0.45: h_label = "📉 MEAN REV"
+        if hurst > 0.55: h_label = "🚀 TRENDING"
+        
+        st.metric("Hurst Exp", f"{hurst:.2f}", h_label)
+        
+        # 2. RANSAC Beta (Hedge Ratio)
+        beta = math_stats.get('beta', 1.0)
+        st.metric("Hedge Beta", f"{beta:.3f}")
+        
+        # 3. Half-Life
+        hl = math_stats.get('half_life', 0)
+        st.metric("Half-Life", f"{int(hl)} bars")
+        
+        # 4. Regime
+        regime = status.get('market_regime', 'UNKNOWN')
+        st.info(f"Regime: {regime}")
+        
+        # 5. Sovereign Market Context (Breadth) - Phase 8.1
+        breadth = status.get('global_regime_data', {})
+        sentiment = breadth.get('sentiment', 'UNKNOWN')
+        bull_pct = breadth.get('bull_pct', 0.0)
+        bear_pct = breadth.get('bear_pct', 0.0)
+        
+        g_color = "#3fb950" if sentiment == "TRENDING_BULL" else ("#f85149" if sentiment == "TRENDING_BEAR" else "#d29922")
+        
+        st.markdown(f"""
+        <div style="padding: 12px; border: 1px solid {g_color}; background: #1a1f2e; border-radius: 6px; margin-top: 10px;">
+            <span style="font-size: 11px; color: #8b949e;">🌍 SOVEREIGN CONTEXT (Breadth Index)</span><br/>
+            <span style="font-size: 18px; font-weight: bold; color: {g_color};">{sentiment}</span>
+            <div style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 10px;">
+                <span style="color: #3fb950;">Bull: {bull_pct:.0%}</span>
+                <span style="color: #f85149;">Bear: {bear_pct:.0%}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        st.subheader("🔮 Strategy Oracle")
+        
+        # Meta-Brain Rankings (Phase 7)
+        rankings = status.get('strategy_rankings', {})
+        if rankings:
+            for strat, data in rankings.items():
+                rank = data.get('rank', '-')
+                score = data.get('score', 0)
+                
+                # Visuals
+                color = "#3fb950" if score > 0.6 else ("#d29922" if score > 0.4 else "#f85149")
+                icon = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else "💀"))
+                
+                st.markdown(f"""
+                <div style="padding: 10px; border-left: 4px solid {color}; background: #1a1f2e; margin-bottom: 8px; border-radius: 4px;">
+                    <span style="font-size: 16px;">{icon} <b>{strat}</b></span><br/>
+                    <span style="font-size: 11px; color: #8b949e;">Confidence: {score:.2%}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.caption("Waiting for Meta-Brain simulation...")
+
     with col_chart:
         st.subheader("💹 Equity Curve & Drawdown")
         
@@ -1054,9 +1153,60 @@ with tab3:
 # TAB 4: SYSTEM HEALTH (Phase 6 CI-HMA)
 # ------------------------------------------------------------------------------
 with tab4:
-    st.subheader("🏥 System Health & Integrity (CI-HMA)")
+    st.subheader("🏥 System Health & Integrity (Phase 15)")
     
+    # 1. Real-time Resources (SystemMonitor)
+    sys_metrics = load_system_metrics(active_data_dir)
     health_logs = load_health_logs(50)
+    
+    if sys_metrics:
+        res_cols = st.columns(4)
+        
+        # CPU
+        cpu = sys_metrics.get('cpu_pct', 0)
+        c_color = "kpi-negative" if cpu > 80 else ("kpi-warning" if cpu > 50 else "kpi-positive")
+        with res_cols[0]:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-value {c_color}">{cpu:.1f}%</div>
+                <div class="kpi-label">CPU Usage</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        # RAM
+        ram = sys_metrics.get('ram_pct', 0)
+        ram_gb = sys_metrics.get('ram_used_gb', 0)
+        r_color = "kpi-negative" if ram > 85 else ("kpi-warning" if ram > 70 else "kpi-positive")
+        with res_cols[1]:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-value {r_color}">{ram:.1f}%</div>
+                <div class="kpi-label">RAM ({ram_gb:.1f} GB)</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        # Disk
+        disk = sys_metrics.get('disk_free_gb', 0)
+        d_color = "kpi-negative" if disk < 2 else "kpi-positive"
+        with res_cols[2]:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-value {d_color}">{disk:.1f} GB</div>
+                <div class="kpi-label">Disk Free</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        # Process RAM
+        proc_ram = sys_metrics.get('process_ram_mb', 0)
+        with res_cols[3]:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-value">{proc_ram:.0f} MB</div>
+                <div class="kpi-label">Bot Memory</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        st.markdown("---")
     
     if health_logs:
         h_col1, h_col2 = st.columns([3, 1])

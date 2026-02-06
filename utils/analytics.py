@@ -257,3 +257,38 @@ class AnalyticsEngine:
         except Exception as e:
             logger.error(f"❌ Error calculating Drawdown Series: {e}")
             return pd.Series(dtype=float)
+
+    @staticmethod
+    def check_rolling_expectancy(trades_df, window=20) -> dict:
+        """
+        Phase 6: Proactive Mathematical Gatekeeper.
+        Calculates Rolling Expectancy over the last N trades.
+        
+        Returns:
+            dict: {
+                'allowed': bool, 
+                'expectancy': float,
+                'reason': str
+            }
+        """
+        if trades_df.empty or len(trades_df) < 5:
+            # Not enough data to judge -> Allow (Learning Phase)
+            return {'allowed': True, 'expectancy': 0.0, 'reason': 'LEARNING_PHASE'}
+            
+        try:
+            # Take last N trades
+            recent_trades = trades_df.tail(window)
+            
+            stats = AnalyticsEngine.calculate_expectancy(recent_trades)
+            e_val = stats.get('expectancy', 0.0)
+            
+            if e_val > 0:
+                return {'allowed': True, 'expectancy': e_val, 'reason': 'POSITIVE_EDGE'}
+            else:
+                # E < 0 implies the strategy is paying the market
+                # Block entry
+                return {'allowed': False, 'expectancy': e_val, 'reason': 'NEGATIVE_EXPECTANCY'}
+                
+        except Exception as e:
+            logger.error(f"❌ Error Checking Rolling Expectancy: {e}")
+            return {'allowed': True, 'expectancy': 0.0, 'reason': 'ERROR_OPEN'}

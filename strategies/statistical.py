@@ -11,6 +11,7 @@ from utils.analytics import AnalyticsEngine
 from core.data_handler import get_data_handler
 from utils.logger import logger
 from utils.statistics_pro import StatisticsPro
+from core.neural_bridge import neural_bridge
 
 class StatisticalStrategy(Strategy):
     """
@@ -22,6 +23,8 @@ class StatisticalStrategy(Strategy):
         self.portfolio = portfolio # Needed for state tracking
         self.pair = pair # Tuple of two symbols (Y, X) where Spread = Y - beta*X or Ratio = Y/X
         self.window = Config.Strategies.STAT_WINDOW
+        self.long_window = self.window * 10 # Phase 7+: 200 bars for long-term baseline
+        self.z_base = Config.Strategies.STAT_Z_ENTRY
         self.z_entry = Config.Strategies.STAT_Z_ENTRY
         self.z_exit = Config.Strategies.STAT_Z_EXIT
         self.invested = 0 # 0 = None, 1 = Long Spread, -1 = Short Spread
@@ -75,19 +78,29 @@ class StatisticalStrategy(Strategy):
 
     def calculate_signals(self, event):
         try:
-            if event.type == EventType.MARKET:
+            if event.type != EventType.MARKET:
+                return
+
+            # OMNI-SYNC: Iterate over all symbols in the basket vs BTC
+            # This allows the statistical strategy to capture mean reversion in all "Gems"
+            target_symbols = [s for s in self.data_provider.symbol_list if 'BTC' not in s]
+            x_sym = 'BTC/USDT'
+            
+            for y_sym in target_symbols:
+                # Deduplication & Cooldown per pair
+                process_key = f"STAT_PROCESS_{y_sym}_{x_sym}"
+                if not cooldown_manager.check_custom_cooldown(process_key, duration_seconds=60):
+                    continue
+
                 # Get latest bars for both assets
-                y_sym, x_sym = self.pair
-                
-                # We need enough history to calculate Z-Score
                 try:
                     bars_y = self.data_provider.get_latest_bars(y_sym, n=self.window)
                     bars_x = self.data_provider.get_latest_bars(x_sym, n=self.window)
                 except KeyError:
-                    return # Data not ready yet
+                    continue 
 
                 if len(bars_y) < self.window or len(bars_x) < self.window:
-                    return
+                    continue
 
                 # Deduplication & Cooldown (Centralized)
                 can_process, _ = cooldown_manager.can_trade(y_sym, strategy_id="STATISTICAL")
@@ -107,18 +120,19 @@ class StatisticalStrategy(Strategy):
                      return
 
 
-                # HURST EXPONENT FILTER (Phase 6)
+                # HURST EXPONENT FILTER (Phase 6/7)
                 # Before heavy processing, check Market Memory.
                 # If H > 0.55 -> Persistent (Trending) -> BAD for Mean Reversion.
                 # If H < 0.45 -> Anti-persistent -> GOOD for Mean Reversion.
                 closes_simple = [b['close'] for b in bars_y] # Use Y (e.g. ETH) as proxy
+                h_val = 0.5 # Default Neutral
                 if len(closes_simple) >= 100:
                     h_val = StatisticsPro.calculate_hurst_exponent(closes_simple)
-                    if h_val > 0.60: # Strong Trend
-                        print(f"📉 [Hurst] {y_sym}: Blocked. Market is Trending (H={h_val:.2f} > 0.60).")
+                    if h_val > 0.70: # Extreme Trend
+                        print(f"📉 [Hurst] {y_sym}: Blocked. Extreme Trend (H={h_val:.2f} > 0.70).")
                         return
-                    elif h_val > 0.53:
-                         print(f"⚠️ [Hurst] {y_sym}: Caution via Hurst (H={h_val:.2f}). Expect volatility.")
+                    elif h_val > 0.55:
+                         print(f"⚠️ [Hurst] {y_sym}: Caution (H={h_val:.2f}). Market trending.")
                 
                 # BUG #55 FIX: Ensure data alignment and correct Ratio High/Low calculation
                 # 1. Align Data by Timestamp (Crucial for correlation/cointegration)
@@ -183,25 +197,104 @@ class StatisticalStrategy(Strategy):
                 closes_x = np.array([b['close'] for b in bars_x])
                 atr_x = talib.ATR(highs_x, lows_x, closes_x, timeperiod=14)[-1]
 
-                # Calculate Z-Score with validation for finite values
-                # spread = closes_y / closes_x
-                spread = safe_div(closes_y, closes_x)
+                # Calculate Rolling OLS Beta (Dynamic Hedge Ratio)
+                # Phase 4 Math Upgrade
+                from utils.statistics_pro import StatisticsPro
                 
-                # Validate spread data - filter out NaN/Inf values
-                valid_spread = spread[np.isfinite(spread)]
-                if len(valid_spread) < 10:
-                    return  # Insufficient valid data
+                # Use log prices for OLS to capture percentage relationships
+                log_y = np.log(closes_y)
+                log_x = np.log(closes_x)
                 
-                mean_spread = np.mean(valid_spread)
-                std_spread = np.std(valid_spread)
+                # Rolling OLS to get Beta (Hedge Ratio)
+                # Phase 6 Upgrade: RANSAC (Robust Regulation)
+                # RANSAC ignores outliers (Flash crashes) for a pure structural relationship
+                beta, alpha = StatisticsPro.ransac_regression(log_y, log_x, window=min(50, len(log_y)))
                 
-                if std_spread == 0 or not np.isfinite(std_spread):
-                    return  # Cannot calculate z-score
+                # Calculate Spread: Spread = log(Y) - beta * log(X)
+                # This creates a stationary series (cointegration)
+                spread = log_y - beta * log_x
                 
-                z_score = (spread[-1] - mean_spread) / std_spread if np.isfinite(spread[-1]) else 0
+                # Calculate Half-Life for dynamic window adjustment (Phase 4)
+                half_life = StatisticsPro.calculate_half_life(spread)
                 
+                # Calculate Z-Score
+                # Dynamic Window based on Half-Life (2x Half-Life is common for mean reversion)
+                # But keep it bounded (20 to 100)
+                if half_life > 0:
+                    z_window = int(max(20, min(100, half_life * 2)))
+                else:
+                    z_window = self.window
+
+                # Rolling Z-Score on spread
+                roll_mean = pd.Series(spread).rolling(window=z_window).mean().values
+                roll_std = pd.Series(spread).rolling(window=z_window).std().values
+                
+                # Current Z
+                if roll_std[-1] > 0 and np.isfinite(roll_std[-1]):
+                    z_score = (spread[-1] - roll_mean[-1]) / roll_std[-1]
+                else:
+                    z_score = 0
+                
+                # Log critical math stats
+                # print(f"DEBUG STATS: Beta(RANSAC)={beta:.4f} HL={half_life:.1f} win={z_window} Z={z_score:.2f}")
+                
+                # Phase 6: Export Stats to Portfolio (Dashboard Propagation)
+                if self.portfolio:
+                    self.portfolio.update_math_stats({
+                        'beta': float(beta), # RANSAC Beta
+                        'half_life': float(half_life),
+                        'z_score': float(z_score),
+                        # Hurst is calculated in MarketRegime, but we can add proxy here if needed
+                        # Ideally strategies report their own internal metrics
+                    })
+                
+                # Phase 6: Proactive Gatekeeper (Expectancy)
+                # Check if this pair has positive expectancy locally
+                if self.portfolio: # Only if portfolio and data available
+                    # Mock fetching trades for this pair (Logic would be in DataHandler usually)
+                    # For now, we assume global expectancy check is done in _check_proactive_expectancy
+                    pass # Done in entry logic
+                
+                # PHASE 7+: ADAPTIVE Z-SCORE & VOLATILITY SYNC
+                # 1. Long-term baseline (sigma_long)
+                try:
+                    bars_y_long = self.data_provider.get_latest_bars(y_sym, n=self.long_window)
+                    bars_x_long = self.data_provider.get_latest_bars(x_sym, n=self.long_window)
+                    if len(bars_y_long) >= 100:
+                        y_long = np.array([b['close'] for b in bars_y_long])
+                        x_long = np.array([b['close'] for b in bars_x_long])
+                        spread_long = safe_div(y_long, x_long)
+                        std_long = np.std(spread_long[np.isfinite(spread_long)])
+                    else:
+                        std_long = std_spread
+                except:
+                    std_long = std_spread
+
+                # 2. Calculate Volatility Ratio (sigma_short / sigma_long)
+                vol_ratio = std_spread / std_long if std_long > 0 else 1.0
+                
+                # 3. Adaptive Threshold Formula: Z_adapt = Z_base * Vol_Ratio
+                # If volatility is high, we require a larger Z-Score (Don't buy the flush)
+                adaptive_z = self.z_base * vol_ratio
+                
+                # 4. Integrate Hurst Penalty
+                # If H > 0.60 (Strong Trend), we punish the threshold further
+                if h_val > 0.60:
+                    adaptive_z *= 1.5 # 50% extra penalty for trending markets
+                elif h_val > 0.55:
+                    adaptive_z *= 1.25 # 25% penalty
+                
+                # 5. Flash Crash & Micro-Capital Protection
+                # If volatility spikes > 3x normal, increase z to a level that effectively bans trading
+                if vol_ratio > 3.0:
+                    adaptive_z *= 2.0
+                    print(f"🚨 [FLASH CRASH ALERT] Volatility {vol_ratio:.1f}x above baseline. Shielding $13.50.")
+
+                # Cap adaptive Z to avoid extreme values but keep it high
+                effective_z_entry = min(5.0, max(self.z_base, adaptive_z))
+
                 # PRINT STATS TO TERMINAL (User Request)
-                print(f"📊 Stat Strategy {self.pair}: Z-Score={z_score:.2f} Ratio_ADX={ratio_adx:.1f}")
+                # print(f"📊 Stat Strategy {y_sym}/{x_sym}: Z-Score={z_score:.2f} (Target={effective_z_entry:.2f}) Vol_Ratio={vol_ratio:.2f}x H={h_val:.2f}")
 
                 # Trading Logic
                 # Long Spread = Buy Y, Sell X (Expect ratio to go up)
@@ -209,15 +302,13 @@ class StatisticalStrategy(Strategy):
                 
                 # Filter: Don't mean revert if Trend is too strong (ADX > 30)
                 # DYNAMIC Z-SCORE: If trend is strong, require higher Z-score to enter (don't catch falling knife)
-                effective_z_entry = self.z_entry
-                
                 if ratio_adx > 25:
-                    effective_z_entry = self.z_entry * 1.5 # Require 2.25 sigma if trending
-                    print(f"  ⚠️ Strong Trend in Spread (ADX={ratio_adx:.1f}). Widening bands to {effective_z_entry:.2f}")
+                    effective_z_entry = max(effective_z_entry, self.z_base * 1.5) 
+                    print(f"  ⚠️ Strong Trend in Spread (ADX={ratio_adx:.1f}). Clamping Z at {effective_z_entry:.2f}")
                 
                 if ratio_adx > 40:
                      # Extreme trend, block mean reversion unless extreme extension
-                     effective_z_entry = 4.0
+                     effective_z_entry = 4.5
                      
                 # Check Portfolio for actual positions (Source of Truth)
 
@@ -250,6 +341,18 @@ class StatisticalStrategy(Strategy):
                 
                 # Update local state to match reality
                 self.invested = current_state
+                
+                # Phase 8: Neural Bridge Publication (Broadcasting Conviction)
+                neural_bridge.publish_insight(
+                    strategy_id="STAT_SPREAD",
+                    symbol=y_sym, # Primary symbol for the pair
+                    insight={
+                        'confidence': min(1.0, abs(z_score) / effective_z_entry),
+                        'direction': 'LONG' if z_score < 0 else 'SHORT', # Z < 0 means buy Y (LONG)
+                        'z_score': z_score,
+                        'vol_ratio': vol_ratio
+                    }
+                )
 
                 # EMERGENCY HANDLING FOR BROKEN STATE
                 if is_broken_state:

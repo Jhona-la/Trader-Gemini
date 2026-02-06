@@ -394,7 +394,7 @@ class PatternStrategyUltimatePro(Strategy):
         self._last_cycle_time = current_time
         
         # 3. Procesar cada símbolo
-        for symbol in self.symbol_list:
+        for symbol in self.data_provider.symbol_list:
             try:
                 # Verificar cooldown por símbolo
                 if self._check_symbol_cooldown(symbol, current_time):

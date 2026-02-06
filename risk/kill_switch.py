@@ -1,4 +1,6 @@
 from datetime import datetime, timezone, timedelta
+from utils.notifier import Notifier
+from utils.logger import logger
 
 class KillSwitch:
     """
@@ -10,7 +12,8 @@ class KillSwitch:
                  standard_drawdown_pct=0.15,  # 15% en standard  
                  max_daily_losses=5,          # Más permisivo
                  max_api_errors=5,
-                 recovery_threshold=0.02):    # Auto-recovery at 2% recovery
+                 recovery_threshold=0.02,     # Auto-recovery at 2% recovery
+                 min_equity=12.50):           # Hard floor (Rule 3.3)
     
         self.is_active = False
         self.activation_reason = None
@@ -22,6 +25,7 @@ class KillSwitch:
         self.max_daily_losses = max_daily_losses
         self.max_api_errors = max_api_errors
         self.recovery_threshold = recovery_threshold
+        self.min_equity = min_equity
         
         # Tracking
         self.peak_equity = 0.0
@@ -49,11 +53,15 @@ class KillSwitch:
                 self._deactivate(f"Auto-recovery: +{recovery_pct*100:.1f}% from activation")
             return
 
-        # Update peak equity
         if current_equity > self.peak_equity:
             self.peak_equity = current_equity
             
-        # Determine phase and appropriate drawdown threshold
+        # 1. HARD EQUITY FLOOR (Phase 6 Absolute Protection)
+        if current_equity <= self.min_equity:
+            self._activate(f"HARD EQUITY FLOOR: ${current_equity:.2f} <= ${self.min_equity:.2f}")
+            return
+
+        # 2. DRAWDOWN PROTECTION
         drawdown_pct = self._get_drawdown_threshold(current_equity)
         current_drawdown = (self.peak_equity - current_equity) / self.peak_equity
         
@@ -115,11 +123,13 @@ class KillSwitch:
         self.activation_time = datetime.now(timezone.utc)
         self.activation_equity = self.current_equity
         
-        print(f"\n💀 KILL SWITCH ACTIVATED 💀")
-        print(f"📉 Reason: {reason}")
-        print(f"⏰ Time: {self.activation_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        print(f"💰 Equity at activation: ${self.activation_equity:.2f}")
-        print("🚫 Trading suspended until recovery\n")
+        msg = f"💀 **KILL SWITCH ACTIVATED** 💀\n\n"
+        msg += f"📉 **Reason**: `{reason}`\n"
+        msg += f"💰 **Equity**: `${self.activation_equity:.2f}`\n"
+        msg += f"🚫 Trading suspended until recovery."
+        
+        logger.critical(f"💀 KILL SWITCH ACTIVATED: {reason}")
+        Notifier.send_telegram(msg, priority="CRITICAL")
 
     def _deactivate(self, reason: str):
         """Deactivate kill switch (auto-recovery)"""
@@ -128,10 +138,13 @@ class KillSwitch:
         self.activation_time = None
         self.consecutive_api_errors = 0
         
-        print(f"\n✅ KILL SWITCH DEACTIVATED ✅")
-        print(f"📈 Reason: {reason}")
-        print(f"💰 Current equity: ${self.current_equity:.2f}")
-        print("🟢 Trading resumed\n")
+        msg = f"✅ **KILL SWITCH DEACTIVATED** ✅\n\n"
+        msg += f"📈 **Reason**: `{reason}`\n"
+        msg += f"💰 **Current Equity**: `${self.current_equity:.2f}`\n"
+        msg += f"🟢 Trading resumed."
+        
+        logger.info(f"✅ KILL SWITCH DEACTIVATED: {reason}")
+        Notifier.send_telegram(msg, priority="INFO")
 
     def check_status(self) -> bool:
         """Check if trading is allowed"""

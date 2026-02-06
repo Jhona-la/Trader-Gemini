@@ -3,6 +3,7 @@ from binance.client import Client # Synchronous Client for REST calls
 from binance.enums import *
 import pandas as pd
 import time
+from datetime import datetime, timezone
 from .data_provider import DataProvider
 from core.events import MarketEvent
 from config import Config  # Import Config
@@ -12,11 +13,21 @@ from utils.thread_monitor import monitor
 import asyncio
 from binance import AsyncClient, BinanceSocketManager
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import deque
+try:
+    import ujson as json
+except ImportError:
+    import json
 
 class BinanceData(DataProvider):
     def __init__(self, events_queue, symbol_list):
         self.events_queue = events_queue
         self.symbol_list = symbol_list
+        self._running = True
+        
+        # Thread Pool for Parallel Fetching (I/O Bound)
+        # Initialize BEFORE calling fetch methods
+        self.executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="BinanceFetch")
         
         # Initialize python-binance Sync Client for REST calls
         # This replaces CCXT for all historical data fetching
@@ -52,14 +63,30 @@ class BinanceData(DataProvider):
         try:
             self.client_sync.ping()
             logger.info("✅ Binance REST API Connected")
+            
+            # Phase 6: Proactive Time Sync Check
+            server_time = self.client_sync.get_server_time()['serverTime']
+            local_time = int(time.time() * 1000)
+            diff = local_time - server_time
+            if abs(diff) > 1000:
+                logger.warning(f"⚠️ TIME DESYNC: System is {diff}ms {'ahead' if diff > 0 else 'behind'} Binance. Sync Clock!")
+            else:
+                logger.info(f"⏱️ Time Sync OK (Diff: {diff}ms)")
+                
         except Exception as e:
             logger.error(f"❌ Binance REST API Connection Failed: {e}")
         
         # Storage for latest bars
-        self.latest_data = {s: [] for s in self.symbol_list}
-        self.latest_data_1h = {s: [] for s in self.symbol_list}  # 1h candles storage
-        self.latest_data_5m = {s: [] for s in self.symbol_list}  # NEW: 5m candles storage
-        self.latest_data_15m = {s: [] for s in self.symbol_list}  # NEW: 15m candles storage
+        # OPTIMIZATION: Use deque with maxlen for O(1) appends and auto-discard
+        MAX_1M = 2000
+        MAX_5M = 500
+        MAX_15M = 500
+        MAX_1H = 500
+        
+        self.latest_data = {s: deque(maxlen=MAX_1M) for s in self.symbol_list}
+        self.latest_data_1h = {s: deque(maxlen=MAX_1H) for s in self.symbol_list}  # 1h candles storage
+        self.latest_data_5m = {s: deque(maxlen=MAX_5M) for s in self.symbol_list}  # NEW: 5m candles storage
+        self.latest_data_15m = {s: deque(maxlen=MAX_15M) for s in self.symbol_list}  # NEW: 15m candles storage
         
         # Thread Safety Lock
         import threading
@@ -135,114 +162,151 @@ class BinanceData(DataProvider):
     # ... (fetch methods remain same, but we should lock inside them if they were called concurrently, 
     # but they are called in init so it's fine. The critical part is update_bars vs get_latest_bars)
 
-    def get_latest_bars(self, symbol, n=1):
+    def get_latest_bars(self, symbol, n=1, timeframe='1m'):
         """
-        Returns the last N bars from the latest_symbol list.
+        Returns the last N bars from the requested timeframe.
         Thread-safe deep copy.
         """
         try:
             with self._data_lock:
-                # ZERO-TRUST: Return a DEEP COPY to prevent strategies from corrupting shared data
-                import copy
-                bars_list = copy.deepcopy(self.latest_data[symbol])
-        except KeyError:
-            logger.warning("That symbol is not available in the historical data set.")
-            raise
-        
-        return bars_list[-n:]
+                # Select target dictionary based on timeframe
+                target_dict = self.latest_data
+                if timeframe == '5m': target_dict = self.latest_data_5m
+                elif timeframe == '15m': target_dict = self.latest_data_15m
+                elif timeframe == '1h': target_dict = self.latest_data_1h
+                
+                if symbol not in target_dict:
+                    return []
+                    
+                dq = target_dict[symbol]
+                if not dq:
+                    return []
+                    
+                if len(dq) < n:
+                    return list(dq)
+                
+                return list(dq)[-n:]
+        except Exception as e:
+            logger.error(f"Error getting {timeframe} bars for {symbol}: {e}")
+            return []
+
+
+    def _fetch_deep_history_worker(self, symbol, interval, hours, dest_dict, limit_per_req=1000, buffer_multiplier=1.2):
+        """Worker function for parallel history fetching"""
+        try:
+            # Calculate requirements
+            time_needed = Config.Strategies.ML_LOOKBACK_BARS * buffer_multiplier if interval == '1m' else hours * 60
+            minutes_needed = hours * 60
+            total_candles_needed = minutes_needed / (15 if interval == '15m' else 60 if interval == '1h' else 5 if interval == '5m' else 1)
+            
+            # Adjust calculation for 1m bars specifically
+            if interval == '1m':
+                total_candles_needed = hours * 60
+            
+            all_candles = []
+            since = int(time.time() * 1000) - (hours * 60 * 60 * 1000)
+            
+            # determine interval string constant
+            kl_interval = Client.KLINE_INTERVAL_1MINUTE
+            if interval == '5m': kl_interval = Client.KLINE_INTERVAL_5MINUTE
+            elif interval == '15m': kl_interval = Client.KLINE_INTERVAL_15MINUTE
+            elif interval == '1h': kl_interval = Client.KLINE_INTERVAL_1HOUR
+            
+            sym_clean = symbol.replace('/', '')
+            
+            while len(all_candles) < total_candles_needed:
+                candles = self.client_sync.get_klines(symbol=sym_clean, interval=kl_interval, limit=limit_per_req, startTime=since)
+                if not candles:
+                    break
+                
+                all_candles.extend(candles)
+                since = candles[-1][0] + (60000 * (15 if interval == '15m' else 60 if interval == '1h' else 5 if interval == '5m' else 1))
+                
+                if len(candles) < limit_per_req:
+                    break
+            
+            # Process and store
+            processed_bars = []
+            for c in all_candles:
+                dt = pd.to_datetime(c[0], unit='ms')
+                processed_bars.append({
+                    'symbol': symbol,
+                    'datetime': dt,
+                    'open': float(c[1]), 'high': float(c[2]), 'low': float(c[3]), 'close': float(c[4]), 'volume': float(c[5])
+                })
+            
+            # RAM OPTIMIZATION
+            if interval == '1m':
+                keep_size = max(Config.Strategies.ML_LOOKBACK_BARS + 500, 2000)
+                dest_dict[symbol] = processed_bars[-keep_size:]
+            else:
+                dest_dict[symbol] = processed_bars
+            
+            logger.info(f"Loaded {len(dest_dict[symbol])} {interval} bars for {symbol}")
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch {interval} history for {symbol}: {e}")
 
     def fetch_initial_history(self):
-        """
-        Fetches ~25 hours of historical data (1m candles) from Binance API.
-        Optimized for RAM usage while maintaining sufficient data for ML training (~1500 bars).
-        """
-        time_needed = Config.Strategies.ML_LOOKBACK_BARS * 1.2 # 20% buffer
-        hours = int(time_needed / 60) + 5 # Convert minutes to hours + margin
-        logger.info(f"Fetching historical data from Binance ({hours} hours / ~{time_needed} bars)...")
-        limit = 1000
-        # hours variable used above
-        total_candles = hours * 60
+        """Fetches ~25 hours of historical data (1m candles) in PARALLEL."""
+        time_needed = Config.Strategies.ML_LOOKBACK_BARS * 1.2
+        hours = int(time_needed / 60) + 5
+        logger.info(f"Fetching 1m historical data ({hours}h) in PARALLEL...")
         
+        futures = []
         for s in self.symbol_list:
-            try:
-                all_candles = []
-                # Calculate start time
-                since = int(time.time() * 1000) - (hours * 60 * 60 * 1000)
-                
-                while len(all_candles) < total_candles:
-                    # candles = self.exchange.fetch_ohlcv(s, timeframe='1m', limit=limit, since=since)
-                    sym_clean = s.replace('/', '') # Phase 6 standardized slash removal
-                    candles = self.client_sync.get_klines(symbol=sym_clean, interval=Client.KLINE_INTERVAL_1MINUTE, limit=limit, startTime=since)
-                    if not candles:
-                        break
-                    
-                    all_candles.extend(candles)
-                    # Update since to the timestamp of the last candle + 1 minute
-                    since = candles[-1][0] + 60000
-                    
-                    # Respect rate limits
-                    time.sleep(0.2)
-                    
-                    if len(candles) < limit:
-                        break
-                
-                # Process and store
-                processed_bars = []
-                for c in all_candles:
-                    timestamp = pd.to_datetime(c[0], unit='ms')
-                    processed_bars.append({
-                        'symbol': s,
-                        'datetime': timestamp,
-                        'open': float(c[1]),
-                        'high': float(c[2]),
-                        'low': float(c[3]),
-                        'close': float(c[4]),
-                        'volume': float(c[5])
-                    })
-                
-                # RAM OPTIMIZATION: Keep meaningful amount but enough for ML
-                keep_size = max(Config.Strategies.ML_LOOKBACK_BARS + 500, 2000)
-                self.latest_data[s] = processed_bars[-keep_size:]
-                logger.info(f"Loaded {len(self.latest_data[s])} historical bars for {s}")
-                
-            except Exception as e:
-                logger.error(f"Failed to fetch history for {s}: {e}")
+            futures.append(self.executor.submit(
+                self._fetch_deep_history_worker, s, '1m', hours, self.latest_data
+            ))
+        
+        # Wait for all to complete
+        from concurrent.futures import as_completed
+        for f in as_completed(futures):
+            pass # exceptions logged in worker
 
     def fetch_initial_history_1h(self):
-        """
-        Fetches ~200 hours of historical data (1h candles) for trend analysis.
-        """
-        logger.info("Fetching 1h historical data from Binance (250 hours)...")
-        limit = 500
-        hours = 250 # FIXED: Increased from 200 to 250 to ensure >200 closed candles for EMA-200
+        """Fetches ~200 hours of 1h data in PARALLEL."""
+        logger.info("Fetching 1h historical data (250h) in PARALLEL...")
+        hours = 250
         
+        futures = []
         for s in self.symbol_list:
-            try:
-                # Calculate start time: now - 200 hours
-                # since = self.exchange.milliseconds() - (hours * 60 * 60 * 1000)
-                since = int(time.time() * 1000) - (hours * 60 * 60 * 1000)
-                # candles = self.exchange.fetch_ohlcv(s, timeframe='1h', limit=limit, since=since)
-                sym_clean = s.replace('/', '')
-                candles = self.client_sync.get_klines(symbol=sym_clean, interval=Client.KLINE_INTERVAL_1HOUR, limit=limit, startTime=since)
-                
-                processed_bars = []
-                for c in candles:
-                    timestamp = pd.to_datetime(c[0], unit='ms')
-                    processed_bars.append({
-                        'symbol': s,
-                        'datetime': timestamp,
-                        'open': float(c[1]),
-                        'high': float(c[2]),
-                        'low': float(c[3]),
-                        'close': float(c[4]),
-                        'volume': float(c[5])
-                    })
-                
-                self.latest_data_1h[s] = processed_bars
-                logger.info(f"Loaded {len(self.latest_data_1h[s])} 1h bars for {s}")
-                
-            except Exception as e:
-                logger.error(f"Failed to fetch 1h history for {s}: {e}")
+            futures.append(self.executor.submit(
+                self._fetch_deep_history_worker, s, '1h', hours, self.latest_data_1h
+            ))
+            
+        from concurrent.futures import as_completed
+        for f in as_completed(futures):
+            pass
+
+    def fetch_initial_history_5m(self):
+        """Fetches 5m data in PARALLEL."""
+        logger.info("Fetching 5m historical data (100h) in PARALLEL...")
+        hours = 100
+        
+        futures = []
+        for s in self.symbol_list:
+            futures.append(self.executor.submit(
+                self._fetch_deep_history_worker, s, '5m', hours, self.latest_data_5m
+            ))
+        from concurrent.futures import as_completed
+        for f in as_completed(futures):
+            pass
+
+    def fetch_initial_history_15m(self):
+        """Fetches 15m data in PARALLEL."""
+        logger.info("Fetching 15m historical data (100h) in PARALLEL...")
+        hours = 100
+        
+        futures = []
+        for s in self.symbol_list:
+            futures.append(self.executor.submit(
+                self._fetch_deep_history_worker, s, '15m', hours, self.latest_data_15m
+            ))
+        from concurrent.futures import as_completed
+        for f in as_completed(futures):
+            pass
+
 
     def get_latest_bars(self, symbol, n=1):
         """
@@ -305,14 +369,14 @@ class BinanceData(DataProvider):
                     timestamp = bar_data['datetime']
                     
                     is_new_bar = False
+                    is_new_bar = False
                     with self._data_lock:
                         if not self.latest_data[s]:
                             self.latest_data[s].append(bar_data)
                             is_new_bar = True
                         elif self.latest_data[s][-1]['datetime'] != timestamp:
                             self.latest_data[s].append(bar_data)
-                            if len(self.latest_data[s]) > 2000:
-                                self.latest_data[s] = self.latest_data[s][-2000:]
+                            # Deque handles maxlen automatically!
                             is_new_bar = True
                         else:
                             self.latest_data[s][-1] = bar_data
@@ -320,7 +384,12 @@ class BinanceData(DataProvider):
                             
                     if is_new_bar:
                         logger.info(f"New Bar for {s}: {timestamp} - Close: {bar_data['close']}")
-                        self.events_queue.put(MarketEvent())
+                        # OPTIMIZED: Enrich event with data to avoid lookup
+                        self.events_queue.put(MarketEvent(
+                            symbol=s, 
+                            close_price=bar_data['close'],
+                            timestamp=datetime.now()
+                        ))
 
                 # 2. Update 5m Data
                 if '5m' in data_packet:
@@ -332,7 +401,7 @@ class BinanceData(DataProvider):
                              self.latest_data_5m[s].append(bar_data)
                         elif self.latest_data_5m[s][-1]['datetime'] != timestamp:
                              self.latest_data_5m[s].append(bar_data)
-                             if len(self.latest_data_5m[s]) > 200: self.latest_data_5m[s] = self.latest_data_5m[s][-200:]
+                             # maxlen handled by deque
                         else:
                              self.latest_data_5m[s][-1] = bar_data
 
@@ -566,7 +635,7 @@ class BinanceData(DataProvider):
              api_secret = Config.BINANCE_DEMO_SECRET_KEY
         
         # Reconnection Loop
-        while True:
+        while self._running:
             try:
                 self.client = await AsyncClient.create(api_key, api_secret, testnet=Config.BINANCE_USE_TESTNET)
                 self.bsm = BinanceSocketManager(self.client)
@@ -650,18 +719,14 @@ class BinanceData(DataProvider):
             close_price = float(kline['c'])
             volume = float(kline['v'])
             
-            # DATA QUALITY FILTER (Rule 3.2)
-            # PROFESSOR METHOD:
-            # QUÉ: Filtro de integridad y velas "Zombie".
-            # POR QUÉ: Velas con volumen cero o precio estático (high == low) ensucian los indicadores técnicos.
-            # CÓMO: Validamos que volumen > 0 y que el precio no sea exactamente igual en extremos.
-            if volume <= 0:
-                # Ignorar velas sin actividad para evitar distorsión de RSI/ADX
-                return
-            
-            if high_price == low_price and not is_closed:
-                # Mercado congelado, ignorar ticks hasta que haya movimiento
-                return
+            # DATA QUALITY FILTER (Rule 3.2 - Refined)
+            # If the bar is NOT closed and has no movement/volume, skip to save CPU.
+            # But if it IS closed, we MUST record it to keep the time-series contiguous.
+            if not is_closed:
+                if volume <= 0 or (high_price == low_price):
+                    return
+            elif volume <= 0:
+                logger.debug(f"🕳️ [Loader] Liquidity Hole in {internal_symbol}: Zero volume bar recorded for time continuity.")
 
             bar_data = {
                 'symbol': internal_symbol,
@@ -692,10 +757,7 @@ class BinanceData(DataProvider):
                 elif self.latest_data[internal_symbol][-1]['datetime'] != timestamp:
                     # New bar
                     self.latest_data[internal_symbol].append(bar_data)
-                    # Limit buffer
-                    keep_size = max(Config.Strategies.ML_LOOKBACK_BARS + 500, 2000)
-                    if len(self.latest_data[internal_symbol]) > keep_size:
-                        self.latest_data[internal_symbol] = self.latest_data[internal_symbol][-keep_size:]
+                    # Limit buffer handled by deque(maxlen) automatically!
                     is_new_bar = True
                 else:
                     # Update current bar
@@ -706,6 +768,31 @@ class BinanceData(DataProvider):
             # Only trigger if bar is closed OR at most once every 2 seconds per symbol
             should_trigger = is_closed
             now_ts = time.time()
+            
+            # --- VOLATILITY BYPASS (High Frequency Fix) ---
+            # Calculates instant price change since last update.
+            # If move > 0.05% (0.0005), FORCE TRIGGER immediately.
+            if not should_trigger:
+                try:
+                    current_price = close_price
+                    last_price = 0.0
+                    
+                    # Peep at last price safely
+                    if internal_symbol in self.latest_data and self.latest_data[internal_symbol]:
+                        # No need to lock just for reading a float in python (atomic-ish) 
+                        # but let's be safe if we were doing more. 
+                        # Ideally we use the lock, but we are inside an async method and _data_lock is a thread lock.
+                        # Since we are just reading the last appended value:
+                        last_price = self.latest_data[internal_symbol][-1]['close']
+                    
+                    if last_price > 0:
+                        pct_change = abs((current_price - last_price) / last_price)
+                        if pct_change >= 0.0005: # 0.05% threshold
+                            should_trigger = True
+                            # logger.info(f"⚡ VOLATILITY BYPASS: {internal_symbol} moved {pct_change*100:.3f}% in <2s")
+                except Exception:
+                    pass
+
             if not should_trigger:
                 last_t = self.last_event_time.get(internal_symbol, 0)
                 if now_ts - last_t > 2.0:
@@ -713,7 +800,12 @@ class BinanceData(DataProvider):
                     self.last_event_time[internal_symbol] = now_ts
             
             if should_trigger:
-                self.events_queue.put(MarketEvent())
+                # OPTIMIZED: Trigger with payload
+                self.events_queue.put(MarketEvent(
+                    symbol=internal_symbol,
+                    close_price=close_price,
+                    timestamp=datetime.now(timezone.utc)
+                ))
             
             if is_closed:
                 logger.info(f"🌊 WebSocket Closed Bar: {internal_symbol} @ {close_price}")
@@ -721,20 +813,67 @@ class BinanceData(DataProvider):
         except Exception as e:
             logger.error(f"WebSocket Message Error: {e}")
 
+    async def update_symbol_list(self, new_symbols: List[str]):
+        """
+        Hot-swaps the symbol list and updates subscriptions.
+        """
+        old_symbols = set(self.symbol_list)
+        target_symbols = set(new_symbols)
+        
+        added = target_symbols - old_symbols
+        removed = old_symbols - target_symbols
+        
+        if not added and not removed:
+            return
+            
+        logger.info(f"🔄 DataProvider: Updating Symbol List. Added: {added}, Removed: {removed}")
+        
+        # 1. Update list
+        self.symbol_list = new_symbols
+        
+        # 2. Cleanup Removed
+        with self._data_lock:
+            for s in removed:
+                if s in self.latest_data: del self.latest_data[s]
+                if s in self.latest_data_1h: del self.latest_data_1h[s]
+                if s in self.latest_data_5m: del self.latest_data_5m[s]
+                if s in self.latest_data_15m: del self.latest_data_15m[s]
+        
+        # 3. Init New
+        for s in added:
+            with self._data_lock:
+                self.latest_data[s] = deque(maxlen=2000)
+                self.latest_data_1h[s] = deque(maxlen=500)
+                self.latest_data_5m[s] = deque(maxlen=500)
+                self.latest_data_15m[s] = deque(maxlen=500)
+            
+            # Fetch history for new symbols in parallel
+            self.executor.submit(self._fetch_deep_history_worker, s, '1m', 25, self.latest_data)
+            self.executor.submit(self._fetch_deep_history_worker, s, '1h', 250, self.latest_data_1h)
+            self.executor.submit(self._fetch_deep_history_worker, s, '5m', 100, self.latest_data_5m)
+            self.executor.submit(self._fetch_deep_history_worker, s, '15m', 100, self.latest_data_15m)
+
+        # 4. Restart WebSocket
+        logger.info("📡 DataProvider: Restarting WebSocket to apply new subscriptions...")
+        await self.stop_socket()
+        # The background loop in start_socket will automatically reconnect
+
     async def shutdown(self):
         """
         Graceful shutdown for all data resources.
         """
         logger.info("BinanceData: Initiating shutdown...")
+        self._running = False # Stop reconnection loop
         
         # 1. Stop Socket
         await self.stop_socket()
         
         # 2. Cleanup ThreadPool
-        logger.info("BinanceData: Closing ThreadPoolExecutor...")
-        self.executor.shutdown(wait=True)
+        logger.info("BinanceData: Closing ThreadPoolExecutor (Non-blocking)...")
+        self.executor.shutdown(wait=False)
         
         logger.info("✅ BinanceData: Cleanup complete.")
+
 
     async def stop_socket(self):
         """

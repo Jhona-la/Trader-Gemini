@@ -95,16 +95,14 @@ class Config:
     
     # FUTURES Trading Pairs (Verified available in Demo Trading)
     # Note: SHIB, PEPE, FLOKI, BONK not available in Futures Demo
+    # Total: 26 pairs (Institutional Basket)
     CRYPTO_FUTURES_PAIRS = [
-        # Top Tier (Major coins - 100% available)
-        "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
-        "DOGE/USDT", "ADA/USDT", "DOT/USDT", "LTC/USDT",
-        
-        # High Volume Altcoins & Trending Assets (Verified for Futures)
-        "AVAX/USDT", "LINK/USDT", "UNI/USDT", "ATOM/USDT",
-        "NEAR/USDT", "SUI/USDT", "POL/USDT", "TIA/USDT",
-        "OP/USDT", "ARB/USDT", "INJ/USDT", "FTM/USDT",
-        "WIF/USDT", "RENDER/USDT", "ETC/USDT"
+        "ADA/USDT", "ARB/USDT", "ATOM/USDT", "AVAX/USDT", "BNB/USDT",
+        "BTC/USDT", "DOGE/USDT", "DOT/USDT", "ETC/USDT", "ETH/USDT",
+        "FIL/USDT", "INJ/USDT", "LINK/USDT", "LTC/USDT", "MATIC/USDT", 
+        "NEAR/USDT", "OP/USDT", "PAXG/USDT", "POL/USDT", "RENDER/USDT", 
+        "SOL/USDT", "SUI/USDT", "TIA/USDT", "UNI/USDT", "WIF/USDT", 
+        "XRP/USDT"
     ]
     # Total: 24 pairs (optimized for liquidity and volatility)
     
@@ -119,10 +117,9 @@ class Config:
     MAX_SIGNAL_AGE = 60       # 60s for M1 timeframe to allow for fast execution
     
     # MULTI-SYMBOL EXPANSION: Top Liquidity Assets for Scalping
-    TRADING_PAIRS = [
-        "BTC/USDT", "ETH/USDT", "SOL/USDT", 
-        "DOGE/USDT", "XRP/USDT", "BNB/USDT", "ADA/USDT"
-    ]
+    # Defaulting to all Futures Pairs (24 total)
+    TRADING_PAIRS = CRYPTO_FUTURES_PAIRS
+
     
     # Risk settings for Multi-Symbol Coordination
     MAX_CONCURRENT_POSITIONS = 3  # Maximum simultaneous trades for $15 account
@@ -170,7 +167,7 @@ class Config:
         # Technical Strategy settings
         TECH_RSI_PERIOD = 14
         TECH_RSI_BUY = 35    
-        TECH_RSI_SELL = 70   
+        TECH_RSI_SELL = 65   
         TECH_EMA_FAST = 20 # SHORT-TERM (Changed from 50)
         TECH_EMA_SLOW = 50 # MEDIUM-TERM (Changed from 200)
         TECH_ADX_THRESHOLD = 25
@@ -185,6 +182,23 @@ class Config:
         ML_LOOKBACK_BARS = 5000     
         ML_INCREMENTAL_UPDATE_BARS = 30 
         ML_ORACLE_VERBOSE = False   
+        
+        # Mean Reversion parameters
+        STAT_Z_ENTRY = 1.5
+        STAT_Z_EXIT = 0.0
+        
+        # --- PHASE 4-6 MATH PARAMETERS ---
+        # Statistical
+        STAT_RANSAC_WINDOW = 50       # Window for Robust Regression
+        STAT_HURST_LAG = 20           # Lag for Hurst Exponent (Trend vs MeanRev)
+        STAT_HURST_THRESHOLD = 0.5    # 0.5 = Random Walk
+        
+        # ML / Risk
+        ML_KELLY_FRACTION = 0.5       # Half-Kelly for safety
+        ANALYTICS_EXPECTANCY_WINDOW = 20 # Rolling window for Kill Switch
+        
+        # Adaptive Technical
+        TECH_DYNAMIC_RSI_VOL_THRESHOLD = 0.005 # 0.5% ATR for band expansion
 
     # ========================================================================
     # === OBSERVABILITY & ANALYTICS (Phase 4) ===
@@ -296,7 +310,9 @@ class Config:
             'ny_open': 13,
             'ny_close': 21
         }
-        REQUIRE_ACTIVE_SESSION = True  # Only trade during London/NY
+        # SESSION FILTER
+        # If True, only trades during London/NY overlaps (08:00 - 22:00 UTC)
+        REQUIRE_ACTIVE_SESSION = False # Set to False for 24/7 Crypto mode
         
         # COMPOUNDING
         COMPOUND_PROFITS = True  # Reinvest 100% of profits

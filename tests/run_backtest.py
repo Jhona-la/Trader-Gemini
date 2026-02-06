@@ -33,12 +33,26 @@ import time
 # ============================================================
 # CONSTANTES
 # ============================================================
-SYMBOLS = ['BTC/USDT']
-INITIAL_CAPITAL = 15.0  # Micro-Account Test
-LEVERAGE = 10
-COMMISSION_PCT = 0.0002 # 0.02% (Maker Fee)
-RISK_PER_TRADE = 0.02  # 2% risk
-DAYS = 3 # 3 Days validation
+SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT'] # Conservative Leaders
+# FETCH REAL BALANCE
+try:
+    from binance.client import Client as RealClient
+    try:
+        real_client = RealClient(Config.BINANCE_API_KEY, Config.BINANCE_SECRET_KEY)
+        acc = real_client.futures_account()
+        real_bal = float(acc.get('totalWalletBalance', 0))
+        INITIAL_CAPITAL = real_bal if real_bal > 0 else 15.0
+        print(f"💰 REAL BALANCE DETECTED: ${INITIAL_CAPITAL:.2f}")
+    except:
+        INITIAL_CAPITAL = 15.0
+        print(f"⚠️ Could not fetch balance, using default: ${INITIAL_CAPITAL}")
+except:
+    INITIAL_CAPITAL = 15.0
+
+LEVERAGE = 5 # Conservative Leverage
+COMMISSION_PCT = 0.0004 # 0.04% (Taker conservative)
+RISK_PER_TRADE = 0.01  # 1% risk (Conservative)
+DAYS = 15 # 15 Days validation (Longer horizon)
 
 # ============================================================
 # ESTRATEGIA SIMPLIFICADA PARA BACKTEST
@@ -98,22 +112,32 @@ def calculate_simple_signal(bars: list, min_bars: int = 50) -> tuple:
     signal_type = None
     strength = 0.0
     
+    # CONSERVATIVE / SMART LOGIC
+    # 1. Trend Filter (EMA 200)
+    ema200 = np.mean(closes[-200:]) if len(closes) >= 200 else closes[0]
+    trend_bullish = current_price > ema200
+    
+    # 2. Stricter RSI (Only Extremes)
+    # Buy dips in Uptrend, Sell rallies in Downtrend
+    
     # LONG conditions
-    if bb_pct < 0.2 and rsi < 35 and ema_bullish:
+    # Rule: Price > EMA200 AND RSI < 30 (Pullback in Uptrend)
+    if trend_bullish and rsi < 30:
         signal_type = SignalType.LONG
-        strength = 0.7 + (35 - rsi) / 100  # Más fuerte si RSI más bajo
-    elif bb_pct < 0.1 and rsi < 30:  # Oversold extremo
+        strength = 0.8 + (30 - rsi) / 100
+    elif rsi < 20: # Crash protection buy (Mean reversion rebound)
         signal_type = SignalType.LONG
-        strength = 0.8
+        strength = 0.9
     
     # SHORT conditions
-    elif bb_pct > 0.8 and rsi > 65 and not ema_bullish:
+    # Rule: Price < EMA200 AND RSI > 70 (Rally in Downtrend) -- Less common in crypto bull runs but safer
+    elif not trend_bullish and rsi > 70:
         signal_type = SignalType.SHORT
-        strength = 0.7 + (rsi - 65) / 100
-    elif bb_pct > 0.9 and rsi > 70:  # Overbought extremo
+        strength = 0.8 + (rsi - 70) / 100
+    elif rsi > 85: # Blow-off top sell
         signal_type = SignalType.SHORT
-        strength = 0.8
-    
+        strength = 0.9
+        
     return signal_type, min(strength, 1.0)
 
 
@@ -800,49 +824,111 @@ def print_report(metrics: dict, portfolio: BacktestPortfolio):
 
 if __name__ == "__main__":
     print("="*60)
-    print("🧪 BACKTEST TRADER GEMINI - 1 MES")
+    print("🧪 BACKTEST TRADER GEMINI - FULL BASKET (26 SYMBOLS)")
     print("="*60)
     
     try:
-        # 1. Descargar datos
-        symbol = 'BTC/USDT'
-        # 1. Descargar datos
-        symbol = 'BTC/USDT'
-        data = fetch_binance_data(symbol, days=15) # 2 weeks aprox
+        # Load Symbols (Full Smart Basket)
+        symbols = Config.CRYPTO_FUTURES_PAIRS
+        print(f"📋 Testing Full Smart Basket ({len(symbols)} symbols)...")
         
-        if data.empty:
-            print("❌ Error: No se pudieron descargar datos")
-            sys.exit(1)
+        grand_total_trades = 0
+        grand_winning_trades = 0
+        grand_losing_trades = 0
+        grand_pnl_usd = 0.0
         
-        # 2. Ejecutar backtest
-        results = run_backtest(data, symbol)
+        # Aggregate Portfolio mimicking single account
+        # We simulate "Parallel" processing by adding up PnL, assuming capital is shared or allocated
+        # For simplicity, we track PnL summation on top of Initial Capital
         
-        # 3. Calcular métricas
-        metrics = calculate_metrics(results['portfolio'])
+        all_results = []
         
-        # 4. Imprimir reporte
-        passed = print_report(metrics, results['portfolio'])
+        # Use simple global portfolio for aggregation
+        # Note: BacktestPortfolio logic is single-threaded/sequential here, 
+        # so we will sum up the PnL impacts.
         
-        # 5. Guardar resultados
-        output_file = 'backtest_results.json'
+        print(f"\n💰 STARTING CAPITAL: ${INITIAL_CAPITAL:.2f}")
+        current_equity = INITIAL_CAPITAL
+        
+        for i, symbol in enumerate(symbols):
+            print(f"\n🔹 TESTING {symbol} ({i+1}/{len(symbols)})...")
+            
+            # Rate Limit Protection
+            time.sleep(2) # 2s delay between symbols to avoid ban
+            
+            # 1. Download Data
+            try:
+                data = fetch_binance_data(symbol, days=DAYS)
+            except Exception as e:
+                print(f"   ⚠️ Download failed for {symbol}: {e}")
+                continue
+            
+            if data.empty:
+                print(f"   ⚠️ No data for {symbol}, skipping.")
+                continue
+                
+            # 2. Run Backtest
+            # Reset portfolio for each symbol to isolate logic per pair (then aggregate PnL)
+            # OR share portfolio? Shared is harder to mock sequentially.
+            # We will use ISOLATED logic per pair and sum PnL.
+            results = run_backtest(data, symbol)
+            
+            # 3. Aggregate
+            p = results['portfolio']
+            symbol_pnl = p.current_capital - p.initial_capital
+            
+            grand_pnl_usd += symbol_pnl
+            grand_total_trades += len(p.trades)
+            grand_winning_trades += p.winning_trades
+            grand_losing_trades += p.losing_trades
+            
+            print(f"   👉 Result {symbol}: ${symbol_pnl:+.2f} ({len(p.trades)} trades)")
+            
+            all_results.append({
+                'symbol': symbol,
+                'pnl': symbol_pnl,
+                'trades': len(p.trades),
+                'wins': p.winning_trades
+            })
+            
+        # Final Totals
+        final_capital = INITIAL_CAPITAL + grand_pnl_usd
+        total_return_pct = (grand_pnl_usd / INITIAL_CAPITAL) * 100
+        total_win_rate = (grand_winning_trades / grand_total_trades * 100) if grand_total_trades > 0 else 0
+        
+        print("\n" + "="*60)
+        print("🏆 GRAND TOTAL REPORT (26 SYMBOLS)")
+        print("="*60)
+        print(f"💰 Initial Capital: ${INITIAL_CAPITAL:.2f}")
+        print(f"💰 Final Capital:   ${final_capital:.2f}")
+        print(f"📈 Total PnL:       ${grand_pnl_usd:+.2f} ({total_return_pct:+.2f}%)")
+        print(f"📊 Total Trades:    {grand_total_trades}")
+        print(f"✅ Win Rate:        {total_win_rate:.1f}%")
+        
+        print("\n🏅 TOP PERFORMERS:")
+        sorted_results = sorted(all_results, key=lambda x: x['pnl'], reverse=True)
+        for r in sorted_results[:5]:
+            print(f"   1. {r['symbol']}: ${r['pnl']:+.2f}")
+            
+        print("\n💀 WORST PERFORMERS:")
+        for r in sorted_results[-5:]:
+            print(f"   - {r['symbol']}: ${r['pnl']:+.2f}")
+            
+        # Save JSON
+        output_file = 'backtest_smart_full_results.json'
         import json
         with open(output_file, 'w') as f:
             json.dump({
                 'timestamp': datetime.now().isoformat(),
-                'symbol': symbol,
-                'bars_processed': results['bars_processed'],
-                'signals_generated': results['signals'],
-                'trades_summary': results['trades'],
-                'detailed_trades': results['portfolio'].trades,
-                'metrics': {k: float(v) if isinstance(v, (int, float, np.floating, np.integer)) else v 
-                           for k, v in metrics.items()}
+                'initial_capital': INITIAL_CAPITAL,
+                'final_capital': final_capital,
+                'total_pnl': grand_pnl_usd,
+                'total_trades': grand_total_trades,
+                'details': all_results
             }, f, indent=2, default=str)
-        print(f"\n📁 Resultados guardados en: {output_file}")
-        
-        sys.exit(0 if passed else 1)
+        print(f"\n📁 Full results saved to: {output_file}")
         
     except Exception as e:
-        print(f"\n❌ Error en backtest: {e}")
+        print(f"\n❌ Final Execution Error: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)

@@ -3,7 +3,10 @@ import sys
 import time
 import asyncio
 import signal
-import json
+try:
+    import ujson as json
+except ImportError:
+    import json
 import argparse
 import logging
 from datetime import datetime, timezone
@@ -15,17 +18,22 @@ import numpy as np
 from config import Config
 from core.engine import Engine
 from data.binance_loader import BinanceData
+from data.sentiment_loader import SentimentLoader
 from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy  # ← UNIVERSAL ENSEMBLE FOR ALL SYMBOLS
 from core.portfolio import Portfolio
 from core.events import OrderEvent, SignalEvent
 from core.enums import OrderSide, OrderType
-from risk.risk_manager import RiskManager
+from core.market_regime import MarketRegimeDetector
+from core.order_manager import OrderManager
+from core.market_scanner import MarketScanner
+from core.strategy_selector import StrategySelector
 from execution.binance_executor import BinanceExecutor
 from utils.logger import logger
 from utils.session_manager import init_session_manager, get_session_manager
 from utils.health_supervisor import start_health_supervisor, _supervisor as health_sup # CI-HMA (Phase 6)
 from core.data_handler import get_data_handler  # For Dashboard persistence
 from utils.reloader import init_hot_reload, get_hot_reload_manager  # Hot Reload System
+from utils.heartbeat import get_heartbeat
 
 # ==================== NUEVAS CLASES ====================
 
@@ -239,6 +247,161 @@ class ScalpingOptimizer:
         self.trade_counts[hour_key] = self.trade_counts.get(hour_key, 0) + 1
 
 
+async def meta_brain_loop(selector: StrategySelector):
+    """
+    Background loop for the Sovereign Meta-Brain.
+    Re-evaluates strategy performance every 2 hours.
+    """
+    logger.info("🧠 Sovereign Meta-Brain Active. Monitoring strategy health...")
+    while True:
+        try:
+            selector.update_strategy_rankings()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"❌ Meta-Brain Loop Error: {e}")
+        
+        await asyncio.sleep(7200) # 2 Hours
+
+async def global_regime_loop(detector: MarketRegimeDetector, data_handler: BinanceData, risk_manager: RiskManager, portfolio: Portfolio):
+    """
+    Sovereign Market Context Loop (Phase 8.1).
+    Aggregates sentiment across all active symbols to calculate market breadth.
+    """
+    logger.info("📡 Regime Orchestrator: Monitoring Market Breadth Context...")
+    while True:
+        try:
+            # 1. Get Active Symbols
+            active_symbols = data_handler.symbol_list
+            context_data = {}
+            
+            # 2. Gather MTF data for all symbols in the basket
+            # PROFESSOR: Analizamos 'enjambre' para no depender solo de BTC.
+            for symbol in active_symbols:
+                bars_1m = data_handler.get_latest_bars(symbol, n=100, timeframe='1m')
+                bars_5m = data_handler.get_latest_bars(symbol, n=50, timeframe='5m')
+                bars_1h = data_handler.get_latest_bars(symbol, n=50, timeframe='1h')
+                
+                if bars_1m:
+                    context_data[symbol] = {
+                        '1m': bars_1m,
+                        '5m': bars_5m,
+                        '1h': bars_1h
+                    }
+            
+            if context_data:
+                # 3. Calculate Sovereign Context (Breadth)
+                breadth = detector.calculate_market_context(context_data)
+                
+                # 4. Broadcast to Risk Manager & Portfolio
+                risk_manager.update_global_regime(breadth['sentiment'])
+                portfolio.global_regime_data = breadth  # Richer data for Dashboard
+                portfolio.global_regime = breadth['sentiment'] # Compatibility
+            else:
+                logger.warning("⏳ Regime Orchestrator: Waiting for market history...")
+                
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"❌ Regime Orchestrator Error: {e}")
+            await asyncio.sleep(60)
+
+async def order_manager_loop(manager: OrderManager):
+    """
+    Phase 9: Anti-Liquidity Sniping Loop.
+    Runs every second to monitor and cancel stale limit orders.
+    """
+    logger.info("📡 Order Manager: Active Order Lifecycle Protection enabled.")
+    while True:
+        try:
+            await manager.monitor_lifecycle()
+            await asyncio.sleep(1) # Check every second
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"❌ Order Manager Error: {e}")
+            await asyncio.sleep(5)
+
+async def market_adaptive_loop(engine: Engine, data_handler: BinanceData, scanner: MarketScanner, 
+                              portfolio: Portfolio, risk_manager: RiskManager, sentiment_loader: SentimentLoader,
+                              events_queue: Any):
+    """
+    Background loop that periodically re-evaluates the best coins to trade.
+    """
+    logger.info("🧬 Starting Adaptive Market Optimizer...")
+    
+    # Weight settings
+    ADAPTIVE_INTERVAL = 4 * 3600 # Every 4 hours
+    
+    while True:
+        try:
+            # 1. Scan for Top Performers
+            top_symbols = scanner.get_top_ranked_symbols(limit=20) 
+            if not top_symbols:
+                await asyncio.sleep(300)
+                continue
+                
+            # 2. Identify Changes
+            current_symbols = data_handler.symbol_list
+            to_add = [s for s in top_symbols if s not in current_symbols]
+            
+            # 3. Handle Retirements (Safety First)
+            to_remove = []
+            for s in current_symbols:
+                if s not in top_symbols:
+                    # SAFETY: Do NOT remove if we have an active position
+                    pos = portfolio.positions.get(s, {'quantity': 0})
+                    if pos['quantity'] == 0:
+                        to_remove.append(s)
+                    else:
+                        logger.info(f"⏳ Postponing removal of {s} due to active position.")
+            
+            if to_add or to_remove:
+                logger.info(f"✨ Adaptive Swap: Adding {to_add}, Removing {to_remove}")
+                
+                # A. Unregister old strategies
+                for s in to_remove:
+                    engine.unregister_strategy(s)
+                
+                # B. Update Data Layer subscriptions
+                new_list = [s for s in current_symbols if s not in to_remove] + to_add
+                await data_handler.update_symbol_list(new_list)
+                
+                # C. Wait for new symbols history to load (simple delay)
+                if to_add:
+                    logger.info("📡 Waiting 30s for new symbol history...")
+                    await asyncio.sleep(30)
+                
+                # D. Register new strategies
+                for s in to_add:
+                    try:
+                        is_leader = ('BTC' in s)
+                        ml_strat = MLStrategy(
+                            data_provider=data_handler,
+                            events_queue=events_queue,
+                            symbol=s,
+                            lookback=Config.Strategies.ML_LOOKBACK_BARS,
+                            sentiment_loader=sentiment_loader,
+                            portfolio=portfolio,
+                            risk_manager=risk_manager if is_leader else None
+                        )
+                        engine.register_strategy(ml_strat)
+                    except Exception as e:
+                        logger.error(f"Failed to spawn adaptive strategy for {s}: {e}")
+
+                logger.info("✅ Adaptive Swap Complete.")
+            
+            # Sleep until next scan
+            await asyncio.sleep(ADAPTIVE_INTERVAL)
+            
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Market Adaptive Loop Error: {e}")
+            await asyncio.sleep(600)
+
+
 # ==================== MAIN ACTUALIZADO ====================
 
 async def main():
@@ -276,11 +439,16 @@ async def main():
     elif args.mode == 'futures':
         Config.BINANCE_USE_FUTURES = True
         Config.DATA_DIR = "dashboard/data/futures"
-        Config.INITIAL_CAPITAL = args.capital  # Set capital for futures mode
+        Config.INITIAL_CAPITAL = args.capital
+        if not args.symbols:
+            Config.TRADING_PAIRS = Config.CRYPTO_FUTURES_PAIRS
     else:
         Config.BINANCE_USE_FUTURES = False
         Config.DATA_DIR = "dashboard/data/spot"
-        Config.INITIAL_CAPITAL = args.capital  # Set capital for spot mode
+        Config.INITIAL_CAPITAL = args.capital
+        if not args.symbols:
+            Config.TRADING_PAIRS = Config.CRYPTO_SPOT_PAIRS
+
     
     # Ensure directories
     os.makedirs(Config.DATA_DIR, exist_ok=True)
@@ -301,29 +469,68 @@ async def main():
     # 3. CORE INITIALIZATION
     import queue
     import threading
+    from core.market_scanner import MarketScanner
     from strategies.technical import HybridScalpingStrategy as TechnicalStrategy
-    from strategies.pattern import PatternStrategyUltimatePro
-    from strategies.sniper_strategy import SniperStrategy
-    from strategies.statistical import StatisticalStrategy
     
     # Events Queue (Thread-Safe)
     events_queue = queue.Queue()
     
-    # Portfolio
+    # 3.1. PRE-INITIALIZATION DISCOVERY (ELITE PROTOCOL)
+    # Instantiate a temporary data handler just for scanning
+    temp_loader = BinanceData(events_queue, ["BTC/USDT"]) # Minimal symbols for fast connect
+    scanner = MarketScanner(temp_loader)
+    
+    if not args.symbols:
+        logger.info("🔭 [Elite Protocol] Performing autonomous market discovery...")
+        top_20 = scanner.get_top_ranked_symbols(limit=20)
+        if top_20:
+            Config.TRADING_PAIRS = top_20
+            logger.info(f"💎 Elite Basket Selected: {len(top_20)} symbols.")
+        else:
+            logger.warning("⚠️ Discovery yielded no results, using default futures pairs.")
+            Config.TRADING_PAIRS = Config.CRYPTO_FUTURES_PAIRS
+    
+    # Cleanup temp scanner resources
+    await temp_loader.shutdown()
+    
+    # 3.2. REAL DATA HANDLER (With Elite Basket)
+    data_handler = BinanceData(events_queue, Config.TRADING_PAIRS)
+    
+    # 3.2.1. PORTFOLIO & RISK (Restored)
     portfolio = Portfolio(
         initial_capital=Config.INITIAL_CAPITAL,
         csv_path=f"{Config.DATA_DIR}/trades.csv",
         status_path=f"{Config.DATA_DIR}/status.csv"
     )
-    
-    # Risk Manager
     risk_manager = RiskManager(
         max_concurrent_positions=getattr(Config, 'MAX_CONCURRENT_POSITIONS', 3),
         portfolio=portfolio
     )
+
+    # 3.3. DATA WARMING BARRIER
+    # Wait for parallel workers to fetch enough history for ML
+    logger.info("📡 [Elite Protocol] Warming up data for universal training...")
+    warming = True
+    start_warm = time.time()
+    while warming and (time.time() - start_warm < 120): # Max 2 min wait
+        ready_count = 0
+        with data_handler._data_lock:
+            for s in Config.TRADING_PAIRS:
+                if len(data_handler.latest_data.get(s, [])) >= 500:
+                    ready_count += 1
+        
+        if ready_count >= len(Config.TRADING_PAIRS):
+            logger.info("✅ All elite symbols warmed up.")
+            warming = False
+        elif (time.time() - start_warm) > 5:
+            logger.info(f"⏳ Warming progress: {ready_count}/{len(Config.TRADING_PAIRS)} symbols ready...")
+            await asyncio.sleep(5)
+        else:
+            await asyncio.sleep(1)
     
-    # Data Handler
-    data_handler = BinanceData(events_queue, Config.TRADING_PAIRS)
+    # Sentiment Engine
+    sentiment_loader = SentimentLoader()
+    sentiment_loader.start_background_thread()
     
     # Executor
     # FIXED: Pass actual portfolio instance, not Config class
@@ -348,15 +555,21 @@ async def main():
     strategies = []
     
     # ML Strategy (one per symbol)
-    # USER REQUEST: Monitor top 12 symbols (Balanced Load)
-    for symbol in Config.TRADING_PAIRS[:12]:
+    # EXPANDED: Analyze ALL symbols in Config
+    for symbol in Config.TRADING_PAIRS:
+
         try:
+            # ORCHESTRATION (Phase 12): Only BTC drives Global Regime
+            is_leader = ('BTC' in symbol)
+            
             ml_strat = MLStrategy(
                 data_provider=data_handler,
                 events_queue=events_queue,
                 symbol=symbol,
                 lookback=Config.Strategies.ML_LOOKBACK_BARS,
-                portfolio=portfolio
+                sentiment_loader=sentiment_loader,
+                portfolio=portfolio,
+                risk_manager=risk_manager if is_leader else None
             )
             strategies.append(ml_strat)
             engine.register_strategy(ml_strat)
@@ -421,10 +634,35 @@ async def main():
     hot_reload = init_hot_reload(engine=engine, strategies_path="strategies")
     hot_reload.start()
     
+    # --- ADAPTIVE SCANNER & META BRAIN ---
+    scanner = MarketScanner(data_handler)
+    selector = StrategySelector(portfolio=portfolio, data_provider=data_handler)
+    
+    # Link to Risk Manager
+    if risk_manager:
+        risk_manager.strategy_selector = selector
+        
+    adaptive_task = asyncio.create_task(market_adaptive_loop(
+        engine, data_handler, scanner, portfolio, risk_manager, sentiment_loader, events_queue
+    ))
+    
+    meta_task = asyncio.create_task(meta_brain_loop(selector))
+    
+    # 3.4. REGIME ORCHESTRATOR
+    regime_detector = MarketRegimeDetector()
+    regime_task = asyncio.create_task(global_regime_loop(regime_detector, data_handler, risk_manager, portfolio))
+    
+    # PHASE 9: ORDER MANAGER
+    order_manager = OrderManager(executor)
+    executor.order_manager = order_manager
+    engine.register_order_manager(order_manager)
+    order_task = asyncio.create_task(order_manager_loop(order_manager))
+    
     # 4. MAIN EVENT LOOP
     loop_count = 0
     last_summary_time = time.time()
     last_heartbeat = time.time()
+    last_reconcile_time = time.time() # Phase 13
     
     logger.info(f"🔍 DEBUG: shutdown_event is_set={shutdown_event.is_set()}")
     logger.info(" Starting main event loop...")
@@ -439,8 +677,13 @@ async def main():
             if loop_count % 60 == 0:  # Every ~60 seconds
                 try:
                     data_handler.update_bars()
+                    # Heartbeat pulse
+                    get_heartbeat().pulse(metadata={
+                        "loop_count": loop_count,
+                        "equity": portfolio.get_total_equity() if portfolio else 0
+                    })
                 except Exception as e:
-                    logger.error(f"Error updating bars: {e}")
+                    logger.error(f"Error updating bars/heartbeat: {e}")
             
             # --- HOT RELOAD: Process pending updates ---
             if hot_reload and hot_reload.is_active:
@@ -478,20 +721,24 @@ async def main():
                 except:
                     pass
             
+            # RECONCILIATION (Phase 13): Periodic Sync every 60m
+            if now - last_reconcile_time >= 3600:
+                try:
+                    logger.info("♻️ [Auto-Reconcile] Syncing state with Binance...")
+                    executor.sync_portfolio_state(portfolio)
+                    last_reconcile_time = now
+                except Exception as e:
+                    logger.error(f"Reconcile failed: {e}")
+            
             # Market Intelligence Heartbeat
             if now - last_heartbeat >= 60:
                 equity = portfolio.get_total_equity()
-                open_pos = sum(1 for p in portfolio.positions.values() if p['quantity'] != 0)
-                
-                # Obtener info de zombies (opcional, si hay acceso)
-                zombie_count = 0
-                active_symbols = []
-                for s in engine.strategies:
-                    if hasattr(s, 'symbol'):
-                        active_symbols.append(s.symbol)
-                        # Check last training/data health
-                
+                open_pos_symbols = [s for s, p in portfolio.positions.items() if p['quantity'] != 0]
+                open_pos = len(open_pos_symbols)
                 logger.info(f"💓 Heartbeat | Equity: ${equity:.2f} | Pos: {open_pos} | Loop: {loop_count}")
+
+                logger.info(f"[PORTFOLIO_STATUS] Active: {open_pos_symbols} | Bal: ${equity:.2f}")
+
                 
                 # --- MARKET COMMENTARY ---
                 analysis_info = []
@@ -511,7 +758,7 @@ async def main():
                 # 3.5. HISTORICAL PERSISTENCE (Phase 6)
                 try:
                     status_packet = {
-                        'timestamp': datetime.utcnow().isoformat(),
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
                         'total_equity': equity,
                         'available_balance': portfolio.current_cash,
                         'realized_pnl': portfolio.realized_pnl,
@@ -528,7 +775,8 @@ async def main():
             
             # Use wait_for with timeout to allow Ctrl+C to interrupt on Windows
             try:
-                await asyncio.wait_for(asyncio.sleep(1.0), timeout=1.5)
+                # OPTIMIZED: 0.1s for faster signal response (Rule 2.4 Fix)
+                await asyncio.wait_for(asyncio.sleep(0.1), timeout=0.2)
             except asyncio.TimeoutError:
                 pass
             
@@ -546,7 +794,15 @@ async def main():
     # A. Stop Engine loops
     engine.stop()
     
-    # B. Close WebSocket & Data Sessions (with timeout to prevent hanging)
+    # B. Stop Adaptive Tasks
+    if 'adaptive_task' in locals():
+        adaptive_task.cancel()
+    if 'meta_task' in locals():
+        meta_task.cancel()
+    if 'regime_task' in locals():
+        regime_task.cancel()
+        
+    # C. Close WebSocket & Data Sessions (with timeout to prevent hanging)
     ws_task.cancel()
     try:
         # Use timeout to prevent indefinite blocking
@@ -565,7 +821,13 @@ async def main():
     portfolio.close() # NEW: Closes DB handler
     performance.print_summary()
     
+    # C1. Stop Sentiment Engine
+    if 'sentiment_loader' in locals():
+        sentiment_loader.stop()
+        logger.info("📰 Sentiment Engine stopped.")
+
     # C2. Stop Health Supervisor
+
     if supervisor:
         supervisor.stop()
         logger.info("🩺 Health Supervisor stopped.")
@@ -592,29 +854,44 @@ if __name__ == "__main__":
     print("""
     ⚠️  IMPORTANTE PARA SCALPING:
     
-    1. CAPITAL INICIAL: ${} (ajustar con --capital)
-    2. MÁXIMO 1 POSICIÓN CONCURRENTE
-    3. TAMAÑO DE POSICIÓN: 30% del capital
+    1. CAPITAL INICIAL: ${} (ajustable/dinámico)
+    2. MÁXIMO {} POSICIÓN(ES) CONCURRENTES
+    3. TAMAÑO DE POSICIÓN: {:.0%} del capital (Micro/Small)
     4. SESIONES ACTIVAS: Londres (8-17 UTC) y NY (13-22 UTC)
-    5. LÍMITE: 12 trades/hora por símbolo
-    6. ESPERA MÍNIMA: 5 minutos entre trades en mismo símbolo
+    5. COOLDOWN: {} min entre trades en mismo símbolo
+    6. RIESGO: {:.1%} por trade (Max Risk)
     
-    🎯 OBJETIVO: $12 → $50 en 8-12 semanas
-    📊 MÉTRICAS MÍNIMAS:
-       - Win Rate > 58%
-       - Sharpe Ratio > 1.0
-       - Drawdown < 5%
+    🎯 OBJETIVO: ${} → $500+ en fases de crecimiento
+    📊 MÉTRICAS MÍNIMAS (Adaptive):
+       - Min Profit Net > {:.2%}
+       - Min R:R > {}:1
+       - Max Drawdown < 5%
     
     ¡Éxito! 🚀
-    """.format(getattr(Config, 'INITIAL_CAPITAL', 15.0)))
+    """.format(
+        getattr(Config, 'INITIAL_CAPITAL', 15.0),
+        getattr(Config, 'MAX_CONCURRENT_POSITIONS', 1),
+        getattr(Config, 'POSITION_SIZE_MICRO_ACCOUNT', 0.40),
+        getattr(Config, 'COOLDOWN_PERIOD_SECONDS', 300) / 60,
+        getattr(Config, 'MAX_RISK_PER_TRADE', 0.01),
+        getattr(Config, 'INITIAL_CAPITAL', 15.0),
+        getattr(Config, 'MIN_PROFIT_AFTER_FEES', 0.003),
+        getattr(Config, 'MIN_RR_RATIO', 1.5)
+    ))
     
     # Audit keys before starting (Phase 6 Fix)
     logger.info("🛠️  AUDIT: Checking Configuration...")
     demo_key = os.getenv('BINANCE_DEMO_API_KEY')
-    if demo_key:
-        logger.info(f"✅ Demo Key Loaded: {demo_key[:6]}...{demo_key[-4:]}")
+    if Config.BINANCE_USE_DEMO:
+        if demo_key:
+            logger.info(f"✅ Demo Key Loaded: {demo_key[:6]}...{demo_key[-4:]} (Active)")
+        else:
+            logger.error("❌ Demo Mode Enabled but Demo Key NOT Found!")
     else:
-        logger.warning("⚠️  Demo Key NOT Loaded correctly from .env")
+        # In Real/Futures mode, we don't need to spam about Demo keys
+        real_key = os.getenv('BINANCE_API_KEY')
+        if real_key:
+            logger.info(f"✅ Production Key Loaded: {real_key[:6]}...{real_key[-4:]}")
         
     try:
         if sys.platform == 'win32':

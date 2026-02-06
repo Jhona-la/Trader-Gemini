@@ -24,10 +24,10 @@ ALERTS:
 """
 
 import os
-import json
-import csv
-import time
 import logging
+import psutil
+import shutil
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Callable
 from dataclasses import dataclass, field
@@ -155,9 +155,267 @@ class GhostSignalAuditor:
             'message': f"Se perdieron {len(self.ghost_signals)} oportunidades por el umbral actual de {self.threshold:.0%}"
         }
     
-    def clear(self):
-        """Clear recorded ghost signals."""
-        self.ghost_signals = []
+    def audit_from_log(self, log_line: str) -> Optional[GhostSignal]:
+        """
+        Audit a signal from a log line.
+        Look for: Verdict -> Direction: ... | Final Conf: 0.XX
+        """
+        if "Final Conf:" in log_line:
+            match = re.search(r"Final Conf: (0\.\d+)", log_line)
+            if match:
+                conf = float(match.group(1))
+                # Extraer símbolo si está en la línea
+                sym_match = re.search(r"Verifying ([A-Z/]+)", log_line)
+                symbol = sym_match.group(1) if sym_match else "UNKNOWN"
+                return self.audit_signal(symbol, conf)
+        return None
+
+# =============================================================================
+# ZOMBIE SYMBOL AUDITOR
+# =============================================================================
+
+class ZombieSymbolAuditor:
+    """
+    🧟 Detects 'Zombie' symbols with flat price action or stale data.
+    
+    PROFESSOR METHOD:
+    - QUÉ: Monitor de inactividad técnica por símbolo.
+    - POR QUÉ: Detecta si un par está estancado (flat) y bloquea entrenamiento inútil.
+    - CÓMO: Analiza la varianza del precio y la frecuencia de actualización.
+    """
+    
+    def __init__(self, spread_threshold: float = 0.0001, stale_threshold: int = 300):
+        self.spread_threshold = spread_threshold
+        self.stale_threshold = stale_threshold
+        self.zombies: Dict[str, Dict] = {}
+        self.logger = logging.getLogger('sentinel.zombie')
+    
+    def audit_symbol(self, symbol: str, df_or_price_data: any):
+        """Audit a symbol for zombie behavior."""
+        import pandas as pd
+        if isinstance(df_or_price_data, pd.DataFrame):
+            if len(df_or_price_data) < 2: return
+            
+            # Check price spread (volatility)
+            high_max = df_or_price_data['high'].max()
+            low_min = df_or_price_data['low'].min()
+            avg_price = df_or_price_data['close'].mean()
+            
+            spread = (high_max - low_min) / avg_price if avg_price > 0 else 0
+            
+            if spread < self.spread_threshold:
+                if symbol not in self.zombies:
+                    self.logger.warning(f"🧟 [ZOMBIE DETECTED] {symbol} is flat (Spread: {spread*100:.6f}%).")
+                self.zombies[symbol] = {
+                    'type': 'FLAT_MARKET',
+                    'last_detected': datetime.now(timezone.utc),
+                    'spread': spread
+                }
+            elif symbol in self.zombies and self.zombies[symbol]['type'] == 'FLAT_MARKET':
+                self.logger.info(f"🧬 [ZOMBIE REVIVED] {symbol} shows price action again.")
+                del self.zombies[symbol]
+    
+    def get_summary(self) -> Dict:
+        return {
+            'total': len(self.zombies),
+            'symbols': list(self.zombies.keys()),
+            'message': f"Detectados {len(self.zombies)} símbolos 'zombis' (sin movimiento)." if self.zombies else "No hay símbolos zombis."
+        }
+    
+    def audit_from_log(self, log_line: str):
+        """Parse zombie alerts from log lines."""
+        if "[ZOMBIE MARKET]" in log_line:
+            # 🚫 [ZOMBIE MARKET] BTC/USDT is flat. Spread: 0.000000%
+            match = re.search(r"\[ZOMBIE MARKET\] ([A-Z/]+) is flat", log_line)
+            if match:
+                symbol = match.group(1)
+                if symbol not in self.zombies:
+                    self.zombies[symbol] = {
+                        'type': 'FLAT_MARKET',
+                        'last_detected': datetime.now(timezone.utc)
+                    }
+                    self.logger.warning(f"🧟 Sentinel confirmed Zombie: {symbol}")
+
+
+# =============================================================================
+# RESOURCE VIGILANCE
+# =============================================================================
+
+class ResourceVigilance:
+    """
+    RESOURCE VIGILANCE: Auditoría profunda de recursos del proyecto.
+    Desglosa RAM por componente (Main, Supervisor, Oracle) y Disco por categoría.
+    """
+    
+    def __init__(self, ram_threshold_pct: float = 85.0, disk_threshold_pct: float = 90.0):
+        self.ram_threshold = ram_threshold_pct
+        self.disk_threshold = disk_threshold_pct
+        self.history: List[Dict] = []
+        self.logger = logging.getLogger('sentinel.resources')
+        self.current_dir = os.getcwd().lower()
+
+    def get_project_metrics(self) -> Dict:
+        """
+        Realiza un escaneo profundo de los procesos del proyecto y uso de disco.
+        """
+        metrics = {
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'system_ram_pct': psutil.virtual_memory().percent,
+            'system_cpu_pct': psutil.cpu_percent(interval=None),
+            'project_ram_mb': 0.0,
+            'process_breakdown': {
+                'Main': {'mb': 0.0, 'cpu': 0.0, 'pids': []},
+                'Supervisor': {'mb': 0.0, 'cpu': 0.0, 'pids': []},
+                'Oracle': {'mb': 0.0, 'cpu': 0.0, 'pids': []}
+            },
+            'disk_breakdown': {}
+        }
+
+        # 1. RAM Breakdown by Process
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'memory_info', 'cpu_percent', 'cwd']):
+            try:
+                info = proc.info
+                cmd = info.get('cmdline')
+                if not cmd: continue
+                
+                cmd_str = " ".join(cmd).lower()
+                # Verificar que pertenezca al directorio del proyecto
+                proc_cwd = (info.get('cwd') or '').lower()
+                if self.current_dir not in proc_cwd and self.current_dir not in cmd_str:
+                    continue
+
+                # Identificar Rol
+                role = None
+                if "main.py" in cmd_str: role = 'Main'
+                elif "supervisor_24h.py" in cmd_str: role = 'Supervisor'
+                elif "check_oracle.py" in cmd_str: role = 'Oracle'
+                
+                if role:
+                    mb = info['memory_info'].rss / (1024 * 1024)
+                    cpu = info['cpu_percent']
+                    
+                    metrics['process_breakdown'][role]['mb'] += mb
+                    metrics['process_breakdown'][role]['cpu'] += cpu
+                    metrics['process_breakdown'][role]['pids'].append(info['pid'])
+                    metrics['project_ram_mb'] += mb
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        # 2. Disk Breakdown
+        paths_to_audit = {
+            'Logs': Path("logs"),
+            'Data': Path("dashboard/data"),
+            'Models': Path("models")
+        }
+        
+        for name, path in paths_to_audit.items():
+            if path.exists():
+                size_mb = sum(f.stat().st_size for f in path.rglob('*') if f.is_file()) / (1024*1024)
+                metrics['disk_breakdown'][name] = round(size_mb, 2)
+
+        # 3. Overall Disk
+        usage = shutil.disk_usage(".")
+        metrics['total_disk_pct'] = round((usage.used / usage.total) * 100, 2)
+
+        self.history.append(metrics)
+        return metrics
+
+    def check_resources(self) -> Dict:
+        """Compatibility method for existing supervisor calls."""
+        metrics = self.get_project_metrics()
+        
+        if metrics['system_ram_pct'] > self.ram_threshold:
+            self.logger.warning(f"🚨 SYSTEM RAM CRITICAL: {metrics['system_ram_pct']}%")
+        
+        return {
+            'ram_pct': metrics['system_ram_pct'],
+            'disk_pct': metrics['total_disk_pct'],
+            'project_mb': metrics['project_ram_mb'],
+            'details': metrics # Full report attached
+        }
+
+
+# =============================================================================
+# PROCESS MONITOR
+# =============================================================================
+
+class ProcessMonitor:
+    """
+    🔍 Monitors the main bot process and its children.
+    """
+    
+    def __init__(self, target_script: str = "main.py"):
+        self.target_script = target_script
+        self.bot_process: Optional[psutil.Process] = None
+        self.logger = logging.getLogger('sentinel.process')
+    
+    def find_bot_process(self) -> bool:
+        """Find the bot process by command line and directory."""
+        self.logger.debug(f"🔍 Searching for bot process: {self.target_script}")
+        current_dir = os.getcwd().lower()
+        
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'cwd']):
+            try:
+                info = proc.info
+                cmd = info.get('cmdline')
+                # Safety for None cwd (Fixing detection bug)
+                proc_cwd = (info.get('cwd') or '').lower()
+                
+                if cmd:
+                    # Specific check: script name in args AND (cwd matches OR path in args matches)
+                    cmd_str = " ".join(cmd).lower()
+                    if self.target_script.lower() in cmd_str:
+                        # Safety 1: Not the supervisor itself
+                        if "supervisor_24h.py" in cmd_str:
+                            continue
+                            
+                        # Safety 2: Check Directory (Crucial for the user's request)
+                        match_dir = False
+                        
+                        # Case A: Exact CWD match (most reliable)
+                        if proc_cwd and proc_cwd == current_dir:
+                            match_dir = True
+                        # Case B: Current dir inside CWD (subfolders)
+                        elif proc_cwd and current_dir in proc_cwd:
+                            match_dir = True
+                        # Case C: Current dir in the command line itself (e.g. running absolute path)
+                        elif current_dir in cmd_str:
+                            match_dir = True
+                        # Case D: Signature Match (Fallback for Bat files/Access Denied)
+                        # If args contain unique project flags, trust it.
+                        elif "--mode" in cmd_str and "futures" in cmd_str:
+                            match_dir = True
+
+                    # LAST RESORT: Python process in exact CWD without specific script in args
+                    # (Happens on some Windows environments where args are hidden/swallowed)
+                    elif "python" in info['name'].lower() and proc_cwd == current_dir:
+                        # Exclude known siblings
+                        if "supervisor_24h.py" not in cmd_str and "check_oracle.py" not in cmd_str:
+                             match_dir = True
+                            
+                    if match_dir:
+                        self.bot_process = proc
+                        self.logger.info(f"✅ Found and attached to bot process: PID {info['pid']}")
+                        return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            except Exception as e:
+                self.logger.debug(f"Error checking process: {e}")
+                continue
+        
+        self.bot_process = None
+        return False
+    
+    def is_alive(self) -> bool:
+        """Check if bot process is still running and not zombie."""
+        if not self.bot_process:
+            return self.find_bot_process()
+        
+        try:
+            return self.bot_process.is_running() and self.bot_process.status() != psutil.STATUS_ZOMBIE
+        except psutil.NoSuchProcess:
+            return False
 
 
 # =============================================================================
@@ -267,7 +525,9 @@ class MarginVigilance:
         
         deviation = abs(current_margin - self.base_margin)
         
-        if not has_open_positions and deviation > self.deviation_threshold:
+        # MODO PROFESOR: Solo alertamos si el margen es NO-CERO pero no hay posiciones
+        # (Indica posiciones fantasma o error de API) o si hay una desviación extrema.
+        if not has_open_positions and current_margin > 0 and deviation > self.deviation_threshold:
             alert = Alert(
                 timestamp=datetime.now(timezone.utc),
                 severity=AlertSeverity.WARNING,
@@ -474,6 +734,9 @@ class Sentinel24:
         self.margin_vigilance = MarginVigilance(base_margin=base_margin)
         self.equity_detector = EquityDriftDetector()
         self.leaderboard = StrategyLeaderboard()
+        self.resource_vigilance = ResourceVigilance()
+        self.process_monitor = ProcessMonitor()
+        self.zombie_auditor = ZombieSymbolAuditor()
         
         # System state
         self.alerts: List[Alert] = []

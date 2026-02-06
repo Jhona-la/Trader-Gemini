@@ -10,8 +10,9 @@ from core.events import SignalEvent
 from core.enums import SignalType
 from datetime import datetime, timezone
 from config import Config
+from strategies.strategy import Strategy
 
-class HybridScalpingStrategy:
+class HybridScalpingStrategy(Strategy):
     """
     Estrategia híbrida que combina:
     - Velocidad y simplicidad del scalping
@@ -44,6 +45,7 @@ class HybridScalpingStrategy:
         # Filtro de tendencia centralizado
         self.EMA_FAST = getattr(Config.Strategies, 'TECH_EMA_FAST', 20)
         self.EMA_SLOW = getattr(Config.Strategies, 'TECH_EMA_SLOW', 50)
+        self.EMA_TREND = 200 # Fixed Golden Filter for "Smart" logic
         
         # Mejora del ORIGINAL: Multi-timeframe
         self.MULTI_TIMEFRAME_WEIGHTS = {
@@ -79,7 +81,11 @@ class HybridScalpingStrategy:
         # MEJORA del ORIGINAL: EMAs para tendencia
         df['ema_fast'] = talib.EMA(df['close'], timeperiod=self.EMA_FAST)
         df['ema_slow'] = talib.EMA(df['close'], timeperiod=self.EMA_SLOW)
-        df['in_uptrend'] = df['ema_fast'] > df['ema_slow']
+        df['ema_trend'] = talib.EMA(df['close'], timeperiod=self.EMA_TREND)
+        
+        # Trend Confluence: Fast > Slow AND Price > Trend (EMA200)
+        df['in_uptrend'] = (df['ema_fast'] > df['ema_slow']) & (df['close'] > df['ema_trend'])
+        df['in_downtrend'] = (df['ema_fast'] < df['ema_slow']) & (df['close'] < df['ema_trend'])
         
         # Volume (común)
         df['volume_ma'] = df['volume'].rolling(20).mean()
@@ -183,37 +189,6 @@ class HybridScalpingStrategy:
         
         return min(confluence_score, 1.0)
 
-    def detect_scalping_setup(self, df_5m):
-        """Detección de setups de scalping - del SCALPING mejorado"""
-        if len(df_5m) < 2:
-            return None
-        
-        last = df_5m.iloc[-1]
-        prev = df_5m.iloc[-2]
-        
-        # MEJORA: Combinar mean reversion y momentum
-        setups = {
-            'long_mean_rev': False,
-            'short_mean_rev': False, 
-            'long_momentum': False,
-            'short_momentum': False,
-            'rsi': last['rsi'],
-            'volume_ratio': last['volume_ratio'],
-            'in_uptrend': last['in_uptrend'],
-            'bb_position': (last['close'] - last['bb_lower']) / (last['bb_upper'] - last['bb_lower']) if (last['bb_upper'] - last['bb_lower']) > 0 else 0.5
-        }
-        
-        # 1. MEAN REVERSION (del SCALPING)
-        price_at_lower = last['close'] <= last['bb_lower']
-        price_at_upper = last['close'] >= last['bb_upper']
-        rsi_oversold = last['rsi'] < self.RSI_OVERSOLD
-        rsi_overbought = last['rsi'] > self.RSI_OVERBOUGHT
-        high_volume = last['volume_ratio'] > 1.5
-        
-        # MEJORA: Requerir alineación con tendencia para mean reversion
-        setups['long_mean_rev'] = price_at_lower and rsi_oversold and high_volume and last['in_uptrend']
-        setups['short_mean_rev'] = price_at_upper and rsi_overbought and high_volume and not last['in_uptrend']
-        
         # 2. MOMENTUM (del SCALPING + filtro tendencia)
         macd_bullish = last['macd'] > last['macd_signal'] and last['macd_hist'] > 0
         macd_bearish = last['macd'] < last['macd_signal'] and last['macd_hist'] < 0
@@ -226,6 +201,69 @@ class HybridScalpingStrategy:
         setups['short_momentum'] = macd_bearish and rsi_momentum_zone and volume_increasing and not last['in_uptrend']
         
         return setups
+
+    def _get_dynamic_rsi_levels(self, df):
+        """
+        Phase 5: Dynamic RSI Bands based on Volatility
+        If Volatility is High -> Widen Bands (20/80) (Don't buy the dip too early)
+        If Volatility is Low -> Tighten Bands (35/65) (Catch mean reversion in ranges)
+        """
+        try:
+            last = df.iloc[-1]
+            atr_pct = (last['atr'] / last['close']) * 100
+            
+            # Base levels
+            buy_level = 30
+            sell_level = 70
+            
+            # Adjust based on ATR % (Normal is ~0.1% for 5m crypto)
+            if atr_pct > 0.3: # High volatility
+                buy_level = 20
+                sell_level = 80
+            elif atr_pct < 0.05: # Low volatility
+                buy_level = 35
+                sell_level = 65
+                
+            return buy_level, sell_level
+        except:
+            return 30, 70
+
+    def detect_scalping_setup(self, df_5m):
+        """Detección de setups de scalping - del SCALPING mejorado"""
+        if len(df_5m) < 2:
+            return None
+        
+        last = df_5m.iloc[-2] # Fix: Use Confirmed Closed Bar
+        prev = df_5m.iloc[-3] # Fix: Use Previous Closed Bar
+        
+        # Phase 5: Dynamic RSI Levels
+        rsi_buy, rsi_sell = self._get_dynamic_rsi_levels(df_5m)
+        
+        # MEJORA: Combinar mean reversion y momentum
+        setups = {
+            'long_mean_rev': False,
+            'short_mean_rev': False, 
+            'long_momentum': False,
+            'short_momentum': False,
+            'rsi': last['rsi'],
+            'volume_ratio': last['volume_ratio'],
+            'in_uptrend': last['in_uptrend'],
+            'in_downtrend': last['in_downtrend'],
+            'bb_position': (last['close'] - last['bb_lower']) / (last['bb_upper'] - last['bb_lower']) if (last['bb_upper'] - last['bb_lower']) > 0 else 0.5
+        }
+        
+        # 1. MEAN REVERSION (del SCALPING)
+        price_at_lower = last['close'] <= last['bb_lower']
+        price_at_upper = last['close'] >= last['bb_upper']
+        # Phase 5: Use Dynamic Levels
+        rsi_oversold = last['rsi'] < rsi_buy
+        rsi_overbought = last['rsi'] > rsi_sell
+        
+        high_volume = last['volume_ratio'] > 1.5
+        
+        # MEJORA: Requerir alineación con tendencia para mean reversion
+        setups['long_mean_rev'] = price_at_lower and rsi_oversold and high_volume and last['in_uptrend']
+        setups['short_mean_rev'] = price_at_upper and rsi_overbought and high_volume and last['in_downtrend']
 
     def calculate_signal_strength(self, setups, confluence_score, volatility):
         """Cálculo de fuerza de señal COMBINADO"""
@@ -297,8 +335,8 @@ class HybridScalpingStrategy:
                 if not setups:
                     continue
                 
-                # 4. Calcular volatilidad
-                volatility = df_5m.iloc[-1]['atr'] / df_5m.iloc[-1]['close']
+                # 4. Calcular volatilidad (usando vela cerrada)
+                volatility = df_5m.iloc[-2]['atr'] / df_5m.iloc[-2]['close']
                 
                 # 5. Determinar dirección
                 signal_type = None
@@ -314,9 +352,11 @@ class HybridScalpingStrategy:
                 if 'XRP' in symbol:
                     # Enforce alignment with 1h trend for XRP
                     if '1h' in timeframe_data:
-                        last_1h = timeframe_data['1h'].iloc[-1]
-                        # trend_1h logic from ml_strategy logic or similar:
-                        # HybridScalpingStrategy also has in_uptrend for 1h
+                        # Use -2 for 1h as well to be safe, or -1 if 1h is much slower? 
+                        # Safe to use -1 for 1h because it updates slowly, but -2 is consistent.
+                        # Actually for 1h, -1 might be the open 1h bar. -2 is safer.
+                        last_1h = timeframe_data['1h'].iloc[-2] if len(timeframe_data['1h']) > 1 else timeframe_data['1h'].iloc[-1]
+                        
                         trend_1h = 1 if last_1h['in_uptrend'] else -1
                         if (signal_type == SignalType.LONG and trend_1h < 0) or \
                            (signal_type == SignalType.SHORT and trend_1h > 0):
@@ -327,7 +367,8 @@ class HybridScalpingStrategy:
                 
                 # OPTIMIZACIÓN DE FRECUENCIA (Quality over Quantity)
                 # 1. Filtro ADX > 25 (Evitar mercados planos)
-                current_adx = df_5m.iloc[-1]['adx']
+                # Usar -2 (Cerrada)
+                current_adx = df_5m.iloc[-2]['adx']
                 if current_adx < 25:
                     # Permitir solo si RSI es extremo (Mean Reversion puro en rango)
                     # Si no es extremo y ADX < 25 -> Ignorar
@@ -388,7 +429,8 @@ class HybridScalpingStrategy:
                     datetime=current_time,
                     signal_type=signal_type,
                     strength=strength,
-                    atr=df_5m.iloc[-1]['atr']
+                    atr=df_5m.iloc[-1]['atr'],
+                    ttl=180 # Phase 9.2: 3-minute TTL for 5m technical setups
                 )
                 
                 # METADATOS para Risk Manager (del SCALPING)

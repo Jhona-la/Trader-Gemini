@@ -11,3 +11,9 @@ class Strategy(ABC):
         Calculate signals based on market data.
         """
         raise NotImplementedError("Should implement calculate_signals()")
+
+    def stop(self):
+        """
+        Signal the strategy to stop processing and cleanup resources.
+        """
+        pass

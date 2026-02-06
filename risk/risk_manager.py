@@ -10,6 +10,8 @@ Risk Manager FINAL CORREGIDO:
 
 from core.events import OrderEvent, SignalEvent
 from core.enums import OrderSide, SignalType, OrderType
+from core.resolution_state import ResolutionState
+from core.world_awareness import world_awareness
 from config import Config
 from .kill_switch import KillSwitch
 from utils.debug_tracer import trace_execution
@@ -121,6 +123,45 @@ class RiskManager:
         self.last_stress_check = 0
         self.stress_check_interval = 3600 # Check every hour
 
+        # Meta-Brain Integration (Phase 7)
+        self.strategy_selector = None # Set by Engine
+        
+        # Execution Caps
+        self.MAX_TRADES_TOTAL = 100
+        self.global_regime = 'UNKNOWN' # BTC Leader (Phase 8)
+        
+        # Phase 14: Dynamic Capital Allocation
+        self.resolution_state = ResolutionState.STABLE
+        self.recovery_threshold = 0.05 # 5% Drawdown triggers recovery
+        self.growth_threshold = 0.10   # 10% Profit triggers growth
+        
+        # ============================================================
+    # REGIME ORCHESTRATION (Phase 12)
+    # ============================================================
+    
+    def update_regime(self, regime: str, data: dict = None):
+        """
+        External update of Market Regime (Single Source of Truth).
+        """
+        if regime in ['TRENDING', 'RANGING', 'VOLATILE', 'STAGNANT', 'MIXED', 'TRENDING_BULL', 'TRENDING_BEAR', 'CHOPPY', 'ZOMBIE', 'MEAN_REVERTING']:
+            if self.current_regime != regime:
+                logger.info(f"⚖️ [RiskManager] Regime Change: {self.current_regime} -> {regime}")
+                self.current_regime = regime
+
+    def update_global_regime(self, global_regime: str):
+        """
+        BTC Leader Broadcasting (Phase 8).
+        """
+        if self.global_regime != global_regime:
+            self.global_regime = global_regime
+            if global_regime == 'TRENDING_BEAR':
+                logger.warning("🛡️ [RiskMgr] GLOBAL VETO: BTC is Bearish. Restricting Altcoin Longs.")
+            elif global_regime == 'TRENDING_BULL':
+                logger.info("🐂 [RiskMgr] Global Sentimens: BTC is Bullish. Opportunity window open.")
+        
+    def get_regime(self):
+        return self.current_regime
+
     # ============================================================
     # GROWTH PHASE METHODS (FIXED)
     # ============================================================
@@ -145,11 +186,19 @@ class RiskManager:
         # Use Bayesian Inference for more robust "Real" Win Rate for optimization
         return StatisticsPro.bayesian_win_rate(self.win_count, self.loss_count, prior_alpha=10, prior_beta=10)
 
-    def calculate_kelly_fraction(self, rr_ratio: float = 0.75) -> float:
-        """Phase 6: Continuous Kelly with Optimization"""
-        # Use Bayesian WR for Kelly (Scientific)
-        # Use Weighted WR for Displays/Growth (User Preferred)
-        p = self.get_bayesian_win_rate()
+    def calculate_kelly_fraction(self, strategy_id: str = None, rr_ratio: float = 0.75) -> float:
+        """Phase 6: Continuous Kelly with Optimization + Phase 14: Strategy Specific"""
+        
+        # Phase 14: Use strategy-specific metrics if available
+        p = 0.0
+        if strategy_id and self.portfolio:
+             metrics = self.portfolio.get_strategy_metrics(strategy_id)
+             if metrics['total_trades'] >= 10:
+                 p = metrics['win_rate']
+        
+        # Fallback to global Bayesian WR
+        if p == 0.0:
+            p = self.get_bayesian_win_rate()
         
         # Use StatisticsPro for precise continuous Kelly
         kelly = StatisticsPro.kelly_criterion_continuous(p, rr_ratio)
@@ -168,6 +217,21 @@ class RiskManager:
         else:
             self.loss_count += 1
         self.cvar_calc.update(pnl_pct)
+
+    def update_equity(self, equity: float):
+        """
+        External update from Main Loop to sync Kill Switch & Safe Leverage.
+        """
+        # 1. Update Kill Switch (Critical Safety)
+        if self.kill_switch:
+            self.kill_switch.update_equity(equity)
+            
+        # 2. Update Safe Leverage Calculator (Growth Phase Tracking)
+        safe_leverage_calculator.update_capital(equity)
+
+    def _update_capital_tracking(self, equity: float):
+        """Internal helper to update Kill Switch during sizing checks"""
+        self.update_equity(equity)
 
     def _get_dynamic_risk_per_trade(self, capital: float) -> float:
         """
@@ -229,7 +293,7 @@ class RiskManager:
             dh = get_data_handler()
             # Determine path (futures/spot) - simplistic approach
             csv_path = "dashboard/data/futures/trades.csv" 
-            trades = dh.load_trades_df(csv_path)
+            trades = get_data_handler().load_trades_df(csv_path)
             
             pnl_returns = []
             if not trades.empty:
@@ -317,10 +381,13 @@ class RiskManager:
         elif "GROWTH" in phase:
             base_pct = self.POSITION_PCT_GROWTH  # 30%
         elif capital < 1000:
-            kelly = self.calculate_kelly_fraction()
+            # Phase 14: Pass strategy_id for specific Kelly
+            strat_id = getattr(signal_event, 'strategy_id', None)
+            kelly = self.calculate_kelly_fraction(strategy_id=strat_id)
             base_pct = max(0.20, kelly)
         else:
-            base_pct = self.calculate_kelly_fraction()
+            strat_id = getattr(signal_event, 'strategy_id', None)
+            base_pct = self.calculate_kelly_fraction(strategy_id=strat_id)
             
         target_exposure = capital * base_pct
         
@@ -346,7 +413,7 @@ class RiskManager:
             if "SOL" in signal_event.symbol or "DOGE" in signal_event.symbol:
                 vol_multiplier = 0.75 # Use 25% less exposure for volatile memes
             
-            print(f"⚖️ Sizing: Risk={current_risk_pct*100}% (${risk_amount:.2f}) | SL={est_sl_pct*100:.2f}% | Size=${vol_adjusted_size:.2f} (VolMult: {vol_multiplier})")
+            logger.info(f"⚖️ Sizing: Risk={current_risk_pct*100}% (${risk_amount:.2f}) | SL={est_sl_pct*100:.2f}% | Size=${vol_adjusted_size:.2f} (VolMult: {vol_multiplier})")
             target_exposure = min(target_exposure, vol_adjusted_size) * vol_multiplier
         
         # MICRO ACCOUNT FIX: Reduce signal strength impact for small accounts
@@ -355,15 +422,28 @@ class RiskManager:
                 target_exposure *= 1.0 # Ignore strength for micro
             else:
                 target_exposure *= min(signal_event.strength, 1.2)
-        
+            
         # STRESS TEST ADJUSTMENT (Phase 6)
         # If Stress Score < 95 (PoR > 5%), reduce sizing proportionally
         # Example: Score 80 -> Mult 0.8
         self._update_stress_metrics() # Lazy update check
         if self.stress_score < 95:
              stress_mult = self.stress_score / 100.0
-             print(f"📉 Ruin Risk Protection: Scaling size by {stress_mult:.2f}x (Score: {self.stress_score})")
+             logger.info(f"📉 Ruin Risk Protection: Scaling size by {stress_mult:.2f}x (Score: {self.stress_score})")
              target_exposure *= stress_mult
+        
+        # 4. Contextual Sizing (World Awareness Adaptive Filter)
+        # PROFESSOR METHOD: Reduced exposure in thin liquidity to prevent slippage.
+        context = world_awareness.get_market_context()
+        ls = context.get('liquidity_score', 0.8)
+        
+        ls_mult = 1.0
+        if ls <= 0.45: ls_mult = 0.5   # 50% red. in Dead Zone
+        elif ls <= 0.65: ls_mult = 0.75 # 25% red. in Low sessions
+            
+        if ls_mult < 1.0:
+            logger.info(f"🌍 Session Risk Adapter: Scaling size by {ls_mult:.2f}x (LS: {ls:.2f})")
+            target_exposure *= ls_mult
         
         # FIXED: Update capital tracking before checking CVaR
         self._update_capital_tracking(capital)
@@ -372,15 +452,56 @@ class RiskManager:
         current_dd = 1 - (capital / self.peak_capital) if capital < self.peak_capital else 0
         if self.cvar_calc.should_reduce_risk(current_dd):
             target_exposure *= 0.5
-            print(f"⚠️ CVaR: Reducing size 50% (DD: {current_dd*100:.1f}%)")
+            logger.warning(f"⚠️ CVaR: Reducing size 50% (DD: {current_dd*100:.1f}%)")
         
+        # --- PHASE 14: DYNAMIC RECOVERY STATE ---
+        self._update_resolution_state(current_dd)
+        if self.resolution_state == ResolutionState.RECOVERY:
+            # Defensive Mode: Cut risk by 50% until we recover half the DD
+            target_exposure *= 0.5
+            logger.warning(f"🛡️ [RECOVERY MODE] Drawdown ({current_dd*100:.1f}%) > 5%. Sizing halved.")
+        elif self.resolution_state == ResolutionState.GROWTH:
+             # Aggressive Mode: 1.2x boost if strictly profitable
+             target_exposure *= 1.2
+             logger.info(f"🚀 [GROWTH MODE] Account flying high. Boost enabled.")
+        
+        # --- PHASE 14: ML CONFIDENCE SCALING ---
+        if hasattr(signal_event, 'strength'):
+            strength = signal_event.strength
+            if strength >= 0.75:
+                # High confidence boost (Max 1.5x)
+                # Linear scale: 0.75->1.0x, 1.0->1.5x
+                boost = 1.0 + ((strength - 0.75) * 2.0)
+                boost = min(boost, 1.5)
+                target_exposure *= boost
+                logger.info(f"🧠 ML Confidence Boost: {boost:.2f}x (Strength: {strength:.2f})")
+            elif strength < 0.6 and capital > 100: # Only penalize if not micro
+                # Low confidence penalty
+                target_exposure *= 0.5
+                logger.info(f"🧠 Low Confidence Penalty: 0.5x (Strength: {strength:.2f})")
+
         # BINANCE MINIMUM: Ensure position meets $5 minimum for futures
         MIN_MARGIN = 5.0
         if target_exposure < MIN_MARGIN and capital >= MIN_MARGIN:
             target_exposure = MIN_MARGIN
-            print(f"📈 Boosted to Binance min: ${target_exposure:.2f}")
+            logger.info(f"📈 Boosted to Binance min: ${target_exposure:.2f}")
             
         return target_exposure
+    
+    def _update_resolution_state(self, current_dd: float):
+        """Phase 14: State Machine for Risk Appetite"""
+        if current_dd > self.recovery_threshold:
+            self.resolution_state = ResolutionState.RECOVERY
+        elif current_dd < (self.recovery_threshold * 0.5) and self.resolution_state == ResolutionState.RECOVERY:
+            # Exit recovery when we claw back half the threshold
+            self.resolution_state = ResolutionState.STABLE
+            logger.info("✅ Recoup complete! Exiting Recovery Mode.")
+        
+        # Check for Growth
+        # Need Total Profit %
+        # capital = ... (already have dd)
+        # Implementation Detail: Growth is tricky, let's stick to simple profit check outside
+        pass
 
     # ============================================================
     # EXPECTANCY GATEKEEPER (Phase 5)
@@ -427,31 +548,64 @@ class RiskManager:
         
         # -1. Kill Switch
         if not self.kill_switch.check_status():
-            print(f"💀 Kill Switch Active: {self.kill_switch.activation_reason}")
+            logger.warning(f"💀 Kill Switch Active: {self.kill_switch.activation_reason}")
             return None
             
         # -0.7 MARGIN RATIO SAFETY (Phase 6 Final)
-        # Block new positions if Margin Ratio > 50% to protect session capital.
+        # Block new positions if Margin Ratio > 50% (75% for micro) to protect session capital.
         if self.portfolio:
-             # Fetch from status or calculate if available
-             # Assuming portfolio has access to APIManager's latest status via DataHandler
-             status = get_data_handler().load_cached_status() # live_status.json
+             status = get_data_handler().load_cached_status()
              if status:
                  maint_margin = status.get('maint_margin', 0)
                  margin_balance = status.get('margin_balance', 0)
                  
                  if margin_balance > 0:
                      margin_ratio = (maint_margin / margin_balance) * 100
-                     if margin_ratio > 50:
-                         logger.warning(f"🛡️ [RiskMgr] MARGIN SAFETY BLOCK: Ratio {margin_ratio:.1f}% > 50%. Entry Rejected.")
+                     equity = self.portfolio.get_total_equity()
+                     # RELAXED FOR MICRO: If equity < $50, allow up to 75% margin ratio
+                     limit = 75 if equity < 50 else 50
+                     
+                     if margin_ratio > limit:
+                         logger.warning(f"🛡️ [RiskMgr] MARGIN SAFETY BLOCK: Ratio {margin_ratio:.1f}% > {limit}%. Entry Rejected.")
                          return None
+        
+        # 0. Daily Frequency Limits (User Request: 15/symbol)
+        if signal_event.signal_type in [SignalType.LONG, SignalType.SHORT]:
+            today = datetime.now().strftime("%Y-%m-%d")
+            if today not in self.daily_trade_logs:
+                self.daily_trade_logs[today] = {}
+            
+            symbol_count = self.daily_trade_logs[today].get(signal_event.symbol, 0)
+            total_count = sum(self.daily_trade_logs[today].values())
+            
+            if symbol_count >= self.MAX_TRADES_PER_SYMBOL:
+                logger.info(f"🚫 [{signal_event.symbol}] Limit: Max daily trades ({self.MAX_TRADES_PER_SYMBOL}) reached.")
+                return None
+            
+            if total_count >= self.MAX_TRADES_TOTAL:
+                logger.info(f"🚫 [SYSTEM] GLOBAL Limit: Max daily trades ({self.MAX_TRADES_TOTAL}) reached.")
+                return None
             
         # -0.5 Proactive Expectancy Gate (Phase 5)
         if signal_event.signal_type in [SignalType.LONG, SignalType.SHORT, SignalType.REVERSE]:
             if not self._check_expectancy_viability(signal_event.symbol):
                 return None
-            
-        # 0. Max positions
+        
+        # -0.4 Meta-Brain Veto (Phase 7)
+        if self.strategy_selector and signal_event.signal_type in [SignalType.LONG, SignalType.SHORT]:
+            strat_id = getattr(signal_event, 'strategy_id', 'Unknown').upper()
+            if not self.strategy_selector.should_allow_trade(strat_id):
+                return None
+
+        # -0.3 GLOBAL REGIME VETO (Phase 8 - Institutional Rule)
+        # QUÉ: Veto Global basado en el Líder (BTC).
+        # POR QUÉ: Evitar "longs" en Altcoins cuando BTC está en tendencia bajista clara.
+        if self.global_regime == 'TRENDING_BEAR':
+            if signal_event.symbol != 'BTC/USDT' and signal_event.signal_type == SignalType.LONG:
+                logger.warning(f"🛡️ [RiskMgr] INSTITUTIONAL VETO: Blocking LONG {signal_event.symbol} because BTC is Bearish.")
+                return None
+
+
         # 0. Max positions
         if self.portfolio:
             open_positions = sum(1 for pos in self.portfolio.positions.values() if pos['quantity'] != 0)
@@ -537,7 +691,7 @@ class RiskManager:
                     if profit_pct >= 0.8:
                         # Use multiplier instead of modifying frozen event
                         pyramid_multiplier = 0.5
-                        print(f"📈 PYRAMIDING: +{profit_pct:.1f}%")
+                        logger.info(f"📈 PYRAMIDING: +{profit_pct:.1f}%")
                     else:
                         print(f"⚠️ Position exists: +{profit_pct:.1f}%")
                         return None
@@ -571,26 +725,26 @@ class RiskManager:
             
             # FIXED: Leverage validation y boost inteligente
             if not safe_calc['is_safe']:
-                print(f"⚠️ Unsafe leverage: {safe_calc['reason']}")
+                logger.warning(f"⚠️ Unsafe leverage: {safe_calc['reason']}")
                 return None
             
             # Additional safety cap
             if leverage > Config.Sniper.MAX_LEVERAGE:
                 leverage = Config.Sniper.MAX_LEVERAGE
-                print(f"⚡ Leverage capped: {leverage}x")
+                logger.info(f"⚡ Leverage capped: {leverage}x")
             
             # FIXED: Boost más inteligente
             capital = self.portfolio.get_total_equity() if self.portfolio else self.current_capital
             if capital < 20 and leverage < 8:
                 leverage = 8  # Mínimo 8x para cuentas micro
-                print(f"🚀 Growth boost: {leverage}x")
+                logger.info(f"🚀 Growth boost: {leverage}x")
             
             if margin_size is None or leverage is None:
                 return None
                 
             notional_value = margin_size * leverage
             
-            print(f"🎯 LONG: margin=${margin_size:.2f}, lev={leverage}x, notional=${notional_value:.2f}")
+            logger.info(f"🎯 LONG: margin=${margin_size:.2f}, lev={leverage}x, notional=${notional_value:.2f}")
             
             # Binance minimum
             MIN_NOTIONAL = 5.0
@@ -598,17 +752,17 @@ class RiskManager:
                 required_margin = (MIN_NOTIONAL / leverage) * 1.05
                 available = self.portfolio.get_available_cash() if self.portfolio else margin_size
                 if required_margin > (available or 0):
-                    print(f"⚠️ Insufficient: Need ${required_margin:.2f}")
+                    logger.warning(f"⚠️ Insufficient: Need ${required_margin:.2f}")
                     return None
                 margin_size = required_margin
                 notional_value = margin_size * leverage
-                print(f"⚠️ Boosted to min: ${notional_value:.2f}")
+                logger.info(f"⚠️ Boosted to min: ${notional_value:.2f}")
             
             # FIXED: Fee validation más permisiva
             expected_profit = notional_value * 0.015
             fees = self.fee_calc.calculate_round_trip_fee(notional_value)
             if fees > (expected_profit * 0.45):  # 45% max (era 40%)
-                print(f"📉 Fees too high: ${fees:.4f} vs profit ${expected_profit:.4f}")
+                logger.warning(f"📉 Fees too high: ${fees:.4f} vs profit ${expected_profit:.4f}")
                 return None
             
             dollar_size = margin_size
@@ -747,15 +901,15 @@ class RiskManager:
             available = self.portfolio.get_available_cash()
             
             if dollar_size < 5.0:
-                print(f"⚠️ Size too small: ${dollar_size:.2f}")
+                logger.warning(f"⚠️ Size too small: ${dollar_size:.2f}")
                 return None
                 
             if available < dollar_size:
-                print(f"⚠️ Insufficient: ${available:.2f}")
+                logger.warning(f"⚠️ Insufficient: ${available:.2f}")
                 return None
             
             if not self.portfolio.reserve_cash(dollar_size):
-                print(f"⚠️ Reserve failed: ${dollar_size:.2f}")
+                logger.warning(f"⚠️ Reserve failed: ${dollar_size:.2f}")
                 return None
             
             # Cooldown (ORIGINAL)
@@ -772,10 +926,10 @@ class RiskManager:
         # CRITICAL: Force cooldown update immediately
         # Use explicit record_trade to mark symbol as "busy"
         cooldown_manager.record_trade(signal_event.symbol, strategy_id="RISK_MANAGER")
-        print(f"❄️ Cooldown recorded for {signal_event.symbol}")
+        logger.info(f"❄️ Cooldown recorded for {signal_event.symbol}")
         
         phase = safe_leverage_calculator.get_phase(self.portfolio.get_total_equity() if self.portfolio else safe_leverage_calculator.get_capital())
-        print(f"✅ {phase}: {direction.name} {quantity:.6f} {signal_event.symbol} (${dollar_size:.2f})")
+        logger.info(f"✅ {phase}: {direction.name} {quantity:.6f} {signal_event.symbol} (${dollar_size:.2f})")
         
         strategy_id = getattr(signal_event, 'strategy_id', None)
         
@@ -808,13 +962,18 @@ class RiskManager:
              tp_pct = max(tp_pct, atr_pct * 4.0)
         
         # Log target info
-        print(f"📐 Target Sync: TP={tp_pct*100:.2f}%, SL={sl_pct*100:.2f}% | Regime: {self.current_regime}")
+        logger.info(f"📐 Target Sync: TP={tp_pct*100:.2f}%, SL={sl_pct*100:.2f}% | Regime: {self.current_regime}")
         
         # MICRO-SCALPING OPTIMIZATION: Use LIMIT Orders (Maker)
         # Entry requires patience.
         # Price: slightly inside spread to ensure Maker?
         # Ideally: Current Price. 'GTX' will reject if Taker.
         # We handle this in Executor.
+        
+        # Increment Daily Trades Counter
+        today = datetime.now().strftime("%Y-%m-%d")
+        if today not in self.daily_trade_logs: self.daily_trade_logs[today] = {}
+        self.daily_trade_logs[today][signal_event.symbol] = self.daily_trade_logs[today].get(signal_event.symbol, 0) + 1
         
         return OrderEvent(
             symbol=signal_event.symbol, 
@@ -824,7 +983,8 @@ class RiskManager:
             strategy_id=strategy_id,
             sl_pct=sl_pct,
             tp_pct=tp_pct,
-            price=current_price # Need price for Limit order
+            price=current_price, # Need price for Limit order
+            ttl=getattr(signal_event, 'ttl', None)
         )
 
     # ============================================================

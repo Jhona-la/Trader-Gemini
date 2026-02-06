@@ -15,8 +15,13 @@ from utils.notifier import Notifier
 from utils.session_manager import get_session_manager
 from utils.data_manager import DatabaseHandler
 
+from typing import Dict, Optional, List, Any, Union
+
 class Portfolio:
-    def __init__(self, initial_capital=10000.0, csv_path="dashboard/data/trades.csv", status_path="dashboard/data/status.csv", auto_save=True):
+    def __init__(self, initial_capital: float = 10000.0, 
+                 csv_path: str = "dashboard/data/trades.csv", 
+                 status_path: str = "dashboard/data/status.csv", 
+                 auto_save: bool = True):
         self.initial_capital = initial_capital
         self.current_cash = initial_capital
         self.pending_cash = 0.0  # Cash reserved for pending orders
@@ -50,6 +55,23 @@ class Portfolio:
         
         # Initialize Database
         self.db = DatabaseHandler()
+        
+        # Phase 6: Math Stats Tracking
+        self.math_stats = {
+            'hurst': 0.5,
+            'beta': 1.0,
+            'half_life': 0,
+            'last_update': None
+        }
+        # Phase 7: Meta-Brain Stats
+        self.strategy_rankings = {}
+        
+    def update_math_stats(self, stats: Dict[str, Any]) -> None:
+        """Update live mathematical statistics from strategies."""
+        if not stats: return
+        self.math_stats.update(stats)
+        # Optional: Auto-save if critical diff? 
+        # For now, rely on standard loop save
         
     def restore_state_from_db(self):
         """
@@ -228,8 +250,14 @@ class Portfolio:
                 if price < lwm:
                     self.positions[symbol]['low_water_mark'] = price
         
-        if self.auto_save:
+        # OPTIMIZATION: Throttle disk writes (Debounce)
+        # Only save if > 1s passed, UNLESS it's a critical update (not passed here yet, so assuming all price updates are non-critical)
+        now = datetime.now()
+        if not hasattr(self, '_last_save_time'): self._last_save_time = datetime.min
+        
+        if self.auto_save and (now - self._last_save_time).total_seconds() > 1.0:
             self.save_status()
+            self._last_save_time = now
             
         # Update DB (Snapshot for crash recovery)
         if symbol in self.positions:
@@ -565,6 +593,10 @@ class Portfolio:
             'unrealized_pnl': unrealized_pnl,
             'positions': self.positions,
             'performance_metrics': metrics,  # New Phase 5 Field
+            'math_stats': getattr(self, 'math_stats', {}), # New Phase 6 Field
+            'strategy_rankings': getattr(self, 'strategy_rankings', {}), # Phase 7 Meta-Brain
+            'global_regime': getattr(self, 'global_regime', 'UNKNOWN'), # Phase 8 Leader
+            'global_regime_data': getattr(self, 'global_regime_data', {}), # Phase 8.1 Breadth
             'last_heartbeat': datetime.now(timezone.utc).isoformat()
         }
         
@@ -586,13 +618,22 @@ class Portfolio:
             'session_id': session_id
         }
         
-        # Append to status history
-        df = pd.DataFrame([csv_data])
-        header = not os.path.exists(self.status_path)
-        try:
-            df.to_csv(self.status_path, mode='a', header=header, index=False)
-        except Exception as e:
-            logger.error(f"⚠️ Failed to save status CSV: {e}")
+        # APPEND THROTTLING (Optimization Phase 2)
+        # Writing to CSV on every tick is too heavy. Only write CSV every 10s or critical events.
+        # However, live_status.json needs to be relatively fresh for UI (1s is fine).
+        
+        now = datetime.now()
+        if not hasattr(self, '_last_csv_save'): self._last_csv_save = datetime.min
+        
+        if (now - self._last_csv_save).total_seconds() > 5.0:
+            self._last_csv_save = now
+            # Append to status history
+            df = pd.DataFrame([csv_data])
+            header = not os.path.exists(self.status_path)
+            try:
+                df.to_csv(self.status_path, mode='a', header=header, index=False)
+            except Exception as e:
+                logger.error(f"⚠️ Failed to save status CSV: {e}")
             
         # 4. Session Copy (Optional)
         session_path = session_mgr.get_session_path() if session_mgr else None
@@ -735,3 +776,28 @@ class Portfolio:
         df = pd.DataFrame([data])
         df.to_csv(self.csv_path, mode='a', header=False, index=False)
         # logger.info(f"Logged: {data}")
+
+    def get_strategy_metrics(self, strategy_id: str) -> Dict[str, float]:
+        """
+        Phase 14: Return real-time performance metrics for a specific strategy.
+        Used by RiskManager for Kelly Criterion sizing.
+        """
+        strat_data = self.strategy_performance.get(strategy_id, {'wins': 0, 'losses': 0, 'pnl': 0.0, 'trades': 0})
+        
+        wins = strat_data['wins']
+        losses = strat_data['losses']
+        total = wins + losses # Using completed trades only
+        
+        win_rate = (wins / total) if total > 0 else 0.5 # Default 50% assumption
+        
+        # Calculate Expectancy = (Win% * AvgWin) - (Loss% * AvgLoss)
+        # We need avg win/loss. 
+        # Ideally strategy_performance should track total_win_amt and total_loss_amt separately.
+        # For now, we approximation or we need to update strategy_performance structure.
+        # Let's keep it simple for now and just return Win Rate and Profit Factor proxy (PnL)
+        
+        return {
+            'win_rate': win_rate,
+            'total_pnl': strat_data['pnl'],
+            'total_trades': strat_data['trades']
+        }

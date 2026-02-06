@@ -23,6 +23,7 @@ Trader Gemini/
 │   ├── engine.py           # Motor principal - Event Loop
 │   ├── events.py           # Sistema de mensajería
 │   ├── portfolio.py        # Gestión de estados y PnL
+│   ├── neural_bridge.py    # 🧠 Shared Intelligence Hub (Phase 8)
 │   ├── enums.py            # Tipos enumerados
 │   └── market_regime.py    # Clasificador de mercado
 │
@@ -31,11 +32,13 @@ Trader Gemini/
 │   └── kill_switch.py      # Parada de emergencia
 │
 ├── execution/               # ⚡ EJECUCIÓN
-│   └── binance_executor.py # Conexión con Binance
+│   ├── binance_executor.py # Conexión con Binance
+│   └── liquidity_guardian.py # 🦈 Order Book Guard (Phase 7)
 │
 ├── strategies/              # 🧠 ESTRATEGIAS
 │   ├── technical.py        # Estrategia híbrida principal
-│   └── ml_strategy.py      # Modelos ML (XGBoost)
+│   ├── ml_strategy.py      # Modelos ML (XGBoost)
+│   └── statistical.py      # Adaptive Z-Score Engine (Phase 7+)
 │
 ├── data/                    # 📊 DATOS
 │   ├── data_provider.py    # Interfaz abstracta
@@ -78,11 +81,13 @@ flowchart LR
     subgraph Core["🚨 Core Engine"]
         EQ[(Event Queue)]
         EN[engine.py]
+        NB[neural_bridge.py]
     end
     
     subgraph Strategy["🧠 Strategy"]
         TS[technical.py]
         ML[ml_strategy.py]
+        ST[statistical.py]
     end
     
     subgraph Risk["🔒 Risk"]
@@ -92,15 +97,23 @@ flowchart LR
     
     subgraph Exec["⚡ Execution"]
         BE[binance_executor.py]
+        LG[liquidity_guardian.py]
     end
     
     BL -->|MarketEvent| EQ
     EQ --> EN
-    EN -->|MARKET| TS & ML
-    TS & ML -->|SignalEvent| EQ
+    EN -->|MARKET| TS & ML & ST
+    
+    TS & ML & ST <-->|Insight| NB
+    
+    TS -->|SignalEvent| EQ
+    ML -->|SignalEvent| EQ
+    ST -->|SignalEvent| EQ
+    
     EN -->|SIGNAL| RM
     RM -->|OrderEvent| EQ
-    EN -->|ORDER| BE
+    EQ -->|ORDER| BE
+    BE -->|PriceCheck| LG
     BE -->|FillEvent| EQ
 ```
 

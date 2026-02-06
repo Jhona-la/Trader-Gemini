@@ -13,13 +13,17 @@ PROFESSOR METHOD:
 """
 
 import os
-import json
+try:
+    import ujson as json
+except ImportError:
+    import json
 import csv
 import time
 import shutil
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any, List, Union
 from datetime import datetime
+import pandas as pd
 
 from utils.logger import logger
 from utils.data_sync import atomic_write_json, touch_timestamp
@@ -43,6 +47,7 @@ class DataHandler:
             
         self.last_write_time = {}
         self.min_write_interval = 1.0  # 1 segundo entre escrituras del mismo archivo
+        self.max_health_log_lines = 1000 # Mantener solo las últimas 1000 comprobaciones
         self._initialized = True
 
     # =========================================================================
@@ -51,11 +56,9 @@ class DataHandler:
     
     def _enforce_precision(self, value, decimals=8):
         """Convierte valor a float con precisión específica usando Decimal."""
-        if isinstance(value, (int, float, str, Decimal)):
+        if isinstance(value, (int, float, Decimal, str)):
             try:
-                d = Decimal(str(value))
-                quantizer = Decimal("1." + "0" * decimals)
-                return float(d.quantize(quantizer, rounding=ROUND_HALF_UP))
+                return round(float(value), decimals)
             except:
                 return value
         return value
@@ -98,7 +101,8 @@ class DataHandler:
         clean_data = self._sanitize_dict(status_data)
         
         # 2. Add Heartbeat Metadata
-        clean_data['last_heartbeat'] = datetime.utcnow().isoformat()
+        from datetime import timezone
+        clean_data['last_heartbeat'] = datetime.now(timezone.utc).isoformat()
         
         # 3. Atomic Write
         if atomic_write_json(clean_data, filepath):
@@ -176,17 +180,21 @@ class DataHandler:
     # =========================================================================
 
     def log_health_check(self, data: Dict[str, Any]):
-        """
-        Appends a health check record to logs/health_log.json.
-        Uses JSON Lines format for efficient appending.
-        """
         log_dir = "logs"
         os.makedirs(log_dir, exist_ok=True)
         filepath = os.path.join(log_dir, "health_log.json")
         
-        # Rate limit specific to health logs? Maybe not needed as Thread sleeps 60s.
-        
         try:
+            # Check if rotation needed
+            if os.path.exists(filepath):
+                with open(filepath, 'r') as f:
+                    lines = f.readlines()
+                if len(lines) >= self.max_health_log_lines:
+                    # Keep only the last N-1 lines and append new one
+                    lines = lines[-(self.max_health_log_lines-1):]
+                    with open(filepath, 'w') as f:
+                        f.writelines(lines)
+            
             with open(filepath, 'a') as f:
                 f.write(json.dumps(data) + "\n")
         except Exception as e:
@@ -238,7 +246,7 @@ class DataHandler:
             return pd.DataFrame()
             
         try:
-            df = pd.read_csv(filepath)
+            df = pd.read_csv(filepath, on_bad_lines='warn', engine='python')
             # Enforce types
             numeric_cols = ['entry_price', 'exit_price', 'quantity', 'pnl', 'fee', 'net_pnl']
             for col in numeric_cols:

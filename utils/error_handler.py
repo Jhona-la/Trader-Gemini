@@ -73,20 +73,33 @@ def parse_binance_error(error):
 
 def retry_on_api_error(max_retries=3, base_delay=1.0):
     """
-    Decorator to retry API calls on temporary errors (rate limits, timeouts)
-    
-    Uses exponential backoff: wait 1s, 2s, 4s, etc.
+    Decorator to retry API calls on temporary errors.
+    Integrates Circuit Breaker pattern.
     """
+    from utils.circuit_breaker import api_circuit
+    
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
+            # 1. Circuit Breaker Check
+            if not api_circuit.can_proceed():
+                logger.warning(f"⛔ Call to {func.__name__} BLOCKED by Circuit Breaker.")
+                raise Exception("Circuit Breaker OPEN: API calls suspended.")
+
             retries = 0
             while retries < max_retries:
                 try:
-                    return func(*args, **kwargs)
+                    result = func(*args, **kwargs)
+                    # 2. Success Record
+                    api_circuit.record_success()
+                    return result
                 except Exception as e:
                     code, msg = parse_binance_error(e)
                     
+                    # 3. Failure Record (Only for connectivity/server errors)
+                    if code in [-1001, -1003, -1007, -1016, -1006] or "502" in str(e) or "504" in str(e):
+                        api_circuit.record_failure()
+                        
                     # Errors that should be retried
                     should_retry = code in [-1003, -1007, -1001, -1006] if code else False
                     

@@ -19,40 +19,53 @@ from config import Config
 from utils.logger import logger
 from utils.thread_monitor import monitor
 
+import nltk
+
+def ensure_nltk_resources():
+    """Ensure required NLTK data is available."""
+    resources = ['punkt', 'brown', 'wordnet', 'omw-1.4', 'averaged_perceptron_tagger']
+    for res in resources:
+        try:
+            nltk.data.find(f'tokenizers/{res}' if res == 'punkt' else f'corpora/{res}' if res in ['brown', 'wordnet'] else f'taggers/{res}')
+        except LookupError:
+            print(f"📥 Downloading NLTK resource: {res}...")
+            nltk.download(res, quiet=True)
+
 class SentimentLoader:
     def __init__(self):
+        # Phase 8: Ensure dependencies
+        ensure_nltk_resources()
+        
         self.feeds = [
             "https://cointelegraph.com/rss",
             "https://www.coindesk.com/arc/outboundfeeds/rss/"
         ]
         
-        # KEY CHANGE: Dictionary instead of float
-        self.sentiment_map = {
-            'GLOBAL': 0.0,
-            'BTC': 0.0,
-            'ETH': 0.0,
-            'SOL': 0.0,
-            'BNB': 0.0,
-            'XRP': 0.0,
-            'ADA': 0.0,
-            'DOGE': 0.0,
-            'DOT': 0.0
-        }
+        # DYNAMIC INITIALIZATION: Populate from Config
+        self.sentiment_map = {'GLOBAL': 0.0}
+        self.keywords = {}
         
-        # Keywords mapping
-        self.keywords = {
-            'BTC': ['bitcoin', 'btc', 'satoshi'],
-            'ETH': ['ethereum', 'eth', 'vitalik'],
-            'SOL': ['solana', 'sol'],
-            'BNB': ['binance', 'bnb', 'cz', 'bsc'],
-            'XRP': ['ripple', 'xrp', 'sec'],
-            'DOGE': ['doge', 'dogecoin', 'musk'],
-            'ADA': ['cardano', 'ada'],
-            'DOT': ['polkadot', 'dot']
-        }
+        # Auto-detect keywords for all trading pairs
+        for pair in getattr(Config, 'TRADING_PAIRS', []):
+            base = pair.split('/')[0] if '/' in pair else pair.replace('USDT', '')
+            self.sentiment_map[base] = 0.0
+            
+            # Smart Keyword Matcher
+            self.keywords[base] = [base.lower()]
+            
+            # Common aliases for top coins (manual overrides for better accuracy)
+            if base == 'BTC': self.keywords[base].extend(['bitcoin', 'satoshi'])
+            elif base == 'ETH': self.keywords[base].extend(['ethereum', 'vitalik'])
+            elif base == 'SOL': self.keywords[base].extend(['solana'])
+            elif base == 'XRP': self.keywords[base].extend(['ripple', 'sec'])
+            elif base == 'DOGE': self.keywords[base].extend(['dogecoin', 'musk'])
+            elif base == 'ADA': self.keywords[base].extend(['cardano'])
+            elif base == 'BNB': self.keywords[base].extend(['binance', 'cz', 'bsc'])
+
         
         self.last_update = 0
         self.update_interval = 900 # 15 minutes (Energy Efficient)
+        self._stop_event = threading.Event()
         
     def start_background_thread(self):
         """Starts background fetcher without blocking main thread"""
@@ -60,9 +73,13 @@ class SentimentLoader:
         t.start()
         print("✅ Sentiment Engine Started (Background)")
 
+    def stop(self):
+        """Terminates background thread immediately"""
+        self._stop_event.set()
+
     def _loop(self):
         monitor.register_thread("Sentiment")
-        while True:
+        while not self._stop_event.is_set():
             try:
                 monitor.update("Sentiment", "Fetching API...")
                 self.fetch_news()
@@ -70,7 +87,11 @@ class SentimentLoader:
                 monitor.update("Sentiment", "Sleeping 900s...")
             except Exception as e:
                 print(f"⚠️ Sentiment error: {e}")
-            time.sleep(self.update_interval)
+            
+            # Use wait() instead of sleep() to allow immediate interruption
+            if self._stop_event.wait(timeout=self.update_interval):
+                break
+
 
     def fetch_news(self):
         """Fetched RSS and updates sentiment_map"""

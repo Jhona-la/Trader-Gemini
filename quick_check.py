@@ -6,7 +6,7 @@ load_dotenv()
 from binance.client import Client
 
 key = os.environ.get('BINANCE_API_KEY')
-secret = os.environ.get('BINANCE_API_SECRET') or os.environ.get('BINANCE_SECRET_KEY')
+secret = os.environ.get('BINANCE_SECRET_KEY') or os.environ.get('BINANCE_API_SECRET')
 
 print('='*60)
 print('PRODUCTION HANDSHAKE - QUICK CHECK')

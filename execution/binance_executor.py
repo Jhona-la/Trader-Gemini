@@ -5,6 +5,9 @@ from core.events import FillEvent
 from utils.logger import logger
 from utils.error_handler import retry_on_api_error, handle_balance_error, handle_order_error
 from utils.debug_tracer import trace_execution
+from .liquidity_guardian import LiquidityGuardian
+from utils.latency_monitor import latency_monitor
+import time
 
 class BinanceExecutor:
     """
@@ -14,6 +17,7 @@ class BinanceExecutor:
     def __init__(self, events_queue, portfolio=None):
         self.events_queue = events_queue
         self.portfolio = portfolio  # Reference for cash release on failure
+        self.order_manager = None   # Set during engine initialization
         
         # Configure Exchange
         options = {
@@ -63,6 +67,9 @@ class BinanceExecutor:
             logger.info(f"🚀 Binance Executor: Running in {mode_description} (Sandbox Mode Active)")
         else:
             logger.info(f"🚀 Binance Executor: Running in {mode_description} (Live Mode ACTIVE)")
+
+        # Phase 7: Guardián de Liquidez
+        self.guardian = LiquidityGuardian(self.exchange)
 
             
         # Set Leverage for Futures
@@ -211,9 +218,35 @@ class BinanceExecutor:
 
         logger.info(f"Executing: {event.direction} {event.quantity} {event.symbol}")
         
+        # --- PHASE 7: LIQUIDITY GUARDIAN CHECK ---
+        liquidity = self.guardian.analyze_liquidity(event.symbol, event.quantity, event.direction)
+        if not liquidity['is_safe']:
+            logger.warning(f"🛡️ [GUARDIAN] Order Blocked: {liquidity['reason']} (Slippage: {liquidity['slippage_pct']*100:.3f}%)")
+            # Release cash in portfolio if it was pending
+            if self.portfolio:
+                 self.portfolio.release_cash(event.quantity * event.price if hasattr(event, 'price') and event.price else 0)
+            return
+        
+        logger.info(f"🛡️ [GUARDIAN] Liquidity Verified: Avg Fill Price ${liquidity['avg_fill_price']:.2f} (Slippage: {liquidity['slippage_pct']*100:.4f}%)")
+        
+        
+        # --- PHASE 13: SMART PRICING ---
+        # If no price is provided, or if MARKET order, we use Liquidity's best price
+        smart_price = event.price
+        if not smart_price:
+            # For BUY, we try to bid at Liquidity's best_bid (if we want to be maker)
+            # Or use midpoint. midpoint = (best_bid + best_ask) / 2
+            # For simplicity, use best_bid/ask to ensure Maker status
+            if event.direction == 'BUY':
+                smart_price = liquidity.get('avg_fill_price') # Default to average fill
+            else:
+                smart_price = liquidity.get('avg_fill_price')
+        
         try:
-            # Map direction to side
-            side = 'buy' if event.direction == 'BUY' else 'sell'
+            # Prepare side string
+            # Support both Enum (OrderSide) and legacy strings
+            from core.enums import OrderSide
+            side = 'buy' if (event.direction == OrderSide.BUY or event.direction == 'BUY') else 'sell'
             symbol = event.symbol
             quantity = event.quantity
             order_type = event.order_type.lower() # 'market' or 'limit'
@@ -251,18 +284,20 @@ class BinanceExecutor:
                 if Config.BINANCE_USE_FUTURES:
                     params['timeInForce'] = 'GTX' # Post Only for Futures
                     # Ensure price is set
-                    price_str = self.exchange.price_to_precision(symbol, event.price)
+                    price_str = self.exchange.price_to_precision(symbol, smart_price)
                     params['price'] = price_str
                     logger.info(f"  🛑 Maker Order (GTX): Limit @ {price_str}")
                 else:
                     # For Spot, use LIMIT_MAKER type
                     params['type'] = 'LIMIT_MAKER'
-                    price_str = self.exchange.price_to_precision(symbol, event.price)
+                    price_str = self.exchange.price_to_precision(symbol, smart_price)
                     params['price'] = price_str
                     logger.info(f"  🛑 Maker Order (Spot): Limit Maker @ {price_str}")
 
             
             # 3. Execute using Raw API (Futures) or Standard CCXT (Spot)
+            import time
+            start_exec = time.perf_counter()
             if Config.BINANCE_USE_FUTURES:
                 # FUTURES: Use Raw API to bypass potential CCXT issues with Testnet URLs
                 logger.info(f"  🚀 Sending Raw Futures Order: {side.upper()} {qty_str} {symbol}")
@@ -278,6 +313,11 @@ class BinanceExecutor:
                 # OR just use the raw 'info' field if available.
                 if 'info' in order:
                     order = order['info'] # Use raw response for consistent parsing below
+            
+            end_exec = time.perf_counter()
+            exec_latency = (end_exec - start_exec) * 1000
+            logger.info(f"⚡ [EXEC] Order sent to Binance in {exec_latency:.2f}ms")
+            latency_monitor.track('order_to_send', exec_latency)
             
             # 4. Parse Response (Raw API returns different structure than CCXT unified)
             # Binance Futures Raw Response:
@@ -298,18 +338,32 @@ class BinanceExecutor:
                 quantity=filled_qty,
                 direction=event.direction,
                 fill_cost=filled_qty * fill_price,
+                fill_price=fill_price,
+                order_id=order_id,
                 commission=None, # Fee info might be in a separate field or trade stream
                 strategy_id=event.strategy_id
             )
+            # Inherit timestamp for E2E tracking
+            # But the dataclass is frozen. We can't set it.
+            # FillEvent will have its own timestamp_ns from creation.
+            # This is fine for e2e_signal_to_fill in engine.
+            
             self.events_queue.put(fill_event)
+            
+            # --- PHASE 9: TRACK ORDER ---
+            if self.order_manager and order_id and order_type.upper() == 'LIMIT':
+                ttl = getattr(event, 'ttl', None)
+                self.order_manager.track_order(order_id, symbol, order_type, ttl=ttl)
             
             # LAYER 3: Exchange-Based Stop-Loss and Take-Profit (Failsafe)
             # Place protective orders on Binance servers
             # Only for ENTRY orders (BUY/SELL), not for EXIT orders
-            if Config.BINANCE_USE_FUTURES and event.direction in ['BUY', 'SELL']:
+            # LAYER 3: Exchange-Based Stop-Loss and Take-Profit (Failsafe)
+            # Place protective orders on Binance servers
+            if Config.BINANCE_USE_FUTURES and (event.direction == OrderSide.BUY or event.direction == OrderSide.SELL or event.direction in ['BUY', 'SELL']):
                 try:
-                    sl_pct = getattr(event, 'sl_pct', 0.003)
-                    tp_pct = getattr(event, 'tp_pct', 0.008)
+                    sl_pct = getattr(event, 'sl_pct', 0.003) or 0.003
+                    tp_pct = getattr(event, 'tp_pct', 0.008) or 0.008
                     self._place_protective_orders(symbol_id, side, filled_qty, fill_price, sl_pct, tp_pct)
                 except ccxt.InsufficientFunds as e:
                     logger.warning(f"⚠️ Insufficient margin for protective orders: {e}")
@@ -394,6 +448,40 @@ class BinanceExecutor:
         except (ccxt.NetworkError, ccxt.ExchangeError) as e:
             # Non-critical: bot can still function with Layers 1 & 2
             logger.warning(f"  ⚠️ Protective orders failed: {e}")
+
+    async def cancel_order(self, symbol: str, order_id: str) -> bool:
+        """
+        Cancels an open order on Binance.
+        PROFESSOR: Módulo crítico para el 'Anti-Liquidity Sniping'.
+        """
+        try:
+            # Prepare symbol string (e.g., BTCUSDT)
+            if not self.exchange.markets:
+                self.exchange.load_markets()
+            
+            market = self.exchange.market(symbol)
+            symbol_id = market['id']
+            
+            if Config.BINANCE_USE_FUTURES:
+                # FUTURES: fapiPrivateDeleteOrder
+                result = self.exchange.fapiPrivateDeleteOrder({
+                    'symbol': symbol_id,
+                    'orderId': order_id,
+                    'recvWindow': 60000
+                })
+                logger.info(f"🗑️ [EXEC] Deleted Futures Order: {order_id} ({symbol})")
+            else:
+                # SPOT
+                result = self.exchange.cancel_order(order_id, symbol)
+                logger.info(f"🗑️ [EXEC] Deleted Spot Order: {order_id} ({symbol})")
+                
+            return True
+        except ccxt.OrderNotFound:
+            logger.warning(f"⚠️ [EXEC] Order {order_id} not found (already filled or cancelled?)")
+            return True # Consider a win
+        except Exception as e:
+            logger.error(f"❌ [EXEC] Failed to cancel order {order_id}: {e}")
+            return False
 
     def get_all_balances(self):
         """

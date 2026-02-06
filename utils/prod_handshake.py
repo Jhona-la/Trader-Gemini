@@ -80,7 +80,7 @@ class ProductionHandshake:
             from binance.exceptions import BinanceAPIException
             
             api_key = os.environ.get('BINANCE_API_KEY')
-            api_secret = os.environ.get('BINANCE_API_SECRET')
+            api_secret = os.environ.get('BINANCE_SECRET_KEY')
             
             if not api_key or not api_secret:
                 print("❌ API Keys not found in environment")

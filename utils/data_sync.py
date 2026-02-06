@@ -12,7 +12,10 @@ PROFESSOR METHOD:
 """
 
 import os
-import json
+try:
+    import ujson as json
+except ImportError:
+    import json
 import time
 from typing import Dict, Any
 
@@ -26,7 +29,7 @@ def atomic_write_json(data: Dict[str, Any], filepath: str):
     try:
         # Write to temp file
         with open(temp_path, 'w') as f:
-            json.dump(data, f, indent=2, default=str)
+            json.dump(data, f, default=str)
         
         # Atomic rename (overwrite)
         os.replace(temp_path, filepath)

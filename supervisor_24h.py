@@ -25,21 +25,25 @@ REPORTS:
 
 import os
 import sys
-import json
+try:
+    import ujson as json
+except ImportError:
+    import json
 import time
 import csv
 import signal
+import subprocess
+import threading
 import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, Optional
-import threading
 
 # Add project root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Force non-test environment
-os.environ['TRADER_GEMINI_ENV'] = os.environ.get('TRADER_GEMINI_ENV', 'DEMO')
+os.environ['TRADER_GEMINI_ENV'] = os.environ.get('TRADER_GEMINI_ENV', 'PRODUCTION')
 
 from utils.sentinel import (
     Sentinel24, 
@@ -115,6 +119,31 @@ class FileWatcher:
             pass
         return None
 
+class LogTailer:
+    """Tails a log file and yields new lines."""
+    def __init__(self, path: Path):
+        self.path = path
+        self._last_size = 0
+        if path.exists():
+            self._last_size = path.stat().st_size
+    
+    def get_new_lines(self) -> list:
+        if not self.path.exists(): return []
+        current_size = self.path.stat().st_size
+        if current_size < self._last_size: # Rotated
+            self._last_size = 0
+        
+        lines = []
+        if current_size > self._last_size:
+            try:
+                with open(self.path, 'r', encoding='utf-8') as f:
+                    f.seek(self._last_size)
+                    lines = f.readlines()
+                    self._last_size = f.tell()
+            except Exception:
+                pass
+        return lines
+
 
 # =============================================================================
 # SUPERVISOR ENGINE
@@ -139,6 +168,7 @@ class Supervisor24H:
         self.trades_watcher = FileWatcher(self.config.TRADES_CSV)
         self.status_watcher = FileWatcher(self.config.LIVE_STATUS)
         self.health_watcher = FileWatcher(self.config.HEALTH_LOG)
+        self.log_tailer = LogTailer(self.config.STRATEGY_LOG)
         
         # State
         self.running = False
@@ -151,6 +181,10 @@ class Supervisor24H:
         self.total_trades_seen = 0
         self.total_ghost_signals = 0
         self.latency_breaches = 0
+        
+        # Pro Monitoring State
+        self.last_restart_time = 0
+        self.restart_cooldown = 60  # seconds
         
         # Setup logging
         self._setup_logging()
@@ -247,6 +281,77 @@ class Supervisor24H:
         
         return False
     
+    def _check_process_health(self):
+        """Check if bot process is alive, if not, try to restart."""
+        # Check if already alive (ProcessMonitor.is_alive() will try to find it if None)
+        if self.sentinel.process_monitor.is_alive():
+            return
+
+        # Cooldown check
+        now = time.time()
+        if now - self.last_restart_time < self.restart_cooldown:
+            return
+
+        self.logger.error("🚨 BOT PROCESS NOT DETECTED (Terminated or Manual Stop). Attempting auto-recovery...")
+        self.sentinel.raise_alert(
+            AlertSeverity.CRITICAL, 
+            "ProcessMonitor", 
+            "Bot process not found in current directory"
+        )
+        
+        # Start the bot with correct arguments for the current session
+        try:
+            self.last_restart_time = now
+            
+            # Using current executable (likely .venv) and specifying mode
+            cmd = [sys.executable, "main.py", "--mode", "futures"] 
+            
+            self.logger.info(f"🚀 RESTARTING BOT: {' '.join(cmd)}")
+            
+            # Redirect stdout/stderr to debug file to catch startup errors
+            # Redirect stdout/stderr to debug file to catch startup errors
+            # Open without 'with' to keep handle alive (file leak acceptable for debug)
+            out = open("logs/startup_debug.log", "a")
+            
+            # Prepare environment with BOT_MODE for logger.py
+            env = os.environ.copy()
+            env['BOT_MODE'] = 'futures'
+            
+            # On Windows, Popen might fail if handle closes too fast.
+            subprocess.Popen(cmd, stdout=out, stderr=out, env=env)
+            
+            self.logger.info("✅ Restart command issued. Monitoring PID...")
+        except Exception as e:
+            self.logger.error(f"Restart failed: {e}")
+            self.last_restart_time = 0 
+    
+    def _check_resources(self):
+        """Check system resources and print deep breakdown."""
+        res = self.sentinel.resource_vigilance.check_resources()
+        details = res.get('details', {})
+        
+        # Log deep breakdown periodically (every 10 cycles to avoid spam)
+        if self.cycles_completed % 10 == 0:
+            print("\n" + "═"*50)
+            print("📊 DEEP RESOURCE AUDIT")
+            print("═"*50)
+            print(f"🖥️  System RAM: {res['ram_pct']}% | CPU: {details.get('system_cpu_pct')}%")
+            print(f"📦 PROJECT TOTAL RAM: {res['project_mb']:.2f} MB")
+            
+            breakdown = details.get('process_breakdown', {})
+            for role, data in breakdown.items():
+                if data['mb'] > 0:
+                    pids = ",".join(map(str, data['pids']))
+                    print(f"   • {role:10}: {data['mb']:7.2f} MB (CPU: {data['cpu']:4.1f}%) [PIDs: {pids}]")
+            
+            print("-" * 30)
+            disk = details.get('disk_breakdown', {})
+            print(f"💾 DISK USAGE (Project):")
+            for cat, size in disk.items():
+                print(f"   • {cat:10}: {size:7.2f} MB")
+            print(f"   TOTAL DISK: {res['disk_pct']}%")
+            print("═"*50 + "\n")
+    
     def _process_status(self, status: Dict):
         """Process live status update."""
         if not status:
@@ -281,7 +386,8 @@ class Supervisor24H:
             new_trades = trades[self.total_trades_seen:]
             
             for trade in new_trades:
-                strategy_id = trade.get('strategy_id', 'UNKNOWN')
+                # MODO PROFESOR: En trades.csv la columna es 'strategy', no 'strategy_id'
+                strategy_id = trade.get('strategy') or trade.get('strategy_id', 'UNKNOWN')
                 pnl_str = trade.get('net_pnl') or trade.get('pnl') or '0'
                 try:
                     pnl = float(pnl_str)
@@ -384,14 +490,25 @@ class Supervisor24H:
                     trades = self._read_trades()
                     self._process_trades(trades)
                 
+                # Real-time ghost signal auditing
+                for line in self.log_tailer.get_new_lines():
+                    self.sentinel.ghost_auditor.audit_from_log(line)
+                    self.sentinel.zombie_auditor.audit_from_log(line)
+                
+                # Pro Monitoring: Process & Resources
+                self._check_process_health()
+                self._check_resources()
+                
                 # Check for report generation
                 self._maybe_generate_report()
                 
                 # Print status
                 self._print_status()
                 
-                # Wait before next cycle
-                time.sleep(self.config.POLL_INTERVAL)
+                # Wait before next cycle (Responsive Poll)
+                for _ in range(int(self.config.POLL_INTERVAL)):
+                    if not self.running: break
+                    time.sleep(1)
                 
         except KeyboardInterrupt:
             print("\n")
