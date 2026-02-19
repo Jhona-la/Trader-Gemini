@@ -4,7 +4,7 @@ All events are frozen dataclasses to prevent race conditions.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from utils.time_helpers import ensure_utc_aware
 from core.enums import EventType, SignalType, OrderSide, OrderType
@@ -28,9 +28,16 @@ class MarketEvent(Event):
     Handles the event of receiving a new market update with corresponding bars.
     Now carries metadata to avoid O(N) lookups in Engine.
     """
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     symbol: Optional[str] = None
     close_price: Optional[float] = None
+    order_flow: Optional[Dict[str, Any]] = None # Added for Phalanx-Omega
+    
+    # 🏎️ [EXCELSIOR-TITAN] Phase III: CPU Cache Alignment
+    # Force object size closer to 64-byte cache line to reduce false sharing
+    _pad1: Optional[int] = field(default=None, repr=False)
+    _pad2: Optional[int] = field(default=None, repr=False)
+    
     type: EventType = field(default=EventType.MARKET, init=False)
 
 
@@ -53,6 +60,17 @@ class SignalEvent(Event):
     current_price: Optional[float] = None
     leverage: Optional[int] = None  # Added for strategies to specify leverage
     ttl: Optional[int] = None      # Phase 9.2: Adaptive TTL (seconds)
+    metadata: Optional[Dict[str, Any]] = None # Flexible metadata container
+    
+    # AEGIS-ULTRA Phase 17: Telemetry
+    trade_id: Optional[str] = None # UUID for forensic tracing
+    
+    # 🏎️ [EXCELSIOR-TITAN] Phase III: CPU Cache Alignment
+    _pad1: Optional[int] = field(default=None, repr=False)
+    _pad2: Optional[int] = field(default=None, repr=False)
+    
+    # 🧬 [Phase 19] Shadow Mode
+    is_shadow: bool = False # If True, ExecutionHandler must IGNORE this for real trading
     
     type: EventType = field(default=EventType.SIGNAL, init=False)
 
@@ -81,6 +99,13 @@ class OrderEvent(Event):
     sl_pct: Optional[float] = None  # NEW: Protective stop loss %
     tp_pct: Optional[float] = None  # NEW: Protective take profit %
     ttl: Optional[int] = None      # Phase 9.2: Adaptive TTL (seconds)
+    metadata: Optional[Dict[str, Any]] = None # Flexible metadata container (Chase count, etc.)
+    
+    # AEGIS-ULTRA Phase 17: Telemetry
+    trade_id: Optional[str] = None # UUID for forensic tracing
+    
+    # 🧬 [Phase 19] Shadow Mode
+    is_shadow: bool = False # If True, Executor MUST DROP this order
     
     type: EventType = field(default=EventType.ORDER, init=False)
 
@@ -115,6 +140,14 @@ class FillEvent(Event):
     # Additional fill info
     fill_price: Optional[float] = None  # Actual fill price
     order_id: Optional[str] = None      # Exchange order ID
+    sl_pct: Optional[float] = None      # Protective stop loss %
+    tp_pct: Optional[float] = None      # Protective take profit %
+    
+    # Phase 31: Partial Fill Handling
+    is_closed: bool = True              # TRUE if fully filled or cancelled, FALSE if partial
+    
+    # AEGIS-ULTRA Phase 17: Telemetry
+    trade_id: Optional[str] = None # UUID for forensic tracing
     
     type: EventType = field(default=EventType.FILL, init=False)
     

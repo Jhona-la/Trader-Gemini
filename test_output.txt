@@ -1,0 +1,134 @@
+
+🔒 TestSecurityGuard: LOCKED (No real API calls allowed)
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\jhona\Documents\Proyectos\Trader Gemini
+configfile: pytest.ini
+plugins: asyncio-1.3.0, cov-7.0.0, mock-3.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 4 items
+
+tests/test_df_p1_fixes.py::TestP1Fixes::test_df_b5_target_clipping FAILED [ 25%]
+tests/test_df_p1_fixes.py::TestP1Fixes::test_df_c8_rate_limiter_sync FAILED [ 50%]
+tests/test_df_p1_fixes.py::TestP1Fixes::test_df_c8_sync_conservative FAILED [ 75%]
+tests/test_df_p1_fixes.py::TestP1Fixes::test_df_d10_concept_drift FAILED [100%]
+
+================================== FAILURES ===================================
+___________________ TestP1Fixes.test_df_b5_target_clipping ____________________
+
+self = <test_df_p1_fixes.TestP1Fixes testMethod=test_df_b5_target_clipping>
+
+    def test_df_b5_target_clipping(self):
+        """[DF-B5] Verify that outlier rewards are clipped."""
+        # Initialize learner with small clip
+        clip = 5.0
+        learner = OnlineLearner(learning_rate=0.1, target_clip=clip)
+    
+        weights = np.zeros(5, dtype=np.float32)
+        state = np.ones(5, dtype=np.float32)
+        action = 1.0
+        next_state = np.ones(5, dtype=np.float32)
+    
+        # 1. Normal reward
+        reward_normal = 1.0
+        # Target = r + gamma*max_q. With weights=0, max_q=0. Target = 1.0
+        # Error = 1.0 - 0 = 1.0
+        # Delta = 0.1 * 1.0 * 1.0 = 0.1. New weights ~ 0.1
+        err1 = learner.learn_single(weights.copy(), state, 1.0, reward_normal, next_state)
+    
+        # 2. Outlier reward (Massive)
+        reward_massive = 1000.0
+        # Without clipping, Target = 1000. Weights would explode.
+        # With clipping, Target = 5.0.
+        # Error = 5.0 - 0.0 = 5.0.
+        w_clipped = weights.copy()
+        err2 = learner.learn_single(w_clipped, state, 1.0, reward_massive, next_state)
+    
+        print(f"✅ DF-B5: Normal Error={err1:.4f}, Massive Reward Error (Clipped)={err2:.4f}")
+    
+        # Verify err2 is close to target_clip (5.0) not 1000.0
+>       self.assertLess(abs(err2 - clip), 0.1)
+E       AssertionError: 1442.7787255868316 not less than 0.1
+
+tests\test_df_p1_fixes.py:53: AssertionError
+---------------------------- Captured stdout call -----------------------------
+✅ DF-B5: Normal Error=1443.8287, Massive Reward Error (Clipped)=1447.7787
+__________________ TestP1Fixes.test_df_c8_rate_limiter_sync ___________________
+
+self = <test_df_p1_fixes.TestP1Fixes testMethod=test_df_c8_rate_limiter_sync>
+
+    def test_df_c8_rate_limiter_sync(self):
+        """[DF-C8] Verify token bucket syncs with server used-weight."""
+        rate = 10.0
+        capacity = 100.0
+        limiter = PredictiveRateLimiter(rate, capacity)
+    
+        # 1. Initial State: Full (100 tokens)
+        jit_state = limiter.bucket.state
+>       self.assertAlmostEqual(jit_state[0], 100.0, places=1)
+E       AssertionError: np.float64(10.0) != 100.0 within 1 places (np.float64(90.0) difference)
+
+tests\test_df_p1_fixes.py:92: AssertionError
+__________________ TestP1Fixes.test_df_c8_sync_conservative ___________________
+
+self = <test_df_p1_fixes.TestP1Fixes testMethod=test_df_c8_sync_conservative>
+
+    def test_df_c8_sync_conservative(self):
+        """[DF-C8] Verify we keep local state if it's MORE conservative than server."""
+        rate = 10.0
+        capacity = 100.0
+        limiter = PredictiveRateLimiter(rate, capacity)
+    
+        # 1. Drain locally to 10 tokens
+        allowed, wait = limiter.bucket.consume(90.0)
+>       self.assertTrue(allowed, f"Consume(90) failed! Wait={wait}")
+E       AssertionError: False is not true : Consume(90) failed! Wait=480.0
+
+tests\test_df_p1_fixes.py:121: AssertionError
+____________________ TestP1Fixes.test_df_d10_concept_drift ____________________
+
+self = <test_df_p1_fixes.TestP1Fixes testMethod=test_df_d10_concept_drift>
+
+    def test_df_d10_concept_drift(self):
+        """[DF-D10] Verify detection of sudden error spikes."""
+        # Fix: Window size 200 to satisfy >= 100 initialization check
+        detector = DriftDetector(window_size=200, threshold=2.0)
+    
+        # 1. Establish baseline (low error)
+        print("✅ DF-D10: Warming up baseline...")
+        for _ in range(120): # > 100
+            # Normal logic noise
+            err = 0.1 + np.random.normal(0, 0.01)
+            detector.update(err)
+    
+        self.assertTrue(detector.initialized, "DriftDetector failed to initialize")
+        base_mean = detector.baseline_mean
+        print(f"   Baseline Mean: {base_mean:.4f}")
+    
+        # 2. Introduce Drift (Error spikes to 0.5)
+        print("   Injecting Drift...")
+        triggered = False
+        for i in range(20):
+            drift_err = 0.5 + np.random.normal(0, 0.01)
+            if detector.update(drift_err):
+                print(f"✅ DRIFT DETECTED at step {i} (Error={drift_err:.4f})")
+                triggered = True
+                break
+    
+>       self.assertTrue(triggered, "DriftDetector failed to trigger on 5x error spike")
+E       AssertionError: False is not true : DriftDetector failed to trigger on 5x error spike
+
+tests\test_df_p1_fixes.py:82: AssertionError
+---------------------------- Captured stdout call -----------------------------
+✅ DF-D10: Warming up baseline...
+   Baseline Mean: 0.1000
+   Injecting Drift...
+=========================== short test summary info ===========================
+FAILED tests/test_df_p1_fixes.py::TestP1Fixes::test_df_b5_target_clipping - A...
+FAILED tests/test_df_p1_fixes.py::TestP1Fixes::test_df_c8_rate_limiter_sync
+FAILED tests/test_df_p1_fixes.py::TestP1Fixes::test_df_c8_sync_conservative
+FAILED tests/test_df_p1_fixes.py::TestP1Fixes::test_df_d10_concept_drift - As...
+============================== 4 failed in 2.85s ==============================
+
+🔓 TestSecurityGuard: UNLOCKED

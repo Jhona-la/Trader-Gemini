@@ -3,16 +3,21 @@ from datetime import datetime, timezone
 from config import Config
 from core.events import FillEvent
 from utils.logger import logger
+from utils.metrics_exporter import metrics
 from utils.error_handler import retry_on_api_error, handle_balance_error, handle_order_error
 from utils.debug_tracer import trace_execution
 from .liquidity_guardian import LiquidityGuardian
 from utils.latency_monitor import latency_monitor
+from .user_data_stream import UserDataStream  # [Dept 3 Fix]
 import time
+import asyncio
+import numpy as np
 
 class BinanceExecutor:
     """
     Handles execution of orders on Binance via CCXT.
     Supports both Spot and Testnet.
+    Integrated with UserDataStream for real-time fills.
     """
     def __init__(self, events_queue, portfolio=None):
         self.events_queue = events_queue
@@ -99,35 +104,62 @@ class BinanceExecutor:
             self.spot_exchange.set_sandbox_mode(True)
             logger.info("  → Spot exchange initialized for Testnet")
             
+        # Phase 14: Rate Limiter
+        from core.rate_limiter import PredictiveRateLimiter
+        self.rate_limiter = PredictiveRateLimiter()
+
         # CRITICAL FIX: Load markets immediately to prevent "markets not loaded" error
-            # 1. Set Position Mode to One-Way (Dual Side Position = False)
-            # We use One-Way mode because our RiskManager assumes simple Buy/Sell
-            # If account is in Hedge Mode, create_order fails without positionSide
-            # CRITICAL: Monkey patch 'request' method to intercept ALL sapi calls
-            # This is more robust than patching individual methods
-            original_request = self.exchange.request
+        # 1. Set Position Mode to One-Way (Dual Side Position = False)
+        # We use One-Way mode because our RiskManager assumes simple Buy/Sell
+        # If account is in Hedge Mode, create_order fails without positionSide
+        # CRITICAL: Monkey patch 'request' method to intercept ALL sapi calls AND track Rate Limit
+        # This is more robust than patching individual methods
+        original_request = self.exchange.request
+        
+        def intercepted_request(path, api='public', method='GET', params={}, headers=None, body=None, config={}):
+            # 1. TESTNET SAPI BLOCKER (BUG #17)
+            if api == 'sapi' and ((hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET):
+                return []
             
-            def intercepted_request(path, api='public', method='GET', params={}, headers=None, body=None, config={}):
-                # BUG #17 FIX: Intercept SAPI for both Futures AND Spot Testnet
-                # Spot Testnet also lacks SAPI support
-                if api == 'sapi':
-                    # Testnet doesn't support SAPI. Return empty list as mock response.
-                    # Most fetch_markets sub-calls expect a list of pairs.
-                    return []
-                return original_request(path, api, method, params, headers, body, config)
+            # 2. PHASE 14: PREDICTIVE RATE LIMIT CHECK
+            # Estimated weight: order=1, others=1. Heavy endpoints handled by buffer.
+            is_safe, wait_time = self.rate_limiter.check_limit(weight_cost=1)
+            if not is_safe:
+                # BLOCKING WAIT (Safety first)
+                time.sleep(wait_time)
             
-            self.exchange.request = intercepted_request
+            # 3. EXECUTE REQUEST
+            response = original_request(path, api, method, params, headers, body, config)
             
-            # Apply to Spot Exchange instance as well if it exists
-            if hasattr(self, 'spot_exchange') and self.spot_exchange:
-                original_spot_request = self.spot_exchange.request
-                def intercepted_spot_request(path, api='public', method='GET', params={}, headers=None, body=None, config={}):
-                    if api == 'sapi':
-                        return []
-                    return original_spot_request(path, api, method, params, headers, body, config)
-                self.spot_exchange.request = intercepted_spot_request
+            # 4. CAPTURE HEADERS (Server Truth)
+            # CCXT stores last response headers in exchange object
+            if hasattr(self.exchange, 'last_response_headers'):
+                self.rate_limiter.update_from_headers(self.exchange.last_response_headers)
                 
-            logger.info("  🔧 Testnet: Intercepting and blocking ALL 'sapi' endpoint calls")
+            return response
+        
+        self.exchange.request = intercepted_request
+        
+        # Apply to Spot Exchange instance as well if it exists
+        if hasattr(self, 'spot_exchange') and self.spot_exchange:
+            original_spot_request = self.spot_exchange.request
+            def intercepted_spot_request(path, api='public', method='GET', params={}, headers=None, body=None, config={}):
+                if api == 'sapi':
+                    return []
+                    
+                is_safe, wait_time = self.rate_limiter.check_limit(weight_cost=1)
+                if not is_safe:
+                    time.sleep(wait_time)
+                    
+                response = original_spot_request(path, api, method, params, headers, body, config)
+                
+                if hasattr(self.spot_exchange, 'last_response_headers'):
+                    self.rate_limiter.update_from_headers(self.spot_exchange.last_response_headers)
+                    
+                return response
+            self.spot_exchange.request = intercepted_spot_request
+            
+        logger.info("  🔧 Testnet: Intercepting 'sapi' & 🛡️ Active Rate Limiting engaged")
 
         # Force time synchronization
         # BUG #24 FIX: load_time_difference() doesn't exist in current CCXT version
@@ -146,7 +178,21 @@ class BinanceExecutor:
         except ccxt.ExchangeError as e:
             logger.warning(f"  ⚠️ Exchange error during credential verification: {e}")
 
+        # Phase 38: Keep-Alive Tuning
+        try:
+            from utils.keep_alive import tune_ccxt_exchange
+            tune_ccxt_exchange(self.exchange)
+            if hasattr(self, 'spot_exchange') and self.spot_exchange:
+                tune_ccxt_exchange(self.spot_exchange)
+        except Exception as e:
+            logger.warning(f"Could not tune CCXT keep-alive: {e}")
+
         self._initialize_futures_settings()
+        
+        # [Dept 3 Fix] Start User Data Stream
+        self.user_stream = UserDataStream(self.events_queue, self.exchange)
+        self.stream_task = asyncio.create_task(self.user_stream.start())
+        logger.info("✅ [Executor] User Data Stream Background Task Started")
 
     def _initialize_futures_settings(self):
         """
@@ -172,27 +218,30 @@ class BinanceExecutor:
                 logger.warning("     Continuing without Position Mode change...")
 
             # 2. Set Margin Type for all pairs
-            # We iterate through configured pairs to set them to ISOLATED
-            # This protects the wallet balance
             logger.info(f"  ⏳ Setting Margin Type to {Config.BINANCE_MARGIN_TYPE} for {len(Config.TRADING_PAIRS)} pairs...")
             for symbol in Config.TRADING_PAIRS:
                 try:
-                    # Convert symbol to ID (ETH/USDT -> ETHUSDT) for the API
                     market = self.exchange.market(symbol)
                     symbol_id = market['id']
-                    
                     self.exchange.fapiPrivatePostMarginType({
                         'symbol': symbol_id,
-                        'marginType': Config.BINANCE_MARGIN_TYPE.upper() # ISOLATED or CROSS
+                        'marginType': Config.BINANCE_MARGIN_TYPE.upper()
                     })
-                except ccxt.ExchangeError as e:
-                    error_msg = str(e)
-                    if "No need to change" in error_msg or "-4046" in error_msg:
-                        pass  # Already set to desired margin type
-                    else:
-                        logger.debug(f"  Could not set Margin Type for {symbol}: {error_msg}")
-                except KeyError:
-                    logger.warning(f"  ⚠️ Symbol {symbol} not found in exchange markets")
+                except Exception as e:
+                    if "No need to change" not in str(e) and "-4046" not in str(e):
+                         logger.debug(f"  Could not set Margin Type for {symbol}: {e}")
+
+            # 3. Verify Trading Permissions (Phase 14 Proactive Check)
+            try:
+                account_status = self.exchange.fapiPrivateV2GetAccount()
+                can_trade = account_status.get('canTrade', False)
+                if not can_trade:
+                    logger.error("❌ CRITICAL: API key does NOT have trading permissions enabled!")
+                else:
+                    logger.info("  ✅ API Trading permissions verified")
+            except Exception as e:
+                logger.warning(f"  ⚠️ Could not verify trading permissions: {e}")
+
             logger.info("  ✅ Margin Types Configured")
             
         except ccxt.NetworkError as e:
@@ -207,184 +256,292 @@ class BinanceExecutor:
     @trace_execution
     def execute_order(self, event):
         """
-        Executes an OrderEvent.
+        🚀 SUPREMO-V3: ULTRA-LOW LATENCY EXECUTION
+        QUÉ: Envía órdenes al exchange con precisión quirúrgica y mínima latencia.
         """
-        if event.type != 'ORDER':
+        if event.type != 'ORDER': return
+        
+        start_exec = time.perf_counter()
+        
+        # 🧬 [Phase 19] SHADOW MODE INTERCEPTION
+        # If this is a Shadow Order, we DO NOT send it to Binance.
+        # We just log it as "Virtual Fill" and return.
+        if getattr(event, 'is_shadow', False):
+            logger.info(f"👻 [SHADOW] VIRTUAL EXECUTION: {event.side} {event.quantity} {event.symbol} @ {event.price or 'MKT'}")
+            # TODO: Generate a FAKE FillEvent for Portfolio to track Shadow PnL?
+            # For now, just blocking is enough to prevent real money loss.
             return
 
-        # Check if symbol is supported by this executor (Crypto only)
-        if '/' not in event.symbol: # Simple check, assuming Stocks don't have '/':
-            return
-
-        logger.info(f"Executing: {event.direction} {event.quantity} {event.symbol}")
-        
-        # --- PHASE 7: LIQUIDITY GUARDIAN CHECK ---
-        liquidity = self.guardian.analyze_liquidity(event.symbol, event.quantity, event.direction)
-        if not liquidity['is_safe']:
-            logger.warning(f"🛡️ [GUARDIAN] Order Blocked: {liquidity['reason']} (Slippage: {liquidity['slippage_pct']*100:.3f}%)")
-            # Release cash in portfolio if it was pending
-            if self.portfolio:
-                 self.portfolio.release_cash(event.quantity * event.price if hasattr(event, 'price') and event.price else 0)
-            return
-        
-        logger.info(f"🛡️ [GUARDIAN] Liquidity Verified: Avg Fill Price ${liquidity['avg_fill_price']:.2f} (Slippage: {liquidity['slippage_pct']*100:.4f}%)")
-        
-        
-        # --- PHASE 13: SMART PRICING ---
-        # If no price is provided, or if MARKET order, we use Liquidity's best price
-        smart_price = event.price
-        if not smart_price:
-            # For BUY, we try to bid at Liquidity's best_bid (if we want to be maker)
-            # Or use midpoint. midpoint = (best_bid + best_ask) / 2
-            # For simplicity, use best_bid/ask to ensure Maker status
-            if event.direction == 'BUY':
-                smart_price = liquidity.get('avg_fill_price') # Default to average fill
-            else:
-                smart_price = liquidity.get('avg_fill_price')
+        symbol = event.symbol
+        symbol_ccxt = symbol.replace('USDT', '/USDT')
+        side = event.side.lower()
+        order_type = event.order_type.lower()
         
         try:
-            # Prepare side string
-            # Support both Enum (OrderSide) and legacy strings
-            from core.enums import OrderSide
-            side = 'buy' if (event.direction == OrderSide.BUY or event.direction == 'BUY') else 'sell'
-            symbol = event.symbol
-            quantity = event.quantity
-            order_type = event.order_type.lower() # 'market' or 'limit'
-            
-            # Execute Order
-            if order_type == 'mkt':
-                order_type = 'market'
-            
-            # 1. Prepare Symbol and Quantity
-            # CRITICAL FIX: Ensure markets are loaded before accessing them
+            # 1. MARKETS LOADED CHECK
             if not self.exchange.markets:
-                logger.info("  ⚠️ Markets not loaded. Loading now...")
                 self.exchange.load_markets()
-                
-            market = self.exchange.market(symbol)
+            
+            market = self.exchange.market(symbol_ccxt)
             symbol_id = market['id']
             
-            # Ensure quantity precision (CRITICAL for Futures)
-            # CCXT amount_to_precision returns a string
-            qty_str = self.exchange.amount_to_precision(symbol, quantity)
-            
-            # 2. Build Parameters for Raw API
-            params = {
-                'symbol': symbol_id,
-                'side': side.upper(),
-                'type': order_type.upper(),
-                'quantity': qty_str,
-                'newOrderRespType': 'RESULT',
-                'recvWindow': 60000
-            }
-            
-            # MAKER-ONLY LOGIC (Micro-Scalping Optimization)
-            if order_type.upper() == 'LIMIT':
-                # Force Post-Only to ensure Maker rebate (no Taker fees)
-                if Config.BINANCE_USE_FUTURES:
-                    params['timeInForce'] = 'GTX' # Post Only for Futures
-                    # Ensure price is set
-                    price_str = self.exchange.price_to_precision(symbol, smart_price)
-                    params['price'] = price_str
-                    logger.info(f"  🛑 Maker Order (GTX): Limit @ {price_str}")
-                else:
-                    # For Spot, use LIMIT_MAKER type
-                    params['type'] = 'LIMIT_MAKER'
-                    price_str = self.exchange.price_to_precision(symbol, smart_price)
-                    params['price'] = price_str
-                    logger.info(f"  🛑 Maker Order (Spot): Limit Maker @ {price_str}")
+            # ✅ PHASE II: ATOMIC BALANCE VALIDATION (Risk Shielding)
+            # EXCELSIOR-TITAN: Prevent "Insufficient Funds" by pre-checking API balance.
+            # Critical for low-capital accounts ($13.00 USD).
+            if OrderSide.BUY in side: # Only check for BUYS (Entry/Cover)
+                try:
+                    quote_currency = market['quote']
+                    cost_est = event.quantity * (event.price if event.price else self.guardian.get_last_price(symbol_ccxt))
+                    
+                    # Fetch Balance (Optimized: fetch only what's needed if supported, else full)
+                    # CCXT fetch_balance is cached by default in some modes, but we want FRESH.
+                    # params={'type': 'future'} if futures
+                    params = {}
+                    if Config.BINANCE_USE_FUTURES: params['type'] = 'future'
+                    
+                    # We use a specialized light check or full fetch
+                    # Note: frequent fetching hits rate limits. We rely on 'User Data Stream' mostly,
+                    # but for "Atomic" check we might double check if we are close to edge.
+                    # Optimization: Only check if local estimate is within 10% of total equity?
+                    # No, user wants invalidation.
+                    
+                    # Rate Limit Protection: Only fetch if > 1s since last fetch?
+                    # Start with standard fetch.
+                    balance = self.exchange.fetch_free_balance(params=params)
+                    available = balance.get(quote_currency, 0.0)
+                    
+                    if available < cost_est:
+                         logger.error(f"🚫 [ATOMIC] INSUFFICIENT FUNDS! Need: {cost_est:.2f} {quote_currency}, Avail: {available:.2f}")
+                         if self.portfolio: self.portfolio.release_cash(cost_est)
+                         return
+                         
+                except Exception as e:
+                    logger.warning(f"⚠️ Balance Check Skipped: {e}")
 
+                except Exception as e:
+                    logger.warning(f"⚠️ Balance Check Skipped: {e}")
+
+            # 2. EXIT PRIORITY (Rule 2.1) - Skip Guardian if EXIT
+            is_exit = getattr(event, 'is_exit', False) or (hasattr(event, 'side') and event.side == 'EXIT')
             
-            # 3. Execute using Raw API (Futures) or Standard CCXT (Spot)
-            import time
-            start_exec = time.perf_counter()
-            if Config.BINANCE_USE_FUTURES:
-                # FUTURES: Use Raw API to bypass potential CCXT issues with Testnet URLs
-                logger.info(f"  🚀 Sending Raw Futures Order: {side.upper()} {qty_str} {symbol}")
-                order = self.exchange.fapiPrivatePostOrder(params)
+            if not is_exit:
+                # Normal Signal: Run Guardian check
+                liquidity = self.guardian.analyze_liquidity(symbol, event.quantity, event.side)
+                if not liquidity['is_safe']:
+                    logger.warning(f"🛡️ [GUARDIAN] Order Blocked: {liquidity['reason']}")
+                    if self.portfolio: self.portfolio.release_cash(event.quantity * event.price if event.price else 0)
+                    return
+                
+                # ✅ PHASE II.6: VWAP-RELATIVE EXECUTION (Smart Execution)
+                # If buying significantly above VWAP, switch to LIMIT to avoid chasing tops.
+                try:
+                    from data.data_provider import get_data_provider
+                    dp = get_data_provider()
+                    bars = dp.get_latest_bars(symbol, n=15) # 15m VWAP
+                    if bars is not None and len(bars) > 5:
+                        # VWAP = Sum(Close * Vol) / Sum(Vol)
+                        # Structured array: 'close', 'volume'
+                        vsum = np.sum(bars['volume'])
+                        if vsum > 0:
+                            vwap_val = np.sum(bars['close'] * bars['volume']) / vsum
+                            current_price = self.guardian.get_last_price(symbol_ccxt)
+                            
+                            # Logic: If BUY and Price > VWAP + 0.3% -> Switch MARKET to LIMIT
+                            if OrderSide.BUY in side and current_price > vwap_val * 1.003:
+                                if order_type == 'market' and not getattr(event, 'urgent', False):
+                                    logger.info(f"📉 [VWAP] Price {current_price:.2f} > VWAP {vwap_val:.2f} (+0.3%). Switching to LIMIT/PASSIVE.")
+                                    order_type = 'limit'
+                                    event.price = current_price * 0.9995 # Bid side
+                                    event.order_type = 'LIMIT'
+                except Exception as e:
+                    pass # Non-critical
+                
+                # --- PHASE 14: SMART-ORDER ROUTING (SOR) ---
+                # Decide order type based on urgency and rebate priority
+                is_urgent = getattr(event, 'urgent', False)
+                rebate_priority = getattr(self.portfolio, 'rebate_priority', True)
+                
+                if order_type == 'limit' and is_urgent:
+                    logger.info("⚡ [SOR] Urgency detected: Switching LIMIT to MARKET to ensure entry.")
+                    order_type = 'market'
+                elif order_type == 'market' and rebate_priority and not is_urgent:
+                    logger.info("💰 [SOR] Rebate Priority Active: Switching MARKET to LIMIT (Post-Only).")
+                    order_type = 'limit'
+                    # Post-Only flag for Binance
+                    event.metadata = event.metadata or {}
+                    event.metadata['timeInForce'] = 'GTX' # GTX = Post Only
+                
+                smart_price = liquidity.get('avg_fill_price', event.price)
             else:
-                # SPOT: Use standard CCXT create_order
-                # CCXT handles the endpoint selection automatically based on 'defaultType': 'spot'
-                logger.info(f"  🚀 Sending Spot Order: {side.upper()} {qty_str} {symbol}")
-                order = self.exchange.create_order(symbol, 'market', side, quantity)
-                # Normalize response to match Raw API structure for parsing below
-                # CCXT returns a unified structure, so we might need to adjust parsing logic
-                # But for simplicity, let's rely on CCXT's unified response if possible, 
-                # OR just use the raw 'info' field if available.
-                if 'info' in order:
-                    order = order['info'] # Use raw response for consistent parsing below
+                # EXIT: High Priority - Use current market price directly
+                smart_price = event.price
+
+            # 3. SURGICAL PRECISION (Roundings)
+            qty_precision = self.exchange.amount_to_precision(symbol_ccxt, event.quantity)
+            final_qty = float(qty_precision)
             
+            # Sniper Logic for LIMIT orders (Aggressive pricing to capture liquidity)
+            # PHASE 13: Enhanced V3 Sniper
+            # Si es una entrada agresiva (Imbalance > 3.0), empujamos el precio para asegurar el fill.
+            if order_type == 'limit':
+                spread_adj = 0.0001 # Default 0.01% bias
+                
+                # Check for Sniper Condition in metadata
+                if event.metadata and event.metadata.get('sniper_mode'):
+                    spread_adj = 0.0003 # 0.03% more aggressive
+                    logger.info(f"🎯 [SNIPER_V3] Aggressive Entry engaged for {symbol}")
+
+                if side == 'buy': smart_price *= (1 + spread_adj)
+                else: smart_price *= (1 - spread_adj)
+            
+            price_precision = self.exchange.price_to_precision(symbol_ccxt, smart_price)
+            final_price = float(price_precision)
+
+            # 3.5 [DF-C9] FAT FINGER PROTECTION — Price Sanity Check
+            # QUÉ: Bloquea órdenes con precio que se desvía >5% del mercado.
+            # POR QUÉ: Un bug en la señal o datos corruptos podría enviar
+            #   price=0.0 o price=last*100, causando pérdida catastrófica.
+            # CÓMO: Compara final_price vs último precio conocido del portfolio
+            #   o del Guardian. Si la desviación >FAT_FINGER_THRESHOLD, bloquea.
+            FAT_FINGER_THRESHOLD = Config.RISK_FAT_FINGER_THRESHOLD if hasattr(Config, 'RISK_FAT_FINGER_THRESHOLD') else 0.05
+            reference_price = None
+            try:
+                # Try portfolio's last known price first (fastest, no API call)
+                if self.portfolio and symbol in self.portfolio.positions:
+                    reference_price = self.portfolio.positions[symbol].get('current_price')
+                # Fallback: Guardian's order book mid-price
+                if not reference_price or reference_price <= 0:
+                    reference_price = self.guardian.get_last_price(symbol) if hasattr(self.guardian, 'get_last_price') else None
+                # Fallback: ticker
+                if not reference_price or reference_price <= 0:
+                    ticker = self.exchange.fetch_ticker(symbol_ccxt)
+                    reference_price = float(ticker.get('last', 0))
+            except Exception as e:
+                logger.warning(f"⚠️ [FAT FINGER] Could not get reference price for {symbol}: {e}")
+                reference_price = None
+
+            if reference_price and reference_price > 0 and final_price > 0:
+                deviation = abs(final_price - reference_price) / reference_price
+                if deviation > FAT_FINGER_THRESHOLD:
+                    logger.critical(
+                        f"🚨 [DF-C9] FAT FINGER BLOCKED: {symbol} "
+                        f"order_price={final_price:.6f} vs market={reference_price:.6f} "
+                        f"(deviation={deviation:.2%} > {FAT_FINGER_THRESHOLD:.0%})"
+                    )
+                    if self.portfolio and side == 'buy':
+                        self.portfolio.release_cash(event.quantity * (event.price or 0))
+                    return
+                elif deviation > FAT_FINGER_THRESHOLD * 0.5:  # Warn at 2.5%
+                    logger.warning(
+                        f"⚠️ [FAT FINGER] Elevated deviation: {symbol} "
+                        f"price={final_price:.6f} vs market={reference_price:.6f} "
+                        f"({deviation:.2%})"
+                    )
+
+            # 4. SEND ORDER
+            logger.info(f"⚡ [EXEC] {order_type.upper()} {side.upper()} {symbol} | Qty: {final_qty} | P: {final_price}")
+            
+            if Config.BINANCE_USE_FUTURES:
+                # Use Raw API for minimum latency
+                params = {
+                    'symbol': symbol_id,
+                    'side': side.upper(),
+                    'type': order_type.upper(),
+                    'quantity': qty_precision,
+                    'newOrderRespType': 'RESULT',
+                    'recvWindow': 60000
+                }
+                if order_type == 'limit':
+                    params['price'] = price_precision
+                    params['timeInForce'] = 'GTC' # Good Till Cancel
+                
+                order_raw = self.exchange.fapiPrivatePostOrder(params)
+                order = order_raw # Simplified mapping
+            else:
+                # SPOT
+                order = self.exchange.create_order(
+                    symbol=symbol_ccxt,
+                    type=order_type,
+                    side=side,
+                    amount=final_qty,
+                    price=final_price if order_type == 'limit' else None
+                )
+                if 'info' in order: order = order['info']
+
+            # 5. PROCESS RESPONSE & EMIT FILL
             end_exec = time.perf_counter()
             exec_latency = (end_exec - start_exec) * 1000
-            logger.info(f"⚡ [EXEC] Order sent to Binance in {exec_latency:.2f}ms")
             latency_monitor.track('order_to_send', exec_latency)
             
-            # 4. Parse Response (Raw API returns different structure than CCXT unified)
-            # Binance Futures Raw Response:
-            # {'orderId': 123, 'symbol': 'BTCUSDT', 'status': 'FILLED', 'avgPrice': '90000', 'executedQty': '0.1', ...}
-            
-            fill_price = float(order.get('avgPrice', 0.0))
-            filled_qty = float(order.get('executedQty', 0.0))
+            fill_price = float(order.get('avgPrice', final_price if order_type == 'limit' else 0.0))
+            filled_qty = float(order.get('executedQty', final_qty))
             order_id = str(order.get('orderId', ''))
+            is_fully_filled = (filled_qty >= event.quantity * 0.9999)  # Tolerance for floating point
             
-            # Log Success
-            logger.info(f"✅ Order Filled: {order_id} - {side.upper()} {filled_qty} @ {fill_price}")
+            logger.info(f"✅ Order OK: {order_id} | Filled: {filled_qty} @ {fill_price} in {exec_latency:.2f}ms")
             
+            # [DF-C7] PARTIAL FILL DETECTION & WARNING
+            if not is_fully_filled and filled_qty > 0:
+                fill_ratio = filled_qty / event.quantity if event.quantity > 0 else 0
+                logger.warning(
+                    f"⚠️ [DF-C7] PARTIAL FILL: {symbol} filled {filled_qty}/{event.quantity} "
+                    f"({fill_ratio:.1%}). SL/TP will use ACTUAL filled qty."
+                )
+            elif filled_qty <= 0:
+                logger.warning(f"⚠️ [DF-C7] ZERO FILL: {symbol} order {order_id} returned 0 qty. Skipping fill event.")
+                return
+
             # Create Fill Event
             fill_event = FillEvent(
                 timeindex=datetime.now(timezone.utc),
                 symbol=symbol,
                 exchange='BINANCE',
                 quantity=filled_qty,
-                direction=event.direction,
+                direction=event.direction, # Using Typed Enum
                 fill_cost=filled_qty * fill_price,
                 fill_price=fill_price,
                 order_id=order_id,
-                commission=None, # Fee info might be in a separate field or trade stream
-                strategy_id=event.strategy_id
+                commission=None,
+                strategy_id=getattr(event, 'strategy_id', 'Unknown'),
+                sl_pct=getattr(event, 'sl_pct', None),
+                tp_pct=getattr(event, 'tp_pct', None),
+                # Phase 31: Partial Fill Logic
+                is_closed=is_fully_filled
             )
-            # Inherit timestamp for E2E tracking
-            # But the dataclass is frozen. We can't set it.
-            # FillEvent will have its own timestamp_ns from creation.
-            # This is fine for e2e_signal_to_fill in engine.
-            
             self.events_queue.put(fill_event)
             
-            # --- PHASE 9: TRACK ORDER ---
-            if self.order_manager and order_id and order_type.upper() == 'LIMIT':
-                ttl = getattr(event, 'ttl', None)
-                self.order_manager.track_order(order_id, symbol, order_type, ttl=ttl)
+            # 6. TRACKING & PROTECTIVE ORDERS
+            if self.order_manager and order_id and order_type == 'limit':
+                self.order_manager.track_order(
+                    order_id, 
+                    symbol, 
+                    order_type, 
+                    side, 
+                    final_price, 
+                    final_qty, 
+                    getattr(event, 'strategy_id', 'Unknown'),
+                    ttl=getattr(event, 'ttl', None),
+                    metadata=getattr(event, 'metadata', None) # Pass chase count
+                )
             
-            # LAYER 3: Exchange-Based Stop-Loss and Take-Profit (Failsafe)
-            # Place protective orders on Binance servers
-            # Only for ENTRY orders (BUY/SELL), not for EXIT orders
-            # LAYER 3: Exchange-Based Stop-Loss and Take-Profit (Failsafe)
-            # Place protective orders on Binance servers
-            if Config.BINANCE_USE_FUTURES and (event.direction == OrderSide.BUY or event.direction == OrderSide.SELL or event.direction in ['BUY', 'SELL']):
+            # Exchange-Based Protective Orders (Failsafe Layer 3)
+            # [DF-C7 FIX] Use filled_qty (actual) NOT final_qty (requested)
+            # POR QUÉ: If only 30% filled, placing SL for 100% would attempt
+            #   to close a position larger than what we hold → Binance error
+            #   or phantom position risk.
+            if Config.BINANCE_USE_FUTURES and filled_qty > 0:
                 try:
                     sl_pct = getattr(event, 'sl_pct', 0.003) or 0.003
                     tp_pct = getattr(event, 'tp_pct', 0.008) or 0.008
-                    self._place_protective_orders(symbol_id, side, filled_qty, fill_price, sl_pct, tp_pct)
-                except ccxt.InsufficientFunds as e:
-                    logger.warning(f"⚠️ Insufficient margin for protective orders: {e}")
-                except ccxt.InvalidOrder as e:
-                    logger.warning(f"⚠️ Invalid protective order parameters: {e}")
-                except (ccxt.NetworkError, ccxt.ExchangeError) as e:
-                    logger.warning(f"⚠️ Failed to place protective orders (non-critical): {e}")
-            
+                    self._place_protective_orders(symbol_id, side.upper(), filled_qty, fill_price, sl_pct, tp_pct)
+                except Exception as ex:
+                    logger.warning(f"⚠️ Protective orders failed: {ex}")
+
         except Exception as e:
-            # Binance-specific error handling
-            handle_order_error(e, event.symbol, event.direction, event.quantity)
-            
-            # RELEASE RESERVED CASH on failure
-            if self.portfolio and event.direction == 'BUY':
-                estimated_cost = event.quantity * (fill_price if 'fill_price' in locals() else 0)
-                # Fallback: use quantity as approximate cost if price unknown
-                if estimated_cost == 0:
-                    # Rough estimate from Risk Manager's $1000 default
-                    estimated_cost = 1000.0
-                self.portfolio.release_cash(estimated_cost)
-                logger.warning(f"Released ${estimated_cost:.2f} reserved cash due to order failure")
+            handle_order_error(e, symbol, side, event.quantity)
+            if self.portfolio and side == 'buy':
+                # Release pending cash
+                self.portfolio.release_cash(event.quantity * (event.price or 0))
     
     def _place_protective_orders(self, symbol_id, side, quantity, entry_price, sl_pct, tp_pct):
         """
@@ -1063,3 +1220,11 @@ class BinanceExecutor:
         else:
             logger.info("🔴 LIVE MODE - Using real funds")
         logger.info("="*70)
+
+    async def stop(self):
+        """Graceful shutdown"""
+        if hasattr(self, 'user_stream'):
+            await self.user_stream.stop()
+        if hasattr(self, 'stream_task'):
+            self.stream_task.cancel()
+        logger.info("✅ [Executor] Stopped.")

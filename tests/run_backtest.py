@@ -21,10 +21,10 @@ from datetime import datetime, timedelta, timezone
 from queue import Queue
 from binance.client import Client
 from config import Config
+from risk.risk_manager import RiskManager
 from strategies.technical import HybridScalpingStrategy
-from core.events import MarketEvent, SignalEvent, OrderEvent
-from core.enums import SignalType, OrderSide
-from core.enums import SignalType, OrderSide
+from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
+from core.enums import SignalType, OrderSide, EventType
 from data.data_provider import DataProvider
 from core.market_regime import MarketRegimeDetector
 from utils.logger import logger
@@ -155,64 +155,97 @@ class BacktestDataProvider(DataProvider):
         self.events_queue = events_queue
         self.symbol_list = symbol_list
         
-        # Datos históricos indexados
         self.historical_data = historical_data
-        self.latest_data = {s: [] for s in symbol_list}
-        self.latest_data_5m = {s: [] for s in symbol_list}
-        self.latest_data_15m = {s: [] for s in symbol_list}
-        self.latest_data_1h = {s: [] for s in symbol_list}
+        
+        # Pre-allocate structured arrays for Zero-Copy parity
+        self.struct_data = {s: {} for s in symbol_list}
+        struct_dtype = [
+            ('timestamp', 'i8'), ('open', 'f4'), ('high', 'f4'), 
+            ('low', 'f4'), ('close', 'f4'), ('volume', 'f4')
+        ]
+        
+        for s in symbol_list:
+            # Main 1m data
+            df_1m = historical_data[s]
+            self.struct_data[s]['1m'] = self._df_to_struct(df_1m, struct_dtype)
+            
+            # Resampled data
+            for tf in ['5min', '15min', '1h']:
+                df_res = df_1m.resample(tf).agg({
+                    'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
+                }).dropna()
+                key = tf.lower().replace('min', 'm').replace('h', 'h')
+                self.struct_data[s][key] = self._df_to_struct(df_res, struct_dtype)
         
         self.current_index = 0
+        self.current_time_ms = 0
         self.continue_backtest = True
+
+    def _df_to_struct(self, df, dtype):
+        """Converts DataFrame to NumPy Structured Array efficiently"""
+        res = np.empty(len(df), dtype=dtype)
+        res['timestamp'] = df.index.values.astype('datetime64[ms]').astype('int64')
+        res['open'] = df['open'].values
+        res['high'] = df['high'].values
+        res['low'] = df['low'].values
+        res['close'] = df['close'].values
+        res['volume'] = df['volume'].values
+        return res
         
-    def get_latest_bars(self, symbol, n=1):
-        """Retorna las últimas n barras"""
+    def get_latest_bars(self, symbol, n=1, timeframe='1m'):
+        """Retorna vista de arreglo estructurado (Ultra-Fast slicing)"""
         try:
-            bars_list = self.latest_data[symbol]
-            return bars_list[-n:] if len(bars_list) >= n else bars_list
-        except KeyError:
-            return []
+            arr = self.struct_data[symbol][timeframe]
+            
+            # Find index of current_time_ms in this timeframe
+            # Using searchsorted (returns index where element should be inserted to maintain order)
+            # side='right' finds the first index > current_time_ms
+            idx = np.searchsorted(arr['timestamp'], self.current_time_ms, side='right')
+            
+            if idx == 0: return None
+            
+            start = max(0, idx - n)
+            return arr[start:idx] # Returns a view (Zero-Copy)
+        except Exception:
+            return None
+
+    def get_active_positions(self):
+        """Mock for strategy compatibility"""
+        return {}
+        
+    def get_symbol_precision(self, symbol):
+        """Mock for strategy compatibility"""
+        return {'quantity': 3, 'price': 2}
     
     def get_latest_bars_5m(self, symbol, n=1):
-        return self.latest_data_5m.get(symbol, [])[-n:]
+        return self.get_latest_bars(symbol, n, '5m')
     
     def get_latest_bars_15m(self, symbol, n=1):
-        return self.latest_data_15m.get(symbol, [])[-n:]
+        return self.get_latest_bars(symbol, n, '15m')
     
     def get_latest_bars_1h(self, symbol, n=1):
-        return self.latest_data_1h.get(symbol, [])[-n:]
+        return self.get_latest_bars(symbol, n, '1h')
     
     def update_bars(self):
         """Avanza una barra en el tiempo"""
-        for symbol in self.symbol_list:
-            df = self.historical_data.get(symbol)
-            if df is None or self.current_index >= len(df):
-                self.continue_backtest = False
-                return
+        symbol = self.symbol_list[0]
+        arr = self.struct_data[symbol]['1m']
+        
+        if self.current_index >= len(arr):
+            self.continue_backtest = False
+            return
             
-            row = df.iloc[self.current_index]
-            bar = {
-                'symbol': symbol,
-                'datetime': row.name if isinstance(row.name, datetime) else pd.to_datetime(row.name),
-                'open': float(row['open']),
-                'high': float(row['high']),
-                'low': float(row['low']),
-                'close': float(row['close']),
-                'volume': float(row['volume'])
-            }
-            
-            self.latest_data[symbol].append(bar)
-            
-            # Agregar a timeframes mayores cada N barras
-            if self.current_index % 5 == 0:
-                self.latest_data_5m[symbol].append(bar)
-            if self.current_index % 15 == 0:
-                self.latest_data_15m[symbol].append(bar)
-            if self.current_index % 60 == 0:
-                self.latest_data_1h[symbol].append(bar)
+        self.current_time_ms = arr['timestamp'][self.current_index]
+        close_price = arr['close'][self.current_index]
         
         self.current_index += 1
-        self.events_queue.put(MarketEvent())
+        
+        # Dispatch event
+        self.events_queue.put(MarketEvent(
+            symbol=symbol, 
+            close_price=close_price, 
+            timestamp=pd.to_datetime(self.current_time_ms, unit='ms', utc=True)
+        ))
 
 
 class BacktestPortfolio:
@@ -238,13 +271,28 @@ class BacktestPortfolio:
     def get_total_equity(self):
         return self.current_capital
     
+    def _apply_slippage(self, price, side):
+        """Simulate realistic slippage based on volatility"""
+        # Base slippage: 0.01% to 0.05%
+        import random
+        slip_pct = random.uniform(0.0001, 0.0005)
+        
+        # Apply against direction
+        if side == 'LONG':
+            return price * (1 + slip_pct) # Buy higher
+        else:
+            return price * (1 - slip_pct) # Sell lower
+
     def open_position(self, symbol, side, price, size_usd, timestamp, sl_price=None, tp_price=None):
-        """Abre una posición"""
+        """Abre una posición con Slippage Simulado"""
         if symbol in self.positions:
             return False  # Ya hay posición abierta
         
+        # Apply Slippage
+        filled_price = self._apply_slippage(price, side)
+        
         # Calcular cantidad
-        qty = (size_usd * self.leverage) / price
+        qty = (size_usd * self.leverage) / filled_price
         
         # Comisión de entrada
         commission = size_usd * COMMISSION_PCT
@@ -281,11 +329,15 @@ class BacktestPortfolio:
         side = pos['side']
         size_usd = pos['size_usd']
         
+        # Apply Slippage to Exit
+        exit_side = 'SHORT' if side == 'LONG' else 'LONG'
+        filled_price = self._apply_slippage(price, exit_side)
+        
         # Calcular PnL
         if side == 'LONG':
-            pnl_pct = (price - entry) / entry
+            pnl_pct = (filled_price - entry) / entry
         else:  # SHORT
-            pnl_pct = (entry - price) / entry
+            pnl_pct = (entry - filled_price) / entry
         
         pnl_usd = size_usd * self.leverage * pnl_pct
         
@@ -445,7 +497,7 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
         
         current_bar = bars[-1]
         current_price = current_bar['close']
-        current_time = current_bar['datetime']
+        current_time = pd.to_datetime(current_bar['timestamp'], unit='ms', utc=True)
         high = current_bar['high']
         low = current_bar['low']
         
@@ -486,45 +538,42 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
                     trade = portfolio.close_position(symbol, stored_tp, current_time)
                     if trade: trades_executed += 1
         
-        # Generar señales solo si no hay posición y han pasado suficientes barras
-        if symbol not in portfolio.positions and (bar_count - last_signal_idx) > 30:
-            # Usar estrategia simplificada para backtest
-            all_bars = data_provider.get_latest_bars(symbol, 100)
-            signal_type, strength = calculate_simple_signal(all_bars)
+        # 3. GENERATE SIGNALS (SUPREMO-V3 Real Logic)
+        # Sync strategy state with portfolio (for signal generation logic)
+        strategy.bought[symbol] = symbol in portfolio.positions
+        
+        # Call strategy every bar to allow EXIT signals and state updates
+        market_event = MarketEvent(symbol=symbol, close_price=current_price, timestamp=current_time)
+        # Note: We need to set the data handler in the strategy state if it uses it directly
+        # but HybridScalpingStrategy uses self.data_provider passed in constructor.
+        strategy.calculate_signals(market_event)
+        
+        # Process signals from queue
+        while not events_queue.empty():
+            event = events_queue.get()
+            if not isinstance(event, SignalEvent):
+                continue
             
-            if signal_type is not None and strength >= 0.6:
+            # Handle EXIT signals
+            if event.signal_type == SignalType.EXIT:
+                if symbol in portfolio.positions:
+                    trade = portfolio.close_position(symbol, current_price, current_time)
+                    if trade: trades_executed += 1
+                continue
+
+            # Handle ENTRY signals
+            if symbol not in portfolio.positions:
                 signals_generated += 1
                 last_signal_idx = bar_count
                 
-                # Metadata capture
-                atr_val = 0.0
-                try:
-                    # Reconstruir ATR correcto (14 period)
-                    if len(all_bars) >= 15:
-                        closes = np.array([b['close'] for b in all_bars[-15:]])
-                        highs = np.array([b['high'] for b in all_bars[-15:]])
-                        lows = np.array([b['low'] for b in all_bars[-15:]])
-                        # Simple ATR calc
-                        tr_list = []
-                        for i in range(1, len(closes)):
-                            hl = highs[i] - lows[i]
-                            hc = abs(highs[i] - closes[i-1])
-                            lc = abs(lows[i] - closes[i-1])
-                            tr_list.append(max(hl, hc, lc))
-                        atr_val = sum(tr_list[-14:]) / 14 if len(tr_list) >= 14 else tr_list[-1]
-                except:
-                    atr_val = current_price * 0.01
-
-                regime = "RANGING"
-                if atr_val / current_price > 0.01: # High Vol
-                    regime = "VOLATILE"
-                
+                # Metadata capture (Aligned with RiskManager)
+                meta_dict = event.metadata if event.metadata else {}
                 metadata = {
-                    'atr': float(atr_val),
-                    'regime': regime
+                    'atr': getattr(event, 'atr', 0.0),
+                    'confluence': meta_dict.get('multi_timeframe_score', 0.0)
                 }
 
-                # === DYNAMIC RISK LOGIC (Mirroring RiskManager) ===
+                # === DYNAMIC RISK & SIZING (Aligned with Supremo-V3) ===
                 # 1. Base Logic (Drawdown Protection)
                 peak = portfolio.peak_equity
                 current_cap = portfolio.current_capital
@@ -532,94 +581,54 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
                 
                 dd = (peak - current_cap) / peak if peak > 0 else 0
                 
-                risk_pct = 0.01 # Default 1%
-                if dd > 0.10:
-                    risk_pct = 0.005 # 0.5%
-                elif dd > 0.05:
-                    risk_pct = 0.0075 # 0.75%
+                risk_pct = 0.01 # Standard Institutional Risk (1%)
+                if dd > 0.05: risk_pct = 0.02 
+                if dd > 0.10: risk_pct = 0.01 
 
-                # 2. Profit Lock Milestones (Wealth Preservation)
-                if peak >= (initial * 2.0): # +100% Growth
-                    risk_pct *= 0.10 # Reduce to 10% (0.1% risk)
-                elif peak >= (initial * 1.5): # +50% Growth
-                    risk_pct *= 0.25 # Reduce to 25% (0.25% risk)
-                    
-                # 3. Protected Capital Floor (The Ratchet)
-                profit = peak - initial
-                if profit > 0:
-                    protected_capital = initial + (profit * 0.80)
-                    max_loss_allowed = current_cap - protected_capital
-                    
-                    if max_loss_allowed <= 0:
-                         risk_pct = 0.0 # Stop Trading
-                    else:
-                         current_risk_amt = current_cap * risk_pct
-                         if current_risk_amt > max_loss_allowed:
-                             risk_pct = max_loss_allowed / current_cap
-                
+                # 2. Profit Lock Milestones
+                if peak >= (initial * 2.0): risk_pct *= 0.50 
+                elif peak >= (initial * 1.5): risk_pct *= 0.75 
+               
                 risk_usd = current_cap * risk_pct
                 
-                # 2. Dynamic SL based on ATR metadata
-                # (Re-using atr_val calculated above)
-                atr_pct = atr_val / current_price
-                if atr_pct < 0.005:  # Low Vol
-                    sl_mult = 3.0
-                elif atr_pct > 0.01: # High Vol
-                    sl_mult = 2.0
-                else:
-                    sl_mult = 2.5
+                # 3. Position Sizing based on SL from Signal
+                # FIXED: Handles both percentage (2.0) and decimal (0.02)
+                raw_sl_pct = getattr(event, 'sl_pct', 1.5)
+                sl_decimal = raw_sl_pct / 100.0 if raw_sl_pct > 0.1 else raw_sl_pct
+                tp_pct = getattr(event, 'tp_pct', 2.0)
                 
-                sl_pct = max(0.003, min(atr_pct * sl_mult, 0.015))
-                
-                # 3. Volatility Based Sizing
                 # Size = Risk / SL_Pct
-                size_usd = risk_usd / sl_pct
+                size_usd = (risk_usd / sl_decimal) if sl_decimal > 0 else (current_cap * 0.1)
                 
-                # Cap size (e.g. max 50% of account for safety or safe leverage)
-                max_lev = 10
-                if atr_pct > 0.02: max_lev = 3
-                elif atr_pct > 0.01: max_lev = 5
-                elif atr_pct > 0.005: max_lev = 8
-                
-                max_size = current_cap * max_lev
+                # Hard cap sizing (prevent extreme leverage)
+                max_size = current_cap * 10 
                 size_usd = min(size_usd, max_size)
                 
-                risk_capital = size_usd # Used for open_position
+                # Institutional Minimum
+                if size_usd < 5.0:
+                    continue
 
-                # Ejecutar trade
-                side = 'LONG' if signal_type == SignalType.LONG else 'SHORT'
-                # Calc Entry SL/TP
-                tp_pct = max(0.005, sl_pct * 1.5) # 1.5 R:R
+                # 4. EXECUTE TRADE (Instant Fill with Slippage)
+                side = 'LONG' if event.signal_type == SignalType.LONG else 'SHORT'
                 
-                # MICRO-SCALPING SIZE BOOST (Corrected)
-                raw_notional_usd = risk_usd / sl_pct if sl_pct > 0 else 0
-                notional_usd = max(raw_notional_usd, 5.0) # Boost to Min $5 Notional
-                
-                # Calculate Margin Required
-                margin_required = notional_usd / portfolio.leverage
-                
-                # Check Collateral
-                if margin_required > portfolio.current_capital:
-                    margin_required = portfolio.current_capital * 0.99 # Leave 1% buffer
-                    
-                size_usd = margin_required # Pass Margin to open_position
-                    
+                # FIXED: Standardizing decimal usage for entry calculations
+                tp_decimal = tp_pct / 100.0 if tp_pct > 0.1 else tp_pct
                 
                 if side == 'LONG':
-                    entry_sl = current_price * (1 - sl_pct)
-                    entry_tp = current_price * (1 + tp_pct)
+                    entry_sl = current_price * (1 - sl_decimal)
+                    entry_tp = current_price * (1 + tp_decimal)
                 else: # SHORT
-                    entry_sl = current_price * (1 + sl_pct)
-                    entry_tp = current_price * (1 - tp_pct)
+                    entry_sl = current_price * (1 + sl_decimal)
+                    entry_tp = current_price * (1 - tp_decimal)
 
                 opened = portfolio.open_position_with_metadata(
-                    symbol, side, current_price, risk_capital, current_time, metadata, entry_sl, entry_tp
+                    symbol, side, current_price, size_usd, current_time, metadata, entry_sl, entry_tp
                 )
                 
                 if opened:
                     trades_executed += 1
                     if trades_executed <= 10 or trades_executed % 20 == 0:
-                        print(f"  🎯 Trade #{trades_executed}: {side} @ ${current_price:.2f}")
+                        print(f"  🎯 Trade #{trades_executed}: {side} @ ${current_price:.2f} (SL: {sl_decimal*100:.2f}%, TP: {tp_decimal*100:.2f}%)")
 
         
         # Actualizar equity cada hora
@@ -634,8 +643,10 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
     # Cerrar posiciones abiertas al final
     for symbol in list(portfolio.positions.keys()):
         bars = data_provider.get_latest_bars(symbol, 1)
-        if bars:
-            portfolio.close_position(symbol, bars[-1]['close'], bars[-1]['datetime'])
+        if bars is not None and len(bars) > 0:
+            ts_ms = bars[-1]['timestamp']
+            dt_close = pd.to_datetime(ts_ms, unit='ms', utc=True)
+            portfolio.close_position(symbol, bars[-1]['close'], dt_close)
             trades_executed += 1
     
     print(f"\n✅ Backtest completado: {trades_executed} trades ejecutados")
@@ -735,6 +746,7 @@ def calculate_metrics(portfolio: BacktestPortfolio) -> dict:
         'profit_factor': profit_factor,
         'avg_trade_duration_min': avg_duration,
         'final_capital': final_capital,
+        'initial_capital': initial,
         'peak_capital': portfolio.peak_equity
     }
 
@@ -828,9 +840,9 @@ if __name__ == "__main__":
     print("="*60)
     
     try:
-        # Load Symbols (Full Smart Basket)
-        symbols = Config.CRYPTO_FUTURES_PAIRS
-        print(f"📋 Testing Full Smart Basket ({len(symbols)} symbols)...")
+        # Load Symbols (Full Smart Basket - 20 symbols for Profitability Audit)
+        symbols = Config.CRYPTO_FUTURES_PAIRS[:20]
+        print(f"📋 Testing Aggressive Optimization Subset ({len(symbols)} symbols)...")
         
         grand_total_trades = 0
         grand_winning_trades = 0

@@ -91,7 +91,7 @@ class StrategySelector:
             # Simplified Logic:
             # We fetch BTC data as a proxy for the 'current vibe'
             bars = self.data_provider.get_latest_bars('BTC/USDT', n=100)
-            if not bars: return 0.5
+            if bars is None or len(bars) == 0: return 0.5
             
             closes = np.array([b['close'] for b in bars])
             returns = np.diff(closes) / closes[:-1]

@@ -17,6 +17,10 @@ class LiquidityGuardian:
         self.exchange = exchange
         self.wall_threshold_multiplier = 5.0 # Un muro es 5x el volumen promedio del book
         
+        # Phase 33: Anti-Spoofing Memory
+        # Guardamos snapshots previos para detectar muros que desaparecen
+        self.book_history = {} # {symbol: {'bids': [], 'asks': [], 'timestamp': ...}}
+        
     def analyze_liquidity(self, symbol: str, quantity: float, side: str) -> Dict:
         """
         Realiza el triple chequeo de liquidez antes de disparar.
@@ -58,6 +62,9 @@ class LiquidityGuardian:
             avg_vol = np.mean([b[1] for b in bids] + [a[1] for a in asks])
             
             is_low_depth = (best_bid_qty < (avg_vol * 0.05)) or (best_ask_qty < (avg_vol * 0.05))
+            
+            # --- PHASE 33: SPOOFING DETECTION ---
+            is_spoofing, spoofing_reason = self._detect_spoofing(symbol, bids, asks)
             
             # 4. Evaluación de Seguridad
             # Bloquear si hay un muro gigante en contra del movimiento
@@ -117,6 +124,43 @@ class LiquidityGuardian:
             "ask_walls": ask_walls[:3], # Top 3 muros de venta
             "avg_depth": (avg_bid_vol + avg_ask_vol) / 2
         }
+
+    def _detect_spoofing(self, symbol, current_bids, current_asks):
+        """
+        Phase 33: Spoofing Detection.
+        Compara el libro actual con el anterior. Si un muro gigante desaparece SIN ser comido (tradeado),
+        es probable spoofing.
+        """
+        is_spoofing = False
+        reason = ""
+        
+        if symbol in self.book_history:
+            prev = self.book_history[symbol]
+            prev_bids = prev['bids']
+            prev_asks = prev['asks']
+            
+            # Detectar desaparición de muros en BIDs
+            if prev_bids and current_bids:
+                prev_best_bid_vol = prev_bids[0][1]
+                curr_best_bid_vol = current_bids[0][1]
+                
+                # Si el volumen cae drásticamente (> 50%) sin cambio de precio significativo
+                if (prev_best_bid_vol > 5.0) and (curr_best_bid_vol < prev_best_bid_vol * 0.2):
+                     is_spoofing = True
+                     reason = f"Spoofing detected: Bid Wall vanished ({prev_best_bid_vol:.2f} -> {curr_best_bid_vol:.2f})"
+
+            # Detectar desaparición de muros en ASKs
+            if prev_asks and current_asks:
+                prev_best_ask_vol = prev_asks[0][1]
+                curr_best_ask_vol = current_asks[0][1]
+                
+                if (prev_best_ask_vol > 5.0) and (curr_best_ask_vol < prev_best_ask_vol * 0.2):
+                     is_spoofing = True
+                     reason = f"Spoofing detected: Ask Wall vanished ({prev_best_ask_vol:.2f} -> {curr_best_ask_vol:.2f})"
+
+        # Actualizar memoria
+        self.book_history[symbol] = {'bids': current_bids[:1], 'asks': current_asks[:1]}
+        return is_spoofing, reason
 
     def _calculate_slippage(self, levels: List, quantity: float) -> Tuple[float, float]:
         """

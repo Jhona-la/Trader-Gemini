@@ -24,7 +24,7 @@
 **Recovery**:
 1. Check Internet/VPN.
 2. Verify Binance Status (https://www.binance.com/en/status).
-3. Bot auto-retries with exponential backoff.
+3. Bot auto-retries with exponential backoff (1s, 2s, 4s...) using `parse_binance_error` for precise diagnostics.
 
 ### 🚨 Scenario C: Execution Hang / Frozen Loop
 **Symptom**: Heartbeat stops flowing in logs > 60s.

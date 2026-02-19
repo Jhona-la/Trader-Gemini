@@ -13,10 +13,7 @@ PROFESSOR METHOD:
 """
 
 import os
-try:
-    import ujson as json
-except ImportError:
-    import json
+# import json (Removed Phase 3)
 import csv
 import time
 import shutil
@@ -125,8 +122,8 @@ class DataHandler:
             return {}
             
         try:
-            with open(filepath, 'r') as f:
-                return json.load(f)
+            from utils.fast_json import FastJson
+            return FastJson.load_from_file(filepath) or {}
         except Exception as e:
             logger.error(f"❌ Error loading cached status from {filepath}: {e}")
             return {}
@@ -196,7 +193,8 @@ class DataHandler:
                         f.writelines(lines)
             
             with open(filepath, 'a') as f:
-                f.write(json.dumps(data) + "\n")
+                from utils.fast_json import FastJson
+                f.write(FastJson.dumps(data) + "\n")
         except Exception as e:
             logger.error(f"❌ Error writing health log: {e}")
 

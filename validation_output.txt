@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "C:\Users\jhona\Documents\Proyectos\Trader Gemini\tests\validate_phalanx.py", line 18, in <module>
+    from core.portfolio import Portfolio
+  File "C:\Users\jhona\Documents\Proyectos\Trader Gemini\core\portfolio.py", line 8, in <module>
+    from config import Config  # Import Config for Futures/Spot detection
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jhona\Documents\Proyectos\Trader Gemini\config.py", line 495, in <module>
+    validate_institutional_policy() # Enforce Policy Verification on Import
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\jhona\Documents\Proyectos\Trader Gemini\config.py", line 468, in validate_institutional_policy
+    if Config.Sniper.ENABLED and not Config.Sniper.USE_MAINNET:
+       ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: type object 'Sniper' has no attribute 'ENABLED'

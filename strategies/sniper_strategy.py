@@ -27,6 +27,7 @@ from config import Config
 from utils.logger import logger
 from utils.safe_leverage import safe_leverage_calculator
 from core.neural_bridge import neural_bridge
+from .phalanx import OrderFlowAnalyzer # PHASE 13
 
 
 class SniperStrategy(Strategy):
@@ -45,11 +46,11 @@ class SniperStrategy(Strategy):
         self.whitelist = getattr(Config.Sniper, 'WHITELIST', [])
         # self.symbol_list = [s for s in data_provider.symbol_list if s in self.whitelist]
         
-        # State tracking
-        self.last_signal_time = {}
-        self.signal_count = 0
+        # Order Flow & Regime (Phase 13/14)
+        self.of_analyzer = OrderFlowAnalyzer()
+        self.garch_models = {} # {symbol: OnlineGARCH}
         
-        logger.info(f"🎯 SNIPER STRATEGY INITIALIZED (ADAPTIVE MODE)")
+        logger.info(f"🎯 SNIPER STRATEGY INITIALIZED (PHALANX-OMEGA V3)")
     
     def calculate_signals(self, event):
         """Main signal generation loop."""
@@ -61,14 +62,38 @@ class SniperStrategy(Strategy):
             return
         
         # OMNI-ADAPTIVE: Sniper now trades whatever is in the active basket
-        for symbol in self.data_provider.symbol_list:
+        # Optimization: If event is for specific symbol, only process that one.
+        target_symbols = [event.symbol] if hasattr(event, 'symbol') and event.symbol else self.data_provider.symbol_list
+        
+        order_flow = getattr(event, 'order_flow', None)
+        
+        for symbol in target_symbols:
             try:
+                # PHASE 14: Update GARCH Volatility
+                bars = self.data_provider.get_latest_bars(symbol, n=2)
+                if len(bars) >= 2:
+                    ret = (bars['close'][-1] - bars['close'][-2]) / bars['close'][-2]
+                    # The following lines were incorrectly placed in the user's instruction.
+                    # They seem to be part of an exit logic, not GARCH update.
+                    # I'm placing the GARCH model instantiation and update here as intended.
+                    if symbol not in self.garch_models:
+                         from .phalanx import OnlineGARCH
+                         self.garch_models[symbol] = OnlineGARCH(0.01, 0.1, 0.85)
+                    
+                    vol = self.garch_models[symbol].update(ret)
+                    
+                    # Update RiskManager centrally if available
+                    # Note: portfolio often has access to engine or risk_manager
+                    if self.portfolio and hasattr(self.portfolio, 'risk_manager'):
+                        self.portfolio.risk_manager.update_leverage_and_params(vol, "ADAPTIVE")
+
                 # 0. Local Cooldown Check
                 now = datetime.now(timezone.utc)
                 if symbol in self.last_signal_time:
-                    if (now - self.last_signal_time[symbol]).total_seconds() < 30:
+                    if (now - self.last_signal_time[symbol]).total_seconds() < 20: # Slightly reduced cooldown for sniping
                         continue
-                signal = self._analyze_symbol(symbol)
+                
+                signal = self._analyze_symbol(symbol, order_flow=order_flow)
                 if signal:
                     self.events_queue.put(signal)
                     self.last_signal_time[symbol] = now # Record last signal
@@ -88,19 +113,19 @@ class SniperStrategy(Strategy):
         
         return london_active or ny_active
     
-    def _analyze_symbol(self, symbol: str) -> Optional[SignalEvent]:
-        """Run simplified 2-layer confluence analysis."""
+    def _analyze_symbol(self, symbol: str, order_flow: Optional[dict] = None) -> Optional[SignalEvent]:
+        """Run simplified 2-layer confluence + Phase 13 Order Flow analysis."""
         
         # Get data
         bars = self.data_provider.get_latest_bars(symbol, n=200)
         if len(bars) < 100:
             return None
         
-        # Extract OHLCV
-        closes = np.array([b['close'] for b in bars])
-        highs = np.array([b['high'] for b in bars])
-        lows = np.array([b['low'] for b in bars])
-        volumes = np.array([b['volume'] for b in bars])
+        # Extract OHLCV — F6: Cast float32→float64 for talib compatibility
+        closes = bars['close'].astype(np.float64)
+        highs = bars['high'].astype(np.float64)
+        lows = bars['low'].astype(np.float64)
+        volumes = bars['volume'].astype(np.float64)
         
         current_price = closes[-1]
         
@@ -109,11 +134,17 @@ class SniperStrategy(Strategy):
         # =====================================================================
         layer_a_results = self._analyze_technical(closes, highs, lows)
         layer_a_score = sum(1 for v in layer_a_results.values() if v['signal'] != 'NEUTRAL')
-        layer_a_direction = self._get_consensus_direction(layer_a_results)
+        # PHASE 13: Order Flow (Sniper Trigger)
+        of_res = self.of_analyzer.analyze_imbalance(order_flow) if order_flow else None
+        is_sniper_v3 = of_res and of_res.get('sniper')
         
-        # EXIGENTE: 2/3 confluencia requerida
-        if layer_a_score < 2:
+        # EXIGENTE: 2/3 confluencia requerida or Sniper V3 (High Imbalance + Delta)
+        if layer_a_score < 2 and not is_sniper_v3:
             return None
+        
+        if is_sniper_v3:
+            layer_a_direction = 'LONG' if of_res['signal'] > 0 else 'SHORT'
+            layer_a_score = 3.5 # Maximum technical conviction for Sniper V3
         
         # =====================================================================
         # PHASE 8: NEURAL BRIDGE CROSS-VALIDATION
@@ -218,7 +249,12 @@ class SniperStrategy(Strategy):
             tp_pct=tp_pct_val,
             sl_pct=sl_pct_val,
             current_price=current_price,
-            leverage=leverage
+            leverage=leverage,
+            metadata={
+                'sniper_mode': is_sniper_v3,
+                'of_reason': of_res.get('reason') if of_res else 'TECHNICAL',
+                'delta': order_flow.get('delta', 0.0) if order_flow else 0.0
+            }
         )
         
         return signal

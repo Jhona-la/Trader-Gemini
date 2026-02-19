@@ -1,59 +1,53 @@
-
 import unittest
 import os
-import sys
 import shutil
-import time
+import numpy as np
+from strategies.technical import HybridScalpingStrategy
+from core.genotype import Genotype
 
-# Add project root
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+class MockDataProvider:
+    def __init__(self):
+        self.symbol_list = ['BTC/USDT']
 
-from utils.data_manager import DatabaseHandler
+class MockQueue:
+    def put(self, item): pass
 
 class TestPersistence(unittest.TestCase):
     def setUp(self):
-        self.db_path = "tests/test_crash.db"
-        if os.path.exists(self.db_path):
-            os.remove(self.db_path)
-        self.db = DatabaseHandler(self.db_path)
-        
-    def tearDown(self):
-        self.db.close()
-        # Wait for file unlock
-        time.sleep(0.1)
-        if os.path.exists(self.db_path):
-            os.remove(self.db_path)
+        # Create temp dir for test genotypes
+        if not os.path.exists("data/genotypes"):
+            os.makedirs("data/genotypes")
             
-    def test_crash_recovery(self):
-        print("\n🧪 Testing Crash Recovery...")
+    def test_save_on_stop(self):
+        symbol = "TEST/PERSIST"
         
-        # 1. Open Position
-        print("   -> Opening position BTC/USDT...")
-        self.db.log_fill_event_atomic(
-            trade_payload={
-                'symbol': 'BTC/USDT', 'side': 'BUY', 'quantity': 0.1, 
-                'price': 50000.0, 'timestamp': '2024-01-01 12:00:00'
-            },
-            position_payload={
-                'symbol': 'BTC/USDT', 'quantity': 0.1, 'entry_price': 50000.0,
-                'current_price': 50000.0, 'pnl': 0.0
-            }
-        )
+        # 1. Create Strategy with Genotype
+        genotype = Genotype(symbol)
+        genotype.init_brain(25, 4)
         
-        # 2. Simulate Crash (Hard Close)
-        self.db.close()
-        print("   -> 💥 SYSTEM CRASH SIMULATED (DB Closed)")
+        # Modify weights to simulate learning
+        # Set first weight to specific value
+        genotype.genes['brain_weights'][0] = 999.99
         
-        # 3. Recover
-        print("   -> 🚑 Restarting System...")
-        new_db = DatabaseHandler(self.db_path)
-        positions = new_db.get_open_positions()
+        dp = MockDataProvider()
+        queue = MockQueue()
+        strategy = HybridScalpingStrategy(dp, queue, genotype=genotype)
         
-        # 4. Verify
-        self.assertTrue('BTC/USDT' in positions, "Position missing after recovery")
-        self.assertEqual(positions['BTC/USDT']['quantity'], 0.1, "Quantity mismatch")
-        print("   ✅ Recovery Successful! Position restored.")
-        new_db.close()
+        # 2. Stop Strategy (Should trigger save)
+        strategy.stop()
+        
+        # 3. Verify File Exists
+        filepath = f"data/genotypes/{symbol.replace('/','')}_gene.json"
+        self.assertTrue(os.path.exists(filepath))
+        
+        # 4. Load and Verify
+        loaded_genotype = Genotype.load(filepath)
+        self.assertIsNotNone(loaded_genotype)
+        self.assertEqual(loaded_genotype.genes['brain_weights'][0], 999.99)
+        
+        # Cleanup
+        if os.path.exists(filepath):
+            os.remove(filepath)
 
 if __name__ == '__main__':
     unittest.main()

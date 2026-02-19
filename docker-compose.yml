@@ -1,0 +1,231 @@
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------
+  # TRADER GEMINI BOT (HEADLESS)
+  # ---------------------------------------------------------
+  trader-gemini:
+    container_name: omega-bot
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: trader-gemini:latest
+    restart: unless-stopped
+    user: "1000:1000" # gemini user
+    environment:
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_SECRET_KEY=${BINANCE_SECRET_KEY}
+      - WANDB_API_KEY=${WANDB_API_KEY:-}
+      - BOT_MODE=${BOT_MODE:-live}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - omega-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.2'
+          memory: 128M
+
+  # ---------------------------------------------------------
+  # OBSERVABILITY STACK (Prometheus + Grafana + Loki)
+  # ---------------------------------------------------------
+
+  # Prometheus (Metrics Database)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: omega-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./deployment/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d' # FASE 10: 7-day retention
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - "9090:9090"
+    networks:
+      - omega-net
+    # FASE 9: Low CPU priority — don't steal from Metal-Core
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
+
+  # Grafana (Visualization)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: omega-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=omega2026
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_UNIFIED_ALERTING_ENABLED=true
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deployment/grafana/provisioning:/etc/grafana/provisioning
+      - ./deployment/grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "3000:3000"
+    networks:
+      - omega-net
+    depends_on:
+      - prometheus
+      - loki
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+
+  # Loki (Log Aggregation)
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: omega-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./deployment/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - omega-net
+    # FASE 9: Low CPU priority
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 256M
+        reservations:
+          cpus: '0.02'
+          memory: 32M
+
+  # Promtail (Log Shipper → Loki + Logstash Multiplexer)
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: omega-promtail
+    restart: unless-stopped
+    volumes:
+      - ./logs:/var/log/trader:ro # Read-only access to bot logs
+      - ./deployment/promtail.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - omega-net
+    depends_on:
+      - loki
+    # FASE 9: Minimal resources
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 128M
+
+  # =============================================================
+  # 🧊 COLD STORAGE: ELK STACK ("Célula Dormida")
+  # =============================================================
+  # Estado por defecto: STOPPED (0% CPU/RAM)
+  # Comando de activación: docker-compose --profile cold-storage up -d
+  # Comando para dormir:   docker-compose --profile cold-storage stop
+
+  # Elasticsearch (Forensic Database)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    container_name: omega-elasticsearch
+    profiles: [ "cold-storage" ]
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.ml.enabled=false
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
+      - cluster.name=omega-forensics
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - omega-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Logstash (Log Transformer & Indexer)
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.12.0
+    container_name: omega-logstash
+    profiles: [ "cold-storage" ]
+    restart: unless-stopped
+    environment:
+      - "LS_JAVA_OPTS=-Xms128m -Xmx128m"
+      - XPACK_MONITORING_ENABLED=false
+    volumes:
+      - ./deployment/elk/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    ports:
+      - "5044:5044"
+    networks:
+      - omega-net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+
+  # Kibana (Forensic Visualization)
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.0
+    container_name: omega-kibana
+    profiles: [ "cold-storage" ]
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - XPACK_SECURITY_ENABLED=false
+    ports:
+      - "5601:5601"
+    networks:
+      - omega-net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+
+networks:
+  omega-net:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  es_data:

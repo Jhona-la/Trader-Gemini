@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 5s     # Scrape frequently for HFT monitoring
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: 'trader_gemini'
+    static_configs:
+      - targets: ['trader-gemini:8000']
+    metrics_path: '/metrics'

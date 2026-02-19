@@ -1,0 +1,19 @@
+Traceback (most recent call last):
+📊 Metrics Exporter Initialized (Phase 99: Per-Symbol + Health).
+  File "C:\Users\jhona\Documents\Proyectos\Trader Gemini\tests\verify_risk_shield.py", line 104, in test_latency_breaker
+
+🛡️ TESTING HALF-KELLY SIZING...
+  Mock Smart Kelly: 0.20
+  Result: 0.2000
+❌ FAIL: Expected ~0.10, got 0.2
+
+    sig = SignalEvent("TEST_STRAT", "BTC/USDT", datetime.now(), SignalType.LONG, 1.0)
+TypeError: SignalEvent.__init__() takes 1 positional argument but 6 were given
+📉 TESTING MAE TRACKER...
+  Avg MAE: 0.0100
+  Suggested SL (1.5x): 0.0150
+✅ PASS: Optimal SL calculation correct (1.5%).
+
+🛑 TESTING LATENCY CIRCUIT BREAKER...
+  Simulating 200ms Ping...
+❌ ERROR in Latency Test: SignalEvent.__init__() takes 1 positional argument but 6 were given

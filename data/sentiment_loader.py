@@ -9,8 +9,20 @@ Now:
 - Returns: Global Score (Macro) + Symbol Score (Specific).
 """
 
-import feedparser
-from textblob import TextBlob
+try:
+    import feedparser
+    HAS_FEEDPARSER = True
+except ImportError:
+    HAS_FEEDPARSER = False
+    print("⚠️ sentiment_loader: feedparser not found. Sentiment analysis disabled.")
+
+try:
+    from textblob import TextBlob
+    HAS_TEXTBLOB = True
+except ImportError:
+    HAS_TEXTBLOB = False
+    print("⚠️ sentiment_loader: textblob not found. NLP features disabled.")
+
 import time
 import threading
 from datetime import datetime
@@ -19,17 +31,29 @@ from config import Config
 from utils.logger import logger
 from utils.thread_monitor import monitor
 
-import nltk
+try:
+    import nltk
+    HAS_NLTK = True
+except ImportError:
+    HAS_NLTK = False
+    print("⚠️ sentiment_loader: nltk not found. NLP features disabled.")
 
 def ensure_nltk_resources():
     """Ensure required NLTK data is available."""
-    resources = ['punkt', 'brown', 'wordnet', 'omw-1.4', 'averaged_perceptron_tagger']
-    for res in resources:
-        try:
-            nltk.data.find(f'tokenizers/{res}' if res == 'punkt' else f'corpora/{res}' if res in ['brown', 'wordnet'] else f'taggers/{res}')
-        except LookupError:
-            print(f"📥 Downloading NLTK resource: {res}...")
-            nltk.download(res, quiet=True)
+    if not HAS_NLTK:
+        return
+    try:
+        resources = ['punkt', 'brown', 'wordnet', 'omw-1.4', 'averaged_perceptron_tagger']
+        for res in resources:
+            try:
+                nltk.data.find(f'tokenizers/{res}' if res == 'punkt' else f'corpora/{res}' if res in ['brown', 'wordnet'] else f'taggers/{res}')
+            except LookupError:
+                # Silently skip if NLTK download fails in restricted envs
+                pass 
+                # print(f"📥 Downloading NLTK resource: {res}...")
+                # nltk.download(res, quiet=True)
+    except Exception:
+        pass
 
 class SentimentLoader:
     def __init__(self):
@@ -95,6 +119,9 @@ class SentimentLoader:
 
     def fetch_news(self):
         """Fetched RSS and updates sentiment_map"""
+        if not HAS_FEEDPARSER:
+            return
+
         print("📰 Fetching Crypto News...")
         
         # Reset temp counters for this batch

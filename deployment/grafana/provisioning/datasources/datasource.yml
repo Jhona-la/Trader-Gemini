@@ -1,0 +1,32 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      maxLines: 1000
+
+  # ═══════════════════════════════════════════
+  # 🧊 COLD STORAGE: Elasticsearch (Forensic)
+  # ═══════════════════════════════════════════
+  # Only available when cold-storage profile is active.
+  # Grafana will show "datasource unavailable" if ES is dormant.
+  - name: Elasticsearch
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    jsonData:
+      index: "trader-gemini-*"
+      timeField: "@timestamp"
+      esVersion: "8.12.0"
+      logMessageField: "log_message"
+      logLevelField: "log_level"
+      maxConcurrentShardRequests: 5

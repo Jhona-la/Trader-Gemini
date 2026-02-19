@@ -44,6 +44,48 @@ class DatabaseHandler:
             logger.error(f"Database connection error: {e}")
             return None
 
+    def check_integrity(self):
+        """
+        Phase 43: Auto-Healing.
+        Runs PRAGMA integrity_check. If failed, rotates DB.
+        """
+        conn = self.get_connection()
+        if not conn: return False
+        
+        try:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA integrity_check;")
+            result = cursor.fetchone()[0]
+            if result != "ok":
+                logger.error(f"🚨 DB CORRUPTION DETECTED: {result}")
+                self.heal_database()
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"Integrity check failed: {e}")
+            self.heal_database() # Phase 43: Heal on crash too
+            return False
+
+    def heal_database(self):
+        """
+        Rotates corrupted DB and starts fresh.
+        """
+        if self.conn:
+            self.conn.close()
+            self.conn = None
+            
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = f"{self.db_path}.corrupt_{timestamp}"
+        
+        try:
+            os.rename(self.db_path, backup_path)
+            logger.warning(f"⚠️ ROTATED CORRUPT DB to {backup_path}")
+            self.conn = self.get_connection() # Recast connection (creates new DB)
+            self.create_tables()
+            logger.info("✅ Database Auto-Healed successfully")
+        except Exception as e:
+            logger.critical(f"🔥 FATAL: Could not heal database: {e}")
+
     def create_tables(self):
         """
         Creates the necessary tables if they don't exist.

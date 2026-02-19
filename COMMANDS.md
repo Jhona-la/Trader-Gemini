@@ -1,52 +1,67 @@
-# 📜 GUÍA DE COMANDOS - TRADER GEMINI
+# 📜 TRADER GEMINI: MANUAL DE OPERACIONES INSTITUCIONAL (SOP)
+**Protocolo**: Sincro-Omega | **Nivel de Acceso**: Admin/Quant
 
-Esta guía define el **orden de ejecución** y la **función** de cada comando del sistema para garantizar una operación institucional segura.
-
----
-
-## 🚀 FLUJO DE EJECUCIÓN (PASO A PASO)
-
-### **PASO 1: Validación Pre-Vuelo (Laboratorio)**
-Antes de encender el bot real, debes validar que la estrategia es robusta en el mercado actual para los símbolos elegidos.
-- **Comando**: `.venv\Scripts\python.exe tools/walk_forward_tester.py`
-- **Función (QUÉ)**: Simula ciclos de entrenamiento y trading real en el pasado reciente.
-- **Resultado**: Si el Sharpe Ratio es > 1.5, el símbolo es apto para producción.
-
-### **PASO 2: Prueba de Estrés Estadístico (Resiliencia)**
-Una vez validada la robustez, probamos si el capital es suficiente para soportar rachas de mala suerte.
-- **Comando**: `.venv\Scripts\python.exe tools/monte_carlo_sim.py`
-- **Función (QUÉ)**: Ejecuta 5,000 "universos paralelos" reordenando los trades.
-- **Resultado**: Nos da el **Risk of Ruin**. Si es < 1%, el capital de $15 es seguro.
-
-### **PASO 3: Monitoreo en Paralelo (Vigilancia)**
-Mientras el bot opera (o incluso antes), debes tener estas terminales abiertas para ver qué está pensando la IA.
-- **Terminal A (Dashboard)**: `.\DASHBOARD_FUTURES.bat`
-  - **Función**: Interfaz visual (Streamlit) para ver balance, equity y trades activos.
-- **Terminal B (Oracle)**: `.venv\Scripts\python.exe check_oracle.py`
-  - **Función**: Muestra en tiempo real las probabilidades y el "árbol de decisión" de la IA para cada moneda.
-
-### **PASO 4: Ejecución Principal (El Motor)**
-Una vez que el laboratorio dio "Verde", el estrés es bajo y el monitoreo está activo, enciende el bot.
-- **Comando**: `.\START_FUTURES.bat` (o `.venv\Scripts\python.exe main.py --mode futures`)
-- **Función**: Ejecución de órdenes reales en Binance.
+Este manual define el **Standard Operating Procedure (SOP)** para el despliegue del "Organismo Supremo" en entornos de producción HFT.
 
 ---
 
-## 📊 RESUMEN DE COMANDOS ÚTILES
-
-| Comando | Función | Cuándo Ejecutar | Paralelo |
-| :--- | :--- | :--- | :--- |
-| `tools/walk_forward_tester.py` | Auditoría de robustez (WFV) | Antes del bot | No |
-| `tools/monte_carlo_sim.py` | Prueba de Supervivencia (Monte Carlo) | Después del WFV | No |
-| `check_oracle.py` | Visión cerebral de la IA | Siempre | **SÍ** |
-| `DASHBOARD_FUTURES.bat` | Monitoreo visual (Web) | Siempre | **SÍ** |
-| `main.py` | Trading real | Después de validar | **SÍ** |
-| `health_check.py` | Diagnóstico de latencia y API | Si el bot se siente lento | No |
+## 🏗️ FASE 0: PREPARACIÓN DEL HARDWARE
+Para garantizar latencias de microsegundos, el sistema requiere:
+1.  **Aislamiento de Cores**: El bot intenta anclarse a cores de alto rendimiento automáticamente.
+2.  **Sincronización NTP**: El error de tiempo debe ser < 5ms.
+3.  **Power Plan**: Esquema de Energía "Alto Rendimiento" en Windows.
 
 ---
 
-## 👨‍🏫 MODO PROFESOR: ¿Por qué este orden?
-- **QUÉ**: Una jerarquía de ejecución segregada.
-- **POR QUÉ**: Separamos el **Laboratorio** (tester) de la **Vigilancia** (oracle) y la **Operación** (main). Esto evita que un error de trading detenga tu capacidad de ver qué está pasando.
-- **PARA QUÉ**: Para maximizar el Uptime y reducir el riesgo de "volar a ciegas".
-- **CUÁNDO**: Sigue este órden cada vez que reinicies el sistema tras una actualización.
+## 🚀 FASE 1: DESPEGUE INSTITUCIONAL (GOD MODE)
+El despegue debe realizarse exclusivamente a través de los lanzadores optimizados que habilitan banderas de CPU de alta prioridad.
+
+1.  **Lanzamiento Principal**:
+    ```powershell
+    .\LAUNCH_GOD_MODE.bat
+    ```
+    *Este comando ejecuta el motor con prioridad `High`, deshabilita asserts de Python (`-O`) y activa el orbe de auditoría `God-Mode`.*
+
+2.  **Lanzamiento de Futuros (Rápido)**:
+    ```powershell
+    .\START_FUTURES.bat
+    ```
+
+---
+
+## 📊 FASE 2: MONITOREO DE SISTEMAS (COCKPIT)
+El sistema HFT no debe operarse "a ciegas". Mantén siempre visibles estas tres consolas:
+
+1.  **Terminal de Ejecución**: Muestra el flujo de señales y fills.
+2.  **Dashboard de Métricas**:
+    ```bash
+    streamlit run dashboard/app.py
+    ```
+    *Verifica el Sharpe Ratio en vivo y la Utilización de la Cola de Eventos.*
+3.  **Oráculo de Inferencia**:
+    ```bash
+    python check_oracle.py
+    ```
+    *Visualiza las predicciones de la Trinidad (Genético + RL + OL) antes de que lleguen al exchange.*
+
+---
+
+## 🛠️ COMANDOS DE AUDITORÍA Y BENCHMARK
+Herramientas para garantizar la perfección operativa antes de escalar el capital.
+
+| Comando | Función | Objetivo |
+| :--- | :--- | :--- |
+| `python tests/certification_of_perfection.py` | Certificación Omega | Validar latencia < 500μs |
+| `python tests/test_extreme_load.py` | Stress Test | Simular flash-crash y ráfaga |
+| `python utils/health_check.py` | Diagnostic | Verificar API, Tiempo y Red |
+
+---
+
+## 📚 GLOSARIO DE NANO-LATENCIA HFT
+- **Zero-Copy**: Metodología donde los datos no se copian entre CPU/Memoria, sino que se pasan referencias (`Structured Arrays`) para evitar el recolector de basura (GC).
+- **Jitter**: Variación en el tiempo de procesamiento. Un jitter alto (ms) rompe la estrategia de scalping.
+- **Kernel Fusion**: Consolidación de múltiples funciones lógicas en una sola unidad compilada por LLVM (`Numba`) para maximizar la localidad de cache L1.
+- **Trinidad Omega**: El enjambre de 3 IAs (Genética, Refuerzo y Online) que gobierna cada símbolo.
+
+---
+**Certificado**: Omega Grade Architecture | **Fecha**: 2026-02-10

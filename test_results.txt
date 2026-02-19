@@ -1,0 +1,4 @@
+test_df_b5_target_clipping (__main__.TestP1Fixes.test_df_b5_target_clipping)
+[DF-B5] Verify that outlier rewards are clipped. ... ok
+test_df_c8_rate_limiter_sync (__main__.TestP1Fixes.test_df_c8_rate_limiter_sync)
+[DF-C8] Verify token bucket syncs with server used-weight. ... 

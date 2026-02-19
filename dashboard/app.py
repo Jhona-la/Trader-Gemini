@@ -704,6 +704,56 @@ with tab1:
             st.caption("Waiting for Meta-Brain simulation...")
 
     with col_chart:
+        st.subheader("🧠 Neuro-Core Telemetry")
+        
+        # Load Brain Telemetry
+        brain_path = os.path.join(active_data_dir, "brain_telemetry.json")
+        # Fallback to root if not in session dir
+        if not os.path.exists(brain_path):
+             brain_path = "dashboard/data/brain_telemetry.json"
+             
+        if os.path.exists(brain_path):
+            try:
+                with open(brain_path, 'r') as f:
+                    brain = json.load(f)
+                
+                # Layout: Gauge | Bars
+                b_col1, b_col2 = st.columns([1, 2])
+                
+                with b_col1:
+                    score = brain.get('consensus_score', 0)
+                    delta_t = (datetime.now(timezone.utc) - datetime.fromisoformat(brain['timestamp'])).total_seconds()
+                    
+                    # Entropy Warning
+                    entropy_status = brain.get('entropy', 'LOW')
+                    if entropy_status == 'HIGH':
+                        st.warning(f"😵 HIGH ENTROPY (HOLD)")
+                    elif score > 0.8:
+                        st.success(f"⚡ HIGH CONVICTION")
+                    elif score < 0.2:
+                        st.error(f"❄️ BEARISH")
+                    else:
+                        st.info(f"⚖️ NEUTRAL")
+                        
+                    st.metric("Consensus", f"{score:.0%}", delta_color="off", help=f"Updated {int(delta_t)}s ago")
+                
+                with b_col2:
+                    # Vote Breakdown
+                    votes = brain.get('votes', {})
+                    weights = brain.get('weights', {})
+                    
+                    # Create a stacked bar or simple progress bars
+                    for model, vote in votes.items():
+                        w = weights.get(model, 0.33)
+                        st.caption(f"{model} (Vote: {vote:.2f} | Weight: {w:.2f})")
+                        st.progress(max(0.0, min(1.0, vote)))
+                        
+            except Exception as e:
+                st.error(f"Brain Error: {e}")
+        else:
+             st.info("🧠 Waiting for AI signal telemetry...")
+             
+        st.markdown("---")
         st.subheader("💹 Equity Curve & Drawdown")
         
         if not history.empty and 'total_equity' in history.columns and 'timestamp' in history.columns:

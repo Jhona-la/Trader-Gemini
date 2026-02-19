@@ -1,0 +1,5 @@
+
+🚀 Benchmarking RiskManager Latency (Phase 56)...
+   - generate_order Average: 428.43 μs
+   - generate_order Jitter (StdDev): 498.92 μs
+ℹ️ Current Latency: 428.43 μs

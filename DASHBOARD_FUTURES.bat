@@ -1,11 +1,17 @@
 @echo off
-echo ========================================
-echo  TRADER GEMINI - FUTURES DASHBOARD
-echo ========================================
-echo Starting Futures Dashboard on port 8501...
-echo Open: http://localhost:8501
+setlocal
+cd /d "%~dp0"
+title [DASHBOARD] TRADER GEMINI - MONITOR
+color 09
+
+echo.
+echo 📊 STARTING TRADER GEMINI DASHBOARD
 echo.
 
-.\.venv\Scripts\streamlit.exe run dashboard/app.py
+call .venv\Scripts\activate.bat
 
+streamlit run dashboard/app.py --server.port 8501 --server.headless true
+
+echo.
+echo [INFO] Dashboard closed.
 pause

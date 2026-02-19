@@ -2,38 +2,43 @@
 Professional logging configuration for Trader Gemini
 Replaces print() statements with structured logging (JSON)
 """
+import re
 import logging
-import json
-import traceback
-from logging.handlers import RotatingFileHandler
-import os
-from datetime import datetime
+# Try to use orjson for ultra-fast serialization (Phase 3: Hardware Opt)
+try:
+    import orjson
+    def json_dumps(obj):
+        return orjson.dumps(obj).decode('utf-8')
+except ImportError:
+    import json
+    def json_dumps(obj):
+        return json.dumps(obj)
 
 class JSONFormatter(logging.Formatter):
     """
     Custom formatter to output logs in JSON format for machine ingestion (Splunk/ELK).
     """
     def format(self, record):
+        # AEGIS-ULTRA: Loki-Compatible JSON Structure (Phase 8)
         log_record = {
-            "timestamp": self.formatTime(record, self.datefmt),
+            "ts": datetime.fromtimestamp(record.created).isoformat(), # ISO 8601
             "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName,
+            "component": getattr(record, "component", record.name),
+            "trade_id": getattr(record, "trade_id", None),
+            "strategy_id": getattr(record, "strategy_id", None),
+            "msg": record.getMessage(),
             "line": record.lineno,
-            "path": record.pathname 
+            "file": record.filename
         }
+        
+        # Prune None values (Bandwidth Opt)
+        log_record = {k: v for k, v in log_record.items() if v is not None}
         
         # Include exception info if present
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
             
-        # Include stack trace if present
-        if record.stack_info:
-            log_record["stack_trace"] = self.formatStack(record.stack_info)
-            
-        return json.dumps(log_record)
+        return json_dumps(log_record)
 
 def setup_logger(name='trader_gemini', log_dir='logs'):
     """
@@ -53,6 +58,10 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)  # Capture everything, handlers will filter
     
+    # 🛡️ [VANGUARDIA-SOBERANA] Attach Sensitive Data Filter
+    secure_filter = SensitiveDataFilter()
+    logger.addFilter(secure_filter)
+    
     # Prevent duplicate handlers if logger already exists
     if logger.handlers:
         return logger
@@ -62,22 +71,40 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     # A. Console Handler (Human Readable)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
-    console_format = logging.Formatter(
-        '%(asctime)s [%(levelname)s] %(message)s',
-        datefmt='%H:%M:%S'
-    )
+    
+    # PHASE 46: HFT_STREAMING Telemetry (Microseconds)
+    if os.getenv('HFT_LOG_MODE') == 'STREAMING':
+        console_format = logging.Formatter(
+            '%(asctime)s.%(msecs)03d %(message)s',
+            datefmt='%H:%M:%S'
+        )
+    else:
+        console_format = logging.Formatter(
+            '%(asctime)s [%(levelname)s] %(message)s',
+            datefmt='%H:%M:%S'
+        )
     console_handler.setFormatter(console_format)
     
-    # Determine filenames based on mode
+    # Determine filenames based on mode and process
     suffix = os.getenv('BOT_MODE', '') # e.g. 'spot' or 'futures'
     date_str = datetime.now().strftime("%Y%m%d")
     
+    # Process differentiation (Phase 17.1 Fix)
+    import sys
+    process_suffix = ""
+    if "dashboard" in sys.argv[0] or "streamlit" in sys.argv[0]:
+        process_suffix = "_dashboard"
+    elif "check_oracle" in sys.argv[0]:
+        process_suffix = "_oracle"
+    elif "walk_forward" in sys.argv[0]:
+        process_suffix = "_tester"
+    
     if suffix:
-        main_log_name = f'bot_{suffix}_{date_str}.json'
-        error_log_name = f'error_{suffix}_{date_str}.json'
+        main_log_name = f'bot_{suffix}{process_suffix}_{date_str}.json'
+        error_log_name = f'error_{suffix}{process_suffix}_{date_str}.json'
     else:
-        main_log_name = f'bot_{date_str}.json'
-        error_log_name = f'error_{date_str}.json'
+        main_log_name = f'bot{process_suffix}_{date_str}.json'
+        error_log_name = f'error{process_suffix}_{date_str}.json'
         
     main_log_path = os.path.join(log_dir, main_log_name)
     error_log_path = os.path.join(log_dir, error_log_name)
@@ -138,9 +165,27 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     return logger
 
 def stop_logger():
-    """Stop the async log listener gracefully"""
+    """Stop the async log listener gracefully and flush the queue"""
     if hasattr(logger, '_listener'):
-        logger._listener.stop()
+        try:
+            # First, check if there are pending logs
+            pending = logger._listener.queue.qsize()
+            if pending > 0:
+                print(f"⏳ Flushing {pending} logs before shutdown...")
+            
+            logger._listener.stop()
+            # Remove handlers to prevent leaks on reload
+            while logger.handlers:
+                logger.removeHandler(logger.handlers[0])
+            print("✅ Logging system stopped gracefully.")
+        except Exception as e:
+            print(f"⚠️ Error stopping logger: {e}")
+
+def get_log_queue_status():
+    """Returns the current size of the log queue to monitor backpressure"""
+    if hasattr(logger, '_listener'):
+        return logger._listener.queue.qsize()
+    return 0
 
 
 def cleanup_old_logs(log_dir: str, days: int = 7):

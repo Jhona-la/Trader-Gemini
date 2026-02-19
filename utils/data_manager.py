@@ -129,6 +129,39 @@ def initialize_data_manager(data_dir: str):
     """Wrapper to call cleanup on startup"""
     cleanup_dashboard_data(data_dir)
 
+def safe_append_csv(file_path: str, data_dict: dict):
+    """
+    Thread-safe CSV append.
+    Acquires lock to prevent race conditions with dashboard readers.
+    """
+    with _file_lock:
+        file_exists = os.path.isfile(file_path)
+        try:
+            with open(file_path, 'a', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=data_dict.keys())
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerow(data_dict)
+        except Exception as e:
+            # Fallback or Log? Since this is utils, we print or raise.
+            # But logger might be using this? No, logger uses QueueHandler.
+            print(f"safe_append_csv failed: {e}")
+
+def safe_read_csv(file_path: str):
+    """
+    Thread-safe CSV read.
+    Returns DataFrame or None if failed.
+    """
+    import pandas as pd
+    with _file_lock:
+        if not os.path.exists(file_path):
+            return None
+        try:
+            return pd.read_csv(file_path)
+        except Exception as e:
+            print(f"safe_read_csv failed: {e}")
+            return None
+
 class DatabaseHandler:
     """
     Robust SQLite Handler with WAL Mode (Write-Ahead Logging).

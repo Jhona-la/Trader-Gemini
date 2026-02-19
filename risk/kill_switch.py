@@ -1,164 +1,149 @@
-from datetime import datetime, timezone, timedelta
-from utils.notifier import Notifier
-from utils.logger import logger
+
+import os
+import sys
+import time
+import asyncio
+from utils.logger import setup_logger
+from config import Config
+
+logger = setup_logger("KillSwitch")
 
 class KillSwitch:
     """
-    Enhanced Kill Switch - Optimized for $12→$50 Growth Challenge
+    🛡️ PHASE 19: ATOMIC INTEGRITY KILL-SWITCH
+    Safety mechanism to stop trading immediately.
+    
+    [SS-010 FIX] Replaced destructive sys.exit(1) with cooperative shutdown:
+    - Sets self.active = True to block all new orders
+    - Writes atomic lock file for restart prevention
+    - Signals shutdown_callback for Engine to handle graceful cleanup
+    - Engine is responsible for: close positions → flush DB → close WebSockets → exit
+    
+    Features:
+    1. Soft Stop: Signal engine to close positions, then exit (Normal risk limit).
+    2. Hard Stop: Set active flag + lock file (Critical bug). Engine decides exit.
+    3. Atomic Lock: File-based persistence to prevent auto-restart loops.
     """
     
-    def __init__(self, 
-                 growth_drawdown_pct=0.25,    # 25% en growth phase
-                 standard_drawdown_pct=0.15,  # 15% en standard  
-                 max_daily_losses=5,          # Más permisivo
-                 max_api_errors=5,
-                 recovery_threshold=0.02,     # Auto-recovery at 2% recovery
-                 min_equity=12.50):           # Hard floor (Rule 3.3)
+    LOCK_FILE = "STOP_TRADING.LOCK"
     
-        self.is_active = False
-        self.activation_reason = None
-        self.activation_time = None
-        
-        # Dynamic thresholds based on phase
-        self.growth_drawdown_pct = growth_drawdown_pct
-        self.standard_drawdown_pct = standard_drawdown_pct
-        self.max_daily_losses = max_daily_losses
-        self.max_api_errors = max_api_errors
-        self.recovery_threshold = recovery_threshold
-        self.min_equity = min_equity
-        
-        # Tracking
+    def __init__(self, portfolio):
+        self.portfolio = portfolio
+        self.active = False
+        self.activation_reason = "NONE"
         self.peak_equity = 0.0
-        self.current_equity = 0.0
         self.daily_losses = 0
-        self.last_reset_date = datetime.now(timezone.utc).date()
-        self.consecutive_api_errors = 0
+        self.api_errors = 0
+        self.MAX_DAILY_LOSSES = getattr(Config, 'MAX_DAILY_LOSSES', 5)
+        self.MAX_API_ERRORS = 10
         
-        # Recovery tracking
-        self.activation_equity = 0.0
-
-    def update_equity(self, current_equity: float):
-        """Enhanced equity tracking with auto-daily reset"""
-        self.current_equity = current_equity
+        # [SS-010] Cooperative shutdown mechanism
+        self._shutdown_callback = None  # Callable set by Engine for graceful stop
         
-        # Auto-reset daily losses at midnight
-        self._auto_reset_daily_losses()
-        
-        if self.is_active:
-            # Check for recovery
-            recovery = current_equity - self.activation_equity
-            recovery_pct = recovery / self.activation_equity if self.activation_equity > 0 else 0
-            
-            if recovery_pct >= self.recovery_threshold:
-                self._deactivate(f"Auto-recovery: +{recovery_pct*100:.1f}% from activation")
-            return
+        # Check integrity on startup
+        if self.check_atomic_lock():
+            self.active = True
+            self.activation_reason = "ATOMIC_LOCK_FOUND"
+            logger.critical("🚨 ATOMIC LOCK FOUND! Bot has been permanently disabled.")
+            logger.critical(f"   Remove '{self.LOCK_FILE}' manually to restart.")
+            # [SS-010 FIX] Don't sys.exit here — let main.py check and exit cleanly
+            # The startup code in main.py should call check_status() before starting the loop.
 
-        if current_equity > self.peak_equity:
-            self.peak_equity = current_equity
-            
-        # 1. HARD EQUITY FLOOR (Phase 6 Absolute Protection)
-        if current_equity <= self.min_equity:
-            self._activate(f"HARD EQUITY FLOOR: ${current_equity:.2f} <= ${self.min_equity:.2f}")
-            return
+    def set_shutdown_callback(self, callback):
+        """
+        [SS-010] Register a callback the Engine provides for graceful shutdown.
+        Callback signature: callback(reason: str) -> None
+        The Engine will: close positions → flush DB → stop event loop.
+        """
+        self._shutdown_callback = callback
 
-        # 2. DRAWDOWN PROTECTION
-        drawdown_pct = self._get_drawdown_threshold(current_equity)
-        current_drawdown = (self.peak_equity - current_equity) / self.peak_equity
-        
-        if current_drawdown >= drawdown_pct:
-            self._activate(f"DRAWDOWN: {current_drawdown*100:.1f}% (Threshold: {drawdown_pct*100}%)")
-
-    def _get_drawdown_threshold(self, current_equity: float) -> float:
-        """Dynamic drawdown based on account size"""
-        if current_equity < 30:  # Growth phase
-            return self.growth_drawdown_pct
-        elif current_equity < 100:  # Consolidation
-            return self.standard_drawdown_pct * 1.5  # 1.5x more tolerant
-        else:  # Standard phase
-            return self.standard_drawdown_pct
-
-    def _auto_reset_daily_losses(self):
-        """Auto-reset daily losses at midnight"""
-        current_date = datetime.now(timezone.utc).date()
-        if current_date != self.last_reset_date:
-            self.daily_losses = 0
-            self.last_reset_date = current_date
-            print(f"🔄 Daily losses reset: {current_date}")
+    def check_status(self):
+        """Returns True if trading is allowed, False if Kill Switch is active."""
+        if self.active:
+            return False
+        if self.check_atomic_lock():
+            self.active = True
+            self.activation_reason = "MANUAL_LOCK_FOUND"
+            return False
+        return True
 
     def record_loss(self):
-        """Record loss with phase-aware thresholds"""
-        if self.is_active:
-            return
-            
+        """Record a losing trade and check daily limits."""
         self.daily_losses += 1
-        
-        # More tolerant in growth phase
-        current_threshold = self.max_daily_losses
-        if self.current_equity < 30:  # Growth phase
-            current_threshold = int(self.max_daily_losses * 1.5)  # 1.5x more losses allowed
-        
-        if self.daily_losses >= current_threshold:
-            self._activate(f"DAILY LOSSES: {self.daily_losses} (Threshold: {current_threshold})")
+        if self.daily_losses >= self.MAX_DAILY_LOSSES:
+            self.activate(f"MAX_DAILY_LOSSES_REACHED ({self.MAX_DAILY_LOSSES})")
 
     def record_api_error(self):
-        """Record API error with exponential backoff consideration"""
-        self.consecutive_api_errors += 1
-        
-        if self.consecutive_api_errors >= self.max_api_errors:
-            self._activate(f"API ERRORS: {self.consecutive_api_errors} consecutive")
+        """Record an API error and check for system instability."""
+        self.api_errors += 1
+        if self.api_errors >= self.MAX_API_ERRORS:
+            self.activate(f"MAX_API_ERRORS_REACHED ({self.MAX_API_ERRORS})")
 
     def reset_api_errors(self):
-        """Reset API errors on successful operation"""
-        self.consecutive_api_errors = 0
+        """Reset the API error counter."""
+        self.api_errors = 0
 
-    def reset_daily_losses(self):
-        """Manual reset option"""
-        self.daily_losses = 0
-        self.last_reset_date = datetime.now(timezone.utc).date()
+    def update_equity(self, current_equity):
+        """Update peak equity and check for extreme drawdown."""
+        if current_equity > self.peak_equity:
+            self.peak_equity = current_equity
+        
+        if self.peak_equity > 0:
+            drawdown = (self.peak_equity - current_equity) / self.peak_equity
+            self.check_triggers(drawdown)
 
-    def _activate(self, reason: str):
-        """Activate kill switch"""
-        self.is_active = True
+    def check_triggers(self, current_drawdown):
+        """
+        Routine check called by Engine.
+        """
+        # 1. Max Drawdown Check (Institutional Hard Limit Phase 71)
+        if current_drawdown > 0.015: # 1.5% Strict Limit
+            logger.critical(f"🚨 KILL SWITCH TRIGGERED: Drawdown {current_drawdown*100:.2f}% > 1.5%")
+            self.activate("MAX_DRAWDOWN_EXCEEDED")
+            
+        # 2. Atomic Lock External Check (If user placed file manually)
+        if self.check_atomic_lock():
+             self.activate("MANUAL_LOCK_FOUND")
+
+    def activate(self, reason="UNKNOWN"):
+        """
+        [SS-010 FIX] Cooperative Kill Switch activation.
+        
+        QUÉ: Detiene trading y señaliza al Engine para shutdown graceful.
+        POR QUÉ: sys.exit(1) dejaba posiciones huérfanas en Binance,
+                 corrompía SQLite WAL, y no flusheaba logs.
+        CÓMO: 1) Flag → bloquea órdenes, 2) Lock file → previene restart,
+              3) Callback → Engine cierra posiciones → flush → exit limpio.
+        """
+        if self.active: return
+        self.active = True
         self.activation_reason = reason
-        self.activation_time = datetime.now(timezone.utc)
-        self.activation_equity = self.current_equity
         
-        msg = f"💀 **KILL SWITCH ACTIVATED** 💀\n\n"
-        msg += f"📉 **Reason**: `{reason}`\n"
-        msg += f"💰 **Equity**: `${self.activation_equity:.2f}`\n"
-        msg += f"🚫 Trading suspended until recovery."
+        logger.critical(f"🛑 KILL SWITCH ACTIVATED: {reason}")
         
-        logger.critical(f"💀 KILL SWITCH ACTIVATED: {reason}")
-        Notifier.send_telegram(msg, priority="CRITICAL")
+        # 1. Persist the Stop (Atomic Lock) — survives process restart
+        self._create_atomic_lock(reason)
+        
+        # 2. Signal Engine for graceful shutdown
+        # [SS-010 FIX] Engine callback handles: close positions → flush DB → stop loop
+        if self._shutdown_callback:
+            try:
+                logger.critical("💀 Requesting graceful shutdown via Engine callback...")
+                self._shutdown_callback(reason)
+            except Exception as e:
+                logger.error(f"Shutdown callback failed: {e}")
+                # Fallback: still don't sys.exit — self.active=True blocks all orders
+        else:
+            logger.warning("⚠️ No shutdown callback registered. Orders blocked but process continues.")
+            logger.warning("   Engine should check kill_switch.active and handle shutdown.")
 
-    def _deactivate(self, reason: str):
-        """Deactivate kill switch (auto-recovery)"""
-        self.is_active = False
-        self.activation_reason = None
-        self.activation_time = None
-        self.consecutive_api_errors = 0
-        
-        msg = f"✅ **KILL SWITCH DEACTIVATED** ✅\n\n"
-        msg += f"📈 **Reason**: `{reason}`\n"
-        msg += f"💰 **Current Equity**: `${self.current_equity:.2f}`\n"
-        msg += f"🟢 Trading resumed."
-        
-        logger.info(f"✅ KILL SWITCH DEACTIVATED: {reason}")
-        Notifier.send_telegram(msg, priority="INFO")
+    def check_atomic_lock(self):
+        return os.path.exists(self.LOCK_FILE)
 
-    def check_status(self) -> bool:
-        """Check if trading is allowed"""
-        return not self.is_active
-
-    def get_status(self) -> dict:
-        """Get detailed kill switch status"""
-        return {
-            'active': self.is_active,
-            'reason': self.activation_reason,
-            'activation_time': self.activation_time,
-            'peak_equity': self.peak_equity,
-            'current_equity': self.current_equity,
-            'daily_losses': self.daily_losses,
-            'consecutive_api_errors': self.consecutive_api_errors,
-            'drawdown_threshold': self._get_drawdown_threshold(self.current_equity) * 100
-        }
+    def _create_atomic_lock(self, reason):
+        try:
+            with open(self.LOCK_FILE, "w") as f:
+                f.write(f"KILLED AT {time.time()}\nREASON: {reason}\n")
+            logger.warning(f"🔒 Atomic Lock file created: {self.LOCK_FILE}")
+        except Exception as e:
+            logger.error(f"Failed to create lock file: {e}")

@@ -1,0 +1,42 @@
+# Version Control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*.so
+.pytest_cache
+.coverage
+htmlcov
+.venv
+venv
+env
+
+# Logs and Data
+logs/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.csv
+data/*.json
+*.log
+dashboard_output.txt
+debug_output.txt
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Models (Large files, if we want to mount them instead)
+# For now, we might want to include them?
+# Let's exclude training artifacts but keep production models if any
+.models_wfv_*
+
+# Local configs
+.env

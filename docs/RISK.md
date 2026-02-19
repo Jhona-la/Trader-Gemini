@@ -13,6 +13,13 @@
 | **Kill Switch** | `risk/kill_switch.py` | Parada de emergencia |
 | **Safe Leverage** | `utils/safe_leverage.py` | Cálculo seguro de apalancamiento |
 
+### 🛡️ NIVEL I: El Corazón Atómico (Fases 1-10)
+Validación de integridad y riesgo pre-ejecución implementada.
+- **Fase 2:** Validación cuántica de riesgo multivariable.
+- **Fase 10:** Kill Switch de 3 niveles (Drawdown, Latencia, Oráculo).
+- **Fase 7:** Anti-Fragilidad (Self-Healing de WebSockets).
+
+
 ---
 
 ## 🎯 Risk Manager
@@ -437,9 +444,10 @@ class Sniper:
 
 ## 📅 Performance Benchmarks (Feb 2026)
 
-### 🧪 Resultados de Validación (Backtest 30 días)
-
-Se realizó una simulación completa con datos reales de Binance (43,200 velas 1m) para validar los parámetros de riesgo.
+### 🧪 Resultados de Validación (Backtest 30 días - Realista)
+ 
+Se realizó una simulación completa con datos reales de Binance (43,200 velas 1m) validando los parámetros de riesgo.
+**ACTUALIZACIÓN:** Incluye modelo de **Slippage Aleatorio** (0.01% - 0.05%) para simular condiciones adversas reales.
 
 #### Métricas Obtenidas vs Targets
 | Métrica | Resultado | Target | Estado | Acción Requerida |
@@ -463,6 +471,26 @@ Para alinear el Drawdown con el objetivo del 1.5% sin sacrificar rentabilidad to
 
 ---
 
+## 🌩️ Alpha-Omega Audit (Flash Crash Protection)
+
+### QUÉ es
+Auditoría de estrés extremo realizada en Febrero 2026. Simula una caída instantánea del 20% (Flash Crash) sin liquidez intermedia.
+
+### Hallazgo Crítico (Level II Audit)
+El sistema con leverage 10x y sizing del 40% (Micro Account) sufrió un Drawdown del **22%**, violando el límite de seguridad del 15%.
+
+### 🔒 REGLA DE ORO (Hard-Coded)
+Para sobrevivir a un Gap del 20% con <15% Drawdown:
+*   **Leverage Máximo:** 3x (o 10x con sizing reducido)
+*   **Position Size Máximo:** **18% del Equity** (para cuentas Micro).
+*   **Exposure Cap:** La exposición nocional total NUNCA debe exceder el 60% del Equity si no hay cobertura.
+
+> **Configuración Obligatoria:** `POSITION_SIZE_MICRO_ACCOUNT <= 0.18`
+
+---
+
+---
+
 ## ⚠️ Reglas de Seguridad Absolutas
 
 > [!CAUTION]
@@ -470,6 +498,7 @@ Para alinear el Drawdown con el objetivo del 1.5% sin sacrificar rentabilidad to
 > - `risk/risk_manager.py`
 > - `risk/kill_switch.py`
 > - `execution/binance_executor.py`
+> - `core/portfolio.py` (Lógica de Locks Crítica)
 
 > [!IMPORTANT]
 > El Kill Switch SIEMPRE tiene prioridad sobre cualquier señal de trading.

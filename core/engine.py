@@ -4,9 +4,14 @@ Coordinates data, strategies, risk, and execution with enhanced validation and r
 """
 
 from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
+import asyncio
+try:
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except ImportError:
+    pass
 import queue
 import time
-import threading
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime, timezone
 from config import Config
@@ -14,35 +19,63 @@ from utils.debug_tracer import trace_execution
 from utils.logger import logger
 from core.world_awareness import world_awareness
 from utils.latency_monitor import latency_monitor
-from utils.system_monitor import system_monitor
+from utils.latency_monitor import latency_monitor
+# from utils.system_monitor import system_monitor # Removed unused & problematic import
+from core.gc_tuner import GCTuner
+from core.gc_tuner import GCTuner
 
-class BoundedQueue:
+import collections
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+class AsyncBoundedQueue:
     """
-    High-Performance Lock-Free(ish) Queue.
-    Wraps standard queue.Queue but optimized for discarding old events.
+    HFT Ring Buffer Queue (Phase 2: Core Refactor).
+    - Uses collections.deque(maxlen) for O(1) auto-drop of oldest events.
+    - Non-blocking PUT (Always succeeds). Sync-safe for strategy calls.
+    - Async GET (Waits for data) with double-check to prevent lost wakeups.
+    
+    [SS-001 FIX] Double-check pattern prevents TOCTOU race in get().
+    [SS-002 FIX] put() is now sync (non-async) so strategies can call
+    it without `await`. deque.append() is thread-safe, and _event.set()
+    is safe to call from within the same event loop thread.
     """
     def __init__(self, maxsize=1000):
-        self._q = queue.Queue(maxsize=maxsize)
+        self._deque = collections.deque(maxlen=maxsize)
+        self._event = asyncio.Event()
     
-    def put(self, item, block=True, timeout=None):
-        try:
-            self._q.put(item, block=False)
-        except queue.Full:
-            try:
-                self._q.get_nowait() # Discard oldest
-            except queue.Empty:
-                pass
-            
-            try:
-                self._q.put(item, block=False)
-            except queue.Full:
-                pass # Drop if still full (extreme load)
+    def put(self, item):
+        """Put item into queue. Never blocks. Sync-safe for strategy calls."""
+        self._deque.append(item)
+        self._event.set()
 
-    def get(self, block=True, timeout=None):
-        return self._q.get(block=block, timeout=timeout)
+    async def get(self):
+        """Wait for and get next item. Double-check prevents lost wakeups."""
+        while True:
+            # Fast path: data available
+            if self._deque:
+                return self._deque.popleft()
+            
+            # Slow path: wait for signal with double-check
+            self._event.clear()
+            
+            # [SS-001] Re-check AFTER clear to prevent race:
+            # If put() fired set() between our first check and clear(),
+            # the data is in _deque but event was just cleared.
+            if self._deque:
+                return self._deque.popleft()
+            
+            await self._event.wait()
 
     def empty(self):
-        return self._q.empty()
+        return not self._deque
+
+    def task_done(self):
+        pass # Not tracked for speed
+
+from utils.metrics_exporter import metrics
 
 class Engine:
     """
@@ -51,8 +84,8 @@ class Engine:
     - Direct payload processing (No lookups)
     - Burst-capable Event Loop
     """
-    def __init__(self, events_queue=None):
-        self.events = events_queue if events_queue else BoundedQueue(maxsize=1000)
+    def __init__(self, events_queue: Optional[Any] = None):
+        self.events = events_queue if events_queue else AsyncBoundedQueue(maxsize=5000) # Increased buffer for burst
         self.data_handlers = []
         self.strategies = []
         self.execution_handler = None
@@ -63,7 +96,6 @@ class Engine:
         
         # Strategy Coordination
         self._strategy_cooldowns = {}
-        # REMOVED: self._event_lock = threading.RLock() -> Global lock killed latency
         
         # Metrics (optimized int counters)
         self.metrics = {
@@ -99,7 +131,8 @@ class Engine:
         to_remove = [s for s in self.strategies if getattr(s, 'symbol', None) == symbol]
         for s in to_remove:
             try:
-                s.stop()
+                if hasattr(s, 'stop'):
+                    s.stop()
                 self.strategies.remove(s)
             except Exception as e:
                 logger.error(f"Error unregistering strategy for {symbol}: {e}")
@@ -107,59 +140,163 @@ class Engine:
         if to_remove:
             logger.info(f"♻️ Engine: Unregistered {len(to_remove)} strategies for {symbol}")
 
-    def run(self):
-        """Main event loop - Optimized for Speed"""
-        logger.info(f"🚀 Engine started. Active Strategies: {len(self.strategies)}")
+    async def start(self):
+        """Main event loop - 100% AsyncIO-Driven"""
+        # AEGIS-ULTRA: Core Pinning (Phase 5)
+        if Config.Aegis.CORE_PINNING and psutil:
+            try:
+                p = psutil.Process()
+                # Pin to physical cores only (Ryzen 7 5700U: 0, 2, 4, 6, 8, 10, 12, 14)
+                # We select the first 4 physical cores for the main Engine loop
+                physical_cores = [0, 2, 4, 6] 
+                p.cpu_affinity(physical_cores)
+                p.nice(psutil.HIGH_PRIORITY_CLASS)
+                logger.info(f"🛡️ AEGIS-ULTRA: Engine Pinned to Cores {physical_cores} | Priority: HIGH")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to set CPU Affinity: {e}")
         
-        # Localize variables for speed
-        get_event = self.events.get
-        process = self.process_event
-        perf_counter = time.perf_counter
+        # ✅ PHASE IV: COLD BOOT (Operational Continuity)
+        # Verify if we need to recover state from Exchange
+        if self.executor and self.portfolio:
+             try:
+                 logger.info("🔌 [COLD BOOT] Initiating State Recovery Protocol...")
+                 self.executor.sync_portfolio_state(self.portfolio)
+             except Exception as e:
+                 logger.critical(f"❌ [COLD BOOT] FAILED: {e} - Proceeding with local state.")
+        
+        logger.info(f"🚀 Engine started. Active Strategies: {len(self.strategies)}")
         
         while self.running:
             try:
-                # 0.1s timeout is fine for checking 'running' flag
-                # For HFT, we might want purely blocking but then we can't stop easily.
-                # 0.1s is acceptable.
-                event = get_event(timeout=0.1)
+                # 1. Get event (Wait max 1s to allow maintenance)
+                try:
+                    event = await asyncio.wait_for(self.events.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    # Idle Cycle: Smart GC (Phase 15)
+                    # Only run GC if market is calm to avoid Stop-The-World in volatility
+                    regime = self._get_current_market_regime()
+                    # Skip GC if we are in high intensity modes
+                    if 'VOLATILE' not in regime and 'TRENDING' not in regime:
+                        GCTuner.check_maintenance()
+                    continue
                 
-                # METRICS: Only sample 1% of calls or if DEBUG is on to save CPU
-                # t0 = perf_counter()
-                process(event)
-                # dt = (perf_counter() - t0) * 1000
+                # 2. Critical Section (GC Disabled)
+                start_loop = time.perf_counter()
+                with GCTuner.critical_section():
+                     # Process the event asynchronously
+                     await self.process_event(event)
+
+                # [DF-A2] Jitter Detection: Measure processing time
+                end_loop = time.perf_counter()
+                loop_duration = (end_loop - start_loop) * 1_000_000 # microseconds
                 
-                # Simple metric tracking without overhead
+                if loop_duration > 500: # 500μs threshold
+                    logger.warning(f"⚠️ [JITTER] Event Loop Blocked: {loop_duration:.2f}μs (Type: {event.type})")
+                    latency_monitor.track('engine_jitter_warning', loop_duration / 1000)
+                
+                # Update rolling avg latency
+                current_avg = self.metrics['avg_latency_ms']
+                processed = self.metrics['processed_events']
+                self.metrics['avg_latency_ms'] = (current_avg * processed + (loop_duration/1000)) / (processed + 1)
+                if (loop_duration/1000) > self.metrics['max_latency_ms']:
+                    self.metrics['max_latency_ms'] = loop_duration / 1000
+                
+                # Mark as done
+                self.events.task_done()
+                
+                # Simple metric tracking
                 self.metrics['processed_events'] += 1
                 
-            except queue.Empty:
-                 # Phase 9: Active Order Management
-                if self.order_manager:
-                    self.order_manager.check_active_orders()
+                # ✅ PHASE 18: RYZEN 7 SNIPER (Dynamic Orchestration)
+                if self.metrics['processed_events'] % 100 == 0:
+                     self._optimize_ryzen_resources()
 
-                # Phase 15: System Monitoring
-                try:
-                    system_monitor.check_health()
-                except Exception as e:
-                    logger.error(f"Monitor error: {e}")
-                    
-                continue
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"Engine Loop Error: {e}")
                 self.metrics['errors'] += 1
 
-    # REMOVED @trace_execution (Too slow for hot path)
-    def process_event(self, event: Union[MarketEvent, SignalEvent, OrderEvent, FillEvent]) -> None:
-        """Route event w/o Global Lock"""
+    def _optimize_ryzen_resources(self):
+        """
+        [PHASE 18] Dynamic Core Pinning & Thermal Throttling.
+        """
+        if not psutil: return
         try:
+            # 1. Thermal Check
+            # Windows psutil doesn't always support temperatures, but we try.
+            # If unavailable, we skip.
+            throttle = 0.0
+            if hasattr(psutil, "sensors_temperatures"):
+                temps = psutil.sensors_temperatures()
+                if temps:
+                    # Find max CPU temp
+                    max_temp = 0
+                    for name, entries in temps.items():
+                        for entry in entries:
+                            if entry.current > max_temp: max_temp = entry.current
+                    
+                    if max_temp > 80.0:
+                        logger.warning(f"🔥 [THERMAL] CPU at {max_temp}°C. Throttling active.")
+                        throttle = 0.1 # 100ms penalty
+                        time.sleep(throttle) # Force cool down
+            
+            # 2. Dynamic Affinity (Load Balancer)
+            cpu_pct = psutil.cpu_percent()
+            p = psutil.Process()
+            
+            if cpu_pct > 80.0:
+                # High Load: Unleash all Cores (Ryzen 7 5700U has 8 cores / 16 threads)
+                # We use all logical processors
+                current_affinity = p.cpu_affinity()
+                if len(current_affinity) < 16:
+                    p.cpu_affinity(list(range(16)))
+                    logger.info(f"⚡ [SNIPER] High Load ({cpu_pct}%). Expanding to ALL 16 Threads.")
+            elif cpu_pct < 20.0:
+                # Low Load: Conserve Power (Eco Mode)
+                # Pin to first 4 physical cores (0, 2, 4, 6)
+                current_affinity = p.cpu_affinity()
+                target = [0, 2, 4, 6]
+                if current_affinity != target:
+                    p.cpu_affinity(target)
+                    logger.info(f"🍃 [SNIPER] Low Load ({cpu_pct}%). Eco Mode Active (4 Cores).")
+                    
+        except Exception:
+            pass # Fail silently on permission/OS errors
+
+    async def process_event(self, event: Union[MarketEvent, SignalEvent, OrderEvent, FillEvent]) -> None:
+        """Route event asynchronously"""
+        try:
+            metrics.inc_event() # Phase 53: Metrics
             etype = event.type
+            
+            # AEGIS-ULTRA: LATENCY CIRCUIT BREAKER (Phase 16)
+            # Check latency before processing Signals/Orders (Market data always processed)
+            if etype in ['SIGNAL', 'ORDER'] and self.data_handlers:
+                dh = self.data_handlers[0]
+                if hasattr(dh, 'get_latency_metrics'):
+                    avg_ping, max_ping = dh.get_latency_metrics()
+                    if avg_ping > 150.0:
+                        if etype == 'SIGNAL':
+                            logger.warning(f"🛑 [CIRCUIT BREAKER] High Latency ({avg_ping:.1f}ms). Signal Dropped.")
+                            self.metrics['discarded_events'] += 1
+                            return
+                        elif etype == 'ORDER':
+                            # Optional: allow closing orders? For now block all to be safe against stale prices.
+                            # Better: Allow CLOSE, Block ENTRY. But Engine doesn't know intent easily.
+                            # Conservative: Block ALL new actions. Risk Manager handles emergency exits via direct API?
+                            # For now, just log and block.
+                            logger.warning(f"🛑 [CIRCUIT BREAKER] High Latency ({avg_ping:.1f}ms). Order Blocked.")
+                            return
+
             if etype == 'MARKET':
-                self._process_market_event(event) # type: ignore
+                await self._process_market_event(event) # type: ignore
             elif etype == 'SIGNAL':
-                self._process_signal_event(event) # type: ignore
+                await self._process_signal_event(event) # type: ignore
             elif etype == 'ORDER':
-                self._process_order_event(event) # type: ignore
+                await self._process_order_event(event) # type: ignore
             elif etype == 'FILL':
-                self._process_fill_event(event) # type: ignore
+                await self._process_fill_event(event) # type: ignore
             elif etype == 'AUDIT':
                 pass 
             else:
@@ -168,32 +305,27 @@ class Engine:
             logger.error(f"Event Logic Error {event.type}: {e}", exc_info=False)
             self.metrics['errors'] += 1
 
-    def _process_market_event(self, event: MarketEvent) -> None:
-        """Process MARKET event: Update portfolio prices and run strategies"""
+    async def _process_market_event(self, event: MarketEvent) -> None:
+        """Process MARKET event asynchronously"""
         
         # 1. Efficient Portfolio Update (Active symbols only)
-        # OPTIMIZATION: Use payload if available, else fallback
         if event.symbol and event.close_price and self.portfolio:
              self.portfolio.update_market_price(event.symbol, event.close_price)
-             # Also execute exit check immediately for this symbol
-             self._check_exits_fast(event)
+             await self._check_exits_fast(event)
         else:
-             # Legacy/Mass Update fallback (slower)
              self._update_portfolio_prices()
         
-        # 2. Market Regime Detection (Only if significant time passed or high volatility)
+        # 2. Market Regime Detection
         current_regime = 'UNKNOWN' # Optimization: Delay regime calc until strat needs it
         
-        # 3. Global Context (Lazy Load)
+        # 3. Global Context
         context = None 
         
         # 4. Strategy Orchestration
         for strategy in self.strategies:
-            # Quick filter before heavy lifting
             if hasattr(strategy, 'symbol') and strategy.symbol != event.symbol:
                 continue
-
-            # Lazy load Regime & Context only if we found a matching strategy
+ 
             if current_regime == 'UNKNOWN':
                  current_regime = self._get_current_market_regime()
             
@@ -203,68 +335,85 @@ class Engine:
                          context = world_awareness.get_market_context()
                     
                     strategy.market_context = context
-                    strategy.calculate_signals(event)
+                    
+                    # Handle both sync and async calculate_signals
+                    if asyncio.iscoroutinefunction(strategy.calculate_signals):
+                        await strategy.calculate_signals(event)
+                    else:
+                        strategy.calculate_signals(event)
+                        
                     self.metrics['strategy_executions'] += 1
                 except Exception as e:
                     logger.error(f"Strategy Error ({strategy.__class__.__name__}): {e}")
 
-    def _check_exits_fast(self, event):
-        """Optimized exit checker for single symbol"""
+    async def _check_exits_fast(self, event):
+        """Optimized exit checker for single symbol - Async wrapper"""
         if self.portfolio and event.symbol in self.portfolio.positions:
-             # We can't easily call 'check_exits' from portfolio because it iterates ALL.
-             # But Portfolio.check_exits iterates all.
-             # For now, calling the full check is safer but we should make it targeted.
-             # Let's trust Portfolio's loop for now (it's in memory, fast enough for <10 positions).
              if self.data_handlers:
+                  # Note: Portfolio.check_exits is currently sync
                   self.portfolio.check_exits(self.data_handlers[0], self.events)
 
-    def _process_signal_event(self, event):
-        """Process SIGNAL event: Validate and route to Risk Manager"""
+    async def _process_signal_event(self, event):
+        """Process SIGNAL event asynchronously"""
         
-        # 0. TTL Check
         if not self._validate_signal_ttl(event):
             self.metrics['discarded_events'] += 1
             return
             
-        # 1. Price Validation
         current_price = self._get_validated_price(event.symbol)
         if not current_price:
             logger.warning(f"Discarding signal for {event.symbol}: Unable to validate price")
             self.metrics['discarded_events'] += 1
             return
             
-        # 2. Log Signal (if portfolio is available)
         if self.portfolio:
              self.portfolio.update_signal(event)
 
-        # 3. Risk Management
         if self.risk_manager:
             order_event = self.risk_manager.generate_order(event, current_price)
             if order_event:
-                # Track Signal-to-Order latency
                 dt_ms = (time.time_ns() - event.timestamp_ns) / 1_000_000
                 latency_monitor.track('signal_to_order', dt_ms)
                 self.events.put(order_event)
 
-    def _process_order_event(self, event):
-        """Process ORDER event: Execute via Execution Handler"""
+    async def _process_order_event(self, event):
+        """Process ORDER event asynchronously"""
         if self.execution_handler:
-            self.execution_handler.execute_order(event)
+            if asyncio.iscoroutinefunction(self.execution_handler.execute_order):
+                await self.execution_handler.execute_order(event)
+            else:
+                self.execution_handler.execute_order(event)
         else:
             logger.warning("No Execution Handler registered. Order ignored.")
 
-    def _process_fill_event(self, event):
-        """Process FILL event: Update Portfolio and Order Manager"""
-        # Track E2E latency if timestamp available
+    async def _process_fill_event(self, event):
+        """Process FILL event asynchronously"""
         dt_ms = (time.time_ns() - event.timestamp_ns) / 1_000_000
         latency_monitor.track('e2e_signal_to_fill', dt_ms)
         
         if self.portfolio:
-            self.portfolio.update_fill(event)
+            result = self.portfolio.update_fill(event)
+            if result is not None:
+                # OMEGA MIND: Unpack result and outcome
+                # Legacy support: if portfolio returns just pnl (float), handle it
+                if isinstance(result, tuple):
+                    pnl, trade_outcome = result
+                else:
+                    pnl = result
+                    trade_outcome = 1.0 if pnl > 0 else 0.0 # Fallback for old strategies
+
+                for strategy in self.strategies:
+                    # Filtramos por símbolo para asegurar que actualizamos la instancia correcta
+                    if getattr(strategy, 'symbol', None) == event.symbol and \
+                       hasattr(strategy, 'update_recursive_weights'):
+                        strategy.update_recursive_weights(trade_outcome)
+
         
-        # Phase 9: Notify OrderManager
         if self.order_manager and hasattr(event, 'order_id') and event.order_id:
-            self.order_manager.remove_order(event.order_id)
+            if asyncio.iscoroutinefunction(self.order_manager.remove_order):
+                await self.order_manager.remove_order(event.order_id, event=event)
+            else:
+                self.order_manager.remove_order(event.order_id, event=event)
 
     # ==================================================================
     # HELPER METHODS

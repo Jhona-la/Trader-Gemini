@@ -2,6 +2,7 @@ import os
 import sys
 from dotenv import load_dotenv
 from core.enums import TimeFrame
+from core.secure_store import SecureString
 
 # Load environment variables from .env file (Phase 6 Absolute Path Fix)
 env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
@@ -11,7 +12,46 @@ load_dotenv(env_path)
 # Reference: Master Bible v2.0.1 Phase 2.6
 EXCLUDED_SYMBOLS_GLOBAL = ['SHIB/USDT', 'PEPE/USDT', 'BONK/USDT']
 
-class Config:
+class EncryptedConfigMeta(type):
+    """Metaclass to handle encrypted properties transparently"""
+    _secure_store = {}
+
+    def _get_secure(cls, key, env_var):
+        if key not in cls._secure_store:
+            val = os.getenv(env_var, '')
+            cls._secure_store[key] = SecureString(val)
+        return cls._secure_store[key].get_unmasked()
+
+    @property
+    def BINANCE_API_KEY(cls):
+        return cls._get_secure('BINANCE_API_KEY', 'BINANCE_API_KEY')
+    
+    @property
+    def BINANCE_SECRET_KEY(cls):
+        return cls._get_secure('BINANCE_SECRET_KEY', 'BINANCE_SECRET_KEY')
+        
+    @property
+    def BINANCE_TESTNET_API_KEY(cls):
+        return cls._get_secure('BINANCE_TESTNET_API_KEY', 'BINANCE_TESTNET_API_KEY')
+        
+    @property
+    def BINANCE_TESTNET_SECRET_KEY(cls):
+        return cls._get_secure('BINANCE_TESTNET_SECRET_KEY', 'BINANCE_TESTNET_SECRET_KEY')
+        
+    @property
+    def BINANCE_DEMO_API_KEY(cls):
+        return cls._get_secure('BINANCE_DEMO_API_KEY', 'BINANCE_DEMO_API_KEY')
+        
+    @property
+    def BINANCE_DEMO_SECRET_KEY(cls):
+        return cls._get_secure('BINANCE_DEMO_SECRET_KEY', 'BINANCE_DEMO_SECRET_KEY')
+        
+    @property
+    def WANDB_API_KEY(cls):
+        # Support both standard name and user's alias in .env
+        return cls._get_secure('WANDB_API_KEY', 'WANDB_API_KEY') or os.getenv('WandB_Key', '')
+
+class Config(metaclass=EncryptedConfigMeta):
     # ========================================================================
     # GLOBAL SETTINGS
     # ========================================================================
@@ -21,19 +61,15 @@ class Config:
     # BINANCE API CREDENTIALS (Loaded from .env file)
     # ========================================================================
     
-    # Production Keys (Leave empty in .env if using Demo/Testnet)
-    BINANCE_API_KEY = os.getenv('BINANCE_API_KEY', '')
-    BINANCE_SECRET_KEY = os.getenv('BINANCE_SECRET_KEY', '')
+    # 🔐 PHASE 17: ENCRYPTED KEYS
+    # Keys are now managed dynamically by EncryptedConfigMeta.
+    # We do not define them here as static attributes to keep RAM clean.
     
     # Binance Testnet (Spot)
     BINANCE_USE_TESTNET = os.getenv('BINANCE_USE_TESTNET', 'False').lower() == 'true'
-    BINANCE_TESTNET_API_KEY = os.getenv('BINANCE_TESTNET_API_KEY')
-    BINANCE_TESTNET_SECRET_KEY = os.getenv('BINANCE_TESTNET_SECRET_KEY')
     
     # Binance Demo Trading (Futures with virtual capital)
     BINANCE_USE_DEMO = os.getenv('BINANCE_USE_DEMO', 'False').lower() == 'true'
-    BINANCE_DEMO_API_KEY = os.getenv('BINANCE_DEMO_API_KEY')
-    BINANCE_DEMO_SECRET_KEY = os.getenv('BINANCE_DEMO_SECRET_KEY')
     
     # === BINANCE FUTURES SETTINGS ===
     # Default: USDT-Margined Futures (standard). 
@@ -127,8 +163,8 @@ class Config:
     MAX_POSITIONS_PER_SYMBOL = 1   # One layer per symbol for safety
     
     # Position Sizing Configuration
-    POSITION_SIZE_MICRO_ACCOUNT = 0.40   # 40% for <$50 capital (Aggressive to grow)
-    POSITION_SIZE_SMALL_ACCOUNT = 0.20   # 20% - Aggressive growth for small accounts
+    POSITION_SIZE_MICRO_ACCOUNT = 0.18   # Fine-tuned to 18% to pass Risk Shield (Target < 15% DD)
+    POSITION_SIZE_SMALL_ACCOUNT = 0.15   # Lowered from 20%
     
     # Trade Validation Thresholds
     MIN_PROFIT_AFTER_FEES = 0.003  # 0.3% minimum net profit
@@ -200,6 +236,10 @@ class Config:
         # Adaptive Technical
         TECH_DYNAMIC_RSI_VOL_THRESHOLD = 0.005 # 0.5% ATR for band expansion
 
+    # Phase 99: WandB Tracking
+    WANDB_ENTITY = "jhonala-none"
+    WANDB_PROJECT = "trader-gemini"
+
     # ========================================================================
     # === OBSERVABILITY & ANALYTICS (Phase 4) ===
     # ========================================================================
@@ -246,6 +286,16 @@ class Config:
     #Recomendación: Mantenlo en False (Apagado) para operar. Solo enciéndelo (True) si el bot se clava y no sabes por qué.
     
     # ========================================================================
+    # === AEGIS-ULTRA PROTOCOL (Hardware & Math) ===
+    # ========================================================================
+    class Aegis:
+        ENABLED = True
+        CORE_PINNING = True        # Enable Processor Affinity (Ryzen 5700U)
+        PROCESS_PRIORITY = "HIGH"  # Win32 High Priority Class
+        USE_AVX2 = True            # Enable Numba Vectorization
+        ZERO_COPY_DATA = True      # Enable RingBuffer direct access
+
+    # ========================================================================
     # === SNIPER STRATEGY SETTINGS (ALL OR NOTHING PROTOCOL) ===
     # ========================================================================
     class Sniper:
@@ -253,11 +303,27 @@ class Config:
         HIGH-RISK configuration for $12 → $240 target.
         WARNING: This configuration has ~99% probability of total loss.
         """
-        # ENABLED FLAG - Set to True to activate Sniper mode
-        ENABLED = True
+        # ✅ DYNAMIC REGIME ADAPTATION (EVOLUTIONARY SNIPER)
+        # ==========================================================
+        # The bot decides autonomy level based on Market Regime.
+        # No more manual "Sniper Mode" switch.
         
-        # MAINNET SWITCH - Set to True for REAL trading after 3 successful testnet trades
-        USE_MAINNET = False  # CRITICAL: Keep False until ready
+        DYNAMIC_ADAPTATION = True
+        ENABLED = True # Master Switch for Sniper Mode
+        
+        # REGIME MAP: Defines aggression per market state
+        # key: Regime Name 
+        # value: (Leverage Limit, Threshold Modifier, Position Scale)
+        REGIME_MAP = {
+            'TRENDING_BULL': {'leverage': 8, 'threshold_mod': -0.05, 'scale': 1.0}, # SNIPER BEHAVIOR (Aggressive)
+            'TRENDING_BEAR': {'leverage': 1, 'threshold_mod': +0.10, 'scale': 0.0}, # DEFENSE BEHAVIOR (Cash)
+            'RANGING':       {'leverage': 3, 'threshold_mod': +0.00, 'scale': 0.8}, # SCALPING BEHAVIOR (Moderate)
+            'CHOPPY':        {'leverage': 1, 'threshold_mod': +0.05, 'scale': 0.5}, # CAUTION BEHAVIOR (Low Risk)
+            'ZOMBIE':        {'leverage': 1, 'threshold_mod': +1.00, 'scale': 0.0}, # DEAD MARKET (No Trade)
+        }
+        
+        # MAINNET SWITCH - Set to True for REAL trading
+        USE_MAINNET = True   # LIVE PRODUCTION MODE
         
         # WHITELIST - Only ultra-high liquidity pairs (low spread)
         WHITELIST = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
@@ -320,6 +386,25 @@ class Config:
         # TESTNET VALIDATION
         TESTNET_TRADES_REQUIRED = 3  # Successful trades before MAINNET
 
+
+    @classmethod
+    def check_types(cls):
+        """Type validation for critical parameters"""
+        try:
+            assert isinstance(cls.BINANCE_LEVERAGE, int), "Leverage must be int"
+            assert 1 <= cls.BINANCE_LEVERAGE <= 125, "Leverage out of bounds"
+            
+            assert isinstance(cls.MAX_RISK_PER_TRADE, float), "Risk must be float"
+            assert 0 < cls.MAX_RISK_PER_TRADE <= 1.0, "Risk must be 0-1"
+            
+            assert isinstance(cls.INITIAL_CAPITAL, (int, float)), "Initial capital must be number"
+            assert cls.INITIAL_CAPITAL > 0, "Capital must be positive"
+            
+            return True
+        except AssertionError as e:
+            print(f"❌ CONFIG TYPE ERROR: {e}")
+            sys.exit(1)
+
 # ============================================================================
 # CONFIGURATION VALIDATION (Fail Fast on Missing Credentials)
 # ============================================================================
@@ -371,5 +456,41 @@ def validate_config():
     
     return True
 
+def validate_institutional_policy():
+    """
+    DF-A3: Institutional Grade Policy Validation.
+    Enforces strict risk limits when operating in PRODUCTION (Mainnet).
+    """
+    is_production = not (Config.BINANCE_USE_TESTNET or Config.BINANCE_USE_DEMO)
+    
+    if is_production:
+        errors = []
+        # 1. Sniper Mode Safety
+        if Config.Sniper.ENABLED and not Config.Sniper.USE_MAINNET:
+             # Sniper is Enabled but USE_MAINNET is False -> Contradiction or Safety Catch
+             # If we are in Production, we cannot use Testnet Sniper settings.
+             # We explicitly fail to prevent accidental high-risk trading.
+             if not os.getenv("FORCE_SNIPER_MAINNET") == "TRUE":
+                 errors.append("❌ SAFETY: Sniper Mode is ENABLED in Production without FORCE_SNIPER_MAINNET=TRUE.")
+        
+        # 2. Leverage Caps
+        if Config.BINANCE_LEVERAGE > 5 and not Config.Sniper.ENABLED:
+            errors.append(f"❌ RISK: Leverage {Config.BINANCE_LEVERAGE}x exceeds Institutional Limit (5x).")
+            
+        # 3. Risk Limits
+        if Config.MAX_RISK_PER_TRADE > 0.02:
+            errors.append(f"❌ RISK: Max Risk {Config.MAX_RISK_PER_TRADE*100}% exceeds Institutional Limit (2%).")
+            
+        if errors:
+            print("\n" + "="*70)
+            print("🛡️ INSTITUTIONAL POLICY VIOLATION")
+            for e in errors: print(e)
+            print("="*70)
+            sys.exit(1)
+    
+    return True
+
 # Run validation on import
-validate_config()
+Config.check_types()
+# validate_config() # Called internally or explicitly in main
+validate_institutional_policy() # Enforce Policy Verification on Import

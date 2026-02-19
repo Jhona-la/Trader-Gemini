@@ -432,9 +432,19 @@ El Z-Score estático es peligroso durante Flash Crashes. El **Adaptive Z-Score**
 
 ### QUÉ
 Un búfer central de "Insights" que permite comunicación cruzada entre todas las estrategias.
+**ACTUALIZACIÓN (Audit):** Ahora protegido con `threading.Lock` para permitir votación concurrente segura de Mülltiples modelos (RF, XGB, Statistical) sin corromper el estado de consenso.
+
+
+## 🧠 NIVEL IV: Inteligencia Superior (Fases 31-36)
+
+### Componentes Clave
+1.  **Z-Score Adaptativo (Fase 31):** Ajusta umbrales dinámicamente según la volatilidad de 30 días.
+2.  **Neural Bridge (Fase 3):** Bus de comunicación Thread-Safe que sincroniza `Technical`, `ML` y `Statistical`.
+3.  **Detección de Régimen (Fase 36):** Clasifica mercado en Tendencia/Rango/Pánico y adapta TP/SL automáticamente.
 
 ### PARA QUÉ
 Evitar señales contradictorias. Por ejemplo, si el Sniper ve un LONG pero la IA detecta un cambio de tendencia bajista, el Bridge bloquea la orden para salvar los **$13.50**.
+
 
 ---
 

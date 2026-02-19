@@ -1,0 +1,111 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: omega_critical_alerts
+    folder: OMEGA Alerts
+    interval: 30s
+    rules:
+      # ═══════════════════════════════════════════
+      # ALERT 1: Kill Switch Activated
+      # ═══════════════════════════════════════════
+      - uid: omega-kill-switch-alert
+        title: "🚨 Kill Switch ACTIVATED"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: omega_kill_switch_active
+              intervalMs: 5000
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        noDataState: OK
+        execErrState: OK
+        for: 0s
+        annotations:
+          summary: "Kill Switch has been triggered. All trading is HALTED."
+
+      # ═══════════════════════════════════════════
+      # ALERT 2: High Latency (> 10ms per tick)
+      # ═══════════════════════════════════════════
+      - uid: omega-high-latency
+        title: "⏱️ High Tick Latency (> 10ms)"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: max(omega_tick_latency_us) > 10000
+              intervalMs: 5000
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+        noDataState: OK
+        execErrState: OK
+        for: 30s
+        annotations:
+          summary: "Tick latency exceeded 10ms threshold for 30 seconds."
+
+      # ═══════════════════════════════════════════
+      # ALERT 3: Excessive Drawdown (> 1.5%)
+      # ═══════════════════════════════════════════
+      - uid: omega-drawdown-alert
+        title: "📉 Drawdown > 1.5%"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: omega_current_drawdown_pct
+              intervalMs: 5000
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [1.5]
+        noDataState: OK
+        execErrState: OK
+        for: 0s
+        annotations:
+          summary: "Current drawdown exceeds 1.5% safety threshold."
+
+      # ═══════════════════════════════════════════
+      # ALERT 4: API Error Spike
+      # ═══════════════════════════════════════════
+      - uid: omega-api-errors
+        title: "❌ API Error Count > 5"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: omega_api_error_count
+              intervalMs: 5000
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5]
+        noDataState: OK
+        execErrState: OK
+        for: 10s
+        annotations:
+          summary: "More than 5 API errors detected — connection stability compromised."

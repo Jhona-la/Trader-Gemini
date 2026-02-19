@@ -153,13 +153,13 @@ class StatisticalStrategy(Strategy):
                 bars_y_aligned = [y_dict[ts] for ts in common_timestamps]
                 bars_x_aligned = [x_dict[ts] for ts in common_timestamps]
                 
-                # Extract aligned arrays
-                closes_y = np.array([b['close'] for b in bars_y_aligned])
-                closes_x = np.array([b['close'] for b in bars_x_aligned])
-                highs_y = np.array([b['high'] for b in bars_y_aligned])
-                lows_y = np.array([b['low'] for b in bars_y_aligned])
-                highs_x = np.array([b['high'] for b in bars_x_aligned])
-                lows_x = np.array([b['low'] for b in bars_x_aligned])
+                # Extract aligned arrays — F6: Cast float32→float64 for talib
+                closes_y = np.array([b['close'] for b in bars_y_aligned], dtype=np.float64)
+                closes_x = np.array([b['close'] for b in bars_x_aligned], dtype=np.float64)
+                highs_y = np.array([b['high'] for b in bars_y_aligned], dtype=np.float64)
+                lows_y = np.array([b['low'] for b in bars_y_aligned], dtype=np.float64)
+                highs_x = np.array([b['high'] for b in bars_x_aligned], dtype=np.float64)
+                lows_x = np.array([b['low'] for b in bars_x_aligned], dtype=np.float64)
                 
                 # Calculate Ratio
                 # ratios = closes_y / closes_x
@@ -191,10 +191,10 @@ class StatisticalStrategy(Strategy):
                 
                 # Calculate ATR for volatility-based sizing
                 # We use the ATR of the asset we are buying (Y or X)
-                closes_y = np.array([b['close'] for b in bars_y])
+                closes_y = np.array([b['close'] for b in bars_y], dtype=np.float64)  # F6
                 atr_y = talib.ATR(highs_y, lows_y, closes_y, timeperiod=14)[-1]
                 
-                closes_x = np.array([b['close'] for b in bars_x])
+                closes_x = np.array([b['close'] for b in bars_x], dtype=np.float64)  # F6
                 atr_x = talib.ATR(highs_x, lows_x, closes_x, timeperiod=14)[-1]
 
                 # Calculate Rolling OLS Beta (Dynamic Hedge Ratio)
@@ -261,8 +261,8 @@ class StatisticalStrategy(Strategy):
                     bars_y_long = self.data_provider.get_latest_bars(y_sym, n=self.long_window)
                     bars_x_long = self.data_provider.get_latest_bars(x_sym, n=self.long_window)
                     if len(bars_y_long) >= 100:
-                        y_long = np.array([b['close'] for b in bars_y_long])
-                        x_long = np.array([b['close'] for b in bars_x_long])
+                        y_long = np.array([b['close'] for b in bars_y_long], dtype=np.float64)  # F6
+                        x_long = np.array([b['close'] for b in bars_x_long], dtype=np.float64)  # F6
                         spread_long = safe_div(y_long, x_long)
                         std_long = np.std(spread_long[np.isfinite(spread_long)])
                     else:
@@ -452,7 +452,7 @@ class StatisticalStrategy(Strategy):
         try:
             bars_1h = self.data_provider.get_latest_bars_1h(symbol, n=210)
             if len(bars_1h) >= 200:
-                closes_1h = np.array([b['close'] for b in bars_1h[:-1]]) # Exclude open candle
+                closes_1h = np.array([b['close'] for b in bars_1h[:-1]], dtype=np.float64)  # F6: float64 for talib
                 if len(closes_1h) >= 200:
                     ema_50 = talib.EMA(closes_1h, timeperiod=50)[-1]
                     ema_200 = talib.EMA(closes_1h, timeperiod=200)[-1]

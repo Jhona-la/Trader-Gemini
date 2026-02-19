@@ -3,10 +3,43 @@ import sys
 import time
 import asyncio
 import signal
+
+# 🧪 GOD-MODE PRE-FLIGHT AUDIT (Institutional Protocol - Level 0)
+# This MUST be the first thing to run before any other imports or logic.
 try:
-    import ujson as json
-except ImportError:
+    # Use a local-style import to avoid complexity before audit
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("pre_flight", "core/pre_flight.py")
+    pre_flight = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pre_flight)
+    pre_flight.SystemPreFlight.launch_audit()
+except Exception as e:
+    print(f"\n🚨 [CRITICAL] God-Mode Audit Bootstrap Failed: {e}")
+    sys.exit(1)
+
+# PROTOCOL METAL-CORE OMEGA: Phase 2 (Global Orjson Patch)
+# Monkey-patch standard json to use orjson (via FastJson wrapper)
+# This forces libraries like 'python-binance' and 'ccxt' to use our high-perf parser.
+try:
     import json
+    from utils.fast_json import FastJson
+    
+    # ⚡ CRITICAL: Patching
+    json.loads = FastJson.loads
+    json.dumps = FastJson.dumps
+    json.load = FastJson.load
+    json.dump = FastJson.dump
+    
+    # Also patch ujson if present (common in sensitive libraries)
+    import sys
+    sys.modules['ujson'] = FastJson
+    sys.modules['json'] = FastJson # Aggressive
+    
+    print("🚀 [Metal-Core] Global ORJSON Monkey-Patch Applied.")
+except ImportError as e:
+    print(f"⚠️ [Metal-Core] FastJson Patch Failed: {e}")
+    import json
+    
 import argparse
 import logging
 from datetime import datetime, timezone
@@ -18,6 +51,8 @@ import numpy as np
 from config import Config
 from core.engine import Engine
 from data.binance_loader import BinanceData
+from risk.risk_manager import RiskManager
+from strategies.sniper_strategy import SniperStrategy
 from data.sentiment_loader import SentimentLoader
 from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy  # ← UNIVERSAL ENSEMBLE FOR ALL SYMBOLS
 from core.portfolio import Portfolio
@@ -29,11 +64,22 @@ from core.market_scanner import MarketScanner
 from core.strategy_selector import StrategySelector
 from execution.binance_executor import BinanceExecutor
 from utils.logger import logger
+from core.neural_bridge import neural_bridge
+from utils.telemetry import telemetry  # Phase 99: Fleet Telemetry
+from utils.efficacy_tracker import efficacy_tracker  # Phase 99: RL Feedback
+from data.user_stream import UserDataStreamListener  # Phase 99: Manual Close Detection
+from core.world_awareness import world_awareness
 from utils.session_manager import init_session_manager, get_session_manager
 from utils.health_supervisor import start_health_supervisor, _supervisor as health_sup # CI-HMA (Phase 6)
 from core.data_handler import get_data_handler  # For Dashboard persistence
 from utils.reloader import init_hot_reload, get_hot_reload_manager  # Hot Reload System
 from utils.heartbeat import get_heartbeat
+from utils.cpu_affinity import CPUManager # Phase 29: CPU Affinity
+from utils.network_optimizer import patch_sockets # Phase 31: TCP NoDelay
+from utils.timer_resolution import set_high_resolution_timer # Phase 32: Timer Resolution
+from utils.dns_cache import cache_dns_lookups # Phase 34: DNS Cache
+from utils.shared_memory import SharedStateManager # Phase 36: Memory Mapping
+from utils.ntp_monitor import NTPSync # Phase 37: NTP Sync
 
 # ==================== NUEVAS CLASES ====================
 
@@ -282,21 +328,62 @@ async def global_regime_loop(detector: MarketRegimeDetector, data_handler: Binan
                 bars_5m = data_handler.get_latest_bars(symbol, n=50, timeframe='5m')
                 bars_1h = data_handler.get_latest_bars(symbol, n=50, timeframe='1h')
                 
-                if bars_1m:
+                if bars_1m is not None and len(bars_1m) > 0:
                     context_data[symbol] = {
                         '1m': bars_1m,
                         '5m': bars_5m,
                         '1h': bars_1h
                     }
             
-            if context_data:
-                # 3. Calculate Sovereign Context (Breadth)
+            if context_data and len(context_data) > 0:
+        # 3. Calculate Sovereign Context (Breadth)
                 breadth = detector.calculate_market_context(context_data)
+                
+                # --- AEGIS-ULTRA: DYNAMIC CORRELATION (Contagion Guard) ---
+                # Build returns matrix from 1m contexts
+                try:
+                    from strategies.stat_arb import StatArbEngine
+                    # Extract 1m closes into a matrix [Time, Asset]
+                    # This requires alignment. Simplification: Take last 50 returns
+                    returns_list = []
+                    valid_symbols = []
+                    
+                    for s, d in context_data.items():
+                        c = d.get('1m', [])
+                        if len(c) >= 50:
+                            closes = c['close'].astype(np.float64)[-50:]
+                            rets = np.diff(closes) / closes[:-1]
+                            returns_list.append(rets)
+                            valid_symbols.append(s)
+                            
+                    if len(returns_list) >= 2:
+                        # Stack arrays (Shape: [n_assets, n_samples] -> Transpose to [n_samples, n_assets])
+                        # Truncate to min length just in case
+                        min_len = min(len(r) for r in returns_list)
+                        aligned_rets = np.array([r[-min_len:] for r in returns_list]).T
+                        
+                        corr_matrix = StatArbEngine.calculate_correlation_matrix(aligned_rets)
+                        avg_corr = StatArbEngine.get_systemic_risk(corr_matrix)
+                        
+                        self.market_breadth['fleet_correlation'] = avg_corr
+                        
+                        if avg_corr > 0.85:
+                            logger.warning(f"☢️ [AEGIS] HIGH SYSTEMIC RISK: Fleet Correlation {avg_corr:.2f} > 0.85")
+                            self.market_breadth['contagion_risk'] = True
+                        else:
+                            self.market_breadth['contagion_risk'] = False
+                            
+                except Exception as e:
+                    logger.error(f"Correlation Matrix Logic Error: {e}")
+                    self.market_breadth['fleet_correlation'] = 0.0
+                    self.market_breadth['contagion_risk'] = False
                 
                 # 4. Broadcast to Risk Manager & Portfolio
                 risk_manager.update_global_regime(breadth['sentiment'])
-                portfolio.global_regime_data = breadth  # Richer data for Dashboard
-                portfolio.global_regime = breadth['sentiment'] # Compatibility
+                
+                # Pass extensive breadth data including correlation
+                portfolio.global_regime_data = self.market_breadth 
+                portfolio.global_regime = breadth['sentiment'] 
             else:
                 logger.warning("⏳ Regime Orchestrator: Waiting for market history...")
                 
@@ -307,7 +394,61 @@ async def global_regime_loop(detector: MarketRegimeDetector, data_handler: Binan
             logger.error(f"❌ Regime Orchestrator Error: {e}")
             await asyncio.sleep(60)
 
-async def order_manager_loop(manager: OrderManager):
+    def calculate_market_context(self, active_symbols_data: Dict[str, Dict]):
+        """
+        SOVEREIGN MARKET CONTEXT (Swarm Intelligence).
+        Now includes AEGIS-ULTRA Correlation Logic internally? No, orchestrated in loop.
+        Kept clean for Breadth.
+        """
+        regimes = []
+        
+        for symbol, data in active_symbols_data.items():
+            r = self.detect_regime(
+                symbol, 
+                data.get('1m', []), 
+                data.get('5m', []), 
+                data.get('15m', []), 
+                data.get('1h', [])
+            )
+            regimes.append(r)
+            
+        if not regimes:
+            return self.market_breadth
+            
+        # Stats
+        total = len(regimes)
+        bulls = regimes.count('TRENDING_BULL')
+        bears = regimes.count('TRENDING_BEAR')
+        
+        bull_pct = (bulls / total)
+        bear_pct = (bears / total)
+        
+        # Determine Aggregate Sentiment
+        if bear_pct >= 0.60:
+            sentiment = 'TRENDING_BEAR'
+        elif bull_pct >= 0.60:
+            sentiment = 'TRENDING_BULL'
+        else:
+            sentiment = 'MIXED'
+            
+        self.global_regime = sentiment 
+        self.market_breadth = {
+            'sentiment': sentiment,
+            'bull_pct': bull_pct,
+            'bear_pct': bear_pct,
+            'regime_count': total,
+            # Init placeholder for loop to fill
+            'fleet_correlation': 0.0,
+            'contagion_risk': False
+        }
+        
+        # LOGGING INSTITUCIONAL
+        if sentiment == 'TRENDING_BEAR':
+            logger.warning(f"🚨 [Sovereign Context] MARKET PANIC: {bear_pct:.0%} of assets are Bearish. Veto Active.")
+        elif sentiment == 'TRENDING_BULL':
+            logger.info(f"🐂 [Sovereign Context] MARKET FRENZY: {bull_pct:.0%} of assets are Bullish.")
+            
+        return self.market_breadth
     """
     Phase 9: Anti-Liquidity Sniping Loop.
     Runs every second to monitor and cancel stale limit orders.
@@ -466,6 +607,22 @@ async def main():
     
     logger.info(f"🚀 STARTING TRADER GEMINI [Mode: {args.mode} | Capital: ${Config.INITIAL_CAPITAL}]")
     
+    # 2.1. CPU AFFINITY OPTIMIZATION (Phase 29)
+    try:
+        CPUManager.pin_process()       # Bind to Performance Cores
+        CPUManager.set_priority("HIGH") # Phase 35: Process Priority (HIGH for safety, REALTIME is risky)
+        patch_sockets()                # Phase 31: TCP_NODELAY
+        set_high_resolution_timer()    # Phase 32: 1ms Timer
+        cache_dns_lookups()            # Phase 34: DNS Cache
+        NTPSync.sync_time()            # Phase 37: Initial Time Check
+        NTPSync.start_background_monitor() # Phase 37: Background Loop
+    except Exception as e:
+        logger.warning(f"Failed to apply System Optimizations: {e}")
+    
+    # 2.2. METRICS EXPORTER (Phase 53)
+    from utils.metrics_exporter import metrics
+    metrics.start_server(port=8000)
+    
     # 3. CORE INITIALIZATION
     import queue
     import threading
@@ -516,7 +673,8 @@ async def main():
         ready_count = 0
         with data_handler._data_lock:
             for s in Config.TRADING_PAIRS:
-                if len(data_handler.latest_data.get(s, [])) >= 500:
+                b1m = data_handler.buffers_1m.get(s)
+                if b1m is not None and b1m.size >= 500:
                     ready_count += 1
         
         if ready_count >= len(Config.TRADING_PAIRS):
@@ -529,8 +687,10 @@ async def main():
             await asyncio.sleep(1)
     
     # Sentiment Engine
-    sentiment_loader = SentimentLoader()
-    sentiment_loader.start_background_thread()
+    # [Phase 6 Audit] DISABLED due to missing dependencies (nltk, feedparser)
+    # sentiment_loader = SentimentLoader()
+    # sentiment_loader.start_background_thread()
+    sentiment_loader = None # Mock for strategy injection
     
     # Executor
     # FIXED: Pass actual portfolio instance, not Config class
@@ -652,200 +812,153 @@ async def main():
     regime_detector = MarketRegimeDetector()
     regime_task = asyncio.create_task(global_regime_loop(regime_detector, data_handler, risk_manager, portfolio))
     
-    # PHASE 9: ORDER MANAGER
-    order_manager = OrderManager(executor)
+    # PHASE 9/41: ORDER MANAGER
+    order_manager = OrderManager(executor, data_provider=data_handler)
     executor.order_manager = order_manager
     engine.register_order_manager(order_manager)
     order_task = asyncio.create_task(order_manager_loop(order_manager))
     
-    # 4. MAIN EVENT LOOP
+    # PHASE 99: USER DATA STREAM (Manual Close Detection)
+    # [Phase 6 Audit] DISABLED to prevent conflict with execution/user_data_stream.py
+    # user_stream = UserDataStreamListener(
+    #     order_manager=order_manager,
+    #     portfolio=portfolio,
+    #     data_provider=data_handler,
+    #     executor=executor,
+    #     engine=engine,
+    #     efficacy_tracker=efficacy_tracker
+    # )
+    # user_stream_task = asyncio.create_task(user_stream.start())
+    
+    # Phase 36: Shared Memory Manager
+    shm_path = os.path.join(Config.DATA_DIR, "live_status.dat")
+    shm_manager = SharedStateManager(shm_path)
+
+    # 4. MAIN EVENT LOOP ORCHESTRATION (SUPREMO-V3)
+    logger.info("⚡ [SUPREMO-V3] Orchestrating Concurrent Async Tasks...")
+    
+    # 4.1. Initialize Engine Task
+    engine_task = asyncio.create_task(engine.start())
+    
+    # 4.2. Background Task for Metrics & Heartbeat
     loop_count = 0
-    last_summary_time = time.time()
     last_heartbeat = time.time()
-    last_reconcile_time = time.time() # Phase 13
+    last_summary_time = time.time()
+    last_shm_update = time.time()
     
-    logger.info(f"🔍 DEBUG: shutdown_event is_set={shutdown_event.is_set()}")
-    logger.info(" Starting main event loop...")
-    logger.info("💡 Press Ctrl+C to stop gracefully...")
-    
-    while not shutdown_event.is_set():
-        try:
-            loop_count += 1
-            now = time.time()
-            
-            # Update bars from REST (fallback if WS slow)
-            if loop_count % 60 == 0:  # Every ~60 seconds
-                try:
-                    data_handler.update_bars()
-                    # Heartbeat pulse
-                    get_heartbeat().pulse(metadata={
-                        "loop_count": loop_count,
-                        "equity": portfolio.get_total_equity() if portfolio else 0
-                    })
-                except Exception as e:
-                    logger.error(f"Error updating bars/heartbeat: {e}")
-            
-            # --- HOT RELOAD: Process pending updates ---
-            if hot_reload and hot_reload.is_active:
-                reload_results = hot_reload.process_pending_reloads()
-                for result in reload_results:
-                    if result.success:
-                        logger.info(f"🔥 [HOT_RELOAD] Applied: {result.module_name} ({result.latency_ms:.1f}ms)")
-            
-            # Process events
-            processed = 0
-            while not events_queue.empty() and processed < 50:
-                try:
-                    event = events_queue.get_nowait()
-                    engine.process_event(event)
-                    processed += 1
-                except queue.Empty:
-                    break
-                except Exception as e:
-                    logger.error(f"Error processing event: {e}")
-            
-            # Risk Manager: Check stops
-            if loop_count % 10 == 0:
-                try:
-                    stop_signals = risk_manager.check_stops(portfolio, data_handler)
-                    for sig in stop_signals:
-                        events_queue.put(sig)
-                except Exception as e:
-                    logger.error(f"Error checking stops: {e}")
-            
-            # Update risk manager equity
-            if loop_count % 30 == 0:
-                try:
-                    equity = portfolio.get_total_equity()
-                    risk_manager.update_equity(equity)
-                except:
-                    pass
-            
-            # RECONCILIATION (Phase 13): Periodic Sync every 60m
-            if now - last_reconcile_time >= 3600:
-                try:
-                    logger.info("♻️ [Auto-Reconcile] Syncing state with Binance...")
-                    executor.sync_portfolio_state(portfolio)
-                    last_reconcile_time = now
-                except Exception as e:
-                    logger.error(f"Reconcile failed: {e}")
-            
-            # Market Intelligence Heartbeat
-            if now - last_heartbeat >= 60:
-                equity = portfolio.get_total_equity()
-                open_pos_symbols = [s for s, p in portfolio.positions.items() if p['quantity'] != 0]
-                open_pos = len(open_pos_symbols)
-                logger.info(f"💓 Heartbeat | Equity: ${equity:.2f} | Pos: {open_pos} | Loop: {loop_count}")
-
-                logger.info(f"[PORTFOLIO_STATUS] Active: {open_pos_symbols} | Bal: ${equity:.2f}")
-
-                
-                # --- MARKET COMMENTARY ---
-                analysis_info = []
-                # engine.strategies is a list
-                for s in engine.strategies:
-                    if hasattr(s, 'analysis_stats') and s.analysis_stats['total'] > 0:
-                        stats = s.analysis_stats
-                        analysis_info.append(f"{s.symbol}: {stats['total']} analyzed")
-                
-                if analysis_info:
-                    logger.info(f"🧬 Market State: Analyzing {len(analysis_info)} pairs... [M1 Scalping Engine Active]")
-                    # Mostrar top pairs analizados
-                    logger.info(f"📊 Activity: {', '.join(analysis_info[:3])}...")
-                
-                last_heartbeat = now
-                
-                # 3.5. HISTORICAL PERSISTENCE (Phase 6)
-                try:
-                    status_packet = {
-                        'timestamp': datetime.now(timezone.utc).isoformat(),
-                        'total_equity': equity,
-                        'available_balance': portfolio.current_cash,
-                        'realized_pnl': portfolio.realized_pnl,
-                        'unrealized_pnl': portfolio.unrealized_pnl
-                    }
-                    get_data_handler().append_status_log(portfolio.status_path, status_packet)
-                except Exception as e:
-                    logger.error(f"Persistence Error: {e}")
-            
-            # Performance summary
-            if now - last_summary_time >= 1800:  # Every 30 minutes
-                performance.print_summary()
-                last_summary_time = now
-            
-            # Use wait_for with timeout to allow Ctrl+C to interrupt on Windows
+    async def metrics_heartbeat_loop():
+        nonlocal loop_count, last_heartbeat, last_summary_time, last_shm_update
+        while not shutdown_event.is_set():
             try:
-                # OPTIMIZED: 0.1s for faster signal response (Rule 2.4 Fix)
-                await asyncio.wait_for(asyncio.sleep(0.1), timeout=0.2)
-            except asyncio.TimeoutError:
-                pass
-            
-        except KeyboardInterrupt:
-            logger.info("🛑 Ctrl+C detected, initiating shutdown...")
-            shutdown_event.set()
-            break
-        except Exception as e:
-            logger.error(f"❌ Loop error: {e}", exc_info=True)
-            await asyncio.sleep(5)
+                now = time.time()
+                loop_count += 1
+                
+                # Phase 36: Shared Memory Update (1s)
+                if now - last_shm_update > 1.0:
+                    current_equity = portfolio.get_total_equity()
+                    shm_manager.write_state({
+                        "timestamp": now, "equity": current_equity,
+                        "active_positions": len(portfolio.positions), "mode": args.mode
+                    })
+                    last_shm_update = now
+                
+                # Heartbeat & Data Update (60s)
+                if now - last_heartbeat > 60:
+                    await data_handler.update_bars_async()
+                    get_heartbeat().pulse(metadata={"loop_count": loop_count, "equity": portfolio.get_total_equity()})
+                    
+                    equity = portfolio.get_total_equity()
+                    open_pos = len([s for s, p in portfolio.positions.items() if p['quantity'] != 0])
+                    logger.info(f"💓 Heartbeat | Equity: ${equity:.2f} | Pos: {open_pos} | Events: {engine.metrics['processed_events']}")
+                    
+                    # Phase 99: Fleet Telemetry Display
+                    telemetry_output = telemetry.render(portfolio, data_handler)
+                    logger.info(telemetry_output)
+                    
+                    metrics.update(portfolio=portfolio, engine=engine, queue_size=engine.events.qsize())
+                    metrics.update_health(risk_manager)
+                    last_heartbeat = now
+                
+                # Performance Summary (30m)
+                if now - last_summary_time > 1800:
+                    performance.print_summary()
+                    last_summary_time = now
+                    
+                await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Metrics Loop Error: {e}")
+                await asyncio.sleep(5)
+
+    heartbeat_task = asyncio.create_task(metrics_heartbeat_loop())
     
-    # 5. GRACEFUL SHUTDOWN (Rule 2.4)
-    logger.info(f"🛑 Initiating clean stop... (Reason: signal={shutdown_event.is_set()})")
+    # 5. WAIT FOR SHUTDOWN
+    logger.info("🚀 System Operational. Monitoring for signals...")
     
-    # A. Stop Engine loops
+    shutdown_task = asyncio.create_task(shutdown_event.wait())
+    
+    try:
+        # Wait for shutdown event or any critical task to fail
+        done, pending = await asyncio.wait(
+            [shutdown_task, engine_task, ws_task, regime_task, order_task, heartbeat_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        
+        # Check if a task failed
+        for task in done:
+            if task != shutdown_task and task.exception():
+                logger.critical(f"💥 Task failure detected: {task.exception()}")
+                shutdown_event.set()
+
+    except Exception as e:
+        import traceback
+        logger.error(f"Orchestration Error: {e}\n{traceback.format_exc()}")
+        shutdown_event.set()
+    
+    # 6. GRACEFUL SHUTDOWN (SUPREMO-V3)
+    logger.info("🛑 Initiating clean stop...")
+    
+    # Signal Engine to stop
     engine.stop()
     
-    # B. Stop Adaptive Tasks
-    if 'adaptive_task' in locals():
-        adaptive_task.cancel()
-    if 'meta_task' in locals():
-        meta_task.cancel()
-    if 'regime_task' in locals():
-        regime_task.cancel()
-        
-    # C. Close WebSocket & Data Sessions (with timeout to prevent hanging)
-    ws_task.cancel()
+    # Stop User Data Stream gracefully
+    user_stream.stop()
+    
+    # Cancel all background tasks
+    tasks = [ws_task, adaptive_task, meta_task, regime_task, order_task, heartbeat_task, engine_task, user_stream_task]
+    for task in tasks:
+        task.cancel()
+    
+    # Wait for tasks to clean up
+    await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Data Layer Cleanup
     try:
-        # Use timeout to prevent indefinite blocking
         await asyncio.wait_for(data_handler.shutdown(), timeout=5.0)
     except asyncio.TimeoutError:
-        logger.warning("⚠️ Data handler shutdown timed out, forcing close")
-    except Exception as e:
-        logger.debug(f"Data handler cleanup: {e}")
+        logger.warning("⚠️ Data handler shutdown timed out")
     
-    try:
-        await asyncio.wait_for(asyncio.shield(ws_task), timeout=3.0)
-    except (asyncio.CancelledError, asyncio.TimeoutError, Exception) as e:
-        logger.debug(f"WS Task cleanup: {e}")
-    
-    # C. Close Portfolio & Database
-    portfolio.close() # NEW: Closes DB handler
+    # Performance & Session Closure
+    portfolio.close()
     performance.print_summary()
     
-    # C1. Stop Sentiment Engine
     if 'sentiment_loader' in locals():
         sentiment_loader.stop()
-        logger.info("📰 Sentiment Engine stopped.")
-
-    # C2. Stop Health Supervisor
-
     if supervisor:
         supervisor.stop()
-        logger.info("🩺 Health Supervisor stopped.")
-    
-    # C3. Stop Hot Reload System
     if hot_reload:
         hot_reload.stop()
-        logger.info("🔥 Hot Reload System stopped.")
-    
-    # D. Close Session with Summary (Phase 6)
+        
     session_mgr = get_session_manager()
     if session_mgr:
         session_mgr.end_session({
             'total_trades': len(performance.trades),
-            'pnl': performance.current_capital - performance.initial_capital,
-            'winning_trades': len([t for t in performance.trades if t.pnl > 0]),
-            'losing_trades': len([t for t in performance.trades if t.pnl < 0]),
+            'pnl': performance.current_capital - performance.initial_capital
         })
+    
+    # Neural Bridge Cleanup (SharedMemory)
+    neural_bridge.cleanup()
     
     logger.info("👋 Bot stopped gracefully")
 
@@ -894,8 +1007,25 @@ if __name__ == "__main__":
             logger.info(f"✅ Production Key Loaded: {real_key[:6]}...{real_key[-4:]}")
         
     try:
+        # PROTOCOL METAL-CORE OMEGA: Nano-Latency Loop (Phase 1)
         if sys.platform == 'win32':
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+            try:
+                import winloop
+                winloop.install()
+                logger.info("🚀 [Metal-Core] winloop activated (Windows Nano-Latency).")
+            except ImportError:
+                # Fallback to Proactor (Standard High Perf)
+                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                logger.warning("⚠️ [Metal-Core] winloop not found. Using WindowsProactor.")
+        else:
+            try:
+                import uvloop
+                # uvloop.install() replaces the default policy
+                uvloop.install() 
+                logger.info("🚀 [Metal-Core] uvloop activated (Unix Nano-Latency).")
+            except ImportError:
+                logger.warning("⚠️ [Metal-Core] uvloop not found. Using default asyncio.")
+                
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("\n👋 Bot detenido por el usuario")
