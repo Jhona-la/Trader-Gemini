@@ -12,10 +12,10 @@ class HiddenMarkovModelDetector:
     """
     
     REGIMES = {
-        0: 'LOW_VOL_SIDEWAYS',
-        1: 'VOLATILE_SIDEWAYS',
-        2: 'TREND_BULL',
-        3: 'TREND_BEAR'
+        0: 'RANGING',          # Was LOW_VOL_SIDEWAYS
+        1: 'CHOPPY',           # Was VOLATILE_SIDEWAYS
+        2: 'TRENDING_BULL',    # Was TREND_BULL
+        3: 'TRENDING_BEAR'     # Was TREND_BEAR
     }
     
     def __init__(self, n_states: int = 4):

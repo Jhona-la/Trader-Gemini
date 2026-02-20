@@ -22,6 +22,7 @@ import os # Phase 5
 import pyarrow # Phase 5 Check
 from utils.fast_strings import intern_string # Phase 21: String Interning Optimization
 from utils.shm_utils import SharedMemoryManager # Phase 11: SHM Bridge
+from strategies.components.microstructure import MicrostructureAnalyzer # Phase 25: Nadir-Soberano
 
 
 class BinanceData(DataProvider):
@@ -49,6 +50,11 @@ class BinanceData(DataProvider):
         # PHASE 14: Lead-Lag Intelligence
         self.lead_lag_results = {} # {symbol: lag_in_seconds}
         self.reference_symbol = "BTC/USDT"
+        
+        # 🌊 PHASE 25: Microstructure Analyzers
+        self.microstructure = {} 
+        for s in self.symbol_list:
+            self.microstructure[s] = MicrostructureAnalyzer(s)
 
 
         # 3. Init actual Numba buffers for each symbol
@@ -946,55 +952,73 @@ class BinanceData(DataProvider):
 
     def _process_kline_event(self, kline_data, stream_name):
         """
-        Processes kline data (extracted from msg['data']['k'] typically).
-        Note: The raw stream data has 'k' key.
+        ⚡ PHASE OMNI: FIXED Kline Event Processor + Jitter Tracking.
+        
+        QUÉ: Procesa datos de vela (kline) recibidos vía WebSocket.
+        POR QUÉ: La versión anterior estaba completamente rota:
+                 - Dead code block referenciaba variable 'msg' inexistente
+                 - Todo el código real estaba dentro de un 'except Exception: pass'
+                 - 'msg.get("stream")' debía ser 'stream_name' (parámetro)
+                 - 'internal_sym' debía ser 'internal_symbol' (typo)
+                 - Nested self._data_lock causaba deadlock
+        PARA QUÉ: Restaurar la funcionalidad de procesamiento de velas en tiempo real.
+        CÓMO: Recibe kline_data (ya es msg['data']) y stream_name → parsea → buffer → event.
+        CUÁNDO: Cada mensaje WebSocket con 'kline' en el stream name.
+        DÓNDE: data/binance_loader.py → _process_kline_event().
+        QUIÉN: BinanceData, _manage_socket_chunk (caller at L914).
+        
+        Args:
+            kline_data: The 'data' field from the WebSocket message (msg['data']).
+            stream_name: The stream identifier (e.g. 'btcusdt@kline_1m').
         """
         try:
-            # Phase 16: Heartbeat
+            # Phase 16: Heartbeat (moved outside dead code block)
             if hasattr(self, 'watchdog') and self.watchdog:
                 self.watchdog.heartbeat("BinanceWS")
-
-                # Or just fix the symbol and proceed if the original code was doing `_process_kline`.
-                # Since I don't see `_process_kline` in the snippets, I will inject the interning 
-                # JUST BEFORE it does whatever it does.
-                
-                # BUT, I must replace lines 734-745 roughly. 
-                
-                # Let's rewrite the block to be safer and optimizing.
-                
-                wrapper_data = msg['data']
-                if 'k' in wrapper_data:
-                     kline_data = wrapper_data['k']
-                     symbol = intern_string(kline_data['s'])
-                     
-                     # Call the handler (assuming internal logic follows or exists)
-                     # Since I can't see the *rest* of the function, I have to be careful not to delete it.
-                     # The REPLACE tool expects to replace a block.
-                     # I will see the file again to be sure.
-                     pass 
-        except Exception:
-            pass
-                
-            data = msg['data']
-            # Parse kline data
-            # Event type: e, Event time: E, Symbol: s, Kline: k
-            kline = data['k']
-            symbol = kline['s'] # e.g. BTCUSDT
             
-            # Convert symbol back to internal format if needed
-            # Our internal format might be BTC/USDT or BTCUSDT. 
-            # Let's try to match it to self.symbol_list
+            # ⚡ PHASE OMNI: Per-Stream Jitter Tracking
+            # Measures time between consecutive messages on the same stream
+            now_mono = time.monotonic()
+            if not hasattr(self, '_stream_jitter'):
+                self._stream_jitter = {}  # {stream_name: {'last_ts': float, 'jitter_ms': deque}}
+            
+            if stream_name in self._stream_jitter:
+                jitter_info = self._stream_jitter[stream_name]
+                delta_ms = (now_mono - jitter_info['last_ts']) * 1000
+                jitter_info['jitter_ms'].append(delta_ms)
+                jitter_info['last_ts'] = now_mono
+                
+                # Alert on extreme jitter (> 5000ms gap indicates stream stall)
+                if delta_ms > 5000:
+                    logger.warning(
+                        f"⚠️ [Jitter] Stream {stream_name} gap: {delta_ms:.0f}ms "
+                        f"(avg: {sum(jitter_info['jitter_ms'])/len(jitter_info['jitter_ms']):.0f}ms)"
+                    )
+            else:
+                self._stream_jitter[stream_name] = {
+                    'last_ts': now_mono,
+                    'jitter_ms': collections.deque(maxlen=100),
+                }
+            
+            # ─── PARSE KLINE DATA ───
+            # kline_data is msg['data'] from _manage_socket_chunk (L911-914)
+            if 'k' not in kline_data:
+                return
+                
+            kline = kline_data['k']
+            symbol = intern_string(kline['s'])  # Phase 21: String Interning
+            
+            # Convert symbol to internal format (e.g. BTCUSDT → BTC/USDT)
             internal_symbol = symbol
             if symbol not in self.symbol_list:
-                # Try adding slash
                 if symbol.endswith('USDT'):
                     test_sym = f"{symbol[:-4]}/USDT"
                     if test_sym in self.symbol_list:
                         internal_symbol = test_sym
             
-            is_closed = kline['x'] # Boolean: Is this kline closed?
+            is_closed = kline['x']  # Boolean: Is this kline closed?
             
-            # Extract data with Phase 4: Downcasting
+            # Extract data with Phase 4: Downcasting (float32 for memory)
             timestamp = pd.to_datetime(kline['t'], unit='ms')
             open_price = np.float32(kline['o'])
             high_price = np.float32(kline['h'])
@@ -1003,83 +1027,53 @@ class BinanceData(DataProvider):
             volume = np.float32(kline['v'])
 
             # DATA QUALITY FILTER (Rule 3.2 - Refined)
-            # If the bar is NOT closed and has no movement/volume, skip to save CPU.
-            # But if it IS closed, we MUST record it to keep the time-series contiguous.
             if not is_closed:
                 if volume <= 0 or (high_price == low_price):
                     return
             elif volume <= 0:
                 logger.debug(f"🕳️ [Loader] Liquidity Hole in {internal_symbol}: Zero volume bar recorded for time continuity.")
 
-            bar_data = {
-                'symbol': internal_symbol,
-                'datetime': timestamp,
-                'open': open_price,
-                'high': high_price,
-                'low': low_price,
-                'close': close_price,
-                'volume': volume
-            }
-            
             # GAP DETECTION (Rule 3.2)
-            # Detección de saltos temporales en la secuencia de velas
             with self._data_lock:
                 if self.latest_data[internal_symbol]:
                     last_ts = self.latest_data[internal_symbol][-1]['datetime']
                     time_diff = (timestamp - last_ts).total_seconds()
                     
-                    if time_diff > 65 and is_closed: # Más de 65s para velas de 1m
+                    if time_diff > 65 and is_closed:
                         logger.warning(f"🚨 GAP DETECTED in {internal_symbol}: {time_diff}s interval. Data might be missing.")
             
-            # Update latest_data (Thread-Safe)
-            is_new_bar = False
-            with self._data_lock:
-                 # In WS, we might get updates for same minute.
-                 # RingBuffer just appends. We need to handle "Update current".
-                 # Logic: Peep last timestamp. If same, we logically 'overwrite'.
-                 # HOW TO OVERWRITE IN RING BUFFER? 
-                 # We expose 'push' (append). 
-                 # To overwrite, we'd need 'set_last' or decrement head.
-                 # HACK: If same TS, decrement head, then push.
-                 
-                # PHASE 33: Multi-Timeframe Routing
-                # The stream name tells us which buffer to use
-                stream = msg.get('stream', '')
-                tf = '1m'
-                if '@kline_5m' in stream: tf = '5m'
-                elif '@kline_15m' in stream: tf = '15m'
-                elif '@kline_1h' in stream: tf = '1h'
-                
-                target_map = self.buffers_1m
-                if tf == '5m': target_map = self.buffers_5m
-                elif tf == '15m': target_map = self.buffers_15m
-                elif tf == '1h': target_map = self.buffers_1h
-                
-                buf = target_map[internal_symbol]
-                ts_ms = int(kline['t']) # Use raw exchange timestamp
-                
-                with self._data_lock:
-                    last_arr = buf.get_last(1)
-                    if last_arr is not None and len(last_arr) > 0 and last_arr['timestamp'][0] == ts_ms:
-                        buf.rewind_one()
-                    
-                    buf.push(ts_ms, open_price, high_price, low_price, close_price, volume)
+            # ─── BUFFER UPDATE (Thread-Safe) ───
+            # PHASE 33: Multi-Timeframe Routing via stream_name parameter
+            tf = '1m'
+            if '@kline_5m' in stream_name: tf = '5m'
+            elif '@kline_15m' in stream_name: tf = '15m'
+            elif '@kline_1h' in stream_name: tf = '1h'
             
-            # Trigger Market Event (THROTTLED)
-            # For scalping, we want updates but not at 100Hz.
-            # Only trigger if bar is closed OR at most once every 2 seconds per symbol
+            target_map = self.buffers_1m
+            if tf == '5m': target_map = self.buffers_5m
+            elif tf == '15m': target_map = self.buffers_15m
+            elif tf == '1h': target_map = self.buffers_1h
+            
+            ts_ms = int(kline['t'])  # Raw exchange timestamp
+            
+            with self._data_lock:
+                buf = target_map[internal_symbol]
+                last_arr = buf.get_last(1)
+                if last_arr is not None and len(last_arr) > 0 and last_arr['timestamp'][0] == ts_ms:
+                    buf.rewind_one()
+                
+                buf.push(ts_ms, open_price, high_price, low_price, close_price, volume)
+            
+            # ─── MARKET EVENT TRIGGER (THROTTLED) ───
             should_trigger = is_closed
             now_ts = time.time()
             
-            # --- VOLATILITY BYPASS (High Frequency Fix) ---
-            # Calculates instant price change since last update.
-            # If move > 0.05% (0.0005), FORCE TRIGGER immediately.
+            # Volatility Bypass: Force trigger on >0.05% move
             if not should_trigger:
                 try:
                     current_price = close_price
                     last_price = 0.0
                     
-                    # Peep at last price safely
                     if internal_symbol in self.buffers_1m:
                         last_bar = self.get_latest_bars(internal_symbol, n=1)
                         if last_bar is not None:
@@ -1087,34 +1081,48 @@ class BinanceData(DataProvider):
                     
                     if last_price > 0:
                         pct_change = abs((current_price - last_price) / last_price)
-                        if pct_change >= 0.0005: # 0.05% threshold
+                        if pct_change >= 0.0005:
                             should_trigger = True
-                            # logger.info(f"⚡ VOLATILITY BYPASS: {internal_symbol} moved {pct_change*100:.3f}% in <2s")
                 except Exception:
                     pass
 
+            # Time-based throttle: at most once every 2s per symbol
             if not should_trigger:
                 last_t = self.last_event_time.get(internal_symbol, 0)
                 if now_ts - last_t > 2.0:
                     should_trigger = True
-                    self.last_event_time[internal_symbol] = now_ts
             
-                # OPTIMIZED: Trigger with payload + Order Flow Metrics (Phase 13)
-                # O(1) Access for micro-latency
-                metrics = self.order_flow_metrics.get(internal_sym)
+            # ─── FIRE MARKET EVENT ───
+            if should_trigger:
+                self.last_event_time[internal_symbol] = now_ts
+                
+                # Build event with Order Flow Metrics (Phase 13)
+                metrics = self.order_flow_metrics.get(internal_symbol)
                 if metrics:
                     of_metrics = metrics.copy()
                     
+                    # 🌊 PHASE 25: Merge Microstructure Metrics
+                    if internal_symbol in self.microstructure:
+                        micro_metrics = self.microstructure[internal_symbol].get_metrics()
+                        of_metrics.update(micro_metrics)
+                    
                     self.events_queue.put(MarketEvent(
-                        symbol=internal_sym,
+                        symbol=internal_symbol,
                         close_price=close_price,
                         timestamp=datetime.now(timezone.utc),
                         order_flow=of_metrics
                     ))
                     
-                    # RESET DELTA ATOMICALLY (<1ms target)
+                    # Reset delta atomically (<1ms target)
                     metrics['delta'] = 0.0
                     metrics['last_update'] = time.time()
+                else:
+                    # Trigger without order flow if not available
+                    self.events_queue.put(MarketEvent(
+                        symbol=internal_symbol,
+                        close_price=close_price,
+                        timestamp=datetime.now(timezone.utc),
+                    ))
             
             if is_closed:
                 logger.info(f"🌊 WebSocket Closed Bar: {internal_symbol} @ {close_price}")
@@ -1168,6 +1176,13 @@ class BinanceData(DataProvider):
                 'ask_vol_5': ask_vol_5,
                 'last_update': now
             })
+            
+            # 🌊 PHASE 25: Microstructure Analysis (Iceberg Detection)
+            if float(bids[0][1]) > 0 and float(asks[0][1]) > 0:
+                self.microstructure[internal_sym].on_depth(
+                    float(bids[0][0]), float(bids[0][1]),
+                    float(asks[0][0]), float(asks[0][1])
+                )
             
             # [PHASE 11] SHM Write (Zero-Copy Export)
             if internal_sym in self.shm_managers:
@@ -1228,6 +1243,12 @@ class BinanceData(DataProvider):
             
             # Cumulative Delta (Strategy will reset this every bar or use moving window)
             self.order_flow_metrics[internal_sym]['delta'] += delta_val
+            
+            # 🌊 PHASE 25: Microstructure Analysis (VPIN)
+            # data['p'] = price, data['q'] = qty
+            self.microstructure[internal_sym].on_trade(
+                float(data['p']), qty, is_buyer_mm
+            )
             
         except Exception as e:
             logger.debug(f"Error in aggTrade processing: {e}")

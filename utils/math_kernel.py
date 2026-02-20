@@ -1,6 +1,149 @@
-
 import numpy as np
 from numba import njit, prange, float64, int64
+
+# ==============================================================================
+# 🧠 FASE 10: QUANTITATIVE MASTERY (Hurst & RANSAC)
+# ==============================================================================
+
+@njit(cache=True)
+def kahan_sum(arr):
+    """
+    [PRECISION-AXIOMA] Kahan Summation Algorithm.
+    Prevents catastrophic loss of significance when summing large arrays of floating point numbers.
+    Maintains a running compensation for accumulated rounding errors.
+    """
+    sum_val = 0.0
+    c = 0.0 # Running compensation for lost low-order bits
+    for i in range(len(arr)):
+        y = arr[i] - c
+        t = sum_val + y
+        c = (t - sum_val) - y
+        sum_val = t
+    return sum_val
+
+@njit(cache=True)
+def calculate_hurst_exponent(prices, max_lags=20):
+    """
+    Hurst Exponent (Variance Ratio Method) - Fast Numba Vectorized
+    Calcula el exponente de Hurst para determinar el régimen de mercado.
+    
+    Interpretación:
+    - H < 0.5: Reversión a la Media (Rango)
+    - H ≈ 0.5: Random Walk (Ruido Geométrico Browniano)
+    - H > 0.5: Tendencia Persistente (Trending)
+    
+    Args:
+        prices: Array numpy de precios
+        max_lags: Profundidad máxima de retardo
+    """
+    n = len(prices)
+    if n < max_lags * 2:
+        return 0.5 # Insufficient data, assume random walk
+        
+    # Standard lags
+    lags = np.arange(2, max_lags + 1)
+    tau = np.zeros(len(lags), dtype=np.float64)
+    
+    for k in range(len(lags)):
+        lag = lags[k]
+        # Restar los precios con un desplazamiento 'lag'
+        # Std( P(t+lag) - P(t) ) proporcional a lag^H
+        # diffs tiene tamaño n - lag
+        diffs = np.empty(n - lag, dtype=np.float64)
+        for i in range(n - lag):
+            diffs[i] = prices[i + lag] - prices[i]
+            
+        tau[k] = np.std(diffs)
+        
+    # Linear Regression en el espacio Log-Log
+    # log(Std) = H * log(lag) + c
+    valid = tau > 0
+    if np.sum(valid) < 3:
+        return 0.5
+        
+    log_lags = np.log(lags[valid])
+    log_tau = np.log(tau[valid])
+    
+    # Regress log_tau on log_lags to find slope H
+    mean_x = np.mean(log_lags)
+    mean_y = np.mean(log_tau)
+    
+    cov_xy = np.mean((log_lags - mean_x) * (log_tau - mean_y))
+    var_x = np.mean((log_lags - mean_x)**2)
+    
+    if var_x == 0:
+        return 0.5
+        
+    H = cov_xy / var_x
+    
+    # Clip H to theoretical limits 0-1
+    if H < 0.0: return 0.0
+    if H > 1.0: return 1.0
+    return H
+
+@njit(cache=True)
+def calculate_ransac_volatility(prices, threshold_ratio=3.0, min_samples=0.5, iterations=50):
+    """
+    RANSAC (Random Sample Consensus) 1D Volatility - Numba Vectorized
+    Calcula una Desviación Estándar Robusta ignorando outliers (spikes/flash crashes).
+    Ideal para canales de volatilidad inmunes al ruido de Binance.
+    
+    Args:
+        prices: Array numpy de precios (ej: ventana de 20 periodos).
+        threshold_ratio: Multiplicador del MAD (Median Absolute Deviation) para clasificar inliers.
+        min_samples: Fracción mínima de inliers requerida.
+        iterations: Número de muestras aleatorias a probar.
+        
+    Returns:
+        robust_std, robust_mean
+    """
+    n = len(prices)
+    if n < 5:
+        # Fallback to standard stats if window is too small
+        return np.std(prices), np.mean(prices)
+        
+    best_inlier_count = 0
+    best_inliers = np.empty(n, dtype=np.bool_)
+    best_inliers[:] = False
+    
+    # Calculate global MAD for baseline threshold
+    med = np.median(prices)
+    mad = np.median(np.abs(prices - med))
+    if mad == 0:
+        mad = 1e-8
+    threshold = mad * threshold_ratio
+    
+    for _ in range(iterations):
+        # 1. Random Sample (2 points to define a 1D "model" mean)
+        i1 = np.random.randint(0, n)
+        i2 = np.random.randint(0, n)
+        while i1 == i2:
+            i2 = np.random.randint(0, n)
+            
+        sample_mean = (prices[i1] + prices[i2]) / 2.0
+        
+        # 2. Evaluate consensus (count inliers)
+        inliers = np.abs(prices - sample_mean) <= threshold
+        inlier_count = np.sum(inliers)
+        
+        # 3. Update best model
+        if inlier_count > best_inlier_count:
+            best_inlier_count = inlier_count
+            best_inliers = inliers
+            
+    # 4. Filter and return robust stats
+    # If we couldn't find a consensus, fallback to standard stats
+    if best_inlier_count < n * min_samples:
+        return np.std(prices), np.mean(prices)
+        
+    # Extract inliers
+    inlier_prices = prices[best_inliers]
+    
+    return np.std(inlier_prices), np.mean(inlier_prices)
+
+# ==============================================================================
+# EXISTING TECHNICAL INDICATORS
+# ==============================================================================
 
 @njit(fastmath=True, cache=True)
 def calculate_ema_jit(prices, period):
@@ -136,6 +279,35 @@ def calculate_bollinger_jit(prices, period=20, std_dev=2.0):
         middle[i] = mean
         upper[i] = mean + (std * std_dev)
         lower[i] = mean - (std * std_dev)
+        
+    return upper, middle, lower
+
+@njit(parallel=True, cache=True)
+def calculate_bollinger_robust_jit(prices, period=20, std_dev=2.0, threshold_ratio=3.0, iterations=30):
+    """
+    Bollinger Bands Robustos (RANSAC Volatility) - Fase 10
+    Calcula las bandas ignorando outliers (flash crashes) en la std.
+    O(N * W), aceptable bajo compilación Numba.
+    """
+    n = len(prices)
+    upper = np.full(n, np.nan, dtype=np.float64)
+    middle = np.full(n, np.nan, dtype=np.float64)
+    lower = np.full(n, np.nan, dtype=np.float64)
+    
+    if n < period:
+        return upper, middle, lower
+        
+    for i in prange(period - 1, n):
+        window = prices[i - period + 1 : i + 1]
+        
+        # Calcular robust stats
+        rob_std, rob_mean = calculate_ransac_volatility(
+            window, threshold_ratio=threshold_ratio, min_samples=0.5, iterations=iterations
+        )
+        
+        middle[i] = rob_mean
+        upper[i] = rob_mean + (rob_std * std_dev)
+        lower[i] = rob_mean - (rob_std * std_dev)
         
     return upper, middle, lower
 

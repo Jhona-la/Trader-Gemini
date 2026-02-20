@@ -12,13 +12,16 @@ from datetime import datetime, timezone
 from config import Config
 from strategies.strategy import Strategy
 from utils.math_kernel import (
-    calculate_rsi_jit, calculate_bollinger_jit, calculate_ema_jit,
+    calculate_rsi_jit, calculate_bollinger_robust_jit, calculate_ema_jit,
     calculate_macd_jit, calculate_atr_jit, calculate_adx_jit
 ) # Phase 3: Total Vectorization
 from core.neural_bridge import neural_bridge
 from core.genotype import Genotype  # Phase 1: Trinidad Omega
 from core.online_learning import OnlineLearner # Phase 46: Real-time Learning
 from core.fused_strategy_kernel import fused_compute_step # Phase 65: Kernel Fusion
+from sophia.intelligence import SophiaIntelligence  # SOPHIA-INTELLIGENCE Protocol
+from sophia.narrative import NarrativeGenerator  # SOPHIA: Human-readable narratives
+from utils.metrics_exporter import metrics  # SOPHIA-VIEW: Real-time telemetry
 
 class HybridScalpingStrategy(Strategy):
     """
@@ -124,6 +127,9 @@ class HybridScalpingStrategy(Strategy):
         # MULTIVERSE SUPPORT (Phase 56)
         self.genotypes = {} # symbol -> Genotype
         
+        # SOPHIA-INTELLIGENCE Protocol: XAI Engine
+        self.sophia = SophiaIntelligence(bar_minutes=5.0)
+        
         # Pre-load provided genotype if any
         if genotype:
             self.genotypes[genotype.symbol] = genotype
@@ -184,8 +190,8 @@ class HybridScalpingStrategy(Strategy):
         vols = data['volume']
 
         try:
-            # 1. Bollinger Bands (Numba JIT)
-            inds['bb_upper'], inds['bb_middle'], inds['bb_lower'] = calculate_bollinger_jit(closes, self.BB_PERIOD, self.BB_STD)
+            # 1. Bollinger Bands (Numba JIT RANSAC - Phase 10)
+            inds['bb_upper'], inds['bb_middle'], inds['bb_lower'] = calculate_bollinger_robust_jit(closes, self.BB_PERIOD, self.BB_STD)
             
             # 2. RSI (Numba JIT)
             inds['rsi'] = calculate_rsi_jit(closes, self.RSI_PERIOD)
@@ -656,7 +662,67 @@ class HybridScalpingStrategy(Strategy):
                 final_sl_pct = max(0.003, min(final_sl_pct, 0.015))
                 final_tp_pct = max(0.005, min(final_tp_pct, 0.030))
 
+                # ── SOPHIA-INTELLIGENCE: Pre-trade XAI Analysis ──
+                sophia_report = None
+                sophia_narrative = ""
+                try:
+                    # Gather returns for GARCH/tail analysis
+                    _closes = data_5m['close'].astype(np.float64)
+                    _returns = np.diff(np.log(_closes)) if len(_closes) > 1 else None
+                    
+                    sophia_report = self.sophia.analyze(
+                        symbol=symbol,
+                        direction=signal_type.name,
+                        signal_strength=strength,
+                        setups=setups,
+                        confluence_score=confluence_score,
+                        tp_pct=final_tp_pct,
+                        sl_pct=final_sl_pct,
+                        returns=_returns,
+                        ttl_seconds=180.0,
+                    )
+                    
+                    # Generate human-readable narrative
+                    sophia_narrative = NarrativeGenerator.generate_intention(
+                        symbol=symbol,
+                        direction=signal_type.name,
+                        win_prob=sophia_report.win_probability,
+                        expected_exit_mins=sophia_report.expected_exit_mins,
+                        top_features=sophia_report.top_features,
+                        setups=setups,
+                        entropy_label=sophia_report.entropy_label,
+                        tail_warning=sophia_report.tail_risk_warning,
+                        current_price=setups['close'],
+                    )
+                    logger.info(f"   💭 {sophia_narrative}")
+                    
+                    # ── SOPHIA-VIEW: Real-time Metacognition Metrics ──
+                    try:
+                        metrics.record_sophia_inference(
+                            symbol=symbol,
+                            entropy=sophia_report.decision_entropy,
+                            top_features=sophia_report.top_features,
+                            consensus_count=confluence_score  # Using multi-timeframe score as consensus proxy
+                        )
+                    except Exception as m_e:
+                        logger.debug(f"[SOPHIA-VIEW] Metric emission skipped: {m_e}")
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ [SOPHIA] Analysis failed for {symbol}: {e}")
+
                 # 8. Crear señal de entrada
+                _metadata = {
+                    'multi_timeframe_score': confluence_score,
+                    'trend_direction': "UP" if setups['in_uptrend'] else "DOWN",
+                    'time_to_target': time_to_target,
+                    'adx': setups['adx'],
+                    'rsi': setups['rsi'],
+                    'atr_mult': atr_mult_sl,
+                }
+                if sophia_report:
+                    _metadata['sophia'] = sophia_report.to_dict()
+                    _metadata['sophia_narrative'] = sophia_narrative
+                
                 signal = SignalEvent(
                     strategy_id=self.strategy_id,
                     symbol=symbol,
@@ -668,14 +734,7 @@ class HybridScalpingStrategy(Strategy):
                     tp_pct=round(final_tp_pct * 100, 4),
                     sl_pct=round(final_sl_pct * 100, 4),
                     current_price=setups['close'],
-                    metadata={
-                        'multi_timeframe_score': confluence_score,
-                        'trend_direction': "UP" if setups['in_uptrend'] else "DOWN",
-                        'time_to_target': time_to_target,
-                        'adx': setups['adx'],
-                        'rsi': setups['rsi'],
-                        'atr_mult': atr_mult_sl # FIXED: Was atr_mult
-                    }
+                    metadata=_metadata,
                 )
                 
                 # 9. Emit signal and update records

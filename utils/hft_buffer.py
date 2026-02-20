@@ -126,16 +126,21 @@ class NumbaStructuredRingBuffer:
     Eliminates memory fragmentation by grouping all candle data.
     """
     def __init__(self, capacity):
-        self.capacity = capacity
-        # Ensure 64-byte alignment for cache locality (approximate via padding if needed, 
-        # but numpy.zeros usually aligns well. For strict HFT we'd use posix_memalign)
-        # We ensure capacity is a multiple of cache line size for vectorization.
-        self.t = np.zeros(capacity, dtype=np.int64)
-        self.o = np.zeros(capacity, dtype=np.float32)
-        self.h = np.zeros(capacity, dtype=np.float32)
-        self.l = np.zeros(capacity, dtype=np.float32)
-        self.c = np.zeros(capacity, dtype=np.float32)
-        self.v = np.zeros(capacity, dtype=np.float32)
+        # ⚡ OMEGA-VOID §1.1: Pad capacity to 64-byte cacheline boundaries
+        # Ryzen 7 5700U L1/L2 cacheline = 64 bytes
+        # float32 = 4 bytes → 16 elements per cacheline
+        # int64 = 8 bytes → 8 elements per cacheline
+        # Padding eliminates False Sharing between adjacent arrays
+        padded_f32 = ((capacity + 15) // 16) * 16  # Round up to 16-element boundary
+        padded_i64 = ((capacity + 7) // 8) * 8     # Round up to 8-element boundary
+        
+        self.capacity = padded_f32  # Use padded capacity for all indexing
+        self.t = np.zeros(padded_i64, dtype=np.int64)
+        self.o = np.zeros(padded_f32, dtype=np.float32)
+        self.h = np.zeros(padded_f32, dtype=np.float32)
+        self.l = np.zeros(padded_f32, dtype=np.float32)
+        self.c = np.zeros(padded_f32, dtype=np.float32)
+        self.v = np.zeros(padded_f32, dtype=np.float32)
         self.head = 0
         self.size = 0
     

@@ -55,7 +55,10 @@ class Config(metaclass=EncryptedConfigMeta):
     # ========================================================================
     # GLOBAL SETTINGS
     # ========================================================================
+    # GLOBAL SETTINGS
+    # ========================================================================
     DEBUG_TRACE_ENABLED = False
+
 
     # ========================================================================
     # BINANCE API CREDENTIALS (Loaded from .env file)
@@ -238,6 +241,11 @@ class Config(metaclass=EncryptedConfigMeta):
 
     # Phase 99: WandB Tracking
     WANDB_ENTITY = "jhonala-none"
+    MAX_RISK_PER_TRADE = 0.015  # 1.5% per trade (Institutional Standard)
+    
+    # ========================================================================
+    # INSTITUTIONAL POLICY ENFORCEMENT (Phase 2.6)
+    # ========================================================================
     WANDB_PROJECT = "trader-gemini"
 
     # ========================================================================
@@ -401,7 +409,7 @@ class Config(metaclass=EncryptedConfigMeta):
             assert cls.INITIAL_CAPITAL > 0, "Capital must be positive"
             
             return True
-        except AssertionError as e:
+        except AssertionError as e:  # Note: Python built-in is AssertionError
             print(f"❌ CONFIG TYPE ERROR: {e}")
             sys.exit(1)
 

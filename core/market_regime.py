@@ -63,22 +63,23 @@ class MarketRegimeDetector:
                 ema50_1h_arr = calculate_ema_jit(closes_1h, 50)
                 is_bullish = closes_1h[-1] > ema50_1h_arr[-1]
             
-            # 4. Hurst (1m)
-            from utils.statistics_pro import StatisticsPro
-            hurst = StatisticsPro.calculate_hurst_exponent(closes_1m[-100:]) if len(closes_1m) >= 100 else 0.5
+            # 4. Hurst (1m) - Phase 10 Numba Accelerated
+            from utils.math_kernel import calculate_hurst_exponent
+            # Use max_lags=30 on the last 100 periods
+            hurst = calculate_hurst_exponent(closes_1m[-100:].copy(), max_lags=30) if len(closes_1m) >= 100 else 0.5
             self.last_hurst = hurst
 
             # 5. Logic
             raw_regime = 'CHOPPY'
             
-            if adx > 25:
+            # Phase 10: Hurst Dictates Macro Regime (Overrides ADX if extremely persistent)
+            if hurst > 0.60 or adx > 25:
                 if is_bullish and mtf_bias >= 0:
                     raw_regime = 'TRENDING_BULL'
                 elif not is_bullish and mtf_bias <= 0:
                     raw_regime = 'TRENDING_BEAR'
-            elif adx < 20:
-                raw_regime = 'RANGING'
-                if hurst < 0.4: raw_regime = 'MEAN_REVERTING'
+            elif hurst < 0.40 or adx < 20:
+                raw_regime = 'MEAN_REVERTING' if hurst < 0.40 else 'RANGING'
 
             # Hysteresis
             if symbol not in self.regime_history: self.regime_history[symbol] = []

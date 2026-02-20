@@ -3,7 +3,10 @@ Professional logging configuration for Trader Gemini
 Replaces print() statements with structured logging (JSON)
 """
 import re
+import os
 import logging
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
 # Try to use orjson for ultra-fast serialization (Phase 3: Hardware Opt)
 try:
     import orjson
@@ -11,8 +14,23 @@ try:
         return orjson.dumps(obj).decode('utf-8')
 except ImportError:
     import json
+    import json
     def json_dumps(obj):
         return json.dumps(obj)
+
+class SensitiveDataFilter(logging.Filter):
+    """
+    🛡️ [PHASE I] VANGUARDIA-SOBERANA: Secure Logging
+    Masks sensitive patterns (API Keys, Secrets) in log records.
+    """
+    def filter(self, record):
+        if not isinstance(record.msg, str): return True
+        msg = record.msg
+        # Mask Binance API Keys (Typical 64 chars)
+        # Simple heuristic: key=VALUE where VALUE is long alphanumeric
+        msg = re.sub(r'(api_key|secret|token|password)=([a-zA-Z0-9\-\_]{8,})', r'\1=********************', msg, flags=re.IGNORECASE)
+        record.msg = msg
+        return True
 
 class JSONFormatter(logging.Formatter):
     """
@@ -129,6 +147,24 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     error_handler.setLevel(logging.ERROR) # Only ERROR and CRITICAL
     error_handler.setFormatter(JSONFormatter(datefmt='%Y-%m-%d %H:%M:%S'))
 
+    # 🌑 PHASE 24: IOPS OPTIMIZATION (Memory Buffered Logging)
+    # Wraps FileHandlers in MemoryHandler to buffer logs in RAM and flush in chunks.
+    # This reduces SSD wear and IO Interrupts (Nadir-Soberano).
+    from logging.handlers import MemoryHandler
+    
+    # Buffer: 1000 records or flush on ERROR
+    buffered_file_handler = MemoryHandler(
+        capacity=1000, 
+        flushLevel=logging.ERROR, 
+        target=file_handler
+    )
+    
+    buffered_error_handler = MemoryHandler(
+        capacity=1000, 
+        flushLevel=logging.CRITICAL, 
+        target=error_handler
+    )
+
     # --- 2. ASYNC INFRASTRUCTURE ---
     import queue
     from logging.handlers import QueueHandler, QueueListener
@@ -145,8 +181,8 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     listener = QueueListener(
         log_queue, 
         console_handler, 
-        file_handler, 
-        error_handler,
+        buffered_file_handler, 
+        buffered_error_handler,
         respect_handler_level=True
     )
     

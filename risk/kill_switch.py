@@ -39,6 +39,7 @@ class KillSwitch:
         
         # [SS-010] Cooperative shutdown mechanism
         self._shutdown_callback = None  # Callable set by Engine for graceful stop
+        self._forensic_callback = None # Phase 20: Forensic Dump
         
         # Check integrity on startup
         if self.check_atomic_lock():
@@ -56,6 +57,10 @@ class KillSwitch:
         The Engine will: close positions → flush DB → stop event loop.
         """
         self._shutdown_callback = callback
+
+    def set_forensic_callback(self, callback):
+        """Phase 20: Register callback for Black Box recording."""
+        self._forensic_callback = callback
 
     def check_status(self):
         """Returns True if trading is allowed, False if Kill Switch is active."""
@@ -124,6 +129,14 @@ class KillSwitch:
         # 1. Persist the Stop (Atomic Lock) — survives process restart
         self._create_atomic_lock(reason)
         
+        # 🕵️ Phase 20: Forensic Snapshot (Before Shutdown)
+        if self._forensic_callback:
+            try:
+                logger.warning("🕵️ Capturing Forensic Snapshot...")
+                self._forensic_callback(reason)
+            except Exception as e:
+                logger.error(f"Forensic snapshot failed: {e}")
+
         # 2. Signal Engine for graceful shutdown
         # [SS-010 FIX] Engine callback handles: close positions → flush DB → stop loop
         if self._shutdown_callback:

@@ -10,21 +10,20 @@ try:
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 except ImportError:
     pass
-import queue
-import time
-from typing import Optional, List, Dict, Any, Union
-from datetime import datetime, timezone
-from config import Config
-from utils.debug_tracer import trace_execution
-from utils.logger import logger
-from core.world_awareness import world_awareness
-from utils.latency_monitor import latency_monitor
-from utils.latency_monitor import latency_monitor
-# from utils.system_monitor import system_monitor # Removed unused & problematic import
-from core.gc_tuner import GCTuner
-from core.gc_tuner import GCTuner
 
 import collections
+from typing import Optional, Any
+from config import Config
+from utils.logger import logger
+from utils.os_tuner import OSTuner # Protocol Nadir-Soberano
+from utils.time_sync import TimeSynchronizer # Phase 26: Stochastic Purity
+from core.system_monitor import SystemMonitor # Phase 27: Disaster Resilience
+from config import Config
+from utils.logger import logger
+from utils.latency_monitor import latency_monitor
+from core.gc_tuner import GCTuner
+from core.forensics import ForensicRecorder # Phase 20: Forensic Logging
+
 try:
     import psutil
 except ImportError:
@@ -104,8 +103,21 @@ class Engine:
             'strategy_executions': 0,
             'errors': 0,
             'avg_latency_ms': 0.0,
-            'max_latency_ms': 0.0
+            'max_latency_ms': 0.0,
+            'burst_events': 0,  # Phase OMNI: Burst-mode drain counter
         }
+        
+        # 🕵️ Phase 20: Forensic Recorder
+        self.forensics = ForensicRecorder(self)
+        
+        # 🌑 PHASE 24: LAYER 0 OPTIMIZATION (Protocol Nadir-Soberano)
+        OSTuner.optimize()
+        
+        # 🧬 PHASE 26: Time Synchronization Integration
+        TimeSynchronizer.sync()
+        
+        # 🏥 PHASE 27: System Monitor
+        self.system_monitor = SystemMonitor()
 
     # ... [Registration methods unchanged] ...
     def register_data_handler(self, handler: Any) -> None: 
@@ -122,6 +134,14 @@ class Engine:
         
     def register_risk_manager(self, manager: Any) -> None: 
         self.risk_manager = manager
+        # 🛡️ Phase 20: Link Forensics to Kill Switch
+        if self.risk_manager and hasattr(self.risk_manager, 'kill_switch'):
+             # Define callback that captures snapshot
+             def forensic_dump(reason):
+                 if hasattr(self, 'forensics'):
+                     self.forensics.capture_snapshot(trigger_reason=f"KILL_SWITCH: {reason}")
+             
+             self.risk_manager.kill_switch.set_forensic_callback(forensic_dump)
 
     def register_order_manager(self, manager: Any) -> None:
         self.order_manager = manager
@@ -168,44 +188,67 @@ class Engine:
         
         while self.running:
             try:
-                # 1. Get event (Wait max 1s to allow maintenance)
+                # 🏥 PHASE 27: Graceful Degradation Check
+                if not self.system_monitor.check_health():
+                    await asyncio.sleep(0.1) # Cool down
+
+                # 1. Get first event (Wait max 1s to allow maintenance)
                 try:
                     event = await asyncio.wait_for(self.events.get(), timeout=1.0)
                 except asyncio.TimeoutError:
                     # Idle Cycle: Smart GC (Phase 15)
-                    # Only run GC if market is calm to avoid Stop-The-World in volatility
                     regime = self._get_current_market_regime()
-                    # Skip GC if we are in high intensity modes
                     if 'VOLATILE' not in regime and 'TRENDING' not in regime:
                         GCTuner.check_maintenance()
                     continue
                 
-                # 2. Critical Section (GC Disabled)
+                # ⚡ PHASE OMNI: BURST-MODE EVENT DRAIN
+                # Process up to 32 events per yield cycle to reduce asyncio overhead.
+                # QUÉ: Drain multiple events in a single GC-free critical section.
+                # POR QUÉ: Cada await cede control al event loop (~15μs overhead).
+                # PARA QUÉ: Reducir latencia total bajo carga alta (bursts de mercado).
+                # CÓMO: Recoger hasta 32 eventos de la deque sin await entre ellos.
+                burst_batch = [event]
+                _BURST_MAX = 32
+                while len(burst_batch) < _BURST_MAX and not self.events.empty():
+                    try:
+                        burst_batch.append(self.events._deque.popleft())
+                    except IndexError:
+                        break
+                
+                # 2. Critical Section (GC Disabled) — process entire burst
                 start_loop = time.perf_counter()
                 with GCTuner.critical_section():
-                     # Process the event asynchronously
-                     await self.process_event(event)
+                    for evt in burst_batch:
+                        await self.process_event(evt)
 
                 # [DF-A2] Jitter Detection: Measure processing time
                 end_loop = time.perf_counter()
+                batch_size = len(burst_batch)
                 loop_duration = (end_loop - start_loop) * 1_000_000 # microseconds
+                per_event_us = loop_duration / batch_size
                 
-                if loop_duration > 500: # 500μs threshold
-                    logger.warning(f"⚠️ [JITTER] Event Loop Blocked: {loop_duration:.2f}μs (Type: {event.type})")
+                if per_event_us > 500: # 500μs per-event threshold
+                    logger.warning(f"⚠️ [JITTER] Burst({batch_size}) Avg: {per_event_us:.0f}μs/evt (Total: {loop_duration:.0f}μs)")
                     latency_monitor.track('engine_jitter_warning', loop_duration / 1000)
                 
                 # Update rolling avg latency
-                current_avg = self.metrics['avg_latency_ms']
-                processed = self.metrics['processed_events']
-                self.metrics['avg_latency_ms'] = (current_avg * processed + (loop_duration/1000)) / (processed + 1)
+                for _ in burst_batch:
+                    current_avg = self.metrics['avg_latency_ms']
+                    processed = self.metrics['processed_events']
+                    self.metrics['avg_latency_ms'] = (current_avg * processed + (per_event_us/1000)) / (processed + 1)
+                    self.metrics['processed_events'] += 1
+                
                 if (loop_duration/1000) > self.metrics['max_latency_ms']:
                     self.metrics['max_latency_ms'] = loop_duration / 1000
                 
-                # Mark as done
-                self.events.task_done()
+                # Track burst size for telemetry
+                if batch_size > 1:
+                    self.metrics['burst_events'] += batch_size
                 
-                # Simple metric tracking
-                self.metrics['processed_events'] += 1
+                # Mark as done
+                for _ in burst_batch:
+                    self.events.task_done()
                 
                 # ✅ PHASE 18: RYZEN 7 SNIPER (Dynamic Orchestration)
                 if self.metrics['processed_events'] % 100 == 0:
@@ -549,6 +592,8 @@ class Engine:
 
     def stop(self):
         self.running = False
+
+        # Phase 3: Hardware Optimization (GC Tuner)
         for strategy in self.strategies:
             try:
                 strategy.stop()

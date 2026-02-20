@@ -12,8 +12,8 @@ from core.events import OrderEvent, SignalEvent
 from core.enums import OrderSide, SignalType, OrderType
 from core.resolution_state import ResolutionState
 from core.world_awareness import world_awareness
-from data.data_provider import get_data_provider
 from config import Config
+from decimal import Decimal, getcontext
 from .kill_switch import KillSwitch
 from utils.debug_tracer import trace_execution
 from datetime import timedelta, datetime, timezone
@@ -175,7 +175,7 @@ class RiskManager:
         # Phase 14: Funding & Rebate Tools
         self.funding_evasion_threshold = 0.0003 # 0.03%
         self.funding_buffer_minutes = 15
-        self.rebate_priority_mode = getattr(Config.Risk, 'REBATE_PRIORITY', True)
+        self.rebate_priority_mode = getattr(Config, 'REBATE_PRIORITY', True)
 
     def _get_sector(self, symbol: str) -> str:
         """Standardized symbol to sector mapping."""
@@ -449,6 +449,45 @@ class RiskManager:
         # Use Bayesian Inference for more robust "Real" Win Rate for optimization
         return StatisticsPro.bayesian_win_rate(self.win_count, self.loss_count, prior_alpha=10, prior_beta=10)
 
+    def _compute_kelly_math(self, p: float, b: float, apply_mult: bool = True) -> float:
+        """
+        [PRECISION-AXIOMA] Core math for Kelly Criterion (p*b-q)/b using Satoshi-level Decimal precision.
+        """
+        getcontext().prec = 28 # Set precision high enough to catch IEEE float drifts
+        
+        try:
+            # Cast floats to Decimal safely
+            dec_p = Decimal(str(p))
+            dec_b = Decimal(str(b))
+            dec_q = Decimal('1.0') - dec_p
+            
+            if dec_b > Decimal('0.0'):
+                kelly = (dec_p * dec_b - dec_q) / dec_b
+            else:
+                kelly = Decimal('0.0')
+                
+            if not apply_mult: 
+                return float(kelly)
+                
+            # Defensive Scaling (Risk Fortress)
+            # Quarter-Kelly for Scalping volatility
+            kelly_mult = Decimal('0.25')
+            
+            if self.stress_score < 90:
+                kelly_mult = Decimal('0.125') # Eighth-Kelly
+                
+            fractional_kelly = max(Decimal('0.0'), kelly * kelly_mult)
+            
+            # Clamp between 0% and 40% exposure
+            clamped = max(Decimal('0.0'), min(fractional_kelly, Decimal('0.40')))
+            
+            logger.debug(f"📐 [Axioma-Kelly] P:{dec_p} B:{dec_b} Kelly:{kelly} Final:{clamped}")
+            return float(clamped)
+            
+        except Exception as e:
+            logger.error(f"❌ [AXIOMA] Decimal Kelly calculation failed: {e}. Defaulting to 0.0")
+            return 0.0
+
     def calculate_kelly_fraction(self, symbol: str = "", strategy_id: str = None, rr_ratio: float = 0.75, signal_event=None) -> float:
         """
         [PHASE 13] ALPHA-SHIELD: Dynamic Kelly Sizing
@@ -473,24 +512,24 @@ class RiskManager:
                 avg_loss = np.mean(losses) if losses else 0.01
                 b = avg_win / avg_loss if avg_loss > 0 else 1.0
                 
-            # 2. Kelly Formula: K = (p*b - q) / b
-            q = 1 - p
-            kelly = (p * b - q) / b if b > 0 else 0
+            # 2. Kelly Formula (Decimal Delegated)
+            kelly_frac_float = self._compute_kelly_math(p, b, apply_mult=False)
+            kelly = Decimal(str(kelly_frac_float))
             
             # 3. Defensive Scaling (Risk Fortress)
             # AEGIS-ULTRA: Absolute Half-Kelly Enforcement
-            kelly_mult = 0.5 
+            kelly_mult = Decimal('0.5')
             
             # Extreme Defense: If Ruin Risk (Stress Score) is low
-            if self.stress_score < 90: kelly_mult = 0.25 # Quarter-Kelly
+            if self.stress_score < 90: kelly_mult = Decimal('0.25') # Quarter-Kelly
             
             # AEGIS-ULTRA: Systemic Risk Shield (Contagion)
             # If fleet correlation is high, reduce size to avoid synchronized drawdowns
             if hasattr(self, 'fleet_correlation') and self.fleet_correlation > 0.85:
                  logger.warning(f"🚨 SYSTEMIC RISK: Fleet Correlation {self.fleet_correlation:.2f}. Reducing Size by 50%.")
-                 kelly_mult *= 0.5
+                 kelly_mult *= Decimal('0.5')
             
-            fractional_kelly = max(0, kelly * kelly_mult)
+            fractional_kelly = max(Decimal('0.0'), kelly * kelly_mult)
             
             # 4. Symbol Isolation & Sector Blocker
             if signal_event and hasattr(signal_event, 'symbol'):
@@ -505,7 +544,7 @@ class RiskManager:
                     return 0.0
 
             # 5. Final Clamp
-            return max(0.05, min(fractional_kelly, 0.40)) # Min 5%, Max 40% (Aggressive for $12)
+            return float(max(Decimal('0.05'), min(fractional_kelly, Decimal('0.40')))) # Min 5%, Max 40% (Aggressive for $12)
 
         except Exception as e:
             logger.error(f"Kelly Error: {e}")
@@ -528,7 +567,18 @@ class RiskManager:
         return True
 
     def record_trade_result(self, is_win: bool, pnl_pct: float = 0, symbol: str = ""):
-        """Phase 56: Real-time cache update (Atomic)."""
+        """
+        Phase 56: Real-time cache update (Atomic).
+        ⚡ Phase OMNI: Tick-Level Dynamic Kelly Update.
+        
+        QUÉ: Recalcula la fracción de Kelly en cada fill event.
+        POR QUÉ: El Kelly batch (cada N trades) introduce lag que pierde alpha.
+        PARA QUÉ: Ajustar el sizing en tiempo real conforme cambia el performance.
+        CÓMO: Rolling window de últimos 50 trades → EMA-smoothed win rate → Kelly formula.
+        CUÁNDO: Cada fill event (vía Portfolio.update_fill → Engine._process_fill_event).
+        DÓNDE: risk/risk_manager.py → record_trade_result().
+        QUIÉN: RiskManager, Portfolio, Engine.
+        """
         if is_win:
             self.win_count += 1
         else:
@@ -546,6 +596,41 @@ class RiskManager:
         # Optional: Limit cache growth to last 1000 trades for performance
         if len(self._trade_cache) > 1000:
             self._trade_cache.pop(0)
+        
+        # ⚡ PHASE OMNI: TICK-LEVEL KELLY RECALCULATION
+        # Uses a rolling window of last 50 trades for responsive sizing
+        _KELLY_WINDOW = 50
+        recent = self._trade_cache[-_KELLY_WINDOW:]
+        
+        if len(recent) >= 10:  # Minimum sample size for statistical validity
+            wins = [t['pnl_pct'] for t in recent if t['is_win']]
+            losses = [abs(t['pnl_pct']) for t in recent if not t['is_win']]
+            
+            n_total = len(recent)
+            p = len(wins) / n_total  # Win probability
+            
+            avg_win = np.mean(wins) if wins else 0.01
+            avg_loss = np.mean(losses) if losses else 0.01
+            b = avg_win / avg_loss if avg_loss > 0 else 1.0  # Payoff ratio
+            
+            # Decimal Kelly Math Evaluation
+            raw_kelly = self._compute_kelly_math(p, b, apply_mult=False)
+            dec_raw = Decimal(str(raw_kelly))
+            
+            # Half-Kelly with regime-aware scaling
+            kelly_mult = Decimal('0.5')
+            if self.stress_score < 90:
+                kelly_mult = Decimal('0.25')  # Quarter-Kelly under stress
+            
+            tick_kelly = float(max(Decimal('0.05'), min(dec_raw * kelly_mult, Decimal('0.40'))))
+            
+            # EMA smoothing to prevent whipsaw (alpha=0.2)
+            if not hasattr(self, '_tick_kelly'):
+                self._tick_kelly = tick_kelly
+            else:
+                self._tick_kelly = 0.2 * tick_kelly + 0.8 * self._tick_kelly
+            
+            logger.debug(f"⚡ [Kelly/Axioma] Tick Update: p={p:.3f} b={b:.3f} raw={raw_kelly:.3f} → {self._tick_kelly:.3f}")
 
     def update_equity(self, equity: float):
         """
@@ -557,6 +642,7 @@ class RiskManager:
             
         # 2. Update Safe Leverage Calculator (Growth Phase Tracking)
         safe_leverage_calculator.update_capital(equity)
+        self.peak_capital = safe_leverage_calculator.peak_capital
 
     # [SS-013 FIX] First duplicate definition removed; unified version below at L536+
 
@@ -660,15 +746,9 @@ class RiskManager:
     
     def _update_capital_tracking(self, current_equity: float):
         """
-        [SS-013 FIX] Unified method: Updates BOTH KillSwitch equity tracking
-        AND SafeLeverageCalculator peak capital.
-        Previously defined twice — merged into single source of truth.
+        Deprecated. Use update_equity directly instead.
         """
-        # 1. KillSwitch equity tracking (was missing in second definition)
         self.update_equity(current_equity)
-        # 2. SafeLeverageCalculator peak capital
-        safe_leverage_calculator.update_capital(current_equity)
-        self.peak_capital = safe_leverage_calculator.peak_capital
 
     # ============================================================
     # POSITION SIZING (FIXED)
@@ -699,19 +779,27 @@ class RiskManager:
         phase = safe_leverage_calculator.get_phase(capital)
         
         # MICRO ACCOUNT FIX: Aggressive sizing for small capital
-        # MICRO ACCOUNT FIX: Aggressive sizing for small capital
         if capital < 50:
             base_pct = Config.POSITION_SIZE_MICRO_ACCOUNT  # 40% (Defined in Config)
         elif "GROWTH" in phase:
             base_pct = self.POSITION_PCT_GROWTH  # 30%
         elif capital < 1000:
-            # Phase 14: Pass strategy_id for specific Kelly
-            strat_id = getattr(signal_event, 'strategy_id', None)
-            kelly = self.calculate_kelly_fraction(strategy_id=strat_id)
-            base_pct = max(0.20, kelly)
+            # Phase 14: Use Portfolio's global Kelly tracker
+            if self.portfolio:
+                wr, pr = self.portfolio.get_kelly_metrics()
+                kelly_frac = self._compute_kelly_math(wr, pr)
+            else:
+                strat_id = getattr(signal_event, 'strategy_id', None)
+                kelly_frac = self.calculate_kelly_fraction(strategy_id=strat_id)
+            base_pct = max(0.20, kelly_frac)
         else:
-            strat_id = getattr(signal_event, 'strategy_id', None)
-            base_pct = self.calculate_kelly_fraction(strategy_id=strat_id)
+            if self.portfolio:
+                wr, pr = self.portfolio.get_kelly_metrics()
+                kelly_frac = self._compute_kelly_math(wr, pr)
+            else:
+                strat_id = getattr(signal_event, 'strategy_id', None)
+                kelly_frac = self.calculate_kelly_fraction(strategy_id=strat_id)
+            base_pct = kelly_frac
             
         target_exposure = capital * base_pct
         
@@ -746,6 +834,15 @@ class RiskManager:
                 target_exposure *= 1.0 # Ignore strength for micro
             target_exposure *= min(signal_event.strength, 1.2)
             
+        # AEGIS-ULTRA: EXPECTED VALUE VETO (Phase 14)
+        # If expected value is strictly negative (Kelly <= 0), Veto trade
+        if self.portfolio:
+            wr, pr = self.portfolio.get_kelly_metrics()
+            kelly_frac = self._compute_kelly_math(wr, pr, apply_mult=False)
+            if kelly_frac <= 0 and wr > 0: # Only if we have some history
+                logger.warning(f"🛑 [KELLY VETO] EV is Negative. WinRate: {wr:.2f}, Payoff: {pr:.2f}, Kelly: {kelly_frac:.2f}. Blocking {signal_event.symbol}")
+                return 0.0, 0.0
+
         # AEGIS-ULTRA: CONTAGION PROTOCOL (Phase 15)
         # If Fleet Correlation > 0.85, reduce risk by 50%
         if hasattr(self.portfolio, 'global_regime_data'):
@@ -1212,15 +1309,8 @@ class RiskManager:
     # KILL SWITCH FACADE
     # ============================================================
     
-    def update_equity(self, equity):
-        """Update equity in kill switch AND capital tracking."""
-        # Update peak tracking first
-        self._update_capital_tracking(equity)
-        
-        # Then update kill switch
-        if self.kill_switch:
-            self.kill_switch.update_equity(equity)
-    def record_loss(self):
+    # Using the L596 update_equity instead.
+    def activate_kill_switch(self, reason: str):
         if self.kill_switch:
             self.kill_switch.record_loss()
     def record_api_error(self):

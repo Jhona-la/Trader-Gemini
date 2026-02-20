@@ -17,46 +17,63 @@ class XAIEngine:
         os.makedirs(self.model_dir, exist_ok=True)
         self.explainers = {}
 
-    def get_feature_importance(self, model, X: pd.DataFrame, model_name: str) -> Dict[str, float]:
+    def explain_local_prediction(self, model, X_row: pd.DataFrame, model_name: str) -> str:
         """
-        Calcula la importancia de las características para una predicción específica.
+        Explains a SINGLE prediction (Real-time).
+        Returns a string summary of the top 3 features driving this specific decision.
         """
         try:
             if model_name not in self.explainers:
                 # Inicializar explainer (TreeExplainer es óptimo para XGB/RF)
-                self.explainers[model_name] = shap.TreeExplainer(model)
+                # feature_perturbation='interventional' is safer for real-time single row
+                try:
+                    self.explainers[model_name] = shap.TreeExplainer(model)
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not init SHAP for {model_name}: {e}")
+                    return "XAI_UnAvailable"
             
             explainer = self.explainers[model_name]
-            shap_values = explainer.shap_values(X)
             
-            # Si es clasificación binaria, tomamos la clase 1
+            # Calculate SHAP values for this single row
+            shap_values = explainer.shap_values(X_row)
+            
+            # Handling Binary Classification (taking positive class contribution)
             if isinstance(shap_values, list):
-                shap_values = shap_values[1]
+                # shap_values is list of arrays [class0_shap, class1_shap]
+                vals = shap_values[1][0] 
+            else:
+                # shap_values is array (if regression or flattened)
+                vals = shap_values[0]
+
+            # Map values to feature names
+            feature_names = X_row.columns
+            feature_importance = dict(zip(feature_names, vals))
+            
+            # Sort by MAGNITUDE of impact (absolute value)
+            sorted_features = sorted(feature_importance.items(), key=lambda x: abs(x[1]), reverse=True)
+            
+            # Get Top 3 Drivers
+            top_drivers = []
+            for k, v in sorted_features[:3]:
+                direction = "⬆️" if v > 0 else "⬇️"
+                top_drivers.append(f"{k} {direction} ({v:.2f})")
                 
-            # Promedio de valores SHAP absolutos por feature
-            importance = np.abs(shap_values).mean(axis=0)
-            feature_importance = dict(zip(X.columns, importance))
-            
-            # Ordenar por importancia
-            sorted_importance = dict(sorted(feature_importance.items(), key=lambda item: item[1], reverse=True))
-            
-            return sorted_importance
+            return " | ".join(top_drivers)
 
         except Exception as e:
-            logger.error(f"XAI Error for {model_name}: {e}")
-            return {}
+            # SHAP errors should never crash the trading bot
+            # moderate logging to avoid spam
+            return f"XAI_Error: {str(e)[:20]}"
 
-    def log_trade_explanation(self, symbol: str, signal_type: str, importance: Dict[str, float]):
+    def log_trade_explanation(self, symbol: str, signal_type: str, explanation: str):
         """
         Registra la explicación de un trade en un archivo dedicado.
         """
         try:
             log_path = os.path.join(self.model_dir, f"xai_audit_{symbol.replace('/','_')}.log")
-            top_3 = list(importance.items())[:3]
-            explanation = ", ".join([f"{k}: {v:.4f}" for k, v in top_3])
             
-            with open(log_path, "a") as f:
-                f.write(f"[{pd.Timestamp.now()}] Signal: {signal_type} | Top Features: {explanation}\n")
+            with open(log_path, "a", encoding='utf-8') as f:
+                f.write(f"[{pd.Timestamp.now()}] Signal: {signal_type} | Drivers: {explanation}\n")
                 
         except Exception as e:
             logger.error(f"XAI Log Error: {e}")

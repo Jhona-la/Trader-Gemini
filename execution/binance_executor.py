@@ -285,9 +285,52 @@ class BinanceExecutor:
             market = self.exchange.market(symbol_ccxt)
             symbol_id = market['id']
             
-            # ✅ PHASE II: ATOMIC BALANCE VALIDATION (Risk Shielding)
+            # 🛡️ PHASE II: ANTI-SLIPPAGE (Order Book Depth Check)
+            # If MARKET order and liquidity is thin, downgrade to LIMIT or abort.
+            if order_type == 'market':
+                try:
+                    orderbook = self.exchange.fetch_order_book(symbol_ccxt, limit=5)
+                    bid = orderbook['bids'][0][0] if orderbook['bids'] else 0
+                    ask = orderbook['asks'][0][0] if orderbook['asks'] else 0
+                    
+                    if bid > 0 and ask > 0:
+                        spread_pct = (ask - bid) / bid
+                        # Si el spread es > 0.1% (Muy alto para HFT), forzar LIMIT
+                        if spread_pct > 0.001:
+                            logger.warning(f"⚠️ High Spread ({spread_pct*100:.3f}%) detected for {symbol}. Downgrading to LIMIT.")
+                            order_type = 'limit'
+                            # Post at Best Bid/Ask
+                            event.price = bid if side == 'sell' else ask
+                except Exception as e:
+                    logger.warning(f"⚠️ Liquidity Check Failed: {e}. Proceeding carefully.")
+            
+            # ✅ PHASE II: ATOMIC BALANCE VALIDATION
             # EXCELSIOR-TITAN: Prevent "Insufficient Funds" by pre-checking API balance.
-            # Critical for low-capital accounts ($13.00 USD).
+            
+            # 💸 PHASE 23: COST OPTIMIZATION (The Leak Preventer)
+            from execution.cost_guard import CostGuard
+            if not CostGuard.check_funding_leak(self.exchange, symbol_ccxt, side):
+                logger.warning(f"🛑 [The Leak Preventer] Trade Aborted due to Toxic Funding.")
+                return
+
+            # 🧠 PHASE 23: SMART ORDER ROUTING (SOR)
+            # Adapt Order Type based on Regime/Urgency (If not already forced to LIMIT by Anti-Slippage)
+            # Accessing regime via portfolio reference if available
+            current_regime = 'UNKNOWN'
+            if self.portfolio and hasattr(self.portfolio, 'market_regime'):
+                 current_regime = self.portfolio.market_regime or 'UNKNOWN'
+
+            if order_type == 'market':
+                # IF RANGING (Low Urgency) -> Try LIMIT (Maker)
+                if current_regime == 'RANGING' or current_regime == 'CHOPPY':
+                     logger.info(f"🧠 [SOR] Regime {current_regime} detected. Switching MARKET -> LIMIT (Maker Priority).")
+                     order_type = 'limit'
+                     # Post at Order Book Top
+                     orderbook = self.exchange.fetch_order_book(symbol_ccxt, limit=5)
+                     bid = orderbook['bids'][0][0]
+                     ask = orderbook['asks'][0][0]
+                     event.price = bid if side == 'buy' else ask
+            
             if OrderSide.BUY in side: # Only check for BUYS (Entry/Cover)
                 try:
                     quote_currency = market['quote']

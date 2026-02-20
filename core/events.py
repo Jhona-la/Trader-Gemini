@@ -11,6 +11,14 @@ from core.enums import EventType, SignalType, OrderSide, OrderType
 
 
 import time
+try:
+    import orjson
+    def json_dumps(obj): return orjson.dumps(obj).decode('utf-8')
+    def json_loads(obj): return orjson.loads(obj)
+except ImportError:
+    import json
+    def json_dumps(obj): return json.dumps(obj, default=str)
+    def json_loads(obj): return json.loads(obj)
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Event:
@@ -20,6 +28,21 @@ class Event:
     __slots__ optimization reduces memory footprint by ~40%.
     """
     timestamp_ns: int = field(default_factory=time.time_ns)
+
+    def to_json(self) -> str:
+        """Fast serialization for IPC/Logging"""
+        # asdict is slow, manual dict creation is faster but verbose
+        # We use dataclasses.asdict for safety but orjson makes it fast
+        from dataclasses import asdict
+        return json_dumps(asdict(self))
+        
+    @classmethod
+    def from_json(cls, json_str: str):
+        """Fast deserialization"""
+        data = json_loads(json_str)
+        # Handle specific field conversions if necessary (e.g. datetime)
+        # For now, simplistic implementation
+        return cls(**data)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

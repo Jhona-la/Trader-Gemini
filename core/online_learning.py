@@ -351,7 +351,24 @@ class OnlineLearner:
         # 1. Forward Pass (New Policy)
         if weights.ndim == 1:
             # Case: Linear Model, Single Output (B x Input) @ (Input) -> (B)
-            mu = states @ weights 
+            mu = states @ weights
+            
+            # --- [PRECISION-AXIOMA] DEEP MATRIX AUDIT (Shadow Calculation) ---
+            try:
+                # Check precision using numpy's longdouble (np.float128/np.float96) if available, else float64
+                high_prec_type = np.longdouble if hasattr(np, 'longdouble') else np.float64
+                states_hp = states.astype(high_prec_type)
+                weights_hp = weights.astype(high_prec_type)
+                mu_hp = states_hp @ weights_hp
+                
+                # Check drift (Max deviation)
+                max_drift = np.max(np.abs(mu - mu_hp.astype(np.float64)))
+                if max_drift > 1e-12:
+                    logger.warning(f"⚠️ [AXIOMA-LOG] Precision Drift Detected in PPO Tensor Audit! Max Deviation: {max_drift:.4e}")
+            except Exception as e:
+                pass # Fail silently if high precision is not supported
+            # -----------------------------------------------------------------
+            
         else:
              # Case: Matrix
              logger.warning("PPO not fully implemented for Matrix weights yet. Using column 0.")
@@ -362,8 +379,12 @@ class OnlineLearner:
         sigma = 1.0
         new_log_probs = -0.5 * ((actions - mu) / sigma)**2
         
-        # 3. Calculate Ratio
-        ratio = np.exp(new_log_probs - old_log_probs)
+        # 3. Calculate Ratio with Underflow/Overflow Shield (Axioma Protocol)
+        # Prevent np.exp from exploding (NaN) if discrepancy is gigantic
+        log_diff = new_log_probs - old_log_probs
+        # Safe clipping: max exp(700) approx, keep it well within safe bounds
+        log_diff_safe = np.clip(log_diff, a_min=-100.0, a_max=80.0)
+        ratio = np.exp(log_diff_safe)
         
         # 4. PPO Loss Logic
         # Gradient of LogProb w.r.t Mu

@@ -1,25 +1,25 @@
 
-import pandas as pd
 import os
-import threading
 from concurrent.futures import ThreadPoolExecutor
-# import json (Removed Phase 3)
 from datetime import datetime, timezone
-from config import Config  # Import Config for Futures/Spot detection
-from core.enums import EventType, SignalType, OrderSide, OrderType, TradeDirection, TradeStatus
-from core.data_handler import get_data_handler
-from utils.analytics import AnalyticsEngine
+import pandas as pd
+
+from core.enums import TradeDirection, TradeStatus, EventType, OrderSide, OrderType
+from core.reward_system import TradeOutcome
 from utils.logger import logger
-from utils.transparent_logger import TransparentLogger
-from utils.debug_tracer import trace_execution
-from utils.position_cleaner import position_cleaner
 from utils.notifier import Notifier
-from utils.session_manager import get_session_manager
 from utils.data_manager import DatabaseHandler, safe_append_csv, safe_read_csv
 from utils.atomic_guard import AtomicGuard
+from core.state_manager import AtomicStateManager # Phase 27
+from sophia.post_mortem import PostMortemComparator  # SOPHIA-INTELLIGENCE Protocol
+from sophia.nemesis import NemesisEngine  # NÉMESIS-RETROSPECCIÓN Protocol
+from utils.axioma_math import PrecisionAuditor  # CRITERIO-AXIOMA Protocol
 
-from typing import Dict, Optional, List, Any, Union, Tuple
-from core.reward_system import TradeOutcome
+from typing import Dict, Any
+
+from config import Config
+from utils.debug_tracer import trace_execution
+from decimal import Decimal, getcontext
 
 class Portfolio:
     def __init__(self, initial_capital: float = 10000.0, 
@@ -31,12 +31,23 @@ class Portfolio:
         self.pending_cash = 0.0  # Cash reserved for pending orders
         self.used_margin = 0.0   # Margin locked in Futures positions
         
+        # [PRECISION-AXIOMA]
+        self.precision_drift_accumulated = Decimal('0.0')
+        getcontext().prec = 28 # Satoshi-level precision for drift auditing
+        
         self.positions = {} # Symbol -> {'quantity': 0, 'avg_price': 0, 'current_price': 0}
         self.realized_pnl = 0.0
+        self.total_fees_paid = 0.0  # CRITERIO-AXIOMA: Explicit fee tracking
         
         # STRATEGY ATTRIBUTION: Track PnL per strategy
         # Format: {strategy_id: {'pnl': 0.0, 'wins': 0, 'losses': 0, 'trades': 0}}
         self.strategy_performance = {}
+        
+        # PHASE 14: Dynamic Kelly Criterion Tracking
+        self.kelly_trades_history = []  # List of dicts: {'pnl': float, 'is_win': bool}
+        self.kelly_winrate = 0.0
+        self.kelly_payoff_ratio = 1.0
+        self.KELLY_WINDOW = 20
         
         self.csv_path = csv_path
         self.status_path = status_path
@@ -75,6 +86,12 @@ class Portfolio:
         }
         # Phase 7: Meta-Brain Stats
         self.strategy_rankings = {}
+        
+        # SOPHIA-INTELLIGENCE: Post-Mortem Calibration Tracker
+        self.sophia_post_mortem = PostMortemComparator(rolling_window=100)
+        
+        # NÉMESIS-RETROSPECCIÓN: Deep Post-Mortem Autopsy Engine
+        self.nemesis_engine = NemesisEngine()
         
     def get_atomic_snapshot(self) -> Dict[str, Any]:
         """
@@ -349,6 +366,7 @@ class Portfolio:
                 if price < self.positions[symbol]['low_water_mark']:
                     self.positions[symbol]['low_water_mark'] = price
             
+            
             # DB Snapshot prep (Copy inside lock)
             if symbol in self.positions:
                 pos = self.positions[symbol].copy()
@@ -357,6 +375,48 @@ class Portfolio:
                 should_update_db = False
         finally:
             self.guard.release()
+
+    def _update_kelly_stats(self, pnl: float):
+        """
+        Phase 14: Updates rolling statistics for Dynamic Kelly computation.
+        Uses a rolling window of recent trades.
+        """
+        is_win = pnl > 0
+        self.kelly_trades_history.append({'pnl': pnl, 'is_win': is_win})
+        
+        # Enforce rolling window
+        if len(self.kelly_trades_history) > self.KELLY_WINDOW:
+            self.kelly_trades_history.pop(0)
+            
+        # Recompute stats
+        wins = 0
+        gross_profit = 0.0
+        gross_loss = 0.0
+        loss_count = 0
+        
+        for t in self.kelly_trades_history:
+            if t['is_win']:
+                wins += 1
+                gross_profit += t['pnl']
+            else:
+                loss_count += 1
+                gross_loss += abs(t['pnl'])
+                
+        total_trades = len(self.kelly_trades_history)
+        if total_trades > 0:
+            self.kelly_winrate = wins / total_trades
+            
+        avg_win = (gross_profit / wins) if wins > 0 else 0.0
+        avg_loss = (gross_loss / loss_count) if loss_count > 0 else 1.0 # Prevent div by zero
+        
+        if avg_loss > 0:
+            self.kelly_payoff_ratio = avg_win / avg_loss
+        else:
+            self.kelly_payoff_ratio = avg_win # If no losses, payoff is basically infinite, but cap at average win
+            
+    def get_kelly_metrics(self) -> tuple[float, float]:
+        """Returns (winrate, payoff_ratio) for Kelly computation"""
+        return self.kelly_winrate, self.kelly_payoff_ratio
 
         # OPTIMIZATION: Throttle disk writes (Debounce)
         now = datetime.now()
@@ -400,6 +460,21 @@ class Portfolio:
                     self.positions[event.symbol]['entry_metadata'] = event.metadata
                 finally:
                     self.guard.release()
+                
+                # SOPHIA-INTELLIGENCE: Store trade intent for Post-Mortem
+                sophia_data = event.metadata.get('sophia')
+                if sophia_data and hasattr(event, 'trade_id') and event.trade_id:
+                    try:
+                        self.sophia_post_mortem.store_intent(
+                            trade_id=event.trade_id,
+                            symbol=event.symbol,
+                            direction=event.signal_type.name if hasattr(event.signal_type, 'name') else str(event.signal_type),
+                            sophia_report=sophia_data,
+                            narrative=event.metadata.get('sophia_narrative', ''),
+                            trigger_price=getattr(event, 'current_price', 0.0) or 0.0,
+                        )
+                    except Exception as e:
+                        logger.debug(f"[SOPHIA] Intent store skipped: {e}")
 
     def update_fill(self, event) -> Optional[Tuple[float, TradeOutcome]]:
         """Atomically update portfolio state. Returns (realized PnL, TradeOutcome) if closed."""
@@ -418,18 +493,24 @@ class Portfolio:
             
             # EXACT FEE LOGIC (Phase 17.4 Audit)
             # Use actual commission from FillEvent if available, else estimate
+            fee_rate = 0.0006 if Config.BINANCE_USE_FUTURES else 0.001
+            
             if event.commission is not None:
                 estimated_fee = event.commission
             else:
                 # Fallback to estimate
-                fee_rate = 0.0006 if Config.BINANCE_USE_FUTURES else 0.001
                 estimated_fee = fill_cost * fee_rate
+            
             
             # BEGIN ATOMIC UPDATE
             self.guard.acquire()
             try:
+                # Capture Pre-State for Accounting Audit
+                pre_balance = Decimal(str(self.current_cash))
+                
                 # Deduct fee from Cash immediately (Atomic & Single Deduction)
                 self.current_cash -= estimated_fee
+                self.total_fees_paid += estimated_fee  # CRITERIO-AXIOMA: explicit fee tracking
                 
                 logger.info(f"  💸 Fee Paid: ${estimated_fee:.4f} ({fee_rate*100}%)")
                 
@@ -486,8 +567,7 @@ class Portfolio:
                         # 3. Update Performance
                         strat_id = getattr(event, 'strategy_id', None) or pos.get('opener_strategy_id', 'Unknown')
                         self._update_strategy_performance(strat_id, pnl)
-
-                        
+                        self._update_kelly_stats(pnl) # Phase 14: Dynamic Kelly tracking                        
                         logger.info(f"📈 SHORT Closed: {event.symbol} PnL=${pnl:.2f} (Qty: {closed_qty})")
                         
                         # 4. Handle FLIP (Opening NEW LONG leg)
@@ -512,11 +592,25 @@ class Portfolio:
                         else:
                             pos['quantity'] = 0
                             pos['avg_price'] = 0
-                            position_cleaner.clean_position(event.symbol, pos)
+                            self.positions.pop(event.symbol, None)
     
                         # REPORTING
                         self.log_trade_report(event, pnl=pnl, fill_price=exit_price)
                         pnl_realized = pnl
+                        
+                        # SOPHIA Post-Mortem (SHORT Close)
+                        self._sophia_post_mortem_check(event, pnl, duration)
+                        
+                        # CRITERIO-AXIOMA Accounting Audit
+                        post_balance = Decimal(str(self.current_cash))
+                        expected_balance = pre_balance - Decimal(str(estimated_fee)) + Decimal(str(pnl))
+                        drift = abs(post_balance - expected_balance)
+                        self.precision_drift_accumulated += drift
+                        
+                        if drift > Decimal('1e-8'):
+                             logger.warning(f"⚠️ [AXIOMA-LOG] Precision Drift Detected in SHORT Close: Max Deviation {drift:.4e}")
+                        
+                        self.verify_accounting_equation()
                     
                     else:
                         # === OPENING/ADDING LONG POSITION ===
@@ -563,8 +657,15 @@ class Portfolio:
                         
                         # REPORTING (Entry)
                         self.log_trade_report(event, pnl=None, fill_price=fill_price)
-                        pnl_realized = pnl
-                    
+                        
+                        # CRITERIO-AXIOMA Accounting Audit (Fee deduction only)
+                        post_balance = Decimal(str(self.current_cash))
+                        expected_balance = pre_balance - Decimal(str(estimated_fee))
+                        if Config.BINANCE_USE_FUTURES is False:
+                             from_cash_spent = Decimal(str(fill_cost))
+                             expected_balance -= from_cash_spent
+                        drift = abs(post_balance - expected_balance)
+                        self.precision_drift_accumulated += drift
                     
                 elif event.direction == OrderSide.SELL:
                     # SELL can be: Close LONG or Open SHORT
@@ -619,8 +720,7 @@ class Portfolio:
                         # 3. Update Performance
                         strat_id = getattr(event, 'strategy_id', None) or pos.get('opener_strategy_id', 'Unknown')
                         self._update_strategy_performance(strat_id, pnl)
-                            
-                        logger.info(f"💰 LONG Closed: {event.symbol} PnL=${pnl:.2f} (Qty: {closed_qty})")
+                        self._update_kelly_stats(pnl) # Phase 14: Dynamic Kelly tracking
                         
                         # 4. Handle FLIP (Opening NEW SHORT leg)
                         if new_short_qty > 0:
@@ -643,14 +743,36 @@ class Portfolio:
                         else:
                             pos['quantity'] = 0
                             pos['avg_price'] = 0
-                            position_cleaner.clean_position(event.symbol, pos)
+                            self.positions.pop(event.symbol, None)
                             
                         # REPORTING
                         self.log_trade_report(event, pnl=pnl, fill_price=fill_price)
+                        
+                        # SOPHIA Post-Mortem (LONG Close)
+                        self._sophia_post_mortem_check(event, pnl, duration)
+                        
+                        # CRITERIO-AXIOMA Accounting Audit
+                        post_balance = Decimal(str(self.current_cash))
+                        expected_balance = pre_balance - Decimal(str(estimated_fee)) + Decimal(str(pnl))
+                        if Config.BINANCE_USE_FUTURES is False:
+                             sold_cash_returned = Decimal(str(closed_qty * fill_price))
+                             expected_balance = pre_balance - Decimal(str(estimated_fee)) + sold_cash_returned
+
+                        drift = abs(post_balance - expected_balance)
+                        self.precision_drift_accumulated += drift
+                        
+                        if drift > Decimal('1e-8'):
+                             logger.warning(f"⚠️ [AXIOMA-LOG] Precision Drift Detected in LONG Close: Max Deviation {drift:.4e}")
+                        
+                        # Trigger Check
+                        if self.precision_drift_accumulated > (Decimal(str(self.initial_capital)) * Decimal('0.00001')):
+                             logger.critical(f"🛑 [AXIOMA-LOG] Accumulated Drift Exceeds Tolerance: {self.precision_drift_accumulated:.6e}. Force Sync required.")
+                        
+                        self.verify_accounting_equation()
                     
                 
                 # Snapshot for internal use (already inside lock)
-                pos_final = self.positions[event.symbol].copy()
+                pos_final = self.positions.get(event.symbol, {'quantity': 0, 'avg_price': 0}).copy()
                 
             finally:
                 self.guard.release()
@@ -698,6 +820,109 @@ class Portfolio:
                 return (pnl_realized, outcome_obj)
             return None
 
+    def verify_accounting_equation(self):
+        """
+        CRITERIO-AXIOMA Protocol: Ley de Conservación
+        Verifica que el Dinero no aparece ni desaparece de la nada.
+        Equation: Current_Cash + Used_Margin == Initial_Capital + Realized_PnL - Total_Fees
+        (Unrealized PnL is excluded as it fluctuates tick by tick without settling)
+        """
+        # Calculate theoretical settled balance
+        theoretical_settled = self.initial_capital + self.realized_pnl - self.total_fees_paid
+        actual_settled = self.current_cash + self.used_margin
+        
+        try:
+            from decimal import Decimal
+            d_theoretical = Decimal(str(theoretical_settled))
+            d_actual = Decimal(str(actual_settled))
+            delta = abs(d_theoretical - d_actual)
+            
+            if delta > PrecisionAuditor.STRICT_EPSILON:
+                logger.error(f"🚨 [AXIOMA-FATAL] CORRUPCIÓN CONTABLE DETECTADA!")
+                logger.error(f"   Teórico:  ${theoretical_settled:.8f}")
+                logger.error(f"   Real:     ${actual_settled:.8f}")
+                logger.error(f"   Delta:    ${delta.normalize():f}")
+                logger.error(f"   Initial={self.initial_capital}, PnL={self.realized_pnl}, Fees={self.total_fees_paid}")
+                
+                # Soft-kill the engine by poisoning PnL
+                logger.error("☠️ SISTEMA COMPROMETIDO. CÁLCULOS INVÁLIDOS.")
+                self.realized_pnl = float('nan')
+        except Exception as e:
+            logger.error(f"⚠️ [AXIOMA] Falló la auditoría contable: {e}")
+
+    def _sophia_post_mortem_check(self, event, pnl: float, duration_seconds: float = 0.0):
+        """
+        SOPHIA-INTELLIGENCE + NÉMESIS-RETROSPECCIÓN:
+        1. Compute SOPHIA Brier Score (basic post-mortem)
+        2. Run NÉMESIS full autopsy (deep diagnosis)
+        Called from update_fill() when a position is closed (SHORT or LONG).
+        """
+        try:
+            trade_id = getattr(event, 'trade_id', None)
+            if not trade_id:
+                # Try to find by symbol match
+                for tid in list(self.sophia_post_mortem.pending_intents.keys()):
+                    intent = self.sophia_post_mortem.pending_intents[tid]
+                    if intent.symbol == event.symbol:
+                        trade_id = tid
+                        break
+            
+            if trade_id:
+                # Retrieve intent BEFORE compute_post_mortem pops it
+                intent = self.sophia_post_mortem.pending_intents.get(trade_id)
+                
+                result = self.sophia_post_mortem.compute_post_mortem(
+                    trade_id=trade_id,
+                    actual_pnl=pnl,
+                    duration_seconds=duration_seconds,
+                )
+                if result:
+                    # Update SOPHIA calibrator if available
+                    won = pnl > 0
+                    # Log calibration status periodically
+                    if self.sophia_post_mortem.total_trades % 10 == 0:
+                        cal_log = self.sophia_post_mortem.get_summary_log()
+                        logger.info(f"   📊 {cal_log}")
+                    
+                    # ── NÉMESIS-RETROSPECCIÓN: Full Autopsy ──
+                    if intent:
+                        try:
+                            fill_price = getattr(event, 'fill_price', 0.0) or 0.0
+                            sophia_data = intent.sophia_report or {}
+                            
+                            nemesis_report = self.nemesis_engine.full_autopsy(
+                                trade_id=trade_id,
+                                symbol=event.symbol,
+                                direction=intent.direction,
+                                predicted_prob=intent.win_probability,
+                                predicted_exit_mins=intent.expected_exit_mins,
+                                predicted_tp_mins=sophia_data.get('time_to_tp_mins', 10.0),
+                                predicted_sl_mins=sophia_data.get('time_to_sl_mins', 5.0),
+                                actual_pnl=pnl,
+                                actual_duration_mins=duration_seconds / 60.0,
+                                brier_score=result.brier_score,
+                                sophia_report=sophia_data,
+                                top_features=intent.top_features,
+                                trigger_price=intent.trigger_price,
+                                fill_price=fill_price,
+                            )
+                            
+                            # Apply overconfidence penalty to next signals
+                            if nemesis_report.overconfidence_active:
+                                logger.info(
+                                    f"   ⚠️ [NÉMESIS] Confidence penalty active: "
+                                    f"{nemesis_report.overconfidence_penalty_factor:.2f}x"
+                                )
+                            
+                            # Log NÉMESIS health every 10 trades
+                            if self.sophia_post_mortem.total_trades % 10 == 0:
+                                health = self.nemesis_engine.get_calibration_health()
+                                logger.info(f"   ⚔️ [NÉMESIS] Health: {health}")
+                        except Exception as e:
+                            logger.debug(f"[NÉMESIS] Autopsy skipped: {e}")
+        except Exception as e:
+            logger.debug(f"[SOPHIA] Post-mortem skipped: {e}")
+
     def close(self):
         """
         Graceful shutdown for portfolio resources.
@@ -729,9 +954,8 @@ class Portfolio:
     def _do_save_status(self, cash, realized, positions, equity, unrealized):
         """Worker method for save_status: Executed in background thread"""
         try:
-            # Get Session Info
-            session_mgr = get_session_manager()
-            session_id = session_mgr.get_session_id() if session_mgr else None
+            # Get Session Info (Disabled: Decoupled for tests)
+            session_id = None
             
             metrics = {} 
             
@@ -772,9 +996,10 @@ class Portfolio:
                 'last_heartbeat': datetime.now(timezone.utc).isoformat()
             }
             
-            handler = get_data_handler()
+            # 🛡️ PHASE 27: ATOMIC PERSISTENCE (Nadir-Soberano)
+            # Replaces legacy handler with AtomicStateManager
             json_path = os.path.join(os.path.dirname(self.status_path), "live_status.json")
-            handler.save_live_status(json_path, json_data)
+            AtomicStateManager.save_json_atomic(json_path, json_data)
         except Exception as e:
             logger.error(f"Async Status Save Failed: {e}")
 

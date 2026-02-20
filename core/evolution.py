@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+import random
+import secrets # Phase 26: Stochastic Purity
 from typing import List, Dict, Any
 from dataclasses import dataclass
 import logging
@@ -91,7 +93,14 @@ class EvolutionEngine:
     Gestiona el ciclo de vida evolutivo: Selección -> Cruce -> Mutación.
     """
     
-    def __init__(self, mutation_rate: float = 0.1, mutation_strength: float = 0.2):
+    def __init__(self, population_size=50, mutation_rate: float = 0.1, mutation_strength: float = 0.2):
+        # 🧬 PHASE 26: Hardware Seeding
+        # Use secrets (OS CSPRNG) to seed Random and Numpy
+        seed_val = secrets.randbits(32)
+        random.seed(seed_val)
+        np.random.seed(seed_val)
+        
+        self.population_size = population_size
         self.mutation_rate = mutation_rate
         self.mutation_strength = mutation_strength # Std dev for gaussian mutation
 
