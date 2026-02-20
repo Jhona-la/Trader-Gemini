@@ -993,6 +993,7 @@ class Portfolio:
                 'positions': positions,
                 'performance_metrics': metrics, # Now populated!
                 'balance': cash, 
+                'precision_drift': float(getattr(self, 'precision_drift_accumulated', 0.0)),
                 'last_heartbeat': datetime.now(timezone.utc).isoformat()
             }
             

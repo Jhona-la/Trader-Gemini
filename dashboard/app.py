@@ -519,7 +519,7 @@ with risk_cols[2]:
 
 st.markdown("---")
 
-kpi_cols = st.columns(8)  # Increased from 7 to 8 for Expectancy KPI
+kpi_cols = st.columns(9)  # Increased from 8 to 9 for Axioma Precision KPI
 
 # 1. Total Equity
 equity = status.get('total_equity', 0) if status else 0
@@ -607,6 +607,20 @@ with kpi_cols[7]:
     <div class="kpi-card">
         <div class="kpi-value {exp_class}">{exp_display}</div>
         <div class="kpi-label">Expectancy</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# 9. Precision Drift (Phase 11: Axioma Protocol)
+drift_val = status.get('precision_drift', 0.0) if status else 0.0
+drift_class = "kpi-positive" if drift_val < 1e-8 else "kpi-warning" if drift_val < 1e-5 else "kpi-negative"
+# Scientific notation for extremely small numbers
+drift_display = f"{drift_val:.2e}" if drift_val > 0 else "0.00e+00"
+
+with kpi_cols[8]:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-value {drift_class}">{drift_display}</div>
+        <div class="kpi-label">Precision Drift</div>
     </div>
     """, unsafe_allow_html=True)
 

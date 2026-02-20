@@ -103,6 +103,10 @@ class MetricsExporter:
             'omega_current_drawdown_pct', 
             'Current drawdown from peak equity percentage'
         )
+        self.g_precision_drift = Gauge(
+            'omega_precision_drift',
+            'Accumulated float precision drift (Axioma Protocol)'
+        )
         
         # Histogram for latency distribution
         self.h_tick_latency = Histogram(
@@ -191,6 +195,13 @@ class MetricsExporter:
                 if peak > 0:
                     dd = ((peak - equity) / peak) * 100
                     self.g_drawdown.set(dd)
+                    
+                # Precision Drift (Axioma)
+                drift_value = getattr(portfolio, 'precision_drift_accumulated', 0.0)
+                try:
+                    self.g_precision_drift.set(float(drift_value))
+                except Exception:
+                    pass
                 
                 # ─── Per-Symbol Metrics ───
                 self._update_per_symbol(portfolio)
