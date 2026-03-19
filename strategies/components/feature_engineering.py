@@ -4,6 +4,8 @@ import talib
 from utils.logger import logger
 from utils.debug_tracer import trace_execution
 from utils.math_helpers import safe_div
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 class FeatureEngineering:
     """
@@ -12,7 +14,10 @@ class FeatureEngineering:
     Extracted from MLStrategy to improve modularity (Excelsior Phase I).
     """
     def __init__(self):
-        pass
+        # [PHASE 3] Caching for Sophia KMeans to avoid computing on every tick
+        self._kmeans_cache = {}
+        self._scaler_cache = {}
+        self._kmeans_last_fit = {}
 
     @trace_execution
     def prepare_features(self, bars, market_regime="UNKNOWN", sentiment_loader=None, data_provider=None, symbol=None, feature_store=None):
@@ -27,12 +32,15 @@ class FeatureEngineering:
         # === [PHASE 12] FEATURE STORE LOOKUP ===
         if feature_store and len(df) > 100:
             try:
-                start_ts = df['datetime'].min()
-                end_ts = df['datetime'].max()
-                cached_df = feature_store.get_features(symbol, start_ts, end_ts)
-                if not cached_df.empty and len(cached_df) >= len(df) * 0.9:
-                    full_df = pd.concat([df.set_index('datetime'), cached_df], axis=1)
-                    return full_df.reset_index()
+                ts_col = 'datetime' if 'datetime' in df.columns else 'timestamp'
+                if ts_col in df.columns:
+                    start_ts = df[ts_col].min()
+                    end_ts = df[ts_col].max()
+                    cached_df = feature_store.get_features(symbol, start_ts, end_ts)
+                    if not cached_df.empty and len(cached_df) >= len(df) * 0.9:
+                        idx_col = 'datetime' if 'datetime' in df.columns else 'timestamp'
+                        full_df = pd.concat([df.set_index(idx_col), cached_df], axis=1)
+                        return full_df.reset_index()
             except Exception as e:
                 logger.warning(f"FeatureStore retrieval skipped: {e}")
 
@@ -61,8 +69,20 @@ class FeatureEngineering:
         new_features['returns_5'] = df['close'].pct_change(5)
         new_features['returns_10'] = df['close'].pct_change(10)
         
-        # High-Low ratios
-        new_features['hl_range'] = (df['high'] - df['low']) / df['close']
+        # ==================== MICROSTRUCTURE ====================
+        # Amihud Illiquidity Ratio: abs(return) / volume
+        # QUÉ: Mide el impacto del precio por unidad de volumen.
+        # POR QUÉ: Detecta mercados con baja profundidad donde el precio se desliza fácilmente.
+        new_features['amihud'] = abs(df['close'].pct_change()) / df['volume']
+        
+        # [PHASE 5] Microstructure (Order Flow Proxy)
+        # Aproxima la presión de órdenes límite reconstruyendo el delta de volumen intravela
+        new_features['close_position'] = safe_div(df['close'] - df['low'], df['high'] - df['low'], 0.5)
+        new_features['volume_imbalance'] = df['volume'] * (new_features['close_position'] * 2 - 1)
+        new_features['micro_imbalance'] = safe_div(new_features['volume_imbalance'].rolling(5).mean(), df['volume'].rolling(5).mean())
+        
+        # High-Low spread proxy (already as hl_range, but let's make it explicit)
+        new_features['hl_spread'] = (df['high'] - df['low']) / df['close']
         new_features['oc_range'] = abs(df['close'] - df['open']) / df['close']
         new_features['close_position'] = safe_div(df['close'] - df['low'], df['high'] - df['low'], 0.5)
         
@@ -78,6 +98,35 @@ class FeatureEngineering:
         new_features['roc_5'] = df['close'].pct_change(5)
         new_features['roc_10'] = df['close'].pct_change(10)
         new_features['roc_20'] = df['close'].pct_change(20)
+        
+        # ==================== CROSS-SECTIONAL (Phase 6.3) ====================
+        # QUÉ: Mide la divergencia de momentum contra el activo líder (BTC).
+        # POR QUÉ: Los Alts que suben cuando BTC cae tienen alta "Fuerza Relativa" real.
+        new_features['cross_spread_vs_btc'] = 0.0
+        new_features['cross_relative_strength'] = 0.0
+        
+        try:
+            if symbol and 'BTC' not in symbol and data_provider is not None:
+                # Asumimos que data_provider puede darnos las velas de BTC
+                btc_bars = data_provider.get_latest_bars('BTC/USDT', n=len(df), timeframe='5m')
+                if btc_bars is not None and len(btc_bars) > 10:
+                    btc_closes = btc_bars['close'].astype(np.float64)
+                    btc_returns = pd.Series(btc_closes).pct_change()
+                    
+                    min_len = min(len(btc_returns), len(new_features['returns_1']))
+                    
+                    # Spread 1 vela (Momentum estallido)
+                    spread = new_features['returns_1'].values[-min_len:] - btc_returns.values[-min_len:]
+                    new_features['cross_spread_vs_btc'] = pd.Series(np.pad(spread, (len(df) - min_len, 0), constant_values=0))
+                    
+                    # Fuerza relativa 5 velas (Tendencia micro)
+                    btc_ret_5 = btc_returns.rolling(5).sum().values[-min_len:]
+                    my_ret_5 = new_features['returns_5'].values[-min_len:]
+                    rs = my_ret_5 - btc_ret_5
+                    new_features['cross_relative_strength'] = pd.Series(np.pad(rs, (len(df) - min_len, 0), constant_values=0))
+        except Exception as e:
+            pass # Falla silenciosa permitida si BTC no está cacheado
+            
         
         # ==================== INDICADORES ====================
         # RSIs
@@ -233,6 +282,87 @@ class FeatureEngineering:
             df['liq_intensity'] = 0.0
 
         # ==================== VALIDATE ====================
+        # ==================== PHASE 3: SOPHIA KMEANS CLUSTER ====================
+        try:
+            symbol_key = symbol if symbol else 'default'
+            cluster_cols = ['rsi_14', 'atr_pct', 'volume_ratio', 'adx']
+            
+            if all(c in df.columns for c in cluster_cols) and len(df) >= 50:
+                features_array = df[cluster_cols].fillna(0).values
+                current_time = pd.Timestamp.utcnow() if 'datetime' not in df.columns else df['datetime'].iloc[-1]
+                
+                # Check if we need to refit (every 50 bars approx or if strictly missing)
+                last_fit_time = self._kmeans_last_fit.get(symbol_key)
+                
+                # Para simplificar en pandas o streaming tick by tick:
+                need_refit = True
+                if last_fit_time is not None:
+                    # En backtesting las fechas pueden saltar, así que forzamos re-entrenamiento ligero
+                    need_refit = True 
+                
+                if need_refit:
+                    scaler = StandardScaler()
+                    scaled_fit = scaler.fit_transform(features_array)
+                    kmeans = KMeans(n_clusters=4, random_state=42, n_init=2, max_iter=50) # Lightweight
+                    # Anchor clusters to fixed meaning (0:Ranging, 1:Bull, 2:Bear, 3:Choppy)
+                    kmeans.fit(scaled_fit)
+                    
+                    # ----------------------------------------------------
+                    # PHASE 3 FIX: KMEANS CLUSTER ANCHORING
+                    # KMeans assigns random labels 0..3 based on initialization.
+                    # We MUST anchor them so Cluster 1 ALWAYS means Bull, etc.
+                    # ----------------------------------------------------
+                    centroids = scaler.inverse_transform(kmeans.cluster_centers_)
+                    cluster_map = {}
+                    
+                    for i, centroid in enumerate(centroids):
+                        rsi_c = centroid[0]
+                        atr_c = centroid[1]
+                        vol_c = centroid[2]
+                        adx_c = centroid[3]
+                        
+                        regime_id = 0 # Default Ranging
+                        if adx_c > 25:
+                            regime_id = 1 if rsi_c > 50 else 2 # Bull / Bear
+                        elif atr_c > 0.015:
+                            regime_id = 3 # Choppy
+                        else:
+                            regime_id = 0 # Ranging
+                        cluster_map[i] = regime_id
+                        
+                    # Save the anchored map to the scaler (hacky but works per symbol)
+                    scaler.cluster_map = cluster_map
+                    
+                    raw_clusters = kmeans.predict(scaled_fit)
+                    anchored_clusters = np.vectorize(cluster_map.get)(raw_clusters, 0)
+                    
+                    self._kmeans_cache[symbol_key] = kmeans
+                    self._scaler_cache[symbol_key] = scaler
+                    self._kmeans_last_fit[symbol_key] = current_time
+                    df['market_cluster'] = anchored_clusters
+                else:
+                    scaler = self._scaler_cache[symbol_key]
+                    kmeans = self._kmeans_cache[symbol_key]
+                    scaled_features = scaler.transform(features_array)
+                    raw_clusters = kmeans.predict(scaled_features)
+                    cluster_map = getattr(scaler, 'cluster_map', {0:0,1:1,2:2,3:3})
+                    anchored_clusters = np.vectorize(cluster_map.get)(raw_clusters, 0)
+                    df['market_cluster'] = anchored_clusters
+                
+                # One-Hot Encoding for XGBoost
+                df['cluster_0'] = (df['market_cluster'] == 0).astype(int)
+                df['cluster_1'] = (df['market_cluster'] == 1).astype(int)
+                df['cluster_2'] = (df['market_cluster'] == 2).astype(int)
+                df['cluster_3'] = (df['market_cluster'] == 3).astype(int)
+            else:
+                df['market_cluster'] = -1
+                for i in range(4): df[f'cluster_{i}'] = 0
+                
+        except Exception as e:
+            logger.error(f"Error computing KMeans market clusters: {e}")
+            df['market_cluster'] = -1
+            for i in range(4): df[f'cluster_{i}'] = 0
+            
         df = self.validate_features(df)
         
         # [PHASE 12] SAVE TO STORE

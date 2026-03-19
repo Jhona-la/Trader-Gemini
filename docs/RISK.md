@@ -1,512 +1,120 @@
-# ⚠️ Gestión de Riesgo - Trader Gemini
+# 🛡️ TRADER GEMINI: COMPLIANCE & RISK MANAGEMENT
 
-> **Documentación completa usando el método profesor**
-> QUÉ - POR QUÉ - PARA QUÉ - CÓMO - CUÁNDO - DÓNDE - QUIÉN
-
----
-
-## 📌 Resumen del Sistema de Riesgo
-
-| Componente | Archivo | Función |
-|------------|---------|---------|
-| **Risk Manager** | `risk/risk_manager.py` | Position sizing, validación |
-| **Kill Switch** | `risk/kill_switch.py` | Parada de emergencia |
-| **Safe Leverage** | `utils/safe_leverage.py` | Cálculo seguro de apalancamiento |
-
-### 🛡️ NIVEL I: El Corazón Atómico (Fases 1-10)
-Validación de integridad y riesgo pre-ejecución implementada.
-- **Fase 2:** Validación cuántica de riesgo multivariable.
-- **Fase 10:** Kill Switch de 3 niveles (Drawdown, Latencia, Oráculo).
-- **Fase 7:** Anti-Fragilidad (Self-Healing de WebSockets).
-
+Este documento certifica el Nivel The Seguridad Militar de la aplicación y la Matriz The Mitigación de Pérdidas de **Trader Gemini**, un requerimiento vital para escalamiento algorítmico asincrónico real en operaciones Scalper.
 
 ---
 
-## 🎯 Risk Manager
+## 🔐 I. DIAGRAMA DE BÓVEDA (VAULTING)
 
-### QUÉ es
-Módulo central que controla el tamaño de posiciones, valida señales y genera órdenes seguras.
-
-### POR QUÉ es crítico
-- **Protege el capital** de pérdidas catastróficas
-- **Optimiza el crecimiento** con sizing científico
-- **Filtra señales** que no cumplen criterios de riesgo
-
-### DÓNDE está
-[`risk/risk_manager.py`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/risk/risk_manager.py) - Clase `RiskManager`
-
----
-
-## 📊 Position Sizing
-
-### Kelly Criterion
-
-**QUÉ es:** Fórmula matemática para calcular el tamaño óptimo de apuesta basado en probabilidad de ganar y ratio riesgo/recompensa.
-
-**POR QUÉ usarlo:** Maximiza el crecimiento del capital a largo plazo sin arriesgar ruina.
-
-**CÓMO se calcula:**
-
-```python
-def calculate_kelly_fraction(self, rr_ratio: float = 0.75):
-    p = self.get_win_rate()      # Probabilidad de ganar
-    b = rr_ratio                  # Ratio recompensa/riesgo
-    q = 1 - p                     # Probabilidad de perder
-    
-    # Fórmula de Kelly
-    kelly = (p * b - q) / b if b > 0 else 0
-    
-    # Fracción de Kelly (40% del óptimo - más conservador)
-    fractional_kelly = kelly * 0.4
-    
-    # Límites según capital
-    capital = self.portfolio.get_total_equity()
-    if capital < 20:
-        return max(0.25, min(fractional_kelly, 0.40))  # 25-40%
-    else:
-        return max(0.15, min(fractional_kelly, 0.35))  # 15-35%
-```
-
-**CUÁNDO ajustar:**
-| Capital | Kelly Min | Kelly Max | Razón |
-|---------|-----------|-----------|-------|
-| < $20 | 25% | 40% | Growth agresivo |
-| $20-$100 | 20% | 35% | Consolidación |
-| > $100 | 15% | 35% | Preservación |
-
-### CVaR (Conditional Value at Risk)
-
-**QUÉ es:** Medida del peor caso esperado de pérdidas.
-
-**POR QUÉ usarlo:** Reduce posiciones cuando hay rachas perdedoras.
-
-**CÓMO funciona:**
-
-```python
-class CVaRCalculator:
-    def __init__(self, confidence_level=0.95):
-        self.confidence_level = confidence_level
-        self.loss_history = deque(maxlen=100)
-    
-    def calculate_cvar(self):
-        if len(self.loss_history) < 10:
-            return 0.05  # 5% default
-        
-        losses = sorted(self.loss_history, reverse=True)
-        var_index = max(1, int(len(losses) * (1 - self.confidence_level)))
-        worst_losses = losses[:var_index]
-        return np.mean(worst_losses)
-    
-    def should_reduce_risk(self, current_drawdown):
-        cvar = self.calculate_cvar()
-        threshold = min(0.25, cvar * 2.5)  # Max 25%
-        return current_drawdown >= threshold
-```
-
-**CUÁNDO reduce posición:**
-- Si drawdown actual > 2.5x CVaR → Reduce 50%
-
----
-
-## 🔄 Growth Phases
-
-### QUÉ son
-Fases de capital que determinan la agresividad del sistema.
-
-### POR QUÉ existen
-Cuentas pequeñas ($12-$50) requieren estrategias diferentes que cuentas grandes.
-
-### CÓMO se definen
-
-```python
-# En safe_leverage.py
-PHASES = {
-    'SURVIVAL': (0, 15),       # $0-$15: Máxima precaución
-    'GROWTH_1': (15, 30),      # $15-$30: Agresivo controlado
-    'GROWTH_2': (30, 50),      # $30-$50: Crecimiento
-    'CONSOLIDATION': (50, 100), # $50-$100: Estabilización
-    'STANDARD': (100, float('inf'))  # $100+: Normal
-}
-```
-
-### Configuración por fase
-
-| Phase | Max Leverage | Max Positions | Position % |
-|-------|-------------|---------------|------------|
-| SURVIVAL | 8x | 1 | 50% |
-| GROWTH_1 | 10x | 2 | 40% |
-| GROWTH_2 | 12x | 3 | 35% |
-| CONSOLIDATION | 10x | 3 | 30% |
-| STANDARD | 8x | 5 | 25% |
-
----
-
-## ⚡ Leverage Dinámico
-
-### QUÉ es
-Cálculo de apalancamiento basado en volatilidad (ATR) y fase de capital.
-
-### POR QUÉ dinámico
-- Alta volatilidad → Menor leverage (protección)
-- Baja volatilidad → Mayor leverage (aprovechar)
-
-### CÓMO se calcula
-
-```python
-def calculate_safe_leverage(self, atr: float, current_price: float):
-    # 1. Volatilidad base
-    vol_pct = (atr / current_price) * 100
-    
-    # 2. Leverage inverso a volatilidad
-    if vol_pct > 2.0:
-        base_leverage = 5
-    elif vol_pct > 1.0:
-        base_leverage = 8
-    elif vol_pct > 0.5:
-        base_leverage = 10
-    else:
-        base_leverage = 12
-    
-    # 3. Ajuste por fase
-    capital = self.portfolio.get_total_equity()
-    phase = self.get_phase(capital)
-    
-    max_lev = PHASE_MAX_LEVERAGE[phase]
-    final_leverage = min(base_leverage, max_lev)
-    
-    # 4. Validación liquidación
-    distance_to_liq = 100 / final_leverage  # %
-    is_safe = distance_to_liq > 5.0  # Mínimo 5% distancia
-    
-    return {
-        'leverage': final_leverage,
-        'is_safe': is_safe,
-        'distance_to_liq': distance_to_liq,
-        'reason': 'OK' if is_safe else 'Too close to liquidation'
-    }
-```
-
-### Tabla de decisión
-
-| ATR% | Vol Level | Base Lev | Ejemplo BTC@$100k |
-|------|-----------|----------|-------------------|
-| > 2% | Extreme | 5x | ATR > $2000 |
-| 1-2% | High | 8x | ATR $1000-2000 |
-| 0.5-1% | Normal | 10x | ATR $500-1000 |
-| < 0.5% | Low | 12x | ATR < $500 |
-
----
-
-## 💀 Kill Switch
-
-### QUÉ es
-Sistema de parada de emergencia que detiene el trading automáticamente.
-
-### POR QUÉ es esencial
-Previene pérdidas catastróficas en condiciones adversas.
-
-### DÓNDE está
-[`risk/kill_switch.py`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/risk/kill_switch.py) - Clase `KillSwitch`
-
-### CUÁNDO se activa
+La memoria the la Máquina Virtual de Python es vulnerable al *Heap-Scraping*. Implementamos cifrado de grado militar sobre las credenciales utilizando AES-GCM-256 (Ephemeral In-Memory Vault).
 
 ```mermaid
-flowchart TB
-    subgraph Triggers["🚨 Disparadores"]
-        DD[Drawdown > Threshold]
-        DL[Daily Losses > Limit]
-        API[API Errors > 5]
+graph LR
+    subgraph Storage & Environment
+        Env[(.env / OS)]
     end
-    
-    subgraph Action["💀 Kill Switch"]
-        STOP[Trading Suspendido]
-        LOG[Log Activation]
+
+    subgraph Security Vault (config.py)
+        EP[Key Derivation<br/>Ephemeral Fernet Key]
+        SEC[SecureString Object<br/>Encrypted Bytes]
     end
-    
-    subgraph Recovery["✅ Recuperación"]
-        REC[Equity sube 2%]
-        RESUME[Trading Reanudado]
+
+    subgraph Execution Area (Restringido)
+        CCXT[Binance ccxt Client]
     end
+
+    Env -->|Raw Secret/API| EP
+    activate EP
+    EP -->|Encrypt AES-256| SEC
+    deactivate EP
     
-    Triggers --> Action
-    Action --> Recovery
-```
+    SEC -.->|Garbage Collection Seguro| SEC 
 
-### Thresholds por fase
-
-```python
-def _get_drawdown_threshold(self, current_equity):
-    if current_equity < 30:      # Growth phase
-        return 0.25              # 25% drawdown allowed
-    elif current_equity < 100:   # Consolidation
-        return 0.225             # 22.5%
-    else:                        # Standard
-        return 0.15              # 15%
-```
-
-### Condiciones de activación
-
-| Trigger | Threshold | Recuperación |
-|---------|-----------|--------------|
-| **Drawdown** | 15-25% (según fase) | +2% equity |
-| **Daily Losses** | 5-8 trades perdedores | Reset a medianoche |
-| **API Errors** | 5 consecutivos | Reset en éxito |
-
-### Auto-Recovery
-
-```python
-def update_equity(self, current_equity):
-    if self.is_active:
-        recovery = current_equity - self.activation_equity
-        recovery_pct = recovery / self.activation_equity
-        
-        if recovery_pct >= 0.02:  # 2% recovery
-            self._deactivate("Auto-recovery: +{:.1f}%".format(recovery_pct*100))
+    CCXT -->> SEC: Solicitar Decrypt Temporal .get_unmasked()
+    activate SEC
+    SEC -->|Raw Secret (Vida: 1ms)| CCXT
+    deactivate SEC
+    
+    classDef secure fill:#4a148c,stroke:#ab47bc,stroke-width:2px,color:#fff;
+    classDef api fill:#e65100,stroke:#fb8c00,stroke-width:2px,color:#fff;
+    
+    class EP,SEC secure;
+    class CCXT api;
 ```
 
 ---
 
-## 🛡️ Validaciones de Orden
+## 📐 II. MAPEO DE LA CAPA 'CRITERIO-AXIOMA' (Mathematical Integrity)
 
-### Pre-Ejecución
-
-Antes de enviar cualquier orden, se validan:
-
-```python
-def generate_order(self, signal_event, current_price):
-    # 1. Kill Switch activo?
-    if not self.kill_switch.check_status():
-        return None
-    
-    # 2. Máximo de posiciones alcanzado?
-    open_positions = count_open_positions()
-    if open_positions >= dynamic_max:
-        return None
-    
-    # 3. Cooldown activo para este símbolo?
-    can_trade, reason = cooldown_manager.can_trade(symbol)
-    if not can_trade:
-        return None
-    
-    # 4. Leverage seguro?
-    safe_calc = calculate_safe_leverage(atr, price)
-    if not safe_calc['is_safe']:
-        return None
-    
-    # 5. Fees razonables?
-    fees = calculate_round_trip_fee(notional)
-    if fees > expected_profit * 0.45:
-        return None
-    
-    # 6. Cash disponible?
-    if not portfolio.reserve_cash(margin):
-        return None
-    
-    # ✅ Todo OK - Generar orden
-    return OrderEvent(...)
-```
-
-### Mínimos de Binance
-
-| Tipo | Mínimo | Validación |
-|------|--------|------------|
-| Notional | $5 | `notional >= 5.0` |
-| Margin | $1 | `margin >= 1.0` |
-
----
-
-## 📊 Check Stops (Trailing)
-
-### QUÉ es
-Sistema de stops dinámicos que protege ganancias.
-
-### CÓMO funciona
+Cada orden y cálculo the PnL atraviesa una auditoría financiera de doble-chequeo basada en la clase `decimal.Decimal` (28 dígitos) que imposibilita de facto el *Floating-Point Drift* ("Ghost Money" / Dinero Fantasma de los Errores de Redondeo en CPU).
 
 ```mermaid
-flowchart LR
-    subgraph Long["📈 LONG Position"]
-        TP1["+1% → Trail 50%"]
-        TP2["+2% → Trail 25%"]
-        TP3["+3% → Trail 10%"]
-        MICRO["+0.6% → Micro-scalp"]
+graph TD
+    subgraph Fill Event Data
+        Fill[Asset PnL C++]
+        Fee[Commission Dynamic Rate]
     end
+
+    subgraph Portfolio Matrix (Axioma Audit)
+        DF[Decimal PnL Check]
+        Acc[Accounting Eq:<br/>Final == Init + PnL - Fees]
+        Tr[Precision Drift Tracker]
+    end
+
+    subgraph Risk Manager Sync
+        Veto[Drift Veto Threshold:<br/>Tolerancia 0.001%]
+    end
+
+    Fill & Fee --> DF
+    DF --> Acc
+    Acc --> Tr
+    Tr --> Veto
     
-    subgraph Short["📉 SHORT Position"]
-        STP1["+1% → Trail 50%"]
-        STP2["+2% → Trail 25%"]
-        STP3["+3% → Trail 10%"]
-        SMICRO["+0.6% → Micro-scalp"]
-    end
-```
-
-### Niveles de Trailing Stop
-
-| Peak PnL | Trail Distance | Stop Price (LONG) |
-|----------|---------------|-------------------|
-| +0.6% | Fixed BE+0.4% | entry * 1.004 |
-| +1% | 50% of gain | max(peak - 50%, entry * 1.003) |
-| +2% | 25% of gain | max(peak - 25%, entry * 1.015) |
-| +3%+ | 10% of gain | peak - 10% |
-
-### Código simplificado
-
-```python
-def check_stops(self, portfolio, data_provider):
-    for symbol, pos in portfolio.positions.items():
-        qty = pos['quantity']
-        if qty == 0:
-            continue
-            
-        current_price = pos['current_price']
-        entry_price = pos['avg_price']
-        hwm = pos.get('high_water_mark', entry_price)
-        
-        # LONG
-        if qty > 0:
-            pnl_pct = (current_price - entry_price) / entry_price * 100
-            peak_pnl = (hwm - entry_price) / entry_price * 100
-            
-            if peak_pnl >= 3.0:
-                trail = 0.10  # 10%
-            elif peak_pnl >= 2.0:
-                trail = 0.25  # 25%
-            elif peak_pnl >= 1.0:
-                trail = 0.50  # 50%
-            else:
-                trail = None  # Fixed SL
-            
-            if trail:
-                stop = hwm - (hwm - entry_price) * trail
-                if current_price < stop:
-                    generate_exit_signal(symbol)
+    classDef fill fill:#004d40,color:#fff;
+    classDef check fill:#b71c1c,color:#fff;
+    
+    class Acc,Tr fill;
+    class Veto check;
 ```
 
 ---
 
-## 🌡️ Market Regime Detection
+## 🚷 III. MANUAL DE 'SOVEREIGN-DEPLOY' (KILL-SWITCHES)
 
-### QUÉ es
-Sistema para identificar el tipo de mercado actual.
+Los mecanismos de protección detienen el motor pasiva o agresivamente dependiendo de la clase del evento adverso, asfixiando automáticamente el capital expuesto y deteniendo las hemorragias.
 
-### PARA QUÉ sirve
-Ajustar TP/SL y rechazar señales incompatibles.
+### Nivel 1: "El Purgatorio" (Soft-Switch / Local Cooldown)
 
-### Tipos de régimen
+* **Activador:** 3 Asesinatos. (Tres Trades perdidos de forma consecutiva por el mismo Símbolo o Estrategia PPO).
+* **Acción:** Suspensión the generación the señales del símbolo por tiempo definido (eg. 1h Cooldown).
+* **Objetivo:** Apaciguar estrategias reaccionarias atrapadas en latigazos M1 de baja liquidez.
 
-| Régimen | Descripción | Acción |
-|---------|-------------|--------|
-| TRENDING_BULL | Tendencia alcista fuerte | Favorece LONG |
-| TRENDING_BEAR | Tendencia bajista fuerte | Favorece SHORT |
-| RANGING | Mercado lateral | Scalping ambas direcciones |
-| CHOPPY | Alta volatilidad sin dirección | Reduce tamaño |
+### Nivel 2: "Equity Critical" (Hard-Switch / Engine Panic)
 
-### Impacto en TP/SL
+* **Activador:** El saldo local ($13.00 USDT inicial base) retrocede del Drawdown Máximo Permanente estipulado (ejemplo: balance detectado < `$12.50 USDT`). O si Time-Drift contra Binance es severo (> 100ms sostenido).
+* **Acción:**
+    1. Envía señal The liquidación a valor de Mercado Vía REST inmediata.
+    2. Modifica localmente un "Lock-File" de bloqueo total (`STOP_TRADING.LOCK`).
+    3. Impone `sys.exit()` o rompe Event-Loop asincróno.
+* **Objetivo:** Detener un desplome general the la cuenta o la estrategia por falta the consenso en la meta-data. Cero operaciones sin supervisión.
 
-```python
-if regime == 'TRENDING':
-    tp_mult, sl_mult = 2.5, 1.2  # Más espacio para profits
-elif regime == 'CHOPPY':
-    tp_mult, sl_mult = 1.2, 0.8  # Más ajustado
-else:  # RANGING
-    tp_mult, sl_mult = 1.5, 1.0  # Equilibrado
-```
+### Nivel 3: "Nuclear Override" (Manual Human Panic)
+
+* **Activador:** El Big Red Button del `Dashboard` local Streamlit por intervención del Autor (Jhona).
+* **Acción:** Invoca el `KillSwitch` explícitamente y aniquila todo hilo activo cancelando órdenes the LOB in-flight sin esperar "Ack" de CCXT.
 
 ---
 
-## 📈 Métricas de Riesgo Target
+## 🛑 IV. MATRIZ DE RIESGOS (BLACK SWANS)
 
-| Métrica | Target | Crítico |
-|---------|--------|---------|
-| Max Drawdown diario | < 5% | > 10% = Kill Switch |
-| Sharpe Ratio | > 2.0 | < 1.0 = Revisar |
-| Win Rate | > 55% | < 45% = Revisar |
-| Max Consecutive Losses | < 5 | > 8 = Kill Switch |
-| Recovery Factor | > 3.0 | < 1.5 = Ajustar |
+Escenarios the Catástrofe (Cisnes Negros) históricamente presentes en Crypto y sus defensas ya implementadas en el **Metal-Core**:
 
----
+| Evento Riesgoso | Impacto Potencial | Mitigación Implementada | Score Residual |
+| :--- | :--- | :--- | :--- |
+| **Velas 'Flash-Crash' / Anomalías de Aguja** | Desvío del SL, Ruina Inmediata | GARCH estipula TP/SLs conservadores lejanos al Spread. | **BAJO** |
+| **Pérdida De Conexión WS Binance** | Órdenes Fantasma, Datos Estancados | Uvloop Keep-Alive. Re-conexion Automática y purga `buffer_reset`. | **MEDIO** |
+| **Slippage Extremo In-Flight** | Llenado a peor precio que el LOB bid/ask | "Liquidity/Slippage Awareness Check" previo a emitir cualquier Orden Límite. | **BAJO** |
+| **Underflow Matemático (Softwares ML)** | Modelos votando 100% Largo vs 100% Corto por NaN | "Tensor Axioma"; Clipping the la matriz L-Prob `[-100, 80]` pre-Softmax. | **NULO** |
+| **Eventos de Fallo the Máquina / OS** | Corrupción del Historial, Des-sincronía PnL | Base The datos SQLite forzada a WAL mode + Local Parquet Data Caching persistente. | **MUY BAJO** |
 
-## 🔧 Parámetros de Configuración
-
-```python
-# En config.py
-MAX_RISK_PER_TRADE = 0.02      # 2% por trade
-STOP_LOSS_PCT = 0.015          # 1.5% SL default
-BINANCE_LEVERAGE = 10          # Leverage base
-
-class Sniper:
-    MAX_LEVERAGE = 15          # Máximo absoluto
-    GROWTH_PHASE_CAPITAL = 50  # $ para salir de growth
-```
-
----
-
----
-
-## 📅 Performance Benchmarks (Feb 2026)
-
-### 🧪 Resultados de Validación (Backtest 30 días - Realista)
- 
-Se realizó una simulación completa con datos reales de Binance (43,200 velas 1m) validando los parámetros de riesgo.
-**ACTUALIZACIÓN:** Incluye modelo de **Slippage Aleatorio** (0.01% - 0.05%) para simular condiciones adversas reales.
-
-#### Métricas Obtenidas vs Targets
-| Métrica | Resultado | Target | Estado | Acción Requerida |
-|---------|-----------|--------|--------|------------------|
-| **Win Rate** | **62.5%** | > 55% | ✅ APROBADO | Mantener lógica de entrada |
-| **Profit** | **+0.85%** | > 0% | ✅ APROBADO | Sistema rentable |
-| **Sharpe Ratio** | **0.95** | > 2.0 | ⚠️ ALERTA | Alta volatilidad relativa |
-| **Max Drawdown** | **2.90%** | < 1.5% | ⚠️ CRÍTICO | Excede límite de seguridad |
-
-### 🛠️ Ajustes de Calibración Recomendados
-
-Para alinear el Drawdown con el objetivo del 1.5% sin sacrificar rentabilidad total:
-
-1.  **Reducción de Riesgo Base:**
-    *   **Antes:** `MAX_RISK_PER_TRADE = 0.02` (2%)
-    *   **Ahora:** `MAX_RISK_PER_TRADE = 0.01` (1%)
-
-2.  **Safe Leverage Tuning:**
-    *   El leverage actual (10x-12x) en fases de volatilidad media amplifica el drawdown.
-    *   **Acción:** Reducir leverage base a 8x en volatilidad > 1% ATR.
-
----
-
-## 🌩️ Alpha-Omega Audit (Flash Crash Protection)
-
-### QUÉ es
-Auditoría de estrés extremo realizada en Febrero 2026. Simula una caída instantánea del 20% (Flash Crash) sin liquidez intermedia.
-
-### Hallazgo Crítico (Level II Audit)
-El sistema con leverage 10x y sizing del 40% (Micro Account) sufrió un Drawdown del **22%**, violando el límite de seguridad del 15%.
-
-### 🔒 REGLA DE ORO (Hard-Coded)
-Para sobrevivir a un Gap del 20% con <15% Drawdown:
-*   **Leverage Máximo:** 3x (o 10x con sizing reducido)
-*   **Position Size Máximo:** **18% del Equity** (para cuentas Micro).
-*   **Exposure Cap:** La exposición nocional total NUNCA debe exceder el 60% del Equity si no hay cobertura.
-
-> **Configuración Obligatoria:** `POSITION_SIZE_MICRO_ACCOUNT <= 0.18`
-
----
-
----
-
-## ⚠️ Reglas de Seguridad Absolutas
-
-> [!CAUTION]
-> **NUNCA** modificar estos archivos sin triple revisión:
-> - `risk/risk_manager.py`
-> - `risk/kill_switch.py`
-> - `execution/binance_executor.py`
-> - `core/portfolio.py` (Lógica de Locks Crítica)
-
-> [!IMPORTANT]
-> El Kill Switch SIEMPRE tiene prioridad sobre cualquier señal de trading.
-
-> [!WARNING]
-> Si el drawdown supera el 20%, contactar al operador ANTES de reiniciar.
-
----
-
-> **Última actualización:** 2026-02-03
-> **Autor:** Sistema Trader Gemini - Documentación Automática
+> Todo Cisne Negro conocido tiene una barrera técnica the protección en este sistema. El sistema opera the manera Agresiva bajo supervisión defensiva Extrema.

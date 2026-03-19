@@ -77,3 +77,32 @@ class XAIEngine:
                 
         except Exception as e:
             logger.error(f"XAI Log Error: {e}")
+
+    def log_ppo_weight_evolution(self, symbol: str, old_weights: dict, new_weights: dict, reward: float, reason: str):
+        """
+        Registra la evolución evolutiva de los pesos del ensemble (Neural Fortress - Phase 9).
+        QUÉ: Traza cómo los pesos de RF, XGB y GB cambian después de un batch de PPO.
+        POR QUÉ: Permite auditar que el sistema se está adaptando correctamente a los Black Swans (PER).
+        """
+        try:
+            log_path = os.path.join(self.model_dir, f"ppo_evolution_{symbol.replace('/','_')}.log")
+            
+            # Formatear el cambio de pesos para fácil lectura
+            weight_diffs = []
+            for k in old_weights.keys():
+                diff = new_weights.get(k, 0) - old_weights.get(k, 0)
+                direction = "📈" if diff > 0 else "📉" if diff < 0 else "➖"
+                weight_diffs.append(f"{k}: {old_weights[k]:.2f} -> {new_weights[k]:.2f} ({direction} {diff:+.2f})")
+                
+            explanation = (
+                f"[{pd.Timestamp.now()}] PPO UPDATE | "
+                f"Reward: {reward:+.4f} | "
+                f"Trigger: {reason} | "
+                f"Weights: {' | '.join(weight_diffs)}\n"
+            )
+            
+            with open(log_path, "a", encoding='utf-8') as f:
+                f.write(explanation)
+                
+        except Exception as e:
+            logger.error(f"PPO Evolution Log Error: {e}")

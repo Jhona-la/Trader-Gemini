@@ -87,3 +87,41 @@ class PrioritizedReplayBuffer:
             
     def __len__(self):
         return len(self.buffer)
+
+    def save(self, filepath: str):
+        """
+        Persistencia: Guarda la memoria en disco (atomicity mediante joblib provisional).
+        """
+        try:
+            import joblib
+            joblib.dump({
+                'buffer': self.buffer,
+                'pos': self.pos,
+                'priorities': self.priorities,
+                'alpha': self.alpha,
+                'capacity': self.capacity
+            }, filepath)
+        except Exception as e:
+            from utils.logger import logger
+            logger.error(f"Failed to save ReplayBuffer: {e}")
+
+    def load(self, filepath: str):
+        """
+        Persistencia: Carga la memoria desde el disco.
+        """
+        import os
+        if not os.path.exists(filepath):
+            return
+        try:
+            import joblib
+            data = joblib.load(filepath)
+            self.buffer = data.get('buffer', [])
+            self.pos = data.get('pos', 0)
+            self.priorities = data.get('priorities', self.priorities)
+            self.alpha = data.get('alpha', self.alpha)
+            self.capacity = data.get('capacity', self.capacity)
+            from utils.logger import logger
+            logger.info(f"ReplayBuffer loaded {len(self.buffer)} experiences from {filepath}.")
+        except Exception as e:
+            from utils.logger import logger
+            logger.error(f"Failed to load ReplayBuffer: {e}")

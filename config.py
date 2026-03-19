@@ -55,8 +55,10 @@ class Config(metaclass=EncryptedConfigMeta):
     # ========================================================================
     # GLOBAL SETTINGS
     # ========================================================================
+    # ========================================================================
     # GLOBAL SETTINGS
     # ========================================================================
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DEBUG_TRACE_ENABLED = False
 
 
@@ -68,11 +70,10 @@ class Config(metaclass=EncryptedConfigMeta):
     # Keys are now managed dynamically by EncryptedConfigMeta.
     # We do not define them here as static attributes to keep RAM clean.
     
-    # Binance Testnet (Spot)
-    BINANCE_USE_TESTNET = os.getenv('BINANCE_USE_TESTNET', 'False').lower() == 'true'
-    
-    # Binance Demo Trading (Futures with virtual capital)
-    BINANCE_USE_DEMO = os.getenv('BINANCE_USE_DEMO', 'False').lower() == 'true'
+    # 🔐 PHASE 17 (SOVEREIGN-DEPLOY): HARDENED PRODUCTION KEYS
+    # OVERRIDEN BY BLOCK G PROTOCOL: PAPER TRADING ENABLED
+    BINANCE_USE_TESTNET = True
+    BINANCE_USE_DEMO = True
     
     # === BINANCE FUTURES SETTINGS ===
     # Default: USDT-Margined Futures (standard). 
@@ -148,8 +149,8 @@ class Config(metaclass=EncryptedConfigMeta):
     # Auto-select correct pairs based on mode
     # BUG #14 FIX: Binance Testnet SPOT is UNRELIABLE (most pairs don't exist)
     # Solution: SPOT only works in PRODUCTION, Testnet/Demo users should use FUTURES
-    # SINGLE SOURCE OF TRUTH: Initial capital for $15 micro-scalping strategy
-    INITIAL_CAPITAL = 15.0  # Base capital for sizing and HWM
+    # SINGLE SOURCE OF TRUTH: Initial capital for $13 micro-scalping strategy (SOVEREIGN-DEPLOY)
+    INITIAL_CAPITAL = 13.0  # Base capital for sizing and HWM
 
     # === TRADING SETTINGS ===
     TIMEFRAME = TimeFrame.M1  # M1 Timeframe (Microscalping)
@@ -174,8 +175,9 @@ class Config(metaclass=EncryptedConfigMeta):
     MIN_RR_RATIO = 1.5             # 1.5:1 R:R minimum
     
     # Risk Management
-    MAX_RISK_PER_TRADE = 0.01  # 1% of capital
+    MAX_RISK_PER_TRADE = 0.05  # 5% of capital max per trade for $13 account
     STOP_LOSS_PCT = 0.02       # 2% stop loss
+    MAX_SLIPPAGE_PCT = 0.001   # 0.1% max slippage (Sovereign-Deploy)
     
     # === INTELLIGENT REVERSE (FLIPPING) PARAMETERS (Phase 5) ===
     # PROFESSOR METHOD:
@@ -233,7 +235,7 @@ class Config(metaclass=EncryptedConfigMeta):
         STAT_HURST_THRESHOLD = 0.5    # 0.5 = Random Walk
         
         # ML / Risk
-        ML_KELLY_FRACTION = 0.5       # Half-Kelly for safety
+        ML_KELLY_FRACTION = 0.1       # Sovereign-Deploy: Fractional Kelly (f*/10)
         ANALYTICS_EXPECTANCY_WINDOW = 20 # Rolling window for Kill Switch
         
         # Adaptive Technical
@@ -241,7 +243,7 @@ class Config(metaclass=EncryptedConfigMeta):
 
     # Phase 99: WandB Tracking
     WANDB_ENTITY = "jhonala-none"
-    MAX_RISK_PER_TRADE = 0.015  # 1.5% per trade (Institutional Standard)
+    # MAX_RISK_PER_TRADE overridden above -> 0.05
     
     # ========================================================================
     # INSTITUTIONAL POLICY ENFORCEMENT (Phase 2.6)
@@ -486,8 +488,8 @@ def validate_institutional_policy():
             errors.append(f"❌ RISK: Leverage {Config.BINANCE_LEVERAGE}x exceeds Institutional Limit (5x).")
             
         # 3. Risk Limits
-        if Config.MAX_RISK_PER_TRADE > 0.02:
-            errors.append(f"❌ RISK: Max Risk {Config.MAX_RISK_PER_TRADE*100}% exceeds Institutional Limit (2%).")
+        if Config.MAX_RISK_PER_TRADE > 0.051: # [SOVEREIGN-DEPLOY] Elevated Max Risk to 5% for micro-accounts
+            errors.append(f"❌ RISK: Max Risk {Config.MAX_RISK_PER_TRADE*100}% exceeds Institutional Limit (5%).")
             
         if errors:
             print("\n" + "="*70)

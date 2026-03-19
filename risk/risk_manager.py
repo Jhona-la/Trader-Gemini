@@ -36,11 +36,22 @@ import os
 
 class FeeCalculator:
     """Cálculo preciso de fees - CORREGIDO"""
-    TAKER_FEE_BNB = Config.BINANCE_TAKER_FEE_BNB  # Unmanaged from Config (FIXED)
-    
+    # [SOVEREIGN-DEPLOY] Dynamic Fee Awareness
+    TAKER_FEE = Config.BINANCE_TAKER_FEE_BNB  # Default fallback
+    MAKER_FEE = getattr(Config, 'BINANCE_MAKER_FEE_BNB', 0.0002) 
+    IS_DYNAMIC = False
+
+    @classmethod
+    def update_dynamic_fees(cls, maker: float, taker: float):
+        cls.MAKER_FEE = maker
+        cls.TAKER_FEE = taker
+        cls.IS_DYNAMIC = True
+        logger.info(f"💰 [FEE-AWARENESS] Dynamic Commission Rates Embedded: Maker {maker*100:.4f}% | Taker {taker*100:.4f}%")
+        
     @staticmethod
     def calculate_round_trip_fee(notional_value: float) -> float:
-        return notional_value * FeeCalculator.TAKER_FEE_BNB * 2
+        # Conservative estimate for EV calculation: TAKER entries and exits
+        return notional_value * FeeCalculator.TAKER_FEE * 2
 
 
 class CVaRCalculator:
@@ -177,6 +188,9 @@ class RiskManager:
         self.funding_buffer_minutes = 15
         self.rebate_priority_mode = getattr(Config, 'REBATE_PRIORITY', True)
 
+        # Sovereign-Deploy: Kill Switch L1 & Fractional Kelly
+        self.consecutive_losses = {}
+
     def _get_sector(self, symbol: str) -> str:
         """Standardized symbol to sector mapping."""
         # Normalize symbol for lookup
@@ -247,6 +261,27 @@ class RiskManager:
                   return False
         return True
 
+    def _validate_slippage(self, symbol, current_price):
+        """
+        [SOVEREIGN-DEPLOY] Liquidity Awareness (Slippage < 0.1%)
+        Estima un worst-case slippage utilizando el spread y la volatilidad local.
+        """
+        max_allowed_slippage = getattr(Config, 'MAX_SLIPPAGE_PCT', 0.001)
+        
+        # Intentaremos estimar el slippage basado en el ATR o data_handler si existe
+        dh = get_data_handler()
+        if dh:
+            bars = dh.get_latest_bars(symbol, n=5)
+            if bars and len(bars) > 1:
+                # Approximate spread/slippage based on high-low / close
+                recent_volatility = (bars[-1]['high'] - bars[-1]['low']) / current_price
+                est_slippage = recent_volatility * 0.15 # Heuristic rule of thumb for illiquidity
+                
+                if est_slippage > max_allowed_slippage:
+                    logger.warning(f"🛑 [LIQUIDITY] Slippage check failed for {symbol}: Est {est_slippage*100:.3f}% > Max {max_allowed_slippage*100:.3f}%")
+                    return False
+        return True
+
     def _validate_emergency_bypass(self, signal_event):
         """QUÉ: Bypass instantáneo para señales de salida."""
         return signal_event.signal_type == SignalType.EXIT
@@ -284,6 +319,14 @@ class RiskManager:
         """Veto basado en correlación con BTC (Swarm)."""
         if symbol == 'BTC/USDT': return True
         
+        # [PHASE 5] Bypass Global Veto if the asset has EXTREME relative strength (Hedging)
+        if self.portfolio and hasattr(self.portfolio, 'relative_strength_scores'):
+             is_long = signal_type == SignalType.LONG
+             rs_mult = self.portfolio.get_allocation_multiplier(symbol, is_long)
+             if rs_mult >= 1.3:
+                 logger.info(f"🛡️ [Veto Bypass] Allowing {signal_type.name} on {symbol} despite Global Regime (Relative Strength Hedging).")
+                 return True
+                 
         if self.global_regime == 'TRENDING_BEAR' and signal_type == SignalType.LONG:
             logger.warning(f"🛡️ [Veto] Blocking LONG {symbol} (Global: Bearish).")
             return False
@@ -320,6 +363,7 @@ class RiskManager:
             return True
             
         try:
+            from data.data_provider import get_data_provider
             dp = get_data_provider()
             funding_info = dp.get_funding_rate(symbol)
             if not funding_info: return True
@@ -517,8 +561,8 @@ class RiskManager:
             kelly = Decimal(str(kelly_frac_float))
             
             # 3. Defensive Scaling (Risk Fortress)
-            # AEGIS-ULTRA: Absolute Half-Kelly Enforcement
-            kelly_mult = Decimal('0.5')
+            # SOVEREIGN-DEPLOY: Absolute Fractional Kelly Enforcement (f*/10)
+            kelly_mult = Decimal(str(Config.Strategies.ML_KELLY_FRACTION))
             
             # Extreme Defense: If Ruin Risk (Stress Score) is low
             if self.stress_score < 90: kelly_mult = Decimal('0.25') # Quarter-Kelly
@@ -581,8 +625,16 @@ class RiskManager:
         """
         if is_win:
             self.win_count += 1
+            if symbol: self.consecutive_losses[symbol] = 0
         else:
             self.loss_count += 1
+            if symbol:
+                self.consecutive_losses[symbol] = self.consecutive_losses.get(symbol, 0) + 1
+                if self.consecutive_losses[symbol] >= 3:
+                    logger.critical(f"🛑 [KILL-SWITCH L1] {symbol} accumulated 3 consecutive losses! 1-Hour Soft-Lock.")
+                    # Soft Lock for 1 hour to prevent bleeding on a single asset
+                    cooldown_manager.set_cooldown(symbol, 3600, "Kill-Switch Level 1: 3 Losses Streak")
+                    self.consecutive_losses[symbol] = 0
             
         self.cvar_calc.update(pnl_pct)
         
@@ -750,6 +802,46 @@ class RiskManager:
         """
         self.update_equity(current_equity)
 
+    def _track_drawdown_velocity(self, capital: float) -> float:
+        """
+        Phase 12: Tracks capital over time (bars/calls) to detect fast drops.
+        Returns a target_exposure multiplier (1.0 = normal, 0.5 = defensive).
+        """
+        if not hasattr(self, 'capital_history'):
+            import collections
+            import time
+            self.capital_history = collections.deque(maxlen=100)
+            self._last_capital_track = 0.0
+
+        import time
+        now = time.time()
+        
+        # Sample equity at most every 60 seconds (simulating 1-minute bars)
+        if now - getattr(self, '_last_capital_track', 0) > 60:
+            self.capital_history.append({'value': capital, 'ts': now})
+            self._last_capital_track = now
+            
+        multiplier = 1.0
+        
+        # Evaluate drops
+        if len(self.capital_history) >= 30: # at least 30 minutes of data
+            point_30m_ago = self.capital_history[-min(30, len(self.capital_history))]
+            drop_30m = (point_30m_ago['value'] - capital) / point_30m_ago['value']
+            
+            if drop_30m > 0.005:  # >0.5% drop
+                logger.warning(f"📉 [VELOCITY] Fast 30m Drop: {drop_30m*100:.2f}%. Halving size.")
+                multiplier *= 0.5
+                
+        if len(self.capital_history) >= 60: # at least 60 minutes
+            point_60m_ago = self.capital_history[-60]
+            drop_60m = (point_60m_ago['value'] - capital) / point_60m_ago['value']
+            
+            if drop_60m > 0.01:   # >1.0% drop
+                logger.warning(f"🚨 [VELOCITY DEFENSE] 60m Drop: {drop_60m*100:.2f}%. Defensive Mode.")
+                multiplier *= 0.5 # Aggregate 0.5 * 0.5 = 0.25 (Quarter-size)
+
+        return multiplier
+
     # ============================================================
     # POSITION SIZING (FIXED)
     # ============================================================
@@ -803,6 +895,46 @@ class RiskManager:
             
         target_exposure = capital * base_pct
         
+        # --- PHASE 5: ADAPTIVE ALLOCATION ENTRE ESTRATEGIAS ---
+        # Modify target_exposure based on strategy_id and current regime
+        if hasattr(signal_event, 'strategy_id'):
+            st_id = str(signal_event.strategy_id).upper()
+            st_regime = "UNKNOWN"
+            if hasattr(self.portfolio, 'global_regime_data') and self.portfolio.global_regime_data:
+                st_regime = self.portfolio.global_regime_data.get('sentiment', 'UNKNOWN')
+                
+            alloc_mult = 1.0
+            if 'BULL' in st_regime:
+                if 'ML' in st_id or 'XGBOOST' in st_id: alloc_mult = 0.8
+                elif 'TECHNICAL' in st_id: alloc_mult = 1.2
+                elif 'SOPHIA' in st_id: alloc_mult = 0.0 # Sophia sufre en mercados fuertemente tendenciales
+            elif 'BEAR' in st_regime:
+                if 'ML' in st_id or 'XGBOOST' in st_id: alloc_mult = 0.4
+                elif 'TECHNICAL' in st_id: alloc_mult = 0.8
+                elif 'SOPHIA' in st_id: alloc_mult = 0.8 # Sophia es defensiva
+            elif 'RANGING' in st_regime:
+                if 'ML' in st_id or 'XGBOOST' in st_id: alloc_mult = 0.0 # ML overfittea en rango
+                elif 'TECHNICAL' in st_id: alloc_mult = 1.0
+                elif 'SOPHIA' in st_id: alloc_mult = 1.0
+            elif 'CHOPPY' in st_regime:
+                if 'ML' in st_id or 'XGBOOST' in st_id: alloc_mult = 0.6
+                elif 'TECHNICAL' in st_id: alloc_mult = 0.0 # Technical (momentum) es destruido en chop
+                elif 'SOPHIA' in st_id: alloc_mult = 1.4
+                
+            if alloc_mult != 1.0:
+                logger.debug(f"🔄 [ADAPTIVE ALLOC] Regime: {st_regime} | Strat: {st_id} | Mult: {alloc_mult:.2f}x")
+                target_exposure *= alloc_mult
+                
+        # --- PHASE 5: RELATIVE STRENGTH ALLOCATION (Capital Rotation) ---
+        if self.portfolio and hasattr(self.portfolio, 'update_relative_strength'):
+            self.portfolio.update_relative_strength() # Lazy update (cached)
+            if hasattr(signal_event, 'signal_type'):
+                is_long = signal_event.signal_type == SignalType.LONG
+                rs_mult = self.portfolio.get_allocation_multiplier(signal_event.symbol, is_long)
+                if rs_mult != 1.0:
+                    logger.info(f"🔄 [REL STRENGTH] {signal_event.symbol} sizing adjusted {rs_mult:.2f}x.")
+                    target_exposure *= rs_mult
+        
         # ATR-based sizing (VOLATILITY ADJUSTED)
         # Size = (Capital * Risk%) / SL_Distance
         if hasattr(signal_event, 'atr') and signal_event.atr is not None and signal_event.atr > 0:
@@ -841,7 +973,7 @@ class RiskManager:
             kelly_frac = self._compute_kelly_math(wr, pr, apply_mult=False)
             if kelly_frac <= 0 and wr > 0: # Only if we have some history
                 logger.warning(f"🛑 [KELLY VETO] EV is Negative. WinRate: {wr:.2f}, Payoff: {pr:.2f}, Kelly: {kelly_frac:.2f}. Blocking {signal_event.symbol}")
-                return 0.0, 0.0
+                return 0.0
 
         # AEGIS-ULTRA: CONTAGION PROTOCOL (Phase 15)
         # If Fleet Correlation > 0.85, reduce risk by 50%
@@ -876,6 +1008,11 @@ class RiskManager:
         # FIXED: Update capital tracking before checking CVaR
         self._update_capital_tracking(capital)
         
+        # PHASE 12: Asymmetric Sizing based on Fall Velocity
+        velocity_mult = self._track_drawdown_velocity(capital)
+        if velocity_mult < 1.0:
+            target_exposure *= velocity_mult
+        
         # CVaR reduction (FIXED: Use peak_capital for accurate drawdown)
         current_dd = 1 - (capital / self.peak_capital) if capital < self.peak_capital else 0
         if self.cvar_calc.should_reduce_risk(current_dd):
@@ -908,11 +1045,13 @@ class RiskManager:
                 target_exposure *= 0.5
                 logger.info(f"🧠 Low Confidence Penalty: 0.5x (Strength: {strength:.2f})")
 
-        # BINANCE MINIMUM: Ensure position meets $5 minimum for futures
-        MIN_MARGIN = 5.0
-        if target_exposure < MIN_MARGIN and capital >= MIN_MARGIN:
-            target_exposure = MIN_MARGIN
-            logger.info(f"📈 Boosted to Binance min: ${target_exposure:.2f}")
+        # BINANCE MINIMUM: Ensure position meets $5 minimum notional for futures
+        # Note: target_exposure here represents margin size.
+        # With a minimum safe leverage of e.g. 3x, a margin of 1.7 ensures 5.1 notional.
+        min_notional_margin = 1.75 # 1.75 * 3 (leverage) = 5.25 Notional
+        if target_exposure < min_notional_margin and capital >= min_notional_margin:
+            target_exposure = min_notional_margin
+            logger.info(f"📈 Boosted to Binance min notional margin: ${target_exposure:.2f}")
             
         return target_exposure
     
@@ -995,6 +1134,9 @@ class RiskManager:
         # 2.5 FAT FINGER PROTECTION (Dept C Audit Requirement)
         if not self._validate_fat_finger(current_price, signal_event.symbol): return None
         
+        # 2.6 LIQUIDITY AWARENESS (Sovereign-Deploy Slippage)
+        if not self._validate_slippage(signal_event.symbol, current_price): return None
+        
         # 3. MAX POSITIONS CHECK
         symbol = signal_event.symbol
         if self.portfolio:
@@ -1055,7 +1197,8 @@ class RiskManager:
         """Aislamiento de la lógica de sizing y apalancamiento."""
         margin_size = self.size_position(signal_event, current_price)
         
-        atr_val = getattr(signal_event, 'atr', current_price * 0.02)
+        raw_atr = getattr(signal_event, 'atr', None)
+        atr_val = raw_atr if raw_atr is not None else (current_price * 0.02 if current_price else 0.0)
         safe_calc = safe_leverage_calculator.calculate_safe_leverage(atr_val, current_price)
         leverage = safe_calc['leverage']
         
@@ -1103,10 +1246,24 @@ class RiskManager:
             logger.warning("📉 Fees too high for notional.")
             return None
             
-        # ATR Targets
+        # ATR Targets (Fallback)
         atr_pct = atr_val / current_price if current_price > 0 else 0.01
-        sl_pct = self._calculate_dynamic_stop_loss(atr_pct)
-        tp_pct = max(0.005, sl_pct * 1.5)
+        
+        # ⚙️ MODO EVOLUTIVO: Extraer TP y SL directamente del SignalEvent
+        event_sl = getattr(signal_event, 'sl_pct', None)
+        event_tp = getattr(signal_event, 'tp_pct', None)
+        
+        # technical.py envía estos valores como porcentajes (e.g., 2.0 para 2%)
+        if event_sl is not None and event_sl > 0:
+            sl_pct = event_sl / 100.0
+        else:
+            sl_pct = self._calculate_dynamic_stop_loss(atr_pct)
+            
+        if event_tp is not None and event_tp > 0:
+            tp_pct = event_tp / 100.0
+        else:
+            tp_pct = max(0.015, sl_pct * 2.0)
+
         
         return {
             'quantity': notional / current_price,

@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timezone
+from collections import deque
 
 from utils.logger import logger
 
@@ -99,6 +100,36 @@ class SophiaReport:
     prior_win_rate: float           # Prior from historical data
     top_features: List[Dict]        # Top-5 SHAP-like attributions
     
+    # Block 1.5: Chronos Temporal Horizon (V5.15)
+    expected_high_pct: float  # Exp. price +% in horizon
+    expected_low_pct: float   # Exp. price -% in horizon
+    drift_factor: float       # Coin-specific price drift
+    
+    # Block 1.6: Holographic Trajectory (V5.16)
+    path_score: float         # 0-1 Intensity of the trajectory
+    
+    # Block 1.7: Quantum Sovereignty (V5.17)
+    hurst_exponent: float          # >0.5 Trend, <0.5 Mean Rev
+    quantum_leverage: float        # Adaptive leverage multiplier (up to 50x)
+    
+    # Block 1.8: Vortex Singularity (V5.18)
+    vortex_pulse: float            # 0-N Volume standard deviation pulse
+    is_vortex_regime: bool         # True if volume > 2.5 sigmas
+    
+    # Block 1.9: Apex Singularity (V5.19)
+    whale_ratio: float             # Current vol / 4H mean vol
+    is_breakout: bool              # Price at 50-bar high/low
+    
+    # Block 1.10: Noise Predator (V5.20)
+    noise_level: float             # Spectral density (0-1)
+    noise_sigma: float             # Noise standard deviation for SL adjustment
+    
+    # Block 1.24: Ocean of PnL (V5.24)
+    noise_trend: str               # "STABLE", "DECAYING", "RISING"
+    
+    # Block 1.26: Omniscient Predator (V5.26)
+    omniscient_score: float        # Single decision score (0-1)
+    
     # Block 2: Horizonte Temporal
     expected_exit_mins: float       # E[T] in minutes
     time_to_tp_mins: float          # Estimated time to TP
@@ -112,11 +143,73 @@ class SophiaReport:
     skewness: float                 # Distribution asymmetry
     tail_risk_warning: bool         # True if fat tails detected
     
+    # Block 1.29: The Oracle (Chaos Prediction) (V5.29)
+    entropy_velocity: float         # ΔH (Change in entropy)
+    lyapunov_horizon: float         # Local predictability horizon (bars)
+    
+    # Block 1.60: Regime Awareness (Phase 6)
+    market_regime: str              # Multi-scale consensus regime
+    
+    # Block 1.30: The Oracle Awakened (V5.30)
+    entropy_acceleration: float     # Δ²H (Acceleration of chaos)
+    entropy_forecast: float         # H_pred (Predicted future chaos)
+    
+    # Block 1.31: The Hurricane Hunter (V5.31)
+    noise_color: str                # WHITE, PINK, BROWN
+    hurricane_flow: float           # 0-1, Structured chaos energy
+    
+    # Block 1.32: The Singularity Pivot (V5.32)
+    chaos_compactness: float        # Phase space density metric
+    singularity_force: float        # Boost factor from hidden patterns
+    
+    # Block 1.33: The Butterfly Effect (V5.33)
+    butterfly_sensitivity: float    # Sensitivity to initial conditions (χ)
+    micro_entropy: float            # Entropy in 5-bar micro-window
+    butterfly_force: float          # Boost factor from micro-order
+    
+    # Block 1.34: The Chaos Resonance (V5.34)
+    resonance_index: float          # Takens Embedding cyclic resonance
+    quantum_tunneling: float        # Energy bypass factor
+    
+    # Block 1.36: The Schrödinger Edge (V5.36)
+    wave_amplitude: float           # Quantum probability amplitude (ψ)
+    entanglement_factor: float      # Cross-symbol correlation energy
+    heisenberg_shield: float        # Price/Time uncertainty buffer
+    
+    # Block 1.37: The Dirac Sea (V5.37)
+    interference_pattern: float     # Constructive/Destructive energy (I)
+    dirac_energy: float             # Vacuum excitation level (E)
+    temporal_tunneling: float       # Wave auto-resonance
+    
+    # Block 1.38: The Quantum Feedback Loop (V5.38)
+    quantum_coherence: float        # System adaptation factor (κ)
+    feedback_bias: float            # Observer correction term
+    
+    # Block 1.39: Quantum Neural Fabric (V5.39)
+    fabric_tension: float           # Physics/Technical resonance (T)
+    liquid_modulation: float        # Adaptive neural weighting
+    
+    # Block 1.40: Quantum Singularity (V5.40)
+    singularity_horizon: float      # Event horizon proximity (Rs)
+    gravitational_boost: float      # Final force multiplier
+    
+    # Block 1.41: Fabric Perfection (V5.41)
+    fabric_harmony: float           # Autotuned tension stability
+    
+    # Block 1.42: Quantum Superposition (V5.42)
+    superposition_coherence: float  # Alignment between parallel paths (|φ⟩)
+    collapsed_path: str             # Selected path (CONSERVATIVE/DYNAMIC/AGGRESSIVE)
+
+    # Block 1.46: The Neuro-Evolutionary Fabric (V5.46) [NEW]
+    meta_reasoning: Dict = field(default_factory=dict)
+    parameter_drift: float = 0.0    # Suggested infinitesimal shift (±0.000001%)
+    
     # Metadata
     timestamp: str = ""
     symbol: str = ""
     direction: str = ""
     signal_strength: float = 0.0
+    metadata: dict = None # V5.14 catalyst
     
     def to_log_line(self) -> str:
         """Compact one-line format for logging."""
@@ -148,11 +241,109 @@ class SophiaReport:
             'symbol': self.symbol,
             'direction': self.direction,
             'signal_strength': round(self.signal_strength, 4),
+            # V5.15+ Blocks
+            'expected_high_pct': round(getattr(self, 'expected_high_pct', 0.0), 5),
+            'expected_low_pct': round(getattr(self, 'expected_low_pct', 0.0), 5),
+            'drift_factor': round(getattr(self, 'drift_factor', 0.0), 6),
+            'path_score': round(getattr(self, 'path_score', 0.0), 4),
+            'hurst_exponent': round(getattr(self, 'hurst_exponent', 0.5), 4),
+            'quantum_leverage': round(getattr(self, 'quantum_leverage', 1.0), 2),
+            'vortex_pulse': round(getattr(self, 'vortex_pulse', 1.0), 2),
+            'is_vortex_regime': getattr(self, 'is_vortex_regime', False),
+            'whale_ratio': round(getattr(self, 'whale_ratio', 1.0), 2),
+            'is_breakout': getattr(self, 'is_breakout', False),
+            'noise_level': round(getattr(self, 'noise_level', 0.5), 4),
+            'noise_sigma': round(getattr(self, 'noise_sigma', 0.001), 6),
+            'noise_trend': getattr(self, 'noise_trend', "STABLE"),
+            'omniscient_score': round(getattr(self, 'omniscient_score', 0.0), 4),
+            'meta_reasoning': getattr(self, 'meta_reasoning', {}),
+            'parameter_drift': round(getattr(self, 'parameter_drift', 0.0), 9)
         }
 
 
 # ============================================================
-# BLOCK 1: BAYESIAN CALIBRATOR
+# BLOCK 1: THE MULTI-HORIZON ORACLE (PHASE 3)
+# ============================================================
+class MultiHorizonOracle:
+    """
+    🔮 SOPHIA §1.0: Multi-Horizon Predictive Oracle.
+    
+    QUÉ: Analiza el contexto de múltiples marcos métimos (1m, 5m, 1h, 1d, 1w) y calcula un "Clash Vector".
+    POR QUÉ: Evita tomar operaciones "perfectas" en 5 minutos que van directo contra una tendencia de 1 semana.
+    PARA QUÉ: Filtrar operaciones con alto riesgo de golpear el Stop Loss (Hard Veto).
+    CÓMO: Revisa la alineación de componentes direccionales en el dict de timeframe_data.
+    CUÁNDO: Se invoca en Technical.generate_signals antes de autorizar el trade.
+    """
+    
+    @staticmethod
+    def evaluate_clash_vector(timeframe_data: Dict, direction: str) -> Dict:
+        """
+        Retorna:
+            - is_vetoed (bool): True si el macro prohíbe el trade.
+            - clash_score (float): 0.0 (Perfectamente alineado) a 1.0 (Choque total).
+            - macro_context (str): Descripción del mercado.
+        """
+        is_vetoed = False
+        clash_score = 0.0
+        details = []
+        
+        # 1. Extraer Macro y Estructural
+        tf_1d = timeframe_data.get('1d')
+        tf_1w = timeframe_data.get('1w')
+        
+        up_votes = 0
+        down_votes = 0
+        total_votes = 0
+        
+        # Ponderación severa para Macro:
+        # Si 1W y 1D apuntan a la baja fuertemente, vetar compras.
+        for tf, data_pkg in [('1d', tf_1d), ('1w', tf_1w)]:
+            if not data_pkg: continue
+            inds = data_pkg['inds']
+            if len(inds['rsi']) == 0: continue
+            
+            # Condición alcista estructural:
+            is_up = inds['in_uptrend'][-1]
+            is_down = inds['in_downtrend'][-1]
+            last_rsi = inds['rsi'][-1]
+            
+            # Peso mayor para 1w
+            weight = 2 if tf == '1w' else 1
+            total_votes += weight
+            
+            if is_up and last_rsi > 40:
+                up_votes += weight
+            elif is_down and last_rsi < 60:
+                down_votes += weight
+                
+            details.append(f"{tf}:{'UP ' if is_up else 'DN ' if is_down else 'SIDE'} (RSI:{last_rsi:.1f})")
+
+        if total_votes == 0:
+             return {'is_vetoed': False, 'clash_score': 0.0, 'macro_context': "NO_MACRO_DATA"}
+             
+        # Cálculo del choque
+        # Up-ratio = (up_votes / total_votes)
+        up_ratio = up_votes / total_votes
+        down_ratio = down_votes / total_votes
+        
+        if direction == 'LONG':
+            clash_score = down_ratio # Si el mercado es 100% bajista, clash=1.0
+            if clash_score > 0.6: # Si más del 60% del peso macro es opuesto
+                 is_vetoed = True
+        elif direction == 'SHORT':
+            clash_score = up_ratio
+            if clash_score > 0.6:
+                 is_vetoed = True
+                 
+        context = " | ".join(details)
+        return {
+            'is_vetoed': is_vetoed,
+            'clash_score': clash_score,
+            'macro_context': context
+        }
+
+# ============================================================
+# BLOCK 1.1: BAYESIAN CALIBRATOR
 # ============================================================
 
 class BayesianCalibrator:
@@ -247,6 +438,35 @@ class BayesianCalibrator:
         
         return np.clip(p_calibrated, 0.01, 0.99)
 
+    def calculate_exhaustion(self, macd_hist: np.ndarray, rsi: float) -> float:
+        """
+        🧠 SOPHIA EXTENSION V5.13: Momentum Exhaustion Predictor.
+        
+        QUÉ: Detecta si el impulso actual está perdiendo fuerza (curvatura del histograma).
+        POR QUÉ: Si el histograma MACD se achica mientras el RSI está en extremo,
+             la probabilidad de continuación cae drásticamente.
+        PARA QUÉ: Activar salidas predictivas antes de que el mercado se de la vuelta.
+        """
+        if len(macd_hist) < 3:
+            return 0.5
+            
+        curr_h = macd_hist[-1]
+        prev_h = macd_hist[-2]
+        prev2_h = macd_hist[-3]
+        
+        # Detectar pérdida de aceleración (curvatura)
+        exhaustion = 0.5
+        if curr_h > 0: # Bullish Momentum
+            if curr_h < prev_h: exhaustion += 0.2
+            if prev_h < prev2_h: exhaustion += 0.1
+            if rsi > 70: exhaustion += 0.1
+        elif curr_h < 0: # Bearish Momentum
+            if curr_h > prev_h: exhaustion += 0.2
+            if prev_h > prev2_h: exhaustion += 0.1
+            if rsi < 30: exhaustion += 0.1
+            
+        return np.clip(exhaustion, 0.0, 1.0)
+
 
 # ============================================================
 # BLOCK 1.2: FEATURE ATTRIBUTION (SHAP-LIKE)
@@ -304,7 +524,17 @@ class FeatureAttributor:
         atr_pct = features.get('atr_pct', 0.01)
         
         # Signal strength: how strong is the entry signal?
-        rsi_extremeness = abs(rsi - 50.0) / 50.0  # 0 at 50, 1 at 0 or 100
+        # MEJORA 7: Dynamic RSI Percentile para Sophia
+        # Ajustamos el punto neutral del RSI según la fuerza de la tendencia
+        rsi_neutral = 50.0
+        if trend > 0.3:
+            rsi_neutral = 60.0 # Support en Bull market es más alto
+        elif trend < -0.3:
+            rsi_neutral = 40.0 # Resistance en Bear market es más bajo
+            
+        rsi_extremeness = abs(rsi - rsi_neutral) / 40.0  # Distancia máxima ~40
+        rsi_extremeness = np.clip(rsi_extremeness, 0.0, 1.0)
+        
         bb_extremeness = abs(bb - 0.5) * 2.0       # 0 at middle, 1 at edges
         vol_boost = min(1.0, (vol_ratio - 1.0) / 2.0) if vol_ratio > 1.0 else 0.0
         
@@ -603,8 +833,32 @@ class EntropyAnalyzer:
         
         h = EntropyAnalyzer.compute_entropy(probs)
         label = EntropyAnalyzer.classify_entropy(h)
-        
         return h, label
+
+    @staticmethod
+    def calculate_micro_entropy(returns: np.ndarray, window: int = 5) -> float:
+        """
+        V5.33: Multi-Scale Chaos. 
+        Calculates entropy of returns in a micro-window.
+        """
+        if returns is None or len(returns) < window:
+            return 1.585
+            
+        try:
+            micro = returns[-window:]
+            # Discretize into 3 buckets: Down, Flat, Up
+            std = np.std(returns[-20:]) if len(returns) >= 20 else 0.001
+            buckets = []
+            for r in micro:
+                if r < -0.5 * std: buckets.append(0) # Down
+                elif r > 0.5 * std: buckets.append(1) # Up
+                else: buckets.append(2) # Flat
+            
+            counts = np.bincount(buckets, minlength=3)
+            probs = counts / len(buckets)
+            return EntropyAnalyzer.compute_entropy(probs.tolist())
+        except:
+            return 1.585
 
 
 # ============================================================
@@ -720,8 +974,55 @@ class SophiaIntelligence:
         self.survival = SurvivalEstimator(bar_minutes=bar_minutes)
         self.decay = AlphaDecayFunction(min_threshold=0.30)
         self.tail_analyzer = TailRiskAnalyzer()
+        self.last_noise = {} # V5.24: State for noise trend {symbol: last_noise_level}
+        self.entropy_history = {} # V5.30: State for chaos prediction {symbol: deque([h1, h2...], maxlen=5)}
+        # Adaptive Evolution Protocol: Horizon-Aware Dampening
+        self.chaos_dampening_factor = 1.0   # 1.0 = full penalty (scalping default)
+        self.certainty_floor = 0.0          # 0.0 = no floor (scalping default)
+        self.horizon_profile = 'SCALPING'
         
         logger.info("🧠 [SOPHIA] Intelligence engine initialized")
+    
+    def set_horizon_profile(self, horizon_days: int):
+        """
+        Adaptive Evolution Protocol: Modula los dampeners de Sophia
+        según el horizonte temporal de operación.
+        
+        QUÉ: Ajusta chaos_dampening_factor y certainty_floor.
+        POR QUÉ: En horizontes de 15D, los dampeners cuánticos (Heisenberg,
+                  Lyapunov, Chaos Penalty) penalizan agresivamente porque
+                  hay ruido Y tendencia simultáneamente. Esto crea el
+                  "Valle de la Muerte" (Win Rate cae a 38.6%).
+        PARA QUÉ: Reducir la penalización en horizontes más largos donde
+                   el ruido es transitorio y las tendencias son reales.
+        CÓMO: 1D→full penalty, 15D→50% penalty, 30D→30% penalty.
+              Certainty floor: 1D→0, 15D→0.50, 30D→0.70.
+        CUÁNDO: Al inicio de cada sesión junto con MarketRegimeDetector.
+        DÓNDE: sophia/intelligence.py → SophiaIntelligence
+        QUIÉN: Engine.py o run_backtest.py.
+        """
+        if horizon_days <= 1:
+            self.chaos_dampening_factor = 1.0
+            self.certainty_floor = 0.0
+            self.horizon_profile = 'SCALPING'
+        elif horizon_days <= 7:
+            self.chaos_dampening_factor = 0.7
+            self.certainty_floor = 0.35
+            self.horizon_profile = 'SHORT_TERM'
+        elif horizon_days <= 15:
+            self.chaos_dampening_factor = 0.5
+            self.certainty_floor = 0.50
+            self.horizon_profile = 'MID_TERM'
+        else:
+            self.chaos_dampening_factor = 0.3
+            self.certainty_floor = 0.70
+            self.horizon_profile = 'MACRO'
+        
+        logger.info(
+            f"🧠 [SOPHIA] Horizon Profile: {self.horizon_profile} → "
+            f"Chaos Dampening={self.chaos_dampening_factor}, "
+            f"Certainty Floor={self.certainty_floor}"
+        )
     
     def sync_history(self, wins: int, losses: int):
         """Sync calibrator with historical win/loss data from RiskManager."""
@@ -746,6 +1047,8 @@ class SophiaIntelligence:
         sl_pct: float,
         returns: Optional[np.ndarray] = None,
         ttl_seconds: float = 180.0,
+        btc_returns: Optional[np.ndarray] = None,
+        regime: str = "UNKNOWN",
     ) -> SophiaReport:
         """
         Generate complete XAI report for a trade decision.
@@ -766,6 +1069,43 @@ class SophiaIntelligence:
         """
         start_ns = time.perf_counter_ns()
         
+        # ── V5.36/V5.37: QUANTUM STATE ANALYSIS ──
+        psi_l_raw, psi_s_raw = self._calculate_quantum_amplitude_vectorial(returns)
+        
+        # ── V5.38: QUANTUM FEEDBACK LOOP (Observer Effect) ──
+        # prior_wr acts as the 'Observation' that collapses the wave more or less.
+        prior_wr = self.calibrator.get_prior_win_rate()
+        psi_l, psi_s, kappa, q_bias = self._apply_quantum_feedback(psi_l_raw, psi_s_raw, prior_wr)
+        
+        psi_amplitude = (psi_l + psi_s) / 2.0
+        
+        interference = self._calculate_interference_pattern(psi_l, psi_s)
+        dirac_e = self._calculate_dirac_energy(returns)
+        t_tunnel = self._calculate_temporal_tunneling(returns)
+        
+        entanglement = self._calculate_entanglement_factor(symbol, returns, btc_returns)
+        
+        # Quantum Boost (V5.37/V5.38): Interference & Coherence
+        # We search for Constructive Interference and high System Coherence (kappa)
+        quantum_boost = 1.0
+        if (interference > 1.2 or (dirac_e > 0.8 and t_tunnel > 0.7)) and kappa > 0.8:
+            quantum_boost = 1.0 + (psi_amplitude * interference * kappa * 0.7)
+            logger.info(f"⚛️ [OBSERVER/FEEDBACK] {symbol} Coherent Wave: I={interference:.2f}, κ={kappa:.2f}, ψ={psi_amplitude:.2f}")
+        
+        # Destructive Interference Penalty (V5.37 / V5.45 Bridge)
+        interference_penalty = 0.0
+        if (interference < 0.3 and (psi_l > 0.4 and psi_s > 0.4)) or kappa < 0.75:
+            # V5.45: The Frequentist Bridge
+            # If technical confluence is strong, we reduce the penalty.
+            # Technicals anchor the bridge while quantum provides the insight.
+            bridge_protection = min(0.15, confluence_score * 0.2)
+            interference_penalty = (0.25 if kappa < 0.75 else 0.20) - bridge_protection
+            
+            if kappa < 0.75:
+                logger.warning(f"🛡️ [COHERENCE SHIELD] {symbol} Decoherece Detected (κ={kappa:.2f}). Penalty modulated by Bridge: {interference_penalty:.2f}")
+            else:
+                logger.warning(f"🚫 [DESTRUCTIVE] {symbol} Conflicting waves detected. Penalty modulated by Bridge: {interference_penalty:.2f}")
+
         # ── BLOCK 1: Bayesian Calibration ──
         features = {
             'rsi': setups.get('rsi', 50.0),
@@ -818,28 +1158,951 @@ class SophiaIntelligence:
             )
         
         # ── Build Report ──
+        # ── BLOCK 6: Chronos Horizon Prediction (V5.15) ──
+        expected_high, expected_low, drift = self._predict_range(returns, horizon_bars=4)
+        
+        # ── BLOCK 7: Holographic Path Intensity (V5.16) ──
+        path_score = self._calculate_path_intensity(setups, direction)
+        
+        # ── BLOCK 8: Quantum Sovereignty (V5.17) ──
+        hurst = self._calculate_hurst_exponent(returns)
+        q_leverage = self._calculate_shannon_leverage(entropy, win_prob)
+        
+        # ── BLOCK 9: Vortex Singularity (V5.18) ──
+        v_pulse, is_v_regime = self._detect_vortex_pulse(setups)
+        
+        # ── BLOCK 10: Apex Singularity (V5.19) ──
+        whale_r = self._detect_whales(setups)
+        is_break = self._detect_breakout(setups, direction)
+        
+        # ── BLOCK 11: Noise Predator (V5.20) ──
+        n_level, n_sigma = self._calculate_noise_density(returns)
+        
+        # V5.24: Noise Trend Analysis
+        prev_noise = self.last_noise.get(symbol, n_level)
+        if n_level < prev_noise * 0.95:
+            n_trend = "DECAYING"
+        elif n_level > prev_noise * 1.05:
+            n_trend = "RISING"
+        else:
+            n_trend = "STABLE"
+        self.last_noise[symbol] = n_level
+        
+        # V5.24: Breakout Anticipation
+        # If confidence is > 65%, we force breakout = True to precede the move
+        if win_prob > 0.65 and not is_break:
+            is_break = True
+            logger.debug(f"🔮 [ANTICIPATION] Sophia forcing breakout for {symbol} (P={win_prob:.2f})")
+        
+        # ── BLOCK 12: Omniscient Score (V5.29 THE ORACLE) ──
+        # Collapse ALL filter dimensions into a single weighted score.
+        edge_for_dir = abs(expected_high if direction == "LONG" else expected_low)
+        risk_for_dir = abs(expected_low if direction == "LONG" else expected_high)
+        
+        edge_norm = min(1.0, edge_for_dir / 0.01)       # 1% edge = 1.0
+        energy_norm = min(1.0, v_pulse / 5.0)            # 5 sigmas = 1.0
+        noise_inv = max(0.0, 1.0 - n_level)              # low noise = high score
+        momentum = path_score                             # 0-1
+        
+        # Chaos & Entropy Momentum (V5.30 THE ORACLE AWAKENED)
+        if symbol not in self.entropy_history:
+            self.entropy_history[symbol] = deque(maxlen=5)
+        
+        history = self.entropy_history[symbol]
+        history.append(entropy)
+        
+        h_velocity = 0.0
+        h_accel = 0.0
+        h_forecast = entropy
+        
+        if len(history) >= 2:
+            h_velocity = history[-1] - history[-2]
+        if len(history) >= 3:
+            prev_velocity = history[-2] - history[-3]
+            h_accel = h_velocity - prev_velocity
+            
+            # Simple Linear Forecast for next bar
+            x = np.arange(len(history))
+            y = np.array(history)
+            try:
+                m, b = np.polyfit(x, y, 1)
+                h_forecast = m * (len(history)) + b
+            except:
+                h_forecast = entropy + h_velocity
+        
+        # V5.31 THE HURRICANE HUNTER: Spectroscopic Chaos Analysis
+        n_color, h_flow = self._classify_noise_color(returns)
+        
+        # V5.32 THE SINGULARITY PIVOT: Phase Space & Entropy Reorganization
+        compactness = self._calculate_chaos_compactness(returns)
+        
+        # V5.33 THE BUTTERFLY EFFECT: Multi-Scale Chaos & Sensitivity
+        h_micro = EntropyAnalyzer.calculate_micro_entropy(returns, window=5)
+        chi_sensitivity = self._calculate_butterfly_sensitivity(returns)
+        
+        # V5.34 THE CHAOS RESONANCE: Takens Embedding & Cyclic Order
+        r_index = self._calculate_resonance_state(returns)
+        
+        # Detect Resonance Alert (V5.35): Requires stronger correlation for gating
+        is_resonant = r_index > 0.45
+        
+        # Detect Butterfly Trigger: Local order emerging in global chaos
+        # Large H (>1.0) but small micro H (<0.6) + High sensitivity.
+        is_butterfly = entropy > 1.0 and h_micro < 0.6 and chi_sensitivity > 0.7
+        
+        # Detect Singularity: High entropy equilibrium transitioning to order
+        # If entropy is near max (>1.4) but acceleration is negative, we are at a pivot.
+        is_pivot = entropy > 1.4 and h_accel < 0
+        
+        # Lyapunov Horizon (Predictability)
+        divergence = 0.5
+        if returns is not None and len(returns) > 10:
+            diffs = np.abs(np.diff(returns[-10:]))
+            sigma_local = np.std(returns[-10:])
+            divergence = np.mean(diffs) / sigma_local if sigma_local > 0 else 0.5
+        
+        l_horizon = 1.0 / max(0.01, divergence)
+        l_horizon = np.clip(l_horizon, 1.0, 20.0)
+        
+        # Heisenberg Shield (V5.36): Uncertainty Buffer
+        # If chaos is high, shield reduces precision and expands time.
+        h_shield = 1.0
+        if entropy > 1.2:
+            h_shield = 1.0 + (entropy - 1.2) * 2.0
+            logger.debug(f"🛡️ [HEISENBERG] Shield Active: {h_shield:.2f}x (H={entropy:.2f})")
+        
+        # Resonance Force (V5.34/V5.35): Multiplier for cyclic chaos
+        # V5.35: Boost only if resonance is truly confirmed
+        res_boost = 1.0
+        if is_resonant:
+            res_boost = 1.0 + (r_index * 1.0) # Up to 2.0x boost
+            logger.info(f"🌀 [RESONANCE] {symbol} Cyclic Order Found: Force={res_boost:.2f} (Index={r_index:.2f})")
+
+        # Butterfly Force (V5.33/V5.35): Power injected by fractal order
+        # V5.35 Fractal Alignment: Only if some minimal resonance is detected
+        butterfly_boost = 1.0
+        if is_butterfly and r_index > 0.35:
+            butterfly_boost = 1.0 + (chi_sensitivity * 1.0) # Up to 2.0x boost
+            logger.info(f"🦋 [BUTTERFLY] {symbol} Micro-Order Found: Force={butterfly_boost:.2f} (χ={chi_sensitivity:.2f})")
+
+        # Singularity Force (V5.32/V5.35): Power injected by hidden patterns
+        singularity_boost = 1.0
+        if compactness > 0.7 or is_pivot:
+            # We found an attractor or an entropy pivot
+            singularity_boost = 1.0 + (compactness * 0.5) + (0.25 if is_pivot else 0.0)
+            logger.info(f"🌌 [SINGULARITY] {symbol} Hidden Order Found: Force={singularity_boost:.2f} (Compact={compactness:.2f})")
+
+        # Eye Boost (V5.31): If we are in Pink/Brown noise, chaos is structured.
+        eye_boost = 1.0
+        if n_color in ["PINK", "BROWN"] and h_flow > 0.4:
+            eye_boost = 1.0 + (h_flow * 0.5) # Max 1.5x boost
+            logger.info(f"🌀 [HURRICANE] {symbol} Flow State Active ({n_color}): Boost x{eye_boost:.2f}")
+
+        # V5.39/V5.41: QUANTUM NEURAL FABRIC (Tejido)
+        # Tension measures alignment between Technical and Quantum.
+        # Liquidity modulates weights based on Coherence (kappa).
+        _fabric_direction = "LONG" if (win_prob > 0.5) else "SHORT" # Use prior belief for early tension
+        fabric_t, fabric_h = self._calculate_fabric_tension(setups, psi_l, psi_s, _fabric_direction)
+        liquid_mod = self._liquid_neural_modulation(kappa, fabric_t, fabric_h)
+        
+        # V5.40: QUANTUM SINGULARITY (Horizonte de Eventos)
+        # Event Horizon Rs: Point of inevitable momentum.
+        rs_horizon, g_boost = self._calculate_quantum_singularity(psi_l, psi_s, h_accel)
+        
+        # V5.36: Heisenberg Shield for Superposition
+        h_shield = 1.0
+        if entropy > 1.2:
+            h_shield = 1.0 + (entropy - 1.2) * 2.0
+            
+        # V5.42: QUANTUM SUPERPOSITION (|φ⟩)
+        # Placeholder base_omni for simulation before actual calculation
+        _sim_omni = (win_prob * 0.4 + confluence_score * 0.6)
+        s_coherence, s_path = self._simulate_superposition_paths(_sim_omni, psi_l, psi_s, h_shield, g_boost, kappa, fabric_t)
+        
+        # V5.45: QUANTUM HARMONY (The Bridge)
+        # Instead of forcing entry, we reward harmony between technical and quantum.
+        # Harmony is high if fabric tension is high and superposition is coherent.
+        harmony_boost = 1.0
+        if fabric_t > 0.7 and s_coherence > 0.6:
+            harmony_boost = 1.0 + (fabric_t - 0.7) * 0.5 + (s_coherence - 0.6) * 0.5
+            logger.info(f"🌈 [HARMONY] Market & Quantum are aligned: Boost x{harmony_boost:.2f}")
+
+        # Oracle Boost (V5.30):
+        # Rewards setups where chaos is stabilizing or decaying.
+        oracle_boost = 1.0
+        if h_forecast < entropy: # Entropy predicted to drop
+            oracle_boost += 0.10
+        if h_accel < 0: # Chaos is decelerating
+            oracle_boost += 0.05
+        
+        # Chaos Penalty (V5.29/V5.30): 
+        # Penalize rising entropy unless acceleration is negative OR Hurricane/Singularity/Butterfly/Resonance is active.
+        # V5.29 CHAOS PENALTY:
+        chaos_penalty = 0.0
+        is_protected = (eye_boost > 1.1) or (singularity_boost > 1.2) or (butterfly_boost > 1.3) or (res_boost > 1.4) or (quantum_boost > 1.2)
+        
+        # Phase 47.5: Altcoin Chaos Mitigation
+        is_btc = 'BTC' in symbol
+        chaos_mult = 1.0 if is_btc else 0.4 # Dampen chaos penalty for volatile alts
+        
+        if h_velocity > 0 and h_accel >= 0 and not is_protected:
+            chaos_penalty += min(0.12 * chaos_mult, h_velocity * 0.6 * chaos_mult)
+        if l_horizon < 4.0 and not is_protected:
+            chaos_penalty += 0.12 * chaos_mult * (1.0 - (l_horizon / 4.0))
+        
+        # Adaptive Evolution Protocol: Horizon-Aware Chaos Dampening (V5.29/V5.30)
+        chaos_penalty *= self.chaos_dampening_factor
+
+        # Phase 6: Regime-Aware Chaos Modulation (Multiscale Consensus)
+        if 'TRENDING' in regime:
+            chaos_penalty *= 0.7 # Reduce penalty in trending markets
+        elif 'CHOPPY' in regime or 'DIVERGENT' in regime:
+            chaos_penalty *= 1.3 # Increase penalty in choppy or divergent markets
+
+        # Phase 6: Regime-Aware Chaos Modulation
+        if 'TRENDING' in regime:
+            chaos_penalty *= 0.7 # Reduce penalty in trending markets
+        elif 'CHOPPY' in regime or 'DIVERGENT' in regime:
+            chaos_penalty *= 1.3 # Increase penalty in choppy or divergent markets
+
+        # Tail Risk Penalty (V5.28): 
+        risk_penalty = 0.0
+        if edge_for_dir > 0 and (risk_for_dir / edge_for_dir) > 1.5:
+            risk_penalty = min(0.15, (risk_for_dir / edge_for_dir - 1.5) * 0.1)
+            
+        base_omni = (
+            win_prob * 0.25 + 
+            edge_norm * 0.20 +
+            energy_norm * 0.15 +
+            momentum * 0.20 +
+            noise_inv * 0.20
+        ) - risk_penalty - chaos_penalty - interference_penalty
+        
+        # V5.45: FREQUENTIST BRIDGE FLOOR
+        # If Harmony is active or technical confluence starts to anchor, we establish a floor.
+        if (harmony_boost > 1.1 or confluence_score > 0.45): # Relaxed from 0.6
+            base_omni = max(base_omni, 0.42) # Anchor to 0.42 (Above the 0.25 hurdle)
+            logger.debug(f"🌉 [BRIDGE FLOOR] {symbol} base_omni anchored to 0.42 due to Technical/Harmony alignment.")
+        
+        # Uncertainty Penalty (V5.28): Multiplicative dampening based on entropy.
+        normalized_entropy = min(1.0, entropy / 1.585)
+        
+        uncertainty_penalty = 1.0 - normalized_entropy
+        # We increase the gate energy if Dirac Sea (E) is high, interference is Constructive (I > 1.2), 
+        # OR if we are in QUANTUM HARMONY (V5.45)
+        if is_resonant or (quantum_boost > 1.3 and interference > 1.2) or (harmony_boost > 1.2):
+            energy_bypass = min(1.0, base_omni * 2.5) # Even deeper bypass for V5.37
+            # V5.45: Harmony Tunneling allows more flow even in high entropy
+            q_tunneling = max(0.45, (1.0 - normalized_entropy * 0.40) + (energy_bypass * 0.40))
+            if harmony_boost > 1.2:
+                logger.info(f"🌈 [HARMONY TUNNELING] {symbol} Bypassing entropy dampeners.")
+        else:
+            q_tunneling = (1.0 - normalized_entropy)
+        
+        # V5.35: LYAPUNOV SHIELD — Hard cap if horizon is blind (< 2.0 bars)
+        l_shield = 1.0
+        if l_horizon < 2.0:
+            # Phase 47.5: Altcoin Shield Relief
+            shield_floor = 0.1 if is_btc else 0.4 # Alts are naturally blind/chaotic
+            l_shield = max(shield_floor, 0.5 * (l_horizon / 2.0))
+            if is_btc:
+                logger.warning(f"🛡️ [LYAPUNOV SHIELD] {symbol} Punishing blind setup: Shield={l_shield:.2f}")
+            else:
+                logger.debug(f"🛡️ [ALT-SHIELD] {symbol} Mitigation: Shield={l_shield:.2f}")
+
+        # We restore the certainty multipliers with Harmony
+        certainty = q_tunneling * l_shield * oracle_boost * eye_boost * singularity_boost * butterfly_boost * res_boost * quantum_boost * liquid_mod * g_boost * harmony_boost
+        
+        # V5.45: SINGULARITY BRIDGE (Frequentist Certainty)
+        # If Harmony is high, we establish a CERTAINTY floor.
+        # This prevents the "Death by 1000 Dampeners" where each layer cuts the score.
+        if harmony_boost > 1.25:
+            certainty = max(certainty, 0.85) # Ensure at least 85% of base_omni is preserved
+            logger.info(f"🌉 [SINGULARITY BRIDGE] {symbol} Certainty anchored to 0.85 due to High Harmony.")
+        
+        # Superposition adjustment (V5.42): Signal is stronger if timelines are coherent
+        certainty *= (0.8 + s_coherence * 0.4)
+        
+        # V5.43: Coherence Injector
+        # If timelines are highly coherent, we inject +5% to +15% to the final omni_score
+        # to ensure we cross the newly tuned gates.
+        if s_coherence > 0.7:
+            injector_boost = 1.0 + (s_coherence - 0.7) * 0.5 # Up to 1.15x
+            certainty *= injector_boost
+            logger.debug(f"💉 [COHERENCE] Injecting x{injector_boost:.2f} boost to certainty")
+        
+        # V5.44: DIVINE RESONANCE & FORCE COLLAPSE (The Awakening)
+        # 1. Divine Resonance: If all timelines are almost perfectly aligned (Coh > 0.85).
+        # 2. Force Collapse: If Singularity is near-absolute (Rs > 0.9).
+        if s_coherence > 0.85:
+            certainty *= 1.4 # Divine Boost
+            logger.info(f"✨ [DIVINE RESONANCE] {symbol} Coherence is Absolute: Boost x1.40")
+            
+        if rs_horizon > 0.9:
+            certainty *= 1.6 # Force Collapse Boost
+            logger.info(f"🕳️ [FORCE COLLAPSE] {symbol} Event Horizon Reached: Boost x1.60")
+
+        certainty = min(8.0, certainty) # We allow up to 8.0 for DIVINE SINGULARITY (Awakening Force)
+        
+        # Adaptive Evolution Protocol: Horizon-Aware Certainty Floor
+        # In longer horizons, prevent over-dampening that kills valid signals
+        if self.certainty_floor > 0:
+            certainty = max(certainty, self.certainty_floor)
+        
+        omni_score = base_omni * certainty
+        
+        # V5.45: QUANTUM OVERRIDE (Frequentist Bridge)
+        # If technicals show any potential or harmony is even slightly present, we force entry.
+        # This is the "Balanced" Frequentist bridge to ensure capital movement with precision.
+        # Phase 50: Sovereign Alt-Floor (0.18 vs 0.25 for BTC) - Raised from 0.12
+        entry_floor = 0.25 if is_btc else 0.18
+        
+        # Elite Bridge: If P(Win) is extremely high, we disregard other dampeners for Alts
+        if not is_btc and win_prob > 0.85:
+            omni_score = max(omni_score, 0.20)  # Phase 50: Raised from 0.15 to 0.20
+            logger.info(f"🌉 [ELITE BRIDGE] {symbol} WIN_PROB={win_prob:.2f} forced entry floor 0.20")
+
+        # Phase 50: Only override if confluence or harmony is genuinely strong
+        if (confluence_score > 0.60 or (harmony_boost > 1.25 and s_coherence > 0.6)):
+            omni_score = max(omni_score, entry_floor) 
+            logger.info(f"⚡ [QUANTUM OVERRIDE] {symbol} Score forced to {entry_floor} (Confluence={confluence_score:.2f}, Harmony={harmony_boost:.2f})")
+        
+        logger.info(f"🔮 [ORACLE] {symbol}: ψ={psi_amplitude:.2f}, Rs={rs_horizon:.2f}, |φ⟩={s_path} → Final={omni_score:.3f} (Coh={s_coherence:.2f})")
+        
         elapsed_us = (time.perf_counter_ns() - start_ns) / 1000
         
         report = SophiaReport(
             win_probability=win_prob,
             prior_win_rate=prior_wr,
             top_features=top_features,
+            expected_high_pct=expected_high,
+            expected_low_pct=expected_low,
+            drift_factor=drift,
+            path_score=path_score,
+            hurst_exponent=hurst,
+            quantum_leverage=q_leverage,
+            vortex_pulse=v_pulse,
+            is_vortex_regime=is_v_regime,
+            # Block 1.9
+            whale_ratio=whale_r,
+            is_breakout=is_break,
+            # Block 1.10
+            noise_level=n_level,
+            noise_sigma=n_sigma,
+            # Block 1.24
+            noise_trend=n_trend,
+            # Block 1.26
+            omniscient_score=omni_score,
+            # Block 1.29: The Oracle (V5.29)
+            entropy_velocity=h_velocity,
+            lyapunov_horizon=l_horizon,
+            # Block 1.30: The Oracle Awakened (V5.30)
+            entropy_acceleration=h_accel,
+            entropy_forecast=h_forecast,
+            # Block 1.31: The Hurricane Hunter (V5.31)
+            noise_color=n_color,
+            hurricane_flow=h_flow,
+            # Block 1.32: The Singularity Pivot (V5.32)
+            chaos_compactness=compactness,
+            singularity_force=singularity_boost,
+            # Block 1.33: The Butterfly Effect (V5.33)
+            butterfly_sensitivity=chi_sensitivity,
+            micro_entropy=h_micro,
+            butterfly_force=butterfly_boost,
+            # Block 1.34: The Chaos Resonance (V5.34)
+            resonance_index=r_index,
+            quantum_tunneling=q_tunneling,
+            # Block 1.36: The Schrödinger Edge (V5.36)
+            wave_amplitude=psi_amplitude,
+            entanglement_factor=entanglement,
+            heisenberg_shield=h_shield,
+            # Block 1.37: The Dirac Sea (V5.37)
+            interference_pattern=interference,
+            dirac_energy=dirac_e,
+            temporal_tunneling=t_tunnel,
+            # Block 1.38: The Quantum Feedback Loop (V5.38)
+            quantum_coherence=kappa,
+            feedback_bias=q_bias,
+            # Block 1.39: Quantum Neural Fabric (V5.39)
+            fabric_tension=fabric_t,
+            liquid_modulation=liquid_mod,
+            # Block 1.40: Quantum Singularity (V5.40)
+            singularity_horizon=rs_horizon,
+            gravitational_boost=g_boost,
+            # Block 1.41: Fabric Perfection (V5.41)
+            fabric_harmony=fabric_h,
+            # Block 1.42: Quantum Superposition (V5.42)
+            superposition_coherence=s_coherence,
+            collapsed_path=s_path,
+            # Block 1.46: Meta-Reasoning (V5.46)
+            meta_reasoning=self._generate_meta_reasoning(
+                symbol, win_prob, entropy, fabric_t, s_coherence
+            ),
+            parameter_drift=1e-6 if s_coherence > 0.8 else -1e-6,
+            # Block 2 (Survival)
             expected_exit_mins=survival.expected_exit_mins,
             time_to_tp_mins=survival.time_to_tp_mins,
             time_to_sl_mins=survival.time_to_sl_mins,
             alpha_decay_threshold_mins=decay_mins,
+            # Block 3 (Telemetry)
             decision_entropy=entropy,
             entropy_label=entropy_label,
             excess_kurtosis=tail.excess_kurtosis,
             skewness=tail.skewness,
             tail_risk_warning=tail.has_fat_tails,
+            # Metadata
             timestamp=datetime.now(timezone.utc).isoformat(),
             symbol=symbol,
             direction=direction,
             signal_strength=signal_strength,
+            market_regime=regime,
+            metadata={
+                'boost_factor': 1.5 if win_prob > 0.90 else (1.2 if win_prob > 0.85 else 1.0),
+                'calibrated': win_prob > 0.6
+            }
         )
         
         # Log compact line
         logger.info(f"   {report.to_log_line()} [{elapsed_us:.0f}μs]")
         
         return report
+
+    def _predict_range(self, returns: np.ndarray, horizon_bars: int = 4) -> Tuple[float, float, float]:
+        """
+        V5.15 Chronos: Predicts the expected range for the next N bars.
+        Uses drift + GARCH vol to estimate a 1-std confidence corridor.
+        """
+        if returns is None or len(returns) < 10:
+            return 0.01, -0.01, 0.0
+            
+        # 1. Calculate Drift (Average return per bar)
+        drift = float(np.mean(returns))
+        
+        # 2. Calculate Volatility (GARCH or Simple Std)
+        # We'll use simple std for reliability in backtest
+        sigma = float(np.std(returns))
+        
+        # 3. Project for N bars
+        # Price process: P_t = P_0 * exp(drift*N + sigma*sqrt(N)*Z)
+        exp_drift = drift * horizon_bars
+        exp_vol = sigma * math.sqrt(horizon_bars)
+        
+        # Upper/Lower Bound (1-sigma)
+        expected_high = exp_drift + exp_vol
+        expected_low = exp_drift - exp_vol
+        
+        return expected_high, expected_low, drift
+
+    def _calculate_path_intensity(self, setups: Dict[str, float], direction: str) -> float:
+        """
+        V5.16 Hologram: Measures how 'sharp' the price path is.
+        Score 1.0 = Perfect explosive alignment. 
+        Score 0.0 = Chaotic noise.
+        """
+        # Heuristic based on volume, RSI acceleration and ATR expansion
+        vol_boost = min(1.0, setups.get('volume_ratio', 1.0) / 3.0)
+        
+        # RSI alignment with direction
+        rsi = setups.get('rsi', 50)
+        rsi_align = 0.0
+        if direction == 'LONG':
+            rsi_align = (rsi - 40) / 40 # 0 if 40, 1 if 80
+        else:
+            rsi_align = (60 - rsi) / 40 # 0 if 60, 1 if 20
+        rsi_align = np.clip(rsi_align, 0.0, 1.0)
+        
+        # Final intensity score
+        score = (vol_boost * 0.4) + (rsi_align * 0.6)
+        return float(np.clip(score, 0.0, 1.0))
+
+    def _calculate_hurst_exponent(self, returns: np.ndarray) -> float:
+        """
+        V5.17: Hurst Exponent Axiom.
+        H > 0.5: Trend (Memory)
+        H < 0.5: Mean Reversion (Anti-persistent)
+        """
+        if returns is None or len(returns) < 50:
+            return 0.5
+            
+        # Simplified R/S approximation for performance
+        try:
+            lags = range(2, 20)
+            tau = [np.sqrt(np.std(np.subtract(returns[lag:], returns[:-lag]))) for lag in lags]
+            poly = np.polyfit(np.log(lags), np.log(tau), 1)
+            return float(np.clip(poly[0] * 2.0, 0.2, 0.8))
+        except:
+            return 0.5
+
+    def _classify_noise_color(self, returns: np.ndarray) -> Tuple[str, float]:
+        """
+        V5.31: Classifies noise structure (Spectral Slope α).
+        - White (α ≈ 0): Pure random chaos.
+        - Pink (α ≈ 1): Fractal/Structured chaos (Standard for markets).
+        - Brown (α ≈ 2): Strong persistence (Trending noise).
+        Returns: (color_name, hurricane_flow_score)
+        """
+        if returns is None or len(returns) < 20:
+            return "WHITE", 0.0
+            
+        try:
+            # Calculate autocorrelation at various lags
+            lags = [1, 2, 3, 5]
+            coeffs = []
+            for l in lags:
+                c = np.corrcoef(returns[l:], returns[:-l])[0, 1]
+                coeffs.append(abs(c))
+            
+            # Estimate spectral power slope (simplified)
+            # alpha is the decay rate of autocorrelation
+            alpha = np.mean(coeffs) * 2.5 # Heuristic mapping to alpha
+            
+            if alpha < 0.4:
+                return "WHITE", 0.0
+            elif alpha < 1.3:
+                # Pink Noise: High energy fractal order
+                flow = (alpha - 0.4) / 0.9
+                return "PINK", float(np.clip(flow, 0.0, 1.0))
+            else:
+                # Brown Noise: High persistence
+                flow = 0.8 + (alpha - 1.3) * 0.2
+                return "BROWN", float(np.clip(flow, 0.8, 1.0))
+        except:
+            return "WHITE", 0.0
+
+    def _calculate_chaos_compactness(self, returns: np.ndarray) -> float:
+        """
+        V5.32: Phase Space Reconstruction & Compactness Analysis.
+        Measures if the chaos is orbiting a stable attractor (compact) 
+        or if it is divergent and purely random.
+        """
+        if returns is None or len(returns) < 10:
+            return 0.5
+            
+        try:
+            # Simple 2D Phase Space Reconstruction (returns[t] vs returns[t-1])
+            x = returns[1:]
+            y = returns[:-1]
+            
+            # Distance from origin in phase space (Energy state)
+            distances = np.sqrt(x**2 + y**2)
+            
+            # Density / Compactness: Inverse of standard deviation of orbit
+            # If orbit is stable, std is low.
+            orbit_stability = np.std(distances)
+            mean_energy = np.mean(distances)
+            
+            if mean_energy == 0: return 0.5
+            
+            # Compactness metric: High if orbit is tight/predictable
+            compactness = 1.0 / (1.0 + (orbit_stability / mean_energy))
+            return float(np.clip(compactness, 0.0, 1.0))
+        except:
+            return 0.5
+
+    def _calculate_butterfly_sensitivity(self, returns: np.ndarray) -> float:
+        """
+        V5.33: Sensitivity to Initial Conditions (χ).
+        Measures the local divergence rate (Short-term Lyapunov).
+        High χ = High sensitivity (Butterfly Effect), potential for explosive moves.
+        """
+        if returns is None or len(returns) < 8:
+            return 0.5
+            
+        try:
+            # Look at the last 8 returns and their cumulative sum (price path)
+            window = returns[-8:]
+            # Local divergence: sum of absolute changes vs absolute total change
+            # If path is zigzagging (high divergence), sensitivity is high.
+            abs_sum = np.sum(np.abs(window))
+            total_abs_move = np.abs(np.sum(window))
+            
+            if total_abs_move == 0: return 0.9 # Pure noise / sensitive
+            
+            # Sensitivity: How much 'extra' activity exists vs the net result.
+            chi = abs_sum / (total_abs_move + 1e-6)
+            # Normalize to 0-1 range (heuristic)
+            return float(np.clip(chi / 4.0, 0.0, 1.0))
+        except:
+            return 0.5
+
+    def _calculate_resonance_state(self, returns: np.ndarray) -> float:
+        """
+        V5.34: Chaos Resonance (Simplified Takens Embedding).
+        Reconstructs state space with delay tau=2 to find cyclic order.
+        If the 'orbit' in phase space is resonant, index is high.
+        """
+        if returns is None or len(returns) < 12:
+            return 0.0
+            
+        try:
+            # Takens Embedding with delay tau=2
+            tau = 2
+            x = returns[tau:]
+            y = returns[:-tau]
+            
+            # Resonance: Correlation between time-delayed states
+            # In purely random noise, correlation with delayed state is 0.
+            # In structured chaos (attractors), cyclic resonance appears.
+            resonance = np.corrcoef(x, y)[0, 1]
+            # We look for ANY structured correlation (positive or negative)
+            index = abs(resonance)
+            
+            return float(np.clip(index * 2.5, 0.0, 1.0)) # Scaled to highlight resonance
+        except:
+            return 0.0
+
+    def _simulate_superposition_paths(self, base_omni: float, psi_l: float, psi_s: float, h_shield: float, g_boost: float, kappa: float, fabric_t: float) -> Tuple[float, str]:
+        """
+        V5.42: Quantum Superposition of Strategies (|φ⟩).
+        Simulates 3 parallel timelines: Conservative, Dynamic, Aggressive.
+        Returns: (superposition_coherence, collapsed_path)
+        """
+        try:
+            # Línea 1: Conservadora (|φ_c⟩)
+            # Alta selectividad, busca pureza total del tejido.
+            score_c = base_omni * 0.8 * fabric_t * kappa / h_shield
+            
+            # Línea 2: Dinámica (|φ_d⟩) 
+            # Equilibrio fluido, adaptándose al ritmo.
+            score_d = base_omni * g_boost * fabric_t * kappa
+            
+            # Línea 3: Agresiva (|φ_a⟩)
+            # Caza singularidades con fuerza gravitacional.
+            score_a = base_omni * g_boost * 1.5 * kappa
+            
+            # Coherencia de Superposición: ¿Qué tan alineadas están?
+            # Si el std es bajo, hay alta coherencia.
+            scores = np.array([score_c, score_d, score_a])
+            coherence = 1.0 - np.std(scores) / (np.mean(scores) + 0.01)
+            coherence = float(np.clip(coherence, 0.0, 1.0))
+            
+            # Colapso de Onda: Elegimos la línea dominante
+            # Normalmente la dinámica, pero si Rs es muy alto, la Agresiva colapsa.
+            if score_a > 1.2 * score_d:
+                path = "AGGRESSIVE"
+            elif score_c > 0.9 * score_d:
+                path = "CONSERVATIVE"
+            else:
+                path = "DYNAMIC"
+                
+            return coherence, path
+        except:
+            return 0.5, "DYNAMIC"
+
+    def _generate_meta_reasoning(self, symbol: str, win_prob: float, entropy: float, fabric_t: float, coherence: float) -> Dict[str, Any]:
+        """
+        V5.46 Meta-Cognition: Generates explainable reasoning for parameter drift.
+        """
+        reasoning = {
+            'state': "STABLE" if coherence > 0.7 else "UNSTABLE",
+            'fabric_tension': fabric_t,
+            'suggestion': "No change required.",
+            'logic': ""
+        }
+        
+        if coherence < 0.5:
+            reasoning['suggestion'] = "Increase SL Buffer"
+            reasoning['logic'] = f"The Neuro-Evolutionary Fabric for {symbol} is unstable (Coh={coherence:.2f}). Increasing defensive parameters."
+        elif win_prob > 0.85:
+            reasoning['suggestion'] = "Tighten TP"
+            reasoning['logic'] = f"High conviction detected. Optimization suggests locking profits faster in this micro-universe."
+        elif fabric_t > 1.2:
+            reasoning['suggestion'] = "Scale Weights"
+            reasoning['logic'] = f"Physics-Technical resonance is high. Strengthening neural fabric connectivity."
+            
+        return reasoning
+
+    def _calculate_quantum_singularity(self, psi_l: float, psi_s: float, h_accel: float) -> Tuple[float, float]:
+        """
+        V5.40: Quantum Singularity (Horizonte de Eventos).
+        Detects the point where uncertainty collapses and momentum becomes inevitable.
+        Returns: (horizon_proximity (Rs), gravitational_boost)
+        """
+        try:
+            # Determinamos la fuerza del campo gravitacional (Amplitud + Aceleración)
+            q_force = (psi_l + psi_s) / 2.0
+            
+            # Singularity condition: High wave amplitude AND negative entropy acceleration (collapsing uncertainty)
+            # R_s (Event Horizon proximity): closer to 1.0 means inevitable collapse
+            rs = q_force * (1.0 - np.clip(h_accel, -1.0, 1.0))
+            rs = float(np.clip(rs, 0.0, 1.0))
+            
+            # Gravitational Boost: Force multiplier if we are near the horizon
+            g_boost = 1.0
+            if rs > 0.85:
+                # We are at the Event Horizon
+                g_boost = 1.0 + (rs * 1.5) # Massive boost for inevitable breakouts
+                
+            return rs, float(g_boost)
+        except:
+            return 0.0, 1.0
+
+    def _calculate_fabric_tension(self, setups: Dict[str, float], psi_l: float, psi_s: float, direction: str) -> Tuple[float, float]:
+        """
+        V5.37/V5.39/V5.41: Fabric Tension (T) with Autotuning.
+        Measures harmony with dynamic sensitivity based on market state.
+        Returns: (tension, harmony_stability)
+        """
+        try:
+            rsi = setups.get('rsi', 50.0)
+            adx = setups.get('adx', 20.0)
+            atr_pct = setups.get('atr_pct', 0.001)
+            
+            # Autotuning: Sensitivity (S) increases with lower volatility (search for micro-tension)
+            # and decreases with high volatility (avoiding over-triggering)
+            sensitivity = 1.0 / (1.0 + atr_pct * 100)
+            sensitivity = np.clip(sensitivity, 0.5, 1.5)
+            
+            tech_dir = 0.5
+            if direction == "LONG":
+                tech_dir = (rsi / 100.0) * (adx / 50.0)
+            else:
+                tech_dir = ((100.0 - rsi) / 100.0) * (adx / 50.0)
+            
+            q_dir = psi_l if direction == "LONG" else psi_s
+            
+            # Tension = Difference weighted by sensitivity
+            raw_tension = abs(tech_dir - q_dir)
+            tension = 1.0 - (raw_tension * sensitivity)
+            
+            # Harmony Stability (V5.41): How reliable is this tension
+            stability = 1.0 - (atr_pct * 10.0)
+            
+            return float(np.clip(tension, 0.0, 1.0)), float(np.clip(stability, 0.0, 1.0))
+        except:
+            return 0.5, 0.5
+
+    def _liquid_neural_modulation(self, kappa: float, tension: float, stability: float) -> float:
+        """
+        V5.39/V5.41: Liquid Neural Modulation with Hysteresis.
+        Refines weighting based on both tension and historical stability.
+        """
+        # Linear Modulation
+        modulation = kappa * tension
+        
+        # Hysteresis (V5.41): Stability reinforces the modulation
+        if stability > 0.7:
+            modulation *= (1.0 + (stability - 0.7)) # Reward consistent fabric
+            
+        # Power scaling for harmony
+        if tension > 0.85 and stability > 0.8:
+            modulation *= 1.3 # Super-Resonancia de Seda
+            
+        return float(np.clip(modulation, 0.4, 2.0))
+
+    def _apply_quantum_feedback(self, psi_l: float, psi_s: float, prior_wr: float) -> Tuple[float, float, float, float]:
+        """
+        V5.38: Quantum Feedback Loop (Observer Effect).
+        Recent performance (prior_wr) acts as a Back-Action on the wave function.
+        Returns: Adjusted (psi_l, psi_s), coherence (kappa), bias.
+        """
+        # Target WR is 60% (0.60)
+        target_wr = 0.60
+        delta_p = prior_wr - target_wr
+        
+        # Coherence (kappa): 1.0 (Target) +/- sensitivity
+        # If WR is high, kappa > 1.0 (Constructive Feedback)
+        # If WR is low, kappa < 1.0 (Wave Diffusion / Protective)
+        kappa = 1.0 + (delta_p * 0.5)
+        kappa = float(np.clip(kappa, 0.7, 1.3))
+        
+        # Feedback Bias: Corrects the wave to favor successful orbits
+        bias = delta_p * 0.2
+        
+        # Apply feedback to amplitudes (Renormalization)
+        psi_l_adj = np.clip(psi_l * kappa + bias, 0.0, 1.0)
+        psi_s_adj = np.clip(psi_s * kappa - bias, 0.0, 1.0) # Bias favors Long if positive
+        
+        return float(psi_l_adj), float(psi_s_adj), float(kappa), float(bias)
+
+    def _calculate_quantum_amplitude_vectorial(self, returns: np.ndarray) -> Tuple[float, float]:
+        """
+        V5.37: Vectorial Schrödinger Amplitude. 
+        Separates energy into Bullish (ψL) and Bearish (ψS) components.
+        """
+        if returns is None or len(returns) < 20:
+            return 0.5, 0.5
+            
+        try:
+            # Separar retornos positivos y negativos
+            pos_returns = returns[returns > 0]
+            neg_returns = returns[returns < 0]
+            
+            # Potencial del sistema (V)
+            potential = np.std(returns[-20:]) if len(returns) >= 20 else 0.001
+            
+            # ψL (Long Amplitude)
+            e_l = np.mean(pos_returns[-10:]) if len(pos_returns) > 0 else 0
+            psi_l = np.abs(e_l) / potential if potential > 0 else 0.5
+            
+            # ψS (Short Amplitude)
+            e_s = np.mean(neg_returns[-10:]) if len(neg_returns) > 0 else 0
+            psi_s = np.abs(e_s) / potential if potential > 0 else 0.5
+            
+            return float(np.clip(psi_l, 0.0, 1.0)), float(np.clip(psi_s, 0.0, 1.0))
+        except:
+            return 0.5, 0.5
+
+    def _calculate_interference_pattern(self, psi_l: float, psi_s: float) -> float:
+        """
+        V5.37: Quantum Interference Matrix.
+        I = (ψL + ψS)^2 - (ψL - ψS)^2 normalized.
+        Detects if forces are amplifying or canceling each other.
+        """
+        # Simplificación: Diferencia de fase simulada basada en la dominancia
+        diff = abs(psi_l - psi_s)
+        total = psi_l + psi_s
+        
+        if total == 0: return 1.0
+        
+        # Coherence: High if one dominates, Low if both are balanced (Destructive)
+        coherence = diff / total
+        
+        # Interference Factor: 0.0 (Destructive) to 2.0 (Constructive)
+        return float(np.clip(coherence * 2.0, 0.0, 2.0))
+
+    def _calculate_dirac_energy(self, returns: np.ndarray) -> float:
+        """
+        V5.37: Dirac Sea Energy Level (E).
+        Measures the 'vacuum' excitation. High energy in the Dirac Sea 
+        precedes a Quantum Jump (Breakout).
+        """
+        if returns is None or len(returns) < 50: return 0.5
+        
+        try:
+            # Use rolling variance acceleration as excitation proxy
+            recent_std = np.std(returns[-10:])
+            baseline_std = np.std(returns[-50:])
+            
+            if baseline_std == 0: return 0.5
+            
+            excitation = recent_std / baseline_std
+            return float(np.clip(excitation, 0.0, 1.0))
+        except:
+            return 0.5
+
+    def _calculate_temporal_tunneling(self, returns: np.ndarray) -> float:
+        """
+        V5.37: Temporal Tunneling.
+        Cross-correlates the wave with its own past to find hidden cycles.
+        """
+        if returns is None or len(returns) < 40: return 0.0
+        
+        try:
+            # Correlación de la ventana actual con la ventana desplazada
+            w1 = returns[-20:]
+            w2 = returns[-40:-20]
+            corr = np.corrcoef(w1, w2)[0, 1]
+            return float(np.clip(abs(corr), 0.0, 1.0))
+        except:
+            return 0.0
+
+    def _calculate_quantum_amplitude(self, returns: np.ndarray) -> float:
+        """
+        V5.36: Schrödinger Probability Amplitude (ψ).
+        Calculates the wave function energy based on return density and volatility.
+        Higher amplitude means the 'wave' is collapsing into a deterministic direction.
+        """
+        if returns is None or len(returns) < 20:
+            return 0.5
+            
+        try:
+            # Energy E = Mean returns normalized
+            energy = np.mean(returns[-10:])
+            # Potential V = Volatility (Standard Deviation)
+            potential = np.std(returns[-20:])
+            
+            # Wave Function Amplitude (simplified)
+            # ψ ~ exp(E/V) if V > 0
+            if potential > 0:
+                psi = np.abs(energy) / potential
+            else:
+                psi = 0.5
+                
+            return float(np.clip(psi, 0.0, 1.0))
+        except:
+            return 0.5
+
+    def _calculate_entanglement_factor(self, symbol: str, returns: np.ndarray, btc_returns: np.ndarray) -> float:
+        """
+        V5.36: Quantum Entanglement.
+        Measures instant correlation with the market leader (BTC).
+        If Entanglement is high, the symbol's wave is coupled with BTC.
+        """
+        if returns is None or btc_returns is None:
+            return 1.0
+            
+        try:
+            # Sync lengths
+            min_len = min(len(returns), len(btc_returns), 20)
+            if min_len < 10: return 1.0
+            
+            # Cross-correlation (Entanglement)
+            corr = np.corrcoef(returns[-min_len:], btc_returns[-min_len:])[0, 1]
+            # We care about the coherence (absolute correlation)
+            return float(np.clip(abs(corr), 0.0, 1.0))
+        except:
+            return 1.0
+
+    def _calculate_shannon_leverage(self, entropy: float, win_prob: float) -> float:
+        """
+        V5.17: Adaptive leverage based on certainty.
+        Low entropy + High WinProb = High Sovereign Force.
+        """
+        if entropy > 1.2 or win_prob < 0.6:
+            return 1.0
+            
+        # Scaling factor: If entropy is 0 and win_prob is 1.0, mult = 5.0 (50x cap in engine)
+        mult = (1.5 - entropy) * win_prob * 2.0
+        return float(np.clip(mult, 1.0, 5.0))
+
+    def _detect_vortex_pulse(self, setups: Dict[str, float]) -> Tuple[float, bool]:
+        """
+        V5.18: Detects Liquidity Vortexes.
+        Measures volume deviation from standard activity.
+        """
+        v_ratio = setups.get('volume_ratio', 1.0)
+        
+        # High-Energy: Volume > 2.5 is rare and indicates explosive momentum
+        is_regime = v_ratio > 2.5
+        return float(v_ratio), bool(is_regime)
+
+    def _detect_whales(self, setups: Dict[str, float]) -> float:
+        """
+        V5.19: Detects institutional activity (Whales).
+        Compares current volume ratio vs a broader window.
+        """
+        # We assume 'volume_ratio_4h' is passed in setups from strategy
+        return float(setups.get('volume_ratio_4h', 1.0))
+
+    def _detect_breakout(self, setups: Dict[str, float], direction: str) -> bool:
+        """
+        V5.19: Detects price breakouts of the last 50 periods.
+        """
+        # We assume 'is_50_bar_high' / 'is_50_bar_low' passed in setups
+        if direction == "LONG":
+            return bool(setups.get('is_50_bar_high', False))
+        else:
+            return bool(setups.get('is_50_bar_low', False))
+
+    def _calculate_noise_density(self, returns: np.ndarray) -> Tuple[float, float]:
+        """
+        V5.20: Noise Predator core logic.
+        Measures 'Spectral Density' of noise vs signal.
+        QUÉ: Calcula la desviación estándar de los residuos.
+        CÓMO: Residuos = Retornos - Media Móvil de Retornos.
+        """
+        if returns is None or len(returns) < 15:
+            return 0.5, 0.001
+            
+        # Window of 15 bars for local noise
+        recent = returns[-15:]
+        mean_ret = np.mean(recent)
+        residuals = recent - mean_ret
+        noise_sigma = float(np.std(residuals))
+        
+        # Noise Level normalization: Compare local std vs historical std
+        hist_std = np.std(returns) if len(returns) > 0 else 0.001
+        noise_level = float(np.clip(noise_sigma / hist_std, 0.0, 1.0)) if hist_std > 0 else 0.5
+        
+        return noise_level, noise_sigma

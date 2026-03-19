@@ -14,6 +14,7 @@
 3. [MANUAL OPERACIONAL](#3-manual-operacional)
 4. [TROUBLESHOOTING Y ANÁLISIS FORENSE](#4-troubleshooting-y-análisis-forense)
 5. [ESTRATEGIA Y MATEMÁTICA](#5-estrategia-y-matemática)
+6. [PHASE 48-49: ONLINE LEARNING & MULTIVERSE](#ph-48-49)
 
 ---
 
@@ -23,9 +24,11 @@
 
 **Trader Gemini NO es un script secuencial.** Es un **sistema asíncrono basado en eventos** (Event-Driven Architecture) diseñado específicamente para:
 
-- **Gestión de capital institucional** con controles de riesgo multinivel
+- **Gestion de capital institucional** con controles de riesgo multinivel
+- **Aprendizaje en Tiempo Real (SGD)**: Adaptación inmediata de pesos neuronales post-trade (Phase 48).
 - **Ejecución de bajo riesgo** mediante deduplicación de señales y TTL validation
 - **Resiliencia operacional** con crash recovery y persistencia atómica en SQLite
+- **Certificación Multiverso**: Validación masiva sobre 26 universos (símbolos) para asegurar convergencia (Phase 49).
 - **Escalabilidad horizontal** para múltiples pares y estrategias simultáneas
 
 El sistema procesa datos de mercado en tiempo real vía WebSockets, genera señales mediante múltiples estrategias (técnicas, ML, estadísticas), valida riesgo, y ejecuta órdenes - todo de forma desacoplada usando una cola de eventos thread-safe.

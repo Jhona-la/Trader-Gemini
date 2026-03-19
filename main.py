@@ -200,10 +200,12 @@ class PerformanceTracker:
             stats['avg_loss'] = np.mean([t.pnl for t in losses])
             stats['largest_loss'] = min(t.pnl for t in losses)
         
-        # Sharpe Ratio (simplificado)
+        # Sharpe Ratio (Anualizado para barras M1, asumiendo 525600 barras/año)
+        # BUG-002 FIX: Factor anualizado sqrt(525600)
         returns = [t.pnl_pct for t in closed_trades]
         if len(returns) > 1 and np.std(returns) > 0:
-            stats['sharpe_ratio'] = np.mean(returns) / np.std(returns)
+            annualization_factor = np.sqrt(525600)
+            stats['sharpe_ratio'] = (np.mean(returns) / np.std(returns)) * annualization_factor
         else:
             stats['sharpe_ratio'] = 0
         
@@ -326,12 +328,14 @@ async def global_regime_loop(detector: MarketRegimeDetector, data_handler: Binan
             for symbol in active_symbols:
                 bars_1m = data_handler.get_latest_bars(symbol, n=100, timeframe='1m')
                 bars_5m = data_handler.get_latest_bars(symbol, n=50, timeframe='5m')
+                bars_15m = data_handler.get_latest_bars(symbol, n=50, timeframe='15m')
                 bars_1h = data_handler.get_latest_bars(symbol, n=50, timeframe='1h')
                 
                 if bars_1m is not None and len(bars_1m) > 0:
                     context_data[symbol] = {
                         '1m': bars_1m,
                         '5m': bars_5m,
+                        '15m': bars_15m,
                         '1h': bars_1h
                     }
             
@@ -365,24 +369,24 @@ async def global_regime_loop(detector: MarketRegimeDetector, data_handler: Binan
                         corr_matrix = StatArbEngine.calculate_correlation_matrix(aligned_rets)
                         avg_corr = StatArbEngine.get_systemic_risk(corr_matrix)
                         
-                        self.market_breadth['fleet_correlation'] = avg_corr
+                        breadth['fleet_correlation'] = avg_corr
                         
                         if avg_corr > 0.85:
                             logger.warning(f"☢️ [AEGIS] HIGH SYSTEMIC RISK: Fleet Correlation {avg_corr:.2f} > 0.85")
-                            self.market_breadth['contagion_risk'] = True
+                            breadth['contagion_risk'] = True
                         else:
-                            self.market_breadth['contagion_risk'] = False
+                            breadth['contagion_risk'] = False
                             
                 except Exception as e:
                     logger.error(f"Correlation Matrix Logic Error: {e}")
-                    self.market_breadth['fleet_correlation'] = 0.0
-                    self.market_breadth['contagion_risk'] = False
+                    breadth['fleet_correlation'] = 0.0
+                    breadth['contagion_risk'] = False
                 
                 # 4. Broadcast to Risk Manager & Portfolio
                 risk_manager.update_global_regime(breadth['sentiment'])
                 
                 # Pass extensive breadth data including correlation
-                portfolio.global_regime_data = self.market_breadth 
+                portfolio.global_regime_data = breadth 
                 portfolio.global_regime = breadth['sentiment'] 
             else:
                 logger.warning("⏳ Regime Orchestrator: Waiting for market history...")
@@ -394,61 +398,9 @@ async def global_regime_loop(detector: MarketRegimeDetector, data_handler: Binan
             logger.error(f"❌ Regime Orchestrator Error: {e}")
             await asyncio.sleep(60)
 
-    def calculate_market_context(self, active_symbols_data: Dict[str, Dict]):
-        """
-        SOVEREIGN MARKET CONTEXT (Swarm Intelligence).
-        Now includes AEGIS-ULTRA Correlation Logic internally? No, orchestrated in loop.
-        Kept clean for Breadth.
-        """
-        regimes = []
-        
-        for symbol, data in active_symbols_data.items():
-            r = self.detect_regime(
-                symbol, 
-                data.get('1m', []), 
-                data.get('5m', []), 
-                data.get('15m', []), 
-                data.get('1h', [])
-            )
-            regimes.append(r)
-            
-        if not regimes:
-            return self.market_breadth
-            
-        # Stats
-        total = len(regimes)
-        bulls = regimes.count('TRENDING_BULL')
-        bears = regimes.count('TRENDING_BEAR')
-        
-        bull_pct = (bulls / total)
-        bear_pct = (bears / total)
-        
-        # Determine Aggregate Sentiment
-        if bear_pct >= 0.60:
-            sentiment = 'TRENDING_BEAR'
-        elif bull_pct >= 0.60:
-            sentiment = 'TRENDING_BULL'
-        else:
-            sentiment = 'MIXED'
-            
-        self.global_regime = sentiment 
-        self.market_breadth = {
-            'sentiment': sentiment,
-            'bull_pct': bull_pct,
-            'bear_pct': bear_pct,
-            'regime_count': total,
-            # Init placeholder for loop to fill
-            'fleet_correlation': 0.0,
-            'contagion_risk': False
-        }
-        
-        # LOGGING INSTITUCIONAL
-        if sentiment == 'TRENDING_BEAR':
-            logger.warning(f"🚨 [Sovereign Context] MARKET PANIC: {bear_pct:.0%} of assets are Bearish. Veto Active.")
-        elif sentiment == 'TRENDING_BULL':
-            logger.info(f"🐂 [Sovereign Context] MARKET FRENZY: {bull_pct:.0%} of assets are Bullish.")
-            
-        return self.market_breadth
+    # NOTE: Sovereign context calculation is done via MarketRegimeDetector.calculate_market_context
+    # as defined in core/market_regime.py. Do not use local duplicate.
+async def order_manager_loop(manager):
     """
     Phase 9: Anti-Liquidity Sniping Loop.
     Runs every second to monitor and cancel stale limit orders.
@@ -639,7 +591,7 @@ async def main():
     
     if not args.symbols:
         logger.info("🔭 [Elite Protocol] Performing autonomous market discovery...")
-        top_20 = scanner.get_top_ranked_symbols(limit=20)
+        top_20 = scanner.get_top_ranked_symbols(limit=26) # FULL BASKET FOR GOD-MODE
         if top_20:
             Config.TRADING_PAIRS = top_20
             logger.info(f"💎 Elite Basket Selected: {len(top_20)} symbols.")
@@ -693,8 +645,15 @@ async def main():
     sentiment_loader = None # Mock for strategy injection
     
     # Executor
-    # FIXED: Pass actual portfolio instance, not Config class
-    executor = BinanceExecutor(events_queue, portfolio=portfolio)
+    print("DEBUG: Instanciando BinanceExecutor...")
+    try:
+        executor = BinanceExecutor(events_queue, portfolio=portfolio)
+        print("DEBUG: BinanceExecutor instanciado exitosamente.")
+    except Exception as e:
+        print(f"DEBUG CRITICAL FAIL en BinanceExecutor: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
     
     # Engine
     engine = Engine(events_queue)
@@ -809,7 +768,7 @@ async def main():
     meta_task = asyncio.create_task(meta_brain_loop(selector))
     
     # 3.4. REGIME ORCHESTRATOR
-    regime_detector = MarketRegimeDetector()
+    regime_detector = MarketRegimeDetector(events_queue=events_queue)
     regime_task = asyncio.create_task(global_regime_loop(regime_detector, data_handler, risk_manager, portfolio))
     
     # PHASE 9/41: ORDER MANAGER
@@ -837,8 +796,9 @@ async def main():
     # 4. MAIN EVENT LOOP ORCHESTRATION (SUPREMO-V3)
     logger.info("⚡ [SUPREMO-V3] Orchestrating Concurrent Async Tasks...")
     
-    # 4.1. Initialize Engine Task
+    # 4.1. Initialize Engine Task & User Stream
     engine_task = asyncio.create_task(engine.start())
+    user_stream_task = asyncio.create_task(executor.user_stream.start())
     
     # 4.2. Background Task for Metrics & Heartbeat
     loop_count = 0
@@ -901,7 +861,7 @@ async def main():
     try:
         # Wait for shutdown event or any critical task to fail
         done, pending = await asyncio.wait(
-            [shutdown_task, engine_task, ws_task, regime_task, order_task, heartbeat_task],
+            [shutdown_task, engine_task, ws_task, regime_task, order_task, heartbeat_task, user_stream_task],
             return_when=asyncio.FIRST_COMPLETED
         )
         
@@ -922,9 +882,6 @@ async def main():
     # Signal Engine to stop
     engine.stop()
     
-    # Stop User Data Stream gracefully
-    user_stream.stop()
-    
     # Cancel all background tasks
     tasks = [ws_task, adaptive_task, meta_task, regime_task, order_task, heartbeat_task, engine_task, user_stream_task]
     for task in tasks:
@@ -943,7 +900,7 @@ async def main():
     portfolio.close()
     performance.print_summary()
     
-    if 'sentiment_loader' in locals():
+    if sentiment_loader is not None:
         sentiment_loader.stop()
     if supervisor:
         supervisor.stop()

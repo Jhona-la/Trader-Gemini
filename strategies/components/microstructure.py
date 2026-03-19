@@ -34,6 +34,10 @@ class MicrostructureAnalyzer:
         self.vpin_history = deque(maxlen=50) # VPIN values for MA
         self.current_vpin = 0.5 # Neutral start
         
+        # --- Intra-Candle Delta (Order Imbalance) ---
+        self.tick_history = deque(maxlen=5000) # (timestamp, delta_vol)
+        self.rolling_delta_60s = 0.0
+        
     def on_depth(self, start_bid_p, start_bid_q, start_ask_p, start_ask_q):
         """
         Called when LOB updates.
@@ -77,9 +81,20 @@ class MicrostructureAnalyzer:
         # is_buyer_maker=False -> BUY (Taker is Buy)
         
         side = 'SELL' if is_buyer_maker else 'BUY'
+        now = time.time()
         
         # VPIN Update
         self.current_bucket_vol += qty
+        
+        # Delta Tracking
+        delta_val = qty if side == 'BUY' else -qty
+        self.tick_history.append((now, delta_val))
+        self.rolling_delta_60s += delta_val
+        
+        # Cleanup old ticks (>60s)
+        while self.tick_history and (now - self.tick_history[0][0]) > 60.0:
+            _, old_delta = self.tick_history.popleft()
+            self.rolling_delta_60s -= old_delta
         
         if side == 'BUY':
             self.buy_vol_bucket += qty
@@ -112,8 +127,8 @@ class MicrostructureAnalyzer:
         """
         Decay old events and count frequency.
         """
+        # Decay old events
         now = time.time()
-        # Remove old events (>10s)
         while self.reload_events and (now - self.reload_events[0][0]) > 10.0:
             self.reload_events.popleft()
             
@@ -122,8 +137,15 @@ class MicrostructureAnalyzer:
         self.iceberg_score = min(count / 5.0, 1.0)
 
     def get_metrics(self):
+        # Update tick decay before returning
+        now = time.time()
+        while self.tick_history and (now - self.tick_history[0][0]) > 60.0:
+            _, old_delta = self.tick_history.popleft()
+            self.rolling_delta_60s -= old_delta
+            
         return {
             'vpin': self.current_vpin,
             'iceberg_score': self.iceberg_score,
+            'rolling_delta_60s': self.rolling_delta_60s,
             'is_toxic': self.current_vpin > 0.6 or self.iceberg_score > 0.8
         }

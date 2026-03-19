@@ -324,7 +324,8 @@ class OnlineLearner:
                          old_log_probs: np.ndarray,
                          rewards: np.ndarray,
                          advantages: Optional[np.ndarray] = None,
-                         epsilon: float = 0.2) -> Tuple[np.ndarray, np.ndarray]:
+                         epsilon: float = 0.2,
+                         learning_factor: float = 1.0) -> Tuple[np.ndarray, np.ndarray]:
         """
         Executes a PPO update step on a batch.
         Assumes a Linear Policy: Action ~ Normal(Weights @ State, Fixed_Std).
@@ -337,6 +338,7 @@ class OnlineLearner:
             rewards: Raw rewards for the batch (B).
             advantages: Optional pre-calculated advantage estimates (B).
             epsilon: PPO Clip parameter (default 0.2).
+            learning_factor: Neuroplasticity modifier from Market Regime.
             
         Returns:
             Tuple[updated_weights, absolute_advantages]
@@ -409,8 +411,9 @@ class OnlineLearner:
         else:
             grad_weights = np.zeros_like(weights)
         
-        # 5. Apply Update (Gradient Ascent on Objective)
-        update = self.learning_rate * grad_weights
+        # 5. Apply Update (Gradient Ascent on Objective) modulated by Neuroplasticity
+        adjusted_lr = self.learning_rate * learning_factor
+        update = adjusted_lr * grad_weights
         
         # 6. Telemetry (Phase 17)
         try:

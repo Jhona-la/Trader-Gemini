@@ -248,6 +248,17 @@ def load_system_metrics(data_dir: str) -> dict:
             pass
     return {}
 
+def load_fabric_telemetry() -> dict:
+    """Load neuro-evolutionary parameter drift history."""
+    path = "data/fabric_telemetry.json"
+    if os.path.exists(path):
+        try:
+            with open(path, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
 def list_sessions(data_dir: str, limit: int = 10) -> list:
     """List available sessions sorted by latest activity."""
     # Start with LIVE session
@@ -364,10 +375,10 @@ with st.sidebar:
     # Emergency
     st.subheader("🚨 Emergency")
     if st.button("💀 KILL SWITCH", type="secondary"):
-        kill_path = os.path.join(data_dir, "kill_switch.txt")
+        kill_path = os.path.join(PROJECT_ROOT, "STOP_TRADING.LOCK")
         with open(kill_path, "w") as f:
-            f.write("STOP")
-        st.error("⚠️ KILL SIGNAL SENT!")
+            f.write(f"KILLED AT {time.time()}\nREASON: MANUAL_DASHBOARD_PANIC\n")
+        st.error("⚠️ KILL SIGNAL SENT! ENGINES LOCKED.")
     
     # Footer
     st.markdown("---")
@@ -519,7 +530,7 @@ with risk_cols[2]:
 
 st.markdown("---")
 
-kpi_cols = st.columns(9)  # Increased from 8 to 9 for Axioma Precision KPI
+kpi_cols = st.columns(11)  # Increased from 9 to 11 for Brier Score & PPO Entropy
 
 # 1. Total Equity
 equity = status.get('total_equity', 0) if status else 0
@@ -624,16 +635,41 @@ with kpi_cols[8]:
     </div>
     """, unsafe_allow_html=True)
 
+# 10. Brier Score [PHASE 9: ML Metacognition]
+brier_score = status.get('brier_score_active', 0.0) if status else 0.0
+# Brier Score = 0 is perfect. Brier > 0.33 means random guessing
+brier_class = "kpi-positive" if brier_score < 0.20 else "kpi-warning" if brier_score < 0.28 else "kpi-negative"
+with kpi_cols[9]:
+    st.markdown(f"""
+    <div class="kpi-card" style="border-top: 2px solid #3fb950; box-shadow: 0 2px 8px rgba(63, 185, 80, 0.2);">
+        <div class="kpi-value {brier_class}">{brier_score:.3f}</div>
+        <div class="kpi-label">Brier Loss</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# 11. PPO Reward Entropy [PHASE 9: Non-Linear Reward]
+ppo_entropy = status.get('ppo_entropy_active', 0.0) if status else 0.0
+ppo_class = "kpi-positive" if ppo_entropy > 0.50 else "kpi-warning" if ppo_entropy > 0 else "kpi-negative"
+with kpi_cols[10]:
+    st.markdown(f"""
+    <div class="kpi-card" style="border-top: 2px solid #58a6ff; box-shadow: 0 2px 8px rgba(88, 166, 255, 0.2);">
+        <div class="kpi-value {ppo_class}">{ppo_entropy:.2f}</div>
+        <div class="kpi-label">PPO Entropy</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
 # ==============================================================================
 # MAIN TABS
 # ==============================================================================
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Monitor en Vivo",
     "📈 Análisis de Desempeño", 
     "🔄 Control Reversiones",
     "🏥 System Health", # Phase 6
+    "🧬 Neuro-Evolution", # Phase 46
     "📝 Logs del Sistema"
 ])
 
@@ -1324,9 +1360,67 @@ with tab4:
         st.caption("The HealthSupervisor runs in the backend every 60s.")
 
 # ------------------------------------------------------------------------------
-# TAB 5: SYSTEM LOGS
+# TAB 5: NEURO-EVOLUTION (Phase 46)
 # ------------------------------------------------------------------------------
 with tab5:
+    st.subheader("🧬 Neuro-Evolutionary Fabric")
+    
+    telemetry = load_fabric_telemetry()
+    
+    if telemetry:
+        symbols = list(telemetry.keys())
+        selected_target = st.selectbox("Select Universe (Symbol)", symbols)
+        
+        if selected_target:
+            target_data = telemetry[selected_target]
+            df_target = pd.DataFrame(target_data)
+            df_target['timestamp'] = pd.to_datetime(df_target['timestamp'])
+            
+            # Extract parameters into separate columns
+            for param in ['tp_pct', 'sl_pct', 'strength_threshold', 'adx_threshold']:
+                df_target[param] = df_target['parameters'].apply(lambda x: x.get(param))
+            
+            # --- DRIFT CHARTS ---
+            st.markdown(f"### 📈 Parameter Drift: {selected_target}")
+            
+            fig_drift = make_subplots(rows=2, cols=2, subplot_titles=("TP Evolution", "SL Evolution", "Strength Hurdle", "ADX Threshold"))
+            
+            # TP
+            fig_drift.add_trace(go.Scatter(x=df_target['timestamp'], y=df_target['tp_pct'], name="TP %", line=dict(color='#3fb950', width=2)), row=1, col=1)
+            # SL
+            fig_drift.add_trace(go.Scatter(x=df_target['timestamp'], y=df_target['sl_pct'], name="SL %", line=dict(color='#f85149', width=2)), row=1, col=2)
+            # Strength
+            fig_drift.add_trace(go.Scatter(x=df_target['timestamp'], y=df_target['strength_threshold'], name="Strength", line=dict(color='#58a6ff', width=2)), row=2, col=1)
+            # ADX
+            fig_drift.add_trace(go.Scatter(x=df_target['timestamp'], y=df_target['adx_threshold'], name="ADX", line=dict(color='#d29922', width=2)), row=2, col=2)
+            
+            fig_drift.update_layout(height=600, template="plotly_dark", showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_drift, use_container_width=True)
+            
+            # --- GENOTYPE INSPECTOR ---
+            st.markdown("### 🧬 Genotype DNA Inspector")
+            gene_path = f"data/genotypes/{selected_target.replace('/','')}_gene.json"
+            if os.path.exists(gene_path):
+                with open(gene_path, 'r') as f:
+                    gene_data = json.load(f)
+                st.json(gene_data)
+            else:
+                st.warning("Genotype file not found on disk.")
+            
+            # --- ADJUSTMENT LOG ---
+            st.markdown("### 📋 Evolution Logs (Causality)")
+            st.dataframe(
+                df_target[['timestamp', 'outcome', 'pnl', 'causality']].sort_values('timestamp', ascending=False),
+                hide_index=True,
+                use_container_width=True
+            )
+    else:
+        st.info("🧬 Waiting for evolution telemetry. Parameter drift will appear after first trades.")
+
+# ------------------------------------------------------------------------------
+# TAB 6: SYSTEM LOGS
+# ------------------------------------------------------------------------------
+with tab6:
     st.subheader("📝 System Logs")
     
     log_level_filter = st.selectbox("Log Level", ["ALL", "INFO", "WARNING", "ERROR"], index=0)

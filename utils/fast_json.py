@@ -52,8 +52,9 @@ class FastJson:
                     option |= orjson.OPT_INDENT_2
                 if kwargs.get('sort_keys'):
                     option |= orjson.OPT_SORT_KEYS
-                    
-                return orjson.dumps(data, option=option).decode('utf-8')
+                
+                # Use default=str to catch complex objects like FontManager
+                return orjson.dumps(data, option=option, default=lambda x: str(x)).decode('utf-8')
             else:
                 # Fallback to standard json (captured)
                 if 'default' not in kwargs:
@@ -75,7 +76,7 @@ class FastJson:
                 if kwargs.get('indent'):
                     option |= orjson.OPT_INDENT_2
                 
-                content = orjson.dumps(data, option=option)
+                content = orjson.dumps(data, option=option, default=lambda x: str(x))
                 fp.write(content.decode('utf-8'))
             else:
                 if 'default' not in kwargs:
@@ -105,11 +106,20 @@ class FastJson:
         Deserializes from file-like object.
         """
         try:
+            content = fp.read()
+            if not content:
+                return {} # Return empty dict for zero-length files
+                
             if HAS_ORJSON:
-                return orjson.loads(fp.read())
+                return orjson.loads(content)
             else:
-                return _json_load(fp, *args, **kwargs)
+                # If content is string (depending on fp type), use json.loads
+                # json_load expects fp, but we already read it.
+                if isinstance(content, bytes):
+                    content = content.decode('utf-8')
+                return _json_loads(content, *args, **kwargs)
         except Exception as e:
+            # Only log actual errors, not completely empty files
             logger.error(f"Deserialization 'load' error: {e}")
             return {}
 
@@ -118,7 +128,7 @@ class FastJson:
         """Atomic write to file."""
         try:
             if HAS_ORJSON:
-                content = orjson.dumps(data, option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
+                content = orjson.dumps(data, option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY, default=lambda x: str(x))
                 with open(filepath, 'wb') as f:
                     f.write(content)
             else:

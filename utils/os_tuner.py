@@ -46,15 +46,16 @@ class OSTuner:
             # Monkey Patch socket to force TCP_NODELAY on new connections
             raw_socket = socket.socket
             
-            def new_socket(*args, **kwargs):
-                s = raw_socket(*args, **kwargs)
-                try:
-                    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                except Exception:
-                    pass # Not a TCP socket or OS doesn't support it
-                return s
-            
-            socket.socket = new_socket
+            class TunedSocket(raw_socket):
+                def __init__(self, family=-1, type=-1, proto=-1, fileno=None):
+                    super().__init__(family, type, proto, fileno)
+                    try:
+                        if family in (socket.AF_INET, socket.AF_INET6) and type == socket.SOCK_STREAM:
+                            self.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                    except Exception:
+                        pass
+                        
+            socket.socket = TunedSocket
             logger.info("⚡ [Layer 0] TCP_NODELAY enforced globally (Nagle Disabled)")
             
         except Exception as e:
@@ -88,5 +89,6 @@ class OSTuner:
         """Run all optimizations."""
         logger.info("🌑 [NADIR-SOBERANO] Initiating Layer 0 Optimization...")
         OSTuner.tune_process_priority()
-        OSTuner.tune_network_stack()
+        # Se elimina tune_network_stack porque network_optimizer.py ya se encarga de FastSocket
+        # OSTuner.tune_network_stack()
         OSTuner.set_cpu_affinity()

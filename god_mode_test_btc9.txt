@@ -1,0 +1,349 @@
+12:00:19 [INFO] 🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)
+12:00:33 [INFO] 🧬 [META-OPTIMIZER] Initialized with Infinitesimal Strength: 1e-06
+12:00:54 [INFO] 📊 [SOPHIA] PostMortem initialized (window=100)
+2026-03-18 12:01:02,345 - trader_gemini - INFO - 🟢 [BTC/USDT] SUPREME XGBoost Model Loaded (JSON). Warning: Feature set mismatch potential.
+12:01:02 [INFO] 🟢 [BTC/USDT] SUPREME XGBoost Model Loaded (JSON). Warning: Feature set mismatch potential.
+2026-03-18 12:01:02,345 - trader_gemini - INFO - 🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR BTC/USDT
+12:01:02 [INFO] 🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR BTC/USDT
+2026-03-18 12:01:02,346 - trader_gemini - INFO - 🎯 OBJECTIVE: $12.0 → $100000.0
+12:01:02 [INFO] 🎯 OBJECTIVE: $12.0 → $100000.0
+2026-03-18 12:01:02,347 - trader_gemini - INFO - ⚙️  Mode: Exponential Growth (Aggressive with Risk Control)
+12:01:02 [INFO] ⚙️  Mode: Exponential Growth (Aggressive with Risk Control)
+2026-03-18 12:01:02,347 - trader_gemini - INFO - 🟢 [BTC/USDT] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED
+12:01:02 [INFO] 🟢 [BTC/USDT] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED
+2026-03-18 12:01:02,348 - trader_gemini - INFO -    Consensus Threshold: 0.75
+12:01:02 [INFO]    Consensus Threshold: 0.75
+2026-03-18 12:01:02,348 - trader_gemini - INFO -    Min Engines Required: 2/3
+12:01:02 [INFO]    Min Engines Required: 2/3
+📊 Metrics Exporter Initialized (Phase 99: Per-Symbol + Health).
+💰 REAL BALANCE DETECTED: $13.29
+============================================================
+🧪 BACKTEST TRADER GEMINI - FULL BASKET (26 SYMBOLS)
+============================================================
+📋 Testing Agresivo V4 (Profundo) (26 symbols)...
+
+💰 STARTING CAPITAL: $13.29
+
+🔹 TESTING ADA/USDT (1/26)...
+📡 Descargando 15 días de datos para ADA/USDT...
+✅ Descargados 21600 velas (15.0 días)
+
+🚀 Iniciando backtest...
+📊 Procesando 21600 barras...
+2026-03-18 12:01:02,582 - trader_gemini - INFO - 🔄 Starting Full training #1 for BTC/USDT...
+12:01:02 [INFO] 🔄 Starting Full training #1 for BTC/USDT...
+2026-03-18 12:01:03,032 - FeatureStore - INFO - ✅ [BTC/USDT] 300 features stored.
+2026-03-18 12:01:03,048 - trader_gemini - ERROR - Error detecting regime: input array type is not double
+12:01:03 [ERROR] Error detecting regime: input array type is not double
+2026-03-18 12:01:03,049 - trader_gemini - DEBUG - 🔧 [Dynamic Adaptation] UNKNOWN: Lev=3x, Conf=0.55 (Base 0.55 + 0.0), Aggr=1.0
+2026-03-18 12:01:03,487 - trader_gemini - INFO - 🔍 DEBUG ML [BTC/USDT]: Rows=106, AvgVol=0.1428%, mult=0.35, Est.Target=0.0010, Labels={-1: 46, 1: 30, 0: 30}
+12:01:03 [INFO] 🔍 DEBUG ML [BTC/USDT]: Rows=106, AvgVol=0.1428%, mult=0.35, Est.Target=0.0010, Labels={-1: 46, 1: 30, 0: 30}
+2026-03-18 12:01:03,493 - trader_gemini - DEBUG - ⚠️ 15 features are constant (std=0). Ex: ['bb_squeeze', 'ema_20_50_cross', 'ema_50_200_cross', 'trend_power', 'trend_alignment']
+2026-03-18 12:01:03,493 - trader_gemini - INFO - 📊 Training BTC/USDT with 76 samples, 80 features
+12:01:03 [INFO] 📊 Training BTC/USDT with 76 samples, 80 features
+2026-03-18 12:01:03,494 - trader_gemini - INFO - 🏭 ModelFactory: Instantiating Ensemble (RF, XGB, GB)...
+12:01:03 [INFO] 🏭 ModelFactory: Instantiating Ensemble (RF, XGB, GB)...
+2026-03-18 12:01:03,495 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 1/1)...
+12:01:03 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 1/1)...
+2026-03-18 12:01:03,763 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:01:03,802 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 105 estimators (Warm Start).
+2026-03-18 12:01:03,988 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 2/1)...
+12:01:03 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 2/1)...
+2026-03-18 12:01:04,264 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:01:04,313 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 110 estimators (Warm Start).
+2026-03-18 12:01:04,624 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 3/1)...
+12:01:04 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 3/1)...
+2026-03-18 12:01:04,882 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:01:04,953 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 115 estimators (Warm Start).
+2026-03-18 12:01:05,491 - trader_gemini - INFO - 📥 [BTC/USDT] Local Training finished. Score: 0.726
+12:01:05 [INFO] 📥 [BTC/USDT] Local Training finished. Score: 0.726
+2026-03-18 12:01:05,739 - MLGovernance - WARNING - ⚠️ Modelo BTC_USDT_v7_20260318 no superó Quality Gate (Sharpe: 0.73). Guardado como histórico.
+2026-03-18 12:01:05,753 - trader_gemini - INFO - 💾 [BTC/USDT] Models persisted and registered in Governance.
+12:01:05 [INFO] 💾 [BTC/USDT] Models persisted and registered in Governance.
+2026-03-18 12:01:05,753 - trader_gemini - INFO - ✨✨✨ [ML BTC/USDT] FULL TRAINING FINISHED ✨✨✨
+   Result: SUCCESS #1 | Score: 0.726 | Total Time: 3.2s
+   Features Used: 80 | Quality Guard: PASSED
+12:01:05 [INFO] ✨✨✨ [ML BTC/USDT] FULL TRAINING FINISHED ✨✨✨
+   Result: SUCCESS #1 | Score: 0.726 | Total Time: 3.2s
+   Features Used: 80 | Quality Guard: PASSED
+  🧠 ML Training completed for ADA/USDT (bars: 300)
+  ▸ 23.1% completado (5000/21600)
+  ▸ 46.3% completado (10000/21600)
+  ▸ 69.4% completado (15000/21600)
+  ▸ 92.6% completado (20000/21600)
+
+✅ Backtest completado: 0 trades ejecutados
+   👉 Result ADA/USDT: $+0.00 (0 trades)
+      Exit Reasons: {}
+
+🔹 TESTING ARB/USDT (2/26)...
+📡 Descargando 15 días de datos para ARB/USDT...
+✅ Descargados 21600 velas (15.0 días)
+
+🚀 Iniciando backtest...
+2026-03-18 12:01:46,313 - trader_gemini - INFO - 📊 [SOPHIA] PostMortem initialized (window=100)
+12:01:46 [INFO] 📊 [SOPHIA] PostMortem initialized (window=100)
+2026-03-18 12:01:46,345 - trader_gemini - INFO - 🟢 [BTC/USDT] SUPREME XGBoost Model Loaded (JSON). Warning: Feature set mismatch potential.
+12:01:46 [INFO] 🟢 [BTC/USDT] SUPREME XGBoost Model Loaded (JSON). Warning: Feature set mismatch potential.
+2026-03-18 12:01:46,346 - trader_gemini - INFO - 🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR BTC/USDT
+12:01:46 [INFO] 🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR BTC/USDT
+2026-03-18 12:01:46,346 - trader_gemini - INFO - 🎯 OBJECTIVE: $12.0 → $100000.0
+12:01:46 [INFO] 🎯 OBJECTIVE: $12.0 → $100000.0
+2026-03-18 12:01:46,347 - trader_gemini - INFO - ⚙️  Mode: Exponential Growth (Aggressive with Risk Control)
+12:01:46 [INFO] ⚙️  Mode: Exponential Growth (Aggressive with Risk Control)
+2026-03-18 12:01:46,347 - trader_gemini - INFO - 🟢 [BTC/USDT] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED
+12:01:46 [INFO] 🟢 [BTC/USDT] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED
+2026-03-18 12:01:46,348 - trader_gemini - INFO -    Consensus Threshold: 0.75
+12:01:46 [INFO]    Consensus Threshold: 0.75
+2026-03-18 12:01:46,349 - trader_gemini - INFO -    Min Engines Required: 2/3
+12:01:46 [INFO]    Min Engines Required: 2/3
+📊 Procesando 21600 barras...
+2026-03-18 12:01:46,581 - trader_gemini - INFO - 🔄 Starting Full training #1 for BTC/USDT...
+12:01:46 [INFO] 🔄 Starting Full training #1 for BTC/USDT...
+2026-03-18 12:01:46,943 - FeatureStore - INFO - ✅ [BTC/USDT] 300 features stored.
+2026-03-18 12:01:46,958 - trader_gemini - ERROR - Error detecting regime: input array type is not double
+12:01:46 [ERROR] Error detecting regime: input array type is not double
+2026-03-18 12:01:46,959 - trader_gemini - DEBUG - 🔧 [Dynamic Adaptation] UNKNOWN: Lev=3x, Conf=0.55 (Base 0.55 + 0.0), Aggr=1.0
+2026-03-18 12:01:47,371 - trader_gemini - INFO - 🔍 DEBUG ML [BTC/USDT]: Rows=106, AvgVol=0.1727%, mult=0.35, Est.Target=0.0010, Labels={-1: 47, 0: 30, 1: 29}
+12:01:47 [INFO] 🔍 DEBUG ML [BTC/USDT]: Rows=106, AvgVol=0.1727%, mult=0.35, Est.Target=0.0010, Labels={-1: 47, 0: 30, 1: 29}
+2026-03-18 12:01:47,375 - trader_gemini - DEBUG - ⚠️ 14 features are constant (std=0). Ex: ['bb_squeeze', 'ema_20_50_cross', 'trend_power', 'trend_alignment', 'range_extreme']
+2026-03-18 12:01:47,375 - trader_gemini - INFO - 📊 Training BTC/USDT with 76 samples, 80 features
+12:01:47 [INFO] 📊 Training BTC/USDT with 76 samples, 80 features
+2026-03-18 12:01:47,376 - trader_gemini - INFO - 🏭 ModelFactory: Instantiating Ensemble (RF, XGB, GB)...
+12:01:47 [INFO] 🏭 ModelFactory: Instantiating Ensemble (RF, XGB, GB)...
+2026-03-18 12:01:47,377 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 1/1)...
+12:01:47 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 1/1)...
+2026-03-18 12:01:47,626 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:01:47,654 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 105 estimators (Warm Start).
+2026-03-18 12:01:47,798 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 2/1)...
+12:01:47 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 2/1)...
+2026-03-18 12:01:48,061 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:01:48,103 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 110 estimators (Warm Start).
+2026-03-18 12:01:48,392 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 3/1)...
+12:01:48 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 3/1)...
+2026-03-18 12:01:48,666 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:01:48,727 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 115 estimators (Warm Start).
+2026-03-18 12:01:49,134 - trader_gemini - INFO - 📥 [BTC/USDT] Local Training finished. Score: 0.608
+12:01:49 [INFO] 📥 [BTC/USDT] Local Training finished. Score: 0.608
+2026-03-18 12:01:49,377 - MLGovernance - WARNING - ⚠️ Modelo BTC_USDT_v8_20260318 no superó Quality Gate (Sharpe: 0.61). Guardado como histórico.
+2026-03-18 12:01:49,391 - trader_gemini - INFO - 💾 [BTC/USDT] Models persisted and registered in Governance.
+12:01:49 [INFO] 💾 [BTC/USDT] Models persisted and registered in Governance.
+2026-03-18 12:01:49,392 - trader_gemini - INFO - ✨✨✨ [ML BTC/USDT] FULL TRAINING FINISHED ✨✨✨
+   Result: SUCCESS #1 | Score: 0.608 | Total Time: 2.8s
+   Features Used: 80 | Quality Guard: PASSED
+12:01:49 [INFO] ✨✨✨ [ML BTC/USDT] FULL TRAINING FINISHED ✨✨✨
+   Result: SUCCESS #1 | Score: 0.608 | Total Time: 2.8s
+   Features Used: 80 | Quality Guard: PASSED
+  🧠 ML Training completed for ARB/USDT (bars: 300)
+  ▸ 23.1% completado (5000/21600)
+  ▸ 46.3% completado (10000/21600)
+  ▸ 69.4% completado (15000/21600)
+  ▸ 92.6% completado (20000/21600)
+
+✅ Backtest completado: 0 trades ejecutados
+2026-03-18 12:02:09,442 - trader_gemini - INFO - 🧹 ML Hybrid Ultimate Strategy for BTC/USDT cleaned up
+12:02:09 [INFO] 🧹 ML Hybrid Ultimate Strategy for BTC/USDT cleaned up
+   👉 Result ARB/USDT: $+0.00 (0 trades)
+      Exit Reasons: {}
+
+🔹 TESTING ATOM/USDT (3/26)...
+📡 Descargando 15 días de datos para ATOM/USDT...
+✅ Descargados 21600 velas (15.0 días)
+
+🚀 Iniciando backtest...
+2026-03-18 12:02:28,439 - trader_gemini - INFO - 📊 [SOPHIA] PostMortem initialized (window=100)
+12:02:28 [INFO] 📊 [SOPHIA] PostMortem initialized (window=100)
+2026-03-18 12:02:28,471 - trader_gemini - INFO - 🟢 [BTC/USDT] SUPREME XGBoost Model Loaded (JSON). Warning: Feature set mismatch potential.
+12:02:28 [INFO] 🟢 [BTC/USDT] SUPREME XGBoost Model Loaded (JSON). Warning: Feature set mismatch potential.
+2026-03-18 12:02:28,472 - trader_gemini - INFO - 🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR BTC/USDT
+12:02:28 [INFO] 🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR BTC/USDT
+2026-03-18 12:02:28,473 - trader_gemini - INFO - 🎯 OBJECTIVE: $12.0 → $100000.0
+12:02:28 [INFO] 🎯 OBJECTIVE: $12.0 → $100000.0
+2026-03-18 12:02:28,473 - trader_gemini - INFO - ⚙️  Mode: Exponential Growth (Aggressive with Risk Control)
+12:02:28 [INFO] ⚙️  Mode: Exponential Growth (Aggressive with Risk Control)
+2026-03-18 12:02:28,474 - trader_gemini - INFO - 🟢 [BTC/USDT] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED
+12:02:28 [INFO] 🟢 [BTC/USDT] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED
+2026-03-18 12:02:28,475 - trader_gemini - INFO -    Consensus Threshold: 0.75
+12:02:28 [INFO]    Consensus Threshold: 0.75
+2026-03-18 12:02:28,475 - trader_gemini - INFO -    Min Engines Required: 2/3
+12:02:28 [INFO]    Min Engines Required: 2/3
+📊 Procesando 21600 barras...
+2026-03-18 12:02:28,727 - trader_gemini - INFO - 🔄 Starting Full training #1 for BTC/USDT...
+12:02:28 [INFO] 🔄 Starting Full training #1 for BTC/USDT...
+2026-03-18 12:02:29,085 - FeatureStore - INFO - ✅ [BTC/USDT] 300 features stored.
+2026-03-18 12:02:29,099 - trader_gemini - ERROR - Error detecting regime: input array type is not double
+12:02:29 [ERROR] Error detecting regime: input array type is not double
+2026-03-18 12:02:29,100 - trader_gemini - DEBUG - 🔧 [Dynamic Adaptation] UNKNOWN: Lev=3x, Conf=0.55 (Base 0.55 + 0.0), Aggr=1.0
+2026-03-18 12:02:29,524 - trader_gemini - INFO - 🔍 DEBUG ML [BTC/USDT]: Rows=106, AvgVol=0.0899%, mult=0.35, Est.Target=0.0010, Labels={-1: 45, 1: 31, 0: 30}
+12:02:29 [INFO] 🔍 DEBUG ML [BTC/USDT]: Rows=106, AvgVol=0.0899%, mult=0.35, Est.Target=0.0010, Labels={-1: 45, 1: 31, 0: 30}
+2026-03-18 12:02:29,529 - trader_gemini - DEBUG - ⚠️ 12 features are constant (std=0). Ex: ['trend_power', 'trend_alignment', 'range_extreme', 'mean_reversion_potential', 'volatility_regime']
+2026-03-18 12:02:29,529 - trader_gemini - INFO - 📊 Training BTC/USDT with 76 samples, 80 features
+12:02:29 [INFO] 📊 Training BTC/USDT with 76 samples, 80 features
+2026-03-18 12:02:29,530 - trader_gemini - INFO - 🏭 ModelFactory: Instantiating Ensemble (RF, XGB, GB)...
+12:02:29 [INFO] 🏭 ModelFactory: Instantiating Ensemble (RF, XGB, GB)...
+2026-03-18 12:02:29,531 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 1/1)...
+12:02:29 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 1/1)...
+2026-03-18 12:02:29,785 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:02:29,813 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 105 estimators (Warm Start).
+2026-03-18 12:02:29,977 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 2/1)...
+12:02:29 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 2/1)...
+2026-03-18 12:02:30,227 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:02:30,270 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 110 estimators (Warm Start).
+2026-03-18 12:02:30,561 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 3/1)...
+12:02:30 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 3/1)...
+2026-03-18 12:02:30,825 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:02:30,886 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 115 estimators (Warm Start).
+2026-03-18 12:02:31,259 - trader_gemini - INFO - 📥 [BTC/USDT] Local Training finished. Score: 0.539
+12:02:31 [INFO] 📥 [BTC/USDT] Local Training finished. Score: 0.539
+2026-03-18 12:02:31,500 - MLGovernance - WARNING - ⚠️ Modelo BTC_USDT_v9_20260318 no superó Quality Gate (Sharpe: 0.54). Guardado como histórico.
+2026-03-18 12:02:31,513 - trader_gemini - INFO - 💾 [BTC/USDT] Models persisted and registered in Governance.
+12:02:31 [INFO] 💾 [BTC/USDT] Models persisted and registered in Governance.
+2026-03-18 12:02:31,513 - trader_gemini - INFO - ✨✨✨ [ML BTC/USDT] FULL TRAINING FINISHED ✨✨✨
+   Result: SUCCESS #1 | Score: 0.539 | Total Time: 2.8s
+   Features Used: 80 | Quality Guard: PASSED
+12:02:31 [INFO] ✨✨✨ [ML BTC/USDT] FULL TRAINING FINISHED ✨✨✨
+   Result: SUCCESS #1 | Score: 0.539 | Total Time: 2.8s
+   Features Used: 80 | Quality Guard: PASSED
+  🧠 ML Training completed for ATOM/USDT (bars: 300)
+  ▸ 23.1% completado (5000/21600)
+  ▸ 46.3% completado (10000/21600)
+  ▸ 69.4% completado (15000/21600)
+  ▸ 92.6% completado (20000/21600)
+
+✅ Backtest completado: 0 trades ejecutados
+2026-03-18 12:02:51,461 - trader_gemini - INFO - 🧹 ML Hybrid Ultimate Strategy for BTC/USDT cleaned up
+12:02:51 [INFO] 🧹 ML Hybrid Ultimate Strategy for BTC/USDT cleaned up
+   👉 Result ATOM/USDT: $+0.00 (0 trades)
+      Exit Reasons: {}
+
+🔹 TESTING AVAX/USDT (4/26)...
+📡 Descargando 15 días de datos para AVAX/USDT...
+✅ Descargados 21600 velas (15.0 días)
+
+🚀 Iniciando backtest...
+2026-03-18 12:03:11,294 - trader_gemini - INFO - 📊 [SOPHIA] PostMortem initialized (window=100)
+12:03:11 [INFO] 📊 [SOPHIA] PostMortem initialized (window=100)
+2026-03-18 12:03:11,327 - trader_gemini - INFO - 🟢 [BTC/USDT] SUPREME XGBoost Model Loaded (JSON). Warning: Feature set mismatch potential.
+12:03:11 [INFO] 🟢 [BTC/USDT] SUPREME XGBoost Model Loaded (JSON). Warning: Feature set mismatch potential.
+2026-03-18 12:03:11,328 - trader_gemini - INFO - 🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR BTC/USDT
+12:03:11 [INFO] 🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR BTC/USDT
+2026-03-18 12:03:11,329 - trader_gemini - INFO - 🎯 OBJECTIVE: $12.0 → $100000.0
+12:03:11 [INFO] 🎯 OBJECTIVE: $12.0 → $100000.0
+2026-03-18 12:03:11,329 - trader_gemini - INFO - ⚙️  Mode: Exponential Growth (Aggressive with Risk Control)
+12:03:11 [INFO] ⚙️  Mode: Exponential Growth (Aggressive with Risk Control)
+2026-03-18 12:03:11,330 - trader_gemini - INFO - 🟢 [BTC/USDT] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED
+12:03:11 [INFO] 🟢 [BTC/USDT] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED
+2026-03-18 12:03:11,330 - trader_gemini - INFO -    Consensus Threshold: 0.75
+12:03:11 [INFO]    Consensus Threshold: 0.75
+2026-03-18 12:03:11,331 - trader_gemini - INFO -    Min Engines Required: 2/3
+12:03:11 [INFO]    Min Engines Required: 2/3
+📊 Procesando 21600 barras...
+2026-03-18 12:03:11,562 - trader_gemini - INFO - 🔄 Starting Full training #1 for BTC/USDT...
+12:03:11 [INFO] 🔄 Starting Full training #1 for BTC/USDT...
+2026-03-18 12:03:11,908 - FeatureStore - INFO - ✅ [BTC/USDT] 300 features stored.
+2026-03-18 12:03:11,923 - trader_gemini - ERROR - Error detecting regime: input array type is not double
+12:03:11 [ERROR] Error detecting regime: input array type is not double
+2026-03-18 12:03:11,923 - trader_gemini - DEBUG - 🔧 [Dynamic Adaptation] UNKNOWN: Lev=3x, Conf=0.55 (Base 0.55 + 0.0), Aggr=1.0
+2026-03-18 12:03:12,357 - trader_gemini - INFO - 🔍 DEBUG ML [BTC/USDT]: Rows=106, AvgVol=0.1219%, mult=0.35, Est.Target=0.0010, Labels={-1: 39, 1: 37, 0: 30}
+12:03:12 [INFO] 🔍 DEBUG ML [BTC/USDT]: Rows=106, AvgVol=0.1219%, mult=0.35, Est.Target=0.0010, Labels={-1: 39, 1: 37, 0: 30}
+2026-03-18 12:03:12,361 - trader_gemini - DEBUG - ⚠️ 14 features are constant (std=0). Ex: ['ema_20_50_cross', 'ema_50_200_cross', 'trend_power', 'trend_alignment', 'range_extreme']
+2026-03-18 12:03:12,362 - trader_gemini - INFO - 📊 Training BTC/USDT with 76 samples, 80 features
+12:03:12 [INFO] 📊 Training BTC/USDT with 76 samples, 80 features
+2026-03-18 12:03:12,362 - trader_gemini - INFO - 🏭 ModelFactory: Instantiating Ensemble (RF, XGB, GB)...
+12:03:12 [INFO] 🏭 ModelFactory: Instantiating Ensemble (RF, XGB, GB)...
+2026-03-18 12:03:12,363 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 1/1)...
+12:03:12 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 1/1)...
+2026-03-18 12:03:12,627 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:03:12,655 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 105 estimators (Warm Start).
+2026-03-18 12:03:12,811 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 2/1)...
+12:03:12 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 2/1)...
+2026-03-18 12:03:13,060 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:03:13,103 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 110 estimators (Warm Start).
+2026-03-18 12:03:13,457 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 3/1)...
+12:03:13 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 3/1)...
+2026-03-18 12:03:13,740 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:03:13,807 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 115 estimators (Warm Start).
+2026-03-18 12:03:14,207 - trader_gemini - INFO - 📥 [BTC/USDT] Local Training finished. Score: 0.542
+12:03:14 [INFO] 📥 [BTC/USDT] Local Training finished. Score: 0.542
+2026-03-18 12:03:14,444 - MLGovernance - WARNING - ⚠️ Modelo BTC_USDT_v10_20260318 no superó Quality Gate (Sharpe: 0.54). Guardado como histórico.
+2026-03-18 12:03:14,458 - trader_gemini - INFO - 💾 [BTC/USDT] Models persisted and registered in Governance.
+12:03:14 [INFO] 💾 [BTC/USDT] Models persisted and registered in Governance.
+2026-03-18 12:03:14,458 - trader_gemini - INFO - ✨✨✨ [ML BTC/USDT] FULL TRAINING FINISHED ✨✨✨
+   Result: SUCCESS #1 | Score: 0.542 | Total Time: 2.9s
+   Features Used: 80 | Quality Guard: PASSED
+12:03:14 [INFO] ✨✨✨ [ML BTC/USDT] FULL TRAINING FINISHED ✨✨✨
+   Result: SUCCESS #1 | Score: 0.542 | Total Time: 2.9s
+   Features Used: 80 | Quality Guard: PASSED
+  🧠 ML Training completed for AVAX/USDT (bars: 300)
+  ▸ 23.1% completado (5000/21600)
+  ▸ 46.3% completado (10000/21600)
+  ▸ 69.4% completado (15000/21600)
+  ▸ 92.6% completado (20000/21600)
+
+✅ Backtest completado: 0 trades ejecutados
+2026-03-18 12:03:35,390 - trader_gemini - INFO - 🧹 ML Hybrid Ultimate Strategy for BTC/USDT cleaned up
+12:03:35 [INFO] 🧹 ML Hybrid Ultimate Strategy for BTC/USDT cleaned up
+   👉 Result AVAX/USDT: $+0.00 (0 trades)
+      Exit Reasons: {}
+
+🔹 TESTING BNB/USDT (5/26)...
+📡 Descargando 15 días de datos para BNB/USDT...
+✅ Descargados 21600 velas (15.0 días)
+
+🚀 Iniciando backtest...
+2026-03-18 12:03:55,976 - trader_gemini - INFO - 📊 [SOPHIA] PostMortem initialized (window=100)
+12:03:55 [INFO] 📊 [SOPHIA] PostMortem initialized (window=100)
+2026-03-18 12:03:56,007 - trader_gemini - INFO - 🟢 [BTC/USDT] SUPREME XGBoost Model Loaded (JSON). Warning: Feature set mismatch potential.
+12:03:56 [INFO] 🟢 [BTC/USDT] SUPREME XGBoost Model Loaded (JSON). Warning: Feature set mismatch potential.
+2026-03-18 12:03:56,008 - trader_gemini - INFO - 🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR BTC/USDT
+12:03:56 [INFO] 🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR BTC/USDT
+2026-03-18 12:03:56,009 - trader_gemini - INFO - 🎯 OBJECTIVE: $12.0 → $100000.0
+12:03:56 [INFO] 🎯 OBJECTIVE: $12.0 → $100000.0
+2026-03-18 12:03:56,009 - trader_gemini - INFO - ⚙️  Mode: Exponential Growth (Aggressive with Risk Control)
+12:03:56 [INFO] ⚙️  Mode: Exponential Growth (Aggressive with Risk Control)
+2026-03-18 12:03:56,010 - trader_gemini - INFO - 🟢 [BTC/USDT] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED
+12:03:56 [INFO] 🟢 [BTC/USDT] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED
+2026-03-18 12:03:56,010 - trader_gemini - INFO -    Consensus Threshold: 0.75
+12:03:56 [INFO]    Consensus Threshold: 0.75
+2026-03-18 12:03:56,011 - trader_gemini - INFO -    Min Engines Required: 2/3
+12:03:56 [INFO]    Min Engines Required: 2/3
+📊 Procesando 21600 barras...
+2026-03-18 12:03:56,235 - trader_gemini - INFO - 🔄 Starting Full training #1 for BTC/USDT...
+12:03:56 [INFO] 🔄 Starting Full training #1 for BTC/USDT...
+2026-03-18 12:03:56,608 - FeatureStore - INFO - ✅ [BTC/USDT] 300 features stored.
+2026-03-18 12:03:56,625 - trader_gemini - ERROR - Error detecting regime: input array type is not double
+12:03:56 [ERROR] Error detecting regime: input array type is not double
+2026-03-18 12:03:56,626 - trader_gemini - DEBUG - 🔧 [Dynamic Adaptation] UNKNOWN: Lev=3x, Conf=0.55 (Base 0.55 + 0.0), Aggr=1.0
+2026-03-18 12:03:57,060 - trader_gemini - INFO - 🔍 DEBUG ML [BTC/USDT]: Rows=106, AvgVol=0.0767%, mult=0.20, Est.Target=0.0006, Labels={-1: 48, 0: 30, 1: 28}
+12:03:57 [INFO] 🔍 DEBUG ML [BTC/USDT]: Rows=106, AvgVol=0.0767%, mult=0.20, Est.Target=0.0006, Labels={-1: 48, 0: 30, 1: 28}
+2026-03-18 12:03:57,065 - trader_gemini - DEBUG - ⚠️ 13 features are constant (std=0). Ex: ['ema_50_200_cross', 'trend_power', 'trend_alignment', 'range_extreme', 'mean_reversion_potential']
+2026-03-18 12:03:57,065 - trader_gemini - INFO - 📊 Training BTC/USDT with 76 samples, 80 features
+12:03:57 [INFO] 📊 Training BTC/USDT with 76 samples, 80 features
+2026-03-18 12:03:57,066 - trader_gemini - INFO - 🏭 ModelFactory: Instantiating Ensemble (RF, XGB, GB)...
+12:03:57 [INFO] 🏭 ModelFactory: Instantiating Ensemble (RF, XGB, GB)...
+2026-03-18 12:03:57,067 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 1/1)...
+12:03:57 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 1/1)...
+2026-03-18 12:03:57,336 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:03:57,366 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 105 estimators (Warm Start).
+2026-03-18 12:03:57,540 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 2/1)...
+12:03:57 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 2/1)...
+2026-03-18 12:03:57,821 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:03:57,870 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 110 estimators (Warm Start).
+2026-03-18 12:03:58,156 - trader_gemini - INFO -    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 3/1)...
+12:03:58 [INFO]    ⚙️ [BTC/USDT] Fitting ML Engine (Fold 3/1)...
+2026-03-18 12:03:58,424 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Feature mismatch for incremental learning. Resetting XGB.
+2026-03-18 12:03:58,491 - trader_gemini - DEBUG - 🔄 [BTC/USDT] Resuming GB with 115 estimators (Warm Start).
+2026-03-18 12:03:58,852 - trader_gemini - INFO - 📥 [BTC/USDT] Local Training finished. Score: 0.547
+12:03:58 [INFO] 📥 [BTC/USDT] Local Training finished. Score: 0.547
+2026-03-18 12:03:59,109 - MLGovernance - WARNING - ⚠️ Modelo BTC_USDT_v11_20260318 no superó Quality Gate (Sharpe: 0.55). Guardado como histórico.
+2026-03-18 12:03:59,124 - trader_gemini - INFO - 💾 [BTC/USDT] Models persisted and registered in Governance.
+12:03:59 [INFO] 💾 [BTC/USDT] Models persisted and registered in Governance.
+2026-03-18 12:03:59,125 - trader_gemini - INFO - ✨✨✨ [ML BTC/USDT] FULL TRAINING FINISHED ✨✨✨
+   Result: SUCCESS #1 | Score: 0.547 | Total Time: 2.9s
+   Features Used: 80 | Quality Guard: PASSED
+12:03:59 [INFO] ✨✨✨ [ML BTC/USDT] FULL TRAINING FINISHED ✨✨✨
+   Result: SUCCESS #1 | Score: 0.547 | Total Time: 2.9s
+   Features Used: 80 | Quality Guard: PASSED
+  🧠 ML Training completed for BNB/USDT (bars: 300)
+  ▸ 23.1% completado (5000/21600)
+✅ Logging system stopped gracefully.

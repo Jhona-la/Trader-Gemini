@@ -1,0 +1,184 @@
+📊 Metrics Exporter Initialized (Phase 99: Per-Symbol + Health).
+💰 REAL BALANCE DETECTED: $13.29
+============================================================
+🧪 BACKTEST TRADER GEMINI - FULL BASKET (26 SYMBOLS)
+============================================================
+📋 Testing Agresivo V4 (Profundo) (5 symbols)...
+
+💰 STARTING CAPITAL: $13.29
+
+🔹 TESTING BTC/USDT (1/5)...
+📡 Descargando 15 días de datos para BTC/USDT...
+✅ Descargados 21600 velas (15.0 días)
+
+🚀 Iniciando backtest...
+📊 Procesando 21600 barras...
+✅ LONG BTC/USDT: Strength=0.86, Setup=MOMENTUM, RSI=60.5, Confluence=0.55, Vol=3.0x
+  🎯 Trade #1: LONG @ $67956.69 (SL: 0.80%, TP: 1.80%)
+  ▸ 23.1% completado (5000/21600)
+  ▸ 46.3% completado (10000/21600)
+✅ SHORT BTC/USDT: Strength=0.85, Setup=MOMENTUM, RSI=22.0, Confluence=0.50, Vol=3.2x
+  🎯 Trade #3: SHORT @ $69046.49 (SL: 0.80%, TP: 1.80%)
+  ▸ 69.4% completado (15000/21600)
+✅ SHORT BTC/USDT: Strength=0.85, Setup=MOMENTUM, RSI=18.6, Confluence=0.50, Vol=7.2x
+  🎯 Trade #5: SHORT @ $65981.43 (SL: 0.80%, TP: 1.80%)
+✅ LONG BTC/USDT: Strength=0.86, Setup=MOMENTUM, RSI=64.0, Confluence=0.52, Vol=3.2x
+  🎯 Trade #7: LONG @ $69283.72 (SL: 0.80%, TP: 1.80%)
+  ▸ 92.6% completado (20000/21600)
+
+✅ Backtest completado: 8 trades ejecutados
+   👉 Result BTC/USDT: $-0.41 (4 trades)
+
+🔹 TESTING ETH/USDT (2/5)...
+📡 Descargando 15 días de datos para ETH/USDT...
+✅ Descargados 21600 velas (15.0 días)
+
+🚀 Iniciando backtest...
+📊 Procesando 21600 barras...
+✅ LONG ETH/USDT: Strength=0.86, Setup=MOMENTUM, RSI=55.4, Confluence=0.52, Vol=3.9x
+  🎯 Trade #1: LONG @ $2073.49 (SL: 0.80%, TP: 1.80%)
+  ▸ 23.1% completado (5000/21600)
+✅ LONG ETH/USDT: Strength=0.87, Setup=MOMENTUM, RSI=78.9, Confluence=0.56, Vol=4.6x
+  🎯 Trade #3: LONG @ $1896.25 (SL: 0.81%, TP: 1.80%)
+  ▸ 46.3% completado (10000/21600)
+✅ SHORT ETH/USDT: Strength=0.85, Setup=MOMENTUM, RSI=18.8, Confluence=0.50, Vol=3.7x
+  🎯 Trade #5: SHORT @ $2050.33 (SL: 0.80%, TP: 1.80%)
+✅ SHORT ETH/USDT: Strength=0.85, Setup=MOMENTUM, RSI=25.4, Confluence=0.50, Vol=5.0x
+  🎯 Trade #7: SHORT @ $2013.10 (SL: 0.83%, TP: 1.80%)
+  ▸ 69.4% completado (15000/21600)
+✅ SHORT ETH/USDT: Strength=0.85, Setup=MOMENTUM, RSI=20.8, Confluence=0.50, Vol=3.5x
+  🎯 Trade #9: SHORT @ $1959.94 (SL: 0.80%, TP: 1.80%)
+✅ SHORT ETH/USDT: Strength=0.85, Setup=MOMENTUM, RSI=26.4, Confluence=0.50, Vol=11.9x
+✅ SHORT ETH/USDT: Strength=0.89, Setup=MOMENTUM, RSI=25.7, Confluence=0.62, Vol=7.0x
+✅ SHORT ETH/USDT: Strength=0.86, Setup=MOMENTUM, RSI=25.4, Confluence=0.54, Vol=5.5x
+✅ SHORT ETH/USDT: Strength=0.85, Setup=MOMENTUM, RSI=32.7, Confluence=0.50, Vol=8.5x
+✅ LONG ETH/USDT: Strength=0.87, Setup=MOMENTUM, RSI=69.1, Confluence=0.58, Vol=3.9x
+✅ SHORT ETH/USDT: Strength=0.87, Setup=MOMENTUM, RSI=27.0, Confluence=0.57, Vol=11.2x
+✅ SHORT ETH/USDT: Strength=0.90, Setup=MOMENTUM, RSI=24.7, Confluence=0.65, Vol=4.4x
+  ▸ 92.6% completado (20000/21600)
+✅ LONG ETH/USDT: Strength=0.87, Setup=MOMENTUM, RSI=83.6, Confluence=0.56, Vol=4.2x
+✅ LONG ETH/USDT: Strength=0.87, Setup=MOMENTUM, RSI=87.3, Confluence=0.56, Vol=4.2x
+
+✅ Backtest completado: 28 trades ejecutados
+   👉 Result ETH/USDT: $-1.75 (14 trades)
+
+🔹 TESTING SOL/USDT (3/5)...
+📡 Descargando 15 días de datos para SOL/USDT...
+✅ Descargados 21600 velas (15.0 días)
+
+🚀 Iniciando backtest...
+📊 Procesando 21600 barras...
+  ▸ 23.1% completado (5000/21600)
+✅ LONG SOL/USDT: Strength=0.87, Setup=MOMENTUM, RSI=74.5, Confluence=0.56, Vol=6.9x
+  🎯 Trade #1: LONG @ $80.35 (SL: 0.86%, TP: 1.80%)
+  ▸ 46.3% completado (10000/21600)
+✅ LONG SOL/USDT: Strength=0.86, Setup=MOMENTUM, RSI=76.3, Confluence=0.55, Vol=3.4x
+  🎯 Trade #3: LONG @ $90.65 (SL: 0.99%, TP: 1.97%)
+✅ SHORT SOL/USDT: Strength=0.88, Setup=MOMENTUM, RSI=31.9, Confluence=0.59, Vol=4.1x
+  🎯 Trade #5: SHORT @ $90.04 (SL: 0.82%, TP: 1.80%)
+  ▸ 69.4% completado (15000/21600)
+✅ SHORT SOL/USDT: Strength=0.85, Setup=MOMENTUM, RSI=25.3, Confluence=0.50, Vol=4.9x
+  🎯 Trade #7: SHORT @ $82.46 (SL: 0.80%, TP: 1.80%)
+✅ SHORT SOL/USDT: Strength=0.87, Setup=MOMENTUM, RSI=25.5, Confluence=0.56, Vol=3.8x
+  🎯 Trade #9: SHORT @ $81.79 (SL: 0.80%, TP: 1.80%)
+✅ SHORT SOL/USDT: Strength=0.65, Setup=MOMENTUM, RSI=31.4, Confluence=0.50, Vol=0.7x
+✅ LONG SOL/USDT: Strength=0.80, Setup=MOMENTUM, RSI=75.0, Confluence=0.51, Vol=2.8x
+✅ SHORT SOL/USDT: Strength=0.87, Setup=MOMENTUM, RSI=23.0, Confluence=0.56, Vol=8.8x
+✅ LONG SOL/USDT: Strength=0.75, Setup=MOMENTUM, RSI=62.3, Confluence=0.56, Vol=2.0x
+✅ LONG SOL/USDT: Strength=0.73, Setup=MOMENTUM, RSI=58.8, Confluence=0.50, Vol=1.6x
+✅ LONG SOL/USDT: Strength=0.82, Setup=MOMENTUM, RSI=65.9, Confluence=0.56, Vol=2.3x
+✅ LONG SOL/USDT: Strength=0.76, Setup=MOMENTUM, RSI=58.7, Confluence=0.59, Vol=1.7x
+✅ LONG SOL/USDT: Strength=0.74, Setup=MOMENTUM, RSI=58.6, Confluence=0.53, Vol=1.7x
+✅ LONG SOL/USDT: Strength=0.80, Setup=MOMENTUM, RSI=55.7, Confluence=0.50, Vol=2.1x
+✅ LONG SOL/USDT: Strength=0.85, Setup=MOMENTUM, RSI=68.3, Confluence=0.50, Vol=4.0x
+  ▸ 92.6% completado (20000/21600)
+✅ SHORT SOL/USDT: Strength=0.83, Setup=MOMENTUM, RSI=37.8, Confluence=0.59, Vol=3.0x
+✅ SHORT SOL/USDT: Strength=0.73, Setup=MOMENTUM, RSI=34.4, Confluence=0.50, Vol=1.8x
+
+✅ Backtest completado: 34 trades ejecutados
+   👉 Result SOL/USDT: $-1.73 (17 trades)
+
+🔹 TESTING XRP/USDT (4/5)...
+📡 Descargando 15 días de datos para XRP/USDT...
+✅ Descargados 21600 velas (15.0 días)
+
+🚀 Iniciando backtest...
+📊 Procesando 21600 barras...
+  ▸ 23.1% completado (5000/21600)
+✅ SHORT XRP/USDT: Strength=0.86, Setup=MOMENTUM, RSI=36.0, Confluence=0.55, Vol=3.3x
+  🎯 Trade #1: SHORT @ $1.34 (SL: 0.80%, TP: 1.80%)
+  ▸ 46.3% completado (10000/21600)
+✅ SHORT XRP/USDT: Strength=0.86, Setup=MOMENTUM, RSI=31.1, Confluence=0.52, Vol=4.0x
+  🎯 Trade #3: SHORT @ $1.39 (SL: 0.80%, TP: 1.80%)
+✅ SHORT XRP/USDT: Strength=0.85, Setup=MOMENTUM, RSI=31.4, Confluence=0.50, Vol=3.1x
+  🎯 Trade #5: SHORT @ $1.35 (SL: 0.80%, TP: 1.80%)
+  ▸ 69.4% completado (15000/21600)
+✅ SHORT XRP/USDT: Strength=0.85, Setup=MOMENTUM, RSI=31.6, Confluence=0.50, Vol=3.7x
+  🎯 Trade #7: SHORT @ $1.35 (SL: 0.80%, TP: 1.80%)
+✅ SHORT XRP/USDT: Strength=0.86, Setup=MOMENTUM, RSI=24.4, Confluence=0.53, Vol=3.3x
+  🎯 Trade #9: SHORT @ $1.35 (SL: 0.80%, TP: 1.80%)
+✅ SHORT XRP/USDT: Strength=0.87, Setup=MOMENTUM, RSI=32.7, Confluence=0.56, Vol=4.7x
+✅ SHORT XRP/USDT: Strength=0.75, Setup=MOMENTUM, RSI=42.4, Confluence=0.56, Vol=1.7x
+✅ SHORT XRP/USDT: Strength=0.74, Setup=MOMENTUM, RSI=34.4, Confluence=0.54, Vol=1.6x
+✅ LONG XRP/USDT: Strength=0.65, Setup=MOMENTUM, RSI=75.9, Confluence=0.50, Vol=0.9x
+  ▸ 92.6% completado (20000/21600)
+✅ LONG XRP/USDT: Strength=0.80, Setup=MOMENTUM, RSI=68.3, Confluence=0.50, Vol=2.4x
+✅ SHORT XRP/USDT: Strength=0.75, Setup=MOMENTUM, RSI=37.0, Confluence=0.56, Vol=1.6x
+✅ LONG XRP/USDT: Strength=0.82, Setup=MOMENTUM, RSI=82.3, Confluence=0.56, Vol=2.4x
+
+✅ Backtest completado: 24 trades ejecutados
+   👉 Result XRP/USDT: $-1.84 (12 trades)
+
+🔹 TESTING DOGE/USDT (5/5)...
+📡 Descargando 15 días de datos para DOGE/USDT...
+✅ Descargados 21600 velas (15.0 días)
+
+🚀 Iniciando backtest...
+📊 Procesando 21600 barras...
+  ▸ 23.1% completado (5000/21600)
+✅ LONG DOGE/USDT: Strength=1.00, Setup=MEAN_REV, RSI=82.1, Confluence=0.56, Vol=11.9x
+  🎯 Trade #1: LONG @ $0.09 (SL: 1.19%, TP: 2.39%)
+✅ SHORT DOGE/USDT: Strength=0.85, Setup=MOMENTUM, RSI=24.0, Confluence=0.50, Vol=6.7x
+  🎯 Trade #3: SHORT @ $0.09 (SL: 0.83%, TP: 1.80%)
+  ▸ 46.3% completado (10000/21600)
+✅ LONG DOGE/USDT: Strength=0.86, Setup=MOMENTUM, RSI=72.8, Confluence=0.55, Vol=5.3x
+  🎯 Trade #5: LONG @ $0.09 (SL: 0.87%, TP: 1.80%)
+✅ SHORT DOGE/USDT: Strength=0.85, Setup=MOMENTUM, RSI=25.0, Confluence=0.50, Vol=3.0x
+  🎯 Trade #7: SHORT @ $0.09 (SL: 1.15%, TP: 2.30%)
+  ▸ 69.4% completado (15000/21600)
+✅ LONG DOGE/USDT: Strength=0.95, Setup=MEAN_REV, RSI=72.0, Confluence=0.50, Vol=4.1x
+  🎯 Trade #9: LONG @ $0.09 (SL: 0.80%, TP: 1.80%)
+✅ SHORT DOGE/USDT: Strength=0.85, Setup=MOMENTUM, RSI=30.6, Confluence=0.50, Vol=11.1x
+✅ SHORT DOGE/USDT: Strength=0.85, Setup=MOMENTUM, RSI=31.8, Confluence=0.50, Vol=9.0x
+✅ SHORT DOGE/USDT: Strength=0.85, Setup=MOMENTUM, RSI=30.1, Confluence=0.50, Vol=3.2x
+✅ SHORT DOGE/USDT: Strength=0.87, Setup=MOMENTUM, RSI=35.0, Confluence=0.56, Vol=5.6x
+  ▸ 92.6% completado (20000/21600)
+✅ SHORT DOGE/USDT: Strength=0.85, Setup=MOMENTUM, RSI=23.6, Confluence=0.50, Vol=4.2x
+
+✅ Backtest completado: 20 trades ejecutados
+   👉 Result DOGE/USDT: $-1.61 (10 trades)
+
+============================================================
+🏆 GRAND TOTAL REPORT (26 SYMBOLS)
+============================================================
+💰 Initial Capital: $13.29
+💰 Final Capital:   $5.96
+📈 Total PnL:       $-7.33 (-55.18%)
+📊 Total Trades:    57
+✅ Win Rate:        38.6%
+
+🏅 TOP PERFORMERS:
+   1. BTC/USDT: $-0.41
+   1. DOGE/USDT: $-1.61
+   1. SOL/USDT: $-1.73
+   1. ETH/USDT: $-1.75
+   1. XRP/USDT: $-1.84
+
+💀 WORST PERFORMERS:
+   - BTC/USDT: $-0.41
+   - DOGE/USDT: $-1.61
+   - SOL/USDT: $-1.73
+   - ETH/USDT: $-1.75
+   - XRP/USDT: $-1.84
+
+📁 Full results saved to: backtest_smart_full_results.json

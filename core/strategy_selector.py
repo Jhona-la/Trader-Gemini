@@ -1,9 +1,13 @@
 """
-🧠 THE SOVEREIGN META-BRAIN - Strategy Selector
+🧠 THE SOVEREIGN META-BRAIN - Strategy Selector v2.0 (Anti-Whipsaw)
 QUÉ: Módulo de meta-cognición que decide qué estrategia priorizar.
-POR QUÉ: Los regímenes de mercado cambian; una estrategia que ganó ayer puede perder hoy.
-PARA QUÉ: Maximizar el Expected Value (EV) seleccionando la herramienta adecuada.
-CÓMO: Ejecuta simulaciones rápidas (mocking) y pondera con resultados reales del Portfolio.
+POR QUÉ: Los regímenes de mercado cambian; una estrategia que ganó ayer
+        puede perder hoy. El efecto Whipsaw duplica el drawdown cuando se
+        persigue al ganador reciente (mean-reversion en crypto).
+PARA QUÉ: Maximizar el Expected Value (EV) sin perseguir el techo de
+        la curva de rendimiento de ninguna estrategia individual.
+CÓMO: EMA sobre performance real, Softmax allocation, penalización DD,
+       cooldown anti-chasing.
 """
 
 import numpy as np
@@ -63,16 +67,36 @@ class StrategySelector:
             self.portfolio.strategy_rankings = self.strategy_health
 
     def _get_real_performance(self, strategy_id) -> float:
-        """Fetch win rate and profit factor from Portfolio."""
-        if not self.portfolio: return 0.5 # Neutral
+        """
+        Fetch win rate + profit factor del Portfolio, penalizados por drawdown actual.
+        
+        QUÉ: Score compuesto que refleja performance histórico Y estado actual del DD.
+        POR QUÉ: Solo usar win-rate pasado causa Whipsaw: una estrategia en DD
+                 activo debe perder peso inmediatamente.
+        PARA QUÉ: Que el softmax refleje el riesgo ACTUAL, no solo el histórico.
+        """
+        if not self.portfolio: return 0.5  # Neutral
         
         perf = self.portfolio.strategy_performance.get(strategy_id)
         if not perf or perf['trades'] < 5:
-            return 0.5 # Neutral for new strategies
-            
-        wr = perf['wins'] / perf['trades']
-        # Profit factor or expectancy would be better, but WR is a good proxy for scalping
-        return wr
+            return 0.5  # Neutral for new strategies
+        
+        trades = perf['trades']
+        wr = perf['wins'] / trades
+        
+        # Profit factor (métrica más robusta que WR en scalping)
+        gross_profit = perf.get('gross_profit', 0.0)
+        gross_loss   = abs(perf.get('gross_loss', 1.0))
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else wr
+        
+        # Score base: blend de WR y PF normalizado
+        base_score = (wr * 0.5) + (min(profit_factor / 2.0, 1.0) * 0.5)
+        
+        # Penalización por drawdown actual de la estrategia
+        current_dd = perf.get('current_drawdown_pct', 0.0)  # 0-1 float
+        dd_penalty = max(0.1, 1.0 - (3.0 * current_dd))     # λ=3.0, min 10%
+        
+        return float(np.clip(base_score * dd_penalty, 0.05, 1.0))
 
     def _run_mini_sim(self, strategy_id) -> float:
         """
@@ -113,17 +137,50 @@ class StrategySelector:
 
     def get_strategy_multiplier(self, strategy_id) -> float:
         """
-        Returns a weight multiplier for the RiskManager.
-        Top Rank = 1.2x sizing/priority
-        Bottom Rank = 0.5x sizing/priority
-        """
-        health = self.strategy_health.get(strategy_id, {'rank': 3})
-        rank = health['rank']
+        Retorna un multiplicador continuo derivado de los pesos Softmax del Meta-Brain.
         
-        if rank == 1: return 1.2   # Boost winner
-        if rank == 2: return 1.0   # Standard
-        if rank == 3: return 0.8   # Cautious
-        return 0.5                 # Drastic reduction for losers
+        QUÉ: En lugar de ranking duro (1.2x/0.5x), usa la distribución Softmax
+             para un peso continuo que varía suavemente entre estrategias.
+        POR QUÉ: El ranking duro binario causa whipsaw al cambiar bruscamente
+                 entre niveles. Softmax suaviza la transición.
+        RANGO: 0.5x (estrategia muy débil) a 1.5x (líer claro).
+        """
+        weights = self.get_anti_whipsaw_weights()
+        w = weights.get(strategy_id, 1.0 / max(1, len(self.strategies_pool)))
+        
+        # Normalizar al rango [0.5, 1.5]
+        n = len(self.strategies_pool)
+        neutral = 1.0 / n  # Peso si todos fueran iguales
+        multiplier = 0.5 + (w / (2 * neutral)) if neutral > 0 else 1.0
+        return float(np.clip(multiplier, 0.5, 1.5))
+    
+    def get_anti_whipsaw_weights(self) -> dict:
+        """
+        Retorna pesos Softmax para todas las estrategias del pool.
+        
+        QUÉ: Portfolio balanceado con temperatura controlada (anti-concentración
+             y anti-dispersión excesiva).
+        POR QUÉ: Softmax con temperatura ≈ 0.1 da distribución que favorece
+                 al líer pero mantiene diversificación como seguro.
+        PARA QUÉ: Que el RiskManager pueda usar pesos fractales en lugar de
+                 alocar 100% a una estrategia por turno.
+        """
+        health = self.strategy_health
+        if not health:
+            # Neutral weights if not ranked yet
+            n = max(1, len(self.strategies_pool))
+            return {s: 1.0 / n for s in self.strategies_pool}
+        
+        scores = np.array([health.get(s, {}).get('score', 0.5) for s in self.strategies_pool])
+        
+        # Softmax con temperatura=0.1 (concentra en líder sin ser winner-take-all)
+        TEMPERATURE = 0.10
+        scaled = scores / TEMPERATURE
+        scaled -= scaled.max()   # Estabilidad numérica
+        exp_s = np.exp(scaled)
+        weights_arr = exp_s / exp_s.sum()
+        
+        return {s: float(w) for s, w in zip(self.strategies_pool, weights_arr)}
 
     def get_governance_advice(self) -> dict:
         """

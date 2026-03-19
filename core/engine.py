@@ -5,6 +5,7 @@ Coordinates data, strategies, risk, and execution with enhanced validation and r
 
 from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
 import asyncio
+import time
 try:
     import uvloop
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -23,6 +24,7 @@ from utils.logger import logger
 from utils.latency_monitor import latency_monitor
 from core.gc_tuner import GCTuner
 from core.forensics import ForensicRecorder # Phase 20: Forensic Logging
+from core.world_awareness import world_awareness
 
 try:
     import psutil
@@ -177,10 +179,10 @@ class Engine:
         
         # ✅ PHASE IV: COLD BOOT (Operational Continuity)
         # Verify if we need to recover state from Exchange
-        if self.executor and self.portfolio:
+        if self.execution_handler and self.portfolio:
              try:
                  logger.info("🔌 [COLD BOOT] Initiating State Recovery Protocol...")
-                 self.executor.sync_portfolio_state(self.portfolio)
+                 self.execution_handler.sync_portfolio_state(self.portfolio)
              except Exception as e:
                  logger.critical(f"❌ [COLD BOOT] FAILED: {e} - Proceeding with local state.")
         
@@ -411,6 +413,13 @@ class Engine:
             
         if self.portfolio:
              self.portfolio.update_signal(event)
+             
+             # [PHASE 9: ML Metacognition] Propagate Brier Score & Entropy to Portfolio for Dashboard Persistence
+             if getattr(event, 'metadata', None):
+                 if 'brier_score' in event.metadata:
+                     self.portfolio.current_brier_score = event.metadata['brier_score']
+                 if 'ppo_entropy' in event.metadata:
+                     self.portfolio.current_ppo_entropy = event.metadata['ppo_entropy']
 
         if self.risk_manager:
             order_event = self.risk_manager.generate_order(event, current_price)
@@ -475,8 +484,25 @@ class Engine:
                 dh = self.data_handlers[0]
                 bars = dh.get_latest_bars('BTC/USDT', n=50)
                 if bars and len(bars) >= 20:
-                     # TODO: Implement local regime fallback logic here or utility
-                     pass
+                     close_prices = [b['close'] for b in bars]
+                     # 1. Calcular Retornos y Volatilidad (Desviación Estándar)
+                     returns = [(close_prices[i] - close_prices[i-1])/close_prices[i-1] for i in range(1, len(close_prices))]
+                     mean_ret = sum(returns) / len(returns) if returns else 0.0
+                     var_ret = sum((r - mean_ret)**2 for r in returns) / len(returns) if returns else 0.0
+                     std_ret = var_ret**0.5
+                     
+                     # 2. Calcular Drift (Dirección del Precio)
+                     drift = (close_prices[-1] - close_prices[0]) / close_prices[0] if close_prices[0] > 0 else 0.0
+                     
+                     # 3. Clasificación de Umbrales Seguros
+                     if std_ret > 0.002:  # Volatilidad alta (~0.2% por barra)
+                         return 'HIGH_VOLATILITY'
+                     elif drift > 0.003: # Tendencia alcista > 0.3%
+                         return 'TRENDING_BULL'
+                     elif drift < -0.003: # Tendencia bajista < -0.3%
+                         return 'TRENDING_BEAR'
+                     else:
+                         return 'RANGING'
         except Exception:
             pass
             

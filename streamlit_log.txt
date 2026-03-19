@@ -1,0 +1,1049 @@
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8501
+  Network URL: http://192.168.2.3:8501
+
+Executing <Task pending name='Task-1' coro=<run.<locals>.main() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\web\bootstrap.py:439> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:326> cb=[_run_until_complete_cb() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:181] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py:109> took 0.176 seconds
+Executing <Handle _on_server_start.<locals>.maybe_open_browser() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\web\bootstrap.py:131 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\web\bootstrap.py:149> took 0.225 seconds
+Executing <Task finished name='Task-18' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.119 seconds
+Executing <Task finished name='Task-21' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 1.570 seconds
+Executing <Task pending name='Task-32' coro=<RequestHandler._execute() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1859> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\iostream.py:805> cb=[_wrap_awaitable.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\gen.py:868, _HandlerDelegate.execute.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:2509] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.139 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.107 seconds
+01:49:40 [INFO] 🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)
+Executing <Task finished name='Task-89' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.225 seconds
+Executing <Task finished name='Task-91' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.117 seconds
+01:49:45 [INFO] 💓 Heartbeat worker started
+Executing <Task finished name='Task-99' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.126 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.141 seconds
+Executing <Task finished name='Task-117' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.148 seconds
+Executing <Task finished name='Task-118' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.160 seconds
+Executing <Task finished name='Task-119' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.119 seconds
+Executing <Task finished name='Task-121' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.126 seconds
+Executing <Task finished name='Task-126' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.102 seconds
+Executing <Task finished name='Task-127' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.145 seconds
+Executing <Task finished name='Task-132' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.205 seconds
+01:49:49 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:49:49 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task finished name='Task-173' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.113 seconds
+2026-02-23 01:49:51.237 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+Executing <Task finished name='Task-176' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 1.034 seconds
+Executing <Task finished name='Task-178' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.141 seconds
+Executing <Task finished name='Task-179' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.141 seconds
+Executing <Task finished name='Task-266' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 3.648 seconds
+01:49:56 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:49:57 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:49:58.121 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 5.049 seconds
+Executing <Task finished name='Task-274' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 1.384 seconds
+Executing <Task finished name='Task-279' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.202 seconds
+Executing <Task finished name='Task-281' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.121 seconds
+Executing <Task finished name='Task-283' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.219 seconds
+01:50:04 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task finished name='Task-284' coro=<RequestHandler._execute() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\tornado\web.py:1807> result=None created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:732> took 0.103 seconds
+01:50:04 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.130 seconds
+2026-02-23 01:50:04.816 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:50:10 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.150 seconds
+2026-02-23 01:50:10.819 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:50:11 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:50:16 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.155 seconds
+2026-02-23 01:50:16.735 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:50:19 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:50:19 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.193 seconds
+2026-02-23 01:50:20.048 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:50:26 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:50:32 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:50:33.013 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:50:33 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:50:40 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:50:45 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.111 seconds
+2026-02-23 01:50:45.847 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:50:47 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:50:54 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.136 seconds
+01:50:58 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:50:58.640 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:51:01 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:51:08 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.127 seconds
+01:51:10 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.135 seconds
+2026-02-23 01:51:11.379 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:51:15 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:51:21 [INFO] 🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)
+01:51:22 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:51:24 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 2.762 seconds
+2026-02-23 01:51:24.415 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:51:30 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:51:36 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:51:37 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.148 seconds
+2026-02-23 01:51:37.314 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:51:44 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:51:49 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.133 seconds
+2026-02-23 01:51:50.079 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:51:51 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:51:58 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <TimerHandle when=19544.1892961 _release_waiter(<Future finis...events.py:459>) at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:435 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:499> took 0.139 seconds
+01:52:02 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.137 seconds
+2026-02-23 01:52:02.962 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:52:05 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:52:12 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:52:13 [INFO] 🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)
+01:52:15 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:52:15.955 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 2.855 seconds
+01:52:19 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.138 seconds
+01:52:26 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:52:28 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:52:28.812 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:52:33 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.130 seconds
+01:52:40 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:52:41 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.137 seconds
+2026-02-23 01:52:41.825 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:52:47 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.140 seconds
+01:52:54 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:52:54.724 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:52:54 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:53:01 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <TimerHandle when=19608.8427804 _release_waiter(<Future finis...events.py:459>) at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:435 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:499> took 0.131 seconds
+01:53:07 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:53:07.516 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:53:08 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:53:15 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <TimerHandle when=19621.6224051 _release_waiter(<Future finis...events.py:459>) at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:435 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:499> took 0.153 seconds
+01:53:20 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.149 seconds
+2026-02-23 01:53:20.519 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:53:22 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:53:30 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.129 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.136 seconds
+01:53:33 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:53:33.484 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:53:37 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <TimerHandle when=19647.602689 _release_waiter(<Future finis...events.py:459>) at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:435 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:499> took 0.144 seconds
+01:53:44 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:53:45 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:53:46.378 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:53:51 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.129 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.228 seconds
+01:53:58 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:53:59 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:53:59.707 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:54:05 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.159 seconds
+01:54:12 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:54:12 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:54:13.047 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:54:19 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.128 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.132 seconds
+01:54:25 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:54:26.095 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:54:27 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:54:34 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.127 seconds
+01:54:38 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.135 seconds
+2026-02-23 01:54:38.946 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:54:41 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:54:48 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.143 seconds
+01:54:51 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.104 seconds
+2026-02-23 01:54:51.779 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:54:55 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.137 seconds
+01:55:02 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:55:04 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.147 seconds
+2026-02-23 01:55:04.664 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:55:09 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.128 seconds
+01:55:16 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:55:17 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:55:17.579 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:55:23 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.133 seconds
+01:55:30 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.108 seconds
+2026-02-23 01:55:30.446 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:55:30 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:55:37 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.130 seconds
+01:55:42 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:55:43.237 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:55:44 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:55:51 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.129 seconds
+01:55:55 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.140 seconds
+2026-02-23 01:55:56.056 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:55:58 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:56:05 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.140 seconds
+01:56:08 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:56:08.916 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:56:12 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.152 seconds
+01:56:20 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:56:21 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.126 seconds
+2026-02-23 01:56:21.834 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:56:27 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.129 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.228 seconds
+01:56:34 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:56:34 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:56:35.011 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:56:41 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:56:47 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.140 seconds
+2026-02-23 01:56:47.878 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:56:48 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:56:56 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.147 seconds
+01:57:00 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:57:01.196 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:57:03 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:57:11 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.137 seconds
+01:57:14 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:57:14.577 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:57:18 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.137 seconds
+01:57:26 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:57:27 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.129 seconds
+2026-02-23 01:57:28.071 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:57:34 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.135 seconds
+01:57:41 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.139 seconds
+2026-02-23 01:57:41.485 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:57:41 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:57:48 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.139 seconds
+01:57:53 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.184 seconds
+2026-02-23 01:57:54.517 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:57:56 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:58:03 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.137 seconds
+01:58:07 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:58:07.614 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:58:10 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:58:17 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.140 seconds
+01:58:19 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.136 seconds
+2026-02-23 01:58:20.457 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:58:24 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.130 seconds
+01:58:31 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:58:32 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.142 seconds
+2026-02-23 01:58:33.410 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:58:38 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.145 seconds
+01:58:45 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:58:45 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.127 seconds
+2026-02-23 01:58:46.312 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:58:52 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.127 seconds
+01:58:59 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.131 seconds
+2026-02-23 01:58:59.613 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:58:59 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:59:06 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <TimerHandle when=19973.7285775 _set_result_unless_cancelled(<Future finis...events.py:459>, None) at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\futures.py:319 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:698> took 0.127 seconds
+01:59:12 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.139 seconds
+2026-02-23 01:59:12.573 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:59:13 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:59:20 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.149 seconds
+01:59:25 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 01:59:25.436 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:59:27 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:59:34 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.134 seconds
+01:59:37 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.147 seconds
+2026-02-23 01:59:38.307 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:59:41 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.129 seconds
+01:59:48 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+01:59:50 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.136 seconds
+2026-02-23 01:59:51.124 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+01:59:56 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.131 seconds
+02:00:03 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:00:03 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:00:04.014 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:00:10 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.128 seconds
+02:00:16 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:00:16.988 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:00:17 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:00:24 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.129 seconds
+02:00:29 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:00:29.862 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:00:31 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:00:38 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <TimerHandle when=20063.996866899997 _set_result_unless_cancelled(<Future finis...events.py:459>, None) at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\futures.py:319 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:698> took 0.130 seconds
+02:00:42 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.138 seconds
+2026-02-23 02:00:42.661 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:00:45 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:00:52 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.134 seconds
+02:00:55 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.134 seconds
+2026-02-23 02:00:55.502 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:00:59 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:01:06 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:01:08 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:01:08.463 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:01:13 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.132 seconds
+02:01:21 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:01:21 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:01:21.562 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:01:28 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.128 seconds
+02:01:33 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:01:34.387 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:01:35 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:01:42 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.128 seconds
+02:01:46 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.114 seconds
+2026-02-23 02:01:47.201 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:01:49 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:01:56 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.128 seconds
+02:01:59 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.140 seconds
+2026-02-23 02:02:00.002 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:02:03 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:02:10 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:02:12 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.144 seconds
+2026-02-23 02:02:12.871 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:02:17 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:677> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.138 seconds
+02:02:24 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:02:25 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:677> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.140 seconds
+2026-02-23 02:02:25.916 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:02:31 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.134 seconds
+02:02:38 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.146 seconds
+2026-02-23 02:02:38.909 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:02:39 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:02:46 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <TimerHandle when=20193.0387929 _release_waiter(<Future finis...events.py:459>) at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:435 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:499> took 0.136 seconds
+02:02:51 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.119 seconds
+2026-02-23 02:02:51.724 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:02:53 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:03:00 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.128 seconds
+02:03:04 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:03:04.522 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:03:07 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:03:14 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.131 seconds
+02:03:16 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.138 seconds
+2026-02-23 02:03:17.338 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:03:21 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.137 seconds
+02:03:28 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:03:29 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.149 seconds
+2026-02-23 02:03:30.304 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:03:35 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <TimerHandle when=20244.4488447 _release_waiter(<Future finis...events.py:459>) at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:435 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:499> took 0.133 seconds
+02:03:42 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:03:42 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.149 seconds
+2026-02-23 02:03:43.386 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:03:49 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.130 seconds
+02:03:55 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.112 seconds
+2026-02-23 02:03:56.434 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:03:57 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:04:04 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.136 seconds
+02:04:09 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:04:09.788 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:04:12 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:04:19 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.131 seconds
+02:04:22 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.140 seconds
+2026-02-23 02:04:23.235 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:04:27 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.130 seconds
+02:04:34 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:04:36 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:04:36.675 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:04:42 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.132 seconds
+02:04:49 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.137 seconds
+02:04:49 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:04:50.115 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:04:57 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.130 seconds
+02:05:02 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.101 seconds
+2026-02-23 02:05:02.995 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:05:04 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:05:11 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.144 seconds
+02:05:15 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.106 seconds
+2026-02-23 02:05:15.795 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:05:18 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:05:25 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.133 seconds
+02:05:28 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.128 seconds
+2026-02-23 02:05:28.597 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:05:32 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.131 seconds
+02:05:39 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:05:41 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:05:41.487 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:05:46 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.132 seconds
+02:05:53 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:05:54 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.177 seconds
+2026-02-23 02:05:54.713 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:06:00 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.135 seconds
+02:06:07 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.128 seconds
+2026-02-23 02:06:07.656 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:06:07 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:06:14 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.165 seconds
+02:06:20 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.135 seconds
+2026-02-23 02:06:20.611 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:06:21 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:06:28 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.148 seconds
+02:06:33 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.154 seconds
+2026-02-23 02:06:33.532 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:06:36 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:06:43 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.136 seconds
+02:06:45 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.125 seconds
+2026-02-23 02:06:46.366 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:06:50 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.135 seconds
+02:06:57 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:06:58 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.144 seconds
+2026-02-23 02:06:59.354 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:07:04 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.128 seconds
+02:07:11 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:07:11 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.137 seconds
+2026-02-23 02:07:12.267 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:07:18 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.142 seconds
+02:07:24 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:07:25.185 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:07:25 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:07:32 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.142 seconds
+02:07:37 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.138 seconds
+2026-02-23 02:07:38.085 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:07:39 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:07:46 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:07:50 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:07:51.072 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:07:53 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:08:00 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.399 seconds
+02:08:03 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:08:04.314 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:08:08 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.147 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.168 seconds
+02:08:15 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:08:17 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:08:17.493 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:08:23 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task finished name='Task-20602' coro=<Event.wait() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\locks.py:200> result=True created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.309 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.286 seconds
+02:08:32 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:08:33 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.236 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.140 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.104 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.119 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.343 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.248 seconds
+2026-02-23 02:08:35.420 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.243 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.171 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.278 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.223 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.138 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.160 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.129 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.142 seconds
+02:08:42 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.349 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.631 seconds
+Executing <Task pending name='Task-20836' coro=<Event.wait() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\locks.py:213> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> cb=[_wait.<locals>._on_completion() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:503] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.187 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.112 seconds
+Executing <Task finished name='Task-20837' coro=<Event.wait() done, defined at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\locks.py:200> result=True created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.124 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.745 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.337 seconds
+02:08:50 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.606 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.124 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.112 seconds
+Executing <Task pending name='Task-20866' coro=<Event.wait() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\locks.py:213> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> cb=[_wait.<locals>._on_completion() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:503] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.178 seconds
+Executing <Task pending name='Task-20867' coro=<Event.wait() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\locks.py:213> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> cb=[_wait.<locals>._on_completion() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:503] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.141 seconds
+02:08:54 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.119 seconds
+Executing <Task pending name='Task-20877' coro=<Event.wait() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\locks.py:213> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> cb=[_wait.<locals>._on_completion() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:503] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.138 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.200 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.142 seconds
+2026-02-23 02:08:56.493 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.671 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.438 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.439 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.215 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.192 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.108 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.163 seconds
+02:09:01 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.108 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.497 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.821 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.203 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.299 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.579 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.381 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.103 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 1.792 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.211 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.176 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.204 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.164 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 1.021 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.102 seconds
+02:09:11 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.206 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.382 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.348 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.508 seconds
+02:09:14 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.175 seconds
+2026-02-23 02:09:18.425 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:09:18 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:09:26 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 0.130 seconds
+02:09:33 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:09:35 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:09:39.296 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:09:42 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle Event.set() created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:760> took 2.027 seconds
+02:09:51 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:09:53 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 1.024 seconds
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 1.005 seconds
+2026-02-23 02:09:59.562 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:10:00 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:10:07 [WARNING] ⚠️ Binance API error: HTTPSConnectionPool(host='api.binance.com', port=443): Max retries exceeded with url: /api/v3/ping (Caused by NameResolutionError("HTTPSConnection(host='api.binance.com', port=443): Failed to resolve 'api.binance.com' ([Errno 11001] getaddrinfo failed)"))
+02:10:12 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:10:15 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:10:21.756 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:10:22 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:10:29 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:10:34 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+2026-02-23 02:10:35.859 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+02:10:37 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Handle _wait.<locals>._on_completion(<Task finishe...\tasks.py:395>) at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:503 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\events.py:94> took 0.250 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.109 seconds
+02:10:49 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:10:51 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:10:56 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.260 seconds
+2026-02-23 02:11:00.008 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:673> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.111 seconds
+02:11:04 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+Executing <_ThreadSafeHandle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:546 created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\app_session.py:545> took 0.126 seconds
+Executing <Task pending name='Runtime.loop_coroutine' coro=<Runtime._loop_coroutine() running at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\streamlit\runtime\runtime.py:683> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py:459> created at C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\tasks.py:395> took 0.149 seconds
+02:11:11 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:11:18 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:11:25 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:11:32 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:11:40 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:11:48 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:11:57 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:12:07 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:12:14 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:12:21 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:12:28 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:12:35 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:12:42 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:12:50 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:12:57 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:13:04 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:13:11 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:13:18 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:13:26 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:13:33 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:13:40 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:13:47 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:13:54 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:14:01 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:14:08 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:14:15 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:14:22 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:14:29 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:14:36 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:14:43 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:14:50 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:14:57 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:15:04 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:15:11 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:15:19 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:15:26 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:15:33 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:15:40 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:15:47 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:15:54 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:16:01 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:16:08 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:16:15 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:16:22 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:16:29 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:16:36 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:16:43 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:16:50 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:16:57 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:17:04 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109
+02:17:12 [WARNING] ⚠️ Binance API error: APIError(code=-2015): Invalid API-key, IP, or permissions for action, request ip: 190.27.96.109

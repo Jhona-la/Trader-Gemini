@@ -15,9 +15,8 @@ class SignalGenerator:
     def generate_signal(self, df, prediction, probability, threshold=0.65, regime="UNKNOWN", threshold_mod=0.0):
         """
         Genera una señal de trading basada en la predicción del modelo y la confluencia.
+        [PHASE 3: Diaria] Meta-Ensembling usa el `market_cluster` para alterar este `threshold`!
         """
-        # Apply Dynamic Threshold Modifier from Regime
-        threshold += threshold_mod
         if df.empty:
             return None
             
@@ -25,35 +24,58 @@ class SignalGenerator:
         timestamp = current_bar['datetime']
         close_price = current_bar['close']
         
+        # ---------------------------------------------------------
+        # PHASE 3: SOPHIA KMEANS META-ENSEMBLE THRESHOLD ADJUSTMENT
+        # ---------------------------------------------------------
+        cluster = current_bar.get('market_cluster', -1)
+        # Cluster Anchors: 0=Ranging, 1=Bull, 2=Bear, 3=Choppy
+        # Prediction: 1(Buy), 0/-1(Sell)
+        is_buy_pred = (prediction == 1)
+        is_sell_pred = (prediction == 0 or prediction == -1)
+        
+        if cluster == 0:
+            threshold_mod -= 0.02 # Rango: Ligeramente más permisivos en reversiones
+        elif cluster == 1:
+            if is_buy_pred: threshold_mod -= 0.05   # Bull: Promover long
+            if is_sell_pred: threshold_mod += 0.08  # Bull: Restringir short
+        elif cluster == 2:
+            if is_sell_pred: threshold_mod -= 0.05  # Bear: Promover short
+            if is_buy_pred: threshold_mod += 0.08   # Bear: Restringir long
+        elif cluster == 3:
+            threshold_mod += 0.05 # Choppy: Exigir alta certeza (+5%) para minimizar whipsaws
+            
+        # Apply combined modifiers
+        threshold += threshold_mod
+        
         # Lógica de Señal Básica
         signal_type = "NEUTRAL"
         confidence = probability
         
-        # Filtro de Régimen (Solo operar a favor de tendencia si es TRENDING)
+        # Filtro de Régimen Clásico (Mantiene retro-compatibilidad)
         if regime == "TRENDING":
-            if prediction == 1 and current_bar['trend_alignment'] > 0:
+            if is_buy_pred and current_bar['trend_alignment'] > 0:
                 signal_type = "BUY"
-            elif prediction == 0 and current_bar['trend_alignment'] < 0:
+            elif is_sell_pred and current_bar['trend_alignment'] < 0:
                 signal_type = "SELL"
             else:
                 confidence *= 0.8 # Penalizar contra-tendencia
-                if prediction == 1: signal_type = "BUY"
-                elif prediction == 0: signal_type = "SELL"
+                if is_buy_pred: signal_type = "BUY"
+                elif is_sell_pred: signal_type = "SELL"
                 
         elif regime == "RANGING":
              # En rango, favorecer reversión a la media
-             if prediction == 1 and current_bar['rsi_14'] < 40:
+             if is_buy_pred and current_bar['rsi_14'] < 40:
                  signal_type = "BUY"
-             elif prediction == 0 and current_bar['rsi_14'] > 60:
+             elif is_sell_pred and current_bar['rsi_14'] > 60:
                  signal_type = "SELL"
              else:
                  confidence *= 0.7 # Penalizar señales de ruptura en rango
-                 if prediction == 1: signal_type = "BUY"
-                 elif prediction == 0: signal_type = "SELL"
+                 if is_buy_pred: signal_type = "BUY"
+                 elif is_sell_pred: signal_type = "SELL"
         
         else: # VOLATILE/UNKNOWN
-             if prediction == 1: signal_type = "BUY"
-             elif prediction == 0: signal_type = "SELL"
+             if is_buy_pred: signal_type = "BUY"
+             elif is_sell_pred: signal_type = "SELL"
              confidence *= 0.6 # Penalizar alta volatilidad
              
         # Filtro de Confluencia

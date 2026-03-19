@@ -11,9 +11,10 @@ from utils.notifier import Notifier
 from utils.data_manager import DatabaseHandler, safe_append_csv, safe_read_csv
 from utils.atomic_guard import AtomicGuard
 from core.state_manager import AtomicStateManager # Phase 27
-from sophia.post_mortem import PostMortemComparator  # SOPHIA-INTELLIGENCE Protocol
+from sophia.post_mortem import PostMortemComparator, PostMortemResult  # SOPHIA-INTELLIGENCE Protocol
 from sophia.nemesis import NemesisEngine  # NÉMESIS-RETROSPECCIÓN Protocol
 from utils.axioma_math import PrecisionAuditor  # CRITERIO-AXIOMA Protocol
+from core.meta_optimizer import meta_optimizer # Phase 46: Sovereign Meta-Predictor
 
 from typing import Dict, Any
 
@@ -86,6 +87,10 @@ class Portfolio:
         }
         # Phase 7: Meta-Brain Stats
         self.strategy_rankings = {}
+        
+        # Phase 5 (Macro): Relative Strength Tracking
+        self.relative_strength_scores = {}  # {symbol: float}
+        self.last_rs_update = 0
         
         # SOPHIA-INTELLIGENCE: Post-Mortem Calibration Tracker
         self.sophia_post_mortem = PostMortemComparator(rolling_window=100)
@@ -239,7 +244,77 @@ class Portfolio:
                  
         except Exception as e:
             logger.error(f"Systemic Risk Check Failed: {e}")
-    
+            
+    def update_relative_strength(self):
+        """
+        [PHASE 5] Calculates Relative Strength (RSI + Momentum) across the fleet.
+        Allows Dynamic Capital Allocation and Cross-Asset Hedging.
+        """
+        import time
+        now = time.time()
+        if now - self.last_rs_update < 300: # Update every 5 mins
+            return
+            
+        try:
+            from core.data_handler import get_data_handler
+            dh = get_data_handler()
+            if not dh: return
+            
+            symbols = dh.symbol_list
+            if len(symbols) < 2: return
+            
+            rs_scores = {}
+            for s in symbols:
+                bars = dh.get_latest_bars(s, n=20) # 20 periods
+                if bars is not None and len(bars) > 15:
+                    closes = bars['close']
+                    # Calculate simple return
+                    ret = (closes[-1] - closes[0]) / closes[0]
+                    # Calculate RSI approx
+                    diff = np.diff(closes)
+                    gains = np.maximum(diff, 0).mean()
+                    losses = np.maximum(-diff, 0).mean()
+                    rs = gains / losses if losses > 0 else 0
+                    rsi = 100 - (100 / (1 + rs)) if losses > 0 else 100
+                    
+                    # Score = Return + RSI normalized contribution
+                    score = (ret * 100) + (rsi / 100)
+                    rs_scores[s] = score
+            
+            if rs_scores:
+                self.relative_strength_scores = rs_scores
+                self.last_rs_update = now
+                logger.debug(f"📊 [PORTFOLIO] Relative Strength Updated for {len(rs_scores)} symbols.")
+                
+        except Exception as e:
+            logger.error(f"Relative Strength Update Failed: {e}")
+            
+    def get_allocation_multiplier(self, symbol: str, is_long: bool) -> float:
+        """
+        Returns fractional Kelly multiplier based on Relative Strength rankings.
+        """
+        if not self.relative_strength_scores or symbol not in self.relative_strength_scores:
+            return 1.0 # Default
+            
+        # Sort symbols by score
+        sorted_symbols = sorted(self.relative_strength_scores.keys(), key=lambda k: self.relative_strength_scores[k], reverse=True)
+        total = len(sorted_symbols)
+        if total == 0: return 1.0
+        
+        rank = sorted_symbols.index(symbol)
+        percentile = 1.0 - (rank / total) # 1.0 is highest, 0.0 is lowest
+        
+        # If LONG, we want HIGH relative strength (Rank 1-5)
+        # If SHORT, we want LOW relative strength (Rank Bottom)
+        if is_long:
+            if percentile > 0.8: return 1.3 # Top 20%: +30% allocation
+            if percentile < 0.3: return 0.5 # Bottom 30%: -50% allocation
+        else:
+            if percentile < 0.2: return 1.3 # Bottom 20% (Weakest): +30% short alloc
+            if percentile > 0.7: return 0.5 # Top 30% (Strongest): -50% short alloc
+            
+        return 1.0
+
     @trace_execution
     def get_available_cash(self):
         """Return cash available for trading (Total Cash - Margin Used - Pending)."""
@@ -877,6 +952,12 @@ class Portfolio:
                     duration_seconds=duration_seconds,
                 )
                 if result:
+                    # Phase 46: Trigger Meta-Optimizer for Sovereign Evolution
+                    try:
+                        meta_optimizer.process_trade_result(result)
+                    except Exception as e:
+                        logger.debug(f"[META] Optimization skipped: {e}")
+
                     # Update SOPHIA calibrator if available
                     won = pnl > 0
                     # Log calibration status periodically
@@ -994,6 +1075,8 @@ class Portfolio:
                 'performance_metrics': metrics, # Now populated!
                 'balance': cash, 
                 'precision_drift': float(getattr(self, 'precision_drift_accumulated', 0.0)),
+                'brier_score_active': float(getattr(self, 'current_brier_score', 0.0)),
+                'ppo_entropy_active': float(getattr(self, 'current_ppo_entropy', 0.0)),
                 'last_heartbeat': datetime.now(timezone.utc).isoformat()
             }
             

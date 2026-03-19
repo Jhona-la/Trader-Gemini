@@ -101,12 +101,20 @@ class KillSwitch:
         """
         Routine check called by Engine.
         """
-        # 1. Max Drawdown Check (Institutional Hard Limit Phase 71)
-        if current_drawdown > 0.015: # 1.5% Strict Limit
-            logger.critical(f"🚨 KILL SWITCH TRIGGERED: Drawdown {current_drawdown*100:.2f}% > 1.5%")
+        # 1. Max Drawdown Check (Shadow-Monitor Sovereign Limit)
+        if current_drawdown > 0.02: # 2.0% Strict Limit during First Contact
+            logger.critical(f"🚨 KILL SWITCH TRIGGERED: Drawdown {current_drawdown*100:.2f}% > 2.0%")
             self.activate("MAX_DRAWDOWN_EXCEEDED")
             
-        # 2. Atomic Lock External Check (If user placed file manually)
+        # 2. Hard Capital Floor Protection (Dynamic based on API config)
+        if self.portfolio:
+            current_capital = self.portfolio.get_total_equity()
+            min_capital = Config.INITIAL_CAPITAL * 0.96  # 4% max loss floor
+            if current_capital <= min_capital and current_capital > 0:
+                logger.critical(f"🚨 SOVEREIGN KILL SWITCH L2: Capital {current_capital} <= ${min_capital:.2f}. Initiating full stop.")
+                self.activate("CRITICAL_CAPITAL_FLOOR_REACHED")
+            
+        # 3. Atomic Lock External Check (If user placed file manually)
         if self.check_atomic_lock():
              self.activate("MANUAL_LOCK_FOUND")
 

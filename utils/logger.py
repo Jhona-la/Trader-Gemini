@@ -128,22 +128,41 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     error_log_path = os.path.join(log_dir, error_log_name)
 
     # B. Main File Handler (JSON, DEBUG+)
-    file_handler = RotatingFileHandler(
-        main_log_path,
-        maxBytes=10*1024*1024,  # 10 MB
-        backupCount=5,
-        encoding='utf-8'
-    )
+    # PHASE 47.3: Adaptive backtest logging for Windows (Avoid Error 32)
+    is_backtest = "run_backtest" in sys.argv[0] or "auditor" in sys.argv[0]
+    is_windows = os.name == 'nt'
+    
+    if is_windows and is_backtest:
+        # Avoid RotatingFileHandler on Windows during backtests to prevent PermissionError
+        file_handler = logging.FileHandler(
+            main_log_path,
+            mode='a',
+            encoding='utf-8'
+        )
+    else:
+        file_handler = RotatingFileHandler(
+            main_log_path,
+            maxBytes=10*1024*1024,  # 10 MB
+            backupCount=5,
+            encoding='utf-8'
+        )
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(JSONFormatter(datefmt='%Y-%m-%d %H:%M:%S'))
     
     # C. Error File Handler (JSON, ERROR+)
-    error_handler = RotatingFileHandler(
-        error_log_path,
-        maxBytes=10*1024*1024,  # 10 MB
-        backupCount=5,
-        encoding='utf-8'
-    )
+    if is_windows and is_backtest:
+        error_handler = logging.FileHandler(
+            error_log_path,
+            mode='a',
+            encoding='utf-8'
+        )
+    else:
+        error_handler = RotatingFileHandler(
+            error_log_path,
+            maxBytes=10*1024*1024,  # 10 MB
+            backupCount=5,
+            encoding='utf-8'
+        )
     error_handler.setLevel(logging.ERROR) # Only ERROR and CRITICAL
     error_handler.setFormatter(JSONFormatter(datefmt='%Y-%m-%d %H:%M:%S'))
 

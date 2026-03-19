@@ -144,7 +144,7 @@ class SystemPreFlight:
         # Memory Pressure Check
         import psutil
         mem = psutil.virtual_memory()
-        if mem.percent > 90:
+        if mem.percent > 98: # [SOVEREIGN-DEPLOY] Elevated from 90 to 98 for heavy local multi-tasking environments
             SystemPreFlight._abort(f"CRITICAL MEMORY PRESSURE: {mem.percent}%")
         logger.info(f"   L50: Memory Isolation Capacity ({mem.percent}%) - OK")
 

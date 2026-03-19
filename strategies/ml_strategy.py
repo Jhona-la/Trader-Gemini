@@ -45,6 +45,8 @@ from strategies.components.feature_engineering import FeatureEngineering # Phase
 from strategies.components.signal_generator import SignalGenerator # Phase I: Refactoring
 from strategies.components.models.factory import ModelFactory # Phase I: Refactoring
 from core.xai_engine import XAIEngine # Phase 22: Explainability
+from sophia.intelligence import MultiHorizonOracle # Phase 4: Oracle Veto
+from utils.math_kernel import calculate_rsi_jit, calculate_ema_jit # Fast Math for Oracle
 
 from .strategy import Strategy
 from core.events import SignalEvent
@@ -79,7 +81,7 @@ from utils.shm_utils import SharedMemoryManager # Phase 10
 from core.online_learning import OnlineLearner
 from ml.replay_buffer import PrioritizedReplayBuffer
 from sophia.rewards import reward_engine, TesisDecayReason
-from core.reward_system import TradeOutcome
+from core.reward_system import TradeOutcome, RewardSystem
 from core.xai_engine import XAIEngine
 
 # Global Process Pool for Training (Singleton)
@@ -120,12 +122,16 @@ def ml_inference_worker_task(in_q, out_q):
             
             conf = (rf_p * w_rf + xgb_p * w_xgb + gb_p * w_gb)
             
-            # Signal Logic
+            # Signal Logic con Adaptive Thresholds
             # Note: In worker we only compute raw probability/direction
             # The complex circuit breaking etc stays in the main process
+            threshold_long = data.get('threshold_long', 0.65)
+            # Default to symmetric if not explicitly passed
+            threshold_short = data.get('threshold_short', 1.0 - threshold_long)
+            
             sig = SignalType.NEUTRAL
-            if conf > 0.65: sig = SignalType.LONG
-            elif conf < 0.35: sig = SignalType.SHORT
+            if conf > threshold_long: sig = SignalType.LONG
+            elif conf < threshold_short: sig = SignalType.SHORT
             
             out_q.put({
                 'confidence': conf, 
@@ -212,6 +218,11 @@ class MLStrategyHybridUltimate(Strategy):
         self._inference_process = None
         
         # ============================================================
+        # ✅ SANDBOX FLAG PARA EMULACIÓN DE WEBSOCKETS GOD-MODE
+        # ============================================================
+        self.is_sandbox = False
+        
+        # ============================================================
         # ✅ PERFORMANCE TRACKING PARA CRECIMIENTO EXPONENCIAL
         # ============================================================
         self.performance_history = deque(maxlen=100)  # Historial de trades
@@ -274,14 +285,7 @@ class MLStrategyHybridUltimate(Strategy):
         self.steps_since_learn = 0
         self.xai_engine = XAIEngine()
         self.last_hmm_info = {'regime': 'UNKNOWN', 'transition_risk': 0.0}
-    
-    def __hash__(self):
-        """Force hashable for ensemble orchestration."""
-        return id(self)
         
-    def __eq__(self, other):
-        """Standard equality for list removal."""
-        return self is other
         self.adaptive_confluence_short = self.BASE_CONFLUENCE_SHORT
         
         # ============================================================
@@ -350,6 +354,7 @@ class MLStrategyHybridUltimate(Strategy):
         self.running = True
         self._state_lock = threading.Lock()
         self._feature_cols = None
+        self.genotypes = {}  # PHASE 47: Standardized Genotype Store (Cognitive Compatibility)
         self._training_thread = None
         self._last_prediction_time = None
         self._label_mapping = {0: -1, 1: 1}  # Default mapping for inference before training
@@ -771,15 +776,32 @@ class MLStrategyHybridUltimate(Strategy):
             tp_hit = (future_data['high'] >= tp_level).any()
             sl_hit = (future_data['low'] <= sl_level).any()
             
+            # --- PHASE 6.3: DRAWDOWN-PENALIZING REWARD (PPO STUB) ---
+            # QUÉ: Calcula el Maximum Adverse Excursion (MAE) durante la ventana.
+            # POR QUÉ: Para maximizar Sharpe, no basta con ganar; hay que ganar "limpio".
+            # PARA QUÉ: Evitar que el modelo aprenda a entrar en picos de volatilidad
+            #          donde casi toca el SL antes de ir a TP. (Aplica a Longs y Shorts).
+            window_low = future_data['low'].min()
+            window_high = future_data['high'].max()
+            
+            mae_long = (current_price - window_low) / current_price
+            mae_short = (window_high - current_price) / current_price
+            
+            ds_long = mae_long / sl_target if sl_target > 0 else 0
+            ds_short = mae_short / sl_target if sl_target > 0 else 0
+            
             if tp_hit and sl_hit:
                 # Ambos tocados: usar el primero
                 tp_idx = future_data[future_data['high'] >= tp_level].index[0]
                 sl_idx = future_data[future_data['low'] <= sl_level].index[0]
-                label = 1 if tp_idx < sl_idx else -1
+                if tp_idx < sl_idx:
+                    label = 1 if ds_long <= 0.75 else 0
+                else:
+                    label = -1 if ds_short <= 0.75 else 0
             elif tp_hit:
-                label = 1
+                label = 1 if ds_long <= 0.75 else 0
             elif sl_hit:
-                label = -1
+                label = -1 if ds_short <= 0.75 else 0
             else:
                 # --- FALLBACK: Fixed Horizon Return ---
                 # Si no tocamos TP ni SL, usamos el signo del movimiento final
@@ -1025,105 +1047,53 @@ class MLStrategyHybridUltimate(Strategy):
                     warm_start=True
                 )
             
-            # The original code had `params.update` here, which is not defined.
-            # Assuming it was meant to be part of the parameter setting logic.
-            # For now, I'll comment it out or replace with a placeholder if needed.
-            # params.update({'n_estimators': 90, 'max_depth_rf': 6, 'learning_rate': 0.06})
+            gb.fit(X_train_scaled, y_train)
+            gb_score = gb.score(X_test_scaled, y_test)
+            cv_scores['gb'].append(gb_score)
             
         try:
-            # ✅ PHASE 10: ZERO-COPY SHARED MEMORY IPC
-            # Convert to contiguous arrays (float32 for speed)
-            X_np = X.to_numpy(dtype=np.float32)
-            y_np = y.to_numpy(dtype=np.float32)
+            # Bypass broken dummy SHM worker and use locally trained models directly
+            best_models = {'rf': rf, 'xgb': xgb, 'gb': gb}
+            best_scaler = scaler
+            f_cols = feature_cols
             
-            # Placeholder for `get_training_pool` and `train_model_process`
-            # In a real scenario, these would be defined elsewhere.
-            # For this edit, I'll assume they exist and `params` is correctly passed.
-            # The `params` variable is not defined in the provided snippet.
-            # I'll create a dummy `params` dict for the sake of compilation.
-            params = {
-                'n_estimators': n_estimators,
-                'max_depth_rf': max_depth_rf,
-                'max_depth_xgb': max_depth_xgb,
-                'max_depth_gb': max_depth_gb,
-                'min_samples_split': min_samples_split,
-                'learning_rate': learning_rate,
-                'subsample': subsample,
-                'feature_cols': feature_cols # Pass feature_cols to the worker
+            # Use last fold score for metrics
+            score = (cv_scores['rf'][-1] * self.base_rf_weight + 
+                     cv_scores['xgb'][-1] * self.base_xgb_weight + 
+                     cv_scores['gb'][-1] * self.base_gb_weight)
+            metrics = {
+                'rf_score': cv_scores['rf'][-1],
+                'xgb_score': cv_scores['xgb'][-1], 
+                'gb_score': cv_scores['gb'][-1]
             }
-
-            # Dummy functions for compilation
-            def get_training_pool():
-                class DummyPool:
-                    def submit(self, func, *args, **kwargs):
-                        class DummyFuture:
-                            def result(self, timeout):
-                                # Simulate a result
-                                return ({'rf': None, 'xgb': None, 'gb': None}, None, [], 0.0, {})
-                        return DummyFuture()
-                return DummyPool()
-
-            def train_model_process(symbol, X_info, y_info, params, xgb_model, gb_model):
-                # This function would typically run in a separate process
-                # and perform the actual model training.
-                # For this context, it's a placeholder.
-                return ({'rf': None, 'xgb': None, 'gb': None}, None, params['feature_cols'], 0.0, {})
-
-            with SharedMemoryManager(X_np) as shm_X, SharedMemoryManager(y_np) as shm_y:
-                
-                # Metadata payload (Small pickle)
-                X_info = {
-                    'name': shm_X.name, 
-                    'shape': shm_X.shape, 
-                    'dtype': shm_X.dtype,
-                    'columns': feature_cols
-                }
-                y_info = {
-                    'name': shm_y.name, 
-                    'shape': shm_y.shape, 
-                    'dtype': shm_y.dtype
-                }
-                
-                # Submit pointer to worker 
-                # Note: We must wait for result INSIDE the context manager
-                # otherwise SHM is unlinked before worker reads it.
-                future = get_training_pool().submit(
-                    train_model_process,
-                    self.symbol,
-                    X_info,  # Pointer
-                    y_info,  # Pointer
-                    params,
-                    getattr(self, 'xgb_model', None),
-                    getattr(self, 'gb_model', None)
-                )
-                
-                result = future.result(timeout=180) # Process blocking wait
-                
-            # SHM is automatically unlinked here __exit__
             
-            best_models, best_scaler, f_cols, score, metrics = result
+            self.rf_model = best_models['rf']
+            self.xgb_model = best_models['xgb']
+            self.gb_model = best_models['gb']
+            self.scaler = best_scaler
+            self._feature_cols = f_cols
+            self.is_trained = True
+
+            self.individual_model_scores['rf'] = metrics.get('rf_score', 0)
+            self.individual_model_scores['xgb'] = metrics.get('xgb_score', 0)
+            self.individual_model_scores['gb'] = metrics.get('gb_score', 0)
             
-            if best_models:
-                self.individual_model_scores['rf'] = metrics.get('rf_score', 0)
-                self.individual_model_scores['xgb'] = metrics.get('xgb_score', 0)
-                self.individual_model_scores['gb'] = metrics.get('gb_score', 0)
-                
-                logger.info(f"📥 [{self.symbol}] Worker finished. Score: {score:.3f}")
-                
-                if score >= self.MIN_MODEL_ACCURACY:
-                    return (best_models, best_scaler, f_cols), score
+            logger.info(f"📥 [{self.symbol}] Local Training finished. Score: {score:.3f}")
             
+            if score >= self.MIN_MODEL_ACCURACY:
+                return (best_models, best_scaler, f_cols), score
+        
             return None, score
 
         except Exception as e:
-            logger.error(f"❌ Worker/SHM Error for {self.symbol}: {e}")
+            logger.error(f"❌ Local Training Error for {self.symbol}: {e}")
             return None, 0.0
 
     # ============================================================
     # ✅ RE-PESADO DINÁMICO DE MODELOS (OMEGA MIND)
     # ============================================================
     
-    def update_recursive_weights(self, actual_outcome: float, trade_pnl: float = None, 
+    def update_recursive_weights(self, actual_outcome_or_obj, trade_pnl: float = None, 
                                  duration_seconds: float = 0.0, max_drawdown: float = 0.0, 
                                  axioma_diagnosis: str = "NONE"):
         """
@@ -1134,15 +1104,35 @@ class MLStrategyHybridUltimate(Strategy):
             return
 
         try:
-            # 1. Fallbacks for PnL if not provided (Local Estimation)
-            if trade_pnl is None:
-                if self.portfolio and self.portfolio.closed_trades:
-                    last_trade = self.portfolio.closed_trades[-1]
-                    if last_trade['symbol'] == self.symbol:
-                        trade_pnl = last_trade.get('pnl_pct', 0.0)
-                        duration_seconds = last_trade.get('duration', 0)
-                else:
-                    trade_pnl = 0.015 if actual_outcome > 0.5 else -0.01
+            # 1. Parse Input (Retrocompatibility vs New TradeOutcome)
+            actual_outcome = 1.0 if trade_pnl and trade_pnl > 0 else 0.0
+            
+            if isinstance(actual_outcome_or_obj, TradeOutcome):
+                trade_pnl = actual_outcome_or_obj.pnl_pct
+                duration_seconds = actual_outcome_or_obj.duration_seconds
+                max_drawdown = actual_outcome_or_obj.max_adverse_excursion
+                actual_outcome = 1.0 if trade_pnl > 0 else 0.0
+                trade_obj = actual_outcome_or_obj
+            else:
+                actual_outcome = float(actual_outcome_or_obj)
+                # Fallbacks for PnL if not provided (Local Estimation)
+                if trade_pnl is None:
+                    if self.portfolio and self.portfolio.closed_trades:
+                        last_trade = self.portfolio.closed_trades[-1]
+                        if last_trade['symbol'] == self.symbol:
+                            trade_pnl = last_trade.get('pnl_pct', 0.0)
+                            duration_seconds = last_trade.get('duration', 0)
+                    else:
+                        trade_pnl = 0.015 if actual_outcome > 0.5 else -0.01
+                # Build synthetic TradeOutcome for RewardSystem
+                trade_obj = TradeOutcome(
+                    entry_price=0.0, exit_price=0.0, direction=1, leverage=1.0,
+                    max_adverse_excursion=max_drawdown, max_favorable_excursion=0.0,
+                    duration_seconds=duration_seconds, latency_ms=0.0
+                )
+                trade_obj._pnl_pct_cache = trade_pnl
+                # Patch property temporarily
+                TradeOutcome.pnl_pct = property(lambda self: getattr(self, '_pnl_pct_cache', 0.0))
 
             # 2. Convert string diagnosis to Enum
             enum_diagnosis = TesisDecayReason.NONE
@@ -1154,12 +1144,7 @@ class MLStrategyHybridUltimate(Strategy):
                 enum_diagnosis = TesisDecayReason.MOMENTUM_REVERSE
 
             # 3. Calculate Terminal Reward (Non-Linear)
-            reward = reward_engine.calculate_reward(
-                pnl_pct=trade_pnl,
-                max_drawdown_pct=max_drawdown,
-                axioma_diagnosis=enum_diagnosis,
-                duration_seconds=duration_seconds
-            )
+            reward = self.reward_system.calculate_reward(trade_obj, current_drawdown=max_drawdown)
             
             # 4. Extract State/Action
             if getattr(self, 'last_ensemble_input', None) is None:
@@ -1184,9 +1169,10 @@ class MLStrategyHybridUltimate(Strategy):
             
             self.steps_since_learn += 1
             
-            # 5. Execute PPO Batch Update
+            # 5. Execute PPO Batch Update (Asynchronous to avoid latency spikes)
             if self.steps_since_learn >= self.training_batch_size:
-                self._learn_ppo_batch()
+                import threading
+                threading.Thread(target=self._learn_ppo_batch, name="PPO_Learner", daemon=True).start()
                 self.steps_since_learn = 0
                 
         except Exception as e:
@@ -1220,25 +1206,33 @@ class MLStrategyHybridUltimate(Strategy):
             # Update priorities back into buffer
             self.memory.update_priorities(idxs, abs_advantages)
             
-            # Apply constraint weights
-            self._apply_weight_update(new_weights)
+            # Apply constraint weights via helper
+            self._apply_weight_update(current_weights, new_weights, np.mean(rewards))
             
             logger.info(f"🧠 [Neural Fortress] PPO Batch Complete. Avg Reward: {np.mean(rewards):.4f} | Weights Adjusted.")
             
         except Exception as e:
             logger.error(f"PPO Batch Learn Error: {e}", exc_info=True)
 
-    def _apply_weight_update(self, new_weights):
-        """Helper to normalize and apply weights."""
+    def _apply_weight_update(self, old_weights_arr, new_weights_arr, avg_reward):
+        """Helper to normalize and apply weights, and log explainability."""
         # Normalization and Constraints
-        new_weights = np.clip(new_weights, 0.05, 0.70)
+        new_weights = np.clip(new_weights_arr, 0.05, 0.70)
         total = np.sum(new_weights)
         if total > 0:
             new_weights = new_weights / total
         
-        self.base_rf_weight = float(new_weights[0])
-        self.base_xgb_weight = float(new_weights[1])
-        self.base_gb_weight = float(new_weights[2])
+        old_w_dict = {'rf': old_weights_arr[0], 'xgb': old_weights_arr[1], 'gb': old_weights_arr[2]}
+        new_w_dict = {'rf': float(new_weights[0]), 'xgb': float(new_weights[1]), 'gb': float(new_weights[2])}
+        
+        self.base_rf_weight = new_w_dict['rf']
+        self.base_xgb_weight = new_w_dict['xgb']
+        self.base_gb_weight = new_w_dict['gb']
+        
+        # XAI Auditing
+        if hasattr(self, 'xai_engine') and self.xai_engine:
+            reason = f"Avg Reward: {avg_reward:+.4f} | Regime: {self.market_regime}"
+            self.xai_engine.log_ppo_weight_evolution(self.symbol, old_w_dict, new_w_dict, avg_reward, reason)
         
         # Logging
         if self.training_iteration % 10 == 0:
@@ -1499,6 +1493,44 @@ class MLStrategyHybridUltimate(Strategy):
             confidence = ensemble_proba[pred_idx]
             predicted_class = self._label_mapping.get(classes[pred_idx], classes[pred_idx])
             
+            # =========================================================
+            # PHASE 4: MULTI-HORIZON ORACLE VETO (Causal Reasoner)
+            # =========================================================
+            timeframe_data = {}
+            for tf in ['1d', '1w']:
+                try:
+                    macro_bars = self.data_provider.get_latest_bars(self.symbol, n=250, timeframe=tf)
+                    if macro_bars is not None and len(macro_bars) >= 20:
+                        _c = macro_bars['close']
+                        _rsi = calculate_rsi_jit(_c, 14)
+                        _ema_fast = calculate_ema_jit(_c, 20)
+                        _ema_slow = calculate_ema_jit(_c, 50)
+                        _ema_trend = calculate_ema_jit(_c, 200)
+                        
+                        _in_up = (_ema_fast > _ema_slow) & (_c > _ema_trend)
+                        _in_dn = (_ema_fast < _ema_slow) & (_c < _ema_trend)
+                        
+                        timeframe_data[tf] = {
+                            'inds': {'rsi': _rsi, 'in_uptrend': _in_up, 'in_downtrend': _in_dn},
+                            'data': macro_bars
+                        }
+                except Exception as e:
+                    logger.debug(f"Oracle data parsing failed for {tf} on {self.symbol}: {e}")
+
+            signal_type_raw = 'LONG' if predicted_class == 1 else 'SHORT'
+            
+            try:
+                oracle_verdict = MultiHorizonOracle.evaluate_clash_vector(timeframe_data, signal_type_raw)
+                if oracle_verdict['is_vetoed']:
+                    logger.info(
+                        f"🔮 [ML ORACLE VETO] {self.symbol} {signal_type_raw} BLOCKED | "
+                        f"Clash: {oracle_verdict['clash_score']:.1%} | Macro: {oracle_verdict['macro_context']}"
+                    )
+                    self.analysis_stats['filtered_conf'] += 1
+                    return
+            except Exception as e:
+                logger.error(f"Oracle ML Integration Error on {self.symbol}: {e}")
+
             # 6. SIGNAL GENERATION (Delegated to Component)
             # Retrieve Dynamic Advice based on Regime
             # NOTE: market_regime object is needed (it's initialized in strategy base or passed in)
@@ -1561,10 +1593,11 @@ class MLStrategyHybridUltimate(Strategy):
                 signal_type=signal_type,
                 strength=confidence,
                 atr=current_row['atr'], # FIXED: Use current_row
-                tp_pct=tp_target * 100,
-                sl_pct=sl_target * 100,
+                tp_pct=tp_target,
+                sl_pct=sl_target,
                 current_price=current_row['close'],
-                ttl=final_ttl
+                ttl=final_ttl,
+                metadata={'timeInForce': 'GTX'} # [PHASE 5] Enforce MAKER execution
             )
             
             # ============ REGISTRAR Y ENVIAR ============
@@ -1777,11 +1810,13 @@ class MLStrategyHybridUltimate(Strategy):
         if event.type != EventType.MARKET:
             return
         
-        # Throttling: máximo 1 predicción por segundo
+        # Throttling: máximo 1 predicción por segundo (Excepto Sandbox)
         current_time = datetime.now(timezone.utc)
-        if (self._last_prediction_time and 
-            (current_time - self._last_prediction_time).total_seconds() < 1.0):
-            return
+        if not getattr(self, 'is_sandbox', False):
+            if (self._last_prediction_time and 
+                (current_time - self._last_prediction_time).total_seconds() < 1.0):
+                return
+
         
         # Task in background
         asyncio.create_task(self._async_process_v3(event))
@@ -1836,6 +1871,12 @@ class MLStrategyHybridUltimate(Strategy):
             
             # Predict last row
             last_row = df.iloc[[-1]]
+            
+            # 🛡️ DEFENSIVE GUARD: Ensure scaler is fitted
+            if self.scaler is None:
+                logger.warning(f"ML {self.symbol}: Inference skipped because scaler is not fitted yet.")
+                return
+                
             X = self.scaler.transform(last_row[self._feature_cols])
             
             # Spawn worker if needed
@@ -1967,17 +2008,36 @@ class MLStrategyHybridUltimate(Strategy):
             confidence = results['confidence']
             rf_p, xgb_p, gb_p = results['rf'], results['xgb'], results['gb']
             
+            # Determine preliminary signal type
+            signal_type = SignalType.LONG if confidence >= 0.55 else (SignalType.SHORT if confidence <= 0.45 else SignalType.HOLD)
+            
+            # 🌊 FASE 25: VETO CUÁNTICO (Nadir-Soberano Order Flow)
+            of_metrics = self.data_provider.get_order_flow_metrics(self.symbol)
+            if of_metrics and signal_type != SignalType.HOLD:
+                is_toxic = of_metrics.get('is_toxic', False)
+                vpin = of_metrics.get('vpin', 0.5)
+                iceberg = of_metrics.get('iceberg_score', 0.0)
+                delta = of_metrics.get('rolling_delta_60s', 0.0)
+                
+                # Check for absolute veto
+                if is_toxic:
+                    logger.warning(f"🌌 [VETO CUÁNTICO] Señal {signal_type.name} cancelada en {self.symbol}! Flujo Tóxico (VPIN: {vpin:.2f}, Iceberg: {iceberg:.2f}).")
+                    self.metrics['discarded_events'] = self.metrics.get('discarded_events', 0) + 1
+                    return
+                
+                # Check directional alignment with aggressive Delta
+                if signal_type == SignalType.LONG and delta < -100:
+                    logger.warning(f"📉 [VETO CUÁNTICO] Señal LONG cancelada! Presión de venta Market excesiva (Delta 60s: {delta:.2f}).")
+                    return
+                elif signal_type == SignalType.SHORT and delta > 100:
+                    logger.warning(f"📈 [VETO CUÁNTICO] Señal SHORT cancelada! Presión de compra Market excesiva (Delta 60s: {delta:.2f}).")
+                    return
+            
             # ============================================================
             # ✅ PHASE 13: PHALANX-SWARM CONSENSUS ENGINE
             # ============================================================
             
             # 1. TIMEFRAME DIVERGENCE CHECK (The Chronos Guard)
-            # Retrieve momentum features from the dataframe used in inference
-            # We need to access the features. 
-            # Ideally, they should be passed in 'results' or accessible via cache.
-            # Since inference worker is isolated, we need to pass them back or recalc/fetch from feature store.
-            # Fast recalc for 1m/5m/15m momentum is cheap.
-            
             tf_divergence = False
             try:
                 # Quick fetch of recent bars for 3 timeframes
@@ -2333,30 +2393,29 @@ class MLStrategyHybridUltimate(Strategy):
                             f"   Features Used: {len(feature_cols)} | Quality Guard: PASSED"
                         )
                     else:
-                        # Even if training result is None (score below threshold),
-                        # we must mark it as trained to avoid infinite re-train loops every minute.
-                        # It will try again in the next retrain_interval.
+                        # ⚠️ Training failed or score below threshold.
+                        # Do NOT mark as trained yet to allow retries, 
+                        # or mark as trained but keep scaler=None to indicate no model available.
+                        # We previously were marking is_trained=True here causing crashes in inference.
                         with self._state_lock:
-                            self.is_trained = True 
-                            self.bars_since_train = 0
-                            self.last_training_score = score
-                            self.phalanx = OrderFlowAnalyzer(window=20)
-                            self.garch = OnlineGARCH() 
-                            
-                            # Phase I: Feature Engineering Component
-                            self.feature_engineer = FeatureEngineering()
-                            self.signal_generator = SignalGenerator(self.strategy_id)
-                            self.xai_engine = XAIEngine() # Phase 22: Explainability
-
-                            self.last_prediction_time = 0 
-                            self.prediction_interval = 60 # 1 minute 
-                            
-                            # Phase 6: Thread-Safe State Management
+                             # Initialize components if they are missing
+                             if not hasattr(self, 'feature_engineer') or self.feature_engineer is None:
+                                self.feature_engineer = FeatureEngineering()
+                             if not hasattr(self, 'signal_generator') or self.signal_generator is None:
+                                self.signal_generator = SignalGenerator(self.strategy_id)
+                             if not hasattr(self, 'phalanx') or self.phalanx is None:
+                                self.phalanx = OrderFlowAnalyzer()
+                             if not hasattr(self, 'garch') or self.garch is None:
+                                self.garch = OnlineGARCH(1e-6, 0.1, 0.85, 1e-4)
+                             if not hasattr(self, 'xai_engine') or self.xai_engine is None:
+                                self.xai_engine = XAIEngine()
+                                
+                             self.bars_since_train = 0
+                        
                         logger.warning(
                             f"⚠️ ML {self.symbol} training failed (Score: {score:.3f} < {self.MIN_MODEL_ACCURACY}). "
-                            "Marking as trained to wait for next interval."
+                            "Retrying in next interval."
                         )
-                        
                 except Exception as e:
                     logger.error(f"ML Training error {self.symbol}: {e}", exc_info=True)
                 finally:
@@ -2509,7 +2568,8 @@ class MLStrategyHybridUltimate(Strategy):
                 cols_path = os.path.join(self.models_dir, f"features_{self.symbol.replace('/', '_')}.json")
                 if os.path.exists(cols_path):
                     with open(cols_path, 'r') as f:
-                        self._feature_cols = json.load(f)
+                        loaded_cols = json.load(f)
+                        self._feature_cols = [c for c in loaded_cols if c is not None]
                 
                 self.is_trained = True
                 logger.info(f"🏆 [{self.symbol}] Cargado modelo de PRODUCCIÓN v{gov_model['version']} (Sharpe: {gov_model['sharpe']:.2f})")
@@ -2896,6 +2956,35 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
         logger.info(f"🟢 [{self.symbol}] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED")
         logger.info(f"   Consensus Threshold: {self.ENSEMBLE_CONSENSUS_THRESHOLD}")
         logger.info(f"   Min Engines Required: {self.MIN_ENGINES_REQUIRED}/3")
+    
+    def _calculate_temporal_confidence(self, bars_processed: int, total_bars: int) -> float:
+        """
+        Adaptive Evolution Protocol: Temporal Confidence Decay.
+        
+        QUÉ: Factor de confianza temporal para el ML (0.5 a 1.0).
+        POR QUÉ: El modelo XGBoost genera predicciones con la misma confianza
+                  sin importar si ha procesado 100 o 10000 barras. En las primeras
+                  barras, las features (zscore_20, rsi_14) NO tienen contexto macro
+                  suficiente, causando 'Underfitting Temporal' en ventanas de 15D.
+        PARA QUÉ: Reducir la confianza de las primeras predicciones para evitar
+                   señales falsas que destruyen el Win Rate en horizontes intermedios.
+        CÓMO: Primer 20% → factor 0.5, 20-50% → factor 0.75, 50%+ → factor 1.0
+        CUÁNDO: Cada ciclo de _run_inference(), antes del cálculo de confluencia.
+        DÓNDE: strategies/ml_strategy.py → UniversalEnsembleStrategy
+        QUIÉN: Motor ML (XGBoost/RF/GB ensemble).
+        """
+        if total_bars <= 0:
+            return 1.0
+        
+        progress = bars_processed / total_bars
+        
+        if progress < 0.20:
+            return 0.50  # ML still learning context
+        elif progress < 0.50:
+            # Linear interpolation from 0.50 to 1.0 between 20% and 50%
+            return 0.50 + (progress - 0.20) * (0.50 / 0.30)
+        else:
+            return 1.0   # Full context available
 
     def _run_inference(self):
         """
@@ -2919,76 +3008,85 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             # 2. Model Availability
             with self._state_lock:
                 # SUPREME MODE DETECTED: If only XGB is loaded and rf/gb are None
-                supreme_mode = (self.xgb_model is not None and self.rf_model is None)
-                models_ready = all([self.rf_model, self.xgb_model, self.gb_model]) or supreme_mode
-                feature_cols = self._feature_cols
+                supreme_mode = (self.xgb_model is not None and getattr(self, 'rf_model', None) is None)
+                
+                # Prevent sklearn unfitted truthiness exception (`__bool__` triggering `__len__`) 
+                # by strictly checking `is_trained` flag instead of evaluating `self.rf_model` instances.
+                if supreme_mode:
+                    models_ready = self.is_trained and self.xgb_model is not None
+                    feature_cols = None # Supreme constructs its own features array manually
+                else:
+                    models_ready = self.is_trained and all(x is not None for x in [self.rf_model, self.xgb_model, self.gb_model])
+                    raw_features = getattr(self, '_feature_cols', []) or []
+                    feature_cols = [c for c in raw_features if c is not None]
+                    if not feature_cols:
+                        models_ready = False
 
             if not models_ready:
                 return
 
             # 3. Aligned Feature Matrix
             if supreme_mode:
-                 # --- SUPREME FEATURE ADAPTER ---
-                 # train_supreme.py used: rsi_14, zscore_20, log_returns
-                 # We must reconstruct these exactly.
-                 # df has 'close' as float (from _prepare_features)
-                 closes = df['close'].values.astype(np.float64)
-                 
-                 # RSI 14
-                 rsi = talib.RSI(closes, timeperiod=14)
-                 
-                 # Z-Score 20 (Manual calculation to match math_kernel)
-                 roll_mean = pd.Series(closes).rolling(20).mean()
-                 roll_std = pd.Series(closes).rolling(20).std(ddof=0)
-                 zscore = (closes - roll_mean) / roll_std
-                 zscore = zscore.fillna(0).values
-                 
-                 # Log Return
-                 # np.log(price / prev_price)
-                 returns = np.diff(np.log(closes), prepend=np.log(closes[0]))
-                 
-                 # Stack for last row
-                 # Features: [rsi, zscore, returns]
-                 # We take the last element
-                 curr_rsi = rsi[-1]
-                 curr_z = zscore[-1]
-                 curr_ret = returns[-1]
-                 
-                 X_pred = np.array([[curr_rsi, curr_z, curr_ret]], dtype=np.float32)
-                 
-                 # Predict
-                 # No scaler used in train_supreme (raw features)
-                 xgb_proba = self.xgb_model.predict_proba(X_pred)[0]
-                 
-                 # Mock others for organic confluence logic, or bypass
-                 # Since Organic Confluence expects 3 engines...
-                 # We will trust XGB fully in Supreme Mode.
-                 
-                 pred_idx = np.argmax(xgb_proba)
-                 final_confidence = xgb_proba[pred_idx]
-                 # classes: [0, 1] which map to [-1, 1] via label_mapping
-                 raw_cls = self.xgb_model.classes_[pred_idx]
-                 # Map 0->-1, 1->1 (if trained with 0,1)
-                 # train_supreme used: 0=DOWN, 1=UP.
-                 # Strategy expects: -1=SHORT, 1=LONG
-                 direction = 1 if raw_cls == 1 else -1
-                 
-                 # Log Oracle
-                 if final_confidence > 0.55: # Min threshold
-                     logger.info(f"🔮 [SUPREME ORACLE] {self.symbol} Signal: {direction} (Conf: {final_confidence:.2f})")
-                     # Trigger Signal
-                     self.events_queue.put(SignalEvent(
-                        symbol=self.symbol,
-                        timestamp=datetime.now(timezone.utc),
-                        signal_type=SignalType.LONG if direction == 1 else SignalType.SHORT,
-                        prob=final_confidence,
+                # --- SUPREME FEATURE ADAPTER ---
+                # train_supreme.py used: rsi_14, zscore_20, log_returns
+                # We must reconstruct these exactly.
+                # df has 'close' as float (from _prepare_features)
+                closes = df['close'].values.astype(np.float64)
+                
+                # RSI 14
+                rsi = talib.RSI(closes, timeperiod=14)
+                
+                # Z-Score 20 (Manual calculation to match math_kernel)
+                roll_mean = pd.Series(closes).rolling(20).mean()
+                roll_std = pd.Series(closes).rolling(20).std(ddof=0)
+                zscore = (closes - roll_mean) / roll_std
+                zscore = zscore.fillna(0).values
+                
+                # Log Return
+                # np.log(price / prev_price)
+                returns = np.diff(np.log(closes), prepend=np.log(closes[0]))
+                
+                # Stack for last row
+                # Features: [rsi, zscore, returns]
+                # We take the last element
+                curr_rsi = rsi[-1]
+                curr_z = zscore[-1]
+                curr_ret = returns[-1]
+                
+                X_pred = np.array([[curr_rsi, curr_z, curr_ret]], dtype=np.float32)
+                
+                # Predict
+                # No scaler used in train_supreme (raw features)
+                xgb_proba = self.xgb_model.predict_proba(X_pred)[0]
+                
+                # Mock others for organic confluence logic, or bypass
+                # Since Organic Confluence expects 3 engines...
+                # We will trust XGB fully in Supreme Mode.
+                
+                pred_idx = np.argmax(xgb_proba)
+                final_confidence = xgb_proba[pred_idx]
+                # classes: [0, 1] which map to [-1, 1] via label_mapping
+                raw_cls = self.xgb_model.classes_[pred_idx]
+                # train_supreme used: 0=DOWN, 1=UP.
+                # Strategy expects: -1=SHORT, 1=LONG
+                direction = 1 if raw_cls == 1 else -1
+                
+                # Log Oracle
+                if final_confidence > 0.55: # Min threshold
+                    logger.info(f"🔮 [SUPREME ORACLE] {self.symbol} Signal: {direction} (Conf: {final_confidence:.2f})")
+                    # Trigger Signal
+                    self.events_queue.put(SignalEvent(
                         strategy_id="SUPREME_XGB_V1",
-                        price=bars[-1]['close'],
-                        stop_loss=bars[-1]['close'] * (1 - 0.005 if direction==1 else 1 + 0.005),
-                        take_profit=bars[-1]['close'] * (1 + 0.015 if direction==1 else 1 - 0.015),
+                        symbol=self.symbol,
+                        datetime=datetime.now(timezone.utc),
+                        signal_type=SignalType.LONG if direction == 1 else SignalType.SHORT,
+                        strength=final_confidence,
+                        current_price=bars[-1]['close'],
+                        sl_pct=0.005,
+                        tp_pct=0.015,
                         metadata={'source': 'SUPREME_XGB'}
-                     ))
-                 return
+                    ))
+                return
 
             if hasattr(self.scaler, 'feature_names_in_'):
                 final_features = self.scaler.feature_names_in_
@@ -2997,7 +3095,10 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                     X_pred_aligned[col] = df[col].iloc[[-1]].values if col in df.columns else 0.0
                 X_pred = X_pred_aligned
             else:
-                X_pred = df[feature_cols].iloc[[-1]]
+                X_pred_aligned = pd.DataFrame(columns=feature_cols)
+                for col in feature_cols:
+                    X_pred_aligned[col] = df[col].iloc[[-1]].values if col in df.columns else 0.0
+                X_pred = X_pred_aligned
                 
             X_scaled = self.scaler.transform(X_pred)
             rf_proba = self.rf_model.predict_proba(X_scaled)[0]
@@ -3012,6 +3113,14 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             pred_idx = np.argmax(ensemble_proba)
             raw_confidence = ensemble_proba[pred_idx]
             direction = self._label_mapping.get(classes[pred_idx], classes[pred_idx])
+            
+            # Adaptive Evolution Protocol: Temporal Confidence Decay
+            # Reduce ML confidence during early bars when context is insufficient
+            temporal_factor = self._calculate_temporal_confidence(
+                self.bars_since_train, 
+                getattr(self, 'retrain_interval', 2000)
+            )
+            raw_confidence *= temporal_factor
             
             # Phase 9: Capture Ensemble Input for PPO (Probabilities of CHOSEN direction)
             # We need the probabilities corresponding to the '1' class (Up) or '0' (Down), depending on how we model state.
@@ -3050,6 +3159,12 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             # For now, we use the model probs as state.
             self.last_ppo_state = self.last_ensemble_input.copy()
             self.last_ppo_action_probs = ensemble_proba # Full prob dist
+            
+            # [PHASE 9: ML Metacognition] Live Dashboard Hooks for Brier Score & Entropy
+            # Brier Score Proxy: (1.0 - Confidencia)^2; Si es 1.0 = Brier 0.0 (Perfecto)
+            self.current_brier_score = (1.0 - raw_confidence) ** 2
+            # PPO Entropy Proxy: -sum(p * log(p)) over the 3 components across binary class
+            self.current_ppo_entropy = -np.sum(ensemble_proba * np.log(ensemble_proba + 1e-9))
             
             # ============================================================
             # 🎯 3-ENGINE ORGANIC CONFLUENCE (The Heart of Phase 8)
@@ -3144,8 +3259,8 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                 signal_type=signal_type,
                 strength=final_confidence,
                 atr=current_row['atr'],
-                tp_pct=tp_target * 100,
-                sl_pct=sl_target * 100,
+                tp_pct=tp_target,
+                sl_pct=sl_target,
                 current_price=current_row['close'],
                 metadata=ppo_metadata
             )

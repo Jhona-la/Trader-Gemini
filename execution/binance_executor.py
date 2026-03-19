@@ -75,6 +75,7 @@ class BinanceExecutor:
 
         # Phase 7: Guardián de Liquidez
         self.guardian = LiquidityGuardian(self.exchange)
+        self.latency_violations = 0 # Sovereign-Deploy Telemetry
 
             
         # Set Leverage for Futures
@@ -165,6 +166,18 @@ class BinanceExecutor:
         # BUG #24 FIX: load_time_difference() doesn't exist in current CCXT version
         # We rely on 'adjustForTimeDifference': True in options instead
         try:
+            # [SOVEREIGN-DEPLOY] Atomic Clock Sync Check (>1500ms drift = abort)
+            exchange_time = self.exchange.fetch_time()
+            local_time = int(time.time() * 1000)
+            drift = abs(exchange_time - local_time)
+            
+            if drift > 1500: # [SOVEREIGN-DEPLOY] Local Network Adaptation (max 1500ms for Dev Dry-Run)
+                 logger.critical(f"🛑 [TIME-DRIFT] Atomic Clock Sync Failed! Drift is {drift}ms (Max: 1500ms). Aborting.")
+                 # En windows el NTP por defecto a veces falla, forzamos salida
+                 raise RuntimeError(f"Time drift too high: {drift}ms > 1500ms limit")
+            else:
+                 logger.info(f"⏱️ [TIME-SYNC] Atomic Clock Aligned. Drift: {drift}ms")
+
             # Just verify the exchange is reachable
             self.exchange.check_required_credentials()
             logger.info(f"  ✅ Exchange credentials verified")
@@ -189,10 +202,9 @@ class BinanceExecutor:
 
         self._initialize_futures_settings()
         
-        # [Dept 3 Fix] Start User Data Stream
+        # [Dept 3 Fix] Start User Data Stream (Moved to main.py loop)
         self.user_stream = UserDataStream(self.events_queue, self.exchange)
-        self.stream_task = asyncio.create_task(self.user_stream.start())
-        logger.info("✅ [Executor] User Data Stream Background Task Started")
+        logger.info("✅ [Executor] User Data Stream Ready (Will start in async loop)")
 
     def _initialize_futures_settings(self):
         """
@@ -219,6 +231,13 @@ class BinanceExecutor:
 
             # 2. Set Margin Type for all pairs
             logger.info(f"  ⏳ Setting Margin Type to {Config.BINANCE_MARGIN_TYPE} for {len(Config.TRADING_PAIRS)} pairs...")
+            
+            # CRITICAL FIX for "binance markets not loaded" error
+            try:
+                self.exchange.load_markets()
+            except Exception as e:
+                logger.debug(f"  Could not load markets implicitly: {e}")
+                
             for symbol in Config.TRADING_PAIRS:
                 try:
                     market = self.exchange.market(symbol)
@@ -240,9 +259,31 @@ class BinanceExecutor:
                 else:
                     logger.info("  ✅ API Trading permissions verified")
             except Exception as e:
-                logger.warning(f"  ⚠️ Could not verify trading permissions: {e}")
+                err_str = str(e)
+                if "testnet/sandbox mode is not supported for futures anymore" in err_str:
+                    logger.warning(f"  ⚠️ Ignorando Permission Check (Binance Vision Limits en Demo Trading)")
+                else:
+                    logger.warning(f"  ⚠️ Could not verify trading permissions: {err_str}")
 
             logger.info("  ✅ Margin Types Configured")
+            
+            # 4. [SOVEREIGN-DEPLOY] Dynamic Fee Awareness
+            try:
+                logger.info("  ⏳ Fetching Dynamic Commission Rates from Binance...")
+                # Fetching fee for a major pair as baseline (Binance usually has global fees per tier)
+                fee_info = self.exchange.fapiPrivateGetCommissionRate({'symbol': 'BTCUSDT'})
+                taker_fee = float(fee_info.get('takerCommissionRate', 0.0004))
+                maker_fee = float(fee_info.get('makerCommissionRate', 0.0002))
+                
+                # Update global FeeCalculator in RiskManager
+                from risk.risk_manager import FeeCalculator
+                FeeCalculator.update_dynamic_fees(maker_fee, taker_fee)
+            except Exception as e:
+                err_str = str(e)
+                if "testnet/sandbox mode is not supported for futures anymore" in err_str:
+                    logger.warning(f"  ⚠️ Fetch de comisiones dinámicas omitido por Binance Demo API Limits. Usando Config defaults.")
+                else:
+                    logger.warning(f"  ⚠️ Could not fetch dynamic fees: {err_str}. Using Config defaults.")
             
         except ccxt.NetworkError as e:
             logger.error(f"❌ Network error initializing Futures settings: {e}")
@@ -430,9 +471,25 @@ class BinanceExecutor:
                 spread_adj = 0.0001 # Default 0.01% bias
                 
                 # Check for Sniper Condition in metadata
-                if event.metadata and event.metadata.get('sniper_mode'):
+                if getattr(event, 'metadata', None) and event.metadata.get('sniper_mode'):
                     spread_adj = 0.0003 # 0.03% more aggressive
                     logger.info(f"🎯 [SNIPER_V3] Aggressive Entry engaged for {symbol}")
+
+                # [PHASE 5] Scalping Optimization: No aggressive pushing for MUST-MAKER (GTX) orders
+                is_post_only = event.metadata.get('timeInForce') == 'GTX' if getattr(event, 'metadata', None) else False
+                if is_post_only:
+                    spread_adj = 0.0 # No aggressive pushing for Maker orders
+                    logger.info(f"💰 [MAKER_V5] Post-Only engaged. Pricing safely to avoid crossing spread.")
+                    
+                    # Ensure price is at the optimal side of the order book to avoid GTX rejection
+                    try:
+                        orderbook = self.exchange.fetch_order_book(symbol_ccxt, limit=5)
+                        if side == 'buy':
+                            smart_price = orderbook['bids'][0][0] # Top of book bid
+                        else:
+                            smart_price = orderbook['asks'][0][0] # Bottom of book ask
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not fetch orderbook for Maker pricing: {e}")
 
                 if side == 'buy': smart_price *= (1 + spread_adj)
                 else: smart_price *= (1 - spread_adj)
@@ -496,7 +553,9 @@ class BinanceExecutor:
                 }
                 if order_type == 'limit':
                     params['price'] = price_precision
-                    params['timeInForce'] = 'GTC' # Good Till Cancel
+                    # Phase 5: Enforce Post-Only if intended
+                    is_post_only = event.metadata.get('timeInForce') == 'GTX' if getattr(event, 'metadata', None) else False
+                    params['timeInForce'] = 'GTX' if is_post_only else 'GTC'
                 
                 order_raw = self.exchange.fapiPrivatePostOrder(params)
                 order = order_raw # Simplified mapping
@@ -515,6 +574,20 @@ class BinanceExecutor:
             end_exec = time.perf_counter()
             exec_latency = (end_exec - start_exec) * 1000
             latency_monitor.track('order_to_send', exec_latency)
+            
+            # [SOVEREIGN-DEPLOY] Latency Guard (< 200ms threshold)
+            if exec_latency > 200.0:
+                self.latency_violations += 1
+                logger.warning(f"⚠️ [LATENCY] Order execution took {exec_latency:.2f}ms (>200ms). Violation {self.latency_violations}/3.")
+                if self.latency_violations >= 3:
+                    logger.critical(f"🚨 [PANIC] 3 Consecutive High-Latency Orders! Engaging PASSIVE MODE/LOCK.")
+                    try:
+                        with open("EMERGENCY_KILL_SWITCH.lock", "w") as f:
+                            f.write(f"LATENCY_PANIC: {exec_latency:.2f}ms")
+                    except Exception as e:
+                        logger.error(f"Failed to write lock: {e}")
+            else:
+                self.latency_violations = 0 # Reset on healthy execution
             
             fill_price = float(order.get('avgPrice', final_price if order_type == 'limit' else 0.0))
             filled_qty = float(order.get('executedQty', final_qty))
@@ -920,15 +993,28 @@ class BinanceExecutor:
                 try:
                     # Try standard fetch_positions (usually maps to v2/positionRisk)
                     positions = self.exchange.fetch_positions()
-                except ccxt.NetworkError as e:
-                    logger.warning(f"Network error in fetch_positions fallback: {e}. Trying raw v2 endpoint...")
-                    # Fallback: Ensure URL exists and try raw
-                    if 'fapiPrivateV2' not in self.exchange.urls['api']:
-                        self.exchange.urls['api']['fapiPrivateV2'] = self.exchange.urls['api']['fapiPrivate'].replace('v1', 'v2')
-                        if 'test' in self.exchange.urls:
-                            self.exchange.urls['test']['fapiPrivateV2'] = self.exchange.urls['test']['fapiPrivate'].replace('v1', 'v2')
-                    
-                    positions = self.exchange.fapiPrivateV2GetPositionRisk()
+                except Exception as e:
+                    err_str = str(e)
+                    if "testnet/sandbox mode is not supported for futures anymore" in err_str:
+                        logger.warning(f"⚠️ Fetch de Posiciones denegado por Demo API (Binance Limits). Asumiendo 0 Posiciones Iniciales.")
+                        positions = []
+                    else:
+                        logger.warning(f"Network error in fetch_positions fallback: {e}. Trying raw v2 endpoint...")
+                        # Fallback: Ensure URL exists and try raw
+                        if 'fapiPrivateV2' not in self.exchange.urls['api']:
+                            self.exchange.urls['api']['fapiPrivateV2'] = self.exchange.urls['api']['fapiPrivate'].replace('v1', 'v2')
+                            if 'test' in self.exchange.urls:
+                                self.exchange.urls['test']['fapiPrivateV2'] = self.exchange.urls['test']['fapiPrivate'].replace('v1', 'v2')
+                        
+                        try:
+                            positions = self.exchange.fapiPrivateV2GetPositionRisk()
+                        except Exception as e2:
+                            err_str2 = str(e2)
+                            if "testnet/sandbox mode is not supported for futures anymore" in err_str2:
+                                logger.warning(f"⚠️ Fetch the Posiciones denegado en V2. Asumiendo 0 Posiciones.")
+                                positions = []
+                            else:
+                                raise e2
                 
                 synced_count = 0
                 for pos in positions:
@@ -992,10 +1078,18 @@ class BinanceExecutor:
                 try:
                     # Fetch Spot balances
                     # Use spot_exchange if in Testnet, otherwise use main exchange
-                    if hasattr(self, 'spot_exchange') and self.spot_exchange:
-                        balance_data = self.spot_exchange.fetch_balance()
-                    else:
-                        balance_data = self.exchange.fetch_balance()
+                    try:
+                        if hasattr(self, 'spot_exchange') and self.spot_exchange:
+                            balance_data = self.spot_exchange.fetch_balance()
+                        else:
+                            balance_data = self.exchange.fetch_balance()
+                    except Exception as e:
+                        err_str = str(e)
+                        if "testnet/sandbox mode is not supported for futures anymore" in err_str:
+                            logger.warning(f"⚠️ Fetch de Spot Balances denegado en Demo Trading. Asignando 0 por defecto.")
+                            balance_data = {}
+                        else:
+                            raise e
                     
                     synced_count = 0
                     

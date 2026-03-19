@@ -52,7 +52,7 @@ def main():
     print("="*60)
     
     # Symbols
-    symbols = Config.CRYPTO_FUTURES_PAIRS[:20]
+    symbols = Config.CRYPTO_FUTURES_PAIRS
     print(f"📋 Targets: {len(symbols)} Symbols")
     print(f"⚡ CPU Cores: {multiprocessing.cpu_count()}")
     

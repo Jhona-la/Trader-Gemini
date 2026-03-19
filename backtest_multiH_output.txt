@@ -1,0 +1,411 @@
+14:53:24 [INFO] 🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: divide by zero encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\run_multi_horizon_backtest.py:97: RuntimeWarning: invalid value encountered in divide
+  rs = np.where(avg_loss > 0, avg_gain / avg_loss, 100.0)
+💰 Capital inicial configurado: $13.00
+⚡ Leverage: 3x | Fee: 0.0375%
+🎯 Símbolos: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'DOGE/USDT']
+📅 Horizontes: [1, 7, 15, 30] días
+
+======================================================================
+🚀 TRADER GEMINI - MULTI-HORIZON BACKTEST
+======================================================================
+
+======================================================================
+📅 HORIZONTE: 1 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 3d para BTC/USDT...
+    ✅ 4320 velas (3.0D)
+    [Technical   ] ❌ PNL: $-0.0327 WR: 33.3% DD: 1.18% Sharpe: -13.86 Trades: 15
+    [Sophia      ] ✅ PNL: $+0.1104 WR: 57.9% DD: 0.36% Sharpe: 37.68 Trades: 19
+    [ML_XGBoost  ] ❌ PNL: $-0.0718 WR: 25.0% DD: 0.68% Sharpe: -17.23 Trades: 8
+
+  🔹 ETH/USDT
+  📡 Descargando 3d para ETH/USDT...
+    ✅ 4320 velas (3.0D)
+    [Technical   ] ✅ PNL: $+0.2392 WR: 53.6% DD: 0.72% Sharpe: 61.94 Trades: 28
+    [Sophia      ] ✅ PNL: $+0.1082 WR: 56.5% DD: 0.87% Sharpe: 5.36 Trades: 23
+    [ML_XGBoost  ] ❌ PNL: $-0.0168 WR: 45.0% DD: 0.97% Sharpe: -2.02 Trades: 20
+
+  🔹 SOL/USDT
+  📡 Descargando 3d para SOL/USDT...
+    ✅ 4320 velas (3.0D)
+    [Technical   ] ❌ PNL: $-0.1161 WR: 30.4% DD: 1.28% Sharpe: -29.15 Trades: 23
+    [Sophia      ] ✅ PNL: $+0.0565 WR: 47.8% DD: 0.30% Sharpe: 9.14 Trades: 23
+    [ML_XGBoost  ] ✅ PNL: $+0.0393 WR: 43.8% DD: 0.85% Sharpe: 2.61 Trades: 16
+
+  🔹 XRP/USDT
+  📡 Descargando 3d para XRP/USDT...
+    ✅ 4320 velas (3.0D)
+    [Technical   ] ❌ PNL: $-0.0601 WR: 32.0% DD: 1.10% Sharpe: -17.64 Trades: 25
+    [Sophia      ] ✅ PNL: $+0.0961 WR: 50.0% DD: 0.54% Sharpe: 8.58 Trades: 22
+    [ML_XGBoost  ] ✅ PNL: $+0.0076 WR: 35.3% DD: 1.00% Sharpe: -6.88 Trades: 17
+
+  🔹 DOGE/USDT
+  📡 Descargando 3d para DOGE/USDT...
+    ✅ 4320 velas (3.0D)
+    [Technical   ] ✅ PNL: $+0.1233 WR: 46.7% DD: 0.73% Sharpe: 21.90 Trades: 30
+    [Sophia      ] ✅ PNL: $+0.0879 WR: 59.1% DD: 0.40% Sharpe: 11.81 Trades: 22
+    [ML_XGBoost  ] ❌ PNL: $-0.1777 WR: 30.4% DD: 1.94% Sharpe: -260.95 Trades: 23
+
+  📊 RESUMEN 1D:
+  [Technical   ] ✅ Total PNL: $+0.154 | WR: 39.2% | DD: 1.00% | Sharpe: 4.64 | Trades: 121
+  [Sophia      ] ✅ Total PNL: $+0.459 | WR: 54.3% | DD: 0.49% | Sharpe: 14.51 | Trades: 109
+  [ML_XGBoost  ] ❌ Total PNL: $-0.219 | WR: 35.9% | DD: 1.09% | Sharpe: -56.89 | Trades: 84
+
+======================================================================
+📅 HORIZONTE: 7 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 9d para BTC/USDT...
+    ✅ 12960 velas (9.0D)
+    [Technical   ] ❌ PNL: $-0.3310 WR: 22.7% DD: 3.46% Sharpe: -21.48 Trades: 44
+    [Sophia      ] ✅ PNL: $+0.0192 WR: 43.9% DD: 1.35% Sharpe: -0.99 Trades: 41
+    [ML_XGBoost  ] ✅ PNL: $+0.1501 WR: 50.0% DD: 0.60% Sharpe: 6.12 Trades: 28
+
+  🔹 ETH/USDT
+  📡 Descargando 9d para ETH/USDT...
+    ✅ 12960 velas (9.0D)
+    [Technical   ] ✅ PNL: $+0.1893 WR: 44.6% DD: 1.45% Sharpe: 6.58 Trades: 56
+    [Sophia      ] ✅ PNL: $+0.1687 WR: 50.0% DD: 0.99% Sharpe: 3.10 Trades: 54
+    [ML_XGBoost  ] ❌ PNL: $-0.1495 WR: 38.3% DD: 1.79% Sharpe: -6.56 Trades: 47
+
+  🔹 SOL/USDT
+  📡 Descargando 9d para SOL/USDT...
+    ✅ 12960 velas (9.0D)
+    [Technical   ] ❌ PNL: $-0.1596 WR: 32.9% DD: 1.81% Sharpe: -7.76 Trades: 70
+    [Sophia      ] ❌ PNL: $-0.0448 WR: 42.4% DD: 1.60% Sharpe: -3.68 Trades: 59
+    [ML_XGBoost  ] ✅ PNL: $+0.0515 WR: 40.0% DD: 1.33% Sharpe: 0.27 Trades: 50
+
+  🔹 XRP/USDT
+  📡 Descargando 9d para XRP/USDT...
+    ✅ 12960 velas (9.0D)
+    [Technical   ] ❌ PNL: $-0.2544 WR: 23.5% DD: 2.41% Sharpe: -15.87 Trades: 51
+    [Sophia      ] ❌ PNL: $-0.0394 WR: 43.1% DD: 1.32% Sharpe: -5.24 Trades: 51
+    [ML_XGBoost  ] ✅ PNL: $+0.1246 WR: 44.1% DD: 0.69% Sharpe: 4.69 Trades: 34
+
+  🔹 DOGE/USDT
+  📡 Descargando 9d para DOGE/USDT...
+    ✅ 12960 velas (9.0D)
+    [Technical   ] ❌ PNL: $-0.0802 WR: 38.2% DD: 1.76% Sharpe: -6.55 Trades: 76
+    [Sophia      ] ✅ PNL: $+0.3038 WR: 57.4% DD: 0.71% Sharpe: 10.88 Trades: 68
+    [ML_XGBoost  ] ❌ PNL: $-0.3401 WR: 28.6% DD: 3.25% Sharpe: -21.13 Trades: 56
+
+  📊 RESUMEN 7D:
+  [Technical   ] ❌ Total PNL: $-0.636 | WR: 32.4% | DD: 2.18% | Sharpe: -9.02 | Trades: 297
+  [Sophia      ] ✅ Total PNL: $+0.407 | WR: 47.4% | DD: 1.19% | Sharpe: 0.82 | Trades: 273
+  [ML_XGBoost  ] ❌ Total PNL: $-0.163 | WR: 40.2% | DD: 1.53% | Sharpe: -3.32 | Trades: 215
+
+======================================================================
+📅 HORIZONTE: 15 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 17d para BTC/USDT...
+    ✅ 24480 velas (17.0D)
+    [Technical   ] ❌ PNL: $-0.4426 WR: 25.9% DD: 4.13% Sharpe: -13.14 Trades: 81
+    [Sophia      ] ✅ PNL: $+0.0696 WR: 45.4% DD: 2.12% Sharpe: -0.19 Trades: 86
+    [ML_XGBoost  ] ❌ PNL: $-0.2259 WR: 36.7% DD: 2.90% Sharpe: -7.20 Trades: 60
+
+  🔹 ETH/USDT
+  📡 Descargando 17d para ETH/USDT...
+    ✅ 24480 velas (17.0D)
+    [Technical   ] ✅ PNL: $+0.3195 WR: 42.2% DD: 1.57% Sharpe: 5.07 Trades: 135
+    [Sophia      ] ✅ PNL: $+0.2373 WR: 47.8% DD: 2.09% Sharpe: 1.44 Trades: 113
+    [ML_XGBoost  ] ❌ PNL: $-0.3720 WR: 36.4% DD: 3.50% Sharpe: -7.84 Trades: 99
+
+  🔹 SOL/USDT
+  📡 Descargando 17d para SOL/USDT...
+    ✅ 24480 velas (17.0D)
+    [Technical   ] ✅ PNL: $+0.1540 WR: 38.2% DD: 1.84% Sharpe: 0.49 Trades: 144
+    [Sophia      ] ✅ PNL: $+0.1390 WR: 45.2% DD: 1.77% Sharpe: 0.97 Trades: 115
+    [ML_XGBoost  ] ❌ PNL: $-0.1503 WR: 37.7% DD: 3.07% Sharpe: -4.74 Trades: 106
+
+  🔹 XRP/USDT
+  📡 Descargando 17d para XRP/USDT...
+    ✅ 24480 velas (17.0D)
+    [Technical   ] ❌ PNL: $-0.4549 WR: 28.2% DD: 4.46% Sharpe: -11.41 Trades: 103
+    [Sophia      ] ❌ PNL: $-0.3744 WR: 36.5% DD: 3.90% Sharpe: -11.93 Trades: 96
+    [ML_XGBoost  ] ✅ PNL: $+0.1027 WR: 41.8% DD: 1.91% Sharpe: 0.54 Trades: 67
+
+  🔹 DOGE/USDT
+  📡 Descargando 17d para DOGE/USDT...
+    ✅ 24480 velas (17.0D)
+    [Technical   ] ❌ PNL: $-0.2330 WR: 35.9% DD: 3.25% Sharpe: -8.13 Trades: 145
+    [Sophia      ] ✅ PNL: $+0.3845 WR: 50.9% DD: 1.17% Sharpe: 5.70 Trades: 114
+    [ML_XGBoost  ] ❌ PNL: $-0.6545 WR: 29.4% DD: 6.02% Sharpe: -18.56 Trades: 109
+
+  📊 RESUMEN 15D:
+  [Technical   ] ❌ Total PNL: $-0.657 | WR: 34.1% | DD: 3.05% | Sharpe: -5.42 | Trades: 608
+  [Sophia      ] ✅ Total PNL: $+0.456 | WR: 45.1% | DD: 2.21% | Sharpe: -0.80 | Trades: 524
+  [ML_XGBoost  ] ❌ Total PNL: $-1.300 | WR: 36.4% | DD: 3.48% | Sharpe: -7.56 | Trades: 441
+
+======================================================================
+📅 HORIZONTE: 30 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 32d para BTC/USDT...
+    ✅ 46080 velas (32.0D)
+    [Technical   ] ❌ PNL: $-0.2467 WR: 34.9% DD: 4.09% Sharpe: -5.27 Trades: 149
+    [Sophia      ] ❌ PNL: $-0.0273 WR: 42.4% DD: 2.55% Sharpe: -2.36 Trades: 158
+    [ML_XGBoost  ] ❌ PNL: $-0.4198 WR: 38.5% DD: 4.46% Sharpe: -7.47 Trades: 109
+
+  🔹 ETH/USDT
+  📡 Descargando 32d para ETH/USDT...
+    ✅ 46080 velas (32.0D)
+    [Technical   ] ✅ PNL: $+0.3321 WR: 40.3% DD: 1.57% Sharpe: 1.58 Trades: 233
+    [Sophia      ] ❌ PNL: $-0.0952 WR: 42.3% DD: 3.59% Sharpe: -2.21 Trades: 208
+    [ML_XGBoost  ] ❌ PNL: $-0.4836 WR: 36.9% DD: 5.04% Sharpe: -5.67 Trades: 187
+
+  🔹 SOL/USDT
+  📡 Descargando 32d para SOL/USDT...
+    ✅ 46080 velas (32.0D)
+    [Technical   ] ✅ PNL: $+0.5292 WR: 42.3% DD: 1.84% Sharpe: 2.81 Trades: 265
+    [Sophia      ] ❌ PNL: $-0.1443 WR: 42.3% DD: 4.67% Sharpe: -3.48 Trades: 222
+    [ML_XGBoost  ] ❌ PNL: $-0.4163 WR: 37.6% DD: 5.66% Sharpe: -4.95 Trades: 205
+
+  🔹 XRP/USDT
+  📡 Descargando 32d para XRP/USDT...
+    ✅ 46080 velas (32.0D)
+    [Technical   ] ❌ PNL: $-0.3581 WR: 35.0% DD: 5.17% Sharpe: -4.58 Trades: 234
+    [Sophia      ] ❌ PNL: $-0.1580 WR: 42.9% DD: 3.81% Sharpe: -3.67 Trades: 198
+    [ML_XGBoost  ] ✅ PNL: $+0.2579 WR: 43.6% DD: 2.09% Sharpe: 0.82 Trades: 172
+
+  🔹 DOGE/USDT
+  📡 Descargando 32d para DOGE/USDT...
+    ✅ 46080 velas (32.0D)
+    [Technical   ] ❌ PNL: $-0.0437 WR: 38.0% DD: 4.85% Sharpe: -2.43 Trades: 263
+    [Sophia      ] ✅ PNL: $+0.1269 WR: 46.1% DD: 3.06% Sharpe: -0.81 Trades: 230
+    [ML_XGBoost  ] ❌ PNL: $-0.6559 WR: 34.3% DD: 6.67% Sharpe: -8.34 Trades: 216
+
+  📊 RESUMEN 30D:
+  [Technical   ] ✅ Total PNL: $+0.213 | WR: 38.1% | DD: 3.50% | Sharpe: -1.58 | Trades: 1144
+  [Sophia      ] ❌ Total PNL: $-0.298 | WR: 43.2% | DD: 3.53% | Sharpe: -2.50 | Trades: 1016
+  [ML_XGBoost  ] ❌ Total PNL: $-1.718 | WR: 38.2% | DD: 4.78% | Sharpe: -5.12 | Trades: 889
+
+======================================================================
+🏆 REPORTE FINAL CONSOLIDADO
+======================================================================
+Horizon  Strategy           PNL$     PNL%     WR%   MaxDD%   Sharpe
+----------------------------------------------------------------------
+1D       Technical         0.154    0.09%   39.2%    1.00%     4.64
+1D       Sophia            0.459    0.58%   54.3%    0.49%    14.51
+1D       ML_XGBoost       -0.219   -0.44%   35.9%    1.09%   -56.89
+7D       Technical        -0.636   -1.33%   32.4%    2.18%    -9.02
+7D       Sophia            0.407    0.30%   47.4%    1.19%     0.82
+7D       ML_XGBoost       -0.163   -0.50%   40.2%    1.53%    -3.32
+15D      Technical        -0.657   -1.71%   34.1%    3.05%    -5.42
+15D      Sophia            0.456    0.06%   45.1%    2.21%    -0.80
+15D      ML_XGBoost       -1.300   -2.49%   36.4%    3.48%    -7.56
+30D      Technical         0.213   -1.00%   38.1%    3.50%    -1.58
+30D      Sophia           -0.298   -1.64%   43.2%    3.53%    -2.50
+30D      ML_XGBoost       -1.718   -3.65%   38.2%    4.78%    -5.12
+
+📁 Resultados guardados en: multi_horizon_results.json
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\logging\handlers.py", line 80, in emit
+    self.doRollover()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\logging\handlers.py", line 185, in doRollover
+    self.rotate(self.baseFilename, dfn)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\logging\handlers.py", line 121, in rotate
+    os.rename(source, dest)
+    ~~~~~~~~~^^^^^^^^^^^^^^
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\logs\\error_20260318.json' -> 'C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\logs\\error_20260318.json.1'
+Call stack:
+Logged from file security.py, line 35
+Message: '🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)'
+Arguments: None
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\logging\handlers.py", line 80, in emit
+    self.doRollover()
+    ~~~~~~~~~~~~~~~^^
+  File "C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\logging\handlers.py", line 185, in doRollover
+    self.rotate(self.baseFilename, dfn)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\logging\handlers.py", line 121, in rotate
+    os.rename(source, dest)
+    ~~~~~~~~~^^^^^^^^^^^^^^
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\logs\\bot_20260318.json' -> 'C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\logs\\bot_20260318.json.1'
+Call stack:
+Logged from file security.py, line 35
+Message: '🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)'
+Arguments: None

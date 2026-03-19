@@ -1,0 +1,24 @@
+
+=== 1D ===
+Technical | PNL: -0.2625 | WR: 37.5% | DD: 0.94% | Sharpe: -9.10 | Trades: 70
+Sophia | PNL: +0.0679 | WR: 49.6% | DD: 0.54% | Sharpe: 1.06 | Trades: 73
+ML_XGBoost | PNL: -0.5135 | WR: 27.5% | DD: 1.26% | Sharpe: -14.65 | Trades: 77
+Orchestrator | PNL: +0.0194 | WR: 38.2% | DD: 0.54% | Sharpe: 1.48 | Trades: 71
+
+=== 7D ===
+Technical | PNL: -0.1738 | WR: 28.7% | DD: 1.59% | Sharpe: -3.40 | Trades: 203
+Sophia | PNL: -0.1758 | WR: 44.4% | DD: 1.00% | Sharpe: -3.71 | Trades: 191
+ML_XGBoost | PNL: -0.0704 | WR: 41.0% | DD: 1.56% | Sharpe: -3.91 | Trades: 224
+Orchestrator | PNL: -0.5028 | WR: 38.0% | DD: 1.72% | Sharpe: -6.00 | Trades: 204
+
+=== 15D ===
+Technical | PNL: -0.4264 | WR: 28.6% | DD: 1.74% | Sharpe: -3.30 | Trades: 422
+Sophia | PNL: +0.1306 | WR: 48.7% | DD: 1.49% | Sharpe: -1.45 | Trades: 411
+ML_XGBoost | PNL: -0.8389 | WR: 37.0% | DD: 2.03% | Sharpe: -5.24 | Trades: 466
+Orchestrator | PNL: -1.1322 | WR: 38.1% | DD: 2.81% | Sharpe: -4.41 | Trades: 432
+
+=== 30D ===
+Technical | PNL: +0.3256 | WR: 31.5% | DD: 2.09% | Sharpe: -1.05 | Trades: 823
+Sophia | PNL: -0.4235 | WR: 45.3% | DD: 2.06% | Sharpe: -3.24 | Trades: 789
+ML_XGBoost | PNL: -0.4647 | WR: 40.1% | DD: 2.07% | Sharpe: -2.34 | Trades: 898
+Orchestrator | PNL: -0.9929 | WR: 39.0% | DD: 4.14% | Sharpe: -2.69 | Trades: 836

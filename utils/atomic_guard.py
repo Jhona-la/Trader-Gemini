@@ -1,7 +1,7 @@
 import numpy as np
 from numba import njit, int32
 
-@njit(fastmath=True, cache=True, nogil=True)
+@njit(fastmath=True, cache=False, nogil=True)
 def jit_try_acquire_spinlock(lock_array: np.ndarray, max_spins: int = 1000) -> bool:
     """
     Attempts to acquire lock with bounded spinning.
@@ -13,7 +13,7 @@ def jit_try_acquire_spinlock(lock_array: np.ndarray, max_spins: int = 1000) -> b
             return True
     return False
 
-@njit(fastmath=True, cache=True, nogil=True)
+@njit(fastmath=True, cache=False, nogil=True)
 def jit_acquire_spinlock(lock_array: np.ndarray):
     """
     DEPRECATED: Prefer non-blocking version to avoid CPU starvation.
@@ -36,7 +36,7 @@ def jit_acquire_spinlock(lock_array: np.ndarray):
             # (In reality, for true HFT, we use Hardware CAS).
             return
         
-@njit(fastmath=True, cache=True, nogil=True)
+@njit(fastmath=True, cache=False, nogil=True)
 def jit_release_spinlock(lock_array: np.ndarray):
     """
     Unlock.

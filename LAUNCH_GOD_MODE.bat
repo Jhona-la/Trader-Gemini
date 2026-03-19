@@ -1,61 +1,66 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 cd /d "%~dp0"
-title [GOD MODE] TRADER GEMINI - DYNAMIC EVOLUTION (OMEGA)
+title [GOD MODE] TRADER GEMINI - OMEGA PROTOCOL
 color 0E
 
-echo ========================================================
-echo    TRADER GEMINI - OMEGA PROTOCOL (PHASE 10)
-echo ========================================================
+echo ===============================================================================
+echo 🛡️ GOD MODE: TRADER GEMINI - OMEGA PROTOCOL (FASE 9 + METACOGNICION)
+echo ===============================================================================
+echo Mensaje NouveauCraft: La automatizacion es la madre de la disciplina operativa.
 echo.
 
-:: 1. Environment Check
+:: 1. Verificacion de Red y Entorno
 if not exist ".venv\Scripts\activate.bat" (
-    echo [ERROR] Virtual Environment not found! Launch aborted.
+    echo ❌ [FATAL] Environment virtual no thetectado. Lanzamiento Abortado.
     pause
     exit /b 1
 )
-
 call .venv\Scripts\activate.bat
 
-:: 2. Trinity Model Verification (Pre-Flight) - RUN ONCE
-echo [SYSTEM] Verifying Evolution Trinity Models...
-if not exist ".models" (
-    echo [WARNING] Brain models not found. Evolution Engine will start from Genesis ADN.
-) else (
-    echo [OK] DNA Genotypes found.
-)
-
-:: 3. God-Mode Pre-Flight Audit - RUN ONCE
-echo.
-echo [SYSTEM] Running God-Mode Micro-Latency Audit...
-python core/pre_flight.py
-if %ERRORLEVEL% NEQ 0 (
+:: 2. Pre-Flight Check (Auditoria NouveauCraft y The God-Mode antigua)
+echo [SYSTEM] Verificando Latencias y Precision Axioma (El Inquisidor)...
+call PREFLIGHT_CHECK.bat
+if %ERRORLEVEL% neq 0 (
     color 0C
-    echo [FATAL] GOD MODE AUDIT FAILED! 
+    echo ❌ [FATAL] PREFLIGHT CHECK FAILED. Abortando thespliegue en OMEGA MODE.
     pause
     exit /b 1
+)
+
+:: Evaluando the Script The Python The Auditoria Antiqua Si existe
+if exist "core\pre_flight.py" (
+    echo [SYSTEM] Corriendo Auditoria The Modulos The HFT...
+    python core/pre_flight.py
+    if !ERRORLEVEL! NEQ 0 (
+        color 0C
+        echo ❌ [FATAL] GOD MODE MODULE AUDIT FAILED! 
+        pause
+        exit /b 1
+    )
 )
 
 :LOOP
-:: 4. Launch Loop
 cls
 echo ===============================================================================
-echo    TRADER GEMINI - DYNAMIC EVOLUTION ENGINE (GOD MODE ACTIVE)
+echo ⚡ THE GOD ENGINE IS RUNNING (HIGH PRIORITY + OPTIMIZED)
 echo ===============================================================================
-echo.
-echo [INFO] System: DYNAMIC ADAPTATION ENABLED
-echo [INFO] Mode:   GOD MODE (HIGH PRIORITY + OPTIMIZED)
-echo.
-echo [CORE] CPU Affinity: Automatic Pinning
+echo [INFO] System: DYNAMIC ADAPTATION ENABLED + C++ ATOMICS
+echo [INFO] Mode:   GOD MODE (OMNI-LATENCY AWARE)
+echo [CORE] CPU Affinity: AMD Ryzen Sniper Automatic Pinning
 echo [CORE] Bytecode: Optimized (-O)
 echo [CORE] Buffer: Unbuffered (-u)
-echo.
+echo ===============================================================================
 
-:: Launch directly (no 'start') to capture exit code and allow loop
+:: Start process with affinity high 
+:: Para un bucle Thentro the CMD es mejor llamarlo directo thestle la consola (no `start`)
+:: asi atrapamos la thetencion Thel thespliegue y lo reiniciamos.
 python -O -u main.py --mode futures
 
 echo.
-echo [WARNING] Omega Engine stopped. Auto-Restarting in 3 seconds...
+echo ===============================================================================
+echo ⚠️ [OMEGA ALARMA] GOD ENGINE DETENIDO.
+echo 🔄 Ejecutando Recuperacion Catastrofica. Auto-Reiniciando en 3 Segundos.
+echo ===============================================================================
 timeout /t 3
 goto LOOP

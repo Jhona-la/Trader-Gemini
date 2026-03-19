@@ -48,9 +48,19 @@ class RewardSystem:
         Returns:
             float: The calculated reward.
         """
-        # 1. Base Reward: Tanh of PnL
+        # 1. Base Reward: Asymmetric PnL
+        # Mayor recompensa por win rápido, mayor castigo por loss lento.
         pnl = outcome.pnl_pct
-        scaled_pnl = pnl * 10
+        duration_factor = max(1.0, outcome.duration_seconds / 60.0) # Normalizado por minuto
+        
+        if pnl > 0:
+            # Win: premiar la rapidez
+            base_score = pnl * (1.0 + (1.0 / duration_factor))
+        else:
+            # Loss: castigar la lentitud
+            base_score = pnl * (1.0 + (duration_factor * 0.2)) # Penalidad moderada
+            
+        scaled_pnl = base_score * 10
         base_reward = np.tanh(scaled_pnl)
 
         # 2. Drawdown Penalty (Exponential)

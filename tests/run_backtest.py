@@ -27,13 +27,23 @@ from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
 from core.enums import SignalType, OrderSide, EventType
 from data.data_provider import DataProvider
 from core.market_regime import MarketRegimeDetector
-from utils.logger import logger
+from utils.logger import logger, stop_logger
+from sophia.post_mortem import PostMortemComparator, PostMortemResult
+from core.meta_optimizer import meta_optimizer
 import time
 
 # ============================================================
-# CONSTANTES
+# CONSTANTES & CLI ARGS
 # ============================================================
-SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT'] # Conservative Leaders
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--days", type=int, default=15)
+parser.add_argument("--symbol", type=str, default=None)
+args_cli, _ = parser.parse_known_args()
+
+DAYS = args_cli.days
+SYMBOLS_CLI = [args_cli.symbol] if args_cli.symbol else None
+
 # FETCH REAL BALANCE
 try:
     from binance.client import Client as RealClient
@@ -50,9 +60,10 @@ except:
     INITIAL_CAPITAL = 15.0
 
 LEVERAGE = 5 # Conservative Leverage
-COMMISSION_PCT = 0.0004 # 0.04% (Taker conservative)
+COMMISSION_PCT = 0.0002 # 0.02% (Maker - LIMIT orders, V2 Optimized)
 RISK_PER_TRADE = 0.01  # 1% risk (Conservative)
-DAYS = 15 # 15 Days validation (Longer horizon)
+USE_ML_STRATEGY = True  # God-Mode: Force full ML Ensemble (Phase 9 Integration)
+
 
 # ============================================================
 # ESTRATEGIA SIMPLIFICADA PARA BACKTEST
@@ -169,12 +180,12 @@ class BacktestDataProvider(DataProvider):
             df_1m = historical_data[s]
             self.struct_data[s]['1m'] = self._df_to_struct(df_1m, struct_dtype)
             
-            # Resampled data
-            for tf in ['5min', '15min', '1h']:
+            # Resampled data (Phase 3: Added 1D and 1W for Multi-Horizon Oracle)
+            for tf in ['5min', '15min', '1h', '1D', '1W']:
                 df_res = df_1m.resample(tf).agg({
                     'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
                 }).dropna()
-                key = tf.lower().replace('min', 'm').replace('h', 'h')
+                key = tf.lower().replace('min', 'm').replace('h', 'h').replace('d', 'd').replace('w', 'w')
                 self.struct_data[s][key] = self._df_to_struct(df_res, struct_dtype)
         
         self.current_index = 0
@@ -213,6 +224,11 @@ class BacktestDataProvider(DataProvider):
         """Mock for strategy compatibility"""
         return {}
         
+    def get_latest_price(self, symbol):
+        """Helper for exit logic"""
+        bars = self.get_latest_bars(symbol, 1)
+        return bars[-1]['close'] if bars is not None and len(bars) > 0 else None
+
     def get_symbol_precision(self, symbol):
         """Mock for strategy compatibility"""
         return {'quantity': 3, 'price': 2}
@@ -268,6 +284,15 @@ class BacktestPortfolio:
         self.winning_trades = 0
         self.losing_trades = 0
         
+        # V5.14 Catalyst: Asset-Specific Snowball
+        self.asset_pnl = {} # {symbol: accumulated_pnl_usd}
+        
+        # Phase 47.2: Sovereign Mind Telemetry
+        self.decision_logs = [] # List of [timestamp, symbol, outcome, attribution, narrative, drift]
+        
+        # Phase 47.3: Cognitive Infrastructure
+        self.post_mortem = PostMortemComparator()
+        
     def get_total_equity(self):
         return self.current_capital
     
@@ -291,8 +316,8 @@ class BacktestPortfolio:
         # Apply Slippage
         filled_price = self._apply_slippage(price, side)
         
-        # Calcular cantidad
-        qty = (size_usd * self.leverage) / filled_price
+        # Calcular cantidad (size_usd YA es el Notional apalancado)
+        qty = size_usd / filled_price
         
         # Comisión de entrada
         commission = size_usd * COMMISSION_PCT
@@ -339,7 +364,7 @@ class BacktestPortfolio:
         else:  # SHORT
             pnl_pct = (entry - filled_price) / entry
         
-        pnl_usd = size_usd * self.leverage * pnl_pct
+        pnl_usd = size_usd * pnl_pct
         
         # Comisión de salida
         commission = size_usd * COMMISSION_PCT
@@ -358,7 +383,8 @@ class BacktestPortfolio:
             'entry_time': pos['timestamp'],
             'exit_time': timestamp,
             'duration': (timestamp - pos['timestamp']).total_seconds() / 60 if isinstance(timestamp, datetime) else 0,
-            'metadata': pos.get('metadata', {})
+            'metadata': pos.get('metadata', {}),
+            'exit_reason': pos.get('exit_reason', 'UNKNOWN')
         }
         self.trades.append(trade)
         
@@ -375,6 +401,12 @@ class BacktestPortfolio:
         if current_dd > self.max_drawdown:
             self.max_drawdown = current_dd
         
+        # V5.14 Catalyst: Snowball Accumulation
+        self.asset_pnl[symbol] = self.asset_pnl.get(symbol, 0.0) + pnl_usd
+        
+        # Phase 47.2: Capture Oracle Reasoning (will be populated after strategy.process_reward)
+        trade['oracle_reasoning'] = None 
+        
         del self.positions[symbol]
         return trade
     
@@ -383,6 +415,45 @@ class BacktestPortfolio:
         self.equity_curve.append(self.current_capital)
         if isinstance(timestamp, datetime):
             self.timestamps.append(timestamp)
+
+def handle_trade_exit(portfolio, strategy, trade, current_time):
+    """
+    Standardized Cognitive Exit Handler (Phase 47.3)
+    Computes Post-Mortem, updates Meta-Optimizer and appends Decision Logs.
+    """
+    if not trade: 
+        return None
+
+    symbol = trade['symbol']
+    # 1. Compute Duration
+    duration_sec = (current_time - trade['entry_time']).total_seconds() if 'entry_time' in trade else 0
+    
+    # 2. Compute Post-Mortem Analysis
+    pm_result = portfolio.post_mortem.compute_post_mortem(
+        trade_id=f"{symbol}_{trade['entry_time'].timestamp()}",
+        actual_pnl=trade['pnl_usd'],
+        duration_seconds=duration_sec
+    )
+    
+    # 3. Trigger Meta-Optimization (Learning)
+    if pm_result:
+        meta_optimizer.process_trade_result(pm_result, strategy.genotypes.get(symbol))
+    
+    # 4. Get Sovereign Reasoning (Oracle narrative)
+    reasoning = None
+    if hasattr(strategy, 'process_reward'):
+        reasoning = strategy.process_reward(trade)
+    
+    # 5. Populate Standardized Telemetry
+    if reasoning:
+        portfolio.decision_logs.append({
+            'timestamp': current_time.isoformat() if hasattr(current_time, 'isoformat') else str(current_time),
+            'symbol': symbol,
+            'pnl_usd': float(trade['pnl_usd']),
+            'reasoning': reasoning
+        })
+    
+    return reasoning
 
 
 # ============================================================
@@ -465,7 +536,23 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
     # Inicializar componentes
     data_provider = BacktestDataProvider(events_queue, [symbol], historical_data)
     portfolio = BacktestPortfolio(INITIAL_CAPITAL, LEVERAGE)
-    strategy = HybridScalpingStrategy(data_provider, events_queue)
+    
+    if USE_ML_STRATEGY:
+        from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy
+        strategy = MLStrategy(data_provider, events_queue)
+        # ⚡ BACKTEST FIX: Flag ML strategy for synchronous backtest mode
+        strategy.is_sandbox = True  # Disable throttling
+        strategy.min_bars_to_train = 300  # Lower warmup for backtest
+        ml_training_triggered = False
+        
+        # ⚡ BACKTEST FIX: Pre-initialize ML components (not auto-initialized in __init__)
+        # Same approach as run_sandbox_engine.py lines 246-250
+        from strategies.components.feature_engineering import FeatureEngineering
+        from strategies.components.signal_generator import SignalGenerator
+        strategy.feature_engineer = FeatureEngineering()
+        strategy.signal_generator = SignalGenerator(strategy.strategy_id)
+    else:
+        strategy = HybridScalpingStrategy(data_provider, events_queue)
     
     # Variables de control
     warmup_bars = 100  # Barras para calentar indicadores
@@ -476,6 +563,10 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
     # Stop Loss / Take Profit tracking
     active_sl = None
     active_tp = None
+    
+    # V3: Cooldown post-pérdida (30 min por símbolo)
+    last_loss_time = {}  # {symbol: datetime_of_last_loss}
+    COOLDOWN_MINUTES = 30  # Esperar 30 min después de un SL hit
     
     bar_count = 0
     total_bars = len(data)
@@ -492,7 +583,7 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
         
         # Obtener precio actual
         bars = data_provider.get_latest_bars(symbol, 1)
-        if not bars:
+        if bars is None or len(bars) == 0:
             continue
         
         current_bar = bars[-1]
@@ -507,11 +598,7 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
             entry = pos['entry']
             side = pos['side']
             
-            # Calcular trailing stop basado en ATR (simplificado)
-            atr_approx = (high - low) * 2  # Aproximación simple
-            
             # Check Exit Conditions (using Stored SL/TP)
-            # If SL/TP not stored (legacy), fallback or ignore
             stored_sl = pos.get('sl_price')
             stored_tp = pos.get('tp_price')
             
@@ -523,30 +610,127 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
                 if side == 'LONG': stored_tp = entry * 1.01
                 else: stored_tp = entry * 0.99
 
+            # === V3: TRAILING STOP AL BREAKEVEN (Adaptive Space) ===
+            # PROFESOR: POR QUÉ - El criptomercado hace retesteos fuertes.
+            # CÓMO - Solo aseguramos Break-Even cuando ya conquistamos el 80% del camino al TP estimado.
+            # PARA QUÉ - Evitar que el ruido mate trades que, por diseño de la IA, iban a ser ganadores.
+            trailing_threshold = 0.80
+            
+            if side == 'LONG':
+                tp_dist = stored_tp - entry
+                breakeven_target = entry + tp_dist * trailing_threshold
+                # Si el HIGH alcanza 80% del TP, mover SL al breakeven
+                if high >= breakeven_target and stored_sl < entry:
+                    breakeven_sl = entry * 1.001  # Entry + tiny buffer
+                    pos['sl_price'] = breakeven_sl
+                    stored_sl = breakeven_sl
+            else: # SHORT
+                tp_dist = entry - stored_tp
+                breakeven_target = entry - tp_dist * trailing_threshold
+                # Si el LOW alcanza 80% del TP, mover SL al breakeven
+                if low <= breakeven_target and stored_sl > entry:
+                    breakeven_sl = entry * 0.999  # Entry - tiny buffer
+                    pos['sl_price'] = breakeven_sl
+                    stored_sl = breakeven_sl
+
             if side == 'LONG':
                 if low <= stored_sl:
-                    trade = portfolio.close_position(symbol, stored_sl, current_time) # Execute at SL
-                    if trade: trades_executed += 1
+                    if stored_sl > entry:
+                        pos['exit_reason'] = 'BREAK_EVEN'
+                    else:
+                        pos['exit_reason'] = 'STOP_LOSS'
+                    trade = portfolio.close_position(symbol, stored_sl, current_time)
+                    if trade: 
+                        trades_executed += 1
+                        handle_trade_exit(portfolio, strategy, trade, current_time)
+                        # V3: Registrar timestamp de pérdida para cooldown
+                        if trade.get('pnl_usd', 0) < 0:
+                            last_loss_time[symbol] = current_time
                 elif high >= stored_tp:
-                    trade = portfolio.close_position(symbol, stored_tp, current_time) # Execute at TP
-                    if trade: trades_executed += 1
+                    pos['exit_reason'] = 'TAKE_PROFIT'
+                    trade = portfolio.close_position(symbol, stored_tp, current_time)
+                    if trade: 
+                        trades_executed += 1
+                        handle_trade_exit(portfolio, strategy, trade, current_time)
             else: # SHORT
                 if high >= stored_sl:
+                    if stored_sl < entry:
+                        pos['exit_reason'] = 'BREAK_EVEN'
+                    else:
+                        pos['exit_reason'] = 'STOP_LOSS'
                     trade = portfolio.close_position(symbol, stored_sl, current_time)
-                    if trade: trades_executed += 1
+                    if trade: 
+                        trades_executed += 1
+                        handle_trade_exit(portfolio, strategy, trade, current_time)
+                        if trade.get('pnl_usd', 0) < 0:
+                            last_loss_time[symbol] = current_time
                 elif low <= stored_tp:
+                    pos['exit_reason'] = 'TAKE_PROFIT'
                     trade = portfolio.close_position(symbol, stored_tp, current_time)
-                    if trade: trades_executed += 1
+                    if trade: 
+                        trades_executed += 1
+                        handle_trade_exit(portfolio, strategy, trade, current_time)
         
         # 3. GENERATE SIGNALS (SUPREMO-V3 Real Logic)
         # Sync strategy state with portfolio (for signal generation logic)
-        strategy.bought[symbol] = symbol in portfolio.positions
+        if hasattr(strategy, 'bought'):
+            strategy.bought[symbol] = symbol in portfolio.positions
         
         # Call strategy every bar to allow EXIT signals and state updates
         market_event = MarketEvent(symbol=symbol, close_price=current_price, timestamp=current_time)
-        # Note: We need to set the data handler in the strategy state if it uses it directly
-        # but HybridScalpingStrategy uses self.data_provider passed in constructor.
-        strategy.calculate_signals(market_event)
+        
+        # ⚡ BACKTEST FIX: Handle async ML strategy in synchronous backtest loop
+        # The MLStrategy.calculate_signals() is an async coroutine designed for 
+        # the live asyncio event loop. In the synchronous backtest we call
+        # _run_inference() directly which is the synchronous inference path.
+        import inspect
+        if USE_ML_STRATEGY and hasattr(strategy, '_run_inference'):
+            # Step 1: Trigger ML training once enough bars are available
+            if not ml_training_triggered:
+                train_bars = data_provider.get_latest_bars(symbol, n=strategy.min_bars_to_train + 100)
+                if train_bars is not None and len(train_bars) >= strategy.min_bars_to_train:
+                    try:
+                        strategy._launch_training(train_bars, "Full")
+                        # Wait for training thread to finish (sync backtest)
+                        if hasattr(strategy, '_training_thread') and strategy._training_thread:
+                            strategy._training_thread.join(timeout=120)
+                        ml_training_triggered = True
+                        print(f"  🧠 ML Training completed for {symbol} (bars: {len(train_bars)})")
+                    except Exception as e:
+                        print(f"  ⚠️ ML Training failed for {symbol}: {e}")
+            
+            # Step 2: Run synchronous inference if models are trained
+            if strategy.is_trained:
+                try:
+                    strategy._run_inference()
+                except Exception as e:
+                    if bar_count % 1000 == 0:
+                        logger.debug(f"ML inference error (bar {bar_count}): {e}")
+            elif bar_count % 2000 == 0 and not ml_training_triggered:
+                # Retrigger training periodically if first attempt failed
+                train_bars = data_provider.get_latest_bars(symbol, n=strategy.min_bars_to_train + 100)
+                if train_bars is not None and len(train_bars) >= strategy.min_bars_to_train:
+                    try:
+                        strategy._launch_training(train_bars, "Full")
+                        if hasattr(strategy, '_training_thread') and strategy._training_thread:
+                            strategy._training_thread.join(timeout=120)
+                        ml_training_triggered = True
+                        print(f"  🧠 ML Training completed (retry) for {symbol}")
+                    except Exception as e:
+                        pass
+        elif inspect.iscoroutinefunction(getattr(strategy, 'calculate_signals', None)):
+            # Fallback: run async calculate_signals in a temporary event loop
+            import asyncio
+            try:
+                loop = asyncio.new_event_loop()
+                loop.run_until_complete(strategy.calculate_signals(market_event))
+                loop.close()
+            except Exception as e:
+                if bar_count % 1000 == 0:
+                    logger.debug(f"Async strategy error: {e}")
+        else:
+            # Synchronous strategy (Technical, Sniper, etc.)
+            strategy.calculate_signals(market_event)
         
         # Process signals from queue
         while not events_queue.empty():
@@ -558,11 +742,24 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
             if event.signal_type == SignalType.EXIT:
                 if symbol in portfolio.positions:
                     trade = portfolio.close_position(symbol, current_price, current_time)
-                    if trade: trades_executed += 1
+                    if trade: 
+                        trades_executed += 1
+                        handle_trade_exit(portfolio, strategy, trade, current_time)
                 continue
 
             # Handle ENTRY signals
             if symbol not in portfolio.positions:
+                # V3/V4: COOLDOWN POST-PÉRDIDA (30 min) con Excepción Evolutiva
+                if symbol in last_loss_time:
+                    elapsed = (current_time - last_loss_time[symbol]).total_seconds() / 60.0
+                    
+                    # EVOLUTIVO: Si la señal es extremadamente fuerte, ignoramos cooldown (el mercado da una oportunidad clara)
+                    meta = getattr(event, 'metadata', {}) or {}
+                    strength_val = getattr(event, 'strength', meta.get('strength', 0.0))
+                    
+                    if elapsed < COOLDOWN_MINUTES and strength_val < 0.85:
+                        continue  # Saltar entrada — aún en cooldown
+                
                 signals_generated += 1
                 last_signal_idx = bar_count
                 
@@ -570,20 +767,54 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
                 meta_dict = event.metadata if event.metadata else {}
                 metadata = {
                     'atr': getattr(event, 'atr', 0.0),
-                    'confluence': meta_dict.get('multi_timeframe_score', 0.0)
+                    'confluence': meta_dict.get('multi_timeframe_score', 0.0),
+                    'setup_type': meta_dict.get('setup_type', 'UNKNOWN'), # V5.7
+                    'cog_state': meta_dict.get('cog_state', 'NORMAL'), # V5.8
+                    'boost_factor': getattr(event, 'metadata', {}).get('boost_factor', 1.0) # V5.14
                 }
 
                 # === DYNAMIC RISK & SIZING (Aligned with Supremo-V3) ===
                 # 1. Base Logic (Drawdown Protection)
+                from config import Config
                 peak = portfolio.peak_equity
                 current_cap = portfolio.current_capital
                 initial = portfolio.initial_capital
                 
                 dd = (peak - current_cap) / peak if peak > 0 else 0
                 
-                risk_pct = 0.01 # Standard Institutional Risk (1%)
-                if dd > 0.05: risk_pct = 0.02 
-                if dd > 0.10: risk_pct = 0.01 
+                risk_pct = getattr(Config, 'MAX_RISK_PER_TRADE', 0.05) # Configured Risk 5%
+                
+                # V5.10 ASYMMETRIC COGNITIVE SIZING (Alpha Hunter)
+                cog_state = metadata.get('cog_state', 'NORMAL')
+                if cog_state == 'INJURED':
+                    risk_pct *= 0.25 # Extreme capital protection
+                    # V5.13 Recovery Pulse: High strength signals in INJURED get a boost
+                    if getattr(event, 'strength', 0) > 0.90:
+                        risk_pct = 0.75 # Accelerate recovery
+                elif cog_state == 'ALPHA':
+                    risk_pct *= 1.50 # Pressing the edge aggressive
+                
+                if dd > 0.05: risk_pct *= 0.5 
+                if dd > 0.10: risk_pct *= 0.25 
+
+                # V5.15 Dynamic Kelly Sizing
+                # PosSize = Capital * (Prob_Win - (Prob_Loss / (Reward/Risk)))
+                prob_win = metadata.get('win_prob', 0.5)
+                # Aligned with final_tp_pct / final_sl_pct usually being ~2-3
+                rr_ratio = 2.5
+                kelly_pct = (prob_win - ((1 - prob_win) / rr_ratio))
+                kelly_pct = max(0.01, min(0.15, kelly_pct)) # Cap at 15% risk for backtest stability
+                
+                # Use higher of baseline or Kelly if high conviction
+                if prob_win > 0.85:
+                    risk_pct = max(risk_pct, kelly_pct)
+                    logger.debug(f"🎯 [KELLY] Sizing adapted: {risk_pct*100:.2f}% risk based on {prob_win*100:.1f}% WinProb")
+
+                # V5.16 Hologram: Path Intensity Sizing (Quantum Sizing)
+                path_score = metadata.get('path_score', 0.5)
+                if path_score > 0.75:
+                    risk_pct *= (1.0 + (path_score - 0.75) * 2) # Boost up to 1.5x
+                    logger.debug(f"🔮 [HOLOGRAM] Quantum Sizing: Risk expanded by Path Intensity ({path_score:.2f})")
 
                 # 2. Profit Lock Milestones
                 if peak >= (initial * 2.0): risk_pct *= 0.50 
@@ -597,22 +828,87 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
                 sl_decimal = raw_sl_pct / 100.0 if raw_sl_pct > 0.1 else raw_sl_pct
                 tp_pct = getattr(event, 'tp_pct', 2.0)
                 
+                # V5.11 Dynamic Scaling Application
+                tp_mult = metadata.get('tp_mult', 1.0)
+                sl_mult = metadata.get('sl_mult', 1.0)
+                
+                sl_decimal = sl_decimal * sl_mult
+                tp_decimal = (tp_pct / 100.0 if tp_pct > 0.1 else tp_pct) * tp_mult
+                
                 # Size = Risk / SL_Pct
                 size_usd = (risk_usd / sl_decimal) if sl_decimal > 0 else (current_cap * 0.1)
                 
+                # V5.21 Quantum Tunnelling: Purity Leverage
+                # If Noise is extremely low, we establish a higher floor.
+                n_level = metadata.get('sophia', {}).get('noise_level', 1.0)
+                if n_level < 0.25:
+                    purity_floor = current_cap * 10.0
+                    if size_usd < purity_floor:
+                        size_usd = purity_floor
+                        logger.debug(f"🧬 [PURITY LEVERAGE] Noise Level {n_level:.2f} detected. Floor raised to 10x: ${size_usd:.2f}")
+                
                 # Hard cap sizing (prevent extreme leverage)
                 max_size = current_cap * 10 
+                
+                # V5.17 Quantum Sovereign Leverage (Unlock up to 50x)
+                q_mult = metadata.get('quantum_leverage', 1.0)
+                if q_mult > 1.1:
+                    max_size = current_cap * 50
+                    size_usd *= q_mult
+                    logger.debug(f"🌌 [SOVEREIGN] Quantum Leverage Active: {q_mult:.2f}x (Max 50x CAP)")
+
+                # V5.18 Singularity Compounding (Vortex + ALPHA)
+                is_vortex = metadata.get('is_vortex', False)
+                if is_vortex and cog_state == 'ALPHA':
+                    # All-In on the Vortex: 100% of Total Capital at Sovereign Leverage
+                    size_usd = current_cap * 50
+                    logger.info(f"🚨 [QUANTIC SINGULARITY] {symbol} All-In Vortex Trade Initialized!")
+
+                # V5.20 Digital Singularity (Noise Predator Apex)
+                sophia_m = metadata.get('sophia', {})
+                n_level = sophia_m.get('noise_level', 1.0)
+                n_win_prob = sophia_m.get('win_probability', 0.0)
+                n_vortex = sophia_m.get('vortex_pulse', 0.0)
+                
+                if n_win_prob > 0.90 and n_level < 0.20 and n_vortex > 3.0:
+                    # PERFECT SIGNAL: The Digital Singularity Breach
+                    size_usd = current_cap * 50
+                    logger.info(f"🏹 [DIGITAL SINGULARITY] {symbol} PERFECT SIGNAL! All-In x50 (Noise: {n_level:.2f}, WinProb: {n_win_prob:.2f})")
+
+                # V5.15 Quantum Leverage: Unlock up to 25x
+                prob_win = metadata.get('win_prob', 0.5)
+                if prob_win > 0.92:
+                    max_size = current_cap * 25
+                    logger.debug(f"🌌 [QUANTUM] High-Conviction detected. Max leverage expanded to 25x.")
+
+                # V5.14 Catalyst: High-Conviction Hyper-Scaling (up to 20x)
+                boost = metadata.get('boost_factor', 1.0)
+                if boost > 1.1:
+                    max_size = current_cap * 20 # Unlock Predator Power
+                    size_usd *= boost
+                
+                # V5.13 Cognitive Leverage: x1.5 multiplier if ALPHA
+                if cog_state == 'ALPHA':
+                    size_usd *= 1.5
                 size_usd = min(size_usd, max_size)
                 
-                # Institutional Minimum
-                if size_usd < 5.0:
-                    continue
+                # V5.16 Winner-Take-All (Reinversión del 100% en ALPHA)
+                accumulated = portfolio.asset_pnl.get(symbol, 0.0)
+                if accumulated > 0:
+                    reinvest_rate = 1.0 if cog_state == 'ALPHA' else 0.5
+                    size_usd += (accumulated * reinvest_rate)
+                    if reinvest_rate == 1.0:
+                        logger.debug(f"🏆 [WINNER-TAKE-ALL] {symbol} Reinvesting 100% of ${accumulated:.2f}")
+                
+                # Institutional Minimum (Binance Futures Notional > $5) and NaN fallback
+                import math
+                if not isinstance(size_usd, (int, float)) or math.isnan(size_usd) or math.isinf(size_usd) or size_usd < 5.0:
+                    # Only abort if 5.0 exceeds total capital (meaning we can't even afford 1x leverage $5 trade)
+                    # However in futures, margin is notional/leverage. We just ensure size_usd (notional) is 5.0
+                    size_usd = 5.0
 
                 # 4. EXECUTE TRADE (Instant Fill with Slippage)
                 side = 'LONG' if event.signal_type == SignalType.LONG else 'SHORT'
-                
-                # FIXED: Standardizing decimal usage for entry calculations
-                tp_decimal = tp_pct / 100.0 if tp_pct > 0.1 else tp_pct
                 
                 if side == 'LONG':
                     entry_sl = current_price * (1 - sl_decimal)
@@ -626,9 +922,115 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
                 )
                 
                 if opened:
+                    # Phase 47.3: Store Intent for Post-Mortem (Cognitive Awareness)
+                    sophia_report = metadata.get('sophia', {})
+                    if not sophia_report and hasattr(event, 'metadata'):
+                        sophia_report = event.metadata
+                    
+                    portfolio.post_mortem.store_intent(
+                        trade_id=f"{symbol}_{current_time.timestamp()}",
+                        symbol=symbol,
+                        direction=side,
+                        sophia_report=sophia_report,
+                        trigger_price=current_price
+                    )
+                    
                     trades_executed += 1
                     if trades_executed <= 10 or trades_executed % 20 == 0:
                         print(f"  🎯 Trade #{trades_executed}: {side} @ ${current_price:.2f} (SL: {sl_decimal*100:.2f}%, TP: {tp_decimal*100:.2f}%)")
+
+        # --- V5.13 OMNISCIENT EXIT LOGIC (Continuous Monitoring) ---
+        for symb, pos in list(portfolio.positions.items()):
+            latest_price = data_provider.get_latest_price(symb)
+            if not latest_price: continue
+            
+            # En BacktestPortfolio, 'pos' es un dict
+            entry_p = pos['entry']
+            side_p = pos['side']
+            
+            # Pnl Pct manual calculation (pos es dict, no tiene get_pnl_pct)
+            if side_p == 'LONG':
+                cur_pnl_pct = (latest_price - entry_p) / entry_p
+            else:
+                cur_pnl_pct = (entry_p - latest_price) / entry_p
+                
+            pos_metadata = pos.get('metadata', {})
+            exhaustion = pos_metadata.get('exhaustion', 0.5)
+            
+            # --- V5.26 OMNISCIENT: ASYMMETRIC SPRINT (Pyramiding) ---
+            # Sprint: Score > 0.55 and PnL > 0.15%
+            if cur_pnl_pct > 0.0015 and not pos_metadata.get('sprinted', False):
+                sophia_m = pos_metadata.get('sophia', {})
+                omni = sophia_m.get('omniscient_score', 0)
+                if omni > 0.55:
+                    # Check for second volume surge (Local V-Ratio > 2.0 — relaxed from 3.0)
+                    local_bars = data_provider.get_latest_bars(symb, 20)
+                    if local_bars is not None and len(local_bars) >= 10:
+                        current_vol = local_bars[-1]['volume']
+                        mean_v = sum(b['volume'] for b in local_bars) / len(local_bars)
+                        v_ratio = current_vol / mean_v if mean_v > 0 else 1.0
+                        
+                        if v_ratio > 2.0:
+                            # SPRINT ACTIVATED: Add 25% size
+                            old_size = pos['size_usd']
+                            sprint_size = old_size * 0.25
+                            
+                            # Apply commission
+                            sprint_comm = sprint_size * COMMISSION_PCT
+                            portfolio.current_capital -= sprint_comm
+                            
+                            # Update position
+                            pos['size_usd'] += sprint_size
+                            pos['qty'] += sprint_size / latest_price
+                            pos_metadata['sprinted'] = True
+                            
+                            print(f"  ⚡ [SPRINT] Expansion in {symb}: +25% size (Omni={omni:.3f}, V-Ratio={v_ratio:.2f})")
+
+            # --- V5.26 OMNISCIENT: RECURSIVE SPRINT (High-Score compounding) ---
+            # Recursive: Score > 0.65 and PnL > 0.25%
+            if cur_pnl_pct > 0.0025 and pos_metadata.get('is_recursive_sprint', False) and not pos_metadata.get('recursed', False):
+                sophia_m = pos_metadata.get('sophia', {})
+                omni = sophia_m.get('omniscient_score', 0)
+                if omni > 0.65:
+                    old_size = pos['size_usd']
+                    rec_size = old_size * 0.50
+                    
+                    # Apply commission
+                    rec_comm = rec_size * COMMISSION_PCT
+                    portfolio.current_capital -= rec_comm
+                    
+                    # Update position
+                    pos['size_usd'] += rec_size
+                    pos['qty'] += rec_size / latest_price
+                    pos_metadata['recursed'] = True
+                    
+                    print(f"  🌀 [RECURSIVE] Hyper-Compound in {symb}: +50% size (Omni={omni:.3f})")
+
+            # --- V5.22 RESONANCE: HYPER-SPRINT (Extreme Purity Re-entry) ---
+            sophia_m = pos_metadata.get('sophia', {})
+            actual_noise = sophia_m.get('noise_level', 1.0)
+            if cur_pnl_pct > 0.005 and actual_noise < 0.05 and not pos_metadata.get('hyper_sprinted', False):
+                # If the move is already winning and noise is non-existent, double down again
+                old_size = pos['size_usd']
+                hyper_size = old_size * 0.50
+                
+                hyper_comm = hyper_size * COMMISSION_PCT
+                portfolio.current_capital -= hyper_comm
+                
+                pos['size_usd'] += hyper_size
+                pos['qty'] += hyper_size / latest_price
+                pos_metadata['hyper_sprinted'] = True
+                
+                print(f"  🌪️ [HYPER SPRINT] Total Resonance in {symb}: Adding extra 50% size (Noise < 0.05)")
+
+            # Predictive Exit Condition:
+            # 1. Profit is decent (> 1.2% - our threshold from V5.12 audit)
+            # 2. Sophia detects exhaustion (> 0.7)
+            if cur_pnl_pct > 0.012 and exhaustion > 0.7:
+                print(f"  🔮 [OMNISCIENT EXIT] {symb} at {cur_pnl_pct*100:.2f}% (Exhaustion: {exhaustion:.2f})")
+                trade = portfolio.close_position(symb, latest_price, current_time)
+                if trade:
+                    handle_trade_exit(portfolio, strategy, trade, current_time)
 
         
         # Actualizar equity cada hora
@@ -646,8 +1048,10 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
         if bars is not None and len(bars) > 0:
             ts_ms = bars[-1]['timestamp']
             dt_close = pd.to_datetime(ts_ms, unit='ms', utc=True)
-            portfolio.close_position(symbol, bars[-1]['close'], dt_close)
-            trades_executed += 1
+            trade = portfolio.close_position(symbol, bars[-1]['close'], dt_close)
+            if trade:
+                trades_executed += 1
+                handle_trade_exit(portfolio, strategy, trade, dt_close)
     
     print(f"\n✅ Backtest completado: {trades_executed} trades ejecutados")
     
@@ -655,7 +1059,8 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
         'portfolio': portfolio,
         'signals': signals_generated,
         'trades': trades_executed,
-        'bars_processed': bar_count
+        'bars_processed': bar_count,
+        'decision_logs': portfolio.decision_logs
     }
 
 
@@ -685,6 +1090,7 @@ def calculate_metrics(portfolio: BacktestPortfolio) -> dict:
             'profit_factor': 0,
             'avg_trade_duration_min': 0,
             'final_capital': portfolio.current_capital,
+            'initial_capital': portfolio.initial_capital,
             'peak_capital': portfolio.peak_equity
         }
     
@@ -840,9 +1246,13 @@ if __name__ == "__main__":
     print("="*60)
     
     try:
-        # Load Symbols (Full Smart Basket - 20 symbols for Profitability Audit)
-        symbols = Config.CRYPTO_FUTURES_PAIRS[:20]
-        print(f"📋 Testing Aggressive Optimization Subset ({len(symbols)} symbols)...")
+        # ⚙️ MODO V4-EVOLUTIVO: Análisis Profundo Top 5
+        if SYMBOLS_CLI:
+            symbols = SYMBOLS_CLI
+        else:
+            # V5.47.5+: Default to full institutional basket for certification
+            symbols = Config.TRADING_PAIRS
+        print(f"📋 Testing Agresivo V4 (Profundo) ({len(symbols)} symbols)...")
         
         grand_total_trades = 0
         grand_winning_trades = 0
@@ -894,13 +1304,21 @@ if __name__ == "__main__":
             grand_winning_trades += p.winning_trades
             grand_losing_trades += p.losing_trades
             
+            # Contar razones de salida
+            exit_counts = {}
+            for t in p.trades:
+                ex_r = t.get('exit_reason', 'UNKNOWN')
+                exit_counts[ex_r] = exit_counts.get(ex_r, 0) + 1
+            
             print(f"   👉 Result {symbol}: ${symbol_pnl:+.2f} ({len(p.trades)} trades)")
+            print(f"      Exit Reasons: {exit_counts}")
             
             all_results.append({
                 'symbol': symbol,
                 'pnl': symbol_pnl,
                 'trades': len(p.trades),
-                'wins': p.winning_trades
+                'wins': p.winning_trades,
+                'exit_reasons': exit_counts
             })
             
         # Final Totals
@@ -940,7 +1358,6 @@ if __name__ == "__main__":
             }, f, indent=2, default=str)
         print(f"\n📁 Full results saved to: {output_file}")
         
-    except Exception as e:
-        print(f"\n❌ Final Execution Error: {e}")
-        import traceback
-        traceback.print_exc()
+    finally:
+        # Ensure all async logs are flushed before exiting
+        stop_logger()

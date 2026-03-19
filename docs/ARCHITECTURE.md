@@ -1,429 +1,209 @@
-# 🏗️ Arquitectura de Trader Gemini
+# 🏛️ TRADER GEMINI: THE MASTER ARCHITECTURE MAP
 
-> **Documentación completa del sistema usando el método profesor**
-> QUÉ - POR QUÉ - PARA QUÉ - CÓMO - CUÁNDO - DÓNDE - QUIÉN
-
----
-
-## 📌 Resumen Ejecutivo
-
-**QUÉ es Trader Gemini:** Un sistema de trading algorítmico event-driven diseñado para scalping de alta frecuencia en Binance (Futuros y Spot).
-
-**POR QUÉ existe:** Para automatizar estrategias de micro-scalping que serían imposibles de ejecutar manualmente debido a la velocidad y precisión requeridas.
-
-**PARA QUÉ sirve:** Generar ganancias consistentes mediante operaciones de 1s-5min con gestión de riesgo científica y recuperación automática ante fallos.
+Este documento cartografía la arquitectura definitiva de grado institucional del proyecto **Trader Gemini**, un sistema de High-Frequency Trading (HFT) / Scalping diseñado para operar con latencias submilisegundo en Binance.
 
 ---
 
-## 🗂️ Estructura del Proyecto
+## 🗺️ I. DIAGRAMA DE ARQUITECTURA DE ALTO NIVEL
 
-```text
-Trader Gemini/
-├── core/                    # 🚨 NÚCLEO CRÍTICO
-│   ├── engine.py           # Motor principal - Event Loop
-│   ├── events.py           # Sistema de mensajería
-│   ├── portfolio.py        # Gestión de estados y PnL
-│   ├── neural_bridge.py    # 🧠 Shared Intelligence Hub (Phase 8)
-│   ├── enums.py            # Tipos enumerados
-│   └── market_regime.py    # Clasificador de mercado
-│
-├── risk/                    # 🔒 GESTIÓN DE RIESGO
-│   ├── risk_manager.py     # Sizing, Kelly, CVaR
-│   └── kill_switch.py      # Parada de emergencia
-│
-├── execution/               # ⚡ EJECUCIÓN
-│   ├── binance_executor.py # Conexión con Binance
-│   └── liquidity_guardian.py # 🦈 Order Book Guard (Phase 7)
-│
-├── strategies/              # 🧠 ESTRATEGIAS
-│   ├── technical.py        # Estrategia híbrida principal
-│   ├── ml_strategy.py      # Modelos ML (XGBoost)
-│   ├── statistical.py      # Adaptive Z-Score Engine (Phase 7+)
-│   └── shadow_optimizer.py # 🧬 Genetic Optimizer (Phase 27)
-│
-├── data/                    # 📊 DATOS
-│   ├── data_provider.py    # Interfaz abstracta
-│   ├── binance_loader.py   # Carga de datos Binance
-│   └── database.py         # SQLite para persistencia
-│
-├── dashboard/               # 📈 MONITOREO
-│   └── app.py              # Interfaz Streamlit
-│
-├── utils/                   # 🔧 UTILIDADES
-│   ├── logger.py           # Sistema de logging
-│   ├── error_handler.py    # Manejo de errores
-│   └── safe_leverage.py    # Cálculo seguro de apalancamiento
-│
-├── config.py               # ⚙️ Configuración central
-└── main.py                 # 🚀 Punto de entrada
-```
-
----
-
-## 🔄 Flujo de Eventos (Event-Driven Architecture)
-
-### QUÉ es el flujo de eventos
-Un patrón arquitectónico donde los componentes se comunican mediante eventos inmutables que fluyen a través de una cola central.
-
-### POR QUÉ usamos Event-Driven
-- **Desacoplamiento:** Cada componente es independiente
-- **Testabilidad:** Fácil de simular eventos para pruebas
-- **Escalabilidad:** Añadir estrategias sin modificar el motor
-- **Resiliencia:** Fallos aislados no afectan todo el sistema
-
-### CÓMO funciona
-
-```mermaid
-flowchart LR
-    subgraph Data["📊 Data Layer"]
-        BL[binance_loader.py]
-    end
-    
-    subgraph Core["🚨 Core Engine"]
-        EQ[(Event Queue)]
-        EN[engine.py]
-        NB[neural_bridge.py]
-    end
-    
-    subgraph Strategy["🧠 Strategy"]
-        TS[technical.py]
-        ML[ml_strategy.py]
-        ST[statistical.py]
-    end
-    
-    subgraph Risk["🔒 Risk"]
-        RM[risk_manager.py]
-        KS[kill_switch.py]
-    end
-    
-    subgraph Exec["⚡ Execution"]
-        BE[binance_executor.py]
-        LG[liquidity_guardian.py]
-    end
-    
-    BL -->|MarketEvent| EQ
-    EQ --> EN
-    EN -->|MARKET| TS & ML & ST
-    
-    TS & ML & ST <-->|Insight| NB
-    
-    TS -->|SignalEvent| EQ
-    ML -->|SignalEvent| EQ
-    ST -->|SignalEvent| EQ
-    
-    EN -->|SIGNAL| RM
-    RM -->|OrderEvent| EQ
-    EQ -->|ORDER| BE
-    BE -->|PriceCheck| LG
-    BE -->|FillEvent| EQ
-    
-    subgraph SharedBrain["🧠 Thread-Safe Intelligence"]
-        NB -->|Lock| NB_State[Consensus State]
-    end
-    
-    TS & ML & ST --> NB_State
-```
-
-### CUÁNDO se activa cada evento
-
-| Evento | Disparador | Frecuencia |
-|--------|-----------|------------|
-| `MarketEvent` | Nueva vela 1m o WebSocket update | ~2s throttled |
-| `SignalEvent` | Estrategia detecta oportunidad | Variable |
-| `OrderEvent` | Risk Manager valida señal | Por señal válida |
-| `FillEvent` | Binance confirma ejecución | Por orden ejecutada |
-
-### DÓNDE se define cada evento
-
-Todos los eventos están en [`core/events.py`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/core/events.py):
-
-```python
-@dataclass(frozen=True)  # Inmutable para evitar race conditions
-class SignalEvent(Event):
-    strategy_id: str
-    symbol: str
-    datetime: datetime  # UTC-aware obligatorio
-    signal_type: SignalType  # LONG, SHORT, EXIT
-    strength: float = 1.0
-    atr: Optional[float] = None
-    tp_pct: Optional[float] = None
-    sl_pct: Optional[float] = None
-```
-
----
-
-## 🚨 Componentes Críticos
-
-### 1. Engine (`core/engine.py`)
-
-**QUÉ:** Motor principal que coordina todo el sistema.
-
-**POR QUÉ:** Centraliza el procesamiento de eventos y la orquestación de estrategias.
-
-**CÓMO funciona:**
-1. Lee eventos de `BoundedQueue` (máx 500, descarta antiguos)
-2. Valida TTL de señales (rechaza >10s)
-3. Detecta régimen de mercado
-4. Ejecuta estrategias compatibles con el régimen
-5. Actualiza precios del portfolio
-
-**QUIÉN lo usa:**
-- `main.py` crea e inicia el engine
-- Todas las estrategias se registran en él
-- `RiskManager` recibe señales de él
-
-```python
-class Engine:
-    def run(self):
-        while self.running:
-            event = self.events.get(timeout=0.1)
-            self.process_event(event)
-```
-
-### 2. Portfolio (`core/portfolio.py`)
-
-**QUÉ:** Gestor centralizado de posiciones, cash y PnL.
-
-**POR QUÉ:** Single Source of Truth para el estado financiero.
-
-**PARA QUÉ:**
-- Calcular equity total
-- Rastrear PnL realizado/no realizado
-- Persistir estado para crash recovery
-
-**CÓMO:**
-- Thread-safe con `RLock` para operaciones de cash y positions (`_positions_lock`)
-- Guarda estado en SQLite + JSON de forma Asíncrona (`ThreadPoolExecutor`)
-- Calcula High/Low Water Mark para trailing stops
-
-**CUÁNDO se actualiza:**
-- En cada `FillEvent` (orden ejecutada)
-- En cada `MarketEvent` (precios actualizados)
-
-### 3. BoundedQueue
-
-**QUÉ:** Cola con límite y política de descarte.
-
-**POR QUÉ:** Prevenir memory leaks durante ráfagas de datos.
-
-**CÓMO:**
-```python
-class BoundedQueue(queue.Queue):
-    def put(self, item, block=True, timeout=None):
-        try:
-            super().put(item, block=False)
-        except queue.Full:
-            self.get_nowait()  # Descarta el más antiguo
-            super().put(item, block=False)
-```
-
----
-
-## 💾 Persistencia y Crash Recovery
-
-### QUÉ
-Sistema de recuperación automática ante reinicios o fallos.
-
-### POR QUÉ
-El trading 24/7 requiere resiliencia absoluta.
-
-### CÓMO funciona
-
-```mermaid
-flowchart TB
-    subgraph Write["Escritura (Cada Fill)"]
-        F[FillEvent] --> DB[(SQLite WAL)]
-        F --> JSON[status.json]
-        F --> CSV[trades.csv]
-    end
-    
-    subgraph Read["Lectura (Startup)"]
-        DB --> P[Portfolio.restore_state_from_db]
-        JSON --> P
-        P --> Active[Posiciones Activas Restauradas]
-    end
-```
-
-### DÓNDE se almacena
-
-| Archivo | Propósito | Ubicación |
-|---------|-----------|-----------|
-| `trader.db` | Posiciones, trades | `data/` |
-| `status.json` | Estado portfolio | `dashboard/data/` |
-| `trades.csv` | Historial trades | `dashboard/data/` |
-
----
-
-## 🔧 Configuración (`config.py`)
-
-### QUÉ
-Archivo central de configuración con valores por ambiente.
-
-### CÓMO está organizado
-
-```python
-class Config:
-    # === EXCHANGE ===
-    BINANCE_USE_FUTURES = True
-    BINANCE_USE_TESTNET = True
-    BINANCE_LEVERAGE = 10
-    
-    # === RISK ===
-    MAX_RISK_PER_TRADE = 0.02  # 2%
-    STOP_LOSS_PCT = 0.015      # 1.5%
-    MAX_SIGNAL_AGE = 10.0      # segundos
-    
-    # === STRATEGIES ===
-    class Strategies:
-        ML_LOOKBACK_BARS = 300
-        SCALPING_TIMEFRAME = '1m'
-    
-    # === SNIPER (Growth Phase) ===
-    class Sniper:
-        MAX_LEVERAGE = 15
-        GROWTH_PHASE_CAPITAL = 50  # $
-```
-
-### CUÁNDO usar cada modo
-
-| Modo | Variable | Uso |
-|------|----------|-----|
-| Testnet | `BINANCE_USE_TESTNET=True` | Desarrollo y pruebas |
-| Demo | `BINANCE_USE_DEMO=True` | Simulación con virtual funds |
-| Live | Ambos `False` | Producción real |
-
----
-
-## 🧵 Thread Safety
-
-### QUÉ
-Mecanismos para evitar race conditions en operaciones concurrentes.
-
-### 4. Concurrencia "Nivel Dios" (Fases 21-25)
-
-**QUÉ:** Optimización extrema de hilos y memoria para High Frequency Trading.
-
-**MEJORAS IMPLEMENTADAS:**
-- **Fase 21 (Pool No-Bloqueante):** Uso de `ThreadPoolExecutor` para tareas pesadas (Analytics, I/O).
-- **Fase 22 (Anti Race-Conditions):** Candados Atómicos (`Lock`) en `NeuralBridge` y `Portfolio`.
-- **Fase 25 (Escritura No-Bloqueante):** Logs y persistencia en disco movidos a "Background Threads".
-- **Fase 28 (Backpressure):** `BoundedQueue` previene saturación de memoria durante picos de volatilidad.
-
-### DÓNDE se implementa
-
-| Módulo | Mecanismo | Protege |
-|--------|-----------|---------|
-| `portfolio.py` | `RLock` | Operaciones de cash |
-| `binance_loader.py` | `_data_lock` | Buffer de datos |
-| `engine.py` | `_event_lock` | Procesamiento de eventos |
-| `neural_bridge.py`| `lock` | Consenso de estrategias (Audit Fix) |
-
-### CÓMO se usa
-
-```python
-# En Portfolio
-with self._cash_lock:
-    self.current_cash -= amount
-    self.pending_cash += amount
-```
-
----
-
-## 📊 Multi-Timeframe Data
-
-### QUÉ
-Sistema de datos que mantiene múltiples timeframes sincronizados.
-
-### POR QUÉ
-Las estrategias requieren contexto de diferentes escalas temporales.
-
-### CÓMO está implementado
-
-| Timeframe | Almacenamiento | Uso |
-|-----------|---------------|-----|
-| 1m | `latest_data` (2000 bars) | Scalping, señales |
-| 5m | `latest_data_5m` (200 bars) | Confirmación tendencia |
-| 15m | `latest_data_15m` (150 bars) | Contexto macro |
-| 1h | `latest_data_1h` (500 bars) | Régimen de mercado |
-
-### CUÁNDO se actualiza
-
-- **REST API:** Cada ciclo de `update_bars()` (~2s)
-- **WebSocket:** En tiempo real (throttled a 2s)
-- **Error Handling:** Integración de `utils.error_handler.parse_binance_error` para diagnósticos precisos en desconexiones.
-
-
----
-
-## 🚀 Inicialización del Sistema
-
-### CÓMO se inicia (`main.py`)
-
-```mermaid
-flowchart TB
-    Start[main.py] --> Config[Cargar Config]
-    Config --> DB[Iniciar Database]
-    DB --> Data[Iniciar BinanceData]
-    Data --> History[Cargar Historial 25h]
-    History --> Portfolio[Crear Portfolio]
-    Portfolio --> Restore[Restaurar Estado DB]
-    Restore --> Risk[Crear RiskManager]
-    Risk --> Strategies[Registrar Estrategias]
-    Strategies --> Engine[Iniciar Engine Loop]
-    Engine --> WS[Iniciar WebSocket]
-    WS --> Running[Sistema Activo]
-```
-
-### QUIÉN orquesta
-
-`main.py` es el punto de entrada único que:
-1. Configura logging
-2. Inicializa todos los componentes
-3. Registra handlers de señales (SIGINT)
-4. Inicia threads/async loops
-5. Maneja shutdown graceful
-
----
-
-## 📈 Métricas de Rendimiento (Validado Feb 2026)
-
-| Métrica | Target | Resultado Validado | Estado |
-|---------|--------|--------------------|--------|
-| Latencia evento | < 50ms | **< 20ms** (Typ) | ✅ APROBADO |
-| Latencia ejecución | < 100ms | **~45ms** (Binance API) | ✅ APROBADO |
-| Uptime | > 99.5% | **100%** (Stress Test) | ✅ APROBADO |
-| Recuperación Crash | < 2s | **1.2s** (SQLite WAL) | ✅ APROBADO |
-| Max Drawdown | < 1.5% | **< 1.0%** (Simulado) | ✅ APROBADO |
-| Clock Drift | < 1s | **0.001s** (UTC Sync) | ✅ APROBADO |
-| Heavy Math | Non-Blocking | **Offloaded** (Async) | ✅ APROBADO |
-
----
-
-## 🔗 Diagramas de Dependencia
-
-### Imports Críticos
+El sistema se compone del núcleo de alto rendimiento (**Metal-Core**), el motor de inteligencia y decisión (**Trinidad Omega**), y la infraestructura de observabilidad.
 
 ```mermaid
 graph TD
-    main[main.py] --> engine[core/engine.py]
-    main --> binance_loader[data/binance_loader.py]
-    main --> binance_exec[execution/binance_executor.py]
-    main --> technical[strategies/technical.py]
-    
-    engine --> events[core/events.py]
-    engine --> portfolio[core/portfolio.py]
-    
-    technical --> events
-    technical --> data_provider[data/data_provider.py]
-    
-    binance_exec --> events
-    binance_exec --> config[config.py]
-    
-    portfolio --> database[data/database.py]
-    portfolio --> config
+    subgraph Observabilidad & Monitoreo
+        Loki[(Grafana Loki)]
+        Prometheus[(Prometheus Time-Series)]
+        Grafana[Dashboard Grafana]
+        WandB[Weights & Biases - ML Ops]
+    end
+
+    subgraph Trinidad Omega
+        GA[Gestor Axioma<br/>Auditoría PnL & Kelly]
+        OL[Sophia Meta-Brain<br/>Aprendizaje Continuo PPO/PER]
+        IA[Phalanx Swarm<br/>Ensembles XGB/RF/GB]
+    end
+
+    subgraph Metal-Core [Núcleo C++/Rust/Numba]
+        WS[Uvloop / ORJSON<br/>WebSockets Binance]
+        SHM[(Memoria Compartida<br/>SharedMemory)]
+        Buffer[Numba RingBuffers<br/>Estructuras C-Contiguas]
+        Regime[Market Regime<br/>Hurst / RANSAC]
+        Engine[Execution Engine<br/>Async Event Loop]
+    end
+
+    WS -->|Zero-Copy| SHM
+    SHM --> Buffer
+    Buffer --> Regime
+    Buffer --> IA
+    Regime --> OL
+    IA --> GA
+    GA --> Engine
+    OL -.->|Feedback de Pesos| IA
+
+    Engine -->|Métricas Telemetría| Prometheus
+    Engine -->|Logs Estructurados| Loki
+    IA -->|Pérdida/Precisión| WandB
+    Prometheus --> Grafana
+    Loki --> Grafana
+
+    classDef core fill:#1c1c1c,stroke:#ff9800,stroke-width:2px,color:#fff;
+    classDef ai fill:#0d47a1,stroke:#64b5f6,stroke-width:2px,color:#fff;
+    classDef obs fill:#1b5e20,stroke:#81c784,stroke-width:2px,color:#fff;
+
+    class Metal-Core core;
+    class Trinidad Omega ai;
+    class Observabilidad & Monitoreo obs;
 ```
 
 ---
 
-> **Última actualización:** 2026-02-06 (Post-Audit)
-> **Autor:** Sistema Trader Gemini - Audit Team
+## 💻 II. DESPLIEGUE DE HARDWARE (CORE PINNING)
+
+El despliegue está optimizado para un entorno **Ryzen 7 5700U (8 Núcleos Físicos, 16 Hilos)**. Para evadir la invalidación de la caché L3 y el *Context Switching*, se aplican políticas estrictas de afinidad de CPU.
+
+```mermaid
+block-beta
+  columns 4
+  block:CPU["CPU: AMD Ryzen 7 5700U (Zen 2)"]
+    columns 4
+    C0["Core 0<br/>Metal-Core Engine"]
+    C1["Core 1<br/>(OS / Background)"]
+    C2["Core 2<br/>Market Scanner"]
+    C3["Core 3<br/>(OS / Network)"]
+    C4["Core 4<br/>Data Loader WS"]
+    C5["Core 5<br/>(Libre / Burst)"]
+    C6["Core 6<br/>Meta-Brain / Sophia"]
+    C7["Core 7<br/>Prometheus / Telemetry"]
+
+    style C0 fill:#b71c1c,color:#fff,stroke:#fff
+    style C2 fill:#b71c1c,color:#fff,stroke:#fff
+    style C4 fill:#b71c1c,color:#fff,stroke:#fff
+    style C6 fill:#b71c1c,color:#fff,stroke:#fff
+    style C1 fill:#424242,color:#fff,stroke:#fff
+    style C3 fill:#424242,color:#fff,stroke:#fff
+    style C5 fill:#424242,color:#fff,stroke:#fff
+    style C7 fill:#1565c0,color:#fff,stroke:#fff
+  end
+  
+  block:Cache["L3 Cache (8MB Unified)"]
+    columns 1
+    L3["Zero-Copy Shared Memory (SHM) Resident"]
+    style L3 fill:#ff9800,color:#fff
+  end
+```
+
+> **Nota Técnica:** Se evitan los hilos SMT (impares) para las rutinas del motor (Cores 0, 2, 4, 6) con prioridad `REALTIME/HIGH`, asegurando que la L1/L2 de cada núcleo pertenezca en exclusiva a los bucles de alta frecuencia.
+
+---
+
+## ⚡ III. LINAJE DE DATOS Y LATENCIA (DATA LINEAGE)
+
+Flujo temporal preciso del recorrido de un dato desde Binance hasta su ejecución. **Objetivo: < 10ms P99**.
+
+```mermaid
+sequenceDiagram
+    participant B as Binance WS
+    participant WS as Uvloop+Orjson (Parsers)
+    participant RB as Numba RingBuffer
+    participant OF as Order Flow Delta
+    participant IA as Phalanx-Swarm (Ensemble)
+    participant EX as Execution Engine
+    participant API as Binance REST API
+
+    Note over B, API: Nanoseconds to Milliseconds (HFT Critical Path)
+    
+    B->>WS: JSON Payload (Tick / Book)
+    activate WS
+    WS->>RB: Deserialización ORJSON + Mapeo a Array C
+    deactivate WS
+    
+    activate RB
+    RB->>OF: Inyección Zero-Copy a SHM (np.copy safe-lock)
+    deactivate RB
+    
+    activate OF
+    OF->>IA: Cálculo Delta/Volatilidad Vectorizado
+    deactivate OF
+    
+    activate IA
+    IA->>IA: Inferencia Paralela (XGB, RF, GB)
+    IA->>EX: Señal Consensuada (SignalEvent)
+    deactivate IA
+    
+    activate EX
+    EX->>EX: Validación (Kelly Criterion + Risk Veto)
+    EX->>API: Ejecución POST /fapi/v1/order (TCP_NODELAY)
+    deactivate EX
+    
+    API-->>EX: Fill / Reject (Latencia Redonda medida)
+```
+
+---
+
+## 🗄️ IV. DICCIONARIO DE DATOS (DATA STRUCTURES)
+
+El intercambio de memoria (IPC) se da sin serialización (*pickle-free*) operando directamente sobre punteros C a través de NumPy estricto.
+
+### 1. Numba Structured Array (El "OhlcvStruct")
+
+Estructura fundacional de cada Ring Buffer para una vela o tick. Perfectamente alineada en memoria (Bytes fijos) para compilación LLVM.
+
+| Campo | Tipo NumPy | Memoria | Propósito |
+| :--- | :--- | :--- | :--- |
+| `timestamp` | `np.int64` | 8 bytes | Marca the tiempo atómica UNIX (ms). |
+| `open` | `np.float32` | 4 bytes | Precio de Apertura (escalado para memoria). |
+| `high` | `np.float32` | 4 bytes | Precio Máximo. |
+| `low` | `np.float32` | 4 bytes | Precio Mínimo. |
+| `close` | `np.float32` | 4 bytes | Precio the Cierre. |
+| `volume` | `np.float32` | 4 bytes | Volumen Operado (Base Asset). |
+| **Total Size** | **Tuple** | **28 bytes** | Alta compresión the hardware. |
+
+### 2. Market Ring Buffer (Numba JIT Class)
+
+Estructura iterativa `deque`-like pero implementada sobre arrays pre-asignados en C.
+
+- `_data`: Bloque de memoria continua the N-elementos (`np.zeros(N, dtype=OhlcvStruct)`).
+- `_index`: Puntero (Int) a la "cabeza" del búfer circular. Funciona en módulo `(index + 1) % N`.
+- **Invariante:** Las escrituras son `O(1)`. Las lecturas del último elemento bloque de `n` elementos son vectorizadas `O(1)` usando punteros rodantes, sin recolección de basura (GC-Free).
+
+---
+
+## 👁️ V. TELEMETRÍA SOBERANA & AUDITORÍA COGNITIVE-AWARE (PHASE 47.3)
+
+La arquitectura de observabilidad se ha extendido para capturar no solo métricas cuantitativas, sino también el **razonamiento cognitivo** detrás de cada decisión.
+
+### 1. El Circuito de Retroalimentación de Atribución
+
+Integrado entre `SophisIntelligence` y `SovereignOracle`, este circuito permite la autopsia técnica de cada operación.
+
+- Intent Storage: Sophia almacena el "Plan de Vuelo" (intent) al abrir una posición.
+- Causal Post-Mortem: Al cerrar, el Oráculo compara el desenlace con el plan y genera una **Narrativa de Atribución**.
+- Cognitive Backtest: El motor de backtest (`run_backtest.py`) ahora es "Cognitive-Aware", poblando logs de decisión con lenguaje natural que explica el *porqué* de cada Profit/Loss.
+
+### 3. V5.47.5+: El Puente Neural y Auditoría Multiverso (Phase 48 & 49)
+
+La arquitectura ahora soporta una **Persistencia de Pesos Localizada** y un puente de retroalimentación asíncrono.
+
+* **Neural Bridge:** Inferencia directa de señales neuronales fusionadas en el flujo técnico, proporcionando una puntuación de "Neural Conviction".
+* **Online Feedback Loop:** Actualización de los pesos `brain_weights` en el disco local (`data/genotypes/`) tras cada cierre de trade exitoso o fallido.
+* **Multiverse Certification:** Protocolo de validación masiva que asegura que el aprendizaje converge positivamente a través de los 26 universos (símbolos) de la canasta institucional.
+
+```mermaid
+graph TD
+    A[Trade Closure] --> B[Reward Calculation]
+    B --> C[Neural Update SGD]
+    C --> D[Genotype Persistence]
+    D --> E[Neural Conviction]
+    E --> F[Next Signal Generation]
+```
+
+### 2. Flujo de Datos de Telemetría Cognitiva
+
+```mermaid
+graph LR
+    A[Sophia Intent] --> B[Post-Mortem Comparator]
+    B --> C[Sovereign Oracle]
+    C --> D[Causal Narrative]
+    D --> E[Massive Audit Report]
+    E --> F[Continuous Meta-Optimization]
+```

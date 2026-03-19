@@ -19,3 +19,10 @@ class DataProvider(ABC):
         in a tuple format: (symbol, datetime, open, high, low, close, volume).
         """
         raise NotImplementedError("Should implement update_bars()")
+
+    @abstractmethod
+    def get_order_flow_metrics(self, symbol: str) -> dict:
+        """
+        Returns real-time order flow and microstructure metrics.
+        """
+        raise NotImplementedError("Should implement get_order_flow_metrics()")
