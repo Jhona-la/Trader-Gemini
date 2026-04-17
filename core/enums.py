@@ -13,6 +13,7 @@ class SignalType(str, Enum):
     EXIT = "EXIT"
     REVERSE = "REVERSE"  # Strategic flipping
     NEUTRAL = "NEUTRAL"
+    HOLD = "HOLD"        # Do not trade (used by order flow veto)
 
 class OrderSide(str, Enum):
     BUY = "BUY"
@@ -25,6 +26,8 @@ class OrderType(str, Enum):
     TAKE_PROFIT = "TAKE_PROFIT"
     STOP_MARKET = "STOP_MARKET"
     TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"
+    # Binance Futures API types for Limit-based protective orders (BBO Architecture)
+    STOP = "STOP"                        # Stop-Limit (Maker fee instead of STOP_MARKET)
 
 class TimeFrame(str, Enum):
     M1 = "1m"

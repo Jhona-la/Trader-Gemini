@@ -12,7 +12,7 @@ from sklearn.metrics import precision_score, accuracy_score
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
-from utils.math_kernel import calculate_rsi_jit, calculate_zscore_jit
+from strategies.components.feature_engineering import FeatureEngineering
 
 def train_supreme():
     print("🧠 [TRAINING] Protocol Supreme: Phase 26-30 - Model Retraining...")
@@ -34,30 +34,27 @@ def train_supreme():
             df = pd.read_parquet(path)
             
             # --- Feature Engineering (Phase 27) ---
-            closes = df['close'].values.astype(np.float32)
+            fe = FeatureEngineering()
+            df_features = fe.prepare_features(df, symbol=symbol)
+            if df_features.empty:
+                print(f"⚠️ {symbol}: Not enough features data.")
+                continue
+                
+            df_features = df_features.dropna()
+            if len(df_features) < 50:
+                print(f"⚠️ {symbol}: Not enough valid features post-dropna (len: {len(df_features)}).")
+                continue
+                
+            feature_cols = [c for c in df_features.columns if c not in ['timestamp', 'datetime', 'open', 'high', 'low', 'close', 'volume']]
             
-            # 1. RSI
-            rsi = calculate_rsi_jit(closes, period=14)
-            
-            # 2. Z-Score (Volatility)
-            zscore = calculate_zscore_jit(closes, period=20)
-            
-            # 3. Log Return
-            returns = np.diff(np.log(closes), prepend=np.log(closes[0]))
+            closes = df_features['close'].values.astype(np.float32)
             
             # Target: Next Candle Close > Current Close (Binary Classification)
-            # 1 = UP, 0 = DOWN
-            # Lag target by -1
             target = (np.roll(closes, -1) > closes).astype(int)
             target[-1] = 0 # Invalid last
             
-            # Prepare X, y
-            # Drop NaN from indicators (first 20)
-            start_idx = 20
-            end_idx = len(closes) - 1 # Drop last target
-            
-            X = np.column_stack([rsi, zscore, returns])[start_idx:end_idx]
-            y = target[start_idx:end_idx]
+            X = df_features[feature_cols].values[:-1]
+            y = target[:-1]
             
             # --- Time Series Split (Phase 28) ---
             tscv = TimeSeriesSplit(n_splits=3)
@@ -90,10 +87,13 @@ def train_supreme():
             
             # Save Model (Phase 30)
             safe_sym = symbol.replace('/', '')
-            model_path = os.path.join(models_dir, f"{safe_sym}_xgb.json")
+            model_path = os.path.join(models_dir, f"{safe_sym}_xgb.ubj")
             model.save_model(model_path)
             
-            print(f"✅ {symbol}: Precision={avg_precision:.3f} | Saved to {model_path}")
+            meta_path = os.path.join(models_dir, f"{safe_sym}_meta.joblib")
+            joblib.dump({'feature_cols': feature_cols}, meta_path)
+            
+            print(f"✅ {symbol}: Precision={avg_precision:.3f} | Saved to {model_path} & {meta_path}")
             
         except Exception as e:
             print(f"❌ {symbol}: Training Failed - {e}")

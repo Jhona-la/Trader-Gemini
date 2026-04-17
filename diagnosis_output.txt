@@ -1,0 +1,210 @@
+================ SYMBOL FORENSIC AUDIT =================
+
+👉 HORIZON: 1D
+  🔹 ADAUSDT
+     [Technical   ] ❌ PNL: $ -1.2962 | WR:  80.0% | Trades:  30 | DD:  6.74%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ❌ PNL: $ -0.5774 | WR:  26.7% | Trades:  10 | DD:  4.48%
+  🔹 ARBUSDT
+     [Technical   ] ❌ PNL: $ -1.1361 | WR:  76.7% | Trades:  30 | DD:  5.07%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.1139 | WR:  75.0% | Trades:   8 | DD:  2.52%
+     [Orchestrator] ❌ PNL: $ -0.4420 | WR:  50.6% | Trades:  12 | DD:  3.73%
+  🔹 ATOMUSDT
+     [Technical   ] ❌ PNL: $ -0.9810 | WR:  62.9% | Trades:  62 | DD:  5.65%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ❌ PNL: $ -0.4042 | WR:  21.0% | Trades:  20 | DD:  3.70%
+  🔹 AVAXUSDT
+     [Technical   ] ❌ PNL: $ -1.3957 | WR:  77.1% | Trades:  70 | DD:  6.60%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -0.2837 | WR:  71.4% | Trades:   7 | DD:  2.60%
+     [Orchestrator] ❌ PNL: $ -0.7980 | WR:  49.5% | Trades:  25 | DD:  6.18%
+  🔹 BNBUSDT
+     [Technical   ] ❌ PNL: $ -1.0568 | WR:  58.1% | Trades:  31 | DD:  5.45%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ❌ PNL: $ -0.4405 | WR:  19.4% | Trades:  10 | DD:  3.57%
+  🔹 BTCUSDT
+     [Technical   ] ❌ PNL: $ -1.0038 | WR:  66.7% | Trades:  33 | DD:  5.38%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -0.6856 | WR:  57.9% | Trades:  19 | DD:  5.30%
+     [Orchestrator] ❌ PNL: $ -0.8306 | WR:  41.5% | Trades:  17 | DD:  6.59%
+  🔹 DOGEUSDT
+     [Technical   ] ❌ PNL: $ -0.9426 | WR:  64.7% | Trades:  34 | DD:  6.65%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -1.5467 | WR:  66.7% | Trades:  30 | DD:  5.66%
+     [Orchestrator] ❌ PNL: $ -1.2419 | WR:  43.8% | Trades:  21 | DD:  9.74%
+  🔹 DOTUSDT
+     [Technical   ] ❌ PNL: $ -1.3070 | WR:  80.0% | Trades:  30 | DD:  5.44%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -0.4527 | WR:  69.2% | Trades:  13 | DD:  3.54%
+     [Orchestrator] ❌ PNL: $ -0.8210 | WR:  49.7% | Trades:  14 | DD:  6.40%
+  🔹 ETCUSDT
+     [Technical   ] ❌ PNL: $ -1.1469 | WR:  66.0% | Trades:  50 | DD:  6.77%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ❌ PNL: $ -0.4957 | WR:  22.0% | Trades:  16 | DD:  4.83%
+  🔹 ETHUSDT
+     [Technical   ] ❌ PNL: $ -1.7095 | WR:  60.0% | Trades:  30 | DD:  6.70%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -0.8852 | WR:  66.7% | Trades:  30 | DD:  6.43%
+     [Orchestrator] ❌ PNL: $ -1.2587 | WR:  42.2% | Trades:  20 | DD: 10.15%
+--------------------------------------------------
+👉 HORIZON: 7D
+  🔹 ADAUSDT
+     [Technical   ] ❌ PNL: $ -1.4849 | WR:  83.3% | Trades:  30 | DD: 11.50%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -1.1343 | WR:  83.3% | Trades:  30 | DD:  9.08%
+     [Orchestrator] ❌ PNL: $ -1.2754 | WR:  55.6% | Trades:  20 | DD:  9.90%
+  🔹 ARBUSDT
+     [Technical   ] ❌ PNL: $ -1.2983 | WR:  77.8% | Trades:  36 | DD: 12.13%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -0.9268 | WR:  80.3% | Trades:  76 | DD: 13.93%
+     [Orchestrator] ❌ PNL: $ -1.1820 | WR:  52.7% | Trades:  37 | DD: 13.08%
+  🔹 ATOMUSDT
+     [Technical   ] ❌ PNL: $ -1.4956 | WR:  66.7% | Trades:  78 | DD: 13.20%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -1.1048 | WR:  62.5% | Trades:  40 | DD:  9.26%
+     [Orchestrator] ❌ PNL: $ -1.3114 | WR:  43.1% | Trades:  39 | DD: 11.26%
+  🔹 AVAXUSDT
+     [Technical   ] ❌ PNL: $ -1.5175 | WR:  78.8% | Trades:  80 | DD: 13.14%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -0.3183 | WR:  85.3% | Trades:  68 | DD:  7.19%
+     [Orchestrator] ❌ PNL: $ -0.8778 | WR:  54.7% | Trades:  49 | DD:  8.20%
+  🔹 BNBUSDT
+     [Technical   ] ❌ PNL: $ -1.0105 | WR:  63.3% | Trades:  30 | DD:  7.80%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -1.0652 | WR:  71.0% | Trades:  31 | DD:  8.55%
+     [Orchestrator] ❌ PNL: $ -1.0641 | WR:  44.8% | Trades:  20 | DD:  8.19%
+  🔹 BTCUSDT
+     [Technical   ] ❌ PNL: $ -1.4627 | WR:  64.7% | Trades:  51 | DD: 11.36%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ❌ PNL: $ -0.6155 | WR:  21.6% | Trades:  17 | DD:  4.79%
+  🔹 DOGEUSDT
+     [Technical   ] ❌ PNL: $ -1.2305 | WR:  83.3% | Trades:  30 | DD:  9.98%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ❌ PNL: $ -0.5829 | WR:  27.8% | Trades:  10 | DD:  4.72%
+  🔹 DOTUSDT
+     [Technical   ] ❌ PNL: $ -1.2492 | WR:  83.7% | Trades:  49 | DD:  9.80%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ❌ PNL: $ -0.5785 | WR:  27.9% | Trades:  16 | DD:  4.54%
+  🔹 ETCUSDT
+     [Technical   ] ❌ PNL: $ -0.2539 | WR:  70.4% | Trades:  54 | DD:  8.20%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ❌ PNL: $ -0.1883 | WR:  23.5% | Trades:  18 | DD:  4.86%
+  🔹 ETHUSDT
+     [Technical   ] ❌ PNL: $ -1.0669 | WR:  63.3% | Trades:  30 | DD:  8.23%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -1.8307 | WR:  76.9% | Trades:  52 | DD: 14.08%
+     [Orchestrator] ❌ PNL: $ -1.4030 | WR:  46.8% | Trades:  27 | DD: 10.79%
+--------------------------------------------------
+👉 HORIZON: 15D
+  🔹 ADAUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -1.5682 | WR:  80.0% | Trades:  30 | DD: 16.31%
+     [Orchestrator] ❌ PNL: $ -1.5682 | WR:  26.7% | Trades:  10 | DD: 16.31%
+  🔹 ARBUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 ATOMUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 AVAXUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -1.4847 | WR:  88.3% | Trades:  60 | DD: 11.42%
+     [Orchestrator] ❌ PNL: $ -1.4847 | WR:  29.4% | Trades:  20 | DD: 11.42%
+  🔹 BNBUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 BTCUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 DOGEUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 DOTUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -1.1475 | WR:  95.1% | Trades:  81 | DD:  9.05%
+     [Orchestrator] ❌ PNL: $ -1.1475 | WR:  31.7% | Trades:  27 | DD:  9.05%
+  🔹 ETCUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 ETHUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+--------------------------------------------------
+👉 HORIZON: 30D
+  🔹 ADAUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -1.2304 | WR:  86.7% | Trades:  30 | DD:  9.93%
+     [Orchestrator] ❌ PNL: $ -1.2304 | WR:  28.9% | Trades:  10 | DD:  9.93%
+  🔹 ARBUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 ATOMUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 AVAXUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 BNBUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 BTCUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -1.1704 | WR:  83.9% | Trades:  31 | DD:  9.22%
+     [Orchestrator] ❌ PNL: $ -1.1704 | WR:  28.0% | Trades:  10 | DD:  9.22%
+  🔹 DOGEUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ❌ PNL: $ -1.1592 | WR:  86.7% | Trades:  30 | DD:  9.46%
+     [Orchestrator] ❌ PNL: $ -1.1592 | WR:  28.9% | Trades:  10 | DD:  9.46%
+  🔹 DOTUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 ETCUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+  🔹 ETHUSDT
+     [Technical   ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Sophia      ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [ML_XGBoost  ] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+     [Orchestrator] ✅ PNL: $  0.0000 | WR:   0.0% | Trades:   0 | DD:  0.00%
+--------------------------------------------------

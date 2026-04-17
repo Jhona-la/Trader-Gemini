@@ -1,32 +1,26 @@
-"""
-Risk Manager FINAL CORREGIDO: 
-- Original check_stops (COMPLETO)
-- Original Sniper Methods (TODOS)
-- Scientific: Kelly, CVaR, Fees (FIXED)
-- Growth Phases (CALIBRADO para $12)
-- Leverage calculation (CORREGIDO)
-- Enhanced debugging
-"""
+import os
+import sys
+import time
+import math
+import traceback
+import numpy as np
+from collections import deque
+from datetime import timedelta, datetime, timezone
+from decimal import Decimal, getcontext
 
+from config import Config
 from core.events import OrderEvent, SignalEvent
 from core.enums import OrderSide, SignalType, OrderType
 from core.resolution_state import ResolutionState
 from core.world_awareness import world_awareness
-from config import Config
-from decimal import Decimal, getcontext
-from .kill_switch import KillSwitch
+from risk.kill_switch import KillSwitch
 from utils.debug_tracer import trace_execution
-from datetime import timedelta, datetime, timezone
-import numpy as np
-from collections import deque
 from utils.cooldown_manager import cooldown_manager
 from utils.safe_leverage import safe_leverage_calculator
 from utils.logger import logger
-from utils.analytics import AnalyticsEngine
 from core.data_handler import get_data_handler
 from utils.statistics_pro import StatisticsPro
-from utils.math_kernel import calculate_garch_jit
-import os
+from utils.math_kernel import calculate_garch_jit, compute_kelly_fraction_jit, extract_kelly_stats_jit, compute_cvar_jit
 
 
 
@@ -49,9 +43,17 @@ class FeeCalculator:
         logger.info(f"💰 [FEE-AWARENESS] Dynamic Commission Rates Embedded: Maker {maker*100:.4f}% | Taker {taker*100:.4f}%")
         
     @staticmethod
-    def calculate_round_trip_fee(notional_value: float) -> float:
-        # Conservative estimate for EV calculation: TAKER entries and exits
-        return notional_value * FeeCalculator.TAKER_FEE * 2
+    def calculate_round_trip_fee(notional_value: float, order_type: str = 'LIMIT') -> float:
+        """
+        SUPREMO-V4: Simulador de comisiones REALISTA (Binance Futures).
+        - MAKER (LIMIT): 0.02% (con BNB)
+        - TAKER (MARKET): 0.0375% (con BNB)
+        """
+        fee_rate = FeeCalculator.MAKER_FEE
+        if order_type.upper() == 'MARKET':
+            fee_rate = FeeCalculator.TAKER_FEE
+            
+        return notional_value * fee_rate * 2
 
 
 class CVaRCalculator:
@@ -80,10 +82,9 @@ class CVaRCalculator:
         if len(self.loss_history) < 10:
             return 0.05  # 5% default (REALISTA con 10x lev)
         
-        losses = sorted(self.loss_history, reverse=True)
-        var_index = max(1, int(len(losses) * (1 - self.confidence_level)))
-        worst_losses = losses[:var_index]
-        return np.mean(worst_losses) if worst_losses else 0.05
+        # [NANO-SPEED] Convert deque to numpy and use compiled kernel
+        loss_array = np.array(self.loss_history, dtype=np.float64)
+        return float(compute_cvar_jit(loss_array, self.confidence_level))
 
     def should_reduce_risk(self, current_drawdown: float) -> bool:
         """FIXED: Threshold más permisivo para growth"""
@@ -124,11 +125,12 @@ class RiskManager:
         # Kill Switch
         self.kill_switch = KillSwitch(portfolio=self.portfolio)
         
-        # Kelly Stats (FIXED bootstrap)
+        # Kelly Stats (Dynamic Genesis V5.0)
         self.win_count = 0
         self.loss_count = 0
-        self.bootstrap_win_rate = 0.52  # REALISTA para scalping
-        self.bootstrap_trades = 20
+        # Instead of fixed 0.52, this now acts only as the absolute 'cold start' prior
+        self.bootstrap_win_rate = getattr(Config.Risk, 'DEFAULT_BOOTSTRAP_WR', 0.52)
+        self.bootstrap_trades = getattr(Config.Risk, 'BOOTSTRAP_TRADES', 20)
         
         # Growth Phases (CALIBRADO)
         self.LEVERAGE_GROWTH = 10
@@ -163,7 +165,7 @@ class RiskManager:
         self.momentum_cache = {} # {symbol: deque(maxlen=5)}
 
         # PHASE 56: Metal-Core Optimized Cache
-        self._trade_cache = [] # List of dicts: {'is_win': bool, 'pnl_pct': float, 'symbol': str}
+        self._trade_cache = deque(maxlen=2000) # List of dicts: {'is_win': bool, 'pnl_pct': float, 'symbol': str}
         self._cache_initialized = False
         self._last_day_str = 0 # Integer YYYYMMDD for fast comparison
         self._status_cache = {}
@@ -270,16 +272,20 @@ class RiskManager:
         
         # Intentaremos estimar el slippage basado en el ATR o data_handler si existe
         dh = get_data_handler()
-        if dh:
-            bars = dh.get_latest_bars(symbol, n=5)
-            if bars and len(bars) > 1:
-                # Approximate spread/slippage based on high-low / close
-                recent_volatility = (bars[-1]['high'] - bars[-1]['low']) / current_price
-                est_slippage = recent_volatility * 0.15 # Heuristic rule of thumb for illiquidity
-                
-                if est_slippage > max_allowed_slippage:
-                    logger.warning(f"🛑 [LIQUIDITY] Slippage check failed for {symbol}: Est {est_slippage*100:.3f}% > Max {max_allowed_slippage*100:.3f}%")
-                    return False
+        if dh and hasattr(dh, 'get_latest_bars'):
+            try:
+                bars = dh.get_latest_bars(symbol, n=5)
+                if bars is not None and len(bars) > 1:
+                    # Calculamos el true range promedio para esta volatilidad cortan high-low / close
+                    recent_volatility = (bars[-1]['high'] - bars[-1]['low']) / current_price
+                    est_slippage = recent_volatility * 0.15 # Heuristic rule of thumb for illiquidity
+                    
+                    if est_slippage > max_allowed_slippage:
+                        logger.warning(f"🛑 [LIQUIDITY] Slippage check failed for {symbol}: Est {est_slippage*100:.3f}% > Max {max_allowed_slippage*100:.3f}%")
+                        return False
+            except Exception as e:
+                logger.error(f"Error in slippage validation (safe fallback triggered): {e}")
+                return True
         return True
 
     def _validate_emergency_bypass(self, signal_event):
@@ -327,6 +333,22 @@ class RiskManager:
                  logger.info(f"🛡️ [Veto Bypass] Allowing {signal_type.name} on {symbol} despite Global Regime (Relative Strength Hedging).")
                  return True
                  
+        # SUPREMO-V4: Filtro de horario NY (15:00 - 18:00 UTC)
+        # La volatilidad agresiva de NY rompe los rangos de scalping. Reducimos exposición.
+        now_utc = datetime.now(timezone.utc)
+        if 15 <= now_utc.hour <= 18:
+            logger.warning(f"🕒 [NY-FILTER] Critical Volatility Zone (15-18 UTC). Applying extra caution for {symbol}.")
+            # Nota: El tamaño de posición se reducirá en la lógica de Kelly o allocation si es necesario,
+            # pero aquí podemos aplicar un veto preventivo si el ADX es > 30 (tendencia violenta).
+            dh = get_data_handler()
+            if dh:
+                bars = dh.get_latest_bars(symbol, n=1)
+                if bars is not None and len(bars) > 0:
+                    # Si el ADX es alto en NY, no operamos scalping de reversión
+                    if bars[-1].get('adx', 0) > 30:
+                        logger.warning(f"🛑 [NY-FILTER] High ADX ({bars[-1]['adx']:.1f}) in NY session. Vetoing {signal_type.name} {symbol}.")
+                        return False
+
         if self.global_regime == 'TRENDING_BEAR' and signal_type == SignalType.LONG:
             logger.warning(f"🛡️ [Veto] Blocking LONG {symbol} (Global: Bearish).")
             return False
@@ -335,18 +357,49 @@ class RiskManager:
             return False
         return True
 
-    def _validate_directional_safety(self, symbol, signal_type):
-        """Evita duplicar posiciones en la misma dirección."""
-        if not self.portfolio or symbol not in self.portfolio.positions:
+    def _validate_directional_safety(self, symbol, signal_type, horizon: str = 'SCALPING'):
+        """
+        Evita duplicar posiciones en la misma dirección PARA EL MISMO HORIZONTE.
+        
+        FORENSIC-V11 FIX: Permite señales CONTRARIAS (flip) si la posición actual
+        está perdiendo > 0.3%. Antes, esta función rechazaba el 69.9% de TODAS
+        las señales porque bloqueaba misma-dirección incluso cuando el trade actual
+        era perdedor y una señal contraria podría recuperar capital.
+        """
+        if not self.portfolio:
             return True
             
-        qty = self.portfolio.positions[symbol]['quantity']
+        v_key = f"{symbol}_{horizon}"
+        v_pos = self.portfolio.virtual_ledger.get(v_key)
+        
+        if not v_pos:
+            return True
+            
+        qty = v_pos.get('quantity', 0)
+        if qty == 0:
+            return True
+        
+        # Block same-direction duplicates (never stack)
         if qty > 0 and signal_type == SignalType.LONG:
-            logger.info(f"🛡️ [{symbol}] Block: Already LONG.")
             return False
         if qty < 0 and signal_type == SignalType.SHORT:
-            logger.info(f"🛡️ [{symbol}] Block: Already SHORT.")
             return False
+            
+        # FORENSIC-V11: Allow opposite-direction flips ONLY if losing > 0.3%
+        # This prevents churning on noise but enables recovery from bad entries
+        entry_price = v_pos.get('entry_price', 0)
+        if entry_price > 0:
+            current_price = self.portfolio.last_prices.get(symbol, entry_price)
+            if qty > 0:  # Currently LONG, new signal is SHORT
+                unrealized_pnl_pct = (current_price - entry_price) / entry_price
+            else:  # Currently SHORT, new signal is LONG
+                unrealized_pnl_pct = (entry_price - current_price) / entry_price
+            
+            if unrealized_pnl_pct < -0.003:  # Losing > 0.3%
+                logger.info(f"🔄 [{v_key}] FLIP ALLOWED: Current PnL {unrealized_pnl_pct*100:.2f}% < -0.3%. Permitting opposite signal.")
+                return True
+        
+        # Default: allow opposite direction (it will be handled by generate_order's exit logic)
         return True
 
     def _validate_margin_ratio(self):
@@ -356,10 +409,11 @@ class RiskManager:
 
     def _validate_funding_risk(self, symbol: str, side: OrderSide) -> bool:
         """
-        QUÉ: Bloquea entradas LONG si el funding es excesivamente alto y el cobro es inminente.
+        QUÉ: Bloquea entradas si el funding es excesivamente alto y el cobro es inminente.
         POR QUÉ: Evitar pérdidas por 'funding leak' en posiciones de HFT.
+        SUPREMO-V4: Simetría total para SHORTS (ADAPTABILIDAD).
         """
-        if not Config.BINANCE_USE_FUTURES or side != OrderSide.BUY:
+        if not Config.BINANCE_USE_FUTURES:
             return True
             
         try:
@@ -371,11 +425,20 @@ class RiskManager:
             rate = funding_info.get('last_funding_rate', 0)
             next_funding_time = funding_info.get('next_funding_time', 0)
             
-            if rate > self.funding_evasion_threshold:
+            # Caso LONG: Funding positivo alto (pagamos por estar largos)
+            if side == OrderSide.BUY and rate > self.funding_evasion_threshold:
                 time_to_funding = (next_funding_time - datetime.now(timezone.utc).timestamp()) / 60
                 if 0 < time_to_funding < self.funding_buffer_minutes:
                     logger.warning(f"💸 [FundingGuard] VETO LONG {symbol}: Rate {rate*100:.3f}% incoming in {time_to_funding:.1f}m.")
                     return False
+                    
+            # Caso SHORT: Funding negativo alto (pagamos por estar cortos)
+            elif side == OrderSide.SELL and rate < -self.funding_evasion_threshold:
+                time_to_funding = (next_funding_time - datetime.now(timezone.utc).timestamp()) / 60
+                if 0 < time_to_funding < self.funding_buffer_minutes:
+                    logger.warning(f"💸 [FundingGuard] VETO SHORT {symbol}: Rate {rate*100:.3f}% incoming in {time_to_funding:.1f}m.")
+                    return False
+                    
             return True
         except Exception as e:
             logger.error(f"Funding Check Error: {e}")
@@ -390,6 +453,8 @@ class RiskManager:
         QUÉS: Salida por momentum adverso (Cuchillo Cayendo).
         POR QUÉ: Evitar esperar al SL si el precio cae >1.5% en segundos (Flash Crash).
         """
+        if not data_provider:
+            return False
         try:
             # Get last 3-5 bars (1m)
             bars = data_provider.get_latest_bars(symbol, n=5)
@@ -401,14 +466,22 @@ class RiskManager:
             last_ret = (closes[-1] - closes[-2]) / closes[-2]
             accel = (closes[-1] - closes[-3]) / closes[-3] # 2m change
             
+            # Evolutionary Momentum Exit (Read from position or default)
+            # Since _check_momentum_exit is proactive, we need the position's parameter
+            # We must fetch it from the portfolio.
+            # Wait, _check_momentum_exit does not receive `pos`. Let's assume -0.012 default
+            # unless we pass it.
+            # We will use a safe default here, but it's better if we pass accel_threshold dynamically.
+            accel_threshold = getattr(self, '_last_momentum_accel', -0.012)
+            
             if side == 'LONG':
                 # Momentum is strongly negative
-                if last_ret < -0.008 or accel < -0.012: # -0.8% in 1m or -1.2% in 2m
+                if last_ret < (accel_threshold * 0.6) or accel < accel_threshold:
                     logger.warning(f"🪂 [RiskMgr] MOMENTUM EXIT {symbol}: Long dumped {accel*100:.2f}% in 2m. GTFO.")
                     return True
             else:
                 # Momentum is strongly positive (Against Short)
-                if last_ret > 0.008 or accel > 0.012:
+                if last_ret > (-accel_threshold * 0.6) or accel > -accel_threshold:
                     logger.warning(f"🪂 [RiskMgr] MOMENTUM EXIT {symbol}: Short squeezed {accel*100:.2f}% in 2m. GTFO.")
                     return True
                     
@@ -479,8 +552,23 @@ class RiskManager:
 
     def get_win_rate(self) -> float:
         total = self.win_count + self.loss_count
+        
+        # Phase 5: Evolutionary Genesis - Dynamic Portfolio Win Rate
+        # Extracción directa del historial corporativo para dimensionamiento Kelly real
+        if self.portfolio and hasattr(self.portfolio, 'get_statistics'):
+            stats = self.portfolio.get_statistics()
+            port_total = stats.get('total_trades', 0)
+            port_wr = stats.get('win_rate', 0.0)
+            
+            if port_total >= self.bootstrap_trades:
+                return port_wr
+            elif port_total > 0:
+                # Transición híbrida con la base portfolio
+                weight = port_total / self.bootstrap_trades
+                return (port_wr * weight) + (self.bootstrap_win_rate * (1 - weight))
+                
+        # Fallback local (Safety Net)
         if total < self.bootstrap_trades:
-            # Weighted average: más peso a datos reales conforme crecen
             if total > 0:
                 weight_real = total / self.bootstrap_trades
                 real_wr = self.win_count / total
@@ -495,41 +583,28 @@ class RiskManager:
 
     def _compute_kelly_math(self, p: float, b: float, apply_mult: bool = True) -> float:
         """
-        [PRECISION-AXIOMA] Core math for Kelly Criterion (p*b-q)/b using Satoshi-level Decimal precision.
+        [PRECISION-AXIOMA] Core math for Kelly Criterion via Numba JIT.
+        Eliminates the millisecond-latency of Python Decimal overhead.
         """
-        getcontext().prec = 28 # Set precision high enough to catch IEEE float drifts
-        
         try:
-            # Cast floats to Decimal safely
-            dec_p = Decimal(str(p))
-            dec_b = Decimal(str(b))
-            dec_q = Decimal('1.0') - dec_p
-            
-            if dec_b > Decimal('0.0'):
-                kelly = (dec_p * dec_b - dec_q) / dec_b
-            else:
-                kelly = Decimal('0.0')
-                
-            if not apply_mult: 
-                return float(kelly)
-                
             # Defensive Scaling (Risk Fortress)
-            # Quarter-Kelly for Scalping volatility
-            kelly_mult = Decimal('0.25')
-            
-            if self.stress_score < 90:
-                kelly_mult = Decimal('0.125') # Eighth-Kelly
-                
-            fractional_kelly = max(Decimal('0.0'), kelly * kelly_mult)
+            kelly_mult = 0.25 # Quarter-Kelly for Scalping volatility
             
             # Clamp between 0% and 40% exposure
-            clamped = max(Decimal('0.0'), min(fractional_kelly, Decimal('0.40')))
+            clamped = compute_kelly_fraction_jit(
+                p=float(p), 
+                b=float(b), 
+                apply_mult=apply_mult, 
+                kelly_mult=float(kelly_mult), 
+                stress_score=float(self.stress_score), 
+                max_exposure=0.40
+            )
             
-            logger.debug(f"📐 [Axioma-Kelly] P:{dec_p} B:{dec_b} Kelly:{kelly} Final:{clamped}")
+            logger.debug(f"📐 [Axioma-Kelly NANO] P:{p:.3f} B:{b:.3f} Final:{clamped:.4f}")
             return float(clamped)
             
         except Exception as e:
-            logger.error(f"❌ [AXIOMA] Decimal Kelly calculation failed: {e}. Defaulting to 0.0")
+            logger.error(f"❌ [AXIOMA] Nano Kelly calculation failed: {e}. Defaulting to 0.0")
             return 0.0
 
     def calculate_kelly_fraction(self, symbol: str = "", strategy_id: str = None, rr_ratio: float = 0.75, signal_event=None) -> float:
@@ -547,33 +622,29 @@ class RiskManager:
                 p = self.get_bayesian_win_rate()
                 b = rr_ratio # Payoff ratio
             else:
-                wins = [t['pnl_pct'] for t in trades if t['is_win']]
-                losses = [abs(t['pnl_pct']) for t in trades if not t['is_win']]
+                # [NANO-SPEED] Use compiled kernel for stats
+                pnl_arr = np.array([t['pnl_pct'] for t in trades], dtype=np.float64)
+                is_win_arr = np.array([t['is_win'] for t in trades], dtype=np.bool_)
+                p, b = extract_kelly_stats_jit(pnl_arr, is_win_arr)
                 
-                p = len(wins) / len(trades)
-                # Payoff = Avg Win / Avg Loss
-                avg_win = np.mean(wins) if wins else 0.01
-                avg_loss = np.mean(losses) if losses else 0.01
-                b = avg_win / avg_loss if avg_loss > 0 else 1.0
-                
-            # 2. Kelly Formula (Decimal Delegated)
+            # 2. Kelly Formula (JIT Delegated)
             kelly_frac_float = self._compute_kelly_math(p, b, apply_mult=False)
-            kelly = Decimal(str(kelly_frac_float))
+            kelly = kelly_frac_float
             
             # 3. Defensive Scaling (Risk Fortress)
             # SOVEREIGN-DEPLOY: Absolute Fractional Kelly Enforcement (f*/10)
-            kelly_mult = Decimal(str(Config.Strategies.ML_KELLY_FRACTION))
+            kelly_mult = getattr(Config.Strategies, 'ML_KELLY_FRACTION', 0.25)
             
             # Extreme Defense: If Ruin Risk (Stress Score) is low
-            if self.stress_score < 90: kelly_mult = Decimal('0.25') # Quarter-Kelly
+            if self.stress_score < 90: kelly_mult = 0.25 # Quarter-Kelly
             
             # AEGIS-ULTRA: Systemic Risk Shield (Contagion)
             # If fleet correlation is high, reduce size to avoid synchronized drawdowns
             if hasattr(self, 'fleet_correlation') and self.fleet_correlation > 0.85:
                  logger.warning(f"🚨 SYSTEMIC RISK: Fleet Correlation {self.fleet_correlation:.2f}. Reducing Size by 50%.")
-                 kelly_mult *= Decimal('0.5')
+                 kelly_mult *= 0.5
             
-            fractional_kelly = max(Decimal('0.0'), kelly * kelly_mult)
+            fractional_kelly = max(0.0, kelly * float(kelly_mult))
             
             # 4. Symbol Isolation & Sector Blocker
             if signal_event and hasattr(signal_event, 'symbol'):
@@ -588,7 +659,7 @@ class RiskManager:
                     return 0.0
 
             # 5. Final Clamp
-            return float(max(Decimal('0.05'), min(fractional_kelly, Decimal('0.40')))) # Min 5%, Max 40% (Aggressive for $12)
+            return float(max(0.05, min(fractional_kelly, 0.40))) # Min 5%, Max 40% (Aggressive for $12)
 
         except Exception as e:
             logger.error(f"Kelly Error: {e}")
@@ -652,29 +723,24 @@ class RiskManager:
         # ⚡ PHASE OMNI: TICK-LEVEL KELLY RECALCULATION
         # Uses a rolling window of last 50 trades for responsive sizing
         _KELLY_WINDOW = 50
-        recent = self._trade_cache[-_KELLY_WINDOW:]
+        trade_list = list(self._trade_cache)
+        recent = trade_list[-_KELLY_WINDOW:]
         
         if len(recent) >= 10:  # Minimum sample size for statistical validity
-            wins = [t['pnl_pct'] for t in recent if t['is_win']]
-            losses = [abs(t['pnl_pct']) for t in recent if not t['is_win']]
-            
-            n_total = len(recent)
-            p = len(wins) / n_total  # Win probability
-            
-            avg_win = np.mean(wins) if wins else 0.01
-            avg_loss = np.mean(losses) if losses else 0.01
-            b = avg_win / avg_loss if avg_loss > 0 else 1.0  # Payoff ratio
+            # [NANO-SPEED] Use compiled kernel for stats
+            pnl_arr = np.array([t['pnl_pct'] for t in recent], dtype=np.float64)
+            is_win_arr = np.array([t['is_win'] for t in recent], dtype=np.bool_)
+            p, b = extract_kelly_stats_jit(pnl_arr, is_win_arr)
             
             # Decimal Kelly Math Evaluation
             raw_kelly = self._compute_kelly_math(p, b, apply_mult=False)
-            dec_raw = Decimal(str(raw_kelly))
             
             # Half-Kelly with regime-aware scaling
-            kelly_mult = Decimal('0.5')
+            kelly_mult = 0.5
             if self.stress_score < 90:
-                kelly_mult = Decimal('0.25')  # Quarter-Kelly under stress
+                kelly_mult = 0.25  # Quarter-Kelly under stress
             
-            tick_kelly = float(max(Decimal('0.05'), min(dec_raw * kelly_mult, Decimal('0.40'))))
+            tick_kelly = float(max(0.05, min(raw_kelly * kelly_mult, 0.40)))
             
             # EMA smoothing to prevent whipsaw (alpha=0.2)
             if not hasattr(self, '_tick_kelly'):
@@ -701,11 +767,13 @@ class RiskManager:
     def _get_dynamic_risk_per_trade(self, capital: float) -> float:
         """
         Calcula riesgo por trade basado en Profit Lock y Drawdown.
-        PROFESSOR METHOD:
-        1. Base Risk: 1% (o menos si hay DD).
-        2. Profit Scaling: Si ganamos mucho (+50%, +100%), reducimos riesgo para "asegurar".
-        3. Protected Floor: Nunca arriesgar el capital "bloqueado" (80% de ganancias).
+        PROFESSOR METHOD (PHOENIX ADJUSTED):
+        1. Micro-Accounts (<$50): Bypasses Ratchet logic that permanently halts trading.
         """
+        if capital < 50:
+            # Phoenix Protocol for Micro Scalping
+            return 0.03 # 3% base risk for micro accounts ($13 * 3% = $0.39 risk -> completely viable for scalping)
+            
         initial = safe_leverage_calculator.initial_capital
         peak = safe_leverage_calculator.peak_capital
         
@@ -713,8 +781,8 @@ class RiskManager:
         risk_pct = 0.01  # Default 1%
         if peak > 0:
             dd = (peak - capital) / peak
-            if dd > 0.012: risk_pct = 0.002 # 0.2% (Deep defense)
-            elif dd > 0.0075: risk_pct = 0.005 # 0.5% (Early defense)
+            if dd > 0.025: risk_pct = 0.002 # 0.2% (Deep defense)
+            elif dd > 0.015: risk_pct = 0.005 # 0.5% (Early defense)
 
         # 2. Profit Lock Milestones (Wealth Preservation)
         # "Si cuenta +50% sobre HWM" (interpretado como Growth sobre Initial)
@@ -766,20 +834,31 @@ class RiskManager:
         except Exception as e:
             pass
 
-    def _calculate_dynamic_stop_loss(self, atr_pct: float) -> float:
+    def _calculate_dynamic_stop_loss(self, atr_pct: float, horizon: str = 'SCALPING') -> float:
         """
         Calcula SL dinámico basado en régimen de volatilidad.
-        - Low Vol (<0.5%): SL = 2.5x ATR (Tightened for Scalping)
-        - High Vol (>1.0%): SL = 1.8x ATR (Shield against Spikes)
+        SUPREMO-V4: ADAPTABILIDAD en mercados CHOPPY.
         """
-        if atr_pct < 0.005:  # Low Vol
-            mult = 2.5
-        elif atr_pct > 0.01: # High Vol
-            mult = 1.8
-        else:                # Normal
-            mult = 2.2
+        horizon_str = getattr(Config.Strategies, 'ACTIVE_HORIZON', '1D')
+        horizon_days = int(horizon_str.replace('D', '')) if 'D' in horizon_str else 1
+        h_sqrt = math.sqrt(horizon_days)
+
+        # 1. Base Multiplier por Volatilidad
+        # SUPREMO-V4: Cambio de SL fijo a dinámico (1.5x ATR)
+        # POR QUÉ: Si el precio se mueve 1.5x su ATR en contra, la tesis del trade murió para micro-cuentas.
+        # Un SL de 3.0x es demasiado suelto y genera pérdidas de -5%.
+        mult = 1.5 # Reducido radicalmente de 3.0 para cuenta de $13
             
-        # AEGIS-ULTRA: MAE-Based Stop Optimization
+        # 2. Ajuste por Régimen de Mercado (ADAPTABILIDAD)
+        # En CHOPPY, APRETAMOS el stop (no lo ampliamos) porque no queremos regalar capital al ruido.
+        # En TRENDING, podemos ajustarlo más para proteger ganancias.
+        if self.current_regime == 'CHOPPY':
+            mult *= 0.90
+            logger.debug(f"🛡️ [ADAPTIVE SL] CHOPPY regime detected. TIGHTENING SL multiplier to {mult:.2f} (Capital Protection)")
+        elif self.current_regime == 'TRENDING':
+            mult *= 0.85
+            
+        # 3. AEGIS-ULTRA: MAE-Based Stop Optimization
         # If we have trade history, check average MAE (Max Adverse Excursion)
         if hasattr(self, '_trade_cache') and len(self._trade_cache) > 20:
             winning_maes = [t.get('max_adverse_excursion', 0) for t in self._trade_cache if t['is_win']]
@@ -788,13 +867,19 @@ class RiskManager:
                 # Set stop just below average MAE of winners (Tightest possible valid stop)
                 mae_stop = avg_mae * 1.2 
                 
-                # Use the tighter of ATR-based or MAE-based (but never extremely tight < 0.2%)
+                # Use the tighter of ATR-based or MAE-based
                 atr_stop = atr_pct * mult
-                final_stop = min(atr_stop, max(0.002, mae_stop))
+                final_stop = min(atr_stop, max(0.002 * h_sqrt, mae_stop))
                 return final_stop
 
         sl_raw = atr_pct * mult
-        return max(0.002, min(sl_raw, 0.012)) # Min 0.2%, Max 1.2% (Scalp limits)
+        
+        # Dynamically scale Max and Min SL limits
+        # 1D Max: 1.2%. 30D Max: ~6.5%
+        max_limit = 0.012 * h_sqrt
+        min_limit = 0.002 * max(1.0, h_sqrt / 2)
+        
+        return max(min_limit, min(sl_raw, max_limit))
     
     def _update_capital_tracking(self, current_equity: float):
         """
@@ -857,7 +942,10 @@ class RiskManager:
         # VIRTUAL CAPITAL CAP: If capital is huge (Testnet default), cap to $15 for sizing
         # to respect the user's $15 micro-account strategy during testing.
         # [SS-007 FIX] Removed duplicate testnet cap block
-        if capital > 15 and Config.BINANCE_USE_TESTNET:
+        # FORENSIC FIX #6: Only cap for TESTNET (not Demo Trading).
+        # POR QUÉ: Demo Trading tiene capital virtual realista, no necesita cap.
+        #   Testnet sí necesita cap porque da millones de fake balance.
+        if capital > 100 and Config.BINANCE_USE_TESTNET and not getattr(Config, 'BINANCE_USE_DEMO', False):
             logger.info(f"🧪 TESTNET: Simulating $15 account (Actual: ${capital:.2f})")
             capital = 15.0
 
@@ -865,14 +953,22 @@ class RiskManager:
         if Config.BINANCE_USE_DEMO and getattr(Config.Sniper, 'PERMISSIVE_MODE', False):
             # Bypass Kelly/Growth logic to test pure signal quality
             fixed_pct = getattr(Config.Strategies, 'DEMO_EQUAL_WEIGHTING', 0.05)
-            logger.info(f"🧪 LAB MODE: Using Fixed Equal Weighting ({fixed_pct*100}%) for comparison.")
+            logger.debug(f"🧪 LAB MODE: Using Fixed Equal Weighting ({fixed_pct*100}%) for comparison.")
             return capital * fixed_pct
 
         phase = safe_leverage_calculator.get_phase(capital)
         
-        # MICRO ACCOUNT FIX: Aggressive sizing for small capital
+        # FORENSIC FIX #11: Was 0.95 (95%) — suicidal.
+        # POR QUÉ: Con MAX_CONCURRENT_POSITIONS=3 y base_pct=0.95, el sistema intentaría
+        #   asignar 285% del capital. Además, una sola pérdida de SL 0.15% sobre 95% del
+        #   capital = 0.14% de equity, pero con leverage 10x el riesgo real escala.
+        # FORENSIC-V11 FIX: Dynamic sizing based on MAX_CONCURRENT_POSITIONS
+        # ANTES: 40% × 3 positions = 120% → 3rd position ALWAYS fails reserve_cash
+        # AHORA: 90% / MAX_POS → con 3: 30%, con 2: 45% → total never exceeds 90%
+        # PARA QUÉ: 30% per trade × 10x leverage = $39 notional (still > $5 min)
         if capital < 50:
-            base_pct = Config.POSITION_SIZE_MICRO_ACCOUNT  # 40% (Defined in Config)
+            max_pos = getattr(Config, 'MAX_CONCURRENT_POSITIONS', 3)
+            base_pct = max(0.25, 0.90 / max_pos)  # 30% with 3 pos, 45% with 2 pos
         elif "GROWTH" in phase:
             base_pct = self.POSITION_PCT_GROWTH  # 30%
         elif capital < 1000:
@@ -895,8 +991,10 @@ class RiskManager:
             
         target_exposure = capital * base_pct
         
-        # --- PHASE 5: ADAPTIVE ALLOCATION ENTRE ESTRATEGIAS ---
-        # Modify target_exposure based on strategy_id and current regime
+        # --- PHOENIX FIX: SIMPLIFIED REGIME ALLOCATION ---
+        # Previous logic zeroed out ML in RANGING (60% of time) and TECHNICAL in CHOPPY.
+        # For $13 micro-capital, we cannot afford to kill strategies entirely.
+        # Conservative adjustment: never go below 0.6x or above 1.3x
         if hasattr(signal_event, 'strategy_id'):
             st_id = str(signal_event.strategy_id).upper()
             st_regime = "UNKNOWN"
@@ -905,21 +1003,11 @@ class RiskManager:
                 
             alloc_mult = 1.0
             if 'BULL' in st_regime:
-                if 'ML' in st_id or 'XGBOOST' in st_id: alloc_mult = 0.8
-                elif 'TECHNICAL' in st_id: alloc_mult = 1.2
-                elif 'SOPHIA' in st_id: alloc_mult = 0.0 # Sophia sufre en mercados fuertemente tendenciales
+                if 'TECHNICAL' in st_id: alloc_mult = 1.2
             elif 'BEAR' in st_regime:
-                if 'ML' in st_id or 'XGBOOST' in st_id: alloc_mult = 0.4
-                elif 'TECHNICAL' in st_id: alloc_mult = 0.8
-                elif 'SOPHIA' in st_id: alloc_mult = 0.8 # Sophia es defensiva
-            elif 'RANGING' in st_regime:
-                if 'ML' in st_id or 'XGBOOST' in st_id: alloc_mult = 0.0 # ML overfittea en rango
-                elif 'TECHNICAL' in st_id: alloc_mult = 1.0
-                elif 'SOPHIA' in st_id: alloc_mult = 1.0
+                if 'ML' in st_id or 'XGBOOST' in st_id: alloc_mult = 0.7
             elif 'CHOPPY' in st_regime:
-                if 'ML' in st_id or 'XGBOOST' in st_id: alloc_mult = 0.6
-                elif 'TECHNICAL' in st_id: alloc_mult = 0.0 # Technical (momentum) es destruido en chop
-                elif 'SOPHIA' in st_id: alloc_mult = 1.4
+                if 'TECHNICAL' in st_id: alloc_mult = 0.6  # Reduce, don't kill
                 
             if alloc_mult != 1.0:
                 logger.debug(f"🔄 [ADAPTIVE ALLOC] Regime: {st_regime} | Strat: {st_id} | Mult: {alloc_mult:.2f}x")
@@ -943,7 +1031,8 @@ class RiskManager:
             
             # Estimate SL distance for sizing (use dynamic logic)
             atr_pct = (signal_event.atr / current_price) if current_price and current_price > 0 else 0.02
-            est_sl_pct = self._calculate_dynamic_stop_loss(atr_pct)
+            horizon_val = getattr(signal_event, 'horizon', 'SCALPING')
+            est_sl_pct = self._calculate_dynamic_stop_loss(atr_pct, horizon=horizon_val)
             
             # Formula: Risk = Size * SL_Pct  =>  Size = Risk / SL_Pct
             if est_sl_pct and est_sl_pct > 0:
@@ -960,15 +1049,21 @@ class RiskManager:
             logger.info(f"⚖️ Sizing: Risk={current_risk_pct*100}% (${risk_amount:.2f}) | SL={est_sl_pct*100:.2f}% | Size=${vol_adjusted_size:.2f} (VolMult: {vol_multiplier})")
             target_exposure = min(target_exposure, vol_adjusted_size) * vol_multiplier
         
-        # MICRO ACCOUNT FIX: Reduce signal strength impact for small accounts
+        # [EXECUTION AUDIT] FIX F-010: Strength scaling for sizing
+        # For micro accounts (<$50), ignore strength to prevent dropping below notional minimums.
+        # For larger accounts, apply strength as conviction scaling (capped at 1.2x).
         if hasattr(signal_event, 'strength'):
-            if capital < 50:
-                target_exposure *= 1.0 # Ignore strength for micro
-            target_exposure *= min(signal_event.strength, 1.2)
+            if capital >= 50:
+                target_exposure *= min(signal_event.strength, 1.2)
             
+        # FORENSIC FIX: Removed dangerous static $6 TARGET_EXPOSURE padding.
+        # target_exposure is MARGIN, not NOTIONAL. Clamping margin to $6 on a $13 account
+        # forces extreme risk. The $5 USD Binance Notional limit is properly calculated
+        # post-leverage in _calculate_order_params.
+
         # AEGIS-ULTRA: EXPECTED VALUE VETO (Phase 14)
         # If expected value is strictly negative (Kelly <= 0), Veto trade
-        if self.portfolio:
+        if self.portfolio and capital >= 50:
             wr, pr = self.portfolio.get_kelly_metrics()
             kelly_frac = self._compute_kelly_math(wr, pr, apply_mult=False)
             if kelly_frac <= 0 and wr > 0: # Only if we have some history
@@ -1015,20 +1110,33 @@ class RiskManager:
         
         # CVaR reduction (FIXED: Use peak_capital for accurate drawdown)
         current_dd = 1 - (capital / self.peak_capital) if capital < self.peak_capital else 0
+        
+        # FORENSIC-V9-FIX: CVaR + Recovery are now NON-MULTIPLICATIVE
+        # QUÉ: Antes CVaR (×0.5) * Recovery (×0.5) = ×0.25 → mataba sizing en micro-cuentas.
+        # POR QUÉ: $13 × 0.40 × 0.25 = $1.30 margen → $10.4 notional (borderline viable).
+        # PARA QUÉ: Usar max(CVaR, Recovery) para una sola reducción de 50%, no 75%.
+        # CÓMO: Calculamos ambas penalidades pero solo aplicamos la más severa.
+        cvar_reduction = 1.0
+        recovery_reduction = 1.0
+        
         if self.cvar_calc.should_reduce_risk(current_dd):
-            target_exposure *= 0.5
-            logger.warning(f"⚠️ CVaR: Reducing size 50% (DD: {current_dd*100:.1f}%)")
+            cvar_reduction = 0.5
+            logger.warning(f"⚠️ CVaR: Risk reduction flagged (DD: {current_dd*100:.1f}%)")
         
         # --- PHASE 14: DYNAMIC RECOVERY STATE ---
         self._update_resolution_state(current_dd)
         if self.resolution_state == ResolutionState.RECOVERY:
-            # Defensive Mode: Cut risk by 50% until we recover half the DD
-            target_exposure *= 0.5
-            logger.warning(f"🛡️ [RECOVERY MODE] Drawdown ({current_dd*100:.1f}%) > 5%. Sizing halved.")
+            recovery_reduction = 0.5
+            logger.warning(f"🛡️ [RECOVERY MODE] Drawdown ({current_dd*100:.1f}%) > threshold.")
         elif self.resolution_state == ResolutionState.GROWTH:
-             # Aggressive Mode: 1.2x boost if strictly profitable
-             target_exposure *= 1.2
+             recovery_reduction = 1.2  # Boost if profitable
              logger.info(f"🚀 [GROWTH MODE] Account flying high. Boost enabled.")
+        
+        # Apply the SINGLE worst reduction (not both)
+        worst_reduction = min(cvar_reduction, recovery_reduction)
+        if worst_reduction != 1.0:
+            target_exposure *= worst_reduction
+            logger.info(f"⚖️ [V9-SIZING] Applied single worst reduction: {worst_reduction:.2f}x (CVaR={cvar_reduction}, Recovery={recovery_reduction})")
         
         # --- PHASE 14: ML CONFIDENCE SCALING ---
         if hasattr(signal_event, 'strength'):
@@ -1045,14 +1153,24 @@ class RiskManager:
                 target_exposure *= 0.5
                 logger.info(f"🧠 Low Confidence Penalty: 0.5x (Strength: {strength:.2f})")
 
-        # BINANCE MINIMUM: Ensure position meets $5 minimum notional for futures
-        # Note: target_exposure here represents margin size.
-        # With a minimum safe leverage of e.g. 3x, a margin of 1.7 ensures 5.1 notional.
-        min_notional_margin = 1.75 # 1.75 * 3 (leverage) = 5.25 Notional
-        if target_exposure < min_notional_margin and capital >= min_notional_margin:
-            target_exposure = min_notional_margin
-            logger.info(f"📈 Boosted to Binance min notional margin: ${target_exposure:.2f}")
-            
+        # FORENSIC-V9-FIX: MINIMUM SIZING FLOOR FOR MICRO-ACCOUNTS
+        # QUÉ: Después de ~15 multiplicadores en cascada, target_exposure puede
+        #   caer a $0.50 (insuficiente para cualquier trade viable).
+        # POR QUÉ: La cascada multiplicativa de 15 factores × <1.0 cada uno
+        #   colapsa exponencialmente: 0.8^15 = 0.035, convirtiendo $5.20 en $0.18.
+        # PARA QUÉ: Garantizar que el sizing NUNCA caiga por debajo del mínimo
+        #   necesario para superar el notional de $5 USD de Binance.
+        # CÓMO: Floor = ($5 / leverage_estimado) × 1.10 (margen de seguridad 10%).
+        if capital < 50:
+            leverage_estimate = 8  # Micro-account minimum leverage
+            min_viable_margin = (5.0 / leverage_estimate) * 1.10  # ~$0.6875
+            if target_exposure < min_viable_margin:
+                logger.warning(
+                    f"🔒 [V9-FLOOR] Sizing cascade collapsed target to ${target_exposure:.2f}. "
+                    f"Restoring to minimum viable: ${min_viable_margin:.2f}"
+                )
+                target_exposure = min_viable_margin
+
         return target_exposure
     
     def _update_resolution_state(self, current_dd: float):
@@ -1093,7 +1211,8 @@ class RiskManager:
             if expectancy <= 0:
                 return False
             return True
-        except:
+        except Exception as e:
+            logger.error(f"Error evaluating trade cache: {e}")
             return True
 
     # ============================================================
@@ -1109,88 +1228,271 @@ class RiskManager:
         """
         # 1. EMERGENCY BYPASS (Rule 2.1) - EXIT Signals ignore everything
         if self._validate_emergency_bypass(signal_event):
+            horizon = getattr(signal_event, 'horizon', 'SCALPING')
             logger.info(f"🚨 [BYPASS] Exit signal for {signal_event.symbol} bypassing safety gates.")
+            
+            # Fetch position to know exactly what to close
+            pos = self.portfolio.get_horizon_position(signal_event.symbol, horizon) if self.portfolio else None
+            
+            if not pos or abs(pos.get('quantity', 0)) < 1e-8:
+                logger.warning(f"⚠️ Exit signal for {signal_event.symbol} ignored: No open position in {horizon}")
+                return None
+            
+            qty = pos['quantity']
+            direction = OrderSide.BUY if qty < 0 else OrderSide.SELL
+            
+            # ═══════════════════════════════════════════════════════════════
+            # BBO ARCHITECTURE: "MAKER PROFIT, TAKER PANIC"
+            # QUÉ: Exits normales (TP, trailing stop) → LIMIT BBO (Maker 0.02%)
+            #   Emergencias (Kill Switch, priority=0) → MARKET (Taker 0.0375%)
+            # POR QUÉ: Taker fees desangran $13 micro-cuentas (~0.075%/trip)
+            # PARA QUÉ: Ahorrar ~47% en fees = ~4% más capital en 15 días
+            # CÓMO: Si priority > 0 (exit normal), usar LIMIT con metadata
+            #   para que executor ponga precio en BBO y OrderManager chase.
+            #   Si priority == 0 (kill switch), MARKET nuclear.
+            # ═══════════════════════════════════════════════════════════════
+            exit_priority = getattr(signal_event, 'priority', 1)
+            strategy_id = getattr(signal_event, 'strategy_id', 'EXIT')
+            is_kill_switch = (exit_priority == 0 or strategy_id == 'EMERGENCY_EXIT' 
+                              or strategy_id == 'KILL_SWITCH')
+            
+            use_limit_exits = getattr(Config, 'Execution', None) and getattr(Config.Execution, 'USE_LIMIT_BBO_EXITS', True)
+            
+            if is_kill_switch or not use_limit_exits:
+                # 🔴 TAKER PANIC: Emergency exit → MARKET nuclear
+                exit_order_type = OrderType.MARKET
+                exit_metadata = {'exit_mode': 'TAKER_PANIC'}
+                logger.warning(f"🔴 [BBO] EMERGENCY EXIT {signal_event.symbol}: MARKET (Taker Panic)")
+            else:
+                # 🟢 MAKER PROFIT: Normal exit → LIMIT BBO (Post-Only)
+                exit_order_type = OrderType.LIMIT
+                use_gtx = getattr(Config.Execution, 'POST_ONLY_GTX', True)
+                exit_ttl = getattr(Config.Execution, 'CHASE_TIMEOUT_SECONDS', 5)
+                exit_metadata = {
+                    'timeInForce': 'GTX' if use_gtx else 'GTC',
+                    'is_bbo_exit': True,
+                    'is_exit': True,
+                    'exit_mode': 'MAKER_PROFIT',
+                }
+                logger.info(f"🟢 [BBO] LIMIT EXIT {signal_event.symbol}: Maker Profit mode (GTX)")
+            
             return OrderEvent(
                 symbol=signal_event.symbol,
-                order_type=OrderType.MARKET,
-                quantity=0, # Engine/Portfolio will calculate full close
-                direction=OrderSide.SELL if signal_event.signal_type == SignalType.EXIT else OrderSide.BUY,
-                price=current_price
+                order_type=exit_order_type,
+                quantity=abs(qty),
+                direction=direction,
+                price=current_price,
+                horizon=horizon,
+                priority=exit_priority,
+                is_exit=True,
+                is_close=True,
+                ttl=getattr(Config.Execution, 'CHASE_TIMEOUT_SECONDS', 5) if exit_order_type == OrderType.LIMIT else None,
+                ml_confidence=getattr(signal_event, 'ml_confidence', None),
+                predicted_duration=getattr(signal_event, 'predicted_duration', None),
+                metadata=exit_metadata,
             )
 
         # 2. ATOMIC VALIDATIONS (Sequencial & Fast)
-        if not self._validate_kill_switch(): return None
-        if not self._validate_frequency_limits(signal_event.symbol, signal_event.signal_type): return None
-        if not self._validate_regime_veto(signal_event.symbol, signal_event.signal_type): return None
+        if not self._validate_kill_switch(): 
+            print("[RISK] Rejected by Kill Switch")
+            return None
+        if not self._validate_frequency_limits(signal_event.symbol, signal_event.signal_type): 
+            print("[RISK] Rejected by Frequency Limits")
+            return None
+        if not self._validate_regime_veto(signal_event.symbol, signal_event.signal_type): 
+            print("[RISK] Rejected by Regime Veto")
+            return None
         
         # Spot Mode Safety: SHORT is ONLY for Futures
         if not getattr(Config, 'BINANCE_USE_FUTURES', False) and signal_event.signal_type == SignalType.SHORT:
             logger.warning(f"🛡️ [SpotSafety] SHORT rejected for {signal_event.symbol} (Futures Mode is OFF).")
+            print("[RISK] Rejected by SpotSafety")
             return None
             
-        if not self._validate_directional_safety(signal_event.symbol, signal_event.signal_type): return None
-        if not self._validate_margin_ratio(): return None
+        horizon = getattr(signal_event, 'horizon', 'SCALPING')
+        if not self._validate_directional_safety(signal_event.symbol, signal_event.signal_type, horizon): 
+            print("[RISK] Rejected by Directional Safety")
+            return None
+        if not self._validate_margin_ratio(): 
+            print("[RISK] Rejected by Margin Ratio")
+            return None
         
         # 2.5 FAT FINGER PROTECTION (Dept C Audit Requirement)
-        if not self._validate_fat_finger(current_price, signal_event.symbol): return None
+        if not self._validate_fat_finger(current_price, signal_event.symbol): 
+            print("[RISK] Rejected by Fat Finger")
+            return None
         
         # 2.6 LIQUIDITY AWARENESS (Sovereign-Deploy Slippage)
-        if not self._validate_slippage(signal_event.symbol, current_price): return None
+        if not self._validate_slippage(signal_event.symbol, current_price): 
+            print("[RISK] Rejected by Slippage")
+            return None
         
-        # 3. MAX POSITIONS CHECK
+        # 3. MAX POSITIONS CHECK (Virtual Ledger Aware)
         symbol = signal_event.symbol
+        horizon = getattr(signal_event, 'horizon', 'SCALPING')
         if self.portfolio:
-            open_positions = sum(1 for pos in self.portfolio.positions.values() if pos['quantity'] != 0)
+            # SUPREMO-V4: CANNIBALIZATION AUDIT
+            v_key_opp = f"{symbol}_{'SWING' if horizon == 'SCALPING' else 'SCALPING'}"
+            opp_pos = self.portfolio.virtual_ledger.get(v_key_opp)
+            if opp_pos and opp_pos.get('quantity', 0) != 0:
+                is_opp_long = opp_pos['quantity'] > 0
+                is_new_short = signal_event.signal_type == SignalType.SHORT
+                is_new_long = signal_event.signal_type == SignalType.LONG
+                
+                if (is_opp_long and is_new_short) or (not is_opp_long and is_new_long):
+                    logger.info(f"🔄 [CANNIBAL-GUARD] Opposite position in {v_key_opp} detected. Allowing signal as Net-Exposure Reducer.")
+            
+            open_positions = sum(1 for pos in self.portfolio.virtual_ledger.values() if pos.get('quantity', 0) != 0)
             if open_positions >= Config.MAX_CONCURRENT_POSITIONS and signal_event.signal_type in [SignalType.LONG, SignalType.SHORT]:
-                if not (symbol in self.portfolio.positions and abs(self.portfolio.positions[symbol]['quantity']) > 0):
+                if not self.portfolio.has_position_for_horizon(symbol, horizon):
+                    print(f"[RISK] Rejected by Max Positions (Open={open_positions}, Max={Config.MAX_CONCURRENT_POSITIONS})")
                     return None
 
         # 4. ORDER CALCULATION (Isolated Logic)
         try:
             params = self._calculate_order_params(signal_event, current_price)
-            if not params: return None
+            if not params: 
+                print("[RISK] Rejected by _calculate_order_params")
+                return None
             
             # 5. FINAL MARGIN RESERVATION
-            if self.portfolio and not self.portfolio.reserve_cash(params['dollar_size']):
-                logger.warning(f"⚠️ Reserve failed for {symbol}")
+            if self.portfolio and not self.portfolio.reserve_cash(params['dollar_size'], horizon=horizon):
+                logger.warning(f"⚠️ Reserve failed for {symbol} on {horizon}")
+                print("[RISK] Rejected by reserve_cash")
                 return None
 
             # 6. EXECUTION & LOGGING
             cooldown_manager.record_trade(symbol, strategy_id="RISK_MANAGER")
             self.global_trade_count += 1
             
+            # ═══════════════════════════════════════════════════════════════
+            # BBO ARCHITECTURE: SMART ENTRY ORDER SELECTION (LIMIT vs MARKET)
+            # QUÉ: Entries usan LIMIT BBO por defecto (Maker 0.02%).
+            # POR QUÉ: MARKET entries pagan Taker 0.0375% — casi el doble.
+            # PARA QUÉ: Reducir el costo de apertura en ~47%.
+            # CÓMO: Solo priority==0 (kill-switch-level urgency) usa MARKET.
+            #   strength > 0.92 mantiene LIMIT pero con pricing agresivo.
+            # CUÁNDO: En cada entrada nueva.
+            # DÓNDE: risk/risk_manager.py :: generate_order()
+            # QUIÉN: Risk Manager + Executor
+            # ═══════════════════════════════════════════════════════════════
+            strength = getattr(signal_event, 'strength', 0)
+            priority = getattr(signal_event, 'priority', 1)
+            use_limit_entries = getattr(Config, 'Execution', None) and getattr(Config.Execution, 'USE_LIMIT_BBO_ENTRIES', True)
+            
+            if priority == 0:
+                # Kill-switch-level urgency ONLY → MARKET
+                order_type = OrderType.MARKET
+                entry_metadata = {'strength': strength, 'entry_mode': 'TAKER_PANIC'}
+                logger.info(f"⚡ [BBO] MARKET ENTRY {symbol}: Kill-switch priority.")
+            elif use_limit_entries:
+                # 🟢 MAKER PROFIT: LIMIT BBO with Post-Only
+                order_type = OrderType.LIMIT
+                use_gtx = getattr(Config.Execution, 'POST_ONLY_GTX', True)
+                entry_ttl = getattr(Config.Execution, 'ENTRY_TTL_SECONDS', 30)
+                entry_metadata = {
+                    'strength': strength,
+                    'entry_mode': 'MAKER_PROFIT',
+                    'timeInForce': 'GTX' if use_gtx else 'GTC',
+                }
+                logger.info(f"🟢 [BBO] LIMIT ENTRY {symbol}: Maker Profit mode (strength={strength:.2f})")
+            else:
+                # Fallback: original behavior
+                order_type = OrderType.LIMIT
+                entry_metadata = {'strength': strength, 'entry_mode': 'LEGACY'}
+                if strength > 0.92:
+                    order_type = OrderType.LIMIT
+                    entry_metadata['entry_mode'] = 'BBO_AGGRESSIVE'
+                    entry_metadata['timeInForce'] = 'GTC' # No GTX so it can cross spread if needed
+                    logger.info(f"⚡ [SMART-ORDER] High conviction signal ({strength*100:.1f}%) for {symbol}. Using AGGRESSIVE LIMIT (BBO).")
+            
+            # SUPREMO-V4: SHADOW MODE (MICRO-ACCOUNT PROTECTION)
+            # If capital is critical, simulate Swing trades to preserve margin for Scalping
+            equity = self.portfolio.get_total_equity() if self.portfolio else 13.0
+            is_shadow_final = False
+            
+            entry_metadata['dollar_size'] = params['dollar_size']
+
+            # FORENSIC FIX: Lowered shadow threshold from 13.0 to 8.0 to re-enable SWING.
+            if equity < 8.0 and horizon == 'SWING':
+                is_shadow_final = True
+                logger.info(f"🧬 [SHADOW-MODE] Capital ${equity:.2f} is critical. Simulating SWING trade.")
+
             return OrderEvent(
                 symbol=symbol,
-                order_type=OrderType.LIMIT,
+                order_type=order_type,
                 quantity=params['quantity'],
                 direction=params['direction'],
                 strategy_id=getattr(signal_event, 'strategy_id', None),
                 sl_pct=params['sl_pct'],
                 tp_pct=params['tp_pct'],
                 price=current_price,
-                ttl=getattr(signal_event, 'ttl', None),
-                is_shadow=getattr(signal_event, 'is_shadow', False) # 🧬 Phase 19: Propagate Shadow Flag
+                ttl=getattr(Config.Execution, 'ENTRY_TTL_SECONDS', 30) if order_type == OrderType.LIMIT else None,
+                horizon=horizon,
+                priority=priority,
+                is_shadow=is_shadow_final,
+                ml_confidence=getattr(signal_event, 'ml_confidence', None),
+                predicted_duration=getattr(signal_event, 'predicted_duration', None),
+                metadata=entry_metadata
             )
         except Exception as e:
             logger.error(f"Order Generation Failed: {e}")
+            logger.error(traceback.format_exc())
             return None
 
     def _generate_exit_order(self, signal_event, current_price):
-        """Bypass de salida inmediata (No validations)."""
-        if not self.portfolio or signal_event.symbol not in self.portfolio.positions:
+        """
+        BBO ARCHITECTURE: Exit Order Generator
+        QUÉ: Genera orden de cierre con tipo LIMIT BBO o MARKET según urgencia.
+        POR QUÉ: Exits normales pueden esperar BBO fill → ahorro 47% en fees.
+        PARA QUÉ: Maximizar retención de capital en micro-cuenta.
+        CÓMO: strategy_id 'EMERGENCY_EXIT'/'KILL_SWITCH' → MARKET. Otros → LIMIT BBO.
+        """
+        if not self.portfolio: return None
+            
+        horizon = getattr(signal_event, 'horizon', 'SCALPING')
+        pos = self.portfolio.get_horizon_position(signal_event.symbol, horizon)
+        
+        if not pos: 
             return None
             
-        pos = self.portfolio.positions[signal_event.symbol]
         qty = pos['quantity']
         if qty == 0: return None
         
+        # BBO Decision: Emergency or Normal exit?
+        strategy_id = getattr(signal_event, 'strategy_id', 'EXIT')
+        exit_priority = getattr(signal_event, 'priority', 1)
+        is_emergency = (strategy_id in ('EMERGENCY_EXIT', 'KILL_SWITCH') or exit_priority == 0)
+        use_limit_exits = getattr(Config, 'Execution', None) and getattr(Config.Execution, 'USE_LIMIT_BBO_EXITS', True)
+        
+        if is_emergency or not use_limit_exits:
+            exit_type = OrderType.MARKET
+            exit_metadata = {'exit_mode': 'TAKER_PANIC', 'is_exit': True}
+            logger.warning(f"🔴 [BBO] EMERGENCY EXIT {signal_event.symbol}/{horizon}: MARKET")
+        else:
+            exit_type = OrderType.LIMIT
+            use_gtx = getattr(Config.Execution, 'POST_ONLY_GTX', True)
+            exit_metadata = {
+                'timeInForce': 'GTX' if use_gtx else 'GTC',
+                'is_bbo_exit': True,
+                'is_exit': True,
+                'exit_mode': 'MAKER_PROFIT',
+            }
+            logger.info(f"🟢 [BBO] LIMIT EXIT {signal_event.symbol}/{horizon}: Maker Profit")
+        
         return OrderEvent(
             symbol=signal_event.symbol,
-            order_type=OrderType.MARKET, # Emergency exits often use Market
+            order_type=exit_type,
             quantity=abs(qty),
             direction=OrderSide.SELL if qty > 0 else OrderSide.BUY,
-            strategy_id="EMERGENCY_EXIT",
-            price=current_price
+            strategy_id=strategy_id,
+            price=current_price,
+            horizon=horizon,
+            priority=exit_priority,
+            is_exit=True,
+            is_close=True,
+            ttl=getattr(Config.Execution, 'CHASE_TIMEOUT_SECONDS', 5) if exit_type == OrderType.LIMIT else None,
+            metadata=exit_metadata,
         )
 
     def _calculate_order_params(self, signal_event, current_price):
@@ -1228,48 +1530,137 @@ class RiskManager:
                   leverage = max(leverage, 8)
                   
         except Exception:
-             leverage = 1 # Safety Fallback
+             # FORENSIC-V9-FIX: Changed fallback from 1x to 8x
+             # QUÉ: leverage=1 con $13 producía notional=$5.20 (borderline).
+             # POR QUÉ: Combinado con multiplicadores de sizing, el notional
+             #   caía por debajo del mínimo de $5 → orden rechazada silenciosamente.
+             # PARA QUÉ: Garantizar notional viable incluso cuando MarketRegime falla.
+             leverage = 8 # Micro-account safe fallback
+        
+        # FORENSIC FIX #7: MICRO-ACCOUNT LEVERAGE FLOOR
+        # POR QUÉ: La REGIME_MAP puede clampar leverage a 1-3x, pero con $13
+        #   de margin y 3x leverage, notional = $39. El mínimo de Binance es $5
+        #   pero con 3 concurrent positions necesitamos notional suficiente.
+        # CÓMO: Para cuentas < $50, forzamos leverage mínimo 8x sin importar régimen.
+        #   Esto garantiza $13×0.40×8 = $41.6 notional mínimo por trade.
+        capital_check = self.portfolio.get_total_equity() if self.portfolio else 15.0
+        if capital_check < 50 and leverage < 8:
+            logger.info(f"⚡ [MICRO-FLOOR] Leverage boosted {leverage}x → 8x (micro-account protection)")
+            leverage = 8
         
         notional = margin_size * leverage
         
-        # Constraints
-        if notional < 5.0:
-            required_margin = (5.0 / leverage) * 1.05
-            if self.portfolio and required_margin > self.portfolio.get_available_cash():
+        # 🚀 PHOENIX MICRO-ACCOUNT GUARD
+        if notional < 5.10:
+            required_margin = (5.10 / leverage)
+            horizon = getattr(signal_event, 'horizon', 'SCALPING')
+            available_cash = self.portfolio.get_available_cash(horizon=horizon) if self.portfolio else 13.0
+            
+            if required_margin > available_cash:
+                logger.warning(f"⚠️ [MICRO-GUARD] Insufficient capital for {signal_event.symbol}. Need ${required_margin:.2f}, Avail: ${available_cash:.2f}")
                 return None
+                
+            capital = self.portfolio.get_total_equity() if self.portfolio else 13.0
+            margin_pct = required_margin / capital if capital > 0 else 0
+            if margin_pct > 0.35 and capital < 50:
+                logger.info(f"⚡ [MICRO-GUARD] Upsizing margin to {margin_pct*100:.1f}%. Safe due to SL.")
+                
             margin_size = required_margin
             notional = margin_size * leverage
             
-        # Fees/Profitability Check
-        fees = self.fee_calc.calculate_round_trip_fee(notional)
-        if fees > (notional * 0.015 * 0.45):
-            logger.warning("📉 Fees too high for notional.")
-            return None
+        # FORENSIC FIX #3: Removed dead fee check (was: fees > notional * 0.015 * 0.45)
+        # POR QUÉ: Con Binance fees de 0.0375%, este check NUNCA se activaba.
+        #   El check real está en L1309 (Fee-Aware Block) que SÍ funciona.
+        # El check duplicado fue eliminado para evitar confusión.
+        fees = self.fee_calc.calculate_round_trip_fee(notional, order_type='LIMIT')
             
         # ATR Targets (Fallback)
         atr_pct = atr_val / current_price if current_price > 0 else 0.01
         
-        # ⚙️ MODO EVOLUTIVO: Extraer TP y SL directamente del SignalEvent
+        # FORENSIC FIX #4: STANDARDIZED TP/SL CONTRACT
+        # All strategies now send TP/SL as decimal fractions (e.g., 0.004 = 0.4%)
+        # The old auto-detect heuristic (> 0.5 → /100) was BROKEN:
+        #   - technical.py sent 0.4 (intended 0.4%) → heuristic said "< 0.5, use as-is" → 40%
+        #   - sniper sent 3.0 (intended 3%) → heuristic said "> 0.5, /100" → 0.03 = 3% ✓ (by luck)
+        # Now: direct passthrough, no guessing.
         event_sl = getattr(signal_event, 'sl_pct', None)
         event_tp = getattr(signal_event, 'tp_pct', None)
-        
-        # technical.py envía estos valores como porcentajes (e.g., 2.0 para 2%)
         if event_sl is not None and event_sl > 0:
-            sl_pct = event_sl / 100.0
+            sl_pct = event_sl  # Already decimal fraction (e.g., 0.0015 = 0.15%)
         else:
             sl_pct = self._calculate_dynamic_stop_loss(atr_pct)
             
         if event_tp is not None and event_tp > 0:
-            tp_pct = event_tp / 100.0
+            tp_pct = event_tp  # Already decimal fraction (e.g., 0.004 = 0.4%)
         else:
             tp_pct = max(0.015, sl_pct * 2.0)
+
+        # ================================================================
+        # FORENSIC REMEDIATION: SYMMETRIC SHORT SL/TP (Fixed Logic)
+        # QUÉ: Antes se DIVIDÍA el SL por SHORT_SL_MULTIPLIER, haciéndolo MÁS
+        #   estrecho (0.6% / 1.2 = 0.5%). Shorts NECESITAN más espacio porque
+        #   squeezes son más violentos que dips.
+        # POR QUÉ: Short squeezes pueden mover +1-2% en segundos. Un SL de 0.5%
+        #   se come el ruido y dispara Hard SL instantáneamente.
+        # PARA QUÉ: Ampliar SL para shorts (0.6% × 1.2 = 0.72%) y reducir TP
+        #   para tomar profit más rápido (shorts revierten más rápido).
+        # ================================================================
+        if signal_event.signal_type == SignalType.SHORT:
+            sl_mult = getattr(Config.Strategies, 'SHORT_SL_MULTIPLIER', 1.0)
+            tp_mult = getattr(Config.Strategies, 'SHORT_TP_MULTIPLIER', 1.0)
+            sl_pct = sl_pct * sl_mult  # WIDER SL for shorts (was: / sl_mult → TIGHTER = bad)
+            tp_pct = tp_pct * tp_mult
+            logger.debug(f"📉 [SYMMETRIC SHORT] Adjusting for {signal_event.symbol}: SL_mult={sl_mult:.2f}x, TP_mult={tp_mult:.2f}x. New SL={sl_pct*100:.2f}%, TP={tp_pct*100:.2f}%")
+        # ================================================================
+
+        # 🛡️ AXIOMATIC FIX: Viability Floor Clamp
+        # QUÉ: Anula silenciosamente y empuja hacia arriba cualquier TP inferior a 1.0%
+        # POR QUÉ: Costos de Micro-Cuenta (fees+volver breakeven) requieren un TP ≥ 1.0%
+        if tp_pct < 0.010:
+            logger.info(f"⚡ [AXIOMATIC-CLAMP] Target TP {tp_pct*100:.2f}% forced to Minimum Viability (1.00%)")
+            tp_pct = 0.010
+
+        # ═══════════════════════════════════════════════════════════════════
+        # REMEDIACIÓN QUIRÚRGICA: MIN_EDGE_NET (Fee + Slippage Viability)
+        # QUÉ: Rechaza trades donde la expectativa neta es negativa.
+        # POR QUÉ: El check anterior solo verificaba fees × 2.0, pero
+        #   NO incluía slippage estimado (~0.03% round-trip). Con $13 de
+        #   capital, incluso 0.03% de slippage puede comer la ganancia.
+        # PARA QUÉ: GARANTIZAR que TODO trade tiene edge NETO positivo
+        #   después de fees + slippage + buffer de seguridad.
+        # CÓMO: expected_net = profit_bruto - fees - slippage.
+        #   Si expected_net < min_edge_absolute → rechazar.
+        # CUÁNDO: Última línea de defensa antes de emitir la orden.
+        # DÓNDE: risk/risk_manager.py :: _calculate_order_params()
+        # QUIÉN: Risk Manager (este módulo)
+        # ═══════════════════════════════════════════════════════════════════
+        fees = self.fee_calc.calculate_round_trip_fee(notional, order_type='LIMIT')
+        estimated_slippage = notional * 0.0003  # 0.03% round-trip average
+        total_costs = fees + estimated_slippage
+        expected_profit = notional * tp_pct
+        expected_net = expected_profit - total_costs
+
+        # Min edge: profit must cover 2.5x total costs for viability
+        min_edge_multiplier = 2.5
+        if expected_net < (total_costs * (min_edge_multiplier - 1.0)):
+            logger.warning(
+                f"📉 [MIN-EDGE-NET] {signal_event.symbol} REJECTED: "
+                f"Net=${expected_net:.3f} < MinEdge=${total_costs * (min_edge_multiplier - 1.0):.3f} "
+                f"(Profit=${expected_profit:.3f}, Fees=${fees:.4f}, "
+                f"Slip=${estimated_slippage:.4f}, TP={tp_pct*100:.2f}%)"
+            )
+            return None
 
         
         return {
             'quantity': notional / current_price,
             'direction': OrderSide.BUY if signal_event.signal_type == SignalType.LONG else OrderSide.SELL,
             'leverage': leverage,
-            'dollar_size': margin_size,
+            # 🔥 FORENSIC-V12 FIX #3: Usar leverage LOCAL (no Config.BINANCE_LEVERAGE)
+            # POR QUÉ: El leverage puede ser dinámico (safe_leverage_calculator,
+            #   REGIME_MAP, MICRO-FLOOR). Usar Config era hardcoded → margin leak.
+            # PARA QUÉ: dollar_size == margin REAL que Portfolio.pending_cash trackea.
+            'dollar_size': notional / leverage if getattr(Config, 'BINANCE_USE_FUTURES', False) else notional,
             'sl_pct': sl_pct,
             'tp_pct': tp_pct
         }
@@ -1340,77 +1731,151 @@ class RiskManager:
     # CHECK STOPS - COMPLETE ORIGINAL
     # ============================================================
 
-    def check_stops(self, portfolio, data_provider):
+    def check_stops(self, portfolio, data_provider, symbol_filter=None):
         """
-        🚀 ALPHA-MAX: Advanced exit orchestration.
+        🚀 ALPHA-MAX: Advanced exit orchestration (Horizon-Isolated).
         - Dynamic TP Targets (ATR-based from Entry)
         - Break-Even 2.0 (Fee protection + Profit Guard)
         - Momentum Protection (Phase 42)
+        
+        FORENSIC-V12 FIX #2: symbol_filter parameter.
+        QUÉ: Filtra evaluación a solo las posiciones del símbolo dado.
+        POR QUÉ: Engine llama check_stops() por cada MarketEvent (1 por símbolo).
+           Sin filtro, 26 símbolos × 26 posiciones = 676 evaluaciones/tick.
+        PARA QUÉ: Reducir a O(N) — solo evalúa posiciones del símbolo actual.
+        CUÁNDO: Siempre que se invoca desde Engine._process_market_event().
+        DÓNDE: risk/risk_manager.py → check_stops()
+        QUIÉN: SRE/DevOps + Arquitecto Senior.
+        
+        Args:
+            portfolio: Portfolio instance
+            data_provider: DataProvider instance
+            symbol_filter: Optional[str] - If set, only evaluate positions for this symbol
         """
         stop_signals = []
         now = datetime.now(timezone.utc)
         
-        for symbol, pos in portfolio.positions.items():
-            qty = pos['quantity']
-            if qty == 0: continue
+        # 🛡️ PHOENIX V3: Iteramos sobre el Libro Mayor Virtual para asegurar aislamiento Scalping vs Swing
+        for v_key, pos in portfolio.virtual_ledger.items():
+            qty = pos.get('quantity', 0.0)
+            if abs(qty) < 1e-8: continue
+            
+            # v_key is like 'BTC/USDT_SCALPING'
+            parts = v_key.rsplit('_', 1)
+            symbol = parts[0]
+            pos_horizon = parts[1] if len(parts) > 1 else pos.get('horizon', 'SCALPING')
+            
+            # FORENSIC-V12 FIX #2: Skip positions not matching the filter
+            if symbol_filter and symbol != symbol_filter:
+                continue
                 
             current_price = pos.get('current_price')
             entry_price = pos.get('avg_price')
             if not current_price or not entry_price: continue
             
-            # Metadata retrieval
-            sl_pct = pos.get('sl_pct', 0.003) or 0.003
-            tp_pct = pos.get('tp_pct', 0.008) or 0.008
+            # ================================================================
+            # FORENSIC REMEDIATION: Horizon-aware SL/TP fallbacks
+            # QUÉ: Los fallbacks originales (0.003 SL / 0.008 TP) eran LETALES
+            #   para BTC con ATR normal de 0.5-1.5% en 5m.
+            # POR QUÉ: Con 0.3% SL y 10x leverage, cualquier movimiento normal
+            #   de BTC (0.2-0.5%) disparaba Hard SL instantáneamente (-2% a -5%).
+            # PARA QUÉ: SL debe ser ≥ ATR medio para sobrevivir ruido normal.
+            # ================================================================
+            default_sl = 0.006 if pos_horizon == 'SCALPING' else 0.015
+            default_tp = 0.012 if pos_horizon == 'SCALPING' else 0.035
+            sl_pct = pos.get('sl_pct', default_sl) or default_sl
+            tp_pct = pos.get('tp_pct', default_tp) or default_tp
             hwm = pos.get('high_water_mark', entry_price)
             lwm = pos.get('low_water_mark', entry_price)
             
             unrealized_pnl_pct = ((current_price - entry_price) / entry_price) * 100 if qty > 0 else \
                                  ((entry_price - current_price) / entry_price) * 100
-            
+            # 🕰️ [FINOPS TIME-STOP] Protección de cuentas Micro ($13) vs Funding Fee en Swing Shorts/Longs
+            if pos_horizon in ['SWING', 'MACRO'] and portfolio.get_total_equity() < 50.0:
+                if 'entry_time' in pos:
+                    entry_time_val = pos['entry_time']
+                    if hasattr(entry_time_val, 'timestamp'):
+                        entry_time_val = entry_time_val.timestamp()
+                    hours_held = (time.time() - entry_time_val) / 3600
+                    if hours_held > 7.5 and unrealized_pnl_pct < 0.5: # Si no ganamos al menos +0.5% en 7.5 hrs, abortar antes del funding
+                        logger.warning(f"🛑 [FINOPS TIME-STOP] {symbol} {pos_horizon} max holding time (7.5h) reached. Exiting to prevent Funding Fee bleed.")
+                        stop_signals.append(SignalEvent(strategy_id="TIME_STOP", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon))
+                        continue
+
             # LONG POSITION
             if qty > 0:
                 # 1. Momentum Exit (Proactive)
                 if self._check_momentum_exit(symbol, 'LONG', data_provider):
-                    print(f"🪂 MOMENTUM EXIT {symbol}! (Proactive)")
-                    stop_signals.append(SignalEvent(strategy_id="MOMENT_MGR", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
+                    print(f"🪂 {pos_horizon} MOMENTUM EXIT {symbol}! (Proactive)")
+                    stop_signals.append(SignalEvent(strategy_id="MOMENT_MGR", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon))
                     self.record_trade_result(True, 0.0)
                     continue
 
-                # 2. Break-Even 2.0 (Fee protection + Micro-lock)
-                # Triggered at 50% of TP target or 0.5% profit
-                be_threshold = min(0.5, tp_pct * 100 * 0.5)
-                if unrealized_pnl_pct >= be_threshold:
-                    fee_buffer = 0.0015 # 0.15% to cover round-trip fees + tiny profit
-                    stop_price = entry_price * (1 + fee_buffer)
-                    if current_price < stop_price:
-                        print(f"🛡️ BE 2.0 {symbol}! Protecting profits at +{unrealized_pnl_pct:.2f}%")
-                        stop_signals.append(SignalEvent(strategy_id="BE_2.0", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
-                        self.record_trade_result(True, unrealized_pnl_pct)
-                        continue
+                # FORENSIC FIX #9: EXPLICIT TAKE PROFIT (was completely missing)
+                # Before: Trades at 100% TP were NEVER closed — only trailing at 25-85%
+                # Now: Close at full TP target, then let trailing handle partial profits
+                if current_price >= (entry_price * (1 + tp_pct)):
+                    tp_pnl_pct = ((current_price - entry_price) / entry_price) * 100
+                    print(f"🎯 [LONG {pos_horizon}] TAKE PROFIT {symbol}! +{tp_pnl_pct:.2f}% (Target: {tp_pct*100:.2f}%)")
+                    stop_signals.append(SignalEvent(strategy_id="TAKE_PROFIT", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon))
+                    self.record_trade_result(True, tp_pnl_pct)
+                    continue
 
-                # 3. Dynamic Trailing Stops (Based on HWM)
+                # 2 & 3. 3-STAGE ADAPTIVE TRAILING + TURBO-BREAKEVEN
+                # FORENSIC-V11: Use BBO Maker fee for round-trip (90%+ of orders are LIMIT)
+                # Before: TAKER fee (0.0375%) × 2 = 0.075% → threshold 0.1125%
+                # After: MAKER fee (0.02%) × 2 = 0.04% → threshold 0.06%
+                # This RAISES the turbo threshold because MAKER fee is lower:
+                # net profit after fees is HIGHER, so we can afford to wait longer.
+                _maker_fee = getattr(Config, 'BINANCE_MAKER_FEE_BNB', 0.0002)
+                _taker_fee = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375)
+                fee_buffer = (_maker_fee + _taker_fee)  # Entry=Maker, Exit=varies
                 peak_pnl = ((hwm - entry_price) / entry_price) * 100
-                if peak_pnl >= tp_pct * 100:
-                    # Aggressive Trail (TP3 level: Give back only 15% of total peak distance)
-                    trail_dist = (hwm - entry_price) * 0.15
-                    if current_price < (hwm - trail_dist):
-                        print(f"💰 DTP TRAIL (AGG) {symbol}! +{unrealized_pnl_pct:.2f}%")
-                        stop_signals.append(SignalEvent(strategy_id="DTP_TRAIL", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
+                tp_target_pct = tp_pct * 100 if tp_pct > 0 else 1.0  # Safe fallback
+                
+                # ⚡ Turbo-Breakeven (Stage 0): Immediate capital protection once fee gap is broken
+                # En force un escape de seguridad absoluto ante la menor insinuación de volatilidad adversa
+                # Se activa con spread + comisiones
+                if peak_pnl >= (fee_buffer * 100 * 1.5): # 1.5x Fees es el umbral para activar
+                    # We lock in entry_price + fee_buffer + slippage + micro-profit
+                    turbo_be_price = entry_price * (1 + fee_buffer + 0.0006) # 0.06% Total FinOps Net-Zero
+                    if current_price < turbo_be_price: # Price crashed back after hitting PEAK
+                        print(f"⚡ [LONG {pos_horizon}] TURBO-BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}% gave us edge. Bailing at {current_price:.4f}")
+                        stop_signals.append(SignalEvent(strategy_id="TURBO_BE", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon))
                         self.record_trade_result(True, unrealized_pnl_pct)
                         continue
-                elif peak_pnl >= tp_pct * 100 * 0.6:
-                    # Moderate Trail (TP2 level: Give back 30%)
-                    trail_dist = (hwm - entry_price) * 0.30
-                    if current_price < (hwm - trail_dist):
-                        print(f"💰 DTP TRAIL (MOD) {symbol}! +{unrealized_pnl_pct:.2f}%")
-                        stop_signals.append(SignalEvent(strategy_id="DTP_TRAIL", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
-                        self.record_trade_result(True, unrealized_pnl_pct)
-                        continue
+                
+                progress = peak_pnl / tp_target_pct if tp_target_pct > 0 else 0
+                
+                trail_price = None
+                trail_name = None
+                
+                # Fetch dynamically passed momentum threshold for this trade
+                self._last_momentum_accel = pos.get('metadata', {}).get('momentum_exit_accel', -0.012) if isinstance(pos.get('metadata'), dict) else -0.012
+                
+                if progress >= 0.75:
+                    # Stage 3: Tight trail - protect 85% of gains from peak
+                    trail_price = hwm - ((hwm - entry_price) * 0.15)
+                    trail_name = "TRAIL_STAGE_3_TIGHT"
+                elif progress >= 0.50:
+                    # Stage 2: Standard trail - protect 70% of gains from peak
+                    trail_price = hwm - ((hwm - entry_price) * 0.30)
+                    trail_name = "TRAIL_STAGE_2_STD"
+                elif progress >= 0.25:
+                    # Stage 1: Move to breakeven + round-trip fees + slippage safety buffer
+                    trail_price = entry_price * (1 + fee_buffer + 0.0005)
+                    trail_name = "TRAIL_STAGE_1_BE"
+                    
+                if trail_price and current_price < trail_price:
+                    print(f"🛡️/💰 [LONG {pos_horizon}] {trail_name} {symbol}! Triggered at {current_price:.4f} (Peak: +{peak_pnl:.2f}%)")
+                    stop_signals.append(SignalEvent(strategy_id=trail_name, symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon))
+                    self.record_trade_result(True, unrealized_pnl_pct)
+                    continue
 
                 # 4. Initial Hard Stop Loss (Protective)
                 if current_price < (entry_price * (1 - sl_pct)):
-                    print(f"🛑 HARD SL {symbol}! {unrealized_pnl_pct:.2f}%")
-                    stop_signals.append(SignalEvent(strategy_id="HARD_SL", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
+                    print(f"🛑 HARD SL [{pos_horizon}] {symbol}! {unrealized_pnl_pct:.2f}%")
+                    stop_signals.append(SignalEvent(strategy_id="HARD_SL", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon))
                     self.record_trade_result(False, unrealized_pnl_pct)
                     continue
 
@@ -1418,49 +1883,72 @@ class RiskManager:
             elif qty < 0:
                 # 1. Momentum Exit
                 if self._check_momentum_exit(symbol, 'SHORT', data_provider):
-                    print(f"🪂 SHORT MOMENTUM EXIT {symbol}! (Proactive)")
-                    stop_signals.append(SignalEvent(strategy_id="MOMENT_MGR", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
+                    print(f"🪂 {pos_horizon} SHORT MOMENTUM EXIT {symbol}! (Proactive)")
+                    stop_signals.append(SignalEvent(strategy_id="MOMENT_MGR", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon))
                     self.record_trade_result(True, 0.0)
                     continue
 
-                # 2. Break-Even 2.0
-                be_threshold = min(0.5, tp_pct * 100 * 0.5)
-                if unrealized_pnl_pct >= be_threshold:
-                    fee_buffer = 0.0015
-                    stop_price = entry_price * (1 - fee_buffer)
-                    if current_price > stop_price:
-                        print(f"🛡️ SHORT BE 2.0 {symbol}! Protecting profits at +{unrealized_pnl_pct:.2f}%")
-                        stop_signals.append(SignalEvent(strategy_id="BE_2.0", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
-                        self.record_trade_result(True, unrealized_pnl_pct)
-                        continue
+                # FORENSIC FIX #9: EXPLICIT TAKE PROFIT FOR SHORTS
+                if current_price <= (entry_price * (1 - tp_pct)):
+                    tp_pnl_pct = ((entry_price - current_price) / entry_price) * 100
+                    print(f"🎯 [SHORT {pos_horizon}] TAKE PROFIT {symbol}! +{tp_pnl_pct:.2f}% (Target: {tp_pct*100:.2f}%)")
+                    stop_signals.append(SignalEvent(strategy_id="TAKE_PROFIT", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon))
+                    self.record_trade_result(True, tp_pnl_pct)
+                    continue
 
-                # 3. Dynamic Trailing
+                # 2 & 3. 3-STAGE ADAPTIVE TRAILING + TURBO-BREAKEVEN
+                # FORENSIC-V11: BBO Maker fee for round-trip (same fix as LONG side)
+                _maker_fee = getattr(Config, 'BINANCE_MAKER_FEE_BNB', 0.0002)
+                _taker_fee = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375)
+                fee_buffer = (_maker_fee + _taker_fee)  # Entry=Maker, Exit=varies
                 peak_pnl = ((entry_price - lwm) / entry_price) * 100
-                if peak_pnl >= tp_pct * 100:
-                    trail_dist = (entry_price - lwm) * 0.15
-                    if current_price > (lwm + trail_dist):
-                        print(f"💰 SHORT DTP TRAIL (AGG) {symbol}! +{unrealized_pnl_pct:.2f}%")
-                        stop_signals.append(SignalEvent(strategy_id="DTP_TRAIL", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
+                tp_target_pct = tp_pct * 100 if tp_pct > 0 else 1.0  # Safe fallback
+                
+                # ⚡ Turbo-Breakeven (Stage 0): Immediate capital protection
+                if peak_pnl >= (fee_buffer * 100 * 1.5): # 1.5x Fees
+                    # We lock in entry_price - fee_buffer - slippage - micro-profit
+                    turbo_be_price = entry_price * (1 - fee_buffer - 0.0006) # 0.06% Total FinOps Net-Zero
+                    if current_price > turbo_be_price: # Price bounced back up
+                        print(f"⚡ [SHORT {pos_horizon}] TURBO-BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}% gave us edge. Bailing at {current_price:.4f}")
+                        stop_signals.append(SignalEvent(strategy_id="TURBO_BE", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon))
                         self.record_trade_result(True, unrealized_pnl_pct)
                         continue
-                elif peak_pnl >= tp_pct * 100 * 0.6:
-                    trail_dist = (entry_price - lwm) * 0.30
-                    if current_price > (lwm + trail_dist):
-                        print(f"💰 SHORT DTP TRAIL (MOD) {symbol}! +{unrealized_pnl_pct:.2f}%")
-                        stop_signals.append(SignalEvent(strategy_id="DTP_TRAIL", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
-                        self.record_trade_result(True, unrealized_pnl_pct)
-                        continue
+                        
+                progress = peak_pnl / tp_target_pct if tp_target_pct > 0 else 0
+                
+                trail_price = None
+                trail_name = None
+                
+                self._last_momentum_accel = pos.get('metadata', {}).get('momentum_exit_accel', -0.012) if isinstance(pos.get('metadata'), dict) else -0.012
+                
+                if progress >= 0.75:
+                    # Stage 3: Tight trail - protect 85% of gains from peak
+                    trail_price = lwm + ((entry_price - lwm) * 0.15)
+                    trail_name = "SHORT_TRAIL_STAGE_3_TIGHT"
+                elif progress >= 0.50:
+                    # Stage 2: Standard trail - protect 70% of gains from peak
+                    trail_price = lwm + ((entry_price - lwm) * 0.30)
+                    trail_name = "SHORT_TRAIL_STAGE_2_STD"
+                elif progress >= 0.25:
+                    # Stage 1: Move to breakeven + round-trip fees + slippage safety buffer
+                    trail_price = entry_price * (1 - fee_buffer - 0.0005)
+                    trail_name = "SHORT_TRAIL_STAGE_1_BE"
+                    
+                if trail_price and current_price > trail_price:
+                    print(f"🛡️/💰 [SHORT {pos_horizon}] {trail_name} {symbol}! Triggered at {current_price:.4f} (Peak: +{peak_pnl:.2f}%)")
+                    stop_signals.append(SignalEvent(strategy_id=trail_name, symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon))
+                    self.record_trade_result(True, unrealized_pnl_pct)
+                    continue
 
                 # 4. Initial Hard Stop
                 if current_price > (entry_price * (1 + sl_pct)):
-                    print(f"🛑 SHORT HARD SL {symbol}! {unrealized_pnl_pct:.2f}%")
-                    stop_signals.append(SignalEvent(strategy_id="HARD_SL", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
+                    print(f"🛑 SHORT HARD SL [{pos_horizon}] {symbol}! {unrealized_pnl_pct:.2f}%")
+                    stop_signals.append(SignalEvent(strategy_id="HARD_SL", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon))
                     self.record_trade_result(False, unrealized_pnl_pct)
                     continue
         
         return stop_signals
-                
-        return stop_signals
+
 
     # ============================================================
     # KILL SWITCH FACADE
@@ -1587,7 +2075,10 @@ class RiskManager:
                                entry_price: float, leverage: int) -> dict:
         notional = quantity * entry_price
         margin_required = notional / leverage
-        MIN_NOTIONAL = 5.0
+        # PHASE 1: Execution Audit ($13 Micro-Account Hardening)
+        # We increase the hard MIN_NOTIONAL from Binance's 5.0 to 6.0 to prevent 
+        # rejected orders due to Taker fees or sub-cent slippage pushing it below limits.
+        MIN_NOTIONAL = 6.0
         MIN_MARGIN = 1.0
         
         if notional < MIN_NOTIONAL:

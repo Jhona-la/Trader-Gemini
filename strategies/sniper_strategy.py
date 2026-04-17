@@ -27,7 +27,8 @@ from config import Config
 from utils.logger import logger
 from utils.safe_leverage import safe_leverage_calculator
 from core.neural_bridge import neural_bridge
-from .phalanx import OrderFlowAnalyzer # PHASE 13
+from .phalanx import OrderFlowAnalyzer, OnlineGARCH  # PHASE 13 + D1 FIX: Module-level import
+from utils.math_kernel import calculate_hurst_jit, bayesian_probability_jit, calculate_zscore_jit
 
 
 class SniperStrategy(Strategy):
@@ -36,11 +37,15 @@ class SniperStrategy(Strategy):
     Optimized for frequent signals with controlled risk.
     """
     
-    def __init__(self, data_provider, events_queue, executor=None, portfolio=None):
+    def __init__(self, data_provider, events_queue, executor=None, portfolio=None, horizon: str = "SCALPING", priority: int = 1):
         self.data_provider = data_provider
         self.events_queue = events_queue
         self.executor = executor
         self.portfolio = portfolio  # NEW: For dynamic capital
+        self.horizon = horizon
+        self.priority = priority
+        lbl = "[SCL]" if horizon == "SCALPING" else "[SWG]"
+        self.strategy_id = f"{lbl}_SNIPER_{horizon}"
         
         # Whitelist filter (Disabled - Now using Dynamic Basket)
         self.whitelist = getattr(Config.Sniper, 'WHITELIST', [])
@@ -49,6 +54,9 @@ class SniperStrategy(Strategy):
         # Order Flow & Regime (Phase 13/14)
         self.of_analyzer = OrderFlowAnalyzer()
         self.garch_models = {} # {symbol: OnlineGARCH}
+        
+        self.last_signal_time = {}
+        self.signal_count = 0
         
         logger.info(f"🎯 SNIPER STRATEGY INITIALIZED (PHALANX-OMEGA V3)")
     
@@ -69,34 +77,34 @@ class SniperStrategy(Strategy):
         
         for symbol in target_symbols:
             try:
-                # PHASE 14: Update GARCH Volatility
-                bars = self.data_provider.get_latest_bars(symbol, n=2)
-                if len(bars) >= 2:
-                    ret = (bars['close'][-1] - bars['close'][-2]) / bars['close'][-2]
-                    # The following lines were incorrectly placed in the user's instruction.
-                    # They seem to be part of an exit logic, not GARCH update.
-                    # I'm placing the GARCH model instantiation and update here as intended.
-                    if symbol not in self.garch_models:
-                         from .phalanx import OnlineGARCH
-                         self.garch_models[symbol] = OnlineGARCH(0.01, 0.1, 0.85)
-                    
-                    vol = self.garch_models[symbol].update(ret)
-                    
-                    # Update RiskManager centrally if available
-                    # Note: portfolio often has access to engine or risk_manager
-                    if self.portfolio and hasattr(self.portfolio, 'risk_manager'):
-                        self.portfolio.risk_manager.update_leverage_and_params(vol, "ADAPTIVE")
+                # D2 FIX: Single data fetch for both GARCH and analysis
+                bars = self.data_provider.get_latest_bars(symbol, n=200)
+                if len(bars) < 2:
+                    continue
+                
+                # PHASE 14: Update GARCH Volatility (reuse bars from single fetch)
+                ret = (bars['close'][-1] - bars['close'][-2]) / bars['close'][-2]
+                # D1 FIX: OnlineGARCH imported at module level now
+                if symbol not in self.garch_models:
+                    self.garch_models[symbol] = OnlineGARCH(0.01, 0.1, 0.85, 0.001)
+                
+                vol = self.garch_models[symbol].update(ret)
+                
+                # Update RiskManager centrally if available
+                if self.portfolio and hasattr(self.portfolio, 'risk_manager'):
+                    self.portfolio.risk_manager.update_leverage_and_params(vol, "ADAPTIVE")
 
                 # 0. Local Cooldown Check
                 now = datetime.now(timezone.utc)
                 if symbol in self.last_signal_time:
-                    if (now - self.last_signal_time[symbol]).total_seconds() < 20: # Slightly reduced cooldown for sniping
+                    if (now - self.last_signal_time[symbol]).total_seconds() < 20:
                         continue
                 
-                signal = self._analyze_symbol(symbol, order_flow=order_flow)
+                # D2 FIX: Pass pre-fetched bars to avoid redundant API call
+                signal = self._analyze_symbol(symbol, order_flow=order_flow, prefetched_bars=bars)
                 if signal:
                     self.events_queue.put(signal)
-                    self.last_signal_time[symbol] = now # Record last signal
+                    self.last_signal_time[symbol] = now
                     self.signal_count += 1
                     logger.info(f"🎯 SNIPER #{self.signal_count}: {signal.signal_type.name} {symbol} (Strength: {signal.strength:.2f})")
             except Exception as e:
@@ -113,11 +121,11 @@ class SniperStrategy(Strategy):
         
         return london_active or ny_active
     
-    def _analyze_symbol(self, symbol: str, order_flow: Optional[dict] = None) -> Optional[SignalEvent]:
+    def _analyze_symbol(self, symbol: str, order_flow: Optional[dict] = None, prefetched_bars=None) -> Optional[SignalEvent]:
         """Run simplified 2-layer confluence + Phase 13 Order Flow analysis."""
         
-        # Get data
-        bars = self.data_provider.get_latest_bars(symbol, n=200)
+        # D2 FIX: Use pre-fetched bars to avoid redundant API call
+        bars = prefetched_bars if prefetched_bars is not None else self.data_provider.get_latest_bars(symbol, n=200)
         if len(bars) < 100:
             return None
         
@@ -130,16 +138,38 @@ class SniperStrategy(Strategy):
         current_price = closes[-1]
         
         # =====================================================================
+        # QUANTUM MATH LAYER: Random Walk Filter (Hurst) & Z-Score
+        # =====================================================================
+        hurst = calculate_hurst_jit(closes, period=20)
+        
+        # HURST NOISE FILTER: 0.45 to 0.55 is pure noise. Block execution.
+        if 0.45 < hurst < 0.55:
+            logger.debug(f"[{symbol}] Sniper blocked by Hurst {hurst:.2f} (Random Walk Noise)")
+            return None
+            
+        z_scores = calculate_zscore_jit(closes, period=20)
+        current_z = z_scores[-1]
+        
+        # =====================================================================
         # LAYER A: Technical Confluence (SIMPLIFIED: 2/3 required)
         # =====================================================================
         layer_a_results = self._analyze_technical(closes, highs, lows)
         layer_a_score = sum(1 for v in layer_a_results.values() if v['signal'] != 'NEUTRAL')
+        
+        # D3 FIX: ALWAYS compute direction BEFORE using it
+        # This prevents UnboundLocalError when layer_a_score >= 2 but is_sniper_v3 is False
+        layer_a_direction = self._get_consensus_direction(layer_a_results)
+        
         # PHASE 13: Order Flow (Sniper Trigger)
         of_res = self.of_analyzer.analyze_imbalance(order_flow) if order_flow else None
         is_sniper_v3 = of_res and of_res.get('sniper')
         
         # EXIGENTE: 2/3 confluencia requerida or Sniper V3 (High Imbalance + Delta)
         if layer_a_score < 2 and not is_sniper_v3:
+            return None
+        
+        # D3 FIX: If no consensus direction could be determined, skip
+        if layer_a_direction == 'NEUTRAL' and not is_sniper_v3:
             return None
         
         if is_sniper_v3:
@@ -179,6 +209,26 @@ class SniperStrategy(Strategy):
                 layer_a_score += 0.5
                 # logger.info(f"🧠 [BRIDGE] Sniper Buff: Stat alignment {stat_dir} (Z={stat_z:.1f})")
         
+        # =====================================================================
+        # BAYESIAN SELECTIVITY ENGINE
+        # =====================================================================
+        # Normalize signal strength (layer_a_score out of 3.5 max)
+        sig_str = min(1.0, layer_a_score / 3.5)
+        
+        # Trend alignment proxy from Z-Score and direction
+        trend_str_val = 1.0 if (layer_a_direction == 'LONG' and current_z > 0) or (layer_a_direction == 'SHORT' and current_z < 0) else -1.0
+        
+        bayes_prob = bayesian_probability_jit(
+            signal_strength=sig_str,
+            trend_strength=trend_str_val,
+            volatility_z=current_z
+        )
+        
+        # RIGUROSO INSTITUCIONAL: Umbral Bayesiano 0.75 (Opción B)
+        if bayes_prob < 0.75:
+            logger.debug(f"[{symbol}] Sniper blocked: Bayesian Prob {bayes_prob:.2f} < 0.75")
+            return None
+
         # ================= ====================================================
         # LAYER B: Volume Confirmation (BONUS, not blocking)
         # =====================================================================
@@ -234,9 +284,11 @@ class SniperStrategy(Strategy):
             }
         )
 
-        # Calculate percentages
-        tp_pct_val = abs(target_price - current_price) / current_price * 100
-        sl_pct_val = abs(current_price - stop_price) / current_price * 100
+        # FORENSIC FIX #1b: Send as decimal fractions (standard contract)
+        # Before: 3.0 meant 3% but risk_manager used heuristic (> 0.5 → /100 = 0.03) 
+        # Now: explicit decimal fraction, no ambiguity
+        tp_pct_val = abs(target_price - current_price) / current_price  # Already decimal
+        sl_pct_val = abs(current_price - stop_price) / current_price    # Already decimal
         
         # FIXED: Pass ALL metadata in constructor (frozen dataclass)
         signal = SignalEvent(
@@ -250,10 +302,14 @@ class SniperStrategy(Strategy):
             sl_pct=sl_pct_val,
             current_price=current_price,
             leverage=leverage,
+            horizon=self.horizon,
+            priority=self.priority,
             metadata={
                 'sniper_mode': is_sniper_v3,
                 'of_reason': of_res.get('reason') if of_res else 'TECHNICAL',
-                'delta': order_flow.get('delta', 0.0) if order_flow else 0.0
+                'delta': order_flow.get('delta', 0.0) if order_flow else 0.0,
+                'bayes_prob': float(bayes_prob),
+                'hurst': float(hurst)
             }
         )
         

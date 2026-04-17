@@ -13,8 +13,9 @@ class StatisticalArbitrage:
     - Monitors 20-asset fleet for Cointegration (Engle-Granger)
     - Calculates Fleet Correlation Matrix to detect Contagion Risk
     """
-    def __init__(self, lookback_window=500):
+    def __init__(self, lookback_window=500, priority=1):
         self.lookback = lookback_window
+        self.priority = priority
         self.price_history: Dict[str, List[float]] = {}
         self.correlation_matrix = None
         self.cointegrated_pairs: List[Tuple[str, str, float]] = [] # (Asset A, Asset B, Beta)
@@ -122,8 +123,10 @@ class StatisticalArbitrage:
                     symbol=a,
                     signal_type=direction,
                     strength=abs(z_score),
-                    timestamp=pd.Timestamp.now(tz='UTC'),
+                    datetime=pd.Timestamp.now(tz='UTC'),
                     strategy_id='STAT_ARB_V1',
+                    horizon='SCALPING',
+                    priority=self.priority,
                     metadata={'pair': b, 'beta': beta, 'z_score': z_score}
                 )
                 signals.append(signal)

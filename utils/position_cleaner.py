@@ -198,16 +198,42 @@ class PositionCleaner:
             required_quantity = min_notional / price
             
             # Round according to preference
+            from decimal import ROUND_UP
             if round_down:
                 # Para sells, round down (conservador)
                 return float(Decimal(str(required_quantity)).quantize(
                     Decimal('0.00000001'), rounding=ROUND_DOWN
                 ))
             else:
-                # Para buys, round up
-                return required_quantity * 1.01  # +1% safety
+                # Para buys, ROUND_UP estricto para sobrepasar siempre MIN_NOTIONAL
+                return float(Decimal(str(required_quantity)).quantize(
+                    Decimal('0.00000001'), rounding=ROUND_UP
+                ))
         
         return quantity
+    
+    async def clean_orphan_orders(self, executor, symbol: str) -> bool:
+        """
+        Orphan Order Cleaner - Cancela órdenes pendientes en Binance.
+        Invocado tras el cierre total de una posición local, para liberar margen retenido.
+        """
+        try:
+            if not executor or not hasattr(executor, 'exchange'):
+                return False
+                
+            logger.info(f"🧹 [ORPHAN CLEANER] Cancelando órdenes pendientes para {symbol} (Liberación Margen Micro-Cuenta)")
+            
+            import asyncio
+            if hasattr(executor.exchange, 'cancel_all_orders'):
+                if asyncio.iscoroutinefunction(executor.exchange.cancel_all_orders):
+                    await executor.exchange.cancel_all_orders(symbol)
+                else:
+                    await asyncio.to_thread(executor.exchange.cancel_all_orders, symbol)
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"⚠️ Failed to clean orphan orders for {symbol}: {e}")
+            return False
     
     def get_statistics(self) -> dict:
         """Obtener estadísticas de limpieza"""

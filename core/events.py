@@ -83,6 +83,8 @@ class SignalEvent(Event):
     current_price: Optional[float] = None
     leverage: Optional[int] = None  # Added for strategies to specify leverage
     ttl: Optional[int] = None      # Phase 9.2: Adaptive TTL (seconds)
+    ml_confidence: Optional[float] = None # Added for ML-based scaling
+    predicted_duration: Optional[int] = None # Hold duration
     metadata: Optional[Dict[str, Any]] = None # Flexible metadata container
     
     # AEGIS-ULTRA Phase 17: Telemetry
@@ -94,6 +96,12 @@ class SignalEvent(Event):
     
     # 🧬 [Phase 19] Shadow Mode
     is_shadow: bool = False # If True, ExecutionHandler must IGNORE this for real trading
+    
+    # ⏱️ Horizon Specialization (Strict enforcement)
+    horizon: str  # "SCALPING" or "SWING" (No default!)
+    
+    # ⚡ Nano-Speeds QoS Priority (0 = Critical/Scalping, 1 = Normal/Swing, 2 = Background)
+    priority: int = 1
     
     type: EventType = field(default=EventType.SIGNAL, init=False)
 
@@ -122,6 +130,8 @@ class OrderEvent(Event):
     sl_pct: Optional[float] = None  # NEW: Protective stop loss %
     tp_pct: Optional[float] = None  # NEW: Protective take profit %
     ttl: Optional[int] = None      # Phase 9.2: Adaptive TTL (seconds)
+    ml_confidence: Optional[float] = None # Added for ML-based scaling
+    predicted_duration: Optional[int] = None # Hold duration
     metadata: Optional[Dict[str, Any]] = None # Flexible metadata container (Chase count, etc.)
     
     # AEGIS-ULTRA Phase 17: Telemetry
@@ -129,6 +139,26 @@ class OrderEvent(Event):
     
     # 🧬 [Phase 19] Shadow Mode
     is_shadow: bool = False # If True, Executor MUST DROP this order
+    
+    # ⏱️ Horizon Specialization (Strict enforcement)
+    horizon: str  # "SCALPING" or "SWING" (No default!)
+    
+    # ⚡ Nano-Speeds QoS Priority
+    priority: int = 1
+    
+    # 🔴 FORENSIC FIX #0: Exit/Close routing fields (were MISSING → all exits failed with TypeError)
+    # QUÉ: Flags que indican si esta orden cierra una posición existente.
+    # POR QUÉ: Sin estos campos, OrderEvent(..., is_exit=True) lanza TypeError
+    #   en Python frozen dataclass con slots=True. El except en generate_order()
+    #   capturaba el error silenciosamente y retornaba None → EXITS MUERTOS.
+    # PARA QUÉ: Permitir que RiskManager genere órdenes de cierre que:
+    #   1) BinanceExecutor use para skip protective orders en exits
+    #   2) OrderManager use para chase/fallback behavior de exits vs entries
+    # CUÁNDO: Siempre que generate_order() o _generate_exit_order() cree una orden.
+    # DÓNDE: core/events.py → OrderEvent
+    # QUIÉN: Risk Manager, BinanceExecutor, OrderManager
+    is_exit: bool = False   # True if this order closes/reduces a position
+    is_close: bool = False  # True if this is a full position close
     
     type: EventType = field(default=EventType.ORDER, init=False)
 
@@ -166,11 +196,26 @@ class FillEvent(Event):
     sl_pct: Optional[float] = None      # Protective stop loss %
     tp_pct: Optional[float] = None      # Protective take profit %
     
+    # 🔍 FORENSIC AUDITING FOR MICRO-ACCOUNTS
+    gross_pnl: Optional[float] = None
+    net_pnl: Optional[float] = None
+    slippage_pct: Optional[float] = None
+    fees_paid: Optional[float] = None
+    duration_seconds: Optional[int] = None
+    
     # Phase 31: Partial Fill Handling
     is_closed: bool = True              # TRUE if fully filled or cancelled, FALSE if partial
     
     # AEGIS-ULTRA Phase 17: Telemetry
     trade_id: Optional[str] = None # UUID for forensic tracing
+    
+    # ⏱️ Horizon Specialization
+    horizon: str = "SCALPING" # "SCALPING" or "SWING"
+    
+    ml_confidence: Optional[float] = None # Added for ML-based scaling
+    predicted_duration: Optional[int] = None # Hold duration
+    
+    metadata: Optional[Dict[str, Any]] = None # Phase 31 Fix: Carry metadata from Order
     
     type: EventType = field(default=EventType.FILL, init=False)
     
@@ -202,6 +247,9 @@ class TradeAuditEvent(Event):
     price: Optional[float] = None
     pnl: Optional[float] = None
     details: Optional[Dict[str, Any]] = None  # ✅ IMPROVED: Dict instead of str
+    
+    # ⏱️ Horizon Specialization
+    horizon: str = "SCALPING" # "SCALPING" or "SWING"
     
     # ✅ FIXED: Use dedicated AUDIT type
     type: EventType = field(default=EventType.AUDIT, init=False)

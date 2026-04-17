@@ -1,0 +1,259 @@
+13:35:42 [INFO] 🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)
+💰 Capital inicial configurado: $13.00
+⚡ Leverage: 3x | Fee: 0.0375% per side
+🛡️ Kill Switch @ 3.0% DD | Cooldown: 120 bars
+🎯 Símbolos: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'DOGE/USDT']
+📅 Horizontes: [1, 7, 15, 30] días
+
+======================================================================
+🚀 TRADER GEMINI - MULTI-HORIZON BACKTEST v2.0
+   🛡️ Real ML | Real Clustering | Circuit Breaker | Fixed Sharpe
+======================================================================
+
+======================================================================
+📅 HORIZONTE: 1 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 3d para BTC/USDT...
+    ✅ 4320 velas (3.0D)
+    [Technical   ] ❌ PNL: $-0.0517 WR: 50.0% DD: 0.50% Sharpe: -50.00 Trades: 6 | Sigs L:3 S:3 N:75
+    [Sophia      ] ❌ PNL: $-0.0268 WR: 20.0% DD: 0.58% Sharpe: -3.79 Trades: 5 | Sigs L:4 S:1 N:1370
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 03:15:00: Accuracy 22.3%
+    [ML_XGBoost  ] ✅ PNL: $+0.0018 WR: 50.0% DD: 0.49% Sharpe: -2.22 Trades: 8 ML_Acc: 22% | Sigs L:2 S:6 N:658
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0288 WR: --.-% DD: 0.25% Sharpe: -13.92 Rebalances: 13 Weights: T=0.31 S=0.30 ML=0.40
+
+  🔹 ETH/USDT
+  📡 Descargando 3d para ETH/USDT...
+    ✅ 4320 velas (3.0D)
+    [Technical   ] ❌ PNL: $-0.0627 WR: 30.0% DD: 0.97% Sharpe: -12.54 Trades: 10 | Sigs L:7 S:3 N:274
+    [Sophia      ] ❌ PNL: $-0.0608 WR: 37.5% DD: 0.77% Sharpe: -12.40 Trades: 8 | Sigs L:6 S:2 N:900
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 03:16:00: Accuracy 27.7%
+    [ML_XGBoost  ] ❌ PNL: $-0.0180 WR: 40.0% DD: 0.72% Sharpe: -3.29 Trades: 15 ML_Acc: 28% | Sigs L:11 S:4 N:456
+    ⭐[Orch-AWv2   ] ✅ PNL: $+0.0070 WR: --.-% DD: 0.51% Sharpe: 0.88 Rebalances: 13 Weights: T=0.31 S=0.29 ML=0.40
+
+  🔹 SOL/USDT
+  📡 Descargando 3d para SOL/USDT...
+    ✅ 4320 velas (3.0D)
+    [Technical   ] ✅ PNL: $+0.0364 WR: 50.0% DD: 0.33% Sharpe: 6.36 Trades: 10 | Sigs L:7 S:3 N:322
+    [Sophia      ] ❌ PNL: $-0.0657 WR: 44.4% DD: 0.97% Sharpe: -12.24 Trades: 9 | Sigs L:6 S:3 N:1029
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 03:16:00: Accuracy 35.1%
+    [ML_XGBoost  ] ✅ PNL: $+0.0812 WR: 46.7% DD: 0.54% Sharpe: 5.72 Trades: 15 ML_Acc: 35% | Sigs L:15 S:0 N:420
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0069 WR: --.-% DD: 0.43% Sharpe: -1.36 Rebalances: 13 Weights: T=0.32 S=0.28 ML=0.40
+
+  🔹 XRP/USDT
+  📡 Descargando 3d para XRP/USDT...
+    ✅ 4320 velas (3.0D)
+    [Technical   ] ❌ PNL: $-0.0919 WR: 22.2% DD: 0.97% Sharpe: -12.10 Trades: 9 | Sigs L:6 S:3 N:130
+    [Sophia      ] ❌ PNL: $-0.1144 WR: 28.6% DD: 0.96% Sharpe: -21.74 Trades: 7 | Sigs L:4 S:3 N:976
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 03:16:00: Accuracy 36.2%
+    [ML_XGBoost  ] ❌ PNL: $-0.0533 WR: 35.7% DD: 0.85% Sharpe: -9.89 Trades: 14 ML_Acc: 36% | Sigs L:13 S:1 N:443
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.1359 WR: --.-% DD: 1.04% Sharpe: -20.65 Rebalances: 13 Weights: T=0.31 S=0.29 ML=0.40
+
+  🔹 DOGE/USDT
+  📡 Descargando 3d para DOGE/USDT...
+    ✅ 4320 velas (3.0D)
+    [Technical   ] ✅ PNL: $+0.0122 WR: 37.5% DD: 0.33% Sharpe: 2.19 Trades: 8 | Sigs L:6 S:2 N:147
+    [Sophia      ] ✅ PNL: $+0.0165 WR: 42.9% DD: 0.20% Sharpe: 3.90 Trades: 7 | Sigs L:5 S:2 N:840
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 03:17:00: Accuracy 31.9%
+    [ML_XGBoost  ] ❌ PNL: $-0.0272 WR: 50.0% DD: 0.65% Sharpe: -4.05 Trades: 14 ML_Acc: 32% | Sigs L:11 S:3 N:430
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0319 WR: --.-% DD: 0.44% Sharpe: -21.16 Rebalances: 13 Weights: T=0.32 S=0.30 ML=0.38
+
+  📊 RESUMEN 1D:
+  [Technical   ] ❌ Total PNL: $-0.158 | WR: 37.9% | DD: 0.62% | Sharpe: -13.22 | Trades: 43
+  [Sophia      ] ❌ Total PNL: $-0.251 | WR: 34.7% | DD: 0.70% | Sharpe: -9.26 | Trades: 36
+  [ML_XGBoost  ] ❌ Total PNL: $-0.015 | WR: 44.5% | DD: 0.65% | Sharpe: -2.75 | Trades: 66
+
+======================================================================
+📅 HORIZONTE: 7 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 9d para BTC/USDT...
+    ✅ 12960 velas (9.0D)
+    [Technical   ] ✅ PNL: $+0.0306 WR: 36.8% DD: 0.98% Sharpe: -0.20 Trades: 19 | Sigs L:6 S:13 N:316
+    [Sophia      ] ✅ PNL: $+0.0922 WR: 50.0% DD: 0.77% Sharpe: 3.83 Trades: 14 | Sigs L:6 S:8 N:1907
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 03:17:00: Accuracy 25.5%
+    [ML_XGBoost  ] ❌ PNL: $-0.3094 WR: 16.0% DD: 2.52% Sharpe: -20.88 Trades: 25 ML_Acc: 26% | Sigs L:21 S:4 N:509
+    ⭐[Orch-AWv2   ] ✅ PNL: $+0.0014 WR: --.-% DD: 0.65% Sharpe: -0.42 Rebalances: 42 Weights: T=0.35 S=0.36 ML=0.29
+
+  🔹 ETH/USDT
+  📡 Descargando 9d para ETH/USDT...
+    ✅ 12960 velas (9.0D)
+    [Technical   ] ❌ PNL: $-0.0556 WR: 31.0% DD: 1.54% Sharpe: -2.73 Trades: 29 | Sigs L:13 S:16 N:465
+    [Sophia      ] ✅ PNL: $+0.0025 WR: 44.4% DD: 0.67% Sharpe: -1.11 Trades: 18 | Sigs L:8 S:10 N:3375
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 03:18:00: Accuracy 36.2%
+    [ML_XGBoost  ] ❌ PNL: $-0.2546 WR: 36.6% DD: 2.21% Sharpe: -18.62 Trades: 41 ML_Acc: 36% | Sigs L:37 S:4 N:440
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.1081 WR: --.-% DD: 0.87% Sharpe: -7.08 Rebalances: 42 Weights: T=0.34 S=0.35 ML=0.31
+
+  🔹 SOL/USDT
+  📡 Descargando 9d para SOL/USDT...
+    ✅ 12960 velas (9.0D)
+    [Technical   ] ❌ PNL: $-0.1156 WR: 28.0% DD: 1.48% Sharpe: -4.96 Trades: 25 | Sigs L:12 S:13 N:518
+    [Sophia      ] ❌ PNL: $-0.0695 WR: 42.1% DD: 1.16% Sharpe: -4.20 Trades: 19 | Sigs L:8 S:11 N:2415
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 03:18:00: Accuracy 38.3%
+    [ML_XGBoost  ] ❌ PNL: $-0.0317 WR: 39.5% DD: 1.31% Sharpe: -3.17 Trades: 38 ML_Acc: 38% | Sigs L:33 S:5 N:1228
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0602 WR: --.-% DD: 0.78% Sharpe: -5.08 Rebalances: 42 Weights: T=0.34 S=0.32 ML=0.33
+
+  🔹 XRP/USDT
+  📡 Descargando 9d para XRP/USDT...
+    ✅ 12960 velas (9.0D)
+    [Technical   ] ✅ PNL: $+0.0976 WR: 27.3% DD: 0.81% Sharpe: 2.42 Trades: 22 | Sigs L:7 S:15 N:559
+    [Sophia      ] ❌ PNL: $-0.1061 WR: 33.3% DD: 1.79% Sharpe: -4.33 Trades: 21 | Sigs L:6 S:15 N:2203
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 03:19:00: Accuracy 23.4%
+    [ML_XGBoost  ] ❌ PNL: $-0.1086 WR: 32.3% DD: 1.28% Sharpe: -6.01 Trades: 31 ML_Acc: 23% | Sigs L:26 S:5 N:778
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0443 WR: --.-% DD: 0.78% Sharpe: -2.69 Rebalances: 42 Weights: T=0.34 S=0.32 ML=0.34
+
+  🔹 DOGE/USDT
+  📡 Descargando 9d para DOGE/USDT...
+    ✅ 12960 velas (9.0D)
+    [Technical   ] ❌ PNL: $-0.0190 WR: 27.3% DD: 1.32% Sharpe: -1.02 Trades: 22 | Sigs L:10 S:12 N:327
+    [Sophia      ] ✅ PNL: $+0.0576 WR: 41.2% DD: 0.58% Sharpe: 2.12 Trades: 17 | Sigs L:7 S:10 N:2481
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 03:20:00: Accuracy 53.2%
+    [ML_XGBoost  ] ✅ PNL: $+0.1126 WR: 48.7% DD: 0.81% Sharpe: 2.40 Trades: 39 ML_Acc: 53% | Sigs L:20 S:19 N:510
+    ⭐[Orch-AWv2   ] ✅ PNL: $+0.0472 WR: --.-% DD: 0.70% Sharpe: 1.68 Rebalances: 42 Weights: T=0.32 S=0.34 ML=0.34
+
+  📊 RESUMEN 7D:
+  [Technical   ] ❌ Total PNL: $-0.062 | WR: 30.1% | DD: 1.23% | Sharpe: -1.30 | Trades: 117
+  [Sophia      ] ❌ Total PNL: $-0.023 | WR: 42.2% | DD: 0.99% | Sharpe: -0.74 | Trades: 89
+  [ML_XGBoost  ] ❌ Total PNL: $-0.592 | WR: 34.6% | DD: 1.63% | Sharpe: -9.25 | Trades: 174
+
+======================================================================
+📅 HORIZONTE: 15 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 17d para BTC/USDT...
+    ✅ 24480 velas (17.0D)
+    [Technical   ] ✅ PNL: $+0.1246 WR: 42.3% DD: 0.65% Sharpe: 3.00 Trades: 26 | Sigs L:17 S:9 N:638
+    [Sophia      ] ✅ PNL: $+0.2270 WR: 51.9% DD: 1.06% Sharpe: 5.50 Trades: 27 | Sigs L:18 S:9 N:3785
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 03:21:00: Accuracy 45.7%
+    [ML_XGBoost  ] ✅ PNL: $+0.0298 WR: 44.4% DD: 1.77% Sharpe: -1.07 Trades: 54 ML_Acc: 46% | Sigs L:20 S:34 N:958
+    ⭐[Orch-AWv2   ] ✅ PNL: $+0.1244 WR: --.-% DD: 0.51% Sharpe: 4.54 Rebalances: 90 Weights: T=0.31 S=0.38 ML=0.30
+
+  🔹 ETH/USDT
+  📡 Descargando 17d para ETH/USDT...
+    ✅ 24480 velas (17.0D)
+    [Technical   ] ✅ PNL: $+0.0378 WR: 31.4% DD: 1.81% Sharpe: -0.30 Trades: 51 | Sigs L:30 S:21 N:893
+    [Sophia      ] ✅ PNL: $+0.1363 WR: 46.3% DD: 1.26% Sharpe: 1.36 Trades: 41 | Sigs L:29 S:12 N:6603
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 03:22:00: Accuracy 35.1%
+    [ML_XGBoost  ] ✅ PNL: $+0.3159 WR: 43.8% DD: 5.05% Sharpe: 1.73 Trades: 80 ML_Acc: 35% | Sigs L:36 S:44 N:564
+    ⭐[Orch-AWv2   ] ✅ PNL: $+0.0711 WR: --.-% DD: 1.79% Sharpe: 1.10 Rebalances: 90 Weights: T=0.23 S=0.33 ML=0.43
+
+  🔹 SOL/USDT
+  📡 Descargando 17d para SOL/USDT...
+    ✅ 24480 velas (17.0D)
+    [Technical   ] ✅ PNL: $+0.0616 WR: 33.3% DD: 1.85% Sharpe: 0.38 Trades: 39 | Sigs L:27 S:12 N:852
+    [Sophia      ] ✅ PNL: $+0.1084 WR: 42.5% DD: 1.49% Sharpe: 1.12 Trades: 40 | Sigs L:28 S:12 N:7042
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 03:24:00: Accuracy 26.6%
+    [ML_XGBoost  ] ❌ PNL: $-0.0127 WR: 41.7% DD: 2.38% Sharpe: -2.00 Trades: 84 ML_Acc: 27% | Sigs L:35 S:49 N:485
+    ⭐[Orch-AWv2   ] ✅ PNL: $+0.1020 WR: --.-% DD: 1.47% Sharpe: 1.97 Rebalances: 90 Weights: T=0.30 S=0.36 ML=0.34
+
+  🔹 XRP/USDT
+  📡 Descargando 17d para XRP/USDT...
+    ✅ 24480 velas (17.0D)
+    [Technical   ] ✅ PNL: $+0.0365 WR: 22.5% DD: 2.05% Sharpe: -0.07 Trades: 40 | Sigs L:19 S:21 N:974
+    [Sophia      ] ✅ PNL: $+0.2062 WR: 44.1% DD: 1.77% Sharpe: 3.02 Trades: 34 | Sigs L:19 S:15 N:4476
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 03:25:00: Accuracy 13.8%
+    [ML_XGBoost  ] ❌ PNL: $-0.1117 WR: 37.1% DD: 1.99% Sharpe: -5.55 Trades: 70 ML_Acc: 14% | Sigs L:35 S:35 N:644
+    ⭐[Orch-AWv2   ] ✅ PNL: $+0.1082 WR: --.-% DD: 1.12% Sharpe: 2.63 Rebalances: 90 Weights: T=0.30 S=0.36 ML=0.34
+
+  🔹 DOGE/USDT
+  📡 Descargando 17d para DOGE/USDT...
+    ✅ 24480 velas (17.0D)
+    [Technical   ] ✅ PNL: $+0.1282 WR: 26.0% DD: 2.27% Sharpe: 1.06 Trades: 50 | Sigs L:29 S:21 N:1069
+    [Sophia      ] ✅ PNL: $+0.2539 WR: 45.0% DD: 0.90% Sharpe: 5.55 Trades: 40 | Sigs L:27 S:13 N:6196
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 03:26:00: Accuracy 24.5%
+    [ML_XGBoost  ] ❌ PNL: $-0.0026 WR: 43.2% DD: 2.30% Sharpe: -2.00 Trades: 88 ML_Acc: 24% | Sigs L:65 S:23 N:851
+    ⭐[Orch-AWv2   ] ✅ PNL: $+0.1403 WR: --.-% DD: 1.12% Sharpe: 2.98 Rebalances: 90 Weights: T=0.29 S=0.40 ML=0.31
+
+  📊 RESUMEN 15D:
+  [Technical   ] ✅ Total PNL: $+0.389 | WR: 31.1% | DD: 1.73% | Sharpe: 0.81 | Trades: 206
+  [Sophia      ] ✅ Total PNL: $+0.932 | WR: 46.0% | DD: 1.30% | Sharpe: 3.31 | Trades: 182
+  [ML_XGBoost  ] ✅ Total PNL: $+0.219 | WR: 42.0% | DD: 2.70% | Sharpe: -1.78 | Trades: 376
+
+======================================================================
+📅 HORIZONTE: 30 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 32d para BTC/USDT...
+    ✅ 46080 velas (32.0D)
+    [Technical   ] ❌ PNL: $-0.1281 WR: 29.3% DD: 5.07% Sharpe: -1.92 Trades: 82 | Sigs L:48 S:34 N:1601
+    [Sophia      ] ❌ PNL: $-0.2403 WR: 32.2% DD: 4.50% Sharpe: -3.72 Trades: 59 | Sigs L:33 S:26 N:9422
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-22 03:28:00: Accuracy 83.0%
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-23 23:44:00: Accuracy 28.1%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-04 09:51:00: Accuracy 27.2%
+    [ML_XGBoost  ] ✅ PNL: $+0.0353 WR: 41.5% DD: 4.21% Sharpe: -0.63 Trades: 106 ML_Acc: 27% | Sigs L:65 S:41 N:3760
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.1530 WR: --.-% DD: 2.44% Sharpe: -2.92 Rebalances: 180 Weights: T=0.33 S=0.40 ML=0.27
+
+  🔹 ETH/USDT
+  📡 Descargando 32d para ETH/USDT...
+    ✅ 46080 velas (32.0D)
+    [Technical   ] ✅ PNL: $+0.1564 WR: 31.9% DD: 3.33% Sharpe: 0.28 Trades: 119 | Sigs L:67 S:52 N:1971
+    [Sophia      ] ❌ PNL: $-0.2694 WR: 37.6% DD: 4.55% Sharpe: -3.31 Trades: 93 | Sigs L:49 S:44 N:12406
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-22 03:31:00: Accuracy 85.1%
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-23 23:58:00: Accuracy 36.0%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-04 15:01:00: Accuracy 31.6%
+    [ML_XGBoost  ] ❌ PNL: $-0.3408 WR: 38.9% DD: 4.44% Sharpe: -4.62 Trades: 167 ML_Acc: 32% | Sigs L:67 S:100 N:3745
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.2851 WR: --.-% DD: 3.47% Sharpe: -3.92 Rebalances: 180 Weights: T=0.30 S=0.41 ML=0.28
+
+  🔹 SOL/USDT
+  📡 Descargando 32d para SOL/USDT...
+    ✅ 46080 velas (32.0D)
+    [Technical   ] ❌ PNL: $-0.0556 WR: 30.1% DD: 5.37% Sharpe: -0.86 Trades: 113 | Sigs L:64 S:49 N:2369
+    [Sophia      ] ❌ PNL: $-0.2017 WR: 37.4% DD: 3.67% Sharpe: -3.74 Trades: 91 | Sigs L:53 S:38 N:14251
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-22 03:34:00: Accuracy 53.2%
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-25 12:15:00: Accuracy 55.3%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 14:45:00: Accuracy 34.2%
+    [ML_XGBoost  ] ❌ PNL: $-0.2454 WR: 38.0% DD: 4.82% Sharpe: -5.08 Trades: 171 ML_Acc: 34% | Sigs L:64 S:107 N:4413
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.2472 WR: --.-% DD: 3.91% Sharpe: -3.22 Rebalances: 180 Weights: T=0.32 S=0.37 ML=0.31
+
+  🔹 XRP/USDT
+  📡 Descargando 32d para XRP/USDT...
+    ✅ 46080 velas (32.0D)
+    [Technical   ] ✅ PNL: $+0.2113 WR: 30.3% DD: 2.48% Sharpe: 1.05 Trades: 89 | Sigs L:48 S:41 N:1688
+    [Sophia      ] ❌ PNL: $-0.0629 WR: 37.2% DD: 2.98% Sharpe: -1.85 Trades: 78 | Sigs L:38 S:40 N:10439
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-22 03:37:00: Accuracy 60.6%
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-25 18:09:00: Accuracy 54.4%
+    [ML_XGBoost  ] ❌ PNL: $-0.3819 WR: 32.9% DD: 4.86% Sharpe: -5.17 Trades: 146 ML_Acc: 54% | Sigs L:118 S:28 N:1980
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.2172 WR: --.-% DD: 2.38% Sharpe: -3.48 Rebalances: 180 Weights: T=0.32 S=0.38 ML=0.30
+
+  🔹 DOGE/USDT
+  📡 Descargando 32d para DOGE/USDT...
+    ✅ 46080 velas (32.0D)
+    [Technical   ] ✅ PNL: $+0.0968 WR: 28.0% DD: 3.57% Sharpe: -0.01 Trades: 118 | Sigs L:65 S:53 N:2286
+    [Sophia      ] ✅ PNL: $+0.0807 WR: 36.0% DD: 2.52% Sharpe: 0.08 Trades: 89 | Sigs L:44 S:45 N:14170
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-22 03:40:00: Accuracy 37.2%
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-24 16:54:00: Accuracy 32.5%
+    [ML_XGBoost  ] ❌ PNL: $-0.3102 WR: 37.1% DD: 5.96% Sharpe: -3.59 Trades: 186 ML_Acc: 32% | Sigs L:55 S:131 N:2579
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.1625 WR: --.-% DD: 3.13% Sharpe: -2.73 Rebalances: 180 Weights: T=0.29 S=0.39 ML=0.32
+
+  📊 RESUMEN 30D:
+  [Technical   ] ✅ Total PNL: $+0.281 | WR: 29.9% | DD: 3.96% | Sharpe: -0.29 | Trades: 521
+  [Sophia      ] ❌ Total PNL: $-0.694 | WR: 36.1% | DD: 3.64% | Sharpe: -2.51 | Trades: 410
+  [ML_XGBoost  ] ❌ Total PNL: $-1.243 | WR: 37.7% | DD: 4.86% | Sharpe: -3.82 | Trades: 776
+
+======================================================================
+🏆 REPORTE FINAL CONSOLIDADO v3.0 (EVOLUTIVO)
+======================================================================
+Horizon  Strategy           PNL$     PNL%     WR%   MaxDD%   Sharpe   KS
+----------------------------------------------------------------------
+1D       Technical        -0.158   -0.29%   37.9%    0.62%   -13.22    0
+1D       Sophia           -0.251   -0.43%   34.7%    0.70%    -9.26    0
+1D       ML_XGBoost       -0.015   -0.10%   44.5%    0.65%    -2.75    0
+1D       Orchestrator     -0.197   -0.30%   39.0%    0.53%   -11.24    0
+7D       Technical        -0.062   -0.27%   30.1%    1.23%    -1.30    0
+7D       Sophia           -0.023   -0.14%   42.2%    0.99%    -0.74    0
+7D       ML_XGBoost       -0.592   -1.11%   34.6%    1.63%    -9.25    0
+7D       Orchestrator     -0.164   -0.25%   35.6%    0.76%    -2.72    0
+15D      Technical         0.389    0.32%   31.1%    1.73%     0.81    0
+15D      Sophia            0.932    1.21%   46.0%    1.30%     3.31    0
+15D      ML_XGBoost        0.219   -0.11%   42.0%    2.70%    -1.78    0
+15D      Orchestrator      0.546    0.84%   39.7%    1.20%     2.65    0
+30D      Technical         0.281   -0.20%   29.9%    3.96%    -0.29    0
+30D      Sophia           -0.694   -1.54%   36.1%    3.64%    -2.51    0
+30D      ML_XGBoost       -1.243   -2.82%   37.7%    4.86%    -3.82    0
+30D      Orchestrator     -1.065   -1.64%   34.6%    3.07%    -3.25    0
+
+📁 Resultados guardados en: multi_horizon_results.json

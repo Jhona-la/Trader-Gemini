@@ -9,7 +9,7 @@ echo Mensaje NouveauCraft: La automatizacion es la madre de la disciplina operat
 echo.
 
 echo [1/4] Ejecutando PREFLIGHT_CHECK.bat (El Inquisidor)...
-call PREFLIGHT_CHECK.bat
+call launchers\PREFLIGHT_CHECK.bat
 if %ERRORLEVEL% neq 0 (
     echo ❌ Falla critica en PREFLIGHT_CHECK. Abortando Ignicion.
     pause
@@ -21,7 +21,7 @@ echo [2/4] Levantando Infraestructura DOCKER (Modo Hot/Cold Duality)...
 :: Para iniciar Light por thefecto, o cambiar a 'deep' the thependiendo de argumentos
 set DOCKER_PROFILE=light
 if not "%~1"=="" set DOCKER_PROFILE=%~1
-call INFRA_MANAGER.bat %DOCKER_PROFILE%
+call launchers\INFRA_MANAGER.bat %DOCKER_PROFILE%
 
 echo.
 echo [3/4] Desencriptando Security Vault en Memoria Volatil...
@@ -41,3 +41,4 @@ echo ✅ [GOD-MODE] MASTER LAUNCHER FINALIZADO.
 echo 🛡️ Sistema Operando en Modo Autonomo Intitucional.
 echo ========================================================
 pause
+

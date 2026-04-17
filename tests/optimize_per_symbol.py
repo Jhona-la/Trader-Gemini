@@ -7,13 +7,13 @@ para cubrir baja/media/alta volatilidad.
 import sys, os, io, contextlib, json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tests.run_backtest import fetch_binance_data, calculate_metrics, BacktestPortfolio, INITIAL_CAPITAL, LEVERAGE
+from core.backtest_infra import fetch_binance_data, calculate_metrics, BacktestPortfolio, INITIAL_CAPITAL, LEVERAGE
 from strategies.technical import HybridScalpingStrategy
 from core.events import MarketEvent, SignalEvent
 from core.enums import SignalType
 from config import Config
 from queue import Queue
-from tests.run_backtest import BacktestDataProvider
+from core.backtest_infra import BacktestDataProvider
 import pandas as pd
 import numpy as np
 

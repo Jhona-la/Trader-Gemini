@@ -70,3 +70,83 @@ def fused_compute_step(
         action_scores[act] = score
         
     return action_scores
+
+
+# =====================================================================
+# NUMBA TREE COMPILER: NANO-LATENCY SKLEARN INFERENCE
+# =====================================================================
+
+@njit(fastmath=True)
+def predict_rf_jit(
+    X: np.ndarray,
+    children_left: np.ndarray,
+    children_right: np.ndarray,
+    feature: np.ndarray,
+    threshold: np.ndarray,
+    value: np.ndarray,
+    tree_offsets: np.ndarray
+) -> float:
+    """
+    Executes a Random Forest inference at nanosecond speed.
+    Bypasses the entire Python Scikit-learn object overhead.
+    Returns the probability of the positive class.
+    """
+    n_trees = len(tree_offsets) - 1
+    total_prob = 0.0
+    
+    for i in range(n_trees):
+        node = tree_offsets[i]
+        
+        # Traverse tree
+        while children_left[node] != -1: # -1 indicates a leaf node in sklearn
+            f_idx = feature[node]
+            if X[f_idx] <= threshold[node]:
+                node = children_left[node]
+            else:
+                node = children_right[node]
+                
+        total_prob += value[node]
+        
+    return total_prob / n_trees
+
+@njit(fastmath=True)
+def predict_gb_jit(
+    X: np.ndarray,
+    children_left: np.ndarray,
+    children_right: np.ndarray,
+    feature: np.ndarray,
+    threshold: np.ndarray,
+    value: np.ndarray,
+    tree_offsets: np.ndarray,
+    init_score: float,
+    learning_rate: float
+) -> float:
+    """
+    Executes a Gradient Boosting classification inference at nanosecond speed.
+    Bypasses Python Sklearn overhead.
+    Returns the probability of the positive class via Sigmoid.
+    """
+    n_trees = len(tree_offsets) - 1
+    score = init_score
+    
+    for i in range(n_trees):
+        node = tree_offsets[i]
+        
+        # Traverse tree
+        while children_left[node] != -1:
+            f_idx = feature[node]
+            if X[f_idx] <= threshold[node]:
+                node = children_left[node]
+            else:
+                node = children_right[node]
+                
+        score += learning_rate * value[node]
+        
+    # Sigmoid to convert log-odds to probability
+    if score >= 0:
+        prob = 1.0 / (1.0 + np.exp(-score))
+    else:
+        exp_s = np.exp(score)
+        prob = exp_s / (1.0 + exp_s)
+        
+    return prob

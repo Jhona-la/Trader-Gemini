@@ -148,7 +148,20 @@ report = SophiaReport(
     alpha_decay_threshold_mins=5.2,
     decision_entropy=0.35, entropy_label='Alta Convicción',
     excess_kurtosis=1.2, skewness=-0.3, tail_risk_warning=False,
-    symbol='BTC/USDT', direction='LONG', signal_strength=0.75,
+    # New fields added in V5.15+ (Block 1.5 - 1.42)
+    expected_high_pct=0.05, expected_low_pct=-0.05, drift_factor=1.0, path_score=0.8,
+    hurst_exponent=0.5, quantum_leverage=1.5, vortex_pulse=1.0, is_vortex_regime=False,
+    whale_ratio=1.0, is_breakout=False, noise_level=0.5, noise_sigma=0.05,
+    noise_trend="STABLE", omniscient_score=0.75, entropy_velocity=0.0,
+    lyapunov_horizon=10.0, market_regime="CHOPPY", entropy_acceleration=0.0,
+    entropy_forecast=0.0, noise_color="WHITE", hurricane_flow=0.5,
+    chaos_compactness=0.5, singularity_force=1.0, butterfly_sensitivity=0.1,
+    micro_entropy=0.5, butterfly_force=1.0, resonance_index=1.0, quantum_tunneling=1.0,
+    wave_amplitude=0.5, entanglement_factor=1.0, heisenberg_shield=1.0,
+    interference_pattern=0.5, dirac_energy=0.5, temporal_tunneling=0.5,
+    quantum_coherence=1.0, feedback_bias=0.0, fabric_tension=1.0, liquid_modulation=1.0,
+    singularity_horizon=1.0, gravitational_boost=1.0, fabric_harmony=1.0,
+    superposition_coherence=1.0, collapsed_path='CONSERVATIVE'
 )
 d = report.to_dict()
 assert d['win_probability'] == 0.78

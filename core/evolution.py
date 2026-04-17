@@ -68,6 +68,12 @@ class FitnessCalculator:
         else:
             significance_penalty = 1.0
             
+        # 🧬 [PHASE 3] DARWINIAN DEATH PENALTY 
+        # Culling the weak. If win rate is below 55%, the genome's survival chance is crushed.
+        # This forces the Evolution Engine to breed only High-Probability Scalping models.
+        if win_rate < 0.55:
+            significance_penalty *= 0.1
+            
         score = (sortino * 2.0) + (profit_factor * 1.0) - (max_drawdown * 10.0)
         
         # Normalize

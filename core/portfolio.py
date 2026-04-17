@@ -1,5 +1,6 @@
 
 import os
+import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import pandas as pd
@@ -16,7 +17,7 @@ from sophia.nemesis import NemesisEngine  # NÉMESIS-RETROSPECCIÓN Protocol
 from utils.axioma_math import PrecisionAuditor  # CRITERIO-AXIOMA Protocol
 from core.meta_optimizer import meta_optimizer # Phase 46: Sovereign Meta-Predictor
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Tuple
 
 from config import Config
 from utils.debug_tracer import trace_execution
@@ -37,6 +38,23 @@ class Portfolio:
         getcontext().prec = 28 # Satoshi-level precision for drift auditing
         
         self.positions = {} # Symbol -> {'quantity': 0, 'avg_price': 0, 'current_price': 0}
+        
+        # 🛡️ OMNIBUS VIRTUAL LEDGER
+        # Tracks true Avg Entry Price separately per Horizon (e.g. BTC/USDT_SCALP).
+        # Prevents high-frequency strategies from being overwritten by Swing entries.
+        self.virtual_ledger = {} # f"{symbol}_{horizon}" -> position_dict
+        
+        # SUPREMO-V4: CANNIBALIZATION GUARD (VIRTUAL LEDGER SYNC)
+        # Tracks net intended position per symbol across all horizons to avoid
+        # paying double fees/margin when horizons have opposite directions.
+        self._net_intended_positions = {} # {symbol: net_qty}
+        
+        # 📂 FORENSIC AUDITING: Isolated Ledgers
+        self.scalping_ledger = []
+        self.swing_ledger = []
+        self.active_scalping_trades = []
+        self.active_swing_trades = []
+        
         self.realized_pnl = 0.0
         self.total_fees_paid = 0.0  # CRITERIO-AXIOMA: Explicit fee tracking
         
@@ -97,6 +115,25 @@ class Portfolio:
         
         # NÉMESIS-RETROSPECCIÓN: Deep Post-Mortem Autopsy Engine
         self.nemesis_engine = NemesisEngine()
+        self._nemesis_sophia_linked = False  # C-1 FIX: Track if feedback loop is connected
+        
+    def link_nemesis_to_sophia(self, sophia_instance):
+        """
+        🔗 C-1 FIX: Connect Némesis to Sophia for closed-loop feedback.
+        
+        QUÉ: Enlaza la instancia de Sophia con NemesisEngine para activar el feedback loop.
+        POR QUÉ: Sin este enlace, apply_nemesis_feedback() nunca recibe datos reales y
+                 Sophia opera en modo open-loop permanente, sin aprender de errores.
+        PARA QUÉ: Cerrar el bucle adaptativo: Trade→Diagnóstico→Ajuste→Mejora continua.
+        CÓMO: Se llama desde la estrategia al primer signal, o desde engine bootstrap.
+        CUÁNDO: Una sola vez durante el lifecycle del sistema.
+        DÓNDE: core/portfolio.py → Portfolio
+        QUIÉN: Strategies (technical/ml) o Engine durante bootstrap.
+        """
+        if not self._nemesis_sophia_linked and sophia_instance is not None:
+            self.nemesis_engine.set_sophia_ref(sophia_instance)
+            self._nemesis_sophia_linked = True
+            logger.info("🔗 [C-1 FIX] Némesis→Sophia feedback loop CONNECTED")
         
     def get_atomic_snapshot(self) -> Dict[str, Any]:
         """
@@ -121,6 +158,27 @@ class Portfolio:
             return snapshot
         finally:
             self.guard.release()
+
+    def get_horizon_position(self, symbol: str, horizon: str) -> Optional[Dict[str, Any]]:
+        """
+        Returns the isolated position for a specific trading horizon from the Virtual Ledger.
+        Returns None if no active position exists for that horizon.
+        """
+        v_key = f"{symbol}_{horizon}"
+        self.guard.acquire()
+        try:
+            pos = self.virtual_ledger.get(v_key)
+            if pos and pos.get('quantity', 0) != 0:
+                return pos.copy()
+            return None
+        finally:
+            self.guard.release()
+            
+    def has_position_for_horizon(self, symbol: str, horizon: str) -> bool:
+        """
+        Checks if there is an active position for a specific trading horizon.
+        """
+        return self.get_horizon_position(symbol, horizon) is not None
 
     def update_math_stats(self, stats: Dict[str, Any]) -> None:
         """Update live mathematical statistics from strategies."""
@@ -199,6 +257,8 @@ class Portfolio:
         If Correlation > 0.9, marks regime as SYSTEMIC_COLLAPSE.
         """
         try:
+            # Lazy import to avoid circular dependency
+            from core.data_handler import get_data_handler
             dh = get_data_handler()
             if not dh: return
             
@@ -315,17 +375,49 @@ class Portfolio:
             
         return 1.0
 
+    def _get_available_cash_internal(self, horizon: str = None):
+        if Config.BINANCE_USE_FUTURES:
+            total_avail = self.current_cash - self.used_margin - self.pending_cash
+        else:
+            total_avail = self.current_cash - self.pending_cash
+            
+        if horizon is None:
+            return total_avail
+            
+        # Cross-Horizon Allocation (50% Scalping / 50% Swing)
+        # 📌 MICRO-ACCOUNT PROTOCOL: Si la cuenta tiene menos de $50, no aislar porcentajes strictamente.
+        if self.current_cash < 50.0:
+            alloc_pct = 1.0
+        else:
+            if horizon == 'SCALPING':
+                alloc_pct = 0.50
+            elif horizon == 'SWING':
+                alloc_pct = 0.50
+            else:
+                alloc_pct = 1.0 # fallback
+            
+        allocated_total = self.current_cash * alloc_pct
+        
+        horizon_used = 0.0
+        for v_key, pos in self.virtual_ledger.items():
+            if pos.get('horizon') == horizon:
+                qty = abs(pos.get('quantity', 0))
+                avg_price = pos.get('avg_price', 0)
+                if qty > 0 and avg_price > 0:
+                    if Config.BINANCE_USE_FUTURES:
+                        horizon_used += (qty * avg_price) / Config.BINANCE_LEVERAGE
+                    else:
+                        horizon_used += (qty * avg_price)
+        
+        horizon_avail = allocated_total - horizon_used
+        return max(0.0, float(min(total_avail, horizon_avail)))
+
     @trace_execution
-    def get_available_cash(self):
-        """Return cash available for trading (Total Cash - Margin Used - Pending)."""
+    def get_available_cash(self, horizon: str = None):
+        """Return cash available for trading, partitioned by horizon if specified."""
         self.guard.acquire()
         try:
-            # In Futures: Cash is collateral. Available = Cash - Margin - Pending
-            # In Spot: Cash is currency. Available = Cash - Pending (Margin is N/A)
-            if Config.BINANCE_USE_FUTURES:
-                return self.current_cash - self.used_margin - self.pending_cash
-            else:
-                return self.current_cash - self.pending_cash
+            return self._get_available_cash_internal(horizon)
         finally:
             self.guard.release()
 
@@ -373,16 +465,11 @@ class Portfolio:
             self.guard.release()
     
     @trace_execution
-    def reserve_cash(self, amount):
+    def reserve_cash(self, amount, horizon: str = None):
         """Reserve cash for a pending order. Returns True if successful."""
         self.guard.acquire()
         try:
-            # Recalculate locally to be safe with lock
-            if Config.BINANCE_USE_FUTURES:
-                avail = self.current_cash - self.used_margin - self.pending_cash
-            else:
-                avail = self.current_cash - self.pending_cash
-                
+            avail = self._get_available_cash_internal(horizon)
             if avail >= amount:
                 self.pending_cash += amount
                 return True
@@ -441,6 +528,17 @@ class Portfolio:
                 if price < self.positions[symbol]['low_water_mark']:
                     self.positions[symbol]['low_water_mark'] = price
             
+            # 🛡️ VIRTUAL LEDGER SYNC: Propagate real-time price to all horizon sub-positions
+            for v_key, vpos in self.virtual_ledger.items():
+                if v_key.startswith(symbol):
+                    vpos['current_price'] = price
+                    if price > vpos.get('high_water_mark', 0):
+                        vpos['high_water_mark'] = price
+                    if 'low_water_mark' not in vpos or vpos['low_water_mark'] == 0:
+                        vpos['low_water_mark'] = price
+                    elif price < vpos['low_water_mark']:
+                        vpos['low_water_mark'] = price
+            
             
             # DB Snapshot prep (Copy inside lock)
             if symbol in self.positions:
@@ -450,6 +548,26 @@ class Portfolio:
                 should_update_db = False
         finally:
             self.guard.release()
+
+        # PHOENIX FIX: Restored from orphaned dead code after get_kelly_metrics().
+        # This code was disconnected from update_market_price during refactoring.
+        # Without it: equity cache goes stale, crash recovery DB writes don't happen.
+        now = datetime.now()
+        if not hasattr(self, '_last_save_time'): self._last_save_time = datetime.min
+        
+        if self.auto_save and (now - self._last_save_time).total_seconds() > 1.0:
+            self._refresh_equity_cache()
+            self.save_status()
+            self._last_save_time = now
+        else:
+            self._refresh_equity_cache()
+            
+        # Update DB (Snapshot for crash recovery)
+        if should_update_db:
+            qty = pos['quantity']
+            avg = pos['avg_price']
+            pnl = (price - avg) * qty if qty != 0 else 0
+            self.io_executor.submit(self.db.update_position, symbol, qty, avg, price, pnl)
 
     def _update_kelly_stats(self, pnl: float):
         """
@@ -493,29 +611,6 @@ class Portfolio:
         """Returns (winrate, payoff_ratio) for Kelly computation"""
         return self.kelly_winrate, self.kelly_payoff_ratio
 
-        # OPTIMIZATION: Throttle disk writes (Debounce)
-        now = datetime.now()
-        if not hasattr(self, '_last_save_time'): self._last_save_time = datetime.min
-        
-        if self.auto_save and (now - self._last_save_time).total_seconds() > 1.0:
-            self._refresh_equity_cache() # Phase 5: Ensure cache is fresh for Dashboard/Risk
-            self.save_status() # Now uses executor
-            self._last_save_time = now
-        else:
-            # Still update cache if price moves significantly (e.g. > 0.05%)
-            # to maintain Risk Manager accuracy without too many calculations
-            self._refresh_equity_cache()
-            
-        # Update DB (Snapshot for crash recovery)
-        if should_update_db:
-            # Calculate Unrealized PnL for DB
-            qty = pos['quantity']
-            avg = pos['avg_price']
-            pnl = (price - avg) * qty if qty != 0 else 0
-            
-            # Async DB Update
-            self.io_executor.submit(self.db.update_position, symbol, qty, avg, price, pnl)
-
     @trace_execution
     def update_signal(self, event):
         if event.type == EventType.SIGNAL:
@@ -551,9 +646,227 @@ class Portfolio:
                     except Exception as e:
                         logger.debug(f"[SOPHIA] Intent store skipped: {e}")
 
+    def _update_virtual_ledger(self, event) -> float:
+        """🛡️ Phase 1 (Virtual Ledger): Isolates Avg Entry Price for Scalping vs Swing safely. Returns isolated PnL."""
+        horizon = getattr(event, 'horizon', 'SCALPING')
+        v_key = f"{event.symbol}_{horizon}"
+        
+        if v_key not in self.virtual_ledger:
+            # Initialize specialized ledger for this horizon
+            self.virtual_ledger[v_key] = {
+                'quantity': 0.0,
+                'avg_price': 0.0,
+                'horizon': horizon,
+                'current_price': 0.0,
+                'high_water_mark': 0.0,
+                'low_water_mark': 0.0,
+                'entry_time': datetime.now(timezone.utc),
+                'sl_pct': getattr(event, 'sl_pct', None),
+                'tp_pct': getattr(event, 'tp_pct', None),
+                'cognitive_anchor': None
+            }
+            
+        pos = self.virtual_ledger[v_key]
+        price = getattr(event, 'fill_price', getattr(event, 'price', 0.0))
+        if price == 0: return 0.0 # Skip invalid physics
+        
+        # Update SL/TP if event provides new targets (Dynamic Calibration)
+        if getattr(event, 'sl_pct', None): pos['sl_pct'] = event.sl_pct
+        if getattr(event, 'tp_pct', None): pos['tp_pct'] = event.tp_pct
+        
+        fill_cost = event.quantity * price
+        isolated_pnl = 0.0
+        
+        # Calculate new average price isolating strategies
+        if event.direction == OrderSide.BUY:
+            if pos['quantity'] < 0: # Closing Short
+                closed = min(abs(pos['quantity']), event.quantity)
+                isolated_pnl = (pos['avg_price'] - price) * closed
+                self._record_closed_trade(event, pos, closed, pos['avg_price'], price, isolated_pnl)
+                pos['quantity'] += closed
+                if abs(pos['quantity']) < 1e-8: pos['quantity'] = 0.0
+                if event.quantity > closed:
+                    remain = event.quantity - closed
+                    pos['quantity'] = remain
+                    pos['avg_price'] = price
+                    pos['entry_time'] = datetime.now(timezone.utc)
+                    self._bind_cognitive_anchor(event.symbol, pos)
+            else: # Adding Long
+                total_cost = (pos['quantity'] * pos['avg_price']) + fill_cost
+                pos['quantity'] += event.quantity
+                pos['avg_price'] = total_cost / pos['quantity']
+                if pos['quantity'] == event.quantity: # New entry
+                    pos['entry_time'] = datetime.now(timezone.utc)
+                    self._bind_cognitive_anchor(event.symbol, pos)
+        else: # OrderSide.SELL
+            if pos['quantity'] > 0: # Closing Long
+                closed = min(pos['quantity'], event.quantity)
+                isolated_pnl = (price - pos['avg_price']) * closed
+                self._record_closed_trade(event, pos, closed, pos['avg_price'], price, isolated_pnl)
+                pos['quantity'] -= closed
+                if abs(pos['quantity']) < 1e-8: pos['quantity'] = 0.0
+                if event.quantity > closed:
+                    remain = event.quantity - closed
+                    pos['quantity'] = -remain
+                    pos['avg_price'] = price
+                    pos['entry_time'] = datetime.now(timezone.utc)
+                    self._bind_cognitive_anchor(event.symbol, pos)
+            else: # Adding Short
+                total_cost = (abs(pos['quantity']) * pos['avg_price']) + fill_cost
+                pos['quantity'] -= event.quantity
+                pos['avg_price'] = total_cost / abs(pos['quantity'])
+                if abs(pos['quantity']) == event.quantity: # New entry
+                    pos['entry_time'] = datetime.now(timezone.utc)
+                    self._bind_cognitive_anchor(event.symbol, pos)
+
+        # Re-evaluar cognitive anchor si the direction se volteó
+        if getattr(pos, 'just_flipped', False):
+             self._bind_cognitive_anchor(event.symbol, pos)
+                
+        pos['current_price'] = price
+        pos['high_water_mark'] = max(pos.get('high_water_mark', 0), price)
+        if pos.get('low_water_mark', 0) == 0 or price < pos.get('low_water_mark', 0):
+            pos['low_water_mark'] = price
+            
+        logger.info(f"📓 [LEDGER] {v_key} | Qty: {pos['quantity']:.4f} | Avg: ${pos['avg_price']:.2f} | PnL: ${isolated_pnl:.4f} | Target SL: {pos.get('sl_pct')}")
+        return isolated_pnl
+
+    def _record_closed_trade(self, event, pos, closed_qty, entry_price, exit_price, gross_pnl):
+        """Generates the Forensic Dictionary for closed operations and routes it."""
+        import uuid
+        
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC FIX #5: DYNAMIC FEE PER LEG (Entry=Maker, Exit=Dynamic)
+        # QUÉ: El fee de salida depende del tipo de orden real (LIMIT vs MARKET).
+        # POR QUÉ: Antes hardcodeaba Maker para AMBAS patas. Pero Kill Switch
+        #   exits y BBO fallbacks usan MARKET (Taker 0.0375% vs Maker 0.02%).
+        # PARA QUÉ: Net PnL preciso en trades cerrados por emergencia.
+        # CÓMO: Lee 'actual_order_type' del metadata del FillEvent.
+        # ═══════════════════════════════════════════════════════════════
+        real_commission = getattr(event, 'commission', None)
+        _meta = getattr(event, 'metadata', {}) or {}
+        exit_order_type = _meta.get('actual_order_type', 'limit')
+        
+        # Entry fee: always Maker (BBO architecture → entries are LIMIT)
+        entry_fee_rate = getattr(Config, 'BINANCE_MAKER_FEE_BNB', 0.0002)
+        # Exit fee: depends on actual execution type
+        if exit_order_type == 'market':
+            exit_fee_rate = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375)
+        else:
+            exit_fee_rate = getattr(Config, 'BINANCE_MAKER_FEE_BNB', 0.0002)
+        
+        fees_entry = (closed_qty * entry_price) * entry_fee_rate
+        fees_exit = (closed_qty * exit_price) * exit_fee_rate
+        
+        if real_commission is not None and real_commission > 0:
+            total_fees = real_commission  # Use exact Binance-reported fee
+            fees_exit = total_fees / 2.0
+            fees_entry = total_fees / 2.0
+        else:
+            total_fees = fees_entry + fees_exit
+        
+        net_pnl = gross_pnl - total_fees
+        net_pnl_percent = net_pnl / (closed_qty * entry_price) if (closed_qty * entry_price) > 0 else 0
+        
+        now_ts = datetime.now(timezone.utc)
+        duration = int((now_ts - pos['entry_time']).total_seconds()) if pos.get('entry_time') else 0
+        
+        exit_side = getattr(event, 'direction', OrderSide.SELL)
+        if exit_side == OrderSide.SELL:
+            closed_direction = "LONG"   # We SELL to close LONG
+        else:
+            closed_direction = "SHORT"  # We BUY to close SHORT
+            
+        size_usd = closed_qty * entry_price
+        leverage = getattr(Config, 'BINANCE_LEVERAGE', 10.0) if getattr(Config, 'BINANCE_USE_FUTURES', False) else 1.0
+        margin_usd = float(size_usd) / leverage
+        size_percent = margin_usd / float(self.current_cash) if self.current_cash > 0 else 0.0
+
+        opener_strat = pos.get('opener_strategy_id', "UNKNOWN")
+        evt_strat = getattr(event, 'strategy_id', "")
+        
+        # Determine exit_reason. If RiskManager sent it, it's usually the strategy_id of the FillEvent.
+        exit_reason = evt_strat if evt_strat and evt_strat != opener_strat else "NORMAL_CLOSE"
+        
+        trade_data = {
+            "trade_id": getattr(event, 'trade_id', str(uuid.uuid4())) or str(uuid.uuid4()),
+            "symbol": event.symbol,
+            "strategy_id": opener_strat,
+            "horizon": getattr(event, 'horizon', 'SCALPING'),
+            "direction": closed_direction,
+            "quantity": closed_qty,
+            "entry_price": entry_price,
+            "exit_price": exit_price,
+            "size_usd": size_usd,
+            "margin_usd": margin_usd,
+            "size_percent": size_percent,
+            "fees_entry": fees_entry,
+            "fees_exit": fees_exit,
+            "slippage_entry": 0.0001,
+            "slippage_exit": 0.0001,
+            "fees_paid": total_fees,
+            "gross_pnl": gross_pnl,
+            "net_pnl": net_pnl,
+            "net_pnl_percent": net_pnl_percent,
+            "duration_seconds": duration,
+            "exit_reason": exit_reason,
+            "closed_at": now_ts.isoformat()
+        }
+        
+        # Route to respective ledger
+        if trade_data['horizon'] == 'SCALPING':
+            self.scalping_ledger.append(trade_data)
+        else:
+            self.swing_ledger.append(trade_data)
+            
+        logger.debug(f"📓 [ROUTED TRADE] {trade_data['horizon']} | {event.symbol} Neto: ${net_pnl:.4f} | T: {duration}s")
+        
+        # --- SISTEMA DE AUTO-DIAGNÓSTICO ---
+        try:
+            from utils.loss_analyzer import get_loss_analyzer
+            from utils.auto_correction_engine import get_auto_correction_engine
+            
+            diag_data = {
+                "gross_pnl": gross_pnl,
+                "net_pnl": net_pnl,
+                "fees": total_fees,
+                "slippage_pct": trade_data.get("slippage_entry", 0.0) + trade_data.get("slippage_exit", 0.0),
+                "duration_sec": duration
+            }
+            issues = get_loss_analyzer().analyze_trade(diag_data)
+            if issues:
+                get_auto_correction_engine().apply_corrections(issues)
+        except Exception as e:
+            logger.error(f"⚠️ Error ejecutando Auto-Diagnóstico Post-Trade: {e}")
+
+    def _bind_cognitive_anchor(self, symbol: str, entry_pos: dict):
+        """Asocia metadata pre-computada al momento de abrirse un ledger virtual."""
+        sym_pos = self.positions.get(symbol, {})
+        meta = sym_pos.get('entry_metadata')
+        if meta:
+            entry_pos['cognitive_anchor'] = {
+                'initial_strength': meta.get('signal_strength', 0.8),
+                'initial_prob': meta.get('sophia', {}).get('win_probability', 0.5),
+                'ttl_seconds': meta.get('ttl', 180.0 if entry_pos.get('horizon') == 'SCALPING' else 3600.0)
+            }
+        else:
+            entry_pos['cognitive_anchor'] = {
+                'initial_strength': 0.8,
+                'initial_prob': 0.5,
+                'ttl_seconds': 180.0 if entry_pos.get('horizon') == 'SCALPING' else 3600.0
+            }
+
     def update_fill(self, event) -> Optional[Tuple[float, TradeOutcome]]:
         """Atomically update portfolio state. Returns (realized PnL, TradeOutcome) if closed."""
         if event.type == EventType.FILL:
+            
+            # Subsystem Hook: Update the independent Virtual Ledger for this specific Horizon
+            isolated_pnl = 0.0
+            try:
+                isolated_pnl = self._update_virtual_ledger(event)
+            except Exception as e:
+                logger.error(f"Failed to update virtual ledger for {event.symbol}: {e}")
+                
             pnl_realized = None
             outcome_obj = None # Neural Fortress Object
             # Update Cash and Positions
@@ -566,14 +879,30 @@ class Portfolio:
                 leverage = Config.BINANCE_LEVERAGE
                 margin_impact = fill_cost / leverage
             
-            # EXACT FEE LOGIC (Phase 17.4 Audit)
-            # Use actual commission from FillEvent if available, else estimate
-            fee_rate = 0.0006 if Config.BINANCE_USE_FUTURES else 0.001
+            
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC FIX #1: DYNAMIC FEE RATE (was hardcoded 0.0006 = 0.06%)
+            # QUÉ: Selecciona Maker (0.02%) o Taker (0.0375%) según tipo de orden real.
+            # POR QUÉ: Con BBO architecture, ~90% de órdenes son LIMIT (Maker).
+            #   El rate anterior (0.06%) sobredescontaba fees 3x → capital fantasma perdido.
+            # PARA QUÉ: Precisión contable exacta en micro-cuenta.
+            # CÓMO: Lee 'actual_order_type' del metadata inyectado por BinanceExecutor.
+            # ═══════════════════════════════════════════════════════════════
+            _meta = getattr(event, 'metadata', {}) or {}
+            actual_order_type = _meta.get('actual_order_type', 'limit')  # Default Maker (BBO)
+            
+            if Config.BINANCE_USE_FUTURES:
+                if actual_order_type == 'market':
+                    fee_rate = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375)  # 0.0375%
+                else:
+                    fee_rate = getattr(Config, 'BINANCE_MAKER_FEE_BNB', 0.0002)    # 0.02%
+            else:
+                fee_rate = 0.001  # Spot default
             
             if event.commission is not None:
                 estimated_fee = event.commission
             else:
-                # Fallback to estimate
+                # Fallback to estimate with CORRECT rate
                 estimated_fee = fill_cost * fee_rate
             
             
@@ -582,6 +911,10 @@ class Portfolio:
             try:
                 # Capture Pre-State for Accounting Audit
                 pre_balance = Decimal(str(self.current_cash))
+                
+                # Extract exact reserved amount from Order metadata
+                _meta = getattr(event, 'metadata', {})
+                _reserved_amount = _meta.get('dollar_size') if _meta else None
                 
                 # Deduct fee from Cash immediately (Atomic & Single Deduction)
                 self.current_cash -= estimated_fee
@@ -635,15 +968,15 @@ class Portfolio:
 
                         # 2. Release Margin for closed portion
                         if Config.BINANCE_USE_FUTURES:
-                            # Proportional margin release
-                            closed_margin = (closed_qty * fill_price) / Config.BINANCE_LEVERAGE
+                            # Proportional margin release using ENTRY PRICE to prevent margin leak
+                            closed_margin = (closed_qty * pos['avg_price']) / (Config.BINANCE_LEVERAGE if Config.BINANCE_LEVERAGE else 1.0)
                             self.used_margin = max(0, self.used_margin - closed_margin)
                         
-                        # 3. Update Performance
+                        # 3. Update Performance using ISOLATED PnL
                         strat_id = getattr(event, 'strategy_id', None) or pos.get('opener_strategy_id', 'Unknown')
-                        self._update_strategy_performance(strat_id, pnl)
-                        self._update_kelly_stats(pnl) # Phase 14: Dynamic Kelly tracking                        
-                        logger.info(f"📈 SHORT Closed: {event.symbol} PnL=${pnl:.2f} (Qty: {closed_qty})")
+                        self._update_strategy_performance(strat_id, isolated_pnl)
+                        self._update_kelly_stats(isolated_pnl) # Phase 14: Dynamic Kelly tracking                        
+                        logger.info(f"📈 SHORT Closed: {event.symbol} Aggregate PnL=${pnl:.2f} (Isolated Horizon PnL: ${isolated_pnl:.2f})")
                         
                         # 4. Handle FLIP (Opening NEW LONG leg)
                         if new_long_qty > 0:
@@ -654,6 +987,7 @@ class Portfolio:
                             pos['entry_time'] = datetime.now(timezone.utc) # Init Entry Time
                             
                             pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
+                            pos['horizon'] = getattr(event, 'horizon', 'SCALPING')
                             pos['sl_pct'] = getattr(event, 'sl_pct', None)
                             pos['tp_pct'] = getattr(event, 'tp_pct', None)
                             
@@ -661,7 +995,8 @@ class Portfolio:
                             if Config.BINANCE_USE_FUTURES:
                                 new_margin = (new_long_qty * fill_price) / Config.BINANCE_LEVERAGE
                                 self.used_margin += new_margin
-                                self.pending_cash = max(0, self.pending_cash - new_margin)
+                                release_amt = _reserved_amount if _reserved_amount is not None else new_margin
+                                self.pending_cash = max(0, self.pending_cash - float(release_amt))
                             
                             logger.info(f"🔄 FLIP: SHORT -> LONG {event.symbol} (New Qty: {new_long_qty} @ ${fill_price:.2f})")
                         else:
@@ -694,13 +1029,14 @@ class Portfolio:
                         if Config.BINANCE_USE_FUTURES:
                             self.used_margin += margin_impact
                             # Release pending (it moves to used_margin)
-                            self.pending_cash = max(0, self.pending_cash - margin_impact)
+                            release_amt = _reserved_amount if _reserved_amount is not None else margin_impact
+                            self.pending_cash = max(0, self.pending_cash - float(release_amt))
                         else:
                             # Spot: Spend Cash
                             self.current_cash -= fill_cost
-                            self.pending_cash = max(0, self.pending_cash - fill_cost)
+                            release_amt = _reserved_amount if _reserved_amount is not None else fill_cost
+                            self.pending_cash = max(0, self.pending_cash - float(release_amt))
                         
-                        # Update Avg Price
                         if event.symbol not in self.positions:
                             self.positions[event.symbol] = {
                                 'quantity': 0, 
@@ -712,6 +1048,7 @@ class Portfolio:
                                 'sl_pct': getattr(event, 'sl_pct', None),
                                 'tp_pct': getattr(event, 'tp_pct', None),
                                 'opener_strategy_id': getattr(event, 'strategy_id', None),
+                                'horizon': getattr(event, 'horizon', 'SCALPING'),
                                 'entry_time': datetime.now(timezone.utc)
                             }
                         
@@ -787,15 +1124,16 @@ class Portfolio:
                         # 2. Update Cash/Margin
                         if Config.BINANCE_USE_FUTURES:
                             self.current_cash += pnl
-                            closed_margin = (closed_qty * fill_price) / Config.BINANCE_LEVERAGE
+                            closed_margin = (closed_qty * pos['avg_price']) / (Config.BINANCE_LEVERAGE if Config.BINANCE_LEVERAGE else 1.0)
                             self.used_margin = max(0, self.used_margin - closed_margin)
                         else:
                             self.current_cash += (closed_qty * fill_price)
                         
-                        # 3. Update Performance
+                        # 3. Update Performance using ISOLATED PnL
                         strat_id = getattr(event, 'strategy_id', None) or pos.get('opener_strategy_id', 'Unknown')
-                        self._update_strategy_performance(strat_id, pnl)
-                        self._update_kelly_stats(pnl) # Phase 14: Dynamic Kelly tracking
+                        self._update_strategy_performance(strat_id, isolated_pnl)
+                        self._update_kelly_stats(isolated_pnl) # Phase 14: Dynamic Kelly tracking
+                        logger.info(f"📈 LONG Closed: {event.symbol} Aggregate PnL=${pnl:.2f} (Isolated Horizon PnL: ${isolated_pnl:.2f})")
                         
                         # 4. Handle FLIP (Opening NEW SHORT leg)
                         if new_short_qty > 0:
@@ -806,19 +1144,25 @@ class Portfolio:
                             pos['entry_time'] = datetime.now(timezone.utc)
                             
                             pos['opener_strategy_id'] = getattr(event, 'strategy_id', None)
+                            pos['horizon'] = getattr(event, 'horizon', 'SCALPING')
                             pos['sl_pct'] = getattr(event, 'sl_pct', None)
                             pos['tp_pct'] = getattr(event, 'tp_pct', None)
                             
                             if Config.BINANCE_USE_FUTURES:
                                 new_margin = (new_short_qty * fill_price) / Config.BINANCE_LEVERAGE
                                 self.used_margin += new_margin
-                                self.pending_cash = max(0, self.pending_cash - new_margin)
+                                release_amt = _reserved_amount if _reserved_amount is not None else new_margin
+                                self.pending_cash = max(0, self.pending_cash - float(release_amt))
                             
                             logger.info(f"🔄 FLIP: LONG -> SHORT {event.symbol} (New Qty: {new_short_qty} @ ${fill_price:.2f})")
                         else:
                             pos['quantity'] = 0
                             pos['avg_price'] = 0
                             self.positions.pop(event.symbol, None)
+                            
+                            # Also purge from virtual ledger
+                            v_key = f"{event.symbol}_{getattr(event, 'horizon', 'SCALPING')}"
+                            self.virtual_ledger.pop(v_key, None)
                             
                         # REPORTING
                         self.log_trade_report(event, pnl=pnl, fill_price=fill_price)
@@ -899,24 +1243,33 @@ class Portfolio:
         """
         CRITERIO-AXIOMA Protocol: Ley de Conservación
         Verifica que el Dinero no aparece ni desaparece de la nada.
-        Equation: Current_Cash + Used_Margin == Initial_Capital + Realized_PnL - Total_Fees
-        (Unrealized PnL is excluded as it fluctuates tick by tick without settling)
         """
+        import math
         # Calculate theoretical settled balance
         theoretical_settled = self.initial_capital + self.realized_pnl - self.total_fees_paid
-        actual_settled = self.current_cash + self.used_margin
         
+        if Config.BINANCE_USE_FUTURES:
+            # In Futures, current_cash tracks total wallet equity (Initial + PnL - Fees)
+            actual_settled = self.current_cash
+        else:
+            # In Spot, current_cash is free margin, so we add back the cost basis of open positions
+            open_cost = sum(abs(p['quantity']) * p['avg_price'] for p in self.positions.values())
+            actual_settled = self.current_cash + open_cost
+            
         try:
+            if math.isnan(theoretical_settled) or math.isnan(actual_settled):
+                return # Avoid cascading decimal Parse exceptions
+                
             from decimal import Decimal
-            d_theoretical = Decimal(str(theoretical_settled))
-            d_actual = Decimal(str(actual_settled))
+            d_theoretical = Decimal(f"{theoretical_settled:.8f}")
+            d_actual = Decimal(f"{actual_settled:.8f}")
             delta = abs(d_theoretical - d_actual)
             
             if delta > PrecisionAuditor.STRICT_EPSILON:
                 logger.error(f"🚨 [AXIOMA-FATAL] CORRUPCIÓN CONTABLE DETECTADA!")
                 logger.error(f"   Teórico:  ${theoretical_settled:.8f}")
                 logger.error(f"   Real:     ${actual_settled:.8f}")
-                logger.error(f"   Delta:    ${delta.normalize():f}")
+                logger.error(f"   Delta:    ${float(delta):f}")
                 logger.error(f"   Initial={self.initial_capital}, PnL={self.realized_pnl}, Fees={self.total_fees_paid}")
                 
                 # Soft-kill the engine by poisoning PnL
@@ -1099,76 +1452,128 @@ class Portfolio:
     @trace_execution
     def check_exits(self, data_provider, events_queue):
         """
-        LAYER 1: Portfolio-based exit monitoring.
-        Checks all open positions and generates EXIT signals based on PnL thresholds.
-        This is a safety net that runs regardless of strategy logic.
+        LAYER 1: Portfolio-based exit monitoring (VIRTUAL LEDGER AWARE).
+        Now iterates the virtual_ledger (composite keys) so that SCALPING and SWING
+        positions have INDEPENDENT SL/TP/Trailing calculations.
         
-        Thresholds:
-        - Stop Loss: -0.3% (cut losses quickly)
-        - Take Profit: +0.8% (lock in profits)
-        - Trailing Stop: -0.2% from peak (protect profits)
+        Thresholds (SCALPING - tight, fast):
+        - Stop Loss: -0.25%
+        - Take Profit: +0.50%
+        - Trailing Stop: -0.15% from peak
+        
+        Thresholds (SWING - wider, patient):
+        - Stop Loss: -1.0%
+        - Take Profit: +2.5%
+        - Trailing Stop: -0.5% from peak
         """
         from core.events import SignalEvent
         
-        # Snapshot iteration keys to avoid RuntimeError
+        # --- HORIZON-SPECIFIC THRESHOLDS ---
+        THRESHOLDS = {
+            'SCALPING': {'sl': -0.0025, 'tp': 0.005, 'trail': -0.0015, 'trail_min_profit': 0.002},
+            'SWING':    {'sl': -0.010,  'tp': 0.025, 'trail': -0.005,  'trail_min_profit': 0.005},
+        }
+        DEFAULT_THRESHOLDS = THRESHOLDS['SCALPING']
+        
+        # Snapshot virtual ledger to avoid RuntimeError
         self.guard.acquire()
         try:
-            # We must iterate a Copy to allow internal logic to potentially trigger closes (which modify dict)
-            snapshot_items = list(self.positions.items())
+            vl_snapshot = list(self.virtual_ledger.items())
         finally:
             self.guard.release()
 
         now_utc = datetime.now(timezone.utc)
 
-        for symbol, position in snapshot_items:
-            # Skip if no position
-            if position['quantity'] == 0:
+        for v_key, vpos in vl_snapshot:
+            if vpos['quantity'] == 0:
                 continue
-                
-            current_price = position.get('current_price', 0)
-            entry_price = position.get('avg_price', 0)
-            quantity = position['quantity']
             
-            # Skip if price not available
+            # Resolve the real symbol (strip "_SCALPING" or "_SWING" suffix)
+            horizon = vpos.get('horizon', 'SCALPING')
+            symbol = v_key.rsplit(f'_{horizon}', 1)[0] if f'_{horizon}' in v_key else v_key
+            
+            # Use the VIRTUAL ledger's avg_price (isolated per horizon)
+            current_price = vpos.get('current_price', 0)
+            entry_price = vpos.get('avg_price', 0)
+            quantity = vpos['quantity']
+            
+            # Sync current_price from physical positions if virtual is stale
+            if current_price == 0 and symbol in self.positions:
+                current_price = self.positions[symbol].get('current_price', 0)
+                vpos['current_price'] = current_price
+            
             if current_price == 0 or entry_price == 0:
                 continue
             
-            # Calculate PnL percentage
-            if quantity > 0:  # LONG position
+            th = THRESHOLDS.get(horizon, DEFAULT_THRESHOLDS)
+            
+            if quantity > 0:  # LONG
                 pnl_pct = (current_price - entry_price) / entry_price
-                hwm = position.get('high_water_mark', current_price)
-                drawdown_from_peak = (current_price - hwm) / hwm
-                
-                # LONG Exit Conditions
-                if pnl_pct < -0.003:  # Stop Loss: -0.3%
-                    logger.warning(f"🛑 STOP LOSS triggered for {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent("99", symbol, now_utc, SignalType.EXIT, strength=1.0))
-                    
-                elif pnl_pct > 0.008:  # Take Profit: +0.8%
-                    logger.info(f"💰 TAKE PROFIT triggered for {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent("99", symbol, now_utc, SignalType.EXIT, strength=1.0))
-                    
-                elif drawdown_from_peak < -0.002 and pnl_pct > 0.002:  # Trailing Stop: -0.2% from peak (only if in profit)
-                    logger.info(f"📉 TRAILING STOP triggered for {symbol}: Peak {hwm:.4f}, Now {current_price:.4f}")
-                    events_queue.put(SignalEvent("99", symbol, now_utc, SignalType.EXIT, strength=1.0))
-                    
-            elif quantity < 0:  # SHORT position
+                hwm = vpos.get('high_water_mark', current_price)
+                drawdown_from_peak = (current_price - hwm) / hwm if hwm > 0 else 0
+            else: # SHORT
                 pnl_pct = (entry_price - current_price) / entry_price
-                lwm = position.get('low_water_mark', current_price)
-                drawup_from_low = (lwm - current_price) / lwm
+                lwm = vpos.get('low_water_mark', current_price)
+                drawup_from_low = (lwm - current_price) / lwm if lwm > 0 else 0
+
                 
-                # SHORT Exit Conditions
-                if pnl_pct < -0.003:  # Stop Loss: -0.3%
-                    logger.warning(f"🛑 STOP LOSS triggered for SHORT {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent("99", symbol, now_utc, SignalType.EXIT, strength=1.0))
+            has_decay_exit = False
+            anchor = vpos.get('cognitive_anchor')
+            if anchor:
+                from utils.math_kernel import compute_alpha_decay_jit
+                time_held_sec = (now_utc - vpos['entry_time']).total_seconds()
+                ttl = anchor.get('ttl_seconds', 300)
+                
+                # Minimum viable time before considering decay
+                if time_held_sec > 45.0:
+                    current_prob = anchor.get('initial_prob', 0.5) * compute_alpha_decay_jit(time_held_sec, ttl)
                     
-                elif pnl_pct > 0.008:  # Take Profit: +0.8%
-                    logger.info(f"💰 TAKE PROFIT triggered for SHORT {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent("99", symbol, now_utc, SignalType.EXIT, strength=1.0))
+                    # Logic 1: Defensive exits for SCALPING (Cut losses early if thesis expires)
+                    if current_prob < 0.35 and pnl_pct < 0 and pnl_pct > th['sl'] * 0.8:
+                        logger.warning(f"🧠 [SOPHIA] {horizon} COGNITIVE DECAY EXIT for {symbol}: Probabilidad Murió ({current_prob:.2f}). PnL: {pnl_pct*100:.2f}%")
+                        events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                        has_decay_exit = True
+                        
+                    # Logic 2: Adaptive Trajectory Recalculation (Fake-out vs Dynamic Check)
+                    elif current_prob < 0.40 and pnl_pct > 0 and pnl_pct < th['tp'] * 0.5:
+                        # Si es engaño o la volatilidad murió, calculamos un nuevo objetivo más realista
+                        new_target_pct = max(pnl_pct * 1.5, th['tp'] * 0.25) # Contrae el TP bruscamente a lo más cercano
+                        
+                        if pnl_pct >= new_target_pct:
+                            logger.info(f"🧠 [SOPHIA] {horizon} TARGET RE-CALCULADO {symbol}: Objetivo Dinámico Alcanzado {pnl_pct*100:.2f}%. Prob: {current_prob:.2f}")
+                            events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                            has_decay_exit = True
+                        else:
+                            # Re-calculamos el riesgo de pérdida moviendo el Stop Loss a Ganancia Cero (Costos cubiertos)
+                            be_sl = 0.0012 # Break-Even + Fees
+                            if th['sl'] < be_sl:
+                                logger.info(f"🛡️ [SOPHIA] {horizon} BLINDAJE BE {symbol}: Prob. baja ({current_prob:.2f}). SL recalibrado a Break-Even.")
+                                th['sl'] = be_sl
+
+            if has_decay_exit:
+                continue
+
+            if quantity > 0:  # LONG
+                if pnl_pct < th['sl']:
+                    logger.warning(f"🛑 [{horizon}] STOP LOSS for {symbol}: {pnl_pct*100:.2f}%")
+                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                elif pnl_pct > th['tp']:
+                    logger.info(f"💰 [{horizon}] TAKE PROFIT for {symbol}: {pnl_pct*100:.2f}%")
+                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                elif drawdown_from_peak < th['trail'] and pnl_pct > th['trail_min_profit']:
+                    logger.info(f"📉 [{horizon}] TRAILING STOP for {symbol}: Peak {hwm:.4f}, Now {current_price:.4f}")
+                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
                     
-                elif drawup_from_low < -0.002 and pnl_pct > 0.002:  # Trailing Stop
-                    logger.info(f"📈 TRAILING STOP triggered for SHORT {symbol}: Low {lwm:.4f}, Now {current_price:.4f}")
-                    events_queue.put(SignalEvent("99", symbol, now_utc, SignalType.EXIT, strength=1.0))
+            elif quantity < 0:  # SHORT
+                if pnl_pct < th['sl']:
+                    logger.warning(f"🛑 [{horizon}] STOP LOSS SHORT {symbol}: {pnl_pct*100:.2f}%")
+                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                elif pnl_pct > th['tp']:
+                    logger.info(f"💰 [{horizon}] TAKE PROFIT SHORT {symbol}: {pnl_pct*100:.2f}%")
+                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                elif drawup_from_low < th['trail'] and pnl_pct > th['trail_min_profit']:
+                    logger.info(f"📈 [{horizon}] TRAILING STOP SHORT {symbol}: Low {lwm:.4f}, Now {current_price:.4f}")
+                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
 
     @trace_execution
     def get_smart_kelly_sizing(self, symbol: str, strategy_id: str) -> float:
@@ -1213,7 +1618,10 @@ class Portfolio:
         return final_size
 
     def log_trade_report(self, event, pnl=None, fill_price=0):
-        """Prints a real-time report of the trade execution, Win Rate, and Balance."""
+        """
+        Prints a real-time report of the trade execution, Win Rate, and Balance.
+        Now sends enhanced notifications with full trade context (Phase 4.5).
+        """
         try:
             # 1. Global Performance Stats
             total_wins = sum(d['wins'] for d in self.strategy_performance.values())
@@ -1226,20 +1634,121 @@ class Portfolio:
             balance_delta = equity - self.initial_capital
             balance_pct = (balance_delta / self.initial_capital) * 100
             
-            direction_icon = "🟢 BUY" if event.direction == OrderSide.BUY else "🔴 SELL"
+            is_exit = pnl is not None
+            if is_exit:
+                direction_icon = "🟢 CLOSE SHORT" if event.direction == OrderSide.BUY else "🔴 CLOSE LONG"
+            else:
+                direction_icon = "🟢 ENTRY LONG" if event.direction == OrderSide.BUY else "🔴 ENTRY SHORT"
+                
             pnl_str = f"+${pnl:.2f}" if pnl and pnl > 0 else (f"-${abs(pnl):.2f}" if pnl else "N/A")
             pnl_color = "🟢" if pnl and pnl > 0 else ("🔴" if pnl and pnl < 0 else "⚪")
             
             print("\n📢 ================= [ TRADE EXECUTION ] =================", flush=True)
             print(f"   {direction_icon} {event.symbol} @ ${fill_price:.4f} (Qty: {event.quantity})", flush=True)
-            if pnl is not None:
-                print(f"   💰 PnL Realized: {pnl_color} {pnl_str}", flush=True)
             
-            print(f"   🏆 Win Rate:     {win_rate:.1f}% ({total_wins} Wins / {total_losses} Losses)", flush=True)
-            print(f"   💵 Net Equity:   ${equity:.2f} ({'+' if balance_delta >=0 else ''}{balance_pct:.2f}%)", flush=True)
+            # FORENSIC FIX #4: Detailed Balance-per-trade tracking
+            _meta = getattr(event, 'metadata', {}) or {}
+            actual_order_type = _meta.get('actual_order_type', 'limit')
+            fee_tag = "Maker" if actual_order_type == 'limit' else "Taker"
+            estimated_fee = getattr(event, 'commission', 0.0) or 0.0
+            
+            leverage = getattr(Config, 'BINANCE_LEVERAGE', 10.0) if getattr(Config, 'BINANCE_USE_FUTURES', False) else 1.0
+            notional = event.quantity * fill_price
+            margin = notional / leverage
+            
+            print(f"   📦 Notional Size: ${notional:.2f} ({leverage}x Lev)", flush=True)
+            print(f"   💳 Margin Used:   ${margin:.2f}", flush=True)
+            print(f"   💸 Fees Paid:     ${estimated_fee:.4f} ({fee_tag})", flush=True)
+            
+            ml_confidence = getattr(event, 'ml_confidence', None)
+            predicted_duration = getattr(event, 'predicted_duration', None)
+            if ml_confidence is not None:
+                prob_str = f"{ml_confidence * 100:.1f}%"
+                dur_str = f"| Horizon: {predicted_duration} bars" if predicted_duration else ""
+                print(f"   🔮 ML Prediction: Conf: {prob_str} {dur_str}", flush=True)
+                
+            print(f"   🏦 Available Cash:${self.current_cash:.2f}", flush=True)
+            
+            if pnl is not None:
+                print(f"   💰 PnL Realized:  {pnl_color} {pnl_str}", flush=True)
+            
+            print(f"   🏆 Win Rate:      {win_rate:.1f}% ({total_wins} Wins / {total_losses} Losses)", flush=True)
+            print(f"   💵 Net Equity:    ${equity:.2f} ({'+' if balance_delta >=0 else ''}{balance_pct:.2f}%)", flush=True)
             print("========================================================\n", flush=True)
             
-            # --- NOTIFICACIÓN EXTERNA (Phase 4) ---
+            # --- ENHANCED NOTIFICATIONS (Phase 4.5) ---
+            # Build enriched trade data dict for the enhanced notifier
+            strategy_id = getattr(event, 'strategy_id', 'Unknown')
+            horizon = getattr(event, 'horizon', 'SCALPING')
+            commission = getattr(event, 'commission', 0.0) or 0.0
+            
+            # Retrieve position data for SL/TP/MAE/MFE
+            pos = self.positions.get(event.symbol, {})
+            sl_pct = pos.get('sl_pct', 0.0) or 0.0
+            tp_pct = pos.get('tp_pct', 0.0) or 0.0
+            entry_time = pos.get('entry_time', None)
+            duration_str = 'N/A'
+            if entry_time:
+                dur_secs = (datetime.now(timezone.utc) - entry_time).total_seconds()
+                if dur_secs < 60:
+                    duration_str = f"{dur_secs:.0f}s"
+                elif dur_secs < 3600:
+                    duration_str = f"{dur_secs/60:.1f}m"
+                else:
+                    duration_str = f"{dur_secs/3600:.1f}h"
+            
+            # Calculate MAE/MFE from watermarks
+            entry_price = pos.get('avg_price', fill_price)
+            hwm = pos.get('high_water_mark', fill_price)
+            lwm = pos.get('low_water_mark', fill_price)
+            mfe_pct = 0.0
+            mae_pct = 0.0
+            if entry_price > 0:
+                if pos.get('quantity', 0) >= 0:  # LONG
+                    mfe_pct = ((hwm - entry_price) / entry_price) * 100 if hwm > entry_price else 0.0
+                    mae_pct = ((entry_price - lwm) / entry_price) * 100 if lwm < entry_price else 0.0
+                else:  # SHORT
+                    mfe_pct = ((entry_price - lwm) / entry_price) * 100 if lwm < entry_price else 0.0
+                    mae_pct = ((hwm - entry_price) / entry_price) * 100 if hwm > entry_price else 0.0
+            
+            is_close = pnl is not None
+            
+            trade_notification_data = {
+                'symbol': event.symbol,
+                'strategy': strategy_id,
+                'horizon': horizon,
+                'direction': 'LONG' if event.direction == OrderSide.BUY else 'SHORT',
+                'entry_price': entry_price,
+                'exit_price': fill_price if is_close else 0.0,
+                'fill_price': fill_price,
+                'quantity': event.quantity,
+                'leverage': leverage,
+                'margin_used': margin,
+                'fee_tag': fee_tag,
+                'sl_pct': sl_pct,
+                'tp_pct': tp_pct,
+                'pnl': pnl if pnl is not None else 0.0,
+                'commission': commission,
+                'mfe_pct': mfe_pct,
+                'mae_pct': mae_pct,
+                'duration': duration_str,
+                'exit_reason': getattr(event, 'exit_reason', 'Unknown'),
+                'ml_confidence': ml_confidence,
+                'predicted_duration': predicted_duration,
+                'balance_before': self.initial_capital + self.realized_pnl - (pnl or 0.0),
+                'balance_after': equity,
+                'win_rate': win_rate,
+                'volatility': 0.0,  # Populated by caller if available
+                'spread': 0.0,
+                'timestamp': datetime.now(timezone.utc).strftime('%H:%M:%S UTC'),
+            }
+            
+            if is_close:
+                Notifier.send_trade_close(trade_notification_data)
+            else:
+                Notifier.send_trade_open(trade_notification_data)
+            
+            # --- LEGACY NOTIFICATION (Phase 4 Backward-Compat) ---
             Notifier.notify_trade(
                 symbol=event.symbol,
                 direction=event.direction,

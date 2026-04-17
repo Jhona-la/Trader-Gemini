@@ -1,0 +1,999 @@
+20:27:28 [INFO] 🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)
+💰 Capital inicial configurado: $13.00
+⚡ Leverage: 3x | Fee: 0.0375% per side
+🛡️ Kill Switch @ 3.0% DD | Cooldown: 120 bars
+🎯 Símbolos: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'DOGE/USDT']
+📅 Horizontes: [1, 7, 15, 30] días
+
+======================================================================
+🚀 TRADER GEMINI - MULTI-HORIZON BACKTEST v2.0
+   🛡️ Real ML | Real Clustering | Circuit Breaker | Fixed Sharpe
+======================================================================
+
+======================================================================
+📅 HORIZONTE: 1 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 3d para BTC/USDT...
+    ✅ 4320 velas (3.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    [Technical   ] ✅ PNL: $+0.0647 WR: 54.5% DD: 0.33% Sharpe: 11.52 Trades: 11 | Sigs L:9 S:2 N:345
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    [Sophia      ] ❌ PNL: $-0.0201 WR: 42.9% DD: 0.39% Sharpe: -17.76 Trades: 7 | Sigs L:6 S:1 N:1063
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    🔒 [AccuracyGate] Model SILENCED: val_acc=29.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 10:07:00: Accuracy 29.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=46.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 13:07:00: Accuracy 46.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=32.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 16:16:00: Accuracy 32.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 18:47:00: Accuracy 43.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=25.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 21:26:00: Accuracy 25.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=21.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 23:33:00: Accuracy 21.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 01:40:00: Accuracy 35.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 03:53:00: Accuracy 41.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 06:13:00: Accuracy 27.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=25.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 08:05:00: Accuracy 25.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 09:57:00: Accuracy 34.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 11:55:00: Accuracy 35.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 13:59:00: Accuracy 35.3% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 16:03:00: Accuracy 53.8%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 18:34:00: Accuracy 35.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.6% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 20:18:00: Accuracy 33.6% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 22:02:00: Accuracy 41.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 23:51:00: Accuracy 42.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 01:45:00: Accuracy 39.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 03:39:00: Accuracy 36.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=16.0% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 05:33:00: Accuracy 16.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 07:05:00: Accuracy 37.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 08:41:00: Accuracy 43.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=28.6% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 10:22:00: Accuracy 28.6% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 11:52:00: Accuracy 43.7% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 13:26:00: Accuracy 51.3%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.0% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 15:27:00: Accuracy 37.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 16:57:00: Accuracy 36.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 18:27:00: Accuracy 35.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=30.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 19:57:00: Accuracy 30.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=31.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 21:27:00: Accuracy 31.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=26.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 23:01:00: Accuracy 26.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.0% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-26 00:35:00: Accuracy 42.0% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.0145 WR: 55.6% DD: 0.20% Sharpe: -18.88 Trades: 9 ML_Acc: 42% 🔒GATE(blk:3529) | Sigs L:4 S:5 N:3914
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0217 WR: --.-% DD: 0.32% Sharpe: -39.19 Rebalances: 13 Weights: T=0.33 S=0.29 ML=0.38
+
+  🔹 ETH/USDT
+  📡 Descargando 3d para ETH/USDT...
+    ✅ 4320 velas (3.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    [Technical   ] ❌ PNL: $-0.0670 WR: 30.8% DD: 0.73% Sharpe: -10.73 Trades: 13 | Sigs L:10 S:3 N:292
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    [Sophia      ] ❌ PNL: $-0.0659 WR: 41.7% DD: 0.61% Sharpe: -10.09 Trades: 12 | Sigs L:10 S:2 N:1603
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    🔒 [AccuracyGate] Model SILENCED: val_acc=30.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 10:08:00: Accuracy 30.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=46.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 13:08:00: Accuracy 46.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=44.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 16:17:00: Accuracy 44.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.0% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 19:26:00: Accuracy 37.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=29.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 21:57:00: Accuracy 29.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=49.6% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 23:58:00: Accuracy 49.6% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=45.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 02:05:00: Accuracy 45.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 04:12:00: Accuracy 43.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 06:19:00: Accuracy 37.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=24.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 08:01:00: Accuracy 24.4% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 09:31:00: Accuracy 50.4%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 11:00:00: Accuracy 40.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 12:30:00: Accuracy 34.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=44.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 14:00:00: Accuracy 44.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 15:34:00: Accuracy 40.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=47.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 17:08:00: Accuracy 47.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 18:47:00: Accuracy 37.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=28.6% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 20:17:00: Accuracy 28.6% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=29.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 21:47:00: Accuracy 29.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=31.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 23:21:00: Accuracy 31.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 01:00:00: Accuracy 36.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 02:44:00: Accuracy 43.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=26.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 04:33:00: Accuracy 26.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=21.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 06:03:00: Accuracy 21.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 07:33:00: Accuracy 43.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=32.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 09:07:00: Accuracy 32.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=29.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 10:37:00: Accuracy 29.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 12:07:00: Accuracy 43.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 13:41:00: Accuracy 39.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 15:15:00: Accuracy 34.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 16:45:00: Accuracy 42.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 18:19:00: Accuracy 43.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 19:58:00: Accuracy 41.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 21:37:00: Accuracy 34.5% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 23:07:00: Accuracy 54.6%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=32.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-26 00:37:00: Accuracy 32.8% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.0042 WR: 33.3% DD: 0.09% Sharpe: -22.65 Trades: 9 ML_Acc: 33% 🔒GATE(blk:3622) | Sigs L:5 S:4 N:4052
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0632 WR: --.-% DD: 0.52% Sharpe: -13.01 Rebalances: 13 Weights: T=0.31 S=0.29 ML=0.40
+
+  🔹 SOL/USDT
+  📡 Descargando 3d para SOL/USDT...
+    ✅ 4320 velas (3.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    [Technical   ] ✅ PNL: $+0.0780 WR: 50.0% DD: 0.49% Sharpe: 12.10 Trades: 12 | Sigs L:11 S:1 N:319
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    [Sophia      ] ❌ PNL: $-0.1074 WR: 33.3% DD: 0.98% Sharpe: -16.25 Trades: 12 | Sigs L:8 S:4 N:1712
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 10:10:00: Accuracy 41.4% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 13:10:00: Accuracy 52.9%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=44.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 17:08:00: Accuracy 44.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=45.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 19:39:00: Accuracy 45.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 22:18:00: Accuracy 42.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 00:57:00: Accuracy 36.1% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 03:04:00: Accuracy 55.5%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=47.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 05:15:00: Accuracy 47.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 07:02:00: Accuracy 36.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 08:32:00: Accuracy 35.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 10:02:00: Accuracy 41.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 11:36:00: Accuracy 41.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=45.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 13:10:00: Accuracy 45.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 14:49:00: Accuracy 41.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=44.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 16:28:00: Accuracy 44.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=48.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 18:12:00: Accuracy 48.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=44.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 20:01:00: Accuracy 44.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=31.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 21:50:00: Accuracy 31.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 23:20:00: Accuracy 39.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=47.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 00:54:00: Accuracy 47.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=46.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 02:33:00: Accuracy 46.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=45.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 04:12:00: Accuracy 45.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=48.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 05:51:00: Accuracy 48.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=30.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 07:35:00: Accuracy 30.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 09:05:00: Accuracy 41.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 10:39:00: Accuracy 42.9% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 12:18:00: Accuracy 52.1%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=49.6% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 14:00:00: Accuracy 49.6% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 15:44:00: Accuracy 38.7% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 17:14:00: Accuracy 52.9%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 18:43:00: Accuracy 50.4%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=47.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 20:38:00: Accuracy 47.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 22:12:00: Accuracy 43.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 23:46:00: Accuracy 34.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=44.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-26 01:16:00: Accuracy 44.5% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.0180 WR: 54.8% DD: 0.35% Sharpe: -19.92 Trades: 31 ML_Acc: 44% 🔒GATE(blk:3126) | Sigs L:18 S:13 N:3792
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0960 WR: --.-% DD: 0.74% Sharpe: -15.49 Rebalances: 13 Weights: T=0.34 S=0.27 ML=0.38
+
+  🔹 XRP/USDT
+  📡 Descargando 3d para XRP/USDT...
+    ✅ 4320 velas (3.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    [Technical   ] ❌ PNL: $-0.1646 WR: 14.3% DD: 1.29% Sharpe: -30.49 Trades: 14 | Sigs L:9 S:5 N:378
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    [Sophia      ] ✅ PNL: $+0.0058 WR: 50.0% DD: 0.58% Sharpe: -2.27 Trades: 10 | Sigs L:8 S:2 N:1049
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 10:11:00: Accuracy 57.6%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 14:16:00: Accuracy 38.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=47.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 17:25:00: Accuracy 47.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=47.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 20:43:00: Accuracy 47.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=31.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 00:11:00: Accuracy 31.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=45.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 02:58:00: Accuracy 45.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 05:53:00: Accuracy 27.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.6% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 08:13:00: Accuracy 33.6% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 10:40:00: Accuracy 27.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 12:38:00: Accuracy 35.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 14:42:00: Accuracy 36.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=46.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 16:52:00: Accuracy 46.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 19:08:00: Accuracy 36.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=21.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 20:57:00: Accuracy 21.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=26.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 22:27:00: Accuracy 26.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.0% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 00:01:00: Accuracy 37.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.0% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 01:40:00: Accuracy 37.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=31.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 03:19:00: Accuracy 31.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 04:49:00: Accuracy 36.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=31.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 06:23:00: Accuracy 31.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 07:57:00: Accuracy 35.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 09:36:00: Accuracy 35.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=17.6% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 11:15:00: Accuracy 17.6% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 12:45:00: Accuracy 35.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 14:19:00: Accuracy 36.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 15:58:00: Accuracy 43.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.0% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 17:42:00: Accuracy 37.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=29.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 19:12:00: Accuracy 29.4% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 20:42:00: Accuracy 50.4%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 22:14:00: Accuracy 53.8%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=47.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 23:54:00: Accuracy 47.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-26 01:24:00: Accuracy 38.7% 🔒GATE
+    [ML_XGBoost  ] ✅ PNL: $+0.0327 WR: 47.1% DD: 0.24% Sharpe: 2.99 Trades: 17 ML_Acc: 39% 🔒GATE(blk:3364) | Sigs L:9 S:8 N:3962
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0452 WR: --.-% DD: 0.65% Sharpe: -50.00 Rebalances: 13 Weights: T=0.29 S=0.30 ML=0.41
+
+  🔹 DOGE/USDT
+  📡 Descargando 3d para DOGE/USDT...
+    ✅ 4320 velas (3.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    [Technical   ] ✅ PNL: $+0.0254 WR: 40.0% DD: 0.59% Sharpe: 0.87 Trades: 15 | Sigs L:11 S:4 N:362
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    [Sophia      ] ❌ PNL: $-0.0442 WR: 33.3% DD: 0.39% Sharpe: -9.22 Trades: 9 | Sigs L:7 S:2 N:1074
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 10:12:00: Accuracy 37.4% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 13:12:00: Accuracy 50.4%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 17:21:00: Accuracy 50.4%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 20:31:00: Accuracy 42.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=30.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 23:02:00: Accuracy 30.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 01:03:00: Accuracy 36.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 03:10:00: Accuracy 41.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=32.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 05:23:00: Accuracy 32.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.0% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 07:10:00: Accuracy 37.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 09:02:00: Accuracy 36.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=26.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 10:54:00: Accuracy 26.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 12:24:00: Accuracy 37.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=46.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 13:58:00: Accuracy 46.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=44.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 15:37:00: Accuracy 44.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 17:16:00: Accuracy 40.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=47.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 18:55:00: Accuracy 47.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 20:39:00: Accuracy 41.2% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 22:09:00: Accuracy 51.3%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 23:49:00: Accuracy 55.5%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 01:21:00: Accuracy 52.1%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=25.2% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 03:30:00: Accuracy 25.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=26.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 05:00:00: Accuracy 26.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.7% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 06:34:00: Accuracy 27.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.0% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 08:13:00: Accuracy 42.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 09:57:00: Accuracy 40.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 11:41:00: Accuracy 34.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.5% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 13:11:00: Accuracy 34.5% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 14:41:00: Accuracy 53.8%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=45.4% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 16:51:00: Accuracy 45.4% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 18:21:00: Accuracy 52.1%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.1% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 19:51:00: Accuracy 36.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.9% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 21:21:00: Accuracy 42.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.3% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 22:55:00: Accuracy 40.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.8% < gate=50.0% (horizon=1D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-26 00:29:00: Accuracy 37.8% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.0108 WR: 50.0% DD: 0.40% Sharpe: -30.68 Trades: 42 ML_Acc: 38% 🔒GATE(blk:2821) | Sigs L:24 S:18 N:3581
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0470 WR: --.-% DD: 0.39% Sharpe: -31.29 Rebalances: 13 Weights: T=0.32 S=0.29 ML=0.38
+
+  📊 RESUMEN 1D:
+  [Technical   ] ❌ Total PNL: $-0.064 | WR: 37.9% | DD: 0.69% | Sharpe: -3.35 | Trades: 65
+  [Sophia      ] ❌ Total PNL: $-0.232 | WR: 40.2% | DD: 0.59% | Sharpe: -11.12 | Trades: 50
+  [ML_XGBoost  ] ❌ Total PNL: $-0.015 | WR: 48.2% | DD: 0.26% | Sharpe: -17.83 | Trades: 108
+
+======================================================================
+📅 HORIZONTE: 7 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 9d para BTC/USDT...
+    ✅ 12960 velas (9.0D)
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    [Technical   ] ❌ PNL: $-0.0027 WR: 40.0% DD: 1.21% Sharpe: -1.43 Trades: 20 | Sigs L:8 S:12 N:492
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    [Sophia      ] ✅ PNL: $+0.1227 WR: 64.7% DD: 0.40% Sharpe: 7.16 Trades: 17 | Sigs L:4 S:13 N:2748
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    🔒 [AccuracyGate] Model SILENCED: val_acc=45.3% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 10:13:00: Accuracy 45.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.1% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 12:13:00: Accuracy 39.1% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 04:13:00: Accuracy 55.7%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.7% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 20:37:00: Accuracy 35.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.0% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 06:13:00: Accuracy 33.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=20.0% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 15:49:00: Accuracy 20.0% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.0884 WR: 25.2% DD: 1.26% Sharpe: -8.81 Trades: 103 ML_Acc: 20% 🔒GATE(blk:10017) | Sigs L:29 S:74 N:12323
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0104 WR: --.-% DD: 0.82% Sharpe: -1.28 Rebalances: 42 Weights: T=0.33 S=0.36 ML=0.31
+
+  🔹 ETH/USDT
+  📡 Descargando 9d para ETH/USDT...
+    ✅ 12960 velas (9.0D)
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    [Technical   ] ❌ PNL: $-0.2303 WR: 29.0% DD: 2.70% Sharpe: -10.56 Trades: 31 | Sigs L:10 S:21 N:644
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    [Sophia      ] ✅ PNL: $+0.0696 WR: 56.5% DD: 0.40% Sharpe: 4.14 Trades: 23 | Sigs L:11 S:12 N:3997
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 10:16:00: Accuracy 52.6%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.8% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 23:09:00: Accuracy 34.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.7% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 17:09:00: Accuracy 41.7% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 13:15:00: Accuracy 47.8%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.8% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 13:01:00: Accuracy 34.8% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.3728 WR: 38.4% DD: 4.76% Sharpe: -20.98 Trades: 339 ML_Acc: 35% 🔒GATE(blk:5922) | Sigs L:182 S:157 N:8432
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.1980 WR: --.-% DD: 1.70% Sharpe: -18.22 Rebalances: 42 Weights: T=0.31 S=0.40 ML=0.29
+
+  🔹 SOL/USDT
+  📡 Descargando 9d para SOL/USDT...
+    ✅ 12960 velas (9.0D)
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    [Technical   ] ❌ PNL: $-0.0495 WR: 37.0% DD: 1.30% Sharpe: -5.84 Trades: 27 | Sigs L:12 S:15 N:726
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    [Sophia      ] ✅ PNL: $+0.0281 WR: 48.1% DD: 0.98% Sharpe: -0.60 Trades: 27 | Sigs L:9 S:18 N:3403
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 10:18:00: Accuracy 70.5%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=28.7% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 23:03:00: Accuracy 28.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.1% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 17:03:00: Accuracy 39.1% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 13:09:00: Accuracy 48.7%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=24.3% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 11:26:00: Accuracy 24.3% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.2574 WR: 47.5% DD: 3.91% Sharpe: -16.89 Trades: 318 ML_Acc: 24% 🔒GATE(blk:6019) | Sigs L:158 S:160 N:8531
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.1372 WR: --.-% DD: 1.18% Sharpe: -8.81 Rebalances: 42 Weights: T=0.34 S=0.37 ML=0.29
+
+  🔹 XRP/USDT
+  📡 Descargando 9d para XRP/USDT...
+    ✅ 12960 velas (9.0D)
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    [Technical   ] ❌ PNL: $-0.0768 WR: 26.1% DD: 1.52% Sharpe: -3.79 Trades: 23 | Sigs L:6 S:17 N:456
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    [Sophia      ] ✅ PNL: $+0.0136 WR: 50.0% DD: 1.33% Sharpe: -0.97 Trades: 22 | Sigs L:5 S:17 N:3112
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 10:21:00: Accuracy 50.5%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 21:09:00: Accuracy 47.8%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.9% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 05:15:00: Accuracy 40.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=24.3% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 23:15:00: Accuracy 24.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=46.1% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 08:51:00: Accuracy 46.1% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.1495 WR: 56.2% DD: 3.29% Sharpe: -17.89 Trades: 333 ML_Acc: 46% 🔒GATE(blk:5547) | Sigs L:76 S:257 N:7145
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0965 WR: --.-% DD: 1.10% Sharpe: -7.73 Rebalances: 42 Weights: T=0.33 S=0.35 ML=0.31
+
+  🔹 DOGE/USDT
+  📡 Descargando 9d para DOGE/USDT...
+    ✅ 12960 velas (9.0D)
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    [Technical   ] ❌ PNL: $-0.1324 WR: 32.4% DD: 1.90% Sharpe: -9.06 Trades: 34 | Sigs L:14 S:20 N:715
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    [Sophia      ] ✅ PNL: $+0.1067 WR: 55.0% DD: 0.39% Sharpe: 6.01 Trades: 20 | Sigs L:6 S:14 N:3101
+    🔍 [System] Horizon: 7D | Style: INTRADAY
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 10:23:00: Accuracy 71.6%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=47.0% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-20 00:23:00: Accuracy 47.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.7% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 18:23:00: Accuracy 35.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=31.3% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 03:59:00: Accuracy 31.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=28.7% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 13:35:00: Accuracy 28.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=16.5% < gate=47.0% (horizon=7D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 23:11:00: Accuracy 16.5% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.0714 WR: 49.2% DD: 1.79% Sharpe: -12.77 Trades: 187 ML_Acc: 16% 🔒GATE(blk:8721) | Sigs L:114 S:73 N:9720
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.0221 WR: --.-% DD: 0.63% Sharpe: -2.71 Rebalances: 42 Weights: T=0.31 S=0.36 ML=0.33
+
+  📊 RESUMEN 7D:
+  [Technical   ] ❌ Total PNL: $-0.492 | WR: 32.9% | DD: 1.73% | Sharpe: -6.14 | Trades: 135
+  [Sophia      ] ✅ Total PNL: $+0.341 | WR: 54.9% | DD: 0.70% | Sharpe: 3.15 | Trades: 109
+  [ML_XGBoost  ] ❌ Total PNL: $-0.940 | WR: 43.3% | DD: 3.00% | Sharpe: -15.47 | Trades: 1280
+
+======================================================================
+📅 HORIZONTE: 15 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 17d para BTC/USDT...
+    ✅ 24480 velas (17.0D)
+    🔍 [System] Horizon: 15D | Style: SWING
+    [Technical   ] ✅ PNL: $+0.0534 WR: 37.8% DD: 1.14% Sharpe: -0.40 Trades: 45 | Sigs L:31 S:14 N:1184
+    🔍 [System] Horizon: 15D | Style: SWING
+    [Sophia      ] ✅ PNL: $+0.2124 WR: 63.6% DD: 0.64% Sharpe: 5.70 Trades: 33 | Sigs L:21 S:12 N:5251
+    🔍 [System] Horizon: 15D | Style: SWING
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 10:25:00: Accuracy 60.0%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-12 01:40:00: Accuracy 48.7%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.1% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-14 00:23:00: Accuracy 39.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.7% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-15 09:59:00: Accuracy 41.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.5% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 21:16:00: Accuracy 43.5% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 10:19:00: Accuracy 60.0%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.8% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-20 04:21:00: Accuracy 34.8% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 11:28:00: Accuracy 97.4%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.1% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 19:53:00: Accuracy 39.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=11.3% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 22:01:00: Accuracy 11.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.0% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 18:56:00: Accuracy 40.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.5% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 16:53:00: Accuracy 36.5% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.3519 WR: 39.8% DD: 4.60% Sharpe: -15.56 Trades: 344 ML_Acc: 36% 🔒GATE(blk:12896) | Sigs L:240 S:104 N:19238
+    ⭐[Orch-AWv2   ] ✅ PNL: $+0.0080 WR: --.-% DD: 0.98% Sharpe: -0.12 Rebalances: 90 Weights: T=0.30 S=0.40 ML=0.30
+
+  🔹 ETH/USDT
+  📡 Descargando 17d para ETH/USDT...
+    ✅ 24480 velas (17.0D)
+    🔍 [System] Horizon: 15D | Style: SWING
+    [Technical   ] ❌ PNL: $-0.1933 WR: 31.3% DD: 2.25% Sharpe: -6.10 Trades: 67 | Sigs L:42 S:25 N:1416
+    🔍 [System] Horizon: 15D | Style: SWING
+    [Sophia      ] ✅ PNL: $+0.1655 WR: 56.9% DD: 1.39% Sharpe: 3.21 Trades: 51 | Sigs L:35 S:16 N:8132
+    🔍 [System] Horizon: 15D | Style: SWING
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 10:30:00: Accuracy 55.8%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-11 17:03:00: Accuracy 51.3%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-14 02:43:00: Accuracy 49.6%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.8% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 05:26:00: Accuracy 27.8% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 23:26:00: Accuracy 59.1%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.5% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 22:33:00: Accuracy 36.5% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 09:50:00: Accuracy 73.9%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=20.0% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 22:23:00: Accuracy 20.0% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 04:01:00: Accuracy 47.0%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=28.7% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 11:56:00: Accuracy 28.7% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.5975 WR: 37.7% DD: 9.22% Sharpe: -29.75 Trades: 838 ML_Acc: 29% 🔒GATE(blk:7250) | Sigs L:493 S:345 N:16737
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.2861 WR: --.-% DD: 2.41% Sharpe: -11.44 Rebalances: 90 Weights: T=0.31 S=0.44 ML=0.25
+
+  🔹 SOL/USDT
+  📡 Descargando 17d para SOL/USDT...
+    ✅ 24480 velas (17.0D)
+    🔍 [System] Horizon: 15D | Style: SWING
+    [Technical   ] ❌ PNL: $-0.0536 WR: 36.4% DD: 1.73% Sharpe: -3.78 Trades: 66 | Sigs L:41 S:25 N:1667
+    🔍 [System] Horizon: 15D | Style: SWING
+    [Sophia      ] ❌ PNL: $-0.0190 WR: 48.0% DD: 1.58% Sharpe: -1.77 Trades: 50 | Sigs L:31 S:19 N:8361
+    🔍 [System] Horizon: 15D | Style: SWING
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.9% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 10:34:00: Accuracy 37.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.8% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-11 02:34:00: Accuracy 27.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.8% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-12 10:34:00: Accuracy 27.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.3% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-13 18:34:00: Accuracy 38.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=19.1% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-15 04:10:00: Accuracy 19.1% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 07:03:00: Accuracy 48.7%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=31.3% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 16:43:00: Accuracy 31.3% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 15:18:00: Accuracy 80.9%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 23:50:00: Accuracy 58.3%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.0% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-20 22:33:00: Accuracy 33.0% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 15:13:00: Accuracy 52.2%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 09:07:00: Accuracy 46.1%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=22.6% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 02:04:00: Accuracy 22.6% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 18:44:00: Accuracy 62.6%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 16:04:00: Accuracy 44.3%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.8% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 11:30:00: Accuracy 34.8% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.2742 WR: 48.4% DD: 5.47% Sharpe: -18.90 Trades: 581 ML_Acc: 35% 🔒GATE(blk:14089) | Sigs L:271 S:310 N:16974
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.2265 WR: --.-% DD: 2.65% Sharpe: -6.86 Rebalances: 90 Weights: T=0.33 S=0.43 ML=0.24
+
+  🔹 XRP/USDT
+  📡 Descargando 17d para XRP/USDT...
+    ✅ 24480 velas (17.0D)
+    🔍 [System] Horizon: 15D | Style: SWING
+    [Technical   ] ❌ PNL: $-0.0727 WR: 32.0% DD: 1.71% Sharpe: -2.79 Trades: 50 | Sigs L:25 S:25 N:1087
+    🔍 [System] Horizon: 15D | Style: SWING
+    [Sophia      ] ✅ PNL: $+0.2334 WR: 60.0% DD: 1.28% Sharpe: 4.53 Trades: 45 | Sigs L:28 S:17 N:6233
+    🔍 [System] Horizon: 15D | Style: SWING
+    🔒 [AccuracyGate] Model SILENCED: val_acc=21.1% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 10:39:00: Accuracy 21.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.9% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-11 02:39:00: Accuracy 33.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=31.3% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-12 20:39:00: Accuracy 31.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.1% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-14 14:39:00: Accuracy 39.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.4% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 10:45:00: Accuracy 37.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=28.7% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 06:51:00: Accuracy 28.7% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 18:08:00: Accuracy 44.3%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 07:04:00: Accuracy 53.0%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.7% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 22:34:00: Accuracy 41.7% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 05:41:00: Accuracy 45.2%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=23.5% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 18:59:00: Accuracy 23.5% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.1446 WR: 36.9% DD: 1.72% Sharpe: -11.72 Trades: 103 ML_Acc: 24% 🔒GATE(blk:17137) | Sigs L:16 S:87 N:22374
+    ⭐[Orch-AWv2   ] ✅ PNL: $+0.0350 WR: --.-% DD: 1.30% Sharpe: 0.83 Rebalances: 90 Weights: T=0.31 S=0.41 ML=0.28
+
+  🔹 DOGE/USDT
+  📡 Descargando 17d para DOGE/USDT...
+    ✅ 24480 velas (17.0D)
+    🔍 [System] Horizon: 15D | Style: SWING
+    [Technical   ] ✅ PNL: $+0.0904 WR: 37.8% DD: 1.75% Sharpe: 1.00 Trades: 74 | Sigs L:51 S:23 N:1611
+    🔍 [System] Horizon: 15D | Style: SWING
+    [Sophia      ] ✅ PNL: $+0.2564 WR: 58.8% DD: 1.33% Sharpe: 4.97 Trades: 51 | Sigs L:36 S:15 N:7237
+    🔍 [System] Horizon: 15D | Style: SWING
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 10:44:00: Accuracy 56.8%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-12 02:06:00: Accuracy 54.8%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=20.9% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-14 18:28:00: Accuracy 20.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=30.4% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 12:28:00: Accuracy 30.4% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 08:34:00: Accuracy 59.1%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.7% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-20 08:36:00: Accuracy 35.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=31.3% < gate=44.0% (horizon=15D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 21:39:00: Accuracy 31.3% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 10:42:00: Accuracy 51.3%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 05:46:00: Accuracy 44.3%
+    [ML_XGBoost  ] ❌ PNL: $-0.7212 WR: 42.1% DD: 10.30% Sharpe: -19.92 Trades: 884 ML_Acc: 44%(blk:9612) | Sigs L:418 S:466 N:15620
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.1413 WR: --.-% DD: 2.20% Sharpe: -4.36 Rebalances: 90 Weights: T=0.32 S=0.43 ML=0.25
+
+  📊 RESUMEN 15D:
+  [Technical   ] ❌ Total PNL: $-0.176 | WR: 35.1% | DD: 1.72% | Sharpe: -2.42 | Trades: 302
+  [Sophia      ] ✅ Total PNL: $+0.849 | WR: 57.5% | DD: 1.24% | Sharpe: 3.33 | Trades: 230
+  [ML_XGBoost  ] ❌ Total PNL: $-2.089 | WR: 41.0% | DD: 6.26% | Sharpe: -19.17 | Trades: 2750
+
+======================================================================
+📅 HORIZONTE: 30 DÍAS
+======================================================================
+
+  🔹 BTC/USDT
+  📡 Descargando 32d para BTC/USDT...
+    ✅ 46080 velas (32.0D)
+    🔍 [System] Horizon: 30D | Style: POSITION
+    [Technical   ] ❌ PNL: $-0.2880 WR: 32.4% DD: 3.80% Sharpe: -5.44 Trades: 105 | Sigs L:63 S:42 N:1967
+    🔍 [System] Horizon: 30D | Style: POSITION
+    [Sophia      ] ❌ PNL: $-0.0741 WR: 47.2% DD: 2.19% Sharpe: -2.84 Trades: 72 | Sigs L:39 S:33 N:12229
+    🔍 [System] Horizon: 30D | Style: POSITION
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-22 10:48:00: Accuracy 98.9%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=26.1% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-24 15:18:00: Accuracy 26.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-26 09:18:00: Accuracy 34.8% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-28 05:24:00: Accuracy 50.4%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-03 00:30:00: Accuracy 38.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.9% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-04 13:33:00: Accuracy 40.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=30.4% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-06 04:27:00: Accuracy 30.4% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-07 11:34:00: Accuracy 48.7%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.4% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-08 18:14:00: Accuracy 37.4% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 20:22:00: Accuracy 44.3%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=16.5% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-11 05:22:00: Accuracy 16.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-12 03:19:00: Accuracy 33.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.6% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-13 02:22:00: Accuracy 42.6% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-14 02:34:00: Accuracy 55.7%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-15 03:13:00: Accuracy 38.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=16.5% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-15 23:33:00: Accuracy 16.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 16:13:00: Accuracy 27.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=23.5% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 09:43:00: Accuracy 23.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=17.4% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 03:13:00: Accuracy 17.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.6% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 19:53:00: Accuracy 42.6% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=19.1% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 13:23:00: Accuracy 19.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=30.4% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-20 06:03:00: Accuracy 30.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=26.1% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-20 23:33:00: Accuracy 26.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 17:03:00: Accuracy 33.0% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 11:25:00: Accuracy 68.7%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=14.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 06:25:00: Accuracy 14.8% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 23:05:00: Accuracy 47.8%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 18:04:00: Accuracy 62.6%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 18:27:00: Accuracy 45.2%
+    [ML_XGBoost  ] ❌ PNL: $-0.2547 WR: 43.2% DD: 5.21% Sharpe: -11.30 Trades: 567 ML_Acc: 45%(blk:28882) | Sigs L:324 S:243 N:37721
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.3903 WR: --.-% DD: 3.05% Sharpe: -9.23 Rebalances: 180 Weights: T=0.31 S=0.41 ML=0.28
+
+  🔹 ETH/USDT
+  📡 Descargando 32d para ETH/USDT...
+    ✅ 46080 velas (32.0D)
+    🔍 [System] Horizon: 30D | Style: POSITION
+    [Technical   ] ❌ PNL: $-0.3418 WR: 33.3% DD: 4.70% Sharpe: -3.72 Trades: 147 | Sigs L:75 S:72 N:3011
+    🔍 [System] Horizon: 30D | Style: POSITION
+    [Sophia      ] ❌ PNL: $-0.0192 WR: 47.3% DD: 2.52% Sharpe: -1.69 Trades: 112 | Sigs L:61 S:51 N:15747
+    🔍 [System] Horizon: 30D | Style: POSITION
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-22 10:56:00: Accuracy 88.4%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=28.7% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-24 15:26:00: Accuracy 28.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=15.7% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-26 09:26:00: Accuracy 15.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.9% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-27 19:02:00: Accuracy 40.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-01 06:19:00: Accuracy 40.0% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-02 17:36:00: Accuracy 60.9%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-05 03:35:00: Accuracy 34.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.9% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-06 09:13:00: Accuracy 40.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-07 16:20:00: Accuracy 40.0% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-08 23:27:00: Accuracy 53.9%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=24.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-10 11:56:00: Accuracy 24.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=30.4% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-11 14:04:00: Accuracy 30.4% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-12 17:31:00: Accuracy 53.9%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.4% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-14 07:37:00: Accuracy 37.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.5% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-15 06:40:00: Accuracy 36.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=19.1% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 05:43:00: Accuracy 19.1% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 00:10:00: Accuracy 45.2%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 06:54:00: Accuracy 40.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 23:34:00: Accuracy 27.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 16:14:00: Accuracy 38.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-20 09:44:00: Accuracy 27.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.6% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 02:24:00: Accuracy 42.6% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 19:54:00: Accuracy 84.3%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=20.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 15:38:00: Accuracy 20.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 08:18:00: Accuracy 34.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=32.2% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 01:48:00: Accuracy 32.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.4% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 19:18:00: Accuracy 37.4% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 13:40:00: Accuracy 47.0%
+    [ML_XGBoost  ] ❌ PNL: $-0.4310 WR: 47.8% DD: 6.26% Sharpe: -12.09 Trades: 525 ML_Acc: 47%(blk:30672) | Sigs L:294 S:231 N:36659
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.4120 WR: --.-% DD: 3.55% Sharpe: -7.50 Rebalances: 180 Weights: T=0.29 S=0.41 ML=0.30
+
+  🔹 SOL/USDT
+  📡 Descargando 32d para SOL/USDT...
+    ✅ 46080 velas (32.0D)
+    🔍 [System] Horizon: 30D | Style: POSITION
+    [Technical   ] ✅ PNL: $+0.3250 WR: 41.1% DD: 1.40% Sharpe: 1.87 Trades: 151 | Sigs L:84 S:67 N:3183
+    🔍 [System] Horizon: 30D | Style: POSITION
+    [Sophia      ] ❌ PNL: $-0.2054 WR: 43.8% DD: 3.13% Sharpe: -3.23 Trades: 112 | Sigs L:56 S:56 N:16977
+    🔍 [System] Horizon: 30D | Style: POSITION
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.2% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-22 11:04:00: Accuracy 43.2% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-24 03:04:00: Accuracy 44.3%
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-26 09:16:00: Accuracy 53.9%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-01 01:13:00: Accuracy 47.0%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-04 00:20:00: Accuracy 67.0%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=32.2% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-07 05:03:00: Accuracy 32.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=24.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-08 10:41:00: Accuracy 24.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.9% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 10:23:00: Accuracy 33.9% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-10 11:17:00: Accuracy 52.2%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=43.5% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-12 02:44:00: Accuracy 43.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=30.4% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-12 23:39:00: Accuracy 30.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-13 16:23:00: Accuracy 38.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-14 09:57:00: Accuracy 38.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-15 03:31:00: Accuracy 27.8% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-15 20:11:00: Accuracy 46.1%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 13:36:00: Accuracy 47.0%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.1% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 14:01:00: Accuracy 39.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=25.2% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 06:41:00: Accuracy 25.2% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 23:21:00: Accuracy 38.3% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 16:51:00: Accuracy 46.1%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-20 19:41:00: Accuracy 67.0%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.1% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 16:47:00: Accuracy 39.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.5% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 09:27:00: Accuracy 36.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=25.2% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 02:07:00: Accuracy 25.2% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 18:47:00: Accuracy 60.9%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 15:46:00: Accuracy 34.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.1% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 08:26:00: Accuracy 39.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-26 01:56:00: Accuracy 40.0% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.9705 WR: 46.1% DD: 12.89% Sharpe: -17.89 Trades: 943 ML_Acc: 40% 🔒GATE(blk:20590) | Sigs L:512 S:431 N:26338
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.4691 WR: --.-% DD: 3.80% Sharpe: -7.16 Rebalances: 180 Weights: T=0.31 S=0.39 ML=0.30
+
+  🔹 XRP/USDT
+  📡 Descargando 32d para XRP/USDT...
+    ✅ 46080 velas (32.0D)
+    🔍 [System] Horizon: 30D | Style: POSITION
+    [Technical   ] ✅ PNL: $+0.2742 WR: 41.1% DD: 3.45% Sharpe: 1.27 Trades: 124 | Sigs L:63 S:61 N:2692
+    🔍 [System] Horizon: 30D | Style: POSITION
+    [Sophia      ] ✅ PNL: $+0.1145 WR: 48.9% DD: 2.36% Sharpe: -0.09 Trades: 94 | Sigs L:48 S:46 N:12924
+    🔍 [System] Horizon: 30D | Style: POSITION
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-22 11:11:00: Accuracy 51.6%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=39.1% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-25 02:25:00: Accuracy 39.1% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=11.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-26 20:25:00: Accuracy 11.3% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-28 06:01:00: Accuracy 45.2%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=32.2% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-02 00:40:00: Accuracy 32.2% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-03 04:53:00: Accuracy 64.3%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=20.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-05 00:08:00: Accuracy 20.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-05 23:50:00: Accuracy 33.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.7% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-07 00:44:00: Accuracy 41.7% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-08 02:52:00: Accuracy 50.4%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 06:04:00: Accuracy 54.8%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-11 02:28:00: Accuracy 34.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=22.6% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-12 01:31:00: Accuracy 22.6% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.9% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-12 19:58:00: Accuracy 33.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.6% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-13 15:20:00: Accuracy 42.6% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=23.5% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-14 11:40:00: Accuracy 23.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.7% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-15 04:20:00: Accuracy 41.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=20.9% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-15 21:50:00: Accuracy 20.9% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 14:30:00: Accuracy 53.0%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=14.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 10:22:00: Accuracy 14.8% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=15.7% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 03:02:00: Accuracy 15.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=32.2% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 20:32:00: Accuracy 32.2% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 14:54:00: Accuracy 44.3%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-20 14:10:00: Accuracy 34.8% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 06:50:00: Accuracy 54.8%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=23.5% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 01:00:00: Accuracy 23.5% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 17:40:00: Accuracy 46.1%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=21.7% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 10:34:00: Accuracy 21.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 03:14:00: Accuracy 38.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=23.5% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 20:44:00: Accuracy 23.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=42.6% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 13:24:00: Accuracy 42.6% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.5715 WR: 45.2% DD: 8.04% Sharpe: -15.45 Trades: 646 ML_Acc: 43% 🔒GATE(blk:27625) | Sigs L:349 S:297 N:37080
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.2661 WR: --.-% DD: 2.45% Sharpe: -4.00 Rebalances: 180 Weights: T=0.31 S=0.40 ML=0.28
+
+  🔹 DOGE/USDT
+  📡 Descargando 32d para DOGE/USDT...
+    ✅ 46080 velas (32.0D)
+    🔍 [System] Horizon: 30D | Style: POSITION
+    [Technical   ] ✅ PNL: $+0.1488 WR: 37.7% DD: 2.17% Sharpe: 0.18 Trades: 146 | Sigs L:84 S:62 N:3044
+    🔍 [System] Horizon: 30D | Style: POSITION
+    [Sophia      ] ✅ PNL: $+0.0253 WR: 47.3% DD: 2.76% Sharpe: -0.89 Trades: 112 | Sigs L:59 S:53 N:15958
+    🔍 [System] Horizon: 30D | Style: POSITION
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-22 11:19:00: Accuracy 48.4%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-24 23:28:00: Accuracy 40.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.7% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-26 15:28:00: Accuracy 35.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.9% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-02-28 07:28:00: Accuracy 40.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.9% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-02 01:28:00: Accuracy 33.9% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-03 11:04:00: Accuracy 60.0%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-06 06:15:00: Accuracy 33.0% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-07 10:28:00: Accuracy 54.8%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=41.7% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-08 16:48:00: Accuracy 41.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=31.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-09 16:30:00: Accuracy 31.3% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-10 11:28:00: Accuracy 55.7%
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-11 17:24:00: Accuracy 54.8%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.5% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-12 17:31:00: Accuracy 36.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=28.7% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-13 10:11:00: Accuracy 28.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=38.3% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-14 02:51:00: Accuracy 38.3% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-14 20:21:00: Accuracy 27.8% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-15 13:01:00: Accuracy 60.0%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=40.9% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 06:16:00: Accuracy 40.9% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-16 22:56:00: Accuracy 53.9%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.0% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-17 18:40:00: Accuracy 33.0% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=35.7% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-18 11:20:00: Accuracy 35.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=36.5% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 04:50:00: Accuracy 36.5% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=17.4% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-19 23:12:00: Accuracy 17.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=34.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-20 15:52:00: Accuracy 34.8% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-21 09:22:00: Accuracy 52.2%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=37.4% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 03:23:00: Accuracy 37.4% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=21.7% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-22 20:03:00: Accuracy 21.7% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=33.9% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-23 12:43:00: Accuracy 33.9% 🔒GATE
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 06:13:00: Accuracy 27.8% 🔒GATE
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-24 22:53:00: Accuracy 50.4%
+    🔒 [AccuracyGate] Model SILENCED: val_acc=27.8% < gate=44.0% (horizon=30D)
+    🤖 [ML_XGBoost] Retrained ML at 2026-03-25 16:07:00: Accuracy 27.8% 🔒GATE
+    [ML_XGBoost  ] ❌ PNL: $-0.4875 WR: 40.0% DD: 6.45% Sharpe: -14.79 Trades: 487 ML_Acc: 28% 🔒GATE(blk:28524) | Sigs L:273 S:214 N:37466
+    ⭐[Orch-AWv2   ] ❌ PNL: $-0.2243 WR: --.-% DD: 2.17% Sharpe: -4.92 Rebalances: 180 Weights: T=0.30 S=0.40 ML=0.30
+
+  📊 RESUMEN 30D:
+  [Technical   ] ✅ Total PNL: $+0.118 | WR: 37.1% | DD: 3.10% | Sharpe: -1.17 | Trades: 673
+  [Sophia      ] ❌ Total PNL: $-0.159 | WR: 46.9% | DD: 2.59% | Sharpe: -1.75 | Trades: 502
+  [ML_XGBoost  ] ❌ Total PNL: $-2.715 | WR: 44.5% | DD: 7.77% | Sharpe: -14.31 | Trades: 3168
+
+======================================================================
+🏆 REPORTE FINAL CONSOLIDADO v3.0 (EVOLUTIVO)
+======================================================================
+Horizon  Strategy           PNL$     PNL%     WR%   MaxDD%   Sharpe   KS
+----------------------------------------------------------------------
+1D       Technical        -0.064   -0.17%   37.9%    0.69%    -3.35    0
+1D       Sophia           -0.232   -0.41%   40.2%    0.59%   -11.12    0
+1D       ML_XGBoost       -0.015   -0.15%   48.2%    0.26%   -17.83    0
+1D       Orchestrator     -0.273   -0.42%   42.1%    0.52%   -29.80    0
+7D       Technical        -0.492   -0.93%   32.9%    1.73%    -6.14    0
+7D       Sophia            0.341    0.40%   54.9%    0.70%     3.15    0
+7D       ML_XGBoost       -0.940   -2.91%   43.3%    3.00%   -15.47    0
+7D       Orchestrator     -0.464   -0.71%   43.7%    1.09%    -7.75    0
+15D      Technical        -0.176   -0.63%   35.1%    1.72%    -2.42    0
+15D      Sophia            0.849    1.02%   57.5%    1.24%     3.33    0
+15D      ML_XGBoost       -2.089   -6.25%   41.0%    6.26%   -19.17    0
+15D      Orchestrator     -0.611   -0.94%   44.5%    1.91%    -4.39    0
+30D      Technical         0.118   -0.62%   37.1%    3.10%    -1.17    0
+30D      Sophia           -0.159   -0.86%   46.9%    2.59%    -1.75    0
+30D      ML_XGBoost       -2.715   -7.70%   44.5%    7.77%   -14.31    0
+30D      Orchestrator     -1.762   -2.71%   42.8%    3.01%    -6.56    0
+
+📁 Resultados guardados en: multi_horizon_results.json

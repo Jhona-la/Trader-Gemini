@@ -99,19 +99,29 @@ class KillSwitch:
 
     def check_triggers(self, current_drawdown):
         """
-        Routine check called by Engine.
+        Routine check called by Engine. Dynamic limit based on Horizon (Phase 3.2).
         """
+        import math
+        horizon_str = getattr(Config.Strategies, 'ACTIVE_HORIZON', '1D')
+        horizon_days = int(horizon_str.replace('D', '')) if 'D' in horizon_str else 1
+        h_sqrt = math.sqrt(horizon_days)
+        
+        # Scale drawdown by square root of time (1D = 2.0%, 7D = 5.2%, 15D = 7.7%, 30D = 10.9%)
+        max_dd = 0.02 * h_sqrt
+
         # 1. Max Drawdown Check (Shadow-Monitor Sovereign Limit)
-        if current_drawdown > 0.02: # 2.0% Strict Limit during First Contact
-            logger.critical(f"🚨 KILL SWITCH TRIGGERED: Drawdown {current_drawdown*100:.2f}% > 2.0%")
+        if current_drawdown > max_dd:
+            logger.critical(f"🚨 KILL SWITCH: Drawdown {current_drawdown*100:.2f}% > Limit {max_dd*100:.2f}%")
             self.activate("MAX_DRAWDOWN_EXCEEDED")
             
-        # 2. Hard Capital Floor Protection (Dynamic based on API config)
+        # 2. Hard Capital Floor Protection
         if self.portfolio:
             current_capital = self.portfolio.get_total_equity()
-            min_capital = Config.INITIAL_CAPITAL * 0.96  # 4% max loss floor
+            max_loss_floor_pct = 0.04 * h_sqrt  # 1D = 4%, 30D = 21.9%
+            min_capital = Config.INITIAL_CAPITAL * max(0.01, (1.0 - max_loss_floor_pct))
+            
             if current_capital <= min_capital and current_capital > 0:
-                logger.critical(f"🚨 SOVEREIGN KILL SWITCH L2: Capital {current_capital} <= ${min_capital:.2f}. Initiating full stop.")
+                logger.critical(f"🚨 SOVEREIGN KILL SWITCH L2: Capital {current_capital:.2f} <= ${min_capital:.2f} (Floor {max_loss_floor_pct*100:.1f}%).")
                 self.activate("CRITICAL_CAPITAL_FLOOR_REACHED")
             
         # 3. Atomic Lock External Check (If user placed file manually)
@@ -144,6 +154,53 @@ class KillSwitch:
                 self._forensic_callback(reason)
             except Exception as e:
                 logger.error(f"Forensic snapshot failed: {e}")
+
+        # 📢 Phase 4.5: Enhanced Notification — CRITICAL RISK ALERT
+        try:
+            from utils.notifier import Notifier
+            
+            # Gather context for the alert
+            balance = 0.0
+            drawdown_pct = 0.0
+            open_positions = 0
+            if self.portfolio:
+                balance = self.portfolio.get_total_equity()
+                if self.peak_equity > 0:
+                    drawdown_pct = ((self.peak_equity - balance) / self.peak_equity) * 100
+                open_positions = len([
+                    s for s, p in self.portfolio.positions.items() 
+                    if p.get('quantity', 0) != 0
+                ])
+            
+            Notifier.send_risk_alert({
+                'type': f'KILL_SWITCH: {reason}',
+                'level': 'critical',
+                'message': (
+                    f"☠️ *El Kill Switch ha sido ACTIVADO.*\n"
+                    f"Todas las órdenes nuevas están BLOQUEADAS.\n"
+                    f"Razón: `{reason}`\n\n"
+                    f"El archivo `{self.LOCK_FILE}` ha sido creado.\n"
+                    f"Elimínalo manualmente para reiniciar el bot."
+                ),
+                'drawdown': drawdown_pct,
+                'balance': balance,
+                'open_positions': open_positions,
+                'recommended_action': (
+                    "1. Verificar posiciones abiertas en Binance\n"
+                    "2. Cerrar manualmente si es necesario\n"
+                    "3. Analizar la causa del drawdown\n"
+                    "4. Eliminar STOP_TRADING.LOCK cuando esté listo"
+                ),
+            })
+            
+            # Also send a system alert for redundancy
+            Notifier.send_system_alert(
+                "KILL_SWITCH",
+                f"Kill Switch activado: `{reason}`\nBalance: `${balance:,.2f}`",
+                priority="CRITICAL"
+            )
+        except Exception as e:
+            logger.error(f"Kill Switch notification failed: {e}")
 
         # 2. Signal Engine for graceful shutdown
         # [SS-010 FIX] Engine callback handles: close positions → flush DB → stop loop

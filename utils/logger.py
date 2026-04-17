@@ -44,6 +44,8 @@ class JSONFormatter(logging.Formatter):
             "component": getattr(record, "component", record.name),
             "trade_id": getattr(record, "trade_id", None),
             "strategy_id": getattr(record, "strategy_id", None),
+            "regime": getattr(record, "regime", None),          # Phase 4 Risk Orchestration
+            "kelly_frac": getattr(record, "kelly_frac", None),  # Phase 4 Kelly Fraction Sizing
             "msg": record.getMessage(),
             "line": record.lineno,
             "file": record.filename
@@ -129,7 +131,7 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
 
     # B. Main File Handler (JSON, DEBUG+)
     # PHASE 47.3: Adaptive backtest logging for Windows (Avoid Error 32)
-    is_backtest = "run_backtest" in sys.argv[0] or "auditor" in sys.argv[0]
+    is_backtest = "backtest" in sys.argv[0] or "auditor" in sys.argv[0]
     is_windows = os.name == 'nt'
     
     if is_windows and is_backtest:

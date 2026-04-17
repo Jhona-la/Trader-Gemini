@@ -1,140 +1,124 @@
-# 🧠 TRADER GEMINI: LA TRINIDAD OMEGA (IA & LÓGICA)
+# 🏛️ TRADER GEMINI: ENCICLOPEDIA OMNIBÚS DE ESTRATEGIAS (V7.2 - SUPREMO)
 
-El componente de inteligencia y decisión de Trader Gemini se divide en **Phalanx-Swarm** (Generación de Señales de Consenso), **Sophia-Intelligence** (Metacognición y PPO), y el **Registro Estratégico** (Modelaje Estadístico).
-
----
-
-## 🛡️ I. MAPE DE LA 'PHALANX-SWARM' (CONSENSO BIZANTINO)
-
-El ecosistema 'Phalanx-Swarm' procesa simultáneamente múltiples modelos (XGBoost, Random Forest, Gradient Boosting) a través de los múltiples procesos asíncronos y 20 monedas Elite de Binance.
-
-```mermaid
-graph TD
-    subgraph Market Data (20 Elite Assets)
-        BTC[BTC/USDT Data]
-        ETH[ETH/USDT Data]
-        ALT[Altcoins (x18) Data]
-    end
-
-    subgraph Ensemble (Por cada Moneda)
-        RF(Random Forest<br/>Peso: W1)
-        XGB(XGBoost Supremo<br/>Peso: W2)
-        GB(Gradient Boosting<br/>Peso: W3)
-    end
-
-    subgraph Phalanx Consensus Engine
-        Agg[Votación de Pesos Dinámicos]
-        Veto[Limitador de Confianza]
-        Confluence[Umbral de Confluencia]
-    end
-
-    subgraph Risk Manager (Orquestador Global)
-        RM(Gestión de Riesgo<br/>Kelly Veto)
-    end
-
-    BTC & ETH & ALT -.-> Ensemble
-    
-    RF --> Agg
-    XGB --> Agg
-    GB --> Agg
-
-    Agg --> Veto
-    Veto --> Confluence
-
-    Confluence -->|Señal: LONG/SHORT/NEUTRAL| RM
-    
-    classDef data fill:#2e7d32,color:#fff;
-    classDef model fill:#1565c0,color:#fff;
-    classDef engine fill:#bf360c,color:#fff;
-
-    class BTC,ETH,ALT data;
-    class RF,XGB,GB model;
-    class Agg,Veto,Confluence engine;
-```
-
-**Mecanismo:** La votación no es democrática simple, sino probabilística. El `OnlineLearner` ajusta (W1, W2, W3) en tiempo real según el rendimiento histórico reciente del modelo. Se exige un mínimo de umbral (`Target > 0.65`) de 2/3 de los motores para cruzar el *Limitador de Confianza*.
+Este es el **Manuscrito Técnico Definitivo**. Ningún parámetro de `config.py` o lógica de `technical.py` queda fuera. Este documento fusiona la visión macro-orgánica con los detalles microscópicos necesarios para duplicar $13 USD.
 
 ---
 
-## 👁️ II. FLUJO DE METACOGNICIÓN (SOPHIA-INTELLIGENCE)
+## 🏛️ I. ARQUITECTURA DEL ORGANISMO INTEGRAL
 
-Sophia es el sistema the autoregulación que audita los trades cerrados. Utiliza un Aprendizaje por Refuerzo asimétrico.
+El sistema opera mediante una jerarquía de 7 capas que procesan datos desde el hardware hasta la explicación humana:
 
-```mermaid
-sequenceDiagram
-    participant EX as Binance Executor
-    participant PM as Post-Mortem Némesis
-    participant GA as Axioma Audits
-    participant OL as Online Learner (PER)
-    participant WT as Weights & Biases / Dashboard
-
-    EX->>PM: Trade Cerrado (FillEvent / Stop)
-    activate PM
-    
-    PM->>GA: Auditoría PnL y Tesis Estructural
-    activate GA
-    GA-->>PM: Recompensa Asimétrica (Reward)
-    Note over GA, PM: Penalización severa a "Ghost Money" y rupturas HMM (-0.5).
-    deactivate GA
-    
-    PM->>OL: Inyección al Prioritized Experience Replay (PER)
-    activate OL
-    Note over OL: "Cisnes Negros" obtienen Prioridad 2x para un-learning
-    OL->>OL: Muestra de Batch Probabilístico (PPO gradient update)
-    OL->>WT: Pesos Ajustados Emitidos
-    deactivate OL
-    deactivate PM
-
-    WT->>WT: Monitor 'Sophia-View' expuesto en Streamlit.
-```
-
-### 3. V5.47.5: Aprendizaje Instantáneo (Real-time SGD)
-
-Implementado en la **Fase 48**, el sistema ha evolucionado de una adaptación genética lenta a una corrección neuronal inmediata.
-
-* **QUÉ**: Retroalimentación por descenso de gradiente estocástico (SGD) tras cada trade.
-* **POR QUÉ**: Los regímenes de las Altcoins pueden cambiar en minutos; la evolución genética era demasiado lenta para capturar estos cambios.
-* **PARA QUÉ**: Ajustar los pesos internos (`brain_weights`) inmediatamente después del cierre de una posición.
-* **CÓMO**: Captura del `state_tensor` (25 dimensiones) en la entrada -> Comparación con PnL final en la salida -> Actualización de matriz de pesos.
-* **CUÁNDO**: Se activa en el evento de cierre (`FillEvent`) procesado por el controlador de recompensas.
+1.  **Infraestructura (`Aegis`)**: Optimización de hardware, afinidad de CPU y aceleración AVX2.
+2.  **Sensores (`DataProvider`)**: Ingesta de datos crudos (OHLCV) y normalización.
+3.  **Sinapsis (`NeuralBridge`)**: Construcción del Tensor de Estado Unificado.
+4.  **Instintos (`Execution Strategies`)**: Lógica competitiva de Scalping, Swing y Sniper.
+5.  **Conciencia (`Meta-Brain`)**: Selección de estrategia y alocación `Anti-Whipsaw`.
+6.  **Oráculo (`Reasoning Oracle`)**: Atribución de Skill vs Luck y razonamiento causal.
+7.  **Némesis (`Adversarial Feedback`)**: El fiscal que audita y deconstruye cada fallo.
 
 ---
 
-## 📈 III. REGISTRO DE TESIS ESTRATÉGICA (CUANTITATIVA)
+## ⚙️ II. CONFIGURACIÓN MAESTRA DE INFRAESTRUCTURA
 
-El Alpha del sistema (ventaja competitiva frente al azar) reside en la mezcla the métodos the estadística cuántica y probabilística financiera, más allá del Deep Learning.
+### ⚡ Protocolo Aegis-Ultra (Hardware)
+Configuraciones en `config.py` para latencias nano-segundo:
+- `Aegis.CORE_PINNING = True`: Fija los hilos del bot a núcleos físicos específicos para evitar context switching.
+- `Aegis.USE_AVX2 = True`: Habilita vectorización matemática pesada en los kernels JIT.
+- `Aegis.ZERO_COPY_DATA = True`: Acceso directo al RingBuffer de datos sin copias en memoria.
 
-### 1. Hurst Exponent & Market Regime (Filtro Anti-Riesgo)
-
-* **Fundamento:** Todo mercado oscila entre estado tendedo (`H > 0.5`) y estado de reversión a la media (`H < 0.5`).
-* **La Ventaja:** El bot cancela todas las señales The momentum si `H < 0.40`, y bloquea todas las señales The Reversión (Scalp corto) si `H > 0.60`. Aislando falsos positivos.
-
-### 2. Volatilidad Z-Score y GARCH Dinámico (Risk Scaling)
-
-* **Fundamento:** La varianza de los criptoactivos (Heterocedasticidad) no es constante.
-* **La Ventaja:** El factor multiplicativo `volatility_multiplier` re-calcula las barreras (TP/SL) basados the previsiones a corto plazo de **GARCH(1,1)** y **Bollinger RANSAC** en lugar de usar desviaciones estándar rígidas (sujetas a *outliers*).
-
-### 3. El Criterio Fractional Kelly (Growth/Ruin Engine)
-
-* **Fundamento:** El modelo puro dictamina la porción óptima de `Capital / EV` a arriesgar (`f* = (p*b - q)/b`). Apostar más causa ruina determinista, apostar menos causa crecimiento sub-óptimo.
-* **La Ventaja:** Kelly Fraccional (`f*/10`). Limita severamente la sobre-exposición (cap a máx 5%), y lo que es más importante: invoca una **Prohibición Total the Trading** si el Valor Esperado (EV) de la red neuronal se desploma (Tasa the Acierto * Payoff < Ruina Constante).
+### 📡 Observabilidad y Alertas
+- **Telegram/Email**: Notificaciones en tiempo real para cambios de PnL y errores críticos.
+- `ALERT_MAX_DRAWDOWN = 0.05`: Alerta visual si el drawdown total toca el 5%.
+- `ALERT_MIN_SHARPE = 1.2`: Notificación si la eficiencia de la sesión cae de niveles institucionales.
 
 ---
 
-## 🧿 IV. TELEMETRÍA CAUSAL & EL ORÁCULO SOBERANO (PHASE 47.3)
+## ⚙️ III. CONFIGURACIÓN GLOBAL DE TRADING ($13 USD)
 
-Implementado en el protocolo **Perpetual Perfection**, el sistema ahora rastrea la **Causalidad** de cada trade en lugar de solo el PnL.
+| Parámetro | Valor | Justificación Técnica |
+| :--- | :--- | :--- |
+| `INITIAL_CAPITAL` | $13.0 | Capital de inicio para micro-scalping. |
+| `BINANCE_LEVERAGE` | 10x | Garantiza que $3.90 de margen alcancen el mínimo de $5 de Binance Futures. |
+| `POS_SIZE_MICRO` | 30% | Aloca ~$3.90 por trade, permitiendo 2 operaciones concurrentes. |
+| `MAX_RISK_TRADE` | 5.0% | Tolerancia de pérdida máxima por señal sobre el capital total. |
+| `MAX_SLIPPAGE` | 0.1% | Límite para órdenes LIMIT Post-Only para evitar pérdida por spread. |
 
-### 1. Descomposición Post-Mortem Standard
+---
 
-Cada trade se audita contra el "Perfect Intent" (qué pensó Sophia que pasaría vs qué pasó).
+## 🧠 IV. ESTRATEGIA TÉCNICA HÍBRIDA (`technical.py`) - MICRO-LÓGICA
 
-* **Atribución de Éxito**: `GENETIC_PRECISION` (los parámetros eran correctos), `ALPHA_LUCK` (movimiento aleatorio a favor), `ORACLE_VETO` (se evitó una pérdida).
-* **Atribución de Fallo**: `CALIBRATION_DRIFT` (parámetros desactualizados), `BLACK_SWAN` (evento impredecible), `LACK_OF_CONVICTION`.
+Esta estrategia es el motor principal. Aquí se detalla la lógica de puntuación y adaptabilidad.
 
-### 2. El Ciclo de Retroalimentación Soberana
+### 1. Sistema de Puntuación de Confluencia
+Para que se dispare una señal, el sistema suma puntos según el estado de múltiples timeframes:
+- **Base Score**: `MeanReversion (+0.6)` o `Momentum (+0.5)`.
+- **Tendencia Confirmada**: `+0.3` si EMA Fast > Slow y Precio > EMA Trend.
+- **RSI de Memoria**: `+0.2` si RSI está en zona de equilibrio (40-60).
+- **RSI Extremo**: `+0.4` si RSI > 70 o < 30 (Dispara Mean Reversion).
+- **Volume Ratio**: `+0.2` si el volumen actual es > 1.2x la media móvil.
+- **Umbral de Calidad**: La señal solo se emite si el Score Total > **0.40 - 0.55** (adaptativo).
 
-El Oráculo Soberano inyecta **Narrativas** en el log de auditoría masiva, permitiendo auditorías institucionales de "Caja de Cristal" (White Box Auditing).
+### 2. DPE: Dynamic Parametric Evolution (DPE)
+El bot no usa RSI 30/70 fijos, sino que los recalcula dinámicamente:
+- **RSI Dinámico**: Usa los **percentiles 15 y 85** de las últimas 200 velas. El mercado define qué es "sobrevendido".
+- **ADX Dinámico**: Usa el `Mean(ADX) + 0.5 * StdDev(ADX)`. El mercado define qué es "tendencia".
 
-* **Audit Trail**: Cada trade en backtest y live contiene un `reasoning_id` que vincula el PnL con la narrativa de la IA.
-* **Infinitesimal Pulse**: Ajustes de $10^{-7}$ en los genes basados en la atribución causal de la última barra.
+### 3. Escalado de Riesgo Asimétrico (ATR-Scaling)
+El Stop Loss (SL) y Take Profit (TP) no son fijos, dependen de la volatilidad:
+- **Base Multiplier**: `ATR * 1.5 (SL)` / `ATR * 3.0 (TP)`. (Variables según Scalping/Swing).
+- **VolRatio Multiplier**: Si la volatilidad actual es 1.2x la media, el SL se amplía un **20%** para evitar mechas falsas.
+- **Regime Multiplier**: En mercados `CHOPPY`, el SL se cierra un **25%** para proteger el capital.
+
+### 4. Definición Quirúrgica de Setups
+- **Mean Reversion**: Mecha en Banda Bollinger + RSI Extremo + Volumen Alto.
+- **Proximity Scalping**: Especial para $13. BB position < 25% + RSI "leaning" (<45) + Volumen moderado. Es más permisivo.
+- **Momentum (VCP)**: `Volatility Contraction Pattern`. Expansión de bandas + Aceleración MACD + ADX > 20.
+
+---
+
+## 🤖 V. ESTRATEGIA ML XGBOOST (`ml_strategy.py`)
+
+- **Conjunto de 25 Modelos**: Un modelo entrenado específicamente para cada activo del basket.
+- **Engine V5.10**: Optimiza 100+ features divididos en Momentum, Volatilidad y Flujo de Volumen.
+- **Retraining cada 240 velas**: Los modelos "aprenden" mientras operan para no quedar obsoletos.
+- **Confidence Oracle**: Requiere un margen de beneficio proyectado del **1.5%** por el modelo de IA antes de autorizar el trade.
+
+---
+
+## 🎯 VI. ESTRATEGIA SNIPER HFT (`sniper.py`)
+
+- **Mapa de Agresión por Régimen**:
+    - `TRENDING_BULL`: 8x Leverage | Aggressive Threshold (-0.05).
+    - `CHOPPY`: 1x Leverage | Caution Threshold (+0.05).
+    - `ZOMBIE`: 1x Leverage | No Trade Threshold (+1.0).
+- **Order Flow Depth**: Analiza los primeros 20 niveles del libro de órdenes buscando desequilibrios del 30% (`Imbalance`).
+
+---
+
+## 💾 VII. ESTADO COGNITIVO (COGNITIVE MEMORY)
+
+El bot recuerda su desempeño reciente por activo y setup:
+- **ALPHA STATE**: Si el activo tiene una racha ganadora, el bot desbloquea **ALL_SETUPS** y aumenta la agresividad.
+- **INJURED STATE**: Si el activo ha perdido recientemente, el bot bloquea setups débiles y solo permite entradas con **"IA Brutal"** (Score > 0.75).
+- **NORMAL STATE**: Comportamiento estándar según perfiles.
+
+---
+
+## 🔢 VIII. CIMIENTOS Y ESTADÍSTICA (MATH PROOFS)
+
+- **Hurst Exponent**: Cálculo de persistencia en 20 velas. Gemini filtra señales donde H está entre 0.45 y 0.55 (ruido blanco).
+- **RANSAC Robustness**: Los cálculos de tendencia y bandas se realizan descartando el 25% de los datos que son ruido o manipulación de mercado.
+- **Brier Audit**: Puntuación de calibración de confianza. Si el bot gana pero predijo con baja confianza, Némesis lo penaliza como "Luck".
+
+---
+
+## 💰 IX. MICRO-ECONOMÍA DE SUPERVIVENCIA ($13 USD)
+
+Para duplicar capital cada 15 días:
+- **Kelly Adaptativo (0.3)**: Usamos el 30% de la fracción de Kelly óptima para evitar la ruina estadística.
+- **Fee Optimization**: El bot prefiere órdenes `LIMIT` (Post-Only). Sabe que el 0.05% de comisión adicional de órdenes `MARKET` destruiría la cuenta rápidamente.
+- **Slippage Forensic**: Cada trade es auditado. Si el spread real supera el 0.05%, el bot anula la operación antes de entrar.
+
+---
+**Tratado Omnibús de Estrategias y Configuraciones Trader Gemini V7.2 - EL MANUAL SUPREMO**
+**"Integración total, de lo nano a lo macro."**

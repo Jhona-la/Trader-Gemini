@@ -12,7 +12,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
-from tests.run_backtest import fetch_binance_data, run_backtest, calculate_metrics
+from core.backtest_infra import fetch_binance_data, calculate_metrics
 
 def process_symbol_horizon(args):
     """

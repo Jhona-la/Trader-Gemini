@@ -56,6 +56,7 @@ from strategies.sniper_strategy import SniperStrategy
 from data.sentiment_loader import SentimentLoader
 from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy  # ← UNIVERSAL ENSEMBLE FOR ALL SYMBOLS
 from core.portfolio import Portfolio
+from core.micro_awareness import MicroAccountAwareness
 from core.events import OrderEvent, SignalEvent
 from core.enums import OrderSide, OrderType
 from core.market_regime import MarketRegimeDetector
@@ -466,20 +467,36 @@ async def market_adaptive_loop(engine: Engine, data_handler: BinanceData, scanne
                     logger.info("📡 Waiting 30s for new symbol history...")
                     await asyncio.sleep(30)
                 
-                # D. Register new strategies
+                # D. Register new strategies (DUAL HORIZON)
                 for s in to_add:
                     try:
                         is_leader = ('BTC' in s)
-                        ml_strat = MLStrategy(
+                        # Scalping Engine
+                        ml_strat_scalp = MLStrategy(
                             data_provider=data_handler,
                             events_queue=events_queue,
                             symbol=s,
                             lookback=Config.Strategies.ML_LOOKBACK_BARS,
                             sentiment_loader=sentiment_loader,
                             portfolio=portfolio,
-                            risk_manager=risk_manager if is_leader else None
+                            risk_manager=risk_manager if is_leader else None,
+                            horizon="SCALPING"
                         )
-                        engine.register_strategy(ml_strat)
+                        engine.register_strategy(ml_strat_scalp)
+                        
+                        # Swing Engine
+                        ml_strat_swing = MLStrategy(
+                            data_provider=data_handler,
+                            events_queue=events_queue,
+                            symbol=s,
+                            lookback=Config.Strategies.ML_LOOKBACK_BARS,
+                            sentiment_loader=sentiment_loader,
+                            portfolio=portfolio,
+                            risk_manager=None,
+                            horizon="SWING"
+                        )
+                        ml_strat_swing.strategy_id += "_SWING"
+                        engine.register_strategy(ml_strat_swing)
                     except Exception as e:
                         logger.error(f"Failed to spawn adaptive strategy for {s}: {e}")
 
@@ -616,6 +633,9 @@ async def main():
         portfolio=portfolio
     )
 
+    # 3.2.2. MICRO ACCOUNT AWARENESS (Phase 1: Real Wallet sync)
+    micro_awareness = MicroAccountAwareness()
+
     # 3.3. DATA WARMING BARRIER
     # Wait for parallel workers to fetch enough history for ML
     logger.info("📡 [Elite Protocol] Warming up data for universal training...")
@@ -647,7 +667,7 @@ async def main():
     # Executor
     print("DEBUG: Instanciando BinanceExecutor...")
     try:
-        executor = BinanceExecutor(events_queue, portfolio=portfolio)
+        executor = BinanceExecutor(events_queue, portfolio=portfolio, data_provider=data_handler, micro_awareness=micro_awareness)
         print("DEBUG: BinanceExecutor instanciado exitosamente.")
     except Exception as e:
         print(f"DEBUG CRITICAL FAIL en BinanceExecutor: {e}")
@@ -681,19 +701,38 @@ async def main():
             # ORCHESTRATION (Phase 12): Only BTC drives Global Regime
             is_leader = ('BTC' in symbol)
             
-            ml_strat = MLStrategy(
+            # --- 1. SCALPING ENGINE (High Frequency) ---
+            ml_strat_scalp = MLStrategy(
                 data_provider=data_handler,
                 events_queue=events_queue,
                 symbol=symbol,
                 lookback=Config.Strategies.ML_LOOKBACK_BARS,
                 sentiment_loader=sentiment_loader,
                 portfolio=portfolio,
-                risk_manager=risk_manager if is_leader else None
+                risk_manager=risk_manager if is_leader else None,
+                horizon="SCALPING"
             )
-            strategies.append(ml_strat)
-            engine.register_strategy(ml_strat)
+            strategies.append(ml_strat_scalp)
+            engine.register_strategy(ml_strat_scalp)
+            
+            # --- 2. SWING ENGINE (Longer Term) ---
+            ml_strat_swing = MLStrategy(
+                data_provider=data_handler,
+                events_queue=events_queue,
+                symbol=symbol,
+                lookback=Config.Strategies.ML_LOOKBACK_BARS,
+                sentiment_loader=sentiment_loader,
+                portfolio=portfolio,
+                risk_manager=None, # Only one Engine should hook the global risk manager to prevent double regime emission
+                horizon="SWING"
+            )
+            # Tag the SWING engine explicitly so it tracks its own timeframe
+            ml_strat_swing.strategy_id += "_SWING"
+            strategies.append(ml_strat_swing)
+            engine.register_strategy(ml_strat_swing)
+            
         except Exception as e:
-            logger.warning(f"Could not init ML Strategy for {symbol}: {e}")
+            logger.warning(f"Could not init ML Strategies for {symbol}: {e}")
     
     # Sniper Strategy
     try:
@@ -703,11 +742,21 @@ async def main():
     except Exception as e:
         logger.warning(f"Could not init Sniper Strategy: {e}")
     
-    # Technical Strategy
+    # Technical Strategy — DUAL HORIZON (FORENSIC REMEDIATION)
+    # QUÉ: Se crean 2 instancias de TechnicalStrategy: SCALPING y SWING.
+    # POR QUÉ: Antes solo existía UNA instancia con horizon="SCALPING" por defecto.
+    #   Esto significaba que NUNCA se generaban señales SWING del TechnicalStrategy.
+    # PARA QUÉ: Habilitar trading bidireccional en ambos horizontes temporales.
     try:
-        tech = TechnicalStrategy(data_handler, events_queue)
-        strategies.append(tech)
-        engine.register_strategy(tech)
+        tech_scalp = TechnicalStrategy(data_handler, events_queue, horizon="SCALPING")
+        strategies.append(tech_scalp)
+        engine.register_strategy(tech_scalp)
+        logger.info("✅ TechnicalStrategy [SCALPING] registered.")
+        
+        tech_swing = TechnicalStrategy(data_handler, events_queue, horizon="SWING")
+        strategies.append(tech_swing)
+        engine.register_strategy(tech_swing)
+        logger.info("✅ TechnicalStrategy [SWING] registered.")
     except Exception as e:
         logger.warning(f"Could not init Technical Strategy: {e}")
     
@@ -837,6 +886,16 @@ async def main():
                     
                     metrics.update(portfolio=portfolio, engine=engine, queue_size=engine.events.qsize())
                     metrics.update_health(risk_manager)
+                    
+                    # Phase 1: Real-Time Wallet Balance Sync
+                    try:
+                        real_balance = await asyncio.to_thread(executor.fetch_real_balance)
+                        portfolio.current_cash = real_balance
+                        if micro_awareness:
+                            micro_awareness.update_balance(real_balance)
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to sync wallet balance: {e}")
+                        
                     last_heartbeat = now
                 
                 # Performance Summary (30m)

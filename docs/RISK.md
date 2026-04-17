@@ -46,7 +46,7 @@ graph LR
 
 ## 📐 II. MAPEO DE LA CAPA 'CRITERIO-AXIOMA' (Mathematical Integrity)
 
-Cada orden y cálculo the PnL atraviesa una auditoría financiera de doble-chequeo basada en la clase `decimal.Decimal` (28 dígitos) que imposibilita de facto el *Floating-Point Drift* ("Ghost Money" / Dinero Fantasma de los Errores de Redondeo en CPU).
+Cada orden y cálculo de PnL atraviesa una auditoría financiera de doble-chequeo basada en **Numpy Float64** (64-bit IEEE 754) procesado mediante kernels **Numba JIT** (`utils/math_kernel.py`). Esto elimina el overhead de `decimal.Decimal` (28 dígitos) que, aunque preciso, era 1,000x veces más lento e incompatible con la latencia nano requerida. Mantener una precisión de ~15-17 decimales reales es suficiente para los límites del Exchange de Binance.
 
 ```mermaid
 graph TD
@@ -56,9 +56,9 @@ graph TD
     end
 
     subgraph Portfolio Matrix (Axioma Audit)
-        DF[Decimal PnL Check]
+        DF[Float64 JIT Check]
         Acc[Accounting Eq:<br/>Final == Init + PnL - Fees]
-        Tr[Precision Drift Tracker]
+        Tr[Nano-Precision Tracker]
     end
 
     subgraph Risk Manager Sync
@@ -114,7 +114,35 @@ Escenarios the Catástrofe (Cisnes Negros) históricamente presentes en Crypto y
 | **Velas 'Flash-Crash' / Anomalías de Aguja** | Desvío del SL, Ruina Inmediata | GARCH estipula TP/SLs conservadores lejanos al Spread. | **BAJO** |
 | **Pérdida De Conexión WS Binance** | Órdenes Fantasma, Datos Estancados | Uvloop Keep-Alive. Re-conexion Automática y purga `buffer_reset`. | **MEDIO** |
 | **Slippage Extremo In-Flight** | Llenado a peor precio que el LOB bid/ask | "Liquidity/Slippage Awareness Check" previo a emitir cualquier Orden Límite. | **BAJO** |
-| **Underflow Matemático (Softwares ML)** | Modelos votando 100% Largo vs 100% Corto por NaN | "Tensor Axioma"; Clipping the la matriz L-Prob `[-100, 80]` pre-Softmax. | **NULO** |
+| **Underflow Matemático (Softwares ML)** | Modelos votando 100% Largo vs 100% Corto por NaN | "Tensor Axioma"; Clipping de la matriz L-Prob `[-100, 80]` pre-Softmax y validación JIT de números reales. | **NULO** |
 | **Eventos de Fallo the Máquina / OS** | Corrupción del Historial, Des-sincronía PnL | Base The datos SQLite forzada a WAL mode + Local Parquet Data Caching persistente. | **MUY BAJO** |
 
+### 🟢 VI. AUDITORÍA DE FRICCIÓN (FEE DRAG) — MICRO-CUENTA $13
+
+Para cuentas pequeñas, la comisión de Binance es el principal depredador. El sistema implementa:
+
+1.  **Isolated Fee Tracker**: El `portfolio.py` calcula y resta la comisión estimada (0.05% Taker) antes de reportar el `net_pnl`.
+2.  **Piso de Rentabilidad (Minimum Alpha)**: Se exige un movimiento mínimo del **0.15%** solo para cubrir los costos de ida y vuelta (*round-trip fees*). Si la estrategia no provee este Alpha neto, las señales son bloqueadas por el `RiskManager`.
+3.  **Filtrado de Micro-Slippage**: El `FillEvent` captura la diferencia entre el precio solicitado y el precio de llenado. Si el slippage acumulado es > 0.05%, se activa un `Cooldown` operativo.
+
+---
+
 > Todo Cisne Negro conocido tiene una barrera técnica the protección en este sistema. El sistema opera the manera Agresiva bajo supervisión defensiva Extrema.
+
+---
+
+## 🛡️ V. GESTIÓN DE RIESGO HORIZON-AWARE (SCALABILITY)
+
+Para soportar operaciones desde 1D hasta 30D, el sistema implementa una escala de riesgo dinámica basada en la volatilidad temporal.
+
+### 1. Escalamiento de Stop Loss (ATR-Based)
+En lugar de porcentajes fijos, el SL/TP se calcula como un múltiplo del ATR (Average True Range). Este múltiplo se escala por la raíz cuadrada del tiempo ($\sqrt{H}$) para compensar el aumento natural del ruido en horizontes largos.
+
+*   **Formula**: $SL = Price - (ATR \times Multiplier \times \sqrt{Horizon\_Days})$
+
+### 2. Drawdown Adaptativo en KillSwitch
+El límite de pérdida máxima permitida (`MAX_DRAWDOWN`) ya no es estático del 1.5%. Para horizontes de Swing/Position (15D-30D), el KillSwitch permite fluctuaciones más amplias (hasta 4-5%) para evitar liquidaciones prematuras de posiciones con tesis estructurales de largo plazo, siempre manteniendo la integridad del capital base.
+
+### 3. Pisos de Capital Dinámicos
+El `CRITICAL_CAPITAL_FLOOR` se ajusta automáticamente según el valor del Tick y el Horizonte, garantizando que el bot siempre tenga margen suficiente para ejecutar órdenes LIMIT sin entrar en colisión con los mínimos del exchange de Binance bajo alta volatilidad.
+

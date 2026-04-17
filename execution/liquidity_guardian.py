@@ -21,16 +21,67 @@ class LiquidityGuardian:
         # Guardamos snapshots previos para detectar muros que desaparecen
         self.book_history = {} # {symbol: {'bids': [], 'asks': [], 'timestamp': ...}}
         
-    def analyze_liquidity(self, symbol: str, quantity: float, side: str) -> Dict:
+        # 🏎️ [L-001] Cache Asíncrono de Latencia Cero (TTL = 1.0s)
+        self.order_book_cache = {} # {symbol: {'data': order_book, 'timestamp': float}}
+        self.cache_ttl = 1.0 # 1 Segundo máximo de vigencia
+        
+    def get_fast_bid_ask(self, symbol: str) -> Tuple[float, float]:
+        """
+        [NANO-LATENCY] Fetches best BID and ASK from cache. 
+        Falls back to Ticker if cache expired, avoiding blocking fetch_order_book in the critical path.
+        """
+        import time
+        current_time = time.time()
+        
+        # 1. Use pure cache if available (0 latency)
+        if symbol in self.order_book_cache and (current_time - self.order_book_cache[symbol]['timestamp'] < self.cache_ttl):
+            bids = self.order_book_cache[symbol]['data'].get('bids', [])
+            asks = self.order_book_cache[symbol]['data'].get('asks', [])
+            if bids and asks:
+                return bids[0][0], asks[0][0]
+                
+        # 2. Fallback to Ticker (Faster than order book depth REST call)
+        try:
+            ticker = self.exchange.fetch_ticker(symbol)
+            bid = ticker.get('bid', 0.0)
+            ask = ticker.get('ask', 0.0)
+            if not bid or not ask:
+                last = ticker.get('last', 0.0)
+                return last, last
+            return float(bid), float(ask)
+        except Exception as e:
+            logger.warning(f"⚠️ [Fast Bid/Ask] Error fetching ticker for {symbol}: {e}")
+            return 0.0, 0.0
+
+    def analyze_liquidity(self, symbol: str, quantity: float, side: str, bypass_guardian: bool = False) -> Dict:
         """
         Realiza el triple chequeo de liquidez antes de disparar.
         """
+        # 🏎️ [L-001] Bypass de Makers: Salto a la velocidad de la luz
+        if bypass_guardian:
+            logger.info(f"⚡ [GUARDIAN BYPASSED] Limit-Maker order - Fast Tracked para {symbol}")
+            return {
+                "is_safe": True,
+                "avg_fill_price": 0.0, # Bypass
+                "slippage_pct": 0.0,
+                "spread_pct": 0.0,
+                "walls": {"bid_walls": [], "ask_walls": [], "avg_depth": 0},
+                "reason": "Bypassed (Maker/Limit)"
+            }
+            
         try:
-            # 1. Obtener el Snapshot (Top 20 Niveles)
+            # 1. Obtener el Snapshot (Top 20 Niveles) con CACHÉ
             symbol_api = symbol.replace('/', '') if Config.BINANCE_USE_FUTURES else symbol
-            # CCXT fetch_order_book handles the internal mapping
             limit = 20
-            order_book = self.exchange.fetch_order_book(symbol, limit=limit)
+            
+            import time
+            current_time = time.time()
+            if symbol in self.order_book_cache and (current_time - self.order_book_cache[symbol]['timestamp'] < self.cache_ttl):
+                order_book = self.order_book_cache[symbol]['data']
+            else:
+                # Bloqueante REST API Call - Optimizado a 1 llamada por segundo máximo por símbolo
+                order_book = self.exchange.fetch_order_book(symbol, limit=limit)
+                self.order_book_cache[symbol] = {'data': order_book, 'timestamp': current_time}
             
             bids = order_book['bids'] # Compras [[price, qty], ...]
             asks = order_book['asks'] # Ventas

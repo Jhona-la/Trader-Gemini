@@ -1,0 +1,5 @@
+📊 Metrics Exporter Initialized (Phase 99: Per-Symbol + Health).
+
+==================================================
+🚀 OMEGA LATENCY REPORT
+==================================================

@@ -28,11 +28,9 @@ def run_single_horizon(symbol: str, days: int) -> dict:
     print(f"{'='*60}")
     
     # Import fresh each time to avoid state leaks
-    from tests.run_backtest import fetch_binance_data, run_backtest, calculate_metrics
+    from core.backtest_infra import fetch_binance_data, calculate_metrics
     
-    # Monkey-patch the DAYS global in run_backtest module
-    import tests.run_backtest as rb_module
-    rb_module.DAYS = days
+    # No monkey-patching needed — core/backtest_infra.py uses Config
     
     try:
         # 1. Fetch data

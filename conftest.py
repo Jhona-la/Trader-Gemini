@@ -342,7 +342,8 @@ def sample_signal_event():
         sl_pct=0.05,
         tp_pct=0.10,
         current_price=0.55,
-        leverage=3
+        leverage=3,
+        horizon='SCALPING'
     )
 
 

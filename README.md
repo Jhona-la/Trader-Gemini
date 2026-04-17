@@ -3,7 +3,7 @@
 
 Trader Gemini es un sistema de trading de Alta Frecuencia (HFT) de Grado Institucional, optimizado para la ejecución de nano-latencia en Binance Futures. Utiliza una arquitectura de **Metal Puro** que minimiza la sobrecarga de Python mediante el uso de kernels JIT y estructuras de datos Zero-Copy.
 
-> 📘 **DEPLOYMENT GUIDE**: See [DEPLOYMENT.md](DEPLOYMENT.md) for production setup.
+> 📘 **DEPLOYMENT GUIDE**: See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for production setup.
 
 ---
 
@@ -69,3 +69,4 @@ Para máxima prioridad y optimización de bytecode:
 ---
 **Desarrollado por**: Protocolo Metal-Core Omega Team
 **Certificación**: 100% SUCCESS (Fuerza Delta Level VI Certified)
+

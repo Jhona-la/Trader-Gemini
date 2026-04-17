@@ -69,12 +69,18 @@ class AxiomDiagnoser:
             slippage = abs(fill_price - trigger_price) / trigger_price
             
             # Sub-Root 1: Cálculo / Latency Extrema (Slippage Devastador)
-            if slippage > cls.MAX_SLIPPAGE_PCT:
+            # FORENSIC-2: Dynamic Slippage Threshold scaling
+            # Scale the maximum allowed slippage relative to the expected duration bounds.
+            # Short durations (< 5 mins) need tighter slippage tolerance (e.g. ~0.15%)
+            # Swing durations (> 60 mins) can tolerate wider natural slippage gaps (e.g. ~0.8%)
+            dynamic_slippage_max = min(0.015, max(0.0015, 0.0015 + (duration_mins / 120.0) * 0.005))
+            
+            if slippage > dynamic_slippage_max:
                 return AxiomDiagnosis(
                     tipo_falla=FallaBase.CALCULO,
                     residual_pct=slippage,
                     accion_recomendada="SAFE_MODE_VERIFY_EXECUTION",
-                    razon=f"Slippage Fatal detectado ({slippage*100:.3f}%). Posible Bug de red o motor lógico.",
+                    razon=f"Slippage Fatal detectado ({slippage*100:.3f}% vs Límite dinámico {dynamic_slippage_max*100:.3f}%). Posible Bug de red o motor lógico.",
                     is_fatal=True
                 )
                 

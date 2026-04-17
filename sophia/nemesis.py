@@ -148,7 +148,7 @@ class OverconfidencePenalizer:
         self.penalty_trades_remaining = 0
         self.current_penalty_factor = 1.0
 
-    def record_brier(self, brier: float):
+    def record_brier(self, brier: float, horizon_profile: str = 'SHORT_TERM'):
         """Record a new Brier score and check if penalty should activate."""
         self.recent_briers.append(brier)
 
@@ -162,7 +162,13 @@ class OverconfidencePenalizer:
         # Check if we need to activate/renew penalty
         if len(self.recent_briers) >= 5:
             avg_brier = sum(self.recent_briers) / len(self.recent_briers)
-            if avg_brier > self.brier_threshold:
+            
+            # FORENSIC-4: Brier threshold scaling based on horizon
+            dynamic_threshold = self.brier_threshold
+            if str(horizon_profile) in ['MID_TERM', 'LONG_TERM'] or (isinstance(horizon_profile, (int, float)) and horizon_profile >= 10):
+                dynamic_threshold += 0.03 # Allow ~0.23 max error on SWING because of multi-day noise.
+
+            if avg_brier > dynamic_threshold:
                 self.current_penalty_factor = 1.0 + max(0, (avg_brier - 0.15) * 3.0)
                 self.penalty_trades_remaining = self.lookback
                 logger.warning(
@@ -184,6 +190,21 @@ class OverconfidencePenalizer:
         if self.current_penalty_factor <= 1.0:
             return p_win
         return max(0.01, p_win / self.current_penalty_factor)
+
+    def get_avg_brier(self) -> float:
+        """
+        Returns rolling average Brier Score over the lookback window.
+        
+        QUÉ: Promedio Brier Score de los últimos N trades.
+        POR QUÉ: Necesario para el feedback loop Némesis→Sophia (apply_nemesis_feedback).
+        PARA QUÉ: Proporciona una medida estable de calibración en vez de un solo trade ruidoso.
+        CUÁNDO: Invocado por NemesisEngine.full_autopsy() para alimentar a Sophia.
+        DÓNDE: sophia/nemesis.py → OverconfidencePenalizer
+        QUIÉN: NemesisEngine → SophiaIntelligence.apply_nemesis_feedback()
+        """
+        if not self.recent_briers:
+            return 0.0
+        return sum(self.recent_briers) / len(self.recent_briers)
 
 
 # ============================================================
@@ -225,7 +246,13 @@ class FalsePositiveAnalyzer:
             (is_false_positive, reason)
         """
         is_loss = actual_pnl <= 0
-        is_high_conf = predicted_prob >= self.HIGH_CONFIDENCE_THRESHOLD
+        
+        # FORENSIC-4: Horizon Aware Confidence scaling
+        horizon = sophia_report.get('horizon_profile', 'SHORT_TERM') # Matches profile from Sophia (Int = Days)
+        # If it's a longer term horizon, max statistical confidence ceiling compresses due to multi-day entropy.
+        threshold = 0.75 if (str(horizon) in ['MID_TERM', 'LONG_TERM'] or (isinstance(horizon, (int, float)) and horizon >= 10)) else self.HIGH_CONFIDENCE_THRESHOLD
+        
+        is_high_conf = predicted_prob >= threshold
 
         if not is_high_conf:
             return False, "N/A"
@@ -301,6 +328,7 @@ class TimeDeviationAnalyzer:
         actual_duration_mins: float,
         predicted_duration_mins: float,
         actual_pnl: float,
+        horizon_profile: str = 'SHORT_TERM' # OMEGA FORENSIC
     ) -> Tuple[float, str]:
         """
         Compute time deviation ratio and classify.
@@ -322,7 +350,10 @@ class TimeDeviationAnalyzer:
         elif ratio > 2.0 and actual_pnl <= 0:
             classification = "VOLATILITY_STALL"
         elif ratio < 0.5:
-            classification = "PREMATURE_EXIT"
+            if actual_pnl > 0 and (predicted_duration_mins > 60 or horizon_profile in ['MID_TERM', 'LONG_TERM']):
+                classification = "ALPHA_STRIKE" # FORENSIC-4: Win before 50% time bound on a high timeframe is a Strike.
+            else:
+                classification = "PREMATURE_EXIT"
         else:
             classification = "PRECISE"
 
@@ -347,6 +378,7 @@ class TimeDeviationAnalyzer:
             "ALPHA_LEAK": f"Duración real {actual_mins:.1f}min vs estimado {predicted_mins:.1f}min → FUGA DE ALFA: ganó pero tardó {ratio:.1f}x lo esperado.",
             "VOLATILITY_STALL": f"Duración real {actual_mins:.1f}min vs estimado {predicted_mins:.1f}min → ESTANCAMIENTO: perdió tras esperar {ratio:.1f}x lo previsto.",
             "PREMATURE_EXIT": f"Duración real {actual_mins:.1f}min vs estimado {predicted_mins:.1f}min → SALIDA PREMATURA: cerró en {ratio:.1f}x del horizonte.",
+            "ALPHA_STRIKE": f"Duración real {actual_mins:.1f}min vs estimado {predicted_mins:.1f}min → ALPHA STRIKE: Ganancia rápida ejecutada en {ratio:.1f}x del horizonte.",
         }
         return narratives.get(classification, f"Ratio temporal: {ratio:.2f}x")
 
@@ -945,8 +977,19 @@ class NemesisEngine:
 
         # §IV: Feedback
         self.gene_penalizer = GenePenalizer()
+        
+        # PHASE 4: Evolutionary Feedback Loop
+        self.sophia_ref = None  # Set via set_sophia_ref() after initialization
 
         logger.info("⚔️ [NÉMESIS] Retrospección engine initialized")
+    
+    def set_sophia_ref(self, sophia_instance):
+        """
+        🔗 Connect Némesis to Sophia for closed-loop feedback.
+        Called during bootstrap in main.py after both instances are created.
+        """
+        self.sophia_ref = sophia_instance
+        logger.info("⚔️ [NÉMESIS] Sophia reference linked for feedback loop")
 
     def full_autopsy(
         self,
@@ -985,7 +1028,8 @@ class NemesisEngine:
         self.brier_buckets.record(predicted_prob, brier_score)
 
         # ── §I.2: Overconfidence ──
-        self.overconfidence.record_brier(brier_score)
+        horizon = sophia_report.get('horizon_profile', 'SHORT_TERM') # OMEGA FORENSIC 
+        self.overconfidence.record_brier(brier_score, horizon_profile=horizon)
         oc_active = self.overconfidence.is_active()
         oc_factor = self.overconfidence.get_penalty_factor()
 
@@ -996,7 +1040,10 @@ class NemesisEngine:
 
         # ── §II.4: Time Deviation ──
         time_ratio, time_class = self.time_deviation.analyze(
-            actual_duration_mins, predicted_exit_mins, actual_pnl
+            actual_duration_mins, 
+            predicted_exit_mins, 
+            actual_pnl,
+            horizon_profile=horizon
         )
 
         # ── §II.5: Efficiency ──
@@ -1122,6 +1169,15 @@ class NemesisEngine:
         # Persist to disk
         if persist_manifest:
             ManifestWriter.persist_to_disk(trade_id, report.to_dict())
+
+        # PHASE 4: Evolutionary Feedback Loop (Némesis → Sophia)
+        if self.sophia_ref is not None:
+            try:
+                fp_rate = self.false_positives.get_fp_rate()
+                avg_brier = self.overconfidence.get_avg_brier() if hasattr(self.overconfidence, 'get_avg_brier') else brier_score
+                self.sophia_ref.apply_nemesis_feedback(fp_rate, avg_brier)
+            except Exception as e:
+                logger.debug(f"[NÉMESIS→SOPHIA] Feedback skipped: {e}")
 
         return report
 

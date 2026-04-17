@@ -39,6 +39,7 @@ class BinanceData(DataProvider):
         self.buffers_5m = {}
         self.buffers_15m = {}
         self.buffers_1h = {}
+        self.buffers_4h = {} # Phase 28: Multi-Horizon Position
         self.buffers_1d = {} # Phase 3: Macro Horizon
         self.buffers_1w = {} # Phase 3: Structural Horizon
         self.vbi_history = {}
@@ -47,6 +48,9 @@ class BinanceData(DataProvider):
         self.liquidity_cache = {}
         # PHASE 13: Order Flow Metrics
         self.order_flow_metrics = {}
+        
+        # PHASE 29: Derivatives Metrics (OI, Funding)
+        self.derivatives_metrics = {}
         
         # PHASE 14: Lead-Lag Intelligence
         self.lead_lag_results = {} # {symbol: lag_in_seconds}
@@ -183,6 +187,7 @@ class BinanceData(DataProvider):
         # Fetch initial history at startup
         self.fetch_initial_history()
         self.fetch_initial_history_1h()
+        self.fetch_initial_history_4h()  # NEW: Phase 28
         self.fetch_initial_history_5m()  # NEW
         self.fetch_initial_history_15m()  # NEW
         self.fetch_initial_history_1d()  # PHASE 3 Macro
@@ -196,6 +201,7 @@ class BinanceData(DataProvider):
         # Phase 16: Latency Circuit Breaker Stats
         self.latency_history = collections.deque(maxlen=20)
         self._start_latency_monitor()
+        self._start_derivatives_monitor()
 
     @property
     def client_sync(self):
@@ -219,7 +225,7 @@ class BinanceData(DataProvider):
                 api_key, 
                 api_secret, 
                 testnet=(hasattr(Config, 'BINANCE_USE_TESTNET') and Config.BINANCE_USE_TESTNET),
-                requests_params={'timeout': 20}
+                requests_params={'timeout': 5}
             )
             from utils.keep_alive import tune_requests_session
             tune_requests_session(client.session)
@@ -275,6 +281,44 @@ class BinanceData(DataProvider):
         t = threading.Thread(target=_ping_loop, daemon=True, name="LatencyMonitor")
         t.start()
         
+    def _start_derivatives_monitor(self):
+        """[PHASE 29] Starts a background thread to fetch Futures derivatives every 60s."""
+        def _derivatives_loop():
+            # Wait a few seconds for main initialization to avoid rate-limit race conditions
+            time.sleep(10)
+            while self._running:
+                try:
+                    for s in self.symbol_list:
+                        sym_clean = s.replace('/', '')
+                        try:
+                            # Use python-binance futures endpoint wrapper
+                            funding_resp = self.client_sync.futures_funding_rate(symbol=sym_clean, limit=1)
+                            oi_resp = self.client_sync.futures_open_interest(symbol=sym_clean)
+                            
+                            funding_rate = float(funding_resp[0]['fundingRate']) if funding_resp else 0.0
+                            oi = float(oi_resp['openInterest']) if 'openInterest' in oi_resp else 0.0
+                            
+                            # Calculate OI Delta if exists
+                            old_oi = self.derivatives_metrics.get(s, {}).get('oi', oi)
+                            oi_delta = ((oi - old_oi) / old_oi) if old_oi > 0 else 0.0
+                            
+                            self.derivatives_metrics[s] = {
+                                'funding_rate': funding_rate,
+                                'oi': oi,
+                                'oi_delta': oi_delta,
+                                'liquidations': 0.0 # Placeholder for WS or history
+                            }
+                        except Exception as e:
+                            logger.debug(f"Futures derivatives fetch skipped/failed for {s}: {e}")
+                except Exception as e:
+                    logger.error(f"Derivatives monitor error loop: {e}")
+                
+                time.sleep(60) # Poll every 1 min (Not highly reactive but suitable for macro OI/Funding)
+
+        import threading
+        t = threading.Thread(target=_derivatives_loop, daemon=True, name="DerivativesMonitor")
+        t.start()
+        
     def get_latency_metrics(self):
         """Returns avg_ping and max_ping in ms."""
         if not self.latency_history:
@@ -290,6 +334,7 @@ class BinanceData(DataProvider):
         self.buffers_5m[symbol] = NumbaStructuredRingBuffer(500)
         self.buffers_15m[symbol] = NumbaStructuredRingBuffer(500)
         self.buffers_1h[symbol] = NumbaStructuredRingBuffer(500)
+        self.buffers_4h[symbol] = NumbaStructuredRingBuffer(500)
         self.buffers_1d[symbol] = NumbaStructuredRingBuffer(500) # Preload ~1.5 years
         self.buffers_1w[symbol] = NumbaStructuredRingBuffer(300) # Preload ~5 years
         self.vbi_history[symbol] = NumbaRingBuffer(1000) # Fast VBI history
@@ -341,6 +386,16 @@ class BinanceData(DataProvider):
                     'close': float(latest[4]), 'volume': float(latest[5])
                 }
                 
+            # Fetch 4h
+            k4h = self.client_sync.get_klines(symbol=sym_clean, interval=Client.KLINE_INTERVAL_4HOUR, limit=2)
+            if k4h:
+                latest = k4h[-1]
+                results['4h'] = {
+                    'timestamp': int(latest[0]),
+                    'open': float(latest[1]), 'high': float(latest[2]), 'low': float(latest[3]),
+                    'close': float(latest[4]), 'volume': float(latest[5])
+                }
+                
             # Fetch 1d
             k1d = self.client_sync.get_klines(symbol=sym_clean, interval=Client.KLINE_INTERVAL_1DAY, limit=2)
             if k1d:
@@ -380,6 +435,7 @@ class BinanceData(DataProvider):
                 if timeframe == '5m': target_map = self.buffers_5m
                 elif timeframe == '15m': target_map = self.buffers_15m
                 elif timeframe == '1h': target_map = self.buffers_1h
+                elif timeframe == '4h': target_map = self.buffers_4h
                 elif timeframe == '1d': target_map = self.buffers_1d
                 elif timeframe == '1w': target_map = self.buffers_1w
                 
@@ -423,6 +479,7 @@ class BinanceData(DataProvider):
             total_candles_needed = minutes_needed / (
                 15 if interval == '15m' else
                 60 if interval == '1h' else
+                240 if interval == '4h' else
                 1440 if interval == '1d' else
                 10080 if interval == '1w' else
                 5 if interval == '5m' else 1
@@ -440,6 +497,7 @@ class BinanceData(DataProvider):
             if interval == '5m': kl_interval = Client.KLINE_INTERVAL_5MINUTE
             elif interval == '15m': kl_interval = Client.KLINE_INTERVAL_15MINUTE
             elif interval == '1h': kl_interval = Client.KLINE_INTERVAL_1HOUR
+            elif interval == '4h': kl_interval = Client.KLINE_INTERVAL_4HOUR
             elif interval == '1d': kl_interval = Client.KLINE_INTERVAL_1DAY
             elif interval == '1w': kl_interval = Client.KLINE_INTERVAL_1WEEK
             
@@ -455,6 +513,7 @@ class BinanceData(DataProvider):
                 since = candles[-1][0] + (60000 * (
                     15 if interval == '15m' else
                     60 if interval == '1h' else
+                    240 if interval == '4h' else
                     1440 if interval == '1d' else
                     10080 if interval == '1w' else
                     5 if interval == '5m' else 1
@@ -478,6 +537,7 @@ class BinanceData(DataProvider):
             elif interval == '5m': target_map = self.buffers_5m
             elif interval == '15m': target_map = self.buffers_15m
             elif interval == '1h': target_map = self.buffers_1h
+            elif interval == '4h': target_map = self.buffers_4h
             elif interval == '1d': target_map = self.buffers_1d
             elif interval == '1w': target_map = self.buffers_1w
             else: target_map = self.buffers_1m
@@ -563,6 +623,21 @@ class BinanceData(DataProvider):
         for f in as_completed(futures):
             pass
 
+    def fetch_initial_history_4h(self):
+        """Fetches 4h data in PARALLEL."""
+        logger.info("Fetching 4h macro historical data (400h) in PARALLEL...")
+        hours = 400
+        
+        futures = []
+        for s in self.symbol_list:
+            futures.append(self.executor.submit(
+                self._fetch_deep_history_worker, s, '4h', hours, None
+            ))
+            
+        from concurrent.futures import as_completed
+        for f in as_completed(futures):
+            pass
+
     def fetch_initial_history_5m(self):
         """Fetches 5m data in PARALLEL."""
         logger.info("Fetching 5m historical data (100h) in PARALLEL...")
@@ -622,6 +697,10 @@ class BinanceData(DataProvider):
         Returns the last N 1h bars (RingBuffer Wrapper).
         """
         return self.get_latest_bars(symbol, n, timeframe='1h')
+
+    def get_latest_bars_4h(self, symbol, n=1):
+        """Returns the last N 4h bars."""
+        return self.get_latest_bars(symbol, n, timeframe='4h')
 
     def get_latest_bars_1d(self, symbol, n=1):
         """Returns the last N 1d bars."""
@@ -704,6 +783,17 @@ class BinanceData(DataProvider):
                     ts = bar['timestamp']
                     with self._data_lock:
                          buf = self.buffers_1h[s]
+                         last_t_arr = buf.get_last(1)
+                         if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
+                              buf.rewind_one()
+                         buf.push(ts, np.float32(bar['open']), np.float32(bar['high']), 
+                                  np.float32(bar['low']), np.float32(bar['close']), np.float32(bar['volume']))
+
+                if '4h' in data_packet:
+                    bar = data_packet['4h']
+                    ts = bar['timestamp']
+                    with self._data_lock:
+                         buf = self.buffers_4h[s]
                          last_t_arr = buf.get_last(1)
                          if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
                               buf.rewind_one()
@@ -903,14 +993,16 @@ class BinanceData(DataProvider):
             best_corr = -1.0
             best_lag = 0
             
+            from utils.math_kernel import pearson_correlation_jit
+            
             for lag in range(-5, 6):
                 if lag == 0:
-                    corr = np.corrcoef(ref_rets, target_rets)[0, 1]
+                    corr = pearson_correlation_jit(ref_rets, target_rets)
                 elif lag > 0:
-                    corr = np.corrcoef(ref_rets[lag:], target_rets[:-lag])[0, 1]
+                    corr = pearson_correlation_jit(ref_rets[lag:], target_rets[:-lag])
                 else:
                     abs_lag = abs(lag)
-                    corr = np.corrcoef(ref_rets[:-abs_lag], target_rets[abs_lag:])[0, 1]
+                    corr = pearson_correlation_jit(ref_rets[:-abs_lag], target_rets[abs_lag:])
                 
                 if not np.isnan(corr) and corr > best_corr:
                     best_corr = corr
@@ -960,9 +1052,17 @@ class BinanceData(DataProvider):
         if symbol in self.order_flow_metrics:
             return self.order_flow_metrics[symbol]
         
-        # Try alternate formats?
         return None
 
+    def get_derivatives_metrics(self, symbol: str) -> dict:
+        """
+        [PHASE 29] Returns the latest Futures derivatives metrics.
+        Expected format: {'funding_rate': float, 'oi': float, 'oi_delta': float, 'liquidations': float}
+        """
+        # We store internally as "BTC/USDT", check fast lookup
+        if symbol in self.derivatives_metrics:
+            return self.derivatives_metrics[symbol]
+        return {'funding_rate': 0.0, 'oi': 0.0, 'oi_delta': 0.0, 'liquidations': 0.0}
 
     async def start_socket(self):
         """
@@ -1177,7 +1277,8 @@ class BinanceData(DataProvider):
             is_closed = kline['x']  # Boolean: Is this kline closed?
             
             # Extract data with Phase 4: Downcasting (float32 for memory)
-            timestamp = pd.to_datetime(kline['t'], unit='ms')
+            # [NANO-SPEED] Extirpado pd.to_datetime del loop caliente
+            timestamp_ms = int(kline['t'])
             open_price = np.float32(kline['o'])
             high_price = np.float32(kline['h'])
             low_price = np.float32(kline['l'])
@@ -1194,11 +1295,11 @@ class BinanceData(DataProvider):
             # GAP DETECTION (Rule 3.2)
             with self._data_lock:
                 if self.latest_data[internal_symbol]:
-                    last_ts = self.latest_data[internal_symbol][-1]['datetime']
-                    time_diff = (timestamp - last_ts).total_seconds()
+                    last_ts_ms = int(self.latest_data[internal_symbol][-1]['datetime'].timestamp() * 1000)
+                    time_diff_s = (timestamp_ms - last_ts_ms) / 1000.0
                     
-                    if time_diff > 65 and is_closed:
-                        logger.warning(f"🚨 GAP DETECTED in {internal_symbol}: {time_diff}s interval. Data might be missing.")
+                    if time_diff_s > 65 and is_closed:
+                        logger.warning(f"🚨 GAP DETECTED in {internal_symbol}: {time_diff_s}s interval. Data might be missing.")
             
             # ─── BUFFER UPDATE (Thread-Safe) ───
             # PHASE 33: Multi-Timeframe Routing via stream_name parameter
@@ -1308,12 +1409,17 @@ class BinanceData(DataProvider):
                         internal_sym = s
                         break
             
-            # Sum volume of top 5 levels
-            bids = data['b'] # [[price, qty], ...]
+            # Sum volume of top 5 levels (NANO: Direct manual loop avoids list compression GC pause)
+            bids = data['b']
             asks = data['a']
             
-            bid_vol_5 = sum(float(b[1]) for b in bids[:5])
-            ask_vol_5 = sum(float(a[1]) for a in asks[:5])
+            bid_vol_5 = 0.0
+            ask_vol_5 = 0.0
+            for i in range(min(5, len(bids))):
+                bid_vol_5 += float(bids[i][1])
+                
+            for i in range(min(5, len(asks))):
+                ask_vol_5 += float(asks[i][1])
             
             # Calculate Imbalance Ratio
             # Avoid ZeroDivision

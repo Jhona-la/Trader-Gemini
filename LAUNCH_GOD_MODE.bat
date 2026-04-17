@@ -20,7 +20,7 @@ call .venv\Scripts\activate.bat
 
 :: 2. Pre-Flight Check (Auditoria NouveauCraft y The God-Mode antigua)
 echo [SYSTEM] Verificando Latencias y Precision Axioma (El Inquisidor)...
-call PREFLIGHT_CHECK.bat
+call launchers\PREFLIGHT_CHECK.bat
 if %ERRORLEVEL% neq 0 (
     color 0C
     echo ❌ [FATAL] PREFLIGHT CHECK FAILED. Abortando thespliegue en OMEGA MODE.
@@ -64,3 +64,4 @@ echo 🔄 Ejecutando Recuperacion Catastrofica. Auto-Reiniciando en 3 Segundos.
 echo ===============================================================================
 timeout /t 3
 goto LOOP
+

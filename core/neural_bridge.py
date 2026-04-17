@@ -182,6 +182,12 @@ class NeuralBridge:
         # For now, pass to avoid blocking the hot path.
         pass
 
+    def query_insight(self, symbol: str, insight_type: str) -> Dict[str, Any]:
+        """
+        Retrieves the latest insight for a symbol/type if available.
+        """
+        return {}  # Placeholder to prevent SniperStrategy crashes
+
     def cleanup(self):
         """Phase 8: Cleanup neural bridge resources."""
         logger.info("🧠 [NeuralBridge] Cleaning up resources...")

@@ -55,9 +55,6 @@ class Config(metaclass=EncryptedConfigMeta):
     # ========================================================================
     # GLOBAL SETTINGS
     # ========================================================================
-    # ========================================================================
-    # GLOBAL SETTINGS
-    # ========================================================================
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DEBUG_TRACE_ENABLED = False
 
@@ -80,9 +77,10 @@ class Config(metaclass=EncryptedConfigMeta):
     # For COIN-Margined, code modifications in binance_executor would be needed (defaultType='delivery').
     # BUG #33 FIX: Changed default to False to allow Spot mode. CLI --mode argument will override this.
     BINANCE_USE_FUTURES = True  # Set to True to trade on Binance Futures instead of Spot
-    BINANCE_LEVERAGE = 3  # Leverage for Futures trading (CONTROLLED: 3x for $15)
+    BINANCE_LEVERAGE = 10  # Leverage for Futures trading (CONTROLLED: 10x for $13 to bypass $5 notional limit)
     BINANCE_MARGIN_TYPE = "ISOLATED"  # Options: "ISOLATED" or "CROSS"
     BINANCE_TAKER_FEE_BNB = 0.000375 # 0.0375% (with BNB discount)
+    BINANCE_MAKER_FEE_BNB = 0.0002   # 0.02% (LIMIT orders = Maker fee, FORENSIC FIX #4)
     
     # Symbols format standardization (Phase 6 Fix)
     # The API expects SYMBOLUSDT, but we prefer SYMBOL/USDT for UI.
@@ -152,6 +150,16 @@ class Config(metaclass=EncryptedConfigMeta):
     # SINGLE SOURCE OF TRUTH: Initial capital for $13 micro-scalping strategy (SOVEREIGN-DEPLOY)
     INITIAL_CAPITAL = 13.0  # Base capital for sizing and HWM
 
+    # MANDATORY TAGGING SYSTEM - SCALPING VS SWING
+    STRATEGY_LABELS = {
+        "technical": "[SCL] Technical Momentum",
+        "ml_strategy": "[SWG] ML Trend Swing",
+        "sniper_strategy": "[SCL] Sniper Ultra",
+        "statistical": "[SWG] Statistical Mean Reversion",
+        "arbitrage": "[SCL] Arbitrage Flow",
+        "phalanx": "[SCL] Phalanx Multi-Signal"
+    }
+
     # === TRADING SETTINGS ===
     TIMEFRAME = TimeFrame.M1  # M1 Timeframe (Microscalping)
     MAX_SIGNAL_AGE = 60       # 60s for M1 timeframe to allow for fast execution
@@ -162,12 +170,12 @@ class Config(metaclass=EncryptedConfigMeta):
 
     
     # Risk settings for Multi-Symbol Coordination
-    MAX_CONCURRENT_POSITIONS = 3  # Maximum simultaneous trades for $15 account
-    COOLDOWN_PERIOD_SECONDS = 1800 # 30 minutes between trades on same symbol
+    MAX_CONCURRENT_POSITIONS = 2  # FORENSIC FIX: 2 concurrent (was 3) to protect notional viability
+    COOLDOWN_PERIOD_SECONDS = 15   # FORENSIC FIX: 15s (was 45s) — micro-scalping needs sub-minute re-entry
     MAX_POSITIONS_PER_SYMBOL = 1   # One layer per symbol for safety
     
     # Position Sizing Configuration
-    POSITION_SIZE_MICRO_ACCOUNT = 0.18   # Fine-tuned to 18% to pass Risk Shield (Target < 15% DD)
+    POSITION_SIZE_MICRO_ACCOUNT = 0.30   # GOD MODE: 30% per trade → $3.90 margin × 10x = $39 notional
     POSITION_SIZE_SMALL_ACCOUNT = 0.15   # Lowered from 20%
     
     # Trade Validation Thresholds
@@ -178,6 +186,15 @@ class Config(metaclass=EncryptedConfigMeta):
     MAX_RISK_PER_TRADE = 0.05  # 5% of capital max per trade for $13 account
     STOP_LOSS_PCT = 0.02       # 2% stop loss
     MAX_SLIPPAGE_PCT = 0.001   # 0.1% max slippage (Sovereign-Deploy)
+    
+    # === RISK CAPITOL HIERARCHY (USER RULE PRESERVATION) ===
+    class Risk:
+        MAX_DRAWDOWN = 1.5           # 1.5% max drawdown (SOVEREIGN LIMIT)
+        DEFAULT_BOOTSTRAP_WR = 0.52 
+        BOOTSTRAP_TRADES = 20
+        MAX_RISK_PER_TRADE = 0.05  
+        STOP_LOSS_PCT = 0.02       
+        MAX_SLIPPAGE_PCT = 0.001
     
     # === INTELLIGENT REVERSE (FLIPPING) PARAMETERS (Phase 5) ===
     # PROFESSOR METHOD:
@@ -203,6 +220,24 @@ class Config(metaclass=EncryptedConfigMeta):
     STAT_Z_ENTRY = 1.5
     STAT_Z_EXIT = 0.0
 
+    # === DATA CAPTURE AND MULTI-TIMEFRAME (PHASE 28) ===
+    class Data:
+        # Map backtest horizon (days) to optimal resolution
+        # QUÉ: Mapeo de tiempo. POR QUÉ: Extraer ruido. PARA QUÉ: Rentabilidad Swing.
+        HORIZON_RESOLUTION_MAP = {
+            1: '1m',   # Scalping (HFT Microstructure)
+            7: '15m',  # Intraday
+            15: '1h',  # Swing
+            30: '4h'   # Position/Mensual
+        }
+        
+        @classmethod
+        def get_resolution_for_horizon(cls, horizon_days):
+            if horizon_days <= 1: return '1m'
+            elif horizon_days <= 7: return '15m'
+            elif horizon_days <= 15: return '1h'
+            else: return '4h'
+
     # === STRATEGY SETTINGS (Nesting required by loader) ===
     class Strategies:
         # Technical Strategy settings
@@ -216,6 +251,66 @@ class Config(metaclass=EncryptedConfigMeta):
         TECH_BB_STD = 2.0
         TECH_TP_PCT = 0.015
         TECH_SL_PCT = 0.02
+        SYMMETRIC_SHORTS_SCALPING = True  # Habilita cortos en contra-tendencia para micro-cuentas
+        SHORT_SL_MULTIPLIER = 1.2         # 20% tightening on SL for shorts (e.g. 0.5% / 1.2 = 0.41%)
+        SHORT_TP_MULTIPLIER = 0.8         # 20% tightening on TP for shorts (e.g. 1.0% * 0.8 = 0.8%)
+        
+        # ================================================================
+        # HORIZON-SPECIALIZED PARAMETERS (Phase Forensic-1)
+        # QUÉ: Parámetros diferenciados para Scalping vs Swing
+        # POR QUÉ: Un TP de 1.5% es inalcanzable en scalping 1min pero
+        #   insuficiente para swing 4h. Cada horizonte necesita su propio DNA.
+        # PARA QUÉ: Maximizar frecuencia de wins en Scalping (0.3-0.5% TP)
+        #   y capturar movimientos grandes en Swing (2-5% TP).
+        # CÓMO: technical.py lee self.horizon y selecciona el dict correcto.
+        # ================================================================
+        SCALPING_PARAMS = {
+            'tp_pct': 0.0120,         # AXIOMATIC FIX: 1.20% Minimum Viability TP for Micro-Account
+            'sl_pct': 0.0060,         # Expanded SL to allow 1.2% TP breathing room
+            'rsi_period': 5,          # RSI ultra-rápido (5 velas)
+            'rsi_buy': 35,            # FORENSIC FIX: was 25 — wider zone to capture more setups
+            'rsi_sell': 65,           # FORENSIC FIX: was 75 — wider zone to capture more setups
+            'bb_period': 10,          # Bollinger rápido
+            'bb_std': 1.5,            # FORENSIC FIX: was 1.8 — tighter bands = more touches
+            'ema_fast': 8,            # EMA rápida
+            'ema_slow': 21,           # EMA lenta
+            'ema_trend': 50,          # Trend filter ligero
+            'atr_period': 7,          # ATR corto
+            'adx_period': 7,          # ADX rápido
+            'timeframes': ['1m', '5m', '15m'],  # Solo timeframes cortos
+            'primary_tf': '5m',       # Timeframe principal
+            'min_volume_ratio': 0.4,  # FORENSIC FIX: was 0.6 — less filtering for micro-account
+            'cooldown_seconds': 15,   # FORENSIC FIX: aligned with global COOLDOWN_PERIOD_SECONDS
+            'max_hold_bars': 120,     # FIX FORENSIC-7: 120 bars = 2h for TP to be reached
+            'strength_threshold': 0.40, # PAPER-TRADING-AUDIT: was 0.55 — too selective for micro-account, ~15-20 trades/day target
+            'atr_sl_mult': 1.0,       # SL pegado (1x ATR)
+            'atr_tp_mult': 2.0,       # TP 2x ATR (ratio 2:1)
+            'sophia_refit': 50,       # Recalibrate clusters every 50 bars (M1/M5)
+        }
+        
+        SWING_PARAMS = {
+            'tp_pct': 0.035,          # 3.5% TP — captura de tendencia
+            'sl_pct': 0.015,          # 1.5% SL — respira pero protege
+            'rsi_period': 14,         # RSI estándar
+            'rsi_buy': 35,            # Oversold conservador
+            'rsi_sell': 65,           # Overbought conservador
+            'bb_period': 20,          # Bollinger estándar
+            'bb_std': 2.0,            # Bandas estándar
+            'ema_fast': 20,           # EMA estándar
+            'ema_slow': 50,           # EMA media
+            'ema_trend': 200,         # Golden Cross filter
+            'atr_period': 14,         # ATR estándar
+            'adx_period': 14,         # ADX estándar
+            'timeframes': ['1h', '4h', '1d'],  # Solo timeframes largos
+            'primary_tf': '1h',       # Timeframe principal
+            'min_volume_ratio': 1.0,  # Volumen confirmado
+            'cooldown_seconds': 3600, # 1h cooldown entre trades
+            'max_hold_bars': 96,      # Max 96 velas (4 días en 1h)
+            'strength_threshold': 0.55, # Umbral medio
+            'atr_sl_mult': 2.0,       # SL amplio (2x ATR)
+            'atr_tp_mult': 4.5,       # TP grande (4.5x ATR, ratio 2.25:1)
+            'sophia_refit': 24,       # Recalibrate clusters once per day (H1/H4)
+        }
         
         # ML Strategy settings
         ML_RETRAIN_INTERVAL = 240   
@@ -278,6 +373,23 @@ class Config(metaclass=EncryptedConfigMeta):
         
         # --- PRIORITIES ---
         MIN_LOG_LEVEL_NOTIFY = 2 # 2=Warning
+        
+        # --- ENHANCED NOTIFICATION SETTINGS (Phase 4.5) ---
+        # QUÉ: Controles granulares para cada tipo de notificación.
+        # POR QUÉ: No todas las notificaciones son necesarias en todo momento.
+        # PARA QUÉ: Personalizar qué información recibir sin tocar código.
+        NOTIFICATION_TRADE_OPEN = True          # Notificar apertura de trades
+        NOTIFICATION_TRADE_CLOSE = True         # Notificar cierre de trades
+        NOTIFICATION_RISK_ALERTS = True         # Alertas de riesgo (drawdown, kill switch)
+        NOTIFICATION_DAILY_REPORT = True        # Reporte diario de performance
+        NOTIFICATION_PERFORMANCE_UPDATE = True  # Updates periódicos de performance
+        NOTIFICATION_UPDATE_FREQUENCY_MIN = 60  # Frecuencia updates (minutos)
+        
+        # Alert thresholds
+        NOTIFICATION_DRAWDOWN_WARNING = 0.005   # 0.5% drawdown → WARNING
+        NOTIFICATION_DRAWDOWN_CRITICAL = 0.010  # 1.0% drawdown → CRITICAL
+        NOTIFICATION_LOSS_STREAK_ALERT = 3      # 3 pérdidas consecutivas → alerta
+        NOTIFICATION_MAX_MESSAGES_PER_MIN = 30  # Rate limit Telegram API
 
     class Analytics:
         RISK_FREE_RATE = 0.02 
@@ -296,6 +408,40 @@ class Config(metaclass=EncryptedConfigMeta):
     #Recomendación: Mantenlo en False (Apagado) para operar. Solo enciéndelo (True) si el bot se clava y no sabes por qué.
     
     # ========================================================================
+    # === EXECUTION ENGINE — "MAKER PROFIT, TAKER PANIC" (BBO Architecture) ===
+    # ========================================================================
+    # QUÉ: Configuración del motor de ejecución Limit BBO.
+    # POR QUÉ: Market orders pagan Taker 0.0375%, Limit BBO paga Maker 0.02%.
+    #   Con $13 USD y 10+ trades/día, la diferencia es ~4% de capital en 15 días.
+    # PARA QUÉ: Maximizar retención de capital en micro-cuenta.
+    # CÓMO: Entries y exits normales usan LIMIT BBO con Post-Only (GTX).
+    #   Solo emergencias (Kill Switch) usan MARKET.
+    # CUÁNDO: En cada orden generada por RiskManager y ejecutada por BinanceExecutor.
+    # DÓNDE: Config.Execution.* referenciado por risk_manager.py y binance_executor.py.
+    # QUIÉN: Arquitecto Senior + Risk Manager.
+    class Execution:
+        # ── BBO Post-Only Configuration ──
+        USE_LIMIT_BBO_ENTRIES = True       # Entries use LIMIT at Best Bid/Offer
+        USE_LIMIT_BBO_EXITS = True         # Normal exits (TP, trailing) use LIMIT BBO
+        USE_LIMIT_PROTECTIVE_ORDERS = True # SL/TP on exchange: STOP (Limit) instead of STOP_MARKET
+        POST_ONLY_GTX = True               # GTX = Post-Only guarantee → Maker fee always
+        
+        # ── Chase / Fallback Configuration ──
+        MAX_CHASE_ATTEMPTS = 3             # Max repricing attempts before MARKET fallback
+        CHASE_TIMEOUT_SECONDS = 5          # TTL per chase attempt for exit orders
+        ENTRY_TTL_SECONDS = 30             # TTL for entry LIMIT orders
+        
+        # ── Emergency Override ──
+        EMERGENCY_FALLBACK_MARKET = True   # Kill Switch / Flash Crash → MARKET nuclear
+        
+        # ── Protective Order Pricing ──
+        # For STOP (Limit): How far below/above trigger to set the limit price
+        # 0.001 = 0.1% tolerance → if SL triggers at $100, limit at $99.90
+        STOP_LIMIT_TOLERANCE_PCT = 0.001
+        # For TAKE_PROFIT (Limit): Set at exact trigger (Post-Only)
+        TP_LIMIT_TOLERANCE_PCT = 0.0       # 0% = limit AT trigger price (pure Maker)
+
+    # ========================================================================
     # === AEGIS-ULTRA PROTOCOL (Hardware & Math) ===
     # ========================================================================
     class Aegis:
@@ -304,6 +450,7 @@ class Config(metaclass=EncryptedConfigMeta):
         PROCESS_PRIORITY = "HIGH"  # Win32 High Priority Class
         USE_AVX2 = True            # Enable Numba Vectorization
         ZERO_COPY_DATA = True      # Enable RingBuffer direct access
+
 
     # ========================================================================
     # === SNIPER STRATEGY SETTINGS (ALL OR NOTHING PROTOCOL) ===
@@ -324,12 +471,17 @@ class Config(metaclass=EncryptedConfigMeta):
         # REGIME MAP: Defines aggression per market state
         # key: Regime Name 
         # value: (Leverage Limit, Threshold Modifier, Position Scale)
+        # FORENSIC FIX #7: Leverage floors raised for micro-accounts ($13).
+        # POR QUÉ: Con $13 y leverage 1-3x, el notional ($13-$39) apenas supera
+        #   el mínimo de Binance ($5). Esto mata el sizing y genera rechazos.
+        # CÓMO: Mínimo 8x en RANGING/CHOPPY para garantizar notional ≥ $40.
+        #   Bear/Zombie mantienen 1x como defensa (no operar, no arriesgar).
         REGIME_MAP = {
-            'TRENDING_BULL': {'leverage': 8, 'threshold_mod': -0.05, 'scale': 1.0}, # SNIPER BEHAVIOR (Aggressive)
-            'TRENDING_BEAR': {'leverage': 1, 'threshold_mod': +0.10, 'scale': 0.0}, # DEFENSE BEHAVIOR (Cash)
-            'RANGING':       {'leverage': 3, 'threshold_mod': +0.00, 'scale': 0.8}, # SCALPING BEHAVIOR (Moderate)
-            'CHOPPY':        {'leverage': 1, 'threshold_mod': +0.05, 'scale': 0.5}, # CAUTION BEHAVIOR (Low Risk)
-            'ZOMBIE':        {'leverage': 1, 'threshold_mod': +1.00, 'scale': 0.0}, # DEAD MARKET (No Trade)
+            'TRENDING_BULL': {'leverage': 10, 'threshold_mod': -0.05, 'scale': 1.0}, # SNIPER BEHAVIOR (Full power)
+            'TRENDING_BEAR': {'leverage': 5,  'threshold_mod': +0.10, 'scale': 0.3}, # DEFENSE (Reduced, not zero)
+            'RANGING':       {'leverage': 8,  'threshold_mod': +0.00, 'scale': 0.8}, # SCALPING (Must be viable)
+            'CHOPPY':        {'leverage': 8,  'threshold_mod': +0.05, 'scale': 0.5}, # CAUTION (Was 1x = dead)
+            'ZOMBIE':        {'leverage': 1,  'threshold_mod': +1.00, 'scale': 0.0}, # DEAD MARKET (No Trade)
         }
         
         # MAINNET SWITCH - Set to True for REAL trading
@@ -339,17 +491,17 @@ class Config(metaclass=EncryptedConfigMeta):
         WHITELIST = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
         
         # DYNAMIC LEVERAGE (ATR-based)
-        MIN_LEVERAGE = 3
-        MAX_LEVERAGE = 8
-        DEFAULT_LEVERAGE = 5
+        MIN_LEVERAGE = 5     # FORENSIC FIX: was 3 — micro-account needs 5x+ for viable notional
+        MAX_LEVERAGE = 10    # FORENSIC FIX: was 8 — aligned with Config.BINANCE_LEVERAGE
+        DEFAULT_LEVERAGE = 8 # FORENSIC FIX: was 5 — default must produce viable notional
         
         # FEES (Binance Futures)
         TAKER_FEE = 0.0005  # 0.05%
         MAKER_FEE = 0.0002  # 0.02%
         
-        # TRADE VALIDATION
-        MIN_RR_RATIO = 2.0       # Minimum Risk/Reward ratio
-        MIN_PROFIT_AFTER_FEES = 0.005  # 0.5% minimum net profit
+        # TRADE VALIDATION - FOR MICRO ACCOUNT (FEE PROTECTION)
+        MIN_RR_RATIO = 2.5       # Increased for fee drag buffer
+        MIN_PROFIT_AFTER_FEES = 0.012  # 1.2% minimum net profit required to exit
         
         # VOLUME ANOMALY DETECTION (Whale detection)
         VOLUME_LOOKBACK_BARS = 1440  # 24h of 1m candles

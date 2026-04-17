@@ -117,6 +117,11 @@ is_fp, reason = fpa.analyze(0.60, -1.0, {}, 300)
 assert not is_fp
 print(f"✅ FalsePositiveAnalyzer: P=60% + LOSS → not FP (below threshold)")
 
+# Swing horizon loss at 78% confidence (Normally < 85% is not FP, but for Swing Threshold is 0.75 so this IS an FP)
+is_fp, reason = fpa.analyze(0.78, -1.0, {'horizon_profile': 'MID_TERM', 'excess_kurtosis': 0.0}, 300)
+assert is_fp
+print(f"✅ FalsePositiveAnalyzer: P=78% + LOSS (MID_TERM) → FP (Threshold dynamically lowered to 75%)")
+
 # ============================================================
 # 6. TEST: TimeDeviationAnalyzer
 # ============================================================
@@ -142,6 +147,11 @@ print(f"✅ TimeDeviationAnalyzer: 25min/8min = {ratio}x → {cls}")
 ratio, cls = tda.analyze(2.0, 15.0, -0.5)
 assert cls == "PREMATURE_EXIT"
 print(f"✅ TimeDeviationAnalyzer: 2min/15min = {ratio}x → {cls}")
+
+# Alpha Strike (Swing premature exit with profit)
+ratio, cls = tda.analyze(10.0, 120.0, 5.0, horizon_profile='MID_TERM')
+assert cls == "ALPHA_STRIKE"
+print(f"✅ TimeDeviationAnalyzer: 10min/120min = {ratio}x (MID_TERM WIN) → {cls}")
 
 # ============================================================
 # 7. TEST: EfficiencyCalculator
@@ -200,19 +210,24 @@ print(f"✅ SlippageForensics: trigger=$50000, fill=$50003 → slip={slip:.4f}%"
 # 11. TEST: GenePenalizer
 # ============================================================
 gp = GenePenalizer()
+from sophia.axioma import AxiomDiagnoser, FallaBase
+class MockAxioma:
+    def __init__(self, tipo_falla=FallaBase.NO_FALLA):
+        self.tipo_falla = tipo_falla
+mock_axioma = MockAxioma()
 
-# Good trade → no penalty
-pen, flag = gp.evaluate(0.10, "gene_a")
-assert pen == 0.0 and not flag
-print(f"✅ GenePenalizer: Brier=0.10 → no penalty")
+# Good trade → no penalty (actually fitness bonus)
+pen, flag = gp.evaluate(0.10, mock_axioma, genotype_id="gene_a")
+assert pen == -0.5 and not flag
+print(f"✅ GenePenalizer: Brier=0.10 → bonus penalty={pen}")
 
 # 3 consecutive poor trades → flag
-gp.evaluate(0.40, "gene_b")
-gp.evaluate(0.50, "gene_b")
-pen, flag = gp.evaluate(0.60, "gene_b")
-assert flag  # 3 consecutive
-assert abs(pen - 0.30) < 0.001  # 0.60 * 0.5
-print(f"✅ GenePenalizer: 3 consecutive poor → flagged, penalty={pen}")
+mock_axioma_poor = MockAxioma(tipo_falla=FallaBase.TESIS_DECAY)
+gp.evaluate(0.40, mock_axioma_poor, "gene_b")
+pen, flag = gp.evaluate(0.60, mock_axioma_poor, "gene_b")
+assert flag  # 2 consecutive for TESIS_DECAY
+assert abs(pen - 0.60) < 0.001  
+print(f"✅ GenePenalizer: 2 consecutive TESIS_DECAY → flagged, penalty={pen}")
 
 # ============================================================
 # 12. TEST: ManifestWriter
@@ -231,6 +246,8 @@ manifest = ManifestWriter.generate_manifest(
     shap_mismatches=["RSI", "Volume Ratio"],
     overconfidence_active=True,
     penalty_factor=1.6,
+    axioma=mock_axioma,
+    gene_penalty=0.0
 )
 assert "perdí" in manifest.lower() or "perd" in manifest.lower()
 assert "BTC/USDT" in manifest
@@ -280,7 +297,7 @@ print(f"✅ NemesisEngine.full_autopsy(): {report.to_log_line()}")
 
 # Verify to_dict
 rd = report.to_dict()
-assert len(rd) == 23  # 23 fields including timestamp
+assert len(rd) == 26  # 26 fields including timestamp
 assert rd['symbol'] == "ETH/USDT"
 print(f"✅ NemesisReport.to_dict(): {len(rd)} fields")
 

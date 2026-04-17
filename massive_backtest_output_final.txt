@@ -1,0 +1,149 @@
+[DEBUG] Thread limits set FIRST (deadlock prevention)
+[DEBUG] Import sys/os ok
+[DEBUG] Import pandas/numpy/datetime/queue ok
+[DEBUG] Import binance ok
+[DEBUG] Starting config import...
+[DEBUG] Import config ok
+📊 Metrics Exporter Initialized (Phase 99: Per-Symbol + Health).
+[DEBUG] Import Engine ok
+[DEBUG] Import risk ok
+[DEBUG] Starting ML imports...
+[DEBUG] Import ML ok
+[DEBUG] Setting up constants...
+[DEBUG] Setup ok
+💰 Capital inicial configurado: $13.00
+⚡ Leverage: 10x | Fee: 0.0375% per side
+🛡️ Kill Switch @ 5.0% DD | Cooldown: 120 bars
+🎯 Símbolos: ['ADAUSDT', 'ARBUSDT', 'ATOMUSDT', 'AVAXUSDT', 'BNBUSDT', 'BTCUSDT', 'DOGEUSDT', 'DOTUSDT', 'ETCUSDT', 'ETHUSDT']
+📅 Horizontes: [1, 7, 15, 30] días
+
+======================================================================
+🚀 TRADER GEMINI - MULTI-HORIZON BACKTEST v2.0
+   🛡️ Real ML | Real Clustering | Circuit Breaker | Fixed Sharpe
+======================================================================
+
+======================================================================
+📅 HORIZONTE: 1 DÍAS
+======================================================================
+
+  🔹 ADAUSDT
+  📡 Descargando 9d para ADAUSDT...
+  📦 Cargando data local para ADAUSDT desde cache...
+    ⚠️ Columnas faltantes en cache: ['tbbase', 'quote_vol'], descargando...
+  📡 Descargando 9d para ADAUSDT desde Binance API...
+    ✅ 12960 velas desde API (9.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.730% TP=1.459%
+    🛡️ [Technical] KILL SWITCH TRIPPED at 2026-04-01 01:20:00! DD 5.12% >= 5.00% (horizon=1D)
+    [Technical   ] ❌ PNL: $-1.1970 WR: 82.3% DD: 5.12% Sharpe: -14.63 Trades: 34 🛡️KS:1 | Sigs L:61 S:67 N:12130
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.730% TP=1.459%
+    📊 [Labels] LONG=432 (41%) SHORT=627 (59%) NEUTRAL=1059 | Threshold=0.250%
+    📊 [Labels] LONG=624 (63%) SHORT=366 (37%) NEUTRAL=990 | Threshold=0.250%
+    [ML_XGBoost  ] ✅ PNL: $+0.0000 WR: 0.0% DD: 0.00% Sharpe: 0.00 Trades: 0 | Sigs L:0 S:0 N:12741
+    ⭐[Orch-v3     ] ❌ PNL: $-0.5323 WR: --.-% DD: 4.19% Sharpe: -14.47 Rebalances: 3 Weights: T=0.34 S=0.00 ML=0.66
+
+  🔹 ARBUSDT
+  📡 Descargando 9d para ARBUSDT...
+  📦 Cargando data local para ARBUSDT desde cache...
+    ⚠️ Columnas faltantes en cache: ['tbbase', 'quote_vol'], descargando...
+  📡 Descargando 9d para ARBUSDT desde Binance API...
+    ✅ 12960 velas desde API (9.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.840% TP=1.680%
+    🛡️ [Technical] KILL SWITCH TRIPPED at 2026-03-30 21:43:00! DD 6.33% >= 5.00% (horizon=1D)
+    🛡️ [Technical] KILL SWITCH TRIPPED at 2026-03-31 17:01:00! DD 5.33% >= 5.00% (horizon=1D)
+    [Technical   ] ❌ PNL: $-1.1975 WR: 76.7% DD: 6.33% Sharpe: -8.16 Trades: 30 🛡️KS:2 | Sigs L:42 S:68 N:11846
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.840% TP=1.680%
+    📊 [Labels] LONG=502 (46%) SHORT=581 (54%) NEUTRAL=1083 | Threshold=0.250%
+    📊 [Labels] LONG=444 (43%) SHORT=587 (57%) NEUTRAL=1031 | Threshold=0.250%
+    [ML_XGBoost  ] ✅ PNL: $+0.0000 WR: 0.0% DD: 0.00% Sharpe: 0.00 Trades: 0 | Sigs L:0 S:0 N:12741
+    ⭐[Orch-v3     ] ❌ PNL: $-0.4928 WR: --.-% DD: 4.70% Sharpe: -8.32 Rebalances: 1 Weights: T=0.34 S=0.00 ML=0.66
+
+  🔹 ATOMUSDT
+  📡 Descargando 9d para ATOMUSDT...
+  📦 Cargando data local para ATOMUSDT desde cache...
+    ⚠️ Columnas faltantes en cache: ['tbbase', 'quote_vol'], descargando...
+  📡 Descargando 9d para ATOMUSDT desde Binance API...
+    ✅ 12960 velas desde API (9.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.592% TP=1.184%
+    🛡️ [Technical] KILL SWITCH TRIPPED at 2026-03-30 21:25:00! DD 5.89% >= 5.00% (horizon=1D)
+    [Technical   ] ❌ PNL: $-0.6757 WR: 67.8% DD: 5.89% Sharpe: -5.14 Trades: 59 🛡️KS:1 | Sigs L:30 S:29 N:11116
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.592% TP=1.184%
+    📊 [Labels] LONG=280 (38%) SHORT=464 (62%) NEUTRAL=744 | Threshold=0.250%
+    📊 [Labels] LONG=642 (58%) SHORT=460 (42%) NEUTRAL=1102 | Threshold=0.250%
+    🤖 [ML_XGBoost] ML Retrain 1 at 2026-04-04 04:03:00: Accuracy 60.0%
+    [ML_XGBoost  ] ✅ PNL: $+0.0470 WR: 70.0% DD: 0.58% Sharpe: 2.09 Trades: 10 ML_Acc: 60% | Sigs L:10 S:0 N:12439
+    ⭐[Orch-v3     ] ❌ PNL: $-0.2962 WR: --.-% DD: 3.12% Sharpe: -4.88 Rebalances: 2 Weights: T=0.42 S=0.00 ML=0.58
+
+  🔹 AVAXUSDT
+  📡 Descargando 9d para AVAXUSDT...
+  📦 Cargando data local para AVAXUSDT desde cache...
+    ⚠️ Columnas faltantes en cache: ['tbbase', 'quote_vol'], descargando...
+  📡 Descargando 9d para AVAXUSDT desde Binance API...
+    ✅ 12960 velas desde API (9.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.792% TP=1.583%
+    🛡️ [Technical] KILL SWITCH TRIPPED at 2026-03-30 08:06:00! DD 5.05% >= 5.00% (horizon=1D)
+    🛡️ [Technical] KILL SWITCH TRIPPED at 2026-04-02 05:11:00! DD 5.82% >= 5.00% (horizon=1D)
+    🛡️ [Technical] KILL SWITCH TRIPPED at 2026-04-05 23:09:00! DD 5.13% >= 5.00% (horizon=1D)
+    [Technical   ] ❌ PNL: $-1.1200 WR: 78.5% DD: 5.82% Sharpe: -8.08 Trades: 65 🛡️KS:3 | Sigs L:32 S:33 N:11232
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.792% TP=1.583%
+    📊 [Labels] LONG=390 (41%) SHORT=552 (59%) NEUTRAL=942 | Threshold=0.250%
+    📊 [Labels] LONG=281 (39%) SHORT=446 (61%) NEUTRAL=727 | Threshold=0.250%
+    [ML_XGBoost  ] ✅ PNL: $+0.0000 WR: 0.0% DD: 0.00% Sharpe: 0.00 Trades: 0 | Sigs L:0 S:0 N:12741
+    ⭐[Orch-v3     ] ❌ PNL: $-0.5336 WR: --.-% DD: 4.53% Sharpe: -9.05 Rebalances: 3 Weights: T=0.39 S=0.00 ML=0.61
+
+  🔹 BNBUSDT
+  📡 Descargando 9d para BNBUSDT...
+  📦 Cargando data local para BNBUSDT desde cache...
+    ⚠️ Columnas faltantes en cache: ['tbbase', 'quote_vol'], descargando...
+  📡 Descargando 9d para BNBUSDT desde Binance API...
+    ✅ 12960 velas desde API (9.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.540% TP=1.080%
+    🛡️ [Technical] KILL SWITCH TRIPPED at 2026-03-31 16:42:00! DD 5.42% >= 5.00% (horizon=1D)
+    [Technical   ] ❌ PNL: $-1.0524 WR: 60.7% DD: 5.42% Sharpe: -11.76 Trades: 56 🛡️KS:1 | Sigs L:14 S:42 N:11053
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.540% TP=1.080%
+    📊 [Labels] LONG=346 (51%) SHORT=333 (49%) NEUTRAL=679 | Threshold=0.250%
+    📊 [Labels] LONG=252 (67%) SHORT=126 (33%) NEUTRAL=378 | Threshold=0.250%
+    [ML_XGBoost  ] ✅ PNL: $+0.0000 WR: 0.0% DD: 0.00% Sharpe: 0.00 Trades: 0 | Sigs L:0 S:0 N:12741
+    ⭐[Orch-v3     ] ❌ PNL: $-0.4802 WR: --.-% DD: 4.00% Sharpe: -11.60 Rebalances: 2 Weights: T=0.41 S=0.00 ML=0.59
+
+  🔹 BTCUSDT
+  📡 Descargando 9d para BTCUSDT...
+  📦 Cargando data local para BTCUSDT desde cache...
+    ⚠️ Columnas faltantes en cache: ['tbbase', 'quote_vol'], descargando...
+  📡 Descargando 9d para BTCUSDT desde Binance API...
+    ✅ 12960 velas desde API (9.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.453% TP=0.906%
+    🛡️ [Technical] KILL SWITCH TRIPPED at 2026-03-31 08:43:00! DD 5.48% >= 5.00% (horizon=1D)
+    [Technical   ] ❌ PNL: $-1.0832 WR: 66.7% DD: 5.48% Sharpe: -11.38 Trades: 30 🛡️KS:1 | Sigs L:37 S:49 N:12008
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.453% TP=0.906%
+    📊 [Labels] LONG=400 (53%) SHORT=356 (47%) NEUTRAL=756 | Threshold=0.250%
+    📊 [Labels] LONG=106 (48%) SHORT=115 (52%) NEUTRAL=221 | Threshold=0.250%
+    [ML_XGBoost  ] ✅ PNL: $+0.0000 WR: 0.0% DD: 0.00% Sharpe: 0.00 Trades: 0 | Sigs L:0 S:0 N:12741
+    ⭐[Orch-v3     ] ❌ PNL: $-0.4846 WR: --.-% DD: 3.98% Sharpe: -11.20 Rebalances: 3 Weights: T=0.37 S=0.00 ML=0.63
+
+  🔹 DOGEUSDT
+  📡 Descargando 9d para DOGEUSDT...
+  📦 Cargando data local para DOGEUSDT desde cache...
+    ⚠️ Columnas faltantes en cache: ['tbbase', 'quote_vol'], descargando...
+  📡 Descargando 9d para DOGEUSDT desde Binance API...
+    ✅ 12960 velas desde API (9.0D)
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.628% TP=1.257%
+    🛡️ [Technical] KILL SWITCH TRIPPED at 2026-03-30 02:47:00! DD 6.60% >= 5.00% (horizon=1D)
+    🛡️ [Technical] KILL SWITCH TRIPPED at 2026-04-02 01:06:00! DD 5.06% >= 5.00% (horizon=1D)
+    [Technical   ] ❌ PNL: $-1.1106 WR: 70.0% DD: 6.60% Sharpe: -13.84 Trades: 30 🛡️KS:2 | Sigs L:53 S:71 N:11858
+    🔍 [System] Horizon: 1D | Style: SCALPING
+    📐 [SL/TP] Calibrated from data: SL=0.628% TP=1.257%
+    📊 [Labels] LONG=501 (48%) SHORT=537 (52%) NEUTRAL=1038 | Threshold=0.250%
+    ⚠️ [ML_XGBoost] Not enough class variance in train/val 15 samples. Delaying retrain.

@@ -664,13 +664,14 @@ with kpi_cols[10]:
 # ==============================================================================
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📊 Monitor en Vivo",
     "📈 Análisis de Desempeño", 
     "🔄 Control Reversiones",
     "🏥 System Health", # Phase 6
     "🧬 Neuro-Evolution", # Phase 46
-    "📝 Logs del Sistema"
+    "📝 Logs del Sistema",
+    "💰 Crecimiento Exponencial"
 ])
 
 # ------------------------------------------------------------------------------
@@ -1459,6 +1460,125 @@ with tab6:
         st.info("No logs available. Logs will appear when the bot starts generating events.")
     
     st.markdown('</div>', unsafe_allow_html=True)
+
+# ------------------------------------------------------------------------------
+# TAB 7: CRECIMIENTO EXPONENCIAL (Dashboard Monetario)
+# ------------------------------------------------------------------------------
+with tab7:
+    st.subheader("💰 Módulo Monetario: Crecimiento Exponencial ($13 ➡️ $26)")
+    st.markdown("Proyección de crecimiento compuesto para duplicar cuenta micro en 15 días. Tasa Diaria Requerida: **~4.73%**")
+    
+    # 1. Definición de Parámetros de Crecimiento
+    CAPITAL_INICIAL = 13.0
+    META_DIAS = 15
+    META_CAPITAL = CAPITAL_INICIAL * 2
+    TASA_DIARIA_REQUERIDA = (2 ** (1 / META_DIAS)) - 1  # ~0.04729 (4.73%)
+    
+    if not history.empty and 'total_equity' in history.columns and 'timestamp' in history.columns:
+        # Calcular días transcurridos reales desde el primer registro
+        hist_df = history.copy()
+        hist_df['time'] = pd.to_datetime(hist_df['timestamp'])
+        start_time = hist_df['time'].iloc[0]
+        hist_df['days_elapsed'] = (hist_df['time'] - start_time).dt.total_seconds() / 86400.0
+        
+        # Calcular crecimiento ideal para cada punto
+        hist_df['ideal_equity'] = CAPITAL_INICIAL * ((1 + TASA_DIARIA_REQUERIDA) ** hist_df['days_elapsed'])
+        
+        current_equity_val = hist_df['total_equity'].iloc[-1]
+        current_days_elapsed = hist_df['days_elapsed'].iloc[-1]
+        
+        # Calcular CAGR Actual (% de crecimiento diario real)
+        if current_days_elapsed > 0:
+             cagr_actual = (current_equity_val / CAPITAL_INICIAL) ** (1 / max(current_days_elapsed, 0.001)) - 1
+        else:
+             cagr_actual = 0.0
+             
+        # Días restantes para la meta (si es positivo el CAGR)
+        if cagr_actual > 0:
+             dias_restantes = np.log(META_CAPITAL / current_equity_val) / np.log(1 + cagr_actual)
+        else:
+             dias_restantes = float('inf')
+             
+        delta_equity = current_equity_val - hist_df['ideal_equity'].iloc[-1]
+        
+        # Layout de 4 columnas para KPIs Monetarios
+        kpi_cols = st.columns(4)
+        
+        with kpi_cols[0]:
+             t_color = "kpi-positive" if cagr_actual >= TASA_DIARIA_REQUERIDA else "kpi-negative"
+             st.markdown(f'''
+             <div class="kpi-card">
+                 <div class="kpi-value {t_color}">{cagr_actual * 100:.2f}%</div>
+                 <div class="kpi-label">Tasa Crecimiento Actual (Diario)</div>
+                 <div style="font-size: 10px; color: #8b949e;">Target: {TASA_DIARIA_REQUERIDA * 100:.2f}%</div>
+             </div>
+             ''', unsafe_allow_html=True)
+             
+        with kpi_cols[1]:
+             e_color = "kpi-positive" if delta_equity >= 0 else "kpi-warning"
+             st.markdown(f'''
+             <div class="kpi-card">
+                 <div class="kpi-value {e_color}">${current_equity_val:.2f}</div>
+                 <div class="kpi-label">Capital Actual</div>
+                 <div style="font-size: 10px; color: #8b949e;">Esperado Hoy: ${hist_df['ideal_equity'].iloc[-1]:.2f}</div>
+             </div>
+             ''', unsafe_allow_html=True)
+             
+        with kpi_cols[2]:
+             l_color = "kpi-positive" if delta_equity >= 0 else "kpi-negative"
+             lag_label = "Ventaja" if delta_equity >= 0 else "Rezago"
+             st.markdown(f'''
+             <div class="kpi-card">
+                 <div class="kpi-value {l_color}">${abs(delta_equity):.2f}</div>
+                 <div class="kpi-label">{lag_label} vs Curva Ideal</div>
+             </div>
+             ''', unsafe_allow_html=True)
+             
+        with kpi_cols[3]:
+             r_color = "kpi-positive" if dias_restantes <= (META_DIAS - current_days_elapsed) else "kpi-warning"
+             dr_str = f"{dias_restantes:.1f}" if dias_restantes != float('inf') else "∞"
+             st.markdown(f'''
+             <div class="kpi-card">
+                 <div class="kpi-value {r_color}">{dr_str}</div>
+                 <div class="kpi-label">Días Restantes Estimados</div>
+             </div>
+             ''', unsafe_allow_html=True)
+             
+        # Plotly Chart
+        st.markdown("---")
+        fig_monetario = go.Figure()
+        
+        # Curva Ideal
+        fig_monetario.add_trace(go.Scatter(
+            x=hist_df['time'],
+            y=hist_df['ideal_equity'],
+            name='Curva Ideal (CAGR 4.73%)',
+            line=dict(color='#58a6ff', width=2, dash='dash')
+        ))
+        
+        # Curva Real
+        fig_monetario.add_trace(go.Scatter(
+            x=hist_df['time'],
+            y=hist_df['total_equity'],
+            name='Capital Real',
+            line=dict(color='#3fb950' if delta_equity >= 0 else '#f85149', width=3)
+        ))
+        
+        # Referencia Meta
+        fig_monetario.add_hline(y=META_CAPITAL, line_dash="dot", line_color="#d29922", annotation_text=f"Meta: ${META_CAPITAL:.2f}")
+        
+        fig_monetario.update_layout(
+            template="plotly_dark",
+            height=400,
+            title="Comparativo: Crecimiento Real vs Exponencial Teórico",
+            yaxis_title="Dólares (USD)",
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)'
+        )
+        st.plotly_chart(fig_monetario, use_container_width=True)
+        
+    else:
+        st.info("ℹ️ Esperando datos históricos (status.csv) para trazar proyección de crecimiento.")
 
 # ==============================================================================
 # AUTO REFRESH

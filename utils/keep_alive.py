@@ -51,8 +51,17 @@ def tune_ccxt_exchange(exchange):
         
         # Set internal CCXT properties if applicable
         exchange.enableRateLimit = False # We handle it via Predictive Rate Limiter (Phase 14)
-        exchange.timeout = 5000 # 5s timeout (Aggressive)
+        exchange.timeout = 10000 # 10s timeout sincronizado con executor async
         
-        logger.info("🔬 [PHASE 38] CCXT Exchange Tuned.")
+        # [WSS TCP ZOMBIE SHIELD] Forzar Ping-Pong sub-10s para mantener OS Socket Vivo
+        if not hasattr(exchange, 'options'):
+            exchange.options = {}
+        if 'ws' not in exchange.options:
+            exchange.options['ws'] = {}
+            
+        exchange.options['ws']['pingInterval'] = 4000  # Enviar PING a Binance cada 4s
+        exchange.options['ws']['pingTimeout'] = 8000   # Dropear y reintentar si no hay PONG en 8s
+        
+        logger.info("🔬 [PHASE 38] CCXT Exchange Tuned (WS Ping: 4s/8s | Timeout: 10s).")
     except Exception as e:
         logger.error(f"Failed to tune CCXT: {e}")

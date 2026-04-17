@@ -8,7 +8,7 @@ Este manual es la guía definitiva para interpretar, gestionar y supervisar al e
 
 ## 🖥️ I. LA CONSOLA DE MANDO (GRAFANA: TIEMPO REAL)
 
-El dashboard de Grafana es el "Cardiógrafo" del Metal-Core. Se nutre de `Prometheus` recopilando la métrica cada 500ms.
+El dashboard de Grafana es el "Cardiógrafo" del Metal-Core. Se nutre de `Prometheus` recopilando métricas con precisión de microsegundos.
 
 ### 1. Lectura del 'Order Flow Delta' (Momentum vs Absorción)
 
@@ -29,7 +29,7 @@ El Panel *"Swarm Intelligence Consensus"* muestra la alineación the los modelos
 
 Monitorea la gráfica "Metal-Core Health":
 
-- **Latencia End-To-End (Verde):** Debe permanecer por debajo de `30ms`. Picos esporádicos a `100ms` son tolerables (Binance lag). **Si se mantiene > 100ms:** Los servidores de intercambio están congestionados, *el Slippage devorará el capital*; pausa el trading usando Kill-Switch Nivel 1.
+- **Latencia Interna (Nano-Edge):** Debe permanecer por debajo de los **20μs**. Latencia de Red (Binance) usualmente es 30-50ms. **Si la latencia interna sube a >100μs:** Algo está bloqueando el event loop (I/O o GC).
 - **CPU Throttling (Rojo):** Los 4 núcleos *Core Pinned* (0, 2, 4, 6) no deben superar el `85%` sostenido o perderán caché L3. Si superan los `85°C`, el OS limitará la frecuencia de 4.3GHz a 1.8GHz, arruinando los WebSockets. Verifica el enfriamiento del hardware local.
 
 ---
@@ -126,7 +126,7 @@ El Metal-Core interactuará contigo a través de códigos visuales the Logger y 
 
 ### Codificación del 'Logger CLI'
 
-- 🟢 **[GREEN] `[OK] / [SUCCESS]`**: Flujo Asincrónico operando perfectamente (Sub-20ms).
+- 🟢 **[GREEN] `[OK] / [SUCCESS]`**: Flujo Asincrónico operando perfectamente (Sub-20μs).
 - 🟡 **[YELLOW] `⚠️ [WARNING]`**: Desfase Menor. El sistema entrará en degradación elegante (Cooldown the activo, o recálculo the fees). Ignorable pero Auditable.
 - 🔴 **[RED] `❌ [ERROR]`**: Falla the API (Key Inválida, Orden Rechazada por Margin insuficiente). La posición *no* se tomó, el capital está a salvo. Requiere intervención manual the Permisos.
 - 🟣 **[MAGENTA] `[CRITICAL] / [KILL-SWITCH]`**: EL EVENTO FATAL. Drawdown Inaceptable o Falla del Motor Cuántico. El Bot se ha autodestruido para proteger el Ledger the U$D 13.00. (El Archivo `.LOCK` existe).

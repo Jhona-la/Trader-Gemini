@@ -25,7 +25,7 @@ from strategies.ml_strategy import MLStrategyHybridUltimate
 from core.events import MarketEvent, SignalEvent, OrderEvent
 from core.enums import SignalType
 from utils.logger import logger
-from tests.run_backtest import BacktestDataProvider, BacktestPortfolio, fetch_binance_data
+from core.backtest_infra import BacktestDataProvider, BacktestPortfolio, fetch_binance_data
 
 class WalkForwardTester:
     """

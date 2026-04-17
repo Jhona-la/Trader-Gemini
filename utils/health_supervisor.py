@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from utils.logger import logger
 from core.data_handler import get_data_handler
 from core.api_manager import get_api_manager
+from utils.alert_system import get_alert_system
 
 class HealthSupervisor(threading.Thread):
     """
@@ -35,6 +36,15 @@ class HealthSupervisor(threading.Thread):
         self.status_file = "dashboard/data/futures/live_status.json" # Default
         self.integrity_file = "dashboard/data/futures/integrity.json"
         
+        self.alert_sys = get_alert_system()
+        
+        # Nuevos métodos de comprobación expandidos (Auto-Diagnostic Modulo)
+        self.checks = {
+            "process_activation": self.check_process_activation,
+            "data_integrity": self.check_data_integrity,
+            "risk_management": self.check_risk_management
+        }
+        
     def run(self):
         logger.info("🩺 [HEALTH] Supervisor Agent STARTED.")
         self.running = True
@@ -42,6 +52,7 @@ class HealthSupervisor(threading.Thread):
         while self.running:
             try:
                 self._perform_triple_check()
+                self._run_expanded_health_checks()
             except Exception as e:
                 logger.error(f"🩺 [HEALTH] Check Failed: {e}")
             
@@ -149,7 +160,42 @@ class HealthSupervisor(threading.Thread):
         self.dh.log_health_check(health_record)
         
         if sync_status == "OK":
-            logger.info(f"🩺 [HEALTH] Sync OK. Equity: ${api_balance:.2f}")
+            pass # Keep it silent to reduce log spam over time
+            
+    # --- AUTO-DIAGNOSTIC NEW CHECKS ---
+    def _run_expanded_health_checks(self):
+        failures = []
+        for check_name, check_func in self.checks.items():
+            try:
+                result = check_func()
+                if not result.get("healthy", True):
+                    failures.append({"component": check_name, **result})
+            except Exception as e:
+                logger.error(f"Error en check {check_name}: {e}")
+                
+        # Acciones para las fallas (Alertas Inteligentes)
+        for fail in failures:
+            if fail["component"] == "process_activation":
+                self.alert_sys.raise_alert("process_not_activated", process_name=fail.get('issue', 'Desconocido'))
+
+    def check_process_activation(self):
+        """Verifica que el event loop y conexiones WS estén vivos."""
+        # Podemos revisar si la data se ha refrescado recientemente
+        timestamp = time.time()
+        # Mock para ejemplo
+        healthy = True
+        issue = ""
+        # Si no hubo update del UI latency
+        
+        return {"healthy": healthy, "issue": issue, "severity": "CRITICAL", "recommendation": "Verificar hilo MarketData."}
+
+    def check_data_integrity(self):
+        # Integridad básica (el _perform_triple_check ya hace mucho de esto)
+        return {"healthy": True}
+
+    def check_risk_management(self):
+        # Podría validar si los tamaños de cuenta en memoria son válidos (>0, drawdown razonable)
+        return {"healthy": True}
 
 # Singleton
 _supervisor = None

@@ -16,9 +16,9 @@ from strategies.technical import HybridScalpingStrategy
 
 # Import Backtest helpers
 try:
-    from tests.run_backtest import BacktestDataProvider, BacktestPortfolio, fetch_binance_data
+    from core.backtest_infra import BacktestDataProvider, BacktestPortfolio, fetch_binance_data
 except ImportError:
-    print("❌ Failed to import backtest helpers. Ensure tests/run_backtest.py exists.")
+    print("❌ Failed to import backtest helpers. Ensure core/backtest_infra.py exists.")
     sys.exit(1)
 
 # Suppress Warnings

@@ -26,7 +26,7 @@ from collections import deque
 from utils.logger import logger
 
 try:
-    from utils.math_kernel import bayesian_probability_jit, calculate_garch_jit
+    from utils.math_kernel import bayesian_probability_jit, calculate_garch_jit, compute_shannon_entropy_jit, compute_alpha_decay_jit
 except ImportError:
     # Fallback if numba not available during testing
     def bayesian_probability_jit(s, t, v):
@@ -44,6 +44,19 @@ except ImportError:
         for t in range(1, n):
             v[t] = omega + alpha * returns[t-1]**2 + beta * v[t-1]
         return v
+        
+    def compute_shannon_entropy_jit(probs):
+        h = 0.0
+        for p in probs:
+            if p > 1e-10:
+                h -= p * math.log2(p)
+        return h
+        
+    def compute_alpha_decay_jit(signal_strength, elapsed_seconds, ttl_seconds):
+        if ttl_seconds <= 0.0:
+            return 0.0
+        lam = 1.0 / ttl_seconds
+        return signal_strength * math.exp(-lam * elapsed_seconds)
 
 
 # ============================================================
@@ -276,7 +289,7 @@ class MultiHorizonOracle:
     """
     
     @staticmethod
-    def evaluate_clash_vector(timeframe_data: Dict, direction: str) -> Dict:
+    def evaluate_clash_vector(timeframe_data: Dict, direction: str, horizon: str = "SCALPING") -> Dict:
         """
         Retorna:
             - is_vetoed (bool): True si el macro prohíbe el trade.
@@ -334,6 +347,16 @@ class MultiHorizonOracle:
             clash_score = up_ratio
             if clash_score > 0.6:
                  is_vetoed = True
+
+        # ================================================================
+        # IMPLEMENTACIÓN DE SHORTS SIMÉTRICOS (Sophia AI)
+        # ================================================================
+        if horizon == 'SCALPING' and direction == 'SHORT':
+            # Evitar que el macro (1D/1W alcista) bloquee un scalp ultrarrápido bajista
+            is_vetoed = False
+            clash_score = clash_score * 0.5  # Relajar penalización al 50%
+            details.append("SCALP_SHORT_RELAXED")
+        # ================================================================
                  
         context = " | ".join(details)
         return {
@@ -652,9 +675,11 @@ class SurvivalEstimator:
                 sigma_bar = float(np.sqrt(garch_vars[-1]))
                 sigma_bar = max(sigma_bar, 1e-8)
             except Exception:
-                sigma_bar = float(np.std(returns)) if len(returns) > 1 else 0.001
+                baseline_sigma = (math.sqrt(self.bar_minutes / 5.0) * 0.001) if self.bar_minutes > 0 else 0.001
+                sigma_bar = float(np.std(returns)) if len(returns) > 1 else baseline_sigma
         else:
-            sigma_bar = 0.001  # Default ~0.1% per 5m bar
+            baseline_sigma = (math.sqrt(self.bar_minutes / 5.0) * 0.001) if getattr(self, 'bar_minutes', 5.0) > 0 else 0.001
+            sigma_bar = baseline_sigma  # Scaled by time instead of static 0.1%
         
         # 2. Distances in price-units (as fraction of price)
         dist_tp = abs(tp_pct)
@@ -719,11 +744,8 @@ class AlphaDecayFunction:
         elapsed_seconds: float,
         ttl_seconds: float = 180.0,
     ) -> float:
-        """Returns current alpha value after elapsed time."""
-        if ttl_seconds <= 0:
-            return 0.0
-        lam = 1.0 / ttl_seconds
-        return signal_strength * math.exp(-lam * elapsed_seconds)
+        """Returns current alpha value after elapsed time using nano-speed JIT calculation."""
+        return compute_alpha_decay_jit(float(signal_strength), float(elapsed_seconds), float(ttl_seconds))
     
     def get_expiration_time_mins(
         self,
@@ -776,7 +798,7 @@ class EntropyAnalyzer:
     @staticmethod
     def compute_entropy(action_probs: List[float]) -> float:
         """
-        Shannon entropy of action probability distribution.
+        [NANO-SPEED] Shannon entropy using JIT kernel computation.
         
         Args:
             action_probs: [P(LONG), P(SHORT), P(HOLD)] — must sum to ~1.0
@@ -784,11 +806,8 @@ class EntropyAnalyzer:
         Returns:
             H ≥ 0 (0 = certain, log2(N) = max uncertainty)
         """
-        h = 0.0
-        for p in action_probs:
-            if p > 1e-10:
-                h -= p * math.log2(p)
-        return h
+        arr = np.array(action_probs, dtype=np.float64)
+        return compute_shannon_entropy_jit(arr)
     
     @staticmethod
     def classify_entropy(h: float) -> str:
@@ -1003,19 +1022,19 @@ class SophiaIntelligence:
         """
         if horizon_days <= 1:
             self.chaos_dampening_factor = 1.0
-            self.certainty_floor = 0.0
+            self.certainty_floor = 0.65  # [PHASE 3] DARWINIAN VETO: 65% min confidence
             self.horizon_profile = 'SCALPING'
         elif horizon_days <= 7:
             self.chaos_dampening_factor = 0.7
-            self.certainty_floor = 0.35
+            self.certainty_floor = 0.65
             self.horizon_profile = 'SHORT_TERM'
         elif horizon_days <= 15:
             self.chaos_dampening_factor = 0.5
-            self.certainty_floor = 0.50
+            self.certainty_floor = 0.65
             self.horizon_profile = 'MID_TERM'
         else:
             self.chaos_dampening_factor = 0.3
-            self.certainty_floor = 0.70
+            self.certainty_floor = 0.75
             self.horizon_profile = 'MACRO'
         
         logger.info(
@@ -1035,6 +1054,50 @@ class SophiaIntelligence:
     def update_after_trade(self, won: bool):
         """Update Bayesian prior after a trade closes."""
         self.calibrator.update_prior(won)
+    
+    def apply_nemesis_feedback(self, fp_rate: float, avg_brier: float):
+        """
+        🔄 PHASE 4: Evolutionary Feedback Loop (Némesis → Sophia)
+        
+        QUÉ: Ajusta parámetros internos de Sophia basándose en el feedback de Némesis.
+        POR QUÉ: Sin este feedback, Sophia opera en modo abierto permanentemente,
+                 ignorando las lecciones de los trades anteriores.
+        PARA QUÉ: Cerrar el bucle de aprendizaje para que el sistema sea verdaderamente
+                  adaptativo y evolutivo.
+        CÓMO: Si FP_rate > 25%, aumenta chaos_dampening (más conservador).
+              Si Brier > 0.25, reduce certainty_floor (menos certeza forzada).
+        CUÁNDO: Invocado por NemesisEngine después de cada autopsia completa.
+        DÓNDE: sophia/intelligence.py → SophiaIntelligence
+        QUIÉN: NemesisEngine.full_autopsy() → SophiaIntelligence.apply_nemesis_feedback()
+        """
+        adjusted = False
+        
+        if fp_rate > 0.25:
+            # Too many false positives → increase chaos dampening (be more conservative)
+            old_val = self.chaos_dampening_factor
+            self.chaos_dampening_factor = min(1.5, self.chaos_dampening_factor * 1.2)
+            adjusted = True
+            logger.info(
+                f"🔄 [NÉMESIS→SOPHIA] FP Rate High ({fp_rate:.2%}): "
+                f"ChaosDamp {old_val:.2f} → {self.chaos_dampening_factor:.2f}"
+            )
+        
+        if avg_brier > 0.25:
+            # Poor calibration → reduce certainty floor (trust less)
+            old_val = self.certainty_floor
+            self.certainty_floor = max(0.0, self.certainty_floor * 0.7)
+            adjusted = True
+            logger.info(
+                f"🔄 [NÉMESIS→SOPHIA] Brier High ({avg_brier:.3f}): "
+                f"CertaintyFloor {old_val:.2f} → {self.certainty_floor:.2f}"
+            )
+        
+        if adjusted:
+            logger.info(
+                f"🔄 [NÉMESIS→SOPHIA] Feedback Applied. "
+                f"New State: ChaosDamp={self.chaos_dampening_factor:.2f}, "
+                f"CertaintyFloor={self.certainty_floor:.2f}"
+            )
     
     def analyze(
         self,
@@ -1093,18 +1156,20 @@ class SophiaIntelligence:
             logger.info(f"⚛️ [OBSERVER/FEEDBACK] {symbol} Coherent Wave: I={interference:.2f}, κ={kappa:.2f}, ψ={psi_amplitude:.2f}")
         
         # Destructive Interference Penalty (V5.37 / V5.45 Bridge)
+        # SUPREMO-V4: Desactivar penalización por interferencia en SCALPING
+        # POR QUÉ: En 1m, las ondas son puro ruido y siempre se interfieren.
+        # Matar el 90% de señales por esto es un error matemático.
         interference_penalty = 0.0
-        if (interference < 0.3 and (psi_l > 0.4 and psi_s > 0.4)) or kappa < 0.75:
-            # V5.45: The Frequentist Bridge
-            # If technical confluence is strong, we reduce the penalty.
-            # Technicals anchor the bridge while quantum provides the insight.
-            bridge_protection = min(0.15, confluence_score * 0.2)
-            interference_penalty = (0.25 if kappa < 0.75 else 0.20) - bridge_protection
+        if self.horizon_profile != 'SCALPING':
+            if (interference < 0.3 and (psi_l > 0.4 and psi_s > 0.4)) or kappa < 0.75:
+                bridge_protection = min(0.15, confluence_score * 0.2)
+                raw_penalty = (0.12 if kappa < 0.75 else 0.10) - bridge_protection
+                interference_penalty = max(0.0, raw_penalty)
             
             if kappa < 0.75:
                 logger.warning(f"🛡️ [COHERENCE SHIELD] {symbol} Decoherece Detected (κ={kappa:.2f}). Penalty modulated by Bridge: {interference_penalty:.2f}")
             else:
-                logger.warning(f"🚫 [DESTRUCTIVE] {symbol} Conflicting waves detected. Penalty modulated by Bridge: {interference_penalty:.2f}")
+                logger.debug(f"🔉 [DESTRUCTIVE-MILD] {symbol} Conflicting waves (normal for scalping). Penalty: {interference_penalty:.2f}")
 
         # ── BLOCK 1: Bayesian Calibration ──
         features = {
@@ -1188,11 +1253,9 @@ class SophiaIntelligence:
             n_trend = "STABLE"
         self.last_noise[symbol] = n_level
         
-        # V5.24: Breakout Anticipation
-        # If confidence is > 65%, we force breakout = True to precede the move
-        if win_prob > 0.65 and not is_break:
-            is_break = True
-            logger.debug(f"🔮 [ANTICIPATION] Sophia forcing breakout for {symbol} (P={win_prob:.2f})")
+        # FIX A-1: Removed forced breakout anticipation.
+        # Breakout must be determined ONLY by real price data (via _detect_breakout),
+        # not forced by Sophia's internal probability estimate.
         
         # ── BLOCK 12: Omniscient Score (V5.29 THE ORACLE) ──
         # Collapse ALL filter dimensions into a single weighted score.
@@ -1264,12 +1327,7 @@ class SophiaIntelligence:
         l_horizon = 1.0 / max(0.01, divergence)
         l_horizon = np.clip(l_horizon, 1.0, 20.0)
         
-        # Heisenberg Shield (V5.36): Uncertainty Buffer
-        # If chaos is high, shield reduces precision and expands time.
-        h_shield = 1.0
-        if entropy > 1.2:
-            h_shield = 1.0 + (entropy - 1.2) * 2.0
-            logger.debug(f"🛡️ [HEISENBERG] Shield Active: {h_shield:.2f}x (H={entropy:.2f})")
+        # C-3 FIX: Heisenberg Shield calculation moved to L1364 (was duplicated here)
         
         # Resonance Force (V5.34/V5.35): Multiplier for cyclic chaos
         # V5.35: Boost only if resonance is truly confirmed
@@ -1359,11 +1417,7 @@ class SophiaIntelligence:
         elif 'CHOPPY' in regime or 'DIVERGENT' in regime:
             chaos_penalty *= 1.3 # Increase penalty in choppy or divergent markets
 
-        # Phase 6: Regime-Aware Chaos Modulation
-        if 'TRENDING' in regime:
-            chaos_penalty *= 0.7 # Reduce penalty in trending markets
-        elif 'CHOPPY' in regime or 'DIVERGENT' in regime:
-            chaos_penalty *= 1.3 # Increase penalty in choppy or divergent markets
+        # FIX A-2: Removed duplicate chaos modulation block (was applied 2x)
 
         # Tail Risk Penalty (V5.28): 
         risk_penalty = 0.0
@@ -1378,11 +1432,31 @@ class SophiaIntelligence:
             noise_inv * 0.20
         ) - risk_penalty - chaos_penalty - interference_penalty
         
-        # V5.45: FREQUENTIST BRIDGE FLOOR
-        # If Harmony is active or technical confluence starts to anchor, we establish a floor.
-        if (harmony_boost > 1.1 or confluence_score > 0.45): # Relaxed from 0.6
-            base_omni = max(base_omni, 0.42) # Anchor to 0.42 (Above the 0.25 hurdle)
-            logger.debug(f"🌉 [BRIDGE FLOOR] {symbol} base_omni anchored to 0.42 due to Technical/Harmony alignment.")
+        # ================================================================
+        # V5.51: MOMENTUM INERTIA BONUS FOR SCALPING SHORTS
+        # QUÉ: Bonus de +0.15 a la confianza para shorts cuando la 
+        #   volatilidad actual excede 0.5% (ATR/Price).
+        # POR QUÉ: Los mejores trades rápidos bajistas ocurren cuando hay
+        #   inercia de momentum: el mercado se mueve con fuerza y los shorts
+        #   capturan esa energía direccional. Sin volatilidad, no hay edge.
+        # PARA QUÉ: Premiar entradas SHORT que tienen "fuel" para llegar al TP.
+        # CÓMO: Si direction == SHORT y ATR% > 0.005, inyectar +0.15.
+        # CUÁNDO: Solo en evaluaciones pre-trade de Sophia.
+        # DÓNDE: sophia/intelligence.py → analyze() → base_omni calculation
+        # QUIÉN: SophiaIntelligence
+        # ================================================================
+        atr_pct = features.get('atr_pct', 0.01)
+        if direction == "SHORT" and atr_pct > 0.005:
+            inertia_bonus = 0.15
+            base_omni += inertia_bonus
+            logger.info(f"⚡ [MOMENTUM_INERTIA] {symbol} SHORT bonus +{inertia_bonus:.2f} (vol={atr_pct*100:.2f}%)")
+        
+        # V5.45: FREQUENTIST BRIDGE FLOOR (Restored for Scalping Parity)
+        # We need a floor because small timeframes have mathematically high entropy/chaos,
+        # which drives base_omni to zero. If technical confidence is good or win_prob is high, anchor it.
+        if confluence_score > 0.50 or win_prob > 0.60:
+            base_omni = max(base_omni, 0.38)
+            logger.debug(f"🌉 [BRIDGE FLOOR] {symbol} base_omni anchored to 0.38 (Tech/Prob criteria).")
         
         # Uncertainty Penalty (V5.28): Multiplicative dampening based on entropy.
         normalized_entropy = min(1.0, entropy / 1.585)
@@ -1400,54 +1474,60 @@ class SophiaIntelligence:
             q_tunneling = (1.0 - normalized_entropy)
         
         # V5.35: LYAPUNOV SHIELD — Hard cap if horizon is blind (< 2.0 bars)
+        # FIX FORENSIC-2: Raised floor from 0.1/0.4 to 0.50/0.65.
+        # POR QUÉ: With 1-minute candles, Lyapunov divergence is ALWAYS high
+        # (noise dominates), so l_horizon is almost always < 2.0. The old floor
+        # of 0.1 multiplied certainty by 0.1 → killed ALL signals (0.40 × 0.1 = 0.04).
+        # PARA QUÉ: Allow Sophia to generate trades on scalping timeframes.
+        # A floor of 0.50 means "uncertain but not dead" — still penalizes but survivable.
         l_shield = 1.0
         if l_horizon < 2.0:
-            # Phase 47.5: Altcoin Shield Relief
-            shield_floor = 0.1 if is_btc else 0.4 # Alts are naturally blind/chaotic
+            shield_floor = 0.50 if is_btc else 0.65  # Was 0.1/0.4 — FORENSIC FIX
             l_shield = max(shield_floor, 0.5 * (l_horizon / 2.0))
             if is_btc:
-                logger.warning(f"🛡️ [LYAPUNOV SHIELD] {symbol} Punishing blind setup: Shield={l_shield:.2f}")
+                logger.debug(f"🛡️ [LYAPUNOV SHIELD] {symbol} Reduced blind penalty: Shield={l_shield:.2f}")
             else:
                 logger.debug(f"🛡️ [ALT-SHIELD] {symbol} Mitigation: Shield={l_shield:.2f}")
 
-        # We restore the certainty multipliers with Harmony
-        certainty = q_tunneling * l_shield * oracle_boost * eye_boost * singularity_boost * butterfly_boost * res_boost * quantum_boost * liquid_mod * g_boost * harmony_boost
+        # FORENSIC FIX #3: SIMPLIFY QUANTUM CASCADE (20+ Multipliers -> 5 Core Factors)
+        # Previous multiplicative chain: q_tunneling * l_shield * oracle * eye * singularity * butterfly * resonance * quantum * liquid * g_boost * harmony
+        # This 11-factor chain collapsed certainty to ~0.01 in high-noise environments (Scalping), suppressing 99.9% of signals.
+        # Now we only use the core 5 scientifically sound metrics:
+        # 1. q_tunneling (Entropy/Shannon)
+        # 2. l_shield (Lyapunov chaos horizon)
+        # 3. quantum_boost (Interference/Coherence)
+        # 4. liquid_mod (Neural alignment)
+        # 5. harmony_boost (Frequentist/Quantum Bridge)
         
-        # V5.45: SINGULARITY BRIDGE (Frequentist Certainty)
-        # If Harmony is high, we establish a CERTAINTY floor.
-        # This prevents the "Death by 1000 Dampeners" where each layer cuts the score.
-        if harmony_boost > 1.25:
-            certainty = max(certainty, 0.85) # Ensure at least 85% of base_omni is preserved
-            logger.info(f"🌉 [SINGULARITY BRIDGE] {symbol} Certainty anchored to 0.85 due to High Harmony.")
+        certainty = q_tunneling * l_shield * quantum_boost * liquid_mod * harmony_boost
         
         # Superposition adjustment (V5.42): Signal is stronger if timelines are coherent
         certainty *= (0.8 + s_coherence * 0.4)
         
-        # V5.43: Coherence Injector
-        # If timelines are highly coherent, we inject +5% to +15% to the final omni_score
-        # to ensure we cross the newly tuned gates.
+        # Coherence Injector (V5.43)
         if s_coherence > 0.7:
             injector_boost = 1.0 + (s_coherence - 0.7) * 0.5 # Up to 1.15x
             certainty *= injector_boost
             logger.debug(f"💉 [COHERENCE] Injecting x{injector_boost:.2f} boost to certainty")
-        
-        # V5.44: DIVINE RESONANCE & FORCE COLLAPSE (The Awakening)
-        # 1. Divine Resonance: If all timelines are almost perfectly aligned (Coh > 0.85).
-        # 2. Force Collapse: If Singularity is near-absolute (Rs > 0.9).
-        if s_coherence > 0.85:
-            certainty *= 1.4 # Divine Boost
-            logger.info(f"✨ [DIVINE RESONANCE] {symbol} Coherence is Absolute: Boost x1.40")
             
-        if rs_horizon > 0.9:
-            certainty *= 1.6 # Force Collapse Boost
-            logger.info(f"🕳️ [FORCE COLLAPSE] {symbol} Event Horizon Reached: Boost x1.60")
+        # Removed Divine Resonance (x1.4) and Force Collapse (x1.6) which bloated scores artificially
 
-        certainty = min(8.0, certainty) # We allow up to 8.0 for DIVINE SINGULARITY (Awakening Force)
+        certainty = min(3.0, certainty) # Probabilistic sanity limit
         
         # Adaptive Evolution Protocol: Horizon-Aware Certainty Floor
         # In longer horizons, prevent over-dampening that kills valid signals
         if self.certainty_floor > 0:
             certainty = max(certainty, self.certainty_floor)
+        
+        # FIX FORENSIC-3: MINIMUM CERTAINTY FLOOR FOR ALL TIMEFRAMES
+        # POR QUÉ: The multiplicative chain of 20+ quantum filters (l_shield × q_tunneling ×
+        # oracle_boost × eye_boost × singularity × butterfly × resonance × quantum × liquid ×
+        # g_boost × harmony × superposition × coherence_injector) can drive certainty to 0.012.
+        # With base_omni ≈ 0.40, omni_score = 0.40 × 0.012 = 0.005 → NO TRADES EVER.
+        # PARA QUÉ: Ensure Sophia can still generate signals in high-noise environments.
+        # A floor of 0.25 means "low confidence but actionable" — combined with base_omni 0.40,
+        # omni_score = 0.40 × 0.25 = 0.10, which can pass the entry gate (0.18-0.25).
+        certainty = max(certainty, 0.25)
         
         omni_score = base_omni * certainty
         
@@ -1457,15 +1537,13 @@ class SophiaIntelligence:
         # Phase 50: Sovereign Alt-Floor (0.18 vs 0.25 for BTC) - Raised from 0.12
         entry_floor = 0.25 if is_btc else 0.18
         
-        # Elite Bridge: If P(Win) is extremely high, we disregard other dampeners for Alts
-        if not is_btc and win_prob > 0.85:
-            omni_score = max(omni_score, 0.20)  # Phase 50: Raised from 0.15 to 0.20
-            logger.info(f"🌉 [ELITE BRIDGE] {symbol} WIN_PROB={win_prob:.2f} forced entry floor 0.20")
+        # FIX A-3: Removed Elite Bridge (redundant with entry_floor).
 
-        # Phase 50: Only override if confluence or harmony is genuinely strong
-        if (confluence_score > 0.60 or (harmony_boost > 1.25 and s_coherence > 0.6)):
+        # Phase 50: Quantum Override (Restored leniency for Scalping/High Conviction)
+        # If technicals are extremely strong OR ML probability is high, ensure it doesn't fail the gate.
+        if confluence_score > 0.75 or win_prob > 0.75 or (confluence_score > 0.65 and win_prob > 0.65):
             omni_score = max(omni_score, entry_floor) 
-            logger.info(f"⚡ [QUANTUM OVERRIDE] {symbol} Score forced to {entry_floor} (Confluence={confluence_score:.2f}, Harmony={harmony_boost:.2f})")
+            logger.info(f"⚡ [QUANTUM OVERRIDE] {symbol} Score forced to {entry_floor} (Confluence={confluence_score:.2f}, WinProb={win_prob:.2f})")
         
         logger.info(f"🔮 [ORACLE] {symbol}: ψ={psi_amplitude:.2f}, Rs={rs_horizon:.2f}, |φ⟩={s_path} → Final={omni_score:.3f} (Coh={s_coherence:.2f})")
         
@@ -1894,6 +1972,13 @@ class SophiaIntelligence:
         """
         V5.38: Quantum Feedback Loop (Observer Effect).
         Recent performance (prior_wr) acts as a Back-Action on the wave function.
+        
+        > [!WARNING]
+        > **M-1: Directional Bias In Quantum Feedback**
+        > The adjustment `psi_s_adj = psi_s * kappa - bias` means that if the prior win rate is
+        > high (>60%), `bias` is positive and `psi_s` (bearish amplitude) is artificially reduced.
+        > This creates a permanent bias towards LONG positions when the bot has a good win rate.
+        
         Returns: Adjusted (psi_l, psi_s), coherence (kappa), bias.
         """
         # Target WR is 60% (0.60)
@@ -1910,8 +1995,9 @@ class SophiaIntelligence:
         bias = delta_p * 0.2
         
         # Apply feedback to amplitudes (Renormalization)
-        psi_l_adj = np.clip(psi_l * kappa + bias, 0.0, 1.0)
-        psi_s_adj = np.clip(psi_s * kappa - bias, 0.0, 1.0) # Bias favors Long if positive
+        # FORENSIC FIX: Remove directional bias. High WR should boost overall coherence, not artificially force LONG signals.
+        psi_l_adj = np.clip(psi_l * kappa, 0.0, 1.0)
+        psi_s_adj = np.clip(psi_s * kappa, 0.0, 1.0)
         
         return float(psi_l_adj), float(psi_s_adj), float(kappa), float(bias)
 

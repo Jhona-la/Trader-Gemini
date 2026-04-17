@@ -26,3 +26,11 @@ class DataProvider(ABC):
         Returns real-time order flow and microstructure metrics.
         """
         raise NotImplementedError("Should implement get_order_flow_metrics()")
+
+    @abstractmethod
+    def get_derivatives_metrics(self, symbol: str) -> dict:
+        """
+        Returns futures derivatives metrics (Funding, Open Interest, Liquidations).
+        Expected format: {'funding_rate': float, 'oi': float, 'oi_delta': float, 'liquidations': float}
+        """
+        raise NotImplementedError("Should implement get_derivatives_metrics()")

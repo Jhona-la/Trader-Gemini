@@ -257,7 +257,10 @@ class SessionManager:
                 logger.warning(f"Could not create backup: {e}")
     
     def _send_session_summary(self):
-        """Envía resumen de sesión por Telegram."""
+        """
+        Envía resumen de sesión por Telegram (Phase 4.5 Enhanced).
+        Includes detailed metrics and formatting.
+        """
         try:
             from utils.notifier import Notifier
             from config import Config
@@ -267,13 +270,37 @@ class SessionManager:
             
             s = self.session_info["summary"]
             duration = s.get("duration_minutes", 0)
+            pnl = s.get('pnl', 0)
+            total_trades = s.get('total_trades', 0)
+            win_rate = s.get('win_rate', 0)
+            winning = s.get('winning_trades', 0)
+            losing = s.get('losing_trades', 0)
             
-            msg = f"🏁 *SESSION ENDED*\n\n"
+            # Session result emoji
+            result_emoji = "📈" if pnl >= 0 else "📉"
+            pnl_sign = "+" if pnl >= 0 else ""
+            
+            # Duration formatting
+            if duration >= 60:
+                dur_str = f"{duration/60:.1f}h"
+            else:
+                dur_str = f"{duration:.0f}min"
+            
+            msg = f"🏁 *SESSION ENDED* 🏁\n\n"
             msg += f"📊 ID: `{self.current_session_id}`\n"
-            msg += f"⏱️ Duration: {duration:.0f} min\n"
-            msg += f"💰 PnL: ${s.get('pnl', 0):+.2f}\n"
-            msg += f"📈 Trades: {s.get('total_trades', 0)}\n"
-            msg += f"🏆 Win Rate: {s.get('win_rate', 0):.1f}%"
+            msg += f"⏱️ Duración: `{dur_str}`\n\n"
+            
+            msg += f"*Resultado:*\n"
+            msg += f"{result_emoji} PnL: `{pnl_sign}${pnl:,.2f}`\n"
+            msg += f"📈 Trades: `{total_trades}` ({winning}W / {losing}L)\n"
+            msg += f"🏆 Win Rate: `{win_rate:.1f}%`\n"
+            
+            sharpe = s.get('sharpe', 0)
+            max_dd = s.get('max_drawdown', 0)
+            if sharpe:
+                msg += f"📐 Sharpe: `{sharpe:.2f}`\n"
+            if max_dd:
+                msg += f"📉 Max Drawdown: `{max_dd:.2f}%`\n"
             
             Notifier.send_telegram(msg, priority="INFO")
         except Exception as e:

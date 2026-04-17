@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import os
+import re
 import shutil
 from datetime import datetime
 import logging
@@ -65,7 +66,33 @@ class MLGovernance:
 
         conn.commit()
         conn.close()
+        
+        # Auto-prune: mantener solo las últimas 3 versiones por símbolo
+        self.prune_old_versions(symbol, keep_n=3)
+        
         return model_id if is_production else None
+
+    def prune_old_versions(self, symbol, keep_n=3):
+        """Elimina directorios de versiones antiguas, manteniendo solo las keep_n más recientes."""
+        symbol_safe = symbol.replace('/', '_')
+        pattern = re.compile(rf"^{re.escape(symbol_safe)}_v(\d+)_(\d{{8}})$")
+        
+        versions = []
+        for d in os.listdir(self.models_root):
+            full_path = os.path.join(self.models_root, d)
+            if os.path.isdir(full_path):
+                match = pattern.match(d)
+                if match:
+                    versions.append((int(match.group(1)), d, full_path))
+        
+        versions.sort(key=lambda x: x[0], reverse=True)
+        
+        for version_num, dir_name, dir_path in versions[keep_n:]:
+            try:
+                shutil.rmtree(dir_path)
+                logger.info(f"🗑️ Pruned old model version: {dir_name}")
+            except Exception as e:
+                logger.error(f"Error pruning {dir_name}: {e}")
 
     def get_production_model(self, symbol):
         """Retrieves the latest production-grade model path for a symbol."""

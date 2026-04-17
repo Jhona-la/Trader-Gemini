@@ -139,7 +139,8 @@ class MarketRegimeDetector:
                             datetime=datetime.now(timezone.utc),
                             strategy_id="SOPHIA_EMERGENCY_EXIT",
                             signal_type=SignalType.EXIT,
-                            strength=1.0
+                            strength=1.0,
+                            horizon="SCALPING"
                         ))
                     except Exception as ev_err:
                         logger.error(f"Failed to emit emergency exit for {symbol}: {ev_err}")
@@ -147,7 +148,7 @@ class MarketRegimeDetector:
             # --- PHASE 14: HMM REINFORCEMENT ---
             if len(bars_1m) >= 100:
                 close_prices = bars_1m['close']
-                rets = np.zeros(len(close_prices), dtype=np.float32)
+                rets = np.zeros(len(close_prices), dtype=np.float64)
                 if len(close_prices) > 1:
                     rets[1:] = np.diff(close_prices) / close_prices[:-1]
                     rets = np.nan_to_num(rets, nan=0.0, posinf=0.0, neginf=0.0)
@@ -170,56 +171,40 @@ class MarketRegimeDetector:
         v3: Lógica difusa (Fuzzy Logic) para transiciones suaves de régimen.
         """
         try:
-            from utils.math_kernel import calculate_hurst_exponent
+            from utils.math_kernel import calculate_hurst_exponent, compute_fuzzy_regime_scores_jit
             c = bars['close'].astype(np.float64)
             h = bars['high'].astype(np.float64)
             l = bars['low'].astype(np.float64)
             
-            # ADX de Talib (se mantiene a petición del user)
-            adx = talib.ADX(h, l, c, timeperiod=14)[-1]
+            # --- Lógica Difusa (Probabilities) ---
+            # Dynamic ADX scaling based on Horizon Profile
+            tm = 1.0
+            if self.horizon_profile == 'SCALPING': tm = 0.6
+            elif self.horizon_profile == 'SHORT_TERM': tm = 0.8
+            elif self.horizon_profile == 'MACRO': tm = 1.2
             
-            # EMA para tendencia
-            ema50 = calculate_ema_jit(c, 50)[-1]
-            is_bullish = c[-1] > ema50
+            adx_period = max(7, int(14 * tm))
+            ema_period = max(20, int(50 * tm))
+            
+            # ADX and EMA with Dynamic Periods
+            adx = talib.ADX(h, l, c, timeperiod=adx_period)[-1]
+            ema_trend = calculate_ema_jit(c, ema_period)[-1]
+            is_bullish = c[-1] > ema_trend
             
             # Hurst para persistencia
             hurst = calculate_hurst_exponent(c[-100:].copy(), max_lags=min(30, len(c)//4)) if len(c) >= 20 else 0.5
             
-            # --- Lógica Difusa (Probabilities) ---
-            # 1. P(Trending): Sube linealmente de ADX 20 a 30, y Hurst de 0.5 a 0.65
-            p_trend_adx = max(0.0, min(1.0, (adx - 20) / 10.0))
-            p_trend_hurst = max(0.0, min(1.0, (hurst - 0.5) / 0.15))
-            score_trending = (p_trend_adx * 0.6) + (p_trend_hurst * 0.4)
+            # --- [NANO-SPEED] Precompiled Fuzzy Logic ---
+            best_idx, best_score = compute_fuzzy_regime_scores_jit(
+                adx=float(adx),
+                hurst=float(hurst),
+                tm_multiplier=float(tm),
+                is_bullish=bool(is_bullish)
+            )
             
-            # 2. P(Mean-Reverting): Hurst muy bajo (< 0.45) y ADX bajo (< 22)
-            p_mr_hurst = max(0.0, min(1.0, (0.45 - hurst) / 0.1))
-            p_mr_adx = max(0.0, min(1.0, (22 - adx) / 7.0))
-            score_mean_reverting = (p_mr_hurst * 0.7) + (p_mr_adx * 0.3)
+            regime_map = ['TRENDING_BEAR', 'TRENDING_BULL', 'MEAN_REVERTING', 'RANGING', 'CHOPPY']
+            best_regime = regime_map[best_idx]
             
-            # 3. P(Ranging): Variables estancadas. ADX bajo, Hurst neutral (0.45-0.55)
-            p_range_adx = max(0.0, min(1.0, (22 - adx) / 7.0))
-            dist_to_neutral = abs(hurst - 0.5)
-            p_range_hurst = max(0.0, min(1.0, (0.1 - dist_to_neutral) / 0.1))
-            score_ranging = (p_range_adx * 0.5) + (p_range_hurst * 0.5)
-            
-            # 4. P(Choppy): Zona de conflicto. Lo que sobra del universo de probabilidad.
-            score_choppy = max(0.0, 1.0 - max(score_trending, score_mean_reverting, score_ranging))
-            
-            scores = {
-                'TRENDING_BULL' if is_bullish else 'TRENDING_BEAR': score_trending,
-                'MEAN_REVERTING': score_mean_reverting,
-                'RANGING': score_ranging,
-                'CHOPPY': score_choppy
-            }
-            
-            # Añadir un sesgo inercial para preferir mantenerse en el trend si el score es muy parecido
-            # (opcional, por ahora se escoge el máximo matemático)
-            best_regime = max(scores, key=scores.get)
-            
-            # Fallback a CHOPPY si la máxima certeza es demasiado baja (ruido total)
-            if scores[best_regime] < 0.35:
-                return 'CHOPPY'
-                
             return best_regime
             
         except Exception as e:
@@ -250,8 +235,24 @@ class MarketRegimeDetector:
             # Calcular volumen en USD para ponderación de voto
             bars_1m = data.get('1m', [])
             if len(bars_1m) > 0:
-                last_bar = bars_1m.iloc[-1]
-                quote_vol = last_bar['volume'] * last_bar['close'] if 'volume' in last_bar else 1.0
+                try:
+                    if hasattr(bars_1m, 'iloc'):
+                        last_bar = bars_1m.iloc[-1]
+                        vol = last_bar['volume'] if 'volume' in last_bar else 1.0
+                        close = last_bar['close'] if 'close' in last_bar else 1.0
+                        quote_vol = float(vol) * float(close)
+                    elif isinstance(bars_1m, np.ndarray) and getattr(bars_1m.dtype, 'names', None):
+                        vol = float(bars_1m['volume'][-1]) if 'volume' in bars_1m.dtype.names else 1.0
+                        close = float(bars_1m['close'][-1]) if 'close' in bars_1m.dtype.names else 1.0
+                        quote_vol = vol * close
+                    elif isinstance(bars_1m, dict):
+                        vol = bars_1m.get('volume', [1.0])[-1]
+                        close = bars_1m.get('close', [1.0])[-1]
+                        quote_vol = float(vol) * float(close)
+                    else:
+                        quote_vol = 1.0
+                except Exception:
+                    quote_vol = 1.0
                 volumes[symbol] = quote_vol
             else:
                 volumes[symbol] = 1.0
@@ -342,7 +343,9 @@ class MarketRegimeDetector:
                 if regime == 'TRENDING_BULL':
                     advice.update({'leverage': 5, 'threshold_mod': -0.02, 'scale': 1.0, 'action': 'LONG'})
                 elif regime == 'RANGING':
-                    advice.update({'leverage': 3, 'threshold_mod': 0.0, 'scale': 0.8, 'action': 'LONG'})
+                    advice.update({'leverage': 3, 'threshold_mod': 0.0, 'scale': 0.8, 'action': 'BOTH' if getattr(Config.Strategies, 'SYMMETRIC_SHORTS_SCALPING', False) else 'LONG'})
+                elif regime == 'TRENDING_BEAR':
+                    advice.update({'leverage': 3, 'threshold_mod': 0.02, 'scale': 1.0, 'action': 'SHORT'})
                 else:
                     advice.update({'leverage': 1, 'threshold_mod': 0.1, 'scale': 0.0, 'action': 'NEUTRAL'})
                     
@@ -366,10 +369,14 @@ class MarketRegimeDetector:
         }
         return factors.get(regime, 0.0)
 
-    def is_volatility_shock(self, bars: Dict, atr_period: int = 14, threshold: float = 2.5) -> bool:
+    def is_volatility_shock(self, bars: Dict, atr_period: int = 14, threshold: float = 2.5, oi_delta: float = 0.0) -> bool:
         """
         Detects sudden volatility expansion (Shock).
-        TR > Threshold * ATR
+        TR > Threshold * ATR OR (TR > Threshold_Squeeze * ATR AND oi_delta < -0.02)
+        
+        QUÉ: Detecta si el mercado acaba de sufrir un "Shock" de volatilidad (Vela inusualmente gigante), 
+             y cruza esto con el 'oi_delta' para detectar Sorteos/Liquidaciones ("Squeezes" en cascada).
+        POR QUÉ: Para poder bloquear preventivamente entradas falsas en un momento de pánico institucional.
         """
         try:
             highs = bars['high'].astype(np.float64)    # F6: float32→float64 for talib
@@ -386,11 +393,20 @@ class MarketRegimeDetector:
             # Current True Range
             tr = max(highs[-1] - lows[-1], abs(highs[-1] - closes[-2]), abs(lows[-1] - closes[-2]))
             
+            # 1. Extreme Price Volatility (Classic Shock)
             if tr > current_atr * threshold:
                 return True
                 
+            # 2. Institutional Squeeze (Price spike + OI Drop)
+            # Threshold lowered to 1.5x ATR if OI is dropping significantly (Squeeze signature)
+            squeeze_threshold = threshold * 0.6
+            if tr > current_atr * squeeze_threshold and oi_delta < -0.02:
+                logger.warning(f"🚨 [SQUEEZE DETECTED] Volatility Expansion ({tr:.2f} > {current_atr*squeeze_threshold:.2f}) with OI drain ({oi_delta*100:.2f}%).")
+                return True
+                
             return False
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error in is_volatility_shock: {e}")
             return True # Fail safe: Assume shock if error
 
     def predict_regime_shift(self, symbol: str, bars_1m) -> Dict[str, Any]:

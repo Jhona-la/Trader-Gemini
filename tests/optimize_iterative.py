@@ -6,8 +6,8 @@ Usa backtest de 1 día (rápido) para iteración veloz.
 import sys, os, io, contextlib, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tests.run_backtest import fetch_binance_data, run_backtest, calculate_metrics, BacktestPortfolio
-import tests.run_backtest as bt_module
+from core.backtest_infra import fetch_binance_data, calculate_metrics, BacktestPortfolio, INITIAL_CAPITAL, LEVERAGE
+import core.backtest_infra as bt_module
 
 print("="*60)
 print("🔬 OPTIMIZADOR ITERATIVO - BUSCANDO RENDIMIENTO MÁXIMO")
@@ -82,10 +82,11 @@ _orig_run = bt_module.run_backtest
 def run_backtest_with_conf_filter(data, symbol='BTC/USDT', min_confidence=0.60):
     """Wrapper that filters low-confidence signals"""
     from queue import Queue
-    from tests.run_backtest import (BacktestDataProvider, BacktestPortfolio, 
-                                     HybridScalpingStrategy, MarketEvent,
-                                     SignalEvent, SignalType, INITIAL_CAPITAL, 
-                                     LEVERAGE, COMMISSION_PCT)
+    from core.backtest_infra import (BacktestDataProvider, BacktestPortfolio, 
+                                     INITIAL_CAPITAL, LEVERAGE, COMMISSION_PCT)
+    from strategies.technical import HybridScalpingStrategy
+    from core.events import MarketEvent, SignalEvent
+    from core.enums import SignalType
     from config import Config
     import pandas as pd
     

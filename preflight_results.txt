@@ -1,0 +1,56 @@
+11:43:49 [INFO] 🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)
+11:43:52 [INFO] 🧬 [META-OPTIMIZER] Initialized with Infinitesimal Strength: 1e-06
+============================================================
+🔬 TRADER GEMINI - PRE-FLIGHT CHECK v1.0
+============================================================
+
+🔹 Check 1: Imports de Módulos Críticos
+  ✅ import config.Config
+📊 Metrics Exporter Initialized (Phase 99: Per-Symbol + Health).
+  ❌ import core.engine.TradingEngine — module 'core.engine' has no attribute 'TradingEngine'
+  ✅ import core.events.SignalEvent
+  ✅ import core.portfolio.Portfolio
+  ✅ import core.market_regime.MarketRegimeDetector
+  ✅ import risk.risk_manager.RiskManager
+  ✅ import risk.kill_switch.KillSwitch
+  ❌ import strategies.technical.HybridTechnicalStrategy — module 'strategies.technical' has no attribute 'HybridTechnicalStrategy'
+  ✅ import strategies.ml_strategy.MLStrategyHybridUltimate
+  ✅ import data.data_provider.DataProvider
+  ✅ import core.ml_governance.MLGovernance
+  ✅ import utils.logger.*
+  ✅ import utils.error_handler.*
+
+🔹 Check 2: Validación de Configuración
+  ✅ INITIAL_CAPITAL definido
+  ✅ INITIAL_CAPITAL > 0 (val=13.0)
+  ❌ LEVERAGE definido
+  ❌ ACTIVE_HORIZON definido
+  ❌ SYMBOLS definido
+
+🔹 Check 3: Integridad de Datos (BTC/USDT mini-fetch)
+  ✅ Descarga BTC/USDT 1m — 100 barras
+  ✅ Sin NaN en OHLCV
+  ✅ Sin gaps temporales > 2min — max gap: 1.0min
+  ✅ Consistencia OHLC (H>=L, H>=O)
+  ✅ Volume >= 0
+
+🔹 Check 4: Consistencia de Features ML
+  ✅ Features base definidos (10)
+  ✅ Features derivados definidos (3)
+  ✅ Sin duplicados en feature set
+
+🔹 Check 5: KillSwitch Horizon Scaling
+  ❌ KillSwitch scaling — type object 'Config' has no attribute 'Risk'
+
+============================================================
+📊 RESUMEN PRE-FLIGHT
+============================================================
+  ❌ Imports
+  ❌ Config
+  ✅ Data
+  ✅ Features
+  ❌ KillSwitch
+
+  Total: 21/27 checks passed
+
+  ❌ 6 CHECKS FALLARON — NO PROCEDER CON BACKTEST

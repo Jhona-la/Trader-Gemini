@@ -1,0 +1,67 @@
+
+🔒 TestSecurityGuard: LOCKED (No real API calls allowed)
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\jhona\Documents\Proyectos\Trader Gemini
+configfile: pytest.ini
+plugins: asyncio-1.3.0, cov-7.0.0, mock-3.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 14 items
+
+tests/test_flow.py::TestXRPPositionFlow::test_xrp_position_detection PASSED [  7%]
+tests/test_flow.py::TestXRPPositionFlow::test_unrealized_pnl_calculation PASSED [ 14%]
+tests/test_flow.py::TestXRPPositionFlow::test_equity_calculation PASSED  [ 21%]
+tests/test_flow.py::TestDataHandlerIntegration::test_live_status_structure PASSED [ 28%]
+tests/test_flow.py::TestDataHandlerIntegration::test_strategy_id_propagation ERROR [ 35%]
+
+=================================== ERRORS ====================================
+__ ERROR at setup of TestDataHandlerIntegration.test_strategy_id_propagation __
+
+fixturedef = <FixtureDef argname='sample_signal_event' scope='function' baseid=''>
+request = <SubRequest 'sample_signal_event' for <Function test_strategy_id_propagation>>
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -> object | None:
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+>               return (yield)
+                        ^^^^^
+
+.venv\Lib\site-packages\pytest_asyncio\plugin.py:730: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @pytest.fixture
+    def sample_signal_event():
+        """
+        📡 Sample Signal Event: A realistic signal for testing.
+        """
+        from core.events import SignalEvent
+        from core.enums import SignalType
+        from datetime import datetime, timezone
+    
+>       return SignalEvent(
+            symbol='XRP/USDT',
+            signal_type=SignalType.LONG,
+            datetime=datetime(2026, 2, 3, 12, 0, 0, tzinfo=timezone.utc),
+            strength=0.85,
+            strategy_id='TEST_STRATEGY',
+            sl_pct=0.05,
+            tp_pct=0.10,
+            current_price=0.55,
+            leverage=3
+        )
+E       TypeError: SignalEvent.__init__() missing 1 required keyword-only argument: 'horizon'
+
+conftest.py:336: TypeError
+=========================== short test summary info ===========================
+ERROR tests/test_flow.py::TestDataHandlerIntegration::test_strategy_id_propagation
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+========================= 4 passed, 1 error in 2.31s ==========================
+
+🔓 TestSecurityGuard: UNLOCKED

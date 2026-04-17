@@ -17,11 +17,13 @@ class StatisticalStrategy(Strategy):
     """
     Pairs Trading Strategy based on Cointegration / Mean Reversion of the Spread.
     """
-    def __init__(self, data_provider, events_queue, portfolio=None, pair=('ETH/USDT', 'BTC/USDT')):
+    def __init__(self, data_provider, events_queue, portfolio=None, pair=('ETH/USDT', 'BTC/USDT'), horizon="SCALPING", priority: int = 1):
         self.data_provider = data_provider
         self.events_queue = events_queue
         self.portfolio = portfolio # Needed for state tracking
         self.pair = pair # Tuple of two symbols (Y, X) where Spread = Y - beta*X or Ratio = Y/X
+        self.horizon = horizon
+        self.priority = priority
         self.window = Config.Strategies.STAT_WINDOW
         self.long_window = self.window * 10 # Phase 7+: 200 bars for long-term baseline
         self.z_base = Config.Strategies.STAT_Z_ENTRY
@@ -364,14 +366,14 @@ class StatisticalStrategy(Strategy):
                         from datetime import datetime, timezone
                         signal_timestamp = datetime.now(timezone.utc)
                         
-                        self.events_queue.put(SignalEvent(2, y_sym, signal_timestamp, SignalType.EXIT, strength=1.0))
+                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
                     if qty_x != 0:
                         print(f"  🚑 Closing naked leg {x_sym}")
                         
                         from datetime import datetime, timezone
                         signal_timestamp = datetime.now(timezone.utc)
                         
-                        self.events_queue.put(SignalEvent(2, x_sym, signal_timestamp, SignalType.EXIT, strength=1.0))
+                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
                     return # Stop processing
 
                 if self.invested == 0:
@@ -394,8 +396,8 @@ class StatisticalStrategy(Strategy):
                             from datetime import datetime, timezone
                             signal_timestamp = datetime.now(timezone.utc)
                             
-                            self.events_queue.put(SignalEvent(2, y_sym, signal_timestamp, SignalType.LONG, strength=strength, atr=atr_y))
-                            self.events_queue.put(SignalEvent(2, x_sym, signal_timestamp, SignalType.SHORT, strength=strength, atr=atr_x))
+                            self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority))
+                            self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority))
                             # self.invested = 1 # Wait for fill
                             
                     elif z_score > effective_z_entry:
@@ -417,8 +419,8 @@ class StatisticalStrategy(Strategy):
                             from datetime import datetime, timezone
                             signal_timestamp = datetime.now(timezone.utc)
                             
-                            self.events_queue.put(SignalEvent(2, y_sym, signal_timestamp, SignalType.SHORT, strength=strength, atr=atr_y))
-                            self.events_queue.put(SignalEvent(2, x_sym, signal_timestamp, SignalType.LONG, strength=strength, atr=atr_x))
+                            self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority))
+                            self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority))
                             # self.invested = -1 # Wait for fill
 
                 elif self.invested == 1:
@@ -429,8 +431,8 @@ class StatisticalStrategy(Strategy):
                         from datetime import datetime, timezone
                         signal_timestamp = datetime.now(timezone.utc)
                         
-                        self.events_queue.put(SignalEvent(2, y_sym, signal_timestamp, SignalType.EXIT, strength=1.0))
-                        self.events_queue.put(SignalEvent(2, x_sym, signal_timestamp, SignalType.EXIT, strength=1.0))
+                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
 
                 elif self.invested == -1:
                     # Exit Short Spread when Z-score returns to mean
@@ -440,8 +442,8 @@ class StatisticalStrategy(Strategy):
                         from datetime import datetime, timezone
                         signal_timestamp = datetime.now(timezone.utc)
                         
-                        self.events_queue.put(SignalEvent(2, y_sym, signal_timestamp, SignalType.EXIT, strength=1.0))
-                        self.events_queue.put(SignalEvent(2, x_sym, signal_timestamp, SignalType.EXIT, strength=1.0))
+                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
         except Exception as e:
             print(f"⚠️  Statistical Strategy Error: {e}")
 

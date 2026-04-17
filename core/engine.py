@@ -4,23 +4,18 @@ Coordinates data, strategies, risk, and execution with enhanced validation and r
 """
 
 from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
+import os
 import asyncio
 import time
-try:
-    import uvloop
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-except ImportError:
-    pass
-
 import collections
-from typing import Optional, Any
+import traceback
+from typing import Optional, Any, Union
+from datetime import datetime, timezone
 from config import Config
 from utils.logger import logger
 from utils.os_tuner import OSTuner # Protocol Nadir-Soberano
 from utils.time_sync import TimeSynchronizer # Phase 26: Stochastic Purity
 from core.system_monitor import SystemMonitor # Phase 27: Disaster Resilience
-from config import Config
-from utils.logger import logger
 from utils.latency_monitor import latency_monitor
 from core.gc_tuner import GCTuner
 from core.forensics import ForensicRecorder # Phase 20: Forensic Logging
@@ -31,50 +26,70 @@ try:
 except ImportError:
     psutil = None
 
-class AsyncBoundedQueue:
+class PriorityBoundedQueue:
     """
-    HFT Ring Buffer Queue (Phase 2: Core Refactor).
-    - Uses collections.deque(maxlen) for O(1) auto-drop of oldest events.
-    - Non-blocking PUT (Always succeeds). Sync-safe for strategy calls.
-    - Async GET (Waits for data) with double-check to prevent lost wakeups.
-    
-    [SS-001 FIX] Double-check pattern prevents TOCTOU race in get().
-    [SS-002 FIX] put() is now sync (non-async) so strategies can call
-    it without `await`. deque.append() is thread-safe, and _event.set()
-    is safe to call from within the same event loop thread.
+    HFT Multi-Level Ring Buffer Queue (Phase OMNI: QOS Priority).
+    - Uses collections.deque(maxlen) per priority level for O(1) auto-drop.
+    - Non-blocking PUT.
+    - Async GET (Checks Priority 0 -> 1 -> 2).
     """
-    def __init__(self, maxsize=1000):
-        self._deque = collections.deque(maxlen=maxsize)
+    def __init__(self, maxsize=5000):
+        self._deques = {
+            0: collections.deque(maxlen=maxsize), # Critical: Fills, Executions, Scalping Signals
+            1: collections.deque(maxlen=maxsize), # Normal: Swing Signals, Generic Orders
+            2: collections.deque(maxlen=maxsize)  # Background: Market Data, Metrics
+        }
         self._event = asyncio.Event()
     
     def put(self, item):
-        """Put item into queue. Never blocks. Sync-safe for strategy calls."""
-        self._deque.append(item)
+        """Put item into queue based on priority."""
+        priority = getattr(item, 'priority', 1) 
+        # Market events & Fills don't have priority by default.
+        # Fills should be 0. Market can be 2. Let's infer if missing.
+        if not hasattr(item, 'priority'):
+            if hasattr(item, 'type'):
+                # Handle Enum Types safely
+                type_name = getattr(item.type, 'name', str(item.type))
+                if type_name == 'FILL':
+                    priority = 0
+                elif type_name == 'MARKET':
+                    priority = 0  # SUPREMO-V4: Market data is CRITICAL for HFT
+                else:
+                    priority = 1
+            else:
+                priority = 1
+                
+        # Clamp priority
+        priority = max(0, min(2, priority))
+        self._deques[priority].append(item)
         self._event.set()
 
     async def get(self):
-        """Wait for and get next item. Double-check prevents lost wakeups."""
+        """Wait for and get next item strictly respecting priority."""
         while True:
-            # Fast path: data available
-            if self._deque:
-                return self._deque.popleft()
+            # Fast path
+            for p in range(3):
+                if self._deques[p]:
+                    return self._deques[p].popleft()
             
-            # Slow path: wait for signal with double-check
+            # Slow path: wait
             self._event.clear()
             
-            # [SS-001] Re-check AFTER clear to prevent race:
-            # If put() fired set() between our first check and clear(),
-            # the data is in _deque but event was just cleared.
-            if self._deque:
-                return self._deque.popleft()
+            # Double-check
+            for p in range(3):
+                if self._deques[p]:
+                    return self._deques[p].popleft()
             
             await self._event.wait()
 
     def empty(self):
-        return not self._deque
+        return not any(d for d in self._deques.values())
 
     def task_done(self):
         pass # Not tracked for speed
+
+# Backward compatibility alias
+AsyncBoundedQueue = PriorityBoundedQueue
 
 from utils.metrics_exporter import metrics
 
@@ -86,9 +101,10 @@ class Engine:
     - Burst-capable Event Loop
     """
     def __init__(self, events_queue: Optional[Any] = None):
-        self.events = events_queue if events_queue else AsyncBoundedQueue(maxsize=5000) # Increased buffer for burst
+        self.events = events_queue if events_queue else PriorityBoundedQueue(maxsize=5000) # Fast QoS queue
         self.data_handlers = []
         self.strategies = []
+        self._strategies_by_symbol = collections.defaultdict(list) # O(1) Optimization
         self.execution_handler = None
         self.portfolio = None
         self.risk_manager = None
@@ -127,6 +143,11 @@ class Engine:
         
     def register_strategy(self, strategy: Any) -> None: 
         self.strategies.append(strategy)
+        if hasattr(strategy, 'symbol') and strategy.symbol:
+            self._strategies_by_symbol[strategy.symbol].append(strategy)
+        else:
+            # Multi-symbol strategies
+            self._strategies_by_symbol['ALL'].append(strategy)
         
     def register_portfolio(self, portfolio: Any) -> None: 
         self.portfolio = portfolio
@@ -214,8 +235,16 @@ class Engine:
                 _BURST_MAX = 32
                 while len(burst_batch) < _BURST_MAX and not self.events.empty():
                     try:
-                        burst_batch.append(self.events._deque.popleft())
-                    except IndexError:
+                        # Drain from priority deques in order (0→1→2)
+                        drained = False
+                        for p in range(3):
+                            if self.events._deques[p]:
+                                burst_batch.append(self.events._deques[p].popleft())
+                                drained = True
+                                break
+                        if not drained:
+                            break
+                    except (IndexError, KeyError):
                         break
                 
                 # 2. Critical Section (GC Disabled) — process entire burst
@@ -356,7 +385,34 @@ class Engine:
         # 1. Efficient Portfolio Update (Active symbols only)
         if event.symbol and event.close_price and self.portfolio:
              self.portfolio.update_market_price(event.symbol, event.close_price)
-             await self._check_exits_fast(event)
+             # ═══════════════════════════════════════════════════════════════
+             # REMEDIACIÓN QUIRÚRGICA: UNIFIED EXIT ENGINE (Production)
+             # QUÉ: Solo RiskManager.check_stops() genera señales EXIT.
+             # POR QUÉ: Portfolio.check_exits() competía con RiskManager,
+             #   causando cierres prematuros (SL fijo -0.25% vs trailing
+             #   adaptativo de 3 etapas). El motor más agresivo (Portfolio)
+             #   cortaba ganancias ANTES de que el trailing pudiera actuar.
+             # PARA QUÉ: Un solo motor de salida tanto en backtest como en
+             #   producción = resultados consistentes y predecibles.
+             # CÓMO: RiskManager.check_stops() se invoca aquí directamente.
+             #   Portfolio.check_exits() se mantiene como AUDIT-ONLY.
+             # ═══════════════════════════════════════════════════════════════
+             has_position = event.symbol in self.portfolio.positions or \
+                            any(k.startswith(event.symbol) for k in self.portfolio.virtual_ledger)
+             if has_position and self.risk_manager and self.data_handlers:
+                 try:
+                     # FORENSIC-V12 FIX #2: symbol_filter avoids O(N²) re-evaluation
+                     # POR QUÉ: Sin filtro, check_stops() escanea TODO el virtual_ledger
+                     #   por CADA MarketEvent. Con 26 símbolos = 676 evals/tick → solo 26.
+                     stop_signals = self.risk_manager.check_stops(
+                         self.portfolio, self.data_handlers[0],
+                         symbol_filter=event.symbol
+                     )
+                     if stop_signals:
+                         for sig in stop_signals:
+                             self.events.put(sig)
+                 except Exception as e:
+                     logger.error(f"check_stops error for {event.symbol}: {e}")
         else:
              self._update_portfolio_prices()
         
@@ -366,11 +422,10 @@ class Engine:
         # 3. Global Context
         context = None 
         
-        # 4. Strategy Orchestration
-        for strategy in self.strategies:
-            if hasattr(strategy, 'symbol') and strategy.symbol != event.symbol:
-                continue
- 
+        # 4. Strategy Orchestration (O(1) Optimized)
+        target_strategies = self._strategies_by_symbol.get(event.symbol, []) + self._strategies_by_symbol.get('ALL', [])
+        
+        for strategy in target_strategies:
             if current_regime == 'UNKNOWN':
                  current_regime = self._get_current_market_regime()
             
@@ -392,11 +447,21 @@ class Engine:
                     logger.error(f"Strategy Error ({strategy.__class__.__name__}): {e}")
 
     async def _check_exits_fast(self, event):
-        """Optimized exit checker for single symbol - Async wrapper"""
-        if self.portfolio and event.symbol in self.portfolio.positions:
-             if self.data_handlers:
-                  # Note: Portfolio.check_exits is currently sync
-                  self.portfolio.check_exits(self.data_handlers[0], self.events)
+        """
+        ⛔ FORENSIC-V12 FIX #1: PERMANENTLY DISABLED (Dead Code → Documented NO-OP)
+        
+        QUÉ: Portfolio.check_exits() solía competir con RiskManager.check_stops().
+        POR QUÉ: check_exits() tiene SL hardcodeado de -0.25% (Scalping) que
+           cortaba trades ANTES del trailing adaptativo de check_stops() (SL -0.60%).
+        PARA QUÉ: RiskManager.check_stops() (L400-413) es el ÚNICO motor de salida.
+           Esto garantiza paridad backtest ←→ producción.
+        CUÁNDO: Deshabilitado permanentemente desde Forensic Audit v12.
+        QUIÉN: Arquitecto Senior + Risk Manager.
+        
+        NOTA: Este método NO se invoca desde ningún lugar. Se mantiene como
+           documentación de la decisión arquitectónica.
+        """
+        pass  # RiskManager.check_stops() is the SOLE exit engine (L400-413)
 
     async def _process_signal_event(self, event):
         """Process SIGNAL event asynchronously"""
@@ -421,12 +486,65 @@ class Engine:
                  if 'ppo_entropy' in event.metadata:
                      self.portfolio.current_ppo_entropy = event.metadata['ppo_entropy']
 
+        # --- SHOCK REGIME EVASION (DYNAMIC FREEZE) ---
+        is_exit_signal = hasattr(event, 'signal_type') and str(event.signal_type) == 'SignalType.EXIT'
+        if not is_exit_signal and self.data_handlers:
+            try:
+                from utils.cooldown_manager import cooldown_manager
+                # Check if currently frozen
+                frozen_key = f"SHOCK_FREEZE_{event.symbol}"
+                # Peeking into custom dictionary to act as a lock check
+                if hasattr(cooldown_manager, 'custom_cooldowns') and frozen_key in cooldown_manager.custom_cooldowns:
+                    from datetime import datetime, timezone
+                    elapsed = (datetime.now(timezone.utc) - cooldown_manager.custom_cooldowns[frozen_key]).total_seconds()
+                    if elapsed < 300: # 5 min freeze
+                        logger.warning(f"❄️ [SHOCK BLOCK] Entry signal for {event.symbol} blocked. Frozen for {(300 - elapsed):.0f}s.")
+                        self.metrics['discarded_events'] += 1
+                        return
+                
+                # If not frozen, check if we SHOULD freeze (evaluate Market Regime shock)
+                dh = self.data_handlers[0]
+                bars = dh.get_latest_bars(event.symbol, n=20)
+                if bars and len(bars) >= 15:
+                    oi_delta = 0.0
+                    derivatives = {}
+                    if hasattr(dh, 'get_derivatives_metrics'):
+                        derivatives = dh.get_derivatives_metrics(event.symbol)
+                        oi_delta = derivatives.get('oi_delta_15m', 0.0)
+                        
+                    from core.market_regime import MarketRegimeDetector
+                    # Create temporary detector instance strictly for metric check (lightweight)
+                    temp_regime = MarketRegimeDetector()
+                    
+                    if temp_regime.is_volatility_shock(bars, oi_delta=oi_delta):
+                        logger.critical(f"🌪️ [SHOCK REGIME DETECTED] Squeeze on {event.symbol}! Activating 5-min Freeze.")
+                        # Activate the freeze (cooldown_manager will set the timestamp)
+                        cooldown_manager.check_custom_cooldown(frozen_key, 300)
+                        self.metrics['discarded_events'] += 1
+                        return
+            except Exception as e:
+                logger.error(f"Shock Evasion Error: {e}")
+
         if self.risk_manager:
             order_event = self.risk_manager.generate_order(event, current_price)
             if order_event:
                 dt_ms = (time.time_ns() - event.timestamp_ns) / 1_000_000
                 latency_monitor.track('signal_to_order', dt_ms)
                 self.events.put(order_event)
+            else:
+                 # INTERACTION MONITOR: Order blocked by Risk Manager
+                 try:
+                     from utils.interaction_monitor import get_interaction_monitor
+                     strat_id = getattr(event, 'strategy_id', 'Strategy')
+                     get_interaction_monitor().log_interaction(
+                         source=strat_id, 
+                         target="RiskManager", 
+                         action="place_order", 
+                         result="rejected",
+                         metadata={"symbol": event.symbol, "price": current_price}
+                     )
+                 except Exception:
+                     pass
 
     async def _process_order_event(self, event):
         """Process ORDER event asynchronously"""
@@ -466,6 +584,17 @@ class Engine:
                 await self.order_manager.remove_order(event.order_id, event=event)
             else:
                 self.order_manager.remove_order(event.order_id, event=event)
+
+        # 🧹 [ORPHAN CLEANER] Check if position closed to cancel hanging orders
+        try:
+            if self.portfolio and self.execution_handler:
+                horizon = getattr(event, 'horizon', 'SCALPING')
+                pos = self.portfolio.get_horizon_position(event.symbol, horizon)
+                if not pos or abs(pos.get('quantity', 0.0)) < 1e-8:
+                    from utils.position_cleaner import position_cleaner
+                    asyncio.create_task(position_cleaner.clean_orphan_orders(self.execution_handler, event.symbol))
+        except Exception as e:
+            logger.error(f"Error checking position for orphan cleanup: {e}")
 
     # ==================================================================
     # HELPER METHODS
@@ -533,11 +662,11 @@ class Engine:
                 # Optional: reduce frequency or block
                 pass
                 
-        # 2. Existing Position Check (Optional: prevent fighting own position)
-        if self.portfolio and hasattr(self.portfolio, 'positions'):
-            pos = self.portfolio.positions.get(event.symbol)
-            if pos and pos['quantity'] != 0:
-                # If we have a position, only allow strategies that manage exits or pyramids
+        # 2. Existing Position Check (Virtual Ledger Isolated)
+        if self.portfolio and hasattr(self.portfolio, 'has_position_for_horizon'):
+            horizon = getattr(strategy, 'horizon', 'SCALPING')
+            if self.portfolio.has_position_for_horizon(event.symbol, horizon):
+                # If we have a position IN THIS HORIZON, only allow strategies that manage exits or pyramids
                 # For simplicity in this engine, we let them run but RiskManager filters adds
                 pass
 

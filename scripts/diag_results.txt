@@ -1,0 +1,51 @@
+19:36:20 [INFO] 🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)
+[DEBUG] Import sys/os ok
+[DEBUG] Import pandas/numpy/datetime/queue ok
+[DEBUG] Import binance ok
+[DEBUG] Starting config import...
+[DEBUG] Import config ok
+📊 Metrics Exporter Initialized (Phase 99: Per-Symbol + Health).
+[DEBUG] Import Engine ok
+[DEBUG] Import risk ok
+[DEBUG] Thread limits set for sklearn/threadpoolctl
+[DEBUG] Starting ML imports...
+[DEBUG] Import ML ok
+[DEBUG] Setting up constants...
+[DEBUG] Setup ok
+💰 Capital inicial configurado: $13.00
+⚡ Leverage: 3x | Fee: 0.0375% per side
+🛡️ Kill Switch @ 3.0% DD | Cooldown: 120 bars
+🎯 Símbolos: ['BTC/USDT']
+📅 Horizontes: [1, 7, 15, 30] días
+
+  📦 Cargando data local para BTC/USDT desde cache...
+    ⚠️ Columnas faltantes en cache: ['tbbase', 'quote_vol'], descargando...
+  📡 Descargando 9d para BTC/USDT desde Binance API...
+    ✅ 12960 velas desde API (9.0D)
+Data: 12960 bars
+Calibrated SL=0.409% TP=0.736% Ratio=1.80
+
+======================================================================
+TRADE DISTRIBUTION ANALYSIS
+======================================================================
+Total trades: 135
+
+SL: 77 trades (57%)
+  Avg PNL: $-0.0484 (-0.41%)
+  Wins: 0/77 (0%)
+  Avg bars held: 58
+
+TP: 39 trades (29%)
+  Avg PNL: $+0.0767 (+0.84%)
+  Wins: 39/39 (100%)
+  Avg bars held: 80
+
+TIME: 19 trades (14%)
+  Avg PNL: $+0.0119 (+0.19%)
+  Wins: 13/19 (68%)
+  Avg bars held: 200
+
+Total PNL: $-0.5086
+Final capital: $12.4914
+Win Rate: 38.5%
+Est. total commissions (135 trades): $1.0125

@@ -6,6 +6,23 @@ from numba import njit, prange, float64, int64
 # ==============================================================================
 
 @njit(cache=True)
+def compute_alpha_decay_jit(time_held_sec: float, ttl_sec: float) -> float:
+    """
+    Computes a bayesian probability decay multiplier based on holding time.
+    Uses a smooth decay curve that accelerates towards 0 as time_held approaches TTL.
+    Returns: A multiplier between 0.0 and 1.0
+    """
+    if ttl_sec <= 0: return 1.0
+    if time_held_sec >= ttl_sec: return 0.0
+    
+    # Smooth decay using an inverse sigmoid shape
+    # At t=0 -> 1.0. At t=ttl -> 0.0. 
+    ratio = time_held_sec / ttl_sec
+    decay_factor = 1.0 - (ratio ** 1.5)
+    return max(0.0, min(1.0, decay_factor))
+
+
+@njit(cache=True)
 def kahan_sum(arr):
     """
     [PRECISION-AXIOMA] Kahan Summation Algorithm.
@@ -644,3 +661,370 @@ def calculate_garch_jit(returns, omega=1e-6, alpha=0.05, beta=0.90):
         variances[t] = omega + alpha * (resid * resid) + beta * variances[t-1]
         
     return variances
+
+# ==============================================================================
+# 🚀 A1 FIX: BATCH VECTORIZED QUANTUM FEATURES (Nano-Speed)
+# ==============================================================================
+# QUÉ: Calcula Hurst, RANSAC-Volatility y Bayesian Probability para TODOS
+#       los bars de una vez en un solo loop JIT compilado.
+# POR QUÉ: La versión anterior hacía 4980 llamadas Python→JIT individuales 
+#           con overhead de ~40μs por llamada = 200ms por símbolo.
+# PARA QUÉ: Reducir latencia de feature engineering de ~200ms a ~5ms por símbolo.
+# CÓMO: Un solo loop Numba que itera internamente sin volver a Python.
+# CUÁNDO: Cada vez que se llama prepare_features() en feature_engineering.py.
+# DÓNDE: utils/math_kernel.py
+# QUIÉN: FeatureEngineering.prepare_features() → calculate_quantum_features_batch_jit()
+
+@njit(fastmath=True, cache=True)
+def calculate_quantum_features_batch_jit(close, z_scores, returns_5, period=20):
+    """
+    BATCH Quantum Features: Hurst + RANSAC + Bayesian for entire array.
+    Single JIT call replaces ~N individual Python→JIT calls.
+    
+    Args:
+        close: float64 array of close prices
+        z_scores: float64 array of pre-computed z-scores
+        returns_5: float64 array of 5-bar returns (may contain NaN)
+        period: lookback window size
+        
+    Returns:
+        hurst_arr, ransac_arr, bayes_arr (all float64 arrays of len(close))
+    """
+    n = len(close)
+    hurst_arr = np.full(n, 0.5, dtype=np.float64)
+    ransac_arr = np.zeros(n, dtype=np.float64)
+    bayes_arr = np.full(n, 0.5, dtype=np.float64)
+    
+    for i in range(period, n):
+        window = close[i - period:i + 1]
+        w_len = len(window)
+        
+        # === INLINE HURST (Variance Difference Method) ===
+        # Avoids function call overhead
+        if w_len >= period:
+            # Lag 1 variance
+            sum_sq_1 = 0.0
+            cnt_1 = 0
+            for k in range(1, w_len):
+                d = window[k] - window[k - 1]
+                sum_sq_1 += d * d
+                cnt_1 += 1
+            
+            # Lag tau2 variance
+            tau2 = max(2, period // 4)
+            if tau2 >= w_len:
+                tau2 = w_len // 2
+            if tau2 < 2:
+                tau2 = 2
+            
+            sum_sq_2 = 0.0
+            cnt_2 = 0
+            for k in range(tau2, w_len):
+                d = window[k] - window[k - tau2]
+                sum_sq_2 += d * d
+                cnt_2 += 1
+            
+            if cnt_1 > 0 and cnt_2 > 0:
+                var1 = sum_sq_1 / cnt_1
+                var2 = sum_sq_2 / cnt_2
+                
+                if var1 > 1e-12 and var2 > 1e-12:
+                    log_tau1 = 0.0  # log(1) = 0
+                    log_tau2 = np.log(float(tau2))
+                    denom_h = log_tau2 - log_tau1
+                    
+                    if abs(denom_h) > 1e-9:
+                        h = 0.5 * (np.log(var2) - np.log(var1)) / denom_h
+                        if h < 0.0:
+                            h = 0.0
+                        elif h > 1.0:
+                            h = 1.0
+                        hurst_arr[i] = h
+        
+        # === INLINE RANSAC VOLATILITY (Simplified — 30 iterations) ===
+        if w_len >= 5:
+            med = np.median(window)
+            abs_devs = np.empty(w_len, dtype=np.float64)
+            for k in range(w_len):
+                abs_devs[k] = abs(window[k] - med)
+            mad = np.median(abs_devs)
+            if mad < 1e-8:
+                mad = 1e-8
+            threshold = mad * 3.0
+            
+            best_count = 0
+            best_inliers = np.empty(w_len, dtype=np.bool_)
+            best_inliers[:] = False
+            
+            for _ in range(30):  # Reduced from 50
+                i1 = np.random.randint(0, w_len)
+                i2 = np.random.randint(0, w_len)
+                while i1 == i2:
+                    i2 = np.random.randint(0, w_len)
+                
+                sample_mean = (window[i1] + window[i2]) / 2.0
+                count = 0
+                inliers = np.abs(window - sample_mean) <= threshold
+                for k in range(w_len):
+                    if inliers[k]:
+                        count += 1
+                
+                if count > best_count:
+                    best_count = count
+                    best_inliers = inliers
+            
+            if best_count >= w_len // 2:
+                inlier_sum = 0.0
+                inlier_sq_sum = 0.0
+                cnt = 0
+                for k in range(w_len):
+                    if best_inliers[k]:
+                        inlier_sum += window[k]
+                        inlier_sq_sum += window[k] * window[k]
+                        cnt += 1
+                if cnt > 1:
+                    mean_val = inlier_sum / cnt
+                    var_val = (inlier_sq_sum / cnt) - (mean_val * mean_val)
+                    if var_val < 0:
+                        var_val = 0.0
+                    ransac_arr[i] = np.sqrt(var_val)
+                else:
+                    ransac_arr[i] = np.std(window)
+            else:
+                ransac_arr[i] = np.std(window)
+        
+        # === INLINE BAYESIAN PROBABILITY ===
+        r_val = returns_5[i]
+        if np.isnan(r_val):
+            r_val = 0.0
+        
+        sig_str = abs(r_val) / 0.02
+        if sig_str > 1.0:
+            sig_str = 1.0
+        
+        z_val = z_scores[i]
+        trend_str = 0.0
+        if r_val > 0 and z_val > 0:
+            trend_str = 1.0
+        elif r_val < 0 and z_val < 0:
+            trend_str = -1.0
+        
+        # Likelihood ratios
+        lr_signal = 0.5 + (sig_str * 1.5)
+        
+        lr_trend = 1.0
+        if trend_str > 0.5:
+            lr_trend = 1.3
+        elif trend_str < -0.5:
+            lr_trend = 0.7
+        
+        lr_vol = 1.0
+        abs_z = abs(z_val)
+        if abs_z > 3.0:
+            lr_vol = 0.6
+        elif abs_z > 1.5:
+            lr_vol = 1.2
+        else:
+            lr_vol = 0.9
+        
+        posterior_odds = 1.0 * lr_signal * lr_trend * lr_vol  # prior_odds = 1.0 (50/50)
+        bayes_arr[i] = posterior_odds / (1.0 + posterior_odds)
+    
+    return hurst_arr, ransac_arr, bayes_arr
+
+# ==============================================================================
+# 🧠 FASE 11: NANO-LATENCY JIT KERNELS FOR RISK & SOPHIA
+# ==============================================================================
+
+@njit(fastmath=True, cache=True)
+def compute_kelly_fraction_jit(p, b, apply_mult=True, kelly_mult=0.25, stress_score=100.0, max_exposure=0.40):
+    """
+    [NANO-SPEED] Reemplazo de `Decimal` de Python para el Criterio de Kelly.
+    Velocidad de ejecución en nanosegundos (vs milisegundos de Decimal Python).
+    Fórmula: (p * b - q) / b donde q = 1 - p
+    """
+    if b <= 0.0:
+        return 0.0
+        
+    q = 1.0 - p
+    kelly = (p * b - q) / b
+    
+    if not apply_mult:
+        return kelly
+        
+    # Defensive Scaling
+    mult = kelly_mult
+    if stress_score < 90.0:
+        mult = 0.125  # Eighth-Kelly under extreme stress
+        
+    fractional_kelly = kelly * mult
+    if fractional_kelly < 0.0:
+        fractional_kelly = 0.0
+        
+    clamped = fractional_kelly
+    if clamped > max_exposure:
+        clamped = max_exposure
+        
+    return clamped
+
+@njit(fastmath=True, cache=True)
+def extract_kelly_stats_jit(pnl_array, is_win_array):
+    """
+    Deduce win rate (p) and payoff ratio (b) from a set of trade returns.
+    """
+    n = len(pnl_array)
+    if n == 0:
+        return 0.5, 1.0
+        
+    wins = 0.0
+    losses = 0.0
+    sum_wins = 0.0
+    sum_losses = 0.0
+    
+    for i in range(n):
+        if is_win_array[i]:
+            wins += 1.0
+            sum_wins += pnl_array[i]
+        else:
+            losses += 1.0
+            sum_losses += abs(pnl_array[i])
+            
+    p = wins / n if n > 0 else 0.5
+    avg_win = sum_wins / wins if wins > 0 else 0.01
+    avg_loss = sum_losses / losses if losses > 0 else 0.01
+    b = avg_win / avg_loss if avg_loss > 0 else 1.0
+    
+    return p, b
+
+@njit(fastmath=True, cache=True)
+def compute_cvar_jit(loss_history, confidence_level=0.95):
+    """
+    [NANO-SPEED] Conditional Value at Risk calculation.
+    Uses numpy backend rather than python `sorted()` list logic.
+    """
+    n = len(loss_history)
+    if n < 10:
+        return 0.05
+        
+    # Sort in descending order
+    sorted_losses = np.sort(loss_history)[::-1]
+    var_index = max(1, int(n * (1.0 - confidence_level)))
+    
+    # Calculate mean of the tail (worst cases)
+    sum_loss = 0.0
+    for i in range(var_index):
+        sum_loss += sorted_losses[i]
+        
+    return sum_loss / float(var_index)
+
+@njit(fastmath=True, cache=True)
+def compute_shannon_entropy_jit(probs):
+    """
+    [NANO-SPEED] Shannon Entropy para Sophia Intelligence.
+    H = -Σ p_i × log2(p_i)
+    """
+    h = 0.0
+    for i in range(len(probs)):
+        p = probs[i]
+        if p > 1e-10:
+            h -= p * np.log2(p)
+    return h
+
+@njit(fastmath=True, cache=True)
+def compute_alpha_decay_jit(signal_strength, elapsed_seconds, ttl_seconds):
+    """
+    [NANO-SPEED] Decaimiento Exponencial Temporal de las señales en Sophia.
+    Reemplaza la lenta llamada de math.exp().
+    """
+    if ttl_seconds <= 0.0:
+        return 0.0
+    lam = 1.0 / ttl_seconds
+    return signal_strength * np.exp(-lam * elapsed_seconds)
+
+# ==============================================================================
+# 🧠 FASE 12: NANO-LATENCY JIT KERNELS FOR REGIME & WEBSOCKET LEAD-LAG
+# ==============================================================================
+
+@njit(fastmath=True, cache=True)
+def compute_fuzzy_regime_scores_jit(adx, hurst, tm_multiplier, is_bullish):
+    """
+    [NANO-SPEED] Reemplaza la lógica serial Fuzzy para Regímenes.
+    Devuelve índice del régimen ganador y su probabilidad:
+    0: TRENDING_BEAR, 1: TRENDING_BULL, 2: MEAN_REVERTING, 3: RANGING, 4: CHOPPY
+    """
+    adx_base = 20.0 * tm_multiplier
+    adx_range = 10.0 * tm_multiplier
+    mr_adx_base = 22.0 * tm_multiplier
+    
+    # 1. P(Trending)
+    p_trend_adx = max(0.0, min(1.0, (adx - adx_base) / adx_range))
+    p_trend_hurst = max(0.0, min(1.0, (hurst - 0.5) / 0.15))
+    score_trending = (p_trend_adx * 0.6) + (p_trend_hurst * 0.4)
+    
+    # 2. P(Mean-Reverting)
+    p_mr_hurst = max(0.0, min(1.0, (0.45 - hurst) / 0.1))
+    p_mr_adx = max(0.0, min(1.0, (mr_adx_base - adx) / 7.0))
+    score_mean_reverting = (p_mr_hurst * 0.7) + (p_mr_adx * 0.3)
+    
+    # 3. P(Ranging)
+    p_range_adx = max(0.0, min(1.0, (mr_adx_base - adx) / 7.0))
+    dist_to_neutral = abs(hurst - 0.5)
+    p_range_hurst = max(0.0, min(1.0, (0.1 - dist_to_neutral) / 0.1))
+    score_ranging = (p_range_adx * 0.5) + (p_range_hurst * 0.5)
+    
+    # 4. P(Choppy)
+    max_3 = max(score_trending, score_mean_reverting, score_ranging)
+    score_choppy = max(0.0, 1.0 - max_3)
+    
+    # Map index
+    best_idx = 4 # CHOPPY (Default)
+    best_score = score_choppy
+    
+    if score_trending > best_score:
+        best_score = score_trending
+        best_idx = 1 if is_bullish else 0
+        
+    if score_mean_reverting > best_score:
+        best_score = score_mean_reverting
+        best_idx = 2
+        
+    if score_ranging > best_score:
+        best_score = score_ranging
+        best_idx = 3
+        
+    if best_score < 0.35:
+        best_idx = 4 # Force Choppy
+        
+    return best_idx, best_score
+
+@njit(fastmath=True, cache=True)
+def pearson_correlation_jit(x, y):
+    """
+    [NANO-SPEED] Pearson Correlation Coefficient para reemplazar np.corrcoef()
+    Extremadamente útil para cálculos Lead-Lag sin overhead overhead O(n^2) del GC.
+    """
+    n = len(x)
+    if n < 2 or n != len(y):
+        return 0.0
+        
+    sum_x = 0.0
+    sum_y = 0.0
+    sum_x2 = 0.0
+    sum_y2 = 0.0
+    sum_xy = 0.0
+    
+    for i in range(n):
+        xi = x[i]
+        yi = y[i]
+        sum_x += xi
+        sum_y += yi
+        sum_x2 += xi * xi
+        sum_y2 += yi * yi
+        sum_xy += xi * yi
+        
+    numerator = (n * sum_xy) - (sum_x * sum_y)
+    denominator = np.sqrt((n * sum_x2 - sum_x * sum_x) * (n * sum_y2 - sum_y * sum_y))
+    
+    if denominator == 0.0:
+        return 0.0
+    return numerator / denominator

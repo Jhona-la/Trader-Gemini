@@ -40,10 +40,10 @@ class CooldownManager:
         # Cooldowns en segundos
         # BUG #55 FIX: Respect Config.COOLDOWN_PERIOD_SECONDS if available
         from config import Config
-        self.GLOBAL_COOLDOWN = 10       # 10s entre cualquier operación
-        self.SYMBOL_COOLDOWN = getattr(Config, 'COOLDOWN_PERIOD_SECONDS', 1800)
-        self.PATTERN_COOLDOWN = 600     # 10 min para mismo patrón
-        self.STRATEGY_COOLDOWN = 300    # 5 min por estrategia (aumentado de 2m)
+        self.GLOBAL_COOLDOWN = 3        # PHOENIX: 3s (was 10s) - scalping needs speed
+        self.SYMBOL_COOLDOWN = getattr(Config, 'COOLDOWN_PERIOD_SECONDS', 90)
+        self.PATTERN_COOLDOWN = 60      # PHOENIX: 60s (was 10 min) - allow re-entry
+        self.STRATEGY_COOLDOWN = 30     # PHOENIX: 30s (was 5 min) - strategies must fire
         
         # State tracking
         self.last_global_trade: Optional[datetime] = None
@@ -208,17 +208,17 @@ class CooldownManager:
         """
         with self._state_lock:
             if regime == 'TRENDING':
-                self.SYMBOL_COOLDOWN = 180    # 3 min - más rápido en tendencia
-                self.STRATEGY_COOLDOWN = 60   # 1 min
+                self.SYMBOL_COOLDOWN = 45     # PHOENIX: 45s - fast in trend
+                self.STRATEGY_COOLDOWN = 15   # 15s
             elif regime == 'CHOPPY':
-                self.SYMBOL_COOLDOWN = 600    # 10 min - más lento en choppy
-                self.STRATEGY_COOLDOWN = 300  # 5 min
+                self.SYMBOL_COOLDOWN = 180    # PHOENIX: 3 min (was 10 min)
+                self.STRATEGY_COOLDOWN = 60   # 1 min
             elif regime == 'VOLATILE':
-                self.SYMBOL_COOLDOWN = 900    # 15 min - muy conservador
-                self.STRATEGY_COOLDOWN = 600  # 10 min
+                self.SYMBOL_COOLDOWN = 120    # PHOENIX: 2 min (was 15 min!)
+                self.STRATEGY_COOLDOWN = 45   # 45s
             else:  # RANGING o default
-                self.SYMBOL_COOLDOWN = 300    # 5 min default
-                self.STRATEGY_COOLDOWN = 120  # 2 min default
+                self.SYMBOL_COOLDOWN = 90     # PHOENIX: 1.5 min (was 5 min)
+                self.STRATEGY_COOLDOWN = 30   # 30s
     
     def get_statistics(self) -> dict:
         """Get cooldown blocking statistics"""
