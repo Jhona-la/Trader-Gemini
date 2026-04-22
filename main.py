@@ -53,6 +53,7 @@ from core.engine import Engine
 from data.binance_loader import BinanceData
 from risk.risk_manager import RiskManager
 from strategies.sniper_strategy import SniperStrategy
+from strategies.technical import TechnicalStrategy  # FORENSIC FIX: Missing import
 from data.sentiment_loader import SentimentLoader
 from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy  # ← UNIVERSAL ENSEMBLE FOR ALL SYMBOLS
 from core.portfolio import Portfolio
@@ -108,192 +109,19 @@ class TradeRecord:
         return (datetime.now(timezone.utc) - self.entry_time).total_seconds()
 
 
-class PerformanceTracker:
-    """Track avanzado de performance (asíncrono)."""
-    def __init__(self, initial_capital: float):
-        self.initial_capital = initial_capital
-        self.current_capital = initial_capital
-        self.peak_capital = initial_capital
-        self.trades: List[TradeRecord] = []
-        self.open_trades: Dict[str, TradeRecord] = {}
-        self.start_time = datetime.now(timezone.utc)
-        
-    def open_trade(self, symbol: str, price: float, quantity: float, 
-                   strategy: str, side: str = "LONG") -> str:
-        """Registrar apertura de trade."""
-        trade_id = f"{symbol}_{int(time.time())}"
-        trade = TradeRecord(
-            symbol=symbol,
-            entry_time=datetime.now(timezone.utc),
-            entry_price=price,
-            quantity=quantity,
-            strategy=strategy,
-            position_side=side
-        )
-        self.open_trades[trade_id] = trade
-        return trade_id
-    
-    def close_trade(self, trade_id: str, exit_price: float, fees: float = 0.0):
-        """Cerrar trade y calcular P&L."""
-        if trade_id not in self.open_trades:
-            return None
-        
-        trade = self.open_trades[trade_id]
-        trade.exit_time = datetime.now(timezone.utc)
-        trade.exit_price = exit_price
-        trade.fees = fees
-        trade.closed = True
-        
-        # Calcular P&L
-        if trade.position_side == "LONG":
-            trade.pnl = (exit_price - trade.entry_price) * trade.quantity - fees
-        else:
-            trade.pnl = (trade.entry_price - exit_price) * trade.quantity - fees
-        
-        trade.pnl_pct = (trade.pnl / (trade.entry_price * trade.quantity)) * 100
-        
-        # Mover a historial
-        self.trades.append(trade)
-        del self.open_trades[trade_id]
-        
-        # Actualizar capital
-        self.current_capital += trade.pnl
-        self.peak_capital = max(self.peak_capital, self.current_capital)
-        
-        logger.info(f"📊 Trade {trade_id}: P&L ${trade.pnl:.2f} ({trade.pnl_pct:.2f}%)")
-        return trade
-    
-    def get_statistics(self) -> Dict:
-        """Obtener estadísticas completas."""
-        if not self.trades:
-            return None
-        
-        closed_trades = [t for t in self.trades if t.closed]
-        if not closed_trades:
-            return None
-        
-        wins = [t for t in closed_trades if t.pnl > 0]
-        losses = [t for t in closed_trades if t.pnl <= 0]
-        
-        total_pnl = sum(t.pnl for t in closed_trades)
-        total_fees = sum(t.fees for t in closed_trades)
-        
-        stats = {
-            'total_trades': len(closed_trades),
-            'wins': len(wins),
-            'losses': len(losses),
-            'win_rate': len(wins) / len(closed_trades) if closed_trades else 0,
-            'total_pnl': total_pnl,
-            'total_fees': total_fees,
-            'net_pnl': total_pnl - total_fees,
-            'current_capital': self.current_capital,
-            'peak_capital': self.peak_capital,
-            'drawdown': ((self.peak_capital - self.current_capital) / self.peak_capital) * 100,
-            'avg_trade_duration': np.mean([t.duration_seconds for t in closed_trades]) if closed_trades else 0,
-            'roi': ((self.current_capital - self.initial_capital) / self.initial_capital) * 100,
-            'runtime_hours': (datetime.now(timezone.utc) - self.start_time).total_seconds() / 3600
-        }
-        
-        if wins:
-            stats['avg_win'] = np.mean([t.pnl for t in wins])
-            stats['largest_win'] = max(t.pnl for t in wins)
-        if losses:
-            stats['avg_loss'] = np.mean([t.pnl for t in losses])
-            stats['largest_loss'] = min(t.pnl for t in losses)
-        
-        # Sharpe Ratio (Anualizado para barras M1, asumiendo 525600 barras/año)
-        # BUG-002 FIX: Factor anualizado sqrt(525600)
-        returns = [t.pnl_pct for t in closed_trades]
-        if len(returns) > 1 and np.std(returns) > 0:
-            annualization_factor = np.sqrt(525600)
-            stats['sharpe_ratio'] = (np.mean(returns) / np.std(returns)) * annualization_factor
-        else:
-            stats['sharpe_ratio'] = 0
-        
-        return stats
-    
-    def print_summary(self):
-        """Imprimir resumen de performance."""
-        stats = self.get_statistics()
-        if not stats:
-            logger.info("📭 No trades executed yet")
-            return
-        
-        logger.info("\n" + "="*60)
-        logger.info("📈 PERFORMANCE SUMMARY")
-        logger.info("="*60)
-        logger.info(f"Capital: ${self.initial_capital:.2f} → ${stats['current_capital']:.2f} "
-                   f"(ROI: {stats['roi']:+.2f}%)")
-        logger.info(f"Trades: {stats['total_trades']} "
-                   f"(W:{stats['wins']} L:{stats['losses']} | WR: {stats['win_rate']*100:.1f}%)")
-        logger.info(f"Net P&L: ${stats['net_pnl']:.2f} | Fees: ${stats['total_fees']:.2f}")
-        logger.info(f"Sharpe: {stats['sharpe_ratio']:.2f} | Drawdown: {stats['drawdown']:.2f}%")
-        logger.info(f"Avg Duration: {stats['avg_trade_duration']/60:.1f} min")
-        logger.info(f"Runtime: {stats['runtime_hours']:.1f} hours")
-        logger.info("="*60 + "\n")
+# [FORENSIC CLEANUP] PerformanceTracker REMOVED
+# QUÉ: Clase eliminada — duplicaba Portfolio.get_statistics()
+# POR QUÉ: Nunca estaba conectada al pipeline real de fills.
+#   Portfolio es la SINGLE SOURCE OF TRUTH para trades y PnL.
+# CUÁNDO: Auditoría Forense de Límites de Trades (2026-04-20)
 
 
-class SessionFilter:
-    """Filtro por sesiones de mercado."""
-    @staticmethod
-    def is_active_session() -> bool:
-        """Verificar si estamos en sesión activa."""
-        now_utc = datetime.now(timezone.utc)
-        hour_utc = now_utc.hour
-        
-        # Sesiones (ajustar según Config)
-        london_active = 8 <= hour_utc < 17  # 8 AM - 5 PM UTC
-        ny_active = 13 <= hour_utc < 22     # 1 PM - 10 PM UTC
-        
-        return london_active or ny_active
-    
-    @staticmethod
-    def get_session_name() -> str:
-        """Obtener nombre de sesión actual."""
-        now_utc = datetime.now(timezone.utc)
-        hour_utc = now_utc.hour
-        
-        if 8 <= hour_utc < 17 and 13 <= hour_utc < 17:
-            return "LONDON_NY_OVERLAP"
-        elif 8 <= hour_utc < 17:
-            return "LONDON"
-        elif 13 <= hour_utc < 22:
-            return "NEW_YORK"
-        return "ASIA/CLOSED"
-
-
-class ScalpingOptimizer:
-    """Optimizador específico para scalping."""
-    def __init__(self, portfolio: Portfolio, risk_manager: RiskManager):
-        self.portfolio = portfolio
-        self.risk_manager = risk_manager
-        self.last_trade_time = {}
-        self.trade_counts = {}
-        self.max_trades_per_hour = 12  # Límite conservador
-        
-    def can_trade(self, symbol: str) -> bool:
-        """Verificar si podemos hacer otro trade en este símbolo."""
-        now = time.time()
-        last_trade = self.last_trade_time.get(symbol, 0)
-        
-        # Esperar mínimo 5 minutos entre trades en mismo símbolo
-        if now - last_trade < 300:
-            return False
-        
-        # Límite de trades por hora
-        hour_key = f"{symbol}_{datetime.now().hour}"
-        if self.trade_counts.get(hour_key, 0) >= self.max_trades_per_hour:
-            return False
-        
-        return True
-    
-    def record_trade(self, symbol: str):
-        """Registrar que se ejecutó un trade."""
-        now = time.time()
-        self.last_trade_time[symbol] = now
-        
-        hour_key = f"{symbol}_{datetime.now().hour}"
-        self.trade_counts[hour_key] = self.trade_counts.get(hour_key, 0) + 1
+# [FORENSIC CLEANUP] SessionFilter + ScalpingOptimizer REMOVED
+# QUÉ: Clases eliminadas — SessionFilter nunca se usaba (crypto 24/7),
+#   ScalpingOptimizer se instanciaba pero NUNCA se invocaba en el event loop.
+# POR QUÉ: Código muerto que añadía complejidad sin funcionalidad.
+#   ScalpingOptimizer duplicaba lógica ya cubierta por CooldownManager.
+# CUÁNDO: Auditoría Forense de Límites de Trades (2026-04-20)
 
 
 async def meta_brain_loop(selector: StrategySelector):
@@ -544,7 +372,9 @@ async def main():
         if not args.symbols:
             Config.TRADING_PAIRS = ['BTCUSDT', 'ETHUSDT']  # Pares principales
         Config.INITIAL_CAPITAL = args.capital
-        Config.MAX_CONCURRENT_POSITIONS = 1  # Una posición a la vez para scalping
+        # [FORENSIC FIX] Removed MAX_CONCURRENT_POSITIONS=1 override
+        # POR QUÉ: Conflicto con Config.MAX_CONCURRENT_POSITIONS=3.
+        #   God Mode necesita 3+ posiciones concurrentes para scalping multi-symbol.
         Config.POSITION_SIZE_PCT = 0.3  # 30% del capital por trade
     elif args.mode == 'futures':
         Config.BINANCE_USE_FUTURES = True
@@ -571,8 +401,8 @@ async def main():
         initial_capital=Config.INITIAL_CAPITAL
     )
     
-    # 2. PERFORMANCE TRACKER
-    performance = PerformanceTracker(initial_capital=Config.INITIAL_CAPITAL)
+    # 2. PERFORMANCE TRACKER (Delegated to Portfolio - Single Source of Truth)
+    # [FORENSIC CLEANUP] PerformanceTracker removed — Portfolio.get_statistics() is the SSOT
     
     logger.info(f"🚀 STARTING TRADER GEMINI [Mode: {args.mode} | Capital: ${Config.INITIAL_CAPITAL}]")
     
@@ -622,12 +452,12 @@ async def main():
     # 3.2. REAL DATA HANDLER (With Elite Basket)
     data_handler = BinanceData(events_queue, Config.TRADING_PAIRS)
     
-    # 3.2.1. PORTFOLIO & RISK (Restored)
     portfolio = Portfolio(
         initial_capital=Config.INITIAL_CAPITAL,
         csv_path=f"{Config.DATA_DIR}/trades.csv",
         status_path=f"{Config.DATA_DIR}/status.csv"
     )
+    portfolio.data_provider = data_handler
     risk_manager = RiskManager(
         max_concurrent_positions=getattr(Config, 'MAX_CONCURRENT_POSITIONS', 3),
         portfolio=portfolio
@@ -767,7 +597,50 @@ async def main():
     logger.info("🩺 CI-HMA Health Supervisor started in background.")
 
     # Scalping Optimizer (optional)
-    scalping_optimizer = ScalpingOptimizer(portfolio, risk_manager)
+    # [FORENSIC CLEANUP] ScalpingOptimizer removed — CooldownManager handles anti-overtrading
+
+    # 🧟 ZOMBIE FEATURE INTEGRATION: Activate latent AI and Evolution modules
+    logger.info("🧟 [PHASE 2] Initializing Dormant Zombie Modules...")
+    try:
+        from core.world_awareness import world_awareness
+        logger.info("✅ WorldAwareness activated.")
+    except Exception as e:
+        logger.warning(f"Could not init WorldAwareness: {e}")
+
+    try:
+        from core.sovereign_oracle import SovereignOracle
+        engine.sovereign_oracle = SovereignOracle()
+        logger.info("✅ SovereignOracle activated.")
+    except Exception as e:
+        logger.warning(f"Could not init SovereignOracle: {e}")
+
+    try:
+        from core.multiverse_simulator import MultiverseSimulator
+        engine.multiverse = MultiverseSimulator()
+        logger.info("✅ MultiverseSimulator activated.")
+    except Exception as e:
+        logger.warning(f"Could not init MultiverseSimulator: {e}")
+
+    try:
+        from core.shadow_darwin import ShadowDarwin
+        engine.shadow_darwin = ShadowDarwin()
+        logger.info("✅ ShadowDarwin activated.")
+    except Exception as e:
+        logger.warning(f"Could not init ShadowDarwin: {e}")
+
+    try:
+        from core.swarm_correlator import SwarmCorrelator
+        engine.swarm = SwarmCorrelator()
+        logger.info("✅ SwarmCorrelator activated.")
+    except Exception as e:
+        logger.warning(f"Could not init SwarmCorrelator: {e}")
+
+    try:
+        from core.neural_bridge import NeuralBridge
+        engine.neural_bridge = NeuralBridge()
+        logger.info("✅ NeuralBridge activated.")
+    except Exception as e:
+        logger.warning(f"Could not init NeuralBridge: {e}")
     
     # --- GRACEFUL SHUTDOWN SYSTEM (Rule 2.1) ---
     shutdown_event = asyncio.Event()
@@ -898,9 +771,11 @@ async def main():
                         
                     last_heartbeat = now
                 
-                # Performance Summary (30m)
+                # Performance Summary (30m) — via Portfolio SSOT
                 if now - last_summary_time > 1800:
-                    performance.print_summary()
+                    stats = portfolio.get_statistics()
+                    if stats and stats.get('total_trades', 0) > 0:
+                        logger.info(f"📊 [30m] Trades: {stats['total_trades']} | WR: {stats.get('win_rate', 0)*100:.1f}% | Equity: ${portfolio.get_total_equity():.2f}")
                     last_summary_time = now
                     
                 await asyncio.sleep(1)
@@ -955,9 +830,13 @@ async def main():
     except asyncio.TimeoutError:
         logger.warning("⚠️ Data handler shutdown timed out")
     
-    # Performance & Session Closure
+    # Performance & Session Closure — via Portfolio SSOT
     portfolio.close()
-    performance.print_summary()
+    final_stats = portfolio.get_statistics()
+    if final_stats:
+        logger.info(f"📊 [FINAL] Trades: {final_stats.get('total_trades', 0)} | WR: {final_stats.get('win_rate', 0)*100:.1f}% | Equity: ${portfolio.get_total_equity():.2f}")
+    else:
+        logger.info("📭 No trades executed during this session.")
     
     if sentiment_loader is not None:
         sentiment_loader.stop()
@@ -969,8 +848,8 @@ async def main():
     session_mgr = get_session_manager()
     if session_mgr:
         session_mgr.end_session({
-            'total_trades': len(performance.trades),
-            'pnl': performance.current_capital - performance.initial_capital
+            'total_trades': final_stats.get('total_trades', 0) if final_stats else 0,
+            'pnl': portfolio.get_total_equity() - Config.INITIAL_CAPITAL
         })
     
     # Neural Bridge Cleanup (SharedMemory)

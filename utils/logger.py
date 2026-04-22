@@ -278,10 +278,10 @@ def cleanup_old_logs(log_dir: str, days: int = 7):
 logger = setup_logger()
 
 
-def log_trade(symbol, direction, quantity, price, strategy='Unknown'):
-    """Helper to log trade execution"""
+def log_trade(symbol, direction, quantity, price, strategy='Unknown', order_id='N/A', horizon='UNKNOWN'):
+    """Helper to log trade execution with strict Horizon and ID tags"""
     # This renders nicely in console text format
-    logger.info(f"TRADE: {direction} {quantity} {symbol} @ ${price:.2f} (Strategy: {strategy})")
+    logger.info(f"TRADE: [{horizon}] {direction} {quantity} {symbol} @ ${price:.2f} (Strategy: {strategy} | ID: {order_id})")
 
 
 def log_error_with_context(error, context=''):

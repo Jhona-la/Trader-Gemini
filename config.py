@@ -137,7 +137,6 @@ class Config(metaclass=EncryptedConfigMeta):
     CRYPTO_FUTURES_PAIRS = [
         "ADA/USDT", "ARB/USDT", "ATOM/USDT", "AVAX/USDT", "BNB/USDT",
         "BTC/USDT", "DOGE/USDT", "DOT/USDT", "ETC/USDT", "ETH/USDT",
-        "FIL/USDT", "INJ/USDT", "LINK/USDT", "LTC/USDT", "MATIC/USDT", 
         "NEAR/USDT", "OP/USDT", "PAXG/USDT", "POL/USDT", "RENDER/USDT", 
         "SOL/USDT", "SUI/USDT", "TIA/USDT", "UNI/USDT", "WIF/USDT", 
         "XRP/USDT"
@@ -152,12 +151,12 @@ class Config(metaclass=EncryptedConfigMeta):
 
     # MANDATORY TAGGING SYSTEM - SCALPING VS SWING
     STRATEGY_LABELS = {
-        "technical": "[SCL] Technical Momentum",
-        "ml_strategy": "[SWG] ML Trend Swing",
-        "sniper_strategy": "[SCL] Sniper Ultra",
-        "statistical": "[SWG] Statistical Mean Reversion",
-        "arbitrage": "[SCL] Arbitrage Flow",
-        "phalanx": "[SCL] Phalanx Multi-Signal"
+        "technical": "Technical Momentum",
+        "ml_strategy": "ML Trend Swing",
+        "sniper_strategy": "Sniper Ultra",
+        "statistical": "Statistical Mean Reversion",
+        "arbitrage": "Arbitrage Flow",
+        "phalanx": "Phalanx Multi-Signal"
     }
 
     # === TRADING SETTINGS ===
@@ -170,9 +169,9 @@ class Config(metaclass=EncryptedConfigMeta):
 
     
     # Risk settings for Multi-Symbol Coordination
-    MAX_CONCURRENT_POSITIONS = 2  # FORENSIC FIX: 2 concurrent (was 3) to protect notional viability
-    COOLDOWN_PERIOD_SECONDS = 15   # FORENSIC FIX: 15s (was 45s) — micro-scalping needs sub-minute re-entry
-    MAX_POSITIONS_PER_SYMBOL = 1   # One layer per symbol for safety
+    MAX_CONCURRENT_POSITIONS = 26 # FORENSIC-V17: 26 (one per symbol) — NO LIMITS per user request
+    COOLDOWN_PERIOD_SECONDS = 0    # FORENSIC-V17: 0s — allow immediate re-entry for micro-scalping
+    MAX_POSITIONS_PER_SYMBOL = 1   # Still 1 per symbol to prevent double-spending on same asset
     
     # Position Sizing Configuration
     POSITION_SIZE_MICRO_ACCOUNT = 0.30   # GOD MODE: 30% per trade → $3.90 margin × 10x = $39 notional
@@ -183,13 +182,13 @@ class Config(metaclass=EncryptedConfigMeta):
     MIN_RR_RATIO = 1.5             # 1.5:1 R:R minimum
     
     # Risk Management
-    MAX_RISK_PER_TRADE = 0.05  # 5% of capital max per trade for $13 account
+    MAX_RISK_PER_TRADE = 0.10  # 10% of capital max per trade for $13 account (Exponential Growth)
     STOP_LOSS_PCT = 0.02       # 2% stop loss
     MAX_SLIPPAGE_PCT = 0.001   # 0.1% max slippage (Sovereign-Deploy)
     
     # === RISK CAPITOL HIERARCHY (USER RULE PRESERVATION) ===
     class Risk:
-        MAX_DRAWDOWN = 1.5           # 1.5% max drawdown (SOVEREIGN LIMIT)
+        MAX_DRAWDOWN = 15.0           # 15.0% max drawdown (SOVEREIGN LIMIT) - Increased from 1.5% for $13 micro-accounts
         DEFAULT_BOOTSTRAP_WR = 0.52 
         BOOTSTRAP_TRADES = 20
         MAX_RISK_PER_TRADE = 0.05  
@@ -203,9 +202,9 @@ class Config(metaclass=EncryptedConfigMeta):
     # PARA QUÉ: Garantizar que el Flip tenga un valor esperado positivo real.
     FLIP_MIN_ATR_PCT = 0.005      # 0.5% ATR mínimo para autorizar Flip
     FLIP_MIN_POTENTIAL_RR = 2.0    # R:R esperado para la nueva dirección
-    FLIP_MAX_DAILY_COUNT = 1       # Máximas reversiones por símbolo al día (Recomendación final)
+    FLIP_MAX_DAILY_COUNT = 99      # NO LIMIT per user request
     FLIP_COST_THRESHOLD = 0.002    # 0.2% max cost (Fees + Slippage)
-    FLIP_COOLDOWN_SECONDS = 300    # 5 min de espera tras un Flip exitoso
+    FLIP_COOLDOWN_SECONDS = 0      # NO COOLDOWN per user request
     
     # Position Sizing Thresholds
     POSITION_SIZE_SMALL_THRESHOLD = 1000   
@@ -265,8 +264,8 @@ class Config(metaclass=EncryptedConfigMeta):
         # CÓMO: technical.py lee self.horizon y selecciona el dict correcto.
         # ================================================================
         SCALPING_PARAMS = {
-            'tp_pct': 0.0120,         # AXIOMATIC FIX: 1.20% Minimum Viability TP for Micro-Account
-            'sl_pct': 0.0060,         # Expanded SL to allow 1.2% TP breathing room
+            'tp_pct': 0.0040,         # FORENSIC-V13: 0.40% TP — realista para 1M-5M (was 1.20% inalcanzable)
+            'sl_pct': 0.0025,         # FORENSIC-V13: 0.25% SL — tight pero alcanzable, R:R = 1.6:1
             'rsi_period': 5,          # RSI ultra-rápido (5 velas)
             'rsi_buy': 35,            # FORENSIC FIX: was 25 — wider zone to capture more setups
             'rsi_sell': 65,           # FORENSIC FIX: was 75 — wider zone to capture more setups
@@ -282,7 +281,7 @@ class Config(metaclass=EncryptedConfigMeta):
             'min_volume_ratio': 0.4,  # FORENSIC FIX: was 0.6 — less filtering for micro-account
             'cooldown_seconds': 15,   # FORENSIC FIX: aligned with global COOLDOWN_PERIOD_SECONDS
             'max_hold_bars': 120,     # FIX FORENSIC-7: 120 bars = 2h for TP to be reached
-            'strength_threshold': 0.40, # PAPER-TRADING-AUDIT: was 0.55 — too selective for micro-account, ~15-20 trades/day target
+            'strength_threshold': 0.55, # FORENSIC-V13: Raised from 0.40 — filter coin-flip signals (52-54% win prob)
             'atr_sl_mult': 1.0,       # SL pegado (1x ATR)
             'atr_tp_mult': 2.0,       # TP 2x ATR (ratio 2:1)
             'sophia_refit': 50,       # Recalibrate clusters every 50 bars (M1/M5)

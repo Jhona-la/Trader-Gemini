@@ -90,12 +90,10 @@ class BinanceExecutor:
         self.latency_violations = 0 # Sovereign-Deploy Telemetry
 
             
-        # Set Leverage for Futures
-        # NOTE: Leverage endpoint not available on Testnet
-        # Configure leverage manually in Binance Demo UI
+        # Phase 15: Leverage Cache & Management
+        self._leverage_cache = {} # symbol -> leverage
         if Config.BINANCE_USE_FUTURES:
-            logger.info("Binance Executor: FUTURES MODE ENABLED")
-            logger.info("  → Using server-side leverage (configure in Binance Demo UI)")
+            logger.info("⚡ Binance Executor: FUTURES MODE ENABLED (Programmatic Leverage Active)")
         
         # ===================================================================
         # Create permanent Spot exchange instance for balance queries
@@ -145,6 +143,15 @@ class BinanceExecutor:
 
         # CRITICAL FIX: Load markets immediately to prevent "markets not loaded" error
         # 1. Set Position Mode to Hedge Mode (Dual Side Position = True)
+        if Config.BINANCE_USE_FUTURES and not Config.BINANCE_USE_DEMO:
+             # This requires an async call or a one-time sync call.
+             # We will attempt to set it via the sync exchange during init.
+             try:
+                 self.exchange.fapiPrivatePostPositionSideDual({'dualSidePosition': 'true'})
+                 logger.info("🛡️ [HEDGE MODE] Enforced Dual Side Position (True)")
+             except Exception as e:
+                 logger.warning(f"⚠️ [HEDGE MODE] Could not enforce Hedge Mode (Already set or API error): {e}")
+
         # CRITICAL: Monkey patch 'request' method to intercept ALL sapi calls AND track Rate Limit
         # This is more robust than patching individual methods
         original_request = self.exchange.request
@@ -329,6 +336,30 @@ class BinanceExecutor:
             logger.error(f"❌ Unexpected error initializing Futures settings: {e}")
             logger.error("   Please report this error with the full traceback")
 
+    async def _ensure_leverage(self, symbol_id: str, target_leverage: int):
+        """
+        ⚡ NANO-EXECUTION: Programmatically sets leverage if it differs from cache.
+        """
+        current = self._leverage_cache.get(symbol_id)
+        if current == target_leverage:
+            return
+            
+        try:
+            logger.info(f"⚡ [EXEC] Adjusting Leverage to {target_leverage}x for {symbol_id}")
+            # Use Async Exchange for non-blocking execution
+            await self.async_exchange.fapiPrivatePostLeverage({
+                'symbol': symbol_id,
+                'leverage': int(target_leverage)
+            })
+            self._leverage_cache[symbol_id] = target_leverage
+            metrics.increment("leverage_adjustments")
+        except Exception as e:
+            err_msg = str(e)
+            if "No need to change" in err_msg:
+                self._leverage_cache[symbol_id] = target_leverage
+            else:
+                logger.warning(f"⚠️ [LEVERAGE-FAIL] Could not set leverage to {target_leverage}x for {symbol_id}: {e}")
+
     # Removed @trace_execution to prevent issues with async
     async def execute_order(self, event):
         """
@@ -362,6 +393,12 @@ class BinanceExecutor:
             
             market = self.exchange.market(symbol_ccxt)
             symbol_id = market['id']
+            
+            # --- 🛡️ PHASE 15: PROGRAMMATIC LEVERAGE CHECK ---
+            # Ensures the exchange is set to the correct leverage FOR THIS SPECIFIC HORIZON
+            target_leverage = getattr(event, 'leverage', None)
+            if target_leverage and Config.BINANCE_USE_FUTURES:
+                await self._ensure_leverage(symbol_id, target_leverage)
             
             # 🛡️ PHASE II: ANTI-SLIPPAGE (Order Book Depth Check)
             # If MARKET order and liquidity is thin, downgrade to LIMIT or abort.
@@ -487,7 +524,14 @@ class BinanceExecutor:
                 is_urgent = getattr(event, 'urgent', False)
                 rebate_priority = getattr(self.portfolio, 'rebate_priority', True)
                 
-                if order_type == 'limit' and is_urgent:
+                # FORENSIC FIX: Force Maker-Only for Scalping Entries
+                is_scalping_entry = (getattr(event, 'horizon', '') == 'SCALPING') and not getattr(event, 'is_exit', False) and not getattr(event, 'is_close', False)
+                
+                if is_scalping_entry:
+                    logger.info(f"🛡️ [FORENSIC-SOR] SCALPING Entry Detected for {symbol}: Forcing LIMIT (GTX/Post-Only) to stop Fee Bleed.")
+                    order_type = 'limit'
+                    metadata['timeInForce'] = 'GTX'
+                elif order_type == 'limit' and is_urgent:
                     logger.info("⚡ [SOR] Urgency detected: Switching LIMIT to MARKET to ensure entry.")
                     order_type = 'market'
                 elif order_type == 'market' and rebate_priority and not is_urgent:
@@ -515,6 +559,11 @@ class BinanceExecutor:
                 if getattr(event, 'metadata', None) and event.metadata.get('sniper_mode'):
                     spread_adj = 0.0003 # 0.03% more aggressive
                     logger.info(f"🎯 [SNIPER_V3] Aggressive Entry engaged for {symbol}")
+
+                # 🧟 ZOMBIE FEATURE INTEGRATION: Dynamic Limit Offset from PredictionTracker
+                if metadata and 'limit_offset_pct' in metadata:
+                    spread_adj = metadata['limit_offset_pct']
+                    logger.info(f"🎯 [PREDICTIVE LIMIT] Using dynamic limit offset {spread_adj:.4%} for {symbol}")
 
                 # [PHASE 5] Scalping Optimization: No aggressive pushing for MUST-MAKER (GTX) orders
                 is_post_only = metadata.get('timeInForce') == 'GTX'
@@ -580,6 +629,18 @@ class BinanceExecutor:
                         f"({deviation:.2%})"
                     )
 
+            # 3.8. CANCEL TP LIMIT PRIOR TO PANIC EXIT
+            _cancel_tp = metadata.get("cancel_tp_first", False)
+            if _cancel_tp and (getattr(event, 'is_exit', False) or getattr(event, 'is_close', False)):
+                logger.info(f"🗑️ [PREDICTIVE LIMIT] Cancelling resting TP limit for {symbol_ccxt} before Market exit...")
+                try:
+                    import asyncio
+                    # ccxt soporta cancel_all_orders para casi todos
+                    await asyncio.wait_for(self.async_exchange.cancel_all_orders(symbol_ccxt), timeout=4.0)
+                    logger.info(f"✅ [PREDICTIVE LIMIT] Pending TP orders cancelled for {symbol_ccxt}.")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not cancel previous TP Limit: {e}")
+
             # 4. SEND ORDER
             logger.info(f"⚡ [EXEC] {order_type.upper()} {side.upper()} {symbol} | Qty: {final_qty} | P: {final_price}")
             
@@ -614,6 +675,10 @@ class BinanceExecutor:
                 if getattr(event, 'is_close', False) or is_exit_signal:
                     params['reduceOnly'] = 'true'
                 
+                # Para la orden PREDICTIVE_TP explícita
+                if metadata.get("is_tp_limit", False):
+                    params['reduceOnly'] = 'true'
+                
                 import asyncio
                 try:
                     order_raw = await asyncio.wait_for(self.async_exchange.fapiPrivatePostOrder(params), timeout=9.0)
@@ -624,17 +689,28 @@ class BinanceExecutor:
             else:
                 # SPOT
                 import asyncio
+                import ccxt
                 try:
+                    spot_params = {}
+                    if order_type == 'limit':
+                        is_post_only = metadata.get('timeInForce') == 'GTX'
+                        spot_params['timeInForce'] = 'GTX' if is_post_only else 'GTC'
+                        
                     order = await asyncio.wait_for(self.async_exchange.create_order(
                         symbol=symbol_ccxt,
                         type=order_type,
                         side=side,
                         amount=final_qty,
-                        price=final_price if order_type == 'limit' else None
+                        price=final_price if order_type == 'limit' else None,
+                        params=spot_params
                     ), timeout=9.0)
                 except asyncio.TimeoutError:
                     logger.critical(f"🛑 [TIMEOUT] Spot order {side} {symbol_id} hung >9s! OS Network Blocked.")
                     raise RuntimeError("API Timeout / Disconnect in execution")
+                except ccxt.OrderImmediatelyFillable:
+                    logger.warning(f"⚠️ [BBO MAKER REJECTED] Order {side} {symbol_id} would cross the spread immediately. GTX blocked execution. (Chase Order needed)")
+                    # The pending cash remains tied unless cancelled properly via Portfolio, or OrderManager handles the omission.
+                    return  # Silent return to avoid crashing the event loop, let Portfolio handle orphan resolution
                 if 'info' in order: order = order['info']
 
             # 5. PROCESS RESPONSE & EMIT FILL
@@ -662,6 +738,22 @@ class BinanceExecutor:
             is_fully_filled = (filled_qty >= event.quantity * 0.9999)  # Tolerance for floating point
             
             logger.info(f"✅ Order OK: {order_id} | Filled: {filled_qty} @ {fill_price} in {exec_latency:.2f}ms")
+            
+            # 🔥 START PHOENIX CHASE LOGIC BACKGROUND TASK (If LIMIT && Maker)
+            if order_type == 'limit' and not getattr(Config, 'BINANCE_USE_DEMO', False):
+                # Don't chase offline or simulated executions
+                asyncio.create_task(
+                    self._chase_order_loop(
+                        symbol_ccxt=symbol_ccxt,
+                        symbol_id=symbol_id,
+                        side=side,
+                        qty_precision=qty_precision,
+                        params=params if Config.BINANCE_USE_FUTURES else spot_params,
+                        original_order=order,
+                        event=event,
+                        max_chases=5
+                    )
+                )
             
             # [DF-C7] PARTIAL FILL DETECTION & WARNING
             if not is_fully_filled and filled_qty > 0:
@@ -751,49 +843,25 @@ class BinanceExecutor:
                     logger.warning(f"⚠️ Protective orders failed: {ex}")
 
         except Exception as e:
-            logger.error(f"Execution Error: {e}")
+            import traceback
+            tb = traceback.format_exc()
+            logger.error(f"🚨 [FATAL-EXECUTION] Order {event.direction} for {event.symbol} failed!\nException: {e}\nTraceback:\n{tb}")
             if self.portfolio and side == 'buy':
                 # Release pending cash
                 self.portfolio.release_cash(event.quantity * (event.price or 0))
     
     async def _place_protective_orders(self, symbol_id, side, quantity, entry_price, sl_pct, tp_pct, pos_side='LONG'):
         """
-        LAYER 3: BBO ARCHITECTURE — Limit-Based Protective Orders
-        
-        QUÉ: Coloca SL y TP como órdenes LIMIT en Binance servers.
-        POR QUÉ: STOP_MARKET y TAKE_PROFIT_MARKET pagan Taker fee (0.0375%).
-            STOP (Limit) y TAKE_PROFIT (Limit) pagan Maker fee (0.02%).
-            Con micro-cuenta, el ahorro en fees es crítico.
-        PARA QUÉ: Ahorrar ~47% en fees de SL/TP sin sacrificar protección.
-        CÓMO: 
-            - SL: STOP (Limit) con tolerance 0.1% — ejecuta cerca del trigger
-              pero como Maker. Si falla (gap), Kill Switch cubre via MARKET.
-            - TP: TAKE_PROFIT (Limit) al precio exacto del trigger — puro Maker.
-        CUÁNDO: Tras cada fill de entrada exitoso.
-        DÓNDE: execution/binance_executor.py
-        QUIÉN: BinanceExecutor + OrderManager para lifecycle.
-
-        FALLBACK: Si el exchange rechaza STOP (Limit) por cualquier razón,
-        se reintenta con STOP_MARKET como safety net.
-        
-        Args:
-            symbol_id: Exchange symbol (e.g., 'BTCUSDT')
-            side: 'BUY' or 'SELL' (direction of the ENTRY order)
-            quantity: Position size
-            entry_price: Entry price
-            sl_pct: Stop Loss percentage (decimal, e.g. 0.006 = 0.6%)
-            tp_pct: Take Profit percentage (decimal, e.g. 0.012 = 1.2%)
-            pos_side: 'LONG' or 'SHORT' (Hedge Mode)
+        🚀 FORENSIC FIX: VIRTUAL NETTING ENFORCEMENT
+        QUÉ: Deshabilitamos el envío de STOP/TP al Exchange Binance.
+        POR QUÉ: Binance Hedge mode soporta 1 LONG y 1 SHORT globales. Si Scalping (0.3% SL)
+          y Swing (3% SL) abren LONG, Binance mezcla los buckets y el SL del Scalping 
+          "machaca" (ejecuta) el saldo del Swing, anulando el multi-horizonte.
+        PARA QUÉ: Permitir que Portfolio.py y RiskManager.check_stops() ejecuten 
+          cierres milimétricos, aislando lógicamente Scalping y Swing en una cuenta micro.
         """
-        # Calculate stop and target prices
-        if side.upper() == 'BUY':  # LONG position
-            stop_price = entry_price * (1 - sl_pct)
-            target_price = entry_price * (1 + tp_pct)
-            stop_side = 'SELL'  # Close LONG with SELL
-        else:  # SHORT position
-            stop_price = entry_price * (1 + sl_pct)
-            target_price = entry_price * (1 - tp_pct)
-            stop_side = 'BUY'  # Close SHORT with BUY
+        logger.info(f"🛡️ [VIRTUAL SL/TP] Delegando Stops al Neural Ledger para evitar pisada de pies en {symbol_id} ({pos_side})")
+        return
         
         # ═══════════════════════════════════════════════════════════════
         # BBO ARCHITECTURE: STOP (Limit) + TAKE_PROFIT (Limit)
@@ -1562,6 +1630,129 @@ class BinanceExecutor:
         else:
             logger.info("🔴 LIVE MODE - Using real funds")
         logger.info("="*70)
+
+    async def _chase_order_loop(self, symbol_ccxt: str, symbol_id: str, side: str, qty_precision: float, params: dict, original_order: dict, event, max_chases: int = 5):
+        """
+        🚀 PHASE 2: HFT CHASE LOGIC for BBO Limits
+        Monitors an unfilled GTX order, cancels it if the spread moves away, and replaces it.
+        """
+        order_id = original_order.get('id', original_order.get('orderId'))
+        if not order_id: return
+        
+        # BBO-ULTRA: Multi-speed Chasing based on ML Confidence
+        ml_conf = getattr(event, 'ml_confidence', 0.5) or 0.5
+        chase_interval = 2.0 if ml_conf < 0.8 else 0.5 # 4x faster for high conviction
+        max_chases = max_chases if ml_conf < 0.9 else max_chases + 2 # Allow more room for certain trades
+        
+        chases = 0
+        current_order_id = order_id
+        
+        # Safe fallback for Backtest/Offline Demo
+        if getattr(Config, 'BINANCE_USE_DEMO', False): return
+        
+        import asyncio
+        import ccxt
+        
+        while chases < max_chases:
+            await asyncio.sleep(chase_interval)
+            try:
+                # Fetch order status to see if it filled
+                if Config.BINANCE_USE_FUTURES:
+                    try:
+                        status_raw = await asyncio.wait_for(self.async_exchange.fapiPrivateGetOrder({'symbol': symbol_id, 'orderId': current_order_id}), timeout=5.0)
+                        status_txt = status_raw.get('status', 'FILLED')
+                        if status_txt in ['FILLED', 'CANCELED', 'REJECTED']:
+                            logger.info(f"☑️ [CHASE] Order {current_order_id} concluded with status: {status_txt}")
+                            return
+                    except Exception as e:
+                        logger.warning(f"⚠️ [CHASE] Error fetching futures status {current_order_id}: {e}")
+                        pass
+                else:
+                    try:
+                        status_ccxt = await asyncio.wait_for(self.async_exchange.fetch_order(current_order_id, symbol_ccxt), timeout=5.0)
+                        if status_ccxt['status'] in ['closed', 'canceled', 'rejected']:
+                            logger.info(f"☑️ [CHASE] Order {current_order_id} concluded with status: {status_ccxt['status']}")
+                            return
+                    except Exception as e:
+                        logger.warning(f"⚠️ [CHASE] Error fetching spot status {current_order_id}: {e}")
+                        pass
+                
+                # Order still OPEN. Moving spread.
+                logger.warning(f"🏃 [CHASE] {symbol_id} Limit unfilled. Cancelling {current_order_id} to chase spread...")
+                
+                # Cancel old order
+                if Config.BINANCE_USE_FUTURES:
+                    await asyncio.wait_for(self.async_exchange.fapiPrivateDeleteOrder({'symbol': symbol_id, 'orderId': current_order_id}), timeout=5.0)
+                else:
+                    await asyncio.wait_for(self.async_exchange.cancel_order(current_order_id, symbol_ccxt), timeout=5.0)
+                
+                # Fetch new BBO to position at absolute top of the book
+                px_tup = await asyncio.to_thread(self.guardian.get_fast_bid_ask, event.symbol)
+                new_price = px_tup[0] if side.lower() == 'buy' else px_tup[1]
+                
+                # Format precision
+                from core.state_manager import BinanceLoader
+                precision_data = BinanceLoader.get_precision_data(event.symbol)
+                tick_size = precision_data.get('price_tick_size', 0.01) if precision_data else 0.01
+                from utils.math_helpers import round_step
+                price_precision = round_step(new_price, tick_size)
+                
+                # Re-submit
+                chases += 1
+                params['price'] = price_precision
+                
+                if Config.BINANCE_USE_FUTURES:
+                    new_order = await asyncio.wait_for(self.async_exchange.fapiPrivatePostOrder(params), timeout=9.0)
+                    current_order_id = new_order.get('orderId')
+                else:
+                    spot_params = params.copy()
+                    for k in ['symbol', 'side', 'type', 'quantity', 'price']:
+                        spot_params.pop(k, None)
+                    new_order = await asyncio.wait_for(self.async_exchange.create_order(
+                        symbol=symbol_ccxt,
+                        type='limit',
+                        side=side.lower(),
+                        amount=qty_precision,
+                        price=price_precision,
+                        params=spot_params
+                    ), timeout=9.0)
+                    current_order_id = new_order.get('id')
+                    
+                logger.info(f"🎯 [CHASE {chases}/{max_chases}] Relocated Limit BBO -> {price_precision} (ID: {current_order_id})")
+                
+            except Exception as e:
+                logger.error(f"🛑 [CHASE ERROR] Failed chase cycle {chases}: {e}")
+                break
+                
+        # Timeout reached
+        if chases >= max_chases:
+            logger.critical(f"⚠️ [CHASE FAILED] Max chases ({max_chases}) exceeded for {symbol_id}. Forcing MARKET panic fill.")
+            try:
+                # Cancel current
+                if Config.BINANCE_USE_FUTURES:
+                    await asyncio.wait_for(self.async_exchange.fapiPrivateDeleteOrder({'symbol': symbol_id, 'orderId': current_order_id}), timeout=5.0)
+                else:
+                    await asyncio.wait_for(self.async_exchange.cancel_order(current_order_id, symbol_ccxt), timeout=5.0)
+                
+                # Force Market
+                mkt_params = {
+                    'symbol': symbol_id,
+                    'side': side.upper(),
+                    'type': 'MARKET',
+                    'quantity': qty_precision,
+                }
+                if Config.BINANCE_USE_FUTURES:
+                    mkt_params['positionSide'] = params.get('positionSide', 'LONG')
+                    mkt_params['reduceOnly'] = params.get('reduceOnly', 'false')
+                    await asyncio.wait_for(self.async_exchange.fapiPrivatePostOrder(mkt_params), timeout=7.0)
+                else:
+                    await asyncio.wait_for(self.async_exchange.create_order(
+                        symbol=symbol_ccxt, type='market', side=side.lower(), amount=qty_precision
+                    ), timeout=7.0)
+                logger.warning(f"✅ [MARKET PANIC] Filled {side.upper()} {qty_precision} {symbol_id} via Market.")
+                
+            except Exception as e:
+                logger.error(f"💥 [FATAL CHASE] Failed to force Market Fill after chasing timeout: {e}")
 
     async def stop(self):
         """Graceful shutdown"""

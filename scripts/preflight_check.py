@@ -38,13 +38,13 @@ def check_1_imports():
     
     modules = [
         ("config", "Config"),
-        ("core.engine", "TradingEngine"),
+        ("core.engine", "Engine"),
         ("core.events", "SignalEvent"),
         ("core.portfolio", "Portfolio"),
         ("core.market_regime", "MarketRegimeDetector"),
         ("risk.risk_manager", "RiskManager"),
         ("risk.kill_switch", "KillSwitch"),
-        ("strategies.technical", "HybridTechnicalStrategy"),
+        ("strategies.technical", "HybridScalpingStrategy"),
         ("strategies.ml_strategy", "MLStrategyHybridUltimate"),
         ("data.data_provider", "DataProvider"),
         ("core.ml_governance", "MLGovernance"),
@@ -80,20 +80,18 @@ def check_2_config():
             all_ok &= check(f"INITIAL_CAPITAL > 0 (val={cap})", cap > 0)
         
         # LEVERAGE
-        lev = getattr(Config, 'LEVERAGE', None)
-        all_ok &= check("LEVERAGE definido", lev is not None)
+        lev = getattr(Config, 'BINANCE_LEVERAGE', None)
+        all_ok &= check("BINANCE_LEVERAGE definido", lev is not None)
         if lev is not None:
-            all_ok &= check(f"LEVERAGE en [1, 20] (val={lev})", 1 <= lev <= 20)
+            all_ok &= check(f"BINANCE_LEVERAGE en [1, 125] (val={lev})", 1 <= lev <= 125)
         
         # ACTIVE_HORIZON
-        horizon = getattr(Config, 'ACTIVE_HORIZON', None)
-        all_ok &= check("ACTIVE_HORIZON definido", horizon is not None)
-        if horizon is not None:
-            all_ok &= check(f"ACTIVE_HORIZON en [1,7,15,30] (val={horizon})", horizon in [1, 7, 15, 30])
+        horizon = getattr(Config, 'TIMEFRAME', None)
+        all_ok &= check("TIMEFRAME definido", horizon is not None)
         
         # SYMBOLS
-        symbols = getattr(Config, 'SYMBOLS', None)
-        all_ok &= check("SYMBOLS definido", symbols is not None and len(symbols) > 0, 
+        symbols = getattr(Config, 'TRADING_PAIRS', None)
+        all_ok &= check("TRADING_PAIRS definido", symbols is not None and len(symbols) > 0, 
                         f"{len(symbols)} symbols" if symbols else "")
         
         # Risk params

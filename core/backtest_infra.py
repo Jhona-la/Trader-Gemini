@@ -67,18 +67,23 @@ from utils.logger import logger
 # CÓMO: COMMISSION_PCT = Maker fee por defecto. COMMISSION_TAKER para exits
 #   de emergencia y SL market fallbacks.
 # ═══════════════════════════════════════════════════════════════════════════════
-COMMISSION_TAKER = Config.BINANCE_TAKER_FEE_BNB   # 0.000375 (0.0375% per side) — MARKET orders
-COMMISSION_MAKER = Config.BINANCE_MAKER_FEE_BNB   # 0.0002 (0.02% per side) — LIMIT BBO orders
+COMMISSION_TAKER = (
+    Config.BINANCE_TAKER_FEE_BNB
+)  # 0.000375 (0.0375% per side) — MARKET orders
+COMMISSION_MAKER = (
+    Config.BINANCE_MAKER_FEE_BNB
+)  # 0.0002 (0.02% per side) — LIMIT BBO orders
 # Default: MAKER fee (BBO Architecture makes ~90%+ of orders LIMIT)
 COMMISSION_PCT = COMMISSION_MAKER
-INITIAL_CAPITAL = Config.INITIAL_CAPITAL          # 13.0
-LEVERAGE = Config.BINANCE_LEVERAGE                # 10
-MAX_CONCURRENT_POSITIONS = getattr(Config, 'MAX_CONCURRENT_POSITIONS', 2)
+INITIAL_CAPITAL = Config.INITIAL_CAPITAL  # 13.0
+LEVERAGE = Config.BINANCE_LEVERAGE  # 10
+MAX_CONCURRENT_POSITIONS = getattr(Config, "MAX_CONCURRENT_POSITIONS", 2)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # BacktestDataProvider v2.0 — Multi-Symbol Global Timeline Engine
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class BacktestDataProvider(DataProvider):
     """
@@ -104,8 +109,12 @@ class BacktestDataProvider(DataProvider):
     """
 
     _STRUCT_DTYPE = [
-        ('timestamp', 'i8'), ('open', 'f4'), ('high', 'f4'),
-        ('low', 'f4'), ('close', 'f4'), ('volume', 'f4')
+        ("timestamp", "i8"),
+        ("open", "f4"),
+        ("high", "f4"),
+        ("low", "f4"),
+        ("close", "f4"),
+        ("volume", "f4"),
     ]
 
     def __init__(self, events_queue, symbol_list, historical_data):
@@ -125,19 +134,30 @@ class BacktestDataProvider(DataProvider):
 
         for s in symbol_list:
             df_1m = historical_data[s]
-            self.struct_data[s]['1m'] = self._df_to_struct(df_1m)
+            self.struct_data[s]["1m"] = self._df_to_struct(df_1m)
 
             # Resampled timeframes for multi-TF strategies
-            for tf in ['5min', '15min', '1h', '1D', '1W']:
-                df_res = df_1m.resample(tf).agg({
-                    'open': 'first', 'high': 'max', 'low': 'min',
-                    'close': 'last', 'volume': 'sum'
-                }).dropna()
-                key = (tf.lower()
-                       .replace('min', 'm')
-                       .replace('h', 'h')
-                       .replace('d', 'd')
-                       .replace('w', 'w'))
+            for tf in ["5min", "15min", "1h", "1D", "1W"]:
+                df_res = (
+                    df_1m.resample(tf)
+                    .agg(
+                        {
+                            "open": "first",
+                            "high": "max",
+                            "low": "min",
+                            "close": "last",
+                            "volume": "sum",
+                        }
+                    )
+                    .dropna()
+                )
+                key = (
+                    tf.lower()
+                    .replace("min", "m")
+                    .replace("h", "h")
+                    .replace("d", "d")
+                    .replace("w", "w")
+                )
                 self.struct_data[s][key] = self._df_to_struct(df_res)
 
         # ═══════════════════════════════════════════════════════════════
@@ -148,8 +168,8 @@ class BacktestDataProvider(DataProvider):
         # ═══════════════════════════════════════════════════════════════
         all_timestamps = set()
         for s in symbol_list:
-            all_timestamps.update(self.struct_data[s]['1m']['timestamp'].tolist())
-        self.global_timeline = np.sort(np.array(list(all_timestamps), dtype='i8'))
+            all_timestamps.update(self.struct_data[s]["1m"]["timestamp"].tolist())
+        self.global_timeline = np.sort(np.array(list(all_timestamps), dtype="i8"))
         self.current_epoch_idx = 0
         self.total_epochs = len(self.global_timeline)
 
@@ -158,26 +178,28 @@ class BacktestDataProvider(DataProvider):
         self.current_time_ms = 0
         self.continue_backtest = True
 
-        print(f"  📊 BacktestDataProvider v2.0: {len(symbol_list)} symbols | "
-              f"{self.total_epochs:,} global epochs | "
-              f"~{self.total_epochs / 1440:.1f} days of data")
+        print(
+            f"  📊 BacktestDataProvider v2.0: {len(symbol_list)} symbols | "
+            f"{self.total_epochs:,} global epochs | "
+            f"~{self.total_epochs / 1440:.1f} days of data"
+        )
 
     def _df_to_struct(self, df):
         """Converts DataFrame to NumPy Structured Array efficiently."""
         res = np.empty(len(df), dtype=self._STRUCT_DTYPE)
-        res['timestamp'] = df.index.values.astype('datetime64[ms]').astype('int64')
-        res['open'] = df['open'].values
-        res['high'] = df['high'].values
-        res['low'] = df['low'].values
-        res['close'] = df['close'].values
-        res['volume'] = df['volume'].values
+        res["timestamp"] = df.index.values.astype("datetime64[ms]").astype("int64")
+        res["open"] = df["open"].values
+        res["high"] = df["high"].values
+        res["low"] = df["low"].values
+        res["close"] = df["close"].values
+        res["volume"] = df["volume"].values
         return res
 
-    def get_latest_bars(self, symbol, n=1, timeframe='1m'):
+    def get_latest_bars(self, symbol, n=1, timeframe="1m"):
         """Retorna vista de arreglo estructurado (Ultra-Fast slicing, Zero-Copy)."""
         try:
             arr = self.struct_data[symbol][timeframe]
-            idx = np.searchsorted(arr['timestamp'], self.current_time_ms, side='right')
+            idx = np.searchsorted(arr["timestamp"], self.current_time_ms, side="right")
             if idx == 0:
                 return None
             start = max(0, idx - n)
@@ -186,13 +208,13 @@ class BacktestDataProvider(DataProvider):
             return None
 
     def get_latest_bars_5m(self, symbol, n=1):
-        return self.get_latest_bars(symbol, n, '5m')
+        return self.get_latest_bars(symbol, n, "5m")
 
     def get_latest_bars_15m(self, symbol, n=1):
-        return self.get_latest_bars(symbol, n, '15m')
+        return self.get_latest_bars(symbol, n, "15m")
 
     def get_latest_bars_1h(self, symbol, n=1):
-        return self.get_latest_bars(symbol, n, '1h')
+        return self.get_latest_bars(symbol, n, "1h")
 
     def get_active_positions(self):
         """Mock for strategy compatibility."""
@@ -201,25 +223,25 @@ class BacktestDataProvider(DataProvider):
     def get_latest_price(self, symbol):
         """Helper for exit logic."""
         bars = self.get_latest_bars(symbol, 1)
-        return float(bars[-1]['close']) if bars is not None and len(bars) > 0 else None
+        return float(bars[-1]["close"]) if bars is not None and len(bars) > 0 else None
 
     def get_symbol_precision(self, symbol):
         """Mock for strategy compatibility."""
-        return {'quantity': 3, 'price': 2}
+        return {"quantity": 3, "price": 2}
 
     def get_derivatives_metrics(self, symbol):
-        return {
-            'funding_rate': 0.0,
-            'open_interest_change': 0.0,
-            'ls_ratio': 1.0
-        }
+        return {"funding_rate": 0.0, "open_interest_change": 0.0, "ls_ratio": 1.0}
 
     def get_order_flow_metrics(self, symbol):
         return {
-            'buy_sell_ratio': 1.0,
-            'taker_buy_volume': 0.0,
-            'taker_sell_volume': 0.0
+            "buy_sell_ratio": 1.0,
+            "taker_buy_volume": 0.0,
+            "taker_sell_volume": 0.0,
         }
+
+    def get_hft_indicators(self, symbol):
+        """Mock HFT indicators for backtest compatibility."""
+        return {}
 
     def update_bars(self):
         """
@@ -244,25 +266,26 @@ class BacktestDataProvider(DataProvider):
         self.current_epoch_idx += 1
         self.current_index = self.current_epoch_idx  # Legacy compat
 
-        current_ts = pd.to_datetime(self.current_time_ms, unit='ms', utc=True)
+        current_ts = pd.to_datetime(self.current_time_ms, unit="ms", utc=True)
 
         # Emit MarketEvent for EVERY symbol that has data at this epoch
         for symbol in self.symbol_list:
-            arr = self.struct_data[symbol]['1m']
+            arr = self.struct_data[symbol]["1m"]
             # Binary search for exact timestamp match
-            idx = np.searchsorted(arr['timestamp'], self.current_time_ms, side='left')
-            if idx < len(arr) and arr['timestamp'][idx] == self.current_time_ms:
-                close_price = float(arr['close'][idx])
-                self.events_queue.put(MarketEvent(
-                    symbol=symbol,
-                    close_price=close_price,
-                    timestamp=current_ts
-                ))
+            idx = np.searchsorted(arr["timestamp"], self.current_time_ms, side="left")
+            if idx < len(arr) and arr["timestamp"][idx] == self.current_time_ms:
+                close_price = float(arr["close"][idx])
+                self.events_queue.put(
+                    MarketEvent(
+                        symbol=symbol, close_price=close_price, timestamp=current_ts
+                    )
+                )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # BacktestPortfolio v2.0 — Multi-Asset Shared Capital Portfolio
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class BacktestPortfolio:
     """
@@ -289,8 +312,8 @@ class BacktestPortfolio:
         self.leverage = leverage or LEVERAGE
 
         # Position tracking — MULTI-SYMBOL
-        self.positions = {}   # {symbol: {qty, entry, side, size_usd, sl_price, tp_price, ...}}
-        self.trades = []      # Completed trades (ALL symbols)
+        self.positions = {}  # {symbol: {qty, entry, side, size_usd, sl_price, tp_price, ...}}
+        self.trades = []  # Completed trades (ALL symbols)
         self.equity_curve = [self.initial_capital]
         self.timestamps = []
 
@@ -310,19 +333,81 @@ class BacktestPortfolio:
         # Key: f"{symbol}_{horizon}" → position_data
         self.virtual_ledger = {}
 
-        # v2.0: Capital partitioning (50% Scalping / 50% Swing)
-        self.scalping_capital_pct = 0.50
-        self.swing_capital_pct = 0.50
+        # v2.0: Capital partitioning (60% Scalping / 40% Swing) - Production Parity
+        self.scalping_capital_pct = 0.60
+        self.swing_capital_pct = 0.40
+
+        # [P0 FIX] Price cache for RiskManager compatibility
+        # Required by risk_manager.size_position() to get current prices
+        self._last_prices = {}
+
+        # ═══════════════════════════════════════════════════════════════
+        # PRODUCTION PARITY ATTRIBUTES
+        # QUÉ: Atributos requeridos por RiskManager.size_position()
+        # POR QUÉ: RiskManager lee directamente del portfolio para el cap global.
+        # ═══════════════════════════════════════════════════════════════
+        self.current_cash = self.current_capital
+        self.used_margin = 0.0
+        self.pending_cash = 0.0
+        self._equity_cache = self.initial_capital
 
     def get_total_equity(self):
-        return self.current_capital
+        return self._refresh_equity_cache()
+
+    def _refresh_equity_cache(self):
+        """
+        Calcula el equity total incluyendo PnL no realizado de todos los horizontes.
+        Paridad con production: portfolio.py L502-520.
+        """
+        equity = self.current_capital # En backtest current_capital es el balance liquidado
+        
+        for v_key, pos in self.virtual_ledger.items():
+            qty = pos.get('quantity', 0)
+            if qty != 0:
+                avg_price = pos.get('avg_price', 0)
+                current_price = pos.get('current_price', avg_price)
+                # PnL no realizado: (current - avg) * qty
+                equity += (current_price - avg_price) * qty
+        
+        self._equity_cache = equity
+        return equity
+
+    def update_market_price(self, symbol, price):
+        """
+        Actualiza el precio de mercado para un símbolo y propaga a ledgers virtuales.
+        Paridad con production: portfolio.py L605-667.
+        """
+        if price <= 0: return
+
+        self._last_prices[symbol] = price
+        
+        # 1. Actualizar posiciones físicas (agregadas por símbolo)
+        if symbol in self.positions:
+            pos = self.positions[symbol]
+            pos['current_price'] = price
+            # Watermarks para MAE/MFE
+            if 'high_water_mark' not in pos: pos['high_water_mark'] = price
+            if 'low_water_mark' not in pos: pos['low_water_mark'] = price
+            
+            pos['high_water_mark'] = max(pos['high_water_mark'], price)
+            pos['low_water_mark'] = min(pos['low_water_mark'], price) if pos['low_water_mark'] > 0 else price
+
+        # 2. Actualizar ledgers virtuales (aislamiento por horizonte SCALPING/SWING)
+        for v_key, v_pos in self.virtual_ledger.items():
+            if v_key.startswith(f"{symbol}_"):
+                v_pos['current_price'] = price
+                if 'high_water_mark' not in v_pos: v_pos['high_water_mark'] = price
+                if 'low_water_mark' not in v_pos: v_pos['low_water_mark'] = price
+                
+                v_pos['high_water_mark'] = max(v_pos['high_water_mark'], price)
+                v_pos['low_water_mark'] = min(v_pos['low_water_mark'], price) if v_pos['low_water_mark'] > 0 else price
 
     @property
     def open_position_count(self):
         """Returns the number of currently open positions across ALL symbols."""
         return len(self.positions)
 
-    def can_open_position(self, horizon='SCALPING'):
+    def can_open_position(self, horizon="SCALPING"):
         """
         Checks if a new position can be opened based on global constraints.
 
@@ -348,7 +433,7 @@ class BacktestPortfolio:
 
         return True
 
-    def get_available_capital(self, horizon='SCALPING'):
+    def get_available_capital(self, horizon="SCALPING"):
         """
         Returns capital available for a specific horizon.
 
@@ -360,39 +445,53 @@ class BacktestPortfolio:
         """
         # Total available (minus capital locked in open positions)
         locked_capital = sum(
-            pos.get('margin_used', pos['size_usd'] / self.leverage)
+            pos.get("margin_used", pos["size_usd"] / self.leverage)
             for pos in self.positions.values()
         )
         total_available = max(0, self.current_capital - locked_capital)
 
         # Horizon partition
-        if horizon == 'SCALPING':
+        if horizon == "SCALPING":
             horizon_budget = self.current_capital * self.scalping_capital_pct
-        elif horizon == 'SWING':
+        elif horizon == "SWING":
             horizon_budget = self.current_capital * self.swing_capital_pct
         else:
             horizon_budget = self.current_capital
 
         # Capital already locked in this horizon
         horizon_locked = sum(
-            pos.get('margin_used', pos['size_usd'] / self.leverage)
+            pos.get("margin_used", pos["size_usd"] / self.leverage)
             for pos in self.positions.values()
-            if pos.get('metadata', {}).get('horizon') == horizon
+            if pos.get("metadata", {}).get("horizon") == horizon
         )
         horizon_available = max(0, horizon_budget - horizon_locked)
 
         return min(total_available, horizon_available)
 
+    def get_available_cash(self, horizon: str = None):
+        """
+        Alias para get_available_capital para compatibilidad con RiskManager.
+        """
+        # Actualizar used_margin dinámicamente antes de retornar
+        self.used_margin = sum(
+            pos.get("margin_used", pos["size_usd"] / self.leverage)
+            for pos in self.positions.values()
+        )
+        self.current_cash = self.current_capital
+        
+        return self.get_available_capital(horizon=horizon)
+
     def _apply_slippage(self, price, side):
         """Simulate realistic slippage (0.01% to 0.05%)."""
         slip_pct = random.uniform(0.0001, 0.0005)
-        if side == 'LONG':
+        if side == "LONG":
             return price * (1 + slip_pct)
         else:
             return price * (1 - slip_pct)
 
-    def open_position(self, symbol, side, price, size_usd, timestamp,
-                      sl_price=None, tp_price=None):
+    def open_position(
+        self, symbol, side, price, size_usd, timestamp, sl_price=None, tp_price=None
+    ):
         """Abre una posición con Slippage Simulado y Comisiones de Producción."""
         if symbol in self.positions:
             return False
@@ -407,26 +506,35 @@ class BacktestPortfolio:
         margin_used = size_usd / self.leverage
 
         self.positions[symbol] = {
-            'qty': qty,
-            'entry': price,
-            'side': side,
-            'size_usd': size_usd,
-            'margin_used': margin_used,
-            'timestamp': timestamp,
-            'metadata': None,
-            'sl_price': sl_price,
-            'tp_price': tp_price
+            "qty": qty,
+            "entry": price,
+            "side": side,
+            "size_usd": size_usd,
+            "margin_used": margin_used,
+            "timestamp": timestamp,
+            "metadata": None,
+            "sl_price": sl_price,
+            "tp_price": tp_price,
         }
         return True
 
-    def open_position_with_metadata(self, symbol, side, price, size_usd,
-                                     timestamp, metadata=None,
-                                     sl_price=None, tp_price=None):
+    def open_position_with_metadata(
+        self,
+        symbol,
+        side,
+        price,
+        size_usd,
+        timestamp,
+        metadata=None,
+        sl_price=None,
+        tp_price=None,
+    ):
         """Abre posición con metadatos (strategy_id, horizon, ATR, Regime)."""
-        if self.open_position(symbol, side, price, size_usd, timestamp,
-                              sl_price, tp_price):
+        if self.open_position(
+            symbol, side, price, size_usd, timestamp, sl_price, tp_price
+        ):
             if metadata:
-                self.positions[symbol]['metadata'] = metadata
+                self.positions[symbol]["metadata"] = metadata
             return True
         return False
 
@@ -436,15 +544,15 @@ class BacktestPortfolio:
             return None
 
         pos = self.positions[symbol]
-        qty = pos['qty']
-        entry = pos['entry']
-        side = pos['side']
-        size_usd = pos['size_usd']
+        qty = pos["qty"]
+        entry = pos["entry"]
+        side = pos["side"]
+        size_usd = pos["size_usd"]
 
-        exit_side = 'SHORT' if side == 'LONG' else 'LONG'
+        exit_side = "SHORT" if side == "LONG" else "LONG"
         filled_price = self._apply_slippage(price, exit_side)
 
-        if side == 'LONG':
+        if side == "LONG":
             pnl_pct = (filled_price - entry) / entry
         else:
             pnl_pct = (entry - filled_price) / entry
@@ -458,20 +566,21 @@ class BacktestPortfolio:
         self.current_capital += pnl_usd
 
         trade = {
-            'symbol': symbol,
-            'side': side,
-            'entry': entry,
-            'exit': price,
-            'pnl_pct': pnl_pct * 100,
-            'pnl_usd': pnl_usd,
-            'entry_time': pos['timestamp'],
-            'exit_time': timestamp,
-            'duration': (
-                (timestamp - pos['timestamp']).total_seconds() / 60
-                if isinstance(timestamp, datetime) else 0
+            "symbol": symbol,
+            "side": side,
+            "entry": entry,
+            "exit": price,
+            "pnl_pct": pnl_pct * 100,
+            "pnl_usd": pnl_usd,
+            "entry_time": pos["timestamp"],
+            "exit_time": timestamp,
+            "duration": (
+                (timestamp - pos["timestamp"]).total_seconds() / 60
+                if isinstance(timestamp, datetime)
+                else 0
             ),
-            'metadata': pos.get('metadata', {}),
-            'exit_reason': pos.get('exit_reason', 'UNKNOWN')
+            "metadata": pos.get("metadata", {}),
+            "exit_reason": pos.get("exit_reason", "UNKNOWN"),
         }
         self.trades.append(trade)
 
@@ -482,9 +591,7 @@ class BacktestPortfolio:
 
         if self.current_capital > self.peak_equity:
             self.peak_equity = self.current_capital
-        current_dd = (
-            (self.peak_equity - self.current_capital) / self.peak_equity
-        )
+        current_dd = (self.peak_equity - self.current_capital) / self.peak_equity
         if current_dd > self.max_drawdown:
             self.max_drawdown = current_dd
 
@@ -504,7 +611,10 @@ class BacktestPortfolio:
 # fetch_binance_data — Historical Data Downloader (Single Symbol)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def fetch_binance_data(symbol: str, days: int = 30, end_time: datetime = None) -> pd.DataFrame:
+
+def fetch_binance_data(
+    symbol: str, days: int = 30, end_time: datetime = None
+) -> pd.DataFrame:
     """
     Descarga datos históricos 1m de Binance mainnet (solo lectura).
 
@@ -524,12 +634,14 @@ def fetch_binance_data(symbol: str, days: int = 30, end_time: datetime = None) -
 
     if end_time is None:
         end_time = datetime.utcnow()
-    
-    start_time = end_time - timedelta(days=days)
-    
-    print(f"📡 Descargando desde {start_time.strftime('%Y-%m-%d %H:%M')} hasta {end_time.strftime('%Y-%m-%d %H:%M')} para {symbol}...")
 
-    binance_symbol = symbol.replace('/', '')
+    start_time = end_time - timedelta(days=days)
+
+    print(
+        f"📡 Descargando desde {start_time.strftime('%Y-%m-%d %H:%M')} hasta {end_time.strftime('%Y-%m-%d %H:%M')} para {symbol}..."
+    )
+
+    binance_symbol = symbol.replace("/", "")
 
     all_klines = []
     current_start = start_time
@@ -539,11 +651,13 @@ def fetch_binance_data(symbol: str, days: int = 30, end_time: datetime = None) -
             binance_symbol,
             Client.KLINE_INTERVAL_1MINUTE,
             str(int(current_start.timestamp() * 1000)),
-            str(int(
-                min(current_start + timedelta(hours=16), end_time)
-                .timestamp() * 1000
-            )),
-            limit=1000
+            str(
+                int(
+                    min(current_start + timedelta(hours=16), end_time).timestamp()
+                    * 1000
+                )
+            ),
+            limit=1000,
         )
 
         if not klines:
@@ -553,21 +667,33 @@ def fetch_binance_data(symbol: str, days: int = 30, end_time: datetime = None) -
         current_start += timedelta(hours=16)
         time.sleep(0.2)  # Rate limit protection
 
-    df = pd.DataFrame(all_klines, columns=[
-        'timestamp', 'open', 'high', 'low', 'close', 'volume',
-        'close_time', 'quote_volume', 'trades', 'taker_buy_base',
-        'taker_buy_quote', 'ignore'
-    ])
+    df = pd.DataFrame(
+        all_klines,
+        columns=[
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "close_time",
+            "quote_volume",
+            "trades",
+            "taker_buy_base",
+            "taker_buy_quote",
+            "ignore",
+        ],
+    )
 
-    df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
-    df.set_index('datetime', inplace=True)
+    df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+    df.set_index("datetime", inplace=True)
 
-    for col in ['open', 'high', 'low', 'close', 'volume']:
+    for col in ["open", "high", "low", "close", "volume"]:
         df[col] = df[col].astype(float)
 
-    df = df[['open', 'high', 'low', 'close', 'volume']]
+    df = df[["open", "high", "low", "close", "volume"]]
 
-    print(f"✅ Descargados {len(df)} velas ({len(df)/60/24:.1f} días)")
+    print(f"✅ Descargados {len(df)} velas ({len(df) / 60 / 24:.1f} días)")
     return df
 
 
@@ -575,15 +701,21 @@ def fetch_binance_data(symbol: str, days: int = 30, end_time: datetime = None) -
 # fetch_multi_symbol_data — Parallel Multi-Symbol Downloader
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def fetch_multi_symbol_data(symbols: list, days: int = 30,
-                             max_workers: int = 4, end_time: datetime = None) -> dict:
+
+def fetch_multi_symbol_data(
+    symbols: list, days: int = 30, max_workers: int = 4, end_time: datetime = None
+) -> dict:
     """
     Descarga datos de MÚLTIPLES símbolos en paralelo de forma determinística si end_time se especifica.
     """
-    print(f"\n{'='*70}")
-    print(f"📡 DESCARGA MULTI-SYMBOL: {len(symbols)} monedas × {days} días | Hasta: {end_time.strftime('%Y-%m-%d %H:%M') if end_time else 'AHORA'}")
-    print(f"   Threads: {max_workers} | Est.: ~{len(symbols)*days*0.5/max_workers:.0f}s")
-    print(f"{'='*70}")
+    print(f"\n{'=' * 70}")
+    print(
+        f"📡 DESCARGA MULTI-SYMBOL: {len(symbols)} monedas × {days} días | Hasta: {end_time.strftime('%Y-%m-%d %H:%M') if end_time else 'AHORA'}"
+    )
+    print(
+        f"   Threads: {max_workers} | Est.: ~{len(symbols) * days * 0.5 / max_workers:.0f}s"
+    )
+    print(f"{'=' * 70}")
 
     all_data = {}
     failed = []
@@ -613,8 +745,10 @@ def fetch_multi_symbol_data(symbols: list, days: int = 30,
                 print(f"  ❌ {sym}: FAILED (insufficient data)")
 
     elapsed = time.time() - t_start
-    print(f"\n  📊 Descarga completada: {len(all_data)}/{len(symbols)} OK | "
-          f"{len(failed)} failed | {elapsed:.1f}s")
+    print(
+        f"\n  📊 Descarga completada: {len(all_data)}/{len(symbols)} OK | "
+        f"{len(failed)} failed | {elapsed:.1f}s"
+    )
 
     if failed:
         print(f"  ⚠️ Símbolos fallidos: {failed}")
@@ -625,6 +759,7 @@ def fetch_multi_symbol_data(symbols: list, days: int = 30,
 # ═══════════════════════════════════════════════════════════════════════════════
 # calculate_metrics — Institutional-Grade Performance Metrics
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def calculate_metrics(portfolio: BacktestPortfolio) -> dict:
     """
@@ -640,23 +775,23 @@ def calculate_metrics(portfolio: BacktestPortfolio) -> dict:
 
     if not trades:
         return {
-            'sharpe_ratio': 0,
-            'sortino_ratio': 0,
-            'max_drawdown_pct': 0,
-            'win_rate': 0,
-            'total_return': 0,
-            'avg_trade_pnl_usd': 0,
-            'avg_trade_pnl_pct': 0,
-            'total_trades': 0,
-            'winning_trades': 0,
-            'losing_trades': 0,
-            'profit_factor': 0,
-            'avg_trade_duration_min': 0,
-            'final_capital': portfolio.current_capital,
-            'initial_capital': portfolio.initial_capital,
-            'peak_capital': portfolio.peak_equity,
-            'payoff_ratio': 0,
-            'ev_per_trade': 0,
+            "sharpe_ratio": 0,
+            "sortino_ratio": 0,
+            "max_drawdown_pct": 0,
+            "win_rate": 0,
+            "total_return": 0,
+            "avg_trade_pnl_usd": 0,
+            "avg_trade_pnl_pct": 0,
+            "total_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "profit_factor": 0,
+            "avg_trade_duration_min": 0,
+            "final_capital": portfolio.current_capital,
+            "initial_capital": portfolio.initial_capital,
+            "peak_capital": portfolio.peak_equity,
+            "payoff_ratio": 0,
+            "ev_per_trade": 0,
         }
 
     # ── Returns from equity curve ──
@@ -669,7 +804,7 @@ def calculate_metrics(portfolio: BacktestPortfolio) -> dict:
     if len(returns) > 1 and np.std(returns) > 0:
         daily_returns = []
         for i in range(0, len(returns), 24):
-            chunk = returns[i:i + 24]
+            chunk = returns[i : i + 24]
             if len(chunk) > 0:
                 daily_returns.append(np.sum(chunk))
 
@@ -698,58 +833,60 @@ def calculate_metrics(portfolio: BacktestPortfolio) -> dict:
     total_return = ((final_capital - initial) / initial) * 100
 
     # ── Average Trade P&L ──
-    avg_pnl = float(np.mean([t['pnl_usd'] for t in trades]))
-    avg_pnl_pct = float(np.mean([t['pnl_pct'] for t in trades]))
+    avg_pnl = float(np.mean([t["pnl_usd"] for t in trades]))
+    avg_pnl_pct = float(np.mean([t["pnl_pct"] for t in trades]))
 
     # ── Profit Factor ──
-    gross_profit = sum(t['pnl_usd'] for t in trades if t['pnl_usd'] > 0)
-    gross_loss = abs(sum(t['pnl_usd'] for t in trades if t['pnl_usd'] < 0))
-    profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+    gross_profit = sum(t["pnl_usd"] for t in trades if t["pnl_usd"] > 0)
+    gross_loss = abs(sum(t["pnl_usd"] for t in trades if t["pnl_usd"] < 0))
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
 
     # ── Average Win / Average Loss ──
-    wins = [t for t in trades if t['pnl_usd'] > 0]
-    losses = [t for t in trades if t['pnl_usd'] <= 0]
-    avg_win = float(np.mean([t['pnl_usd'] for t in wins])) if wins else 0
-    avg_loss = abs(float(np.mean([t['pnl_usd'] for t in losses]))) if losses else 0
-    payoff_ratio = avg_win / avg_loss if avg_loss > 0 else float('inf')
+    wins = [t for t in trades if t["pnl_usd"] > 0]
+    losses = [t for t in trades if t["pnl_usd"] <= 0]
+    avg_win = float(np.mean([t["pnl_usd"] for t in wins])) if wins else 0
+    avg_loss = abs(float(np.mean([t["pnl_usd"] for t in losses]))) if losses else 0
+    payoff_ratio = avg_win / avg_loss if avg_loss > 0 else float("inf")
 
     # ── Expected Value per trade ──
     ev = 0.0
     if total_trades > 0:
-        ev = (len(wins) / total_trades * avg_win) - (len(losses) / total_trades * avg_loss)
+        ev = (len(wins) / total_trades * avg_win) - (
+            len(losses) / total_trades * avg_loss
+        )
 
     # ── Avg trade duration ──
-    avg_duration = float(np.mean([t['duration'] for t in trades]))
+    avg_duration = float(np.mean([t["duration"] for t in trades]))
 
     # ── Per-symbol breakdown ──
     symbol_stats = {}
-    for sym in set(t['symbol'] for t in trades):
-        sym_trades = [t for t in trades if t['symbol'] == sym]
-        sym_wins = [t for t in sym_trades if t['pnl_usd'] > 0]
-        sym_pnl = sum(t['pnl_usd'] for t in sym_trades)
+    for sym in set(t["symbol"] for t in trades):
+        sym_trades = [t for t in trades if t["symbol"] == sym]
+        sym_wins = [t for t in sym_trades if t["pnl_usd"] > 0]
+        sym_pnl = sum(t["pnl_usd"] for t in sym_trades)
         symbol_stats[sym] = {
-            'trades': len(sym_trades),
-            'win_rate': len(sym_wins) / len(sym_trades) * 100 if sym_trades else 0,
-            'pnl_usd': round(sym_pnl, 4)
+            "trades": len(sym_trades),
+            "win_rate": len(sym_wins) / len(sym_trades) * 100 if sym_trades else 0,
+            "pnl_usd": round(sym_pnl, 4),
         }
 
     return {
-        'sharpe_ratio': round(sharpe, 2),
-        'sortino_ratio': round(sortino, 2),
-        'max_drawdown_pct': round(max_dd, 2),
-        'win_rate': round(win_rate, 1),
-        'total_return': round(total_return, 2),
-        'total_trades': total_trades,
-        'winning_trades': winning,
-        'losing_trades': total_trades - winning,
-        'avg_trade_pnl_usd': round(avg_pnl, 4),
-        'avg_trade_pnl_pct': round(avg_pnl_pct, 2),
-        'profit_factor': round(profit_factor, 2),
-        'payoff_ratio': round(payoff_ratio, 2),
-        'ev_per_trade': round(ev, 4),
-        'avg_trade_duration_min': round(avg_duration, 1),
-        'final_capital': round(final_capital, 2),
-        'initial_capital': initial,
-        'peak_capital': round(portfolio.peak_equity, 2),
-        'symbol_breakdown': symbol_stats,
+        "sharpe_ratio": round(sharpe, 2),
+        "sortino_ratio": round(sortino, 2),
+        "max_drawdown_pct": round(max_dd, 2),
+        "win_rate": round(win_rate, 1),
+        "total_return": round(total_return, 2),
+        "total_trades": total_trades,
+        "winning_trades": winning,
+        "losing_trades": total_trades - winning,
+        "avg_trade_pnl_usd": round(avg_pnl, 4),
+        "avg_trade_pnl_pct": round(avg_pnl_pct, 2),
+        "profit_factor": round(profit_factor, 2),
+        "payoff_ratio": round(payoff_ratio, 2),
+        "ev_per_trade": round(ev, 4),
+        "avg_trade_duration_min": round(avg_duration, 1),
+        "final_capital": round(final_capital, 2),
+        "initial_capital": initial,
+        "peak_capital": round(portfolio.peak_equity, 2),
+        "symbol_breakdown": symbol_stats,
     }

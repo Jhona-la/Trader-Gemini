@@ -57,7 +57,7 @@ warnings.filterwarnings('ignore')
 from config import Config
 
 # Import backtest functions (SAME as production — no divergence)
-from scripts.run_multi_horizon_backtest import (
+from scripts.run_god_mode_backtest import (
     fetch_data, compute_indicators, calibrate_sl_tp,
     signal_technical, SophiaClusterEngine, WalkForwardXGBoost,
     detect_regime, HORIZON_PROFILES, COMMISSION_PCT, STRATEGY_SPECIALIZATION_MAP
@@ -796,7 +796,70 @@ def main():
             }, f, indent=2, default=str)
         print(f"\n💾 Resultados guardados en: {output_path}")
     except Exception as e:
-        print(f"⚠️ Error guardando resultados: {e}")
+        print(f"⚠️ Error guardando resultados brutos: {e}")
+        
+    # === GENERAR PREDICTION_METRICS.JSON PARA SISTEMA LIVE ===
+    try:
+        prediction_metrics = {}
+        for s in summary:
+            strat = s['strategy']
+            if strat not in prediction_metrics:
+                prediction_metrics[strat] = {'hits': 0, 'total': 0, 'decays': []}
+            
+            # Un hit es cuando mfe > fee_buffer (trade viable)
+            if s['mfe_pct'] > s['round_trip_fee_pct']:
+                prediction_metrics[strat]['hits'] += 1
+            prediction_metrics[strat]['total'] += 1
+            if s.get('prediction_decay_bar'):
+                prediction_metrics[strat]['decays'].append(s['prediction_decay_bar'])
+                
+        final_metrics = {}
+        for strat, data in prediction_metrics.items():
+            if data['total'] < 10: continue
+            acc = data['hits'] / data['total']
+            
+            # Confidence factor: escala linear donde 50% = 0.5, 80% = 1.0, >90% = 1.2
+            # Interpolamos para que al 60% la agresividad sea baja, 80% alta.
+            c_factor = max(0.5, min(1.2, (acc - 0.5) * 2.5 + 0.5)) if acc > 0.5 else 0.5
+            
+            avg_decay = np.median(data['decays']) if data['decays'] else 60
+            
+            final_metrics[strat] = {
+                "accuracy_pct": round(acc * 100, 2),
+                "confidence_factor": round(c_factor, 2),
+                "optimal_ttl_bars": int(avg_decay)
+            }
+        
+        metrics_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prediction_metrics.json')
+        with open(metrics_path, 'w') as f:
+            json.dump(final_metrics, f, indent=2)
+        print(f"✅ Prediction Metrics guardadas en: {metrics_path}")
+        
+        # === GENERAR PREDICTION_ACCURACY_LOG.md ===
+        md_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'PREDICTION_ACCURACY_LOG.md')
+        with open(md_path, 'w', encoding='utf-8') as f:
+            f.write("# 🎯 PREDICTION ACCURACY LOG\n\n")
+            f.write(f"**Generado:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write("## 1. Precisión por Estrategia\n\n")
+            f.write("| Estrategia | Precisión (%) | Confidence Factor | Tiempo de Vida Óptimo (barras) |\n")
+            f.write("|------------|---------------|-------------------|--------------------------------|\n")
+            for strat, mets in final_metrics.items():
+                f.write(f"| {strat} | {mets['accuracy_pct']}% | {mets['confidence_factor']}x | {mets['optimal_ttl_bars']} barras |\n")
+            
+            f.write("\n## 2. Recomendación de Ejecución LIMIT Dinámica\n\n")
+            f.write("El factor de confianza (Confidence Factor) modula la distancia a la que se colocan los Take Profits LIMIT.\n")
+            for strat, mets in final_metrics.items():
+                if mets['accuracy_pct'] > 75:
+                    f.write(f"- **{strat}:** 🟢 **Alta Precisión**. LIMIT agresivo activado. Exposición aumentada.\n")
+                elif mets['accuracy_pct'] > 60:
+                    f.write(f"- **{strat}:** 🟡 **Precisión Media**. LIMIT conservador. Ajustes finos requeridos.\n")
+                else:
+                    f.write(f"- **{strat}:** 🔴 **Precisión Baja**. Se recomienda pausar esta estrategia.\n")
+                    
+        print(f"📄 Reporte generado: {md_path}")
+            
+    except Exception as e:
+        print(f"⚠️ Error generando métricas predictivas en vivo: {e}")
 
 
 if __name__ == '__main__':

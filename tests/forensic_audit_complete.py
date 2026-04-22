@@ -187,10 +187,15 @@ def audit_execution():
     # 3.4 Cooldown y concurrent positions
     cooldown = getattr(Config, 'COOLDOWN_PERIOD_SECONDS', 45)
     concurrent = getattr(Config, 'MAX_CONCURRENT_POSITIONS', 2)
-    log_finding("INFO", "EJECUCIÓN",
-        f"Operativa: Cooldown={cooldown}s, MaxConcurrent={concurrent}",
-        f"Con {concurrent} posiciones concurrentes y cooldown {cooldown}s, "
-        f"máximo teórico: {3600/cooldown * concurrent:.0f} trades/hora")
+    if cooldown > 0:
+        log_finding("INFO", "EJECUCIÓN",
+            f"Operativa: Cooldown={cooldown}s, MaxConcurrent={concurrent}",
+            f"Con {concurrent} posiciones concurrentes y cooldown {cooldown}s, "
+            f"máximo teórico: {3600/cooldown * concurrent:.0f} trades/hora")
+    else:
+        log_finding("INFO", "EJECUCIÓN",
+            f"Operativa: Cooldown={cooldown}s, MaxConcurrent={concurrent}",
+            f"Sin límite de cooldown, trades/hora infinito.")
 
     print(f"  ✅ Área 3 completada: {sum(1 for f in FINDINGS if f['area']=='EJECUCIÓN')} hallazgos")
 

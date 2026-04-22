@@ -164,7 +164,9 @@ class TestByzantineResilience:
             symbol='BTC/USDT',
             signal_type=SignalType.LONG,
             strength=0.8,
-            strategy_id='test'
+            strategy_id='test',
+            datetime=datetime.now(timezone.utc),
+            horizon='SCALPING'
         )
         
         mock_engine.risk_manager = MagicMock()
@@ -238,9 +240,10 @@ class TestByzantineResilience:
         order = OrderEvent(
             symbol='BTC/USDT',
             order_type=OrderType.LIMIT,
-            side=OrderSide.BUY,
+            direction=OrderSide.BUY,
             quantity=0.001,
-            price=50000.0
+            price=50000.0,
+            horizon='SCALPING'
         )
         
         mock_engine.execution_handler = MagicMock()
@@ -314,7 +317,9 @@ class TestByzantineResilience:
             symbol='BTC/USDT',
             signal_type=SignalType.LONG,
             strength=1.0,
-            strategy_id='test'
+            strategy_id='test',
+            datetime=datetime.now(timezone.utc),
+            horizon='SCALPING'
         )
         
         # Should return None (blocked)

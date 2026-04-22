@@ -136,10 +136,34 @@ class Engine:
         
         # 🏥 PHASE 27: System Monitor
         self.system_monitor = SystemMonitor()
+        
+        # 🧟 PHASE 2 ZOMBIES
+        self.correlation_manager = None
+        self.liquidity_guardian = None
+        try:
+            from core.sentiment_processor import SentimentProcessor
+            self.sentiment_processor = SentimentProcessor()
+        except Exception as e:
+            logger.warning(f"Failed to init SentimentProcessor: {e}")
+            self.sentiment_processor = None
 
     # ... [Registration methods unchanged] ...
     def register_data_handler(self, handler: Any) -> None: 
         self.data_handlers.append(handler)
+        
+        if not self.correlation_manager:
+            try:
+                from core.correlation_manager import CorrelationManager
+                self.correlation_manager = CorrelationManager(handler)
+            except Exception:
+                pass
+                
+        if not self.liquidity_guardian:
+            try:
+                from core.liquidity_guardian import LiquidityGuardian
+                self.liquidity_guardian = LiquidityGuardian(handler)
+            except Exception:
+                pass
         
     def register_strategy(self, strategy: Any) -> None: 
         self.strategies.append(strategy)
@@ -157,6 +181,11 @@ class Engine:
         
     def register_risk_manager(self, manager: Any) -> None: 
         self.risk_manager = manager
+        # Inject Phase 2 Zombie Features into Risk Manager
+        self.risk_manager.correlation_manager = getattr(self, 'correlation_manager', None)
+        self.risk_manager.liquidity_guardian = getattr(self, 'liquidity_guardian', None)
+        self.risk_manager.sentiment_processor = getattr(self, 'sentiment_processor', None)
+
         # 🛡️ Phase 20: Link Forensics to Kill Switch
         if self.risk_manager and hasattr(self.risk_manager, 'kill_switch'):
              # Define callback that captures snapshot
@@ -223,6 +252,13 @@ class Engine:
                     regime = self._get_current_market_regime()
                     if 'VOLATILE' not in regime and 'TRENDING' not in regime:
                         GCTuner.check_maintenance()
+                        
+                    # 🧟 ZOMBIE UPDATE: Recalculate Correlation Matrix during idle time
+                    if hasattr(self, 'correlation_manager') and self.correlation_manager:
+                        now = time.time()
+                        if now - getattr(self.correlation_manager, 'last_update', 0) > 300: # 5 mins
+                            self.correlation_manager.update_correlations()
+                            self.correlation_manager.last_update = now
                     continue
                 
                 # ⚡ PHASE OMNI: BURST-MODE EVENT DRAIN
@@ -342,7 +378,13 @@ class Engine:
         """Route event asynchronously"""
         try:
             metrics.inc_event() # Phase 53: Metrics
-            etype = event.type
+            
+            # NORMALIZACIÓN DE TIPO (Phase OMNI: Enum Resilience)
+            # QUÉ: Asegura que 'etype' sea siempre un string para las comparaciones.
+            # POR QUÉ: Event.type es un Enum (EventType.SIGNAL), pero Engine
+            #   comparaba contra strings ('SIGNAL'), resultando en falsos negativos.
+            raw_type = getattr(event, 'type', 'UNKNOWN')
+            etype = getattr(raw_type, 'name', str(raw_type))
             
             # AEGIS-ULTRA: LATENCY CIRCUIT BREAKER (Phase 16)
             # Check latency before processing Signals/Orders (Market data always processed)
@@ -376,7 +418,9 @@ class Engine:
             else:
                 pass
         except Exception as e:
-            logger.error(f"Event Logic Error {event.type}: {e}", exc_info=False)
+            import traceback
+            tb = traceback.format_exc()
+            logger.error(f"🚨 [FATAL-ENGINE] Event Logic Error for {getattr(event, 'type', 'UNKNOWN')}:\nException: {e}\nTraceback:\n{tb}")
             self.metrics['errors'] += 1
 
     async def _process_market_event(self, event: MarketEvent) -> None:
@@ -465,14 +509,16 @@ class Engine:
 
     async def _process_signal_event(self, event):
         """Process SIGNAL event asynchronously"""
+        logger.info(f"⚡ [ENGINE] Processing Signal: {event.symbol} {event.signal_type} (Conf: {getattr(event, 'confidence', 0):.2f})")
         
         if not self._validate_signal_ttl(event):
+            logger.warning(f"❌ [ENGINE] Signal {event.symbol} rejected: TTL Expired")
             self.metrics['discarded_events'] += 1
             return
             
         current_price = self._get_validated_price(event.symbol)
         if not current_price:
-            logger.warning(f"Discarding signal for {event.symbol}: Unable to validate price")
+            logger.warning(f"❌ [ENGINE] Signal {event.symbol} rejected: Price Validation Failed")
             self.metrics['discarded_events'] += 1
             return
             
@@ -504,7 +550,7 @@ class Engine:
                 
                 # If not frozen, check if we SHOULD freeze (evaluate Market Regime shock)
                 dh = self.data_handlers[0]
-                bars = dh.get_latest_bars(event.symbol, n=20)
+                bars = dh.get_latest_bars(event.symbol, n=50)
                 if bars and len(bars) >= 15:
                     oi_delta = 0.0
                     derivatives = {}
@@ -522,16 +568,46 @@ class Engine:
                         cooldown_manager.check_custom_cooldown(frozen_key, 300)
                         self.metrics['discarded_events'] += 1
                         return
+
+                    # 🧟 ZOMBIE FEATURE INTEGRATION: Calculate tension for RiskManager
+                    try:
+                        shift_pred = temp_regime.predict_regime_shift(event.symbol, bars)
+                        event.tension = shift_pred.get('tension', 0.0)
+                    except Exception:
+                        event.tension = 0.0
             except Exception as e:
                 logger.error(f"Shock Evasion Error: {e}")
 
+        # 🧟 ZOMBIE FEATURE INTEGRATION: Record Signal in Prediction Tracker
+        if self.risk_manager and getattr(self.risk_manager, 'prediction_tracker', None):
+            try:
+                _strat_id = getattr(event, 'strategy_id', 'Unknown')
+                _dir = getattr(event, 'signal_type', 'UNKNOWN')
+                _direction_str = 'long' if 'LONG' in str(_dir) else ('short' if 'SHORT' in str(_dir) else str(_dir).lower())
+                _horizon = getattr(event, 'horizon', 'SCALPING')
+                
+                # Only record directional entry signals
+                if _direction_str in ['long', 'short']:
+                    self.risk_manager.prediction_tracker.record_signal(
+                        strategy_id=_strat_id,
+                        symbol=event.symbol,
+                        direction=_direction_str,
+                        horizon=_horizon,
+                        current_price=current_price
+                    )
+            except Exception as e:
+                logger.error(f"Failed to record signal in PredictionTracker: {e}")
+
         if self.risk_manager:
+            logger.info(f"🛡️ [ENGINE] Handing signal to RiskManager for {event.symbol}")
             order_event = self.risk_manager.generate_order(event, current_price)
             if order_event:
+                logger.info(f"🚀 [ENGINE] Order Generated by RiskManager for {event.symbol}: {order_event.quantity} {order_event.side}")
                 dt_ms = (time.time_ns() - event.timestamp_ns) / 1_000_000
                 latency_monitor.track('signal_to_order', dt_ms)
                 self.events.put(order_event)
             else:
+                 logger.warning(f"🛑 [ENGINE] RiskManager REJECTED signal for {event.symbol}")
                  # INTERACTION MONITOR: Order blocked by Risk Manager
                  try:
                      from utils.interaction_monitor import get_interaction_monitor

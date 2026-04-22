@@ -32,10 +32,15 @@ class TestOnlineLearner(unittest.TestCase):
         
         new_weights = self.learner.update_matrix(weights, inputs, target, prediction, output_idx)
         
-        expected_col0 = np.array([0.9, -0.1])
+        # Expected Update (WITH weight_decay=1e-4):
+        # Error = 0.0 - 1.0 = -1.0
+        # Delta = 0.1 * -1.0 * [1.0, 1.0] = [-0.1, -0.1]
+        # New Column 0 = [1.0, 0.0] * (1 - 1e-4) + [-0.1, -0.1] = [0.8999, -0.1]
+        # Column 1 = [0.0, 1.0] (unchanged)
+        expected_col0 = np.array([1.0, 0.0]) * (1.0 - self.learner.weight_decay) + np.array([-0.1, -0.1])
         expected_col1 = np.array([0.0, 1.0])
         
-        np.testing.assert_array_almost_equal(new_weights[:, 0], expected_col0)
+        np.testing.assert_array_almost_equal(new_weights[:, 0], expected_col0, decimal=5)
         np.testing.assert_array_almost_equal(new_weights[:, 1], expected_col1)
 
     def test_clipping(self):

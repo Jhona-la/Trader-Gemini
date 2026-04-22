@@ -56,8 +56,8 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 # Suppress noisy warnings during backtest
-warnings.filterwarnings('ignore', category=FutureWarning)
-warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PRODUCTION IMPORTS — SAME AS main.py
@@ -65,6 +65,21 @@ warnings.filterwarnings('ignore', category=UserWarning)
 from config import Config
 from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
 from core.enums import EventType, SignalType, OrderSide, OrderType
+from core.api_manager import APIManager
+
+# ─── GET REAL PRODUCTION BALANCE ───
+api_mgr = APIManager()
+try:
+    prod_balance = api_mgr.get_production_balance()
+    real_capital = (
+        prod_balance.get("total_equity", Config.INITIAL_CAPITAL)
+        if prod_balance
+        else Config.INITIAL_CAPITAL
+    )
+    print(f"💰 PRODUCTION BALANCE: ${real_capital:.2f}")
+except Exception as e:
+    print(f"⚠️ Could not fetch production balance: {e}")
+    real_capital = Config.INITIAL_CAPITAL
 
 # ─── PRODUCTION PORTFOLIO (THE REAL ONE) ───
 from core.portfolio import Portfolio
@@ -93,6 +108,7 @@ from utils.logger import logger
 # BacktestExecutor — Simulates BinanceExecutor with zero exchange calls
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class BacktestExecutor:
     """
     Simulates BinanceExecutor for backtesting.
@@ -105,16 +121,17 @@ class BacktestExecutor:
     CÓMO: Recibe OrderEvent, aplica slippage DETERMINÍSTICO basado en seed fija,
          calcula comisión real (Config.BINANCE_TAKER_FEE_BNB), y crea un FillEvent
          con los campos exactos que Portfolio.update_fill() espera.
-    
+
     REMEDIACIÓN QUIRÚRGICA:
       - Slippage ahora es DETERMINÍSTICO (usa self._rng con seed fija).
       - Dos ejecuciones con la misma seed producen resultados BIT-A-BIT idénticos.
       - Esto resuelve el problema de backtests no reproducibles.
     """
 
-    def __init__(self, events_queue, seed=42):
-        self.events_queue = events_queue
+    def __init__(self, data_provider=None):
+        self._rng = np.random.RandomState(42)  # Determinismo absoluto
         self.fills_count = 0
+        self.data_provider = data_provider
         # ═══════════════════════════════════════════════════════════════
         # REMEDIACIÓN: DETERMINISTIC SLIPPAGE
         # QUÉ: RNG privado con seed fija para reproducibilidad total.
@@ -123,12 +140,11 @@ class BacktestExecutor:
         # PARA QUÉ: Dos runs con misma seed → mismos fills → mismos resultados.
         # CÓMO: Random instance aislada, no afecta ni es afectada por global.
         # ═══════════════════════════════════════════════════════════════
-        self._rng = random.Random(seed)
 
     def execute_order(self, order_event, current_price=None):
         """
         Simulates order execution identical to production.
-        
+
         BBO ARCHITECTURE: Uses differentiated Maker/Taker fees.
         - LIMIT orders (BBO) → Maker fee (0.02%)
         - MARKET orders → Taker fee (0.0375%)
@@ -147,16 +163,24 @@ class BacktestExecutor:
         if qty <= 0:
             return None
 
-        # ─── DETERMINISTIC SLIPPAGE (Seeded RNG) ───
-        # BBO: LIMIT orders have LESS slippage than MARKET orders
-        is_limit = (order_event.order_type == OrderType.LIMIT)
-        if is_limit:
-            # LIMIT orders: minimal slippage (posted at BBO)
-            slip_pct = self._rng.uniform(0.0000, 0.0002)  # 0.00% - 0.02%
-        else:
-            # MARKET orders: higher slippage (crosses the spread)
-            slip_pct = self._rng.uniform(0.0001, 0.0005)  # 0.01% - 0.05%
+        # ─── DETERMINISTIC STOCHASTIC LATENCY & SLIPPAGE (Seeded RNG) ───
+        # Simulate real-world network and exchange latency (5ms - 250ms)
+        stochastic_latency_ms = max(5, min(250, self._rng.normal(50, 40)))
         
+        # BBO: LIMIT orders have ZERO slippage (executed exactly at limit price)
+        is_limit = order_event.order_type == OrderType.LIMIT
+        if is_limit:
+            # LIMIT orders: exact execution if latency is acceptable, otherwise small adverse slippage if BBO shifts
+            if stochastic_latency_ms > 150:
+                slip_pct = self._rng.uniform(0.00005, 0.0001) # Punish high latency limits slightly
+            else:
+                slip_pct = 0.0  
+        else:
+            # MARKET orders: higher slippage, scales with latency
+            base_slip = self._rng.uniform(0.0001, 0.0005)  # 0.01% - 0.05%
+            latency_penalty = (stochastic_latency_ms / 250.0) * 0.0002
+            slip_pct = base_slip + latency_penalty
+
         if order_event.direction == OrderSide.BUY:
             fill_price = price * (1 + slip_pct)
         else:
@@ -168,26 +192,46 @@ class BacktestExecutor:
         # LIMIT (BBO) → Maker fee | MARKET → Taker fee
         if is_limit:
             commission = fill_cost * COMMISSION_MAKER  # 0.02%
+            actual_order_type = "limit"
         else:
             commission = fill_cost * COMMISSION_TAKER  # 0.0375%
+            actual_order_type = "market"
 
         self.fills_count += 1
+        b_order_id = f"BT_{self.fills_count}"
+
+        # Inject real execution type into metadata for Portfolio fee selection
+        metadata = order_event.metadata.copy() if order_event.metadata else {}
+        metadata["actual_order_type"] = actual_order_type
+
+        # Use simulated time if available
+        import pandas as pd
+        if self.data_provider and hasattr(self.data_provider, 'current_time_ms'):
+            try:
+                # Add stochastic latency to fill time
+                actual_time_ms = self.data_provider.current_time_ms + stochastic_latency_ms
+                fill_time = pd.to_datetime(actual_time_ms, unit="ms", utc=True)
+            except:
+                fill_time = datetime.now(timezone.utc)
+        else:
+            fill_time = datetime.now(timezone.utc)
 
         fill_event = FillEvent(
-            timeindex=datetime.now(timezone.utc),
+            timeindex=fill_time,
             symbol=order_event.symbol,
-            exchange='BINANCE_BACKTEST',
+            exchange="BINANCE_BACKTEST",
             quantity=qty,
             direction=order_event.direction,
             fill_cost=fill_cost,
             commission=commission,
             strategy_id=order_event.strategy_id,
             fill_price=fill_price,
-            order_id=f'BT_{self.fills_count}',
+            order_id=b_order_id,
             sl_pct=order_event.sl_pct,
             tp_pct=order_event.tp_pct,
             horizon=order_event.horizon,
-            metadata=order_event.metadata,
+            leverage=order_event.leverage,
+            metadata=metadata,
         )
 
         return fill_event
@@ -197,8 +241,10 @@ class BacktestExecutor:
 # GLOBAL SYNCHRONIZED BACKTEST ENGINE v2.0
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def run_global_backtest(all_data, symbols, days,
-                        initial_capital=None, verbose=True, seed=42):
+
+def run_global_backtest(
+    all_data, symbols, days, initial_capital=None, verbose=True, seed=42
+):
     """
     MOTOR DE BACKTEST GLOBAL SINCRONIZADO — PRODUCTION-PARITY.
 
@@ -252,18 +298,22 @@ def run_global_backtest(all_data, symbols, days,
     random.seed(seed)
     np.random.seed(seed)
 
-    capital = initial_capital or Config.INITIAL_CAPITAL
+    capital = initial_capital if initial_capital else real_capital
     leverage = Config.BINANCE_LEVERAGE
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"🚀 GOD MODE BACKTEST v3.0 — UNIFIED EXIT ENGINE (REMEDIATED)")
     print(f"   run_id: {run_id} | Seed: {seed}")
-    print(f"   Símbolos: {len(symbols)} | Días: {days} | Capital: ${capital}")
-    print(f"   Leverage: {leverage}x | Max Positions: {Config.MAX_CONCURRENT_POSITIONS}")
-    print(f"   Fee: {COMMISSION_PCT*100:.4f}% per side")
+    print(
+        f"   Símbolos: {len(symbols)} | Días: {days} | Capital: ${capital:.2f} (REAL PRODUCTION)"
+    )
+    print(
+        f"   Leverage: {leverage}x | Max Positions: {Config.MAX_CONCURRENT_POSITIONS}"
+    )
+    print(f"   Fee: {COMMISSION_PCT * 100:.4f}% per side")
     print(f"   EXIT ENGINE: RiskManager.check_stops() ONLY (Portfolio audit-only)")
     print(f"   MODE: PRODUCTION-PARITY (uses real Portfolio + RiskManager)")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     # ─────────────────────────────────────────────────────────────────────────
     # STEP 1: INITIALIZE PRODUCTION COMPONENTS (identical to main.py L594-679)
@@ -274,31 +324,39 @@ def run_global_backtest(all_data, symbols, days,
     data_provider = BacktestDataProvider(events_queue, symbols, all_data)
 
     # 1b. PRODUCTION Portfolio (THE REAL ONE)
-    bt_data_dir = os.path.join(_project_root, 'dashboard', 'data', 'backtest_temp')
+    bt_data_dir = os.path.join(_project_root, "dashboard", "data", "backtest_temp")
     os.makedirs(bt_data_dir, exist_ok=True)
 
     portfolio = Portfolio(
         initial_capital=capital,
-        csv_path=os.path.join(bt_data_dir, 'bt_trades.csv'),
-        status_path=os.path.join(bt_data_dir, 'bt_status.csv'),
-        auto_save=False  # No periodic saves during backtest
+        csv_path=os.path.join(bt_data_dir, "bt_trades.csv"),
+        status_path=os.path.join(bt_data_dir, "bt_status.csv"),
+        auto_save=False,  # No periodic saves during backtest
     )
+    portfolio.data_provider = data_provider
 
     # 1c. PRODUCTION RiskManager (THE REAL ONE)
     risk_manager = RiskManager(
-        max_concurrent_positions=Config.MAX_CONCURRENT_POSITIONS,
-        portfolio=portfolio
+        max_concurrent_positions=Config.MAX_CONCURRENT_POSITIONS, portfolio=portfolio
     )
 
-    # 1d. BacktestExecutor (simulates BinanceExecutor)
-    executor = BacktestExecutor(events_queue, seed=seed)
+    # 1c-bis. PREDICTION TRACKER (Feedback Loop Closure for Backtest)
+    # QUÉ: Inicializa tracker de precisión predictiva con paridad producción.
+    # POR QUÉ: Si solo existe en producción, el backtest no puede medir
+    #   prediction decay ni validar confidence_factor.
+    from core.prediction_tracker import PredictionTracker
+    prediction_tracker = PredictionTracker()
+    risk_manager.prediction_tracker = prediction_tracker
+
+    # 1d. BacktestExecutor (simulates)
+    executor = BacktestExecutor(data_provider=data_provider)
 
     # ─────────────────────────────────────────────────────────────────────────
     # STEP 2: REGISTER STRATEGIES (identical to main.py L694-747)
     # For each symbol: MLStrategy(SCALPING) + MLStrategy(SWING)
     # ─────────────────────────────────────────────────────────────────────────
     # ─── DIRECTION FILTER (GOD MODE RIGOR) ───
-    os.environ['TRADER_GEMINI_BACKTEST'] = 'true'
+    os.environ["TRADER_GEMINI_BACKTEST"] = "true"
 
     # ═══════════════════════════════════════════════════════════════════
     # FIX-V10-1: BACKTEST ISOLATION — Remove leftover STOP_TRADING.LOCK
@@ -307,20 +365,21 @@ def run_global_backtest(all_data, symbols, days,
     #   causando que _validate_kill_switch() retorne False → 99.7% rechazo.
     # PARA QUÉ: Cada backtest arranca con estado LIMPIO.
     # ═══════════════════════════════════════════════════════════════════
-    _lock_file = os.path.join(_project_root, 'STOP_TRADING.LOCK')
+    _lock_file = os.path.join(_project_root, "STOP_TRADING.LOCK")
     if os.path.exists(_lock_file):
         os.remove(_lock_file)
         print(f"  🔓 [V10] Removed leftover STOP_TRADING.LOCK (backtest isolation)")
-    
+
     # ─── ISOLATION PROTOCOL (V4) ───
     # Ensure backtest models and DB do not clash with production/paper trading
     backtest_models_dir = os.path.join(_project_root, ".models_backtest")
     backtest_db_path = os.path.join(_project_root, "data", "backtest_governance.db")
     os.makedirs(backtest_models_dir, exist_ok=True)
-    
+
     # Initialize separate DB if needed
     if not os.path.exists(backtest_db_path):
         import sqlite3
+
         conn = sqlite3.connect(backtest_db_path)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS model_registry (
@@ -340,7 +399,7 @@ def run_global_backtest(all_data, symbols, days,
 
     for symbol in symbols:
         try:
-            is_leader = ('BTC' in symbol)
+            is_leader = "BTC" in symbol
 
             # ── SCALPING ENGINE ──
             ml_scalp = MLStrategy(
@@ -353,7 +412,7 @@ def run_global_backtest(all_data, symbols, days,
                 risk_manager=risk_manager if is_leader else None,
                 horizon="SCALPING",
                 models_dir=backtest_models_dir,
-                db_path=backtest_db_path
+                db_path=backtest_db_path,
             )
 
             # ── SWING ENGINE ──
@@ -367,7 +426,7 @@ def run_global_backtest(all_data, symbols, days,
                 risk_manager=None,
                 horizon="SWING",
                 models_dir=backtest_models_dir,
-                db_path=backtest_db_path
+                db_path=backtest_db_path,
             )
             ml_swing.strategy_id += "_SWING"
 
@@ -388,22 +447,26 @@ def run_global_backtest(all_data, symbols, days,
     tech_strategies = []
     try:
         from strategies.technical import HybridScalpingStrategy as TechnicalStrategy
-        
+
         tech_scalp = TechnicalStrategy(data_provider, events_queue, horizon="SCALPING")
         tech_strategies.append(tech_scalp)
-        
+
         tech_swing = TechnicalStrategy(data_provider, events_queue, horizon="SWING")
         tech_strategies.append(tech_swing)
-        
+
         # TechnicalStrategy iterates ALL symbols internally, so we DON'T
         # add it per-symbol. Instead, we store it separately and call
         # generate_signals() once per epoch (it processes all symbols).
-        print(f"  🧠 TechnicalStrategy registered: SCALPING + SWING (processes all {len(symbols)} symbols)")
+        print(
+            f"  🧠 TechnicalStrategy registered: SCALPING + SWING (processes all {len(symbols)} symbols)"
+        )
     except Exception as e:
         logger.warning(f"⚠️ Failed to init TechnicalStrategy: {e}")
 
     total_strats = sum(len(v) for v in strategies_map.values()) + len(tech_strategies)
-    print(f"  🧠 Total strategies registered: {total_strats} ({len(symbols)} symbols × 2 ML + {len(tech_strategies)} Tech)")
+    print(
+        f"  🧠 Total strategies registered: {total_strats} ({len(symbols)} symbols × 2 ML + {len(tech_strategies)} Tech)"
+    )
 
     # ─────────────────────────────────────────────────────────────────────────
     # STEP 3: GLOBAL SIMULATION LOOP (mirrors Engine.process_event())
@@ -459,16 +522,20 @@ def run_global_backtest(all_data, symbols, days,
         data_provider.update_bars()
         epoch_count += 1
 
-        # ── Progress reporting ──
+        # ── Progress reporting (AEGIS-V21: Faster reporting for observability) ──
         progress = int((epoch_count / total_epochs) * 100)
-        if verbose and progress >= last_progress + 10:
+        if verbose: # Report every epoch for fine-grained monitoring
             elapsed = time.time() - t_start
             equity = portfolio.get_total_equity()
-            open_count = sum(1 for p in portfolio.virtual_ledger.values()
-                           if p.get('quantity', 0) != 0)
-            print(f"  📊 [{progress}%] Epoch {epoch_count:,}/{total_epochs:,} | "
-                  f"Equity: ${equity:.2f} | Open: {open_count} | "
-                  f"Trades: {fill_count} | Signals: {signal_count} | {elapsed:.0f}s")
+            open_count = sum(1 for p in portfolio.virtual_ledger.values() if p.get("quantity", 0) != 0)
+            msg = (
+                f"📊 [{progress}%] Epoch {epoch_count:,}/{total_epochs:,} | "
+                f"Equity: ${equity:.2f} | Open: {open_count} | "
+                f"Trades: {fill_count} | Signals: {signal_count} | {elapsed:.0f}s"
+            )
+            logger.info(msg)
+            if epoch_count % 10 == 0: # Print to console every 10 epochs to avoid spam
+                print(f"  {msg}")
             last_progress = progress
 
         # ── KILL SWITCH CHECK (global portfolio drawdown) ──
@@ -477,20 +544,25 @@ def run_global_backtest(all_data, symbols, days,
 
         # ✨ GRACEFUL TERMINATION LOGIC: 30 minutes before end
         if (total_epochs - epoch_count) == 30:
-            print("\n  ⏱️ [ENDGAME] 30 epochs remaining. Emitting EXIT for all open positions to avoid BACKTEST_CLOSE bias.")
+            print(
+                "\n  ⏱️ [ENDGAME] 30 epochs remaining. Emitting EXIT for all open positions to avoid BACKTEST_CLOSE bias."
+            )
             for v_key, vpos in portfolio.virtual_ledger.items():
-                qty = vpos.get('quantity', 0)
+                qty = vpos.get("quantity", 0)
                 if qty != 0:
-                    symbol = v_key.rsplit('_', 1)[0]
-                    if '_' in symbol: symbol = symbol.split('_')[0] # Safety split if horizon attached
+                    symbol = v_key.rsplit("_", 1)[0]
+                    if "_" in symbol:
+                        symbol = symbol.split("_")[
+                            0
+                        ]  # Safety split if horizon attached
                     exit_sig = SignalEvent(
-                        strategy_id='GRACEFUL_CLOSE',
+                        strategy_id="GRACEFUL_CLOSE",
                         symbol=symbol,
                         datetime=datetime.now(timezone.utc),
                         signal_type=SignalType.EXIT,
                         strength=1.0,
-                        horizon=vpos.get('horizon', 'SCALPING'),
-                        priority=100
+                        horizon=vpos.get("horizon", "SCALPING"),
+                        priority=100,
                     )
                     events_queue.put(exit_sig)
 
@@ -506,9 +578,21 @@ def run_global_backtest(all_data, symbols, days,
             for sym, strats in strategies_map.items():
                 for strat in strats:
                     try:
-                        if not strat.is_trained and hasattr(strat, '_train_model'):
-                            strat._train_model()
-                            if strat.is_trained:
+                        if not getattr(strat, "is_trained", False):
+                            if hasattr(strat, "_launch_training"):
+                                bars = data_provider.get_latest_bars(
+                                    sym,
+                                    getattr(strat, "lookback", 500),
+                                    getattr(strat, "PRIMARY_TF", "5m"),
+                                )
+                                if bars is not None and len(bars) > 50:
+                                    strat._launch_training(bars, "Full")
+                            elif hasattr(strat, "_train_model"):
+                                strat._train_model()
+                            elif hasattr(strat, "train_model"):
+                                strat.train_model()
+
+                            if getattr(strat, "is_trained", False):
                                 trained_count += 1
                             else:
                                 untrained_strategies.add(f"{sym}_{strat.strategy_id}")
@@ -517,10 +601,14 @@ def run_global_backtest(all_data, symbols, days,
                         else:
                             untrained_strategies.add(f"{sym}_{strat.strategy_id}")
                     except Exception as e:
-                        logger.warning(f"⚠️ Training failed for {sym}/{strat.strategy_id}: {e}")
+                        logger.warning(
+                            f"⚠️ Training failed for {sym}/{strat.strategy_id}: {e}"
+                        )
                         untrained_strategies.add(f"{sym}_{strat.strategy_id}")
-            print(f"  🧠 Post-warmup training: {trained_count} strategies ready, "
-                  f"{len(untrained_strategies)} failed")
+            print(
+                f"  🧠 Post-warmup training: {trained_count} strategies ready, "
+                f"{len(untrained_strategies)} failed"
+            )
 
         # ══════════════════════════════════════════════════════════════════
         # PROCESS ALL EVENTS FOR THIS EPOCH
@@ -544,6 +632,11 @@ def run_global_backtest(all_data, symbols, days,
 
             # B1. UPDATE PORTFOLIO PRICES (production: portfolio.update_market_price)
             portfolio.update_market_price(symbol, close_price)
+
+            # PREDICTION TRACKER: Update forward returns for all active signals
+            # QUÉ: Actualiza MFE/MAE/direction accuracy de señales abiertas.
+            # CUÁNDO: En cada tick de precio, O(active_signals) ~< 10.
+            prediction_tracker.update_forward_returns(symbol, close_price, event.timestamp)
 
             # B2. Skip trading during warmup (strategies need history)
             if epoch_count < warmup_epochs:
@@ -580,10 +673,12 @@ def run_global_backtest(all_data, symbols, days,
             # FORENSIC-V11 Fix #7: Exit Cascade Prevention
             # Only emit EXIT if not already pending for this symbol+horizon
             try:
-                stop_signals = risk_manager.check_stops(portfolio, data_provider)
+                stop_signals = risk_manager.check_stops(portfolio, data_provider, now=event.timestamp)
                 if stop_signals:
                     for sig in stop_signals:
-                        _exit_key = f"{sig.symbol}_{getattr(sig, 'horizon', 'SCALPING')}"
+                        _exit_key = (
+                            f"{sig.symbol}_{getattr(sig, 'horizon', 'SCALPING')}"
+                        )
                         if _exit_key not in pending_exits:
                             events_queue.put(sig)
                             pending_exits.add(_exit_key)
@@ -613,13 +708,39 @@ def run_global_backtest(all_data, symbols, days,
                     # FORENSIC-V9-FIX: Attempt training if untrained
                     # POR QUÉ: Algunos modelos no entrenan durante warmup porque
                     #   necesitan más datos. Cada 500 epochs, intentar de nuevo.
-                    if not strat.is_trained:
-                        if epoch_count % 500 == 0 and hasattr(strat, '_train_model'):
-                            try:
-                                strat._train_model()
-                            except Exception:
-                                pass
-                        continue  # Skip inference for untrained
+                    if not getattr(strat, "is_trained", False):
+                        if hasattr(strat, "_launch_training"):
+                            bars = data_provider.get_latest_bars(
+                                symbol,
+                                getattr(strat, "lookback", 500),
+                                getattr(strat, "PRIMARY_TF", "5m"),
+                            )
+                            if bars is not None and len(bars) > 50:
+                                # 🛡️ TRAINING GUARD: Don't spam training threads
+                                is_training = (
+                                    hasattr(strat, "_training_thread")
+                                    and strat._training_thread
+                                    and strat._training_thread.is_alive()
+                                )
+                                if not is_training:
+                                    try:
+                                        strat._launch_training(bars, "Full")
+                                    except Exception:
+                                        pass
+                        elif epoch_count % 500 == 0:
+                            if hasattr(strat, "_train_model"):
+                                try:
+                                    strat._train_model()
+                                except Exception:
+                                    pass
+                            elif hasattr(strat, "train_model"):
+                                try:
+                                    strat.train_model()
+                                except Exception:
+                                    pass
+
+                        if not getattr(strat, "is_trained", False):
+                            continue  # Skip inference for untrained
 
                     # FORENSIC-V11 Fix #4: ML QUALITY GATE (Shadow Mode)
                     # After ML_LOSS_STREAK_LIMIT consecutive losses, enter shadow mode
@@ -643,7 +764,7 @@ def run_global_backtest(all_data, symbols, days,
                     # FORENSIC-V11 Fix #2+#6: COOLDOWN ENFORCEMENT
                     # Skip inference if we just filled a trade for this symbol+horizon
                     # Prevents zero-duration churning (open+close same epoch)
-                    _horizon = getattr(strat, 'horizon', 'SCALPING')
+                    _horizon = getattr(strat, "horizon", "SCALPING")
                     _cooldown_key = f"{symbol}_{_horizon}"
                     _last_fill = last_fill_epoch.get(_cooldown_key, -COOLDOWN_EPOCHS)
                     if (epoch_count - _last_fill) < COOLDOWN_EPOCHS:
@@ -675,8 +796,30 @@ def run_global_backtest(all_data, symbols, days,
             _iter += 1
             event = events_queue.get()
 
-            if event.type == EventType.SIGNAL:
+            # AEGIS-V15: Normalización de tipo para evitar fallos de comparación de Enums
+            etype = event.type.name if hasattr(event.type, "name") else str(event.type)
+
+            if etype == "SIGNAL" or etype == EventType.SIGNAL.name:
                 signal_count += 1
+
+                # PREDICTION TRACKER: Record signal for forward tracking
+                if not (event.signal_type == SignalType.EXIT):
+                    _direction = 'long' if event.signal_type == SignalType.LONG else 'short'
+                    _hz = getattr(event, 'horizon', 'SCALPING')
+                    _sid = getattr(event, 'strategy_id', 'unknown')
+                    _price = data_provider.get_latest_price(event.symbol) or 0
+                    _h_params = risk_manager.horizon_params.get(_hz, risk_manager.horizon_params.get('SCALPING', {}))
+                    prediction_tracker.record_signal(
+                        strategy_id=_sid,
+                        symbol=event.symbol,
+                        direction=_direction,
+                        horizon=_hz,
+                        entry_price=_price,
+                        sl_pct=_h_params.get('stop_loss_pct', 0.0025),
+                        tp_pct=_h_params.get('take_profit_pct', 0.004),
+                        confidence=getattr(event, 'strength', 0.5),
+                        timestamp=event.timestamp if hasattr(event, 'timestamp') else None,
+                    )
 
                 # Get current price for this symbol
                 current_price = data_provider.get_latest_price(event.symbol)
@@ -684,15 +827,21 @@ def run_global_backtest(all_data, symbols, days,
                     reason = "NO_PRICE"
                     rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
                     continue
-                
+
                 is_exit = event.signal_type == SignalType.EXIT
 
                 # ✨ ENDGAME: Block new entries in last 30 minutes to ensure clean exits
-                if (total_epochs - epoch_count) <= 30 and not is_exit and event.signal_type != SignalType.REVERSE:
+                if (
+                    (total_epochs - epoch_count) <= 30
+                    and not is_exit
+                    and event.signal_type != SignalType.REVERSE
+                ):
                     continue
-                    
+
                 if is_exit:
-                    print(f"DEBUG: Processing EXIT signal for {event.symbol} at {current_price}")
+                    print(
+                        f"DEBUG: Processing EXIT signal for {event.symbol} at {current_price}"
+                    )
 
                 # ── PRODUCTION RISK MANAGER: generate_order() ──
                 # This does ALL the validations from production:
@@ -717,17 +866,21 @@ def run_global_backtest(all_data, symbols, days,
                     # Extract specific rejection reason from stdout
                     _captured = _f_capture.getvalue()
                     _specific_reason = None
-                    for _line in _captured.strip().split('\n'):
-                        if '[RISK] Rejected by' in _line:
+                    for _line in _captured.strip().split("\n"):
+                        if "[RISK] Rejected by" in _line:
                             _specific_reason = _line.strip()
                             break
                     if _specific_reason:
-                        rejection_reasons[_specific_reason] = rejection_reasons.get(_specific_reason, 0) + 1
-                        if is_exit: print(f"DEBUG EXIT REJECTED: {_specific_reason}")
+                        rejection_reasons[_specific_reason] = (
+                            rejection_reasons.get(_specific_reason, 0) + 1
+                        )
+                        print(f"⚠️ [RISK] Signal REJECTED: {_specific_reason}")
                     else:
                         reason = f"RISK_GATE_UNKNOWN:{getattr(event, 'symbol', '?')}"
                         rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
-                        if is_exit: print(f"DEBUG EXIT REJECTED: {reason}\nSTDOUT: {_f_capture.getvalue()}")
+                        print(
+                            f"⚠️ [RISK] Signal REJECTED: {reason}\nSTDOUT: {_f_capture.getvalue()}"
+                        )
                     continue
 
                 order_count += 1
@@ -738,16 +891,36 @@ def run_global_backtest(all_data, symbols, days,
                     rejected_count += 1
                     reason = "EXECUTOR_REJECT"
                     rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
+
+                    # 🚀 AEGIS-V15: ATOMIC METADATA RELEASE
+                    # QUÉ: Usar el valor exacto reservado en RiskManager.
                     try:
-                        reserved = order.metadata.get('dollar_size') if order.metadata else None
+                        order_id = order.metadata.get("client_order_id") if order.metadata else None
+                        reserved = (
+                            order.metadata.get("dollar_size")
+                            if order.metadata
+                            else None
+                        )
                         if reserved:
-                            portfolio.release_cash(reserved)
+                            portfolio.release_order_margin(amount=reserved, order_id=order_id)
                         else:
-                            portfolio.release_cash(
-                                getattr(order, 'quantity', 0) * current_price / Config.BINANCE_LEVERAGE
+                            # Fallback using dynamic leverage from order
+                            lev = (
+                                getattr(order, "leverage", Config.BINANCE_LEVERAGE)
+                                or Config.BINANCE_LEVERAGE
                             )
-                    except Exception:
-                        pass
+                            portfolio.release_order_margin(
+                                amount=order.quantity * current_price / lev,
+                                order_id=order_id
+                            )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to release margin for rejected order: {e}"
+                        )
+
+                    # Also clear pending exit to prevent lock-up
+                    _key = f"{order.symbol}_{order.horizon}"
+                    pending_exits.discard(_key)
                     continue
 
                 # ── PORTFOLIO UPDATE (THE REAL update_fill) ──
@@ -756,10 +929,10 @@ def run_global_backtest(all_data, symbols, days,
                     fill_count += 1
 
                     # FORENSIC-V11 Fix #2+#6: Record fill epoch for cooldown
-                    _fill_horizon = getattr(fill, 'horizon', 'SCALPING')
+                    _fill_horizon = getattr(fill, "horizon", "SCALPING")
                     _fill_cooldown_key = f"{fill.symbol}_{_fill_horizon}"
                     last_fill_epoch[_fill_cooldown_key] = epoch_count
-                    
+
                     # FORENSIC-V11 Fix #7: Clear pending exit after fill
                     pending_exits.discard(_fill_cooldown_key)
 
@@ -772,17 +945,21 @@ def run_global_backtest(all_data, symbols, days,
                             risk_manager.record_trade_result(
                                 is_win, pnl_pct, event.symbol
                             )
-                            
+
                             # FORENSIC-V11 Fix #4: Track ML consecutive losses
-                            _fill_strat = getattr(fill, 'strategy_id', '')
+                            _fill_strat = getattr(fill, "strategy_id", "")
                             if _fill_strat:
                                 if is_win:
                                     ml_consecutive_losses[_fill_strat] = 0
                                     # Also count shadow wins if in shadow mode
                                     if _fill_strat in ml_shadow_wins:
-                                        ml_shadow_wins[_fill_strat] = ml_shadow_wins.get(_fill_strat, 0) + 1
+                                        ml_shadow_wins[_fill_strat] = (
+                                            ml_shadow_wins.get(_fill_strat, 0) + 1
+                                        )
                                 else:
-                                    ml_consecutive_losses[_fill_strat] = ml_consecutive_losses.get(_fill_strat, 0) + 1
+                                    ml_consecutive_losses[_fill_strat] = (
+                                        ml_consecutive_losses.get(_fill_strat, 0) + 1
+                                    )
                 except Exception as e:
                     logger.warning(f"Fill processing error: {e}")
 
@@ -793,7 +970,7 @@ def run_global_backtest(all_data, symbols, days,
         if epoch_count % 60 == 0:  # Sample every 60 bars (1 hour)
             eq = portfolio.get_total_equity()
             equity_curve.append(eq)
-            ts = pd.to_datetime(data_provider.current_time_ms, unit='ms', utc=True)
+            ts = pd.to_datetime(data_provider.current_time_ms, unit="ms", utc=True)
             equity_timestamps.append(ts)
 
             # Update RiskManager equity (for kill switch)
@@ -811,13 +988,19 @@ def run_global_backtest(all_data, symbols, days,
             # PARA QUÉ: Terminar RÁPIDO cuando no se puede operar más.
             # ═══════════════════════════════════════════════════════════
             if risk_manager.kill_switch.active:
-                print(f"\n  🚨 RISK MANAGER KILL SWITCH SYNCED: {risk_manager.kill_switch.activation_reason}")
-                print(f"     Equity: ${eq:.2f} | Peak: ${risk_manager.kill_switch.peak_equity:.2f}")
+                print(
+                    f"\n  🚨 RISK MANAGER KILL SWITCH SYNCED: {risk_manager.kill_switch.activation_reason}"
+                )
+                print(
+                    f"     Equity: ${eq:.2f} | Peak: ${risk_manager.kill_switch.peak_equity:.2f}"
+                )
                 kill_switch_triggered = True
 
             # Global kill switch check (hard floor)
             if eq < capital * 0.85:  # 15% total drawdown -> emergency stop
-                print(f"\n  🚨 HARD FLOOR KILL SWITCH: Equity ${eq:.2f} < 85% of initial ${capital:.2f}")
+                print(
+                    f"\n  🚨 HARD FLOOR KILL SWITCH: Equity ${eq:.2f} < 85% of initial ${capital:.2f}"
+                )
                 kill_switch_triggered = True
 
     elapsed = time.time() - t_start
@@ -826,12 +1009,12 @@ def run_global_backtest(all_data, symbols, days,
     # STEP 4: CLOSE ALL REMAINING POSITIONS
     # ─────────────────────────────────────────────────────────────────────────
     for v_key, vpos in list(portfolio.virtual_ledger.items()):
-        qty = vpos.get('quantity', 0)
+        qty = vpos.get("quantity", 0)
         if qty == 0:
             continue
 
-        horizon = vpos.get('horizon', 'SCALPING')
-        parts = v_key.rsplit(f'_{horizon}', 1)
+        horizon = vpos.get("horizon", "SCALPING")
+        parts = v_key.rsplit(f"_{horizon}", 1)
         symbol = parts[0] if len(parts) > 1 else v_key
 
         current_price = data_provider.get_latest_price(symbol)
@@ -844,12 +1027,14 @@ def run_global_backtest(all_data, symbols, days,
             close_fill = FillEvent(
                 timeindex=datetime.now(timezone.utc),
                 symbol=symbol,
-                exchange='BINANCE_BACKTEST',
+                exchange="BINANCE_BACKTEST",
                 quantity=abs(qty),
                 direction=direction,
                 fill_cost=abs(qty) * current_price,
-                commission=abs(qty) * current_price * COMMISSION_MAKER,  # FORENSIC-V12 FIX #6: Exits are LIMIT BBO → Maker fee
-                strategy_id='BACKTEST_CLOSE',
+                commission=abs(qty)
+                * current_price
+                * COMMISSION_MAKER,  # FORENSIC-V12 FIX #6: Exits are LIMIT BBO → Maker fee
+                strategy_id="BACKTEST_CLOSE",
                 fill_price=current_price,
                 horizon=horizon,
             )
@@ -866,13 +1051,15 @@ def run_global_backtest(all_data, symbols, days,
     # Collect trades from portfolio strategy attribution
     all_trades = []
     for strat_id, perf in portfolio.strategy_performance.items():
-        all_trades.append({
-            'strategy': strat_id,
-            'pnl_usd': perf.get('pnl', 0),
-            'wins': perf.get('wins', 0),
-            'losses': perf.get('losses', 0),
-            'trades': perf.get('trades', 0)
-        })
+        all_trades.append(
+            {
+                "strategy": strat_id,
+                "pnl_usd": perf.get("pnl", 0),
+                "wins": perf.get("wins", 0),
+                "losses": perf.get("losses", 0),
+                "trades": perf.get("trades", 0),
+            }
+        )
 
     # Basic metrics
     total_return = ((final_equity - capital) / capital) * 100
@@ -898,111 +1085,192 @@ def run_global_backtest(all_data, symbols, days,
             sharpe = float(np.mean(returns) / np.std(returns) * np.sqrt(365 * 24))
 
     results = {
-        'version': 'GOD_MODE_v3.0_UNIFIED_EXIT',
-        'run_id': run_id,
-        'timestamp': datetime.now(timezone.utc).isoformat(),
-        'config': {
-            'symbols': symbols,
-            'num_symbols': len(symbols),
-            'days': days,
-            'initial_capital': capital,
-            'leverage': leverage,
-            'max_concurrent_positions': Config.MAX_CONCURRENT_POSITIONS,
-            'fee_per_side': COMMISSION_PCT,
-            'seed': seed,
-            'exit_engine': 'RiskManager.check_stops() ONLY',
-            'portfolio_check_exits': 'AUDIT-ONLY (no EXIT signals)',
+        "version": "GOD_MODE_v3.0_UNIFIED_EXIT",
+        "run_id": run_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "config": {
+            "symbols": symbols,
+            "num_symbols": len(symbols),
+            "days": days,
+            "initial_capital": capital,
+            "leverage": leverage,
+            "max_concurrent_positions": Config.MAX_CONCURRENT_POSITIONS,
+            "fee_per_side": COMMISSION_PCT,
+            "seed": seed,
+            "exit_engine": "RiskManager.check_stops() ONLY",
+            "portfolio_check_exits": "AUDIT-ONLY (no EXIT signals)",
         },
-        'metrics': {
-            'final_capital': round(final_equity, 4),
-            'total_return_pct': round(total_return, 2),
-            'total_trades': total_trades,
-            'signals_generated': signal_count,
-            'orders_generated': order_count,
-            'orders_rejected': rejected_count,
-            'win_rate': round(win_rate, 1),
-            'max_drawdown_pct': round(max_dd, 2),
-            'sharpe_ratio': round(sharpe, 2),
-            'fees_paid': round(portfolio.total_fees_paid, 4),
-            'kill_switch_triggered': kill_switch_triggered,
-            'portfolio_audit_exits_suppressed': portfolio_audit_exits,
+        "metrics": {
+            "final_capital": round(final_equity, 4),
+            "total_return_pct": round(total_return, 2),
+            "total_trades": total_trades,
+            "signals_generated": signal_count,
+            "orders_generated": order_count,
+            "orders_rejected": rejected_count,
+            "win_rate": round(win_rate, 1),
+            "max_drawdown_pct": round(max_dd, 2),
+            "sharpe_ratio": round(sharpe, 2),
+            "fees_paid": round(portfolio.total_fees_paid, 4),
+            "kill_switch_triggered": kill_switch_triggered,
+            "portfolio_audit_exits_suppressed": portfolio_audit_exits,
         },
-        'strategy_attribution': portfolio.strategy_performance,
-        'elapsed_seconds': round(elapsed, 1),
-        'epochs_processed': epoch_count,
-        'equity_curve_sample': [round(e, 4) for e in equity_curve[-50:]],
-        'trade_history': {
-            'scalping': portfolio.scalping_ledger,
-            'swing': portfolio.swing_ledger
+        "strategy_attribution": portfolio.strategy_performance,
+        "elapsed_seconds": round(elapsed, 1),
+        "epochs_processed": epoch_count,
+        "equity_curve_sample": [round(e, 4) for e in equity_curve[-50:]],
+        "trade_history": {
+            "scalping": portfolio.scalping_ledger,
+            "swing": portfolio.swing_ledger,
         },
-        'rejection_reasons': rejection_reasons
+        "rejection_reasons": rejection_reasons,
     }
+
+    # ─── PREDICTION TRACKER: EXPORT & REPORT ───
+    # QUÉ: Exporta métricas de precisión predictiva al resultado del backtest.
+    # PARA QUÉ: Visibilidad completa de accuracy/MFE/MAE/decay por estrategia.
+    try:
+        pred_metrics = prediction_tracker.export_metrics()
+        results["prediction_metrics"] = pred_metrics
+        print(f"\n{prediction_tracker.get_summary()}")
+    except Exception as _pt_err:
+        logger.warning(f"PredictionTracker export error: {_pt_err}")
 
     # ─── SEGMENTED METRICS ───
     def calculate_ledger_metrics(ledger: list) -> dict:
         if not ledger:
-             return {'pnl': 0.0, 'gross': 0.0, 'fees': 0.0, 'wins': 0, 'losses': 0, 'wr': 0.0, 'total': 0}
-        pnl = sum(t.get('net_pnl', 0) for t in ledger)
-        gross = sum(t.get('gross_pnl', 0) for t in ledger)
-        fees = sum(t.get('fees_paid', 0) for t in ledger)
-        wins = sum(1 for t in ledger if t.get('net_pnl', 0) > 0)
+            return {
+                "pnl": 0.0,
+                "gross": 0.0,
+                "fees": 0.0,
+                "wins": 0,
+                "losses": 0,
+                "wr": 0.0,
+                "total": 0,
+                "avg_margin": 0.0,
+                "limits": 0,
+                "markets": 0,
+                "avg_certainty": 0.0,
+                "avg_duration": 0,
+            }
+        pnl = sum(t.get("net_pnl", 0) for t in ledger)
+        gross = sum(t.get("gross_pnl", 0) for t in ledger)
+        fees = sum(t.get("fees_paid", 0) for t in ledger)
+        wins = sum(1 for t in ledger if t.get("net_pnl", 0) > 0)
+        limits = sum(
+            1 for t in ledger if str(t.get("exit_type", "limit")).lower() == "limit"
+        )
+        markets = sum(
+            1 for t in ledger if str(t.get("exit_type", "")).lower() == "market"
+        )
         total = len(ledger)
         losses = total - wins
+        avg_margin = (
+            sum(t.get("margin_usd", 0) for t in ledger) / total if total > 0 else 0
+        )
+        avg_certainty = (
+            sum(t.get("oracle_certainty", 0) for t in ledger) / total
+            if total > 0
+            else 0
+        )
+        avg_dur = (
+            sum(t.get("duration_seconds", 0) for t in ledger) / total
+            if total > 0
+            else 0
+        )
         wr = (wins / total * 100) if total > 0 else 0
-        return {'pnl': pnl, 'gross': gross, 'fees': fees, 'wins': wins, 'losses': losses, 'wr': wr, 'total': total}
+        return {
+            "pnl": pnl,
+            "gross": gross,
+            "fees": fees,
+            "wins": wins,
+            "losses": losses,
+            "wr": wr,
+            "total": total,
+            "avg_margin": avg_margin,
+            "limits": limits,
+            "markets": markets,
+            "avg_certainty": avg_certainty,
+            "avg_duration": avg_dur,
+        }
 
     scl_m = calculate_ledger_metrics(portfolio.scalping_ledger)
     swg_m = calculate_ledger_metrics(portfolio.swing_ledger)
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"📊 GOD MODE BACKTEST v2.0 — RESULTS (COMBINED)")
-    print(f"{'='*70}")
-    print(f"  🏦 Capital:     ${capital:.2f} → ${final_equity:.2f} ({total_return:+.2f}%)")
-    print(f"  📈 Total Trades: {total_trades} (Signals: {signal_count} | "
-          f"Orders: {order_count} | Rejected: {rejected_count})")
-    print(f"  🎯 Win Rate:    {win_rate:.1f}% ({risk_manager.win_count}W / {risk_manager.loss_count}L)")
+    print(f"{'=' * 70}")
+    print(
+        f"  🏦 Capital:     ${capital:.2f} → ${final_equity:.2f} ({total_return:+.2f}%)"
+    )
+    print(
+        f"  📈 Total Trades: {total_trades} (Signals: {signal_count} | "
+        f"Orders: {order_count} | Rejected: {rejected_count})"
+    )
+    print(
+        f"  🎯 Win Rate:    {win_rate:.1f}% ({risk_manager.win_count}W / {risk_manager.loss_count}L)"
+    )
     print(f"  📉 Max Drawdown: {max_dd:.2f}%")
     print(f"  📊 Sharpe Ratio: {sharpe:.2f}")
     print(f"  💸 Total Fees:  ${portfolio.total_fees_paid:.4f}")
     print(f"  ⏱️  Elapsed:     {elapsed:.1f}s ({epoch_count:,} epochs)")
     print(f"  🚨 Kill Switch:  {'YES' if kill_switch_triggered else 'NO'}")
 
-    print(f"\n  {'─'*50}")
+    print(f"\n  {'─' * 50}")
     print(f"  ⚡ [SCALPING] COHORT RESULTS:")
-    print(f"    Total Trades: {scl_m['total']}")
+    print(
+        f"    Total Trades: {scl_m['total']} (LIMIT BBO: {scl_m['limits']} | MKT: {scl_m['markets']})"
+    )
     print(f"    Win Rate:     {scl_m['wr']:.1f}% ({scl_m['wins']}W/{scl_m['losses']}L)")
     print(f"    Net PnL:      ${scl_m['pnl']:+.4f} (Gross: ${scl_m['gross']:+.4f})")
-    print(f"    Fee Drag:     ${scl_m['fees']:.4f} ({ (scl_m['fees']/scl_m['gross']*100) if scl_m['gross'] > 0 else 0:.1f}% of gross)")
+    print(
+        f"    Fee Drag:     ${scl_m['fees']:.4f} ({(scl_m['fees'] / scl_m['gross'] * 100) if scl_m['gross'] > 0 else 0:.1f}% of gross)"
+    )
+    print(
+        f"    Metrics:      Avg Margin: ${scl_m['avg_margin']:.2f} | Avg Oracle: {scl_m['avg_certainty'] * 100:.1f}% | Avg Hold: {scl_m['avg_duration']:.1f}s"
+    )
 
-    print(f"\n  {'─'*50}")
+    print(f"\n  {'─' * 50}")
     print(f"  🌊 [SWING] COHORT RESULTS:")
-    print(f"    Total Trades: {swg_m['total']}")
+    print(
+        f"    Total Trades: {swg_m['total']} (LIMIT BBO: {swg_m['limits']} | MKT: {swg_m['markets']})"
+    )
     print(f"    Win Rate:     {swg_m['wr']:.1f}% ({swg_m['wins']}W/{swg_m['losses']}L)")
     print(f"    Net PnL:      ${swg_m['pnl']:+.4f} (Gross: ${swg_m['gross']:+.4f})")
-    print(f"    Fee Drag:     ${swg_m['fees']:.4f} ({ (swg_m['fees']/swg_m['gross']*100) if swg_m['gross'] > 0 else 0:.1f}% of gross)")
+    print(
+        f"    Fee Drag:     ${swg_m['fees']:.4f} ({(swg_m['fees'] / swg_m['gross'] * 100) if swg_m['gross'] > 0 else 0:.1f}% of gross)"
+    )
+    print(
+        f"    Metrics:      Avg Margin: ${swg_m['avg_margin']:.2f} | Avg Oracle: {swg_m['avg_certainty'] * 100:.1f}% | Avg Hold: {swg_m['avg_duration']:.1f}s"
+    )
 
     if portfolio.strategy_performance:
-        print(f"\n  {'─'*50}")
+        print(f"\n  {'─' * 50}")
         print(f"  📋 STRATEGY ATTRIBUTION:")
-        for strat_id, perf in sorted(portfolio.strategy_performance.items(),
-                                       key=lambda x: x[1].get('pnl', 0),
-                                       reverse=True):
-            pnl = perf.get('pnl', 0)
-            wins = perf.get('wins', 0)
-            losses = perf.get('losses', 0)
+        for strat_id, perf in sorted(
+            portfolio.strategy_performance.items(),
+            key=lambda x: x[1].get("pnl", 0),
+            reverse=True,
+        ):
+            pnl = perf.get("pnl", 0)
+            wins = perf.get("wins", 0)
+            losses = perf.get("losses", 0)
             total = wins + losses
             wr = (wins / total * 100) if total > 0 else 0
-            print(f"    {strat_id}: PnL=${pnl:+.4f} | "
-                  f"W/L: {wins}/{losses} ({wr:.0f}%) | "
-                  f"Trades: {total}")
+            print(
+                f"    {strat_id}: PnL=${pnl:+.4f} | "
+                f"W/L: {wins}/{losses} ({wr:.0f}%) | "
+                f"Trades: {total}"
+            )
 
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     # FORENSIC-V9: REJECTION ANALYSIS — WHERE DO SIGNALS DIE?
     if rejection_reasons:
-        print(f"  {'─'*50}")
+        print(f"  {'─' * 50}")
         print(f"  🔬 FORENSIC-V9: REJECTION ANALYSIS")
-        sorted_reasons = sorted(rejection_reasons.items(), key=lambda x: x[1], reverse=True)
+        sorted_reasons = sorted(
+            rejection_reasons.items(), key=lambda x: x[1], reverse=True
+        )
         for reason, count in sorted_reasons[:15]:
             pct = (count / max(signal_count, 1)) * 100
             print(f"    {reason}: {count} ({pct:.1f}% of signals)")
@@ -1011,35 +1279,47 @@ def run_global_backtest(all_data, symbols, days,
     # FIX-V10-5: BETTER UNTRAINED STRATEGY BREAKDOWN
     # ═══════════════════════════════════════════════════════════════════
     if untrained_strategies:
-        swing_untrained = sorted([s for s in untrained_strategies if 'SWING' in s.upper()])
-        scalp_untrained = sorted([s for s in untrained_strategies if 'SWING' not in s.upper()])
+        swing_untrained = sorted(
+            [s for s in untrained_strategies if "SWING" in s.upper()]
+        )
+        scalp_untrained = sorted(
+            [s for s in untrained_strategies if "SWING" not in s.upper()]
+        )
         print(f"\n  ⚠️ UNTRAINED STRATEGIES ({len(untrained_strategies)} total):")
-        print(f"    🌊 SWING: {len(swing_untrained)} untrained (likely insufficient 4H candle data)")
+        print(
+            f"    🌊 SWING: {len(swing_untrained)} untrained (likely insufficient 4H candle data)"
+        )
         if scalp_untrained:
             print(f"    ⚡ SCALP: {len(scalp_untrained)} untrained:")
             for s in scalp_untrained[:10]:
                 print(f"      • {s}")
 
     # Add forensic data to results
-    results['forensic_v10'] = {
-        'rejection_reasons': dict(sorted(rejection_reasons.items(), key=lambda x: x[1], reverse=True)),
-        'untrained_strategies': list(untrained_strategies),
-        'signal_to_fill_ratio': f"{(fill_count/max(signal_count,1))*100:.1f}%",
-        'signal_to_order_ratio': f"{(order_count/max(signal_count,1))*100:.1f}%",
-        'untrained_swing_count': len([s for s in untrained_strategies if 'SWING' in s.upper()]),
-        'untrained_scalp_count': len([s for s in untrained_strategies if 'SWING' not in s.upper()]),
+    results["forensic_v10"] = {
+        "rejection_reasons": dict(
+            sorted(rejection_reasons.items(), key=lambda x: x[1], reverse=True)
+        ),
+        "untrained_strategies": list(untrained_strategies),
+        "signal_to_fill_ratio": f"{(fill_count / max(signal_count, 1)) * 100:.1f}%",
+        "signal_to_order_ratio": f"{(order_count / max(signal_count, 1)) * 100:.1f}%",
+        "untrained_swing_count": len(
+            [s for s in untrained_strategies if "SWING" in s.upper()]
+        ),
+        "untrained_scalp_count": len(
+            [s for s in untrained_strategies if "SWING" not in s.upper()]
+        ),
     }
 
     # ═══════════════════════════════════════════════════════════════════
     # FIX-V10-4: CLEANUP STOP_TRADING.LOCK AFTER BACKTEST
     # QUÉ: Elimina el lock file para no contaminar producción ni futuros BTs.
     # ═══════════════════════════════════════════════════════════════════
-    _lock_cleanup = os.path.join(_project_root, 'STOP_TRADING.LOCK')
+    _lock_cleanup = os.path.join(_project_root, "STOP_TRADING.LOCK")
     if os.path.exists(_lock_cleanup):
         os.remove(_lock_cleanup)
         print(f"  🔓 [V10] Cleaned up STOP_TRADING.LOCK (backtest cleanup)")
 
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     return results
 
@@ -1048,43 +1328,57 @@ def run_global_backtest(all_data, symbols, days,
 # CLI ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def main():
     parser = argparse.ArgumentParser(
-        description='God Mode Backtest v2.0 — Global Synchronized Engine'
+        description="God Mode Backtest v2.0 — Global Synchronized Engine"
     )
-    parser.add_argument('--days', type=int, default=7,
-                        help='Number of days to backtest')
-    parser.add_argument('--end', type=str, default=None,
-                        help='End date in YYYY-MM-DD HH:MM:SS format (default: now)')
-    parser.add_argument('--symbols', type=str, default='BTC/USDT,ETH/USDT,SOL/USDT',
-                        help='Comma-separated symbols or ALL for full basket')
-    parser.add_argument('--capital', type=float, default=None,
-                        help=f'Initial capital (default: ${Config.INITIAL_CAPITAL})')
-    parser.add_argument('--output', type=str, default=None,
-                        help='Output JSON file path')
-    parser.add_argument('--quiet', action='store_true',
-                        help='Suppress progress output')
+    parser.add_argument(
+        "--days", type=int, default=7, help="Number of days to backtest"
+    )
+    parser.add_argument(
+        "--end",
+        type=str,
+        default=None,
+        help="End date in YYYY-MM-DD HH:MM:SS format (default: now)",
+    )
+    parser.add_argument(
+        "--symbols",
+        type=str,
+        default="BTC/USDT,ETH/USDT,SOL/USDT",
+        help="Comma-separated symbols or ALL for full basket",
+    )
+    parser.add_argument(
+        "--capital",
+        type=float,
+        default=None,
+        help=f"Initial capital (default: ${Config.INITIAL_CAPITAL})",
+    )
+    parser.add_argument(
+        "--output", type=str, default=None, help="Output JSON file path"
+    )
+    parser.add_argument("--quiet", action="store_true", help="Suppress progress output")
 
     args = parser.parse_args()
 
     end_time = None
     if args.end:
         try:
-            end_time = datetime.strptime(args.end, '%Y-%m-%d %H:%M:%S')
+            end_time = datetime.strptime(args.end, "%Y-%m-%d %H:%M:%S")
         except ValueError:
             print("Error: --end format must be 'YYYY-MM-DD HH:MM:SS'")
             sys.exit(1)
 
     # ── Parse symbols ──
-    if args.symbols.upper() == 'ALL':
+    if args.symbols.upper() == "ALL":
         symbols = Config.CRYPTO_FUTURES_PAIRS
     else:
-        symbols = [s.strip() for s in args.symbols.split(',')]
+        symbols = [s.strip() for s in args.symbols.split(",")]
         # Normalize format
         normalized = []
         for s in symbols:
-            s = s.upper().replace('/', '')
-            if s.endswith('USDT'):
+            s = s.upper().replace("/", "")
+            if s.endswith("USDT"):
                 normalized.append(f"{s[:-4]}/USDT")
             else:
                 normalized.append(s)
@@ -1093,7 +1387,9 @@ def main():
     print(f"\n🎯 Symbols to backtest: {symbols}")
 
     # ── Download data for ALL symbols ──
-    all_data = fetch_multi_symbol_data(symbols, days=args.days, max_workers=4, end_time=end_time)
+    all_data = fetch_multi_symbol_data(
+        symbols, days=args.days, max_workers=4, end_time=end_time
+    )
 
     if not all_data:
         print("❌ No data downloaded. Aborting.")
@@ -1109,23 +1405,27 @@ def main():
         symbols=valid_symbols,
         days=args.days,
         initial_capital=args.capital,
-        verbose=not args.quiet
+        verbose=not args.quiet,
     )
 
     # ── Save results to UNIQUE file (never overwrite) ──
     # REMEDIACIÓN: Cada run tiene su propio archivo con run_id.
     # POR QUÉ: Antes se sobrescribía el mismo archivo → resultados mezclados.
-    run_id_result = results.get('run_id', 'unknown')
+    run_id_result = results.get("run_id", "unknown")
     if args.output:
         output_path = args.output
     else:
-        results_dir = os.path.join(_project_root, 'results', 'backtests')
+        results_dir = os.path.join(_project_root, "results", "backtests")
         os.makedirs(results_dir, exist_ok=True)
-        output_path = os.path.join(results_dir, f'god_mode_{run_id_result}_{args.days}d.json')
+        output_path = os.path.join(
+            results_dir, f"god_mode_{run_id_result}_{args.days}d.json"
+        )
 
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
 
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         json.dump(results, f, indent=2, default=str)
 
     print(f"💾 Results saved to: {output_path}")
@@ -1133,5 +1433,5 @@ def main():
     return results
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

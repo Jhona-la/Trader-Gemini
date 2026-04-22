@@ -157,7 +157,8 @@ def safe_read_csv(file_path: str):
         if not os.path.exists(file_path):
             return None
         try:
-            return pd.read_csv(file_path)
+            # on_bad_lines='skip' prevents ParserError when schema changes
+            return pd.read_csv(file_path, on_bad_lines='skip')
         except Exception as e:
             print(f"safe_read_csv failed: {e}")
             return None
@@ -245,7 +246,7 @@ class DatabaseHandler:
                     trade_payload['side'],
                     trade_payload['quantity'],
                     trade_payload['price'],
-                    trade_payload.get('timestamp'),
+                    str(trade_payload.get('timestamp')) if trade_payload.get('timestamp') is not None else None,
                     trade_payload.get('strategy_id', 'Unknown'),
                     trade_payload.get('pnl', 0),
                     trade_payload.get('commission', 0)

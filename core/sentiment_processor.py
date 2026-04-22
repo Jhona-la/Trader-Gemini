@@ -23,6 +23,11 @@ class SentimentProcessor:
             'crypto', 'currency', 'bitcoin', 'btc', 'eth', 'ethereum' 
         ])
         
+        # Phase 15: Adaptive Market Mood State
+        from collections import deque
+        self._last_scores = deque(maxlen=20) 
+        self._last_mood_update = 0
+        
         # Pre-trained "Mock" Topics (In production, this would be trained on historical news)
         # Topic 0: Regulatory/FUD (SEC, Ban, Regulation, Lawsuit)
         # Topic 1: Bullish Tech/Adoption (Upgrade, Launch, Partnership, Mainnet)
@@ -93,11 +98,16 @@ class SentimentProcessor:
             
             labels = ["Regulatory FUD", "Bullish Adoption", "Macro Bearish", "Retail Hype"]
             
+            confidence = float(avg_dist[dominant_topic])
+            
+            # --- 🛡️ PHASE 15: SCORE PERSISTENCE ---
+            self._last_scores.append(weighted_score)
+            
             return {
                 'dominant_topic': int(dominant_topic),
                 'topic_label': labels[dominant_topic],
                 'sentiment_score': float(weighted_score),
-                'confidence': float(avg_dist[dominant_topic])
+                'confidence': confidence
             }
             
         except Exception as e:
@@ -112,9 +122,11 @@ class SentimentProcessor:
 
     def get_market_mood(self):
         """
-        Public API to get current market mood. 
-        (Mocked input for now until NewsLoader is active)
+        Public API to get current market mood based on recent news analyzed.
+        Returns 0.0 if no news has been processed yet.
         """
-        # In a real scenario, this would pull from a buffer of recent news
-        # For now, return Neutral
-        return 0.0
+        if not self._last_scores:
+            return 0.0
+        
+        # Phase 15: Return EMA-like mean of recent sentiment scores
+        return float(np.mean(list(self._last_scores)))

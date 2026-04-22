@@ -207,8 +207,17 @@ class AtomicStateManager:
                 f.flush()
                 os.fsync(f.fileno()) # Force write to disk
                 
-            # 2. Atomic Rename
-            os.replace(tmp_path, path)
+            # 2. Atomic Rename with Retry (Windows File Lock Mitigation)
+            retries = 3
+            for i in range(retries):
+                try:
+                    os.replace(tmp_path, path)
+                    break
+                except OSError as e:
+                    # Catch Windows Error 5 (Access Denied) or 32 (File in use)
+                    if i == retries - 1:
+                        raise e
+                    time.sleep(0.05 * (i + 1))
             
         except Exception as e:
             logger.error(f"❌ [AtomicState] Save Failed: {e}")

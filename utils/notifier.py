@@ -131,15 +131,25 @@ class EnhancedTradeData:
             if self.balance_before > 0 else 0.0
         )
         
-        # ── ML Telemetry ──
+        # ── ML Telemetry & Forensic Data ──
         self.ml_confidence = trade_info.get('ml_confidence', None)
         self.predicted_duration = trade_info.get('predicted_duration', None)
+        
+        # Parse metadata if exists
+        self.metadata = trade_info.get('metadata', {})
+        self.setup_type = self.metadata.get('setup_type', trade_info.get('setup_type', 'UNKNOWN'))
+        self.neural_bias = self.metadata.get('neural_bias', None)
+        self.rsi = self.metadata.get('rsi', None)
+        self.adx = self.metadata.get('adx', None)
+        self.confluence = self.metadata.get('multi_timeframe_score', None)
+        self.raw_ml_confidence = self.metadata.get('raw_ml_confidence', None)
+        self.smoothed_ml_confidence = self.metadata.get('smoothed_ml_confidence', None)
 
         # ── Market Context ──
         self.volatility = float(trade_info.get('volatility', 0.0))
         self.spread = float(trade_info.get('spread', 0.0))
         self.win_rate = float(trade_info.get('win_rate', 0.0))
-        self.timestamp = trade_info.get('timestamp', datetime.now(timezone.utc).strftime('%H:%M:%S UTC'))
+        self.timestamp = trade_info.get('timestamp', datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'))
 
     def _calc_breakeven(self) -> float:
         """Breakeven % considering fees."""
@@ -262,24 +272,31 @@ class Notifier:
             return
 
         # Priority visual header
-        header = "🤖 *TRADER GEMINI*"
+        header = "🤖 <b>TRADER GEMINI</b>"
         if priority == "CRITICAL":
-            header = "🚨 *CRITICAL ALERT*"
+            header = "🚨 <b>CRITICAL ALERT</b>"
         elif priority == "WARNING":
-            header = "⚠️ *WARNING*"
+            header = "⚠️ <b>WARNING</b>"
 
         ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
         full_message = f"{header}\n\n{message}\n\n🕒 {ts} UTC"
 
-        # Telegram has 4096 char limit — truncate if needed
-        if len(full_message) > 4000:
-            full_message = full_message[:3990] + "\n\n⚠️ _(truncated)_"
+        # ── FORENSIC FIX: TELEGRAM FORMATTING CRASH ──
+        # Telegram Markdown throws "Can't parse entities" if unescaped `_` (e.g. strategy_id) exists.
+        # HTML mode safely ignores raw `_` and `[]` characters.
+        import re
+        html_message = re.sub(r'\*(.*?)\*', r'<b>\1</b>', full_message) # Bold
+        html_message = re.sub(r'`(.*?)`', r'<code>\1</code>', html_message) # Monospace
+
+        # Telegram has a 4096 char limit — truncate if needed
+        if len(html_message) > 4000:
+            html_message = html_message[:3990] + "\n\n⚠️ <i>(truncated)</i>"
 
         url = f"https://api.telegram.org/bot{Config.Observability.TELEGRAM_TOKEN}/sendMessage"
         payload = {
             "chat_id": Config.Observability.TELEGRAM_CHAT_ID,
-            "text": full_message,
-            "parse_mode": "Markdown"
+            "text": html_message,
+            "parse_mode": "HTML"
         }
 
         try:
@@ -370,6 +387,7 @@ class Notifier:
         msg = f"🎯 *NUEVO TRADE INICIADO* 🎯\n\n"
         msg += f"*Estrategia:* {td.strategy} ({horizon_emoji} {td.horizon})\n"
         msg += f"*Par:* `{td.symbol}`\n"
+        msg += f"*Setup:* `{td.setup_type}`\n"
         msg += f"*Dirección:* {dir_emoji} {td.direction}\n"
         msg += f"*Entrada:* `${td.fill_price:,.4f}`\n"
         msg += f"*Tamaño:* `{td.quantity}` (${td.size_usd:,.2f} USD)\n"
@@ -380,6 +398,16 @@ class Notifier:
             msg += f"*Take Profit:* `{td.tp_pct*100:,.2f}%`\n"
         if td.rr_ratio > 0:
             msg += f"*Risk/Reward:* `1:{td.rr_ratio:,.2f}`\n"
+
+        msg += f"\n*Decisión Forense:*\n"
+        if td.confluence is not None:
+            msg += f"🎯 Confluencia: `{td.confluence:.2f}`\n"
+        if td.neural_bias is not None:
+            msg += f"🧠 Neural Bias: `{td.neural_bias:.2f}`\n"
+        if td.raw_ml_confidence is not None:
+            msg += f"🤖 ML Raw: `{td.raw_ml_confidence*100:.1f}%` | Smoothed: `{td.smoothed_ml_confidence*100:.1f}%`\n"
+        if td.rsi is not None and td.adx is not None:
+            msg += f"📉 RSI: `{td.rsi:.1f}` | ADX: `{td.adx:.1f}`\n"
 
         msg += f"\n*Análisis de Viabilidad:*\n"
         msg += f"⚠️ Fees estimados: `${td.commission:,.4f}`\n"
@@ -431,6 +459,7 @@ class Notifier:
         msg += f"*Resumen:*\n"
         msg += f"Estrategia: {td.strategy} ({horizon_emoji} {td.horizon})\n"
         msg += f"Par: `{td.symbol}`\n"
+        msg += f"Setup: `{td.setup_type}`\n"
         msg += f"Dirección: {EMOJI_MAP.get(str(td.direction).upper(), '🔶')} {td.direction}\n"
         msg += f"Duración: `{td.duration}`\n"
 
@@ -449,6 +478,17 @@ class Notifier:
         msg += f"Fees: `-${td.commission:,.4f}` (`{td.fee_tag}`)\n"
         pnl_sign = "+" if td.net_pnl >= 0 else ""
         msg += f"*PnL Neto: `{pnl_sign}${td.net_pnl:,.4f}`* ({td.net_pnl_pct:+,.2f}%)\n"
+
+        if td.confluence is not None or td.neural_bias is not None or td.raw_ml_confidence is not None:
+            msg += f"\n*Decisión Forense:*\n"
+            if td.confluence is not None:
+                msg += f"🎯 Confluencia: `{td.confluence:.2f}`\n"
+            if td.neural_bias is not None:
+                msg += f"🧠 Neural Bias: `{td.neural_bias:.2f}`\n"
+            if td.raw_ml_confidence is not None:
+                msg += f"🤖 ML Raw: `{td.raw_ml_confidence*100:.1f}%` | Smoothed: `{td.smoothed_ml_confidence*100:.1f}%`\n"
+            if td.rsi is not None and td.adx is not None:
+                msg += f"📉 RSI: `{td.rsi:.1f}` | ADX: `{td.adx:.1f}`\n"
 
         if td.ml_confidence is not None:
             msg += f"\n*Predicción IA:*\n"

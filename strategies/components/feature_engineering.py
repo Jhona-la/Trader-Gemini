@@ -313,7 +313,8 @@ class FeatureEngineering:
                 sent_shifted = fast_shift(sent_arr, 1)
                 new_features['sentiment_change'] = np.where(np.isnan(sent_shifted), 0.0, sent_arr - sent_shifted)
                 new_features['sentiment_momentum'] = talib.SMA(new_features['sentiment_change'], timeperiod=5)
-            except:
+            except Exception as e:
+                logger.debug(f"Sentiment parsing skipped for {symbol}: {e}")
                 pass
 
         # ==================== OMEGA MIND HFT ====================
@@ -327,7 +328,8 @@ class FeatureEngineering:
                 new_features['vbi'] = np.full(n_len, hft.get('vbi', 0.0))
                 new_features['vbi_avg'] = np.full(n_len, hft.get('vbi_avg', 0.0))
                 new_features['liq_intensity'] = np.full(n_len, hft.get('liq_intensity', 0.0) / 100000.0)
-            except:
+            except Exception as e:
+                logger.debug(f"HFT indicators skipped for {symbol}: {e}")
                 pass
 
         # ==================== OMEGA DERIVATIVES ====================
@@ -348,6 +350,7 @@ class FeatureEngineering:
                 fr_ma20 = talib.SMA(new_features['funding_rate'], timeperiod=20)
                 new_features['funding_distortion'] = fr_ma20 / 0.0001
             except Exception as e:
+                logger.debug(f"Derivative metrics skipped for {symbol}: {e}")
                 pass
 
         # ==================== VALIDATE ====================
@@ -359,7 +362,8 @@ class FeatureEngineering:
             if all(c in new_features for c in cluster_cols) and len(df) >= 50:
                 # Use data from new_features for clustering
                 feat_data = {c: new_features[c] for c in cluster_cols}
-                features_array = pd.DataFrame(feat_data).fillna(0).values
+                # FORENSIC FIX: Forward-fill first to prevent snapping to 0 on websocket gaps
+                features_array = pd.DataFrame(feat_data).ffill().fillna(0).values
                 current_time = pd.Timestamp.utcnow() if 'datetime' not in df.columns else df['datetime'].iloc[-1]
                 
                 last_fit_time = self._kmeans_last_fit.get(symbol_key)
@@ -511,9 +515,14 @@ class FeatureEngineering:
         return df
 
     def validate_features(self, df):
-        """Limpieza robusta de features"""
+        """Limpieza robusta de features sin bleeding de O.Os"""
         if len(df) == 0: return df
-        df.replace([np.inf, -np.inf], 0, inplace=True)
-        df.ffill(limit=5, inplace=True)
-        df.bfill(limit=5, inplace=True)
+        # FORENSIC FIX: Replace INF with NaN so ffill() interpolates properly
+        df.replace([np.inf, -np.inf], np.nan, inplace=True)
+        # 1. Forward-fill to cascade current state to missing gaps
+        df.ffill(inplace=True)
+        # 2. Back-fill to populate the warmup zone (NO LIMIT, prevent 0.000 bug)
+        df.bfill(inplace=True) 
+        # 3. Only if a column is ENTIRELY empty, safely fallback to 0.0
+        df.fillna(0.0, inplace=True)
         return df

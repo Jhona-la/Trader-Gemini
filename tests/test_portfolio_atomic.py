@@ -32,7 +32,8 @@ class TestPortfolioAtomic(unittest.TestCase):
                 # 2. Occasional fills
                 if i % 10 == 0:
                     fill = FillEvent(
-                        timestamp=time.time(),
+                        timestamp_ns=time.time_ns(),
+                        timeindex=time.time_ns(),
                         symbol=symbol,
                         exchange="BINANCE",
                         quantity=0.1,

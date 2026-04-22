@@ -55,6 +55,7 @@ class MarketEvent(Event):
     symbol: Optional[str] = None
     close_price: Optional[float] = None
     order_flow: Optional[Dict[str, Any]] = None # Added for Phalanx-Omega
+    health_metrics: Optional[Dict[str, Any]] = None # Added for Data Integrity Hardening
     
     # 🏎️ [EXCELSIOR-TITAN] Phase III: CPU Cache Alignment
     # Force object size closer to 64-byte cache line to reduce false sharing
@@ -85,6 +86,8 @@ class SignalEvent(Event):
     ttl: Optional[int] = None      # Phase 9.2: Adaptive TTL (seconds)
     ml_confidence: Optional[float] = None # Added for ML-based scaling
     predicted_duration: Optional[int] = None # Hold duration
+    setup_type: Optional[str] = None # NEW: Granular setup (e.g. RSI_OVERSOLD, BREAKOUT)
+    strategy_version: Optional[str] = "1.0.0" # Versioning for evolutionary tracking
     metadata: Optional[Dict[str, Any]] = None # Flexible metadata container
     
     # AEGIS-ULTRA Phase 17: Telemetry
@@ -132,10 +135,13 @@ class OrderEvent(Event):
     ttl: Optional[int] = None      # Phase 9.2: Adaptive TTL (seconds)
     ml_confidence: Optional[float] = None # Added for ML-based scaling
     predicted_duration: Optional[int] = None # Hold duration
+    setup_type: Optional[str] = None # NEW: Granular setup propagation
+    strategy_version: Optional[str] = "1.0.0"
     metadata: Optional[Dict[str, Any]] = None # Flexible metadata container (Chase count, etc.)
     
     # AEGIS-ULTRA Phase 17: Telemetry
     trade_id: Optional[str] = None # UUID for forensic tracing
+    leverage: float = 1.0 # Phase 15: Precise margin tracking
     
     # 🧬 [Phase 19] Shadow Mode
     is_shadow: bool = False # If True, Executor MUST DROP this order
@@ -193,6 +199,8 @@ class FillEvent(Event):
     # Additional fill info
     fill_price: Optional[float] = None  # Actual fill price
     order_id: Optional[str] = None      # Exchange order ID
+    setup_type: Optional[str] = None    # NEW: Forensic attribution
+    strategy_version: Optional[str] = "1.0.0"
     sl_pct: Optional[float] = None      # Protective stop loss %
     tp_pct: Optional[float] = None      # Protective take profit %
     
@@ -208,6 +216,7 @@ class FillEvent(Event):
     
     # AEGIS-ULTRA Phase 17: Telemetry
     trade_id: Optional[str] = None # UUID for forensic tracing
+    leverage: float = 1.0 # Phase 15: Precise margin tracking
     
     # ⏱️ Horizon Specialization
     horizon: str = "SCALPING" # "SCALPING" or "SWING"

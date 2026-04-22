@@ -3,6 +3,7 @@ Estrategia Técnica HÍBRIDA - Optimized for $12→$50 Scalping
 Combina simplicidad del scalping con robustez del análisis técnico avanzado
 """
 
+import os
 import time
 import numpy as np
 import pandas as pd
@@ -1022,6 +1023,10 @@ class HybridScalpingStrategy(Strategy):
                 STRENGTH_THRESH = params['strength_threshold']
                 TP_PCT_LOCAL = params['tp_pct']
                 SL_PCT_LOCAL = params['sl_pct']
+                
+                # B-1 FIX: Initialize dynamic risk parameters to prevent UnboundLocalError or leakage
+                final_tp_pct = TP_PCT_LOCAL
+                final_sl_pct = SL_PCT_LOCAL
 
                 # FORENSIC FIX #1: Signal Deduplication (BAR-BASED, not tick-based)
                 # QUÉ: Deduplicación basada en el timestamp de la BARRA OHLCV, no del tick.
@@ -1030,6 +1035,13 @@ class HybridScalpingStrategy(Strategy):
                 # CÓMO: Usamos el timestamp de la última barra cerrada del data_provider,
                 #   que es fijo para todas las evaluaciones dentro de esa barra.
                 # EVIDENCIA: massive_god_mode.log → ARB/USDT LONG repetido cada ~1s con mismos datos.
+                # 0.5 DATA HEALTH GUARD (Phase 3 Hardening)
+                health = getattr(event, 'health_metrics', None)
+                if health and health.get('score', 100) < 80:
+                    logger.warning(f"⚠️ [DATA-HEALTH] Skipping {symbol} due to poor integrity: {health['score']:.1f}% (Gap: {health.get('gap_s', 0)}s)")
+                    if health.get('score', 100) < 50:
+                        continue # Critical integrity loss
+                
                 event_time = event.timestamp if hasattr(event, 'timestamp') else datetime.now(timezone.utc)
                 if event_time.tzinfo is None:
                     event_time = event_time.replace(tzinfo=timezone.utc)
@@ -1186,6 +1198,30 @@ class HybridScalpingStrategy(Strategy):
                     # ================================================================
                     # FORENSIC REMEDIATION: Process BOTH LONG and SHORT explicit setups
                     # ================================================================
+                    elif setups.get('long_mean_rev'):
+                        if self.horizon == 'SCALPING' and not setups.get('_long_vol_gate_pass', True):
+                            logger.debug(f"🚫 [VOL_GATE] {symbol} LONG MEAN_REVERSION blocked: extreme volatility")
+                        else:
+                            signal_type = SignalType.LONG
+                            setup_type = "RSI_MEAN_REVERSION"
+                    elif setups.get('short_mean_rev'):
+                        if self.horizon == 'SCALPING' and not setups.get('_short_vol_gate_pass', True):
+                            logger.debug(f"🚫 [VOL_GATE] {symbol} SHORT MEAN_REVERSION blocked: extreme volatility")
+                        else:
+                            signal_type = SignalType.SHORT
+                            setup_type = "RSI_MEAN_REVERSION"
+                    elif setups.get('long_momentum'):
+                        if self.horizon == 'SCALPING' and not setups.get('_long_vol_gate_pass', True):
+                            logger.debug(f"🚫 [VOL_GATE] {symbol} LONG MOMENTUM blocked: extreme volatility")
+                        else:
+                            signal_type = SignalType.LONG
+                            setup_type = "TREND_MOMENTUM"
+                    elif setups.get('short_momentum'):
+                        if self.horizon == 'SCALPING' and not setups.get('_short_vol_gate_pass', True):
+                            logger.debug(f"🚫 [VOL_GATE] {symbol} SHORT MOMENTUM blocked: extreme volatility")
+                        else:
+                            signal_type = SignalType.SHORT
+                            setup_type = "TREND_MOMENTUM"
                     elif setups.get('long_rsi_explicit') or setups.get('long_bb_explicit'):
                         if self.horizon == 'SCALPING' and not setups.get('_long_vol_gate_pass', True):
                             logger.debug(f"🚫 [VOL_GATE] {symbol} LONG EXPLICIT_REVERSAL blocked: extreme volatility")
@@ -1337,14 +1373,26 @@ class HybridScalpingStrategy(Strategy):
                         entry_price = self.last_trade_prices.get(symbol, current_price)
                         cur_pnl = (current_price / entry_price - 1.0) if current_qty > 0 else (entry_price / current_price - 1.0)
                         
+                        # FORENSIC FIX #1: FEE GUARD
+                        # QUÉ: Exigir un PnL mínimo antes de permitir cierres "proactivos" o "por RSI".
+                        # POR QUÉ: Cierres prematuros (ej. PnL 0.035%) son devorados por las comisiones (0.04%).
+                        _maker_fee = getattr(Config, "BINANCE_MAKER_FEE_BNB", 0.0002)
+                        _taker_fee = getattr(Config, "BINANCE_TAKER_FEE_BNB", 0.000375)
+                        fee_guard_pnl = (_maker_fee + _taker_fee) * 2.5
+                        
+                        # FORENSIC FIX #3: SWING FIREWALL
+                        # QUÉ: Aislar los trades SWING de los cierres tempranos de Scalping.
+                        # POR QUÉ: Swing busca 1-5%, no debe cerrar en 60s por ruido de RSI.
+                        is_swing = self.horizon in ['SWING', 'MACRO']
+                        
                         be_trigger = final_tp_pct * 0.8 if 'final_tp_pct' in dir() else 0.008
                         if cur_pnl > be_trigger and symbol not in self.trailing_sl:
                             new_sl = entry_price * 1.001 if current_qty > 0 else entry_price * 0.999
                             self.trailing_sl[symbol] = new_sl
                             logger.info(f"🛡️ [V5.28 RAZOR-RELAX] Proactive BE Guard Activated for {symbol} (PnL: {cur_pnl*100:.2f}%)")
                         
-                        # 2. RSI-Based Trailing (Legacy check)
-                        elif symbol not in self.trailing_sl:
+                        # 2. RSI-Based Trailing (Legacy check) - BLOCKED FOR SWING
+                        elif symbol not in self.trailing_sl and not is_swing:
                             trailing_rsi_thresh = params.get('trailing_rsi', 70)
                             should_trail = (current_qty > 0 and current_rsi > trailing_rsi_thresh) or \
                                            (current_qty < 0 and current_rsi < (100 - trailing_rsi_thresh))
@@ -1353,60 +1401,64 @@ class HybridScalpingStrategy(Strategy):
                                 new_sl = entry_price * 1.001 if current_qty > 0 else entry_price * 0.999
                                 self.trailing_sl[symbol] = new_sl
                                 logger.info(f"🛡️ [{symbol}] Trailing SL Activated by RSI at {new_sl:.6f}")
+                            
+                        # AEGIS-V15: Stability Guard
+                        # QUÉ: No permite cerrar por indicadores si no han pasado X barras.
+                        # POR QUÉ: Evita micro-trades de 0 segundos que mueren por fees.
+                        entry_bar = self.bought[symbol] if isinstance(self.bought[symbol], int) else 0
+                        bars_held = len(data_primary) - entry_bar
+                        min_bars = 3 if self.horizon == 'SCALPING' else 12  # SWING needs more time
                         
-                        # 2. Check Trailing SL Hit
-                        if symbol in self.trailing_sl:
-                            tsl = self.trailing_sl[symbol]
-                            if (current_qty > 0 and current_price <= tsl) or \
-                               (current_qty < 0 and current_price >= tsl):
-                                exit_signal = SignalEvent(
-                                    strategy_id=self.strategy_id,
-                                    symbol=symbol,
-                                    datetime=event_time,
-                                    signal_type=SignalType.EXIT,
-                                    strength=1.0,
-                                    horizon=self.horizon,
-                                    priority=self.priority
-                                )
-                                self.events_queue.put(exit_signal)
-                                self.bought[symbol] = False
-                                self.trailing_sl.pop(symbol, None)
-                                logger.info(f"🛡️ [{symbol}] BREAK-EVEN/TRAILING EXIT at {current_price:.6f}")
-                                continue
+                        if bars_held >= min_bars:
+                            # 2. Check Trailing SL Hit
+                            if symbol in self.trailing_sl:
+                                tsl = self.trailing_sl[symbol]
+                                if (current_qty > 0 and current_price <= tsl) or \
+                                   (current_qty < 0 and current_price >= tsl):
+                                    # Ensure we don't exit for a loss if we were trailing (slippage protection)
+                                    if cur_pnl >= (fee_guard_pnl * 0.5):
+                                        exit_signal = SignalEvent(
+                                            strategy_id=self.strategy_id,
+                                            symbol=symbol,
+                                            datetime=event_time,
+                                            signal_type=SignalType.EXIT,
+                                            strength=1.0,
+                                            horizon=self.horizon,
+                                            priority=self.priority
+                                        )
+                                        self.events_queue.put(exit_signal)
+                                        self.bought[symbol] = False
+                                        self.trailing_sl.pop(symbol, None)
+                                        logger.info(f"🛡️ [{symbol}] BREAK-EVEN/TRAILING EXIT at {current_price:.6f}")
+                                        continue
 
-                        # 3. RSI Extreme Exit (Partial/Total)
-                        if (current_qty > 0 and current_rsi > 80) or \
-                           (current_qty < 0 and current_rsi < 20):
-                            exit_signal = SignalEvent(
-                                strategy_id=self.strategy_id,
-                                symbol=symbol,
-                                datetime=event_time,
-                                signal_type=SignalType.EXIT,
-                                strength=1.0,
-                                horizon=self.horizon,
-                                priority=self.priority
-                            )
-                            self.events_queue.put(exit_signal)
-                            self.bought[symbol] = False
-                            logger.info(f"🛡️ [{symbol}] RSI EXTREME EXIT at {current_price:.6f}")
-                            continue
+                            # 3. RSI Extreme Exit (Partial/Total) - PROTECTED BY FEE GUARD & FIREWALL
+                            if not is_swing and cur_pnl > fee_guard_pnl:
+                                if (current_qty > 0 and current_rsi > 80) or \
+                                   (current_qty < 0 and current_rsi < 20):
+                                    exit_signal = SignalEvent(
+                                        strategy_id=self.strategy_id,
+                                        symbol=symbol,
+                                        datetime=event_time,
+                                        signal_type=SignalType.EXIT,
+                                        strength=1.0,
+                                        horizon=self.horizon,
+                                        priority=self.priority
+                                    )
+                                    self.events_queue.put(exit_signal)
+                                    self.bought[symbol] = False
+                                    logger.info(f"🛡️ [{symbol}] RSI EXTREME EXIT at {current_price:.6f} after {bars_held} bars. PnL: {cur_pnl*100:.2f}%")
+                                    continue
 
-                # 10. Emit Seignal si no hay posición o si la reversión es viable
-                if not self.bought[symbol]:
-                    signal = SignalEvent(
-                        strategy_id=self.strategy_id,
-                        symbol=symbol,
-                        datetime=event_time,
-                        signal_type=signal_type,
-                        strength=strength,
-                        horizon=self.horizon,
-                        priority=self.priority,
-                        metadata=signal_metadata
-                    )
-                    self.events_queue.put(signal)
-                    self.last_trade_times[symbol] = time.time()
+                # 10. Emit Signal si no hay posición o si la reversión es viable
+                # AEGIS-V15: Atribución Granular
+                # QUÉ: Inyecta el setup_type en el strategy_id.
+                # POR QUÉ: Permite saber si perdemos plata en MEAN_REV o MOMENTUM.
+                detailed_id = f"{self.strategy_id}.{setup_type}"
                 
-                # PHASE 5: Time-to-Target (TTT) Analysis
+                if not self.bought[symbol]:
+                    # Store bar index for min_hold validation
+                    self.bought[symbol] = len(data_primary)
                 dist_to_tp = setups['close'] * TP_PCT_LOCAL
                 current_atr = setups['atr']
                 time_to_target = 10
@@ -1745,7 +1797,8 @@ class HybridScalpingStrategy(Strategy):
                 _metadata['neural_bias'] = neural_bias # For telemetry
                 
                 signal = SignalEvent(
-                    strategy_id=self.strategy_id,
+                    strategy_id=detailed_id,
+                    setup_type=setup_type,
                     symbol=symbol,
                     datetime=event_time,
                     signal_type=signal_type,
@@ -1780,7 +1833,8 @@ class HybridScalpingStrategy(Strategy):
                 self.last_trade_prices[symbol] = setups['close']
                 self.partial_tp[symbol] = False
                 self.trailing_sl.pop(symbol, None) # Clear old trailing
-                self.bought[symbol] = True
+                if self.bought[symbol] is False:
+                    self.bought[symbol] = len(data_primary)
                 
                 # PHASE 3: Neural Insight Publication
                 neural_bridge.publish_insight(

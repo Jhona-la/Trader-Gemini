@@ -40,10 +40,14 @@ class CooldownManager:
         # Cooldowns en segundos
         # BUG #55 FIX: Respect Config.COOLDOWN_PERIOD_SECONDS if available
         from config import Config
-        self.GLOBAL_COOLDOWN = 3        # PHOENIX: 3s (was 10s) - scalping needs speed
-        self.SYMBOL_COOLDOWN = getattr(Config, 'COOLDOWN_PERIOD_SECONDS', 90)
-        self.PATTERN_COOLDOWN = 60      # PHOENIX: 60s (was 10 min) - allow re-entry
-        self.STRATEGY_COOLDOWN = 30     # PHOENIX: 30s (was 5 min) - strategies must fire
+        # FORENSIC-V16/17: Bypass limits directly for multi-frequency micro-scalping
+        # QUÉ: Tiempos mínimos entre trades por nivel.
+        # POR QUÉ: Exigido por el usuario para aprovechar oportunidades sin bloquear ninguna validación.
+        # PARA QUÉ: Permitir re-entry infinita.
+        self.GLOBAL_COOLDOWN = 0.0 # ZERO COOLDOWN
+        self.SYMBOL_COOLDOWN = 0.0 # ZERO COOLDOWN
+        self.PATTERN_COOLDOWN = 0.0 # ZERO COOLDOWN
+        self.STRATEGY_COOLDOWN = 0.0 # ZERO COOLDOWN
         
         # State tracking
         self.last_global_trade: Optional[datetime] = None
@@ -201,24 +205,12 @@ class CooldownManager:
     
     def adjust_for_regime(self, regime: str):
         """
-        Ajustar cooldowns basado en régimen de mercado.
-        
-        Args:
-            regime: 'TRENDING', 'RANGING', 'CHOPPY', 'VOLATILE'
+        Ajustar cooldowns basado en régimen de mercado. Bypass activado (1s universal).
         """
         with self._state_lock:
-            if regime == 'TRENDING':
-                self.SYMBOL_COOLDOWN = 45     # PHOENIX: 45s - fast in trend
-                self.STRATEGY_COOLDOWN = 15   # 15s
-            elif regime == 'CHOPPY':
-                self.SYMBOL_COOLDOWN = 180    # PHOENIX: 3 min (was 10 min)
-                self.STRATEGY_COOLDOWN = 60   # 1 min
-            elif regime == 'VOLATILE':
-                self.SYMBOL_COOLDOWN = 120    # PHOENIX: 2 min (was 15 min!)
-                self.STRATEGY_COOLDOWN = 45   # 45s
-            else:  # RANGING o default
-                self.SYMBOL_COOLDOWN = 90     # PHOENIX: 1.5 min (was 5 min)
-                self.STRATEGY_COOLDOWN = 30   # 30s
+            # Bypass limits: set to minimal interval regardless of regime
+            self.SYMBOL_COOLDOWN = 1
+            self.STRATEGY_COOLDOWN = 1
     
     def get_statistics(self) -> dict:
         """Get cooldown blocking statistics"""
