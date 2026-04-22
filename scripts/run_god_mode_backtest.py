@@ -155,6 +155,9 @@ class BacktestExecutor:
         if order_event.is_shadow:
             return None  # Shadow orders are never executed (production behavior)
 
+        if order_event.metadata and order_event.metadata.get("is_tp_limit"):
+            return None  # Backtester relies on check_stops loop for exits
+
         price = current_price or order_event.price
         if not price or price <= 0:
             return None
@@ -858,8 +861,13 @@ def run_global_backtest(
                         order = risk_manager.generate_order(event, current_price)
                 except Exception as e:
                     order = None
-                    reason = f"EXCEPTION:{type(e).__name__}"
+                    # Use the exception message directly
+                    _exception_msg = f"EXCEPTION:{type(e).__name__}:{str(e)}"
+                    reason = _exception_msg
                     rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
+                    print(f"⚠️ [RISK] Signal REJECTED: {_exception_msg}")
+                    # Skip the next block since we already handled the rejection
+                    continue
 
                 if order is None:
                     rejected_count += 1

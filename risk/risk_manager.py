@@ -470,7 +470,7 @@ class RiskManager:
             rs_mult = self.portfolio.get_allocation_multiplier(symbol, is_long)
             if rs_mult >= 1.3:
                 logger.info(
-                    f"🛡️ [Veto Bypass] Allowing {signal_type.name} on {symbol} despite Global Regime (Relative Strength Hedging)."
+                    f"🛡️ [Veto Bypass] Allowing {getattr(signal_type, 'name', str(signal_type))} on {symbol} despite Global Regime (Relative Strength Hedging)."
                 )
                 return True
 
@@ -1429,6 +1429,42 @@ class RiskManager:
         CÓMO: Pipeline secuencial: Bypass → Validaciones → Sizing Kelly → Reserva → Construcción.
         """
         # ================================================================
+        # 1.0. PREDICTIVE TP LIMIT BYPASS
+        # QUÉ: Genera una orden LIMIT en el exchange para el TP exacto
+        # ================================================================
+        if getattr(signal_event, "strategy_id", "") == "PLACE_TP_LIMIT":
+            horizon = getattr(signal_event, "horizon", "SCALPING")
+            pos = self.portfolio.get_horizon_position(signal_event.symbol, horizon) if self.portfolio else None
+            if not pos or abs(pos.get("quantity", 0)) < 1e-8:
+                return None
+            
+            qty = pos["quantity"]
+            direction = OrderSide.SELL if qty > 0 else OrderSide.BUY
+            
+            _meta = getattr(signal_event, "metadata", {}) or {}
+            tp_price = _meta.get("tp_price", 0.0)
+            if not tp_price:
+                return None
+                
+            return OrderEvent(
+                symbol=signal_event.symbol,
+                order_type=OrderType.LIMIT,
+                quantity=abs(qty),
+                direction=direction,
+                price=tp_price,
+                strategy_id="PREDICTIVE_TP",
+                horizon=horizon,
+                priority=1,
+                is_exit=True,
+                is_close=True,
+                metadata={
+                    "timeInForce": "GTC",
+                    "reduceOnly": True,
+                    "is_tp_limit": True
+                }
+            )
+
+        # ================================================================
         # 1. EMERGENCY BYPASS (Rule 2.1) - EXIT Signals ignore entry gates
         # QUÉ: Las señales de salida no pasan por los filtros de entrada.
         # POR QUÉ: La seguridad de cerrar una posición es prioritaria.
@@ -1489,42 +1525,6 @@ class RiskManager:
             )
 
         # ================================================================
-        # 1.5. PREDICTIVE TP LIMIT BYPASS
-        # QUÉ: Genera una orden LIMIT en el exchange para el TP exacto
-        # ================================================================
-        if getattr(signal_event, "strategy_id", "") == "PLACE_TP_LIMIT":
-            horizon = getattr(signal_event, "horizon", "SCALPING")
-            pos = self.portfolio.get_horizon_position(signal_event.symbol, horizon) if self.portfolio else None
-            if not pos or abs(pos.get("quantity", 0)) < 1e-8:
-                return None
-            
-            qty = pos["quantity"]
-            direction = OrderSide.SELL if qty > 0 else OrderSide.BUY
-            
-            _meta = getattr(signal_event, "metadata", {}) or {}
-            tp_price = _meta.get("tp_price", 0.0)
-            if not tp_price:
-                return None
-                
-            return OrderEvent(
-                symbol=signal_event.symbol,
-                order_type=OrderType.LIMIT,
-                quantity=abs(qty),
-                direction=direction,
-                price=tp_price,
-                strategy_id="PREDICTIVE_TP",
-                horizon=horizon,
-                priority=1,
-                is_exit=True,
-                is_close=True,
-                metadata={
-                    "timeInForce": "GTC",
-                    "reduceOnly": True,
-                    "is_tp_limit": True
-                }
-            )
-
-        # ================================================================
         # 2. ATOMIC VALIDATIONS (Sequencial & Fast)
         # QUÉ: Puertas de seguridad obligatorias previo al sizing.
         # ================================================================
@@ -1539,7 +1539,8 @@ class RiskManager:
         if not self._validate_regime_veto(
             signal_event.symbol, signal_event.signal_type
         ):
-            print(f"[RISK] Rejected by REGIME_VETO for {signal_event.symbol} ({signal_event.signal_type.name} vs {self.global_regime})")
+            _sig_name = getattr(signal_event.signal_type, 'name', str(signal_event.signal_type))
+            print(f"[RISK] Rejected by REGIME_VETO for {signal_event.symbol} ({_sig_name} vs {self.global_regime})")
             return None
 
         # 🧟 ZOMBIE FEATURE INTEGRATION: Regime Tension Veto
@@ -1561,14 +1562,16 @@ class RiskManager:
         # 2. Market Sentiment Veto
         if hasattr(self, 'sentiment_processor') and self.sentiment_processor:
             mood = self.sentiment_processor.get_market_mood()
-            if direction == OrderSide.LONG and mood < -0.5:
+            _sig_str = str(signal_event.signal_type).split('.')[-1]
+            if _sig_str == 'LONG' and mood < -0.5:
                 print(f"[RISK] Rejected by SENTIMENT_DIVERGENCE for {signal_event.symbol} (LONG but Mood={mood:.2f})")
                 return None
-            elif direction == OrderSide.SHORT and mood > 0.5:
+            elif _sig_str == 'SHORT' and mood > 0.5:
                 print(f"[RISK] Rejected by SENTIMENT_DIVERGENCE for {signal_event.symbol} (SHORT but Mood={mood:.2f})")
                 return None
                 
         # 3. Liquidity Vacuum Veto (Only for Scalping)
+        horizon = getattr(signal_event, "horizon", "SCALPING")
         if horizon == 'SCALPING' and hasattr(self, 'liquidity_guardian') and self.liquidity_guardian:
             quality = self.liquidity_guardian.get_market_quality_score(signal_event.symbol)
             if quality < 30:
@@ -1605,11 +1608,11 @@ class RiskManager:
             print(f"[RISK] Rejected by SPOT_SAFETY for {signal_event.symbol} (SHORT in Spot Mode)")
             return None
 
-        horizon = getattr(signal_event, "horizon", "SCALPING")
         if not self._validate_directional_safety(
             signal_event.symbol, signal_event.signal_type, horizon
         ):
-            print(f"[RISK] Rejected by DIRECTIONAL_SAFETY for {signal_event.symbol} ({signal_event.signal_type.name} {horizon})")
+            _sig_name = getattr(signal_event.signal_type, 'name', str(signal_event.signal_type))
+            print(f"[RISK] Rejected by DIRECTIONAL_SAFETY for {signal_event.symbol} ({_sig_name} {horizon})")
             return None
         if not self._validate_margin_ratio():
             print(f"[RISK] Rejected by MARGIN_RATIO for {signal_event.symbol}")
@@ -1644,7 +1647,8 @@ class RiskManager:
             # Risk Gates & Cooldowns
             # FORENSIC-V24 FIX #2: Pass actual signal_type to risk gates
             if not self._check_risk_gates(symbol, strategy_id, signal_event.signal_type):
-                print(f"[RISK] Rejected by RISK_GATES for {symbol} ({signal_event.signal_type.name})")
+                _sig_name = getattr(signal_event.signal_type, 'name', str(signal_event.signal_type))
+                print(f"[RISK] Rejected by RISK_GATES for {symbol} ({_sig_name})")
                 return None
 
             # 📋 [PHASE 6] SECTOR CORRELATION FILTER
@@ -1892,7 +1896,8 @@ class RiskManager:
         # FORENSIC-V24 FIX #2: Use actual signal_type instead of hardcoded LONG
         _freq_signal = signal_type if signal_type else SignalType.LONG
         if not self._validate_frequency_limits(symbol, _freq_signal):
-            print(f"🛑 [AEGIS] Frequency Limit Breached for {symbol} ({_freq_signal.name}).")
+            _sig_name = getattr(_freq_signal, 'name', str(_freq_signal))
+            print(f"🛑 [AEGIS] Frequency Limit Breached for {symbol} ({_sig_name}).")
             return False
 
         # 3. Cooldown Check (FORENSIC FIX: unpack tuple)
