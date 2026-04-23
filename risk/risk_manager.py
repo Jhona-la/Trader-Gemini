@@ -1614,6 +1614,48 @@ class RiskManager:
             _sig_name = getattr(signal_event.signal_type, 'name', str(signal_event.signal_type))
             print(f"[RISK] Rejected by DIRECTIONAL_SAFETY for {signal_event.symbol} ({_sig_name} {horizon})")
             return None
+
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC-V29 FIX #1: ATOMIC FLIP-EXIT (CRITICAL)
+        # QUÉ: Si la señal pasa directional_safety y hay una posición
+        #   activa en dirección opuesta, genera EXIT primero.
+        # POR QUÉ: Sin esto, generate_order() intenta reservar margen
+        #   para la nueva entrada ANTES de liberar el margen de la
+        #   posición existente → doble-lockup en cuenta micro $13.
+        # PARA QUÉ: Garantizar que el margen se libera atómicamente
+        #   antes de abrir la posición contraria. La señal original
+        #   será re-evaluada en el siguiente tick del motor.
+        # CÓMO: Detectar posición opuesta → generar EXIT order → retornar.
+        #   Engine procesa el EXIT, Portfolio libera margen, y la
+        #   estrategia regenerará la señal en el siguiente ciclo.
+        # CUÁNDO: Solo cuando hay FLIP real (señal opuesta a posición).
+        # DÓNDE: risk/risk_manager.py → generate_order()
+        # QUIÉN: RiskManager (Protección de margen)
+        # ═══════════════════════════════════════════════════════════════
+        if self.portfolio and signal_event.signal_type in [SignalType.LONG, SignalType.SHORT]:
+            existing_pos = self.portfolio.get_horizon_position(signal_event.symbol, horizon)
+            if existing_pos and abs(existing_pos.get('quantity', 0)) > 1e-8:
+                existing_qty = existing_pos.get('quantity', 0)
+                # LONG position + SHORT signal → FLIP, or SHORT position + LONG signal → FLIP
+                is_flip = (existing_qty > 0 and signal_event.signal_type == SignalType.SHORT) or \
+                          (existing_qty < 0 and signal_event.signal_type == SignalType.LONG)
+                if is_flip:
+                    logger.info(
+                        f"🔄 [FLIP-EXIT] {signal_event.symbol} {horizon} | "
+                        f"Closing {'LONG' if existing_qty > 0 else 'SHORT'} position before "
+                        f"{'SHORT' if signal_event.signal_type == SignalType.SHORT else 'LONG'} entry. "
+                        f"Qty={existing_qty:.6f}"
+                    )
+                    flip_exit_signal = SignalEvent(
+                        strategy_id="FLIP_EXIT",
+                        symbol=signal_event.symbol,
+                        datetime=datetime.now(timezone.utc),
+                        signal_type=SignalType.EXIT,
+                        strength=1.0,
+                        horizon=horizon,
+                    )
+                    return self._generate_exit_order(flip_exit_signal, current_price)
+
         if not self._validate_margin_ratio():
             print(f"[RISK] Rejected by MARGIN_RATIO for {signal_event.symbol}")
             return None
@@ -2031,13 +2073,21 @@ class RiskManager:
                 
                 seconds_held = (now.timestamp() - entry_time_val)
                 
-                # FORENSIC FIX #2: ZOMBIE CATCHER (Scalping TTL)
-                # QUÉ: Liberar capital secuestrado en trades Scalping perdedores que duran horas.
-                # POR QUÉ: Un trade en negativo bloquea margen, impidiendo tomar señales ML altamente rentables.
-                if pos_horizon == "SCALPING" and seconds_held > 420:  # 7 minutos máximo
-                    if unrealized_pnl_pct < 0.1:  # Si no está en ganancias claras, liquidar
+                # 🚀 FORENSIC-V30: ZOMBIE CATCHER RECALIBRATION
+                # QUÉ: Diferenciar entre un mercado "plano" (True Zombie) y un "Slow Bleed".
+                # POR QUÉ: Salir de trades a los 7 minutos con -0.1% estaba cristalizando pérdidas innecesarias (24% de trades, 23% WR).
+                # PARA QUÉ: Reducir PnL negativo dando espacio a la volatilidad, o cortando si el tiempo es excesivo.
+                if pos_horizon == "SCALPING":
+                    # Rango de precio desde que se abrió
+                    price_range_pct = ((hwm - lwm) / entry_price) * 100
+                    
+                    is_true_zombie = (seconds_held > 900) and (price_range_pct < 0.15) and (unrealized_pnl_pct < 0.05)
+                    is_slow_bleed = (seconds_held > 1800) and (unrealized_pnl_pct < 0.0)
+                    
+                    if is_true_zombie or is_slow_bleed:
+                        reason = "FLAT MARKET" if is_true_zombie else "SLOW BLEED"
                         logger.warning(
-                            f"🧟 [ZOMBIE CATCHER] {symbol} {pos_horizon} held for {seconds_held:.0f}s with PnL {unrealized_pnl_pct:.2f}%. Exiting to free capital."
+                            f"🧟 [ZOMBIE CATCHER - {reason}] {symbol} {pos_horizon} held for {seconds_held:.0f}s with PnL {unrealized_pnl_pct:.2f}% (Range: {price_range_pct:.2f}%). Exiting to free capital."
                         )
                         stop_signals.append(
                             SignalEvent(
@@ -2152,8 +2202,15 @@ class RiskManager:
                 #   un buen trade que simplemente no cerró en TP perfecto.
                 # ═══════════════════════════════════════════════════════════════
                 if pos_horizon == "SCALPING":
-                    # FORENSIC FIX: Aggressive Trailing Breakeven at 0.3% PnL
-                    turbo_threshold_pct = 0.30
+                    # ═══════════════════════════════════════════════════════
+                    # FORENSIC-V29 FIX #2: TP-RELATIVE TURBO-BREAKEVEN
+                    # QUÉ: Escala turbo-BE al 50% del TP target.
+                    # POR QUÉ: El threshold fijo de 0.30% mataba trades
+                    #   que podían alcanzar TP de 1.2% → profit de $0.005.
+                    # PARA QUÉ: Dejar que el precio alcance al menos la
+                    #   mitad del TP antes de activar protección de capital.
+                    # ═══════════════════════════════════════════════════════
+                    turbo_threshold_pct = max(0.30, tp_target_pct * 0.50)
                 else:
                     # Fee-relative for SWING (original behavior)
                     turbo_threshold_pct = fee_buffer * 100 * 2.5
@@ -2307,8 +2364,8 @@ class RiskManager:
                 # ⚡ Turbo-Breakeven (Stage 0): Immediate capital protection
                 # FORENSIC-V13 FIX #5: TP-relative for SCALPING (same logic as LONG)
                 if pos_horizon == "SCALPING":
-                    # FORENSIC FIX: Aggressive Trailing Breakeven at 0.3% PnL
-                    turbo_threshold_pct = 0.30
+                    # FORENSIC-V29 FIX #2: TP-RELATIVE TURBO-BREAKEVEN (SHORT mirror)
+                    turbo_threshold_pct = max(0.30, tp_target_pct * 0.50)
                 else:
                     turbo_threshold_pct = fee_buffer * 100 * 2.5
 

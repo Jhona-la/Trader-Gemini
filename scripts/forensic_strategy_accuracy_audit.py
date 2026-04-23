@@ -57,7 +57,7 @@ warnings.filterwarnings('ignore')
 from config import Config
 
 # Import backtest functions (SAME as production — no divergence)
-from scripts.run_god_mode_backtest import (
+from scripts.run_multi_horizon_backtest import (
     fetch_data, compute_indicators, calibrate_sl_tp,
     signal_technical, SophiaClusterEngine, WalkForwardXGBoost,
     detect_regime, HORIZON_PROFILES, COMMISSION_PCT, STRATEGY_SPECIALIZATION_MAP

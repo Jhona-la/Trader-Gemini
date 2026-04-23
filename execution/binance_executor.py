@@ -799,6 +799,11 @@ class BinanceExecutor:
                 # ML Telemetry
                 ml_confidence=getattr(event, 'ml_confidence', None),
                 predicted_duration=getattr(event, 'predicted_duration', None),
+                # Forensic Details
+                setup_type=getattr(event, 'setup_type', None),
+                exit_reason=getattr(event, 'exit_reason', None),
+                order_type=getattr(event, 'order_type', None),
+                strategy_version=getattr(event, 'strategy_version', '1.0.0'),
                 # FORENSIC FIX #2: Carry metadata for fee attribution + margin release
                 metadata=_order_metadata,
             )

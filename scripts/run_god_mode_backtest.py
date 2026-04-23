@@ -342,6 +342,16 @@ def run_global_backtest(
     risk_manager = RiskManager(
         max_concurrent_positions=Config.MAX_CONCURRENT_POSITIONS, portfolio=portfolio
     )
+    # ═══════════════════════════════════════════════════════════════════
+    # FORENSIC-V31 FIX: BACKTEST COUNTER ISOLATION
+    # QUÉ: Resetea win_count, loss_count y _trade_cache.
+    # POR QUÉ: RiskManager carga el historial de producción (trades.csv)
+    #   en __init__. En backtest, esto contamina los resultados desde el
+    #   inicio (empezando con 172+ wins).
+    # ═══════════════════════════════════════════════════════════════════
+    risk_manager.win_count = 0
+    risk_manager.loss_count = 0
+    risk_manager._trade_cache = []
 
     # 1c-bis. PREDICTION TRACKER (Feedback Loop Closure for Backtest)
     # QUÉ: Inicializa tracker de precisión predictiva con paridad producción.
@@ -948,8 +958,20 @@ def run_global_backtest(
                     if result and isinstance(result, tuple):
                         pnl, outcome = result
                         if pnl is not None:
-                            is_win = pnl > 0
-                            pnl_pct = pnl / capital if capital > 0 else 0
+                            # ═══════════════════════════════════════════════════════════════
+                            # FORENSIC-V31 FIX: USE NET PNL FOR RISK MANAGER TRACKING
+                            # QUÉ: Usar net_pnl para determinar is_win.
+                            # POR QUÉ: risk_manager.win_count se usa para Kelly sizing y backtest WR.
+                            #   Si usamos gross_pnl, inflamos el WR y el apalancamiento Kelly!
+                            # ═══════════════════════════════════════════════════════════════
+                            _closed_trade = getattr(portfolio, '_last_closed_trade_data', None)
+                            if _closed_trade and _closed_trade.get('symbol') == event.symbol:
+                                net_pnl = _closed_trade.get('net_pnl', pnl)
+                            else:
+                                net_pnl = pnl  # Fallback
+                                
+                            is_win = net_pnl > 0
+                            pnl_pct = net_pnl / capital if capital > 0 else 0
                             risk_manager.record_trade_result(
                                 is_win, pnl_pct, event.symbol
                             )
@@ -1071,7 +1093,9 @@ def run_global_backtest(
 
     # Basic metrics
     total_return = ((final_equity - capital) / capital) * 100
-    total_trades = fill_count
+    
+    # 🚀 FORENSIC FIX: total_trades was reading fill_count (which is 0 unless forced close at end).
+    total_trades = len(portfolio.get_trade_history()) if hasattr(portfolio, "get_trade_history") else len(all_trades)
 
     # Equity curve metrics
     eq_arr = np.array(equity_curve)
@@ -1328,6 +1352,14 @@ def run_global_backtest(
         print(f"  🔓 [V10] Cleaned up STOP_TRADING.LOCK (backtest cleanup)")
 
     print(f"{'=' * 70}\n")
+    
+    # EXPORT PREDICTION METRICS
+    try:
+        if hasattr(risk_manager, 'prediction_tracker') and risk_manager.prediction_tracker:
+            metrics_exported = risk_manager.prediction_tracker.export_metrics()
+            print(f"  🎯 Prediction metrics exported to JSON. Total tracked strategies: {len(metrics_exported)}")
+    except Exception as e:
+        print(f"  ⚠️ Could not export prediction metrics: {e}")
 
     return results
 

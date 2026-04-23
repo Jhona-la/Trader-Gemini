@@ -136,6 +136,7 @@ class OrderEvent(Event):
     ml_confidence: Optional[float] = None # Added for ML-based scaling
     predicted_duration: Optional[int] = None # Hold duration
     setup_type: Optional[str] = None # NEW: Granular setup propagation
+    exit_reason: Optional[str] = None # NEW: Specific reason for exit (e.g., "TIME_STOP_ZOMBIE", "TAKE_PROFIT")
     strategy_version: Optional[str] = "1.0.0"
     metadata: Optional[Dict[str, Any]] = None # Flexible metadata container (Chase count, etc.)
     
@@ -200,6 +201,8 @@ class FillEvent(Event):
     fill_price: Optional[float] = None  # Actual fill price
     order_id: Optional[str] = None      # Exchange order ID
     setup_type: Optional[str] = None    # NEW: Forensic attribution
+    exit_reason: Optional[str] = None   # NEW: Reason for exit
+    order_type: Optional[OrderType] = None # NEW: Order type used
     strategy_version: Optional[str] = "1.0.0"
     sl_pct: Optional[float] = None      # Protective stop loss %
     tp_pct: Optional[float] = None      # Protective take profit %

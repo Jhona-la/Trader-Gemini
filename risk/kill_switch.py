@@ -106,8 +106,12 @@ class KillSwitch:
         horizon_days = int(horizon_str.replace('D', '')) if 'D' in horizon_str else 1
         h_sqrt = math.sqrt(horizon_days)
         
-        # Scale drawdown by square root of time (1D = 2.0%, 7D = 5.2%, 15D = 7.7%, 30D = 10.9%)
-        max_dd = 0.02 * h_sqrt
+        # 🚀 FORENSIC FIX: Respect Config.Risk.MAX_DRAWDOWN instead of hardcoding 2.0%.
+        # A $13 micro-account needs at least 15% drawdown room to breathe.
+        base_dd_pct = getattr(Config.Risk, 'MAX_DRAWDOWN', 15.0) / 100.0
+        
+        # Scale drawdown by square root of time
+        max_dd = base_dd_pct * h_sqrt
 
         # 1. Max Drawdown Check (Shadow-Monitor Sovereign Limit)
         if current_drawdown > max_dd:

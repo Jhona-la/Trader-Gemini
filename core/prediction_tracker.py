@@ -424,11 +424,18 @@ class PredictionTracker:
             }
 
         c_factor = metrics['confidence_factor']
+        accuracy = metrics.get('direction_accuracy', 0.5)
 
-        # Higher confidence → tighter spread (more aggressive LIMIT)
-        # c_factor 0.5 → 0.05% offset (passive)
-        # c_factor 1.2 → 0.01% offset (aggressive)
-        limit_offset = max(0.0001, 0.0005 * (1.5 - c_factor))
+        # 🎯 OPTIMIZACIÓN DE EJECUCIÓN LIMIT BASADA EN DATA
+        # Si precisión > 75% → Órdenes LIMIT agresivas (push spread, offset negativo)
+        # Si precisión 60-75% → Órdenes LIMIT conservadoras (passive maker, offset positivo)
+        # Si precisión < 60% → Reevaluación de estrategia (offset estándar, pero será rechazada)
+        if accuracy >= 0.75:
+            limit_offset = -0.0002  # Agresivo: push 0.02% into spread para forzar fill
+        elif accuracy >= 0.60:
+            limit_offset = 0.0001   # Conservador: wait 0.01% away from BBO
+        else:
+            limit_offset = 0.0003   # Muy pasivo
 
         return {
             'confidence_factor': c_factor,
@@ -454,9 +461,10 @@ class PredictionTracker:
         acc = metrics['direction_accuracy']
         n = metrics['total_signals']
 
-        if n >= MIN_SIGNALS_FOR_METRICS and acc < 0.55:
+        # ⚠️ CRITERIO DE ACCIÓN: Rechazar < 60% (Subido desde 55%)
+        if n >= MIN_SIGNALS_FOR_METRICS and acc < 0.60:
             return True, (
-                f"accuracy {acc:.1%} < 55% threshold "
+                f"accuracy {acc:.1%} < 60% threshold "
                 f"(n={n}, horizon={metrics.get('horizon', '?')})"
             )
 

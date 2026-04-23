@@ -213,6 +213,9 @@ class UserDataStream:
                 commission=float(o.get('n', 0)), # Commission amount
                 is_closed=(status == 'FILLED'),
                 strategy_id="UserStream", # Tag origin
+                order_type=None,
+                setup_type="UserStream",
+                exit_reason="ExchangeFill",
                 # [DF-B6] Forensic Latency Tracking
                 received_ns=time.time_ns()
             )

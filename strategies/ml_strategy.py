@@ -1097,12 +1097,22 @@ class MLStrategyHybridUltimate(Strategy):
                 final_price = future_data.iloc[-1]["close"]
                 ret = (final_price - current_price) / current_price
 
-                # Relajamos el umbral de ruido en backtest para forzar aprendizaje
-                noise_threshold = max(tp_target * 0.5, fee_threshold)
-                if self.data_provider and getattr(
-                    self.data_provider, "is_backtest", False
-                ):
-                    noise_threshold = 0.0015  # 0.15% (mínimo para cubrir fees)
+                # ═══════════════════════════════════════════════════════════════
+                # FORENSIC-V31: STRICT NOISE THRESHOLD (was too lax)
+                # QUÉ: El umbral de ruido ahora exige que el retorno supere 2×
+                #   el costo de fees para clasificar como señal válida.
+                # POR QUÉ: Con fees de 0.075% por pata (Maker), un trade necesita
+                #   ganar al menos 0.15% bruto para ser net-positivo. Antes el
+                #   umbral era 0.0015 (0.15%) que apenas cubría fees, creando
+                #   labels +1/-1 para movimientos que realmente son breakeven.
+                # PARA QUÉ: Labels más limpias → modelo aprende solo patrones
+                #   que generan ganancia REAL después de costos → accuracy >70%.
+                # CAMBIO: noise_threshold = max(tp_target * 0.5, fee_threshold * 2.0)
+                #   Antes: fee_threshold * 1.0 o 0.0015 fijo en backtest
+                # ═══════════════════════════════════════════════════════════════
+                noise_threshold = max(tp_target * 0.5, fee_threshold * 2.0)
+                # REMOVED: Backtest-specific relaxation was causing label contamination
+                # The threshold must be IDENTICAL in backtest and production
 
                 if ret > noise_threshold:
                     label = 1
@@ -1250,7 +1260,28 @@ class MLStrategyHybridUltimate(Strategy):
             splitter = [(indices, indices)]
         else:
             tscv = TimeSeriesSplit(n_splits=3)
-            splitter = tscv.split(X)
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC-V31: EMBARGO GAP IN CV SPLITS
+            # QUÉ: Añade un gap de 'lookahead' barras entre train y test.
+            # POR QUÉ: Sin purga, las últimas barras del train tienen labels
+            #   que dependen de datos que están en el test set (data leakage).
+            # PARA QUÉ: Estimación honesta del accuracy real del modelo.
+            # CÓMO: Recorta las últimas 'embargo' filas del train set.
+            # ═══════════════════════════════════════════════════════════════
+            embargo = self.LOOKAHEAD_BARS
+            raw_splits = list(tscv.split(X))
+            purged_splits = []
+            for train_idx, test_idx in raw_splits:
+                if len(test_idx) == 0:
+                    continue
+                # Remove train samples within 'embargo' bars of test start
+                test_start = test_idx[0]
+                purged_train = [i for i in train_idx if i < test_start - embargo]
+                if len(purged_train) >= 10:  # Minimum viable train set
+                    purged_splits.append((purged_train, list(test_idx)))
+                else:
+                    purged_splits.append((list(train_idx), list(test_idx)))
+            splitter = purged_splits if purged_splits else [(list(range(n_samples)), list(range(n_samples)))]
 
         cv_scores = {"rf": [], "xgb": [], "gb": []}
         best_models = {"rf": None, "xgb": None, "gb": None}
@@ -1349,11 +1380,12 @@ class MLStrategyHybridUltimate(Strategy):
             X_test_scaled = scaler.transform(X_test).astype("float32")
 
             # 1. Random Forest (Paralelización completa)
+            # FORENSIC-V31: min_samples_leaf 3→5 for better generalization
             rf = RandomForestClassifier(
                 n_estimators=n_estimators,
                 max_depth=max_depth_rf,
                 min_samples_split=min_samples_split,
-                min_samples_leaf=3,
+                min_samples_leaf=5,            # Was 3 → reduce leaf overfitting
                 max_features="sqrt",
                 n_jobs=1,  # Optimización: n_jobs=1 para evitar explosión de RAM con 24 símbolos
                 random_state=42 + self.training_iteration,
@@ -1364,12 +1396,26 @@ class MLStrategyHybridUltimate(Strategy):
             cv_scores["rf"].append(rf_score)
 
             # 2. XGBoost (Incremental Ready + tree_method='hist')
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC-V31: ANTI-OVERFITTING REGULARIZATION
+            # QUÉ: Hiperparámetros más conservadores para combatir overfitting.
+            # POR QUÉ: Con micro-datasets (<2000 samples) y >100 features,
+            #   los modelos memorizaban ruido en lugar de aprender patrones.
+            # PARA QUÉ: Accuracy real (out-of-sample) >70% en vez de 95%
+            #   in-sample pero 45% out-of-sample.
+            # CAMBIOS: min_child_weight 1→5, gamma 0→0.1, reg_alpha 0→0.5,
+            #   reg_lambda 1→2.0, colsample 0.8→0.7, subsample cap 0.75.
+            # ═══════════════════════════════════════════════════════════════
             xgb = XGBClassifier(
                 n_estimators=n_estimators,
                 max_depth=max_depth_xgb,
                 learning_rate=learning_rate,
-                subsample=subsample,
-                colsample_bytree=0.8,
+                subsample=min(subsample, 0.75),      # Cap: no more than 75%
+                colsample_bytree=0.7,                 # Was 0.8 → reduce feature sampling
+                min_child_weight=5,                   # Was default 1 → prevent leaf overfitting
+                gamma=0.1,                            # Was 0 → minimum loss reduction per split
+                reg_alpha=0.5,                        # L1 regularization (sparsity)
+                reg_lambda=2.0,                       # L2 regularization (was default 1.0)
                 n_jobs=1,  # Optimización: n_jobs=1 para estabilidad de recursos
                 tree_method="hist",  # MÁXIMA VELOCIDAD
             )
@@ -1406,6 +1452,30 @@ class MLStrategyHybridUltimate(Strategy):
                 )
                 xgb.fit(X_train_scaled, y_train)  # Fresh fit without warm-start
             xgb_score = xgb.score(X_test_scaled, y_test)
+
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC-V31: FEATURE IMPORTANCE PRUNING (POST FOLD-0)
+            # QUÉ: Después del primer fold, retiene solo las top-30 features
+            #   más importantes según XGBoost feature_importances_.
+            # POR QUÉ: Curse of dimensionality — 100+ features con <2000
+            #   muestras causa que el modelo memorice ruido.
+            # PARA QUÉ: Modelo más parsimonioso con mayor generalización.
+            # CUÁNDO: Solo en fold 0 (las features seleccionadas se usan en
+            #   los folds siguientes).
+            # ═══════════════════════════════════════════════════════════════
+            if fold == 0 and hasattr(xgb, 'feature_importances_') and len(feature_cols) > 30:
+                importances = xgb.feature_importances_
+                top_k = min(30, len(importances))
+                top_indices = np.argsort(importances)[-top_k:]
+                selected_features = [feature_cols[i] for i in sorted(top_indices)]
+                logger.info(
+                    f"🔬 [{self.symbol}] Feature Pruning: {len(feature_cols)} → {len(selected_features)} features "
+                    f"(top-{top_k} by XGB importance)"
+                )
+                feature_cols = selected_features
+                X = df_signals[feature_cols]
+                # Re-split with new features for remaining folds
+                # Current fold results are kept as-is (valid baseline)
             cv_scores["xgb"].append(xgb_score)
 
             # 3. Gradient Boosting (Persistent Warm Start - Rule 3.7)

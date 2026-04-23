@@ -664,14 +664,15 @@ with kpi_cols[10]:
 # ==============================================================================
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📊 Monitor en Vivo",
     "📈 Análisis de Desempeño", 
     "🔄 Control Reversiones",
     "🏥 System Health", # Phase 6
     "🧬 Neuro-Evolution", # Phase 46
     "📝 Logs del Sistema",
-    "💰 Crecimiento Exponencial"
+    "💰 Crecimiento Exponencial",
+    "🎯 Predictive Analytics"
 ])
 
 # ------------------------------------------------------------------------------
@@ -1581,8 +1582,91 @@ with tab7:
         st.info("ℹ️ Esperando datos históricos (status.csv) para trazar proyección de crecimiento.")
 
 # ==============================================================================
+# TAB 8: PREDICTIVE ANALYTICS
+# ==============================================================================
+with tab8:
+    st.markdown("## 🎯 Exactitud Predictiva & Optimización LIMIT")
+    st.markdown("Monitor de Feedback Loop del `PredictionTracker` para vetting de señales y optimización de execution.")
+    
+    metrics_path = os.path.join(PROJECT_ROOT, "prediction_metrics.json")
+    if os.path.exists(metrics_path):
+        try:
+            with open(metrics_path, "r") as f:
+                pred_metrics = json.load(f)
+                
+            if not pred_metrics:
+                st.info("No hay métricas predictivas disponibles aún.")
+            else:
+                # Top Level KPIs
+                p_col1, p_col2, p_col3 = st.columns(3)
+                
+                total_tracked = len(pred_metrics)
+                approved_count = sum(1 for m in pred_metrics.values() if m.get("direction_accuracy", 0) >= 0.6)
+                rejected_count = total_tracked - approved_count
+                
+                with p_col1:
+                    st.metric("Modelos Rastreados", total_tracked)
+                with p_col2:
+                    st.metric("Señales Aprobadas (>=60%)", approved_count, delta="Activas", delta_color="normal")
+                with p_col3:
+                    st.metric("Señales Rechazadas (<60%)", rejected_count, delta="Vetadas", delta_color="inverse")
+                    
+                st.markdown("---")
+                st.markdown("### Rendimiento Histórico por Modelo")
+                
+                for model_name, m in pred_metrics.items():
+                    accuracy = m.get("direction_accuracy", 0)
+                    horizon = m.get("horizon", "N/A")
+                    signals = m.get("total_signals", 0)
+                    mfe = m.get("avg_mfe_pct", 0)
+                    mae = m.get("avg_mae_pct", 0)
+                    ttl = m.get("optimal_ttl_bars", 0)
+                    
+                    status_color = "#3fb950" if accuracy >= 0.6 else "#f85149"
+                    status_text = "PASA (Ejecutando)" if accuracy >= 0.6 else "RECHAZADO (Requiere Optuna)"
+                    
+                    st.markdown(f'''
+                    <div style="padding: 12px; border-left: 4px solid {status_color}; background: #1a1f2e; border-radius: 6px; margin-bottom: 12px;">
+                        <h4 style="margin: 0; padding: 0;">{model_name} <span style="font-size: 12px; background: #30363d; padding: 2px 6px; border-radius: 4px;">{horizon}</span></h4>
+                        <div style="display: flex; justify-content: space-between; margin-top: 10px;">
+                            <div><b>Exactitud:</b> <span style="color: {status_color}; font-size: 18px;">{accuracy*100:.2f}%</span></div>
+                            <div><b>Estado:</b> {status_text}</div>
+                            <div><b>Señales Históricas:</b> {signals}</div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 14px; color: #8b949e;">
+                            <div>MFE: +{mfe*100:.2f}% | MAE: {mae*100:.2f}%</div>
+                            <div>TTL Óptimo: {ttl} barras</div>
+                        </div>
+                    </div>
+                    ''', unsafe_allow_html=True)
+                    
+                    # Exactitud por Ventana
+                    acc_window = m.get("accuracy_by_window", {})
+                    if acc_window:
+                        x_vals = [f"{k} bar" for k in acc_window.keys()]
+                        y_vals = [v * 100 for v in acc_window.values()]
+                        
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(
+                            x=x_vals, y=y_vals, mode='lines+markers',
+                            name="Exactitud (%)", line=dict(color="#58a6ff", width=2)
+                        ))
+                        fig.add_hline(y=60, line_dash="dot", line_color="#f85149", annotation_text="Umbral Rechazo (60%)")
+                        fig.update_layout(
+                            height=200, margin=dict(l=20, r=20, t=20, b=20),
+                            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                            yaxis_title="%"
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error cargando métricas predictivas: {str(e)}")
+    else:
+        st.info("El archivo `prediction_metrics.json` aún no existe. Ejecute el backtest para generar el baseline.")
+
+# ==============================================================================
 # AUTO REFRESH
 # ==============================================================================
+
 if st.session_state.auto_refresh:
     time.sleep(refresh_rate)
     st.rerun()
