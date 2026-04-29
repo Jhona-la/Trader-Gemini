@@ -4,6 +4,8 @@ class Strategy(ABC):
     """
     Abstract base class for all strategies.
     """
+    def __init__(self):
+        self.sophia = None
 
     @abstractmethod
     def calculate_signals(self, event):

@@ -542,8 +542,20 @@ class BinanceExecutor:
                 
                 smart_price = liquidity.get('avg_fill_price', price)
             else:
-                # EXIT: High Priority - Use current market price directly
-                smart_price = price
+                # EXIT: High Priority
+                is_emergency = getattr(event, 'strategy_id', '') in ("EMERGENCY_EXIT", "KILL_SWITCH", "HARD_SL", "TIME_STOP")
+                if order_type == 'limit' and not is_emergency:
+                    logger.info(f"🛡️ [FORENSIC-SOR] BBO Limit Exit for {symbol}. Positioning at Maker side.")
+                    try:
+                        bid, ask = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
+                        # To exit LONG (SELL), we want to be at the ASK (to be a maker)
+                        # To exit SHORT (BUY), we want to be at the BID (to be a maker)
+                        smart_price = ask if side.lower() == 'sell' else bid
+                    except Exception as e:
+                        logger.warning(f"⚠️ [BBO-EXIT] Could not fetch orderbook: {e}. Fallback to trigger price.")
+                        smart_price = price
+                else:
+                    smart_price = price
 
             # 3. SURGICAL PRECISION (Roundings)
             qty_precision = self.exchange.amount_to_precision(symbol_ccxt, event.quantity)
@@ -679,12 +691,19 @@ class BinanceExecutor:
                 if metadata.get("is_tp_limit", False):
                     params['reduceOnly'] = 'true'
                 
-                import asyncio
+                import ccxt
                 try:
                     order_raw = await asyncio.wait_for(self.async_exchange.fapiPrivatePostOrder(params), timeout=9.0)
                 except asyncio.TimeoutError:
                     logger.critical(f"🛑 [TIMEOUT] Futures order {side} {symbol_id} hung >9s! OS Network Blocked.")
                     raise RuntimeError("API Timeout / Disconnect in execution")
+                except ccxt.ExchangeError as e:
+                    if "immediately match" in str(e).lower() and params.get('timeInForce') == 'GTX':
+                        logger.warning(f"⚠️ [BBO MAKER REJECTED] Futures order {side} {symbol_id} would cross spread. Fallback to GTC to secure fill.")
+                        params['timeInForce'] = 'GTC'
+                        order_raw = await asyncio.wait_for(self.async_exchange.fapiPrivatePostOrder(params), timeout=9.0)
+                    else:
+                        raise e
                 order = order_raw # Simplified mapping
             else:
                 # SPOT
@@ -776,7 +795,39 @@ class BinanceExecutor:
             # PARA QUÉ: Eliminar margin leak acumulativo y phantom fee drain.
             # ═══════════════════════════════════════════════════════════════
             _order_metadata = dict(getattr(event, 'metadata', {}) or {})
-            _order_metadata['actual_order_type'] = order_type  # 'limit' or 'market'
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC-V35: GRANULAR ORDER TYPE ENRICHMENT
+            # QUÉ: Enriquece 'actual_order_type' con sub-tipo descriptivo.
+            # POR QUÉ: 'limit' o 'market' es insuficiente para auditar
+            #   decisiones de ejecución. El usuario necesita saber si fue
+            #   Post-Only (GTX), BBO, SOR-downgrade, Emergency, TP/SL, etc.
+            # PARA QUÉ: Telegram muestra el tipo exacto de ejecución.
+            # ═══════════════════════════════════════════════════════════════
+            is_gtx = metadata.get('timeInForce') == 'GTX'
+            is_tp_limit = metadata.get('is_tp_limit', False)
+            is_reduce = getattr(event, 'is_close', False) or getattr(event, 'is_exit', False)
+            
+            if order_type == 'limit':
+                if is_tp_limit:
+                    enriched_type = 'LIMIT_TP'
+                elif is_gtx:
+                    enriched_type = 'LIMIT_POST_ONLY'
+                elif is_reduce:
+                    enriched_type = 'LIMIT_BBO_EXIT'
+                else:
+                    enriched_type = 'LIMIT_BBO'
+            elif order_type == 'market':
+                if is_reduce:
+                    enriched_type = 'MARKET_EXIT'
+                elif getattr(event, 'strategy_id', '') == 'EMERGENCY_EXIT':
+                    enriched_type = 'MARKET_EMERGENCY'
+                else:
+                    enriched_type = 'MARKET_SOR'
+            else:
+                enriched_type = order_type.upper()
+            
+            _order_metadata['actual_order_type'] = order_type  # raw for fee calc
+            _order_metadata['enriched_order_type'] = enriched_type  # display
             _order_metadata['is_exit'] = getattr(event, 'is_exit', False)
             _order_metadata['is_close'] = getattr(event, 'is_close', False)
             
@@ -803,6 +854,7 @@ class BinanceExecutor:
                 setup_type=getattr(event, 'setup_type', None),
                 exit_reason=getattr(event, 'exit_reason', None),
                 order_type=getattr(event, 'order_type', None),
+                trade_id=getattr(event, 'trade_id', None),
                 strategy_version=getattr(event, 'strategy_version', '1.0.0'),
                 # FORENSIC FIX #2: Carry metadata for fee attribution + margin release
                 metadata=_order_metadata,

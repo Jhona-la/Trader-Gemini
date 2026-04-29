@@ -11,6 +11,7 @@ from core.enums import EventType, SignalType, OrderSide, OrderType
 
 
 import time
+import uuid
 try:
     import orjson
     def json_dumps(obj): return orjson.dumps(obj).decode('utf-8')
@@ -54,6 +55,8 @@ class MarketEvent(Event):
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     symbol: Optional[str] = None
     close_price: Optional[float] = None
+    high_price: Optional[float] = None # Added for High-Fidelity Backtest
+    low_price: Optional[float] = None  # Added for High-Fidelity Backtest
     order_flow: Optional[Dict[str, Any]] = None # Added for Phalanx-Omega
     health_metrics: Optional[Dict[str, Any]] = None # Added for Data Integrity Hardening
     
@@ -85,6 +88,7 @@ class SignalEvent(Event):
     leverage: Optional[int] = None  # Added for strategies to specify leverage
     ttl: Optional[int] = None      # Phase 9.2: Adaptive TTL (seconds)
     ml_confidence: Optional[float] = None # Added for ML-based scaling
+    predicted_magnitude: Optional[float] = None # Predicted move %
     predicted_duration: Optional[int] = None # Hold duration
     setup_type: Optional[str] = None # NEW: Granular setup (e.g. RSI_OVERSOLD, BREAKOUT)
     strategy_version: Optional[str] = "1.0.0" # Versioning for evolutionary tracking
@@ -109,11 +113,18 @@ class SignalEvent(Event):
     type: EventType = field(default=EventType.SIGNAL, init=False)
 
     def __post_init__(self):
-        """Validate datetime is UTC-aware"""
+        """Validate datetime is UTC-aware and ensure trade_id"""
         try:
             ensure_utc_aware(self.datetime)
         except ValueError as e:
             raise ValueError(f"SignalEvent validation failed: {e}")
+        
+        # Auto-generate trade_id if missing (using object.__setattr__ because frozen=True)
+        if not self.trade_id:
+            # Prefix based on horizon to prevent cross-contamination
+            prefix = "SCL" if getattr(self, "horizon", "SCALPING") == "SCALPING" else "SWG"
+            short_id = f"[{prefix}]-TRD-{str(uuid.uuid4())[:6].upper()}"
+            object.__setattr__(self, 'trade_id', short_id)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -134,6 +145,7 @@ class OrderEvent(Event):
     tp_pct: Optional[float] = None  # NEW: Protective take profit %
     ttl: Optional[int] = None      # Phase 9.2: Adaptive TTL (seconds)
     ml_confidence: Optional[float] = None # Added for ML-based scaling
+    predicted_magnitude: Optional[float] = None # Predicted move %
     predicted_duration: Optional[int] = None # Hold duration
     setup_type: Optional[str] = None # NEW: Granular setup propagation
     exit_reason: Optional[str] = None # NEW: Specific reason for exit (e.g., "TIME_STOP_ZOMBIE", "TAKE_PROFIT")
@@ -225,6 +237,7 @@ class FillEvent(Event):
     horizon: str = "SCALPING" # "SCALPING" or "SWING"
     
     ml_confidence: Optional[float] = None # Added for ML-based scaling
+    predicted_magnitude: Optional[float] = None # Predicted move %
     predicted_duration: Optional[int] = None # Hold duration
     
     metadata: Optional[Dict[str, Any]] = None # Phase 31 Fix: Carry metadata from Order

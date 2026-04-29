@@ -84,6 +84,12 @@ class LossAnalyzer:
 
     def detect_fee_death(self, trade_data: Dict[str, Any]) -> dict:
         """Detectar si los fees destruyen la rentabilidad (Gross PNL > 0 pero Net PNL = 0 o negativo)"""
+        # Ignorar FLIP_EXIT y TURBO_BE, ya que son cierres defensivos donde el micro-profit 
+        # distorsiona el cálculo del ratio de fees, causando falsos positivos.
+        exit_reason = trade_data.get("exit_reason", "")
+        if exit_reason in ["FLIP_EXIT", "TURBO_BE", "TIME_STOP_ZOMBIE", "PREDICTIVE_DECAY"]:
+            return {}
+            
         gross = trade_data.get("gross_pnl", 0)
         fees = trade_data.get("fees", 0)
         net = trade_data.get("net_pnl", 0)

@@ -21,6 +21,24 @@ from core.gc_tuner import GCTuner
 from core.forensics import ForensicRecorder # Phase 20: Forensic Logging
 from core.world_awareness import world_awareness
 
+# ═══════════════════════════════════════════════════════════════
+# SOPHIA INTEGRATION (Phase SOPHIA-GLOBAL)
+# QUÉ: Sophia AI actúa como filtro de veto GLOBAL para todas las señales.
+# POR QUÉ: Antes solo TechnicalStrategy usaba Sophia internamente.
+#   MLStrategy, Sniper y Statistical operaban sin supervisión de IA.
+# PARA QUÉ: Proteger la cuenta de $13 con filtro probabilístico unificado.
+# CÓMO: engine._sophia_veto_filter() examina cada SignalEvent antes
+#   del RiskManager. Si win_probability < SOPHIA_MIN_CONFIDENCE → veto.
+# CUÁNDO: En _process_signal_event(), después de TTL/precio validados.
+# DÓNDE: core/engine.py → Engine._sophia_veto_filter()
+# QUIÉN: Engine (orquestador) + SophiaIntelligence (facade)
+# ═══════════════════════════════════════════════════════════════
+try:
+    from sophia.intelligence import SophiaIntelligence
+    _SOPHIA_AVAILABLE = True
+except ImportError:
+    _SOPHIA_AVAILABLE = False
+
 try:
     import psutil
 except ImportError:
@@ -137,6 +155,18 @@ class Engine:
         # 🏥 PHASE 27: System Monitor
         self.system_monitor = SystemMonitor()
         
+        # 🧠 SOPHIA-GLOBAL: Initialize Sophia Intelligence Engine
+        self.sophia_intelligence = None
+        self.SOPHIA_MIN_CONFIDENCE = 0.70  # FORENSIC-V35: Strict >70% accuracy threshold
+        if _SOPHIA_AVAILABLE:
+            try:
+                self.sophia_intelligence = SophiaIntelligence(bar_minutes=5.0)
+                self.sophia_intelligence.set_horizon_profile(1)  # Default: SCALPING
+                logger.info("🧠 [SOPHIA-GLOBAL] Intelligence engine attached to Engine pipeline.")
+            except Exception as e:
+                logger.warning(f"⚠️ [SOPHIA-GLOBAL] Failed to init: {e}")
+                self.sophia_intelligence = None
+        
         # 🧟 PHASE 2 ZOMBIES
         self.correlation_manager = None
         self.liquidity_guardian = None
@@ -167,6 +197,11 @@ class Engine:
         
     def register_strategy(self, strategy: Any) -> None: 
         self.strategies.append(strategy)
+        
+        # 🧠 FORENSIC-V35: Inject Sophia AI directly into the strategy
+        if hasattr(self, 'sophia_intelligence'):
+            strategy.sophia = self.sophia_intelligence
+
         if hasattr(strategy, 'symbol') and strategy.symbol:
             self._strategies_by_symbol[strategy.symbol].append(strategy)
         else:
@@ -175,6 +210,8 @@ class Engine:
         
     def register_portfolio(self, portfolio: Any) -> None: 
         self.portfolio = portfolio
+        # PHASE 2 POWER: Back-reference for HotAdapterRL feedback loop
+        portfolio._engine = self
         
     def register_execution_handler(self, handler: Any) -> None: 
         self.execution_handler = handler
@@ -185,6 +222,9 @@ class Engine:
         self.risk_manager.correlation_manager = getattr(self, 'correlation_manager', None)
         self.risk_manager.liquidity_guardian = getattr(self, 'liquidity_guardian', None)
         self.risk_manager.sentiment_processor = getattr(self, 'sentiment_processor', None)
+        
+        # 🧠 SOPHIA-GLOBAL: Inject into Risk Manager for DCA / exit validation
+        self.risk_manager.sophia = getattr(self, 'sophia_intelligence', None)
 
         # 🛡️ Phase 20: Link Forensics to Kill Switch
         if self.risk_manager and hasattr(self.risk_manager, 'kill_switch'):
@@ -598,6 +638,17 @@ class Engine:
             except Exception as e:
                 logger.error(f"Failed to record signal in PredictionTracker: {e}")
 
+        # ═══════════════════════════════════════════════════════════════
+        # SOPHIA-GLOBAL VETO FILTER
+        # QUÉ: Sophia revisa la señal ANTES del RiskManager.
+        # POR QUÉ: RiskManager valida sizing/risk. Sophia valida CALIDAD
+        #   probabilística de la señal con calibración Bayesiana.
+        # PARA QUÉ: Filtro dual: Sophia (calidad) → RiskManager (riesgo).
+        # ═══════════════════════════════════════════════════════════════
+        if not self._sophia_veto_filter(event):
+            self.metrics['discarded_events'] += 1
+            return
+        
         if self.risk_manager:
             logger.info(f"🛡️ [ENGINE] Handing signal to RiskManager for {event.symbol}")
             order_event = self.risk_manager.generate_order(event, current_price)
@@ -819,6 +870,71 @@ class Engine:
                  logger.warning(f"Discarding STALE signal {event.symbol} (Age: {age:.2f}s)")
             return False
             
+        return True
+
+    def _sophia_veto_filter(self, event) -> bool:
+        """
+        🧠 SOPHIA-GLOBAL: Probabilistic Signal Quality Filter.
+        
+        QUÉ: Examina la metadata de la señal para validar que Sophia
+          (o el sistema ML) haya asignado una win_probability suficiente.
+        POR QUÉ: Señales de baja calidad queman capital en fees + slippage.
+        PARA QUÉ: Proteger la micro-cuenta $13 de señales ruidosas.
+        CÓMO:
+          1. Si la señal ya tiene sophia.win_probability → usa ese valor.
+          2. Si NO tiene (MLStrategy, Sniper, Statistical) → usa
+             ml_confidence si disponible, o pasa sin veto.
+          3. EXIT signals SIEMPRE pasan (protección de capital).
+        CUÁNDO: Antes del RiskManager en _process_signal_event().
+        DÓNDE: core/engine.py → Engine._sophia_veto_filter()
+        QUIÉN: Engine (orquestador).
+        
+        Returns:
+            True = signal passes, False = signal vetoed.
+        """
+        # EXIT signals always pass — never block a protective close
+        is_exit = hasattr(event, 'signal_type') and 'EXIT' in str(event.signal_type)
+        if is_exit:
+            return True
+        
+        if not self.sophia_intelligence:
+            return True  # If Sophia not available, pass through
+        
+        meta = getattr(event, 'metadata', None) or {}
+        sophia_data = meta.get('sophia', {})
+        strategy_id = getattr(event, 'strategy_id', 'Unknown')
+        symbol = getattr(event, 'symbol', '???')
+        
+        # 1. Check Sophia win_probability (set by TechnicalStrategy)
+        win_prob = sophia_data.get('win_probability', None)
+        
+        # 2. Fallback: Check ml_confidence (set by MLStrategy)
+        if win_prob is None:
+            win_prob = getattr(event, 'ml_confidence', None)
+        
+        # 3. Fallback: Check generic confidence
+        if win_prob is None:
+            win_prob = getattr(event, 'confidence', None)
+        
+        # 4. If no probability available at all, allow through
+        #    (Strategy didn't produce confidence → trust RiskManager's PREDICTION_GATE)
+        if win_prob is None:
+            return True
+        
+        # 5. Veto if below threshold
+        if win_prob < self.SOPHIA_MIN_CONFIDENCE:
+            logger.warning(
+                f"🧠 [SOPHIA-VETO] {symbol} signal REJECTED | "
+                f"Strategy: {strategy_id} | P(Win)={win_prob:.1%} < "
+                f"{self.SOPHIA_MIN_CONFIDENCE:.0%} threshold"
+            )
+            return False
+        
+        # 6. Log approved signal
+        logger.info(
+            f"🧠 [SOPHIA-OK] {symbol} | Strategy: {strategy_id} | "
+            f"P(Win)={win_prob:.1%} ✓"
+        )
         return True
 
     def stop(self):

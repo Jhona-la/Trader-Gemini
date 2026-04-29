@@ -248,3 +248,93 @@ class AtomicStateManager:
             except Exception:
                 pass
 
+    # ═══════════════════════════════════════════════════════════════
+    # PHASE OMEGA: INTEGRITY CHECKSUM SYSTEM
+    # QUÉ: Genera y verifica SHA-256 hashes del estado del portfolio.
+    # POR QUÉ: Un crash durante escritura puede corromper el JSON/SQLite.
+    #   Sin checksum, recuperaríamos estado corrupto sin saberlo.
+    # PARA QUÉ: Detectar corrupción ANTES de restaurar, evitando
+    #   operar con balances/posiciones incorrectas.
+    # CÓMO: hash(json(state)) → almacenado junto al checkpoint.
+    # CUÁNDO: En cada checkpoint() y recover().
+    # DÓNDE: core/state_manager.py → AtomicStateManager
+    # QUIÉN: Portfolio.save_status() y Portfolio.__init__()
+    # ═══════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def compute_checksum(state: Dict[str, Any]) -> str:
+        """
+        Computes SHA-256 checksum of the state dictionary.
+        Uses deterministic JSON serialization (sorted keys) for consistency.
+        """
+        import hashlib
+        serialized = json.dumps(state, sort_keys=True, default=str)
+        return hashlib.sha256(serialized.encode('utf-8')).hexdigest()[:16]
+
+    @classmethod
+    def checkpoint_with_integrity(cls, state: Dict[str, Any], key: str = "portfolio"):
+        """
+        Enhanced checkpoint that includes integrity checksum.
+        Stores both the state AND its hash for corruption detection.
+        """
+        checksum = cls.compute_checksum(state)
+        state_with_checksum = {
+            '_checksum': checksum,
+            '_timestamp': time.time(),
+            'state': state
+        }
+        cls.checkpoint(state_with_checksum, key=key)
+        return checksum
+
+    @classmethod
+    def recover_with_integrity(cls, key: str = "portfolio") -> Optional[Dict[str, Any]]:
+        """
+        Enhanced recovery that verifies integrity checksum.
+        Returns None if checksum doesn't match (corruption detected).
+        """
+        cls._ensure_db()
+        if cls._db_conn is None:
+            return None
+
+        try:
+            cursor = cls._db_conn.execute(
+                "SELECT value, updated_at FROM state_checkpoint WHERE key = ?",
+                (key,)
+            )
+            row = cursor.fetchone()
+
+            if row is None:
+                return None
+
+            wrapper = json.loads(row[0])
+
+            # Legacy format (no checksum) — accept as-is
+            if '_checksum' not in wrapper:
+                logger.warning("⚠️ [Recovery] Legacy checkpoint (no checksum). Accepting as-is.")
+                return wrapper
+
+            stored_checksum = wrapper['_checksum']
+            state = wrapper['state']
+
+            # Verify integrity
+            computed_checksum = cls.compute_checksum(state)
+
+            if computed_checksum != stored_checksum:
+                logger.critical(
+                    f"🚨 [INTEGRITY] CHECKSUM MISMATCH! "
+                    f"Stored={stored_checksum}, Computed={computed_checksum}. "
+                    f"State may be CORRUPTED. Rejecting recovery."
+                )
+                return None
+
+            checkpoint_age = time.time() - wrapper.get('_timestamp', row[1])
+            logger.info(
+                f"🛡️ [Recovery] State restored with VERIFIED integrity "
+                f"(checksum={stored_checksum}, age={checkpoint_age:.0f}s)"
+            )
+
+            return state
+
+        except Exception as e:
+            logger.error(f"❌ [Recovery] Integrity check failed: {e}")
+            return None

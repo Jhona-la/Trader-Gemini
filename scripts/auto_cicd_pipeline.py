@@ -163,24 +163,52 @@ def check_success_criteria(metrics: dict) -> bool:
 
 def evolve_parameters(metrics: dict):
     """
-    Hipótesis Forense: Si fallamos, ajustamos parámetros genéticos.
-    (Implementación mock/placeholder para conectarse a evolution.py en Fase 21)
+    Motor Auto-CICD Avanzado: Muta los genotipos cuando las métricas fallan.
+    Invoca a EvolutionEngine y aplica gaussian mutations a los parámetros.
     """
     log("🧠 [NEMESIS] Generando hipótesis evolutiva para ajustar parámetros...")
     
-    # 1. Si DD es alto, reducir Size / Ajustar Stop Loss
-    if metrics.get("max_drawdown", 0) > MAX_DRAWDOWN:
-        log("   👉 Hipótesis: Drawdown superado. Sugerencia: Ajustar SL_MULTIPLIER (hacerlo más estricto).")
-        
-    # 2. Si WR es bajo, incrementar filtro de confluencia
-    if metrics.get("win_rate", 0) < MIN_WIN_RATE:
-        log("   👉 Hipótesis: Win Rate pobre. Sugerencia: Incrementar ENSEMBLE_CONSENSUS_THRESHOLD a 0.70.")
-        
-    # 3. Si Sharpe es bajo, revisar Fee Drag (Spread limit vs market)
-    if metrics.get("sharpe_ratio", 0) < TARGET_SHARPE:
-        log("   👉 Hipótesis: Ineficiencia Riesgo/Retorno (Fee Drag). Sugerencia: Ajustar BBO Chase Limit logic.")
+    from core.evolution import EvolutionEngine
+    from core.genotype import Genotype
+    from core.gene_bank import gene_bank
+    import numpy as np
 
-    log("⚠️ (Nota: Invocación auto-tuner vía evolution.py se activará tras auditar este pipeline).")
+    # Instanciar motor de evolución
+    engine = EvolutionEngine(mutation_rate=0.5, mutation_strength=0.3)
+    
+    # Extraer todos los símbolos configurados
+    from config import Config
+    symbols = Config.Trading.SYMBOLS
+    
+    for symbol in symbols:
+        # Cargar el genotipo "élito" actual o crear uno por defecto
+        current_genes = gene_bank.get_best_gene(symbol, "NORMAL")
+        
+        genotype = Genotype(symbol=symbol)
+        if current_genes:
+            genotype.genes = current_genes.copy()
+            
+        # Determinar qué gen mutar en base a la falla específica
+        if metrics.get("max_drawdown", 0) > MAX_DRAWDOWN:
+            log(f"   👉 [MUTACIÓN] Reduciendo SL_MULTIPLIER para {symbol} por Drawdown Alto.")
+            if "sl_pct" in genotype.genes:
+                genotype.genes["sl_pct"] *= 0.8  # Hacer SL más estricto
+                
+        if metrics.get("win_rate", 0) < MIN_WIN_RATE:
+            log(f"   👉 [MUTACIÓN] Ajustando Confirmaciones (RSI/Bollinger) para {symbol} por WR Bajo.")
+            if "rsi_overbought" in genotype.genes:
+                genotype.genes["rsi_overbought"] = min(95, genotype.genes["rsi_overbought"] + 2)
+            if "rsi_oversold" in genotype.genes:
+                genotype.genes["rsi_oversold"] = max(5, genotype.genes["rsi_oversold"] - 2)
+                
+        # Mutación General Aleatoria para no estancarse en mínimos locales
+        mutated_genotype = engine.mutate(genotype)
+        mutated_genotype.fitness_score = -1.0 # Reset fitness para el próximo backtest
+        
+        # Guardar en el banco de genes (Archetype Memory)
+        gene_bank.save_elite_gene(mutated_genotype, "NORMAL")
+        
+    log("🧬 Mutación Genética Global completada. Listos para el próximo ciclo de Backtest.")
 
 def main():
     parser = argparse.ArgumentParser(description="Auto-CICD Pipeline Engine")

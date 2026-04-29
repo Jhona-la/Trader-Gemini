@@ -53,7 +53,10 @@ from core.engine import Engine
 from data.binance_loader import BinanceData
 from risk.risk_manager import RiskManager
 from strategies.sniper_strategy import SniperStrategy
-from strategies.technical import TechnicalStrategy  # FORENSIC FIX: Missing import
+from strategies.statistical import StatisticalStrategy
+from strategies.phalanx import PhalanxStrategy
+from strategies.stat_arb import StatArbStrategy
+from strategies.arbitrage import ArbitrageStrategy
 from data.sentiment_loader import SentimentLoader
 from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy  # ← UNIVERSAL ENSEMBLE FOR ALL SYMBOLS
 from core.portfolio import Portfolio
@@ -523,60 +526,71 @@ async def main():
     # Strategies
     strategies = []
     
-    # ML Strategy (one per symbol)
-    # EXPANDED: Analyze ALL symbols in Config
-    for symbol in Config.TRADING_PAIRS:
-
-        try:
-            # ORCHESTRATION (Phase 12): Only BTC drives Global Regime
-            is_leader = ('BTC' in symbol)
-            
-            # --- 1. SCALPING ENGINE (High Frequency) ---
-            ml_strat_scalp = MLStrategy(
-                data_provider=data_handler,
-                events_queue=events_queue,
-                symbol=symbol,
-                lookback=Config.Strategies.ML_LOOKBACK_BARS,
-                sentiment_loader=sentiment_loader,
-                portfolio=portfolio,
-                risk_manager=risk_manager if is_leader else None,
-                horizon="SCALPING"
-            )
-            strategies.append(ml_strat_scalp)
-            engine.register_strategy(ml_strat_scalp)
-            
-            # --- 2. SWING ENGINE (Longer Term) ---
-            ml_strat_swing = MLStrategy(
-                data_provider=data_handler,
-                events_queue=events_queue,
-                symbol=symbol,
-                lookback=Config.Strategies.ML_LOOKBACK_BARS,
-                sentiment_loader=sentiment_loader,
-                portfolio=portfolio,
-                risk_manager=None, # Only one Engine should hook the global risk manager to prevent double regime emission
-                horizon="SWING"
-            )
-            # Tag the SWING engine explicitly so it tracks its own timeframe
-            ml_strat_swing.strategy_id += "_SWING"
-            strategies.append(ml_strat_swing)
-            engine.register_strategy(ml_strat_swing)
-            
-        except Exception as e:
-            logger.warning(f"Could not init ML Strategies for {symbol}: {e}")
+    # ════════════════════════════════════════════════════════════════
+    # LEAN_MODE: TRADING PAIRS OVERRIDE
+    # QUÉ: Reduce de 21+ pares a 3 de máxima liquidez.
+    # POR QUÉ: Con $13 USD, operar 21 pares dispersa el capital.
+    #   3 pares concentrados maximizan oportunidades viables.
+    # ════════════════════════════════════════════════════════════════
+    if getattr(Config, 'LEAN_MODE', False) and not args.symbols:
+        Config.TRADING_PAIRS = Config.LEAN_TRADING_PAIRS
+        logger.info(f"🎯 [LEAN MODE] Reduced to {len(Config.TRADING_PAIRS)} high-liquidity pairs: {Config.TRADING_PAIRS}")
     
-    # Sniper Strategy
+    # ML Strategy (one per symbol) — DISABLED IN LEAN MODE
+    if getattr(Config, 'LEAN_ML_ENABLED', True):
+        for symbol in Config.TRADING_PAIRS:
+            try:
+                is_leader = ('BTC' in symbol)
+                
+                # --- 1. SCALPING ENGINE (High Frequency) ---
+                ml_strat_scalp = MLStrategy(
+                    data_provider=data_handler,
+                    events_queue=events_queue,
+                    symbol=symbol,
+                    lookback=Config.Strategies.ML_LOOKBACK_BARS,
+                    sentiment_loader=sentiment_loader,
+                    portfolio=portfolio,
+                    risk_manager=risk_manager if is_leader else None,
+                    horizon="SCALPING"
+                )
+                strategies.append(ml_strat_scalp)
+                engine.register_strategy(ml_strat_scalp)
+                
+                # --- 2. SWING ENGINE (Longer Term) ---
+                ml_strat_swing = MLStrategy(
+                    data_provider=data_handler,
+                    events_queue=events_queue,
+                    symbol=symbol,
+                    lookback=Config.Strategies.ML_LOOKBACK_BARS,
+                    sentiment_loader=sentiment_loader,
+                    portfolio=portfolio,
+                    risk_manager=None,
+                    horizon="SWING"
+                )
+                ml_strat_swing.strategy_id += "_SWING"
+                strategies.append(ml_strat_swing)
+                engine.register_strategy(ml_strat_swing)
+                
+            except Exception as e:
+                logger.warning(f"Could not init ML Strategies for {symbol}: {e}")
+    else:
+        logger.info("🎯 [LEAN MODE] ML Strategy DISABLED (accuracy 42-52% = destructive). Using Technical only.")
+    
+    # Sniper Strategy - DUAL HORIZON (RE-ENABLED: Integral Consensus)
     try:
-        sniper = SniperStrategy(data_handler, events_queue, executor, portfolio)
-        strategies.append(sniper)
-        engine.register_strategy(sniper)
+        sniper_scalp = SniperStrategy(data_handler, events_queue, executor, portfolio, horizon="SCALPING")
+        strategies.append(sniper_scalp)
+        engine.register_strategy(sniper_scalp)
+        logger.info("✅ SniperStrategy [SCALPING] registered (Integral).")
+
+        sniper_swing = SniperStrategy(data_handler, events_queue, executor, portfolio, horizon="SWING")
+        strategies.append(sniper_swing)
+        engine.register_strategy(sniper_swing)
+        logger.info("✅ SniperStrategy [SWING] registered (Integral).")
     except Exception as e:
         logger.warning(f"Could not init Sniper Strategy: {e}")
     
-    # Technical Strategy — DUAL HORIZON (FORENSIC REMEDIATION)
-    # QUÉ: Se crean 2 instancias de TechnicalStrategy: SCALPING y SWING.
-    # POR QUÉ: Antes solo existía UNA instancia con horizon="SCALPING" por defecto.
-    #   Esto significaba que NUNCA se generaban señales SWING del TechnicalStrategy.
-    # PARA QUÉ: Habilitar trading bidireccional en ambos horizontes temporales.
+    # Technical Strategy — DUAL HORIZON (ALWAYS ACTIVE — 73.5% WR proven)
     try:
         tech_scalp = TechnicalStrategy(data_handler, events_queue, horizon="SCALPING")
         strategies.append(tech_scalp)
@@ -589,6 +603,71 @@ async def main():
         logger.info("✅ TechnicalStrategy [SWING] registered.")
     except Exception as e:
         logger.warning(f"Could not init Technical Strategy: {e}")
+
+    # ════════════════════════════════════════════════════════════════
+    # INTEGRAL MODE: Statistical re-enabled, Phalanx/StatArb/Arb still gated
+    # QUÉ: Statistical aporta señales de reversión a la media complementarias.
+    # POR QUÉ: Phalanx/StatArb/Arbitrage generan EXIT sin posición (44% ruido).
+    # PARA QUÉ: Consenso ponderado necesita diversidad de señales.
+    # ════════════════════════════════════════════════════════════════
+    # Statistical Strategy — DUAL HORIZON (RE-ENABLED: Integral)
+    try:
+        stat_scalp = StatisticalStrategy(data_handler, events_queue, horizon="SCALPING")
+        strategies.append(stat_scalp)
+        engine.register_strategy(stat_scalp)
+        logger.info("✅ StatisticalStrategy [SCALPING] registered (Integral).")
+        
+        stat_swing = StatisticalStrategy(data_handler, events_queue, horizon="SWING")
+        strategies.append(stat_swing)
+        engine.register_strategy(stat_swing)
+        logger.info("✅ StatisticalStrategy [SWING] registered (Integral).")
+    except Exception as e:
+        logger.warning(f"Could not init Statistical Strategy: {e}")
+    # Phalanx/StatArb/Arbitrage — STILL GATED (generate EXIT without position = 44% noise)
+    if not getattr(Config, 'LEAN_MODE', False):
+        # Phalanx Strategy — DUAL HORIZON
+        try:
+            phalanx_scalp = PhalanxStrategy(data_handler, events_queue, horizon="SCALPING")
+            strategies.append(phalanx_scalp)
+            engine.register_strategy(phalanx_scalp)
+            logger.info("✅ PhalanxStrategy [SCALPING] registered.")
+            
+            phalanx_swing = PhalanxStrategy(data_handler, events_queue, horizon="SWING")
+            strategies.append(phalanx_swing)
+            engine.register_strategy(phalanx_swing)
+            logger.info("✅ PhalanxStrategy [SWING] registered.")
+        except Exception as e:
+            logger.warning(f"Could not init Phalanx Strategy: {e}")
+
+        # StatArb Strategy — DUAL HORIZON
+        try:
+            statarb_scalp = StatArbStrategy(data_handler, events_queue, horizon="SCALPING")
+            strategies.append(statarb_scalp)
+            engine.register_strategy(statarb_scalp)
+            logger.info("✅ StatArbStrategy [SCALPING] registered.")
+            
+            statarb_swing = StatArbStrategy(data_handler, events_queue, horizon="SWING")
+            strategies.append(statarb_swing)
+            engine.register_strategy(statarb_swing)
+            logger.info("✅ StatArbStrategy [SWING] registered.")
+        except Exception as e:
+            logger.warning(f"Could not init StatArb Strategy: {e}")
+
+        # Arbitrage Strategy — DUAL HORIZON
+        try:
+            arbitrage_scalp = ArbitrageStrategy(data_handler, events_queue, horizon="SCALPING")
+            strategies.append(arbitrage_scalp)
+            engine.register_strategy(arbitrage_scalp)
+            logger.info("✅ ArbitrageStrategy [SCALPING] registered.")
+            
+            arbitrage_swing = ArbitrageStrategy(data_handler, events_queue, horizon="SWING")
+            strategies.append(arbitrage_swing)
+            engine.register_strategy(arbitrage_swing)
+            logger.info("✅ ArbitrageStrategy [SWING] registered.")
+        except Exception as e:
+            logger.warning(f"Could not init Arbitrage Strategy: {e}")
+    else:
+        logger.info("🎯 [INTEGRAL] Phalanx/StatArb/Arbitrage gated (EXIT-without-position noise).")
     
     logger.info(f"[OK] Registered {len(strategies)} strategies in the Engine.")
     
@@ -718,18 +797,50 @@ async def main():
     # 4. MAIN EVENT LOOP ORCHESTRATION (SUPREMO-V3)
     logger.info("⚡ [SUPREMO-V3] Orchestrating Concurrent Async Tasks...")
     
+    # Send Rich Startup Notification to Telegram
+    try:
+        from utils.notifier import Notifier
+        _startup_mode = "PRODUCTION"
+        if Config.BINANCE_USE_TESTNET:
+            _startup_mode = "PAPER"
+        elif Config.BINANCE_USE_DEMO:
+            _startup_mode = "PAPER"
+        Notifier.send_system_startup(_startup_mode, {
+            'trading_mode': args.mode,
+            'capital': Config.INITIAL_CAPITAL,
+            'leverage': Config.BINANCE_LEVERAGE,
+            'symbols_count': len(Config.TRADING_PAIRS),
+            'strategies_count': len(strategies),
+            'testnet': Config.BINANCE_USE_TESTNET,
+            'demo': Config.BINANCE_USE_DEMO,
+            'max_drawdown': Config.Risk.MAX_DRAWDOWN,
+            'tp_scalp': Config.Strategies.SCALPING_PARAMS.get('tp_pct', 0.006),
+            'sl_scalp': Config.Strategies.SCALPING_PARAMS.get('sl_pct', 0.0075),
+            'symbols_list': Config.TRADING_PAIRS,
+        })
+    except Exception as e:
+        logger.warning(f"Could not send Telegram startup alert: {e}")
+        
     # 4.1. Initialize Engine Task & User Stream
     engine_task = asyncio.create_task(engine.start())
     user_stream_task = asyncio.create_task(executor.user_stream.start())
+    
+    # 4.1.5 Liquidation Sniper Websockets (Phase 1 Power)
+    if hasattr(data_handler, 'start_websockets'):
+        logger.info("🩸 Starting Liquidation Sniper Websockets...")
+        websockets_task = asyncio.create_task(data_handler.start_websockets())
     
     # 4.2. Background Task for Metrics & Heartbeat
     loop_count = 0
     last_heartbeat = time.time()
     last_summary_time = time.time()
     last_shm_update = time.time()
+    last_pulse_time = time.time()  # Strategy Pulse tracker
+    last_leaderboard_time = time.time() # Strategy Leaderboard tracker
+    PULSE_INTERVAL_SECONDS = 900   # Every 15 minutes
     
     async def metrics_heartbeat_loop():
-        nonlocal loop_count, last_heartbeat, last_summary_time, last_shm_update
+        nonlocal loop_count, last_heartbeat, last_summary_time, last_shm_update, last_pulse_time, last_leaderboard_time
         while not shutdown_event.is_set():
             try:
                 now = time.time()
@@ -770,6 +881,80 @@ async def main():
                         logger.warning(f"⚠️ Failed to sync wallet balance: {e}")
                         
                     last_heartbeat = now
+
+                # ═══════════════════════════════════════════════════════════════
+                # STRATEGY PULSE: Every 15 min, report system state via Telegram
+                # QUÉ: Reporte periódico de estado cuando no hay trades.
+                # POR QUÉ: El usuario necesita saber qué está pasando.
+                # PARA QUÉ: Visibilidad total, incluso cuando el mercado está quiet.
+                # ═══════════════════════════════════════════════════════════════
+                if now - last_pulse_time > PULSE_INTERVAL_SECONDS:
+                    try:
+                        from utils.notifier import Notifier
+                        _equity = portfolio.get_total_equity()
+                        _open_pos = [(s, p) for s, p in portfolio.positions.items() if p.get('quantity', 0) != 0]
+                        _open_symbols = [s for s, _ in _open_pos]
+                        
+                        # Get BTC price
+                        _btc_price = 0
+                        try:
+                            _btc_bars = data_handler.get_latest_bars('BTC/USDT', n=1)
+                            if _btc_bars and len(_btc_bars) > 0:
+                                _btc_price = _btc_bars[-1].get('close', 0)
+                        except Exception:
+                            pass
+                        
+                        # Get market regime
+                        _regime = 'UNKNOWN'
+                        if risk_manager and hasattr(risk_manager, 'current_regime'):
+                            _regime = risk_manager.current_regime
+                        
+                        # Session stats from portfolio
+                        _stats = portfolio.get_statistics() or {}
+                        
+                        # Strategy signal counts
+                        _strat_status = []
+                        for strat in strategies[:16]:  # Cap at 16 to avoid message explosion
+                            _sname = getattr(strat, 'strategy_id', strat.__class__.__name__)
+                            _shorizon = getattr(strat, 'horizon', 'SCALPING')
+                            _ssignals = getattr(strat, 'signal_count', 0)
+                            _strat_status.append({
+                                'name': _sname,
+                                'horizon': _shorizon,
+                                'signals_emitted': _ssignals,
+                            })
+                        
+                        Notifier.send_strategy_pulse({
+                            'equity': _equity,
+                            'initial_capital': Config.INITIAL_CAPITAL,
+                            'open_positions': len(_open_pos),
+                            'open_symbols': _open_symbols,
+                            'events_processed': engine.metrics.get('processed_events', 0),
+                            'signals_generated': engine.metrics.get('strategy_executions', 0),
+                            'signals_rejected': engine.metrics.get('discarded_events', 0),
+                            'avg_latency_ms': engine.metrics.get('avg_latency_ms', 0),
+                            'market_regime': _regime,
+                            'btc_price': _btc_price,
+                            'strategies_status': _strat_status,
+                            'session_trades': _stats.get('total_trades', 0),
+                            'session_wins': _stats.get('winning_trades', 0),
+                            'session_losses': _stats.get('losing_trades', 0),
+                            'minutes_since_last_trade': (now - last_summary_time) / 60,
+                        })
+                    except Exception as e:
+                        logger.error(f"Strategy Pulse Error: {e}")
+                    last_pulse_time = now
+                    
+                # ═══════════════════════════════════════════════════════════════
+                # STRATEGY LEADERBOARD: Every 4 hours (14400s), report Top 5 Strategies
+                # ═══════════════════════════════════════════════════════════════
+                if now - last_leaderboard_time > 14400:
+                    try:
+                        from utils.notifier import Notifier
+                        Notifier.send_strategy_leaderboard(portfolio.strategy_performance, title_prefix="LIVE (4H)")
+                    except Exception as e:
+                        logger.error(f"Strategy Leaderboard Error: {e}")
+                    last_leaderboard_time = now
                 
                 # Performance Summary (30m) — via Portfolio SSOT
                 if now - last_summary_time > 1800:

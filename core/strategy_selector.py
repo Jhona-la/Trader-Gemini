@@ -25,17 +25,37 @@ class StrategySelector:
         self.last_update = None
         self.update_interval_hours = 2
         
-        # Strategies to monitor
-        self.strategies_pool = [
-            'TECHNICAL', 'ML_XGBOOST', 'PATTERN_RECOGNITION', 
-            'SNIPER_MOMENTUM', 'STATISTICAL_PAIRS'
-        ]
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC-V35: DYNAMIC STRATEGY POOL (No More Hardcoded IDs)
+        # QUÉ: El pool se sincroniza dinámicamente desde portfolio.strategy_performance.
+        # POR QUÉ: Antes tenía IDs hardcoded ('TECHNICAL', 'ML_XGBOOST', etc.) que
+        #   NO coincidían con los strategy_id reales (ej: 'MLEnsemble_BTCUSDT',
+        #   'SniperMomentum_SCALPING'). Resultado: todos los pesos eran neutrales.
+        # PARA QUÉ: Ranking evolutivo real basado en performance de producción.
+        # CÓMO: _sync_pool() lee las keys de portfolio.strategy_performance.
+        # ═══════════════════════════════════════════════════════════════
+        self.strategies_pool = []  # Populated dynamically
+
+    def _sync_pool(self):
+        """Syncs strategies_pool from portfolio's actual strategy performance keys."""
+        if self.portfolio and hasattr(self.portfolio, 'strategy_performance'):
+            real_ids = list(self.portfolio.strategy_performance.keys())
+            if real_ids and set(real_ids) != set(self.strategies_pool):
+                self.strategies_pool = real_ids
+                logger.info(f"🧠 [Meta-Brain] Synced {len(real_ids)} real strategies: {real_ids[:5]}...")
 
     def update_strategy_rankings(self):
         """
         Main loop for the Meta-Brain.
         Combines Sim Results + Real Portfolio Results.
         """
+        # FORENSIC-V35: Sync pool before ranking
+        self._sync_pool()
+        
+        if not self.strategies_pool:
+            logger.debug("🧠 [Meta-Brain] No strategies tracked yet. Skipping ranking.")
+            return
+        
         logger.info("🧠 [Meta-Brain] Starting real-time strategy re-evaluation...")
         
         rankings = {}
@@ -138,6 +158,7 @@ class StrategySelector:
     def get_strategy_multiplier(self, strategy_id) -> float:
         """
         Retorna un multiplicador continuo derivado de los pesos Softmax del Meta-Brain.
+        FORENSIC-V35: Now syncs pool first and handles unknown IDs gracefully.
         
         QUÉ: En lugar de ranking duro (1.2x/0.5x), usa la distribución Softmax
              para un peso continuo que varía suavemente entre estrategias.
@@ -145,6 +166,10 @@ class StrategySelector:
                  entre niveles. Softmax suaviza la transición.
         RANGO: 0.5x (estrategia muy débil) a 1.5x (líer claro).
         """
+        self._sync_pool()  # FORENSIC-V35: Ensure pool is current
+        if not self.strategies_pool:
+            return 1.0  # Neutral if no strategies tracked yet
+        
         weights = self.get_anti_whipsaw_weights()
         w = weights.get(strategy_id, 1.0 / max(1, len(self.strategies_pool)))
         

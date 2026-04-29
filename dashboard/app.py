@@ -1208,7 +1208,7 @@ with tab2:
     
     if not trades.empty:
         # Display recent trades
-        display_cols = [c for c in ['datetime', 'symbol', 'direction', 'quantity', 'price', 'pnl'] if c in trades.columns]
+        display_cols = [c for c in ['datetime', 'symbol', 'direction', 'quantity', 'price', 'pnl', 'trade_id'] if c in trades.columns]
         if display_cols:
             st.dataframe(
                 trades[display_cols].sort_values('datetime', ascending=False).head(20),

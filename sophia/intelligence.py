@@ -977,7 +977,7 @@ class SophiaIntelligence:
     POR QUÉ: Simplifica la integración en technical.py. Un solo método analyze()
          que devuelve todo lo necesario.
     PARA QUÉ: Se invoca así:
-         sophia = SophiaIntelligence()
+         sophia = SophiaIntelligence.get_instance(bar_minutes=5.0)
          report = sophia.analyze(symbol, setups, returns, tp_pct, sl_pct, ...)
          signal.metadata['sophia'] = report.to_dict()
     CÓMO: Orquesta BayesianCalibrator → FeatureAttributor → SurvivalEstimator →
@@ -985,7 +985,32 @@ class SophiaIntelligence:
     CUÁNDO: Antes de cada SignalEvent en generate_signals().
     DÓNDE: sophia/intelligence.py → SophiaIntelligence
     QUIÉN: HybridScalpingStrategy.generate_signals()
+    
+    OPTIMIZACIÓN RAM: Singleton por horizonte. En vez de 42 instancias (21 símbolos × 2),
+    se comparten 2 instancias (SCALPING y SWING). Los sub-sistemas son stateless
+    per-symbol — el estado per-symbol se guarda en dicts keyed por symbol.
     """
+    
+    # ═══════════════════════════════════════════════════════════════
+    # SINGLETON REGISTRY: One instance per bar_minutes value
+    # ═══════════════════════════════════════════════════════════════
+    _instances: Dict[float, 'SophiaIntelligence'] = {}
+    
+    @classmethod
+    def get_instance(cls, bar_minutes: float = 5.0) -> 'SophiaIntelligence':
+        """
+        Returns a shared SophiaIntelligence instance for the given timeframe.
+        
+        QUÉ: Factory method que reutiliza instancias existentes.
+        POR QUÉ: Sophia es stateless per-symbol (usa dicts keyed por symbol).
+             Crear 42 instancias idénticas desperdicia ~200MB de RAM.
+        PARA QUÉ: RAM savings masivos sin cambiar la lógica.
+        CÓMO: Registry pattern con bar_minutes como key.
+        """
+        if bar_minutes not in cls._instances:
+            cls._instances[bar_minutes] = cls(bar_minutes=bar_minutes)
+            logger.info(f"🧠 [SOPHIA] New singleton instance for {bar_minutes}min timeframe (total: {len(cls._instances)})")
+        return cls._instances[bar_minutes]
     
     def __init__(self, bar_minutes: float = 5.0):
         self.calibrator = BayesianCalibrator(prior_alpha=10, prior_beta=10)
@@ -1446,6 +1471,17 @@ class SophiaIntelligence:
         # QUIÉN: SophiaIntelligence
         # ================================================================
         atr_pct = features.get('atr_pct', 0.01)
+        
+        # --- FORENSIC-V36: ORACLE FEE HEADROOM ---
+        from config import Config
+        round_trip_fee = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375) * 2
+        min_required_headroom = round_trip_fee * 2.5
+        
+        if atr_pct < min_required_headroom:
+            fee_penalty = 0.20 * (1.0 - (atr_pct / min_required_headroom))
+            base_omni -= fee_penalty
+            logger.warning(f"💸 [FEE HEADROOM] {symbol} ATR {atr_pct*100:.3f}% < {min_required_headroom*100:.3f}%. Penalty: -{fee_penalty:.2f}")
+
         if direction == "SHORT" and atr_pct > 0.005:
             inertia_bonus = 0.15
             base_omni += inertia_bonus
@@ -1544,6 +1580,14 @@ class SophiaIntelligence:
         if confluence_score > 0.75 or win_prob > 0.75 or (confluence_score > 0.65 and win_prob > 0.65):
             omni_score = max(omni_score, entry_floor) 
             logger.info(f"⚡ [QUANTUM OVERRIDE] {symbol} Score forced to {entry_floor} (Confluence={confluence_score:.2f}, WinProb={win_prob:.2f})")
+            
+        # V5.52: PISADAS DE PIES (Strategy Conflict Resolution)
+        # QUÉ: Technical Strategy (confluence) can bypass ML veto if Technical certainty > 0.95
+        #      and ML is just Neutral (0.45 < win_prob < 0.55).
+        # POR QUÉ: Para que el sistema técnico independiente pueda actuar sin bloqueo pasivo del ML.
+        if confluence_score > 0.95 and 0.45 <= win_prob <= 0.55:
+            omni_score = max(omni_score, entry_floor * 1.5)
+            logger.info(f"🚀 [STRATEGY AUTONOMY] {symbol} Technical certainty > 95% overriding Neutral ML. Score forced to {omni_score:.3f}")
         
         logger.info(f"🔮 [ORACLE] {symbol}: ψ={psi_amplitude:.2f}, Rs={rs_horizon:.2f}, |φ⟩={s_path} → Final={omni_score:.3f} (Coh={s_coherence:.2f})")
         

@@ -132,3 +132,69 @@ class StatisticalArbitrage:
                 signals.append(signal)
                 
         return signals
+
+from strategies.strategy import Strategy
+
+class ArbitrageStrategy(Strategy):
+    """
+    Arbitrage Strategy Wrapper
+    ═══════════════════════════════════════════════════════════════
+    FORENSIC-DCA FIX #1: Corregido crash crítico donde se llamaba
+      self.engine.generate_signals() pero el método real es
+      scan_opportunities(). Este bug hacía la estrategia MUERTA.
+    FORENSIC-DCA FIX #2: Añadido cooldown de 120s entre escaneos
+      para prevenir spam de señales.
+    ═══════════════════════════════════════════════════════════════
+    """
+    def __init__(self, data_provider, events_queue, horizon="SCALPING", priority=1):
+        super().__init__()
+        self.data_provider = data_provider
+        self.events_queue = events_queue
+        self.horizon = horizon
+        self.priority = priority
+        self.strategy_id = f"ARBITRAGE_{horizon}"
+        self.engine = StatisticalArbitrage()
+
+    def generate_signals(self, event):
+        from config import Config
+        from utils.cooldown_manager import cooldown_manager
+
+        # Cooldown: no escanear más de 1 vez cada 120s
+        cooldown_key = f"ARBITRAGE_SCAN_{self.horizon}"
+        if not cooldown_manager.check_custom_cooldown(cooldown_key, duration_seconds=120):
+            return
+
+        pairs = Config.TRADING_PAIRS
+        for symbol in pairs:
+            data = self.data_provider.get_data(symbol)
+            if data is not None and not data.empty:
+                self.engine.update_price(symbol, data['close'].values[-1])
+                
+        # FORENSIC-DCA FIX #1: Corrected method → scan_opportunities()
+        signals = self.engine.scan_opportunities()
+        for signal in signals:
+            sophia_report_dict = {}
+            if hasattr(self, 'sophia') and self.sophia:
+                sophia_report = self.sophia.analyze(
+                    symbol=signal.symbol,
+                    direction=signal.signal_type.name,
+                    signal_strength=0.85,
+                    setups=signal.metadata,
+                    confluence_score=1.0,
+                    tp_pct=0.01,
+                    sl_pct=0.01,
+                    returns=None,
+                    ttl_seconds=300.0 if self.horizon == 'SCALPING' else 3600.0,
+                    regime="UNKNOWN"
+                )
+                
+                if sophia_report.win_probability < 0.70:
+                    continue
+                sophia_report_dict = sophia_report.to_dict()
+                
+            signal.metadata['sophia'] = sophia_report_dict
+            signal.horizon = self.horizon
+            self.events_queue.put(signal)
+            
+    def calculate_signals(self, event):
+        self.generate_signals(event)

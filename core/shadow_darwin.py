@@ -85,6 +85,11 @@ class ShadowDarwin:
 
     def run_epoch(self, symbol: str, generations: int = 1):
         """Ejecuta N generaciones de evolución genética para un símbolo"""
+        from config import Config
+        if getattr(Config.Strategies, 'GOLDEN_BASELINE_LOCKED', False):
+            logger.warning(f"🔒 [Golden Baseline] Evolution LOCKED for {symbol}. Skipping epoch.")
+            return self.populations.get(symbol, [Genotype(symbol=symbol)])[0]
+
         if symbol not in self.populations:
             self.initialize_population(symbol)
             
@@ -132,14 +137,18 @@ class ShadowDarwin:
     def run_epoch_optuna(self, symbol: str, n_trials: int = 50) -> Dict:
         """
         Ejecuta optimización Bayesiana con Optuna para un símbolo.
-        
-        Args:
-            symbol: Par de trading (e.g., 'BTC/USDT')
-            n_trials: Número de evaluaciones (cada trial = 1 simulación)
-            
-        Returns:
-            dict con best_params + best_fitness
         """
+        from config import Config
+        if getattr(Config.Strategies, 'GOLDEN_BASELINE_LOCKED', False):
+            logger.warning(f"🔒 [Golden Baseline] Optuna LOCKED for {symbol}. Returning current best.")
+            clean_sym = symbol.replace('/', '')
+            # Try to load existing best
+            try:
+                best_genotype = Genotype(symbol=symbol)
+                best_genotype.load(f"data/genotypes/{clean_sym}_gene_optuna_best.json")
+                return {'best_params': best_genotype.genes, 'best_fitness': best_genotype.fitness_score, 'genotype': best_genotype}
+            except:
+                return {'best_params': {}, 'best_fitness': 0.0, 'genotype': Genotype(symbol=symbol)}
         clean_sym = symbol.replace('/', '')
         study_name = f"omega_{clean_sym}"
         

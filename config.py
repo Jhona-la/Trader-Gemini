@@ -58,6 +58,22 @@ class Config(metaclass=EncryptedConfigMeta):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DEBUG_TRACE_ENABLED = False
 
+    # ════════════════════════════════════════════════════════════════
+    # 🎯 INTEGRAL MODE — CONSENSUS-BASED OPERATION
+    # QUÉ: Flag que mantiene protecciones de micro-cuenta ($13) activas
+    #   mientras permite que TODAS las estrategias operen en consenso.
+    # POR QUÉ: LEAN_MODE v1 amputó estrategias (0 ML). Ahora usamos
+    #   Consenso Ponderado v1.0: ninguna estrategia tiene veto absoluto.
+    #   Sophia/Oracle PENALIZAN strength pero no BLOQUEAN.
+    # PARA QUÉ: Sistema integral — scalping + swing + ML + técnica
+    #   trabajando juntas. Position Rotation libera margin automáticamente.
+    # CÓMO: LEAN_MODE=True preserva: wider kill switch (35% DD),
+    #   margin cap 95%, wider headroom floors. ML re-habilitado.
+    # ════════════════════════════════════════════════════════════════
+    LEAN_MODE = True  # Keep True for micro-account protections (kill switch, margin)
+    LEAN_ML_ENABLED = True  # ML Strategy: RE-ENABLED (consensus system handles quality)
+    LEAN_TRADING_PAIRS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']  # Focus on high liquidity
+
 
     # ========================================================================
     # BINANCE API CREDENTIALS (Loaded from .env file)
@@ -194,6 +210,7 @@ class Config(metaclass=EncryptedConfigMeta):
         MAX_RISK_PER_TRADE = 0.05  
         STOP_LOSS_PCT = 0.02       
         MAX_SLIPPAGE_PCT = 0.001
+        USE_PREDICTIVE_TP = True      # Enable resting LIMIT TP orders for fee optimization
     
     # === INTELLIGENT REVERSE (FLIPPING) PARAMETERS (Phase 5) ===
     # PROFESSOR METHOD:
@@ -215,9 +232,6 @@ class Config(metaclass=EncryptedConfigMeta):
     # Strategy Filters (Restored)
     PATTERN_BULLISH_RSI_MAX = 60
     PATTERN_BEARISH_RSI_MIN = 40
-    STAT_WINDOW = 20
-    STAT_Z_ENTRY = 1.5
-    STAT_Z_EXIT = 0.0
 
     # === DATA CAPTURE AND MULTI-TIMEFRAME (PHASE 28) ===
     class Data:
@@ -255,41 +269,73 @@ class Config(metaclass=EncryptedConfigMeta):
         SHORT_TP_MULTIPLIER = 0.8         # 20% tightening on TP for shorts (e.g. 1.0% * 0.8 = 0.8%)
         
         # ================================================================
-        # HORIZON-SPECIALIZED PARAMETERS (Phase Forensic-1)
-        # QUÉ: Parámetros diferenciados para Scalping vs Swing
-        # POR QUÉ: Un TP de 1.5% es inalcanzable en scalping 1min pero
-        #   insuficiente para swing 4h. Cada horizonte necesita su propio DNA.
-        # PARA QUÉ: Maximizar frecuencia de wins en Scalping (0.3-0.5% TP)
-        #   y capturar movimientos grandes en Swing (2-5% TP).
-        # CÓMO: technical.py lee self.horizon y selecciona el dict correcto.
+        # 🏆 GOLDEN BASELINE — FROZEN PARAMETERS (2024-04-24 to 2024-05-09)
+        # QUÉ: Configuración protegida que logró 88.2% WR (15W/2L).
+        # POR QUÉ: Estabilidad demostrada en micro-cuentas de $13 USD.
+        # PARA QUÉ: Evitar degradación por sobre-optimización o deriva.
         # ================================================================
+        GOLDEN_BASELINE_LOCKED = True # SET TO FALSE TO ALLOW EVOLUTION
+        
+        # ════════════════════════════════════════════════════════════════
+        # 🏆 GOLDEN EXIT SYSTEMS — PROTEGIDOS (No modificar sin auditoría)
+        # QUÉ: Los 2 sistemas de cierre con mejor rendimiento del sistema.
+        # POR QUÉ: FLIP_EXIT y TURBO_BE son los exits con WR más alto
+        #   y mejor relación PnL neto, validados en producción.
+        # PARA QUÉ: Preservar y documentar para que nunca se degraden.
+        # CÓMO: FLIP_EXIT cierra atómicamente al detectar cambio de
+        #   dirección. TURBO_BE protege capital cuando peak PnL alcanza
+        #   50% (SCALP) o 60% (SWING) del TP y luego retrocede.
+        # CUÁNDO: FLIP_EXIT en generate_order() de RiskManager.
+        #         TURBO_BE en check_stops() de RiskManager.
+        # DÓNDE: risk/risk_manager.py → L1630 (FLIP), L2311 (TURBO)
+        # QUIÉN: RiskManager (Risk Manager role)
+        # ════════════════════════════════════════════════════════════════
+        GOLDEN_EXITS = {
+            'FLIP_EXIT': {
+                'enabled': True,
+                'description': 'Atomic direction flip closure — closes existing position when opposite signal arrives',
+                'uses_limit_bbo': True,
+                'location': 'risk_manager.py::generate_order() L1630',
+            },
+            'TURBO_BE': {
+                'enabled': True,
+                'description': 'Turbo breakeven — locks in fee+slippage when peak PnL reaches threshold, exits if price crashes back',
+                'scalping_threshold_pct_of_tp': 0.50,  # 50% of TP target
+                'swing_threshold_pct_of_tp': 0.60,     # 60% of TP target
+                'min_scalping_pct': 0.30,              # Floor
+                'min_swing_pct': 1.00,                 # Floor
+                'fee_buffer_formula': 'maker_fee + taker_fee + 0.0008',
+                'location': 'risk_manager.py::check_stops() L2311',
+            },
+        }
+        
         SCALPING_PARAMS = {
-            'tp_pct': 0.0040,         # FORENSIC-V13: 0.40% TP — realista para 1M-5M (was 1.20% inalcanzable)
-            'sl_pct': 0.0025,         # FORENSIC-V13: 0.25% SL — tight pero alcanzable, R:R = 1.6:1
-            'rsi_period': 5,          # RSI ultra-rápido (5 velas)
-            'rsi_buy': 35,            # FORENSIC FIX: was 25 — wider zone to capture more setups
-            'rsi_sell': 65,           # FORENSIC FIX: was 75 — wider zone to capture more setups
-            'bb_period': 10,          # Bollinger rápido
-            'bb_std': 1.5,            # FORENSIC FIX: was 1.8 — tighter bands = more touches
-            'ema_fast': 8,            # EMA rápida
-            'ema_slow': 21,           # EMA lenta
-            'ema_trend': 50,          # Trend filter ligero
-            'atr_period': 7,          # ATR corto
-            'adx_period': 7,          # ADX rápido
-            'timeframes': ['1m', '5m', '15m'],  # Solo timeframes cortos
-            'primary_tf': '5m',       # Timeframe principal
-            'min_volume_ratio': 0.4,  # FORENSIC FIX: was 0.6 — less filtering for micro-account
-            'cooldown_seconds': 15,   # FORENSIC FIX: aligned with global COOLDOWN_PERIOD_SECONDS
-            'max_hold_bars': 120,     # FIX FORENSIC-7: 120 bars = 2h for TP to be reached
-            'strength_threshold': 0.55, # FORENSIC-V13: Raised from 0.40 — filter coin-flip signals (52-54% win prob)
-            'atr_sl_mult': 1.0,       # SL pegado (1x ATR)
-            'atr_tp_mult': 2.0,       # TP 2x ATR (ratio 2:1)
-            'sophia_refit': 50,       # Recalibrate clusters every 50 bars (M1/M5)
+            'tp_pct': 0.0045,         # LEAN: 0.45% TP — más alcanzable en 5min, reduce zombies
+            'sl_pct': 0.0060,         # LEAN: 0.60% SL — R:R 0.75:1 pero WR 73.5% lo compensa
+            'rsi_period': 5,          # GOLDEN: RSI ultra-rápido
+            'rsi_buy': 35,            # GOLDEN: Wider zone
+            'rsi_sell': 65,           # GOLDEN: Wider zone
+            'bb_period': 10,          # GOLDEN: Bollinger rápido
+            'bb_std': 1.5,            # GOLDEN: Tighter bands
+            'ema_fast': 8,            # GOLDEN: EMA rápida
+            'ema_slow': 21,           # GOLDEN: EMA lenta
+            'ema_trend': 50,          # GOLDEN: Trend filter
+            'atr_period': 7,          # GOLDEN: ATR corto
+            'adx_period': 7,          # GOLDEN: ADX rápido
+            'timeframes': ['1m', '5m', '15m'],
+            'primary_tf': '5m',
+            'min_volume_ratio': 0.4,
+            'cooldown_seconds': 15,
+            'max_hold_bars': 120,
+            'strength_threshold': 0.55, # GOLDEN: Confluence filter
+            'atr_sl_mult': 3.0,
+            'atr_tp_mult': 3.5,
+            'sophia_refit': 50,
         }
         
         SWING_PARAMS = {
-            'tp_pct': 0.035,          # 3.5% TP — captura de tendencia
-            'sl_pct': 0.015,          # 1.5% SL — respira pero protege
+            'tp_pct': 0.045,          # 4.5% TP — captura de tendencia
+            'sl_pct': 0.025,          # 2.5% SL — respiración holgada
             'rsi_period': 14,         # RSI estándar
             'rsi_buy': 35,            # Oversold conservador
             'rsi_sell': 65,           # Overbought conservador
@@ -306,10 +352,37 @@ class Config(metaclass=EncryptedConfigMeta):
             'cooldown_seconds': 3600, # 1h cooldown entre trades
             'max_hold_bars': 96,      # Max 96 velas (4 días en 1h)
             'strength_threshold': 0.55, # Umbral medio
-            'atr_sl_mult': 2.0,       # SL amplio (2x ATR)
-            'atr_tp_mult': 4.5,       # TP grande (4.5x ATR, ratio 2.25:1)
+            'atr_sl_mult': 3.0,       # FORENSIC-V14: SL amplio (3x ATR)
+            'atr_tp_mult': 4.5,       # TP grande (4.5x ATR)
             'sophia_refit': 24,       # Recalibrate clusters once per day (H1/H4)
         }
+        
+        # ════════════════════════════════════════════════════════════════
+        # 📉 DCA AUTOMÁTICO SWING — PROMEDIAR PRECIO ESCALONADO
+        # QUÉ: Sistema de Dollar Cost Averaging automático para posiciones
+        #   Swing que están en drawdown, aprovechando el 70% de margen libre.
+        # POR QUÉ: Con $13 USD, una posición Swing usa solo 30% del silo
+        #   (≈$1.56 margen). El 70% restante (≈$3.64) puede usarse para
+        #   promediar el precio de entrada si el trade va en contra.
+        # PARA QUÉ: Reducir el avg_price → acercar el TP → recuperar
+        #   capital más rápido cuando el mercado revierte a la media.
+        # CÓMO: 3 layers escalonados a -2%, -4%, -6% de drawdown.
+        #   Cada layer usa una fracción decreciente del margen disponible.
+        # CUÁNDO: Evaluado en cada tick de check_stops() para posiciones Swing.
+        # DÓNDE: Config.Strategies.DCA → core/swing_dca_engine.py → risk_manager.py
+        # QUIÉN: Risk Manager (sizing) + SwingDCAEngine (trigger logic)
+        # ════════════════════════════════════════════════════════════════
+        class DCA:
+            ENABLED = True
+            MAX_LAYERS = 3                          # Máximo 3 entradas DCA por posición
+            TRIGGERS = [-0.020, -0.040, -0.060]     # Umbrales: -2%, -4%, -6% drawdown
+            SIZE_MULTS = [0.25, 0.30, 0.35]         # % del margen disponible Swing por layer
+            COOLDOWN_SECONDS = 1800                 # 30 min mínimo entre DCAs
+            REGIME_BLOCK_BEAR = True                # Bloquear DCA LONG en Bear market
+            ATR_SAFETY_MULT = 2.5                   # Bloquear si ATR > 2.5x normal (cisne negro)
+            RECALC_TP = True                        # Recalcular TP tras promediar
+            RECALC_SL = False                       # NO ensanchar SL (mantener riesgo controlado)
+            MIN_MARGIN_FOR_DCA = 0.50               # Mínimo $0.50 margen libre para DCA
         
         # ML Strategy settings
         ML_RETRAIN_INTERVAL = 240   
@@ -319,6 +392,7 @@ class Config(metaclass=EncryptedConfigMeta):
         ML_ORACLE_VERBOSE = False   
         
         # Mean Reversion parameters
+        STAT_WINDOW = 20
         STAT_Z_ENTRY = 1.5
         STAT_Z_EXIT = 0.0
         

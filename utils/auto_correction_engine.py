@@ -61,16 +61,16 @@ class AutoCorrectionEngine:
 
     def correct_high_fee_ratio(self, issue: Dict[str, Any]) -> str:
         """Aumenta dinámicamente el TARGET mínimo de Take Profit para sobrevivir comisiones."""
-        # Intenta obtener el ratio configurado globalmente o por defecto
-        current_tp = getattr(Config.Strategies, 'SCALPING_TP_MIN', 0.005) 
+        # Modificar el parámetro real en SCALPING_PARAMS
+        current_tp = Config.Strategies.SCALPING_PARAMS.get('tp_pct', 0.0045)
         new_tp = current_tp * 1.25 # Aumento geométrico del 25% para separarnos del piso de fees
         
         # Max cap para evitar TP inalcanzables en scalping (max 1.5%)
         if new_tp > 0.015:
             new_tp = 0.015
             
-        setattr(Config.Strategies, 'SCALPING_TP_MIN', new_tp)
-        return f"Increased SCALPING_TP_MIN to {new_tp*100:.2f}% to compensate for fee drag."
+        Config.Strategies.SCALPING_PARAMS['tp_pct'] = new_tp
+        return f"Increased SCALPING_PARAMS['tp_pct'] to {new_tp*100:.2f}% to compensate for fee drag."
 
     def correct_frequent_small_losses(self, issue: Dict[str, Any]) -> str:
         """Reduce leverage temporalmente ante racha negativa."""

@@ -77,6 +77,42 @@ class SniperStrategy(Strategy):
         
         for symbol in target_symbols:
             try:
+                # ── PHASE 1: LIQUIDATION SQUEEZE TRIGGER ──
+                # If the event is a direct liquidation notification, bypass standard analysis
+                # AUDIT FIX #2: Read from order_flow instead of 'data' (which does not exist)
+                event_data = getattr(event, 'order_flow', {}) or {}
+                if event_data and event_data.get('liquidation'):
+                    liq_side = event_data.get('side')
+                    liq_usd = event_data.get('usd_value', 0)
+                    
+                    # If LONGs are liquidated (SELL), we go LONG. If SHORTs are liquidated (BUY), we go SHORT.
+                    signal_type = SignalType.LONG if liq_side == 'SELL' else SignalType.SHORT
+                    
+                    logger.warning(f"⚡ [LIQUIDATION SQUEEZE] {symbol} | Sniping {signal_type.name} after ${liq_usd:,.0f} {liq_side} liquidation cascade!")
+                    
+                    # Create atomic high-conviction signal
+                    signal = SignalEvent(
+                        strategy_id="SNIPER_LIQ_SQUEEZE",
+                        symbol=symbol,
+                        datetime=getattr(event, 'timestamp', datetime.now(timezone.utc)),
+                        signal_type=signal_type,
+                        strength=1.0,  # Max conviction
+                        atr=0.0, # Will be dynamically calculated in risk_manager or executor
+                        tp_pct=0.015, # Quick 1.5% TP for bounce
+                        sl_pct=0.005, # Tight 0.5% SL
+                        current_price=event_data.get('price', 0),
+                        leverage=Config.BINANCE_LEVERAGE,
+                        horizon=self.horizon,
+                        priority=10, # Top priority
+                        metadata={
+                            'is_liquidation_squeeze': True,
+                            'liq_value': liq_usd
+                        }
+                    )
+                    self.events_queue.put(signal)
+                    self.last_signal_time[symbol] = getattr(event, 'timestamp', datetime.now(timezone.utc))
+                    continue # Skip standard analysis
+                    
                 # D2 FIX: Single data fetch for both GARCH and analysis
                 bars = self.data_provider.get_latest_bars(symbol, n=200)
                 if len(bars) < 2:
@@ -95,7 +131,8 @@ class SniperStrategy(Strategy):
                     self.portfolio.risk_manager.update_leverage_and_params(vol, "ADAPTIVE")
 
                 # 0. Local Cooldown Check
-                now = datetime.now(timezone.utc)
+                # FORENSIC FIX: Use event.timestamp for backtest parity, fallback to now
+                now = getattr(event, 'timestamp', datetime.now(timezone.utc))
                 if symbol in self.last_signal_time:
                     if (now - self.last_signal_time[symbol]).total_seconds() < 20:
                         continue
@@ -145,6 +182,18 @@ class SniperStrategy(Strategy):
         # HURST NOISE FILTER: 0.45 to 0.55 is pure noise. Block execution.
         if 0.45 < hurst < 0.55:
             logger.debug(f"[{symbol}] Sniper blocked by Hurst {hurst:.2f} (Random Walk Noise)")
+            return None
+            
+        # =====================================================================
+        # BOLLINGER BAND SQUEEZE EXPANSION FILTER
+        # QUÉ: Exige que la volatilidad esté en expansión.
+        # POR QUÉ: Sniper es pésimo en mercados planos. Solo disparar si la banda se abre.
+        # =====================================================================
+        upper, middle, lower = talib.BBANDS(closes, timeperiod=20, nbdevup=2.0, nbdevdn=2.0)
+        bbw = (upper - lower) / middle
+        # Require BBW to be expanding (current > previous)
+        if len(bbw) >= 2 and bbw[-1] <= bbw[-2]:
+            # logger.debug(f"[{symbol}] Sniper blocked by BBW Compression (No Volatility Expansion)")
             return None
             
         z_scores = calculate_zscore_jit(closes, period=20)
@@ -290,7 +339,45 @@ class SniperStrategy(Strategy):
         tp_pct_val = abs(target_price - current_price) / current_price  # Already decimal
         sl_pct_val = abs(current_price - stop_price) / current_price    # Already decimal
         
+        # ── SOPHIA-INTELLIGENCE: Pre-trade XAI Analysis ──
+        sophia_report_dict = {}
+        if hasattr(self, 'sophia') and self.sophia:
+            _returns = None
+            if len(closes) > 1:
+                _returns = np.diff(np.log(closes))
+
+            # Obtener régimen del portfolio o por defecto
+            market_regime = "UNKNOWN"
+            if self.portfolio and hasattr(self.portfolio, 'market_regime') and self.portfolio.market_regime:
+                market_regime = self.portfolio.market_regime.get_current_regime()
+
+            # Sniper requires tight TTL
+            dynamic_ttl = 120.0 if self.horizon == 'SCALPING' else 900.0
+
+            sophia_report = self.sophia.analyze(
+                symbol=symbol,
+                direction=signal_type.name,
+                signal_strength=strength,
+                setups={'is_sniper_v3': is_sniper_v3, 'bayes_prob': bayes_prob},
+                confluence_score=1.0,
+                tp_pct=tp_pct_val,
+                sl_pct=sl_pct_val,
+                returns=_returns,
+                ttl_seconds=dynamic_ttl,
+                regime=market_regime,
+            )
+
+            # FORENSIC-31: DYNAMIC EXACTITUDE THRESHOLD
+            veto_threshold = 0.65 if market_regime == "TRENDING" else 0.55
+            if sophia_report.win_probability < veto_threshold:
+                logger.info(f"🛑 [SOPHIA VETO] {symbol} Sniper Signal Blocked. Exactitude ({sophia_report.win_probability*100:.1f}%) < {veto_threshold*100:.0f}% (Regime: {market_regime}).")
+                return None
+            sophia_report_dict = sophia_report.to_dict()
+        
         # FIXED: Pass ALL metadata in constructor (frozen dataclass)
+        signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc)) if hasattr(self, 'event') else datetime.now(timezone.utc) # fallback
+        # Wait, we don't have event in _analyze_symbol directly, let's just use datetime.now or pass it down.
+        # Actually, let's just use datetime.now here. It's only for the SignalEvent creation time. 
         signal = SignalEvent(
             strategy_id="SNIPER",
             symbol=symbol,
@@ -309,7 +396,8 @@ class SniperStrategy(Strategy):
                 'of_reason': of_res.get('reason') if of_res else 'TECHNICAL',
                 'delta': order_flow.get('delta', 0.0) if order_flow else 0.0,
                 'bayes_prob': float(bayes_prob),
-                'hurst': float(hurst)
+                'hurst': float(hurst),
+                'sophia': sophia_report_dict
             }
         )
         

@@ -15,10 +15,41 @@ class TransparentLogger:
         self._setup_logging()
         
     def _setup_logging(self):
-        # Configuración básica de logging a archivo si es necesario
-        # Por ahora nos enfocamos en el output de consola estructurado
-        pass
+        import os
+        os.makedirs("dashboard/data", exist_ok=True)
+        self.sink_path = "dashboard/data/backtest_thoughts.jsonl"
         
+    def _write_to_sink(self, source: str, symbol: str, data: dict):
+        """FORENSIC-V43: Persist thoughts to JSONL for post-mortem analysis."""
+        import json
+        import numpy as np
+        from config import Config
+        
+        class NpEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                if isinstance(obj, np.floating):
+                    return float(obj)
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                if isinstance(obj, np.bool_):
+                    return bool(obj)
+                return super(NpEncoder, self).default(obj)
+                
+        try:
+            with open(self.sink_path, "a", encoding="utf-8") as f:
+                log_entry = {
+                    "ts": self._get_timestamp(),
+                    "source": source,
+                    "symbol": symbol,
+                    "is_backtest": getattr(Config, 'IS_BACKTEST', False),
+                    "thoughts": data
+                }
+                f.write(json.dumps(log_entry, cls=NpEncoder, ensure_ascii=False) + "\n")
+        except Exception as e:
+            print(f"Error in _write_to_sink: {e}")
+            
     def _get_timestamp(self):
         return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
@@ -26,6 +57,16 @@ class TransparentLogger:
         """
         Nivel 1 - DECISIONES ESTRATÉGICAS (Technical)
         """
+        self._write_to_sink("TECHNICAL", symbol, {
+            "timeframe": timeframe,
+            "price": price,
+            "signal": signal,
+            "strength": strength,
+            "analysis": analysis,
+            "indicators": indicators,
+            "confluence": confluence
+        })
+        
         color = Fore.GREEN if signal == "BUY" else (Fore.RED if signal == "SELL" else Fore.YELLOW)
         
         print(f"\n{Style.BRIGHT}═══════════════════════════════════════════════════════════")
@@ -76,6 +117,14 @@ class TransparentLogger:
         """
         Nivel 2 - ESTRATEGIAS DE INTELIGENCIA ARTIFICIAL (ML)
         """
+        self._write_to_sink("ML", symbol, {
+            "model_name": model_name,
+            "prediction": prediction,
+            "confidence": confidence,
+            "features": features,
+            "decision": decision
+        })
+        
         color = Fore.GREEN if decision == "LONG" else (Fore.RED if decision == "SHORT" else Fore.YELLOW)
         
         print(f"\n{Style.BRIGHT}═══════════════════════════════════════════════════════════")
@@ -103,6 +152,10 @@ class TransparentLogger:
         """
         Nivel 3 - ESTRATEGIA SNIPER
         """
+        self._write_to_sink("SNIPER", symbol, {
+            "layers": layers
+        })
+        
         print(f"\n{Style.BRIGHT}═══════════════════════════════════════════════════════════")
         print(f"🎯 [SNIPER MODE] {symbol} | {self._get_timestamp()}")
         print(f"═══════════════════════════════════════════════════════════{Style.RESET_ALL}")

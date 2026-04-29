@@ -29,7 +29,7 @@ class AdaptiveMLParameterEngine:
             'label_threshold': (0.0004, 0.0020),
             'retrain_interval':(90.0, 360.0),
             'dd_stress_limit': (0.40, 0.70),
-            'ml_confidence':   (0.45, 0.70),
+            'ml_confidence':   (0.65, 0.85),
             'vol_sensitivity': (-0.08, 0.05),
             'balance_cap':     (0.55, 0.80),
             'sl_mult':         (0.15, 0.50), # Corrected for Scalping (0.15% to 0.50%)
@@ -45,7 +45,7 @@ class AdaptiveMLParameterEngine:
             'label_threshold': (0.0010, 0.0050),
             'retrain_interval':(1000.0, 5000.0),
             'dd_stress_limit': (0.30, 0.50),
-            'ml_confidence':   (0.50, 0.75),
+            'ml_confidence':   (0.65, 0.85),
             'vol_sensitivity': (0.0, 0.20),
             'balance_cap':     (0.60, 0.85),
             'sl_mult':         (1.0, 5.0),  # Swing targets (1.0% to 5.0%)
@@ -73,7 +73,7 @@ class AdaptiveMLParameterEngine:
         """
         # Resolver horizonte: horizon_str tiene prioridad, horizon_days como fallback
         if horizon_days is not None:
-            self.is_scalping = (horizon_days <= 1)
+            self.is_scalping = (horizon_days == 0) # 0 = Scalping, 1+ = Swing
         else:
             horizon_str_upper = horizon_str.upper()
             self.is_scalping = (horizon_str_upper == 'SCALPING' or horizon_str_upper == '1D')
@@ -195,14 +195,15 @@ class AdaptiveMLParameterEngine:
         self.params['ml_confidence'] = 0.8 * self.params['ml_confidence'] + 0.2 * np.clip(target_conf, 0.45, 0.70)
         
         # 2. Ajustar SL/TP basado en MAE/MFE reales
+        # FORENSIC-V36: Usamos divisor 0.01 para que 1.0 = 1% (Consistencia con ml_strategy)
         if maes and any(m > 0 for m in maes):
-            target_sl_mult = np.percentile(maes, 80) / 0.001 if np.percentile(maes, 80) > 0 else self.params['sl_mult']
+            target_sl_mult = np.percentile(maes, 80) / 0.01 if np.percentile(maes, 80) > 0 else self.params['sl_mult']
             # Clip to the CORRECT bounds for this profile
             sl_lo, sl_hi = self.r['sl_mult']
             self.params['sl_mult'] = 0.7 * self.params['sl_mult'] + 0.3 * np.clip(target_sl_mult, sl_lo, sl_hi)
             
         if mfes and any(m > 0 for m in mfes):
-            target_tp_mult = np.percentile(mfes, 60) / 0.001 if np.percentile(mfes, 60) > 0 else self.params['tp_mult']
+            target_tp_mult = np.percentile(mfes, 60) / 0.01 if np.percentile(mfes, 60) > 0 else self.params['tp_mult']
             tp_lo, tp_hi = self.r['tp_mult']
             self.params['tp_mult'] = 0.7 * self.params['tp_mult'] + 0.3 * np.clip(target_tp_mult, tp_lo, tp_hi)
             

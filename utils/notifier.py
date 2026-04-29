@@ -30,6 +30,7 @@ from typing import Optional, Dict, Any, List
 
 from config import Config
 from utils.logger import logger
+from utils.fast_json import FastJson
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -75,6 +76,7 @@ class EnhancedTradeData:
     def __init__(self, trade_info: Dict[str, Any]):
         # ── Basic Data ──
         self.symbol = trade_info.get('symbol', 'UNKNOWN')
+        self.trade_id = trade_info.get('trade_id', 'UNKNOWN')
         self.strategy = trade_info.get('strategy', 'Unknown')
         self.horizon = trade_info.get('horizon', 'SCALPING')
         self.direction = trade_info.get('direction', 'BUY')
@@ -134,9 +136,11 @@ class EnhancedTradeData:
         # ── ML Telemetry & Forensic Data ──
         self.ml_confidence = trade_info.get('ml_confidence', None)
         self.predicted_duration = trade_info.get('predicted_duration', None)
+        self.predicted_magnitude = trade_info.get('predicted_magnitude', None)
         
         # Parse metadata if exists
         self.metadata = trade_info.get('metadata', {})
+        self.order_type = self.metadata.get('enriched_order_type', trade_info.get('order_type', 'UNKNOWN'))
         self.setup_type = self.metadata.get('setup_type', trade_info.get('setup_type', 'UNKNOWN'))
         self.neural_bias = self.metadata.get('neural_bias', None)
         self.rsi = self.metadata.get('rsi', None)
@@ -144,11 +148,18 @@ class EnhancedTradeData:
         self.confluence = self.metadata.get('multi_timeframe_score', None)
         self.raw_ml_confidence = self.metadata.get('raw_ml_confidence', None)
         self.smoothed_ml_confidence = self.metadata.get('smoothed_ml_confidence', None)
+        
+        # Phase & Concept from Sophia (Unified Oracle)
+        self.concept = self.metadata.get('concept', None)
+        self.phase = self.metadata.get('phase', None)
 
         # ── Market Context ──
         self.volatility = float(trade_info.get('volatility', 0.0))
         self.spread = float(trade_info.get('spread', 0.0))
         self.win_rate = float(trade_info.get('win_rate', 0.0))
+        self.alltime_win_rate = float(trade_info.get('alltime_win_rate', 0.0))
+        self.session_wins = int(trade_info.get('session_wins', 0))
+        self.session_losses = int(trade_info.get('session_losses', 0))
         self.timestamp = trade_info.get('timestamp', datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'))
 
     def _calc_breakeven(self) -> float:
@@ -187,14 +198,17 @@ class _RateLimiter:
     Token bucket rate limiter for Telegram API.
     Max 30 messages per minute by default.
     """
-    def __init__(self, max_per_minute: int = 30):
+    def __init__(self, max_per_minute: int = 15):
         self._max = max_per_minute
         self._timestamps: deque = deque(maxlen=max_per_minute)
         self._lock = threading.Lock()
+        self._pause_until = 0.0
 
     def allow(self) -> bool:
         now = time.monotonic()
         with self._lock:
+            if now < self._pause_until:
+                return False
             # Purge timestamps older than 60s
             while self._timestamps and (now - self._timestamps[0]) > 60.0:
                 self._timestamps.popleft()
@@ -202,6 +216,12 @@ class _RateLimiter:
                 self._timestamps.append(now)
                 return True
             return False
+
+    def pause(self, seconds: float):
+        """Pause rate limiter completely for X seconds (e.g. after 429)."""
+        now = time.monotonic()
+        with self._lock:
+            self._pause_until = max(self._pause_until, now + seconds)
 
     @property
     def remaining(self) -> int:
@@ -267,8 +287,47 @@ class Notifier:
     @staticmethod
     def _do_send_telegram(message: str, priority: str) -> None:
         """Actual Telegram send (runs in background thread)."""
+        # ── FORENSIC-V42: TRANSPARENT BLACK BOX SINK ──
+        # QUÉ: Guarda TODO el spam localmente antes del Rate Limiter.
+        # POR QUÉ: El usuario requiere visibilidad absoluta para auditar.
+        try:
+            print(f"\n📢 [SPAM-{priority}]\n{message}\n")
+            import os, json
+            os.makedirs("dashboard/data", exist_ok=True)
+            with open("dashboard/data/backtest_telemetry_spam.jsonl", "a", encoding="utf-8") as f:
+                log_entry = {
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "priority": priority,
+                    "message": message
+                }
+                f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+        if getattr(Config, 'IS_BACKTEST', False):
+            if priority == "CRITICAL":
+                pass # Allow CRITICAL alerts (startup, kill switch) to proceed immediately
+            elif "TRADE CERRADO" in message:
+                # Batch trades during backtest to avoid rate limits and Telegram bans
+                with Notifier._lock:
+                    if not hasattr(Notifier, '_backtest_trade_batch'):
+                        Notifier._backtest_trade_batch = []
+                    Notifier._backtest_trade_batch.append(message)
+                    
+                    # Telegram limit is 4096 chars. 3 full trades is ~2500 chars.
+                    if len(Notifier._backtest_trade_batch) >= 3:
+                        batch_msg = "==== 📊 BATCH DE 3 TRADES (BACKTEST) ====\n\n" + "\n-------------------\n".join(Notifier._backtest_trade_batch)
+                        Notifier._backtest_trade_batch.clear()
+                        # Override message and priority to allow it through
+                        message = batch_msg
+                        priority = "CRITICAL"
+                    else:
+                        return
+            else:
+                return
+
         if not Notifier._rate_limiter.allow():
-            logger.warning("📢 [Notifier] Rate limited — Telegram message dropped")
+            logger.warning("📢 [Notifier] Rate limited — Telegram message dropped (saved locally)")
             return
 
         # Priority visual header
@@ -300,8 +359,23 @@ class Notifier:
         }
 
         try:
-            response = requests.post(url, json=payload, timeout=10)
-            if response.status_code != 200:
+            serialized_payload = FastJson.dumps(payload).encode('utf-8')
+            response = requests.post(
+                url, 
+                data=serialized_payload, 
+                headers={'Content-Type': 'application/json'}, 
+                timeout=10
+            )
+            if response.status_code == 429:
+                try:
+                    data = response.json()
+                    retry_after = data.get("parameters", {}).get("retry_after", 30)
+                    logger.warning(f"Telegram API 429 Too Many Requests. Pausing notifications for {retry_after}s.")
+                    Notifier._rate_limiter.pause(retry_after)
+                except Exception:
+                    logger.warning("Telegram API 429 Too Many Requests. Pausing notifications for 30s.")
+                    Notifier._rate_limiter.pause(30)
+            elif response.status_code != 200:
                 logger.warning(f"Telegram failed: {response.text}")
         except Exception as e:
             logger.error(f"Error sending Telegram: {e}")
@@ -381,21 +455,48 @@ class Notifier:
             return
 
         td = EnhancedTradeData(trade_data)
-        dir_emoji = EMOJI_MAP.get(str(td.direction).upper(), "🔶")
-        horizon_emoji = EMOJI_MAP.get(td.horizon, "📊")
+        dir_str = str(td.direction).upper()
+        dir_label = "📈 LONG" if dir_str in ("BUY", "LONG") else "📉 SHORT" if dir_str in ("SELL", "SHORT") else f"🔶 {dir_str}"
+        horizon_emoji = "⚡" if td.horizon == "SCALPING" else "🌊" if td.horizon == "SWING" else "📊"
 
-        msg = f"🎯 *NUEVO TRADE INICIADO* 🎯\n\n"
+        # Safe parsing for visual formatting
+        visual_tid = td.trade_id if td.trade_id and td.trade_id not in ("None", "UNKNOWN") else "Pendiente_Asignación"
+        visual_setup = td.setup_type if td.setup_type and td.setup_type not in ("None", "UNKNOWN") else "AUTOMATICO"
+
+        msg = f"🎯 *NUEVO TRADE INICIADO* 🎯\n"
+        msg += f"ID: `{visual_tid}`\n\n"
         msg += f"*Estrategia:* {td.strategy} ({horizon_emoji} {td.horizon})\n"
+        
+        # Avoid printing -100% win rate for uninitialized / open signals
+        if td.win_rate >= 0:
+            msg += f"*Win Rate Estrategia:* `{td.win_rate*100:.1f}%` (Sesión: {td.session_wins}W/{td.session_losses}L)\n"
+            
         msg += f"*Par:* `{td.symbol}`\n"
-        msg += f"*Setup:* `{td.setup_type}`\n"
-        msg += f"*Dirección:* {dir_emoji} {td.direction}\n"
+        msg += f"*Setup:* `{visual_setup}`\n"
+        msg += f"*Dirección:* {dir_label}\n"
+        msg += f"*Tipo Orden:* `{td.order_type}`\n"
         msg += f"*Entrada:* `${td.fill_price:,.4f}`\n"
         msg += f"*Tamaño:* `{td.quantity}` (${td.size_usd:,.2f} USD)\n"
 
-        if td.sl_pct > 0:
-            msg += f"*Stop Loss:* `{td.sl_pct*100:,.2f}%`\n"
-        if td.tp_pct > 0:
-            msg += f"*Take Profit:* `{td.tp_pct*100:,.2f}%`\n"
+        if td.concept or td.phase:
+            msg += f"\n*🧠 Decisión Oráculo (Sophia):*\n"
+            if td.phase: msg += f"Fase Mercado: `{td.phase}`\n"
+            if td.concept: msg += f"Concepto: {td.concept}\n"
+
+        if td.sl_pct > 0 or td.tp_pct > 0:
+            msg += f"\n*Niveles (Precios):*\n"
+            direction_mult = 1 if str(td.direction).upper() == "LONG" else -1
+            
+            if td.tp_pct > 0:
+                tp_price = td.fill_price * (1 + (td.tp_pct * direction_mult))
+                expected_profit = td.size_usd * td.tp_pct
+                msg += f"🎯 *Target Limit (TP):* `${tp_price:,.4f}` (`+{td.tp_pct*100:,.2f}%`)\n"
+                msg += f"   💰 *Crecimiento Esperado:* `${expected_profit:,.2f}`\n"
+                
+            if td.sl_pct > 0:
+                sl_price = td.fill_price * (1 - (td.sl_pct * direction_mult))
+                msg += f"🛡️ *Stop Loss:* `${sl_price:,.4f}` (`-{td.sl_pct*100:,.2f}%`)\n"
+                
         if td.rr_ratio > 0:
             msg += f"*Risk/Reward:* `1:{td.rr_ratio:,.2f}`\n"
 
@@ -404,15 +505,33 @@ class Notifier:
             msg += f"🎯 Confluencia: `{td.confluence:.2f}`\n"
         if td.neural_bias is not None:
             msg += f"🧠 Neural Bias: `{td.neural_bias:.2f}`\n"
+        
+        sophia_prob = td.metadata.get('sophia_prob', None)
+        if sophia_prob is not None:
+            msg += f"🔮 Sophia Prob: `{sophia_prob*100:.1f}%`\n"
+            
         if td.raw_ml_confidence is not None:
             msg += f"🤖 ML Raw: `{td.raw_ml_confidence*100:.1f}%` | Smoothed: `{td.smoothed_ml_confidence*100:.1f}%`\n"
         if td.rsi is not None and td.adx is not None:
             msg += f"📉 RSI: `{td.rsi:.1f}` | ADX: `{td.adx:.1f}`\n"
 
+        if td.ml_confidence is not None or td.predicted_magnitude is not None:
+            msg += f"\n*Predicción Cuantitativa IA:*\n"
+            if td.predicted_magnitude:
+                msg += f"📏 Magnitud Proyectada: `+{td.predicted_magnitude*100:.2f}%`\n"
+            if td.predicted_duration:
+                msg += f"⏱️ Tiempo Estimado: `{td.predicted_duration} barras`\n"
+
         msg += f"\n*Análisis de Viabilidad:*\n"
         msg += f"⚠️ Fees estimados: `${td.commission:,.4f}`\n"
         msg += f"📊 Breakeven: `{td.breakeven_pct:,.3f}%`\n"
         msg += f"🎯 Neto mínimo viable: `${td.min_viable_net:,.4f}`\n"
+        
+        msg += f"\n*Features Activos:*\n"
+        if td.sl_pct >= 0.0075:
+            msg += f"🛡️ Defensa: `Anti-Barrido NY` (SL Holgado)\n"
+        if td.confluence is not None and td.confluence > 0:
+            msg += f"🌌 Engine: `Sophia Quantum Veto Activo`\n"
 
         if td.volatility > 0:
             msg += f"\n*Condiciones de Mercado:*\n"
@@ -451,19 +570,47 @@ class Notifier:
 
         td = EnhancedTradeData(trade_data)
         result_emoji = "🟢" if td.net_pnl > 0 else ("🔴" if td.net_pnl < 0 else "🔶")
-        horizon_emoji = EMOJI_MAP.get(td.horizon, "📊")
+        horizon_emoji = "⚡" if td.horizon == "SCALPING" else "🌊" if td.horizon == "SWING" else "📊"
         exit_emoji = EMOJI_MAP.get(td.exit_reason, "📋")
+        
+        # Direction with clearer labeling
+        dir_str = str(td.direction).upper()
+        dir_label = "📈 LONG" if dir_str in ("BUY", "LONG") else "📉 SHORT" if dir_str in ("SELL", "SHORT") else f"🔶 {dir_str}"
 
-        msg = f"{result_emoji} *TRADE CERRADO* {result_emoji}\n\n"
+        msg = f"{result_emoji} *TRADE CERRADO* {result_emoji}\n"
+        msg += f"ID: `{td.trade_id}`\n\n"
+
+        if td.exit_reason == "TIME_STOP_ZOMBIE":
+            msg += f"🧟 *ZOMBIE CATCHER TRIGGERED*\n"
+            msg += f"_{td.duration} de inmovilización en mercado sin tendencia_\n\n"
+        elif td.exit_reason == "TURBO_BE":
+            msg += f"⚡ *TURBO-BREAKEVEN PROTEGIDO*\n"
+            msg += f"_Peak PnL alcanzado y retrocedido — capital protegido_\n\n"
+        elif td.exit_reason == "FLIP_EXIT":
+            msg += f"🔄 *FLIP EXIT — Cambio de dirección detectado*\n\n"
+        elif td.exit_reason == "HARD_SL":
+            msg += f"🛑 *HARD STOP LOSS — Pérdida cortada*\n\n"
 
         msg += f"*Resumen:*\n"
         msg += f"Estrategia: {td.strategy} ({horizon_emoji} {td.horizon})\n"
         msg += f"Par: `{td.symbol}`\n"
+        msg += f"Razón de Cierre: {exit_emoji} `{td.exit_reason}`\n"
         msg += f"Setup: `{td.setup_type}`\n"
-        msg += f"Dirección: {EMOJI_MAP.get(str(td.direction).upper(), '🔶')} {td.direction}\n"
+        msg += f"Dirección: {dir_label}\n"
+        msg += f"Tipo Orden: `{td.order_type}`\n"
         msg += f"Duración: `{td.duration}`\n"
+        
+        # Market Regime Context
+        market_regime = td.metadata.get('market_regime', trade_data.get('market_regime', None))
+        if market_regime:
+            msg += f"Régimen: `{market_regime}`\n"
+        
+        # Peak PnL for exit context (especially useful for TURBO_BE and trailing)
+        peak_pnl = td.metadata.get('peak_pnl_pct', trade_data.get('peak_pnl_pct', None))
+        if peak_pnl is not None:
+            msg += f"Peak PnL: `+{peak_pnl:.2f}%`\n"
 
-        msg += f"\n*Resultados:*\n"
+        msg += f"\n*Resultados (Precios):*\n"
         msg += f"Entrada: `${td.entry_price:,.4f}`\n"
         msg += f"Salida: `${td.exit_price:,.4f}`\n"
 
@@ -471,7 +618,7 @@ class Notifier:
             price_change = ((td.exit_price - td.entry_price) / td.entry_price) * 100
             msg += f"Movimiento: `{price_change:+,.2f}%`\n"
 
-        msg += f"\n*Métricas:*\n"
+        msg += f"\n💰 *TRADE PNL (Aislado):*\n"
         msg += f"Nocional: `${td.size_usd:,.2f}` (`{td.leverage}x Lev`)\n"
         msg += f"Margen gastado: `${td.margin_used:,.2f}`\n"
         msg += f"PnL Bruto: `${td.pnl:,.4f}`\n"
@@ -490,11 +637,14 @@ class Notifier:
             if td.rsi is not None and td.adx is not None:
                 msg += f"📉 RSI: `{td.rsi:.1f}` | ADX: `{td.adx:.1f}`\n"
 
-        if td.ml_confidence is not None:
-            msg += f"\n*Predicción IA:*\n"
-            msg += f"Confianza: `{td.ml_confidence*100:.1f}%`\n"
+        if td.ml_confidence is not None or td.predicted_magnitude is not None:
+            msg += f"\n*Auditoría de Predicción IA:*\n"
+            if td.ml_confidence is not None:
+                msg += f"🧠 Confianza Inicial: `{td.ml_confidence*100:.1f}%`\n"
+            if td.predicted_magnitude:
+                msg += f"🎯 Proyectado: `+{td.predicted_magnitude*100:.2f}%` | 📊 Realidad (MFE): `+{td.mfe_pct:.2f}%`\n"
             if td.predicted_duration:
-                msg += f"Horizonte Objetivo: `{td.predicted_duration} barras`\n"
+                msg += f"⏱️ Estimado: `{td.predicted_duration} barras` | ⏳ Real: `{td.duration}`\n"
 
         msg += f"\n*Gestión:*\n"
         msg += f"Razón: {exit_emoji} `{td.exit_reason}`\n"
@@ -506,13 +656,43 @@ class Notifier:
             msg += f"R multiple: `{td.r_multiple:,.2f}`\n"
 
         if td.balance_before > 0:
-            msg += f"\n*Balance:*\n"
-            msg += f"Antes: `${td.balance_before:,.2f}`\n"
-            msg += f"Después: `${td.balance_after:,.2f}`\n"
-            msg += f"Cambio: `{td.balance_change_pct:+,.2f}%`\n"
+            msg += f"\n🏦 *GLOBAL ACCOUNT BALANCE:*\n"
+            msg += f"Antes de trade: `${td.balance_before:,.2f}`\n"
+            msg += f"Balance Total Ahora: `${td.balance_after:,.2f}`\n"
+            msg += f"Crecimiento Acumulado: `{td.balance_change_pct:+,.2f}%`\n"
 
-        if td.win_rate > 0:
-            msg += f"\n🏆 Win Rate: `{td.win_rate:.1f}%`"
+        # ═══════════════════════════════════════════════════════════════
+        # SOPHIA-GLOBAL FIX: WR display for CLOSE notifications only
+        # QUÉ: Solo muestra WR en trades cerrados (win_rate >= 0).
+        # POR QUÉ: Entries envían win_rate=-1 como sentinel.
+        # PARA QUÉ: Evitar mostrar "WR: 100%" en un trade que aún no cerró.
+        # ═══════════════════════════════════════════════════════════════
+        if td.win_rate >= 0 and (td.session_wins > 0 or td.session_losses > 0):
+            session_total = td.session_wins + td.session_losses
+            msg += f"\n🏆 WR Global: `{td.win_rate:.1f}%` ({td.session_wins}W/{td.session_losses}L de {session_total})"
+            
+            # FORENSIC-V15: Strategy Specific WR
+            strat_wr = trade_data.get('strat_win_rate', -1.0)
+            if strat_wr >= 0:
+                strat_w = trade_data.get('strat_wins', 0)
+                strat_l = trade_data.get('strat_losses', 0)
+                strat_tot = strat_w + strat_l
+                if strat_tot > 0:
+                    msg += f"\n🎯 WR {td.strategy}: `{strat_wr:.1f}%` ({strat_w}W/{strat_l}L de {strat_tot})"
+
+        # ═══════════════════════════════════════════════════════════════
+        # XAI AUTOPSY DISPLAY (Phase Omega)
+        # QUÉ: Muestra la autopsia forense de Sophia en Telegram.
+        # POR QUÉ: El usuario necesita saber POR QUÉ perdió, no solo cuánto.
+        # PARA QUÉ: Feedback loop humano → mejores decisiones de configuración.
+        # CÓMO: Lee 'xai_autopsy' del trade_data inyectado por portfolio.py.
+        # ═══════════════════════════════════════════════════════════════
+        xai_autopsy = trade_data.get('xai_autopsy')
+        if xai_autopsy:
+            msg += f"\n\n🧠 *Autopsia Sophia (XAI):*\n{xai_autopsy}"
+        sophia_narrative = trade_data.get('sophia_narrative')
+        if sophia_narrative:
+            msg += f"\n💬 _{sophia_narrative}_"
 
         Notifier.send_telegram(msg)
 
@@ -761,6 +941,362 @@ class Notifier:
         # Always email critical system alerts
         if Config.Observability.EMAIL_ENABLED and priority == "CRITICAL":
             Notifier.send_email(f"🚨 Sistema: {alert_type}", msg)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # LAYER 6: SYSTEM STARTUP IDENTIFICATION
+    # ══════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def send_system_startup(mode: str, context: Dict[str, Any]) -> None:
+        """
+        🚀 System Startup Notification — Identifies WHAT is running.
+
+        PROFESSOR METHOD:
+        - QUÉ: Mensaje de inicio que identifica claramente si es PRODUCCIÓN o BACKTEST.
+        - POR QUÉ: El usuario necesita saber inmediatamente qué sistema arrancó.
+        - PARA QUÉ: Distinguir entre sesiones y evitar confusión en Telegram.
+        - CÓMO: Envía un mensaje rico con todos los parámetros de la sesión.
+        - CUÁNDO: Al inicio de main.py (producción) o run_god_mode_backtest.py.
+        - DÓNDE: Primer mensaje que llega a Telegram en cualquier sesión.
+        - QUIÉN: Notifier (invocado por main.py o backtest script).
+        """
+        ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+
+        if mode == "PRODUCTION":
+            emoji = "🚀"
+            title = "TRADER GEMINI — PRODUCCIÓN LIVE"
+            mode_detail = context.get('trading_mode', 'FUTURES').upper()
+        elif mode == "BACKTEST":
+            emoji = "🧪"
+            title = "TRADER GEMINI — BACKTEST GOD MODE"
+            mode_detail = f"{context.get('days', '?')} días"
+        elif mode == "PAPER":
+            emoji = "📝"
+            title = "TRADER GEMINI — PAPER TRADING"
+            mode_detail = context.get('trading_mode', 'DEMO').upper()
+        else:
+            emoji = "⚙️"
+            title = f"TRADER GEMINI — {mode.upper()}"
+            mode_detail = mode
+
+        msg = f"{emoji} *{title}* {emoji}\n\n"
+        msg += f"*Modo:* `{mode_detail}`\n"
+        msg += f"*Capital:* `${context.get('capital', 0):,.2f}`\n"
+        msg += f"*Leverage:* `{context.get('leverage', 1)}x`\n"
+        msg += f"*Símbolos:* `{context.get('symbols_count', 0)}` activos\n"
+        msg += f"*Estrategias:* `{context.get('strategies_count', 0)}` registradas\n"
+
+        if mode == "BACKTEST":
+            msg += f"\n*Configuración Backtest:*\n"
+            msg += f"Periodo: `{context.get('days', '?')} días`\n"
+            msg += f"Capital inicial: `${context.get('capital', 0):,.2f}`\n"
+            seed = context.get('seed', 42)
+            msg += f"Seed: `{seed}` (determinístico)\n"
+            msg += f"Epochs: `{context.get('total_epochs', '?'):,}`\n"
+        else:
+            msg += f"\n*Conexión:*\n"
+            testnet = context.get('testnet', False)
+            demo = context.get('demo', False)
+            if testnet:
+                msg += f"Exchange: `Binance TESTNET`\n"
+            elif demo:
+                msg += f"Exchange: `Binance DEMO`\n"
+            else:
+                msg += f"Exchange: `Binance MAINNET` ⚠️\n"
+
+        # Risk params
+        msg += f"\n*Parámetros de Riesgo:*\n"
+        msg += f"Max Drawdown: `{context.get('max_drawdown', 0):.1f}%`\n"
+        msg += f"TP Scalping: `{context.get('tp_scalp', 0)*100:.2f}%`\n"
+        msg += f"SL Scalping: `{context.get('sl_scalp', 0)*100:.2f}%`\n"
+        msg += f"Kill Switch: `Activo`\n"
+
+        # Symbols list (abbreviated)
+        symbols = context.get('symbols_list', [])
+        if symbols:
+            symbols_display = symbols[:10]
+            symbols_str = ", ".join(f"`{s}`" for s in symbols_display)
+            if len(symbols) > 10:
+                symbols_str += f" +{len(symbols) - 10} más"
+            msg += f"\n*Símbolos:*\n{symbols_str}\n"
+
+        msg += f"\n🕒 `{ts}`"
+
+        Notifier.send_telegram(msg, priority="CRITICAL")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # LAYER 7: STRATEGY PULSE — IDLE MARKET INTELLIGENCE
+    # ══════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def send_strategy_pulse(pulse_data: Dict[str, Any]) -> None:
+        """
+        🫀 Strategy Pulse — Reports what strategies and market are doing.
+
+        PROFESSOR METHOD:
+        - QUÉ: Reporte periódico del estado de estrategias cuando NO hay trades.
+        - POR QUÉ: Sin este pulso, el usuario no sabe si el sistema está vivo
+            o muerto cuando no genera señales.
+        - PARA QUÉ: Visibilidad total — saber POR QUÉ no se opera.
+        - CÓMO: Cada 15 min (configurable), si no hubo trades recientes,
+            envía un resumen de lo que cada estrategia ve en el mercado.
+        - CUÁNDO: Invocado por metrics_heartbeat_loop() en main.py.
+        - DÓNDE: Telegram (canal principal).
+        - QUIÉN: Notifier + Engine metrics + Portfolio stats.
+        """
+        ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+
+        msg = f"🫀 *PULSO DEL SISTEMA* 🫀\n\n"
+
+        # System vitals
+        equity = pulse_data.get('equity', 0)
+        initial = pulse_data.get('initial_capital', 13.0)
+        growth = ((equity - initial) / initial * 100) if initial > 0 else 0
+        msg += f"*Estado:* ✅ Operativo\n"
+        msg += f"*Equity:* `${equity:,.2f}` ({growth:+,.2f}%)\n"
+
+        # Positions
+        open_positions = pulse_data.get('open_positions', 0)
+        open_symbols = pulse_data.get('open_symbols', [])
+        msg += f"*Posiciones abiertas:* `{open_positions}`\n"
+        if open_symbols:
+            msg += f"  → {', '.join(f'`{s}`' for s in open_symbols[:8])}\n"
+
+        # Engine metrics
+        events_processed = pulse_data.get('events_processed', 0)
+        signals_generated = pulse_data.get('signals_generated', 0)
+        signals_rejected = pulse_data.get('signals_rejected', 0)
+        avg_latency = pulse_data.get('avg_latency_ms', 0)
+        msg += f"\n*Motor (Engine):*\n"
+        msg += f"Eventos procesados: `{events_processed:,}`\n"
+        msg += f"Señales generadas: `{signals_generated:,}`\n"
+        msg += f"Señales rechazadas: `{signals_rejected:,}`\n"
+        msg += f"Latencia promedio: `{avg_latency:.2f}ms`\n"
+
+        # Market regime
+        regime = pulse_data.get('market_regime', 'UNKNOWN')
+        regime_emojis = {
+            'TRENDING_BULL': '📈', 'TRENDING_BEAR': '📉',
+            'RANGING': '↔️', 'HIGH_VOLATILITY': '🌪️',
+            'CHOPPY': '🔀', 'UNKNOWN': '❓'
+        }
+        regime_emoji = regime_emojis.get(regime, '❓')
+        msg += f"\n*Mercado:*\n"
+        msg += f"Régimen: {regime_emoji} `{regime}`\n"
+
+        btc_price = pulse_data.get('btc_price', 0)
+        if btc_price > 0:
+            msg += f"BTC: `${btc_price:,.2f}`\n"
+
+        # Why no trades?
+        rejection_reasons = pulse_data.get('rejection_reasons', {})
+        if rejection_reasons:
+            msg += f"\n*¿Por qué no se opera?*\n"
+            # Sort by count descending, show top 5
+            sorted_reasons = sorted(rejection_reasons.items(), key=lambda x: x[1], reverse=True)[:5]
+            for reason, count in sorted_reasons:
+                msg += f"  🚫 `{reason}`: {count}x\n"
+
+        # Strategies status
+        strategies_status = pulse_data.get('strategies_status', [])
+        if strategies_status:
+            msg += f"\n*Estrategias activas:*\n"
+            for strat in strategies_status[:8]:
+                name = strat.get('name', 'Unknown')
+                horizon = strat.get('horizon', '?')
+                signals = strat.get('signals_emitted', 0)
+                h_emoji = "⚡" if horizon == "SCALPING" else "🌊"
+                msg += f"  {h_emoji} `{name}`: {signals} señales\n"
+
+        # Session stats
+        session_trades = pulse_data.get('session_trades', 0)
+        session_wins = pulse_data.get('session_wins', 0)
+        session_losses = pulse_data.get('session_losses', 0)
+        if session_trades > 0:
+            wr = (session_wins / session_trades * 100) if session_trades > 0 else 0
+            msg += f"\n*Sesión:*\n"
+            msg += f"Trades: `{session_trades}` | WR: `{wr:.1f}%` ({session_wins}W/{session_losses}L)\n"
+        else:
+            last_trade_ago = pulse_data.get('minutes_since_last_trade', None)
+            if last_trade_ago is not None:
+                msg += f"\n⏳ Sin trades en esta sesión ({last_trade_ago:.0f} min)\n"
+            else:
+                msg += f"\n⏳ Sin trades en esta sesión\n"
+
+        msg += f"\n🕒 `{ts} UTC`"
+
+        Notifier.send_telegram(msg, priority="INFO")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # LAYER 8: BACKTEST PROGRESS & COMPLETION
+    # ══════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def send_backtest_progress(progress_data: Dict[str, Any]) -> None:
+        """
+        📊 Backtest Progress Notification — Sent at key milestones.
+        """
+        pct = progress_data.get('progress_pct', 0)
+        equity = progress_data.get('equity', 0)
+        trades = progress_data.get('trades', 0)
+        elapsed = progress_data.get('elapsed_seconds', 0)
+        open_pos = progress_data.get('open_positions', 0)
+        epoch = progress_data.get('epoch', 0)
+        total = progress_data.get('total_epochs', 1)
+
+        bar_fill = int(pct / 10)
+        bar = "█" * bar_fill + "░" * (10 - bar_fill)
+
+        msg = f"🧪 *BACKTEST PROGRESO* 🧪\n\n"
+        msg += f"[{bar}] `{pct}%`\n"
+        msg += f"Epoch: `{epoch:,}/{total:,}`\n"
+        msg += f"Equity: `${equity:,.2f}`\n"
+        msg += f"Trades ejecutados: `{trades}`\n"
+        msg += f"Posiciones abiertas: `{open_pos}`\n"
+        msg += f"Tiempo: `{elapsed:.0f}s`\n"
+
+        Notifier.send_telegram(msg, priority="INFO")
+
+    @staticmethod
+    def send_backtest_complete(results: Dict[str, Any]) -> None:
+        """
+        🏁 Backtest Completion — Final results summary.
+        """
+        msg = f"🏁 *BACKTEST COMPLETADO* 🏁\n\n"
+
+        config = results.get('config', {})
+        metrics = results.get('metrics', {})
+
+        initial = config.get('initial_capital', results.get('initial_capital', 13.0))
+        final = metrics.get('final_capital', results.get('final_equity', 0.0))
+        pnl = final - initial
+        pnl_pct = (pnl / initial * 100) if initial > 0 else 0
+        result_emoji = "🟢" if pnl > 0 else "🔴"
+
+        msg += f"*Resultado:* {result_emoji}\n"
+        msg += f"Capital inicial: `${initial:,.2f}`\n"
+        msg += f"Capital final: `${final:,.2f}`\n"
+        msg += f"PnL Neto: `${pnl:+,.4f}` ({pnl_pct:+,.2f}%)\n\n"
+
+        total = metrics.get('total_trades', results.get('total_trades', 0))
+        wins = metrics.get('wins', results.get('wins', 0))
+        losses = metrics.get('losses', results.get('losses', 0))
+        wr = metrics.get('win_rate', results.get('win_rate', 0.0))
+        
+        msg += f"*Trades:*\n"
+        msg += f"Total: `{total}` | Wins: `{wins}` | Losses: `{losses}`\n"
+        msg += f"Win Rate: `{wr:.1f}%`\n"
+
+        sharpe = metrics.get('sharpe_ratio', results.get('sharpe', 0.0))
+        max_dd = metrics.get('max_drawdown_pct', results.get('max_drawdown', 0.0))
+        if sharpe != 0:
+            msg += f"Sharpe: `{sharpe:.2f}`\n"
+        msg += f"Max Drawdown: `{max_dd:.2f}%`\n"
+
+        elapsed = metrics.get('elapsed_seconds', results.get('elapsed_seconds', 0))
+        msg += f"\n⏱️ Duración: `{elapsed:.0f}s`\n"
+        msg += f"Días simulados: `{config.get('days', results.get('days', 0))}`\n"
+        msg += f"Símbolos: `{config.get('num_symbols', results.get('symbols_count', 0))}`\n"
+
+        Notifier.send_telegram(msg, priority="CRITICAL")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # LAYER 9: ML TRAINING & STRATEGY LEADERBOARD
+    # ══════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def send_ml_training_update(symbol: str, horizon: str, status: str, details: Dict[str, Any] = None) -> None:
+        """
+        🧠 Notificación de Progreso de Entrenamiento ML.
+        Estados: STARTING, SUCCESS, FAILED, REJECTED
+        """
+        if details is None:
+            details = {}
+
+        # Mapeo de emojis y descripciones por estado
+        status_map = {
+            "STARTING": ("🔄", "Iniciando Entrenamiento", "INFO"),
+            "SUCCESS": ("✨", "Entrenamiento Exitoso", "INFO"),
+            "FAILED": ("⚠️", "Error en Entrenamiento", "WARNING"),
+            "REJECTED": ("🛡️", "Modelo Rechazado (Quality Guard)", "WARNING")
+        }
+        
+        emoji, status_desc, priority = status_map.get(status, ("❓", f"Estado: {status}", "INFO"))
+        
+        msg = f"{emoji} *ML TRAINING: {symbol}* {emoji}\n\n"
+        msg += f"*Horizonte:* `{horizon}`\n"
+        msg += f"*Estado:* `{status_desc}`\n"
+
+        if status == "SUCCESS":
+            score = details.get("score", 0)
+            features = details.get("features", 0)
+            duration = details.get("duration", 0)
+            msg += f"\n*Métricas de Éxito:*\n"
+            msg += f"Puntuación (Score): `{score:.3f}`\n"
+            msg += f"Features Activos: `{features}`\n"
+            msg += f"Tiempo: `{duration:.1f}s`\n"
+        elif status == "REJECTED":
+            score = details.get("score", 0)
+            min_acc = details.get("min_acc", 0)
+            msg += f"\n*Motivo de Rechazo:*\n"
+            msg += f"Puntuación (`{score:.3f}`) < Mínimo Requerido (`{min_acc:.3f}`)\n"
+            msg += f"_El modelo es peor que una predicción aleatoria._\n"
+        elif status == "FAILED":
+            error = details.get("error", "Unknown")
+            msg += f"\n*Error Reportado:*\n`{error}`\n"
+            
+        Notifier.send_telegram(msg, priority=priority)
+
+    @staticmethod
+    def send_strategy_leaderboard(strategy_performance: Dict[str, Any], title_prefix: str = "") -> None:
+        """
+        🏆 Strategy Leaderboard: Top 5 Mejores y Peores Estrategias.
+        """
+        if not strategy_performance:
+            return
+
+        # Filtrar solo estrategias con al menos 1 trade
+        active_strats = [
+            (sid, perf) for sid, perf in strategy_performance.items() 
+            if (perf.get("wins", 0) + perf.get("losses", 0)) > 0
+        ]
+        
+        if not active_strats:
+            return
+
+        # Ordenar por PnL descendente
+        sorted_strats = sorted(active_strats, key=lambda x: x[1].get("pnl", 0), reverse=True)
+        
+        top_5 = sorted_strats[:5]
+        bottom_5 = sorted_strats[-5:] if len(sorted_strats) > 5 else []
+        
+        prefix = f"{title_prefix} " if title_prefix else ""
+        msg = f"🏆 *{prefix}STRATEGY LEADERBOARD* 🏆\n\n"
+        msg += f"Total de estrategias con actividad: `{len(active_strats)}`\n\n"
+
+        msg += f"🌟 *TOP 5 GANADORAS:*\n"
+        for i, (sid, perf) in enumerate(top_5, 1):
+            pnl = perf.get('pnl', 0)
+            wins = perf.get('wins', 0)
+            losses = perf.get('losses', 0)
+            total = wins + losses
+            wr = (wins / total * 100) if total > 0 else 0
+            msg += f"{i}. `{sid}`\n   💰 `${pnl:+.4f}` | WR: `{wr:.0f}%` ({wins}W/{losses}L)\n"
+
+        if bottom_5:
+            msg += f"\n📉 *TOP 5 PERDEDORAS:*\n"
+            # Invertimos para mostrar la peor al final
+            for i, (sid, perf) in enumerate(reversed(bottom_5), 1):
+                pnl = perf.get('pnl', 0)
+                wins = perf.get('wins', 0)
+                losses = perf.get('losses', 0)
+                total = wins + losses
+                wr = (wins / total * 100) if total > 0 else 0
+                msg += f"{i}. `{sid}`\n   🩸 `${pnl:+.4f}` | WR: `{wr:.0f}%` ({wins}W/{losses}L)\n"
+
+        msg += f"\n🕒 `{datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}`"
+        
+        Notifier.send_telegram(msg, priority="INFO")
 
     # ══════════════════════════════════════════════════════════════════════
     # UTILITIES

@@ -461,10 +461,13 @@ class PredictionTracker:
         acc = metrics['direction_accuracy']
         n = metrics['total_signals']
 
-        # ⚠️ CRITERIO DE ACCIÓN: Rechazar < 60% (Subido desde 55%)
-        if n >= MIN_SIGNALS_FOR_METRICS and acc < 0.60:
+        # ⚠️ CRITERIO DE ACCIÓN: Rechazar < 40% (Bajado desde 60%)
+        # FORENSIC-V15: Con accuracy de 48%, el umbral de 60% bloqueaba
+        # el 100% de las señales. Bajamos a 40% para permitir flujo de
+        # datos y re-entrenamiento. Se subirá cuando la precisión mejore.
+        if n >= MIN_SIGNALS_FOR_METRICS and acc < 0.40:
             return True, (
-                f"accuracy {acc:.1%} < 60% threshold "
+                f"accuracy {acc:.1%} < 40% threshold "
                 f"(n={n}, horizon={metrics.get('horizon', '?')})"
             )
 

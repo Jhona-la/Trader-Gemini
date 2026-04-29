@@ -165,6 +165,7 @@ class PostMortemComparator:
         trade_id: str,
         actual_pnl: float,
         duration_seconds: float = 0.0,
+        exit_reason: str = "",
     ) -> Optional[PostMortemResult]:
         """
         Compute post-mortem comparison when position closes.
@@ -201,6 +202,13 @@ class PostMortemComparator:
         
         # Brier Score = (predicted_prob - actual_outcome)²
         brier = (intent.win_probability - outcome_binary) ** 2
+        
+        # 🚀 FORENSIC-V33: GENETIC PUNISHMENT FOR ZOMBIE TRADES
+        # QUÉ: Si la IA nos metió en un mercado plano, destruye su score.
+        # POR QUÉ: Un win_prob alto en un mercado muerto significa muy mala calibración de volatilidad.
+        if exit_reason == "TIME_STOP_ZOMBIE":
+            brier += 0.15  # Penalización masiva (equivale a perder el trade + multa)
+            logger.warning(f"🧬 [SOPHIA-PUNISH] Penalty applied to {intent.symbol} due to ZOMBIE state. New Brier: {brier:.3f}")
         
         # Duration comparison
         duration_mins = duration_seconds / 60.0

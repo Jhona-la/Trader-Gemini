@@ -126,11 +126,15 @@ class BacktestDataProvider(DataProvider):
         """
         self.events_queue = events_queue
         self.symbol_list = symbol_list
-        self.historical_data = historical_data
+        # FORENSIC FIX: Do NOT store the raw DataFrame dictionary to prevent RAM leaks (OOM)
+        # We only need the NumPy structured arrays which are highly memory efficient.
+        self.historical_data = None 
         self.is_backtest = True
 
         # Pre-allocate structured arrays for Zero-Copy parity
         self.struct_data = {s: {} for s in symbol_list}
+
+        import gc
 
         for s in symbol_list:
             df_1m = historical_data[s]
@@ -159,6 +163,13 @@ class BacktestDataProvider(DataProvider):
                     .replace("w", "w")
                 )
                 self.struct_data[s][key] = self._df_to_struct(df_res)
+                del df_res
+                
+            # Free memory immediately after struct is built for this symbol
+            historical_data[s] = None
+            del df_1m
+            gc.collect()
+
 
         # ═══════════════════════════════════════════════════════════════
         # v2.0: BUILD GLOBAL TIMELINE
@@ -275,9 +286,15 @@ class BacktestDataProvider(DataProvider):
             idx = np.searchsorted(arr["timestamp"], self.current_time_ms, side="left")
             if idx < len(arr) and arr["timestamp"][idx] == self.current_time_ms:
                 close_price = float(arr["close"][idx])
+                high_price = float(arr["high"][idx])
+                low_price = float(arr["low"][idx])
                 self.events_queue.put(
                     MarketEvent(
-                        symbol=symbol, close_price=close_price, timestamp=current_ts
+                        symbol=symbol, 
+                        close_price=close_price, 
+                        high_price=high_price,
+                        low_price=low_price,
+                        timestamp=current_ts
                     )
                 )
 

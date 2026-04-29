@@ -138,9 +138,32 @@ class DatabaseHandler:
                     current_price REAL,
                     unrealized_pnl REAL,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    status TEXT DEFAULT 'OPEN'
+                    status TEXT DEFAULT 'OPEN',
+                    sl_pct REAL,
+                    tp_pct REAL,
+                    horizon TEXT DEFAULT 'SCALPING',
+                    strategy_id TEXT DEFAULT 'UNKNOWN'
                 )
             ''')
+            
+            # --- Auto-Migration Logic for Existing Databases ---
+            cursor.execute("PRAGMA table_info(positions)")
+            existing_columns = [col[1] for col in cursor.fetchall()]
+            
+            columns_to_add = {
+                'sl_pct': 'REAL',
+                'tp_pct': 'REAL',
+                'horizon': 'TEXT DEFAULT "SCALPING"',
+                'strategy_id': 'TEXT DEFAULT "UNKNOWN"'
+            }
+            
+            for col_name, col_type in columns_to_add.items():
+                if col_name not in existing_columns:
+                    try:
+                        cursor.execute(f"ALTER TABLE positions ADD COLUMN {col_name} {col_type}")
+                    except sqlite3.OperationalError as e:
+                        # Ignorar si ya se está añadiendo por otro hilo concurrente
+                        pass
 
             # 4. ERRORS TABLE (Audit Trail)
             cursor.execute('''
@@ -209,7 +232,7 @@ class DatabaseHandler:
         except sqlite3.Error as e:
             logger.error(f"Error logging signal: {e}")
 
-    def update_position(self, symbol, quantity, entry_price, current_price=None, pnl=None):
+    def update_position(self, symbol, quantity, entry_price, current_price=None, pnl=None, sl_pct=None, tp_pct=None, horizon='SCALPING', strategy_id='UNKNOWN'):
         """
         Upserts a position state.
         If quantity is 0, marks as CLOSED or deletes.
@@ -226,16 +249,20 @@ class DatabaseHandler:
             else:
                 # Upsert
                 cursor.execute('''
-                    INSERT INTO positions (symbol, quantity, entry_price, current_price, unrealized_pnl, timestamp, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'OPEN')
+                    INSERT INTO positions (symbol, quantity, entry_price, current_price, unrealized_pnl, timestamp, status, sl_pct, tp_pct, horizon, strategy_id)
+                    VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
                     ON CONFLICT(symbol) DO UPDATE SET
                         quantity=excluded.quantity,
                         entry_price=excluded.entry_price,
                         current_price=excluded.current_price,
                         unrealized_pnl=excluded.unrealized_pnl,
-                        timestamp=excluded.timestamp
+                        timestamp=excluded.timestamp,
+                        sl_pct=excluded.sl_pct,
+                        tp_pct=excluded.tp_pct,
+                        horizon=excluded.horizon,
+                        strategy_id=excluded.strategy_id
                 ''', (
-                    symbol, quantity, entry_price, current_price, pnl, datetime.now(timezone.utc)
+                    symbol, quantity, entry_price, current_price, pnl, datetime.now(timezone.utc), sl_pct, tp_pct, horizon, strategy_id
                 ))
             
             conn.commit()
@@ -257,11 +284,16 @@ class DatabaseHandler:
             
             positions = {}
             for row in rows:
+                keys = row.keys()
                 positions[row['symbol']] = {
                     'quantity': row['quantity'],
                     'entry_price': row['entry_price'],
                     'current_price': row['current_price'],
-                    'unrealized_pnl': row['unrealized_pnl']
+                    'unrealized_pnl': row['unrealized_pnl'],
+                    'sl_pct': row['sl_pct'] if 'sl_pct' in keys else None,
+                    'tp_pct': row['tp_pct'] if 'tp_pct' in keys else None,
+                    'horizon': row['horizon'] if 'horizon' in keys else 'SCALPING',
+                    'strategy_id': row['strategy_id'] if 'strategy_id' in keys else 'UNKNOWN'
                 }
             return positions
         except sqlite3.Error as e:
@@ -324,21 +356,26 @@ class DatabaseHandler:
             else:
                 # Upsert
                 cursor.execute('''
-                    INSERT INTO positions (symbol, quantity, entry_price, current_price, unrealized_pnl, timestamp, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'OPEN')
+                    INSERT INTO positions (symbol, quantity, entry_price, current_price, unrealized_pnl, timestamp, status, sl_pct, tp_pct, horizon, strategy_id)
+                    VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
                     ON CONFLICT(symbol) DO UPDATE SET
                         quantity=excluded.quantity,
                         entry_price=excluded.entry_price,
                         current_price=excluded.current_price,
                         unrealized_pnl=excluded.unrealized_pnl,
-                        timestamp=excluded.timestamp
+                        timestamp=excluded.timestamp,
+                        sl_pct=excluded.sl_pct,
+                        tp_pct=excluded.tp_pct,
+                        horizon=excluded.horizon,
+                        strategy_id=excluded.strategy_id
                 ''', (
-                    symbol, 
-                    quantity, 
-                    position_dict['entry_price'], 
-                    position_dict['current_price'], 
-                    position_dict.get('pnl', 0.0), # unrealized pnl
-                    datetime.now(timezone.utc)
+                    symbol, quantity, position_dict['entry_price'], 
+                    position_dict['current_price'], position_dict.get('pnl', 0.0), 
+                    datetime.now(timezone.utc),
+                    position_dict.get('sl_pct'),
+                    position_dict.get('tp_pct'),
+                    position_dict.get('horizon', 'SCALPING'),
+                    position_dict.get('strategy_id', 'UNKNOWN')
                 ))
             
             conn.commit()

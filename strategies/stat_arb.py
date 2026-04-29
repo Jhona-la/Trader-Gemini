@@ -160,3 +160,84 @@ class StatArbEngine:
             # logger.error(f"Lite-EG Error: {e}") # Verbose
             return CointegrationResult(False, 1.0, 0.0, 0.0, 0.0)
 
+from core.events import SignalEvent, SignalType
+from datetime import datetime, timezone
+from strategies.strategy import Strategy
+
+class StatArbStrategy(Strategy):
+    """
+    StatArb Strategy Wrapper
+    """
+    def __init__(self, data_provider, events_queue, horizon="SCALPING", priority=1):
+        super().__init__()
+        self.data_provider = data_provider
+        self.events_queue = events_queue
+        self.horizon = horizon
+        self.priority = priority
+        self.strategy_id = f"STATARB_{horizon}"
+        self.engine = StatArbEngine()
+
+    def generate_signals(self, event):
+        from config import Config
+        pairs = Config.TRADING_PAIRS
+        if len(pairs) < 2: return
+        
+        # Simple scan
+        try:
+            x_sym = "BTC/USDT"
+            y_sym = pairs[1] if pairs[0] == "BTC/USDT" else pairs[0]
+            
+            data_x = self.data_provider.get_data(x_sym)
+            data_y = self.data_provider.get_data(y_sym)
+            
+            if data_x is None or data_y is None or len(data_x) < 500 or len(data_y) < 500:
+                return
+                
+            px = data_x['close'].values[-500:]
+            py = data_y['close'].values[-500:]
+            
+            coint = self.engine.test_cointegration_lite_eg(px, py)
+            
+            if coint.is_cointegrated and abs(coint.z_score) > 2.0:
+                signal_type = SignalType.SHORT if coint.z_score > 0 else SignalType.LONG
+                current_price = data_y['close'].values[-1]
+                
+                sophia_report_dict = {}
+                if hasattr(self, 'sophia') and self.sophia:
+                    sophia_report = self.sophia.analyze(
+                        symbol=y_sym,
+                        direction=signal_type.name,
+                        signal_strength=0.85,
+                        setups={'z_score': coint.z_score},
+                        confluence_score=1.0,
+                        tp_pct=0.015,
+                        sl_pct=0.015,
+                        returns=None,
+                        ttl_seconds=300.0,
+                        regime="RANGING"
+                    )
+                    
+                    if sophia_report.win_probability < 0.70:
+                        return
+                    sophia_report_dict = sophia_report.to_dict()
+                    
+                signal = SignalEvent(
+                    strategy_id="STATARB",
+                    symbol=y_sym,
+                    datetime=datetime.now(timezone.utc),
+                    signal_type=signal_type,
+                    strength=0.85,
+                    atr=0.0,
+                    tp_pct=0.015,
+                    sl_pct=0.015,
+                    current_price=current_price,
+                    horizon=self.horizon,
+                    priority=self.priority,
+                    metadata={'sophia': sophia_report_dict, 'z_score': coint.z_score}
+                )
+                self.events_queue.put(signal)
+        except Exception:
+            pass
+            
+    def calculate_signals(self, event):
+        self.generate_signals(event)

@@ -373,6 +373,13 @@ def calculate_zscore_jit(prices, period=20):
     return zscores
 
 @njit(fastmath=True, cache=True)
+def vector_zscore(prices, period=20):
+    """
+    [NANO-SPEED] Vectorized Z-Score calculation for feature engineering.
+    """
+    return calculate_zscore_jit(prices, period)
+
+@njit(fastmath=True, cache=True)
 def bayesian_probability_jit(signal_strength, trend_strength, volatility_z):
     """
     Calcula la probabilidad bayesiana de éxito de un trade dado el contexto.

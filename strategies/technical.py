@@ -206,7 +206,8 @@ class HybridScalpingStrategy(Strategy):
         primary_tf = getattr(self, 'PRIMARY_TF', '5m' if horizon.upper() == 'SCALPING' else '1h')
         bar_mins = tf_to_mins.get(primary_tf, 5.0 if horizon.upper() == 'SCALPING' else 60.0)
         
-        self.sophia = SophiaIntelligence(bar_minutes=bar_mins)
+        # OPTIMIZACIÓN RAM: Singleton por horizonte (2 instancias vs 42)
+        self.sophia = SophiaIntelligence.get_instance(bar_minutes=bar_mins)
         
         # FORENSIC-1: Set Horizon Profile to prevent false Chaos Dampening
         horizon_days_map = {'SCALPING': 1, 'SWING': 15}
@@ -1424,7 +1425,8 @@ class HybridScalpingStrategy(Strategy):
                                             signal_type=SignalType.EXIT,
                                             strength=1.0,
                                             horizon=self.horizon,
-                                            priority=self.priority
+                                            priority=self.priority,
+                                            metadata={'urgent': False, 'actual_order_type': 'limit', 'is_tp_limit': True}
                                         )
                                         self.events_queue.put(exit_signal)
                                         self.bought[symbol] = False
@@ -1443,7 +1445,8 @@ class HybridScalpingStrategy(Strategy):
                                         signal_type=SignalType.EXIT,
                                         strength=1.0,
                                         horizon=self.horizon,
-                                        priority=self.priority
+                                        priority=self.priority,
+                                        metadata={'urgent': False, 'actual_order_type': 'limit', 'is_tp_limit': True}
                                     )
                                     self.events_queue.put(exit_signal)
                                     self.bought[symbol] = False
@@ -1515,12 +1518,18 @@ class HybridScalpingStrategy(Strategy):
                         logger.warning(f"🌌 [VETO CUÁNTICO] {symbol} {signal_type.name} CANCELADO | Flujo Tóxico/Icebergs (VPIN: {vpin:.2f}, Score: {iceberg:.2f})")
                         continue
                     
+                    # CONSENSO PONDERADO v1.0 — Delta Pressure
+                    # QUÉ: Presión de venta/compra agresiva NO mata la señal, la penaliza.
+                    # POR QUÉ: En scalping, contra-tendencia de corto plazo puede ser rentable.
+                    # PARA QUÉ: Permitir scalps contra-corriente con sizing reducido.
                     if signal_type == SignalType.LONG and delta < -100:
-                         logger.warning(f"📉 [VETO CUÁNTICO] {symbol} LONG CANCELADO | Presión de Venta Agresiva Continua (Delta 60s: {delta:.2f})")
-                         continue
+                         delta_penalty = max(0.5, 1.0 - (abs(delta) - 100) / 500)
+                         strength *= delta_penalty
+                         logger.info(f"📉 [CONSENSUS] {symbol} LONG penalized x{delta_penalty:.2f} | Sell Pressure Delta={delta:.0f}")
                     elif signal_type == SignalType.SHORT and delta > 100:
-                         logger.warning(f"📈 [VETO CUÁNTICO] {symbol} SHORT CANCELADO | Presión de Compra Agresiva Continua (Delta 60s: {delta:.2f})")
-                         continue
+                         delta_penalty = max(0.5, 1.0 - (delta - 100) / 500)
+                         strength *= delta_penalty
+                         logger.info(f"📈 [CONSENSUS] {symbol} SHORT penalized x{delta_penalty:.2f} | Buy Pressure Delta={delta:.0f}")
 
                 # ── SOPHIA-INTELLIGENCE: Pre-trade XAI Analysis ──
                 sophia_report = None
@@ -1563,25 +1572,26 @@ class HybridScalpingStrategy(Strategy):
 
                     # FORENSIC-1: Tie TTL dynamically to the horizon's bar_minutes to accurately project Survival Estimates.
                     # Default is 3 bars base survival.
-                    bar_mins = getattr(self.sophia.survival, 'bar_minutes', 5.0) 
+                    bar_mins = getattr(self.sophia.survival, 'bar_minutes', 5.0) if hasattr(self, 'sophia') and self.sophia else 5.0
                     if self.horizon == 'SCALPING':
                         dynamic_ttl = 180.0 # 3 min for Scalping micro-edges
                     else:
                         dynamic_ttl = bar_mins * 60.0 * 3.0 # 3 bars for Swing/Trending
                         
-                    sophia_report = self.sophia.analyze(
-                        symbol=symbol,
-                        direction=signal_type.name,
-                        signal_strength=strength,
-                        setups=setups,
-                        confluence_score=confluence_score,
-                        tp_pct=final_tp_pct,
-                        sl_pct=final_sl_pct,
-                        returns=_returns,
-                        ttl_seconds=dynamic_ttl,
-                        btc_returns=btc_returns,
-                        regime=symbol_regime_val,
-                    )
+                    if hasattr(self, 'sophia') and self.sophia:
+                        sophia_report = self.sophia.analyze(
+                            symbol=symbol,
+                            direction=signal_type.name,
+                            signal_strength=strength,
+                            setups=setups,
+                            confluence_score=confluence_score,
+                            tp_pct=final_tp_pct,
+                            sl_pct=final_sl_pct,
+                            returns=_returns,
+                            ttl_seconds=dynamic_ttl,
+                            btc_returns=btc_returns,
+                            regime=symbol_regime_val,
+                        )
                     
                     # V5.21 Quantum Tunnelling: Update Global BTC State
                     if symbol == "BTC/USDT":
@@ -1660,9 +1670,29 @@ class HybridScalpingStrategy(Strategy):
                         logger.info(f"🧬 [RESONANCE BRIDGE] Reducing friction: Hurdle=0.025")
                     
                     if omni < hurdle:
-                        status = "OPEN" if (is_divine or is_harmonic or is_resonant) else "CLOSED"
-                        logger.info(f"🧿 [ORACLE] SKIP {symbol}: Score={omni:.3f} < {hurdle:.3f} (Gate={status})")
-                        continue
+                        # ═══════════════════════════════════════════════════════
+                        # CONSENSO PONDERADO v1.0 — Oracle Hurdle
+                        # QUÉ: El Oracle NO mata la señal, la PENALIZA proporcionalmente.
+                        # POR QUÉ: Una señal técnica con RSI=32, confluence=0.70 es VÁLIDA
+                        #   aunque el Oracle score sea 0.02 vs hurdle 0.05.
+                        # PARA QUÉ: Todas las estrategias contribuyen al consenso.
+                        #   Señales penalizadas → sizing más pequeño (ya implementado en RM).
+                        # CÓMO: penalty = score/hurdle → clamped [0.4, 1.0]
+                        # ═══════════════════════════════════════════════════════
+                        oracle_penalty = max(0.4, omni / hurdle) if hurdle > 0 else 1.0
+                        strength *= oracle_penalty
+                        status = "OPEN" if (is_divine or is_harmonic or is_resonant) else "PENALIZED"
+                        logger.info(f"🧿 [CONSENSUS] {symbol}: Oracle penalty x{oracle_penalty:.2f} (Score={omni:.3f} < {hurdle:.3f}, Gate={status})")
+
+                    # CONSENSO PONDERADO v1.0 — Sophia Confidence Gate
+                    # QUÉ: Sophia NO bloquea, REDUCE strength proporcionalmente.
+                    # POR QUÉ: Una señal técnica con WP=54% no es basura — es "indecisa".
+                    #   El RiskManager ya reduce sizing para señales débiles.
+                    # PARA QUÉ: Preservar trades donde Technical tiene razón pero Sophia duda.
+                    if sophia_report.win_probability < 0.70:
+                        sophia_penalty = max(0.5, sophia_report.win_probability / 0.70)
+                        strength *= sophia_penalty
+                        logger.info(f"🧠 [CONSENSUS] {symbol}: Sophia penalty x{sophia_penalty:.2f} (WP={sophia_report.win_probability*100:.1f}% < 70%)")
                     
                     # ── V5.45: SOVEREIGN ADAPTIVE LEVERAGE ──
                     # Leverage is dictated by the Market Order (1 - Entropy).
@@ -1814,7 +1844,7 @@ class HybridScalpingStrategy(Strategy):
                     current_price=setups['close'],
                     metadata={
                         **_metadata,
-                        'exhaustion': self.sophia.calibrator.calculate_exhaustion(inds_primary['macd_hist'], setups['rsi']),  # C-2 FIX: was inds_5m
+                        'exhaustion': self.sophia.calibrator.calculate_exhaustion(inds_primary['macd_hist'], setups['rsi']) if hasattr(self, 'sophia') and self.sophia else 0.0,  # C-2 FIX: was inds_5m
                         'boost_factor': sophia_report.metadata.get('boost_factor', 1.0) if sophia_report else 1.0,
                         'win_prob': sophia_report.win_probability if sophia_report else 0.5,
                         'expected_high': sophia_report.expected_high_pct if sophia_report else 0.0,

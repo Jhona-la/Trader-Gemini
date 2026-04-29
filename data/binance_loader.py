@@ -264,6 +264,101 @@ class BinanceData(DataProvider):
             
         logger.info("🛑 [BinanceLoader] Resources gracefully shut down.")
 
+    async def start_websockets(self):
+        """
+        [PHASE 1] Liquidation Sniper & Order Flow
+        Connects to Binance Async Websockets to listen to @forceOrder
+        """
+        api_key = Config.BINANCE_API_KEY
+        api_secret = Config.BINANCE_SECRET_KEY
+        testnet = getattr(Config, 'BINANCE_USE_TESTNET', False)
+        
+        if not self.client:
+            self.client = await AsyncClient.create(api_key, api_secret, testnet=testnet)
+            self.bsm = BinanceSocketManager(self.client)
+            
+        async def liquidation_listener():
+            try:
+                # To get all liquidations, we can use the multiplex socket
+                streams = [f"{sym.replace('/', '').lower()}@forceOrder" for sym in self.symbol_list]
+                
+                logger.info(f"🌊 [WebSockets] Liquidation Sniper listening to {len(streams)} streams...")
+                multiplex_socket = self.bsm.multiplex_socket(streams)
+                async with multiplex_socket as ts:
+                    while self._running:
+                        try:
+                            msg = await ts.recv()
+                            self._process_liquidation_msg(msg)
+                        except asyncio.TimeoutError:
+                            continue
+                        except Exception as e:
+                            logger.error(f"Liquidation stream err: {e}")
+                            await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Liquidation listener fatal: {e}")
+
+        # Start background task
+        asyncio.create_task(liquidation_listener())
+
+    def _process_liquidation_msg(self, msg):
+        """
+        Processes forceOrder messages
+        """
+        try:
+            if 'data' not in msg or 'o' not in msg['data']:
+                return
+            
+            data = msg['data']['o']
+            symbol_raw = data.get('s', '')
+            
+            # Format back to BTC/USDT
+            symbol = f"{symbol_raw[:-4]}/{symbol_raw[-4:]}" if symbol_raw.endswith('USDT') else symbol_raw
+            
+            side = data.get('S', '') # SELL = Long liquidation, BUY = Short liquidation
+            price = float(data.get('ap', data.get('p', 0))) # Average price
+            qty = float(data.get('q', 0))
+            usd_value = price * qty
+            
+            if usd_value < 5000: # Filter noise
+                return
+                
+            # Log significant liquidations
+            if usd_value > 50000:
+                 logger.info(f"🩸 [REKT] {symbol} {'LONG' if side == 'SELL' else 'SHORT'} Liq: ${usd_value:,.2f} @ {price}")
+            
+            # Add to liquidation history buffer
+            if symbol not in self.liquidation_history:
+                from collections import deque
+                self.liquidation_history[symbol] = deque(maxlen=100)
+                
+            self.liquidation_history[symbol].append({
+                'timestamp': time.time(),
+                'side': side,
+                'price': price,
+                'usd_value': usd_value
+            })
+            
+            # ═══════════════════════════════════════════════════════════════
+            # AUDIT FIX #1: Use order_flow (existing MarketEvent field) instead
+            # of 'data' (which doesn't exist on the frozen dataclass).
+            # Also set close_price=price so Engine._process_market_event()
+            # routes this event to strategies (without close_price, the event
+            # falls into the else branch and never reaches calculate_signals).
+            # ═══════════════════════════════════════════════════════════════
+            self.events_queue.put(MarketEvent(
+                symbol=symbol, 
+                close_price=price,
+                order_flow={
+                    'liquidation': True, 
+                    'side': side, 
+                    'usd_value': usd_value, 
+                    'price': price
+                }
+            ))
+            
+        except Exception as e:
+            logger.error(f"Error processing liquidation: {e}")
+
     def _start_latency_monitor(self):
         """Starts a background thread to ping Binance every 5s."""
         def _ping_loop():

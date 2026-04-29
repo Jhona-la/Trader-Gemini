@@ -67,6 +67,27 @@ class Portfolio:
         # Format: {strategy_id: {'pnl': 0.0, 'wins': 0, 'losses': 0, 'trades': 0}}
         self.strategy_performance = {}
         
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC-V35: SESSION-LEVEL WIN RATE TRACKING
+        # QUÉ: Contadores de wins/losses para la SESIÓN ACTUAL.
+        # POR QUÉ: El WR acumulado de por vida (strategy_performance) mostraba
+        #   90% WR después de un trade perdedor porque las sesiones anteriores
+        #   tenían wins. Esto es engañoso y peligroso.
+        # PARA QUÉ: Telegram muestra WR de sesión (preciso) como principal,
+        #   WR all-time como secundario.
+        # CÓMO: Contadores separados reseteados en cada sesión.
+        # ═══════════════════════════════════════════════════════════════
+        # SOPHIA-GLOBAL FIX: Session stats always start fresh on Portfolio init.
+        # This ensures WR=0% until the FIRST trade closes (not inherited from crashes).
+        self._session_stats = {
+            'wins': 0,
+            'losses': 0,
+            'total': 0,
+            'net_pnl': 0.0,
+            'gross_pnl': 0.0,
+            'start_time': datetime.now(timezone.utc).isoformat(),
+        }
+        
         # PHASE 14: Dynamic Kelly Criterion Tracking
         self.kelly_trades_history = []  # List of dicts: {'pnl': float, 'is_win': bool}
         self.kelly_winrate = 0.0
@@ -180,14 +201,28 @@ class Portfolio:
         """
         Returns the isolated position for a specific trading horizon from the Virtual Ledger.
         Returns None if no active position exists for that horizon.
+        🚀 PHOENIX V3: Hedge Mode Aware. Checks both LONG and SHORT isolated ledgers.
         """
-        v_key = f"{symbol}_{horizon}"
         self.guard.acquire()
         try:
-            pos = self.virtual_ledger.get(v_key)
-            if pos and pos.get('quantity', 0) != 0:
-                return pos.copy()
-            return None
+            long_pos = self.virtual_ledger.get(f"{symbol}_{horizon}_LONG")
+            short_pos = self.virtual_ledger.get(f"{symbol}_{horizon}_SHORT")
+            legacy_pos = self.virtual_ledger.get(f"{symbol}_{horizon}")
+            
+            valid_positions = []
+            if long_pos and abs(long_pos.get('quantity', 0)) > 1e-8:
+                valid_positions.append(long_pos)
+            if short_pos and abs(short_pos.get('quantity', 0)) > 1e-8:
+                valid_positions.append(short_pos)
+            if legacy_pos and abs(legacy_pos.get('quantity', 0)) > 1e-8:
+                valid_positions.append(legacy_pos)
+                
+            if not valid_positions:
+                return None
+                
+            # If multiple exist (rare), return the largest exposure to manage risk conservatively
+            best_pos = max(valid_positions, key=lambda p: abs(p.get('quantity', 0)))
+            return best_pos.copy()
         finally:
             self.guard.release()
             
@@ -219,11 +254,29 @@ class Portfolio:
             if db_positions:
                 self.positions = db_positions
                 logger.info(f"🔄 RESTORED {len(self.positions)} active positions from DB.")
+                
                 for sym, pos in self.positions.items():
                     logger.info(f"   - {sym}: {pos['quantity']} @ ${pos['entry_price']:.4f}")
                     # Map entry_price to avg_price for internal consistency
                     if 'avg_price' not in pos:
                         pos['avg_price'] = pos['entry_price']
+                        
+                    # --- RECONSTRUCT VIRTUAL LEDGER ---
+                    horizon = pos.get('horizon', 'SCALPING')
+                    v_key = f"{sym}_{horizon}"
+                    
+                    self.virtual_ledger[v_key] = {
+                        'quantity': pos['quantity'],
+                        'avg_price': pos['avg_price'],
+                        'current_price': pos.get('current_price', pos['avg_price']),
+                        'sl_pct': pos.get('sl_pct'),
+                        'tp_pct': pos.get('tp_pct'),
+                        'opener_strategy_id': pos.get('strategy_id', 'UNKNOWN'),
+                        'entry_time': self._get_current_time() # Fallback
+                    }
+                    
+                    sl_print = f"{float(pos.get('sl_pct'))*100:.2f}%" if pos.get('sl_pct') else "None"
+                    logger.info(f"   ↳ 🧬 Virtual Ledger Reconstructed: {v_key} (SL: {sl_print})")
             else:
                 logger.info("✅ No active positions found in DB.")
                 
@@ -258,8 +311,30 @@ class Portfolio:
             if loaded_positions:
                 self.positions = loaded_positions
                 print(f"🔄 RESTORED {len(self.positions)} active positions from previous session.")
-                for sym, pos in self.positions.items():
-                    print(f"   - {sym}: {pos['quantity']} @ ${pos['avg_price']:.4f}")
+                
+                loaded_vl = data.get('virtual_ledger', {})
+                if loaded_vl:
+                    self.virtual_ledger = loaded_vl
+                    print(f"🔄 RESTORED {len(self.virtual_ledger)} virtual ledger entries natively.")
+                else:
+                    for sym, pos in self.positions.items():
+                        print(f"   - {sym}: {pos['quantity']} @ ${pos['avg_price']:.4f}")
+                        
+                        # --- RECONSTRUCT VIRTUAL LEDGER ---
+                        horizon = pos.get('horizon', 'SCALPING')
+                        v_key = f"{sym}_{horizon}"
+                        
+                        self.virtual_ledger[v_key] = {
+                            'quantity': pos['quantity'],
+                            'avg_price': pos['avg_price'],
+                            'current_price': pos.get('current_price', pos['avg_price']),
+                            'sl_pct': pos.get('sl_pct'),
+                            'tp_pct': pos.get('tp_pct'),
+                            'opener_strategy_id': pos.get('strategy_id', 'UNKNOWN'),
+                            'entry_time': self._get_current_time() # Fallback
+                        }
+                        sl_print = f"{float(pos.get('sl_pct'))*100:.2f}%" if pos.get('sl_pct') else "None"
+                        print(f"   ↳ 🧬 Virtual Ledger Reconstructed: {v_key} (SL: {sl_print})")
             else:
                 print("✅ No active positions to restore.")
                 
@@ -629,7 +704,7 @@ class Portfolio:
                     'high_water_mark': price, 
                     'low_water_mark': price,
                     'stop_distance': 0,
-                    'setup_type': 'UNKNOWN',
+                    'setup_type': 'UNTAGGED_SETUP',
                     'strategy_version': '1.0.0'
                 }
             else:
@@ -783,14 +858,27 @@ class Portfolio:
     def _update_virtual_ledger(self, event) -> float:
         """🛡️ Phase 1 (Virtual Ledger): Isolates Avg Entry Price for Scalping vs Swing safely. Returns isolated PnL."""
         horizon = getattr(event, 'horizon', 'SCALPING')
-        v_key = f"{event.symbol}_{horizon}"
+        
+        # 🛡️ PHOENIX V3: HEDGE MODE ENFORCEMENT
+        # Aislamiento de LONG y SHORT simultáneos para el mismo símbolo/horizonte
+        meta = getattr(event, 'metadata', {}) or {}
+        is_close = getattr(event, 'is_close', False) or getattr(event, 'is_exit', False) or meta.get('is_close', False) or meta.get('is_exit', False)
+        direction_val = event.direction.name if hasattr(event.direction, 'name') else str(event.direction)
+        
+        if is_close:
+            pos_side = 'LONG' if direction_val == 'SELL' else 'SHORT'
+        else:
+            pos_side = 'LONG' if direction_val == 'BUY' else 'SHORT'
+            
+        v_key = f"{event.symbol}_{horizon}_{pos_side}"
         
         if v_key not in self.virtual_ledger:
-            # Initialize specialized ledger for this horizon
+            # Initialize specialized ledger for this horizon and side
             self.virtual_ledger[v_key] = {
                 'quantity': 0.0,
                 'avg_price': 0.0,
                 'horizon': horizon,
+                'pos_side': pos_side,
                 'current_price': 0.0,
                 'high_water_mark': 0.0,
                 'low_water_mark': 0.0,
@@ -803,7 +891,10 @@ class Portfolio:
                 'strategy_version': getattr(event, 'strategy_version', '1.0.0'),
                 'ml_confidence': (getattr(event, 'metadata', {}) or {}).get('ml_confidence', (getattr(event, 'metadata', {}) or {}).get('strength', 0.0)),
                 'tp_limit_placed': False,
-                'tp_order_id': None
+                'tp_order_id': None,
+                'trade_id': getattr(event, 'trade_id', None),
+                'predicted_duration': getattr(event, 'predicted_duration', None),
+                'predicted_magnitude': getattr(event, 'predicted_magnitude', None)
             }
             
         pos = self.virtual_ledger[v_key]
@@ -954,11 +1045,14 @@ class Portfolio:
         opener_strat = pos.get('opener_strategy_id', "UNKNOWN")
         evt_strat = getattr(event, 'strategy_id', "")
         
-        # Determine exit_reason. If RiskManager sent it, it's usually the strategy_id of the FillEvent.
-        exit_reason = evt_strat if evt_strat and evt_strat != opener_strat else "NORMAL_CLOSE"
+        # Determine exit_reason. Priority: event.exit_reason > event.strategy_id > "NORMAL_CLOSE"
+        exit_reason = getattr(event, 'exit_reason', None)
+        if not exit_reason:
+            exit_reason = evt_strat if evt_strat and evt_strat != opener_strat else "NORMAL_CLOSE"
         
         trade_data = {
-            "trade_id": getattr(event, 'trade_id', str(uuid.uuid4())) or str(uuid.uuid4()),
+            "trade_id": getattr(event, 'trade_id', None) or pos.get('trade_id') or str(uuid.uuid4()),
+            "exit_reason": exit_reason,
             "symbol": event.symbol,
             "strategy_id": opener_strat,
             "horizon": getattr(event, 'horizon', 'SCALPING'),
@@ -992,6 +1086,25 @@ class Portfolio:
         #   pueda usar net_pnl real, fees breakdown, y duración exacta.
         # POR QUÉ: Sin esto, log_trade_report() tiene que recalcular todo.
         # ═══════════════════════════════════════════════════════════════
+        
+        # --- FORENSIC-V36: LOSS PACING (Dynamic Cooldown) ---
+        if not hasattr(self, 'consecutive_losses'):
+            self.consecutive_losses = {}
+            
+        pacing_key = f"{event.symbol}_{trade_data['horizon']}"
+        if net_pnl < 0:
+            self.consecutive_losses[pacing_key] = self.consecutive_losses.get(pacing_key, 0) + 1
+            if self.consecutive_losses[pacing_key] >= 2:
+                logger.warning(f"❄️ [PACING COOLDOWN] {pacing_key} suffered 2 consecutive losses. Freezing entries for 15 mins.")
+                from utils.cooldown_manager import cooldown_manager
+                if not hasattr(cooldown_manager, 'custom_cooldowns'):
+                    cooldown_manager.custom_cooldowns = {}
+                frozen_key = f"SHOCK_FREEZE_{event.symbol}"
+                cooldown_manager.custom_cooldowns[frozen_key] = datetime.now(timezone.utc)
+                self.consecutive_losses[pacing_key] = 0  # Reset after triggering
+        else:
+            self.consecutive_losses[pacing_key] = 0  # Reset on win
+            
         self._last_closed_trade_data = trade_data
         
         # Route to respective ledger
@@ -1069,6 +1182,34 @@ class Portfolio:
         # This dict is used by log_trade_report() to populate the enhanced notification
         # with real net PnL, fees breakdown, and duration from _record_closed_trade.
         self._last_closed_trade_data = trade_data
+
+        # ═══════════════════════════════════════════════════════════════
+        # PHASE 2 POWER: HOT ADAPTER RL FEEDBACK LOOP
+        # QUÉ: Notifica a TODAS las estrategias ML que tienen HotAdapterRL
+        #   sobre el resultado del trade para que actualicen su bias.
+        # POR QUÉ: Sin esto, el Hot Adapter nunca aprende → bias=1.0 siempre.
+        # PARA QUÉ: Penalizar direcciones perdedoras en tiempo real.
+        # CÓMO: Itera por las estrategias registradas en el engine y llama
+        #   a hot_adapter.update_weights() con los datos del trade.
+        # CUÁNDO: Inmediatamente después de registrar el trade cerrado.
+        # DÓNDE: core/portfolio.py → _record_closed_trade()
+        # QUIÉN: Portfolio → Engine.strategies → MLStrategy.hot_adapter
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            if hasattr(self, '_engine') and self._engine:
+                for strat in getattr(self._engine, 'strategies', []):
+                    adapter = getattr(strat, 'hot_adapter', None)
+                    if adapter and hasattr(adapter, 'update_weights'):
+                        # Only send feedback for matching symbol
+                        if getattr(strat, 'symbol', None) == event.symbol:
+                            adapter.update_weights(
+                                symbol=event.symbol,
+                                is_win=net_pnl > 0,
+                                pnl_pct=net_pnl_percent,
+                                direction=closed_direction
+                            )
+        except Exception as e:
+            logger.debug(f"[HOT-RL] Feedback dispatch skipped: {e}")
 
     def _bind_cognitive_anchor(self, symbol: str, entry_pos: dict):
         """Asocia metadata pre-computada al momento de abrirse un ledger virtual."""
@@ -1193,7 +1334,7 @@ class Portfolio:
                         self.positions[event.symbol] = {
                             'quantity': 0, 'avg_price': 0, 'current_price': fill_price, 
                             'high_water_mark': fill_price, 'low_water_mark': fill_price,
-                            'setup_type': getattr(event, 'setup_type', 'UNKNOWN'),
+                            'setup_type': getattr(event, 'setup_type', 'UNTAGGED_SETUP'),
                             'strategy_version': getattr(event, 'strategy_version', '1.0.0')
                         }
                     
@@ -1204,7 +1345,7 @@ class Portfolio:
                 
                 # 4. Strategy Performance, Sophia Post-Mortem & Reporting
                 if isolated_pnl != 0.0:
-                    strat_id = getattr(event, 'strategy_id', None) or 'Unknown'
+                    strat_id = getattr(event, 'strategy_id', None) or 'UNTAGGED_STRAT'
                     # ═══════════════════════════════════════════════════════════════
                     # FORENSIC-V31 FIX: USE NET PNL FOR WIN/LOSS DETERMINATION
                     # QUÉ: Pasamos el net_pnl (después de fees) para clasificar
@@ -1224,7 +1365,8 @@ class Portfolio:
                     
                     trade_data = getattr(self, '_last_closed_trade_data', None)
                     duration = trade_data.get('duration_seconds', 0.0) if trade_data else 0.0
-                    self._sophia_post_mortem_check(event, isolated_pnl, duration)
+                    exit_reason = trade_data.get('exit_reason', getattr(event, 'exit_reason', 'NORMAL_CLOSE')) if trade_data else getattr(event, 'exit_reason', 'NORMAL_CLOSE')
+                    self._sophia_post_mortem_check(event, isolated_pnl, duration, exit_reason)
                     
                     logger.info(f"📈 Trade Closed: {event.symbol} (Isolated Horizon PnL: ${isolated_pnl:.2f})")
                     self.log_trade_report(event, pnl=isolated_pnl, fill_price=fill_price)
@@ -1282,6 +1424,7 @@ class Portfolio:
                 'strategy_id': getattr(event, 'strategy_id', 'Unknown'),
                 'setup_type': getattr(event, 'setup_type', 'UNKNOWN'),
                 'strategy_version': getattr(event, 'strategy_version', '1.0.0'),
+                'trade_id': getattr(event, 'trade_id', None) or (pos.get('trade_id') if 'pos' in locals() else None),
                 'details': f"Exchange: {event.exchange} | Margin: {margin_impact:.2f} | Setup: {getattr(event, 'setup_type', 'UNKNOWN')}"
             })
 
@@ -1298,12 +1441,18 @@ class Portfolio:
                 'commission': estimated_fee
             }
             
+            v_key = f"{event.symbol}_{getattr(event, 'horizon', 'SCALPING')}"
+            v_pos = self.virtual_ledger.get(v_key, {})
             position_payload = {
                 'symbol': event.symbol,
-                'quantity': pos_final['quantity'],
-                'entry_price': pos_final['avg_price'],
+                'quantity': v_pos.get('quantity', 0.0),
+                'entry_price': v_pos.get('avg_price', 0.0),
                 'current_price': fill_price,
-                'pnl': pnl_realized if pnl_realized is not None else 0.0  # FORENSIC-V21 FIX #1
+                'pnl': pnl_realized if pnl_realized is not None else 0.0,  # FORENSIC-V21 FIX #1
+                'sl_pct': v_pos.get('sl_pct'),
+                'tp_pct': v_pos.get('tp_pct'),
+                'horizon': getattr(event, 'horizon', 'SCALPING'),
+                'strategy_id': getattr(event, 'strategy_id', 'Unknown')
             }
             
             self.db.log_fill_event_atomic(trade_payload, position_payload)
@@ -1354,11 +1503,12 @@ class Portfolio:
         except Exception as e:
             logger.error(f"⚠️ [AXIOMA] Falló la auditoría contable: {e}")
 
-    def _sophia_post_mortem_check(self, event, pnl: float, duration_seconds: float = 0.0):
+    def _sophia_post_mortem_check(self, event, pnl: float, duration_seconds: float = 0.0, exit_reason: str = ""):
         """
-        SOPHIA-INTELLIGENCE + NÉMESIS-RETROSPECCIÓN:
+        SOPHIA-INTELLIGENCE + NÉMESIS-RETROSPECCIÓN + XAI AUTOPSY:
         1. Compute SOPHIA Brier Score (basic post-mortem)
         2. Run NÉMESIS full autopsy (deep diagnosis)
+        3. Inject XAI forensic summary into notification payload
         Called from update_fill() when a position is closed (SHORT or LONG).
         """
         try:
@@ -1379,6 +1529,7 @@ class Portfolio:
                     trade_id=trade_id,
                     actual_pnl=pnl,
                     duration_seconds=duration_seconds,
+                    exit_reason=exit_reason,
                 )
                 if result:
                     # Phase 46: Trigger Meta-Optimizer for Sovereign Evolution
@@ -1386,6 +1537,62 @@ class Portfolio:
                         meta_optimizer.process_trade_result(result)
                     except Exception as e:
                         logger.debug(f"[META] Optimization skipped: {e}")
+
+                    # ═══════════════════════════════════════════════════════════════
+                    # XAI AUTOPSY INJECTION (Phase Omega)
+                    # QUÉ: Inyecta un resumen forense legible en el payload de
+                    #   notificación para que Telegram muestre POR QUÉ perdimos.
+                    # POR QUÉ: Sin esto, solo vemos "$-0.01" pero no sabemos si fue
+                    #   culpa del RSI, del régimen, o de la calibración Sophia.
+                    # PARA QUÉ: Feedback loop humano + auto-aprendizaje evolutivo.
+                    # CÓMO: Construye un mini-reporte con Brier Score, top features,
+                    #   y la narrativa de Sophia, y lo pega en _last_closed_trade_data.
+                    # CUÁNDO: En cada cierre de trade que tenga intent registrado.
+                    # DÓNDE: core/portfolio.py → _sophia_post_mortem_check
+                    # QUIÉN: PostMortemComparator + NemesisEngine + XAIEngine
+                    # ═══════════════════════════════════════════════════════════════
+                    try:
+                        xai_lines = []
+                        xai_lines.append(f"🔬 Brier: {result.brier_score:.3f}")
+                        
+                        # Calibration quality label
+                        if result.brier_score < 0.05:
+                            xai_lines.append("Calibración: 🎯 EXCELENTE")
+                        elif result.brier_score < 0.15:
+                            xai_lines.append("Calibración: ✅ BUENA")
+                        elif result.brier_score < 0.25:
+                            xai_lines.append("Calibración: ⚠️ DEGRADADA")
+                        else:
+                            xai_lines.append("Calibración: ❌ CRÍTICA")
+                        
+                        # Predicted vs Actual
+                        xai_lines.append(f"Predicho: WP={result.predicted_prob*100:.0f}% | Duración={result.predicted_exit_mins:.1f}min")
+                        xai_lines.append(f"Real: {result.actual_outcome} | Duración={result.actual_duration_mins:.1f}min")
+                        
+                        # Time error
+                        if result.time_error_mins > 5.0:
+                            xai_lines.append(f"⏱️ Error temporal: {result.time_error_mins:.1f}min (modelo desincronizado)")
+                        
+                        # Top features from intent
+                        if intent and intent.top_features:
+                            top_3 = intent.top_features[:3]
+                            feat_str = ", ".join(
+                                f"{f.get('name', 'unknown')}={f.get('value', 0):.2f}" 
+                                for f in top_3 if isinstance(f, dict)
+                            )
+                            if feat_str:
+                                xai_lines.append(f"Drivers: {feat_str}")
+                        
+                        xai_summary = "\n".join(xai_lines)
+                        
+                        # Inject into notification payload
+                        closed_data = getattr(self, '_last_closed_trade_data', None)
+                        if closed_data and closed_data.get('symbol') == event.symbol:
+                            closed_data['xai_autopsy'] = xai_summary
+                            closed_data['brier_score'] = result.brier_score
+                            closed_data['sophia_narrative'] = result.narrative
+                    except Exception as xai_e:
+                        logger.debug(f"[XAI] Autopsy injection skipped: {xai_e}")
 
                     # Update SOPHIA calibrator if available
                     won = pnl > 0
@@ -1452,6 +1659,13 @@ class Portfolio:
             cash_snapshot = self.current_cash
             realized_snapshot = self.realized_pnl
             positions_snapshot = self.positions.copy()
+            # Serialize virtual ledger (remove non-serializable objects like datetime if any, though it should be primitive)
+            vl_snapshot = {}
+            for k, v in self.virtual_ledger.items():
+                vl_copy = v.copy()
+                if 'entry_time' in vl_copy and hasattr(vl_copy['entry_time'], 'isoformat'):
+                    vl_copy['entry_time'] = vl_copy['entry_time'].isoformat()
+                vl_snapshot[k] = vl_copy
         finally:
             self.guard.release()
             
@@ -1459,9 +1673,9 @@ class Portfolio:
         unrealized_pnl = equity - self.initial_capital - realized_snapshot
         
         # Submit to Executor
-        self.io_executor.submit(self._do_save_status, cash_snapshot, realized_snapshot, positions_snapshot, equity, unrealized_pnl)
+        self.io_executor.submit(self._do_save_status, cash_snapshot, realized_snapshot, positions_snapshot, equity, unrealized_pnl, vl_snapshot)
 
-    def _do_save_status(self, cash, realized, positions, equity, unrealized):
+    def _do_save_status(self, cash, realized, positions, equity, unrealized, vl_snapshot):
         """Worker method for save_status: Executed in background thread"""
         try:
             # Get Session Info (Disabled: Decoupled for tests)
@@ -1501,6 +1715,7 @@ class Portfolio:
                 'realized_pnl': realized,
                 'unrealized_pnl': unrealized,
                 'positions': positions,
+                'virtual_ledger': vl_snapshot,
                 'performance_metrics': metrics, # Now populated!
                 'balance': cash, 
                 'precision_drift': float(getattr(self, 'precision_drift_accumulated', 0.0)),
@@ -1693,11 +1908,25 @@ class Portfolio:
         # Prints a real-time report of the trade execution, Win Rate, and Balance.
         # Now sends enhanced notifications with full trade context (Phase 4.5).
         try:
-            # 1. Global Performance Stats
+            # 1. Performance Stats — SESSION (Primary) + ALL-TIME (Secondary)
+            # FORENSIC-V35: Use session stats as PRIMARY WR (not lifetime)
+            session_wins = self._session_stats['wins']
+            session_losses = self._session_stats['losses']
+            session_total = self._session_stats['total']
+            win_rate = (session_wins / session_total * 100) if session_total > 0 else 0.0
+            
+            # All-time (secondary display)
             total_wins = sum(d['wins'] for d in self.strategy_performance.values())
             total_losses = sum(d['losses'] for d in self.strategy_performance.values())
             total_trades = sum(d['trades'] for d in self.strategy_performance.values())
-            win_rate = (total_wins / total_trades * 100) if total_trades > 0 else 0.0
+            alltime_win_rate = (total_wins / total_trades * 100) if total_trades > 0 else 0.0
+            
+            # Strategy-specific Win Rate
+            strat_perf = self.strategy_performance.get(getattr(event, 'strategy_id', 'Unknown'), {'wins': 0, 'losses': 0, 'trades': 0, 'pnl': 0.0})
+            strat_wins = strat_perf['wins']
+            strat_losses = strat_perf['losses']
+            strat_total = strat_perf['trades']
+            strat_win_rate = (strat_wins / strat_total * 100) if strat_total > 0 else 0.0
             
             # 2. Balance Stats
             equity = self.get_total_equity()
@@ -1723,6 +1952,7 @@ class Portfolio:
             # FORENSIC FIX #4: Detailed Balance-per-trade tracking
             _meta = getattr(event, 'metadata', {}) or {}
             actual_order_type = _meta.get('actual_order_type', 'limit')
+            enriched_order_type = _meta.get('enriched_order_type', actual_order_type.upper())
             fee_tag = "Maker" if actual_order_type == 'limit' else "Taker"
             estimated_fee = getattr(event, 'commission', 0.0) or 0.0
             
@@ -1732,14 +1962,16 @@ class Portfolio:
             
             print(f"   📦 Notional Size: ${notional:.2f} ({leverage}x Lev)", flush=True)
             print(f"   💳 Margin Used:   ${margin:.2f}", flush=True)
-            print(f"   💸 Fees Paid:     ${estimated_fee:.4f} ({fee_tag})", flush=True)
+            print(f"   💸 Fees Paid:     ${estimated_fee:.4f} ({fee_tag}) | Type: {enriched_order_type}", flush=True)
             
             ml_confidence = getattr(event, 'ml_confidence', None)
             predicted_duration = getattr(event, 'predicted_duration', None)
+            predicted_magnitude = getattr(event, 'predicted_magnitude', None)
             if ml_confidence is not None:
                 prob_str = f"{ml_confidence * 100:.1f}%"
                 dur_str = f"| Horizon: {predicted_duration} bars" if predicted_duration else ""
-                print(f"   🔮 ML Prediction: Conf: {prob_str} {dur_str}", flush=True)
+                mag_str = f"| Target: +{predicted_magnitude * 100:.2f}%" if predicted_magnitude else ""
+                print(f"   🔮 ML Prediction: Conf: {prob_str} {dur_str} {mag_str}", flush=True)
                 
             print(f"   🏦 Available Cash:${self.current_cash:.2f}", flush=True)
             
@@ -1748,7 +1980,7 @@ class Portfolio:
             neural_bias = _meta.get('neural_bias')
             rsi = _meta.get('rsi')
             adx = _meta.get('adx')
-            setup_type = _meta.get('setup_type', getattr(event, 'setup_type', 'UNKNOWN'))
+            setup_type = _meta.get('setup_type', getattr(event, 'setup_type', 'UNTAGGED_SETUP'))
             
             print(f"   🔬 Setup: {setup_type}", flush=True)
             if confluence is not None or neural_bias is not None:
@@ -1761,7 +1993,13 @@ class Portfolio:
                 print(f"   💰 PnL Realized:  {pnl_color} {pnl_str}", flush=True)
             
             # FORENSIC-V21 FIX #7: Show SL/TP targets
-            _pos_temp = self.virtual_ledger.get(f"{event.symbol}_{horizon}", self.positions.get(event.symbol, {}))
+            _vkey_base = f"{event.symbol}_{horizon}"
+            _pos_temp = (
+                self.virtual_ledger.get(f"{_vkey_base}_LONG") or
+                self.virtual_ledger.get(f"{_vkey_base}_SHORT") or
+                self.virtual_ledger.get(_vkey_base) or
+                self.positions.get(event.symbol, {})
+            )
             sl_display = _pos_temp.get('sl_pct')
             tp_display = _pos_temp.get('tp_pct')
             if sl_display or tp_display:
@@ -1769,8 +2007,20 @@ class Portfolio:
                 tp_str = f"{float(tp_display)*100:.2f}%" if tp_display else "N/A"
                 print(f"   🎯 SL: {sl_str} | TP: {tp_str}", flush=True)
             
-            print(f"   🏆 Win Rate:      {win_rate:.1f}% ({total_wins} Wins / {total_losses} Losses)", flush=True)
-            print(f"   💵 Net Equity:    ${equity:.2f} ({'+' if balance_delta >=0 else ''}{balance_pct:.2f}%)", flush=True)
+            # ═══════════════════════════════════════════════════════════════
+            # SOPHIA-GLOBAL FIX: ACCURATE WR DISPLAY
+            # QUÉ: WR siempre muestra desglose completo session + all-time.
+            # POR QUÉ: Si el primer trade de la sesión pierde, WR debe ser 0%.
+            #   Antes podía heredar stats de sesiones anteriores por crash recovery.
+            # PARA QUÉ: Telegram muestra datos 100% verificables.
+            # CÓMO: Para ENTRIES → no mostramos WR (no hay resultado aún).
+            #   Para CLOSES → WR incluye el trade actual (ya contabilizado).
+            # ═══════════════════════════════════════════════════════════════
+            if is_exit and session_total > 0:
+                print(f"   🏆 WR Sesión: {win_rate:.1f}% ({session_wins}W/{session_losses}L de {session_total}) | All-Time: {alltime_win_rate:.1f}% ({total_wins}W/{total_losses}L)", flush=True)
+            elif not is_exit:
+                print(f"   📋 Trades en Sesión: {session_total} | All-Time: {total_trades}", flush=True)
+            print(f"   🏦 Cumulative Account Balance: ${equity:.2f} ({'+' if balance_delta >=0 else ''}{balance_pct:.2f}%)", flush=True)
             print(f"========= [ /{horizon} — {strategy_id_log} ] =========\n", flush=True)
             
             # --- ENHANCED NOTIFICATIONS (Phase 4.5 + FORENSIC-V21) ---
@@ -1837,6 +2087,13 @@ class Portfolio:
             #   Taker), PnL neto preciso, y duración desde entry_time.
             # ═══════════════════════════════════════════════════════════════
             closed_data = getattr(self, '_last_closed_trade_data', None)
+            # ═══════════════════════════════════════════════════════════════
+            # XAI AUTOPSY PROPAGATION: Extract forensic fields BEFORE clearing
+            # QUÉ: Extrae xai_autopsy y sophia_narrative inyectados por
+            #   _sophia_post_mortem_check ANTES de borrar _last_closed_trade_data.
+            # ═══════════════════════════════════════════════════════════════
+            notif_xai_autopsy = None
+            notif_sophia_narrative = None
             if is_close and closed_data and closed_data.get('symbol') == event.symbol:
                 notif_pnl = closed_data.get('gross_pnl', pnl or 0.0)
                 notif_commission = closed_data.get('fees_paid', commission)
@@ -1845,6 +2102,9 @@ class Portfolio:
                 notif_duration = f"{closed_data.get('duration_seconds', 0):.0f}s"
                 notif_net_pnl = closed_data.get('net_pnl', 0.0)
                 notif_direction = closed_data.get('direction', notif_direction)
+                notif_trade_id = closed_data.get('trade_id') or getattr(event, 'trade_id', None) or 'UNKNOWN'
+                notif_xai_autopsy = closed_data.get('xai_autopsy')
+                notif_sophia_narrative = closed_data.get('sophia_narrative')
                 # Clear after use
                 self._last_closed_trade_data = None
             else:
@@ -1854,12 +2114,32 @@ class Portfolio:
                 notif_entry_price = entry_price
                 notif_duration = duration_str
                 notif_net_pnl = notif_pnl - notif_commission  # FORENSIC-V23: Fixed 0.000 net_pnl fallback
+                # ═══════════════════════════════════════════════════════════════
+                # FORENSIC-V42 FIX: GUARANTEED TRADE_ID FOR ALL NOTIFICATIONS
+                # QUÉ: Genera UUID de respaldo si FillEvent no trae trade_id.
+                # POR QUÉ: Antes mostraba "UNKNOWN" o None en Telegram para OPENs
+                #   porque la cadena Signal→RiskManager→Order no siempre propagaba
+                #   trade_id (ahora sí, pero mantenemos fallback defensivo).
+                # PARA QUÉ: 100% trazabilidad de cada trade en Telegram.
+                # ═══════════════════════════════════════════════════════════════
+                import uuid as _uuid
+                _event_tid = getattr(event, 'trade_id', None)
+                # Try virtual_ledger as intermediate source
+                if not _event_tid:
+                    _pos_side_guess = 'LONG' if event.direction == OrderSide.BUY else 'SHORT'
+                    _vkey_guess = f"{event.symbol}_{horizon}_{_pos_side_guess}"
+                    _vpos = self.virtual_ledger.get(_vkey_guess, {})
+                    _event_tid = _vpos.get('trade_id')
+                notif_trade_id = _event_tid or str(_uuid.uuid4())
             
             trade_notification_data = {
+                'trade_id': notif_trade_id,
                 'symbol': event.symbol,
+                'setup_type': setup_type,
                 'strategy': strategy_id,
                 'horizon': horizon,
                 'direction': notif_direction,
+                'order_type': enriched_order_type,
                 'entry_price': notif_entry_price,
                 'exit_price': fill_price if is_close else 0.0,
                 'fill_price': fill_price,
@@ -1877,16 +2157,41 @@ class Portfolio:
                 'exit_reason': notif_exit_reason,
                 'ml_confidence': ml_confidence,
                 'predicted_duration': predicted_duration,
+                'predicted_magnitude': predicted_magnitude,
                 'balance_before': self.initial_capital + self.realized_pnl - (pnl or 0.0),
                 'balance_after': equity,
-                'win_rate': win_rate,
+                # ═══════════════════════════════════════════════════════════════
+                # SOPHIA-GLOBAL FIX: WR sentinel for ENTRY notifications
+                # QUÉ: Entries send win_rate=-1 so Telegram SKIPS WR display.
+                # POR QUÉ: An ENTRY has no outcome yet. Showing "WR: 100%"
+                #   after opening a position is misleading and confusing.
+                # PARA QUÉ: Only CLOSE notifications show WR (with current trade included).
+                # ═══════════════════════════════════════════════════════════════
+                'win_rate': win_rate if is_close else -1.0,
+                'alltime_win_rate': alltime_win_rate if is_close else -1.0,
+                'session_wins': session_wins if is_close else 0,
+                'session_losses': session_losses if is_close else 0,
+                'strat_win_rate': strat_win_rate if is_close else -1.0,
+                'strat_wins': strat_wins if is_close else 0,
+                'strat_losses': strat_losses if is_close else 0,
                 'volatility': 0.0,  # Populated by caller if available
                 'spread': 0.0,
                 'metadata': getattr(event, 'metadata', {}) or {}, # 🧠 FORENSIC-V22: Pass telemetry
                 'timestamp': datetime.now(timezone.utc).strftime('%H:%M:%S UTC'),
             }
             
+            # SUPPRESS BACKTEST_CLOSE NOISE
+            if strategy_id == "BACKTEST_CLOSE" or notif_exit_reason == "BACKTEST_CLOSE":
+                return
+
             if is_close:
+                # ═══════════════════════════════════════════════════════════════
+                # XAI AUTOPSY FINAL INJECTION: Merge forensic fields into payload
+                # ═══════════════════════════════════════════════════════════════
+                if notif_xai_autopsy:
+                    trade_notification_data['xai_autopsy'] = notif_xai_autopsy
+                if notif_sophia_narrative:
+                    trade_notification_data['sophia_narrative'] = notif_sophia_narrative
                 Notifier.send_trade_close(trade_notification_data)
             else:
                 Notifier.send_trade_open(trade_notification_data)
@@ -1941,6 +2246,18 @@ class Portfolio:
             
         if stats['trades'] > 0:
             stats['win_rate'] = stats['wins'] / stats['trades']
+        
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC-V35: SESSION-LEVEL STATS UPDATE
+        # QUÉ: Actualiza contadores de sesión en paralelo al all-time.
+        # POR QUÉ: log_trade_report() y Telegram usan session stats como WR primario.
+        # ═══════════════════════════════════════════════════════════════
+        self._session_stats['total'] += 1
+        self._session_stats['net_pnl'] += pnl
+        if pnl > 0:
+            self._session_stats['wins'] += 1
+        elif pnl < 0:
+            self._session_stats['losses'] += 1
 
     def get_strategy_metrics(self, strategy_id: str) -> Dict[str, float]:
         # PHASE 17: Meritocratic Scaling Metrics

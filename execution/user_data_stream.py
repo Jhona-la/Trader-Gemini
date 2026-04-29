@@ -200,24 +200,76 @@ class UserDataStream:
             # FillEvent doesn't strictly need 'Entry/Exit', just direction.
             # Core engine handles net position via Portfolio.
             
-            # Create Fill Event
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC-V44 FIX: CORRECTED FillEvent CONSTRUCTION
+            # BUG #1: direction=side passed raw string ('BUY'/'SELL') but
+            #   FillEvent expects OrderSide enum. frozen+slots dataclass
+            #   would reject or mistype it.
+            # BUG #2: received_ns=time.time_ns() — FillEvent has NO such
+            #   field → TypeError silently kills the fill event.
+            # BUG #3: strategy_id="UserStream" loses the real strategy.
+            #   We now look up the original OrderEvent metadata from
+            #   the OrderManager (if available) to recover trade_id,
+            #   strategy_id, setup_type, and horizon.
+            # ═══════════════════════════════════════════════════════════════
+            from core.enums import OrderSide as _OrderSide
+            
+            # Map string → enum
+            if side == 'BUY':
+                fill_direction = _OrderSide.BUY
+            elif side == 'SELL':
+                fill_direction = _OrderSide.SELL
+            else:
+                logger.error(f"❌ [UserStream] Unknown side: {side}")
+                return
+
+            # Attempt to recover original order metadata
+            _real_strategy = "UserStream"
+            _real_setup = None
+            _real_trade_id = None
+            _real_horizon = "SCALPING"
+            _real_exit_reason = None
+            _real_metadata = {}
+
+            # Convert symbol format: BTCUSDT → BTC/USDT
+            symbol_ccxt = symbol
+            for quote in ['USDT', 'BUSD', 'USDC', 'BTC', 'ETH']:
+                if symbol.endswith(quote) and len(symbol) > len(quote):
+                    symbol_ccxt = symbol[:-len(quote)] + '/' + quote
+                    break
+
+            # Try to find the original order in OrderManager or Portfolio
+            try:
+                if hasattr(self, 'order_manager') and self.order_manager:
+                    tracked = self.order_manager.get_order(order_id)
+                    if tracked:
+                        _real_strategy = tracked.get('strategy_id', 'UserStream')
+                        _real_setup = tracked.get('setup_type')
+                        _real_trade_id = tracked.get('trade_id')
+                        _real_horizon = tracked.get('horizon', 'SCALPING')
+                        _real_metadata = tracked.get('metadata', {}) or {}
+                        logger.info(f"🔗 [UserStream] Matched fill to order: {_real_strategy} ({_real_trade_id})")
+            except Exception as e:
+                logger.debug(f"[UserStream] Order lookup failed: {e}")
+
             fill_event = FillEvent(
                 timeindex=datetime.now(timezone.utc),
-                symbol=symbol,
+                symbol=symbol_ccxt,
                 exchange='BINANCE',
-                quantity=last_qty, # Delta quantity
-                direction=side,    # 'BUY' or 'SELL'
+                quantity=last_qty,
+                direction=fill_direction,
                 fill_cost=last_qty * last_price,
                 fill_price=last_price,
                 order_id=order_id,
-                commission=float(o.get('n', 0)), # Commission amount
+                commission=float(o.get('n', 0)),
                 is_closed=(status == 'FILLED'),
-                strategy_id="UserStream", # Tag origin
+                strategy_id=_real_strategy,
                 order_type=None,
-                setup_type="UserStream",
-                exit_reason="ExchangeFill",
-                # [DF-B6] Forensic Latency Tracking
-                received_ns=time.time_ns()
+                setup_type=_real_setup,
+                exit_reason=_real_exit_reason,
+                trade_id=_real_trade_id,
+                horizon=_real_horizon,
+                metadata=_real_metadata,
             )
             
             self.events_queue.put(fill_event)

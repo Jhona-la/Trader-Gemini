@@ -109,18 +109,20 @@ class AlertSystem:
         logger.error(msg.replace('\n', ' | '))
         
         if self.telegram_ready:
-            try:
-                import requests
-                token = os.getenv("TELEGRAM_BOT_TOKEN")
-                chat_id = os.getenv("TELEGRAM_CHAT_ID")
-                url = f"https://api.telegram.org/bot{token}/sendMessage"
-                payload = {
-                    "chat_id": chat_id,
-                    "text": msg
-                }
-                requests.post(url, json=payload, timeout=5)
-            except Exception as e:
-                logger.error(f"Fallo enviando alerta Telegram Diagnóstico: {e}")
+            from config import Config
+            if getattr(Config.Observability, "TELEGRAM_ENABLED", True):
+                try:
+                    import requests
+                    token = os.getenv("TELEGRAM_BOT_TOKEN")
+                    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+                    url = f"https://api.telegram.org/bot{token}/sendMessage"
+                    payload = {
+                        "chat_id": chat_id,
+                        "text": msg
+                    }
+                    requests.post(url, json=payload, timeout=5)
+                except Exception as e:
+                    logger.error(f"Fallo enviando alerta Telegram Diagnóstico: {e}")
 
 _alert_sys = None
 def get_alert_system() -> AlertSystem:

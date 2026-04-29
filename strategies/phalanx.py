@@ -1,4 +1,5 @@
 import numpy as np
+from typing import Optional
 from numba import jit, float64, int64
 from numba.experimental import jitclass
 
@@ -166,3 +167,115 @@ class OrderFlowAnalyzer:
             
         except Exception as e:
             return {'detected': False, 'type': 'ERROR', 'reason': str(e)}
+
+from core.events import SignalEvent, SignalType
+from datetime import datetime, timezone
+from strategies.strategy import Strategy
+from utils.cooldown_manager import cooldown_manager
+
+class PhalanxStrategy(Strategy):
+    """
+    Phalanx Multi-Signal Strategy
+    Operates as an independent strategy using the OrderFlowAnalyzer to detect absorption.
+
+    ═══════════════════════════════════════════════════════════════
+    FORENSIC-DCA FIXES:
+    #1: Añadido missing import 'Optional' (NameError en is_absorption_detected)
+    #2: SL/TP ahora dinámicos basados en horizonte (SCALPING vs SWING)
+    #3: Añadido cooldown de 60s por símbolo para prevenir spam
+    #4: Fallback seguro si get_order_flow_metrics() no existe
+    ═══════════════════════════════════════════════════════════════
+    """
+    def __init__(self, data_provider, events_queue, horizon="SCALPING", priority=1):
+        super().__init__()
+        self.data_provider = data_provider
+        self.events_queue = events_queue
+        self.horizon = horizon
+        self.priority = priority
+        self.strategy_id = f"PHALANX_{horizon}"
+        self.analyzer = OrderFlowAnalyzer()
+
+    def generate_signals(self, event):
+        from config import Config
+        for symbol in Config.TRADING_PAIRS:
+            # FORENSIC-DCA FIX #3: Cooldown por símbolo
+            cooldown_key = f"PHALANX_{symbol}_{self.horizon}"
+            if not cooldown_manager.check_custom_cooldown(cooldown_key, duration_seconds=60):
+                continue
+
+            data = self.data_provider.get_data(symbol)
+            if data is None or len(data) < 20:
+                continue
+                
+            # FORENSIC-DCA FIX #4: Fallback seguro para order flow metrics
+            metrics = None
+            if hasattr(self.data_provider, 'get_order_flow_metrics'):
+                try:
+                    metrics = self.data_provider.get_order_flow_metrics(symbol)
+                except Exception:
+                    metrics = None
+            
+            # Convert last 20 rows to list of dicts for analyzer
+            price_action = data.iloc[-20:].to_dict('records')
+            
+            absorption = self.analyzer.is_absorption_detected(price_action, metrics)
+            if absorption['detected']:
+                signal_type = SignalType.LONG if absorption['type'] == 'BULLISH' else SignalType.SHORT
+                current_price = price_action[-1]['close']
+                
+                # FORENSIC-DCA FIX #2: SL/TP dinámicos por horizonte
+                # QUÉ: SL/TP ya no son 1% hardcoded — usan parámetros del horizonte.
+                # POR QUÉ: 1% SL con 10x leverage = -10% loss, demasiado para $13.
+                # PARA QUÉ: Consistencia con las SL/TP de las estrategias principales.
+                if self.horizon == 'SCALPING':
+                    tp_pct = Config.Strategies.SCALPING_PARAMS.get('tp_pct', 0.006)
+                    sl_pct = Config.Strategies.SCALPING_PARAMS.get('sl_pct', 0.0075)
+                else:
+                    tp_pct = Config.Strategies.SWING_PARAMS.get('tp_pct', 0.045)
+                    sl_pct = Config.Strategies.SWING_PARAMS.get('sl_pct', 0.025)
+                
+                # SOPHIA INTEGRATION
+                sophia_report_dict = {}
+                if hasattr(self, 'sophia') and self.sophia:
+                    # Get market regime dynamically
+                    market_regime = "UNKNOWN"
+                    if hasattr(self, 'portfolio') and self.portfolio and hasattr(self.portfolio, 'market_regime') and self.portfolio.market_regime:
+                        market_regime = self.portfolio.market_regime.get_current_regime()
+
+                    sophia_report = self.sophia.analyze(
+                        symbol=symbol,
+                        direction=signal_type.name,
+                        signal_strength=0.85,
+                        setups={'reason': absorption['reason']},
+                        confluence_score=1.0,
+                        tp_pct=tp_pct,
+                        sl_pct=sl_pct,
+                        returns=None,
+                        ttl_seconds=120.0 if self.horizon == 'SCALPING' else 900.0,
+                        regime=market_regime
+                    )
+                    
+                    # FORENSIC-V42: Dynamic threshold
+                    veto_threshold = 0.65 if market_regime == "TRENDING" else 0.55
+                    if sophia_report.win_probability < veto_threshold:
+                        continue
+                    sophia_report_dict = sophia_report.to_dict()
+
+                signal = SignalEvent(
+                    strategy_id="PHALANX",
+                    symbol=symbol,
+                    datetime=datetime.now(timezone.utc),
+                    signal_type=signal_type,
+                    strength=0.85,
+                    atr=0.0,
+                    tp_pct=tp_pct,
+                    sl_pct=sl_pct,
+                    current_price=current_price,
+                    horizon=self.horizon,
+                    priority=self.priority,
+                    metadata={'sophia': sophia_report_dict, 'reason': absorption['reason']}
+                )
+                self.events_queue.put(signal)
+    
+    def calculate_signals(self, event):
+        self.generate_signals(event)

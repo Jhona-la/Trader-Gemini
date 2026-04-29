@@ -503,8 +503,8 @@ class RiskManager:
         if not self.portfolio:
             return True
 
-        v_key = f"{symbol}_{horizon}"
-        v_pos = self.portfolio.virtual_ledger.get(v_key)
+        # [PHOENIX V3] Hedge Mode Aware: Use get_horizon_position instead of raw ledger lookup
+        v_pos = self.portfolio.get_horizon_position(symbol, horizon)
 
         if not v_pos:
             return True
@@ -558,7 +558,7 @@ class RiskManager:
         # Opposite direction signals: Allow if current position is losing
         if unrealized_pnl_pct < flip_threshold:
             logger.info(
-                f"🔄 [{v_key}] FLIP ALLOWED: Current PnL {unrealized_pnl_pct * 100:.2f}% < {flip_threshold * 100:.2f}%. Permitting opposite signal."
+                f"🔄 [{symbol}_{horizon}] FLIP ALLOWED: Current PnL {unrealized_pnl_pct * 100:.2f}% < {flip_threshold * 100:.2f}%. Permitting opposite signal."
             )
             return True
 
@@ -2202,24 +2202,22 @@ class RiskManager:
                 #   un buen trade que simplemente no cerró en TP perfecto.
                 # ═══════════════════════════════════════════════════════════════
                 if pos_horizon == "SCALPING":
-                    # ═══════════════════════════════════════════════════════
-                    # FORENSIC-V29 FIX #2: TP-RELATIVE TURBO-BREAKEVEN
-                    # QUÉ: Escala turbo-BE al 50% del TP target.
-                    # POR QUÉ: El threshold fijo de 0.30% mataba trades
-                    #   que podían alcanzar TP de 1.2% → profit de $0.005.
-                    # PARA QUÉ: Dejar que el precio alcance al menos la
-                    #   mitad del TP antes de activar protección de capital.
-                    # ═══════════════════════════════════════════════════════
-                    turbo_threshold_pct = max(0.30, tp_target_pct * 0.50)
-                else:
-                    # Fee-relative for SWING (original behavior)
+                    # FORENSIC-V44 FIX #4: RESTORE IMMEDIATE TURBO-BREAKEVEN
+                    # QUÉ: Restaurar el turbo-BE a 1.5x Fees para microscalping.
+                    # POR QUÉ: El threshold fijo de 0.30% es demasiado amplio
+                    #   para operaciones ultra-rápidas, matando trades buenos.
+                    # PARA QUÉ: Protección inmediata de capital en cuanto se 
+                    #   rompe el spread y se paga la comisión (FinOps Net-Zero).
                     turbo_threshold_pct = fee_buffer * 100 * 2.5
+                else:
+                    # Fee-relative for SWING (wider threshold)
+                    turbo_threshold_pct = fee_buffer * 100 * 4.0
 
                 if peak_pnl >= turbo_threshold_pct:
                     # We lock in entry_price + fee_buffer + round trip slippage
                     turbo_be_price = entry_price * (
-                        1 + fee_buffer + 0.0008
-                    )  # 0.08% Total FinOps Net-Zero
+                        1 + fee_buffer + 0.0002
+                    )  # 0.02% slippage buffer to guarantee FinOps Net-Zero without premature triggers
                     if (
                         current_price < turbo_be_price
                     ):  # Price crashed back after hitting PEAK
@@ -2259,7 +2257,7 @@ class RiskManager:
                     # Stage 2: Standard trail - protect 70% of gains from peak
                     trail_price = hwm - ((hwm - entry_price) * 0.30)
                     trail_name = "TRAIL_STAGE_2_STD"
-                elif progress >= 0.25:
+                elif progress >= 0.40:
                     # Stage 1: Move to breakeven + round-trip fees + slippage safety buffer
                     trail_price = entry_price * (1 + fee_buffer + 0.0005)
                     trail_name = "TRAIL_STAGE_1_BE"
@@ -2362,18 +2360,18 @@ class RiskManager:
                 tp_target_pct = tp_pct * 100 if tp_pct > 0 else 1.0  # Safe fallback
 
                 # ⚡ Turbo-Breakeven (Stage 0): Immediate capital protection
-                # FORENSIC-V13 FIX #5: TP-relative for SCALPING (same logic as LONG)
+                # FORENSIC-V44 FIX #4: RESTORE IMMEDIATE TURBO-BREAKEVEN (SHORT mirror)
                 if pos_horizon == "SCALPING":
-                    # FORENSIC-V29 FIX #2: TP-RELATIVE TURBO-BREAKEVEN (SHORT mirror)
-                    turbo_threshold_pct = max(0.30, tp_target_pct * 0.50)
-                else:
+                    # FORENSIC FIX: Aggressive Trailing Breakeven at 2.5x fees
                     turbo_threshold_pct = fee_buffer * 100 * 2.5
+                else:
+                    turbo_threshold_pct = fee_buffer * 100 * 4.0
 
                 if peak_pnl >= turbo_threshold_pct:
                     # We lock in entry_price - fee_buffer - round trip slippage
                     turbo_be_price = entry_price * (
-                        1 - fee_buffer - 0.0008
-                    )  # 0.08% Total FinOps Net-Zero
+                        1 - fee_buffer - 0.0002
+                    )  # 0.02% slippage buffer to guarantee FinOps Net-Zero without premature triggers
                     if current_price > turbo_be_price:  # Price bounced back up
                         print(
                             f"⚡ [SHORT {pos_horizon}] TURBO-BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}% gave us edge. Bailing at {current_price:.4f}"
@@ -2410,7 +2408,7 @@ class RiskManager:
                     # Stage 2: Standard trail - protect 70% of gains from peak
                     trail_price = lwm + ((entry_price - lwm) * 0.30)
                     trail_name = "SHORT_TRAIL_STAGE_2_STD"
-                elif progress >= 0.25:
+                elif progress >= 0.40:
                     # Stage 1: Move to breakeven + round-trip fees + slippage safety buffer
                     trail_price = entry_price * (1 - fee_buffer - 0.0005)
                     trail_name = "SHORT_TRAIL_STAGE_1_BE"
@@ -2449,6 +2447,33 @@ class RiskManager:
                     )
                     self.record_trade_result(False, unrealized_pnl_pct)
                     continue
+
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC-V44 FIX #3: ENRICH EXIT SIGNALS WITH METADATA
+        # QUÉ: Inyectar `setup_type` y `trade_id` originales en las señales de salida.
+        # POR QUÉ: Las señales de salida como "TURBO_BE" o "TIME_STOP" perdían
+        #   el setup_type y trade_id, causando que en Telegram los cierres 
+        #   mostraran "Setup: UNKNOWN" y "ID: None".
+        # PARA QUÉ: Preservar el contexto forense durante el cierre del trade.
+        # ═══════════════════════════════════════════════════════════════
+        for sig in stop_signals:
+            if getattr(sig, 'signal_type', None) == SignalType.EXIT:
+                _horizon = getattr(sig, 'horizon', 'SCALPING')
+                v_key = f"{sig.symbol}_{_horizon}"
+                
+                # Fetch original position to recover metadata
+                vpos = portfolio.virtual_ledger.get(f"{v_key}_LONG") or \
+                       portfolio.virtual_ledger.get(f"{v_key}_SHORT") or \
+                       portfolio.positions.get(sig.symbol, {})
+                
+                orig_setup = vpos.get('setup_type')
+                orig_tid = vpos.get('trade_id')
+                
+                # SignalEvent has frozen=True, slots=True, so we use object.__setattr__
+                if orig_setup and not getattr(sig, 'setup_type', None):
+                    object.__setattr__(sig, 'setup_type', orig_setup)
+                if orig_tid and not getattr(sig, 'trade_id', None):
+                    object.__setattr__(sig, 'trade_id', orig_tid)
 
         return stop_signals
 
