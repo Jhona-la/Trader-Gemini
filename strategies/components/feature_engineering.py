@@ -9,6 +9,9 @@ from utils.math_helpers import safe_div
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from utils.math_kernel import calculate_zscore_jit, calculate_quantum_features_batch_jit
+from core.swarm_correlator import swarm_correlator
+from data.macro_loader import macro_loader
+from data.onchain_loader import onchain_loader
 
 def fast_pct_change(arr, period):
     n = len(arr)
@@ -355,6 +358,28 @@ class FeatureEngineering:
 
         # ==================== SCALPING MICROSTRUCTURE ====================
         new_features['micro_velocity_3'] = df['returns_3'].to_numpy() / 3.0
+        
+        # 🌊 PHASE 10: REAL L2 ORDERBOOK METRICS
+        new_features['l2_ofi'] = np.zeros(n_len)
+        new_features['l2_spread'] = np.zeros(n_len)
+        new_features['l2_microprice_dist'] = np.zeros(n_len)
+        
+        if data_provider and hasattr(data_provider, 'get_orderbook'):
+            try:
+                ob = data_provider.get_orderbook(symbol)
+                if ob:
+                    # Current values at the moment the feature vector is created
+                    ofi = ob.calculate_ofi()
+                    spread = ob.calculate_spread()
+                    microprice = ob.calculate_microprice()
+                    
+                    # Fill the last value (real-time snapshot). 
+                    new_features['l2_ofi'][-1] = ofi
+                    new_features['l2_spread'][-1] = spread
+                    if close[-1] > 0 and microprice > 0:
+                        new_features['l2_microprice_dist'][-1] = (microprice - close[-1]) / close[-1]
+            except Exception as e:
+                pass
         vol_ma_5 = talib.SMA(volume, 5)
         vol_ma_15 = talib.SMA(volume, 15)
         new_features['volume_accel'] = np.where(vol_ma_15 > 0, vol_ma_5 / vol_ma_15, 1.0)
@@ -409,6 +434,22 @@ class FeatureEngineering:
         for feat_name in ['swing_momentum_ratio', 'swing_ema50_slope', 'scalp_velocity_1', 'scalp_rsi_divergence']:
             if feat_name not in new_features:
                 new_features[feat_name] = np.zeros(n_len)
+
+        # ==================== PHASE 3 (AITS): HYPERGRAPH CENTRALITY ====================
+        graph_feats = swarm_correlator.get_hypergraph_features(symbol)
+        new_features['graph_centrality'] = np.full(n_len, graph_feats.get('graph_centrality', 0.0))
+        new_features['graph_pagerank'] = np.full(n_len, graph_feats.get('graph_pagerank', 0.0))
+        new_features['graph_connectivity'] = np.full(n_len, graph_feats.get('graph_connectivity', 0.0))
+
+        # ==================== PHASE 2 (AITS): MACRO & ON-CHAIN NERVOUS SYSTEM ====================
+        macro_feats = macro_loader.get_macro_features()
+        onchain_feats = onchain_loader.get_onchain_features()
+        
+        new_features['macro_dxy_returns'] = np.full(n_len, macro_feats.get('macro_dxy_returns', 0.0))
+        new_features['macro_dxy_trend'] = np.full(n_len, macro_feats.get('macro_dxy_trend', 0.0))
+        new_features['macro_nq_returns'] = np.full(n_len, macro_feats.get('macro_nq_returns', 0.0))
+        new_features['macro_nq_trend'] = np.full(n_len, macro_feats.get('macro_nq_trend', 0.0))
+        new_features['onchain_whale_flow'] = np.full(n_len, onchain_feats.get('onchain_whale_flow', 0.0))
 
         # Merge dict back into Polars df efficiently
         pl_features = pl.DataFrame(new_features)

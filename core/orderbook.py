@@ -25,6 +25,12 @@ class PythonOrderBook:
         self.bids = {} # Price -> Qty
         self.asks = {} # Price -> Qty
         
+        # OFI Tracking
+        self.prev_best_bid = 0.0
+        self.prev_best_ask = 0.0
+        self.prev_bid_qty = 0.0
+        self.prev_ask_qty = 0.0
+        
     def update_bid(self, price: float, qty: float):
         if qty <= 0:
             if price in self.bids:
@@ -50,6 +56,54 @@ class PythonOrderBook:
             'bids': sorted_bids,
             'asks': sorted_asks
         }
+        
+    def calculate_spread(self) -> float:
+        if not self.bids or not self.asks: return 0.0
+        best_bid = max(self.bids.keys())
+        best_ask = min(self.asks.keys())
+        return best_ask - best_bid
+        
+    def calculate_microprice(self) -> float:
+        if not self.bids or not self.asks: return 0.0
+        best_bid = max(self.bids.keys())
+        best_ask = min(self.asks.keys())
+        bid_qty = self.bids[best_bid]
+        ask_qty = self.asks[best_ask]
+        imb = bid_qty / (bid_qty + ask_qty + 1e-9)
+        return best_ask * imb + best_bid * (1.0 - imb)
+        
+    def calculate_ofi(self) -> float:
+        if not self.bids or not self.asks: return 0.0
+        
+        curr_best_bid = max(self.bids.keys())
+        curr_best_ask = min(self.asks.keys())
+        curr_bid_qty = self.bids[curr_best_bid]
+        curr_ask_qty = self.asks[curr_best_ask]
+        
+        delta_w = 0.0
+        if curr_best_bid >= self.prev_best_bid:
+            if curr_best_bid == self.prev_best_bid:
+                delta_w = curr_bid_qty - self.prev_bid_qty
+            else:
+                delta_w = curr_bid_qty
+        else:
+            delta_w = -self.prev_bid_qty
+            
+        delta_v = 0.0
+        if curr_best_ask <= self.prev_best_ask:
+            if curr_best_ask == self.prev_best_ask:
+                delta_v = curr_ask_qty - self.prev_ask_qty
+            else:
+                delta_v = curr_ask_qty
+        else:
+            delta_v = -self.prev_ask_qty
+            
+        self.prev_best_bid = curr_best_bid
+        self.prev_best_ask = curr_best_ask
+        self.prev_bid_qty = curr_bid_qty
+        self.prev_ask_qty = curr_ask_qty
+        
+        return delta_w - delta_v
 
 # 3. Factory / Wrapper
     # 3. Factory / Wrapper

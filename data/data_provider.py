@@ -34,3 +34,10 @@ class DataProvider(ABC):
         Expected format: {'funding_rate': float, 'oi': float, 'oi_delta': float, 'liquidations': float}
         """
         raise NotImplementedError("Should implement get_derivatives_metrics()")
+        
+    @abstractmethod
+    def get_orderbook(self, symbol: str):
+        """
+        Returns the OrderBook instance for a symbol to access L2 metrics (OFI, Spread, Microprice).
+        """
+        pass

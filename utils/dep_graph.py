@@ -20,7 +20,7 @@ import sys
 import importlib
 import importlib.util
 from pathlib import Path
-from typing import Dict, List, Set, Tuple, Optional
+from typing import Dict, List, Set, Tuple, Optional, Any
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -73,7 +73,7 @@ class DependencyGraph:
         py_files = [
             f for f in py_files 
             if not any(part in f.parts for part in 
-                      ['venv', '.venv', '__pycache__', '.git', 'node_modules'])
+                      ['venv', '.venv', '__pycache__', '.git', 'node_modules', '.agents', 'scratch', 'archive', 'build'])
         ]
         
         for filepath in py_files:
@@ -107,7 +107,26 @@ class DependencyGraph:
                             node.imports.add(resolved)
                 
                 elif isinstance(ast_node, ast.ImportFrom):
-                    if ast_node.module:
+                    if ast_node.level > 0:
+                        # Handle relative imports (e.g. `from .engine import X`)
+                        parts = rel_path.split('/')[:-1] # directory parts
+                        
+                        # Go up one level for each dot beyond the first
+                        for _ in range(ast_node.level - 1):
+                            if parts:
+                                parts.pop()
+                                
+                        base_module = '.'.join(parts)
+                        if ast_node.module:
+                            full_module = f"{base_module}.{ast_node.module}" if base_module else ast_node.module
+                        else:
+                            full_module = base_module
+                            
+                        resolved = self._resolve_import(full_module)
+                        if resolved:
+                            node.imports.add(resolved)
+                            
+                    elif ast_node.module:
                         resolved = self._resolve_import(ast_node.module)
                         if resolved:
                             node.imports.add(resolved)
@@ -264,6 +283,60 @@ class DependencyGraph:
         
         return None
     
+    def find_cycles(self) -> List[List[str]]:
+        """
+        Detect all circular dependencies (cycles) using depth-first search (Tarjan/DFS).
+        Returns a list of cycles, where each cycle is a list of module paths forming the loop.
+        """
+        if not self._built:
+            self.build()
+            
+        cycles = []
+        visited = set()   # Black nodes
+        path_set = set()  # Gray nodes (currently in recursion stack)
+        path = []         # Current recursion path
+        
+        def dfs(node_path):
+            if node_path in path_set:
+                # Cycle detected! Extract the cycle part from the path
+                cycle_start_idx = path.index(node_path)
+                cycle = path[cycle_start_idx:] + [node_path]
+                # Avoid duplicate cycles (ignoring starting point variation)
+                # Sort the cycle (excluding the repeating last element) to create a unique signature
+                cycle_sig = tuple(sorted(cycle[:-1]))
+                # Check if we already found this cycle
+                is_duplicate = False
+                for existing in cycles:
+                    if len(existing) - 1 == len(cycle_sig):
+                        if tuple(sorted(existing[:-1])) == cycle_sig:
+                            is_duplicate = True
+                            break
+                if not is_duplicate:
+                    cycles.append(cycle)
+                return
+                
+            if node_path in visited:
+                return
+                
+            visited.add(node_path)
+            path_set.add(node_path)
+            path.append(node_path)
+            
+            if node_path in self.nodes:
+                for imp in self.nodes[node_path].imports:
+                    # Only traverse internal imports that exist in our nodes
+                    if imp in self.nodes:
+                        dfs(imp)
+                        
+            path_set.remove(node_path)
+            path.pop()
+
+        for mod in self.nodes.keys():
+            if mod not in visited:
+                dfs(mod)
+                
+        return sorted(cycles, key=len)
+    
     def summary(self) -> str:
         """Returns a human-readable summary of the dependency graph."""
         if not self._built:
@@ -315,6 +388,17 @@ if __name__ == "__main__":
                 print(f"  [{mod}] {e}")
     else:
         print("\n✅ All imports validated successfully!")
+    
+    # 🌀 Detect Circular Dependencies
+    cycles = graph.find_cycles()
+    if cycles:
+        print(f"\n🚨 FOUND {len(cycles)} CIRCULAR DEPENDENCIES (CYCLES) 🚨")
+        for i, cycle in enumerate(cycles, 1):
+            print(f"\nCycle #{i}:")
+            # Format the cycle nicely: A -> B -> C -> A
+            print(f"  {' ➔ '.join(cycle)}")
+    else:
+        print("\n🌀 No circular dependencies detected. The graph is acyclic! (DAG) ✅")
     
     # Check blast radius for specified module
     if len(sys.argv) > 1:

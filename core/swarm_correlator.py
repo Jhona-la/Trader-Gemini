@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional
 from utils.logger import logger
+from data.market_hypergraph import MarketHypergraph
 
 class SwarmCorrelator:
     """
@@ -22,6 +23,8 @@ class SwarmCorrelator:
         self.window = window
         self.correlations = {} # symbol -> correlation_coefficient
         self.leader_returns = None
+        self.hypergraph = None
+        self._all_returns = {} # To calculate N x N correlations
         
     def update_leader_data(self, btc_bars_1m):
         """Actualiza los retornos del líder para el cálculo de Pearson."""
@@ -48,16 +51,41 @@ class SwarmCorrelator:
             if len(target_returns) < self.window:
                 return 0.0
                 
-            # Pearson Correlation
+            # Store returns for full graph computation
+            self._all_returns[symbol] = target_returns
+                
+            # Pearson Correlation with Leader
             corr = np.corrcoef(self.leader_returns, target_returns)[0, 1]
             if np.isnan(corr): corr = 0.0
             
             self.correlations[symbol] = corr
+            
+            # If we have enough symbols, initialize and update Hypergraph (AITS Phase 3)
+            if len(self._all_returns) > 5:
+                if self.hypergraph is None:
+                    self.hypergraph = MarketHypergraph(list(self._all_returns.keys()))
+                
+                # Update correlation edges with all other stored symbols
+                for other_sym, other_ret in self._all_returns.items():
+                    if other_sym != symbol and len(other_ret) == len(target_returns):
+                        pair_corr = np.corrcoef(target_returns, other_ret)[0, 1]
+                        if not np.isnan(pair_corr):
+                            self.hypergraph.update_correlation_edge(symbol, other_sym, pair_corr)
+                            
+                # Recompute graph topology
+                self.hypergraph.compute_topology()
+                
             return corr
             
         except Exception as e:
             logger.debug(f"🐝 [SWARM] Correlation error for {symbol}: {e}")
             return 0.0
+
+    def get_hypergraph_features(self, symbol: str) -> dict:
+        """Returns topology features (Centrality, PageRank) for ML Models."""
+        if self.hypergraph:
+            return self.hypergraph.get_node_features(symbol)
+        return {'graph_centrality': 0.0, 'graph_pagerank': 0.0, 'graph_connectivity': 0.0}
 
     def get_swarm_pressure(self, symbol: str) -> float:
         """

@@ -555,14 +555,37 @@ class RiskManager:
             # Already SHORT, new signal is SHORT → stacking prohibited
             return False
 
-        # Opposite direction signals: Allow if current position is losing
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC-V45 FIX: THE FEE DEAD ZONE (ANTI-OVERTRADING)
+        # QUÉ: Bloquea FLIP_EXIT si el trade está "ganando" pero la ganancia
+        #   no es suficiente para cubrir la comisión de ida y vuelta.
+        # POR QUÉ: Binance cobra ~0.07% por round-trip. Si cerramos en +0.02%,
+        #   perdemos -0.05% neto. Esto causa el ratio de Fees > 330%.
+        # PARA QUÉ: Forzar a los trades a llegar al Take Profit o al Stop Loss,
+        #   eliminando el ruido y el goteo de capital por comisiones.
+        # ═══════════════════════════════════════════════════════════════
+        
+        # Calculate approximate round-trip fees (Maker in + Taker out)
+        _maker_fee = getattr(Config, "BINANCE_MAKER_FEE_BNB", 0.0002)
+        _taker_fee = getattr(Config, "BINANCE_TAKER_FEE_BNB", 0.000375)
+        fee_buffer = _maker_fee + _taker_fee
+
+        if unrealized_pnl_pct >= 0 and unrealized_pnl_pct < (fee_buffer * 1.5):
+            # The trade is technically winning, but closing now is a GUARANTEED NET LOSS.
+            # We ignore the opposite signal and force the trade to mature.
+            logger.debug(
+                f"🛡️ [{symbol}_{horizon}] FLIP BLOCKED (DEAD ZONE): PnL {unrealized_pnl_pct*100:.3f}% is less than required fee buffer {(fee_buffer*1.5)*100:.3f}%"
+            )
+            return False
+
+        # Opposite direction signals: Allow if current position is losing heavily (Stop Loss/Flip)
         if unrealized_pnl_pct < flip_threshold:
             logger.info(
                 f"🔄 [{symbol}_{horizon}] FLIP ALLOWED: Current PnL {unrealized_pnl_pct * 100:.2f}% < {flip_threshold * 100:.2f}%. Permitting opposite signal."
             )
             return True
 
-        # Default: allow opposite direction (it will be handled by generate_order's exit logic)
+        # If we have solid profit (> 1.5x fees), we ALLOW the flip as a valid Take Profit reversal.
         return True
 
     def _validate_margin_ratio(self):
@@ -1280,8 +1303,56 @@ class RiskManager:
                  logger.warning(f"⚠️ [SIZING] Global Margin Cap Reached. Used+Pending: ${current_total_margin:.2f} / Max: ${max_global_margin:.2f} (Cap: {_margin_cap_pct*100:.0f}%)")
                  return None
 
-            # 3. Cálculo de Tamaño Nominal (Notional)
-            effective_risk = min(0.20, risk_pct * multiplier)  # Cap a 20% max por trade
+            # ═══════════════════════════════════════════════════════════════
+            # PHASE 6 AITS: DYNAMIC FRACTIONAL KELLY SIZING
+            # QUÉ: Reemplaza el risk_pct estático por el Criterio de Kelly.
+            # POR QUÉ: Kelly maximiza el crecimiento logarítmico del capital
+            #   a largo plazo. Con un WR del 60%, Kelly dice apostar ~20% del
+            #   bankroll. Con un WR del 52%, dice apostar ~4%.
+            # PARA QUÉ: Acelerar interés compuesto en rachas ganadoras y
+            #   reducir exposición automáticamente en rachas perdedoras.
+            # CÓMO: Half-Kelly (fracción=0.5) como techo de seguridad.
+            #   Full Kelly es óptimo pero con drawdowns catastróficos.
+            # CUÁNDO: En cada señal de entrada procesada por size_position.
+            # DÓNDE: risk/risk_manager.py → size_position()
+            # QUIÉN: RiskManager (Kelly Calculator)
+            # ═══════════════════════════════════════════════════════════════
+            
+            # 3. Cálculo de Tamaño Nominal (Notional) via Fractional Kelly
+            win_rate = self.get_win_rate()
+            
+            # Extract avg_win / avg_loss ratio from trade cache
+            wins = [t['pnl_pct'] for t in self._trade_cache if t['is_win'] and t['pnl_pct'] > 0]
+            losses = [abs(t['pnl_pct']) for t in self._trade_cache if not t['is_win'] and t['pnl_pct'] < 0]
+            
+            if len(wins) >= 5 and len(losses) >= 5:
+                avg_win = float(np.mean(wins))
+                avg_loss = float(np.mean(losses))
+                # Kelly Fraction = WR - (1 - WR) / (avg_win / avg_loss)
+                # Using JIT kernel for nano-speed
+                kelly_stats = extract_kelly_stats_jit(
+                    np.array(wins + [-l for l in losses], dtype=np.float64)
+                )
+                kelly_f = compute_kelly_fraction_jit(
+                    win_rate, kelly_stats[0], kelly_stats[1]
+                )
+                # Half-Kelly for safety (institutional standard)
+                kelly_half = max(0.01, min(0.25, kelly_f * 0.5))  # Floor 1%, Cap 25%
+                
+                # Blend Kelly with the merit multiplier
+                effective_risk = min(0.25, kelly_half * multiplier)
+                logger.debug(
+                    f"📐 [KELLY] {symbol} | WR={win_rate:.2f} | K={kelly_f:.3f} | "
+                    f"½K={kelly_half:.3f} | Merit={multiplier:.2f} | EffRisk={effective_risk:.3f}"
+                )
+            else:
+                # Cold start: use conservative static risk until enough data
+                effective_risk = min(0.20, risk_pct * multiplier)
+                logger.debug(
+                    f"📐 [KELLY-COLD] {symbol} | Insufficient trades ({len(wins)}W/{len(losses)}L). "
+                    f"Using static risk={effective_risk:.3f}"
+                )
+            
             risk_amount = available_cash * effective_risk
 
             # Notional = Risk_Amount / SL_Pct
@@ -1793,7 +1864,21 @@ class RiskManager:
             cooldown_manager.record_trade(symbol, strategy_id="RISK_MANAGER")
             self.global_trade_count += 1
 
-            # BBO Selection
+            # ═══════════════════════════════════════════════════════════════
+            # PHASE 6 AITS: MAKER/TAKER INTELLIGENT ROUTER
+            # QUÉ: Decide si la orden de entrada es LIMIT (Maker) o MARKET.
+            # POR QUÉ: Maker fee en Binance es 0.02% vs Taker 0.05%. En $13
+            #   de capital y scalping de 0.1%-0.3%, la diferencia Maker/Taker
+            #   es la diferencia entre profit y pérdida neta.
+            # PARA QUÉ: Ahorrar ~47% en comisiones por round-trip usando
+            #   órdenes pasivas cuando el mercado lo permite.
+            # CÓMO: Si el momentum es bajo (mercado calmo), forzar LIMIT
+            #   (Maker). Si es alto (explosión direccional), usar MARKET
+            #   para garantizar fill antes de que el precio escape.
+            # CUÁNDO: En cada señal de entrada (LONG/SHORT) post-sizing.
+            # DÓNDE: risk/risk_manager.py → generate_order()
+            # QUIÉN: RiskManager (Execution Router)
+            # ═══════════════════════════════════════════════════════════════
             strength = getattr(signal_event, "strength", 0)
             priority = getattr(signal_event, "priority", 1)
             exec_config = getattr(Config, "Execution", None)
@@ -1803,12 +1888,35 @@ class RiskManager:
                 else True
             )
 
-            order_type = OrderType.MARKET if priority == 0 else OrderType.LIMIT
-            entry_mode = (
-                "TAKER_PANIC"
-                if priority == 0
-                else ("MAKER_PROFIT" if use_limit_entries else "LEGACY")
-            )
+            # Determine momentum urgency from signal metadata
+            _sig_meta = getattr(signal_event, 'metadata', {}) or {}
+            momentum_score = abs(_sig_meta.get('momentum', 0.0))
+            atr_pct = _sig_meta.get('atr_pct', 0.0)
+            
+            # Router Logic:
+            #   Priority 0 → ALWAYS MARKET (emergency/kill_switch)
+            #   High Momentum (>0.6) or High ATR (>0.5%) → MARKET (price escaping)
+            #   Normal conditions → LIMIT (save fees, act as Maker)
+            if priority == 0:
+                order_type = OrderType.MARKET
+                entry_mode = "TAKER_PANIC"
+            elif momentum_score > 0.6 or atr_pct > 0.005:
+                # Market is exploding directionally — fill is more important than fee
+                order_type = OrderType.MARKET
+                entry_mode = "TAKER_MOMENTUM"
+                logger.debug(
+                    f"⚡ [ROUTER] {symbol} → TAKER (Momentum={momentum_score:.2f}, ATR={atr_pct*100:.2f}%)"
+                )
+            elif use_limit_entries:
+                # Market is calm — post passively at BBO for Maker rebate
+                order_type = OrderType.LIMIT
+                entry_mode = "MAKER_PROFIT"
+                logger.debug(
+                    f"💰 [ROUTER] {symbol} → MAKER (Momentum={momentum_score:.2f}, ATR={atr_pct*100:.2f}%)"
+                )
+            else:
+                order_type = OrderType.LIMIT
+                entry_mode = "LEGACY"
 
             entry_metadata = {
                 "strength": strength,
@@ -1817,6 +1925,7 @@ class RiskManager:
                 "client_order_id": client_order_id,
                 "setup_type": setup_type,
                 "merit_mult": merit_mult,
+                "routing_reason": entry_mode,
             }
             if limit_offset_pct is not None:
                 entry_metadata["limit_offset_pct"] = limit_offset_pct
@@ -1924,9 +2033,15 @@ class RiskManager:
         QUÉ: Concentra validaciones de cooldown, kill_switch y régimen global en un punto único.
         POR QUÉ: Antes estaban dispersas, causando latencia y fallos de lógica por desincronización.
         PARA QUÉ: Garantizar que cada trade cumpla con el consenso de seguridad del sistema.
-        CÓMO: Pipeline: Kill Switch → Daily Limits → Cooldowns → Strategic Veto.
+        CÓMO: Pipeline: Toxic Check → Kill Switch → Daily Limits → Cooldowns → Strategic Veto.
         CUÁNDO: Antes de cada sizing y reserva de margen en generate_order.
         """
+        # 0. Toxic Asset Check
+        TOXIC_ASSETS = ["DOT/USDT", "XRP/USDT", "ATOM/USDT"]
+        if symbol in TOXIC_ASSETS:
+            print(f"💀 [AEGIS] Global Veto: {symbol} is BLACKLISTED (Toxic Asset)")
+            return False
+
         # 1. Kill Switch Check
         if not self.kill_switch.check_status():
             print(
@@ -2053,8 +2168,11 @@ class RiskManager:
             #   de BTC (0.2-0.5%) disparaba Hard SL instantáneamente (-2% a -5%).
             # PARA QUÉ: SL debe ser ≥ ATR medio para sobrevivir ruido normal.
             # ================================================================
-            default_sl = 0.006 if pos_horizon == "SCALPING" else 0.015
-            default_tp = 0.012 if pos_horizon == "SCALPING" else 0.035
+            # FORENSIC-V46: REALISTIC HFT TARGETS
+            # SCALPING TP ajustado a 0.35% (alcanzable en 5m) en lugar de 1.2%.
+            # SCALPING SL ajustado a 0.25% para un R:R de 1.4.
+            default_sl = 0.0025 if pos_horizon == "SCALPING" else 0.015
+            default_tp = 0.0035 if pos_horizon == "SCALPING" else 0.035
             sl_pct = pos.get("sl_pct", default_sl) or default_sl
             tp_pct = pos.get("tp_pct", default_tp) or default_tp
             hwm = pos.get("high_water_mark", entry_price)

@@ -309,9 +309,11 @@ class StatisticalStrategy(Strategy):
                 
                 # 5. Flash Crash & Micro-Capital Protection
                 # If volatility spikes > 3x normal, increase z to a level that effectively bans trading
-                if vol_ratio > 3.0:
+                # FORENSIC-V47: Added sanity check — if std_long < 1e-6 (no baseline yet), vol_ratio is meaningless
+                if vol_ratio > 3.0 and std_long > 1e-6:
                     adaptive_z *= 2.0
-                    print(f"🚨 [FLASH CRASH ALERT] Volatility {vol_ratio:.1f}x above baseline. Shielding $13.50.")
+                    if vol_ratio < 50.0:  # Only print for real spikes, not near-zero baseline artifacts
+                        print(f"🚨 [FLASH CRASH ALERT] Volatility {vol_ratio:.1f}x above baseline. Shielding $13.50.")
 
                 # Cap adaptive Z to avoid extreme values but keep it high
                 effective_z_entry = min(5.0, max(self.z_base, adaptive_z))

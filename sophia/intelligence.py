@@ -143,6 +143,12 @@ class SophiaReport:
     # Block 1.26: Omniscient Predator (V5.26)
     omniscient_score: float        # Single decision score (0-1)
     
+    # Block 1.27: Voting Committee (V5.55)
+    fee_vote: float                # 0-1 Fee Headroom penalty
+    tech_vote: float               # 0-1 Technical Edge
+    ml_vote: float                 # 0-1 ML Base Probability
+    micro_vote: float              # 0-1 Order Flow Imbalance (L2)
+    
     # Block 2: Horizonte Temporal
     expected_exit_mins: float       # E[T] in minutes
     time_to_tp_mins: float          # Estimated time to TP
@@ -1449,38 +1455,66 @@ class SophiaIntelligence:
         if edge_for_dir > 0 and (risk_for_dir / edge_for_dir) > 1.5:
             risk_penalty = min(0.15, (risk_for_dir / edge_for_dir - 1.5) * 0.1)
             
-        base_omni = (
-            win_prob * 0.25 + 
-            edge_norm * 0.20 +
-            energy_norm * 0.15 +
-            momentum * 0.20 +
-            noise_inv * 0.20
-        ) - risk_penalty - chaos_penalty - interference_penalty
-        
         # ================================================================
-        # V5.51: MOMENTUM INERTIA BONUS FOR SCALPING SHORTS
-        # QUÉ: Bonus de +0.15 a la confianza para shorts cuando la 
-        #   volatilidad actual excede 0.5% (ATR/Price).
-        # POR QUÉ: Los mejores trades rápidos bajistas ocurren cuando hay
-        #   inercia de momentum: el mercado se mueve con fuerza y los shorts
-        #   capturan esa energía direccional. Sin volatilidad, no hay edge.
-        # PARA QUÉ: Premiar entradas SHORT que tienen "fuel" para llegar al TP.
-        # CÓMO: Si direction == SHORT y ATR% > 0.005, inyectar +0.15.
-        # CUÁNDO: Solo en evaluaciones pre-trade de Sophia.
-        # DÓNDE: sophia/intelligence.py → analyze() → base_omni calculation
-        # QUIÉN: SophiaIntelligence
+        # V5.55: THE WEIGHTED VOTING COMMITTEE (Comité de Votación Ponderada)
+        # QUÉ: Sistema de votación aditiva en lugar de vetos secuenciales.
+        # POR QUÉ: Evitar la "Muerte por Mil Vetos". Un ML fuerte puede compensar un Fee débil.
         # ================================================================
-        atr_pct = features.get('atr_pct', 0.01)
         
-        # --- FORENSIC-V36: ORACLE FEE HEADROOM ---
+        # 1. Technical / Edge Vote (Weight: 20%)
+        # Normalizamos la expectativa de ganancia (Edge)
+        edge_for_dir = abs(expected_high if direction == "LONG" else expected_low)
+        risk_for_dir = abs(expected_low if direction == "LONG" else expected_high)
+        edge_norm = min(1.0, edge_for_dir / 0.01)       # 1% edge = 1.0
+        tech_vote = (confluence_score * 0.6) + (edge_norm * 0.4)
+        
+        # 2. Machine Learning / Bayesian Vote (Weight: 35%)
+        # Confianza directa del XGBoost y Bayes
+        ml_vote = win_prob
+        
+        # 3. Chaos & Momentum Vote (Weight: 15%)
+        energy_norm = min(1.0, v_pulse / 5.0)            # 5 sigmas = 1.0
+        noise_inv = max(0.0, 1.0 - n_level)              # low noise = high score
+        chaos_vote = (energy_norm * 0.4) + (noise_inv * 0.3) + (path_score * 0.3)
+        
+        # 4. Fee Headroom Vote (Weight: 15%)
         from config import Config
         round_trip_fee = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375) * 2
         min_required_headroom = round_trip_fee * 2.5
+        atr_pct = features.get('atr_pct', 0.01)
         
-        if atr_pct < min_required_headroom:
-            fee_penalty = 0.20 * (1.0 - (atr_pct / min_required_headroom))
-            base_omni -= fee_penalty
-            logger.warning(f"💸 [FEE HEADROOM] {symbol} ATR {atr_pct*100:.3f}% < {min_required_headroom*100:.3f}%. Penalty: -{fee_penalty:.2f}")
+        fee_vote = min(1.0, atr_pct / min_required_headroom) if min_required_headroom > 0 else 1.0
+        if fee_vote < 1.0:
+            logger.warning(f"💸 [FEE VOTE] {symbol} ATR {atr_pct*100:.3f}% < {min_required_headroom*100:.3f}%. Vote: {fee_vote:.2f}")
+        
+        # 5. Historical WinRate Vote (Weight: 10%)
+        # Confianza basada en el historial de la estrategia con esta moneda hoy
+        hist_vote = prior_wr
+        
+        # 6. Microstructure Vote (L2 Order Flow) (Weight: 15%)
+        # Phase 10: Tape Reading
+        ofi = features.get('l2_ofi', 0.0)
+        micro_vote = 0.5
+        if direction == "LONG":
+            if ofi > 0: micro_vote = min(1.0, 0.5 + (ofi / 10000.0))
+            else: micro_vote = max(0.0, 0.5 + (ofi / 10000.0))
+        elif direction == "SHORT":
+            if ofi < 0: micro_vote = min(1.0, 0.5 + (abs(ofi) / 10000.0))
+            else: micro_vote = max(0.0, 0.5 - (ofi / 10000.0))
+            
+        # Penalize if microstructure heavily opposes the trade
+        if micro_vote < 0.2:
+            logger.warning(f"🧱 [ORDERBOOK WALL] {symbol} {direction} blocked by heavy L2 limit orders. OFI: {ofi}")
+        
+        # --- SUM THE VOTES ---
+        base_omni = (
+            tech_vote * 0.15 + 
+            ml_vote * 0.35 +
+            chaos_vote * 0.10 +
+            fee_vote * 0.15 +
+            hist_vote * 0.10 +
+            micro_vote * 0.15
+        )
 
         if direction == "SHORT" and atr_pct > 0.005:
             inertia_bonus = 0.15
@@ -1615,6 +1649,10 @@ class SophiaIntelligence:
             noise_trend=n_trend,
             # Block 1.26
             omniscient_score=omni_score,
+            fee_vote=fee_vote,
+            tech_vote=tech_vote,
+            ml_vote=ml_vote,
+            micro_vote=micro_vote,
             # Block 1.29: The Oracle (V5.29)
             entropy_velocity=h_velocity,
             lyapunov_horizon=l_horizon,

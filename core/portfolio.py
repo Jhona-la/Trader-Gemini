@@ -18,6 +18,7 @@ from sophia.post_mortem import PostMortemComparator, PostMortemResult  # SOPHIA-
 from sophia.nemesis import NemesisEngine  # NÉMESIS-RETROSPECCIÓN Protocol
 from utils.axioma_math import PrecisionAuditor  # CRITERIO-AXIOMA Protocol
 from core.meta_optimizer import meta_optimizer # Phase 46: Sovereign Meta-Predictor
+from core.compounding_engine import get_compounding_engine  # Phase 7 AITS: Dynamic Allocation
 
 from typing import Dict, Any, Optional, Tuple
 
@@ -502,18 +503,31 @@ class Portfolio:
             return total_avail
             
         # ═══════════════════════════════════════════════════════════════
-        # AEGIS-V16 FIX: STRICT HORIZON ISOLATION (No Overlap)
-        # QUÉ: Particiona el capital estrictamente: Scalping 60%, Swing 40%.
-        # POR QUÉ: Incluso en cuentas micro ($13), compartir el pool genera
-        #   rechazos SIZING_FAILED cuando ambos intentan abrir posiciones.
-        # PARA QUÉ: Cada horizonte opera en su propio "Silo" de margen.
+        # PHASE 7 AITS: DYNAMIC HORIZON ALLOCATION (CompoundingEngine)
+        # QUÉ: Reemplaza el 60/40 hardcoded por una sigmoid adaptativa.
+        # POR QUÉ: Con $13, el 85% debe estar en Scalping para superar
+        #   el mínimo notional de Binance. A $200+, el balance se iguala.
+        # PARA QUÉ: Maximizar velocidad de duplicación (15 días target)
+        #   adaptando la asignación al equity en tiempo real.
+        # CÓMO: CompoundingEngine.get_horizon_allocation(equity) retorna
+        #   (scalping_pct, swing_pct) basado en una función sigmoide.
+        # CUÁNDO: Cada consulta de available cash por horizonte.
+        # DÓNDE: core/portfolio.py → _get_available_cash_internal()
+        # QUIÉN: Portfolio + CompoundingEngine (singleton)
         # ═══════════════════════════════════════════════════════════════
+        try:
+            ce = get_compounding_engine()
+            equity_now = getattr(self, '_equity_cache', self.current_cash)
+            scalp_pct, swing_pct = ce.get_horizon_allocation(equity_now)
+        except Exception:
+            scalp_pct, swing_pct = 0.70, 0.30  # Safe fallback
+        
         if horizon == 'SCALPING':
-            alloc_pct = 0.60
+            alloc_pct = scalp_pct
         elif horizon == 'SWING':
-            alloc_pct = 0.40
+            alloc_pct = swing_pct
         else:
-            alloc_pct = 1.0 # fallback
+            alloc_pct = 1.0  # fallback
             
         allocated_total = getattr(self, '_equity_cache', self.current_cash) * alloc_pct
         
@@ -1441,7 +1455,7 @@ class Portfolio:
                 'commission': estimated_fee
             }
             
-            v_key = f"{event.symbol}_{getattr(event, 'horizon', 'SCALPING')}"
+            v_key = f"{event.symbol}_{getattr(event, 'horizon', 'SCALPING')}_{pos_side}"
             v_pos = self.virtual_ledger.get(v_key, {})
             position_payload = {
                 'symbol': event.symbol,
@@ -2180,10 +2194,9 @@ class Portfolio:
                 'timestamp': datetime.now(timezone.utc).strftime('%H:%M:%S UTC'),
             }
             
-            # SUPPRESS BACKTEST_CLOSE NOISE
+            # SUPPRESS BACKTEST_CLOSE NOISE ON TELEGRAM (BUT KEEP TELEMETRY)
             if strategy_id == "BACKTEST_CLOSE" or notif_exit_reason == "BACKTEST_CLOSE":
-                return
-
+                trade_notification_data['skip_telegram'] = True
             if is_close:
                 # ═══════════════════════════════════════════════════════════════
                 # XAI AUTOPSY FINAL INJECTION: Merge forensic fields into payload

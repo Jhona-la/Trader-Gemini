@@ -55,8 +55,8 @@ from core.fused_strategy_kernel import (  # Nano-latency JIT Inference
     predict_rf_jit,
 )
 from core.neural_bridge import neural_bridge
-from core.transparent_logger import monitor_log
 from core.xai_engine import XAIEngine  # Phase 22: Explainability
+from models.deep_predictor import deep_predictor  # Phase 4 AITS: Deep Learning Model
 from ml.tree_compiler import (  # Model to Matrix parser
     compile_gb_to_numpy_batch,
     compile_rf_to_numpy_batch,
@@ -1603,10 +1603,10 @@ class MLStrategyHybridUltimate(Strategy):
             )
             prediction = float(np.dot(current_weights, state))
 
-            # PPO Actor Log Prob Approx (Assume Gaussian policy around prediction)
+            # Legacy PPO Actor Log Prob Approx (Ensemble Weighting)
             log_prob = -0.5 * ((prediction - actual_outcome) ** 2)
 
-            # Add to Prioritized Replay Buffer
+            # Add to Prioritized Replay Buffer (Legacy / Weights)
             self.memory.add(
                 state=state,
                 action=prediction,
@@ -1615,6 +1615,25 @@ class MLStrategyHybridUltimate(Strategy):
                 log_prob=log_prob,
                 axioma_reason=axioma_diagnosis,
             )
+            
+            # --- PHASE 5 AITS: Train PPO Agent ---
+            if hasattr(self, "last_ppo_state") and self.last_ppo_state is not None:
+                try:
+                    from ml.ppo_agent import ppo_agent
+                    if not hasattr(self, "ppo_memory"):
+                        from ml.replay_buffer import PrioritizedReplayBuffer
+                        self.ppo_memory = PrioritizedReplayBuffer(capacity=5000)
+                        
+                    self.ppo_memory.add(
+                        state=self.last_ppo_state,
+                        action=self.last_ppo_action,
+                        reward=reward, # Reward from trade outcome
+                        next_state=np.zeros_like(self.last_ppo_state),
+                        log_prob=self.last_ppo_log_prob,
+                        axioma_reason=axioma_diagnosis
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to add to PPO Memory: {e}")
 
             self.steps_since_learn += 1
 
@@ -1633,40 +1652,46 @@ class MLStrategyHybridUltimate(Strategy):
     def _learn_ppo_batch(self):
         """Ejecuta el Clipped Surrogate Objective Update (PPO) sobre el Replay Buffer."""
         try:
-            # Sample Black Swans probabilistically
+            # 1. Update Legacy Ensemble Weights
             batch, idxs, weights_is = self.memory.sample(self.training_batch_size)
-            if not batch:
-                return
+            if batch:
+                states = np.array([e[0] for e in batch])
+                actions = np.array([e[1] for e in batch])
+                rewards = np.array([e[2] for e in batch])
+                old_log_probs = np.array([e[4] for e in batch])
+                advantages = rewards  # For Bandit tasks, Advantage ~ Reward
 
-            states = np.array([e[0] for e in batch])
-            actions = np.array([e[1] for e in batch])
-            rewards = np.array([e[2] for e in batch])
-            old_log_probs = np.array([e[4] for e in batch])
-            advantages = rewards  # For Bandit tasks, Advantage ~ Reward
+                current_weights = np.array(
+                    [self.base_rf_weight, self.base_xgb_weight, self.base_gb_weight]
+                )
 
-            current_weights = np.array(
-                [self.base_rf_weight, self.base_xgb_weight, self.base_gb_weight]
-            )
+                new_weights, abs_advantages = self.online_learner.update_ppo_batch(
+                    weights=current_weights,
+                    states=states,
+                    actions=actions,
+                    old_log_probs=old_log_probs,
+                    returns=rewards,
+                    advantages=advantages,
+                )
+                self.memory.update_priorities(idxs, abs_advantages)
+                self._apply_weight_update(current_weights, new_weights, np.mean(rewards))
 
-            # Update via OnlineLearner (Policy tuning)
-            new_weights, abs_advantages = self.online_learner.update_ppo_batch(
-                weights=current_weights,
-                states=states,
-                actions=actions,
-                old_log_probs=old_log_probs,
-                returns=rewards,
-                advantages=advantages,
-            )
-
-            # Update priorities back into buffer
-            self.memory.update_priorities(idxs, abs_advantages)
-
-            # Apply constraint weights via helper
-            self._apply_weight_update(current_weights, new_weights, np.mean(rewards))
-
-            logger.info(
-                f"🧠 [Neural Fortress] PPO Batch Complete. Avg Reward: {np.mean(rewards):.4f} | Weights Adjusted."
-            )
+            # 2. Update Deep PPO Agent (Phase 5 AITS)
+            if hasattr(self, "ppo_memory"):
+                from ml.ppo_agent import ppo_agent
+                p_batch, p_idxs, p_weights_is = self.ppo_memory.sample(self.training_batch_size)
+                if p_batch and ppo_agent.network is not None:
+                    p_states = np.array([e[0] for e in p_batch])
+                    p_actions = np.array([e[1] for e in p_batch])
+                    p_rewards = np.array([e[2] for e in p_batch])
+                    p_log_probs = np.array([e[4] for e in p_batch])
+                    # Normalize advantage proxy
+                    p_advantages = (p_rewards - np.mean(p_rewards)) / (np.std(p_rewards) + 1e-8)
+                    
+                    # Ejecutar backprop en la red PyTorch
+                    ppo_agent.update(p_states, p_actions, p_log_probs, p_rewards, p_advantages)
+                    
+                    logger.info(f"🧠 [PPO Agent] PyTorch Network Batch Complete. Avg Reward: {np.mean(p_rewards):.4f}")
 
         except Exception as e:
             logger.error(f"PPO Batch Learn Error: {e}", exc_info=True)
@@ -2024,6 +2049,39 @@ class MLStrategyHybridUltimate(Strategy):
                 + gb_proba * self.base_gb_weight
             )
 
+            # =========================================================
+            # PHASE 4 (AITS): DEEP LEARNING LSTM-ATTENTION INJECTION
+            # =========================================================
+            # We add Deep Learning context to the ensemble.
+            # XGBoost focuses on tabular micro-structure, DeepPredictor on Temporal Sequences.
+            # Create a sequence of scaled features for the LSTM (e.g., last 10 bars)
+            seq_len = min(10, len(df))
+            
+            # Align features for the sequence
+            if hasattr(self.scaler, "feature_names_in_"):
+                seq_df = pd.DataFrame(columns=self.scaler.feature_names_in_)
+                for col in self.scaler.feature_names_in_:
+                    if col in df.columns:
+                        seq_df[col] = df[col].iloc[-seq_len:].values
+                    else:
+                        seq_df[col] = 0.0
+            else:
+                seq_df = df[valid_features].iloc[-seq_len:]
+                
+            seq_df = seq_df.fillna(0)
+            seq_scaled = (
+                self.scaler.transform(seq_df)
+                if hasattr(self.scaler, "scale_")
+                else seq_df.values
+            )
+            
+            deep_probs = deep_predictor.predict_probs(seq_scaled)
+            deep_array = np.array([deep_probs["SHORT"], deep_probs["LONG"]]) # Mapping to 2 classes
+            
+            # Soft-Ensemble: We give 15% weight to Deep Learning and 85% to Tree Ensemble
+            if len(deep_array) == len(ensemble_proba):
+                ensemble_proba = ensemble_proba * 0.85 + deep_array * 0.15
+
             # Determine base prediction BEFORE bias
             classes = self.rf_model.classes_
             pred_idx = np.argmax(ensemble_proba)
@@ -2033,22 +2091,73 @@ class MLStrategyHybridUltimate(Strategy):
             )
 
             # ═══════════════════════════════════════════════════════════════
-            # PHASE 2 POWER: HOT ADAPTER RL BIAS INJECTION
-            # QUÉ: Modula la confianza con el bias aprendido en tiempo real.
-            # AUDIT FIX #3: El bias SÓLO reduce la confianza, NO cambia la
-            #   dirección de la predicción. (Renormalizar antes causaba que
-            #   argmax saltara a la clase opuesta, disparando trades erróneos).
+            # PHASE 5 AITS: REINFORCEMENT LEARNING CORE (PPO SIZING)
+            # QUÉ: PPO Agent ajusta la magnitud (agresividad/tamaño) del trade.
             # ═══════════════════════════════════════════════════════════════
             confidence = raw_confidence
-            if self.hot_adapter:
+            
+            # Construir Estado (State) para el PPO (15 dims)
+            try:
+                from ml.ppo_agent import ppo_agent
+                
+                # Regime one-hot
+                reg_trend = 1.0 if self.market_regime == "TRENDING" else 0.0
+                reg_vol = 1.0 if self.market_regime == "VOLATILE" else 0.0
+                reg_range = 1.0 if self.market_regime == "RANGING" else 0.0
+                
+                ppo_state = np.array([
+                    ensemble_proba[0], ensemble_proba[1], # 2
+                    deep_probs.get("SHORT", 0), deep_probs.get("LONG", 0), # 2
+                    confluence, atr_pct, vol_ratio, rsi, # 4
+                    current_row.get("trend_power", 0), # 1
+                    current_row.get("adx", 0), # 1
+                    current_row.get("volume_zscore", 0), # 1
+                    math_hurst, # 1
+                    reg_trend, reg_vol, reg_range # 3
+                ], dtype=np.float32)
+                
+                # Obtener Acción (Continuous [-1, 1])
+                ppo_action, ppo_log_prob, ppo_value = ppo_agent.get_action_and_value(ppo_state)
+                
+                # Modulación de la Confianza/Sizing
+                _tentative_dir = "LONG" if predicted_class == 1 else "SHORT"
+                
+                # Si el PPO está de acuerdo con la dirección (signo), aumentamos confianza
+                # Si el PPO difiere, la reducimos.
+                # Acción > 0 significa LONG, Acción < 0 significa SHORT.
+                ppo_aggressiveness = 1.0
+                if _tentative_dir == "LONG":
+                    if ppo_action > 0:
+                        ppo_aggressiveness = 1.0 + (ppo_action * 0.2) # Up to 20% boost
+                    else:
+                        ppo_aggressiveness = 1.0 + ppo_action # Penalty down to 0
+                else: # SHORT
+                    if ppo_action < 0:
+                        ppo_aggressiveness = 1.0 + (abs(ppo_action) * 0.2)
+                    else:
+                        ppo_aggressiveness = 1.0 - ppo_action
+                        
+                confidence = raw_confidence * max(0.1, ppo_aggressiveness)
+                
+                logger.debug(
+                    f"🧠 [PPO-RL] {_tentative_dir} | PPO Action: {ppo_action:.3f} | Conf: {raw_confidence:.3f} → {confidence:.3f}"
+                )
+                
+                # Save context for training when trade finishes
+                self.last_ppo_state = ppo_state
+                self.last_ppo_action = ppo_action
+                self.last_ppo_log_prob = ppo_log_prob
+                
+            except Exception as e:
+                logger.error(f"PPO Agent inference error: {e}")
+                confidence = raw_confidence
+                
+            # Legacy HotAdapter as Fallback
+            if self.hot_adapter and 'ppo_action' not in locals():
                 _tentative_dir = "LONG" if predicted_class == 1 else "SHORT"
                 _bias = self.hot_adapter.get_bias(self.symbol, _tentative_dir)
                 if _bias < 1.0:
                     confidence = raw_confidence * _bias
-                    logger.debug(
-                        f"🧠 [HOT-RL] {self.symbol} {_tentative_dir} penalized: "
-                        f"bias={_bias:.3f} | conf: {raw_confidence:.3f} → {confidence:.3f}"
-                    )
 
             # =========================================================
             # PHASE 4: MULTI-HORIZON ORACLE VETO (Causal Reasoner)

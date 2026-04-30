@@ -694,6 +694,21 @@ class Notifier:
         if sophia_narrative:
             msg += f"\n💬 _{sophia_narrative}_"
 
+        if trade_data.get('skip_telegram'):
+            # Just log to telemetry file and return
+            import os, json
+            os.makedirs("dashboard/data", exist_ok=True)
+            try:
+                with open("dashboard/data/backtest_telemetry_spam.jsonl", "a", encoding="utf-8") as f:
+                    log_entry = {
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                        "priority": "INFO",
+                        "message": msg
+                    }
+                    f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+            except Exception: pass
+            return
+
         Notifier.send_telegram(msg)
 
         # Email (optional)

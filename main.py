@@ -527,14 +527,13 @@ async def main():
     strategies = []
     
     # ════════════════════════════════════════════════════════════════
-    # LEAN_MODE: TRADING PAIRS OVERRIDE
-    # QUÉ: Reduce de 21+ pares a 3 de máxima liquidez.
-    # POR QUÉ: Con $13 USD, operar 21 pares dispersa el capital.
-    #   3 pares concentrados maximizan oportunidades viables.
+    # FORENSIC-V47: INTEGRAL MODE — ALL SYMBOLS ALWAYS ACTIVE
+    # QUÉ: Removido el override de LEAN_MODE que reducía a 3 pares.
+    # POR QUÉ: Crear paridad total con backtest (21 símbolos).
+    #   La Dead Zone de comisiones + consenso ponderado manejan el filtrado.
+    # PARA QUÉ: El sistema opera integralmente en 21 monedas.
     # ════════════════════════════════════════════════════════════════
-    if getattr(Config, 'LEAN_MODE', False) and not args.symbols:
-        Config.TRADING_PAIRS = Config.LEAN_TRADING_PAIRS
-        logger.info(f"🎯 [LEAN MODE] Reduced to {len(Config.TRADING_PAIRS)} high-liquidity pairs: {Config.TRADING_PAIRS}")
+    logger.info(f"🎯 [INTEGRAL MODE] Operating with {len(Config.TRADING_PAIRS)} symbols (Full basket)")
     
     # ML Strategy (one per symbol) — DISABLED IN LEAN MODE
     if getattr(Config, 'LEAN_ML_ENABLED', True):
@@ -623,51 +622,54 @@ async def main():
         logger.info("✅ StatisticalStrategy [SWING] registered (Integral).")
     except Exception as e:
         logger.warning(f"Could not init Statistical Strategy: {e}")
-    # Phalanx/StatArb/Arbitrage — STILL GATED (generate EXIT without position = 44% noise)
-    if not getattr(Config, 'LEAN_MODE', False):
-        # Phalanx Strategy — DUAL HORIZON
-        try:
-            phalanx_scalp = PhalanxStrategy(data_handler, events_queue, horizon="SCALPING")
-            strategies.append(phalanx_scalp)
-            engine.register_strategy(phalanx_scalp)
-            logger.info("✅ PhalanxStrategy [SCALPING] registered.")
-            
-            phalanx_swing = PhalanxStrategy(data_handler, events_queue, horizon="SWING")
-            strategies.append(phalanx_swing)
-            engine.register_strategy(phalanx_swing)
-            logger.info("✅ PhalanxStrategy [SWING] registered.")
-        except Exception as e:
-            logger.warning(f"Could not init Phalanx Strategy: {e}")
+    # ════════════════════════════════════════════════════════════════
+    # FORENSIC-V47: INTEGRAL MODE — ALL STRATEGIES ALWAYS ACTIVE
+    # QUÉ: Removido el gate LEAN_MODE que bloqueaba Phalanx/StatArb/Arbitrage.
+    # POR QUÉ: El backtest opera con 7 estrategias, producción debe ser igual.
+    #   La Dead Zone + consenso ponderado filtran el ruido de EXIT sin posición.
+    # PARA QUÉ: Paridad total backtest ↔ producción.
+    # ════════════════════════════════════════════════════════════════
+    # Phalanx Strategy — DUAL HORIZON
+    try:
+        phalanx_scalp = PhalanxStrategy(data_handler, events_queue, horizon="SCALPING")
+        strategies.append(phalanx_scalp)
+        engine.register_strategy(phalanx_scalp)
+        logger.info("✅ PhalanxStrategy [SCALPING] registered (Integral).")
+        
+        phalanx_swing = PhalanxStrategy(data_handler, events_queue, horizon="SWING")
+        strategies.append(phalanx_swing)
+        engine.register_strategy(phalanx_swing)
+        logger.info("✅ PhalanxStrategy [SWING] registered (Integral).")
+    except Exception as e:
+        logger.warning(f"Could not init Phalanx Strategy: {e}")
 
-        # StatArb Strategy — DUAL HORIZON
-        try:
-            statarb_scalp = StatArbStrategy(data_handler, events_queue, horizon="SCALPING")
-            strategies.append(statarb_scalp)
-            engine.register_strategy(statarb_scalp)
-            logger.info("✅ StatArbStrategy [SCALPING] registered.")
-            
-            statarb_swing = StatArbStrategy(data_handler, events_queue, horizon="SWING")
-            strategies.append(statarb_swing)
-            engine.register_strategy(statarb_swing)
-            logger.info("✅ StatArbStrategy [SWING] registered.")
-        except Exception as e:
-            logger.warning(f"Could not init StatArb Strategy: {e}")
+    # StatArb Strategy — DUAL HORIZON
+    try:
+        statarb_scalp = StatArbStrategy(data_handler, events_queue, horizon="SCALPING")
+        strategies.append(statarb_scalp)
+        engine.register_strategy(statarb_scalp)
+        logger.info("✅ StatArbStrategy [SCALPING] registered (Integral).")
+        
+        statarb_swing = StatArbStrategy(data_handler, events_queue, horizon="SWING")
+        strategies.append(statarb_swing)
+        engine.register_strategy(statarb_swing)
+        logger.info("✅ StatArbStrategy [SWING] registered (Integral).")
+    except Exception as e:
+        logger.warning(f"Could not init StatArb Strategy: {e}")
 
-        # Arbitrage Strategy — DUAL HORIZON
-        try:
-            arbitrage_scalp = ArbitrageStrategy(data_handler, events_queue, horizon="SCALPING")
-            strategies.append(arbitrage_scalp)
-            engine.register_strategy(arbitrage_scalp)
-            logger.info("✅ ArbitrageStrategy [SCALPING] registered.")
-            
-            arbitrage_swing = ArbitrageStrategy(data_handler, events_queue, horizon="SWING")
-            strategies.append(arbitrage_swing)
-            engine.register_strategy(arbitrage_swing)
-            logger.info("✅ ArbitrageStrategy [SWING] registered.")
-        except Exception as e:
-            logger.warning(f"Could not init Arbitrage Strategy: {e}")
-    else:
-        logger.info("🎯 [INTEGRAL] Phalanx/StatArb/Arbitrage gated (EXIT-without-position noise).")
+    # Arbitrage Strategy — DUAL HORIZON
+    try:
+        arbitrage_scalp = ArbitrageStrategy(data_handler, events_queue, horizon="SCALPING")
+        strategies.append(arbitrage_scalp)
+        engine.register_strategy(arbitrage_scalp)
+        logger.info("✅ ArbitrageStrategy [SCALPING] registered (Integral).")
+        
+        arbitrage_swing = ArbitrageStrategy(data_handler, events_queue, horizon="SWING")
+        strategies.append(arbitrage_swing)
+        engine.register_strategy(arbitrage_swing)
+        logger.info("✅ ArbitrageStrategy [SWING] registered (Integral).")
+    except Exception as e:
+        logger.warning(f"Could not init Arbitrage Strategy: {e}")
     
     logger.info(f"[OK] Registered {len(strategies)} strategies in the Engine.")
     

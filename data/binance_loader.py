@@ -62,6 +62,11 @@ class BinanceData(DataProvider):
         for s in self.symbol_list:
             self.microstructure[s] = MicrostructureAnalyzer(s)
 
+        # 🌊 PHASE 10: High-Frequency Limit Order Book (Cythonized)
+        from core.orderbook import OrderBook
+        self.orderbooks = {s: OrderBook(max_depth=10) for s in self.symbol_list}
+        self.last_depth_update = {s: 0.0 for s in self.symbol_list}
+
         # 🔍 PHASE 3 (Data Integrity): Sliding window for gap detection
         self.latest_data = collections.defaultdict(list)  # {symbol: [bar_dict, ...]}
         self.data_health_metrics = collections.defaultdict(lambda: {"gaps": 0, "last_backfill": 0})
@@ -299,6 +304,70 @@ class BinanceData(DataProvider):
 
         # Start background task
         asyncio.create_task(liquidation_listener())
+        
+        # 🌊 PHASE 10: Market Microstructure (L2 OrderBook Listener)
+        # Limit to BTC and ETH initially to save bandwidth/CPU unless throttled.
+        # We will subscribe to all but throttle the math update to 500ms.
+        async def depth_listener():
+            try:
+                streams = [f"{sym.replace('/', '').lower()}@depth10@100ms" for sym in self.symbol_list]
+                logger.info(f"📊 [WebSockets] L2 Orderbook listening to {len(streams)} streams...")
+                multiplex_socket = self.bsm.multiplex_socket(streams)
+                
+                async with multiplex_socket as ts:
+                    while self._running:
+                        try:
+                            msg = await ts.recv()
+                            self._process_depth_msg(msg)
+                        except asyncio.TimeoutError:
+                            continue
+                        except Exception as e:
+                            logger.error(f"Depth stream err: {e}")
+                            await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Depth listener fatal: {e}")
+                
+        asyncio.create_task(depth_listener())
+
+    def _process_depth_msg(self, msg):
+        """
+        Processes @depth10@100ms messages and updates the Cython OrderBook.
+        """
+        try:
+            if 'data' not in msg or 'bids' not in msg['data']:
+                return
+                
+            data = msg['data']
+            stream_name = msg.get('stream', '')
+            symbol_raw = stream_name.split('@')[0].upper()
+            
+            # Format back to BTC/USDT
+            symbol = f"{symbol_raw[:-4]}/{symbol_raw[-4:]}" if symbol_raw.endswith('USDT') else symbol_raw
+            
+            if symbol not in self.orderbooks:
+                return
+                
+            # Throttle processing to 500ms to save CPU
+            now = time.time()
+            if (now - self.last_depth_update.get(symbol, 0)) < 0.5:
+                return
+            self.last_depth_update[symbol] = now
+            
+            ob = self.orderbooks[symbol]
+            
+            # Update Bids
+            for bid in data.get('bids', []):
+                ob.update_bid(float(bid[0]), float(bid[1]))
+                
+            # Update Asks
+            for ask in data.get('asks', []):
+                ob.update_ask(float(ask[0]), float(ask[1]))
+                
+            # The metrics (OFI, Spread, Microprice) are now instantly available in Cython
+            
+        except Exception as e:
+            # Silently drop malformed depth updates to prevent log spam
+            pass
 
     def _process_liquidation_msg(self, msg):
         """
@@ -1419,6 +1488,8 @@ class BinanceData(DataProvider):
                 self.latest_data[internal_symbol].append(bar_dict)
                 if len(self.latest_data[internal_symbol]) > 10:
                     self.latest_data[internal_symbol].pop(0)
+
+
 
             health_metrics = {
                 "score": health_score,
