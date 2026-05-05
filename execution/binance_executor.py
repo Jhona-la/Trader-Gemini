@@ -122,6 +122,16 @@ class BinanceExecutor:
         # Phase 14: Rate Limiter
         from core.rate_limiter import PredictiveRateLimiter
         self.rate_limiter = PredictiveRateLimiter()
+        
+        # 🚀 AITS P4: Cython Execution Intelligence
+        self.fast_signer = None
+        self.http_session = None  # Lazy initialization in async context
+        try:
+            from execution.c_executor import FastBinanceSigner
+            self.fast_signer = FastBinanceSigner(api_key, secret_key)
+            logger.info("⚡ [EXEC] Cython FastBinanceSigner activated.")
+        except ImportError:
+            logger.warning("⚠️ [EXEC] c_executor not compiled. Using pure CCXT.")
 
         # ===================================================================
         # Async Exchange Initialization
@@ -692,18 +702,62 @@ class BinanceExecutor:
                     params['reduceOnly'] = 'true'
                 
                 import ccxt
-                try:
-                    order_raw = await asyncio.wait_for(self.async_exchange.fapiPrivatePostOrder(params), timeout=9.0)
-                except asyncio.TimeoutError:
-                    logger.critical(f"🛑 [TIMEOUT] Futures order {side} {symbol_id} hung >9s! OS Network Blocked.")
-                    raise RuntimeError("API Timeout / Disconnect in execution")
-                except ccxt.ExchangeError as e:
-                    if "immediately match" in str(e).lower() and params.get('timeInForce') == 'GTX':
-                        logger.warning(f"⚠️ [BBO MAKER REJECTED] Futures order {side} {symbol_id} would cross spread. Fallback to GTC to secure fill.")
-                        params['timeInForce'] = 'GTC'
+                # ⚡ NATIVE C-LEVEL EXECUTION (AITS Phase 4)
+                if getattr(self, 'fast_signer', None) and not getattr(Config, 'BINANCE_USE_DEMO', False) and not Config.BINANCE_USE_TESTNET:
+                    import aiohttp
+                    if self.http_session is None or self.http_session.closed:
+                        # Re-use connection pool for sub-millisecond execution
+                        connector = aiohttp.TCPConnector(keepalive_timeout=60, limit=100)
+                        self.http_session = aiohttp.ClientSession(connector=connector)
+                        
+                    endpoint, query, headers = self.fast_signer.build_fapi_order(
+                        symbol_id, side.upper(), order_type.upper(), float(qty_precision), 
+                        float(price_precision) if order_type == 'limit' else 0.0,
+                        params.get('timeInForce', 'GTC'),
+                        bool(params.get('reduceOnly', False))
+                    )
+                    url = f"https://fapi.binance.com{endpoint}?{query}"
+                    
+                    try:
+                        async with self.http_session.post(url, headers=headers) as resp:
+                            order_raw = await resp.json()
+                            if 'code' in order_raw and int(order_raw['code']) < 0:
+                                err_msg = order_raw.get('msg', '')
+                                if "immediately match" in err_msg.lower() and params.get('timeInForce') == 'GTX':
+                                    raise ccxt.ExchangeError(err_msg)
+                                else:
+                                    logger.error(f"Binance API Error: {order_raw}")
+                                    raise ccxt.ExchangeError(f"Binance API Error: {err_msg}")
+                    except ccxt.ExchangeError as e:
+                        if "immediately match" in str(e).lower() and params.get('timeInForce') == 'GTX':
+                            logger.warning(f"⚠️ [BBO MAKER REJECTED] Futures order {side} {symbol_id} would cross spread. Fallback to GTC to secure fill.")
+                            endpoint, query, headers = self.fast_signer.build_fapi_order(
+                                symbol_id, side.upper(), order_type.upper(), float(qty_precision), 
+                                float(price_precision) if order_type == 'limit' else 0.0,
+                                "GTC",
+                                bool(params.get('reduceOnly', False))
+                            )
+                            url = f"https://fapi.binance.com{endpoint}?{query}"
+                            async with self.http_session.post(url, headers=headers) as resp:
+                                order_raw = await resp.json()
+                        else:
+                            raise e
+                    except asyncio.TimeoutError:
+                        logger.critical(f"🛑 [TIMEOUT] Futures order {side} {symbol_id} hung >9s! OS Network Blocked.")
+                        raise RuntimeError("API Timeout / Disconnect in execution")
+                else:
+                    try:
                         order_raw = await asyncio.wait_for(self.async_exchange.fapiPrivatePostOrder(params), timeout=9.0)
-                    else:
-                        raise e
+                    except asyncio.TimeoutError:
+                        logger.critical(f"🛑 [TIMEOUT] Futures order {side} {symbol_id} hung >9s! OS Network Blocked.")
+                        raise RuntimeError("API Timeout / Disconnect in execution")
+                    except ccxt.ExchangeError as e:
+                        if "immediately match" in str(e).lower() and params.get('timeInForce') == 'GTX':
+                            logger.warning(f"⚠️ [BBO MAKER REJECTED] Futures order {side} {symbol_id} would cross spread. Fallback to GTC to secure fill.")
+                            params['timeInForce'] = 'GTC'
+                            order_raw = await asyncio.wait_for(self.async_exchange.fapiPrivatePostOrder(params), timeout=9.0)
+                        else:
+                            raise e
                 order = order_raw # Simplified mapping
             else:
                 # SPOT

@@ -23,6 +23,10 @@ class MockPortfolio:
 
     def get_total_equity(self):
         return self._equity_cache
+        
+    def get_horizon_position(self, symbol, horizon):
+        key = f"{symbol}_{horizon}"
+        return self.virtual_ledger.get(key, None)
     
     def get_available_cash(self, horizon=None):
         with self._cash_lock:
@@ -140,6 +144,11 @@ class TestRiskManager(unittest.TestCase):
         # Reset for next test
         self.rm.kill_switch.active = False
         self.rm.kill_switch.daily_losses = 0
+        if os.path.exists("STOP_TRADING.LOCK"):
+             try:
+                 os.remove("STOP_TRADING.LOCK")
+             except:
+                 pass
         
         # 2. Trigger via Drawdown (>15% for standard accounts)
         # Peak equity set to 10000
@@ -258,7 +267,8 @@ class TestRiskManager(unittest.TestCase):
             'high_water_mark': 50000.0,
             'horizon': 'SCALPING',
             'sl_pct': 0.02, # Set exactly to match the test assumptions
-            'tp_pct': 0.02
+            'tp_pct': 0.02,
+            'tp_limit_placed': True
         }
         
         # 1. Test Stop Loss (-2%)

@@ -266,24 +266,28 @@ class RiskManager:
         # POR QUÉ: Scalping requiere stop-loss más ajustados y cierres rápidos,
         #   mientras que Swing necesita espacio para respirar (ATR mayor).
         # PARA QUÉ: Evitar "Position Collision" y mejorar la tasa de acierto (WR).
+        # P2-FIX #5: PARITY WITH CONFIG — Los SL/TP DEBEN coincidir con
+        #   Config.Strategies.*_PARAMS para eliminar divergencia backtest↔producción.
+        _scalp_cfg = getattr(Config.Strategies, 'SCALPING_PARAMS', {})
+        _swing_cfg = getattr(Config.Strategies, 'SWING_PARAMS', {})
         self.horizon_params = {
             "SCALPING": {
-                "stop_loss_pct": getattr(
-                    Config, "STOP_LOSS_PCT_SCALPING", 0.006
-                ),  # 0.6%
-                "take_profit_pct": getattr(
-                    Config, "TAKE_PROFIT_PCT_SCALPING", 0.012
-                ),  # 1.2%
+                "stop_loss_pct": _scalp_cfg.get('sl_pct', getattr(
+                    Config, "STOP_LOSS_PCT_SCALPING", 0.0035
+                )),  # 0.35% — synced with Config
+                "take_profit_pct": _scalp_cfg.get('tp_pct', getattr(
+                    Config, "TAKE_PROFIT_PCT_SCALPING", 0.0020
+                )),  # 0.20% — synced with Config
                 "max_risk_pct": getattr(
                     Config, "MAX_RISK_SCALPING", 0.05
                 ),  # 5% del capital alloc
                 "leverage": getattr(Config, "LEVERAGE_SCALPING", 10),
             },
             "SWING": {
-                "stop_loss_pct": getattr(Config, "STOP_LOSS_PCT_SWING", 0.015),  # 1.5%
-                "take_profit_pct": getattr(
-                    Config, "TAKE_PROFIT_PCT_SWING", 0.035
-                ),  # 3.5%
+                "stop_loss_pct": _swing_cfg.get('sl_pct', getattr(Config, "STOP_LOSS_PCT_SWING", 0.025)),  # 2.5%
+                "take_profit_pct": _swing_cfg.get('tp_pct', getattr(
+                    Config, "TAKE_PROFIT_PCT_SWING", 0.045
+                )),  # 4.5% — synced with Config
                 "max_risk_pct": getattr(
                     Config, "MAX_RISK_SWING", 0.10
                 ),  # 10% del capital alloc
@@ -537,15 +541,17 @@ class RiskManager:
                 unrealized_pnl_pct = (entry_price - current_price) / entry_price
 
         # ═══════════════════════════════════════════════════════════════
-        # FORENSIC-V28 FIX #2: ADAPTIVE FLIP THRESHOLDS
-        # QUÉ: Umbrales de flip más permisivos para micro-cuentas.
-        # POR QUÉ: BTC ATR típico es 0.04%. El threshold anterior de -0.05%
-        #   EXCEDÍA el rango normal de volatilidad → flips nunca se ejecutaban.
-        # PARA QUÉ: Permitir que el sistema cambie de dirección cuando el
-        #   mercado invalida la tesis original, incluso con movimientos mínimos.
-        # CÓMO: SCALPING -0.02% (mitad del ATR mínimo), SWING -0.1%.
+        # P2-FIX #1: M5-CALIBRATED FLIP THRESHOLDS
+        # QUÉ: Umbrales de flip calibrados para timeframe M5.
+        # POR QUÉ: En M5, el ruido normal de BTC es 0.10-0.30%. El threshold
+        #   anterior de -0.02% disparaba FLIP_EXIT con CUALQUIER retroceso
+        #   mínimo, cerrando trades viables prematuramente (-$0.02 a -$0.07).
+        # PARA QUÉ: Permitir que un trade de M5 respire durante la
+        #   volatilidad normal sin ser cerrado por "pánico" del sistema.
+        # CÓMO: SCALPING -0.15% (mitad del ATR típico M5), SWING -0.30%.
+        #   Solo se hace FLIP si el trade está genuinamente perdido.
         # ═══════════════════════════════════════════════════════════════
-        flip_threshold = -0.0002 if horizon == "SCALPING" else -0.001
+        flip_threshold = -0.0015 if horizon == "SCALPING" else -0.003
 
         # Block same-direction duplicates (never stack)
         if qty > 0 and signal_type == SignalType.LONG:
@@ -570,11 +576,28 @@ class RiskManager:
         _taker_fee = getattr(Config, "BINANCE_TAKER_FEE_BNB", 0.000375)
         fee_buffer = _maker_fee + _taker_fee
 
-        if unrealized_pnl_pct >= 0 and unrealized_pnl_pct < (fee_buffer * 1.5):
-            # The trade is technically winning, but closing now is a GUARANTEED NET LOSS.
-            # We ignore the opposite signal and force the trade to mature.
+        # ═══════════════════════════════════════════════════════════════
+        # P2-FIX #6: M5-CALIBRATED DEAD ZONE (SL-Proportional)
+        # QUÉ: La dead zone anterior (fee_buffer * 1.5 ≈ 0.086%) era
+        #   demasiado estrecha para M5 donde el ruido normal es 0.10-0.30%.
+        # POR QUÉ: Trades en -0.10% (apenas 1 vela M5 adversa) superaban
+        #   la dead zone y eran FLIPeados, cristalizando pérdidas mínimas
+        #   que el trade habría recuperado en las siguientes velas.
+        # PARA QUÉ: Forzar que un trade no sea FLIPeado a menos que haya
+        #   perdido al menos el 50% de su Stop Loss. Si SL=0.60%, el trade
+        #   debe perder >0.30% antes de permitir un FLIP.
+        # CÓMO: Dead zone = max(fee_buffer * 1.5, sl_pct * 0.5)
+        #   donde sl_pct proviene de horizon_params.
+        # ═══════════════════════════════════════════════════════════════
+        _h_params = self.horizon_params.get(horizon, self.horizon_params["SCALPING"])
+        _sl_for_deadzone = _h_params.get("stop_loss_pct", 0.0035)
+        dead_zone_upper = max(fee_buffer * 1.5, _sl_for_deadzone * 0.5)
+
+        if unrealized_pnl_pct >= flip_threshold and unrealized_pnl_pct < dead_zone_upper:
+            # The trade is in the dead zone (slightly losing, or slightly winning but < meaningful profit).
+            # We ignore the opposite signal and force the trade to mature to either TP, SL, or a heavy flip.
             logger.debug(
-                f"🛡️ [{symbol}_{horizon}] FLIP BLOCKED (DEAD ZONE): PnL {unrealized_pnl_pct*100:.3f}% is less than required fee buffer {(fee_buffer*1.5)*100:.3f}%"
+                f"🛡️ [{symbol}_{horizon}] FLIP BLOCKED (DEAD ZONE M5): PnL {unrealized_pnl_pct*100:.3f}% is between {flip_threshold*100:.3f}% and {dead_zone_upper*100:.3f}%"
             )
             return False
 
@@ -585,7 +608,7 @@ class RiskManager:
             )
             return True
 
-        # If we have solid profit (> 1.5x fees), we ALLOW the flip as a valid Take Profit reversal.
+        # If we have solid profit (> dead zone), we ALLOW the flip as a valid Take Profit reversal.
         return True
 
     def _validate_margin_ratio(self):
@@ -1319,60 +1342,65 @@ class RiskManager:
             # ═══════════════════════════════════════════════════════════════
             
             # 3. Cálculo de Tamaño Nominal (Notional) via Fractional Kelly
-            win_rate = self.get_win_rate()
-            
-            # Extract avg_win / avg_loss ratio from trade cache
-            wins = [t['pnl_pct'] for t in self._trade_cache if t['is_win'] and t['pnl_pct'] > 0]
-            losses = [abs(t['pnl_pct']) for t in self._trade_cache if not t['is_win'] and t['pnl_pct'] < 0]
-            
-            if len(wins) >= 5 and len(losses) >= 5:
-                avg_win = float(np.mean(wins))
-                avg_loss = float(np.mean(losses))
-                # Kelly Fraction = WR - (1 - WR) / (avg_win / avg_loss)
-                # Using JIT kernel for nano-speed
-                kelly_stats = extract_kelly_stats_jit(
-                    np.array(wins + [-l for l in losses], dtype=np.float64)
-                )
-                kelly_f = compute_kelly_fraction_jit(
-                    win_rate, kelly_stats[0], kelly_stats[1]
-                )
-                # Half-Kelly for safety (institutional standard)
-                kelly_half = max(0.01, min(0.25, kelly_f * 0.5))  # Floor 1%, Cap 25%
+            if global_cash < 50.0:
+                # FORENSIC-V42 FIX: Micro-Account Bypass
+                # Kelly constraints mathematically prevent trading with $13 account.
+                # Force minimum $6.50 notional (takes ~$0.65 margin at 10x)
+                notional_size = 6.5
+                logger.debug(f"📐 [MICRO-SIZING] Bypassing Kelly for <$50 account. Forcing notional $6.50 for {symbol}")
+            else:
+                win_rate = self.get_win_rate()
                 
-                # Blend Kelly with the merit multiplier
-                effective_risk = min(0.25, kelly_half * multiplier)
-                logger.debug(
-                    f"📐 [KELLY] {symbol} | WR={win_rate:.2f} | K={kelly_f:.3f} | "
-                    f"½K={kelly_half:.3f} | Merit={multiplier:.2f} | EffRisk={effective_risk:.3f}"
-                )
-            else:
-                # Cold start: use conservative static risk until enough data
-                effective_risk = min(0.20, risk_pct * multiplier)
-                logger.debug(
-                    f"📐 [KELLY-COLD] {symbol} | Insufficient trades ({len(wins)}W/{len(losses)}L). "
-                    f"Using static risk={effective_risk:.3f}"
-                )
-            
-            risk_amount = available_cash * effective_risk
+                # Extract avg_win / avg_loss ratio from trade cache
+                wins = [t['pnl_pct'] for t in self._trade_cache if t['is_win'] and t['pnl_pct'] > 0]
+                losses = [abs(t['pnl_pct']) for t in self._trade_cache if not t['is_win'] and t['pnl_pct'] < 0]
+                
+                if len(wins) >= 5 and len(losses) >= 5:
+                    avg_win = float(np.mean(wins))
+                    avg_loss = float(np.mean(losses))
+                    # Using JIT kernel for nano-speed
+                    kelly_stats = extract_kelly_stats_jit(
+                        np.array(wins + [-l for l in losses], dtype=np.float64)
+                    )
+                    kelly_f = compute_kelly_fraction_jit(
+                        win_rate, kelly_stats[0], kelly_stats[1]
+                    )
+                    # Half-Kelly for safety (institutional standard)
+                    kelly_half = max(0.01, min(0.25, kelly_f * 0.5))  # Floor 1%, Cap 25%
+                    
+                    # Blend Kelly with the merit multiplier
+                    effective_risk = min(0.25, kelly_half * multiplier)
+                    logger.debug(
+                        f"📐 [KELLY] {symbol} | WR={win_rate:.2f} | K={kelly_f:.3f} | "
+                        f"½K={kelly_half:.3f} | Merit={multiplier:.2f} | EffRisk={effective_risk:.3f}"
+                    )
+                else:
+                    # Cold start: use conservative static risk until enough data
+                    effective_risk = min(0.20, risk_pct * multiplier)
+                    logger.debug(
+                        f"📐 [KELLY-COLD] {symbol} | Insufficient trades ({len(wins)}W/{len(losses)}L). "
+                        f"Using static risk={effective_risk:.3f}"
+                    )
+                
+                risk_amount = available_cash * effective_risk
 
-            # Notional = Risk_Amount / SL_Pct
-            if sl_pct > 0:
-                notional_size = risk_amount / sl_pct
-            else:
-                notional_size = available_cash * target_leverage * 0.5  # Conservador
+                # Notional = Risk_Amount / SL_Pct
+                if sl_pct > 0:
+                    notional_size = risk_amount / sl_pct
+                else:
+                    notional_size = available_cash * target_leverage * 0.5  # Conservador
 
-            # 4. Hardening para Cuenta Micro ($13 USD)
-            # Limitar al MENOR entre el 40% del disponible, o el headroom global restante
-            max_notional_from_cash = available_cash * target_leverage * 0.40
-            max_notional_from_headroom = remaining_margin_headroom * target_leverage
-            
-            max_notional = min(max_notional_from_cash, max_notional_from_headroom)
-            notional_size = min(notional_size, max_notional)
+                # 4. Hardening para Cuentas Estándar
+                max_notional_from_cash = available_cash * target_leverage * 0.40
+                max_notional_from_headroom = remaining_margin_headroom * target_leverage
+                
+                max_notional = min(max_notional_from_cash, max_notional_from_headroom)
+                notional_size = min(notional_size, max_notional)
 
             # Minimum Notional Guard ($6.00 para margen de error)
             if notional_size < 6.0:
                 margin_needed_for_pad = 6.0 / target_leverage
-                if margin_needed_for_pad <= remaining_margin_headroom and (available_cash * target_leverage) >= 6.0:
+                if margin_needed_for_pad <= remaining_margin_headroom:
                     notional_size = 6.0
                     logger.debug(
                         f"⚖️ [MARGIN-FIT] Padding notional to $6.0 for {symbol} (Headroom: ${remaining_margin_headroom:.2f})"
@@ -1602,6 +1630,19 @@ class RiskManager:
         if not self._validate_kill_switch():
             print(f"[RISK] Rejected by KILL_SWITCH for {signal_event.symbol}")
             return None
+            
+        # P1-3: Anti-Fee Drag Filter (Micro-Account Protection)
+        # Rechazar operaciones donde el mercado no se mueve lo suficiente para cubrir las comisiones
+        _sig_meta = getattr(signal_event, 'metadata', {}) or {}
+        atr_pct = _sig_meta.get('atr_pct', 0.0)
+        if atr_pct > 0:
+            round_trip_fee = getattr(Config, "BINANCE_TAKER_FEE_BNB", 0.000375) * 2  # Worst case
+            if getattr(Config.Execution, "USE_LIMIT_BBO_ENTRIES", True) and getattr(Config.Execution, "USE_LIMIT_BBO_EXITS", True):
+                round_trip_fee = getattr(Config, "BINANCE_MAKER_FEE_BNB", 0.0002) * 2  # Best case
+            if atr_pct < (round_trip_fee * 1.5):
+                print(f"[RISK] Rejected by FEE_DRAG for {signal_event.symbol} (ATR {atr_pct*100:.3f}% < Fees {round_trip_fee*1.5*100:.3f}%)")
+                return None
+                
         if not self._validate_frequency_limits(
             signal_event.symbol, signal_event.signal_type
         ):
@@ -1711,11 +1752,57 @@ class RiskManager:
                 is_flip = (existing_qty > 0 and signal_event.signal_type == SignalType.SHORT) or \
                           (existing_qty < 0 and signal_event.signal_type == SignalType.LONG)
                 if is_flip:
+                    # ═══════════════════════════════════════════════════════════
+                    # P2-FIX #8: FLIP MATURATION GUARD (M5 Trade Protection)
+                    # QUÉ: Bloquear FLIP_EXIT si el trade no ha madurado.
+                    # POR QUÉ: En M5, señales opuestas llegan cada 2-5 velas.
+                    #   Un trade de 10 min (2 velas M5) no ha tenido tiempo de
+                    #   desarrollarse. FLIPear tan pronto cristaliza pérdidas
+                    #   microscópicas que el trade habría recuperado.
+                    # PARA QUÉ: Forzar que el trade tenga al mínimo 10 velas M5
+                    #   (50 min) de vida antes de permitir un FLIP.
+                    #   EXCEPCIÓN: Si el PnL ya excedió el SL, dejar salir.
+                    # ═══════════════════════════════════════════════════════════
+                    entry_price = existing_pos.get('avg_price', current_price)
+                    if existing_qty > 0:
+                        unrealized_pnl = (current_price - entry_price) / entry_price
+                    else:
+                        unrealized_pnl = (entry_price - current_price) / entry_price
+                    
+                    _h_params = self.horizon_params.get(horizon, self.horizon_params["SCALPING"])
+                    _sl_pct = _h_params.get("stop_loss_pct", 0.0035)
+                    
+                    # Check trade age
+                    entry_time_val = existing_pos.get('entry_time')
+                    trade_age_s = 0
+                    if entry_time_val:
+                        if hasattr(entry_time_val, 'timestamp'):
+                            entry_time_val = entry_time_val.timestamp()
+                        
+                        # Use signal's timestamp for backtest fidelity
+                        _now_dt = getattr(signal_event, 'datetime', datetime.now(timezone.utc))
+                        if not _now_dt:
+                            _now_dt = datetime.now(timezone.utc)
+                        _now_ts = _now_dt.timestamp() if hasattr(_now_dt, 'timestamp') else datetime.now(timezone.utc).timestamp()
+                        trade_age_s = _now_ts - entry_time_val
+                    
+                    min_maturation_s = 3000 if horizon == "SCALPING" else 7200  # 50min scalp, 2h swing
+                    sl_exceeded = unrealized_pnl < -_sl_pct
+                    
+                    if trade_age_s < min_maturation_s and not sl_exceeded:
+                        logger.info(
+                            f"🛡️ [FLIP BLOCKED - MATURATION] {signal_event.symbol} {horizon} | "
+                            f"Trade age {trade_age_s:.0f}s < {min_maturation_s}s min. "
+                            f"PnL={unrealized_pnl*100:.2f}% (SL={_sl_pct*100:.2f}%). "
+                            f"Letting trade mature."
+                        )
+                        return None
+                    
                     logger.info(
                         f"🔄 [FLIP-EXIT] {signal_event.symbol} {horizon} | "
                         f"Closing {'LONG' if existing_qty > 0 else 'SHORT'} position before "
                         f"{'SHORT' if signal_event.signal_type == SignalType.SHORT else 'LONG'} entry. "
-                        f"Qty={existing_qty:.6f}"
+                        f"Qty={existing_qty:.6f} | Age={trade_age_s:.0f}s | PnL={unrealized_pnl*100:.2f}%"
                     )
                     flip_exit_signal = SignalEvent(
                         strategy_id="FLIP_EXIT",
@@ -1812,10 +1899,29 @@ class RiskManager:
             )
             
             # 🧟 ZOMBIE FEATURE INTEGRATION: Dynamic Take Profit based on MFE
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC-V50 FIX: HORIZON-AWARE MFE CAP
+            # QUÉ: El PredictionTracker reportaba avg_mfe=10% (datos históricos
+            #   contaminados por trades de swing). La fórmula 0.1*0.9=0.09 (9%)
+            #   convertía TODOS los TP de scalping de 0.20% → 9.00%.
+            # POR QUÉ: Con TP del 9%, NINGÚN trade M5 puede alcanzar el target.
+            #   Todos cierran por FLIP_EXIT → rendimiento aleatorio 50/50.
+            # PARA QUÉ: Respetar la identidad del horizonte. Scalping=micro-profits,
+            #   Swing=macro-profits. La MFE del tracker NO puede anular esto.
+            # CÓMO: Cap por horizonte: SCALPING ≤0.50%, SWING ≤5.00%.
+            #   Solo override si MFE es mayor que el TP estático actual.
+            # ═══════════════════════════════════════════════════════════════
             if params and avg_mfe_pct and avg_mfe_pct > params.get("tp_pct", 0.0):
-                # We cap the override to prevent absurd MFE spikes from risking the trade
-                max_tp = getattr(Config.Risk, "MAX_PROFIT_TAKE", 0.15) 
-                dynamic_tp = min(avg_mfe_pct * 0.9, max_tp) # Target 90% of avg MFE
+                # Horizon-aware ceiling to prevent scalping TP from becoming swing TP
+                # FORENSIC-V70: Reduced from 0.50% to 0.20% — empirically:
+                #   TP 0.50% hit rate in 90min = 34% → 81% ZOMBIE exits
+                #   TP 0.20% hit rate in 30min = 35% → viable for scalping
+                if horizon == "SCALPING":
+                    max_tp = 0.002  # 0.20% max for scalping (M1-calibrated)
+                else:
+                    max_tp = getattr(Config.Risk, "MAX_PROFIT_TAKE", 0.05)  # 5% max for swing
+                
+                dynamic_tp = min(avg_mfe_pct * 0.9, max_tp)
                 if dynamic_tp > params["tp_pct"]:
                     params["tp_pct"] = dynamic_tp
 
@@ -2146,10 +2252,24 @@ class RiskManager:
             if abs(qty) < 1e-8:
                 continue
 
-            # v_key is like 'BTC/USDT_SCALPING'
-            parts = v_key.rsplit("_", 1)
-            symbol = parts[0]
-            pos_horizon = parts[1] if len(parts) > 1 else pos.get("horizon", "SCALPING")
+            # v_key is like 'BTC/USDT_SCALPING_LONG' or 'BTC/USDT_SCALPING'
+            # FORENSIC-V50 FIX: The old rsplit("_", 1) was catastrophically broken.
+            # "BTC/USDT_SCALPING_LONG".rsplit("_", 1) → ["BTC/USDT_SCALPING", "LONG"]
+            # This made symbol = "BTC/USDT_SCALPING" which NEVER matched symbol_filter.
+            # Result: ALL SL/TP evaluations were silently skipped.
+            # FIX: Extract symbol by splitting on known horizon tags.
+            _horizon_tags = ["_SCALPING_LONG", "_SCALPING_SHORT", "_SWING_LONG", "_SWING_SHORT",
+                             "_SCALPING", "_SWING", "_MACRO_LONG", "_MACRO_SHORT", "_MACRO"]
+            symbol = v_key
+            pos_horizon = pos.get("horizon", "SCALPING")
+            for tag in _horizon_tags:
+                if v_key.endswith(tag):
+                    symbol = v_key[:-len(tag)]
+                    if "_" in tag[1:]:
+                        pos_horizon = tag.split("_")[1]  # Extract SCALPING/SWING/MACRO
+                    else:
+                        pos_horizon = tag[1:]
+                    break
 
             # FORENSIC-V12 FIX #2: Skip positions not matching the filter
             if symbol_filter and symbol != symbol_filter:
@@ -2168,13 +2288,45 @@ class RiskManager:
             #   de BTC (0.2-0.5%) disparaba Hard SL instantáneamente (-2% a -5%).
             # PARA QUÉ: SL debe ser ≥ ATR medio para sobrevivir ruido normal.
             # ================================================================
-            # FORENSIC-V46: REALISTIC HFT TARGETS
-            # SCALPING TP ajustado a 0.35% (alcanzable en 5m) en lugar de 1.2%.
-            # SCALPING SL ajustado a 0.25% para un R:R de 1.4.
-            default_sl = 0.0025 if pos_horizon == "SCALPING" else 0.015
-            default_tp = 0.0035 if pos_horizon == "SCALPING" else 0.035
+            # P2-FIX #2: M5-CALIBRATED SL/TP DEFAULTS (Parity with Config)
+            # QUÉ: Los defaults DEBEN coincidir con Config.Strategies.*_PARAMS.
+            # POR QUÉ: Con default_sl=0.25% y BTC moviéndose 0.20-0.50% por
+            #   vela de 5m, el Hard SL se disparaba en la PRIMERA vela
+            #   adversa, cristalizando pérdidas innecesarias.
+            # PARA QUÉ: Dar al trade M5 espacio de 0.60% SL (3 velas M5 de
+            #   ruido) y capturar 0.45% TP (alcanzable en 2-4 velas M5).
+            # CÓMO: Sincronizar con Config.Strategies.SCALPING_PARAMS exactos.
+            default_sl = 0.0015 if pos_horizon == "SCALPING" else 0.025
+            default_tp = 0.0010 if pos_horizon == "SCALPING" else 0.045
             sl_pct = pos.get("sl_pct", default_sl) or default_sl
             tp_pct = pos.get("tp_pct", default_tp) or default_tp
+            
+            # ════════════════════════════════════════════════════════════════
+            # FORENSIC-V70: HARD CAP on SCALPING TP/SL (defense-in-depth)
+            # QUÉ: Previene que TP/SL inflados por la estrategia (ATR M5)
+            #   lleguen al motor de salida con valores inalcanzables.
+            # POR QUÉ: ATR-based TP de 0.50% solo se alcanza 34% del tiempo
+            #   en 90min, generando 81% de ZOMBIE exits.
+            # PARA QUÉ: Garantizar que check_stops use targets realizables.
+            # ════════════════════════════════════════════════════════════════
+            if pos_horizon == "SCALPING":
+                tp_pct = min(tp_pct, 0.0010)  # Hard cap 0.10%
+                sl_pct = min(sl_pct, 0.0015)  # Hard cap 0.15%
+            
+            # 🧠 PHASE 8: PETIM DYNAMIC EXITS (LimitOrderOptimizer)
+            # FORENSIC-V50: Horizon-aware caps to prevent scalping → swing TP drift
+            petim_pred = pos.get("trajectory_prediction")
+            if petim_pred and isinstance(petim_pred, dict):
+                # Use expected MFE for Take Profit Limit with 85% probability discount
+                expected_mfe = petim_pred.get("mfe")
+                if expected_mfe and expected_mfe > 0.001:
+                    petim_max_tp = 0.003 if pos_horizon == "SCALPING" else 0.05
+                    tp_pct = min(max(expected_mfe * 0.85, 0.002), petim_max_tp)
+                
+                # Use expected MAE to set structural stop, avoiding noise
+                expected_mae = petim_pred.get("mae")
+                if expected_mae and expected_mae > 0.001:
+                    sl_pct = min(max(expected_mae * 1.5, default_sl), 0.05)
             hwm = pos.get("high_water_mark", entry_price)
             lwm = pos.get("low_water_mark", entry_price)
 
@@ -2195,15 +2347,37 @@ class RiskManager:
                 # QUÉ: Diferenciar entre un mercado "plano" (True Zombie) y un "Slow Bleed".
                 # POR QUÉ: Salir de trades a los 7 minutos con -0.1% estaba cristalizando pérdidas innecesarias (24% de trades, 23% WR).
                 # PARA QUÉ: Reducir PnL negativo dando espacio a la volatilidad, o cortando si el tiempo es excesivo.
+                
+                # 🧠 PHASE 8: PETIM TIME-TO-EXHAUSTION
+                expected_survival_s = None
+                if petim_pred and isinstance(petim_pred, dict) and "survival" in petim_pred:
+                    expected_survival_bars = petim_pred["survival"]
+                    expected_survival_s = expected_survival_bars * 60  # 1m bars
+                
                 if pos_horizon == "SCALPING":
                     # Rango de precio desde que se abrió
                     price_range_pct = ((hwm - lwm) / entry_price) * 100
                     
-                    is_true_zombie = (seconds_held > 900) and (price_range_pct < 0.15) and (unrealized_pnl_pct < 0.05)
-                    is_slow_bleed = (seconds_held > 1800) and (unrealized_pnl_pct < 0.0)
+                    # P2-FIX #3: M5-CALIBRATED ZOMBIE CATCHER
+                    # QUÉ: Antes: 900s (15 min) = 3 velas M5. Una consolidación
+                    #   normal de BTC de 3 velas activaba zombie matando trades.
+                    # AHORA: 2700s (45 min) = 9 velas M5. Da espacio real para
+                    #   que el mercado desarrolle el impulso predicho.
+                    # Slow Bleed: 3600s (1h) = 12 velas M5 sin progreso.
+                    is_true_zombie = (seconds_held > 2700) and (price_range_pct < 0.15) and (unrealized_pnl_pct < 0.05)
+                    is_slow_bleed = (seconds_held > 3600) and (unrealized_pnl_pct < 0.0)
+                    is_absolute_timeout = (seconds_held > 5400) # 90 minutes max for any scalping trade
                     
-                    if is_true_zombie or is_slow_bleed:
-                        reason = "FLAT MARKET" if is_true_zombie else "SLOW BLEED"
+                    # PETIM Exhaustion
+                    is_petim_exhausted = expected_survival_s and (seconds_held > expected_survival_s * 1.5) and (unrealized_pnl_pct < 0.1)
+                    
+                    if is_true_zombie or is_slow_bleed or is_petim_exhausted or is_absolute_timeout:
+                        if is_absolute_timeout:
+                            reason = "ABSOLUTE TIMEOUT"
+                        elif is_petim_exhausted:
+                            reason = "PETIM EXHAUSTION"
+                        else:
+                            reason = "FLAT MARKET" if is_true_zombie else "SLOW BLEED"
                         logger.warning(
                             f"🧟 [ZOMBIE CATCHER - {reason}] {symbol} {pos_horizon} held for {seconds_held:.0f}s with PnL {unrealized_pnl_pct:.2f}% (Range: {price_range_pct:.2f}%). Exiting to free capital."
                         )
@@ -2275,11 +2449,19 @@ class RiskManager:
                                 metadata={"tp_price": tp_price_val}
                             )
                         )
-                    # Fallback de seguridad por si falla la orden en el exchange
-                    elif current_price >= (entry_price * (1 + tp_pct)):
+                    # FORENSIC-V60 FIX: Always evaluate TP fallback (was elif, now separate if)
+                    # QUÉ: Changed from `elif` to standalone `if` so the TP is evaluated
+                    #   on EVERY check_stops call, including the first one.
+                    # POR QUÉ: With `elif`, the first call placed the TP limit order but
+                    #   skipped the price check. If price already exceeded TP on that bar,
+                    #   the system would miss the TP and later close via TURBO_BE at a loss.
+                    # DEBUG
+                    if current_price >= (entry_price * (1 + tp_pct * 0.5)):
+                        print(f"DEBUG LONG TP CHECK: curr={current_price:.2f} target={(entry_price * (1 + tp_pct)):.2f} (tp_pct={tp_pct:.4f}, hwm={hwm:.2f})")
+                    if current_price >= (entry_price * (1 + tp_pct)):
                         tp_pnl_pct = ((current_price - entry_price) / entry_price) * 100
                         print(
-                            f"🎯 [LONG {pos_horizon}] TAKE PROFIT (FALLBACK) {symbol}! +{tp_pnl_pct:.2f}%"
+                            f"🎯 [LONG {pos_horizon}] TAKE PROFIT {symbol}! +{tp_pnl_pct:.2f}%"
                         )
                         stop_signals.append(
                             SignalEvent(
@@ -2319,41 +2501,23 @@ class RiskManager:
                 #   de activar protección. Si llega a 75% y retrocede, ya fue
                 #   un buen trade que simplemente no cerró en TP perfecto.
                 # ═══════════════════════════════════════════════════════════════
-                if pos_horizon == "SCALPING":
-                    # FORENSIC-V44 FIX #4: RESTORE IMMEDIATE TURBO-BREAKEVEN
-                    # QUÉ: Restaurar el turbo-BE a 1.5x Fees para microscalping.
-                    # POR QUÉ: El threshold fijo de 0.30% es demasiado amplio
-                    #   para operaciones ultra-rápidas, matando trades buenos.
-                    # PARA QUÉ: Protección inmediata de capital en cuanto se 
-                    #   rompe el spread y se paga la comisión (FinOps Net-Zero).
-                    turbo_threshold_pct = fee_buffer * 100 * 2.5
-                else:
-                    # Fee-relative for SWING (wider threshold)
-                    turbo_threshold_pct = fee_buffer * 100 * 4.0
-
-                if peak_pnl >= turbo_threshold_pct:
-                    # We lock in entry_price + fee_buffer + round trip slippage
-                    turbo_be_price = entry_price * (
-                        1 + fee_buffer + 0.0002
-                    )  # 0.02% slippage buffer to guarantee FinOps Net-Zero without premature triggers
-                    if (
-                        current_price < turbo_be_price
-                    ):  # Price crashed back after hitting PEAK
-                        print(
-                            f"⚡ [LONG {pos_horizon}] TURBO-BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}% gave us edge. Bailing at {current_price:.4f}"
-                        )
-                        stop_signals.append(
-                            SignalEvent(
-                                strategy_id="TURBO_BE",
-                                symbol=symbol,
-                                datetime=now,
-                                signal_type=SignalType.EXIT,
-                                strength=1.0,
-                                horizon=pos_horizon,
-                            )
-                        )
-                        self.record_trade_result(True, unrealized_pnl_pct)
-                        continue
+                # ⚡ Turbo-Breakeven (Stage 0): Disabled to test if tight TP triggers were causing premature exits.
+                # if pos_horizon == "SCALPING":
+                #     turbo_threshold_pct = tp_target_pct * 0.75
+                #     min_threshold = fee_buffer * 100 * 1.2
+                #     turbo_threshold_pct = max(turbo_threshold_pct, min_threshold)
+                # else:
+                #     turbo_threshold_pct = fee_buffer * 100 * 4.0
+                # 
+                # if peak_pnl >= turbo_threshold_pct:
+                #     turbo_be_price = entry_price * (1 + fee_buffer + 0.0001)
+                #     if current_price < turbo_be_price:
+                #         print(f"⚡ [LONG {pos_horizon}] TURBO-BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}% gave us edge. Bailing at {current_price:.4f}")
+                #         stop_signals.append(
+                #             SignalEvent(strategy_id="TURBO_BE", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon)
+                #         )
+                #         self.record_trade_result(True, unrealized_pnl_pct)
+                #         continue
 
                 progress = peak_pnl / tp_target_pct if tp_target_pct > 0 else 0
 
@@ -2367,17 +2531,17 @@ class RiskManager:
                     else -0.012
                 )
 
-                if progress >= 0.75:
+                if progress >= 0.90:
                     # Stage 3: Tight trail - protect 85% of gains from peak
                     trail_price = hwm - ((hwm - entry_price) * 0.15)
                     trail_name = "TRAIL_STAGE_3_TIGHT"
-                elif progress >= 0.50:
+                elif progress >= 0.80:
                     # Stage 2: Standard trail - protect 70% of gains from peak
                     trail_price = hwm - ((hwm - entry_price) * 0.30)
                     trail_name = "TRAIL_STAGE_2_STD"
-                elif progress >= 0.40:
+                elif progress >= 0.60:
                     # Stage 1: Move to breakeven + round-trip fees + slippage safety buffer
-                    trail_price = entry_price * (1 + fee_buffer + 0.0005)
+                    trail_price = entry_price * (1 + fee_buffer + 0.0001)
                     trail_name = "TRAIL_STAGE_1_BE"
 
                 if trail_price and current_price < trail_price:
@@ -2450,11 +2614,13 @@ class RiskManager:
                                 metadata={"tp_price": tp_price_val}
                             )
                         )
-                    # Fallback de seguridad
-                    elif current_price <= (entry_price * (1 - tp_pct)):
+                    # FORENSIC-V60 FIX: Always evaluate TP fallback (was elif, now separate if)
+                    # QUÉ: Changed from `elif` to standalone `if` so the TP is evaluated
+                    #   on EVERY check_stops call, including the first one.
+                    if current_price <= (entry_price * (1 - tp_pct)):
                         tp_pnl_pct = ((entry_price - current_price) / entry_price) * 100
                         print(
-                            f"🎯 [SHORT {pos_horizon}] TAKE PROFIT (FALLBACK) {symbol}! +{tp_pnl_pct:.2f}%"
+                            f"🎯 [SHORT {pos_horizon}] TAKE PROFIT {symbol}! +{tp_pnl_pct:.2f}%"
                         )
                         stop_signals.append(
                             SignalEvent(
@@ -2480,16 +2646,18 @@ class RiskManager:
                 # ⚡ Turbo-Breakeven (Stage 0): Immediate capital protection
                 # FORENSIC-V44 FIX #4: RESTORE IMMEDIATE TURBO-BREAKEVEN (SHORT mirror)
                 if pos_horizon == "SCALPING":
-                    # FORENSIC FIX: Aggressive Trailing Breakeven at 2.5x fees
-                    turbo_threshold_pct = fee_buffer * 100 * 2.5
+                    # FORENSIC-V60 FIX: Dynamic TP-relative TURBO-BREAKEVEN (SHORT)
+                    turbo_threshold_pct = tp_target_pct * 0.75
+                    min_threshold = fee_buffer * 100 * 1.2
+                    turbo_threshold_pct = max(turbo_threshold_pct, min_threshold)
                 else:
                     turbo_threshold_pct = fee_buffer * 100 * 4.0
 
                 if peak_pnl >= turbo_threshold_pct:
-                    # We lock in entry_price - fee_buffer - round trip slippage
+                    # We lock in entry_price - fee_buffer - round trip slippage - net profit
                     turbo_be_price = entry_price * (
-                        1 - fee_buffer - 0.0002
-                    )  # 0.02% slippage buffer to guarantee FinOps Net-Zero without premature triggers
+                        1 - fee_buffer - 0.0001
+                    )  # 0.01% net profit after fees
                     if current_price > turbo_be_price:  # Price bounced back up
                         print(
                             f"⚡ [SHORT {pos_horizon}] TURBO-BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}% gave us edge. Bailing at {current_price:.4f}"
@@ -2518,17 +2686,17 @@ class RiskManager:
                     else -0.012
                 )
 
-                if progress >= 0.75:
+                if progress >= 0.90:
                     # Stage 3: Tight trail - protect 85% of gains from peak
                     trail_price = lwm + ((entry_price - lwm) * 0.15)
                     trail_name = "SHORT_TRAIL_STAGE_3_TIGHT"
-                elif progress >= 0.50:
+                elif progress >= 0.80:
                     # Stage 2: Standard trail - protect 70% of gains from peak
                     trail_price = lwm + ((entry_price - lwm) * 0.30)
                     trail_name = "SHORT_TRAIL_STAGE_2_STD"
-                elif progress >= 0.40:
+                elif progress >= 0.60:
                     # Stage 1: Move to breakeven + round-trip fees + slippage safety buffer
-                    trail_price = entry_price * (1 - fee_buffer - 0.0005)
+                    trail_price = entry_price * (1 - fee_buffer - 0.0001)
                     trail_name = "SHORT_TRAIL_STAGE_1_BE"
 
                 if trail_price and current_price > trail_price:

@@ -604,21 +604,46 @@ class Portfolio:
         try:
             equity = self.current_cash
             
+            # Exposure metrics tracking
+            total_long_beta = 0.0
+            total_short_beta = 0.0
+            net_delta = 0.0
+            
             # Iterate through isolated horizon positions
             for v_key, pos in self.virtual_ledger.items():
                 qty = pos['quantity']
                 if qty != 0:
                     avg_price = pos['avg_price']
                     current_price = pos.get('current_price', avg_price)
-                    # For LONG: (current - avg) * qty
-                    # For SHORT: (avg - current) * abs(qty) -> (current - avg) * qty (since qty is negative)
-                    # (current - avg) * qty works for both.
+                    
+                    notional = qty * current_price
+                    if qty > 0:
+                        total_long_beta += notional
+                        net_delta += notional
+                    else:
+                        total_short_beta += abs(notional)
+                        net_delta += notional # qty is negative, so this subtracts
+                        
                     equity += (current_price - avg_price) * qty
             
             self._equity_cache = equity
+            
+            # Cache exposure metrics for Meta-Arbitrator
+            self.math_stats['total_long_beta'] = total_long_beta
+            self.math_stats['total_short_beta'] = total_short_beta
+            self.math_stats['net_delta'] = net_delta
+            
             return equity
         finally:
             self.guard.release()
+    
+    def get_portfolio_exposure(self) -> Dict[str, float]:
+        """Returns the cached global exposure metrics."""
+        return {
+            'TOTAL_LONG_BETA': self.math_stats.get('total_long_beta', 0.0),
+            'TOTAL_SHORT_BETA': self.math_stats.get('total_short_beta', 0.0),
+            'NET_DELTA': self.math_stats.get('net_delta', 0.0)
+        }
     
     def reserve_cash(self, amount, horizon='SCALPING', order_id=None):
         """
@@ -937,6 +962,7 @@ class Portfolio:
                     pos['entry_time'] = self._get_current_time()
                     pos['opener_strategy_id'] = getattr(event, 'strategy_id', 'Unknown')
                     pos['ml_confidence'] = (getattr(event, 'metadata', {}) or {}).get('ml_confidence', (getattr(event, 'metadata', {}) or {}).get('strength', 0.0))
+                    pos['trajectory_prediction'] = (getattr(event, 'metadata', {}) or {}).get('trajectory_prediction', None)
                     pos['tp_limit_placed'] = False
                     pos['tp_order_id'] = None
                     self._bind_cognitive_anchor(event.symbol, pos)
@@ -951,8 +977,12 @@ class Portfolio:
                     pos['entry_time'] = self._get_current_time()
                     pos['opener_strategy_id'] = getattr(event, 'strategy_id', 'Unknown')
                     pos['ml_confidence'] = (getattr(event, 'metadata', {}) or {}).get('ml_confidence', (getattr(event, 'metadata', {}) or {}).get('strength', 0.0))
+                    pos['trajectory_prediction'] = (getattr(event, 'metadata', {}) or {}).get('trajectory_prediction', None)
                     pos['tp_limit_placed'] = False
                     pos['tp_order_id'] = None
+                    # FORENSIC FIX: Reset watermarks on new trade to prevent instant TURBO_BE
+                    pos['high_water_mark'] = price
+                    pos['low_water_mark'] = price
                     self._bind_cognitive_anchor(event.symbol, pos)
                     
                     # 🚀 TELEGRAM NOTIFICATION: Handled by log_trade_report() → send_trade_open()
@@ -973,6 +1003,7 @@ class Portfolio:
                     pos['entry_time'] = self._get_current_time()
                     pos['opener_strategy_id'] = getattr(event, 'strategy_id', 'Unknown')
                     pos['ml_confidence'] = (getattr(event, 'metadata', {}) or {}).get('ml_confidence', (getattr(event, 'metadata', {}) or {}).get('strength', 0.0))
+                    pos['trajectory_prediction'] = (getattr(event, 'metadata', {}) or {}).get('trajectory_prediction', None)
                     pos['tp_limit_placed'] = False
                     pos['tp_order_id'] = None
                     self._bind_cognitive_anchor(event.symbol, pos)
@@ -980,12 +1011,16 @@ class Portfolio:
                 total_cost = (abs(pos['quantity']) * pos['avg_price']) + fill_cost
                 pos['quantity'] -= event.quantity
                 pos['avg_price'] = total_cost / abs(pos['quantity'])
-                if abs(pos['quantity']) == event.quantity: # New entry
+                if pos['quantity'] == event.quantity: # New entry
                     pos['entry_time'] = self._get_current_time()
                     pos['opener_strategy_id'] = getattr(event, 'strategy_id', 'Unknown')
                     pos['ml_confidence'] = (getattr(event, 'metadata', {}) or {}).get('ml_confidence', (getattr(event, 'metadata', {}) or {}).get('strength', 0.0))
+                    pos['trajectory_prediction'] = (getattr(event, 'metadata', {}) or {}).get('trajectory_prediction', None)
                     pos['tp_limit_placed'] = False
                     pos['tp_order_id'] = None
+                    # FORENSIC FIX: Reset watermarks on new trade to prevent instant TURBO_BE
+                    pos['high_water_mark'] = price
+                    pos['low_water_mark'] = price
                     self._bind_cognitive_anchor(event.symbol, pos)
                     
                     # 🚀 TELEGRAM NOTIFICATION: Handled by log_trade_report() → send_trade_open()
@@ -1454,7 +1489,15 @@ class Portfolio:
                 'pnl': pnl_realized if pnl_realized is not None else 0.0,  # FORENSIC-V21 FIX #1
                 'commission': estimated_fee
             }
+            meta = getattr(event, 'metadata', {}) or {}
+            is_close = getattr(event, 'is_close', False) or getattr(event, 'is_exit', False) or meta.get('is_close', False) or meta.get('is_exit', False)
+            direction_val = event.direction.name if hasattr(event.direction, 'name') else str(event.direction)
             
+            if is_close:
+                pos_side = 'LONG' if direction_val == 'SELL' else 'SHORT'
+            else:
+                pos_side = 'LONG' if direction_val == 'BUY' else 'SHORT'
+
             v_key = f"{event.symbol}_{getattr(event, 'horizon', 'SCALPING')}_{pos_side}"
             v_pos = self.virtual_ledger.get(v_key, {})
             position_payload = {

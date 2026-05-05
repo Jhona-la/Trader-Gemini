@@ -55,6 +55,9 @@ class CooldownManager:
         self.last_pattern_trade: Dict[str, datetime] = {}
         self.last_strategy_trade: Dict[str, datetime] = {}
         
+        # Virtual clock for backtests (Phase 99: Parity Fix)
+        self._virtual_now: Optional[datetime] = None
+        
         # Thread safety
         self._state_lock = threading.RLock()
         
@@ -63,17 +66,30 @@ class CooldownManager:
         
         self._initialized = True
     
+    def set_virtual_time(self, time: datetime):
+        """Set the virtual clock for backtesting (deterministico)"""
+        with self._state_lock:
+            self._virtual_now = time
+
+    def _get_now(self) -> datetime:
+        """Get current time (virtual or real)"""
+        if self._virtual_now:
+            return self._virtual_now
+        return datetime.now(timezone.utc)
+
+    
     def can_trade_global(self) -> bool:
         """Check global cooldown (fastest check)"""
         with self._state_lock:
             if self.last_global_trade is None:
                 return True
             
-            elapsed = (datetime.now(timezone.utc) - self.last_global_trade).total_seconds()
+            elapsed = (self._get_now() - self.last_global_trade).total_seconds()
             if elapsed < self.GLOBAL_COOLDOWN:
                 self.blocked_count['global'] += 1
                 return False
             return True
+
     
     def can_trade_symbol(self, symbol: str) -> bool:
         """Check symbol-specific cooldown"""
@@ -81,11 +97,12 @@ class CooldownManager:
             if symbol not in self.last_symbol_trade:
                 return True
             
-            elapsed = (datetime.now(timezone.utc) - self.last_symbol_trade[symbol]).total_seconds()
+            elapsed = (self._get_now() - self.last_symbol_trade[symbol]).total_seconds()
             if elapsed < self.SYMBOL_COOLDOWN:
                 self.blocked_count[f'symbol_{symbol}'] += 1
                 return False
             return True
+
     
     def can_trade_pattern(self, symbol: str, pattern: str) -> bool:
         """Check pattern-specific cooldown"""
@@ -94,11 +111,12 @@ class CooldownManager:
             if key not in self.last_pattern_trade:
                 return True
             
-            elapsed = (datetime.now(timezone.utc) - self.last_pattern_trade[key]).total_seconds()
+            elapsed = (self._get_now() - self.last_pattern_trade[key]).total_seconds()
             if elapsed < self.PATTERN_COOLDOWN:
                 self.blocked_count[f'pattern_{pattern}'] += 1
                 return False
             return True
+
     
     def can_trade_strategy(self, strategy_id: str) -> bool:
         """Check strategy-specific cooldown"""
@@ -106,11 +124,12 @@ class CooldownManager:
             if strategy_id not in self.last_strategy_trade:
                 return True
             
-            elapsed = (datetime.now(timezone.utc) - self.last_strategy_trade[strategy_id]).total_seconds()
+            elapsed = (self._get_now() - self.last_strategy_trade[strategy_id]).total_seconds()
             if elapsed < self.STRATEGY_COOLDOWN:
                 self.blocked_count[f'strategy_{strategy_id}'] += 1
                 return False
             return True
+
     
     def can_trade(self, symbol: str, pattern: Optional[str] = None, 
                   strategy_id: Optional[str] = None) -> tuple:
@@ -145,7 +164,8 @@ class CooldownManager:
                      strategy_id: Optional[str] = None):
         """Record that a trade was executed"""
         with self._state_lock:
-            now = datetime.now(timezone.utc)
+            now = self._get_now()
+
             
             # Update all levels
             self.last_global_trade = now
@@ -162,7 +182,7 @@ class CooldownManager:
                                pattern: Optional[str] = None) -> float:
         """Get remaining cooldown time in seconds"""
         with self._state_lock:
-            now = datetime.now(timezone.utc)
+            now = self._get_now()
             
             if level == 'global':
                 if self.last_global_trade is None:
@@ -190,6 +210,7 @@ class CooldownManager:
                 return max(0, self.STRATEGY_COOLDOWN - elapsed)
             
             return 0.0
+
     
     def adjust_cooldown(self, level: str, new_value: int):
         """Dynamically adjust cooldown durations"""
@@ -275,7 +296,7 @@ class CooldownManager:
             if not hasattr(self, 'custom_cooldowns'):
                  self.custom_cooldowns = {}
             
-            now = datetime.now(timezone.utc)
+            now = self._get_now()
             if key in self.custom_cooldowns:
                 last_time = self.custom_cooldowns[key]
                 elapsed = (now - last_time).total_seconds()
@@ -284,6 +305,7 @@ class CooldownManager:
             
             self.custom_cooldowns[key] = now
             return True
+
 
 
 # Singleton instance for global access

@@ -91,6 +91,13 @@ class SignalEvent(Event):
     predicted_magnitude: Optional[float] = None # Predicted move %
     predicted_duration: Optional[int] = None # Hold duration
     setup_type: Optional[str] = None # NEW: Granular setup (e.g. RSI_OVERSOLD, BREAKOUT)
+    
+    # 🧠 META-COORDINATOR (Trade Intent Metadata)
+    risk_score: float = 0.5            # 0.0 (Safe) to 1.0 (Risky)
+    liquidity_score: float = 0.5       # 0.0 (Illiquid) to 1.0 (Deep)
+    fee_tolerance: float = 0.5         # 0.0 (Strict limits only) to 1.0 (Market orders fine)
+    regime_compatibility: float = 0.5  # 0.0 (Contra-trend) to 1.0 (Trend aligned)
+    
     strategy_version: Optional[str] = "1.0.0" # Versioning for evolutionary tracking
     metadata: Optional[Dict[str, Any]] = None # Flexible metadata container
     

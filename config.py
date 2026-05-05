@@ -176,8 +176,8 @@ class Config(metaclass=EncryptedConfigMeta):
     }
 
     # === TRADING SETTINGS ===
-    TIMEFRAME = TimeFrame.M1  # M1 Timeframe (Microscalping)
-    MAX_SIGNAL_AGE = 60       # 60s for M1 timeframe to allow for fast execution
+    TIMEFRAME = TimeFrame.M5  # M5 Timeframe (Scalping P1 Fee Drag fix)
+    MAX_SIGNAL_AGE = 300      # 300s for M5 timeframe to allow for execution
     
     # MULTI-SYMBOL EXPANSION: Top Liquidity Assets for Scalping
     # Defaulting to all Futures Pairs (24 total)
@@ -310,8 +310,8 @@ class Config(metaclass=EncryptedConfigMeta):
         }
         
         SCALPING_PARAMS = {
-            'tp_pct': 0.0045,         # LEAN: 0.45% TP — más alcanzable en 5min, reduce zombies
-            'sl_pct': 0.0060,         # LEAN: 0.60% SL — R:R 0.75:1 pero WR 73.5% lo compensa
+            'tp_pct': 0.0010,         # FORENSIC-V71: 0.10% TP — ajustado a M1 empírico (3.5x ATR M1)
+            'sl_pct': 0.0015,         # FORENSIC-V71: 0.15% SL — ajustado a M1 empírico
             'rsi_period': 5,          # GOLDEN: RSI ultra-rápido
             'rsi_buy': 35,            # GOLDEN: Wider zone
             'rsi_sell': 65,           # GOLDEN: Wider zone

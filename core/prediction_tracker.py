@@ -52,7 +52,7 @@ from utils.logger import logger
 
 MAX_SIGNALS_PER_STRATEGY = 500   # Ring buffer size per strategy_id
 FORWARD_WINDOWS = [1, 3, 5, 10, 15, 30, 60, 120]  # Bars to measure accuracy
-MIN_SIGNALS_FOR_METRICS = 20     # Minimum signals before exposing metrics (reduced from 30 for micro-accounts)
+MIN_SIGNALS_FOR_METRICS = 100    # [P0 FIX] Minimum 100 signals before exposing metrics to avoid premature blocks
 DECAY_CLEANUP_BARS = 2000        # Clean signals older than this
 PERSIST_INTERVAL = 100           # Persist to JSON every N signals
 DEFAULT_CONFIDENCE = 1.0         # Neutral confidence when no data

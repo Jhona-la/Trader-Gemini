@@ -13,7 +13,18 @@ from risk.risk_manager import RiskManager
 from queue import Queue
 from datetime import datetime, timezone
 import numpy as np
+import pandas as pd
 import random
+
+Config.TELEGRAM_ENABLED = False
+Config.EMAIL_ENABLED = False
+Config.DISCORD_ENABLED = False
+
+# Silence Observability layer notifications (the real gate for Notifier)
+if hasattr(Config, 'Observability'):
+    Config.Observability.TELEGRAM_ENABLED = False
+    Config.Observability.DISCORD_ENABLED = False
+    Config.Observability.EMAIL_ENABLED = False
 
 random.seed(42)
 np.random.seed(42)
@@ -54,8 +65,19 @@ class SimpleExecutor:
     def __init__(self, seed=42):
         self._rng = random.Random(seed)
         self.fills = 0
+        self.current_bar_time = datetime.now(timezone.utc)  # Will be updated per epoch
     
     def execute(self, order, price):
+        # FORENSIC-V60 FIX: Ignore resting limit orders in naive backtest executor
+        # QUÉ: Prevent immediate market execution of resting TP limits.
+        # POR QUÉ: SimpleExecutor has no orderbook. When PREDICTIVE_TP was placed,
+        #   the executor immediately filled it at `price` (current market price),
+        #   closing the trade at breakeven/loss instantly.
+        # PARA QUÉ: Rely on risk_manager.py `check_stops` fallback to trigger
+        #   TAKE_PROFIT when price actually hits the target.
+        if getattr(order, 'strategy_id', '') in ('PREDICTIVE_TP', 'PLACE_TP_LIMIT', 'PLACE_SL_LIMIT'):
+            return None
+            
         slip = self._rng.uniform(0.0, 0.0002)
         if order.direction == OrderSide.BUY:
             fp = price * (1 + slip)
@@ -70,7 +92,7 @@ class SimpleExecutor:
         meta['actual_order_type'] = 'limit'
         
         return FillEvent(
-            timeindex=datetime.now(timezone.utc),
+            timeindex=self.current_bar_time,  # P2-FIX #9: Use candle timestamp, not wall-clock
             symbol=order.symbol,
             exchange='BT_DIAG',
             quantity=qty,
@@ -110,24 +132,84 @@ for epoch in range(total):
         if evt.type == EventType.MARKET:
             market_events.append(evt)
     
+    # P2-FIX #9: Track the bar timestamp for time-based logic fidelity
+    bar_time = pd.to_datetime(dp.current_time_ms, unit='ms', utc=True)
+    
     for evt in market_events:
         portfolio.update_market_price(evt.symbol, evt.close_price)
+
+    
+    if bar_time:
+        executor.current_bar_time = bar_time
     
     if epoch < warmup:
         continue
     
-    # Check stops
+    # Check stops with candle timestamp and intra-bar evaluation
     try:
-        stop_sigs = rm.check_stops(portfolio, dp)
-        if stop_sigs:
-            for sig in stop_sigs:
-                events_queue.put(sig)
-    except:
-        pass
+        for evt in market_events:
+            bar = dp.get_latest_bars(evt.symbol, n=1)
+            if bar is not None and len(bar) > 0:
+                # First check at adverse price (intra-bar worst case)
+                # --- INTRA-BAR ADVERSE PRICE (SL check) ---
+                for v_key, vpos in list(portfolio.virtual_ledger.items()):
+                    qty = vpos.get('quantity', 0)
+                    if abs(qty) < 1e-8:
+                        continue
+                    # FORENSIC-V50 FIX: Extract symbol correctly from v_key
+                    # v_key format: "BTC/USDT_SCALPING_LONG" → split by _SCALPING or _SWING
+                    pos_sym = v_key.split('_SCALPING')[0].split('_SWING')[0]
+                    if pos_sym != evt.symbol:
+                        continue
+                    if qty > 0:
+                        portfolio.update_market_price(evt.symbol, float(bar['low'][-1]))
+                    else:
+                        portfolio.update_market_price(evt.symbol, float(bar['high'][-1]))
+                
+                stop_sigs = rm.check_stops(portfolio, dp, symbol_filter=evt.symbol, now=bar_time)
+                if stop_sigs:
+                    for sig in stop_sigs:
+                        events_queue.put(sig)
+                
+                # --- INTRA-BAR FAVORABLE PRICE (TP check) ---
+                for v_key, vpos in list(portfolio.virtual_ledger.items()):
+                    qty = vpos.get('quantity', 0)
+                    if abs(qty) < 1e-8:
+                        continue
+                    pos_sym = v_key.split('_SCALPING')[0].split('_SWING')[0]
+                    if pos_sym != evt.symbol:
+                        continue
+                    if qty > 0:
+                        portfolio.update_market_price(evt.symbol, float(bar['high'][-1]))
+                    else:
+                        portfolio.update_market_price(evt.symbol, float(bar['low'][-1]))
+                
+                stop_sigs = rm.check_stops(portfolio, dp, symbol_filter=evt.symbol, now=bar_time)
+                if stop_sigs:
+                    for sig in stop_sigs:
+                        events_queue.put(sig)
+                
+                # Restore close price
+                portfolio.update_market_price(evt.symbol, evt.close_price)
+            
+            # Also check at close
+            stop_sigs = rm.check_stops(portfolio, dp, symbol_filter=evt.symbol, now=bar_time)
+            if stop_sigs:
+                for sig in stop_sigs:
+                    events_queue.put(sig)
+    except Exception as e:
+        print(f"[WARN] check_stops error: {e}")
+
+
     
-    # Run technical strategy
+    # Run technical strategy with proper timestamp
     try:
-        tech.generate_signals()
+        class DummyEvent:
+            pass
+        dummy = DummyEvent()
+        if bar_time:
+            dummy.timestamp = bar_time
+        tech.generate_signals(event=dummy)
     except:
         pass
     
@@ -146,7 +228,10 @@ for epoch in range(total):
             try:
                 with contextlib.redirect_stdout(capture):
                     order = rm.generate_order(evt, price)
-            except:
+            except Exception as e:
+                import traceback
+                print(f"[FATAL ERROR] generate_order threw exception: {e}")
+                traceback.print_exc()
                 order = None
             
             if order is None:
@@ -225,12 +310,21 @@ if portfolio.trade_history:
     losses = sum(1 for t in portfolio.trade_history if t['net_pnl'] <= 0)
     total_trades = len(portfolio.trade_history)
     wr = wins / total_trades * 100 if total_trades > 0 else 0
-    print(f"\n  TRADE BREAKDOWN:")
-    print(f"    Total: {total_trades} | Wins: {wins} | Losses: {losses} | WR: {wr:.1f}%")
     total_pnl = sum(t['net_pnl'] for t in portfolio.trade_history)
     total_fees = sum(t['fees_paid'] for t in portfolio.trade_history)
+    
+    print(f"\n  TRADE BREAKDOWN:")
+    print(f"    Total: {total_trades} | Wins: {wins} | Losses: {losses} | WR: {wr:.1f}%")
     print(f"    Net PnL: ${total_pnl:.4f} | Fees: ${total_fees:.4f}")
-    for t in portfolio.trade_history[:5]:
-        print(f"    {t['symbol']} {t['direction']} | Net: ${t['net_pnl']:.4f} | Dur: {t['duration_seconds']}s | Exit: {t['exit_reason']}")
+    
+    # Aggregate exit reasons
+    exit_counts = {}
+    for t in portfolio.trade_history:
+        reason = t.get('exit_reason', 'UNKNOWN')
+        exit_counts[reason] = exit_counts.get(reason, 0) + 1
+        
+    print(f"    EXIT REASONS:")
+    for reason, count in sorted(exit_counts.items(), key=lambda x: x[1], reverse=True):
+        print(f"      {reason}: {count}")
 
 print(f"{'='*60}")

@@ -4,6 +4,7 @@ Coordinates data, strategies, risk, and execution with enhanced validation and r
 """
 
 from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
+from core.symbol_state_matrix import symbol_state_matrix
 import os
 import asyncio
 import time
@@ -166,6 +167,28 @@ class Engine:
             except Exception as e:
                 logger.warning(f"⚠️ [SOPHIA-GLOBAL] Failed to init: {e}")
                 self.sophia_intelligence = None
+                
+        # 🔭 AITS SHADOW BRIDGE (Read-Only Mode)
+        self.shadow_bridge = None
+        try:
+            from aits_research.shadow_bridge import ShadowBridge
+            self.shadow_bridge = ShadowBridge()
+            logger.info("🔭 [SHADOW] AITS Shadow Bridge initialized in Engine.")
+        except ImportError:
+            logger.warning("⚠️ [SHADOW] aits_research.shadow_bridge not found. Shadow mode disabled.")
+        except Exception as e:
+            logger.warning(f"⚠️ [SHADOW] Failed to init Shadow Bridge: {e}")
+            
+        # 🌌 PHASE 9: OMEGA PROTOCOL
+        self.omega_protocol = None
+        try:
+            from core.omega_protocol import OmegaProtocolManager
+            self.omega_protocol = OmegaProtocolManager()
+            logger.info("🌌 [OMEGA] Protocol Manager initialized in Engine.")
+        except ImportError:
+            logger.warning("⚠️ [OMEGA] core.omega_protocol not found. Omega Protocol disabled.")
+        except Exception as e:
+            logger.warning(f"⚠️ [OMEGA] Failed to init Omega Protocol: {e}")
         
         # 🧟 PHASE 2 ZOMBIES
         self.correlation_manager = None
@@ -254,6 +277,14 @@ class Engine:
 
     async def start(self):
         """Main event loop - 100% AsyncIO-Driven"""
+        # 🧠 Supreme Meta-Coordinator
+        try:
+            from core.meta_arbitrator import meta_arbitrator
+            meta_arbitrator.start()
+            asyncio.create_task(self._drain_meta_arbitrator())
+        except Exception as e:
+            logger.error(f"Failed to start Meta-Arbitrator: {e}")
+            
         # AEGIS-ULTRA: Core Pinning (Phase 5)
         if Config.Aegis.CORE_PINNING and psutil:
             try:
@@ -466,6 +497,9 @@ class Engine:
     async def _process_market_event(self, event: MarketEvent) -> None:
         """Process MARKET event asynchronously"""
         
+        # 0. Supreme Meta-Coordinator: Update Symbol State Matrix
+        symbol_state_matrix.update_from_market_event(event)
+        
         # 1. Efficient Portfolio Update (Active symbols only)
         if event.symbol and event.close_price and self.portfolio:
              self.portfolio.update_market_price(event.symbol, event.close_price)
@@ -598,6 +632,13 @@ class Engine:
                         derivatives = dh.get_derivatives_metrics(event.symbol)
                         oi_delta = derivatives.get('oi_delta_15m', 0.0)
                         
+                    # 🌌 OMEGA PROTOCOL ECOSYSTEM CHECK
+                    if getattr(self, 'omega_protocol', None):
+                        # Simulating OFI and Liquidation metrics locally
+                        local_ofi = oi_delta # Using OI delta as a proxy for POC
+                        local_liq = 0.0 # Could be fetched from DH if available
+                        self.omega_protocol.assess_ecosystem_health(event.symbol, local_ofi, local_liq)
+                        
                     from core.market_regime import MarketRegimeDetector
                     # Create temporary detector instance strictly for metric check (lightweight)
                     temp_regime = MarketRegimeDetector()
@@ -648,9 +689,67 @@ class Engine:
         if not self._sophia_veto_filter(event):
             self.metrics['discarded_events'] += 1
             return
+            
+        # 🌌 OMEGA PROTOCOL VETO
+        if getattr(self, 'omega_protocol', None):
+            sig_dict = {
+                "symbol": getattr(event, 'symbol', 'UNKNOWN'),
+                "horizon": getattr(event, 'horizon', 'SCALPING')
+            }
+            if self.omega_protocol.should_veto_signal(sig_dict):
+                self.metrics['discarded_events'] += 1
+                return
+
+        # 🧠 META-COORDINATOR INJECTION
+        # Instead of directly processing through the RiskManager, we submit this to the Supreme Arbitrator
+        # for conflict resolution, portfolio checks, and global context weighing.
+        try:
+            from core.meta_arbitrator import meta_arbitrator
+            await meta_arbitrator.submit_intent(event)
+            logger.debug(f"📥 [ENGINE] Intent {event.symbol} passed to Meta-Arbitrator.")
+        except Exception as e:
+            logger.error(f"Meta-Arbitrator Submit Error: {e}")
+            self.metrics['errors'] += 1
+
+    async def _drain_meta_arbitrator(self):
+        """Background task that continuously processes approved intents from the Meta-Arbitrator."""
+        try:
+            from core.meta_arbitrator import meta_arbitrator
+            while self.running:
+                approved_intent = await meta_arbitrator.get_approved_intent()
+                await self._execute_approved_intent(approved_intent)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Meta-Arbitrator Drain Error: {e}")
+
+    async def _execute_approved_intent(self, event):
+        """Processes intents that have survived the Meta-Arbitrator conflict resolution."""
+        current_price = self._get_validated_price(event.symbol)
+        if not current_price: return
         
         if self.risk_manager:
-            logger.info(f"🛡️ [ENGINE] Handing signal to RiskManager for {event.symbol}")
+            logger.info(f"🛡️ [ENGINE] Handing APPROVED intent to RiskManager for {event.symbol}")
+            
+            # 🔭 AITS SHADOW BRIDGE OBSERVATION
+            if getattr(self, 'shadow_bridge', None):
+                try:
+                    sig_dict = {
+                        "symbol": event.symbol,
+                        "side": "BUY" if "LONG" in str(event.signal_type) else ("SELL" if "SHORT" in str(event.signal_type) else "EXIT"),
+                        "quantity": getattr(event, 'suggested_quantity', 0.0),
+                        "price": current_price,
+                        "confidence": getattr(event, 'confidence', 0.0),
+                        "horizon": getattr(event, 'horizon', 'SCALPING')
+                    }
+                    acct_state = {"total_capital": 13.0, "equity": 13.0, "open_positions": 0}
+                    if self.portfolio:
+                        acct_state["equity"] = getattr(self.portfolio, 'total_equity', 13.0)
+                        acct_state["open_positions"] = len(getattr(self.portfolio, 'positions', {})) + len(getattr(self.portfolio, 'virtual_ledger', {}))
+                    self.shadow_bridge.observe(sig_dict, acct_state)
+                except Exception as e:
+                    logger.error(f"[SHADOW] Observation error: {e}")
+                    
             order_event = self.risk_manager.generate_order(event, current_price)
             if order_event:
                 logger.info(f"🚀 [ENGINE] Order Generated by RiskManager for {event.symbol}: {order_event.quantity} {order_event.side}")
@@ -665,11 +764,6 @@ class Engine:
                      strat_id = getattr(event, 'strategy_id', 'Strategy')
                      get_interaction_monitor().log_interaction(
                          source=strat_id, 
-                         target="RiskManager", 
-                         action="place_order", 
-                         result="rejected",
-                         metadata={"symbol": event.symbol, "price": current_price}
-                     )
                  except Exception:
                      pass
 
@@ -698,6 +792,14 @@ class Engine:
                 else:
                     pnl = result
                     trade_outcome = 1.0 if pnl > 0 else 0.0 # Fallback for old strategies
+                    
+                # 🔭 AITS SHADOW BRIDGE OUTCOME UPDATE
+                if getattr(self, 'shadow_bridge', None):
+                    try:
+                        out_str = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "FLAT")
+                        self.shadow_bridge.update_outcome(event.symbol, out_str, pnl)
+                    except Exception:
+                        pass
 
                 for strategy in self.strategies:
                     # Filtramos por símbolo para asegurar que actualizamos la instancia correcta

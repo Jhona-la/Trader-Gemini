@@ -232,9 +232,14 @@ class KillSwitch:
             logger.warning("   Engine should check kill_switch.active and handle shutdown.")
 
     def check_atomic_lock(self):
+        if os.environ.get("TRADER_GEMINI_BACKTEST") == "true":
+            return False
         return os.path.exists(self.LOCK_FILE)
 
     def _create_atomic_lock(self, reason):
+        if os.environ.get("TRADER_GEMINI_BACKTEST") == "true":
+            logger.warning(f"🔒 [BACKTEST] Skipped creating Atomic Lock file: {self.LOCK_FILE}")
+            return
         try:
             with open(self.LOCK_FILE, "w") as f:
                 f.write(f"KILLED AT {time.time()}\nREASON: {reason}\n")

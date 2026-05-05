@@ -63,11 +63,15 @@ class AutoCorrectionEngine:
         """Aumenta dinámicamente el TARGET mínimo de Take Profit para sobrevivir comisiones."""
         # Modificar el parámetro real en SCALPING_PARAMS
         current_tp = Config.Strategies.SCALPING_PARAMS.get('tp_pct', 0.0045)
-        new_tp = current_tp * 1.25 # Aumento geométrico del 25% para separarnos del piso de fees
+        # FORENSIC-V60 FIX: Reduced multiplier from 1.25x to 1.10x
+        # QUÉ: 1.25x geometric increase was pushing TP to 1.50% in ~5 iterations.
+        # POR QUÉ: BTC 5m candles rarely reach 1.50% without retracing.
+        # PARA QUÉ: Keep TP within achievable range (max 0.30%) for M5 scalping.
+        new_tp = current_tp * 1.10  # Conservative 10% increase
         
-        # Max cap para evitar TP inalcanzables en scalping (max 1.5%)
-        if new_tp > 0.015:
-            new_tp = 0.015
+        # FORENSIC-V60: Cap at 0.30% instead of 1.50%
+        if new_tp > 0.003:
+            new_tp = 0.003
             
         Config.Strategies.SCALPING_PARAMS['tp_pct'] = new_tp
         return f"Increased SCALPING_PARAMS['tp_pct'] to {new_tp*100:.2f}% to compensate for fee drag."
@@ -75,9 +79,15 @@ class AutoCorrectionEngine:
     def correct_frequent_small_losses(self, issue: Dict[str, Any]) -> str:
         """Reduce leverage temporalmente ante racha negativa."""
         current_lev = getattr(Config.Risk, 'BASE_LEVERAGE', 10)
-        new_lev = max(1, current_lev // 2)
+        # FORENSIC-V60 FIX: Floor at 3x instead of 1x
+        # QUÉ: At 1x leverage with $13 capital, position size is ~$1.30 notional.
+        # POR QUÉ: At $1.30 notional, the 0.02% maker fee ($0.00026) is nearly
+        #   the same magnitude as the expected PnL from a 0.20% move ($0.0026).
+        #   This makes it mathematically impossible to overcome the fee floor.
+        # PARA QUÉ: Keep leverage >= 3x so position sizes generate meaningful PnL.
+        new_lev = max(3, current_lev // 2)
         setattr(Config.Risk, 'BASE_LEVERAGE', new_lev)
-        return f"Reduced BASE_LEVERAGE drastically to {new_lev}x due to loss streak."
+        return f"Reduced BASE_LEVERAGE to {new_lev}x due to loss streak."
 
     def correct_strategy_conflict(self, issue: Dict[str, Any]) -> str:
         """Desactiva temporalmente el override de Risk para resetear el loop."""

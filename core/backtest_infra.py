@@ -254,6 +254,15 @@ class BacktestDataProvider(DataProvider):
         """Mock HFT indicators for backtest compatibility."""
         return {}
 
+    def get_orderbook(self, symbol: str):
+        """
+        Mock orderbook for backtest compatibility.
+        QUÉ: Retorna None porque el backtest no tiene L2 data real.
+        POR QUÉ: DataProvider ABC requiere esta implementación desde Phase 7.
+        PARA QUÉ: Evitar TypeError al instanciar BacktestDataProvider.
+        """
+        return None
+
     def update_bars(self):
         """
         v2.0: Avanza al siguiente epoch global y emite MarketEvents para

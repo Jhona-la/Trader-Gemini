@@ -165,6 +165,15 @@ class MarketRegimeDetector:
             logger.error(f"Regime Error {symbol}: {e}")
             return self.last_regime.get(symbol, 'RANGING')
 
+    def get_current_regime(self, symbol=None) -> str:
+        """
+        Devuelve el régimen actual almacenado.
+        Utilizado extensivamente por estrategias.
+        """
+        if symbol and symbol in self.last_regime:
+            return self.last_regime[symbol]
+        return self.global_regime
+
     def _detect_single_scale_regime(self, bars) -> str:
         """
         Helper para detectar el régimen en una sola escala temporal.

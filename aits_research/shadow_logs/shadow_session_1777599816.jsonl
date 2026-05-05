@@ -1,0 +1,5 @@
+{"ts": 1777599816.32453, "sym": "BTCUSDT", "side": "BUY", "conf": 0.8, "verdict": "PASS", "algo": "LIMIT_MAKER", "outcome": "WIN", "pnl": 0.05}
+{"ts": 1777599816.329667, "sym": "ETHUSDT", "side": "SELL", "conf": 0.4, "verdict": "BLOCK", "algo": "N/A", "outcome": "LOSS", "pnl": -0.03}
+{"ts": 1777599816.3318498, "sym": "SOLUSDT", "side": "BUY", "conf": 0.72, "verdict": "PASS", "algo": "TWAP", "outcome": "WIN", "pnl": 0.05}
+{"ts": 1777599816.3338344, "sym": "BTCUSDT", "side": "SELL", "conf": 0.65, "verdict": "PASS", "algo": "TWAP", "outcome": "LOSS", "pnl": -0.03}
+{"ts": 1777599816.3378778, "sym": "DOGEUSDT", "side": "BUY", "conf": 0.58, "verdict": "BLOCK", "algo": "N/A", "outcome": "WIN", "pnl": 0.05}

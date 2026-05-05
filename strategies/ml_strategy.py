@@ -339,6 +339,20 @@ class MLStrategyHybridUltimate(Strategy):
         self.xgb_model = None
         self.gb_model = None
         self.scaler = StandardScaler()
+        
+        # 🧠 PHASE 8: PETIM INTEGRATION
+        try:
+            from ml.petim_model import GeometryPredictor
+            self.petim_predictor = GeometryPredictor(self.symbol, timeframe="1m")
+            petim_dir = os.path.join(getattr(Config, "BASE_DIR", "."), "models", "petim")
+            if self.petim_predictor.load(petim_dir):
+                logger.info(f"🚀 [PETIM] Multi-Task Predictor Loaded for {self.symbol}")
+            else:
+                logger.warning(f"⚠️ [PETIM] Models not found for {self.symbol}, running without PETIM")
+                self.petim_predictor = None
+        except Exception as e:
+            logger.error(f"Failed to init PETIM: {e}")
+            self.petim_predictor = None
 
         # Pesos base para crecimiento agresivo
         self.base_rf_weight = 0.45
@@ -2314,7 +2328,7 @@ class MLStrategyHybridUltimate(Strategy):
                 sophia_report = self.sophia.analyze(
                     symbol=self.symbol,
                     direction=signal_type.name,
-                    signal_strength=confidence,
+                    signal_strength=confidence, ml_confidence=confidence,
                     setups={"xai_reason": xai_explanation},
                     confluence_score=confluence,
                     tp_pct=tp_target,
@@ -2339,7 +2353,7 @@ class MLStrategyHybridUltimate(Strategy):
                 symbol=self.symbol,
                 datetime=datetime.now(timezone.utc),
                 signal_type=signal_type,
-                strength=confidence,
+                strength=confidence, ml_confidence=confidence,
                 atr=current_row["atr"],  # FIXED: Use current_row
                 tp_pct=tp_target,
                 sl_pct=sl_target,
@@ -2651,13 +2665,26 @@ class MLStrategyHybridUltimate(Strategy):
 
                 # B4 FIX: Only scale if we have a non-tree model that needs it
                 # Tree models (RF, XGB, GB) are ALL scale-invariant
-                has_non_tree_model = False  # All our models are tree-based
+                has_non_tree_model = False
                 if (
                     has_non_tree_model
                     and self.scaler is not None
                     and hasattr(self.scaler, "scale_")
                 ):
                     X = self.scaler.transform(X)
+                    
+                # 🧠 PHASE 8: PETIM INFERENCE
+                self._latest_petim_prediction = None
+                if getattr(self, "petim_predictor", None):
+                    try:
+                        # Extract exact features expected by PETIM
+                        petim_feats = self.petim_predictor.features
+                        valid_petim_cols = [c for c in petim_feats if c in df.columns]
+                        if len(valid_petim_cols) == len(petim_feats):
+                            X_petim = df[valid_petim_cols].iloc[[-1]].values
+                            self._latest_petim_prediction = self.petim_predictor.predict(X_petim)
+                    except Exception as e:
+                        logger.error(f"PETIM Inference Error: {e}")
             else:
                 return
 
@@ -3090,6 +3117,10 @@ class MLStrategyHybridUltimate(Strategy):
                     else -0.015,
                 }
                 
+                # 🧠 INJECT PETIM PREDICTION INTO SIGNAL METADATA
+                if getattr(self, "_latest_petim_prediction", None):
+                    metadata['trajectory_prediction'] = self._latest_petim_prediction
+                
                 if signal_type == SignalType.EXIT:
                     metadata['urgent'] = False
                     metadata['actual_order_type'] = 'limit'
@@ -3102,7 +3133,7 @@ class MLStrategyHybridUltimate(Strategy):
                     symbol=self.symbol,
                     datetime=datetime.now(timezone.utc),
                     signal_type=signal_type,
-                    strength=confidence,
+                    strength=confidence, ml_confidence=confidence,
                     current_price=results.get("price", 0),
                     tp_pct=getattr(self, "current_tp_target", 0.004),
                     sl_pct=getattr(self, "current_sl_target", 0.002),
@@ -4261,7 +4292,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                             signal_type=SignalType.LONG
                             if direction == 1
                             else SignalType.SHORT,
-                            strength=final_confidence,
+                            strength=final_confidence, ml_confidence=final_confidence,
                             current_price=bars[-1]["close"],
                             sl_pct=0.005,
                             tp_pct=0.015,
@@ -4604,7 +4635,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                                     symbol=self.symbol,
                                     datetime=datetime.now(timezone.utc),
                                     signal_type=SignalType.EXIT,
-                                    strength=final_confidence,
+                                    strength=final_confidence, ml_confidence=final_confidence,
                                     current_price=current_row["close"],
                                     horizon=getattr(self, 'horizon', 'SCALPING'),
                                     metadata={'urgent': False, 'actual_order_type': 'limit', 'is_tp_limit': True},
@@ -4624,7 +4655,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                                     symbol=self.symbol,
                                     datetime=datetime.now(timezone.utc),
                                     signal_type=SignalType.EXIT,
-                                    strength=final_confidence,
+                                    strength=final_confidence, ml_confidence=final_confidence,
                                     current_price=current_row["close"],
                                     horizon=getattr(self, 'horizon', 'SCALPING'),
                                     metadata={'urgent': False, 'actual_order_type': 'limit', 'is_tp_limit': True},
@@ -4667,6 +4698,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                         direction=signal_type.name,
                         signal_strength=final_confidence,
                         setups={
+
                             "source": "UNIVERSAL_ENSEMBLE",
                             "rsi": current_row.get("rsi_14", current_row.get("rsi", 50.0)),
                             "bb_position": current_row.get("bb_position", 0.5),
@@ -4754,13 +4786,12 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                 symbol=self.symbol,
                 datetime=datetime.now(timezone.utc),
                 signal_type=signal_type,
-                strength=final_confidence,
+                strength=final_confidence, ml_confidence=final_confidence,
                 atr=current_row["atr"],
                 tp_pct=tp_target,
                 sl_pct=sl_target,
                 current_price=current_row["close"],
                 horizon=getattr(self, "horizon", "SCALPING"),
-                ml_confidence=final_confidence,
                 predicted_magnitude=tp_target,
                 predicted_duration=self.LOOKAHEAD_BARS,
                 metadata=ppo_metadata,

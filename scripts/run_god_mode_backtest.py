@@ -65,6 +65,14 @@ warnings.filterwarnings("ignore", category=UserWarning)
 from config import Config
 from utils.notifier import Notifier
 
+# FORENSIC LOGGING CONFIGURATION
+forensic_logger = logging.getLogger("ForensicAuditor")
+forensic_logger.setLevel(logging.DEBUG)
+if not forensic_logger.handlers:
+    fh = logging.FileHandler("forensic_audit.log")
+    fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    forensic_logger.addHandler(fh)
+
 # ═══════════════════════════════════════════════════════════════════════
 # FORENSIC-V41: SMART NOTIFICATION MANAGEMENT FOR BACKTEST
 # QUÉ: Mantiene Telegram ACTIVO para mensajes de sistema (startup,
@@ -83,6 +91,7 @@ from utils.notifier import Notifier
 from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
 from core.enums import EventType, SignalType, OrderSide, OrderType
 from core.api_manager import APIManager
+from core.meta_arbitrator import meta_arbitrator
 
 # ─── GET REAL PRODUCTION BALANCE ───
 api_mgr = APIManager()
@@ -104,16 +113,21 @@ from core.portfolio import Portfolio
 # ─── PRODUCTION RISK MANAGER (THE REAL ONE) ───
 from risk.risk_manager import RiskManager
 
+# ─── PRODUCTION META-ARBITRATOR ───
+from core.meta_arbitrator import meta_arbitrator
+
 # ─── PRODUCTION STRATEGIES (THE REAL ONES) ───
 from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy
 from strategies.sniper_strategy import SniperStrategy
 from strategies.statistical import StatisticalStrategy
 
-# MOCK COOLDOWN MANAGER FOR BACKTEST
-# CooldownManager uses real datetime.now() which completely blocks backtests.
+# ─── COOLDOWN MANAGER (PARITY FIX) ───
+# QUÉ: Restaurado el CooldownManager real.
+# POR QUÉ: Antes se mockeaba (lambda: True), lo que causaba spam de señales.
+#   Ahora usa set_virtual_time() para ser determinista en backtest.
 from utils.cooldown_manager import cooldown_manager
-cooldown_manager.check_custom_cooldown = lambda *args, **kwargs: True
-cooldown_manager.can_trade = lambda *args, **kwargs: (True, 0.0)
+# No more mocking!
+
 
 # ─── BACKTEST INFRASTRUCTURE ───
 from core.backtest_infra import (
@@ -298,7 +312,8 @@ class BacktestExecutor:
 
 
 def run_global_backtest(
-    all_data, symbols, days, initial_capital=None, verbose=True, seed=42
+    all_data, symbols, days, initial_capital=None, verbose=True, seed=42,
+    scenario="A", isolated_strategy=None
 ):
     """
     MOTOR DE BACKTEST GLOBAL SINCRONIZADO — PRODUCTION-PARITY.
@@ -368,7 +383,36 @@ def run_global_backtest(
     print(f"   Fee: {COMMISSION_PCT * 100:.4f}% per side")
     print(f"   EXIT ENGINE: RiskManager.check_stops() ONLY (Portfolio audit-only)")
     print(f"   MODE: PRODUCTION-PARITY (uses real Portfolio + RiskManager)")
+    print(f"   SCENARIO: {scenario} | Isolated Strategy: {isolated_strategy or 'None'}")
     print(f"{'=' * 70}\n")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # FORENSIC AUDIT: ALPHA LEAK TRACKING STRUCTURES
+    # QUÉ: Contadores acumulados para medir exactamente dónde se pierde alpha.
+    # POR QUÉ: Sin esta contabilidad, no podemos aislar si perdemos por
+    #   slippage, comisiones, exits prematuros, o conflictos de arbitraje.
+    # ═══════════════════════════════════════════════════════════════════
+    alpha_leak = {
+        "gross_alpha": 0.0,          # PnL ideal (sin fees, sin slippage)
+        "slippage_loss": 0.0,        # Delta negativo por deslizamiento de precio
+        "fee_loss": 0.0,             # Comisiones pagadas
+        "premature_exit_loss": 0.0,  # PnL dejado en la mesa por exits reactivos
+        "conflict_loss": 0.0,        # Costo de oportunidad de señales vetadas
+        "net_alpha": 0.0,            # Alpha neto final
+    }
+    # Per-trade MFE/MAE tracker: {trade_id: {entry_price, mfe, mae, exit_price, pnl}}
+    mfe_mae_tracker = {}
+    # Per-strategy attribution: {strategy_id: {wins, losses, gross_pnl, net_pnl}}
+    strategy_attribution = {}
+    # Per-symbol attribution: {symbol: {wins, losses, gross_pnl, net_pnl, fees}}
+    symbol_attribution = {}
+    # Conflict log: [{epoch, symbol, winner, losers, regime}]
+    conflict_log = []
+    # Scenario flags
+    scenario_disable_reactive_exits = scenario == "B"
+    scenario_force_market = scenario == "C"
+    scenario_ideal_execution = scenario == "D"
+    scenario_isolate_strategy = scenario == "E"
 
     # ═══════════════════════════════════════════════════════════════════════
     # FORENSIC-V42 FIX: PREVENT CONFIG CONTAMINATION
@@ -1036,8 +1080,13 @@ def run_global_backtest(
     
             # ── Phase B: Process Market Events (prices, exits, strategies) ──
             for event in market_events:
+                # 🏁 SYNC VIRTUAL TIME (Phase 99: Parity Fix)
+                # QUÉ: Sincroniza el reloj del CooldownManager con el tiempo del backtest.
+                cooldown_manager.set_virtual_time(event.timestamp)
+                
                 symbol = event.symbol
                 close_price = event.close_price
+
     
                 if not close_price or close_price <= 0:
                     continue
@@ -1255,6 +1304,7 @@ def run_global_backtest(
             # This mirrors Engine._process_signal_event() in production.
             _max_signal_iterations = 50  # Prevent infinite loops
             _iter = 0
+            epoch_intents = []
             while not events_queue.empty() and _iter < _max_signal_iterations:
                 _iter += 1
                 event = events_queue.get()
@@ -1319,202 +1369,307 @@ def run_global_backtest(
                         except Exception:
                             pass
     
-                    # ── PRODUCTION RISK MANAGER: generate_order() ──
-                    # This does ALL the validations from production:
-                    # ═══════════════════════════════════════════════════════════
-                    # FIX-V10-3: GRANULAR REJECTION TRACKING via stdout capture
-                    # QUÉ: Captura el print de generate_order para saber EXACTAMENTE
-                    #   qué filtro rechazó (Kill Switch, Frequency, Regime, etc.).
-                    # POR QUÉ: Antes solo registrábamos "RISK_GATE:SYMBOL" genérico.
-                    # PARA QUÉ: Diagnóstico forense preciso por filtro.
-                    # ═══════════════════════════════════════════════════════════
-                    _f_capture = io.StringIO()
-                    try:
-                        with contextlib.redirect_stdout(_f_capture):
-                            order = risk_manager.generate_order(event, current_price)
-                    except Exception as e:
-                        order = None
-                        # Use the exception message directly
-                        _exception_msg = f"EXCEPTION:{type(e).__name__}:{str(e)}"
-                        reason = _exception_msg
-                        rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
-                        print(f"⚠️ [RISK] Signal REJECTED: {_exception_msg}")
-                        # Skip the next block since we already handled the rejection
-                        continue
-    
-                    if order is None:
-                        rejected_count += 1
-                        # Extract specific rejection reason from stdout
-                        _captured = _f_capture.getvalue()
-                        _specific_reason = None
-                        for _line in _captured.strip().split("\n"):
-                            if "[RISK] Rejected by" in _line:
-                                _specific_reason = _line.strip()
-                                break
-                        if _specific_reason:
-                            rejection_reasons[_specific_reason] = (
-                                rejection_reasons.get(_specific_reason, 0) + 1
-                            )
-                            print(f"⚠️ [RISK] Signal REJECTED: {_specific_reason}")
-                        else:
-                            reason = f"RISK_GATE_UNKNOWN:{getattr(event, 'symbol', '?')}"
-                            rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
-                            print(
-                                f"⚠️ [RISK] Signal REJECTED: {reason}\nSTDOUT: {_f_capture.getvalue()}"
-                            )
-                        continue
-    
-                    order_count += 1
-    
-                    # ═══════════════════════════════════════════════════════════════
-                    # DIGITAL TWIN V100: ORDER MANAGER CHAOS (LATENCY & SLIPPAGE)
-                    # ═══════════════════════════════════════════════════════════════
-                    if order_manager:
-                        # 1. Emulate Rate Limits (Binance -2015 / -1003)
-                        # If more than 3 orders in the last 10 epochs, reject
-                        _recent_orders = getattr(order_manager, "_bt_recent_orders", [])
-                        _recent_orders = [e for e in _recent_orders if epoch_count - e < 10]
-                        if len(_recent_orders) >= 3:
-                            rejected_count += 1
-                            reason = "BINANCE_RATE_LIMIT_429"
-                            rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
-                            print(f"  ⚠️ [CHAOS] OrderManager rejected {event.symbol} due to Rate Limits (Too Many Requests)")
-                            continue
-                        _recent_orders.append(epoch_count)
-                        order_manager._bt_recent_orders = _recent_orders
-
-                        # 2. Emulate Slippage based on real-world execution delay
-                        # 0.01% to 0.05% slippage applied against the order side
-                        _slip_pct = random.uniform(0.0001, 0.0005)
-                        if order.side.name == "BUY":
-                            current_price = current_price * (1 + _slip_pct)
-                        else:
-                            current_price = current_price * (1 - _slip_pct)
-
-                    # ── EXECUTE ORDER → FillEvent ──
-                    fill = executor.execute_order(order, current_price)
-                    if fill is None:
-                        rejected_count += 1
-                        reason = "EXECUTOR_REJECT"
-                        rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
-    
-                        # 🚀 AEGIS-V15: ATOMIC METADATA RELEASE
-                        # QUÉ: Usar el valor exacto reservado en RiskManager.
-                        try:
-                            order_id = order.metadata.get("client_order_id") if order.metadata else None
-                            reserved = (
-                                order.metadata.get("dollar_size")
-                                if order.metadata
-                                else None
-                            )
-                            if reserved:
-                                portfolio.release_order_margin(amount=reserved, order_id=order_id)
-                            else:
-                                # Fallback using dynamic leverage from order
-                                lev = (
-                                    getattr(order, "leverage", Config.BINANCE_LEVERAGE)
-                                    or Config.BINANCE_LEVERAGE
-                                )
-                                portfolio.release_order_margin(
-                                    amount=order.quantity * current_price / lev,
-                                    order_id=order_id
-                                )
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to release margin for rejected order: {e}"
-                            )
-    
-                        # Also clear pending exit to prevent lock-up
-                        _key = f"{order.symbol}_{order.horizon}"
-                        pending_exits.discard(_key)
-                        continue
-    
-                    # ── PORTFOLIO UPDATE (THE REAL update_fill) ──
-                    try:
-                        result = portfolio.update_fill(fill)
-                        fill_count += 1
-    
-                        # 🚀 FORENSIC PARITY: Accounting Equation Verification
-                        # Ensures no money is created or destroyed during backtest loop.
-                        portfolio.verify_accounting_equation()
-    
-                        # FORENSIC-V11 Fix #2+#6: Record fill epoch for cooldown
-                        _fill_horizon = getattr(fill, "horizon", "SCALPING")
-                        _fill_cooldown_key = f"{fill.symbol}_{_fill_horizon}"
-                        last_fill_epoch[_fill_cooldown_key] = epoch_count
-    
-                        # FORENSIC-V11 Fix #7: Clear pending exit after fill
-                        pending_exits.discard(_fill_cooldown_key)
-    
-                        # Record result for RiskManager Kelly tracking
-                        if result and isinstance(result, tuple):
-                            pnl, _ = result
-                            if pnl is not None:
-                                # ═══════════════════════════════════════════════════════════════
-                                # FORENSIC-V31 FIX: USE NET PNL FOR RISK MANAGER TRACKING
-                                # QUÉ: Usar net_pnl para determinar is_win.
-                                # POR QUÉ: risk_manager.win_count se usa para Kelly sizing y backtest WR.
-                                #   Si usamos gross_pnl, inflamos el WR y el apalancamiento Kelly!
-                                # ═══════════════════════════════════════════════════════════════
-                                _closed_trade = getattr(portfolio, "_last_closed_trade_data", None)
-                                if (
-                                    _closed_trade
-                                    and _closed_trade.get("symbol") == fill.symbol
-                                ):
-                                    net_pnl = _closed_trade.get("net_pnl", pnl)
-                                else:
-                                    net_pnl = pnl  # Fallback
-    
-                                is_win = net_pnl > 0
-                                pnl_pct = net_pnl / capital if capital > 0 else 0
-                                risk_manager.record_trade_result(
-                                    is_win, pnl_pct, fill.symbol
-                                )
-
-                                # ═══════════════════════════════════════════════════════════════
-                                # FORENSIC-V48: SOVEREIGN ORACLE ATTRIBUTION
-                                # QUÉ: Envía los resultados de trades cerrados al Oráculo.
-                                # POR QUÉ: Permite ajustar el mutation_mod basado en Skill vs Luck.
-                                # ═══════════════════════════════════════════════════════════════
-                                if sovereign_oracle:
-                                    try:
-                                        from sophia.post_mortem import PostMortemResult
-                                        _pm_res = PostMortemResult(
-                                            trade_id=order.order_id,
-                                            symbol=order.symbol,
-                                            direction="long" if order.side.name == "SELL" else "short",
-                                            predicted_prob=0.8,  # Mocked baseline
-                                            predicted_exit_mins=15.0,
-                                            actual_outcome="WIN" if net_pnl > 0 else "LOSS",
-                                            actual_pnl=net_pnl,
-                                            actual_duration_mins=10.0,
-                                            brier_score=0.1 if net_pnl > 0 else 0.4, # Mocked
-                                            time_error_mins=5.0,
-                                            narrative=f"GodMode backtest exited {order.symbol}"
-                                        )
-                                        sovereign_oracle.reason_about_outcome(_pm_res)
-                                    except Exception:
-                                        pass
-    
-                                # FORENSIC-V11 Fix #4: Track ML consecutive losses
-                                _fill_strat = getattr(fill, "strategy_id", "")
-                                if _fill_strat:
-                                    if is_win:
-                                        ml_consecutive_losses[_fill_strat] = 0
-                                        # Also count shadow wins if in shadow mode
-                                        if _fill_strat in ml_shadow_wins:
-                                            ml_shadow_wins[_fill_strat] = (
-                                                ml_shadow_wins.get(_fill_strat, 0) + 1
-                                            )
-                                    else:
-                                        ml_consecutive_losses[_fill_strat] = (
-                                            ml_consecutive_losses.get(_fill_strat, 0) + 1
-                                        )
-                    except Exception as e:
-                        logger.warning(f"Fill processing error: {e}")
+                    epoch_intents.append(event)
     
                 elif event.type == EventType.FILL:
                     pass  # Handled inline after executor
+
+            # ═══════════════════════════════════════════════════════════════
+            # META-ARBITRATOR (SUPREME CO-ORDINATOR) CONFLICT RESOLUTION
+            # Resolves cannibalization between strategies across horizons.
+            # ═══════════════════════════════════════════════════════════════
+            approved_intents, rejected_intents = meta_arbitrator.resolve_intents(epoch_intents) if epoch_intents else ([], [])
+            
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC: LOG CONFLICT LOSSES (Alpha Leak: Conflict Category)
+            # ═══════════════════════════════════════════════════════════════
+            for rej in rejected_intents:
+                rej_intent = rej["intent"]
+                rej_reason = rej["reason"]
+                _rej_price = data_provider.get_latest_price(rej_intent.symbol) or 0
+                _ts = getattr(rej_intent, 'timestamp', getattr(market_events[0], 'timestamp', '')) if market_events else ''
+                forensic_logger.debug(
+                    f"[{_ts}] [CONFLICT_DETECTED] {rej_intent.symbol} {getattr(rej_intent, 'strategy_id', '?')} "
+                    f"{rej_intent.signal_type.name} confidence={getattr(rej_intent, 'strength', 0):.3f} "
+                    f"VETOED reason={rej_reason}"
+                )
+
+                conflict_log.append({
+                    "epoch": epoch_count, "symbol": rej_intent.symbol,
+                    "strategy": getattr(rej_intent, 'strategy_id', '?'),
+                    "direction": rej_intent.signal_type.name,
+                    "reason": rej_reason, "price": _rej_price,
+                    "confidence": getattr(rej_intent, 'strength', 0)
+                })
+            
+            for event in approved_intents:
+                current_price = data_provider.get_latest_price(event.symbol)
+                if not current_price:
+                    continue
+                
+                # FORENSIC: Log strategy decision
+                _ts = getattr(event, 'timestamp', getattr(market_events[0], 'timestamp', '')) if market_events else ''
+                forensic_logger.debug(
+                    f"[{_ts}] [STRATEGY_DECISION] {event.symbol} {getattr(event, 'strategy_id', '?')} "
+                    f"proposed {event.signal_type.name} confidence={getattr(event, 'strength', 0):.3f} "
+                    f"horizon={getattr(event, 'horizon', '?')}"
+                )
+
+                
+                # Scenario E: Isolate strategy
+                if scenario_isolate_strategy and isolated_strategy:
+                    _sid = getattr(event, 'strategy_id', '')
+                    if isolated_strategy.lower() not in str(_sid).lower():
+                        continue
+                
+                _pre_slip_price = current_price  # Save for alpha leak calculation
+                
+                # ── PRODUCTION RISK MANAGER: generate_order() ──
+                # This does ALL the validations from production:
+                # ═══════════════════════════════════════════════════════════
+                # FIX-V10-3: GRANULAR REJECTION TRACKING via stdout capture
+                # QUÉ: Captura el print de generate_order para saber EXACTAMENTE
+                #   qué filtro rechazó (Kill Switch, Frequency, Regime, etc.).
+                # POR QUÉ: Antes solo registrábamos "RISK_GATE:SYMBOL" genérico.
+                # PARA QUÉ: Diagnóstico forense preciso por filtro.
+                # ═══════════════════════════════════════════════════════════
+                _f_capture = io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(_f_capture):
+                        order = risk_manager.generate_order(event, current_price)
+                except Exception as e:
+                    order = None
+                    # Use the exception message directly
+                    _exception_msg = f"EXCEPTION:{type(e).__name__}:{str(e)}"
+                    reason = _exception_msg
+                    rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
+                    print(f"⚠️ [RISK] Signal REJECTED: {_exception_msg}")
+                    # Skip the next block since we already handled the rejection
+                    continue
+    
+                if order is None:
+                    rejected_count += 1
+                    # Extract specific rejection reason from stdout
+                    _captured = _f_capture.getvalue()
+                    _specific_reason = None
+                    for _line in _captured.strip().split("\n"):
+                        if "[RISK] Rejected by" in _line:
+                            _specific_reason = _line.strip()
+                            break
+                    if _specific_reason:
+                        rejection_reasons[_specific_reason] = (
+                            rejection_reasons.get(_specific_reason, 0) + 1
+                        )
+                        print(f"⚠️ [RISK] Signal REJECTED: {_specific_reason}")
+                    else:
+                        reason = f"RISK_GATE_UNKNOWN:{getattr(event, 'symbol', '?')}"
+                        rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
+                        print(
+                            f"⚠️ [RISK] Signal REJECTED: {reason}\nSTDOUT: {_f_capture.getvalue()}"
+                        )
+                    continue
+    
+                order_count += 1
+    
+                # ═══════════════════════════════════════════════════════════════
+                # DIGITAL TWIN V100: ORDER MANAGER CHAOS (LATENCY & SLIPPAGE)
+                # ═══════════════════════════════════════════════════════════════
+                if order_manager and not scenario_ideal_execution:
+                    # 1. Emulate Rate Limits (Binance -2015 / -1003)
+                    # If more than 3 orders in the last 10 epochs, reject
+                    _recent_orders = getattr(order_manager, "_bt_recent_orders", [])
+                    _recent_orders = [e for e in _recent_orders if epoch_count - e < 10]
+                    if len(_recent_orders) >= 3:
+                        rejected_count += 1
+                        reason = "BINANCE_RATE_LIMIT_429"
+                        rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
+                        print(f"  ⚠️ [CHAOS] OrderManager rejected {event.symbol} due to Rate Limits (Too Many Requests)")
+                        continue
+                    _recent_orders.append(epoch_count)
+                    order_manager._bt_recent_orders = _recent_orders
+
+                    # 2. Emulate Slippage based on real-world execution delay
+                    if scenario_force_market:
+                        _slip_pct = random.uniform(0.0005, 0.0015)  # Scenario C: higher slippage
+                    else:
+                        _slip_pct = random.uniform(0.0001, 0.0005)
+                    if order.side.name == "BUY":
+                        current_price = current_price * (1 + _slip_pct)
+                    else:
+                        current_price = current_price * (1 - _slip_pct)
+                    
+                    # FORENSIC: Track slippage loss
+                    _slippage_delta = abs(current_price - _pre_slip_price) * order.quantity
+                    alpha_leak["slippage_loss"] += _slippage_delta
+                    forensic_logger.debug(
+                        f"[EXECUTION_CHOICE] {event.symbol} slip={_slip_pct*100:.4f}% "
+                        f"delta=${_slippage_delta:.6f} side={order.side.name}"
+                    )
+
+                # ── EXECUTE ORDER → FillEvent ──
+                fill = executor.execute_order(order, current_price)
+                if fill is None:
+                    rejected_count += 1
+                    reason = "EXECUTOR_REJECT"
+                    rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
+    
+                    # 🚀 AEGIS-V15: ATOMIC METADATA RELEASE
+                    # QUÉ: Usar el valor exacto reservado en RiskManager.
+                    try:
+                        order_id = order.metadata.get("client_order_id") if order.metadata else None
+                        reserved = (
+                            order.metadata.get("dollar_size")
+                            if order.metadata
+                            else None
+                        )
+                        if reserved:
+                            portfolio.release_order_margin(amount=reserved, order_id=order_id)
+                        else:
+                            # Fallback using dynamic leverage from order
+                            lev = (
+                                getattr(order, "leverage", Config.BINANCE_LEVERAGE)
+                                or Config.BINANCE_LEVERAGE
+                            )
+                            portfolio.release_order_margin(
+                                amount=order.quantity * current_price / lev,
+                                order_id=order_id
+                            )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to release margin for rejected order: {e}"
+                        )
+    
+                    # Also clear pending exit to prevent lock-up
+                    _key = f"{order.symbol}_{order.horizon}"
+                    pending_exits.discard(_key)
+                    continue
+    
+                # ── PORTFOLIO UPDATE (THE REAL update_fill) ──
+                try:
+                    result = portfolio.update_fill(fill)
+                    fill_count += 1
+    
+                    # 🚀 FORENSIC PARITY: Accounting Equation Verification
+                    # Ensures no money is created or destroyed during backtest loop.
+                    portfolio.verify_accounting_equation()
+    
+                    # FORENSIC-V11 Fix #2+#6: Record fill epoch for cooldown
+                    _fill_horizon = getattr(fill, "horizon", "SCALPING")
+                    _fill_cooldown_key = f"{fill.symbol}_{_fill_horizon}"
+                    last_fill_epoch[_fill_cooldown_key] = epoch_count
+    
+                    # FORENSIC-V11 Fix #7: Clear pending exit after fill
+                    pending_exits.discard(_fill_cooldown_key)
+    
+                    # Record result for RiskManager Kelly tracking
+                    if result and isinstance(result, tuple):
+                        pnl, _ = result
+                        if pnl is not None:
+                            # ═══════════════════════════════════════════════════════════════
+                            # FORENSIC-V31 FIX: USE NET PNL FOR RISK MANAGER TRACKING
+                            # QUÉ: Usar net_pnl para determinar is_win.
+                            # POR QUÉ: risk_manager.win_count se usa para Kelly sizing y backtest WR.
+                            #   Si usamos gross_pnl, inflamos el WR y el apalancamiento Kelly!
+                            # ═══════════════════════════════════════════════════════════════
+                            _closed_trade = getattr(portfolio, "_last_closed_trade_data", None)
+                            if (
+                                _closed_trade
+                                and _closed_trade.get("symbol") == fill.symbol
+                            ):
+                                net_pnl = _closed_trade.get("net_pnl", pnl)
+                            else:
+                                net_pnl = pnl  # Fallback
+    
+                            is_win = net_pnl > 0
+                            pnl_pct = net_pnl / capital if capital > 0 else 0
+                            risk_manager.record_trade_result(
+                                is_win, pnl_pct, fill.symbol
+                            )
+
+                            # ═══════════════════════════════════════════════════════════
+                            # FORENSIC AUDIT: STRATEGY & SYMBOL ATTRIBUTION
+                            # ═══════════════════════════════════════════════════════════
+                            _fa_strat = getattr(fill, 'strategy_id', 'unknown')
+                            _fa_sym = fill.symbol
+                            _fa_fees = _closed_trade.get("total_fees", 0.0) if _closed_trade else 0.0
+                            _fa_gross = _closed_trade.get("gross_pnl", pnl) if _closed_trade else pnl
+                            
+                            # Fee accounting
+                            if not scenario_ideal_execution:
+                                alpha_leak["fee_loss"] += abs(_fa_fees)
+                            alpha_leak["gross_alpha"] += _fa_gross
+                            alpha_leak["net_alpha"] += net_pnl
+                            
+                            # Strategy attribution
+                            if _fa_strat not in strategy_attribution:
+                                strategy_attribution[_fa_strat] = {"wins": 0, "losses": 0, "gross_pnl": 0.0, "net_pnl": 0.0, "trades": 0}
+                            strategy_attribution[_fa_strat]["trades"] += 1
+                            strategy_attribution[_fa_strat]["gross_pnl"] += _fa_gross
+                            strategy_attribution[_fa_strat]["net_pnl"] += net_pnl
+                            if is_win:
+                                strategy_attribution[_fa_strat]["wins"] += 1
+                            else:
+                                strategy_attribution[_fa_strat]["losses"] += 1
+                            
+                            # Symbol attribution
+                            if _fa_sym not in symbol_attribution:
+                                symbol_attribution[_fa_sym] = {"wins": 0, "losses": 0, "gross_pnl": 0.0, "net_pnl": 0.0, "fees": 0.0, "trades": 0}
+                            symbol_attribution[_fa_sym]["trades"] += 1
+                            symbol_attribution[_fa_sym]["gross_pnl"] += _fa_gross
+                            symbol_attribution[_fa_sym]["net_pnl"] += net_pnl
+                            symbol_attribution[_fa_sym]["fees"] += abs(_fa_fees)
+                            if is_win:
+                                symbol_attribution[_fa_sym]["wins"] += 1
+                            else:
+                                symbol_attribution[_fa_sym]["losses"] += 1
+
+                            forensic_logger.info(
+                                f"[TRADE_CLOSED] {_fa_sym} strategy={_fa_strat} "
+                                f"gross={_fa_gross:.6f} net={net_pnl:.6f} fees={_fa_fees:.6f} "
+                                f"result={'WIN' if is_win else 'LOSS'}"
+                            )
+
+                            # ═══════════════════════════════════════════════════════════════
+                            # FORENSIC-V48: SOVEREIGN ORACLE ATTRIBUTION
+                            # QUÉ: Envía los resultados de trades cerrados al Oráculo.
+                            # POR QUÉ: Permite ajustar el mutation_mod basado en Skill vs Luck.
+                            # ═══════════════════════════════════════════════════════════════
+                            if sovereign_oracle:
+                                try:
+                                    from sophia.post_mortem import PostMortemResult
+                                    _pm_res = PostMortemResult(
+                                        trade_id=order.order_id,
+                                        symbol=order.symbol,
+                                        direction="long" if order.side.name == "SELL" else "short",
+                                        predicted_prob=0.8,  # Mocked baseline
+                                        predicted_exit_mins=15.0,
+                                        actual_outcome="WIN" if net_pnl > 0 else "LOSS",
+                                        actual_pnl=net_pnl,
+                                        actual_duration_mins=10.0,
+                                        brier_score=0.1 if net_pnl > 0 else 0.4, # Mocked
+                                        time_error_mins=5.0,
+                                        narrative=f"GodMode backtest exited {order.symbol}"
+                                    )
+                                    sovereign_oracle.reason_about_outcome(_pm_res)
+                                except Exception:
+                                    pass
+    
+                            # FORENSIC-V11 Fix #4: Track ML consecutive losses
+                            _fill_strat = getattr(fill, "strategy_id", "")
+                            if _fill_strat:
+                                if is_win:
+                                    ml_consecutive_losses[_fill_strat] = 0
+                                    # Also count shadow wins if in shadow mode
+                                    if _fill_strat in ml_shadow_wins:
+                                        ml_shadow_wins[_fill_strat] = (
+                                            ml_shadow_wins.get(_fill_strat, 0) + 1
+                                        )
+                                else:
+                                    ml_consecutive_losses[_fill_strat] = (
+                                        ml_consecutive_losses.get(_fill_strat, 0) + 1
+                                    )
+                except Exception as e:
+                    logger.warning(f"Fill processing error: {e}")
     
             # ── END OF EPOCH: Update equity curve ──
             if epoch_count % 60 == 0:  # Sample every 60 bars (1 hour)
@@ -1869,6 +2024,77 @@ def run_global_backtest(
                 [s for s in untrained_strategies if "SWING" not in s.upper()]
             ),
         }
+
+        # ═══════════════════════════════════════════════════════════════════
+        # FORENSIC AUDIT: ALPHA LEAK TABLE
+        # ═══════════════════════════════════════════════════════════════════
+        _al = alpha_leak
+        _al["premature_exit_loss"] = _al["gross_alpha"] - _al["net_alpha"] - _al["slippage_loss"] - _al["fee_loss"]
+        if _al["premature_exit_loss"] < 0:
+            _al["premature_exit_loss"] = 0.0
+
+        print(f"\n  {'═' * 55}")
+        print(f"  🔬 FORENSIC ALPHA LEAK TABLE (Scenario {scenario})")
+        print(f"  {'═' * 55}")
+        print(f"  {'Metric':<35} {'Value':>15}")
+        print(f"  {'─' * 55}")
+        _v_gross = f"${_al['gross_alpha']:+.6f}"
+        _v_slip = f"${-_al['slippage_loss']:.6f}"
+        _v_fees = f"${-_al['fee_loss']:.6f}"
+        _v_exit = f"${-_al['premature_exit_loss']:.6f}"
+        _v_net = f"${_al['net_alpha']:+.6f}"
+        print(f"  {'Alpha Bruto (Gross PnL)':<35} {_v_gross:>15}")
+        print(f"  {'- Perdida por Slippage':<35} {_v_slip:>15}")
+        print(f"  {'- Perdida por Comisiones (Fees)':<35} {_v_fees:>15}")
+        print(f"  {'- Perdida por Exits Prematuros':<35} {_v_exit:>15}")
+        print(f"  {'- Perdida por Conflictos (Vetos)':<35} {len(conflict_log):>15} vetos")
+        print(f"  {'─' * 55}")
+        print(f"  {'= NET ALPHA FINAL':<35} {_v_net:>15}")
+        print(f"  {'═' * 55}")
+
+        # ═══════════════════════════════════════════════════════════════════
+        # FORENSIC AUDIT: STRATEGY ATTRIBUTION TABLE
+        # ═══════════════════════════════════════════════════════════════════
+        if strategy_attribution:
+            print(f"\n  {'─' * 55}")
+            print(f"  📊 FORENSIC: STRATEGY ATTRIBUTION")
+            print(f"  {'Strategy':<25} {'Trades':>7} {'WR%':>6} {'Gross':>12} {'Net':>12}")
+            print(f"  {'─' * 55}")
+            for sid, sa in sorted(strategy_attribution.items(), key=lambda x: x[1]["net_pnl"], reverse=True):
+                _sa_wr = (sa["wins"] / sa["trades"] * 100) if sa["trades"] > 0 else 0
+                print(f"  {sid[:24]:<25} {sa['trades']:>7} {_sa_wr:>5.1f}% ${sa['gross_pnl']:>+10.6f} ${sa['net_pnl']:>+10.6f}")
+
+        # ═══════════════════════════════════════════════════════════════════
+        # FORENSIC AUDIT: SYMBOL ATTRIBUTION TABLE
+        # ═══════════════════════════════════════════════════════════════════
+        if symbol_attribution:
+            print(f"\n  {'─' * 65}")
+            print(f"  💱 FORENSIC: SYMBOL ATTRIBUTION (Top 15)")
+            print(f"  {'Symbol':<15} {'Trades':>7} {'WR%':>6} {'Gross':>12} {'Net':>12} {'Fees':>10}")
+            print(f"  {'─' * 65}")
+            for sym, sa in sorted(symbol_attribution.items(), key=lambda x: x[1]["net_pnl"], reverse=True)[:15]:
+                _sa_wr = (sa["wins"] / sa["trades"] * 100) if sa["trades"] > 0 else 0
+                print(f"  {sym:<15} {sa['trades']:>7} {_sa_wr:>5.1f}% ${sa['gross_pnl']:>+10.6f} ${sa['net_pnl']:>+10.6f} ${sa['fees']:>8.6f}")
+
+        # ═══════════════════════════════════════════════════════════════════
+        # FORENSIC AUDIT: CONFLICT LOG SUMMARY
+        # ═══════════════════════════════════════════════════════════════════
+        if conflict_log:
+            print(f"\n  {'─' * 55}")
+            print(f"  ⚔️ FORENSIC: CONFLICT LOG ({len(conflict_log)} total vetoed intents)")
+            _conflict_reasons = {}
+            for c in conflict_log:
+                r = c["reason"]
+                _conflict_reasons[r] = _conflict_reasons.get(r, 0) + 1
+            for reason, count in sorted(_conflict_reasons.items(), key=lambda x: x[1], reverse=True):
+                print(f"    {reason}: {count}")
+
+        # Inject forensic data into results JSON
+        results["forensic_alpha_leak"] = alpha_leak
+        results["forensic_strategy_attribution"] = strategy_attribution
+        results["forensic_symbol_attribution"] = symbol_attribution
+        results["forensic_conflict_log_count"] = len(conflict_log)
+        results["forensic_scenario"] = scenario
     
         # ═══════════════════════════════════════════════════════════════════
         # FIX-V10-4: CLEANUP STOP_TRADING.LOCK AFTER BACKTEST
@@ -1889,6 +2115,33 @@ def run_global_backtest(
         except Exception as e:
             print(f"  ⚠️ Could not export prediction metrics: {e}")
     
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC EXPORTER: PERSIST AUDIT DATA TO PARQUET
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            from utils.forensic_exporter import ForensicExporter
+            _forensic_exporter = ForensicExporter()
+            _trade_list = []
+            for ledger_name in ["scalping_ledger", "swing_ledger"]:
+                ledger = getattr(portfolio, ledger_name, {})
+                for trades in ledger.values():
+                    if isinstance(trades, list):
+                        _trade_list.extend(trades)
+                    elif isinstance(trades, dict):
+                        _trade_list.append(trades)
+            _exported = _forensic_exporter.export_all(
+                alpha_leak=alpha_leak,
+                strategy_attribution=strategy_attribution,
+                symbol_attribution=symbol_attribution,
+                conflict_log=conflict_log,
+                run_id=run_id,
+                scenario=scenario,
+                trades=_trade_list
+            )
+            print(f"  📊 [FORENSIC] All audit data exported: {_exported}")
+        except Exception as e:
+            print(f"  ⚠️ Could not export forensic data: {e}")
+
         # ═══════════════════════════════════════════════════════════════
         # TELEGRAM: SEND FINAL BACKTEST RESULTS
         # ═══════════════════════════════════════════════════════════════
@@ -1995,6 +2248,10 @@ def main():
         "--output", type=str, default=None, help="Output JSON file path"
     )
     parser.add_argument("--quiet", action="store_true", help="Suppress progress output")
+    parser.add_argument("--scenario", type=str, default="A", choices=["A", "B", "C", "D", "E"], 
+                        help="Forensic Scenario: A=Full, B=No Reactive Exits, C=Market Only, D=Ideal Exec, E=Isolated")
+    parser.add_argument("--isolated-strategy", type=str, default=None, 
+                        help="Strategy ID to isolate (for Scenario E)")
 
     args = parser.parse_args()
 
@@ -2043,6 +2300,8 @@ def main():
         days=args.days,
         initial_capital=args.capital,
         verbose=not args.quiet,
+        scenario=args.scenario,
+        isolated_strategy=args.isolated_strategy
     )
 
     # ── Save results to UNIQUE file (never overwrite) ──

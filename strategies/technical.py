@@ -563,9 +563,32 @@ class HybridScalpingStrategy(Strategy):
             # Las hardcoded bounds originales (0.005 min_sl y 0.010 min_tp)
             # hacían IMPOSIBLE el scalping rápido con cuenta micro de $13.
             min_sl_cap = self.SL_PCT * 0.5 if hasattr(self, 'SL_PCT') else 0.0015
-            max_sl_cap = getattr(Config.Strategies, 'MAX_EVO_SL', 0.15) 
             min_tp_cap = self.TP_PCT * 0.5 if hasattr(self, 'TP_PCT') else 0.003
-            max_tp_cap = getattr(Config.Strategies, 'MAX_EVO_TP', 0.30) 
+            
+            # ════════════════════════════════════════════════════════════════
+            # FORENSIC-V70 FIX: HORIZON-AWARE TP/SL CAPS
+            # QUÉ: Cap máximo para TP/SL ajustado al horizonte temporal real.
+            # POR QUÉ: El ATR se calcula en M5 pero el scalping opera en M1.
+            #   Con ATR(M5)=$115 y atr_tp_mult=3.5, TP=0.50% — INALCANZABLE.
+            #   Datos empíricos M1 (24h, 1440 barras):
+            #     - ATR(14) M1 = 0.028%
+            #     - MFE 30-bar P50 = +0.14%
+            #     - TP 0.50% hit rate en 90min = solo 33.8%
+            #     - TP 0.20% hit rate en 30min = 35.4%
+            #     - TP 0.15% hit rate en 30min = 46.3%
+            # PARA QUÉ: Reducir ZOMBIE exits (58/72 = 81%) que destrozan WR.
+            # CÓMO: Cap TP scalping a 0.20% y SL a 0.15% (empíricamente viable).
+            # CUÁNDO: En cada cálculo de risk params para señales de entrada.
+            # DÓNDE: strategies/technical.py → _calculate_dynamic_risk_params()
+            # QUIÉN: HybridScalpingStrategy (Quant Developer + Risk Manager)
+            # ════════════════════════════════════════════════════════════════
+            is_scalping = hasattr(self, 'horizon') and self.horizon == 'SCALPING'
+            if is_scalping:
+                max_tp_cap = 0.0025  # FORENSIC-V80: Increased to 0.25% to allow trades to reach real profit.
+                max_sl_cap = 0.0025  # 0.25% — survives ~3x M1 ATR noise
+            else:
+                max_tp_cap = getattr(Config.Strategies, 'MAX_EVO_TP', 0.30)
+                max_sl_cap = getattr(Config.Strategies, 'MAX_EVO_SL', 0.15)
             
             sl_pct = np.clip(sl_pct, min_sl_cap, max_sl_cap)
             tp_pct = np.clip(tp_pct, min_tp_cap, max_tp_cap)
@@ -1313,14 +1336,30 @@ class HybridScalpingStrategy(Strategy):
                 # 6. Calcular fuerza (Pasando Símbolo y Setup_Type para Asimetría V5.8)
                 strength = self.calculate_signal_strength(setups, confluence_score, volatility, symbol, setup_type)
                 
-                # OPTIMIZACIÓN DE FRECUENCIA
-                # 1. Filtro ADX Dinámico
-                current_adx = setups['adx']
+                # ═══════════════════════════════════════════════════════
+                # FORENSIC-V80: FEE HEADROOM & STRICT MOMENTUM GUARD
+                # QUÉ: Bloqueo duro si el mercado está completamente plano.
+                # POR QUÉ: Comisiones consumen 0.075%. Si ATR es 0.10%, ganar 0.10% netos es imposible.
+                #   Esto generaba los 54+ TIME_STOP_ZOMBIE.
+                # ═══════════════════════════════════════════════════════
+                current_adx = setups.get('adx', 0)
+                
+                # Calcular ATR_PCT real (porque no viene en setups dict)
+                current_atr = setups.get('atr', 0)
+                current_close = setups.get('close', 1)
+                atr_pct = current_atr / current_close if current_close > 0 else 0
+                
+                # Para Scalping, necesitamos al menos 0.15% de movimiento natural en una vela.
+                min_atr_required = 0.0015 if self.horizon == 'SCALPING' else 0.0035
+                
+                if atr_pct < min_atr_required:
+                    logger.warning(f"🛑 [VOLATILITY BLOCK] {symbol} ATR {atr_pct*100:.3f}% < {min_atr_required*100:.3f}%")
+                    continue
+                
                 if current_adx < ADX_THRESH:
-                    # Allow if RSI is extreme OR Strength is very high (Dynamic override)
-                    is_rsi_extreme = setups['rsi'] < 15 or setups['rsi'] > 85
-                    is_high_strength = strength > (STRENGTH_THRESH + 0.1) # Extra confidence
-                    if not (is_rsi_extreme or is_high_strength):
+                    # En Scalping, el ADX bajo significa Chop. NO OVERRIDES permitidos si ATR es mediocre.
+                    if atr_pct < (min_atr_required * 1.5):
+                        logger.warning(f"🛑 [CHOP BLOCK] {symbol} ADX {current_adx:.1f} < {ADX_THRESH} and low ATR")
                         continue
                 
                 # CONFIDENCE GATE: Strict threshold for Momentum to avoid low-quality entries
@@ -1640,18 +1679,16 @@ class HybridScalpingStrategy(Strategy):
                     omni = sophia_report.omniscient_score
                     
                     # ================================================================
-                    # FORENSIC-AUDIT-FIX: Sophia Hurdle REDUCED 0.15 → 0.03
-                    # QUÉ: Sophia produce scores de 0.005, pero el hurdle exigía 0.15.
-                    # POR QUÉ: El score era 30x MENOR que el mínimo → 100% kill rate.
-                    # EVIDENCIA: Forensic V8 L30: "Final=0.005 (Coh=0.29)" vs hurdle=0.15
-                    # PARA QUÉ: Permitir que señales con edge real pasen el gate.
-                    # CÓMO: base_hurdle 0.15→0.03 (BTC), 0.025 (ALTs). Divine/Harmonic
-                    #   gates reducidos proporcionalmente.
+                    # FORENSIC-AUDIT-FIX: Sophia Hurdle RAISED 0.03 → 0.38
+                    # QUÉ: Restaurar un filtro agresivo para evitar zombies.
+                    # POR QUÉ: Un hurdle de 0.03 permitía entrar en mercados muertos (chop),
+                    #   generando 65+ zombies por backtest (TIME_STOP 90 min).
+                    # PARA QUÉ: Reducir drásticamente los TIME_STOP_ZOMBIE, subiendo el Win Rate.
                     # ================================================================
-                    base_hurdle = 0.03  # FORENSIC FIX: was 0.15
+                    base_hurdle = 0.38  # FORENSIC FIX: was 0.03
                     if 'BTC' not in symbol:
-                        base_hurdle = 0.025  # FORENSIC FIX: was 0.12
-                        logger.debug(f"🔓 [V5.50 ALT-GATE] Using 0.025 hurdle for {symbol}")
+                        base_hurdle = 0.35  # FORENSIC FIX: was 0.025
+                        logger.debug(f"🔓 [V5.50 ALT-GATE] Using 0.35 hurdle for {symbol}")
                     
                     hurdle = base_hurdle
                     
@@ -1660,29 +1697,26 @@ class HybridScalpingStrategy(Strategy):
                     is_resonant = sophia_report.resonance_index > 0.6
                     
                     if is_divine:
-                        hurdle = 0.01  # FORENSIC FIX: was 0.05
-                        logger.warning(f"✨ [DIVINE HARMONY] {symbol} Total alignment: Hurdle=0.01")
+                        hurdle = base_hurdle * 0.5  # FORENSIC FIX: was hardcoded 0.01
+                        logger.warning(f"✨ [DIVINE HARMONY] {symbol} Total alignment: Hurdle={hurdle:.3f}")
                     elif is_harmonic:
-                        hurdle = 0.02  # FORENSIC FIX: was 0.10
-                        logger.info(f"🏹 [HARMONIC GATE] Frequency agreement: Hurdle=0.02")
+                        hurdle = base_hurdle * 0.75  # FORENSIC FIX: was hardcoded 0.02
+                        logger.info(f"🏹 [HARMONIC GATE] Frequency agreement: Hurdle={hurdle:.3f}")
                     elif is_resonant:
-                        hurdle = 0.025  # FORENSIC FIX: was 0.12
-                        logger.info(f"🧬 [RESONANCE BRIDGE] Reducing friction: Hurdle=0.025")
+                        hurdle = base_hurdle * 0.90  # FORENSIC FIX: was hardcoded 0.025
+                        logger.info(f"🧬 [RESONANCE BRIDGE] Reducing friction: Hurdle={hurdle:.3f}")
                     
                     if omni < hurdle:
                         # ═══════════════════════════════════════════════════════
-                        # CONSENSO PONDERADO v1.0 — Oracle Hurdle
-                        # QUÉ: El Oracle NO mata la señal, la PENALIZA proporcionalmente.
-                        # POR QUÉ: Una señal técnica con RSI=32, confluence=0.70 es VÁLIDA
-                        #   aunque el Oracle score sea 0.02 vs hurdle 0.05.
-                        # PARA QUÉ: Todas las estrategias contribuyen al consenso.
-                        #   Señales penalizadas → sizing más pequeño (ya implementado en RM).
-                        # CÓMO: penalty = score/hurdle → clamped [0.4, 1.0]
+                        # FORENSIC-V75 FIX: OMNISCIENT HARD BLOCK FOR CHOPPY MARKETS
+                        # QUÉ: Restaurar el hard-block del oráculo (en vez de solo penalizar).
+                        # POR QUÉ: "Consenso Ponderado" permitía que señales de baja energía pasen,
+                        #   las cuales el RiskManager dejaba abrir, pero luego no tenían momentum
+                        #   para alcanzar el TP de 0.10%, convirtiéndose en 65+ Zombies.
+                        # PARA QUÉ: Cortar de raíz los setups sin momentum direccional real.
                         # ═══════════════════════════════════════════════════════
-                        oracle_penalty = max(0.4, omni / hurdle) if hurdle > 0 else 1.0
-                        strength *= oracle_penalty
-                        status = "OPEN" if (is_divine or is_harmonic or is_resonant) else "PENALIZED"
-                        logger.info(f"🧿 [CONSENSUS] {symbol}: Oracle penalty x{oracle_penalty:.2f} (Score={omni:.3f} < {hurdle:.3f}, Gate={status})")
+                        logger.warning(f"🛑 [ORACLE BLOCK] {symbol} rejected: Omni Score {omni:.3f} < {hurdle:.3f}")
+                        continue
 
                     # CONSENSO PONDERADO v1.0 — Sophia Confidence Gate
                     # QUÉ: Sophia NO bloquea, REDUCE strength proporcionalmente.
@@ -1825,6 +1859,19 @@ class HybridScalpingStrategy(Strategy):
                     _metadata['sophia_narrative'] = sophia_narrative
                 
                 _metadata['neural_bias'] = neural_bias # For telemetry
+                
+                # ════════════════════════════════════════════════════════════════
+                # FORENSIC-V70: FINAL HARD CAP before emission
+                # QUÉ: Cap absoluto después de TODOS los modificadores (Sophia,
+                #   Hologram, Sovereign, Apex, R:R) para evitar inflación.
+                # POR QUÉ: Los multiplicadores apilados (1.5*1.1*1.1*1.25)
+                #   pueden inflar TP de 0.20% → 0.57%, inalcanzable en M1.
+                # PARA QUÉ: Garantizar que NINGÚN trade scalping salga con
+                #   TP > 0.10% hacia risk_manager/check_stops.
+                # ════════════════════════════════════════════════════════════════
+                if self.horizon == 'SCALPING':
+                    final_tp_pct = min(final_tp_pct, 0.0010)  # 0.10% hard cap (M1 ATR calibrated)
+                    final_sl_pct = min(final_sl_pct, 0.0015)  # 0.15% hard cap (M1 ATR calibrated)
                 
                 signal = SignalEvent(
                     strategy_id=detailed_id,
