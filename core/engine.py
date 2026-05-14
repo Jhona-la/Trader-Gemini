@@ -4,7 +4,12 @@ Coordinates data, strategies, risk, and execution with enhanced validation and r
 """
 
 from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
-from core.symbol_state_matrix import symbol_state_matrix
+from core.global_state import global_state  # CTOS: Single Source of Truth
+from core.clock import global_clock          # CTOS: Master Clock Synchronization
+from core.event_bus import event_bus, EventChannel  # CTOS: Event-Driven Architecture
+from core.feedback_processor import feedback_processor  # CTOS: Learning Loop
+from core.asset_classifier import AssetClassifier
+from core.segment_policy_engine import SegmentPolicyEngine
 import os
 import asyncio
 import time
@@ -21,6 +26,8 @@ from utils.latency_monitor import latency_monitor
 from core.gc_tuner import GCTuner
 from core.forensics import ForensicRecorder # Phase 20: Forensic Logging
 from core.world_awareness import world_awareness
+from core.evolution import EvolutionEngine, FitnessCalculator
+from core.genotype import Genotype
 
 # ═══════════════════════════════════════════════════════════════
 # SOPHIA INTEGRATION (Phase SOPHIA-GLOBAL)
@@ -189,6 +196,15 @@ class Engine:
             logger.warning("⚠️ [OMEGA] core.omega_protocol not found. Omega Protocol disabled.")
         except Exception as e:
             logger.warning(f"⚠️ [OMEGA] Failed to init Omega Protocol: {e}")
+            
+        # 🧬 PHASE 3: EVOLUTION ENGINE (Live Mutation)
+        try:
+            self.evolution_engine = EvolutionEngine(population_size=10, mutation_rate=0.1)
+            self._last_mutation_time = time.time()
+            logger.info("🧬 [EVOLUTION] Engine initialized for Live Mutation.")
+        except Exception as e:
+            logger.warning(f"⚠️ [EVOLUTION] Failed to init EvolutionEngine: {e}")
+            self.evolution_engine = None
         
         # 🧟 PHASE 2 ZOMBIES
         self.correlation_manager = None
@@ -199,6 +215,15 @@ class Engine:
         except Exception as e:
             logger.warning(f"Failed to init SentimentProcessor: {e}")
             self.sentiment_processor = None
+            
+        # 🏛️ INSTITUTIONAL SEGMENTATION (Major vs Meme)
+        self.asset_classifier = AssetClassifier()
+        self.segment_policy_engine = SegmentPolicyEngine(self.asset_classifier)
+        logger.info("🏛️ [SEGMENT POLICY] Asset Classifier and Segment Policy Engine initialized.")
+
+        # 🧬 Subscribe to Live Mutations
+        event_bus.subscribe(EventChannel.MUTATION, self._on_mutation_event)
+
 
     # ... [Registration methods unchanged] ...
     def register_data_handler(self, handler: Any) -> None: 
@@ -208,21 +233,35 @@ class Engine:
             try:
                 from core.correlation_manager import CorrelationManager
                 self.correlation_manager = CorrelationManager(handler)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to initialize CorrelationManager: {e}")
                 
         if not self.liquidity_guardian:
             try:
                 from core.liquidity_guardian import LiquidityGuardian
                 self.liquidity_guardian = LiquidityGuardian(handler)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to initialize LiquidityGuardian: {e}")
         
     def register_strategy(self, strategy: Any) -> None: 
         self.strategies.append(strategy)
         
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC FIX #11: Inject Engine back-reference into strategy
+        # QUÉ: La estrategia necesita acceder a risk_manager.prediction_tracker
+        #   para calcular edge en tiempo real en request_exit_opinion().
+        # POR QUÉ: Sin esta referencia, self.engine es None → edge_prob
+        #   nunca se calcula → Alpha Decay Detection MUERTO.
+        # ═══════════════════════════════════════════════════════════════
+        strategy._engine_ref = self
+        
         # 🧠 FORENSIC-V35: Inject Sophia AI directly into the strategy
-        if hasattr(self, 'sophia_intelligence'):
+        # FIX-FORENSIC-V82: Only inject if strategy doesn't already have a calibrated Sophia.
+        # Bug: Engine.sophia_intelligence is ALWAYS 5min/SCALPING (L171-172).
+        #   Overwriting strategy.sophia destroyed the horizon-calibrated singleton
+        #   that SWING strategies created in __init__ (bar_minutes=60.0).
+        # Impact: ALL SWING strategies operated with SCALPING-calibrated Sophia.
+        if hasattr(self, 'sophia_intelligence') and not getattr(strategy, 'sophia', None):
             strategy.sophia = self.sophia_intelligence
 
         if hasattr(strategy, 'symbol') and strategy.symbol:
@@ -231,6 +270,24 @@ class Engine:
             # Multi-symbol strategies
             self._strategies_by_symbol['ALL'].append(strategy)
         
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC AUDIT FIX: Register strategy in ExitOracle
+        # QUÉ: Las estrategias con request_exit_opinion DEBEN estar
+        #   registradas en el ExitOracle para que el Oracle las consulte.
+        # POR QUÉ: Sin esto, oracle.strategies es un dict vacío y
+        #   request_exit_opinion NUNCA se ejecuta → dynamic_targets
+        #   NUNCA se genera → Phase 8 es código muerto.
+        # PARA QUÉ: Completar la conexión neural del sistema omnisciente.
+        # ═══════════════════════════════════════════════════════════════
+        if hasattr(strategy, 'request_exit_opinion') and self.risk_manager:
+            oracle = getattr(self.risk_manager, 'exit_oracle', None)
+            if oracle:
+                strat_id = getattr(strategy, 'id', None) or getattr(strategy, 'strategy_id', None) or strategy.__class__.__name__
+                sym = getattr(strategy, 'symbol', 'ALL')
+                oracle_key = f"{strat_id}_{sym}"
+                oracle.register_strategy(oracle_key, strategy)
+                logger.debug(f"🔮 [ORACLE-WIRE] Registered {oracle_key} in ExitOracle")
+        
     def register_portfolio(self, portfolio: Any) -> None: 
         self.portfolio = portfolio
         # PHASE 2 POWER: Back-reference for HotAdapterRL feedback loop
@@ -238,6 +295,9 @@ class Engine:
         
     def register_execution_handler(self, handler: Any) -> None: 
         self.execution_handler = handler
+        # Inject OrderManager to ExecutionHandler so UserDataStream can map fills correctly
+        if hasattr(self, 'order_manager') and hasattr(self.execution_handler, 'set_order_manager'):
+            self.execution_handler.set_order_manager(self.order_manager)
         
     def register_risk_manager(self, manager: Any) -> None: 
         self.risk_manager = manager
@@ -330,6 +390,49 @@ class Engine:
                         if now - getattr(self.correlation_manager, 'last_update', 0) > 300: # 5 mins
                             self.correlation_manager.update_correlations()
                             self.correlation_manager.last_update = now
+                            
+                            # 🌐 GRAPH LAYER UPDATE
+                            try:
+                                from core.meta_arbitrator import meta_arbitrator
+                                if hasattr(self.correlation_manager, 'correlation_matrix') and self.correlation_manager.correlation_matrix is not None:
+                                    meta_arbitrator.graph_layer.update_graph_edges(self.correlation_manager.correlation_matrix)
+                            except Exception as e:
+                                logger.error(f"Failed to update Graph Edges: {e}")
+                    
+                    # 🧬 LIVE MUTATION TRIGGER
+                    if hasattr(self, 'evolution_engine') and self.evolution_engine:
+                        now = time.time()
+                        if now - getattr(self, '_last_mutation_time', 0) > 3600: # Every 1 hour
+                            self._trigger_live_mutation()
+                            self._last_mutation_time = now
+                            
+                    # 🧹 MEMORIA OMNISCIENTE (Pruning & Cleanup)
+                    # QUÉ: Ejecuta limpieza de base de datos para evitar bloat en uptimes largos.
+                    # POR QUÉ: Las tablas de telemetría forense crecen masivamente.
+                    now_time = time.time()
+                    if now_time - getattr(self, '_last_db_prune_time', 0) > 86400: # Every 24 hours
+                        if hasattr(self, 'portfolio') and hasattr(self.portfolio, 'db'):
+                            try:
+                                self.portfolio.db.prune_historical_data(days_to_keep=7)
+                            except Exception as e:
+                                logger.error(f"Error en Pruning de Memoria: {e}")
+                        self._last_db_prune_time = now_time
+
+                    # ═══════════════════════════════════════════════════════════════
+                    # CTOS Phase 5: SYSTEMIC INTEGRITY FORENSICS
+                    # QUÉ: Registrar estado general del sistema (strategies activas, posiciones, health)
+                    # POR QUÉ: Permite analizar divergencias retrospectivamente
+                    # ═══════════════════════════════════════════════════════════════
+                    if now_time - getattr(self, '_last_system_awareness_time', 0) > 300: # Every 5 minutes
+                        if hasattr(self, 'portfolio') and hasattr(self.portfolio, 'db'):
+                            try:
+                                active_strategies = global_state.get_system_capabilities()
+                                positions = {s: p for s,p in self.portfolio.positions.items()} if getattr(self.portfolio, 'positions', None) else {}
+                                self.portfolio.db.log_system_awareness_snapshot(active_strategies, positions)
+                            except Exception as e:
+                                logger.error(f"Error logging system awareness: {e}")
+                        self._last_system_awareness_time = now_time
+                            
                     continue
                 
                 # ⚡ PHASE OMNI: BURST-MODE EVENT DRAIN
@@ -355,6 +458,12 @@ class Engine:
                         break
                 
                 # 2. Critical Section (GC Disabled) — process entire burst
+                # ════ CTOS: CLOCK TICK ════
+                # QUÉ: Dispara un nuevo ciclo de reloj maestro ANTES del burst.
+                # POR QUÉ: Todos los módulos deben operar sobre el mismo instante t.
+                # CÓMO: global_clock.tick() congela timestamp y notifica suscriptores.
+                global_clock.tick()
+                
                 start_loop = time.perf_counter()
                 with GCTuner.critical_section():
                     for evt in burst_batch:
@@ -391,6 +500,15 @@ class Engine:
                 # ✅ PHASE 18: RYZEN 7 SNIPER (Dynamic Orchestration)
                 if self.metrics['processed_events'] % 100 == 0:
                      self._optimize_ryzen_resources()
+                
+                # ════ CTOS PHASE 2: EVENT BUS DRAIN ════
+                # QUÉ: Procesa eventos encolados en el EventBus.
+                # POR QUÉ: Sin esto, los subscribers del EventBus nunca reciben eventos.
+                # CUÁNDO: Al final de cada burst loop, fuera del GC critical section.
+                try:
+                    event_bus.process_queue(max_items=50)
+                except Exception as e:
+                    logger.error(f"Error processing EventBus queue: {e}")
 
             except asyncio.CancelledError:
                 break
@@ -497,8 +615,27 @@ class Engine:
     async def _process_market_event(self, event: MarketEvent) -> None:
         """Process MARKET event asynchronously"""
         
-        # 0. Supreme Meta-Coordinator: Update Symbol State Matrix
-        symbol_state_matrix.update_from_market_event(event)
+        # 0. CTOS: Update Single Source of Truth (SSOT)
+        # QUÉ: global_state absorbe symbol_state_matrix.
+        # POR QUÉ: Antes había dos matrices de estado — ahora hay UNA.
+        # CÓMO: symbol_state_matrix es un proxy que delega a global_state.
+        global_state.update_from_market_event(event)
+        
+        # 🌐 GRAPH LAYER: Update State Vector features
+        try:
+            from core.meta_arbitrator import meta_arbitrator
+            sym_state = global_state.get_state(event.symbol)
+            if sym_state:
+                features = {
+                    'orderflow_imbalance': sym_state.get('order_imbalance', 0.0),
+                    'spread_cost_pct': sym_state.get('spread', 0.0),
+                    'trend_score_m5': sym_state.get('trend_strength', 0.0),
+                    'volatility_atr_pct': sym_state.get('volatility', 0.0)
+                }
+                if meta_arbitrator.graph_layer:
+                    meta_arbitrator.graph_layer.update_symbol_state(event.symbol, features)
+        except Exception as e:
+            logger.error(f"GraphLayer State Update Error: {e}")
         
         # 1. Efficient Portfolio Update (Active symbols only)
         if event.symbol and event.close_price and self.portfolio:
@@ -529,8 +666,76 @@ class Engine:
                      if stop_signals:
                          for sig in stop_signals:
                              self.events.put(sig)
+                             
+                     # ═══════════════════════════════════════════════════════════════
+                     # FORENSIC FIX #18: ExitOracle DUPLICATE REMOVAL
+                     # QUÉ: ExitOracle ya se evalúa DENTRO de risk_manager.check_stops() (L2446).
+                     #   Evaluarlo AQUÍ TAMBIÉN generaba EXIT DOBLES por tick.
+                     # POR QUÉ: Esto era la RAÍZ de las "pisadas de pata" — cada tick
+                     #   producía 2 señales de cierre idénticas inundando el MetaCoordinator.
+                     # FIX: ELIMINADO. Solo sobrevive Dynamic Target Mutation (abajo).
+                     # ═══════════════════════════════════════════════════════════════
+                     if self.risk_manager and hasattr(self.risk_manager, 'exit_oracle'):
+                         oracle = self.risk_manager.exit_oracle
+                         if oracle:
+                             # Dynamic Target Mutation still needs verdicts
+                             pos_map = {}
+                             for h in ['SCALPING', 'SWING']:
+                                 pos = self.portfolio.get_horizon_position(event.symbol, h)
+                                 if pos and pos.get('quantity', 0) != 0:
+                                     pos_map[f"{event.symbol}_{h}"] = pos
+                             
+                             if pos_map:
+                                 market_data = {event.symbol: {'close': event.close_price}}
+                                 verdicts = oracle.evaluate_open_positions(pos_map, market_data)
+                                 for verdict in verdicts:
+                                     # EXIT signals are now SOLELY handled by risk_manager.check_stops()
+                                     # Here we ONLY process Dynamic Target Mutations
+                                     
+                                     # ═══════════════════════════════════════════════════
+                                     # CTOS PHASE 8: DYNAMIC TARGET MUTATION
+                                     # FORENSIC FIX #14: pos_map contenía COPIAS (.copy()).
+                                     #   Mutar pv['tp_pct'] mutaba la copia, NO el ledger.
+                                     # FIX: Acceder directamente al virtual_ledger.
+                                     # ═══════════════════════════════════════════════════
+                                     if verdict.dynamic_targets and not verdict.should_exit:
+                                         dt = verdict.dynamic_targets
+                                         tp_mult = dt.get('tp_mult', 1.0)
+                                         sl_mult = dt.get('sl_mult', 1.0)
+                                          
+
+                                         if tp_mult != 1.0 or sl_mult != 1.0:
+                                             for ps in ['LONG', 'SHORT']:
+                                                 for h in ['SCALPING', 'SWING']:
+                                                     vk = f"{event.symbol}_{h}_{ps}"
+                                                     real_pos = self.portfolio.virtual_ledger.get(vk)
+                                                     if not real_pos or abs(real_pos.get('quantity', 0)) < 1e-8:
+                                                         continue
+                                                     if 'original_tp_pct' not in real_pos:
+                                                         real_pos['original_tp_pct'] = real_pos.get('tp_pct', 0.008)
+                                                     if 'original_sl_pct' not in real_pos:
+                                                         real_pos['original_sl_pct'] = real_pos.get('sl_pct', 0.004)
+                                                     base_tp = real_pos['original_tp_pct']
+                                                     base_sl = real_pos['original_sl_pct']
+                                                     if h == 'SCALPING':
+                                                         new_tp = max(0.002, min(base_tp * tp_mult, 0.015))
+                                                         new_sl = max(0.001, min(base_sl * sl_mult, 0.008))
+                                                     else:
+                                                         new_tp = max(0.005, min(base_tp * tp_mult, 0.050))
+                                                         new_sl = max(0.003, min(base_sl * sl_mult, 0.030))
+                                                     old_tp = real_pos.get('tp_pct', base_tp)
+                                                     old_sl = real_pos.get('sl_pct', base_sl)
+                                                     real_pos['tp_pct'] = new_tp
+                                                     real_pos['sl_pct'] = new_sl
+                                                     if abs(new_tp - old_tp) > 1e-6 or abs(new_sl - old_sl) > 1e-6:
+                                                         logger.info(
+                                                             f"🎯 [DYNAMIC CHASE] {event.symbol} {h}_{ps} | "
+                                                             f"TP: {old_tp*100:.2f}% → {new_tp*100:.2f}% (x{tp_mult:.1f}) | "
+                                                             f"SL: {old_sl*100:.2f}% → {new_sl*100:.2f}% (x{sl_mult:.1f})"
+                                                          )
+
                  except Exception as e:
-                     logger.error(f"check_stops error for {event.symbol}: {e}")
+                     logger.error(f"check_stops/oracle error for {event.symbol}: {e}")
         else:
              self._update_portfolio_prices()
         
@@ -606,9 +811,21 @@ class Engine:
                  if 'ppo_entropy' in event.metadata:
                      self.portfolio.current_ppo_entropy = event.metadata['ppo_entropy']
 
-        # --- SHOCK REGIME EVASION (DYNAMIC FREEZE) ---
+        # --- SHOCK REGIME & FUNDING EVASION (DYNAMIC FREEZE) ---
         is_exit_signal = hasattr(event, 'signal_type') and str(event.signal_type) == 'SignalType.EXIT'
         if not is_exit_signal and self.data_handlers:
+            # 🕒 FUNDING FEE EVASION (Phase 1 Protection)
+            try:
+                from datetime import datetime, timezone
+                now_utc = datetime.now(timezone.utc)
+                # Binance funding occurs at 00:00, 08:00, 16:00 UTC.
+                # We block entries from XX:45 to XX:59 to avoid funding drag.
+                if (now_utc.hour in (23, 7, 15)) and (now_utc.minute >= 45):
+                    logger.warning(f"🕒 [FUNDING EVASION] Entry signal {event.symbol} blocked. Funding snapshot in < 15 mins.")
+                    self.metrics['discarded_events'] += 1
+                    return
+            except Exception as e:
+                logger.error(f"Funding evasion error: {e}")
             try:
                 from utils.cooldown_manager import cooldown_manager
                 # Check if currently frozen
@@ -667,7 +884,6 @@ class Engine:
                 _direction_str = 'long' if 'LONG' in str(_dir) else ('short' if 'SHORT' in str(_dir) else str(_dir).lower())
                 _horizon = getattr(event, 'horizon', 'SCALPING')
                 
-                # Only record directional entry signals
                 if _direction_str in ['long', 'short']:
                     self.risk_manager.prediction_tracker.record_signal(
                         strategy_id=_strat_id,
@@ -678,6 +894,36 @@ class Engine:
                     )
             except Exception as e:
                 logger.error(f"Failed to record signal in PredictionTracker: {e}")
+
+        # ═══════════════════════════════════════════════════════════════
+        # CTOS Phase 5: SYSTEMIC INTEGRITY (CROSS-STRATEGY AWARENESS)
+        # QUÉ: Verificar `get_competing_strategies()` antes de procesar señales contradictorias.
+        # POR QUÉ: Evitar "pisarse las patas" entre Swing y Scalping.
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            _signal_dir = 'LONG' if 'LONG' in str(event.signal_type) else ('SHORT' if 'SHORT' in str(event.signal_type) else None)
+            if _signal_dir and self.portfolio:
+                _horizon = getattr(event, 'horizon', 'SCALPING')
+                _opposing_horizon = 'SWING' if _horizon == 'SCALPING' else 'SCALPING'
+                _opp_pos = self.portfolio.get_horizon_position(event.symbol, _opposing_horizon)
+                
+                if _opp_pos and _opp_pos.get('quantity', 0) != 0:
+                    _opp_actual_dir = 'LONG' if _opp_pos['quantity'] > 0 else 'SHORT'
+                    if _opp_actual_dir != _signal_dir:
+                        # Obtenemos las estrategias que compiten
+                        competing = global_state.get_competing_strategies(event.symbol, _opposing_horizon)
+                        comp_names = [c.get('strategy_id') for c in competing]
+                        
+                        logger.warning(
+                            f"⚠️ [SYSTEMIC INTEGRITY] Conflicto direccional en {event.symbol}: "
+                            f"Señal {_horizon} {_signal_dir} vs Posición {_opposing_horizon} {_opp_actual_dir}. "
+                            f"Estrategias compitiendo: {comp_names}. Pasando a Meta-Arbitrator para resolución explícita."
+                        )
+                        event.metadata = event.metadata or {}
+                        event.metadata['competing_horizon'] = _opposing_horizon
+                        event.metadata['competing_direction'] = _opp_actual_dir
+        except Exception as e:
+            logger.error(f"Failed to check competing strategies: {e}")
 
         # ═══════════════════════════════════════════════════════════════
         # SOPHIA-GLOBAL VETO FILTER
@@ -699,6 +945,17 @@ class Engine:
             if self.omega_protocol.should_veto_signal(sig_dict):
                 self.metrics['discarded_events'] += 1
                 return
+
+        # 🏛️ INSTITUTIONAL SEGMENTATION (Policy Enforcement)
+        try:
+            current_regime_str = self._get_current_market_regime()
+            event = self.segment_policy_engine.enforce_policy(event, current_regime_str)
+            if hasattr(event, 'segment_policy') and event.segment_policy.veto:
+                logger.warning(f"🛑 [SEGMENT POLICY] Signal {event.symbol} VETOED by Segment Policy Engine.")
+                self.metrics['discarded_events'] += 1
+                return
+        except Exception as e:
+            logger.error(f"Segment Policy Engine Error: {e}")
 
         # 🧠 META-COORDINATOR INJECTION
         # Instead of directly processing through the RiskManager, we submit this to the Supreme Arbitrator
@@ -763,9 +1020,12 @@ class Engine:
                      from utils.interaction_monitor import get_interaction_monitor
                      strat_id = getattr(event, 'strategy_id', 'Strategy')
                      get_interaction_monitor().log_interaction(
-                         source=strat_id, 
-                 except Exception:
-                     pass
+                         source=strat_id,
+                         action="Signal Rejected",
+                         details=f"RiskManager rejected signal for {event.symbol}"
+                     )
+                 except Exception as e:
+                     logger.debug(f"Interaction monitor logging failed: {e}")
 
     async def _process_order_event(self, event):
         """Process ORDER event asynchronously"""
@@ -798,14 +1058,53 @@ class Engine:
                     try:
                         out_str = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "FLAT")
                         self.shadow_bridge.update_outcome(event.symbol, out_str, pnl)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Shadow bridge outcome update failed: {e}")
 
                 for strategy in self.strategies:
                     # Filtramos por símbolo para asegurar que actualizamos la instancia correcta
                     if getattr(strategy, 'symbol', None) == event.symbol and \
                        hasattr(strategy, 'update_recursive_weights'):
                         strategy.update_recursive_weights(trade_outcome)
+
+                # ════════════════════════════════════════════════════════════════
+                # CTOS PHASE 2: FEEDBACK LOOP + EVENT BUS FILL PUBLISH
+                # QUÉ: Alimenta el FeedbackProcessor con el resultado del trade
+                #   y publica el fill al EventBus para suscriptores downstream.
+                # POR QUÉ: Sin esto, el sistema NUNCA aprende de sus trades.
+                #   FeedbackProcessor analiza slippage, WR por régimen, y calidad
+                #   de exits → emite ajustes adaptativos.
+                # PARA QUÉ: Cerrar el loop EXEC→RESULT→LEARNING→ADJUSTMENT.
+                # CÓMO: Usa _last_closed_trade_data del portfolio para contexto.
+                # CUÁNDO: Después de que portfolio procesó el fill y las estrategias
+                #   actualizaron pesos. No bloquea el path crítico.
+                # DÓNDE: core/engine.py → _process_fill_event()
+                # QUIÉN: Engine (emisor) → FeedbackProcessor (receptor)
+                # ════════════════════════════════════════════════════════════════
+                try:
+                    if pnl is not None and pnl != 0:
+                        _closed = getattr(self.portfolio, '_last_closed_trade_data', None) if self.portfolio else None
+                        feedback_processor.process_fill_outcome(
+                            fill_event=event,
+                            pnl=pnl,
+                            strategy_id=_closed.get('strategy_id', 'Unknown') if _closed else 'Unknown',
+                            entry_price=_closed.get('entry_price', 0.0) if _closed else 0.0,
+                            duration_seconds=_closed.get('duration_seconds', 0.0) if _closed else 0.0,
+                        )
+                except Exception as _fb_e:
+                    logger.debug(f"[FEEDBACK] Fill processing skipped: {_fb_e}")
+                
+                # Publish to EventBus FILLS channel
+                try:
+                    event_bus.publish(EventChannel.FILLS, {
+                        'symbol': event.symbol,
+                        'pnl': pnl,
+                        'strategy_id': getattr(event, 'strategy_id', 'Unknown'),
+                        'horizon': getattr(event, 'horizon', 'SCALPING'),
+                        'timestamp_ns': time.time_ns(),
+                    })
+                except Exception as e:
+                    logger.error(f"EventBus publish FILLS error: {e}")
 
         
         if self.order_manager and hasattr(event, 'order_id') and event.order_id:
@@ -830,41 +1129,49 @@ class Engine:
     # ==================================================================
 
     def _get_current_market_regime(self) -> str:
-        """Determines current market regime (TRENDING_BULL, TRENDING_BEAR, RANGING, HIGH_VOLATILITY)"""
+        """Determines current market regime (TRENDING_BULL, TRENDING_BEAR, RANGING, HIGH_VOLATILITY)
+        CTOS PHASE 2: Syncs result to global_state.market_regime.
+        """
+        _regime = 'UNKNOWN'
+        
         # 1. Trust Risk Manager first (centralized analysis)
         if self.risk_manager and hasattr(self.risk_manager, 'current_regime'):
-             return self.risk_manager.current_regime
+             _regime = self.risk_manager.current_regime
+        else:
+            # 2. Fallback: Simple heuristic using BTC proxy
+            # This prevents 'RANGING' deadlock if risk manager isn't updating
+            try:
+                if self.data_handlers:
+                    dh = self.data_handlers[0]
+                    bars = dh.get_latest_bars('BTC/USDT', n=50)
+                    if bars and len(bars) >= 20:
+                         close_prices = [b['close'] for b in bars]
+                         # 1. Calcular Retornos y Volatilidad (Desviación Estándar)
+                         returns = [(close_prices[i] - close_prices[i-1])/close_prices[i-1] for i in range(1, len(close_prices))]
+                         mean_ret = sum(returns) / len(returns) if returns else 0.0
+                         var_ret = sum((r - mean_ret)**2 for r in returns) / len(returns) if returns else 0.0
+                         std_ret = var_ret**0.5
+                         
+                         # 2. Calcular Drift (Dirección del Precio)
+                         drift = (close_prices[-1] - close_prices[0]) / close_prices[0] if close_prices[0] > 0 else 0.0
+                         
+                         # 3. Clasificación de Umbrales Seguros
+                         if std_ret > 0.002:  # Volatilidad alta (~0.2% por barra)
+                             _regime = 'HIGH_VOLATILITY'
+                         elif drift > 0.003: # Tendencia alcista > 0.3%
+                             _regime = 'TRENDING_BULL'
+                         elif drift < -0.003: # Tendencia bajista < -0.3%
+                             _regime = 'TRENDING_BEAR'
+                         else:
+                             _regime = 'RANGING'
+            except Exception as e:
+                logger.debug(f"Fallback regime calculation failed: {e}")
         
-        # 2. Fallback: Simple heuristic using BTC proxy
-        # This prevents 'RANGING' deadlock if risk manager isn't updating
-        try:
-            if self.data_handlers:
-                dh = self.data_handlers[0]
-                bars = dh.get_latest_bars('BTC/USDT', n=50)
-                if bars and len(bars) >= 20:
-                     close_prices = [b['close'] for b in bars]
-                     # 1. Calcular Retornos y Volatilidad (Desviación Estándar)
-                     returns = [(close_prices[i] - close_prices[i-1])/close_prices[i-1] for i in range(1, len(close_prices))]
-                     mean_ret = sum(returns) / len(returns) if returns else 0.0
-                     var_ret = sum((r - mean_ret)**2 for r in returns) / len(returns) if returns else 0.0
-                     std_ret = var_ret**0.5
-                     
-                     # 2. Calcular Drift (Dirección del Precio)
-                     drift = (close_prices[-1] - close_prices[0]) / close_prices[0] if close_prices[0] > 0 else 0.0
-                     
-                     # 3. Clasificación de Umbrales Seguros
-                     if std_ret > 0.002:  # Volatilidad alta (~0.2% por barra)
-                         return 'HIGH_VOLATILITY'
-                     elif drift > 0.003: # Tendencia alcista > 0.3%
-                         return 'TRENDING_BULL'
-                     elif drift < -0.003: # Tendencia bajista < -0.3%
-                         return 'TRENDING_BEAR'
-                     else:
-                         return 'RANGING'
-        except Exception:
-            pass
-            
-        return 'UNKNOWN'
+        # CTOS PHASE 2: Sync regime to SSOT (single write point)
+        if _regime != 'UNKNOWN':
+            global_state.market_regime = _regime
+        
+        return _regime
 
     def _should_strategy_run(self, strategy, event, regime: str) -> bool:
         """
@@ -878,6 +1185,16 @@ class Engine:
         # PROFESSOR METHOD: No procesar eventos de otros símbolos para reducir latencia.
         if hasattr(strategy, 'symbol') and strategy.symbol != event.symbol:
             return False
+
+        # 0.5 Data Leakage Prevention (Repainting FIX)
+        # QUÉ: Bloquea la evaluación si la vela no está cerrada, salvo que la estrategia
+        #   esté explícitamente diseñada para operar intraday (HFT/Tick data).
+        # POR QUÉ: Las estrategias evalúan el índice [-1]. Si la vela está viva,
+        #   el RSI, MACD o ML model repinta y da señales falsas.
+        if hasattr(event, 'is_closed') and not getattr(event, 'is_closed', True):
+            if not getattr(strategy, 'handles_tick_data', False):
+                return False
+
 
         # 1. Regime Compatibility
         if 'Statistical' in strat_name:
@@ -906,10 +1223,12 @@ class Engine:
         if not self.portfolio or not self.data_handlers:
             return
             
-        active_symbols = [
-            sym for sym, pos in self.portfolio.positions.items()
-            if pos['quantity'] != 0
-        ]
+        # FORENSIC FIX #16: Use virtual_ledger to find ALL active symbols
+        # aggregate positions can miss symbols where LONG + SHORT net to 0
+        active_symbols = list(set(
+            v_key.split('_')[0] for v_key, pos in self.portfolio.virtual_ledger.items()
+            if abs(pos.get('quantity', 0)) > 1e-8
+        ))
         
         if not active_symbols:
             return
@@ -1048,3 +1367,69 @@ class Engine:
                 strategy.stop()
             except Exception as e:
                 logger.error(f"Error stopping strategy {getattr(strategy, 'symbol', 'Unknown')}: {e}")
+
+    def _on_mutation_event(self, payload: Dict[str, Any]):
+        """
+        🧬 Applies mutated genes to global Config dynamically.
+        """
+        try:
+            genes = payload.get('mutated_genes', {})
+            if not genes: return
+            
+            from config import Config
+            # Update Risk Parameters
+            if 'tp_pct' in genes:
+                Config.Risk.RISK_THRESHOLDS['take_profit_base'] = genes['tp_pct']
+            if 'sl_pct' in genes:
+                Config.Risk.RISK_THRESHOLDS['stop_loss_base'] = genes['sl_pct']
+                
+            # Update Strategy Parameters
+            if 'adx_threshold' in genes:
+                Config.Strategies.ML_THRESHOLDS['trending_min_adx'] = genes['adx_threshold']
+                
+            logger.info(f"🧬 [MUTATION APPLIED] New Config parameters injected live! ({len(genes)} genes)")
+        except Exception as e:
+            logger.error(f"Error applying live mutation: {e}")
+
+
+    def _trigger_live_mutation(self):
+        """
+        🧬 PHASE 3: Integración del Motor Evolutivo (Live Mutation).
+        Evaluates recent trades and mutates Config parameters dynamically.
+        """
+        if not self.evolution_engine: return
+        
+        try:
+            from core.feedback_processor import feedback_processor
+            from core.evolution import FitnessCalculator
+            outcomes = feedback_processor.get_recent_outcomes(n=50)
+            if len(outcomes) < 10:
+                logger.debug("🧬 [LIVE MUTATION] Not enough trades to evaluate fitness.")
+                return 
+                
+            # Simulate a Genotype evaluation
+            score = FitnessCalculator.calculate_fitness(outcomes)
+            
+            # Use current Config as base Genotype
+            from config import Config
+            current_genes = Genotype(symbol="LIVE_CONFIG")
+            current_genes.genes['tp_pct'] = Config.Risk.RISK_THRESHOLDS.get('take_profit_base', 0.015)
+            current_genes.genes['sl_pct'] = Config.Risk.RISK_THRESHOLDS.get('stop_loss_base', 0.02)
+            current_genes.genes['adx_threshold'] = Config.Strategies.ML_THRESHOLDS.get('trending_min_adx', 25)
+            
+            # Mutate
+            mutated_genes = self.evolution_engine.mutate(current_genes)
+            
+            # Publish Mutation to EventBus
+            from core.event_bus import event_bus, EventChannel
+            event_bus.publish(EventChannel.MUTATION, {
+                'source': 'EvolutionEngine',
+                'fitness_score': score,
+                'mutated_genes': mutated_genes.genes,
+                'timestamp_ns': time.time_ns()
+            })
+            
+            logger.info(f"🧬 [LIVE MUTATION] Triggered! Fitness: {score:.2f} | Mutated Genes: {list(mutated_genes.genes.keys())[:3]}")
+        except Exception as e:
+            logger.error(f"Live Mutation Error: {e}")
+

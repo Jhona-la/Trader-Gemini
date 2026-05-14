@@ -59,6 +59,8 @@ class MarketEvent(Event):
     low_price: Optional[float] = None  # Added for High-Fidelity Backtest
     order_flow: Optional[Dict[str, Any]] = None # Added for Phalanx-Omega
     health_metrics: Optional[Dict[str, Any]] = None # Added for Data Integrity Hardening
+    is_closed: bool = True # FORENSIC-V47: Fix Data Leakage (Repainting)
+    
     
     # 🏎️ [EXCELSIOR-TITAN] Phase III: CPU Cache Alignment
     # Force object size closer to 64-byte cache line to reduce false sharing
@@ -101,8 +103,12 @@ class SignalEvent(Event):
     strategy_version: Optional[str] = "1.0.0" # Versioning for evolutionary tracking
     metadata: Optional[Dict[str, Any]] = None # Flexible metadata container
     
+    # 🏛️ INSTITUTIONAL SEGMENTATION (Major vs Meme)
+    segment_policy: Optional[Any] = None # SegmentPolicy instance injected by SegmentPolicyEngine
+    
     # AEGIS-ULTRA Phase 17: Telemetry
     trade_id: Optional[str] = None # UUID for forensic tracing
+    thought_id: Optional[str] = None # UUID for thought tracing
     
     # 🏎️ [EXCELSIOR-TITAN] Phase III: CPU Cache Alignment
     _pad1: Optional[int] = field(default=None, repr=False)
@@ -126,12 +132,15 @@ class SignalEvent(Event):
         except ValueError as e:
             raise ValueError(f"SignalEvent validation failed: {e}")
         
-        # Auto-generate trade_id if missing (using object.__setattr__ because frozen=True)
+        # Auto-generate trade_id and thought_id if missing (using object.__setattr__ because frozen=True)
         if not self.trade_id:
             # Prefix based on horizon to prevent cross-contamination
             prefix = "SCL" if getattr(self, "horizon", "SCALPING") == "SCALPING" else "SWG"
             short_id = f"[{prefix}]-TRD-{str(uuid.uuid4())[:6].upper()}"
             object.__setattr__(self, 'trade_id', short_id)
+            
+        if not self.thought_id:
+            object.__setattr__(self, 'thought_id', f"THOUGHT-{str(uuid.uuid4())[:6].upper()}")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -161,6 +170,7 @@ class OrderEvent(Event):
     
     # AEGIS-ULTRA Phase 17: Telemetry
     trade_id: Optional[str] = None # UUID for forensic tracing
+    thought_id: Optional[str] = None # UUID for thought tracing
     leverage: float = 1.0 # Phase 15: Precise margin tracking
     
     # 🧬 [Phase 19] Shadow Mode
@@ -238,6 +248,7 @@ class FillEvent(Event):
     
     # AEGIS-ULTRA Phase 17: Telemetry
     trade_id: Optional[str] = None # UUID for forensic tracing
+    thought_id: Optional[str] = None # UUID for thought tracing
     leverage: float = 1.0 # Phase 15: Precise margin tracking
     
     # ⏱️ Horizon Specialization

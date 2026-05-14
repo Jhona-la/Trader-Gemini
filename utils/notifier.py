@@ -198,7 +198,7 @@ class _RateLimiter:
     Token bucket rate limiter for Telegram API.
     Max 30 messages per minute by default.
     """
-    def __init__(self, max_per_minute: int = 15):
+    def __init__(self, max_per_minute: int = 999999):
         self._max = max_per_minute
         self._timestamps: deque = deque(maxlen=max_per_minute)
         self._lock = threading.Lock()
@@ -304,32 +304,36 @@ class Notifier:
         except Exception:
             pass
 
-        if getattr(Config, 'IS_BACKTEST', False):
-            if priority == "CRITICAL":
-                pass # Allow CRITICAL alerts (startup, kill switch) to proceed immediately
-            elif "TRADE CERRADO" in message:
-                # Batch trades during backtest to avoid rate limits and Telegram bans
-                with Notifier._lock:
-                    if not hasattr(Notifier, '_backtest_trade_batch'):
-                        Notifier._backtest_trade_batch = []
-                    Notifier._backtest_trade_batch.append(message)
-                    
-                    # Telegram limit is 4096 chars. 3 full trades is ~2500 chars.
-                    if len(Notifier._backtest_trade_batch) >= 3:
-                        batch_msg = "==== 📊 BATCH DE 3 TRADES (BACKTEST) ====\n\n" + "\n-------------------\n".join(Notifier._backtest_trade_batch)
-                        Notifier._backtest_trade_batch.clear()
-                        # Override message and priority to allow it through
-                        message = batch_msg
-                        priority = "CRITICAL"
-                    else:
-                        return
-            else:
-                return
-
+        # ═══════════════════════════════════════════════════════════════
+        # CTOS OMNISCIENCE: BATCHED SPAM (Evade Rate Limits)
+        # QUÉ: Si superamos el Rate Limit, no dropeamos, lo metemos al batch.
+        # POR QUÉ: El usuario exige visibilidad absoluta de TODO.
+        # PARA QUÉ: Evadir el 429 concatenando en bloques gigantes.
+        # ═══════════════════════════════════════════════════════════════
         if not Notifier._rate_limiter.allow():
-            logger.warning("📢 [Notifier] Rate limited — Telegram message dropped (saved locally)")
+            logger.warning("📢 [Notifier] Rate limited — Queueing message for batching")
+            with Notifier._lock:
+                if not hasattr(Notifier, '_backtest_trade_batch'):
+                    Notifier._backtest_trade_batch = []
+                Notifier._backtest_trade_batch.append(f"[{priority}] {message}")
+                
+                # Auto-flush if batch gets too big (Telegram limit is 4096 chars, 
+                # so let's flush every 5 messages or ~2500 chars)
+                current_len = sum(len(m) for m in Notifier._backtest_trade_batch)
+                if len(Notifier._backtest_trade_batch) >= 5 or current_len > 3000:
+                    batch_msg = "==== 📊 SPAM BATCH ====\n\n" + "\n---\n".join(Notifier._backtest_trade_batch)
+                    Notifier._backtest_trade_batch.clear()
+                    # Resubmit the batch as a single message bypassing the rate limiter temporarily
+                    # but sleeping to prevent an instant 429
+                    time.sleep(1.0)
+                    Notifier._get_executor().submit(Notifier._do_send_telegram_bypass, batch_msg, priority)
             return
 
+        Notifier._do_send_telegram_bypass(message, priority)
+
+    @staticmethod
+    def _do_send_telegram_bypass(message: str, priority: str) -> None:
+        """Sends the message directly without checking the rate limiter."""
         # Priority visual header
         header = "🤖 <b>TRADER GEMINI</b>"
         if priority == "CRITICAL":
@@ -379,6 +383,16 @@ class Notifier:
                 logger.warning(f"Telegram failed: {response.text}")
         except Exception as e:
             logger.error(f"Error sending Telegram: {e}")
+
+    @staticmethod
+    def flush_backtest_trades() -> None:
+        """Flushes any remaining batched trades during a backtest."""
+        with Notifier._lock:
+            if hasattr(Notifier, '_backtest_trade_batch') and len(Notifier._backtest_trade_batch) > 0:
+                batch_msg = "==== 📊 BATCH DE TRADES FINAL (BACKTEST) ====\n\n" + "\n-------------------\n".join(Notifier._backtest_trade_batch)
+                Notifier._backtest_trade_batch.clear()
+                Notifier._do_send_telegram(batch_msg, "CRITICAL")
+
 
     @staticmethod
     def send_email(subject: str, body: str, is_html: bool = False) -> None:
@@ -464,7 +478,11 @@ class Notifier:
         visual_setup = td.setup_type if td.setup_type and td.setup_type not in ("None", "UNKNOWN") else "AUTOMATICO"
 
         msg = f"🎯 *NUEVO TRADE INICIADO* 🎯\n"
-        msg += f"ID: `{visual_tid}`\n\n"
+        msg += f"ID: `{visual_tid}`\n"
+        if td.metadata.get('thought_id'):
+            msg += f"Cortex ID: `{td.metadata.get('thought_id')}`\n\n"
+        else:
+            msg += "\n"
         msg += f"*Estrategia:* {td.strategy} ({horizon_emoji} {td.horizon})\n"
         
         # Avoid printing -100% win rate for uninitialized / open signals
@@ -540,6 +558,35 @@ class Notifier:
         if td.spread > 0:
             msg += f"📊 Spread: `{td.spread:,.4f}%`\n"
 
+        # ═══════════════════════════════════════════════════════════════
+        # CTOS PHASE 3: PREDICTION DETAILS & SIZE TRACKING
+        # ═══════════════════════════════════════════════════════════════
+        _p_audit = trade_data.get('prediction_audit', {})
+        _p_mag = _p_audit.get('predicted_magnitude') or trade_data.get('predicted_magnitude')
+        _p_dur = _p_audit.get('predicted_duration_bars') or trade_data.get('predicted_duration')
+        _p_target = _p_audit.get('predicted_target_price')
+        _p_conf = _p_audit.get('confidence') or td.ml_confidence
+
+        if _p_mag or _p_dur or _p_target:
+            msg += f"\n📏 *Predicción de Estrategia:*\n"
+            if _p_mag:
+                msg += f"   Magnitud: `+{float(_p_mag)*100:.2f}%`"
+                if _p_target:
+                    msg += f" → `${float(_p_target):,.2f}`"
+                msg += "\n"
+            if _p_dur:
+                msg += f"   Tiempo: `~{_p_dur} barras`\n"
+            if _p_conf:
+                msg += f"   Confianza: `{float(_p_conf)*100:.1f}%`\n"
+
+        _open_size = trade_data.get('open_size_usd', 0.0)
+        if _open_size > 0:
+            msg += f"\n📦 *Tamaño de Apertura:*\n"
+            msg += f"   Qty: `{td.quantity}` (`${_open_size:,.2f}` USD)\n"
+            _margin = trade_data.get('margin_used', 0.0)
+            if _margin > 0:
+                msg += f"   Margen: `${_margin:,.2f}` (`{td.leverage}x` Lev)\n"
+
         msg += f"\n🕒 `{td.timestamp}`"
 
         Notifier.send_telegram(msg)
@@ -578,7 +625,12 @@ class Notifier:
         dir_label = "📈 LONG" if dir_str in ("BUY", "LONG") else "📉 SHORT" if dir_str in ("SELL", "SHORT") else f"🔶 {dir_str}"
 
         msg = f"{result_emoji} *TRADE CERRADO* {result_emoji}\n"
-        msg += f"ID: `{td.trade_id}`\n\n"
+        msg += f"ID: `{td.trade_id}`\n"
+        thought_id = trade_data.get('thought_id', td.metadata.get('thought_id', 'N/A'))
+        if thought_id != 'N/A':
+            msg += f"Cortex ID: `{thought_id}`\n\n"
+        else:
+            msg += "\n"
 
         if td.exit_reason == "TIME_STOP_ZOMBIE":
             msg += f"🧟 *ZOMBIE CATCHER TRIGGERED*\n"
@@ -656,10 +708,94 @@ class Notifier:
             msg += f"R multiple: `{td.r_multiple:,.2f}`\n"
 
         if td.balance_before > 0:
-            msg += f"\n🏦 *GLOBAL ACCOUNT BALANCE:*\n"
-            msg += f"Antes de trade: `${td.balance_before:,.2f}`\n"
-            msg += f"Balance Total Ahora: `${td.balance_after:,.2f}`\n"
-            msg += f"Crecimiento Acumulado: `{td.balance_change_pct:+,.2f}%`\n"
+            balance_change = td.balance_after - td.balance_before
+            balance_change_pct = (balance_change / td.balance_before) * 100 if td.balance_before > 0 else 0.0
+            
+            msg += f"\n🏦 *CTOS OMNISCIENT BALANCE:*\n"
+            msg += f"├ Antes de iniciar la sesión: `${trade_data.get('session_start_equity', 0):,.4f}`\n"
+            msg += f"├ Valor antes del trade: `${td.balance_before:,.4f}`\n"
+            msg += f"├ Crecimiento neto de aporte: `${balance_change:+,.4f}` (`{balance_change_pct:+,.2f}%`)\n"
+            msg += f"├ Crecimiento acumulado sesión: `${trade_data.get('session_net_pnl', 0):+,.4f}`\n"
+            msg += f"└ Balance Total Actual: `${td.balance_after:,.4f}`\n"
+
+        # ═══════════════════════════════════════════════════════════════
+        # CTOS PHASE 5: EXPONENTIAL COMPOUNDING ROADMAP
+        # ═══════════════════════════════════════════════════════════════
+        roadmap = trade_data.get('growth_roadmap')
+        if roadmap:
+            msg += f"\n🚀 *ROADMAP CRECIMIENTO EXPONENCIAL (100% en 15 días):*\n"
+            msg += f"Meta Diaria: `+${roadmap.get('daily_target_usd', 0.0):.4f}` (`{roadmap.get('daily_target_pct', 0.0):.2f}%`)\n"
+            msg += f"Progreso Hoy: `${roadmap.get('usd_progress_today', 0.0):+.4f}`\n"
+            msg += f"Trades Ganadores Faltantes Hoy: `{roadmap.get('trades_needed_today', 0)}`\n"
+            if not roadmap.get('on_track', False) and roadmap.get('trades_needed_today', 0) > 0:
+                msg += f"⚠️ *ALERTA:* Velocidad baja. Necesitamos `{roadmap.get('trades_needed_today', 0)}` aciertos de `~${roadmap.get('avg_win_usd', 0.0):.2f}`.\n"
+
+        # ═══════════════════════════════════════════════════════════════
+        # CTOS PHASE 3: FORENSIC ENRICHMENT SECTIONS
+        # ═══════════════════════════════════════════════════════════════
+        
+        # A) Prediction Audit: What was predicted vs reality
+        _p_audit = trade_data.get('prediction_audit', {})
+        _p_mag = _p_audit.get('predicted_magnitude')
+        _p_dur = _p_audit.get('predicted_duration_bars')
+        _p_target = _p_audit.get('predicted_target_price')
+        _optimal_exit = _p_audit.get('optimal_exit_price')
+        _missed_profit = _p_audit.get('missed_profit_pct')
+        _was_correct = _p_audit.get('was_correct')
+        
+        _open_size = trade_data.get('open_size_usd', 0.0)
+        _close_size = trade_data.get('close_size_usd', 0.0)
+
+        if _p_mag or _p_dur:
+            pred_icon = "✅" if _was_correct else "❌"
+            msg += f"🧠 *Predicción de Estrategia:* {pred_icon}\n"
+            if _p_mag:
+                msg += f"   Se predijo magnitud: `+{float(_p_mag)*100:.2f}%`"
+                if _p_target:
+                    msg += f" → `${float(_p_target):,.2f}`"
+                msg += "\n"
+                msg += f"   Realidad lograda: `{td.net_pnl_pct:+,.2f}%`\n"
+            if _p_dur:
+                msg += f"   Se predijo tiempo: `{_p_dur} barras`\n"
+                msg += f"   Realidad tiempo: `{td.duration}`\n"
+            msg += f"   {pred_icon} Predicción {'ACERTADA' if _was_correct else 'FALLIDA'}\n"
+            if _optimal_exit:
+                msg += f"   💡 Punto óptimo (MFE): `${float(_optimal_exit):,.4f}`\n"
+            if _missed_profit and float(_missed_profit) > 0:
+                msg += f"   🕳️ Ganancia perdida: `{float(_missed_profit)*100:.2f}%`\n"
+
+        # B) Size Tracking: Open → Close
+        _open_sz = trade_data.get('open_size_usd', 0.0)
+        _close_sz = trade_data.get('close_size_usd', 0.0)
+        if _open_sz > 0 and _close_sz > 0:
+            _delta_sz = _close_sz - _open_sz
+            msg += f"\n📦 *Tamaños de Posición (Apertura vs Cierre):*\n"
+            msg += f"   Se abrió con:  `${_open_sz:,.2f}` USD\n"
+            msg += f"   Se cerró con: `${_close_sz:,.2f}` USD\n"
+            msg += f"   Diferencia (PnL Nocional): `${_delta_sz:+,.2f}` USD\n"
+
+        # C) Strategy Attribution
+        _opener = trade_data.get('opener_strategy')
+        _closer = trade_data.get('closer_strategy')
+        if _opener or _closer:
+            msg += f"\n🔄 *Atribución de Estrategia:*\n"
+            if _opener: msg += f"   Abrió: `{_opener}`\n"
+            if _closer: msg += f"   Cerró: `{_closer}` ({exit_emoji} `{td.exit_reason}`)\n"
+
+        # D) Session Growth Progress
+        _session_start = trade_data.get('session_start_equity', 0.0)
+        _session_growth = trade_data.get('session_growth_pct', 0.0)
+        _daily_target = trade_data.get('daily_target_pct', 4.73)
+        _growth_progress = trade_data.get('growth_progress', 0.0)
+        if _session_start > 0 and _daily_target > 0:
+            # Progress bar: 10 blocks
+            filled = int(_growth_progress * 10)
+            bar = '▓' * filled + '░' * (10 - filled)
+            msg += f"\n📈 *Meta Diaria ({_daily_target:.2f}%):*\n"
+            msg += f"   `{bar}` `{abs(_session_growth):.2f}%`\n"
+            msg += f"   Sesión inicio: `${_session_start:,.2f}`\n"
+            _session_net = trade_data.get('session_net_pnl', 0.0)
+            msg += f"   Acumulado sesión: `${_session_net:+,.4f}`\n"
 
         # ═══════════════════════════════════════════════════════════════
         # SOPHIA-GLOBAL FIX: WR display for CLOSE notifications only
@@ -682,10 +818,6 @@ class Notifier:
 
         # ═══════════════════════════════════════════════════════════════
         # XAI AUTOPSY DISPLAY (Phase Omega)
-        # QUÉ: Muestra la autopsia forense de Sophia en Telegram.
-        # POR QUÉ: El usuario necesita saber POR QUÉ perdió, no solo cuánto.
-        # PARA QUÉ: Feedback loop humano → mejores decisiones de configuración.
-        # CÓMO: Lee 'xai_autopsy' del trade_data inyectado por portfolio.py.
         # ═══════════════════════════════════════════════════════════════
         xai_autopsy = trade_data.get('xai_autopsy')
         if xai_autopsy:
@@ -693,6 +825,48 @@ class Notifier:
         sophia_narrative = trade_data.get('sophia_narrative')
         if sophia_narrative:
             msg += f"\n💬 _{sophia_narrative}_"
+
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC FIX #2: EXIT BALLOT DISPLAY
+        # QUÉ: Muestra qué estrategias de cierre votaron EXIT vs HOLD.
+        # POR QUÉ: Sin esto, no sabemos por qué se cerró o por qué NO
+        #   se cerró a tiempo. Es la pieza clave para diagnosticar pérdidas.
+        # PARA QUÉ: El usuario ve exactamente quién mandó cerrar.
+        # ═══════════════════════════════════════════════════════════════
+        _exit_ballot = trade_data.get('exit_ballot')
+        if _exit_ballot and isinstance(_exit_ballot, dict):
+            _exit_v = _exit_ballot.get('exit_voters', [])
+            _hold_v = _exit_ballot.get('hold_voters', [])
+            if _exit_v or _hold_v:
+                msg += f"\n\n🗳️ *Votación de Cierre:*\n"
+                for voter in _exit_v:
+                    msg += f"   🔴 EXIT: `{voter}`\n"
+                for voter in _hold_v:
+                    msg += f"   🟢 HOLD: `{voter}`\n"
+
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC FIX #2: DIAGNOSTIC STATS
+        # QUÉ: Estadísticas diagnósticas para entender salud del sistema.
+        # POR QUÉ: Si avg_loss > avg_win, necesitas WR > 57% para ser rentable.
+        # PARA QUÉ: Detectar R:R invertido y ajustar estrategias.
+        # ═══════════════════════════════════════════════════════════════
+        _diag = trade_data.get('diagnostic_stats')
+        if _diag and isinstance(_diag, dict):
+            avg_w = _diag.get('avg_win_pnl', 0.0)
+            avg_l = _diag.get('avg_loss_pnl', 0.0)
+            pf = _diag.get('profit_factor', 0.0)
+            msg += f"\n📊 *Diagnóstico Estadístico:*\n"
+            msg += f"   Avg Win: `${avg_w:,.4f}` | Avg Loss: `${avg_l:,.4f}`\n"
+            msg += f"   Profit Factor: `{pf:,.2f}`\n"
+            if avg_l > avg_w and avg_l > 0:
+                min_wr = avg_l / (avg_w + avg_l) * 100 if (avg_w + avg_l) > 0 else 50
+                msg += f"   ⚠️ R:R Invertido. WR mínimo para profit: `{min_wr:.1f}%`\n"
+
+        # E) Auditoría Inteligente: Sugerencias basadas en el resultado
+        if td.net_pnl < 0:
+            msg += f"\n\n💡 *Sugerencia Forense:* El trade se cerró en pérdida. El Oráculo reporta: `{td.exit_reason}`. Revisa si el `Alpha Decay` intervino demasiado temprano o si la estrategia `{_opener}` no capturó el momentum correcto."
+        elif _missed_profit and float(_missed_profit) > 0.005: # Si se perdió más de 0.5%
+            msg += f"\n\n💡 *Sugerencia Forense:* Cerramos en ganancia, pero perdimos un movimiento de `{float(_missed_profit)*100:.2f}%`. Revisa los parámetros de trailing stop de la estrategia `{_closer}`."
 
         if trade_data.get('skip_telegram'):
             # Just log to telemetry file and return
@@ -1177,6 +1351,8 @@ class Notifier:
         """
         🏁 Backtest Completion — Final results summary.
         """
+        Notifier.flush_backtest_trades()
+        
         msg = f"🏁 *BACKTEST COMPLETADO* 🏁\n\n"
 
         config = results.get('config', {})

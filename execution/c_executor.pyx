@@ -32,7 +32,7 @@ cdef class FastBinanceSigner:
         cdef str signature = hmac.new(self.secret_key, query_bytes, hashlib.sha256).hexdigest()
         return signature
         
-    cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False):
+    cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False, str positionSide="BOTH"):
         """
         Constructs the exact HTTP query and headers for Binance Futures (fapi) order endpoint.
         Returns: (endpoint, query_string, headers)
@@ -41,6 +41,7 @@ cdef class FastBinanceSigner:
         cdef list params = [
             f"symbol={symbol}",
             f"side={side}",
+            f"positionSide={positionSide}",
             f"type={order_type}",
             f"quantity={quantity:.6f}".rstrip('0').rstrip('.'),
             f"newOrderRespType=RESULT",

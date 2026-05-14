@@ -232,7 +232,7 @@ class SophiaReport:
     
     def to_log_line(self) -> str:
         """Compact one-line format for logging."""
-        top3 = ", ".join(f"{f['feature']}={f['contribution']:+.3f}" for f in self.top_features[:3])
+        top3 = ", ".join(f"{f['feature']}={f.get('value', 0.0):.1f}(δ{f['contribution']:+.3f})" for f in self.top_features[:3])
         return (
             f"[SOPHIA] P(Win)={self.win_probability:.1%} | "
             f"E[T]={self.expected_exit_mins:.0f}min | "
@@ -1580,8 +1580,18 @@ class SophiaIntelligence:
             certainty *= injector_boost
             logger.debug(f"💉 [COHERENCE] Injecting x{injector_boost:.2f} boost to certainty")
             
-        # Removed Divine Resonance (x1.4) and Force Collapse (x1.6) which bloated scores artificially
-
+        # 👻 RESURRECCIÓN FANTASMA: Divine Resonance y Force Collapse
+        # Se reactivan con capas de seguridad para encontrar MÁS trades de calidad
+        # sin inflar el score artificialmente.
+        if s_coherence >= 0.85:
+            divine_res = 1.25 # Divine Resonance: Extreme timeline coherence
+            certainty *= divine_res
+            logger.debug(f"👼 [DIVINE RESONANCE] Coherencia Extrema. Multiplicador x{divine_res}")
+            
+        if abs(q_tunneling - 1.0) < 0.15 and l_shield > 0.85:
+            collapse = 1.20 # Force Collapse: Certainty aligns with chaos shield
+            certainty *= collapse
+            logger.debug(f"🌌 [FORCE COLLAPSE] Colapso de estado cuántico. Multiplicador x{collapse}")
         certainty = min(3.0, certainty) # Probabilistic sanity limit
         
         # Adaptive Evolution Protocol: Horizon-Aware Certainty Floor

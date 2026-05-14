@@ -1,6 +1,7 @@
 
 import os
 import time
+import json
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -11,7 +12,8 @@ from core.events import SignalEvent
 from core.reward_system import TradeOutcome
 from utils.logger import logger
 from utils.notifier import Notifier
-from utils.data_manager import DatabaseHandler, safe_append_csv, safe_read_csv
+from data.database import DatabaseHandler
+from utils.data_manager import safe_append_csv, safe_read_csv
 from utils.atomic_guard import AtomicGuard
 from core.state_manager import AtomicStateManager # Phase 27
 from sophia.post_mortem import PostMortemComparator, PostMortemResult  # SOPHIA-INTELLIGENCE Protocol
@@ -58,6 +60,14 @@ class Portfolio:
         self.swing_ledger = []
         self.active_scalping_trades = []
         self.active_swing_trades = []
+        
+        # CTOS Phase 3: Session-level balance tracking for accurate reporting
+        self._session_start_equity = initial_capital  # Equity when session started
+        self._pre_trade_equity = initial_capital  # Fallback
+        self._pre_trade_equity_map = {} # trade_id -> Equity when trade opened
+        self._session_net_pnl = 0.0  # Accumulated net PnL this session
+        self._daily_growth_target = 0.0473  # 4.73% daily for 100% in 15 days
+        self._chronicle_tick_counters = {}  # {trade_id: tick_count} for chronicle logging
         
         self.realized_pnl = 0.0
         self.total_fees_paid = 0.0  # CRITERIO-AXIOMA: Explicit fee tracking
@@ -152,8 +162,8 @@ class Portfolio:
         if hasattr(self, 'data_provider') and self.data_provider and hasattr(self.data_provider, 'current_time_ms'):
             try:
                 return pd.to_datetime(self.data_provider.current_time_ms, unit="ms", utc=True)
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"Silent exception caught: {e}")
         return datetime.now(timezone.utc)
         
     def link_nemesis_to_sophia(self, sophia_instance):
@@ -763,26 +773,16 @@ class Portfolio:
                     self.positions[symbol]['low_water_mark'] = price
                     
             # --- 🛡️ PHASE 15: HEDGE MODE SYNC ---
-            # Update all virtual ledgers for this symbol (Multi-Horizon Support)
-            for v_key, v_pos in self.virtual_ledger.items():
-                if v_key.startswith(f"{symbol}_"):
-                    v_pos['current_price'] = price
-                    # Update HWM/LWM for the isolated position
-                    if 'high_water_mark' not in v_pos: v_pos['high_water_mark'] = price
-                    if 'low_water_mark' not in v_pos: v_pos['low_water_mark'] = price
-                    
-                    v_pos['high_water_mark'] = max(v_pos['high_water_mark'], price)
-                    v_pos['low_water_mark'] = min(v_pos['low_water_mark'], price) if v_pos['low_water_mark'] > 0 else price
-            
             # 🛡️ VIRTUAL LEDGER SYNC: Propagate real-time price to all horizon sub-positions
             for v_key, vpos in self.virtual_ledger.items():
-                if v_key.startswith(symbol):
+                if v_key.startswith(f"{symbol}_"):
                     vpos['current_price'] = price
-                    if price > vpos.get('high_water_mark', 0):
+                    if 'high_water_mark' not in vpos: vpos['high_water_mark'] = price
+                    if 'low_water_mark' not in vpos: vpos['low_water_mark'] = price
+                    
+                    if price > vpos['high_water_mark']:
                         vpos['high_water_mark'] = price
-                    if 'low_water_mark' not in vpos or vpos['low_water_mark'] == 0:
-                        vpos['low_water_mark'] = price
-                    elif price < vpos['low_water_mark']:
+                    if vpos['low_water_mark'] == 0 or price < vpos['low_water_mark']:
                         vpos['low_water_mark'] = price
             
             
@@ -814,6 +814,91 @@ class Portfolio:
             avg = pos['avg_price']
             pnl = (price - avg) * qty if qty != 0 else 0
             self.io_executor.submit(self.db.update_position, symbol, qty, avg, price, pnl)
+
+        # ═══════════════════════════════════════════════════════════════
+        # CTOS PHASE 4: TRADE CHRONICLE — TICK-BY-TICK HISTORY
+        # QUÉ: Cada 5 ticks, graba el estado de CADA posición abierta.
+        # POR QUÉ: La tabla trade_chronicle existía pero NUNCA se llenaba.
+        #   Sin historia, no podemos identificar el punto óptimo de cierre.
+        # PARA QUÉ: Reconstrucción forense completa de cada trade.
+        # CÓMO: Itera virtual_ledger, calcula métricas, llama log_trade_chronicle().
+        # CUÁNDO: Cada 5 actualizaciones de precio por posición.
+        # DÓNDE: core/portfolio.py → update_market_price()
+        # QUIÉN: Portfolio → DatabaseHandler.log_trade_chronicle()
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            for v_key, vpos in list(self.virtual_ledger.items()):
+                if vpos.get('quantity', 0) == 0:
+                    continue
+                if not v_key.startswith(f"{symbol}_"):
+                    continue
+                    
+                trade_id = vpos.get('trade_id')
+                if not trade_id:
+                    continue
+                    
+                # Increment tick counter
+                self._chronicle_tick_counters[trade_id] = self._chronicle_tick_counters.get(trade_id, 0) + 1
+                tick_num = self._chronicle_tick_counters[trade_id]
+                
+                # Log every 5 ticks
+                if tick_num % 5 != 0:
+                    continue
+                    
+                entry_p = vpos.get('avg_price', 0)
+                if entry_p <= 0:
+                    continue
+                    
+                qty = vpos['quantity']
+                horizon = vpos.get('horizon', 'SCALPING')
+                direction = 'LONG' if qty > 0 else 'SHORT'
+                
+                # Calculate unrealized PnL %
+                if direction == 'LONG':
+                    unrealized_pct = ((price - entry_p) / entry_p) * 100
+                    mfe = ((vpos.get('high_water_mark', price) - entry_p) / entry_p) * 100
+                    mae = ((entry_p - vpos.get('low_water_mark', price)) / entry_p) * 100
+                else:
+                    unrealized_pct = ((entry_p - price) / entry_p) * 100
+                    mfe = ((entry_p - vpos.get('low_water_mark', price)) / entry_p) * 100
+                    mae = ((vpos.get('high_water_mark', price) - entry_p) / entry_p) * 100
+                
+                # Distance to SL/TP
+                sl_pct = vpos.get('sl_pct') or 0
+                tp_pct = vpos.get('tp_pct') or 0
+                dist_tp = (tp_pct * 100 - unrealized_pct) if tp_pct > 0 else 0
+                dist_sl = (unrealized_pct - (-sl_pct * 100)) if sl_pct > 0 else 0
+                
+                # Oracle predictions from entry metadata
+                _meta = vpos.get('metadata', {}) or {}
+                _traj = vpos.get('trajectory_prediction') or _meta.get('trajectory_prediction') or {}
+                pred_mag = _traj.get('magnitude_pct') if isinstance(_traj, dict) else None
+                pred_target = _traj.get('target_price') if isinstance(_traj, dict) else None
+                pred_bars = _traj.get('duration_bars') if isinstance(_traj, dict) else None
+                
+                entry_size = abs(qty) * entry_p
+                
+                self.io_executor.submit(
+                    self.db.log_trade_chronicle,
+                    trade_id=trade_id,
+                    symbol=symbol,
+                    horizon=horizon,
+                    tick_number=tick_num,
+                    current_price=price,
+                    entry_price=entry_p,
+                    unrealized_pnl_pct=unrealized_pct,
+                    distance_to_tp_pct=dist_tp,
+                    distance_to_sl_pct=dist_sl,
+                    mfe_so_far=mfe,
+                    mae_so_far=mae,
+                    oracle_prediction_magnitude=pred_mag,
+                    oracle_prediction_target_price=pred_target,
+                    oracle_prediction_time_bars=pred_bars,
+                    direction=direction,
+                    entry_size_usd=entry_size,
+                )
+        except Exception as _chron_e:
+            logger.debug(f"[CHRONICLE] Tick logging skipped: {_chron_e}")
 
     def _update_kelly_stats(self, pnl: float):
         """
@@ -902,12 +987,28 @@ class Portfolio:
         # Aislamiento de LONG y SHORT simultáneos para el mismo símbolo/horizonte
         meta = getattr(event, 'metadata', {}) or {}
         is_close = getattr(event, 'is_close', False) or getattr(event, 'is_exit', False) or meta.get('is_close', False) or meta.get('is_exit', False)
+        
+        # FORENSIC FIX: Force is_close from FillEvent top-level if present (from UserDataStream)
+        if getattr(event, 'is_closed', False) and (meta.get('is_close') or meta.get('is_exit')):
+            is_close = True
+            
         direction_val = event.direction.name if hasattr(event.direction, 'name') else str(event.direction)
         
-        if is_close:
-            pos_side = 'LONG' if direction_val == 'SELL' else 'SHORT'
+        # ═══════════════════════════════════════════════════════════════
+        # NATIVE BINANCE HEDGE ROUTING (Zombie Trade Prevention)
+        # QUÉ: Usa la información nativa de Binance para dirigir el fill.
+        # ═══════════════════════════════════════════════════════════════
+        binance_ps = meta.get('binance_position_side')
+        
+        if binance_ps in ('LONG', 'SHORT'):
+            # El Websocket nos dijo EXACTAMENTE a qué lado pertenece
+            pos_side = binance_ps
         else:
-            pos_side = 'LONG' if direction_val == 'BUY' else 'SHORT'
+            # Fallback legacy si viene de REST
+            if is_close:
+                pos_side = 'LONG' if direction_val == 'SELL' else 'SHORT'
+            else:
+                pos_side = 'LONG' if direction_val == 'BUY' else 'SHORT'
             
         v_key = f"{event.symbol}_{horizon}_{pos_side}"
         
@@ -933,7 +1034,9 @@ class Portfolio:
                 'tp_order_id': None,
                 'trade_id': getattr(event, 'trade_id', None),
                 'predicted_duration': getattr(event, 'predicted_duration', None),
-                'predicted_magnitude': getattr(event, 'predicted_magnitude', None)
+                'predicted_magnitude': getattr(event, 'predicted_magnitude', None),
+                'metadata': getattr(event, 'metadata', {}) or {},
+                'exit_pending_time': 0 # FORENSIC FIX: Initialize exit race condition lock
             }
             
         pos = self.virtual_ledger[v_key]
@@ -954,7 +1057,9 @@ class Portfolio:
                 isolated_pnl = (pos['avg_price'] - price) * closed
                 self._record_closed_trade(event, pos, closed, pos['avg_price'], price, isolated_pnl)
                 pos['quantity'] += closed
-                if abs(pos['quantity']) < 1e-8: pos['quantity'] = 0.0
+                if abs(pos['quantity']) < 1e-8:
+                    pos['quantity'] = 0.0
+                    pos['exit_pending_time'] = 0  # FORENSIC FIX #19: Clear lock on successful close
                 if event.quantity > closed:
                     remain = event.quantity - closed
                     pos['quantity'] = remain
@@ -965,6 +1070,7 @@ class Portfolio:
                     pos['trajectory_prediction'] = (getattr(event, 'metadata', {}) or {}).get('trajectory_prediction', None)
                     pos['tp_limit_placed'] = False
                     pos['tp_order_id'] = None
+                    pos['metadata'] = getattr(event, 'metadata', {}) or {}
                     self._bind_cognitive_anchor(event.symbol, pos)
                 else:
                     # If just added to existing, keep original opener_id but could log the add
@@ -983,6 +1089,8 @@ class Portfolio:
                     # FORENSIC FIX: Reset watermarks on new trade to prevent instant TURBO_BE
                     pos['high_water_mark'] = price
                     pos['low_water_mark'] = price
+                    pos['metadata'] = getattr(event, 'metadata', {}) or {}
+                    pos['exit_pending_time'] = 0 # FORENSIC FIX: Reset lock on new DCA/add
                     self._bind_cognitive_anchor(event.symbol, pos)
                     
                     # 🚀 TELEGRAM NOTIFICATION: Handled by log_trade_report() → send_trade_open()
@@ -995,7 +1103,9 @@ class Portfolio:
                 isolated_pnl = (price - pos['avg_price']) * closed
                 self._record_closed_trade(event, pos, closed, pos['avg_price'], price, isolated_pnl)
                 pos['quantity'] -= closed
-                if abs(pos['quantity']) < 1e-8: pos['quantity'] = 0.0
+                if abs(pos['quantity']) < 1e-8:
+                    pos['quantity'] = 0.0
+                    pos['exit_pending_time'] = 0  # FORENSIC FIX #19: Clear lock on successful close
                 if event.quantity > closed:
                     remain = event.quantity - closed
                     pos['quantity'] = -remain
@@ -1006,6 +1116,7 @@ class Portfolio:
                     pos['trajectory_prediction'] = (getattr(event, 'metadata', {}) or {}).get('trajectory_prediction', None)
                     pos['tp_limit_placed'] = False
                     pos['tp_order_id'] = None
+                    pos['metadata'] = getattr(event, 'metadata', {}) or {}
                     self._bind_cognitive_anchor(event.symbol, pos)
             else: # Adding Short
                 total_cost = (abs(pos['quantity']) * pos['avg_price']) + fill_cost
@@ -1021,6 +1132,8 @@ class Portfolio:
                     # FORENSIC FIX: Reset watermarks on new trade to prevent instant TURBO_BE
                     pos['high_water_mark'] = price
                     pos['low_water_mark'] = price
+                    pos['metadata'] = getattr(event, 'metadata', {}) or {}
+                    pos['exit_pending_time'] = 0 # FORENSIC FIX: Reset lock on new DCA/add
                     self._bind_cognitive_anchor(event.symbol, pos)
                     
                     # 🚀 TELEGRAM NOTIFICATION: Handled by log_trade_report() → send_trade_open()
@@ -1068,9 +1181,10 @@ class Portfolio:
         fees_exit = (closed_qty * exit_price) * exit_fee_rate
         
         if real_commission is not None and real_commission > 0:
-            total_fees = real_commission  # Use exact Binance-reported fee
-            fees_exit = total_fees / 2.0
-            fees_entry = total_fees / 2.0
+            # FORENSIC-V81: real_commission from the EXIT event is ONLY the exit fee.
+            # We MUST add it to the estimated entry fee (which was already paid on entry).
+            fees_exit = real_commission
+            total_fees = fees_entry + fees_exit
         else:
             total_fees = fees_entry + fees_exit
         
@@ -1099,6 +1213,16 @@ class Portfolio:
         if not exit_reason:
             exit_reason = evt_strat if evt_strat and evt_strat != opener_strat else "NORMAL_CLOSE"
         
+        # Compute MFE and MAE
+        hwm = pos.get('high_water_mark', entry_price)
+        lwm = pos.get('low_water_mark', entry_price)
+        if closed_direction == "LONG":
+            mfe_pct = (hwm - entry_price) / entry_price if entry_price > 0 else 0.0
+            mae_pct = (entry_price - lwm) / entry_price if entry_price > 0 else 0.0
+        else: # SHORT
+            mfe_pct = (entry_price - lwm) / entry_price if entry_price > 0 else 0.0
+            mae_pct = (hwm - entry_price) / entry_price if entry_price > 0 else 0.0
+
         trade_data = {
             "trade_id": getattr(event, 'trade_id', None) or pos.get('trade_id') or str(uuid.uuid4()),
             "exit_reason": exit_reason,
@@ -1126,7 +1250,28 @@ class Portfolio:
             "exit_type": exit_order_type,
             "oracle_certainty": pos.get("ml_confidence", 0.0),
             "setup_type": pos.get('setup_type', 'UNKNOWN'),
-            "strategy_version": pos.get('strategy_version', '1.0.0')
+            "strategy_version": pos.get('strategy_version', '1.0.0'),
+            "mfe_pct": mfe_pct,
+            "mae_pct": mae_pct,
+            # CTOS Phase 3: Exit attribution
+            "closer_strategy_id": evt_strat if evt_strat else "UNKNOWN",
+            "opener_strategy_id": opener_strat,
+            # CTOS Phase 4: Size tracking (Open → Close)
+            "open_size_usd": closed_qty * entry_price,
+            "close_size_usd": closed_qty * exit_price,
+            "size_delta_usd": (closed_qty * exit_price) - (closed_qty * entry_price),
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC FIX #2: EXIT BALLOT PROPAGATION
+            # QUÉ: Captura los votos de las estrategias de cierre al momento
+            #   del cierre del trade y los almacena en trade_data.
+            # POR QUÉ: check_exits() almacena votos en vpos['_exit_votes']
+            #   y vpos['_hold_votes'], pero estos se perdían al cerrar.
+            # PARA QUÉ: El Telegram muestra qué estrategias votaron EXIT vs HOLD.
+            # ═══════════════════════════════════════════════════════════════
+            "exit_ballot": {
+                'exit_voters': pos.get('_exit_votes', []),
+                'hold_voters': pos.get('_hold_votes', []),
+            } if pos.get('_exit_votes') or pos.get('_hold_votes') else None,
         }
         
         # ═══════════════════════════════════════════════════════════════
@@ -1157,16 +1302,25 @@ class Portfolio:
         self._last_closed_trade_data = trade_data
         
         # Route to respective ledger
+        # ═══════════════════════════════════════════════════════════════
+        # PHASE 4 FIX: RAM MEMORY LEAK PREVENTION (LEDGERS)
+        # QUÉ: Mantener eficiencia de memoria limitando historiales en RAM.
+        # POR QUÉ: Evitar consumo infinito durante backtests o runs de varios días.
+        # ═══════════════════════════════════════════════════════════════
         if trade_data['horizon'] == 'SCALPING':
             self.scalping_ledger.append(trade_data)
+            if len(self.scalping_ledger) > 50:
+                self.scalping_ledger.pop(0)
         else:
             self.swing_ledger.append(trade_data)
+            if len(self.swing_ledger) > 50:
+                self.swing_ledger.pop(0)
             
         logger.debug(f"📓 [ROUTED TRADE] {trade_data['horizon']} | {event.symbol} Neto: ${net_pnl:.4f} | T: {duration}s")
         
         # Meritocracy Central (Phase 3.9): Record for setup-based sizing
         self.trade_history.append(trade_data)
-        if len(self.trade_history) > 1000: # Maintain memory efficiency
+        if len(self.trade_history) > 50: # Maintain memory efficiency (Phase 6 RAM OFF-LOAD)
             self.trade_history.pop(0)
         
         # ═══════════════════════════════════════════════════════════════
@@ -1222,6 +1376,104 @@ class Portfolio:
                 get_auto_correction_engine().apply_corrections(issues)
         except Exception as e:
             logger.error(f"⚠️ Error ejecutando Auto-Diagnóstico Post-Trade: {e}")
+        
+        # ═══════════════════════════════════════════════════════════════
+        # CTOS PHASE 3: PREDICTION AUDIT — What was predicted vs reality
+        # QUÉ: Al cerrar un trade, registra en prediction_audit la predicción
+        #   original de la estrategia que abrió vs el resultado real.
+        # POR QUÉ: Para saber qué estrategias predicen bien y cuáles no.
+        # PARA QUÉ: Feedback loop → mejorar o desactivar estrategias malas.
+        # CÓMO: Lee predicciones del metadata de la posición (trajectory_prediction,
+        #   ml_confidence) y compara con MFE/MAE reales.
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            _pos_meta = pos.get('metadata', {}) or {}
+            _trajectory = pos.get('trajectory_prediction', _pos_meta.get('trajectory_prediction'))
+            _predicted_mag = None
+            _predicted_dur = None
+            _predicted_target = None
+            _confidence = pos.get('ml_confidence', 0.0) or 0.0
+            
+            if _trajectory and isinstance(_trajectory, dict):
+                _predicted_mag = _trajectory.get('magnitude_pct')
+                _predicted_dur = _trajectory.get('duration_bars')
+                _predicted_target = _trajectory.get('target_price')
+            elif _pos_meta.get('predicted_magnitude'):
+                _predicted_mag = _pos_meta.get('predicted_magnitude')
+                _predicted_dur = _pos_meta.get('predicted_duration')
+                _predicted_target = _pos_meta.get('predicted_target_price')
+            
+            # Calculate optimal exit (MFE point)
+            optimal_exit_price = hwm if closed_direction == "LONG" else lwm
+            missed_profit = max(0.0, mfe_pct - max(0.0, net_pnl_percent))
+            was_correct = net_pnl > 0
+            
+            # Store in trade_data for notification enrichment
+            trade_data['predicted_magnitude'] = _predicted_mag
+            trade_data['predicted_duration_bars'] = _predicted_dur
+            trade_data['predicted_target_price'] = _predicted_target
+            trade_data['prediction_confidence'] = _confidence
+            trade_data['optimal_exit_price'] = optimal_exit_price
+            trade_data['missed_profit_pct'] = missed_profit
+            trade_data['was_prediction_correct'] = was_correct
+            
+            # Write to DB
+            # FORENSIC FIX: Include position sizing data for capital-at-risk traceability
+            _open_size_usd = closed_qty * entry_price
+            _close_size_usd = closed_qty * exit_price
+            self.db.log_prediction_audit(
+                trade_id=trade_data['trade_id'],
+                thought_id=_pos_meta.get('thought_id'),
+                strategy_id=opener_strat,
+                symbol=event.symbol,
+                horizon=trade_data['horizon'],
+                direction=closed_direction,
+                predicted_magnitude_pct=_predicted_mag,
+                predicted_duration_bars=_predicted_dur,
+                predicted_target_price=_predicted_target,
+                confidence=_confidence,
+                actual_magnitude_pct=net_pnl_percent * 100,
+                actual_duration_bars=int(duration / 60) if duration else 0,  # Convert seconds to bars (~1min)
+                actual_exit_price=exit_price,
+                was_correct=was_correct,
+                optimal_exit_price=optimal_exit_price,
+                optimal_exit_bar=0,  # Will be enriched by PredictionTracker
+                missed_profit_pct=missed_profit * 100,
+                entry_time=pos.get('entry_time'),
+                open_size_usd=_open_size_usd,
+                close_size_usd=_close_size_usd,
+                size_delta_usd=_close_size_usd - _open_size_usd,
+                open_price_at_prediction=entry_price,
+            )
+            
+            # FORENSIC FIX: Update Strategy Report Card for governance
+            self.db.update_strategy_report_card(
+                strategy_id=opener_strat,
+                pnl=net_pnl,
+                is_win=was_correct
+            )
+            
+            # Update PredictionTracker with outcome
+            if hasattr(self, '_engine') and self._engine:
+                # FORENSIC FIX: prediction_tracker lives on risk_manager, not engine
+                rm = getattr(self._engine, 'risk_manager', None)
+                pt = getattr(rm, 'prediction_tracker', None) if rm else None
+                if pt:
+                    audit = pt.record_trade_outcome(
+                        symbol=event.symbol,
+                        is_win=net_pnl > 0,
+                        pnl_pct=net_pnl_percent,
+                        strategy_id=opener_strat,
+                        trade_id=trade_data['trade_id']
+                    )
+                    if audit and audit.get('optimal_exit_bar'):
+                        trade_data['optimal_exit_bar'] = audit['optimal_exit_bar']
+                        trade_data['prediction_audit'] = audit
+        except Exception as e:
+            logger.debug(f"[CTOS-P3] Prediction audit skipped: {e}")
+        
+        # Update session PnL tracking
+        self._session_net_pnl += net_pnl
             
         # 🚀 TELEGRAM NOTIFICATION: Handled by log_trade_report() → send_trade_close()
         # FORENSIC-V21 FIX #3: Removed duplicate raw notification.
@@ -1391,6 +1643,9 @@ class Portfolio:
                     self.positions[event.symbol]['quantity'] = agg_qty
                     self.positions[event.symbol]['avg_price'] = total_notional / abs(agg_qty)
                     self.positions[event.symbol]['current_price'] = fill_price
+                    _seg = (getattr(event, 'metadata', {}) or {}).get('segment_policy')
+                    self.positions[event.symbol]['exec_policy'] = getattr(_seg, 'execution_type', 'MAKER_ONLY') if _seg else 'MAKER_ONLY'
+                    self.positions[event.symbol]['trail_policy'] = getattr(_seg, 'trailing_aggression', 'STRUCTURED') if _seg else 'STRUCTURED'
                 
                 # 4. Strategy Performance, Sophia Post-Mortem & Reporting
                 if isolated_pnl != 0.0:
@@ -1461,11 +1716,73 @@ class Portfolio:
             # ═══════════════════════════════════════════════════════════════
             self._refresh_equity_cache()
             
+            # ════════════════════════════════════════════════════════════════
+            # CTOS PHASE 2: PORTFOLIO → SSOT SYNC
+            # QUÉ: Publica equity, margin y posiciones activas al SSOT global.
+            # POR QUÉ: Sin esto, global_state.portfolio está vacío y todos los
+            #   consumidores (MetaCoordinator, Invariants, FeedbackProcessor)
+            #   operan con datos ficticios (equity=0, positions=0).
+            # PARA QUÉ: Coherencia total → el sistema sabe cuánto tiene y
+            #   dónde está invertido en todo momento.
+            # CÓMO: Llama update_portfolio_snapshot() + sincroniza active_positions.
+            # CUÁNDO: Después de cada fill procesado (post _refresh_equity_cache).
+            # DÓNDE: core/portfolio.py → update_fill()
+            # QUIÉN: Portfolio (escritor) → GlobalMarketState (receptor)
+            # ════════════════════════════════════════════════════════════════
+            try:
+                from core.global_state import global_state
+                _open_count = sum(1 for v in self.virtual_ledger.values() if v.get('quantity', 0) != 0)
+                _equity = self.get_total_equity()
+                global_state.update_portfolio_snapshot(
+                    equity=_equity,
+                    margin_used=self.used_margin,
+                    positions_count=_open_count,
+                    unrealized_pnl=_equity - self.initial_capital - self.realized_pnl,
+                    realized_pnl=self.realized_pnl
+                )
+                # Sync active positions to SSOT for downstream consumers
+                _active = {}
+                for _vk, _vp in self.virtual_ledger.items():
+                    if _vp.get('quantity', 0) != 0:
+                        _parts = _vk.split('_')
+                        _sym = _parts[0] if _parts else event.symbol
+                        _dir = 'LONG' if _vp['quantity'] > 0 else 'SHORT'
+                        from core.structs import PositionState
+                        _active[_vk] = PositionState(
+                            symbol=_sym, direction=_dir,
+                            quantity=abs(_vp['quantity']),
+                            entry_price=_vp.get('avg_price', 0),
+                            current_price=_vp.get('current_price', fill_price),
+                        )
+                global_state.active_positions = _active
+            except Exception as _ssot_e:
+                logger.debug(f"[SSOT] Portfolio sync skipped: {_ssot_e}")
+            
+            meta = getattr(event, 'metadata', {}) or {}
+            is_close = getattr(event, 'is_close', False) or getattr(event, 'is_exit', False) or meta.get('is_close', False) or meta.get('is_exit', False)
+            
             # Log Trade
+            details_dict = {
+                'margin': margin_impact,
+                'setup': getattr(event, 'setup_type', 'UNKNOWN'),
+                'is_close': is_close
+            }
+            if is_close and hasattr(self, '_last_closed_trade_data') and self._last_closed_trade_data:
+                td = self._last_closed_trade_data
+                details_dict.update({
+                    'pnl': td.get('net_pnl', 0.0),
+                    'fees': td.get('fees_paid', 0.0),
+                    'mfe_pct': td.get('mfe_pct', 0.0),
+                    'mae_pct': td.get('mae_pct', 0.0),
+                    'duration_s': td.get('duration_seconds', 0),
+                    'exit_reason': td.get('exit_reason', 'UNKNOWN'),
+                    'ml_confidence': td.get('oracle_certainty', 0.0)
+                })
+
             self.log_to_csv({
                 'datetime': self._get_current_time(),
                 'symbol': event.symbol,
-                'type': EventType.FILL,
+                'type': "FILL_CLOSE" if is_close else "FILL_OPEN",
                 'direction': event.direction,
                 'quantity': event.quantity,
                 'price': fill_price,
@@ -1474,7 +1791,7 @@ class Portfolio:
                 'setup_type': getattr(event, 'setup_type', 'UNKNOWN'),
                 'strategy_version': getattr(event, 'strategy_version', '1.0.0'),
                 'trade_id': getattr(event, 'trade_id', None) or (pos.get('trade_id') if 'pos' in locals() else None),
-                'details': f"Exchange: {event.exchange} | Margin: {margin_impact:.2f} | Setup: {getattr(event, 'setup_type', 'UNKNOWN')}"
+                'details': json.dumps(details_dict)
             })
 
             # ATOMIC DB UPDATE (Rule 5.2) - Done outside spinlock to avoid blocking loop
@@ -1489,8 +1806,6 @@ class Portfolio:
                 'pnl': pnl_realized if pnl_realized is not None else 0.0,  # FORENSIC-V21 FIX #1
                 'commission': estimated_fee
             }
-            meta = getattr(event, 'metadata', {}) or {}
-            is_close = getattr(event, 'is_close', False) or getattr(event, 'is_exit', False) or meta.get('is_close', False) or meta.get('is_exit', False)
             direction_val = event.direction.name if hasattr(event.direction, 'name') else str(event.direction)
             
             if is_close:
@@ -1701,6 +2016,37 @@ class Portfolio:
         """
         Graceful shutdown for portfolio resources.
         """
+        # FORENSIC FIX: Log session telemetry before closing DB
+        try:
+            if hasattr(self, 'db') and self.db and hasattr(self, '_session_stats'):
+                session_id = f"SES_{self._session_stats['start_time'].replace(':', '').replace('-', '').split('.')[0]}"
+                end_equity = self.current_cash + self.realized_pnl
+                for pos in self.virtual_ledger.values():
+                    if 'unrealized_pnl' in pos:
+                        end_equity += pos['unrealized_pnl']
+                
+                # Derive symbols traded
+                symbols = list(set([k.split('_')[0] for k in self.virtual_ledger.keys()]))
+                
+                self.db.log_session(
+                    session_id=session_id,
+                    start_equity=self._session_start_equity,
+                    end_equity=end_equity,
+                    total_trades=self._session_stats.get('total', 0),
+                    wins=self._session_stats.get('wins', 0),
+                    losses=self._session_stats.get('losses', 0),
+                    gross_pnl=self._session_stats.get('gross_pnl', 0.0),
+                    total_fees=getattr(self, 'total_fees_paid', 0.0),
+                    net_pnl=self._session_stats.get('net_pnl', 0.0),
+                    best_trade_pnl=0.0,  # Could be tracked individually
+                    worst_trade_pnl=0.0,
+                    avg_trade_duration_sec=0.0,
+                    symbols_traded=",".join(symbols) if symbols else "NONE",
+                    start_time=self._session_stats['start_time']
+                )
+        except Exception as e:
+            logger.debug(f"[CTOS] Session log skipped: {e}")
+
         if hasattr(self, 'db') and self.db:
             self.db.close()
         logger.info("✅ Portfolio: Shutdown complete.")
@@ -1864,62 +2210,119 @@ class Portfolio:
 
                 
             has_decay_exit = False
-            anchor = vpos.get('cognitive_anchor')
-            if anchor:
-                from utils.math_kernel import compute_alpha_decay_jit
-                time_held_sec = (now_utc - vpos['entry_time']).total_seconds()
-                ttl = anchor.get('ttl_seconds', 300)
-                
-                # Minimum viable time before considering decay
-                if time_held_sec > 45.0:
-                    current_prob = anchor.get('initial_prob', 0.5) * compute_alpha_decay_jit(time_held_sec, ttl)
-                    
-                    # Logic 1: Defensive exits for SCALPING (Cut losses early if thesis expires)
-                    if current_prob < 0.35 and pnl_pct < 0 and pnl_pct > th['sl'] * 0.8:
-                        logger.warning(f"🧠 [SOPHIA] {horizon} COGNITIVE DECAY EXIT for {symbol}: Probabilidad Murió ({current_prob:.2f}). PnL: {pnl_pct*100:.2f}%")
-                        events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                        has_decay_exit = True
-                        
-                    # Logic 2: Adaptive Trajectory Recalculation (Fake-out vs Dynamic Check)
-                    elif current_prob < 0.40 and pnl_pct > 0 and pnl_pct < th['tp'] * 0.5:
-                        # Si es engaño o la volatilidad murió, calculamos un nuevo objetivo más realista
-                        new_target_pct = max(pnl_pct * 1.5, th['tp'] * 0.25) # Contrae el TP bruscamente a lo más cercano
-                        
-                        if pnl_pct >= new_target_pct:
-                            logger.info(f"🧠 [SOPHIA] {horizon} TARGET RE-CALCULADO {symbol}: Objetivo Dinámico Alcanzado {pnl_pct*100:.2f}%. Prob: {current_prob:.2f}")
-                            events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                            has_decay_exit = True
-                        else:
-                            # Re-calculamos el riesgo de pérdida moviendo el Stop Loss a Ganancia Cero (Costos cubiertos)
-                            be_sl = 0.0012 # Break-Even + Fees
-                            if th['sl'] < be_sl:
-                                logger.info(f"🛡️ [SOPHIA] {horizon} BLINDAJE BE {symbol}: Prob. baja ({current_prob:.2f}). SL recalibrado a Break-Even.")
-                                th['sl'] = be_sl
-
-            if has_decay_exit:
+            # ═══════════════════════════════════════════════════════════════
+            # CTOS PHASE 4: EXIT STRATEGY VOTE COLLECTION
+            # QUÉ: Registra qué estrategia de cierre votó EXIT vs HOLD.
+            # POR QUÉ: Sin esto, no sabemos por qué un trade no se cerró a tiempo.
+            # PARA QUÉ: Diagnosticar trades perdedores — "quién debió cerrar y no lo hizo".
+            # CÓMO: Cada evaluador registra su voto en exit_strategy_log (DB).
+            # ═══════════════════════════════════════════════════════════════
+            trade_id_for_log = vpos.get('trade_id')
+            unrealized_pnl_usd = pnl_pct * abs(quantity) * entry_price
+            exit_votes = []
+            hold_votes = []
+            
+            # ═══════════════════════════════════════════════════════════════
+            # CTOS Phase 5: ORACLE TARGET EXIT
+            # QUÉ: Si alcanzamos la magnitud que la IA predijo originalmente, salir inmediatamente.
+            # ═══════════════════════════════════════════════════════════════
+            _pred_mag = vpos.get('predicted_magnitude') or vpos.get('metadata', {}).get('predicted_magnitude', 0)
+            if _pred_mag and _pred_mag > 0.0015 and pnl_pct >= _pred_mag * 0.95:
+                logger.info(f"🔮 [ORACLE TARGET] {horizon} TARGET SECURED {symbol}: +{pnl_pct*100:.2f}% (Pred: {_pred_mag*100:.2f}%)")
+                events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                has_decay_exit = True
+                exit_votes.append("ORACLE_TARGET_REACHED")
+                if trade_id_for_log:
+                    self.io_executor.submit(self.db.log_exit_strategy_decision, trade_id_for_log, symbol, 0, "ORACLE_TARGET_REACHED", "EXIT", f"pred={_pred_mag*100:.2f}%_actual={pnl_pct*100:.2f}%", unrealized_pnl_usd, current_price)
+                vpos['_exit_votes'] = exit_votes
+                vpos['_hold_votes'] = hold_votes
                 continue
 
+            # ═══════════════════════════════════════════════════════════════
+            # PHASE 3 FIX: DELEGATED TO EXIT ORACLE
+            # QUÉ: Lógicas de Cognitive Decay y Dynamic Target eliminadas.
+            # POR QUÉ: Portfolio solo debe ser un contador mecánico (SL/TP/Trail).
+            # PARA QUÉ: Evitar conflicto con RiskManager y ExitOracle.
+            # ═══════════════════════════════════════════════════════════════
+
+            if has_decay_exit:
+                # Store votes on the position for chronicle
+                vpos['_exit_votes'] = exit_votes
+                vpos['_hold_votes'] = hold_votes
+                continue
+
+            # Standard SL/TP/Trailing evaluation with vote logging
+            exit_triggered = False
+            exit_reason = None
+            
             if quantity > 0:  # LONG
                 if pnl_pct < th['sl']:
                     logger.warning(f"🛑 [{horizon}] STOP LOSS for {symbol}: {pnl_pct*100:.2f}%")
                     events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                elif pnl_pct > th['tp']:
-                    logger.info(f"💰 [{horizon}] TAKE PROFIT for {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                elif drawdown_from_peak < th['trail'] and pnl_pct > th['trail_min_profit']:
-                    logger.info(f"📉 [{horizon}] TRAILING STOP for {symbol}: Peak {hwm:.4f}, Now {current_price:.4f}")
-                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                    exit_triggered = True
+                    exit_reason = "STOP_LOSS"
+                    exit_votes.append("STOP_LOSS")
+                else:
+                    hold_votes.append("SL_HOLD")
+                    
+                if pnl_pct > th['tp']:
+                    if not exit_triggered:
+                        logger.info(f"💰 [{horizon}] TAKE PROFIT for {symbol}: {pnl_pct*100:.2f}%")
+                        events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                        exit_triggered = True
+                        exit_reason = "TAKE_PROFIT"
+                    exit_votes.append("TAKE_PROFIT")
+                else:
+                    hold_votes.append("TP_HOLD")
+                    
+                if drawdown_from_peak < th['trail'] and pnl_pct > th['trail_min_profit']:
+                    if not exit_triggered:
+                        logger.info(f"📉 [{horizon}] TRAILING STOP for {symbol}: Peak {hwm:.4f}, Now {current_price:.4f}")
+                        events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                        exit_triggered = True
+                        exit_reason = "TRAILING_STOP"
+                    exit_votes.append("TRAILING_STOP")
+                else:
+                    hold_votes.append("TRAIL_HOLD")
                     
             elif quantity < 0:  # SHORT
                 if pnl_pct < th['sl']:
                     logger.warning(f"🛑 [{horizon}] STOP LOSS SHORT {symbol}: {pnl_pct*100:.2f}%")
                     events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                elif pnl_pct > th['tp']:
-                    logger.info(f"💰 [{horizon}] TAKE PROFIT SHORT {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                elif drawup_from_low < th['trail'] and pnl_pct > th['trail_min_profit']:
-                    logger.info(f"📈 [{horizon}] TRAILING STOP SHORT {symbol}: Low {lwm:.4f}, Now {current_price:.4f}")
-                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                    exit_triggered = True
+                    exit_reason = "STOP_LOSS"
+                    exit_votes.append("STOP_LOSS")
+                else:
+                    hold_votes.append("SL_HOLD")
+                    
+                if pnl_pct > th['tp']:
+                    if not exit_triggered:
+                        logger.info(f"💰 [{horizon}] TAKE PROFIT SHORT {symbol}: {pnl_pct*100:.2f}%")
+                        events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                        exit_triggered = True
+                        exit_reason = "TAKE_PROFIT"
+                    exit_votes.append("TAKE_PROFIT")
+                else:
+                    hold_votes.append("TP_HOLD")
+                    
+                if drawup_from_low < th['trail'] and pnl_pct > th['trail_min_profit']:
+                    if not exit_triggered:
+                        logger.info(f"📈 [{horizon}] TRAILING STOP SHORT {symbol}: Low {lwm:.4f}, Now {current_price:.4f}")
+                        events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
+                        exit_triggered = True
+                        exit_reason = "TRAILING_STOP"
+                    exit_votes.append("TRAILING_STOP")
+                else:
+                    hold_votes.append("TRAIL_HOLD")
+            
+            # Log the winning exit vote to DB
+            if exit_triggered and trade_id_for_log:
+                self.io_executor.submit(self.db.log_exit_strategy_decision, trade_id_for_log, symbol, 0, exit_reason, "EXIT", f"pnl={pnl_pct*100:.2f}%_votes={','.join(exit_votes)}", unrealized_pnl_usd, current_price)
+            
+            # Store votes on position for chronicle enrichment
+            vpos['_exit_votes'] = exit_votes
+            vpos['_hold_votes'] = hold_votes
+
 
     @trace_execution
     def get_smart_kelly_sizing(self, symbol: str, strategy_id: str) -> float:
@@ -2151,6 +2554,32 @@ class Portfolio:
             # ═══════════════════════════════════════════════════════════════
             notif_xai_autopsy = None
             notif_sophia_narrative = None
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC FIX #2 (BUG CRÍTICO): EXTRACTION ANTES DE CLEAR
+            # QUÉ: Extraer TODOS los datos de prediction_audit, strategy
+            #   attribution y exit votes AQUÍ, ANTES de limpiar closed_data.
+            # POR QUÉ: Antes, closed_data se limpiaba en L2536, y luego el
+            #   bloque de L2579-2599 intentaba leer de closed_data → siempre
+            #   era None → predicciones NUNCA aparecían en Telegram.
+            # PARA QUÉ: Las notificaciones de cierre ahora mostrarán:
+            #   - Predicción de magnitud vs realidad (MFE)
+            #   - Tiempo estimado vs real
+            #   - Punto óptimo de cierre (MFE price)
+            #   - Ganancia perdida (missed profit)
+            #   - Quién abrió y quién cerró el trade
+            # CÓMO: Extracción atómica en un solo bloque if-else.
+            # ═══════════════════════════════════════════════════════════════
+            _pred_mag = None
+            _pred_dur = None
+            _pred_target = None
+            _pred_conf = ml_confidence
+            _optimal_exit = None
+            _missed_profit = None
+            _was_pred_correct = None
+            _closer_strat = None
+            _opener_strat = None
+            _exit_ballot = None
+            
             if is_close and closed_data and closed_data.get('symbol') == event.symbol:
                 notif_pnl = closed_data.get('gross_pnl', pnl or 0.0)
                 notif_commission = closed_data.get('fees_paid', commission)
@@ -2162,7 +2591,24 @@ class Portfolio:
                 notif_trade_id = closed_data.get('trade_id') or getattr(event, 'trade_id', None) or 'UNKNOWN'
                 notif_xai_autopsy = closed_data.get('xai_autopsy')
                 notif_sophia_narrative = closed_data.get('sophia_narrative')
-                # Clear after use
+                
+                # PREDICTION AUDIT — Extract BEFORE clear (FORENSIC FIX #2)
+                _pred_mag = closed_data.get('predicted_magnitude')
+                _pred_dur = closed_data.get('predicted_duration_bars')
+                _pred_target = closed_data.get('predicted_target_price')
+                _pred_conf = closed_data.get('prediction_confidence', ml_confidence)
+                _optimal_exit = closed_data.get('optimal_exit_price')
+                _missed_profit = closed_data.get('missed_profit_pct')
+                _was_pred_correct = closed_data.get('was_prediction_correct')
+                
+                # STRATEGY ATTRIBUTION — Extract BEFORE clear
+                _closer_strat = closed_data.get('closer_strategy_id')
+                _opener_strat = closed_data.get('opener_strategy_id')
+                
+                # EXIT BALLOT — Extract BEFORE clear  
+                _exit_ballot = closed_data.get('exit_ballot')
+                
+                # NOW clear after ALL extraction is complete
                 self._last_closed_trade_data = None
             else:
                 notif_pnl = pnl if pnl is not None else 0.0
@@ -2188,6 +2634,49 @@ class Portfolio:
                     _vpos = self.virtual_ledger.get(_vkey_guess, {})
                     _event_tid = _vpos.get('trade_id')
                 notif_trade_id = _event_tid or str(_uuid.uuid4())
+                
+                # For ENTRY events, extract predictions from the event/metadata itself
+                if not is_close:
+                    _pred_mag = predicted_magnitude
+                    _pred_dur = predicted_duration
+                    _pred_conf = ml_confidence
+            
+            # ═══════════════════════════════════════════════════════════════
+            # CTOS PHASE 3: ACCURATE BALANCE TRACKING
+            # QUÉ: balance_before = balance_after - net_pnl
+            # POR QUÉ: Usar un mapa de equity pre-trade fallaba espectacularmente
+            #   cuando múltiples trades superpuestos fluctuaban en M2M. Hacía que
+            #   la suma de (after - before) no cuadrara con el net_pnl.
+            # PARA QUÉ: Telegram muestra balance lógico y consistente.
+            # ═══════════════════════════════════════════════════════════════
+            if is_close:
+                _balance_after = self.get_total_equity()
+                _balance_before = _balance_after - notif_net_pnl
+                # Remove from map just to prevent memory leak, though we no longer use it
+                self._pre_trade_equity_map.pop(notif_trade_id, None)
+            else:
+                _balance_before = self.get_total_equity()
+                _balance_after = _balance_before  # No PnL on entry
+                self._pre_trade_equity_map[notif_trade_id] = _balance_before
+            
+            # Size in USD
+            _open_size_usd = event.quantity * notif_entry_price if notif_entry_price else 0.0
+            _close_size_usd = event.quantity * fill_price if is_close else 0.0
+            
+            # Daily growth progress
+            _session_growth_pct = ((equity - self._session_start_equity) / self._session_start_equity * 100) if self._session_start_equity > 0 else 0.0
+            _daily_target_pct = self._daily_growth_target * 100  # 4.73%
+            _growth_progress = max(0.0, min(1.0, _session_growth_pct / _daily_target_pct)) if _daily_target_pct > 0 else 0.0
+            
+            # CTOS Phase 5: Growth Roadmap
+            _compounding_engine = get_compounding_engine(self.initial_capital)
+            _avg_net_pnl = sum([t.get('net_pnl', 0) for t in self.trade_history if t.get('net_pnl', 0) > 0]) / max(1, sum(1 for t in self.trade_history if t.get('net_pnl', 0) > 0))
+            _roadmap = _compounding_engine.get_growth_roadmap(
+                current_equity=self.get_total_equity(),
+                current_day=1,  # TODO: Track actual campaign day
+                avg_net_pnl_per_trade=_avg_net_pnl,
+                trades_today=session_wins + session_losses if 'session_wins' in locals() else 0
+            )
             
             trade_notification_data = {
                 'trade_id': notif_trade_id,
@@ -2215,8 +2704,42 @@ class Portfolio:
                 'ml_confidence': ml_confidence,
                 'predicted_duration': predicted_duration,
                 'predicted_magnitude': predicted_magnitude,
-                'balance_before': self.initial_capital + self.realized_pnl - (pnl or 0.0),
-                'balance_after': equity,
+                # CTOS Phase 3: Corrected balance fields
+                'balance_before': _balance_before,
+                'balance_after': _balance_after,
+                'session_start_equity': self._session_start_equity,
+                'session_net_pnl': self._session_net_pnl,
+                'session_growth_pct': _session_growth_pct,
+                'daily_target_pct': _daily_target_pct,
+                'growth_progress': _growth_progress,
+                'thought_id': getattr(event, 'metadata', {}).get('thought_id', 'N/A'),
+                # CTOS Phase 3: Prediction audit fields
+                'prediction_audit': {
+                    'predicted_magnitude': _pred_mag,
+                    'predicted_duration_bars': _pred_dur,
+                    'predicted_target_price': _pred_target,
+                    'confidence': _pred_conf,
+                    'optimal_exit_price': _optimal_exit,
+                    'missed_profit_pct': _missed_profit,
+                    'was_correct': _was_pred_correct,
+                },
+                # CTOS Phase 3: Size tracking
+                'open_size_usd': _open_size_usd,
+                'close_size_usd': _close_size_usd,
+                # CTOS Phase 3: Strategy attribution
+                'closer_strategy': _closer_strat,
+                'opener_strategy': _opener_strat,
+                # FORENSIC FIX #2: Exit ballot (which strategies voted EXIT vs HOLD)
+                'exit_ballot': _exit_ballot,
+                # CTOS Phase 5: Exponential Compounding
+                'growth_roadmap': _roadmap,
+                # FORENSIC FIX #2: Diagnostic Stats for Balance section
+                'diagnostic_stats': {
+                    'avg_win_pnl': sum(d.get('total_win_pnl', 0) for d in self.strategy_performance.values()) / max(1, sum(d['wins'] for d in self.strategy_performance.values())) if sum(d['wins'] for d in self.strategy_performance.values()) > 0 else 0.0,
+                    'avg_loss_pnl': sum(d.get('total_loss_pnl', 0) for d in self.strategy_performance.values()) / max(1, sum(d['losses'] for d in self.strategy_performance.values())) if sum(d['losses'] for d in self.strategy_performance.values()) > 0 else 0.0,
+                    'profit_factor': (sum(d.get('total_win_pnl', 0) for d in self.strategy_performance.values()) / max(0.001, sum(d.get('total_loss_pnl', 0) for d in self.strategy_performance.values()))),
+                    'total_session_trades': session_total,
+                } if is_close else None,
                 # ═══════════════════════════════════════════════════════════════
                 # SOPHIA-GLOBAL FIX: WR sentinel for ENTRY notifications
                 # QUÉ: Entries send win_rate=-1 so Telegram SKIPS WR display.
@@ -2237,9 +2760,8 @@ class Portfolio:
                 'timestamp': datetime.now(timezone.utc).strftime('%H:%M:%S UTC'),
             }
             
-            # SUPPRESS BACKTEST_CLOSE NOISE ON TELEGRAM (BUT KEEP TELEMETRY)
-            if strategy_id == "BACKTEST_CLOSE" or notif_exit_reason == "BACKTEST_CLOSE":
-                trade_notification_data['skip_telegram'] = True
+            # FORENSIC FIX: The user requested full spam telemetry for all trades,
+            # so we no longer suppress BACKTEST_CLOSE notifications.
             if is_close:
                 # ═══════════════════════════════════════════════════════════════
                 # XAI AUTOPSY FINAL INJECTION: Merge forensic fields into payload
@@ -2252,6 +2774,55 @@ class Portfolio:
             else:
                 Notifier.send_trade_open(trade_notification_data)
             
+            # --- ATOMIC DATABASE LOGGING (Phase 5 CTOS) ---
+            trade_dict = {
+                'symbol': event.symbol,
+                'side': event.direction.name if hasattr(event.direction, 'name') else str(event.direction),
+                'quantity': event.quantity,
+                'price': fill_price,
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'order_type': enriched_order_type,
+                'strategy_id': strategy_id,
+                'pnl': notif_pnl,
+                'commission': notif_commission,
+                'trade_id': notif_trade_id,
+                'thought_id': getattr(event, 'metadata', {}).get('thought_id', None)
+            }
+            
+            # Use the position AFTER the fill, which is stored in self.positions
+            current_pos = self.positions.get(event.symbol, {})
+            position_dict = {
+                'symbol': event.symbol,
+                'quantity': current_pos.get('quantity', 0.0),
+                'entry_price': current_pos.get('avg_price', 0.0),
+                'current_price': current_pos.get('current_price', fill_price),
+                'pnl': current_pos.get('unrealized_pnl', 0.0),
+                'sl_pct': current_pos.get('sl_pct', sl_pct),
+                'tp_pct': current_pos.get('tp_pct', tp_pct),
+                'horizon': horizon,
+                'strategy_id': current_pos.get('strategy_version', strategy_id)
+            }
+            
+            try:
+                self.db.log_fill_event_atomic(trade_dict, position_dict)
+                
+                # ═══════════════════════════════════════════════════════════════
+                # FORENSIC FIX #3: PERSIST EXIT DECISION NUCLEUS
+                # QUÉ: Guarda el ballot en la tabla exit_decisions.
+                # ═══════════════════════════════════════════════════════════════
+                if is_close and _exit_ballot:
+                    for v in _exit_ballot.get('exit_votes', []):
+                        self.db.log_exit_decision(
+                            trade_id=notif_trade_id,
+                            symbol=event.symbol,
+                            exit_reason=v.get('reason'),
+                            proposing_strategy=v.get('vote'),
+                            oracle_verdict="EXIT",
+                            pnl_at_decision=current_pos.get('unrealized_pnl', 0.0)
+                        )
+            except Exception as e:
+                logger.error(f"⚠️ DB Atomic Fill Logging Error: {e}")
+                
             # --- LEGACY NOTIFICATION (Phase 4 Backward-Compat) ---
             # FORENSIC-V21 FIX #3: Removed legacy duplicate notification.
             # send_trade_open/close above already provides ALL information.
@@ -2314,6 +2885,41 @@ class Portfolio:
             self._session_stats['wins'] += 1
         elif pnl < 0:
             self._session_stats['losses'] += 1
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        ═══════════════════════════════════════════════════════════════
+        FORENSIC FIX #20: PHANTOM FEATURE RESURRECTION
+        QUÉ: Retorna estadísticas agregadas del portafolio.
+        POR QUÉ: RiskManager.get_win_rate() (L880) llama este método
+          para calcular el Kelly Criterion dinámico. Sin este método,
+          hasattr() siempre fallaba → Kelly usaba bootstrap_win_rate
+          fijo (0.55), ignorando los datos REALES de trading.
+        PARA QUÉ: Sizing adaptativo que EVOLUCIONA con el rendimiento real.
+        CÓMO: Agrega wins/trades de TODAS las estrategias registradas.
+        CUÁNDO: Llamado por RiskManager cada vez que necesita calcular
+          el tamaño de una nueva posición.
+        DÓNDE: core/portfolio.py → Portfolio.get_statistics()
+        QUIÉN: Portfolio → RiskManager → Dynamic Kelly
+        ═══════════════════════════════════════════════════════════════
+        """
+        total_trades = 0
+        total_wins = 0
+        total_pnl = 0.0
+
+        for strat_id, stats in self.strategy_performance.items():
+            total_trades += stats.get('trades', 0)
+            total_wins += stats.get('wins', 0)
+            total_pnl += stats.get('pnl', 0.0)
+
+        win_rate = (total_wins / total_trades) if total_trades > 0 else 0.0
+
+        return {
+            'total_trades': total_trades,
+            'total_wins': total_wins,
+            'total_pnl': total_pnl,
+            'win_rate': win_rate,
+        }
 
     def get_strategy_metrics(self, strategy_id: str) -> Dict[str, float]:
         # PHASE 17: Meritocratic Scaling Metrics

@@ -373,7 +373,7 @@ async def main():
         Config.BINANCE_USE_FUTURES = False  # Scalping en spot para empezar
         Config.DATA_DIR = "dashboard/data/scalping"
         if not args.symbols:
-            Config.TRADING_PAIRS = ['BTCUSDT', 'ETHUSDT']  # Pares principales
+            Config.TRADING_PAIRS = Config.CRYPTO_FUTURES_PAIRS  # [FORENSIC] Sync with backtest
         Config.INITIAL_CAPITAL = args.capital
         # [FORENSIC FIX] Removed MAX_CONCURRENT_POSITIONS=1 override
         # POR QUÉ: Conflicto con Config.MAX_CONCURRENT_POSITIONS=3.
@@ -435,9 +435,9 @@ async def main():
     events_queue = queue.Queue()
     
     # 3.1. PRE-INITIALIZATION DISCOVERY (ELITE PROTOCOL)
-    # Instantiate a temporary data handler just for scanning
-    temp_loader = BinanceData(events_queue, ["BTC/USDT"]) # Minimal symbols for fast connect
-    scanner = MarketScanner(temp_loader)
+    # Instantiate the data handler with a minimal payload for fast connect
+    data_handler = BinanceData(events_queue, ["BTC/USDT"])
+    scanner = MarketScanner(data_handler)
     
     if not args.symbols:
         logger.info("🔭 [Elite Protocol] Performing autonomous market discovery...")
@@ -448,12 +448,9 @@ async def main():
         else:
             logger.warning("⚠️ Discovery yielded no results, using default futures pairs.")
             Config.TRADING_PAIRS = Config.CRYPTO_FUTURES_PAIRS
-    
-    # Cleanup temp scanner resources
-    await temp_loader.shutdown()
-    
-    # 3.2. REAL DATA HANDLER (With Elite Basket)
-    data_handler = BinanceData(events_queue, Config.TRADING_PAIRS)
+            
+    # Update data handler with the selected elite basket (downloads history in background)
+    await data_handler.update_symbol_list(Config.TRADING_PAIRS)
     
     portfolio = Portfolio(
         initial_capital=Config.INITIAL_CAPITAL,

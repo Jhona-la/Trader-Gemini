@@ -165,7 +165,13 @@ class ForensicExporter:
         top_trades = df_sorted.head(top_n)
         bottom_trades = df_sorted.tail(top_n)
 
-        combined = pd.concat([top_trades, bottom_trades]).drop_duplicates()
+        combined = pd.concat([top_trades, bottom_trades])
+        if "trade_id" in combined.columns:
+            combined = combined.drop_duplicates(subset=["trade_id"])
+        else:
+            # Fallback if trade_id is missing, drop dict columns before dropping duplicates
+            cols_to_use = [c for c in combined.columns if not isinstance(combined[c].iloc[0], (dict, list))] if not combined.empty else combined.columns
+            combined = combined.drop_duplicates(subset=cols_to_use)
         path = os.path.join(self.output_dir, f"trade_replay_{scenario}_{run_id}.parquet")
         try:
             combined.to_parquet(path, index=False)

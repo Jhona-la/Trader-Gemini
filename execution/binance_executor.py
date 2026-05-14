@@ -166,7 +166,9 @@ class BinanceExecutor:
         # This is more robust than patching individual methods
         original_request = self.exchange.request
         
-        def intercepted_request(path, api='public', method='GET', params={}, headers=None, body=None, config={}):
+        def intercepted_request(path, api='public', method='GET', params=None, headers=None, body=None, config=None):
+            if params is None: params = {}
+            if config is None: config = {}
             # 1. TESTNET SAPI BLOCKER (BUG #17)
             if api == 'sapi' and ((hasattr(Config, 'BINANCE_USE_DEMO') and Config.BINANCE_USE_DEMO) or Config.BINANCE_USE_TESTNET):
                 return []
@@ -193,7 +195,9 @@ class BinanceExecutor:
         # Apply to Spot Exchange instance as well if it exists
         if hasattr(self, 'spot_exchange') and self.spot_exchange:
             original_spot_request = self.spot_exchange.request
-            def intercepted_spot_request(path, api='public', method='GET', params={}, headers=None, body=None, config={}):
+            def intercepted_spot_request(path, api='public', method='GET', params=None, headers=None, body=None, config=None):
+                if params is None: params = {}
+                if config is None: config = {}
                 if api == 'sapi':
                     return []
                     
@@ -259,6 +263,13 @@ class BinanceExecutor:
         # [Dept 3 Fix] Start User Data Stream (Moved to main.py loop)
         self.user_stream = UserDataStream(self.events_queue, self.exchange)
         logger.info("✅ [Executor] User Data Stream Ready (Will start in async loop)")
+
+    def set_order_manager(self, order_manager):
+        """Injects OrderManager into the Executor and its components"""
+        self.order_manager = order_manager
+        if hasattr(self, 'user_stream') and self.user_stream:
+            self.user_stream.order_manager = order_manager
+            logger.info("🔗 [Executor] OrderManager successfully injected into UserDataStream.")
 
     def _initialize_futures_settings(self):
         """
@@ -382,9 +393,23 @@ class BinanceExecutor:
         
         # 🧬 [Phase 19] SHADOW MODE INTERCEPTION
         # If this is a Shadow Order, we DO NOT send it to Binance.
-        # We just log it as "Virtual Fill" and return.
+        # We log it and send a Telegram notification so the user can track Prospect symbols.
         if getattr(event, 'is_shadow', False):
             logger.info(f"👻 [SHADOW] VIRTUAL EXECUTION: {event.direction.value} {event.quantity} {event.symbol} @ {event.price or 'MKT'}")
+            try:
+                from utils.notifier import Notifier
+                horizon = getattr(event, 'horizon', 'UNKNOWN')
+                confidence = getattr(event, 'ml_confidence', 0.0)
+                msg = f"👻 *SHADOW PROSPECT SIGNAL* 👻\n"
+                msg += f"Par: `{event.symbol}`\n"
+                msg += f"Dirección: `{event.direction.value}`\n"
+                msg += f"Horizonte: `{horizon}`\n"
+                msg += f"Confianza: `{confidence*100:.1f}%`\n"
+                msg += f"Estrategia: `{getattr(event, 'strategy_id', 'UNKNOWN')}`\n"
+                msg += f"_(Esta operación es en papel para medir viabilidad)_"
+                Notifier.send_telegram(msg, "INFO")
+            except Exception as e:
+                logger.error(f"Error sending shadow notification: {e}")
             return
 
         symbol = event.symbol
@@ -553,9 +578,32 @@ class BinanceExecutor:
                 smart_price = liquidity.get('avg_fill_price', price)
             else:
                 # EXIT: High Priority
-                is_emergency = getattr(event, 'strategy_id', '') in ("EMERGENCY_EXIT", "KILL_SWITCH", "HARD_SL", "TIME_STOP")
-                if order_type == 'limit' and not is_emergency:
-                    logger.info(f"🛡️ [FORENSIC-SOR] BBO Limit Exit for {symbol}. Positioning at Maker side.")
+                strategy_name = getattr(event, 'strategy_id', '')
+                is_emergency = strategy_name in ("EMERGENCY_EXIT", "KILL_SWITCH", "HARD_SL", "TIME_STOP")
+                is_trailing = "TRAIL" in strategy_name
+                is_active_exit = is_emergency or is_trailing or ("EXIT" in strategy_name) or ("PREDICTION" in strategy_name) or ("TURBO" in strategy_name)
+                is_resting_tp = metadata.get('is_tp_limit', False) if metadata else False
+
+                if is_emergency:
+                    logger.critical(f"🚨 [EMERGENCY EXIT] {strategy_name} for {symbol}. Forcing MARKET panic fill.")
+                    order_type = 'market'
+                    smart_price = price
+                elif Config.Execution.USE_LIMIT_BBO_EXITS and is_active_exit and not is_resting_tp:
+                    logger.info(f"🛡️ [WEALTH-PHASE CHASE] Dynamic exit {strategy_name} for {symbol}. Forcing LIMIT chasing logic to save fees.")
+                    order_type = 'limit'
+                    metadata['timeInForce'] = 'GTX'
+                    try:
+                        bid, ask = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
+                        smart_price = ask if side.lower() == 'sell' else bid
+                    except Exception as e:
+                        logger.warning(f"⚠️ [BBO-EXIT] Fallback to price: {e}")
+                        smart_price = price
+                elif is_active_exit and not is_resting_tp:
+                    logger.info(f"⚡ [TAKER EXIT] Dynamic exit detected for {symbol} ({strategy_name}). Forcing MARKET to guarantee fill.")
+                    order_type = 'market'
+                    smart_price = price
+                elif order_type == 'limit':
+                    logger.info(f"🛡️ [FORENSIC-SOR] BBO Limit Exit for {symbol} ({strategy_name}). Positioning at Maker side.")
                     try:
                         bid, ask = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
                         # To exit LONG (SELL), we want to be at the ASK (to be a maker)
@@ -688,6 +736,13 @@ class BinanceExecutor:
                     'newOrderRespType': 'RESULT',
                     'recvWindow': 60000
                 }
+                
+                # FORENSIC FIX: Inject Horizon into clientOrderId for perfect WebSocket tracking
+                import uuid
+                pos_horizon = getattr(event, 'horizon', 'SCALPING')
+                uid = uuid.uuid4().hex[:8]
+                params['newClientOrderId'] = f"ctos_{pos_horizon}_{uid}"
+                
                 if order_type == 'limit':
                     params['price'] = price_precision
                     # Phase 5: Enforce Post-Only if intended
@@ -714,7 +769,8 @@ class BinanceExecutor:
                         symbol_id, side.upper(), order_type.upper(), float(qty_precision), 
                         float(price_precision) if order_type == 'limit' else 0.0,
                         params.get('timeInForce', 'GTC'),
-                        bool(params.get('reduceOnly', False))
+                        bool(params.get('reduceOnly', False)),
+                        pos_side
                     )
                     url = f"https://fapi.binance.com{endpoint}?{query}"
                     
@@ -735,7 +791,8 @@ class BinanceExecutor:
                                 symbol_id, side.upper(), order_type.upper(), float(qty_precision), 
                                 float(price_precision) if order_type == 'limit' else 0.0,
                                 "GTC",
-                                bool(params.get('reduceOnly', False))
+                                bool(params.get('reduceOnly', False)),
+                                pos_side
                             )
                             url = f"https://fapi.binance.com{endpoint}?{query}"
                             async with self.http_session.post(url, headers=headers) as resp:
@@ -909,6 +966,7 @@ class BinanceExecutor:
                 exit_reason=getattr(event, 'exit_reason', None),
                 order_type=getattr(event, 'order_type', None),
                 trade_id=getattr(event, 'trade_id', None),
+                thought_id=getattr(event, 'thought_id', None),
                 strategy_version=getattr(event, 'strategy_version', '1.0.0'),
                 # FORENSIC FIX #2: Carry metadata for fee attribution + margin release
                 metadata=_order_metadata,
@@ -1245,7 +1303,7 @@ class BinanceExecutor:
                         primary_balance = float(asset['balance'])
                         logger.info(f"  (Fallback) Balance: ${primary_balance:,.2f}")
                         break
-            except:
+            except Exception:
                 pass
         
         # ===================================================================
@@ -1498,7 +1556,7 @@ class BinanceExecutor:
                                     current_price = ticker.get('last')
                                     if current_price is None:
                                         current_price = 0.0
-                                except:
+                                except Exception:
                                     current_price = 0.0  # If we can't get price, set to 0
                                 
                                 # Add to portfolio as a "position" (quantity of asset held)
@@ -1593,7 +1651,7 @@ class BinanceExecutor:
                             try:
                                 ticker = spot_exchange.fetch_ticker(f"{asset}/USDT")
                                 price = ticker['last']
-                            except:
+                            except Exception:
                                 price = 0
                             value = amount * price
                         
@@ -1602,7 +1660,7 @@ class BinanceExecutor:
                             logger.info(f"  {asset:8s}: {amount:>15,.4f}  @ ${price:>10,.2f}  = ${value:>12,.2f}")
                         else:
                             logger.info(f"  {asset:8s}: {amount:>15,.4f}  (Price Unavailable)")
-                    except:
+                    except Exception:
                         logger.info(f"  {asset:8s}: {amount:>15,.4f}  (Error valuing)")
             else:
                 logger.info("  No assets found")
@@ -1716,7 +1774,7 @@ class BinanceExecutor:
                             logger.info(f"    In Use:    {used:>15,.6f}")
                             
                             total_value_usd += value
-                        except:
+                        except Exception:
                             logger.info(f"  {asset:8s}: {total:>15,.6f}  (price unavailable)")
                 else:
                     logger.info("  No assets found")

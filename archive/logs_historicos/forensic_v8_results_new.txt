@@ -1,0 +1,1582 @@
+01:20:41 [INFO] 🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)
+======================================================================
+🔬 AUDITORÍA FORENSE V8 — DEEP SIGNAL & DATA FLOW
+   Timestamp: 2026-04-02 01:20:39
+   Capital: $13 USD | Objetivo: Duplicar en 15 días
+======================================================================
+
+======================================================================
+🔬 S1: HORIZONTE EN TODAS LAS ESTRATEGIAS
+======================================================================
+📊 Metrics Exporter Initialized (Phase 99: Per-Symbol + Health).
+  ✅ HybridScalpingStrategy has 'horizon' param: Params: ['self', 'data_provider', 'events_queue', 'genotype', 'horizon', 'priority']
+  ✅ HybridScalpingStrategy horizon default: Default: SCALPING
+  ✅ HybridScalpingStrategy emits horizon in signals: SignalEvent includes horizon field
+  ✅ SniperStrategy has 'horizon' param: Params: ['self', 'data_provider', 'events_queue', 'executor', 'portfolio', 'horizon', 'priority']
+  ✅ SniperStrategy horizon default: Default: SCALPING
+  ✅ SniperStrategy emits horizon in signals: SignalEvent includes horizon field
+  ✅ MLStrategy has 'horizon' param: Params: ['self', 'data_provider', 'events_queue', 'symbol', 'lookback', 'sentiment_loader', 'portfolio', 'risk_manager', 'horizon']
+  ✅ MLStrategy horizon default: Default: SCALPING
+  ✅ MLStrategy emits horizon in signals: SignalEvent includes horizon field
+  ✅ StatisticalStrategy has 'horizon' param: Params: ['self', 'data_provider', 'events_queue', 'portfolio', 'pair', 'horizon']
+  ✅ StatisticalStrategy horizon default: Default: SCALPING
+  ✅ StatisticalStrategy emits horizon in signals: SignalEvent includes horizon field
+  ⚠️  ArbitrageStrategy: Not importable
+  ⚠️  PhalanxStrategy: Not importable
+
+======================================================================
+🔬 S2: SOPHIA INTELLIGENCE — SPEED PROFILING
+======================================================================
+2026-04-02 01:20:47,520 - trader_gemini - INFO - 🧠 [SOPHIA] Intelligence engine initialized
+01:20:47 [INFO] 🧠 [SOPHIA] Intelligence engine initialized
+2026-04-02 01:20:47,523 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:47 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,085 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,086 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,087 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,088 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [565466μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [565466μs]
+2026-04-02 01:20:48,089 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,095 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,096 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,096 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,097 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8725μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8725μs]
+2026-04-02 01:20:48,098 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,104 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,105 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,105 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,106 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8343μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8343μs]
+2026-04-02 01:20:48,107 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,113 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,113 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,114 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,115 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7918μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7918μs]
+2026-04-02 01:20:48,116 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,123 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,124 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,125 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,126 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [9901μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [9901μs]
+2026-04-02 01:20:48,127 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,133 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,133 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,134 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,135 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8902μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8902μs]
+2026-04-02 01:20:48,137 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,145 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,146 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,147 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,148 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [11419μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [11419μs]
+2026-04-02 01:20:48,150 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,157 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,159 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,160 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,161 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [12124μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [12124μs]
+2026-04-02 01:20:48,162 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,169 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,170 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,170 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,171 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [9431μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [9431μs]
+2026-04-02 01:20:48,172 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,178 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,178 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,179 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,180 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8029μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8029μs]
+2026-04-02 01:20:48,181 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,186 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,187 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,187 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,188 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7912μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7912μs]
+2026-04-02 01:20:48,190 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,195 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,196 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,196 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,197 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8043μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8043μs]
+2026-04-02 01:20:48,198 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,204 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,204 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,205 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,205 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7722μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7722μs]
+2026-04-02 01:20:48,207 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,212 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,213 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,213 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,214 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7566μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7566μs]
+2026-04-02 01:20:48,215 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,221 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,221 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,222 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,223 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7917μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7917μs]
+2026-04-02 01:20:48,224 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,229 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,230 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,230 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,231 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7984μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7984μs]
+2026-04-02 01:20:48,232 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,238 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,238 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,239 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,240 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7940μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7940μs]
+2026-04-02 01:20:48,241 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,246 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,247 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,248 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,249 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8236μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8236μs]
+2026-04-02 01:20:48,250 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,255 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,256 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,256 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,257 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7729μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7729μs]
+2026-04-02 01:20:48,258 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,264 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,264 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,265 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,266 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7874μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7874μs]
+2026-04-02 01:20:48,267 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,272 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,273 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,273 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,274 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7799μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7799μs]
+2026-04-02 01:20:48,275 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,281 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,281 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,282 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,283 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7758μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7758μs]
+2026-04-02 01:20:48,284 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,289 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,289 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,290 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,291 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7646μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7646μs]
+2026-04-02 01:20:48,292 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,297 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,298 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,299 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,299 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7804μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7804μs]
+2026-04-02 01:20:48,301 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,306 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,306 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,307 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,308 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7727μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7727μs]
+2026-04-02 01:20:48,309 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,314 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,315 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,316 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,316 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7671μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7671μs]
+2026-04-02 01:20:48,318 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,323 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,323 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,324 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,325 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7471μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7471μs]
+2026-04-02 01:20:48,326 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,331 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,331 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,332 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,332 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7500μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7500μs]
+2026-04-02 01:20:48,334 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,338 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,339 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,339 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,340 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [6924μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [6924μs]
+2026-04-02 01:20:48,341 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,346 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,347 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,347 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,348 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7119μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7119μs]
+2026-04-02 01:20:48,349 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,354 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,355 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,355 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,356 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7261μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7261μs]
+2026-04-02 01:20:48,357 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,362 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,362 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,362 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,363 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [6722μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [6722μs]
+2026-04-02 01:20:48,364 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,369 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,369 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,370 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,370 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [6671μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [6671μs]
+2026-04-02 01:20:48,371 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,376 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,377 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,377 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,378 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7200μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7200μs]
+2026-04-02 01:20:48,379 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,384 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,385 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,385 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,386 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [6962μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [6962μs]
+2026-04-02 01:20:48,387 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,392 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,392 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,393 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,394 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7507μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7507μs]
+2026-04-02 01:20:48,395 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,400 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,401 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,401 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,402 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7325μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7325μs]
+2026-04-02 01:20:48,403 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,408 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,408 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,409 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,410 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7417μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7417μs]
+2026-04-02 01:20:48,411 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,416 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,416 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,417 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,417 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7153μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7153μs]
+2026-04-02 01:20:48,419 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,424 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,425 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,425 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,426 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8260μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8260μs]
+2026-04-02 01:20:48,427 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,432 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,433 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,434 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,435 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7773μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7773μs]
+2026-04-02 01:20:48,436 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,441 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,442 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,442 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,443 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7748μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7748μs]
+2026-04-02 01:20:48,444 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,450 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,451 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,451 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,452 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8534μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8534μs]
+2026-04-02 01:20:48,454 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,459 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,460 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,460 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,461 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8169μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8169μs]
+2026-04-02 01:20:48,463 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,471 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,472 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,473 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,473 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [11576μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [11576μs]
+2026-04-02 01:20:48,475 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,480 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,480 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,481 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,482 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7670μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [7670μs]
+2026-04-02 01:20:48,483 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,489 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,490 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,492 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,494 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [10946μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [10946μs]
+2026-04-02 01:20:48,497 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,503 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,504 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,505 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,506 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [9669μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [9669μs]
+2026-04-02 01:20:48,507 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,513 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,514 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,515 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,516 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [9201μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [9201μs]
+2026-04-02 01:20:48,517 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,522 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,523 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,524 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,524 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8130μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [8130μs]
+2026-04-02 01:20:48,526 - trader_gemini - WARNING - 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+01:20:48 [WARNING] 🚫 [DESTRUCTIVE] BTC/USDT Conflicting waves detected. Penalty modulated by Bridge: 0.06
+2026-04-02 01:20:48,532 - trader_gemini - DEBUG - 🛡️ [HEISENBERG] Shield Active: 1.32x (H=1.36)
+2026-04-02 01:20:48,533 - trader_gemini - WARNING - 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+01:20:48 [WARNING] 🛡️ [LYAPUNOV SHIELD] BTC/USDT Punishing blind setup: Shield=0.25
+2026-04-02 01:20:48,534 - trader_gemini - INFO - 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+01:20:48 [INFO] 🔮 [ORACLE] BTC/USDT: ψ=0.87, Rs=0.87, |φ⟩=AGGRESSIVE → Final=0.005 (Coh=0.29)
+2026-04-02 01:20:48,535 - trader_gemini - INFO -    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [9077μs]
+01:20:48 [INFO]    [SOPHIA] P(Win)=57.3% | E[T]=25min | Top3=[BB Position=+0.034, RSI=+0.025, Volume Ratio=+0.017] | H=1.36 (Indeciso) ⚠️FAT-TAILS [9077μs]
+  ✅ analyze() avg=8.94ms, p99=13.20ms: 50 calls | Min: 7.19ms | Max: 13.41ms
+  ✅ Win Probability range: P(Win)=0.5733
+  ✅ Omniscient Score computed: Score=0.0054
+  ✅ Hurst Exponent valid: H=0.2000
+  ✅ Expected Exit Time positive: E[T]=25.0 min
+  ✅ Top Features populated: Top: ['BB Position', 'RSI', 'Volume Ratio']
+  ✅ BayesianCalibrator (15ns/call): 10K calls
+  ✅ FeatureAttributor (1μs/call): 1K calls
+  ✅ SurvivalEstimator (0μs/call): 10K calls
+
+======================================================================
+🔬 S3: RISK MANAGER — SIZING PARA $13 USD
+======================================================================
+2026-04-02 01:20:51,197 - trader_gemini - INFO - 🧬 [META-OPTIMIZER] Initialized with Infinitesimal Strength: 1e-06
+01:20:51 [INFO] 🧬 [META-OPTIMIZER] Initialized with Infinitesimal Strength: 1e-06
+2026-04-02 01:20:51,607 - trader_gemini - INFO - 📊 [SOPHIA] PostMortem initialized (window=100)
+01:20:51 [INFO] 📊 [SOPHIA] PostMortem initialized (window=100)
+2026-04-02 01:20:51,608 - trader_gemini - INFO - ⚔️ [NÉMESIS] Retrospección engine initialized
+01:20:51 [INFO] ⚔️ [NÉMESIS] Retrospección engine initialized
+2026-04-02 01:20:51,609 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+  ✅ Position size for $13 BTC LONG: Size: $0.65 | Capital: $13 | Leverage: 10x
+  ✅ Notional > $5 Binance minimum: Notional: $6.50 (size $0.65 × 10x)
+  ✅ Risk per trade: 3.0% = $0.39 per trade
+  ✅ Max concurrent positions: 20 positions of $0.65 each
+  ✅ Expected gain per winning trade: Gross: $0.1560 - Fees: $0.0049 = Net: $0.1511
+  ✅ Expected loss per losing trade: Gross: $0.0780 + Fees: $0.0049 = Net: $0.0829
+  ✅ Breakeven Win Rate: 35.4% (need > this to profit)
+  ✅ EV at 60% WR: EV = $0.0575 per trade
+  ✅ Trades to double capital at 60% WR: 225 trades ≈ 9.4 days at 24/day
+2026-04-02 01:20:51,611 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,611 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,611 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,612 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,612 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,612 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,613 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,613 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,613 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,614 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,614 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,614 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,614 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,615 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,615 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,615 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,616 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,616 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,616 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,616 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,617 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,617 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,617 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,618 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,618 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,618 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,618 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,619 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,619 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,619 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,619 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,620 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,620 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,620 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,620 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,621 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,621 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,621 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,621 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,622 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,622 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,622 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,622 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,623 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,623 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,623 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,623 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,624 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,624 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,624 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,625 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,625 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,625 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,626 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,626 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,626 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,626 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,627 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,627 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,627 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,627 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,627 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,628 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,628 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,628 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,628 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,629 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,629 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,629 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,629 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,630 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,630 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,630 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,630 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,631 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,631 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,631 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,631 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,632 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,632 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,632 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,632 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,633 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,633 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,633 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,633 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,634 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,634 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,634 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,634 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,635 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,635 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,635 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,635 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,636 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,636 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,636 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,636 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,637 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,637 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,637 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,637 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,638 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,638 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,638 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,638 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,639 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,639 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,639 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,640 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,640 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,640 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,640 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,641 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,641 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,641 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,641 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,642 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,642 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,642 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,642 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,643 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,643 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,643 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,644 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,644 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,644 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,644 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,644 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,645 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,645 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,645 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,645 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,646 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,646 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,646 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,646 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,647 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,647 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,647 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,647 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,648 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,648 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,648 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,648 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,649 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,649 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,649 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,649 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,650 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,650 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,650 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,650 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,651 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,651 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,651 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,651 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,652 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,652 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,652 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,652 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,652 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,653 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,653 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,653 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,653 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,654 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,654 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,654 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,654 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,655 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,655 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,655 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,655 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,656 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,656 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,656 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,656 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,657 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,657 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,657 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,657 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,658 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,658 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,658 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,658 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,659 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,659 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,659 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,659 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,660 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,660 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,660 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,660 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,661 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,661 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,661 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,661 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,662 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,662 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,662 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,662 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,663 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,663 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,663 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,663 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,664 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,664 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,664 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,664 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,665 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,665 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,665 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,665 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,666 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,666 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,666 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,666 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,667 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,667 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,667 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,668 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,668 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,668 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,668 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,669 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,669 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,669 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,669 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,670 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,670 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,670 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,671 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,671 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,671 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,671 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,672 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,672 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,672 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,672 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,672 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,673 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,673 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,673 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,674 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,674 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,674 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,674 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,674 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,675 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,675 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,675 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,675 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,676 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,676 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,676 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,676 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,677 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,677 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,677 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,677 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,678 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,678 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,678 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,678 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,679 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,679 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,679 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,679 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,679 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,680 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,680 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,680 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,680 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,681 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,681 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,681 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,681 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,682 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,682 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,682 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,682 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,683 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,683 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,683 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,683 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,684 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,684 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,684 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,684 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,684 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,685 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,685 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,685 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,686 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,686 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,687 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,687 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,687 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,688 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,688 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,688 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,689 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,689 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,689 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,689 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,690 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,690 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,690 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,690 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,691 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,691 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,691 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,691 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,692 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,692 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,692 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,692 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,692 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,693 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,693 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,693 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,693 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,694 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,694 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,694 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,694 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,695 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,695 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,695 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,695 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,696 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,696 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,696 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,696 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,697 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,697 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,697 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,697 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,698 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,698 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,698 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,698 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,699 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,699 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,699 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,699 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,700 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,700 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,700 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,700 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,701 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,701 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,702 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,702 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,702 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,703 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,704 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,704 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,705 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,705 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,705 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,706 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,706 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,706 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,707 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,707 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,707 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,708 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,708 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,708 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,709 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,709 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,709 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,709 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,710 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,710 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,710 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,710 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,711 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,711 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,711 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,711 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,712 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,712 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,712 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,712 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,713 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,713 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,713 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,713 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,714 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,714 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,714 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,714 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,715 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,715 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,715 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,715 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,716 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,716 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,716 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,716 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,717 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,717 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,717 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,717 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,718 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,718 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,718 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,719 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,719 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,719 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,720 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,720 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,720 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,720 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,721 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,721 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,721 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,721 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,722 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,722 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,722 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,722 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,723 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,723 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,723 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,723 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,724 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,724 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,724 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,724 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,725 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,725 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,725 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,725 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,726 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,726 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,726 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,726 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,727 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,727 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,727 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,727 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,728 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,728 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,728 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,728 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,728 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,729 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,729 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,729 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,730 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,730 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,730 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,730 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,730 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,731 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,731 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,731 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,731 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,732 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,732 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,732 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,733 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,733 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,734 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,734 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,734 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,734 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,735 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,735 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,735 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,735 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,736 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,736 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,736 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,736 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,737 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,737 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,737 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,737 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,738 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,738 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,738 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,738 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,739 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,739 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,739 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,739 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,740 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,740 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,740 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,740 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,741 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,741 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,741 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,741 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,742 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,742 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,742 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,742 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,743 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,743 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,743 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,743 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,744 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,744 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,744 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,744 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,745 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,745 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,745 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,745 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,746 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,746 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,746 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,746 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,746 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,747 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,747 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,747 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,747 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,748 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,748 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,748 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,748 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,749 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,749 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,749 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,749 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,750 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,750 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,750 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,751 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,751 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,751 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,751 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,752 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,752 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,752 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,753 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,753 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,753 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,753 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,754 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,754 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,754 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,754 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,754 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,755 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,755 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,755 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,755 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,756 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,756 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,756 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,756 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,757 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,757 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,757 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,757 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,758 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,758 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,758 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,758 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,759 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,759 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,759 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,759 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,760 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,760 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,760 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,761 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,761 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,761 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,762 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,762 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,762 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,762 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,763 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,763 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,763 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,764 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,764 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,765 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,765 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,765 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,766 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,766 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,766 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,767 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,767 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,767 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,768 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,768 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,768 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,768 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,769 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,769 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,770 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,770 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,770 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,771 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,771 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,772 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,772 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,772 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,773 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,773 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,774 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,774 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,774 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,775 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,775 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,776 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,776 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,777 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,777 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,778 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,778 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,778 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,779 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,779 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,780 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,780 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,780 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,781 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,781 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,781 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,781 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,781 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,782 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,782 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,783 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,783 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,783 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,783 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,784 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,784 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,784 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,784 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,785 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,785 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,785 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,785 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,786 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,786 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,786 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,786 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,787 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,787 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,787 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,787 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,788 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,788 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,788 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,788 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,788 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,789 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,789 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,789 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,789 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,790 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,790 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,790 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,790 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,791 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,791 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,791 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,792 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,792 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,792 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,793 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,793 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,793 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,793 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,794 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,794 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,795 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,795 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,795 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,795 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,796 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,796 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,796 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,797 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,797 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,797 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,798 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,798 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,798 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,798 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,799 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,799 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,799 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,799 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,799 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,800 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,800 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,800 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,800 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,801 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,801 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,801 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,801 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,802 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,802 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,802 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,802 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,803 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,803 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,803 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,803 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,804 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,804 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,804 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,804 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,805 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,805 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,805 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,805 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,806 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,806 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,806 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,806 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,807 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,807 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,807 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,807 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,808 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,808 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,808 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,809 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,809 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,809 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,810 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,810 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,810 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,811 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,811 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,812 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,812 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,812 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,813 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,813 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,813 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,813 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,814 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,814 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,815 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,815 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,815 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,815 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,816 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,816 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,816 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,816 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,817 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,817 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,817 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,817 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,818 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,818 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,818 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,818 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,819 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,819 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,819 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,819 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,820 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,820 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,820 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,820 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,820 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,821 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,821 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,821 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,821 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,822 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,822 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,822 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,822 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,823 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,823 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,823 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,823 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,824 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,824 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,824 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,824 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,825 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,825 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,825 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,826 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,826 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,827 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,827 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,827 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,827 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,828 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,828 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,828 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,828 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,828 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,829 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,829 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,829 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,830 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,830 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,830 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,830 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,831 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,831 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,831 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,831 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,832 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,832 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,832 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,832 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,833 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,833 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,833 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,833 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,834 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,834 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,834 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,834 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,834 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,835 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,835 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,835 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,836 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,836 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,836 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,836 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,837 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,837 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,837 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,837 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,838 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,838 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,838 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,838 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,839 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,839 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,839 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,839 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,840 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,840 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,840 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,840 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,841 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,841 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,841 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,842 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,842 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,843 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,843 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,844 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,844 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,844 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,845 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,845 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,846 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,846 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,847 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,847 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,847 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,847 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,848 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,848 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,848 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,848 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,849 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,849 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,849 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,849 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,850 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,850 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,850 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,850 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,851 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,851 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,851 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,851 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,852 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,852 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,852 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,852 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,853 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,853 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,853 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,853 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,853 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,854 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,854 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,854 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,855 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,855 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,855 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,855 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,856 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,856 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,856 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,856 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,857 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,857 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,858 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,858 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,858 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,858 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,859 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,859 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,859 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,860 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,860 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,860 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,860 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,861 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,861 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,861 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,861 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,862 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,862 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,862 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,862 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,863 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,863 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,863 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,863 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,863 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,864 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,864 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,864 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,864 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,865 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,865 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,865 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,865 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,866 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,866 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,866 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,866 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,867 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,867 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,867 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,867 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,868 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,868 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,868 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,868 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,868 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,869 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,869 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,869 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,869 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,870 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,870 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,870 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,870 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,871 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,871 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,871 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,871 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,871 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,872 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,872 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,872 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,873 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,873 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,873 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,873 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,874 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,874 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,874 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,874 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,875 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,875 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,875 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,875 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,875 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,876 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,876 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,876 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,876 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,877 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,877 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,877 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,877 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,878 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,878 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,878 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,879 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,879 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,879 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,879 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,880 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+2026-04-02 01:20:51,880 - trader_gemini - DEBUG - 🧪 LAB MODE: Using Fixed Equal Weighting (5.0%) for comparison.
+  ✅ size_position speed (0μs/call): 1K calls
+
+======================================================================
+🔬 S4: SIGNAL FILTER CASCADE — DÓNDE MUEREN LAS SEÑALES
+======================================================================
+  ✅ Total 'continue' gates in generate_signals: 19 filter gates (each one can kill a signal)
+  ✅ Filter: ADX Filter: ACTIVE
+  ✅ Filter: Strength Filter: ACTIVE
+  ✅ Filter: Oracle Veto: ACTIVE
+  ✅ Filter: Quantum Veto (VPIN): ACTIVE
+  ✅ Filter: Sophia Omniscient Gate: ACTIVE
+  ✅ Filter: Volatility Minimum: ACTIVE
+  ✅ Filter: XRP Trend Alignment: ACTIVE
+  ✅ Filter: Closed-Bar Logic: ACTIVE
+  ✅ Omniscient Score hurdle (BTC): Hurdle = 0.15 (too high = too few signals)
+  ✅ Omniscient Score hurdle (ALTs): Alt Hurdle = 0.12
+  ✅ Divine/Harmonic Gate overrides exist: Lower hurdle for high-coherence signals
+  ⚠️  Adaptive Leverage base: Base: 10.0x + up to 20x more (DANGEROUS for $13)
+
+======================================================================
+🔬 S5: SL/TP ECONOMICS — RENTABILIDAD POST-FEES
+======================================================================
+
+  💰 Account: $13.0 | Position: $6.0 | Notional: $60.0
+  📊 Leverage: 10x | Fee: 0.0375% per side
+  ============================================================
+  ✅ Ultra-Tight Scalp (SL=0.2%/TP=0.4%): NetWin=$0.195 NetLoss=$0.165 BE_WR=46% EV@60%=$0.051
+  ✅ Standard Scalp (SL=0.5%/TP=1.0%): NetWin=$0.555 NetLoss=$0.345 BE_WR=38% EV@60%=$0.195
+  ✅ Wide Scalp (SL=0.8%/TP=1.6%): NetWin=$0.915 NetLoss=$0.525 BE_WR=36% EV@60%=$0.339
+  ✅ Swing Entry (SL=1.0%/TP=2.5%): NetWin=$1.455 NetLoss=$0.645 BE_WR=31% EV@60%=$0.615
+  ✅ Wide Swing (SL=1.5%/TP=3.5000000000000004%): NetWin=$2.055 NetLoss=$0.945 BE_WR=32% EV@60%=$0.855
+  ✅ Fee impact per trade: $0.0450 = 0.35% of capital per round trip
+  ✅ Trades to ruin (at worst scenario SL): 13 consecutive losses until $0
+
+======================================================================
+🔬 S6: RISK MANAGER — VALIDATION PIPELINE SPEED
+======================================================================
+  ✅ validate_order (0μs/call): Full pipeline including all 7 validation checks
+  ✅ _validate_fat_finger (2ns/call): 10K iterations
+  ✅ _validate_kill_switch (2ns/call): 10K iterations
+  ✅ _validate_frequency_limits (3ns/call): 10K iterations
+
+======================================================================
+📊 RESUMEN FINAL — AUDITORÍA FORENSE V8 DEEP
+======================================================================
+  ✅ HORIZON: 12/14 passed (2 WARN)
+  ✅ SOPHIA: 6/6 passed
+  ✅ SIZING: 10/10 passed
+  ✅ FILTERS: 12/13 passed (1 WARN)
+  ✅ ECONOMICS: 7/7 passed
+  ✅ RISK_SPEED: 4/4 passed
+
+  📈 Score: 94.4% (51/54)
+
+🔍 DIAGNÓSTICO CLAVE PARA $13 USD:
+   Si ganas el 60% de los trades y cada trade arriesga ~$0.39:
+   → Necesitas ~260 trades rentables para duplicar
+   → A 24 trades/día = ~11 días
+   → CLAVE: Subir WR a 70%+ reduce esto a ~5 días
+
+======================================================================
+🏁 Auditoría V8 completada: 2026-04-02 01:20:51
+======================================================================

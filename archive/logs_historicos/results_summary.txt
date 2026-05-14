@@ -1,0 +1,108 @@
+
+Horizon: 1D
+  BTC/USDT:
+    Technical: PNL=-0.1788, WR=22.22%, Sharpe=-28.94, Trades=18, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=-0.0312, WR=20.00%, Sharpe=-3.80, Trades=5, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.0714, WR=27.27%, Sharpe=-50.00, Trades=11, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.0911, WR=23.16%, Sharpe=-24.36, Trades=11, Sigs(L/S/N)=?/?/?
+  ETH/USDT:
+    Technical: PNL=-0.1650, WR=16.67%, Sharpe=-20.36, Trades=18, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=-0.0663, WR=37.50%, Sharpe=-12.40, Trades=8, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=+0.0333, WR=53.85%, Sharpe=10.74, Trades=13, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.0109, WR=36.01%, Sharpe=-1.79, Trades=13, Sigs(L/S/N)=?/?/?
+  SOL/USDT:
+    Technical: PNL=-0.0848, WR=27.78%, Sharpe=-17.53, Trades=18, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=-0.0731, WR=33.33%, Sharpe=-12.43, Trades=9, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.0882, WR=38.46%, Sharpe=-10.23, Trades=13, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.0599, WR=33.19%, Sharpe=-9.32, Trades=13, Sigs(L/S/N)=?/?/?
+  XRP/USDT:
+    Technical: PNL=-0.0490, WR=25.00%, Sharpe=-17.72, Trades=12, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=-0.1241, WR=14.29%, Sharpe=-21.74, Trades=7, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=+0.0129, WR=50.00%, Sharpe=-0.11, Trades=14, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.0626, WR=29.76%, Sharpe=-14.27, Trades=11, Sigs(L/S/N)=?/?/?
+  DOGE/USDT:
+    Technical: PNL=-0.0352, WR=33.33%, Sharpe=-19.98, Trades=9, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=+0.0118, WR=42.86%, Sharpe=3.90, Trades=7, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.0496, WR=50.00%, Sharpe=-7.24, Trades=14, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.0626, WR=42.06%, Sharpe=-17.85, Trades=10, Sigs(L/S/N)=?/?/?
+
+Horizon: 7D
+  BTC/USDT:
+    Technical: PNL=-0.0539, WR=37.50%, Sharpe=-4.44, Trades=24, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=+0.0882, WR=50.00%, Sharpe=4.16, Trades=14, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.0566, WR=37.50%, Sharpe=-5.83, Trades=24, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=+0.0334, WR=41.67%, Sharpe=2.01, Trades=20, Sigs(L/S/N)=?/?/?
+  ETH/USDT:
+    Technical: PNL=-0.2401, WR=18.92%, Sharpe=-11.61, Trades=37, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=-0.0020, WR=44.44%, Sharpe=-1.11, Trades=18, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.2706, WR=33.33%, Sharpe=-24.00, Trades=36, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.2024, WR=32.23%, Sharpe=-19.73, Trades=30, Sigs(L/S/N)=?/?/?
+  SOL/USDT:
+    Technical: PNL=-0.0094, WR=31.43%, Sharpe=-1.79, Trades=35, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=-0.0733, WR=36.84%, Sharpe=-4.22, Trades=19, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.0604, WR=45.71%, Sharpe=-5.03, Trades=35, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.1081, WR=37.99%, Sharpe=-8.62, Trades=29, Sigs(L/S/N)=?/?/?
+  XRP/USDT:
+    Technical: PNL=+0.1429, WR=29.03%, Sharpe=2.77, Trades=31, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=-0.0298, WR=38.10%, Sharpe=-2.08, Trades=21, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.2597, WR=32.26%, Sharpe=-12.73, Trades=31, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=+0.0236, WR=33.13%, Sharpe=0.84, Trades=27, Sigs(L/S/N)=?/?/?
+  DOGE/USDT:
+    Technical: PNL=+0.1256, WR=45.71%, Sharpe=2.24, Trades=35, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=+0.0548, WR=41.18%, Sharpe=2.12, Trades=17, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.0412, WR=42.86%, Sharpe=-7.50, Trades=42, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.0132, WR=43.25%, Sharpe=-0.98, Trades=31, Sigs(L/S/N)=?/?/?
+
+Horizon: 15D
+  BTC/USDT:
+    Technical: PNL=-0.0677, WR=27.27%, Sharpe=-2.84, Trades=55, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=+0.1985, WR=50.00%, Sharpe=4.80, Trades=28, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.2481, WR=32.73%, Sharpe=-7.33, Trades=55, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.0477, WR=36.67%, Sharpe=-1.92, Trades=46, Sigs(L/S/N)=?/?/?
+  ETH/USDT:
+    Technical: PNL=-0.0212, WR=30.14%, Sharpe=-1.62, Trades=73, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=+0.1104, WR=45.24%, Sharpe=0.96, Trades=42, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.1749, WR=35.37%, Sharpe=-5.29, Trades=82, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.0834, WR=36.92%, Sharpe=-2.00, Trades=65, Sigs(L/S/N)=?/?/?
+  SOL/USDT:
+    Technical: PNL=+0.0605, WR=31.51%, Sharpe=-0.15, Trades=73, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=+0.0550, WR=41.46%, Sharpe=0.21, Trades=41, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.4471, WR=33.72%, Sharpe=-9.25, Trades=86, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.0371, WR=35.56%, Sharpe=-1.18, Trades=66, Sigs(L/S/N)=?/?/?
+  XRP/USDT:
+    Technical: PNL=-0.0175, WR=25.40%, Sharpe=-1.27, Trades=63, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=+0.2138, WR=42.86%, Sharpe=2.60, Trades=35, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.1893, WR=32.81%, Sharpe=-6.18, Trades=64, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=+0.0591, WR=33.69%, Sharpe=1.24, Trades=54, Sigs(L/S/N)=?/?/?
+  DOGE/USDT:
+    Technical: PNL=-0.1379, WR=30.23%, Sharpe=-4.14, Trades=86, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=+0.2176, WR=43.90%, Sharpe=4.71, Trades=41, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.0607, WR=41.11%, Sharpe=-2.93, Trades=90, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=+0.0172, WR=38.41%, Sharpe=0.16, Trades=72, Sigs(L/S/N)=?/?/?
+
+Horizon: 30D
+  BTC/USDT:
+    Technical: PNL=-0.1703, WR=27.78%, Sharpe=-2.86, Trades=126, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=-0.2181, WR=32.76%, Sharpe=-3.56, Trades=58, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.4393, WR=30.61%, Sharpe=-8.70, Trades=98, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.3080, WR=30.38%, Sharpe=-5.39, Trades=94, Sigs(L/S/N)=?/?/?
+  ETH/USDT:
+    Technical: PNL=+0.2949, WR=33.33%, Sharpe=1.17, Trades=168, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=-0.2677, WR=37.63%, Sharpe=-3.40, Trades=93, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.2556, WR=37.95%, Sharpe=-3.57, Trades=166, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.2423, WR=36.30%, Sharpe=-3.25, Trades=142, Sigs(L/S/N)=?/?/?
+  SOL/USDT:
+    Technical: PNL=+0.4434, WR=34.07%, Sharpe=1.72, Trades=182, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=-0.2026, WR=37.36%, Sharpe=-3.73, Trades=91, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.0969, WR=40.11%, Sharpe=-2.60, Trades=182, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.0776, WR=37.18%, Sharpe=-1.27, Trades=151, Sigs(L/S/N)=?/?/?
+  XRP/USDT:
+    Technical: PNL=+0.3014, WR=32.47%, Sharpe=1.25, Trades=154, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=-0.0688, WR=37.18%, Sharpe=-1.67, Trades=78, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=+0.0070, WR=39.44%, Sharpe=-1.35, Trades=142, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.0879, WR=36.36%, Sharpe=-1.92, Trades=124, Sigs(L/S/N)=?/?/?
+  DOGE/USDT:
+    Technical: PNL=-0.1219, WR=29.73%, Sharpe=-2.60, Trades=185, Sigs(L/S/N)=?/?/?
+    Sophia: PNL=+0.1099, WR=36.67%, Sharpe=0.36, Trades=90, Sigs(L/S/N)=?/?/?
+    ML_XGBoost: PNL=-0.1319, WR=37.58%, Sharpe=-2.95, Trades=165, Sigs(L/S/N)=?/?/?
+    Orchestrator: PNL=-0.1836, WR=34.66%, Sharpe=-3.27, Trades=146, Sigs(L/S/N)=?/?/?

@@ -6,7 +6,6 @@ PARA QUÉ: HFT StatArb without heavy 'statsmodels' dependency.
 """
 
 import numpy as np
-from strategies.quant_math import rsi_numba # Re-use if needed
 from utils.logger import logger
 from dataclasses import dataclass
 
@@ -156,6 +155,7 @@ class StatArbEngine:
             
             return CointegrationResult(is_coint, round(p_val, 3), beta, c, z_score)
             
+
         except Exception as e:
             # logger.error(f"Lite-EG Error: {e}") # Verbose
             return CointegrationResult(False, 1.0, 0.0, 0.0, 0.0)
@@ -163,10 +163,19 @@ class StatArbEngine:
 from core.events import SignalEvent, SignalType
 from datetime import datetime, timezone
 from strategies.strategy import Strategy
+from config import Config
 
 class StatArbStrategy(Strategy):
     """
-    StatArb Strategy Wrapper
+    StatArb Strategy Wrapper — HORIZON-AWARE (Forensic Phase 4)
+    ═══════════════════════════════════════════════════════════════
+    QUÉ: Estrategia de arbitraje estadístico por cointegración.
+    POR QUÉ: Arbitraje estadístico en SWING captura mean-reversion
+      de spreads a largo plazo, necesita TP/SL más amplios.
+    CÓMO: Lee Config.Strategies.SCALPING_PARAMS o SWING_PARAMS.
+    DÓNDE: strategies/stat_arb.py → StatArbStrategy
+    QUIÉN: StatArbStrategy (Quant Developer)
+    ═══════════════════════════════════════════════════════════════
     """
     def __init__(self, data_provider, events_queue, horizon="SCALPING", priority=1):
         super().__init__()
@@ -176,6 +185,24 @@ class StatArbStrategy(Strategy):
         self.priority = priority
         self.strategy_id = f"STATARB_{horizon}"
         self.engine = StatArbEngine()
+        
+        # ================================================================
+        # PHASE FORENSIC-4: HORIZON-AWARE PARAMETER LOADING
+        # ================================================================
+        if horizon.upper() == 'SCALPING':
+            h_params = getattr(Config.Strategies, 'SCALPING_PARAMS', {})
+        elif horizon.upper() == 'SWING':
+            h_params = getattr(Config.Strategies, 'SWING_PARAMS', {})
+        else:
+            h_params = {}
+        
+        from utils.logger import logger
+        
+        self.TP_PCT = h_params.get('tp_pct', 0.015)
+        self.SL_PCT = h_params.get('sl_pct', 0.015)
+        self.SOPHIA_TTL = 300.0 if horizon == 'SCALPING' else 3600.0
+        
+        logger.info(f"📐 STATARB [{horizon}] INITIALIZED | TP={self.TP_PCT*100:.2f}% SL={self.SL_PCT*100:.2f}%")
 
     def generate_signals(self, event):
         from config import Config
@@ -196,7 +223,8 @@ class StatArbStrategy(Strategy):
             px = data_x['close'].values[-500:]
             py = data_y['close'].values[-500:]
             
-            coint = self.engine.test_cointegration_lite_eg(px, py)
+            # FORENSIC-4 FIX: Correct method name
+            coint = self.engine.lite_engle_granger(px, py)
             
             if coint.is_cointegrated and abs(coint.z_score) > 2.0:
                 signal_type = SignalType.SHORT if coint.z_score > 0 else SignalType.LONG
@@ -210,10 +238,10 @@ class StatArbStrategy(Strategy):
                         signal_strength=0.85,
                         setups={'z_score': coint.z_score},
                         confluence_score=1.0,
-                        tp_pct=0.015,
-                        sl_pct=0.015,
+                        tp_pct=self.TP_PCT,
+                        sl_pct=self.SL_PCT,
                         returns=None,
-                        ttl_seconds=300.0,
+                        ttl_seconds=self.SOPHIA_TTL,
                         regime="RANGING"
                     )
                     
@@ -228,16 +256,16 @@ class StatArbStrategy(Strategy):
                     signal_type=signal_type,
                     strength=0.85,
                     atr=0.0,
-                    tp_pct=0.015,
-                    sl_pct=0.015,
+                    tp_pct=self.TP_PCT,
+                    sl_pct=self.SL_PCT,
                     current_price=current_price,
                     horizon=self.horizon,
                     priority=self.priority,
                     metadata={'sophia': sophia_report_dict, 'z_score': coint.z_score}
                 )
                 self.events_queue.put(signal)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Silent exception caught: {e}")
             
     def calculate_signals(self, event):
         self.generate_signals(event)

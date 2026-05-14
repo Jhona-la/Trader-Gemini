@@ -145,4 +145,22 @@ class PPOAgent:
             
         logger.info(f"🧠 [PPO Agent] Update complete. Actor Loss: {actor_loss.item():.4f}, Critic Loss: {critic_loss.item():.4f}")
 
+    def reset_weights(self):
+        """
+        FORENSIC PURGE: Reinicializa los pesos de la red para eliminar memoria envenenada.
+        """
+        if self.network is None:
+            return
+        
+        logger.warning("🚨 [PPO Agent] FORENSIC PURGE: Iniciando amnesia inducida al modelo RL...")
+        for layer in self.network.modules():
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_uniform_(layer.weight)
+                if layer.bias is not None:
+                    nn.init.zeros_(layer.bias)
+        
+        # Reset optimizador
+        self.optimizer = optim.Adam(self.network.parameters(), lr=3e-4)
+        logger.info("✅ [PPO Agent] Pesos y Optimizador reinicializados (Amnesia completada).")
+
 ppo_agent = PPOAgent()

@@ -50,9 +50,9 @@ from utils.logger import logger
 # CONSTANTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-MAX_SIGNALS_PER_STRATEGY = 500   # Ring buffer size per strategy_id
+MAX_SIGNALS_PER_STRATEGY = 200   # [Phase 6 RAM OFF-LOAD] Strict sliding window
 FORWARD_WINDOWS = [1, 3, 5, 10, 15, 30, 60, 120]  # Bars to measure accuracy
-MIN_SIGNALS_FOR_METRICS = 100    # [P0 FIX] Minimum 100 signals before exposing metrics to avoid premature blocks
+MIN_SIGNALS_FOR_METRICS = 50     # Reduced from 100 to allow faster learning with smaller RAM footprint
 DECAY_CLEANUP_BARS = 2000        # Clean signals older than this
 PERSIST_INTERVAL = 100           # Persist to JSON every N signals
 DEFAULT_CONFIDENCE = 1.0         # Neutral confidence when no data
@@ -72,11 +72,18 @@ class PredictionSignal:
         'direction_correct_at',  # dict: {window: bool}
         'is_resolved', 'trade_outcome',  # win/loss/None
         'pnl_pct',
+        # CTOS Phase 3: Extended prediction fields
+        'predicted_magnitude', 'predicted_target_price', 'predicted_duration_bars',
+        'trade_id', 'thought_id',  # Forensic traceability IDs
     ]
 
     def __init__(self, strategy_id: str, symbol: str, direction: str,
                  horizon: str, entry_price: float, sl_pct: float,
-                 tp_pct: float, confidence: float, timestamp):
+                 tp_pct: float, confidence: float, timestamp,
+                 predicted_magnitude: float = None,
+                 predicted_target_price: float = None,
+                 predicted_duration_bars: int = None,
+                 trade_id: str = None, thought_id: str = None):
         self.strategy_id = strategy_id
         self.symbol = symbol
         self.direction = direction  # 'long' or 'short'
@@ -99,6 +106,13 @@ class PredictionSignal:
         self.is_resolved = False
         self.trade_outcome = None  # 'win', 'loss', None
         self.pnl_pct = 0.0
+
+        # CTOS Phase 3: Extended prediction fields
+        self.predicted_magnitude = predicted_magnitude  # Expected % move
+        self.predicted_target_price = predicted_target_price  # Expected target price
+        self.predicted_duration_bars = predicted_duration_bars  # Expected bars to target
+        self.trade_id = trade_id  # Link to portfolio trade_id
+        self.thought_id = thought_id  # Link to thought_id in DB
 
 
 class PredictionTracker:
@@ -167,12 +181,20 @@ class PredictionTracker:
     def record_signal(self, strategy_id: str, symbol: str, direction: str,
                       horizon: str, entry_price: float, sl_pct: float,
                       tp_pct: float, confidence: float = 0.5,
-                      timestamp=None) -> None:
+                      timestamp=None,
+                      predicted_magnitude: float = None,
+                      predicted_target_price: float = None,
+                      predicted_duration_bars: int = None,
+                      trade_id: str = None,
+                      thought_id: str = None) -> None:
         """
         📝 Registra una nueva señal predictiva para tracking.
 
         Llamado desde: Engine (después de strategy.calculate_signals())
         o desde el backtest loop (después de generar SignalEvent).
+        
+        CTOS Phase 3: Now accepts predicted_magnitude, predicted_target_price,
+        and predicted_duration_bars for full prediction audit trail.
         """
         if entry_price <= 0:
             return
@@ -189,10 +211,27 @@ class PredictionTracker:
             tp_pct=tp_pct,
             confidence=confidence,
             timestamp=ts,
+            predicted_magnitude=predicted_magnitude,
+            predicted_target_price=predicted_target_price,
+            predicted_duration_bars=predicted_duration_bars,
+            trade_id=trade_id,
+            thought_id=thought_id,
         )
 
         self._signals[strategy_id].append(sig)
         self._active_by_symbol[symbol].append(sig)
+        
+        # ═══════════════════════════════════════════════════════════════
+        # PHASE 4 FIX: RAM MEMORY LEAK PREVENTION (SSD OFFLOADING)
+        # QUÉ: Limitar el tamaño de _active_by_symbol a 50 señales vivas.
+        # POR QUÉ: Para evitar llenar la RAM con señales huérfanas en
+        # simulaciones o ejecuciones de varios días.
+        # ═══════════════════════════════════════════════════════════════
+        if len(self._active_by_symbol[symbol]) > 50:
+            while len(self._active_by_symbol[symbol]) > 50:
+                old_sig = self._active_by_symbol[symbol].pop(0)
+                old_sig.is_resolved = True
+                
         self._total_signals_recorded += 1
         self._cache_dirty = True
 
@@ -245,10 +284,19 @@ class PredictionTracker:
                 sig.mae = favorable
                 sig.mae_bar = sig.bar_count
 
-            # Direction accuracy at forward windows
+            # Direction accuracy at forward windows (ANTI-MENTIRA FIX)
+            # QUÉ: Una predicción no es correcta solo porque esté en >0.
+            # POR QUÉ: Si predijo ganar 1% y va en +0.01%, está estancado, no es correcto.
+            # PARA QUÉ: Penalizar predicciones falsas o extremadamente optimistas.
             for window in FORWARD_WINDOWS:
                 if sig.bar_count == window and window not in sig.direction_correct_at:
-                    sig.direction_correct_at[window] = (unrealized_pct > 0)
+                    target = sig.predicted_magnitude or sig.tp_pct or 0.001
+                    # Se espera un progreso proporcional al tiempo transcurrido
+                    expected_duration = sig.predicted_duration_bars or 60
+                    expected_progress = target * (window / max(1, expected_duration))
+                    # Requerimos al menos el 50% del progreso esperado (mitad de inercia)
+                    min_required = min(expected_progress * 0.5, target * 0.8)
+                    sig.direction_correct_at[window] = (unrealized_pct >= min_required)
 
             # Auto-resolve after DECAY_CLEANUP_BARS
             if sig.bar_count >= DECAY_CLEANUP_BARS:
@@ -268,23 +316,79 @@ class PredictionTracker:
     # ═══════════════════════════════════════════════════════════════════════════
 
     def record_trade_outcome(self, symbol: str, is_win: bool,
-                             pnl_pct: float = 0.0, strategy_id: str = None) -> None:
+                             pnl_pct: float = 0.0, strategy_id: str = None,
+                             trade_id: str = None) -> Optional[Dict]:
         """
         📈 Records the actual outcome of a trade for the most recent signal.
+        
+        CTOS Phase 3: Returns forensic data dict with prediction vs reality
+        for the prediction_audit table.
 
-        Called from: RiskManager.record_trade_result()
+        Called from: RiskManager.record_trade_result() / Portfolio._record_closed_trade()
+        
+        Returns:
+            dict with prediction audit data, or None if no matching signal found.
         """
+        audit_data = None
+        
         # Find the most recent unresolved signal for this symbol
         if symbol in self._active_by_symbol:
             for sig in reversed(self._active_by_symbol[symbol]):
                 if not sig.is_resolved:
                     if strategy_id and sig.strategy_id != strategy_id:
                         continue
+                    if trade_id and sig.trade_id and sig.trade_id != trade_id:
+                        continue
+                    # CTOS Phase 3/5: Anti-Mentira (Magnitude Verification)
                     sig.is_resolved = True
-                    sig.trade_outcome = 'win' if is_win else 'loss'
                     sig.pnl_pct = pnl_pct
                     self._cache_dirty = True
+                    
+                    target = sig.predicted_magnitude or sig.tp_pct or 0.0
+                    
+                    if target > 0:
+                        # Para no mentirnos, exigimos que el precio se haya movido
+                        # al menos a un 80% del objetivo que la estrategia prometió.
+                        magnitude_achieved = sig.mfe >= (target * 0.8)
+                    else:
+                        magnitude_achieved = (pnl_pct > 0)
+                        
+                    was_direction_correct = (pnl_pct > 0)
+                    
+                    # La predicción fue una MENTIRA si el precio subió un tick y luego cayó.
+                    was_correct = was_direction_correct and magnitude_achieved
+                    
+                    # Fix: Penalizar al modelo si nos engañó con un objetivo irreal
+                    if is_win and not magnitude_achieved:
+                        sig.trade_outcome = 'loss'  # Falla predictiva (aunque no perdamos $)
+                    else:
+                        sig.trade_outcome = 'win' if is_win else 'loss'
+                    
+                    # Calculate missed profit: Target - actual exit PnL
+                    missed_profit = max(0.0, target - max(0.0, pnl_pct))
+                    
+                    audit_data = {
+                        'strategy_id': sig.strategy_id,
+                        'symbol': sig.symbol,
+                        'horizon': sig.horizon,
+                        'direction': sig.direction,
+                        'confidence': sig.confidence,
+                        'predicted_magnitude': sig.predicted_magnitude,
+                        'predicted_target_price': sig.predicted_target_price,
+                        'predicted_duration_bars': sig.predicted_duration_bars,
+                        'actual_magnitude_pct': pnl_pct,
+                        'actual_duration_bars': sig.bar_count,
+                        'was_correct': was_correct,
+                        'optimal_exit_bar': sig.mfe_bar,
+                        'mfe_pct': sig.mfe,
+                        'mae_pct': sig.mae,
+                        'missed_profit_pct': missed_profit,
+                        'trade_id': sig.trade_id or trade_id,
+                        'thought_id': sig.thought_id,
+                    }
                     break
+        
+        return audit_data
 
     # ═══════════════════════════════════════════════════════════════════════════
     # METRICS AGGREGATION
@@ -461,17 +565,103 @@ class PredictionTracker:
         acc = metrics['direction_accuracy']
         n = metrics['total_signals']
 
-        # ⚠️ CRITERIO DE ACCIÓN: Rechazar < 40% (Bajado desde 60%)
-        # FORENSIC-V15: Con accuracy de 48%, el umbral de 60% bloqueaba
-        # el 100% de las señales. Bajamos a 40% para permitir flujo de
-        # datos y re-entrenamiento. Se subirá cuando la precisión mejore.
-        if n >= MIN_SIGNALS_FOR_METRICS and acc < 0.40:
+        # CTOS Phase 5: Sniper Accuracy Minimum (55%)
+        # Si la estrategia no tiene Edge Matemático positivo, queda vetada.
+        if n >= MIN_SIGNALS_FOR_METRICS and acc < 0.55:
             return True, (
-                f"accuracy {acc:.1%} < 40% threshold "
+                f"accuracy {acc:.1%} < 55% threshold "
                 f"(n={n}, horizon={metrics.get('horizon', '?')})"
             )
 
         return False, ""
+
+    def get_prediction_for_trade(self, symbol: str, strategy_id: str = None,
+                                 trade_id: str = None) -> Optional[Dict]:
+        """
+        🔍 CTOS Phase 3: Returns the active prediction for a symbol/strategy.
+        
+        Used by: ExitOracle to know what the opening strategy predicted.
+        This allows exit strategies to evaluate if the position is on track
+        to reach its predicted target or has deviated.
+        
+        Returns:
+            dict with prediction data, or None if not found.
+        """
+        if symbol not in self._active_by_symbol:
+            return None
+        
+        for sig in reversed(self._active_by_symbol[symbol]):
+            if sig.is_resolved:
+                continue
+            if strategy_id and sig.strategy_id != strategy_id:
+                continue
+            if trade_id and sig.trade_id and sig.trade_id != trade_id:
+                continue
+            
+            return {
+                'strategy_id': sig.strategy_id,
+                'symbol': sig.symbol,
+                'direction': sig.direction,
+                'horizon': sig.horizon,
+                'entry_price': sig.entry_price,
+                'confidence': sig.confidence,
+                'predicted_magnitude': sig.predicted_magnitude,
+                'predicted_target_price': sig.predicted_target_price,
+                'predicted_duration_bars': sig.predicted_duration_bars,
+                'bar_count': sig.bar_count,
+                'mfe': sig.mfe,
+                'mae': sig.mae,
+                'mfe_bar': sig.mfe_bar,
+                'trade_id': sig.trade_id,
+                'thought_id': sig.thought_id,
+                'sl_pct': sig.sl_pct,
+                'tp_pct': sig.tp_pct,
+            }
+        return None
+
+    def calculate_realtime_edge(self, strategy_id: str, elapsed_bars: float, horizon: str = None) -> float:
+        """
+        📉 CTOS Phase 3: Dynamic Alpha Decay
+        Calcula el 'Edge Probability' (0.0 a 1.0) usando la función matemática de decaimiento continuo
+        en vez de un corte binario basado en un umbral de tiempo.
+        
+        Args:
+            strategy_id: ID de la estrategia.
+            elapsed_bars: Barras o minutos transcurridos desde que se abrió el trade.
+            horizon: SCALPING o SWING.
+            
+        Returns:
+            float: Edge probability actual. Si es menor a 0.45, el trade perdió su inercia matemática.
+        """
+        metrics = self.get_strategy_metrics(strategy_id, horizon)
+        
+        # Fallback values
+        initial_accuracy = 0.5
+        ttl_bars = 25.0
+        
+        if metrics:
+            initial_accuracy = metrics.get('direction_accuracy', 0.5)
+            ttl_bars = float(metrics.get('optimal_ttl_bars', 25.0))
+            
+            # Si el TTL histórico es muy corto o absurdo, ponerle límites (min 5, max 120)
+            ttl_bars = max(5.0, min(120.0, ttl_bars))
+        
+        # Traemos la funcion Numba de FastMath para el Alpha Decay continuo
+        try:
+            from utils.math_kernel import compute_alpha_decay_jit
+            # compute_alpha_decay_jit(signal_strength, elapsed_seconds, ttl_seconds)
+            # En nuestro caso, strength = accuracy inicial, y enviamos barras en lugar de segundos
+            edge_prob = compute_alpha_decay_jit(initial_accuracy, elapsed_bars, ttl_bars)
+        except ImportError:
+            # Fallback en caso de que math_kernel no cargue
+            import math
+            if ttl_bars <= 0.0:
+                return 0.0
+            lam = 1.0 / ttl_bars
+            edge_prob = initial_accuracy * math.exp(-lam * elapsed_bars)
+            
+        return edge_prob
+
 
     # ═══════════════════════════════════════════════════════════════════════════
     # PERSISTENCE

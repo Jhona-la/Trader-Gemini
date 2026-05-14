@@ -137,13 +137,15 @@ from strategies.strategy import Strategy
 
 class ArbitrageStrategy(Strategy):
     """
-    Arbitrage Strategy Wrapper
+    Arbitrage Strategy Wrapper — HORIZON-AWARE (Forensic Phase 4)
     ═══════════════════════════════════════════════════════════════
-    FORENSIC-DCA FIX #1: Corregido crash crítico donde se llamaba
-      self.engine.generate_signals() pero el método real es
-      scan_opportunities(). Este bug hacía la estrategia MUERTA.
-    FORENSIC-DCA FIX #2: Añadido cooldown de 120s entre escaneos
-      para prevenir spam de señales.
+    QUÉ: Wrapper de estrategia de arbitraje estadístico.
+    POR QUÉ: Arbitraje en SWING necesita TP más amplios y cooldowns
+      más largos para capturar reversiones de spread completas.
+    CÓMO: Lee Config.Strategies.SCALPING_PARAMS o SWING_PARAMS.
+    CUÁNDO: En cada instanciación y evaluación de señales.
+    DÓNDE: strategies/arbitrage.py → ArbitrageStrategy
+    QUIÉN: ArbitrageStrategy (Quant Developer)
     ═══════════════════════════════════════════════════════════════
     """
     def __init__(self, data_provider, events_queue, horizon="SCALPING", priority=1):
@@ -154,14 +156,31 @@ class ArbitrageStrategy(Strategy):
         self.priority = priority
         self.strategy_id = f"ARBITRAGE_{horizon}"
         self.engine = StatisticalArbitrage()
+        
+        # ================================================================
+        # PHASE FORENSIC-4: HORIZON-AWARE PARAMETER LOADING
+        # ================================================================
+        if horizon.upper() == 'SCALPING':
+            h_params = getattr(Config.Strategies, 'SCALPING_PARAMS', {})
+        elif horizon.upper() == 'SWING':
+            h_params = getattr(Config.Strategies, 'SWING_PARAMS', {})
+        else:
+            h_params = {}
+        
+        self.TP_PCT = h_params.get('tp_pct', 0.010)
+        self.SL_PCT = h_params.get('sl_pct', 0.010)
+        self.COOLDOWN_SECONDS = h_params.get('cooldown_seconds', 120 if horizon == 'SCALPING' else 3600)
+        self.SOPHIA_TTL = 300.0 if horizon == 'SCALPING' else 3600.0
+        
+        logger.info(f"💱 ARBITRAGE [{horizon}] INITIALIZED | TP={self.TP_PCT*100:.2f}% SL={self.SL_PCT*100:.2f}% | Cooldown={self.COOLDOWN_SECONDS}s")
 
     def generate_signals(self, event):
         from config import Config
         from utils.cooldown_manager import cooldown_manager
 
-        # Cooldown: no escanear más de 1 vez cada 120s
+        # Cooldown: HORIZON-AWARE
         cooldown_key = f"ARBITRAGE_SCAN_{self.horizon}"
-        if not cooldown_manager.check_custom_cooldown(cooldown_key, duration_seconds=120):
+        if not cooldown_manager.check_custom_cooldown(cooldown_key, duration_seconds=self.COOLDOWN_SECONDS):
             return
 
         pairs = Config.TRADING_PAIRS
@@ -181,10 +200,10 @@ class ArbitrageStrategy(Strategy):
                     signal_strength=0.85,
                     setups=signal.metadata,
                     confluence_score=1.0,
-                    tp_pct=0.01,
-                    sl_pct=0.01,
+                    tp_pct=self.TP_PCT,
+                    sl_pct=self.SL_PCT,
                     returns=None,
-                    ttl_seconds=300.0 if self.horizon == 'SCALPING' else 3600.0,
+                    ttl_seconds=self.SOPHIA_TTL,
                     regime="UNKNOWN"
                 )
                 

@@ -1,4 +1,3 @@
-import numpy as np
 from utils.logger import logger
 from utils.debug_tracer import trace_execution
 

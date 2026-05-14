@@ -40,14 +40,17 @@ class CooldownManager:
         # Cooldowns en segundos
         # BUG #55 FIX: Respect Config.COOLDOWN_PERIOD_SECONDS if available
         from config import Config
-        # FORENSIC-V16/17: Bypass limits directly for multi-frequency micro-scalping
+        # ================================================================
+        # FORENSIC-RESCUE-PROTOCOL: COOLDOWNS RESTORED
         # QUÉ: Tiempos mínimos entre trades por nivel.
-        # POR QUÉ: Exigido por el usuario para aprovechar oportunidades sin bloquear ninguna validación.
-        # PARA QUÉ: Permitir re-entry infinita.
-        self.GLOBAL_COOLDOWN = 0.0 # ZERO COOLDOWN
-        self.SYMBOL_COOLDOWN = 0.0 # ZERO COOLDOWN
-        self.PATTERN_COOLDOWN = 0.0 # ZERO COOLDOWN
-        self.STRATEGY_COOLDOWN = 0.0 # ZERO COOLDOWN
+        # POR QUÉ: Bypass anterior de 0.0s causaba overtrading extremo 
+        #   y re-entradas suicidas en la misma vela de 5m.
+        # PARA QUÉ: Preservar capital y obligar al bot a esperar nueva info.
+        # ================================================================
+        self.GLOBAL_COOLDOWN = 0.0 # 0s global is fine (symbols independent)
+        self.SYMBOL_COOLDOWN = 300.0 # 5 minutes (1 candle)
+        self.PATTERN_COOLDOWN = 300.0 # 5 minutes
+        self.STRATEGY_COOLDOWN = 60.0 # 1 minute
         
         # State tracking
         self.last_global_trade: Optional[datetime] = None
@@ -157,6 +160,19 @@ class CooldownManager:
         if strategy_id and not self.can_trade_strategy(strategy_id):
             remaining = self.get_remaining_cooldown(strategy_id, 'strategy')
             return False, f"Strategy cooldown ({remaining:.0f}s remaining)"
+            
+        # Level 5: Loss Streak Custom Cooldown
+        with self._state_lock:
+            if hasattr(self, 'custom_cooldowns'):
+                loss_key = f"loss_streak_{symbol}"
+                if loss_key in self.custom_cooldowns:
+                    now = self._get_now()
+                    last_time = self.custom_cooldowns[loss_key]
+                    elapsed = (now - last_time).total_seconds()
+                    # RESCUE PROTOCOL: Check for 1800s (30m) instead of 300s
+                    if elapsed < 1800:
+                        remaining = 1800 - elapsed
+                        return False, f"Loss streak cooldown ({remaining:.0f}s remaining)"
         
         return True, "OK"
     
@@ -226,12 +242,12 @@ class CooldownManager:
     
     def adjust_for_regime(self, regime: str):
         """
-        Ajustar cooldowns basado en régimen de mercado. Bypass activado (1s universal).
+        Ajustar cooldowns basado en régimen de mercado.
+        RESCUE PROTOCOL: Ya no hacemos bypass a 1s.
         """
         with self._state_lock:
-            # Bypass limits: set to minimal interval regardless of regime
-            self.SYMBOL_COOLDOWN = 1
-            self.STRATEGY_COOLDOWN = 1
+            # We don't bypass anymore. We keep the strict 300s cooldown.
+            pass
     
     def get_statistics(self) -> dict:
         """Get cooldown blocking statistics"""

@@ -133,8 +133,9 @@ class StatisticalStrategy(Strategy):
                 # POR QUÉ: Operar contra la tendencia destruye cuentas de $13.
                 # ═══════════════════════════════════════════════════
                 market_regime = "UNKNOWN"
-                if self.portfolio and hasattr(self.portfolio, 'market_regime') and self.portfolio.market_regime:
-                    market_regime = self.portfolio.market_regime.get_current_regime()
+                if self.portfolio and hasattr(self.portfolio, 'global_regime_data'):
+                    regime_meta = self.portfolio.global_regime_data
+                    market_regime = regime_meta.get('symbol_regimes', {}).get(y_sym, regime_meta.get('sentiment', 'UNKNOWN'))
                 if market_regime == "TRENDING" and h_val > 0.60:
                     logger.info(f"🛑 [STAT REGIME BLOCK] {y_sym}: Mean reversion blocked in TRENDING regime (H={h_val:.2f}).")
                     return
@@ -219,7 +220,6 @@ class StatisticalStrategy(Strategy):
 
                 # Calculate Rolling OLS Beta (Dynamic Hedge Ratio)
                 # Phase 4 Math Upgrade
-                from utils.statistics_pro import StatisticsPro
                 
                 # Use log prices for OLS to capture percentage relationships
                 log_y = np.log(closes_y)
@@ -436,8 +436,8 @@ class StatisticalStrategy(Strategy):
                                     signal_strength=strength,
                                     setups={'z_score': z_score, 'pair': x_sym},
                                     confluence_score=1.0,
-                                    tp_pct=0.015,
-                                    sl_pct=0.015,
+                                    tp_pct=Config.Strategies.SWING_PARAMS['tp_pct'] if self.horizon == 'SWING' else Config.Strategies.SCALPING_PARAMS['tp_pct'],
+                                    sl_pct=Config.Strategies.SWING_PARAMS['sl_pct'] if self.horizon == 'SWING' else Config.Strategies.SCALPING_PARAMS['sl_pct'],
                                     returns=None,
                                     ttl_seconds=3600.0 if self.horizon == 'SWING' else 300.0,
                                     regime="RANGING", # Pairs trading usually implies ranging/mean rev
@@ -482,8 +482,8 @@ class StatisticalStrategy(Strategy):
                                     signal_strength=strength,
                                     setups={'z_score': z_score, 'pair': x_sym},
                                     confluence_score=1.0,
-                                    tp_pct=0.015,
-                                    sl_pct=0.015,
+                                    tp_pct=Config.Strategies.SWING_PARAMS['tp_pct'] if self.horizon == 'SWING' else Config.Strategies.SCALPING_PARAMS['tp_pct'],
+                                    sl_pct=Config.Strategies.SWING_PARAMS['sl_pct'] if self.horizon == 'SWING' else Config.Strategies.SCALPING_PARAMS['sl_pct'],
                                     returns=None,
                                     ttl_seconds=3600.0 if self.horizon == 'SWING' else 300.0,
                                     regime="RANGING", # Pairs trading usually implies ranging/mean rev

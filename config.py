@@ -14,6 +14,7 @@ EXCLUDED_SYMBOLS_GLOBAL = ['SHIB/USDT', 'PEPE/USDT', 'BONK/USDT']
 
 class EncryptedConfigMeta(type):
     """Metaclass to handle encrypted properties transparently"""
+    # LEAN_MODE removed — single source of truth is Config.LEAN_MODE (L75)
     _secure_store = {}
 
     def _get_secure(cls, key, env_var):
@@ -57,6 +58,7 @@ class Config(metaclass=EncryptedConfigMeta):
     # ========================================================================
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DEBUG_TRACE_ENABLED = False
+    # FIX-FORENSIC-V82: Removed duplicate LEAN_MODE = True (was shadowed by L75 anyway)
 
     # ════════════════════════════════════════════════════════════════
     # 🎯 INTEGRAL MODE — CONSENSUS-BASED OPERATION
@@ -70,7 +72,8 @@ class Config(metaclass=EncryptedConfigMeta):
     # CÓMO: LEAN_MODE=True preserva: wider kill switch (35% DD),
     #   margin cap 95%, wider headroom floors. ML re-habilitado.
     # ════════════════════════════════════════════════════════════════
-    LEAN_MODE = True  # Keep True for micro-account protections (kill switch, margin)
+    LEAN_MODE = False  # Set to False to run ALL strategies (Full Mode)
+    ACTIVE_TRADING_LIMIT = 10  # Solo opera los Top 10, mide los siguientes 16
     LEAN_ML_ENABLED = True  # ML Strategy: RE-ENABLED (consensus system handles quality)
     LEAN_TRADING_PAIRS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']  # Focus on high liquidity
 
@@ -149,15 +152,20 @@ class Config(metaclass=EncryptedConfigMeta):
     
     # FUTURES Trading Pairs (Verified available in Demo Trading)
     # Note: SHIB, PEPE, FLOKI, BONK not available in Futures Demo
-    # Total: 26 pairs (Institutional Basket)
-    CRYPTO_FUTURES_PAIRS = [
-        "ADA/USDT", "ARB/USDT", "ATOM/USDT", "AVAX/USDT", "BNB/USDT",
-        "BTC/USDT", "DOGE/USDT", "DOT/USDT", "ETC/USDT", "ETH/USDT",
-        "NEAR/USDT", "OP/USDT", "PAXG/USDT", "POL/USDT", "RENDER/USDT", 
-        "SOL/USDT", "SUI/USDT", "TIA/USDT", "UNI/USDT", "WIF/USDT", 
-        "XRP/USDT"
+    # Total: 26 pairs (10 Core + 16 Prospects)
+    CORE_SYMBOLS = [
+        "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "DOGE/USDT",
+        "ADA/USDT", "AVAX/USDT", "SUI/USDT", "ETC/USDT", "NEAR/USDT"
     ]
-    # Total: 24 pairs (optimized for liquidity and volatility)
+    
+    PROSPECT_SYMBOLS = [
+        "ARB/USDT", "OP/USDT", "PAXG/USDT", "POL/USDT", "RENDER/USDT",
+        "TIA/USDT", "UNI/USDT", "WIF/USDT", "XRP/USDT", "DOT/USDT",
+        "ATOM/USDT", "LINK/USDT", "MATIC/USDT", "LTC/USDT", "BCH/USDT", "TRX/USDT"
+    ]
+    
+    CRYPTO_FUTURES_PAIRS = CORE_SYMBOLS + PROSPECT_SYMBOLS
+    # [CIRUGÍA #5] Re-added DOT, XRP, ATOM etc into PROSPECT for measurement (Shadow Mode)
     
     # Auto-select correct pairs based on mode
     # BUG #14 FIX: Binance Testnet SPOT is UNRELIABLE (most pairs don't exist)
@@ -198,9 +206,17 @@ class Config(metaclass=EncryptedConfigMeta):
     MIN_RR_RATIO = 1.5             # 1.5:1 R:R minimum
     
     # Risk Management
-    MAX_RISK_PER_TRADE = 0.10  # 10% of capital max per trade for $13 account (Exponential Growth)
-    STOP_LOSS_PCT = 0.02       # 2% stop loss
-    MAX_SLIPPAGE_PCT = 0.001   # 0.1% max slippage (Sovereign-Deploy)
+    # ════════════════════════════════════════════════════════════════
+    # 🔒 RISK PARAMETERS — SINGLE SOURCE OF TRUTH
+    # QUÉ: Delegados a Config.Risk. Estos proxies garantizan
+    #   que Config.MAX_RISK_PER_TRADE == Config.Risk.MAX_RISK_PER_TRADE.
+    # POR QUÉ: Antes había 0.10 aquí y 0.05 en Risk, causando que
+    #   el RiskManager usara 10% pero la validación esperaba 5%.
+    # PARA QUÉ: Un solo valor → el motor evolutivo muta correctamente.
+    # ════════════════════════════════════════════════════════════════
+    MAX_RISK_PER_TRADE = 0.05  # [UNIFIED] 5% — delegates to Config.Risk.MAX_RISK_PER_TRADE
+    STOP_LOSS_PCT = 0.02       # 2% stop loss — SYNCED with Config.Risk.STOP_LOSS_PCT
+    MAX_SLIPPAGE_PCT = 0.001   # 0.1% max slippage — SYNCED with Config.Risk.MAX_SLIPPAGE_PCT
     
     # === RISK CAPITOL HIERARCHY (USER RULE PRESERVATION) ===
     class Risk:
@@ -210,7 +226,25 @@ class Config(metaclass=EncryptedConfigMeta):
         MAX_RISK_PER_TRADE = 0.05  
         STOP_LOSS_PCT = 0.02       
         MAX_SLIPPAGE_PCT = 0.001
-        USE_PREDICTIVE_TP = True      # Enable resting LIMIT TP orders for fee optimization
+        USE_PREDICTIVE_TP = False     # CIRUGÍA-V100: DISABLED — net PnL -4.65 after fees (769 trades, 47% WR). Trailing stops are superior.
+        
+        # ════════════════════════════════════════════════════════════════
+        # 🛡️ RISK THRESHOLDS — ERADICATING MAGIC NUMBERS (PHASE 2)
+        # QUÉ: Centralización de umbrales extraídos de risk_manager.py.
+        # POR QUÉ: Permite que el sistema mute y modifique dinámicamente
+        #   sus reglas de riesgo sin requerir cambios en el código duro.
+        # PARA QUÉ: Integración completa con Hyper-Evolver.
+        # ════════════════════════════════════════════════════════════════
+        RISK_THRESHOLDS = {
+            'petim_exhaustion_mult': 2.0,
+            'petim_exhaustion_pnl': -0.02,
+            'swing_min_equity_block': 50.0,
+            'zombie_hours_held': 7.5,
+            'zombie_pnl_max': 0.5,
+            'merit_win_rate_min': 0.60,
+            'merit_score_high': 1.2,
+            'merit_factor_expansion': 1.5,
+        }
     
     # === INTELLIGENT REVERSE (FLIPPING) PARAMETERS (Phase 5) ===
     # PROFESSOR METHOD:
@@ -259,11 +293,11 @@ class Config(metaclass=EncryptedConfigMeta):
         TECH_RSI_SELL = 65   
         TECH_EMA_FAST = 20 # SHORT-TERM (Changed from 50)
         TECH_EMA_SLOW = 50 # MEDIUM-TERM (Changed from 200)
-        TECH_ADX_THRESHOLD = 25
+        TECH_ADX_THRESHOLD = 18 # [HYPER-EVOLVER-V2] Golden Genotype: ADX 18 (80% WR, 50 trials)
         TECH_BB_PERIOD = 20
         TECH_BB_STD = 2.0
-        TECH_TP_PCT = 0.015
-        TECH_SL_PCT = 0.02
+        TECH_TP_PCT = 0.0080 # [ZOMBIE-FIX] SYNCED with SCALPING_PARAMS — TP=0.80% (Net TP=0.743% after fees. Old 0.30% was impossible: net 0.243% < fees)
+        TECH_SL_PCT = 0.0040 # [ZOMBIE-FIX] SYNCED with SCALPING_PARAMS — SL=0.40% (R:R net=1.63:1 @ 38% WR breakeven)
         SYMMETRIC_SHORTS_SCALPING = True  # Habilita cortos en contra-tendencia para micro-cuentas
         SHORT_SL_MULTIPLIER = 1.2         # 20% tightening on SL for shorts (e.g. 0.5% / 1.2 = 0.41%)
         SHORT_TP_MULTIPLIER = 0.8         # 20% tightening on TP for shorts (e.g. 1.0% * 0.8 = 0.8%)
@@ -299,19 +333,19 @@ class Config(metaclass=EncryptedConfigMeta):
             },
             'TURBO_BE': {
                 'enabled': True,
-                'description': 'Turbo breakeven — locks in fee+slippage when peak PnL reaches threshold, exits if price crashes back',
-                'scalping_threshold_pct_of_tp': 0.50,  # 50% of TP target
+                'description': 'Turbo breakeven — locks in fee×2 when peak PnL reaches threshold, exits if price crashes back',
+                'scalping_threshold_pct_of_tp': 0.80,  # [FORENSIC-V90.2] Raised from 50% to 80% — stops intercepting winning trades
                 'swing_threshold_pct_of_tp': 0.60,     # 60% of TP target
-                'min_scalping_pct': 0.30,              # Floor
+                'min_scalping_pct': 0.48,              # Floor (80% of 0.60% TP)
                 'min_swing_pct': 1.00,                 # Floor
-                'fee_buffer_formula': 'maker_fee + taker_fee + 0.0008',
-                'location': 'risk_manager.py::check_stops() L2311',
+                'fee_buffer_formula': 'fee_buffer × 2',  # [FORENSIC-V90.2] Guarantees meaningful net profit
+                'location': 'risk_manager.py::check_stops() L2529/L2675',
             },
         }
         
         SCALPING_PARAMS = {
-            'tp_pct': 0.0010,         # FORENSIC-V71: 0.10% TP — ajustado a M1 empírico (3.5x ATR M1)
-            'sl_pct': 0.0015,         # FORENSIC-V71: 0.15% SL — ajustado a M1 empírico
+            'tp_pct': 0.0080,         # [ZOMBIE-FIX] TP 0.80% — Net after fees: 0.743%. Old 0.30% was impossible (net 0.243% < SL 0.257%)
+            'sl_pct': 0.0040,         # [ZOMBIE-FIX] SL 0.40% — R:R net 1.63:1 (breakeven at 38% WR). Old 0.20% = sub-fee territory
             'rsi_period': 5,          # GOLDEN: RSI ultra-rápido
             'rsi_buy': 35,            # GOLDEN: Wider zone
             'rsi_sell': 65,           # GOLDEN: Wider zone
@@ -327,7 +361,7 @@ class Config(metaclass=EncryptedConfigMeta):
             'min_volume_ratio': 0.4,
             'cooldown_seconds': 15,
             'max_hold_bars': 120,
-            'strength_threshold': 0.55, # GOLDEN: Confluence filter
+            'strength_threshold': 0.45, # [FORENSIC-RECAL] Lowered from 0.57 → 0.45. Multiplicative model max ≈0.55. Old threshold killed ALL signals.
             'atr_sl_mult': 3.0,
             'atr_tp_mult': 3.5,
             'sophia_refit': 50,
@@ -391,6 +425,48 @@ class Config(metaclass=EncryptedConfigMeta):
         ML_INCREMENTAL_UPDATE_BARS = 30 
         ML_ORACLE_VERBOSE = False   
         
+        # ════════════════════════════════════════════════════════════════
+        # 🧠 ML THRESHOLDS — ERADICATING MAGIC NUMBERS (PHASE 2)
+        # QUÉ: Centralización de umbrales duros extraídos de ml_strategy.py.
+        # POR QUÉ: Para permitir que el motor Genotipo/Evolutivo pueda
+        #   mutar estos valores dinámicamente según el régimen de mercado.
+        # PARA QUÉ: Evolutividad real. Si estos valores están en config,
+        #   el bot puede aprender que en Bear Market necesita más confidence.
+        # ════════════════════════════════════════════════════════════════
+        ML_THRESHOLDS = {
+            # Regime Detection (ml_strategy.py L730-760)
+            'regime_adx_trend': 25,
+            'regime_trend_strength': 0.025,
+            'regime_atr_trend_max': 0.03,
+            'regime_vol_volatility_max': 0.5,
+            'regime_atr_volatile_min': 0.035,
+            'regime_rsi_std_volatile': 18,
+            'regime_price_vol_volatile': 0.035,
+            'regime_adx_range_max': 20,
+            'regime_rsi_std_range_max': 10,
+            'regime_atr_range_max': 0.015,
+            'regime_atr_zombie_1': 0.0005,
+            'regime_spread_zombie': 0.0002,
+            'regime_ident_bars_zombie': 0.85,
+            'regime_atr_zombie_2': 0.0015,
+            'mixed_regime_max_score': 0.60,
+            
+            # Confidence & Transitions (ml_strategy.py L827, L940)
+            'confidence_regime_change': 0.55,
+            'hmm_transition_risk_high': 0.40,
+            
+            # Decay & Exits (ml_strategy.py L3105-3109)
+            'decay_confidence_long': 0.40,
+            'decay_confidence_short': 0.60,
+            
+            # Filters
+            'min_success_rate_excellent': 0.70,
+            'min_success_rate_poor': 0.20,
+            'clash_threshold': 0.85,
+            'final_confidence_entry': 0.60,
+            'final_confidence_strong': 0.70,
+        }
+        
         # Mean Reversion parameters
         STAT_WINDOW = 20
         STAT_Z_ENTRY = 1.5
@@ -409,9 +485,65 @@ class Config(metaclass=EncryptedConfigMeta):
         # Adaptive Technical
         TECH_DYNAMIC_RSI_VOL_THRESHOLD = 0.005 # 0.5% ATR for band expansion
 
+        # ════════════════════════════════════════════════════════════════
+        # 🧬 HYPER-EVOLVER-V2 GOLDEN GENOTYPE — PERMANENT MUTATIONS
+        # QUÉ: Parámetros óptimos descubiertos por Optuna (50 trials bayesianos).
+        # POR QUÉ: 80% WR con capital $13, convergencia en top-5 trials.
+        # PARA QUÉ: Override permanente que technical.py consume en get_symbol_params().
+        # CÓMO: Config.Mutations leído en technical.py L301-305 para Gen 0.
+        # CUÁNDO: Siempre activo (producción y backtest).
+        # DÓNDE: config.py → consumido por strategies/technical.py
+        # QUIÉN: Hyper-Evolver Optuna Engine
+        # ════════════════════════════════════════════════════════════════
+        Mutations = {
+            'min_atr_required': 0.0004,    # [GOLDEN-V4] 0.04% — allows ALL M5 symbols
+            'adx_threshold': 18,           # ADX filter — blocks chop without killing trends
+            'strength_threshold': 0.45,    # [FORENSIC-RECAL] Synced with SCALPING_PARAMS. Old 0.57 produced 0 trades in 7-day BT.
+            'max_tp_cap': 0.0080,          # [ZOMBIE-FIX] SYNCED with SCALPING_PARAMS.tp_pct (0.80%). Old 0.30% was mathematically impossible
+            # 'sl_multiplier' REMOVED — [CIRUGÍA #1] SL now comes directly from SCALPING_PARAMS.sl_pct
+        }
+    
+        # ════════════════════════════════════════════════════════════════
+        # 📐 TECHNICAL THRESHOLDS — ERADICATING MAGIC NUMBERS (PHASE 2)
+        # QUÉ: Centralización de umbrales duros extraídos de technical.py.
+        # POR QUÉ: Extraer constantes mágicas (1.5, 0.85, 0.025) que bloqueaban
+        #   la evolución y hardcodeaban el comportamiento de Sophia y Riesgo.
+        # PARA QUÉ: Mutaciones dinámicas sobre setups y filtros Oracle.
+        # ════════════════════════════════════════════════════════════════
+        TECHNICAL_THRESHOLDS = {
+            'rsi_pullback_uptrend': 40,
+            'rsi_rally_downtrend': 60,
+            'rsi_extreme_low': 30,
+            'rsi_extreme_high': 70,
+            'vol_ratio_btc': 1.2,
+            'vol_ratio_alts': 1.1,
+            'vol_ratio_expansion': 1.5,
+        
+            'vol_ratio_high': 1.2,
+            'vol_ratio_low': 0.8,
+            'volatility_gate_pct': 0.025,
+        
+            'bb_pos_lower_prox': 0.25,
+            'bb_pos_upper_prox': 0.75,
+        
+            # Sophia Oracle validation (RESCUE PROTOCOL: Increased to 0.85)
+            'sophia_win_prob_min': 0.85,
+            'sophia_win_prob_high': 0.90,
+            'sophia_win_prob_supreme': 0.95,
+        
+            'sophia_superposition_divine': 0.85,
+            'sophia_superposition_harmonic': 0.70,
+            'sophia_resonance_index': 0.60,
+        
+            'sophia_butterfly_force': 1.5,
+            'sophia_path_score': 0.80,
+            'sophia_hurst_trend': 0.55,
+            'sophia_hurst_mean_rev': 0.42,
+            'sophia_whale_ratio': 5.0,
+        }
+    
     # Phase 99: WandB Tracking
     WANDB_ENTITY = "jhonala-none"
-    # MAX_RISK_PER_TRADE overridden above -> 0.05
     
     # ========================================================================
     # INSTITUTIONAL POLICY ENFORCEMENT (Phase 2.6)
@@ -462,7 +594,7 @@ class Config(metaclass=EncryptedConfigMeta):
         NOTIFICATION_DRAWDOWN_WARNING = 0.005   # 0.5% drawdown → WARNING
         NOTIFICATION_DRAWDOWN_CRITICAL = 0.010  # 1.0% drawdown → CRITICAL
         NOTIFICATION_LOSS_STREAK_ALERT = 3      # 3 pérdidas consecutivas → alerta
-        NOTIFICATION_MAX_MESSAGES_PER_MIN = 30  # Rate limit Telegram API
+        NOTIFICATION_MAX_MESSAGES_PER_MIN = 300 # Rate limit ampliado para permitir TODO EL SPAM
 
     class Analytics:
         RISK_FREE_RATE = 0.02 
@@ -473,12 +605,8 @@ class Config(metaclass=EncryptedConfigMeta):
     # ========================================================================
     # === GLOBAL SETTINGS ===
     # ========================================================================
-    DEBUG_TRACE_ENABLED = False
-    #DEBUG_TRACE_ENABLED = True hace un seguimiento microscópico de todo lo que hace el bot. 
-    #Lo que hace: Imprime en la consola cada vez que el código ENTRA ([ENTER]) y SALE ([EXIT]) de una función importante, y cuánto tiempo tardó.
-    #Para qué sirve: Para encontrar "cuellos de botella" (funciones que tardan demasiado) o ver exactamente en qué línea se congela el programa.
-    #Problema: Genera miles de líneas de texto por segundo, llenando la terminal de "ruido" y dificultando ver lo importante (precios, señales, errores).
-    #Recomendación: Mantenlo en False (Apagado) para operar. Solo enciéndelo (True) si el bot se clava y no sabes por qué.
+    # DEBUG_TRACE_ENABLED already defined at L59 — DO NOT RE-DEFINE HERE
+    # (Removed duplicate to prevent shadowing. Ref: Frankenstein Audit Phase 2)
     
     # ========================================================================
     # === EXECUTION ENGINE — "MAKER PROFIT, TAKER PANIC" (BBO Architecture) ===
@@ -495,7 +623,7 @@ class Config(metaclass=EncryptedConfigMeta):
     class Execution:
         # ── BBO Post-Only Configuration ──
         USE_LIMIT_BBO_ENTRIES = True       # Entries use LIMIT at Best Bid/Offer
-        USE_LIMIT_BBO_EXITS = True         # Normal exits (TP, trailing) use LIMIT BBO
+        USE_LIMIT_BBO_EXITS = True         # [CIRUGÍA #7] Enabled to save 0.035% Taker fee. Scalping micro-profits CANNOT survive Taker fees.
         USE_LIMIT_PROTECTIVE_ORDERS = True # SL/TP on exchange: STOP (Limit) instead of STOP_MARKET
         POST_ONLY_GTX = True               # GTX = Post-Only guarantee → Maker fee always
         
@@ -512,7 +640,7 @@ class Config(metaclass=EncryptedConfigMeta):
         # 0.001 = 0.1% tolerance → if SL triggers at $100, limit at $99.90
         STOP_LIMIT_TOLERANCE_PCT = 0.001
         # For TAKE_PROFIT (Limit): Set at exact trigger (Post-Only)
-        TP_LIMIT_TOLERANCE_PCT = 0.0       # 0% = limit AT trigger price (pure Maker)
+        TP_LIMIT_TOLERANCE_PCT = 0.0005    # [FORENSIC V99] Allow TP to cross spread by 0.05% to avoid Zombie Trades
 
     # ========================================================================
     # === AEGIS-ULTRA PROTOCOL (Hardware & Math) ===
@@ -553,7 +681,7 @@ class Config(metaclass=EncryptedConfigMeta):
             'TRENDING_BULL': {'leverage': 10, 'threshold_mod': -0.05, 'scale': 1.0}, # SNIPER BEHAVIOR (Full power)
             'TRENDING_BEAR': {'leverage': 5,  'threshold_mod': +0.10, 'scale': 0.3}, # DEFENSE (Reduced, not zero)
             'RANGING':       {'leverage': 8,  'threshold_mod': +0.00, 'scale': 0.8}, # SCALPING (Must be viable)
-            'CHOPPY':        {'leverage': 8,  'threshold_mod': +0.05, 'scale': 0.5}, # CAUTION (Was 1x = dead)
+            'CHOPPY':        {'leverage': 1,  'threshold_mod': +0.05, 'scale': 0.0}, # RESCUE PROTOCOL: Choppy = DEAD (1x)
             'ZOMBIE':        {'leverage': 1,  'threshold_mod': +1.00, 'scale': 0.0}, # DEAD MARKET (No Trade)
         }
         
@@ -568,9 +696,9 @@ class Config(metaclass=EncryptedConfigMeta):
         MAX_LEVERAGE = 10    # FORENSIC FIX: was 8 — aligned with Config.BINANCE_LEVERAGE
         DEFAULT_LEVERAGE = 8 # FORENSIC FIX: was 5 — default must produce viable notional
         
-        # FEES (Binance Futures)
-        TAKER_FEE = 0.0005  # 0.05%
-        MAKER_FEE = 0.0002  # 0.02%
+        # FEES (Binance Futures) — SYNCED with global Config.BINANCE_*_FEE_BNB
+        TAKER_FEE = 0.000375  # [UNIFIED] 0.0375% with BNB discount (was 0.0005 — CONFLICTING)
+        MAKER_FEE = 0.0002    # 0.02% (matches Config.BINANCE_MAKER_FEE_BNB)
         
         # TRADE VALIDATION - FOR MICRO ACCOUNT (FEE PROTECTION)
         MIN_RR_RATIO = 2.5       # Increased for fee drag buffer

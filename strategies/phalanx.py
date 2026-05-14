@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Optional
-from numba import jit, float64, int64
 from numba.experimental import jitclass
+from numba import float64
 
 # JIT Spec for OnlineGARCH
 garch_spec = [

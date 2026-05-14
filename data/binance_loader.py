@@ -215,12 +215,8 @@ class BinanceData(DataProvider):
 
     @property
     def client_sync(self):
-        """Returns a thread-local Binance Sync Client to prevent SSL Heap Corruptions."""
-        if not hasattr(self, '_thread_local'):
-            import threading
-            self._thread_local = threading.local()
-            
-        if not hasattr(self._thread_local, 'client'):
+        """Returns the thread-safe Binance Sync Client."""
+        if not hasattr(self, '_client_sync'):
             # Recreate credentials logic
             api_key = Config.BINANCE_API_KEY
             api_secret = Config.BINANCE_SECRET_KEY
@@ -239,9 +235,9 @@ class BinanceData(DataProvider):
             )
             from utils.keep_alive import tune_requests_session
             tune_requests_session(client.session)
-            self._thread_local.client = client
+            self._client_sync = client
             
-        return self._thread_local.client
+        return self._client_sync
 
     async def shutdown(self):
         """
@@ -991,150 +987,13 @@ class BinanceData(DataProvider):
                     
                 # --- PHASE 14: LEAD-LAG SYNC ---
                 if s != self.reference_symbol and self.reference_symbol in self.buffers_1m:
-                    self._calculate_lead_lag(s)
+                    try:
+                        self._calculate_lead_lag(s)
+                    except Exception as e:
+                        logger.error(f"Error calculating Lead-Lag for {s}: {e}")
                     
             except Exception as e:
                 logger.error(f"Error processing update for {s}: {e}")
-                
-                # MULTI-TIMEFRAME: Also update 1h candles
-                # Fetch 1h candle (limit=2 to get latest closed or current open)
-                sym_clean = s.replace('/', '')
-                bars_1h = self.client_sync.get_klines(symbol=sym_clean, interval=Client.KLINE_INTERVAL_1HOUR, limit=2)
-                if bars_1h:
-                    latest_1h = bars_1h[-1]
-                    ts_1h = pd.to_datetime(latest_1h[0], unit='ms')
-                    
-                    # Update if new or same (to update current candle)
-                    # For trend analysis, we usually want closed candles, but updating current is fine
-                    bar_data_1h = {
-                        'symbol': s,
-                        'datetime': ts_1h,
-                        'open': float(latest_1h[1]),
-                        'high': float(latest_1h[2]),
-                        'low': float(latest_1h[3]),
-                        'close': float(latest_1h[4]),
-                        'volume': float(latest_1h[5])
-                    }
-                    
-                    if not self.buffers_1h.get(s): return
-
-                    # Push to 1H Ring Buffer
-                    buf = self.buffers_1h[s]
-                    # Check if new or update last
-                    ts_1h_ms = int(ts_1h.timestamp() * 1000)
-                    last_arr = buf['t'].get_last(1)
-                    
-                    if len(last_arr) > 0 and last_arr[0] == ts_1h_ms:
-                         # Overwrite logic (manual head rewind)
-                         buf['t'].head = (buf['t'].head - 1 + buf['t'].capacity) % buf['t'].capacity
-                         buf['o'].head = (buf['o'].head - 1 + buf['o'].capacity) % buf['o'].capacity
-                         buf['h'].head = (buf['h'].head - 1 + buf['h'].capacity) % buf['h'].capacity
-                         buf['l'].head = (buf['l'].head - 1 + buf['l'].capacity) % buf['l'].capacity
-                         buf['c'].head = (buf['c'].head - 1 + buf['c'].capacity) % buf['c'].capacity
-                         buf['v'].head = (buf['v'].head - 1 + buf['v'].capacity) % buf['v'].capacity
-                         
-                         if buf['t'].size > 0: buf['t'].size -= 1
-                         if buf['o'].size > 0: buf['o'].size -= 1
-                         if buf['h'].size > 0: buf['h'].size -= 1
-                         if buf['l'].size > 0: buf['l'].size -= 1
-                         if buf['c'].size > 0: buf['c'].size -= 1
-                         if buf['v'].size > 0: buf['v'].size -= 1
-
-                    buf['t'].push(ts_1h_ms)
-                    buf['o'].push(np.float32(latest_1h[1]))
-                    buf['h'].push(np.float32(latest_1h[2]))
-                    buf['l'].push(np.float32(latest_1h[3]))
-                    buf['c'].push(np.float32(latest_1h[4]))
-                    buf['v'].push(np.float32(latest_1h[5]))
-                
-                # MULTI-TIMEFRAME: Also update 5m candles
-                # bars_5m = self.exchange.fetch_ohlcv(s, timeframe='5m', limit=2)
-                bars_5m = self.client_sync.get_klines(symbol=sym_clean, interval=Client.KLINE_INTERVAL_5MINUTE, limit=2)
-                if bars_5m:
-                    latest_5m = bars_5m[-1]
-                    ts_5m = pd.to_datetime(latest_5m[0], unit='ms')
-                    
-                    bar_data_5m = {
-                        'symbol': s,
-                        'datetime': ts_5m,
-                        'open': float(latest_5m[1]),
-                        'high': float(latest_5m[2]),
-                        'low': float(latest_5m[3]),
-                        'close': float(latest_5m[4]),
-                        'volume': float(latest_5m[5])
-                    }
-                    
-                    # Update 5m Ring Buffer
-                    if s in self.buffers_5m:
-                        buf = self.buffers_5m[s]
-                        ts_5m_ms = int(ts_5m.timestamp() * 1000)
-                        last_arr = buf['t'].get_last(1)
-                        if len(last_arr) > 0 and last_arr[0] == ts_5m_ms:
-                             buf['t'].head = (buf['t'].head - 1 + buf['t'].capacity) % buf['t'].capacity
-                             buf['o'].head = (buf['o'].head - 1 + buf['o'].capacity) % buf['o'].capacity
-                             buf['h'].head = (buf['h'].head - 1 + buf['h'].capacity) % buf['h'].capacity
-                             buf['l'].head = (buf['l'].head - 1 + buf['l'].capacity) % buf['l'].capacity
-                             buf['c'].head = (buf['c'].head - 1 + buf['c'].capacity) % buf['c'].capacity
-                             buf['v'].head = (buf['v'].head - 1 + buf['v'].capacity) % buf['v'].capacity
-                             if buf['t'].size > 0: buf['t'].size -= 1
-                             if buf['o'].size > 0: buf['o'].size -= 1
-                             if buf['h'].size > 0: buf['h'].size -= 1
-                             if buf['l'].size > 0: buf['l'].size -= 1
-                             if buf['c'].size > 0: buf['c'].size -= 1
-                             if buf['v'].size > 0: buf['v'].size -= 1
-
-                        buf['t'].push(ts_5m_ms)
-                        buf['o'].push(np.float32(latest_5m[1]))
-                        buf['h'].push(np.float32(latest_5m[2]))
-                        buf['l'].push(np.float32(latest_5m[3]))
-                        buf['c'].push(np.float32(latest_5m[4]))
-                        buf['v'].push(np.float32(latest_5m[5]))
-                
-                # MULTI-TIMEFRAME: Also update 15m candles
-                # bars_15m = self.exchange.fetch_ohlcv(s, timeframe='15m', limit=2)
-                bars_15m = self.client_sync.get_klines(symbol=sym_clean, interval=Client.KLINE_INTERVAL_15MINUTE, limit=2)
-                if bars_15m:
-                    latest_15m = bars_15m[-1]
-                    ts_15m = pd.to_datetime(latest_15m[0], unit='ms')
-                    
-                    bar_data_15m = {
-                        'symbol': s,
-                        'datetime': ts_15m,
-                        'open': float(latest_15m[1]),
-                        'high': float(latest_15m[2]),
-                        'low': float(latest_15m[3]),
-                        'close': float(latest_15m[4]),
-                        'volume': float(latest_15m[5])
-                    }
-                    
-                    # Update 15m Ring Buffer
-                    if s in self.buffers_15m:
-                        buf = self.buffers_15m[s]
-                        ts_15m_ms = int(ts_15m.timestamp() * 1000)
-                        last_arr = buf['t'].get_last(1)
-                        if len(last_arr) > 0 and last_arr[0] == ts_15m_ms:
-                             buf['t'].head = (buf['t'].head - 1 + buf['t'].capacity) % buf['t'].capacity
-                             buf['o'].head = (buf['o'].head - 1 + buf['o'].capacity) % buf['o'].capacity
-                             buf['h'].head = (buf['h'].head - 1 + buf['h'].capacity) % buf['h'].capacity
-                             buf['l'].head = (buf['l'].head - 1 + buf['l'].capacity) % buf['l'].capacity
-                             buf['c'].head = (buf['c'].head - 1 + buf['c'].capacity) % buf['c'].capacity
-                             buf['v'].head = (buf['v'].head - 1 + buf['v'].capacity) % buf['v'].capacity
-                             if buf['t'].size > 0: buf['t'].size -= 1
-                             if buf['o'].size > 0: buf['o'].size -= 1
-                             if buf['h'].size > 0: buf['h'].size -= 1
-                             if buf['l'].size > 0: buf['l'].size -= 1
-                             if buf['c'].size > 0: buf['c'].size -= 1
-                             if buf['v'].size > 0: buf['v'].size -= 1
-
-                        buf['t'].push(ts_15m_ms)
-                        buf['o'].push(np.float32(latest_15m[1]))
-                        buf['h'].push(np.float32(latest_15m[2]))
-                        buf['l'].push(np.float32(latest_15m[3]))
-                        buf['c'].push(np.float32(latest_15m[4]))
-                        buf['v'].push(np.float32(latest_15m[5]))
-                    
-            except Exception as e:
-                logger.error(f"Error calculating Lead-Lag for {s}: {e}")
 
     def _calculate_lead_lag(self, symbol: str):
         """
@@ -1367,12 +1226,7 @@ class BinanceData(DataProvider):
             except Exception as e:
                 logger.error(f"Restart failed: {e}")
                 
-    async def process_socket_message(self, msg):
-        """
-        DEPRECATED: Logic moved to _manage_socket_chunk routing.
-        Kept for compatibility if called directly, but essentially purely abstract now.
-        """
-        pass
+
 
     def _process_kline_event(self, kline_data, stream_name):
         """
@@ -1571,7 +1425,8 @@ class BinanceData(DataProvider):
                         close_price=close_price,
                         timestamp=datetime.now(timezone.utc),
                         order_flow=of_metrics,
-                        health_metrics=health_metrics
+                        health_metrics=health_metrics,
+                        is_closed=is_closed
                     ))
                     
                     # Reset delta atomically (<1ms target)
@@ -1583,7 +1438,8 @@ class BinanceData(DataProvider):
                         symbol=internal_symbol,
                         close_price=close_price,
                         timestamp=datetime.now(timezone.utc),
-                        health_metrics=health_metrics
+                        health_metrics=health_metrics,
+                        is_closed=is_closed
                     ))
             
             if is_closed:
@@ -1792,6 +1648,47 @@ class BinanceData(DataProvider):
         
         if not added and not removed:
             return
+            
+        with self._data_lock:
+            for s in added:
+                self._init_symbol_buffer(s)
+                from core.orderbook import OrderBook
+                self.microstructure[s] = MicrostructureAnalyzer(s)
+                self.orderbooks[s] = OrderBook(max_depth=10)
+                self.last_depth_update[s] = 0.0
+                
+            self.symbol_list = new_symbols
+            
+        if added:
+            logger.info(f"🔄 Dynamic update: Fetching history for {len(added)} new symbols...")
+            # Initialize SHM for new symbols
+            self._init_shm()
+            
+            # Fetch history in a separate daemon thread to avoid blocking asyncio loop
+            # and to avoid ThreadPoolExecutor deadlocks!
+            import threading
+            def _fetch_all_history():
+                try:
+                    self.fetch_initial_history()
+                    self.fetch_initial_history_1h()
+                    self.fetch_initial_history_4h()
+                    self.fetch_initial_history_5m()
+                    self.fetch_initial_history_15m()
+                    self.fetch_initial_history_1d()
+                    self.fetch_initial_history_1w()
+                    logger.info("✅ Dynamic update history fetch complete.")
+                except Exception as e:
+                    logger.error(f"Error fetching dynamic history: {e}")
+                    
+            threading.Thread(target=_fetch_all_history, daemon=True, name="DynamicHistoryFetch").start()
+            
+            # Restart socket to subscribe to new symbols
+            if self.socket:
+                try:
+                    await self.stop_socket()
+                    asyncio.create_task(self.start_socket())
+                except Exception as e:
+                    logger.error(f"Failed to restart socket on dynamic update: {e}")
 
     def _process_book_ticker(self, data):
         """
@@ -2181,3 +2078,20 @@ class BinanceData(DataProvider):
             of_metrics.update(micro_metrics)
             
         return of_metrics
+
+    def get_derivatives_metrics(self, symbol: str) -> dict:
+        """
+        Returns futures derivatives metrics (Funding, Open Interest, Liquidations).
+        """
+        return getattr(self, 'derivatives_metrics', {}).get(symbol, {
+            'funding_rate': 0.0,
+            'oi': 0.0,
+            'oi_delta': 0.0,
+            'liquidations': 0.0
+        })
+
+    def get_orderbook(self, symbol: str):
+        """
+        Returns the OrderBook instance for a symbol to access L2 metrics.
+        """
+        return getattr(self, 'orderbooks', {}).get(symbol, None)

@@ -62,16 +62,16 @@ class AutoCorrectionEngine:
     def correct_high_fee_ratio(self, issue: Dict[str, Any]) -> str:
         """Aumenta dinámicamente el TARGET mínimo de Take Profit para sobrevivir comisiones."""
         # Modificar el parámetro real en SCALPING_PARAMS
-        current_tp = Config.Strategies.SCALPING_PARAMS.get('tp_pct', 0.0045)
+        current_tp = Config.Strategies.SCALPING_PARAMS.get('tp_pct', 0.0035)
         # FORENSIC-V60 FIX: Reduced multiplier from 1.25x to 1.10x
         # QUÉ: 1.25x geometric increase was pushing TP to 1.50% in ~5 iterations.
         # POR QUÉ: BTC 5m candles rarely reach 1.50% without retracing.
-        # PARA QUÉ: Keep TP within achievable range (max 0.30%) for M5 scalping.
+        # PARA QUÉ: Keep TP within achievable range for M5 scalping.
         new_tp = current_tp * 1.10  # Conservative 10% increase
         
-        # FORENSIC-V60: Cap at 0.30% instead of 1.50%
-        if new_tp > 0.003:
-            new_tp = 0.003
+        # [FORENSIC-V90] Cap at 0.40% to allow the 0.35% TP to survive
+        if new_tp > 0.004:
+            new_tp = 0.004
             
         Config.Strategies.SCALPING_PARAMS['tp_pct'] = new_tp
         return f"Increased SCALPING_PARAMS['tp_pct'] to {new_tp*100:.2f}% to compensate for fee drag."
@@ -94,9 +94,14 @@ class AutoCorrectionEngine:
         return "" # Logic needs engine integration
 
     def correct_slippage_issues(self, issue: Dict[str, Any]) -> str:
-        """Exige órdenes EXCLUSIVAMENTE limit post-only en ejecución."""
-        setattr(Config.Execution, 'STRICT_LIMIT_ONLY', True)
-        return "Enforced STRICT_LIMIT_ONLY (Post-Only) execution due to massive slippage erosion."
+        """
+        FORENSIC FIX: Anteriormente forzaba STRICT_LIMIT_ONLY, causando una espiral
+        de la muerte al no cruzar el spread cuando el mercado caía. Ahora simplemente
+        alerta sobre el slippage sin alterar el mecanismo atómico de cruce.
+        """
+        # NO enforcing limit-only! That kills the HFT exit logic.
+        logger.warning("🚨 [AUTO-CORRECTION] High slippage detected, but maintaining MARKET exits to preserve trade closure guarantees.")
+        return "Acknowledged slippage erosion, but preserving MARKET exits to prevent Zombie Trades."
 
 _auto_correction_sys = None
 def get_auto_correction_engine() -> AutoCorrectionEngine:

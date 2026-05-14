@@ -379,7 +379,7 @@ class FeatureEngineering:
                     if close[-1] > 0 and microprice > 0:
                         new_features['l2_microprice_dist'][-1] = (microprice - close[-1]) / close[-1]
             except Exception as e:
-                pass
+                logger.debug(f"Silent exception caught: {e}")
         vol_ma_5 = talib.SMA(volume, 5)
         vol_ma_15 = talib.SMA(volume, 15)
         new_features['volume_accel'] = np.where(vol_ma_15 > 0, vol_ma_5 / vol_ma_15, 1.0)

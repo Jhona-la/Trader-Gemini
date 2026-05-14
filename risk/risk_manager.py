@@ -1,12 +1,9 @@
+from datetime import datetime, timedelta, timezone
 import os
-import sys
 import time
 import math
-import traceback
 import numpy as np
 from collections import deque
-from datetime import timedelta, datetime, timezone
-from decimal import Decimal, getcontext
 
 # ═══════════════════════════════════════════════════════════════
 # PREDICTION TRACKER IMPORT (Feedback Loop Closure)
@@ -22,12 +19,30 @@ try:
 except ImportError:
     _PREDICTION_TRACKER_AVAILABLE = False
 
+# ═══════════════════════════════════════════════════════════════
+# ASSET PARAMETER ENGINE (Dynamic TP/SL per Asset)
+# QUÉ: Motor que calibra TP/SL según la volatilidad REAL (ATR) de cada activo.
+# POR QUÉ: La autopsia forense reveló que el sistema usaba R:R=0.76:1
+#   para TODOS los activos (TP=1.51%, SL=2.00%). Esto es suicidio estadístico.
+# PARA QUÉ: Cada activo recibe parámetros calibrados a su ATR, con
+#   un floor de R:R ≥ 1.5:1 que NUNCA se viola.
+# CUÁNDO: En cada llamada a size_position() y generate_order().
+# DÓNDE: core/asset_parameter_engine.py → risk/risk_manager.py
+# QUIÉN: AssetParameterEngine (cálculo), RiskManager (consumo)
+# ═══════════════════════════════════════════════════════════════
+try:
+    from core.asset_parameter_engine import get_asset_parameter_engine
+    _ASSET_PARAM_ENGINE_AVAILABLE = True
+except ImportError:
+    _ASSET_PARAM_ENGINE_AVAILABLE = False
+
 from config import Config
 from core.events import OrderEvent, SignalEvent
 from core.enums import OrderSide, SignalType, OrderType
 from core.resolution_state import ResolutionState
-from core.world_awareness import world_awareness
 from risk.kill_switch import KillSwitch
+from core.swing_dca_engine import swing_dca_engine
+from sophia.exit_oracle import ExitOracle
 from utils.debug_tracer import trace_execution
 from utils.cooldown_manager import cooldown_manager
 from utils.safe_leverage import safe_leverage_calculator
@@ -152,6 +167,11 @@ class RiskManager:
         # Kill Switch
         self.kill_switch = KillSwitch(portfolio=self.portfolio)
 
+        # Exit Oracle (Autoconciencia del Sistema)
+        self.exit_oracle = ExitOracle(
+            db_handler=self.portfolio.db if hasattr(self, 'portfolio') and self.portfolio else None
+        )
+
         # ═══════════════════════════════════════════════════════════════
         # PREDICTION TRACKER (Feedback Loop Closure)
         # QUÉ: Tracker de precisión predictiva en tiempo real.
@@ -164,6 +184,18 @@ class RiskManager:
             self.prediction_tracker = PredictionTracker()
         else:
             self.prediction_tracker = None
+
+        # ═══════════════════════════════════════════════════════════════
+        # ASSET PARAMETER ENGINE (CTOS Phase 1.3)
+        # QUÉ: Referencia al motor de parámetros dinámicos por activo.
+        # POR QUÉ: Reemplaza los TP/SL estáticos de horizon_params con
+        #   valores calibrados al ATR real de cada activo.
+        # PARA QUÉ: R:R ≥ 1.5:1 SIEMPRE, para cada activo individual.
+        # ═══════════════════════════════════════════════════════════════
+        if _ASSET_PARAM_ENGINE_AVAILABLE:
+            self.asset_param_engine = get_asset_parameter_engine()
+        else:
+            self.asset_param_engine = None
 
         # Kelly Stats (Dynamic Genesis V5.0)
         self.win_count = 0
@@ -298,6 +330,48 @@ class RiskManager:
         # Sovereign-Deploy: Kill Switch L1 & Fractional Kelly
         self.consecutive_losses = {}
 
+    # ============================================================
+    # ASSET-AWARE PARAMETER RESOLUTION (CTOS Phase 1.3)
+    # ============================================================
+    def _get_asset_params(self, symbol: str, horizon: str = "SCALPING") -> dict:
+        """
+        QUÉ: Resuelve los parámetros de TP/SL para un activo+horizonte específico.
+        POR QUÉ: Combina los defaults estáticos de horizon_params con los
+          valores dinámicos del AssetParameterEngine (ATR-calibrated).
+        PARA QUÉ: Garantizar que CADA trade usa parámetros calibrados al
+          comportamiento real del activo, no un valor global estático.
+        CÓMO:
+          1. Carga los defaults estáticos de self.horizon_params[horizon]
+          2. Si el AssetParameterEngine tiene datos calibrados para este activo,
+             SOBREESCRIBE tp_pct y sl_pct con los valores dinámicos.
+          3. Enforcea el R:R mínimo de 1.5:1 como safety floor.
+        CUÁNDO: En cada llamada a size_position(), generate_order(), check_stops().
+        DÓNDE: risk/risk_manager.py
+        QUIÉN: RiskManager
+        """
+        # 1. Load static defaults
+        base = dict(self.horizon_params.get(horizon, self.horizon_params["SCALPING"]))
+        
+        # 2. Overlay dynamic ATR-based params if available
+        if self.asset_param_engine is not None:
+            profile = self.asset_param_engine.get_profile(symbol)
+            if profile.last_calculated > 0:  # Profile has real data
+                dynamic = self.asset_param_engine.get_params(symbol, horizon)
+                base["stop_loss_pct"] = dynamic["stop_loss_pct"]
+                base["take_profit_pct"] = dynamic["take_profit_pct"]
+        
+        # 3. SAFETY FLOOR: Enforce R:R >= 1.5:1 (IMMUTABLE)
+        sl = base["stop_loss_pct"]
+        tp = base["take_profit_pct"]
+        if sl > 0 and tp / sl < 1.5:
+            # Tighten SL to restore minimum R:R
+            base["stop_loss_pct"] = tp / 1.5
+            logger.warning(
+                f"🛡️ [R:R FLOOR] {symbol} {horizon}: Adjusted SL {sl*100:.3f}% → {base['stop_loss_pct']*100:.3f}% to enforce R:R ≥ 1.5:1"
+            )
+        
+        return base
+
     def _get_sector(self, symbol: str) -> str:
         """Standardized symbol to sector mapping."""
         # Normalize symbol for lookup
@@ -318,12 +392,18 @@ class RiskManager:
         if not self.portfolio:
             return 0.0
         exposure = 0.0
-        for sym, pos in self.portfolio.positions.items():
+        # FORENSIC FIX #12: Usar virtual_ledger para GROSS exposure real.
+        # portfolio.positions (aggregate) hace netting que subestima exposición.
+        for v_key, pos in self.portfolio.virtual_ledger.items():
+            qty = pos.get("quantity", 0)
+            if abs(qty) < 1e-8:
+                continue
+            # Extract symbol from v_key (format: "BTC/USDT:USDT_SCALPING_LONG")
+            parts = v_key.split('_')
+            sym = parts[0] if parts else v_key
             if self._get_sector(sym) == sector:
-                qty = pos.get("quantity", 0)
                 price = pos.get("current_price", pos.get("avg_price", 0))
                 notional = abs(qty * price)
-                # Use position-stored leverage or Config default
                 lev = pos.get("leverage", getattr(Config, "BINANCE_LEVERAGE", 10)) or 10
                 exposure += notional / lev  # MARGIN, not notional
         return exposure
@@ -485,12 +565,13 @@ class RiskManager:
         # PARA QUÉ: Permitir que el sistema capture movimientos fuertes
         #   que antes se vetaban arbitrariamente.
 
-        if self.global_regime == "TRENDING_BEAR" and signal_type == SignalType.LONG:
-            logger.warning(f"🛡️ [Veto] Blocking LONG {symbol} (Global: Bearish).")
-            return False
-        if self.global_regime == "TRENDING_BULL" and signal_type == SignalType.SHORT:
-            logger.warning(f"🛡️ [Veto] Blocking SHORT {symbol} (Global: Bullish).")
-            return False
+        # FORENSIC-V49 FIX: MACRO-REGIME VETO REMOVED
+        # QUÉ: Antes se bloqueaban todos los SHORTs en BULL y LONGs en BEAR.
+        # POR QUÉ: Para una cuenta de $13 buscando duplicar rápido (Scalping puro),
+        #   los retrocesos ("pullbacks") son las mejores oportunidades con R:R asimétricos.
+        #   El veto macro destruía el WinRate asfixiando señales perfectas.
+        # PARA QUÉ: Libertad total de ejecución delegada puramente a la Inteligencia Artificial
+        #   y al momentum inmediato.
         return True
 
     def _validate_directional_safety(
@@ -577,27 +658,22 @@ class RiskManager:
         fee_buffer = _maker_fee + _taker_fee
 
         # ═══════════════════════════════════════════════════════════════
-        # P2-FIX #6: M5-CALIBRATED DEAD ZONE (SL-Proportional)
-        # QUÉ: La dead zone anterior (fee_buffer * 1.5 ≈ 0.086%) era
-        #   demasiado estrecha para M5 donde el ruido normal es 0.10-0.30%.
-        # POR QUÉ: Trades en -0.10% (apenas 1 vela M5 adversa) superaban
-        #   la dead zone y eran FLIPeados, cristalizando pérdidas mínimas
-        #   que el trade habría recuperado en las siguientes velas.
-        # PARA QUÉ: Forzar que un trade no sea FLIPeado a menos que haya
-        #   perdido al menos el 50% de su Stop Loss. Si SL=0.60%, el trade
-        #   debe perder >0.30% antes de permitir un FLIP.
-        # CÓMO: Dead zone = max(fee_buffer * 1.5, sl_pct * 0.5)
-        #   donde sl_pct proviene de horizon_params.
+        # P2-FIX #6: M5-CALIBRATED DEAD ZONE 
+        # QUÉ: La dead zone anterior atrapaba trades ganadores (+0.15%) 
+        #   forzándolos a perder (-0.15%) solo por evitar pagar fees.
+        # POR QUÉ: Tomar un profit pequeño (+0.05% neto) o una pérdida 
+        #   pequeña (-0.05%) es MEJOR que dejar que el precio retroceda
+        #   completamente hasta el Stop Loss.
+        # CÓMO: Reducimos la dead zone al mínimo estricto de fees para 
+        #   evitar que bots se queden atascados, pero permitimos que 
+        #   el FLIP_EXIT actúe cuando la IA detecta reversión.
         # ═══════════════════════════════════════════════════════════════
-        _h_params = self.horizon_params.get(horizon, self.horizon_params["SCALPING"])
-        _sl_for_deadzone = _h_params.get("stop_loss_pct", 0.0035)
-        dead_zone_upper = max(fee_buffer * 1.5, _sl_for_deadzone * 0.5)
+        dead_zone_upper = fee_buffer * 1.0  # Solo el ~0.0575% de las fees
 
-        if unrealized_pnl_pct >= flip_threshold and unrealized_pnl_pct < dead_zone_upper:
-            # The trade is in the dead zone (slightly losing, or slightly winning but < meaningful profit).
-            # We ignore the opposite signal and force the trade to mature to either TP, SL, or a heavy flip.
+        if unrealized_pnl_pct >= 0 and unrealized_pnl_pct < dead_zone_upper:
+            # The trade is barely winning (less than fees). We ignore flip to avoid getting chopped by fees.
             logger.debug(
-                f"🛡️ [{symbol}_{horizon}] FLIP BLOCKED (DEAD ZONE M5): PnL {unrealized_pnl_pct*100:.3f}% is between {flip_threshold*100:.3f}% and {dead_zone_upper*100:.3f}%"
+                f"🛡️ [{symbol}_{horizon}] FLIP BLOCKED (FEE ZONE): PnL {unrealized_pnl_pct*100:.3f}% is less than fees {dead_zone_upper*100:.3f}%"
             )
             return False
 
@@ -941,18 +1017,23 @@ class RiskManager:
         QUÉ: Verifica que no excedamos el presupuesto de memoria para 20 símbolos.
         POR QUÉ: Evitar fugas de memoria y degradación de performance en HFT.
         """
+        # FORENSIC FIX #13: Contar símbolos ÚNICOS desde virtual_ledger.
+        # portfolio.positions (aggregate) puede borrar un símbolo cuando
+        # SCALPING LONG + SWING SHORT se cancelan a net 0, pero hay 2 posiciones reales.
         active_symbols = 0
+        symbol_has_position = False
         if self.portfolio:
-            active_symbols = sum(
-                1 for pos in self.portfolio.positions.values() if pos["quantity"] != 0
-            )
+            active_syms = set()
+            for v_key, pos in self.portfolio.virtual_ledger.items():
+                if abs(pos.get('quantity', 0)) > 1e-8:
+                    sym_part = v_key.split('_')[0]
+                    active_syms.add(sym_part)
+                    if symbol in v_key:
+                        symbol_has_position = True
+            active_symbols = len(active_syms)
 
         # Budget: 20 Símbolos Máximo para estabilidad micro-latencia
-        if active_symbols >= 20 and not (
-            self.portfolio
-            and symbol in self.portfolio.positions
-            and self.portfolio.positions[symbol]["quantity"] != 0
-        ):
+        if active_symbols >= 20 and not symbol_has_position:
             logger.critical(
                 f"🛑 [ISOLATION] Memory Budget Exceeded! Blocking {symbol}."
             )
@@ -982,20 +1063,15 @@ class RiskManager:
                 self.consecutive_losses[symbol] = (
                     self.consecutive_losses.get(symbol, 0) + 1
                 )
-                if self.consecutive_losses[symbol] >= 5:
-                    # [FORENSIC FIX] Relaxed from 3 losses/1h → 5 losses/5min
-                    # QUÉ: Cooldown de 5 minutos tras 5 pérdidas consecutivas.
-                    # POR QUÉ: 1 hora era excesivo para scalping — bloqueaba
-                    #   la moneda el 6% del día por solo 3 pérdidas.
-                    # PARA QUÉ: Permitir re-entry rápida cuando el mercado
-                    #   revierte, sin perder oportunidades.
-                    # CÓMO: 5 pérdidas es más estadísticamente significativo
-                    #   que 3, y 5 minutos permite que las condiciones cambien.
+                if self.consecutive_losses[symbol] >= 3:
+                    # [RESCUE PROTOCOL] 3 losses -> 30-min absolute cooldown
+                    # QUÉ: Cooldown de 30 minutos tras 3 pérdidas consecutivas.
+                    # POR QUÉ: Evitar sangrado rápido en cascada.
+                    # PARA QUÉ: Preservar capital forzando a esperar a que cambie la estructura del mercado.
                     logger.warning(
-                        f"⚠️ [COOLING] {symbol} accumulated 5 consecutive losses. 5-min cooldown."
+                        f"⚠️ [COOLING] {symbol} accumulated 3 consecutive losses. 30-min cooldown."
                     )
-                    # Use custom cooldown (the method sets the timestamp, blocking re-entry for 300s)
-                    cooldown_manager.check_custom_cooldown(f"loss_streak_{symbol}", 300)
+                    cooldown_manager.check_custom_cooldown(f"loss_streak_{symbol}", 1800)
                     self.consecutive_losses[symbol] = 0
 
         self.cvar_calc.update(pnl_pct)
@@ -1128,7 +1204,6 @@ class RiskManager:
 
     def _update_stress_metrics(self):
         """Phase 56: Use in-memory cache instead of CSV for PoR."""
-        import time
 
         now = time.time()
         if now - self.last_stress_check < self.stress_check_interval:
@@ -1149,7 +1224,7 @@ class RiskManager:
 
             self.last_stress_check = now
         except Exception as e:
-            pass
+            logger.debug(f"Silent exception caught: {e}")
 
     def _calculate_dynamic_stop_loss(
         self, atr_pct: float, horizon: str = "SCALPING"
@@ -1219,12 +1294,10 @@ class RiskManager:
         """
         if not hasattr(self, "capital_history"):
             import collections
-            import time
 
             self.capital_history = collections.deque(maxlen=100)
             self._last_capital_track = 0.0
 
-        import time
 
         now = time.time()
 
@@ -1263,7 +1336,7 @@ class RiskManager:
     # ============================================================
 
     @trace_execution
-    def size_position(self, symbol, risk_pct=0.02, multiplier=1.0, horizon="SCALPING", current_price=0.0):
+    def size_position(self, symbol, risk_pct=0.02, multiplier=1.0, horizon="SCALPING", current_price=0.0, signal_metadata=None):
         """
         [PHASE 3.2] Meritocratic Position Sizing (The 13-Dollar micro-account Protocol)
         QUÉ: Calcula el tamaño de posición (notional y quantity) basándose en mérito y horizonte.
@@ -1277,19 +1350,22 @@ class RiskManager:
             if not self.portfolio:
                 return None
 
-            # 1. Obtener parámetros por horizonte
-            h_params = self.horizon_params.get(horizon, self.horizon_params["SCALPING"])
+            # 1. Obtener parámetros por horizonte (CTOS: ATR-calibrated per asset)
+            h_params = self._get_asset_params(symbol, horizon)
 
             # [MERITOCRACY] Merit-based risk adjustment
             sl_pct = h_params["stop_loss_pct"]
             tp_pct = h_params["take_profit_pct"]
-            target_leverage = h_params["leverage"]
+            
+            # ── V5.45: SOVEREIGN ADAPTIVE LEVERAGE ──
+            # signal_metadata is passed from generate_order() which has the SignalEvent context
+            target_leverage = signal_metadata.get("leverage", h_params["leverage"]) if signal_metadata else h_params["leverage"]
 
             # 2. Calcular Capital Disponible para este horizonte
             available_cash = self.portfolio.get_available_cash(horizon=horizon)
             
             # AEGIS-V21: Adaptive floor for micro-accounts ($13)
-            _min_cash_floor = 0.50 if self.portfolio.get_total_equity() < 50.0 else 1.0
+            _min_cash_floor = 0.50 if self.portfolio.get_total_equity() < Config.Risk.RISK_THRESHOLDS['swing_min_equity_block'] else 1.0
             
             if available_cash < _min_cash_floor:
                 logger.warning(
@@ -1343,11 +1419,24 @@ class RiskManager:
             
             # 3. Cálculo de Tamaño Nominal (Notional) via Fractional Kelly
             if global_cash < 50.0:
-                # FORENSIC-V42 FIX: Micro-Account Bypass
-                # Kelly constraints mathematically prevent trading with $13 account.
-                # Force minimum $6.50 notional (takes ~$0.65 margin at 10x)
-                notional_size = 6.5
-                logger.debug(f"📐 [MICRO-SIZING] Bypassing Kelly for <$50 account. Forcing notional $6.50 for {symbol}")
+                # FORENSIC-V46 FIX: Micro-Account Aggressive Compounding ($13 -> $26 in 15 days)
+                # QUÉ: Sizing agresivo diferenciado por horizonte.
+                # POR QUÉ: Para hacer +4.73% diario, necesitamos apalancar más el poco capital.
+                # CTOS Phase 4: Compounding Agresivo al 95%
+                # SCALPING (10x): Apuntamos a usar el 95% del capital como margen ($12.35) -> Notional = $123.50
+                # SWING (5x): Apuntamos a usar el 50% del capital como margen ($6.50) -> Notional = $32.50
+                if horizon == "SCALPING":
+                    _margin_to_use = available_cash * 0.95
+                else:
+                    _margin_to_use = available_cash * 0.50
+                
+                notional_size = _margin_to_use * target_leverage
+                
+                # Minimum Binance enforcement
+                if notional_size < 5.5:
+                    notional_size = 5.5
+                    
+                logger.debug(f"📐 [MICRO-SIZING] Compounding Phase: {horizon} -> Margin ${_margin_to_use:.2f} at {target_leverage}x = Notional ${notional_size:.2f}")
             else:
                 win_rate = self.get_win_rate()
                 
@@ -1400,6 +1489,7 @@ class RiskManager:
             # Minimum Notional Guard ($6.00 para margen de error)
             if notional_size < 6.0:
                 margin_needed_for_pad = 6.0 / target_leverage
+                logger.warning(f"DEBUG-SIZING: margin_needed={margin_needed_for_pad}, headroom={remaining_margin_headroom}, lev={target_leverage}")
                 if margin_needed_for_pad <= remaining_margin_headroom:
                     notional_size = 6.0
                     logger.debug(
@@ -1527,6 +1617,24 @@ class RiskManager:
         PARA QUÉ: Lograr un 100% de WR mediante filtrado ultra-selectivo.
         CÓMO: Pipeline secuencial: Bypass → Validaciones → Sizing Kelly → Reserva → Construcción.
         """
+        # ═══════════════════════════════════════════════════════════════
+        # TOP 10 GATEKEEPER (MEASURE 16 PROSPECTS, TRADE 10 CORE)
+        # ═══════════════════════════════════════════════════════════════
+        from config import Config
+        existing_pos = self.portfolio.positions.get(signal_event.symbol)
+        existing_qty = existing_pos.get("quantity", 0.0) if existing_pos else 0.0
+        
+        # Determine if this is a prospect symbol
+        is_prospect = False
+        core_symbols = getattr(Config, 'CORE_SYMBOLS', [])
+        if core_symbols and signal_event.symbol not in core_symbols:
+            is_prospect = True
+            
+        if existing_qty == 0 and signal_event.signal_type != SignalType.EXIT:
+            if is_prospect:
+                logger.debug(f"🛡️ [GATEKEEPER] {signal_event.symbol} is a Prospect. Activating SHADOW MODE.")
+                signal_event.is_shadow = True
+
         # ================================================================
         # 1.0. PREDICTIVE TP LIMIT BYPASS
         # QUÉ: Genera una orden LIMIT en el exchange para el TP exacto
@@ -1554,6 +1662,8 @@ class RiskManager:
                 strategy_id="PREDICTIVE_TP",
                 horizon=horizon,
                 priority=1,
+                trade_id=getattr(signal_event, 'trade_id', None),
+                thought_id=getattr(signal_event, 'thought_id', None),
                 is_exit=True,
                 is_close=True,
                 metadata={
@@ -1568,7 +1678,8 @@ class RiskManager:
         # QUÉ: Las señales de salida no pasan por los filtros de entrada.
         # POR QUÉ: La seguridad de cerrar una posición es prioritaria.
         # ================================================================
-        if self._validate_emergency_bypass(signal_event):
+        _sig_type_str = getattr(signal_event.signal_type, "name", str(signal_event.signal_type))
+        if _sig_type_str == "EXIT" or getattr(signal_event, "is_exit", False):
             horizon = getattr(signal_event, "horizon", "SCALPING")
             pos = (
                 self.portfolio.get_horizon_position(signal_event.symbol, horizon)
@@ -1615,6 +1726,8 @@ class RiskManager:
                 strategy_id=strategy_id,
                 horizon=horizon,
                 priority=exit_priority,
+                trade_id=getattr(signal_event, 'trade_id', None),
+                thought_id=getattr(signal_event, 'thought_id', None),
                 is_exit=True,
                 is_close=True,
                 ttl=getattr(Config.Execution, "CHASE_TIMEOUT_SECONDS", 5)
@@ -1664,7 +1777,11 @@ class RiskManager:
         # 🧟 PHASE 2 ZOMBIE INTEGRATION: Correlation, Sentiment, Liquidity
         # 1. Correlation Risk
         if hasattr(self, 'correlation_manager') and self.correlation_manager:
-            active_symbols = [sym for sym, pos in self.portfolio.positions.items() if abs(pos.get('quantity', 0)) > 0]
+            # FORENSIC FIX: Use virtual_ledger for real active symbols (not netted aggregate)
+            active_symbols = list(set(
+                v_key.split('_')[0] for v_key, pos in self.portfolio.virtual_ledger.items()
+                if abs(pos.get('quantity', 0)) > 1e-8
+            ))
             if active_symbols:
                 safe, reason = self.correlation_manager.check_correlation_risk(signal_event.symbol, active_symbols)
                 if not safe:
@@ -1753,6 +1870,16 @@ class RiskManager:
                           (existing_qty < 0 and signal_event.signal_type == SignalType.LONG)
                 if is_flip:
                     # ═══════════════════════════════════════════════════════════
+                    # CTOS OMNIPOTENCE: HIGH-CONFIDENCE FLIP ONLY
+                    # QUÉ: Exigir alta confianza (>0.80) para contradecir un trade.
+                    # POR QUÉ: Evitar "pisadas de pata" entre 7 estrategias.
+                    # ═══════════════════════════════════════════════════════════
+                    confidence = getattr(signal_event, 'confidence', getattr(signal_event, 'strength', 0.0))
+                    if confidence < 0.80:
+                        logger.debug(f"🛡️ [CONSENSUS] Ignorando FLIP_EXIT en {signal_event.symbol}: Confianza baja ({confidence:.2f} < 0.80)")
+                        return None
+                        
+                    # ═══════════════════════════════════════════════════════════
                     # P2-FIX #8: FLIP MATURATION GUARD (M5 Trade Protection)
                     # QUÉ: Bloquear FLIP_EXIT si el trade no ha madurado.
                     # POR QUÉ: En M5, señales opuestas llegan cada 2-5 velas.
@@ -1769,7 +1896,7 @@ class RiskManager:
                     else:
                         unrealized_pnl = (entry_price - current_price) / entry_price
                     
-                    _h_params = self.horizon_params.get(horizon, self.horizon_params["SCALPING"])
+                    _h_params = self._get_asset_params(signal_event.symbol, horizon)
                     _sl_pct = _h_params.get("stop_loss_pct", 0.0035)
                     
                     # Check trade age
@@ -1786,7 +1913,7 @@ class RiskManager:
                         _now_ts = _now_dt.timestamp() if hasattr(_now_dt, 'timestamp') else datetime.now(timezone.utc).timestamp()
                         trade_age_s = _now_ts - entry_time_val
                     
-                    min_maturation_s = 3000 if horizon == "SCALPING" else 7200  # 50min scalp, 2h swing
+                    min_maturation_s = 900 if horizon == "SCALPING" else 3600  # 15min scalp (3 M5 candles), 1h swing
                     sl_exceeded = unrealized_pnl < -_sl_pct
                     
                     if trade_age_s < min_maturation_s and not sl_exceeded:
@@ -1798,6 +1925,34 @@ class RiskManager:
                         )
                         return None
                     
+                    # ═══════════════════════════════════════════════════════════════
+                    # PHASE 4 FIX: FLIP_EXIT DELEGATED TO EXIT ORACLE
+                    # QUÉ: Le preguntamos al oráculo si debemos hacer flip o ignorar el ruido.
+                    # ═══════════════════════════════════════════════════════════════
+                    hwm = existing_pos.get("high_water_mark", entry_price)
+                    lwm = existing_pos.get("low_water_mark", entry_price)
+                    mfe_pct = ((hwm - entry_price) / entry_price) if existing_qty > 0 else ((entry_price - lwm) / entry_price)
+                    
+                    if getattr(self, "exit_oracle", None) and not sl_exceeded:
+                        current_dir = "LONG" if existing_qty > 0 else "SHORT"
+                        new_dir = "SHORT" if signal_event.signal_type == SignalType.SHORT else "LONG"
+                        
+                        should_flip, block_reason = self.exit_oracle.evaluate_flip_exit(
+                            symbol=signal_event.symbol,
+                            current_direction=current_dir,
+                            new_signal_direction=new_dir,
+                            pnl_pct=unrealized_pnl,
+                            mfe_pct=mfe_pct
+                        )
+                        
+                        if not should_flip:
+                            logger.info(
+                                f"🛡️ [FLIP BLOCKED - ORACLE] {signal_event.symbol} {horizon} | "
+                                f"Reason: {block_reason}. "
+                                f"Ignoring contrary signal."
+                            )
+                            return None
+
                     logger.info(
                         f"🔄 [FLIP-EXIT] {signal_event.symbol} {horizon} | "
                         f"Closing {'LONG' if existing_qty > 0 else 'SHORT'} position before "
@@ -1894,8 +2049,10 @@ class RiskManager:
                 merit_mult *= c_factor
                 logger.debug(f"⚖️ [SIZING] {symbol} | Base Merit: {merit_mult/c_factor if c_factor else merit_mult:.2f} | Confidence: {c_factor:.2f} | Final Mult: {merit_mult:.2f}")
 
+            # Pass signal metadata for dynamic leverage extraction
+            _sig_meta = getattr(signal_event, 'metadata', None) or {}
             params = self.size_position(
-                symbol, base_risk_pct, multiplier=merit_mult, horizon=horizon, current_price=current_price
+                symbol, base_risk_pct, multiplier=merit_mult, horizon=horizon, current_price=current_price, signal_metadata=_sig_meta
             )
             
             # 🧟 ZOMBIE FEATURE INTEGRATION: Dynamic Take Profit based on MFE
@@ -1916,8 +2073,11 @@ class RiskManager:
                 # FORENSIC-V70: Reduced from 0.50% to 0.20% — empirically:
                 #   TP 0.50% hit rate in 90min = 34% → 81% ZOMBIE exits
                 #   TP 0.20% hit rate in 30min = 35% → viable for scalping
+                # FORENSIC-V71: Increased max_tp to 0.006 (0.60%) to mathematically
+                #   allow Net Profit after Binance Taker fees (0.10% RT) + SL of 0.40%.
+                #   At 0.002 (0.20%), R:R is negative and WR requires >83%.
                 if horizon == "SCALPING":
-                    max_tp = 0.002  # 0.20% max for scalping (M1-calibrated)
+                    max_tp = 0.006  # 0.60% max for scalping to allow R:R > 1:1
                 else:
                     max_tp = getattr(Config.Risk, "MAX_PROFIT_TAKE", 0.05)  # 5% max for swing
                 
@@ -1926,7 +2086,7 @@ class RiskManager:
                     params["tp_pct"] = dynamic_tp
 
             if not params or params["quantity"] <= 0:
-                print(f"[RISK] Rejected by SIZING_FAILED for {symbol} (params={params})")
+                logger.debug(f"[RISK] Rejected by SIZING_FAILED for {symbol} (params={params})")
                 return None
 
             # 📊 [PHASE 10] PORTFOLIO VaR CHECK
@@ -1967,7 +2127,9 @@ class RiskManager:
             # ================================================================
             # 4. EXECUTION CONSTRUCTION
             # ================================================================
-            cooldown_manager.record_trade(symbol, strategy_id="RISK_MANAGER")
+            # FORENSIC FIX: Pass the actual strategy_id so cooldown_manager.can_trade
+            # correctly enforces the cooldown.
+            cooldown_manager.record_trade(symbol, strategy_id=strategy_id)
             self.global_trade_count += 1
 
             # ═══════════════════════════════════════════════════════════════
@@ -2059,7 +2221,9 @@ class RiskManager:
                 ttl=optimal_ttl_bars * 60 if optimal_ttl_bars else (getattr(exec_config, "ENTRY_TTL_SECONDS", 30) if order_type == OrderType.LIMIT else 30),
                 horizon=horizon,
                 priority=priority,
-                is_shadow=False,
+                trade_id=getattr(signal_event, 'trade_id', None),
+                thought_id=getattr(signal_event, 'thought_id', None),
+                is_shadow=getattr(signal_event, 'is_shadow', False),
                 metadata=entry_metadata,
             )
 
@@ -2121,6 +2285,8 @@ class RiskManager:
                 price=current_price,
                 horizon=horizon,
                 priority=exit_priority,
+                trade_id=getattr(signal_event, 'trade_id', None),
+                thought_id=getattr(signal_event, 'thought_id', None),
                 is_exit=True,
                 is_close=True,
                 ttl=getattr(exec_config, "CHASE_TIMEOUT_SECONDS", 5)
@@ -2275,10 +2441,93 @@ class RiskManager:
             if symbol_filter and symbol != symbol_filter:
                 continue
 
+            # FORENSIC FIX #17: Prevent multiple identical exit signals (Race Condition)
+            # WebSockets take 100-300ms to confirm a fill. During this time, the engine could
+            # loop dozens of times, emitting dozens of EXIT signals for the same position.
+            pending_time = pos.get("exit_pending_time", 0)
+            if pending_time > 0:
+                if time.time() - pending_time < 5.0: # 5 second lock
+                    continue # Skip evaluation, we already emitted an exit
+                else:
+                    # Lock expired (order probably failed/rejected). Clear lock and retry.
+                    pos["exit_pending_time"] = 0
+
             current_price = pos.get("current_price")
             entry_price = pos.get("avg_price")
             if not current_price or not entry_price:
                 continue
+                
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC FIX #2: EXIT BALLOT INITIALIZATION
+            # QUÉ: Track votes from all exit evaluation sub-engines.
+            # ═══════════════════════════════════════════════════════════════
+            exit_votes = []
+            hold_votes = []
+            has_exit = False
+                
+            # ════════════════════════════════════════════════════════════════
+            # 👁️ EXIT ORACLE: THE COGNITIVE EXIT LAYER
+            # QUÉ: Antes de aplicar stop losses ciegos, el Oráculo evalúa la tesis.
+            # POR QUÉ: Evita "Zombie trades" lentos y corta pérdidas tempranas.
+            # ════════════════════════════════════════════════════════════════
+            if hasattr(self, 'exit_oracle') and self.exit_oracle:
+                oracle_decision, oracle_reason = self.exit_oracle.evaluate_position(
+                    symbol=symbol,
+                    pos=pos,
+                    current_price=current_price,
+                    data_handler=data_provider,
+                    prediction_tracker=getattr(self, 'prediction_tracker', None),
+                    current_time=now
+                )
+                
+                if oracle_decision != "KEEP_OPEN":
+                    logger.warning(f"🔮 [EXIT ORACLE] {oracle_decision} for {symbol} ({pos_horizon}): {oracle_reason}")
+                    exit_votes.append({"vote": "EXIT", "reason": f"ORACLE: {oracle_reason}"})
+                    pos['exit_pending_time'] = time.time()
+                    stop_signals.append(
+                        SignalEvent(
+                            strategy_id=oracle_decision, # e.g. "CLOSE_ALPHA_DECAY"
+                            symbol=symbol,
+                            datetime=now,
+                            signal_type=SignalType.EXIT,
+                            horizon=pos_horizon,
+                            metadata={"exit_reason": oracle_reason, "dollar_size": abs(qty) * current_price}
+                        )
+                    )
+                    has_exit = True
+                    pos['_exit_votes'] = exit_votes
+                    pos['_hold_votes'] = hold_votes
+                    # Corto-circuito para este símbolo: el Oráculo ordenó la salida
+                    continue
+                else:
+                    hold_votes.append({"vote": "HOLD", "reason": "ORACLE: KEEP_OPEN"})
+
+            # ════════════════════════════════════════════════════════════════
+            # 📉 SWING DCA ENGINE INTEGRATION
+            # QUÉ: Evaluación proactiva de promediación (DCA) para posiciones Swing.
+            # POR QUÉ: Convertir margen libre en recuperación de drawdowns.
+            # ════════════════════════════════════════════════════════════════
+            if pos_horizon == "SWING":
+                try:
+                    available_cash_swing = portfolio.get_available_cash(horizon="SWING")
+                    kill_switch_active = self.kill_switch.active if getattr(self, "kill_switch", None) else False
+                    
+                    dca_signal = swing_dca_engine.evaluate(
+                        v_key=v_key,
+                        pos=pos,
+                        symbol=symbol,
+                        current_price=current_price,
+                        available_cash_swing=available_cash_swing,
+                        global_regime=getattr(self, "global_regime", "RANGING"),
+                        kill_switch_active=kill_switch_active,
+                        now=now
+                    )
+                    
+                    if dca_signal:
+                        pos['exit_pending_time'] = time.time()
+                        stop_signals.append(dca_signal)
+                except Exception as dca_e:
+                    logger.error(f"⚠️ [DCA] Error evaluating {v_key}: {dca_e}")
 
             # ================================================================
             # FORENSIC REMEDIATION: Horizon-aware SL/TP fallbacks
@@ -2296,37 +2545,64 @@ class RiskManager:
             # PARA QUÉ: Dar al trade M5 espacio de 0.60% SL (3 velas M5 de
             #   ruido) y capturar 0.45% TP (alcanzable en 2-4 velas M5).
             # CÓMO: Sincronizar con Config.Strategies.SCALPING_PARAMS exactos.
-            default_sl = 0.0015 if pos_horizon == "SCALPING" else 0.025
-            default_tp = 0.0010 if pos_horizon == "SCALPING" else 0.045
+            # ════════════════════════════════════════════════════════════════
+            # CIRUGÍA-V100: SYNCED CHECK_STOPS WITH CONFIG.STRATEGIES.*_PARAMS
+            # QUÉ: Los defaults y hard-caps DEBEN coincidir con SCALPING_PARAMS.
+            # POR QUÉ: Antes: default_tp=0.10%, hard_cap=0.10%. Config TP=0.80%.
+            #   → El TP efectivo era 0.10% pero las fees son 0.0575%.
+            #   → PnL neto máximo posible = 0.10% - 0.0575% = 0.0425%.
+            #   → SL era 0.15% → R:R = 0.28:1. IMPOSIBLE ganar.
+            #   → 12,385 trades expirados como ZOMBIE porque el TP inalcanzable
+            #     nunca se alcanzaba antes del timeout.
+            # PARA QUÉ: TP=0.80%, SL=0.40% (Config) → R:R = 2:1.
+            #   PnL neto TP = 0.80% - 0.0575% = 0.74%. Viable.
+            # CÓMO: Extraer directamente desde Config.Strategies y eliminar defaults hardcodeados.
+            # ════════════════════════════════════════════════════════════════
+            _config_strategies = getattr(Config, "Strategies", None)
+            _scalping_params = getattr(_config_strategies, "SCALPING_PARAMS", {}) if _config_strategies else {}
+            _swing_params = getattr(_config_strategies, "SWING_PARAMS", {}) if _config_strategies else {}
+
+            default_sl = _scalping_params.get("sl_pct", 0.0040) if pos_horizon == "SCALPING" else _swing_params.get("sl_pct", 0.025)
+            default_tp = _scalping_params.get("tp_pct", 0.0080) if pos_horizon == "SCALPING" else _swing_params.get("tp_pct", 0.045)
+            
             sl_pct = pos.get("sl_pct", default_sl) or default_sl
             tp_pct = pos.get("tp_pct", default_tp) or default_tp
             
-            # ════════════════════════════════════════════════════════════════
-            # FORENSIC-V70: HARD CAP on SCALPING TP/SL (defense-in-depth)
-            # QUÉ: Previene que TP/SL inflados por la estrategia (ATR M5)
-            #   lleguen al motor de salida con valores inalcanzables.
-            # POR QUÉ: ATR-based TP de 0.50% solo se alcanza 34% del tiempo
-            #   en 90min, generando 81% de ZOMBIE exits.
-            # PARA QUÉ: Garantizar que check_stops use targets realizables.
-            # ════════════════════════════════════════════════════════════════
-            if pos_horizon == "SCALPING":
-                tp_pct = min(tp_pct, 0.0010)  # Hard cap 0.10%
-                sl_pct = min(sl_pct, 0.0015)  # Hard cap 0.15%
+            # FORENSIC-V100: Hard cap REMOVED for SCALPING.
+            # The old cap (tp=0.10%, sl=0.15%) made it mathematically impossible
+            # to profit. Now using Config.Strategies.SCALPING_PARAMS values.
+            # Only cap SWING to prevent runaway values (max 5% TP, 3% SL).
+            if pos_horizon == "SWING":
+                tp_pct = min(tp_pct, 0.050)  # 5.0% max for swing
+                sl_pct = min(sl_pct, 0.030)  # 3.0% max for swing
             
-            # 🧠 PHASE 8: PETIM DYNAMIC EXITS (LimitOrderOptimizer)
-            # FORENSIC-V50: Horizon-aware caps to prevent scalping → swing TP drift
-            petim_pred = pos.get("trajectory_prediction")
-            if petim_pred and isinstance(petim_pred, dict):
-                # Use expected MFE for Take Profit Limit with 85% probability discount
-                expected_mfe = petim_pred.get("mfe")
-                if expected_mfe and expected_mfe > 0.001:
-                    petim_max_tp = 0.003 if pos_horizon == "SCALPING" else 0.05
-                    tp_pct = min(max(expected_mfe * 0.85, 0.002), petim_max_tp)
-                
-                # Use expected MAE to set structural stop, avoiding noise
-                expected_mae = petim_pred.get("mae")
-                if expected_mae and expected_mae > 0.001:
-                    sl_pct = min(max(expected_mae * 1.5, default_sl), 0.05)
+            # ════════════════════════════════════════════════════════════════
+            # 🧠 PHASE 8: PETIM DYNAMIC EXITS — **DISABLED** (FORENSIC-V110)
+            # ════════════════════════════════════════════════════════════════
+            # QUÉ: Bloque que sobreescribía TP/SL con predicciones PETIM.
+            # POR QUÉ SE DESHABILITÓ:
+            #   - petim_max_tp = 0.003 (0.30%) aplastaba Config TP=0.80% → TP efectivo 0.17-0.30%
+            #   - Con fees de 0.057% round-trip, el margen neto era ~0.14% → IMPOSIBLE ganar
+            #   - expected_mae * 1.5 creaba SL ultra-ajustados que disparaban en ruido normal
+            #   RESULTADO MEDIDO (Autopsia 19,160 trades):
+            #   - 12,491 ZOMBIE exits (trades nunca alcanzaron TP microscópico)
+            #   - 1,625 HARD_SL deaths (SL ajustado por MAE se disparaba en noise)
+            #   - 3,510 TURBO_BE exits (fee-erosion por micro-movimientos)
+            #   - PnL neto: -$2.53 (debería ser +$44.66 sin estos 3 killers)
+            # PARA QUÉ: Restaurar Config.Strategies.SCALPING_PARAMS (TP=0.80%, SL=0.40%)
+            #   → R:R = 2:1 → Matemáticamente viable.
+            # CUÁNDO REACTIVAR: Solo si PETIM se recalibra para predecir MFE > 1%
+            #   con accuracy > 70% en walk-forward validation.
+            # ════════════════════════════════════════════════════════════════
+            # petim_pred = pos.get("trajectory_prediction")
+            # if petim_pred and isinstance(petim_pred, dict):
+            #     expected_mfe = petim_pred.get("mfe")
+            #     if expected_mfe and expected_mfe > 0.001:
+            #         petim_max_tp = 0.003 if pos_horizon == "SCALPING" else 0.05
+            #         tp_pct = min(max(expected_mfe * 0.85, 0.002), petim_max_tp)
+            #     expected_mae = petim_pred.get("mae")
+            #     if expected_mae and expected_mae > 0.001:
+            #         sl_pct = min(max(expected_mae * 1.5, default_sl), 0.05)
             hwm = pos.get("high_water_mark", entry_price)
             lwm = pos.get("low_water_mark", entry_price)
 
@@ -2349,6 +2625,9 @@ class RiskManager:
                 # PARA QUÉ: Reducir PnL negativo dando espacio a la volatilidad, o cortando si el tiempo es excesivo.
                 
                 # 🧠 PHASE 8: PETIM TIME-TO-EXHAUSTION
+                # FORENSIC FIX: petim_pred was undefined (original assignment was commented out).
+                # This caused NameError → silently killed ALL zombie/time-stop logic.
+                petim_pred = pos.get("trajectory_prediction")  # Restore from position metadata
                 expected_survival_s = None
                 if petim_pred and isinstance(petim_pred, dict) and "survival" in petim_pred:
                     expected_survival_bars = petim_pred["survival"]
@@ -2364,44 +2643,87 @@ class RiskManager:
                     # AHORA: 2700s (45 min) = 9 velas M5. Da espacio real para
                     #   que el mercado desarrolle el impulso predicho.
                     # Slow Bleed: 3600s (1h) = 12 velas M5 sin progreso.
-                    is_true_zombie = (seconds_held > 2700) and (price_range_pct < 0.15) and (unrealized_pnl_pct < 0.05)
-                    is_slow_bleed = (seconds_held > 3600) and (unrealized_pnl_pct < 0.0)
-                    is_absolute_timeout = (seconds_held > 5400) # 90 minutes max for any scalping trade
+                    # CIRUGÍA-V100: WIDENED ZOMBIE THRESHOLDS
+                    # QUÉ: Con TP=0.80% (corregido), el trade necesita más tiempo para desarrollarse.
+                    # POR QUÉ: Antes con TP=0.10%, 45min era "mucho tiempo".
+                    #   Ahora con TP=0.80%, 45min es el MÍNIMO esperado.
+                    # PARA QUÉ: Dar tiempo real al M5 para que el impulso se materialice.
+                    # CÓMO: true_zombie=60min, slow_bleed=75min, absolute=120min.
+                    # CIRUGÍA-CTOS: TIME-STOPS DINÁMICOS
+                    # QUÉ: Ya no cerramos trades "porque pasó 1 hora y media". 
+                    # POR QUÉ: Forzar cierres de tiempo ciega el bot a la predicción ampliada, cristalizando pérdidas justo antes de romper.
+                    # PARA QUÉ: Delegar el cierre al ExitOracle a menos que el trade sea verdaderamente un riesgo tóxico.
+                    
+                    # CIRUGÍA-CTOS: TIME-STOPS DINÁMICOS & ADAPTIVE HOLDING
+                    # El trade es zombie solo si está perdiendo dinero y lleva MUCHO tiempo.
+                    # CTOS Phase 3: Recalibrated for SCALPING. 45m maximum hold if bleeding.
+                    is_true_zombie = (seconds_held > 2700) and (unrealized_pnl_pct < -0.15)
+                    is_slow_bleed = (seconds_held > 3600) and (unrealized_pnl_pct < -0.30) # 1 hour max bleed
+                    
+                    # CTOS Phase 4: Flat Zombie Kill Switch
+                    # Si lleva 90 mins y no ha ganado ni para las fees (+0.05%), ciérralo.
+                    is_flat_zombie = (seconds_held > 5400) and (unrealized_pnl_pct < 0.05)
+                    is_absolute_timeout = False # Delegated to ExitOracle / prediction_duration
                     
                     # PETIM Exhaustion
-                    is_petim_exhausted = expected_survival_s and (seconds_held > expected_survival_s * 1.5) and (unrealized_pnl_pct < 0.1)
+                    is_petim_exhausted = expected_survival_s and (seconds_held > expected_survival_s * 2.0) and (unrealized_pnl_pct < -0.2)
                     
-                    if is_true_zombie or is_slow_bleed or is_petim_exhausted or is_absolute_timeout:
-                        if is_absolute_timeout:
-                            reason = "ABSOLUTE TIMEOUT"
-                        elif is_petim_exhausted:
-                            reason = "PETIM EXHAUSTION"
-                        else:
-                            reason = "FLAT MARKET" if is_true_zombie else "SLOW BLEED"
+                    # CTOS Phase 5: Adaptive Holding (No matar si está progresando)
+                    # Si el MFE está en ganancia decente y sigue creciendo, le damos más tiempo.
+                    mfe_pct = ((hwm - entry_price) / entry_price * 100) if qty > 0 else ((entry_price - lwm) / entry_price * 100)
+                    is_growing = mfe_pct > 0.15 and unrealized_pnl_pct > -0.15
+                    
+                    # MEGA FORENSIC FIX #19: Wire predicted_duration_bars
+                    # QUÉ: Usar la predicción de duración del ML como base para el time-stop.
+                    # POR QUÉ: time-stops estáticos matan trades que el ML sabía que tomarían más tiempo.
+                    _pred_dur = pos.get('predicted_duration_bars')
+                    if _pred_dur and _pred_dur > 0:
+                        _pred_dur_s = _pred_dur * 60  # convert 1m bars to seconds
+                        # Extiende los thresholds estáticos si el ML predijo un trade largo
+                        if _pred_dur_s > 10800:
+                            is_true_zombie = (seconds_held > _pred_dur_s) and (unrealized_pnl_pct < -0.50)
+                            is_slow_bleed = (seconds_held > _pred_dur_s * 1.5) and (unrealized_pnl_pct < -1.0)
+                    
+                    
+                    if is_growing:
+                        is_true_zombie = False
+                        is_slow_bleed = False
+                        is_petim_exhausted = False
+                    
+                    if is_true_zombie or is_slow_bleed or is_petim_exhausted or is_flat_zombie:
+                        reason = "PETIM EXHAUSTION" if is_petim_exhausted else ("FLAT MARKET" if is_flat_zombie else ("TRUE ZOMBIE" if is_true_zombie else "SLOW BLEED"))
                         logger.warning(
-                            f"🧟 [ZOMBIE CATCHER - {reason}] {symbol} {pos_horizon} held for {seconds_held:.0f}s with PnL {unrealized_pnl_pct:.2f}% (Range: {price_range_pct:.2f}%). Exiting to free capital."
+                            f"🧟 [ZOMBIE CATCHER - {reason}] {symbol} {pos_horizon} held for {seconds_held:.0f}s with PnL {unrealized_pnl_pct:.2f}%. Toxic holding. Exiting."
                         )
+                        exit_votes.append({"vote": "EXIT", "reason": f"ZOMBIE: {reason}"})
+                        pos['exit_pending_time'] = time.time()
                         stop_signals.append(
                             SignalEvent(
                                 strategy_id="TIME_STOP_ZOMBIE",
                                 symbol=symbol,
                                 datetime=now,
                                 signal_type=SignalType.EXIT,
-                                strength=1.0,
                                 horizon=pos_horizon,
+                                metadata={"exit_reason": "ZOMBIE_FLAT_MARKET", "dollar_size": abs(qty) * current_price}
                             )
                         )
+                        has_exit = True
+                        pos['_exit_votes'] = exit_votes
+                        pos['_hold_votes'] = hold_votes
                         continue
+                    else:
+                        hold_votes.append({"vote": "HOLD", "reason": "ZOMBIE: GROWING/ALIVE"})
 
                 # Original FINOPS TIME-STOP for SWING
-                if pos_horizon in ["SWING", "MACRO"] and portfolio.get_total_equity() < 50.0:
+                if pos_horizon in ["SWING", "MACRO"] and portfolio.get_total_equity() < Config.Risk.RISK_THRESHOLDS['swing_min_equity_block']:
                     hours_held = seconds_held / 3600
                     if (
-                        hours_held > 7.5 and unrealized_pnl_pct < 0.5
+                        hours_held > Config.Risk.RISK_THRESHOLDS['zombie_hours_held'] and unrealized_pnl_pct < Config.Risk.RISK_THRESHOLDS['zombie_pnl_max']
                     ):  # Si no ganamos al menos +0.5% en 7.5 hrs, abortar antes del funding
                         logger.warning(
                             f"🛑 [FINOPS TIME-STOP] {symbol} {pos_horizon} max holding time (7.5h) reached. Exiting to prevent Funding Fee bleed."
                         )
+                        pos['exit_pending_time'] = time.time()
                         stop_signals.append(
                             SignalEvent(
                                 strategy_id="TIME_STOP",
@@ -2419,6 +2741,7 @@ class RiskManager:
                 # 1. Momentum Exit (Proactive)
                 if self._check_momentum_exit(symbol, "LONG", data_provider):
                     print(f"🪂 {pos_horizon} MOMENTUM EXIT {symbol}! (Proactive)")
+                    pos['exit_pending_time'] = time.time()
                     stop_signals.append(
                         SignalEvent(
                             strategy_id="MOMENT_MGR",
@@ -2427,53 +2750,88 @@ class RiskManager:
                             signal_type=SignalType.EXIT,
                             strength=1.0,
                             horizon=pos_horizon,
+                            metadata={"exit_reason": "MOMENTUM_EXIT", "dollar_size": abs(qty) * current_price}
                         )
                     )
                     self.record_trade_result(True, 0.0)
                     continue
 
                 # FORENSIC FIX #9: EXPLICIT TAKE PROFIT (PREDICTIVE LIMIT)
-                if tp_pct > 0:
+                # CIRUGÍA-V100: Gated by USE_PREDICTIVE_TP (now False)
+                if tp_pct > 0 and getattr(Config.Risk, 'USE_PREDICTIVE_TP', False):
                     if not pos.get("tp_limit_placed"):
                         tp_price_val = entry_price * (1 + tp_pct)
                         logger.info(f"🎯 [PREDICTIVE LIMIT] LONG {symbol} | Placing Resting TP at {tp_price_val:.4f} (+{tp_pct*100:.2f}%)")
                         pos["tp_limit_placed"] = True
+                        pos['exit_pending_time'] = time.time()
                         stop_signals.append(
                             SignalEvent(
                                 strategy_id="PLACE_TP_LIMIT",
                                 symbol=symbol,
                                 datetime=now,
-                                signal_type=SignalType.EXIT, # Se ignora en el generate_order bypass
+                                signal_type=SignalType.EXIT,
                                 strength=1.0,
                                 horizon=pos_horizon,
                                 metadata={"tp_price": tp_price_val}
                             )
                         )
-                    # FORENSIC-V60 FIX: Always evaluate TP fallback (was elif, now separate if)
-                    # QUÉ: Changed from `elif` to standalone `if` so the TP is evaluated
-                    #   on EVERY check_stops call, including the first one.
-                    # POR QUÉ: With `elif`, the first call placed the TP limit order but
-                    #   skipped the price check. If price already exceeded TP on that bar,
-                    #   the system would miss the TP and later close via TURBO_BE at a loss.
-                    # DEBUG
-                    if current_price >= (entry_price * (1 + tp_pct * 0.5)):
-                        print(f"DEBUG LONG TP CHECK: curr={current_price:.2f} target={(entry_price * (1 + tp_pct)):.2f} (tp_pct={tp_pct:.4f}, hwm={hwm:.2f})")
-                    if current_price >= (entry_price * (1 + tp_pct)):
-                        tp_pnl_pct = ((current_price - entry_price) / entry_price) * 100
-                        print(
-                            f"🎯 [LONG {pos_horizon}] TAKE PROFIT {symbol}! +{tp_pnl_pct:.2f}%"
+
+                # CIRUGÍA-V100: TAKE PROFIT EVALUATION — ALWAYS ACTIVE
+                # QUÉ: Evaluación directa del precio vs TP target.
+                # POR QUÉ: Independiente de PREDICTIVE_TP. Si el precio llegó al TP, cerrar.
+                # PARA QUÉ: Con TP=0.80% (corregido), esta es la salida principal ganadora.
+                if tp_pct > 0 and current_price >= (entry_price * (1 + tp_pct)):
+                    tp_pnl_pct = ((current_price - entry_price) / entry_price) * 100
+                    print(
+                        f"🎯 [LONG {pos_horizon}] TAKE PROFIT {symbol}! +{tp_pnl_pct:.2f}%"
+                    )
+                    exit_reason = f"TAKE_PROFIT: +{tp_pnl_pct:.2f}%"
+                    exit_votes.append({"vote": "EXIT", "reason": exit_reason})
+                    pos['exit_pending_time'] = time.time()
+                    stop_signals.append(
+                        SignalEvent(
+                            strategy_id="TAKE_PROFIT_LIMIT" if False else "TAKE_PROFIT_MARKET",
+                            symbol=symbol,
+                            datetime=now,
+                            signal_type=SignalType.EXIT,
+                            horizon=pos_horizon,
+                            metadata={"exit_reason": exit_reason, "dollar_size": abs(qty) * current_price}
                         )
+                    )
+                    self.record_trade_result(True, tp_pnl_pct)
+                    has_exit = True
+                    pos['_exit_votes'] = exit_votes
+                    pos['_hold_votes'] = hold_votes
+                    continue
+                else:
+                    hold_votes.append({"vote": "HOLD", "reason": f"TP_NOT_REACHED: req +{tp_pct*100:.2f}%, curr +{unrealized_pnl_pct:.2f}%"})
+
+                # MEGA FORENSIC FIX #20: Wire predicted_target_price
+                # QUÉ: Cierra el trade SI el precio actual ya superó el target predicho por el ML
+                # POR QUÉ: optimal_exit_price / predicted_target son escritos por ML pero ignorados por RM
+                _pred_tp = pos.get('predicted_target_price')
+                if _pred_tp and _pred_tp > 0:
+                    _hit_pred_tp = (current_price >= _pred_tp) if qty > 0 else (current_price <= _pred_tp)
+                    if _hit_pred_tp:
+                        tp_pnl_pct = ((current_price - entry_price) / entry_price) * 100 if qty > 0 else ((entry_price - current_price) / entry_price) * 100
+                        print(f"🎯 [PREDICTED TARGET] {pos_horizon} {symbol} Hit ML target {_pred_tp:.4f}! +{tp_pnl_pct:.2f}%")
+                        exit_reason = f"HIT_ML_PREDICTED_TARGET: +{tp_pnl_pct:.2f}%"
+                        exit_votes.append({"vote": "EXIT", "reason": exit_reason})
+                        pos['exit_pending_time'] = time.time()
                         stop_signals.append(
                             SignalEvent(
-                                strategy_id="TAKE_PROFIT",
+                                strategy_id="ML_PREDICTED_TP",
                                 symbol=symbol,
                                 datetime=now,
                                 signal_type=SignalType.EXIT,
-                                strength=1.0,
                                 horizon=pos_horizon,
+                                metadata={"exit_reason": exit_reason, "dollar_size": abs(qty) * current_price}
                             )
                         )
                         self.record_trade_result(True, tp_pnl_pct)
+                        has_exit = True
+                        pos['_exit_votes'] = exit_votes
+                        pos['_hold_votes'] = hold_votes
                         continue
 
                 # 2 & 3. 3-STAGE ADAPTIVE TRAILING + TURBO-BREAKEVEN
@@ -2487,6 +2845,19 @@ class RiskManager:
                 fee_buffer = _maker_fee + _taker_fee  # Entry=Maker, Exit=varies
                 peak_pnl = ((hwm - entry_price) / entry_price) * 100
                 tp_target_pct = tp_pct * 100 if tp_pct > 0 else 1.0  # Safe fallback
+
+                # ZOMBIE FEATURE #17: Regime Shift Awareness
+                # QUÉ: Si el régimen cambió desde la apertura, ajustar trailing.
+                # POR QUÉ: Un trade abierto en TRENDING que ahora está en CHOPPY
+                #   tiene alta probabilidad de revertir → trailing más agresivo.
+                # CÓMO: Comparar regime_at_entry vs self.global_regime actual.
+                _entry_regime = pos.get('regime_at_entry', self.global_regime)
+                _regime_shifted = _entry_regime != self.global_regime
+                _regime_danger = _regime_shifted and self.global_regime in ('CHOPPY', 'VOLATILE', 'CRISIS')
+                if _regime_danger and peak_pnl > 0:
+                    # Regime deteriorated while in profit → tighten trailing by 30%
+                    _cog_mult = max(0.5, getattr(self, '_cog_mult_cache', 1.0) * 0.70)
+                    logger.info(f"🔄 [REGIME SHIFT] {symbol} {pos_horizon} | {_entry_regime}→{self.global_regime} | Tightening trailing x{_cog_mult:.2f}")
 
                 # ⚡ Turbo-Breakeven (Stage 0): Immediate capital protection once fee gap is broken
                 # ═══════════════════════════════════════════════════════════════
@@ -2513,6 +2884,7 @@ class RiskManager:
                 #     turbo_be_price = entry_price * (1 + fee_buffer + 0.0001)
                 #     if current_price < turbo_be_price:
                 #         print(f"⚡ [LONG {pos_horizon}] TURBO-BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}% gave us edge. Bailing at {current_price:.4f}")
+                #         pos['exit_pending_time'] = time.time()
                 #         stop_signals.append(
                 #             SignalEvent(strategy_id="TURBO_BE", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon)
                 #         )
@@ -2524,6 +2896,14 @@ class RiskManager:
                 trail_price = None
                 trail_name = None
 
+                # ZOMBIE FEATURE #16: Cognitive Anchor → Trailing Multiplier
+                # QUÉ: Usa initial_prob del cognitive_anchor para ajustar trailing.
+                # POR QUÉ: Si ML tenía alta confianza al abrir, dar más room.
+                # CÓMO: _cog_mult va de 1.0 (50% prob) a 1.25 (100% prob).
+                _cog = pos.get('cognitive_anchor', {})
+                _init_prob = _cog.get('initial_prob', 0.5) if _cog else 0.5
+                _cog_mult = 1.0 + max(0, (_init_prob - 0.5) * 0.5)
+
                 # Fetch dynamically passed momentum threshold for this trade
                 self._last_momentum_accel = (
                     pos.get("metadata", {}).get("momentum_exit_accel", -0.012)
@@ -2533,11 +2913,11 @@ class RiskManager:
 
                 if progress >= 0.90:
                     # Stage 3: Tight trail - protect 85% of gains from peak
-                    trail_price = hwm - ((hwm - entry_price) * 0.15)
+                    trail_price = hwm - ((hwm - entry_price) * 0.15 * _cog_mult)  # cognitive_anchor: wider room for high-prob trades
                     trail_name = "TRAIL_STAGE_3_TIGHT"
                 elif progress >= 0.80:
                     # Stage 2: Standard trail - protect 70% of gains from peak
-                    trail_price = hwm - ((hwm - entry_price) * 0.30)
+                    trail_price = hwm - ((hwm - entry_price) * 0.30 * _cog_mult)  # cognitive_anchor: wider room for high-prob trades
                     trail_name = "TRAIL_STAGE_2_STD"
                 elif progress >= 0.60:
                     # Stage 1: Move to breakeven + round-trip fees + slippage safety buffer
@@ -2548,6 +2928,8 @@ class RiskManager:
                     print(
                         f"🛡️/💰 [LONG {pos_horizon}] {trail_name} {symbol}! Triggered at {current_price:.4f} (Peak: +{peak_pnl:.2f}%)"
                     )
+                    exit_votes.append({"vote": "EXIT", "reason": f"TRAILING_STOP: {trail_name}"})
+                    pos['exit_pending_time'] = time.time()
                     stop_signals.append(
                         SignalEvent(
                             strategy_id=trail_name,
@@ -2556,16 +2938,25 @@ class RiskManager:
                             signal_type=SignalType.EXIT,
                             strength=1.0,
                             horizon=pos_horizon,
+                            metadata={"exit_reason": f"TRAILING_STOP:{trail_name}", "dollar_size": abs(qty) * current_price}
                         )
                     )
                     self.record_trade_result(True, unrealized_pnl_pct)
+                    has_exit = True
+                    pos['_exit_votes'] = exit_votes
+                    pos['_hold_votes'] = hold_votes
                     continue
+                else:
+                    if trail_name:
+                        hold_votes.append({"vote": "HOLD", "reason": f"TRAILING_STOP_SAFE: {trail_name}"})
 
                 # 4. Initial Hard Stop Loss (Protective)
                 if current_price < (entry_price * (1 - sl_pct)):
                     print(
                         f"🛑 HARD SL [{pos_horizon}] {symbol}! {unrealized_pnl_pct:.2f}%"
                     )
+                    exit_votes.append({"vote": "EXIT", "reason": f"HARD_SL: {unrealized_pnl_pct:.2f}%"})
+                    pos['exit_pending_time'] = time.time()
                     stop_signals.append(
                         SignalEvent(
                             strategy_id="HARD_SL",
@@ -2574,16 +2965,23 @@ class RiskManager:
                             signal_type=SignalType.EXIT,
                             strength=1.0,
                             horizon=pos_horizon,
+                            metadata={"exit_reason": f"HARD_SL: {unrealized_pnl_pct:.2f}%", "dollar_size": abs(qty) * current_price}
                         )
                     )
                     self.record_trade_result(False, unrealized_pnl_pct)
+                    has_exit = True
+                    pos['_exit_votes'] = exit_votes
+                    pos['_hold_votes'] = hold_votes
                     continue
+                else:
+                    hold_votes.append({"vote": "HOLD", "reason": f"SL_SAFE: req -{sl_pct*100:.2f}%, curr {unrealized_pnl_pct:.2f}%"})
 
             # SHORT POSITION
             elif qty < 0:
                 # 1. Momentum Exit
                 if self._check_momentum_exit(symbol, "SHORT", data_provider):
                     print(f"🪂 {pos_horizon} SHORT MOMENTUM EXIT {symbol}! (Proactive)")
+                    pos['exit_pending_time'] = time.time()
                     stop_signals.append(
                         SignalEvent(
                             strategy_id="MOMENT_MGR",
@@ -2592,17 +2990,20 @@ class RiskManager:
                             signal_type=SignalType.EXIT,
                             strength=1.0,
                             horizon=pos_horizon,
+                            metadata={"exit_reason": "MOMENTUM_EXIT", "dollar_size": abs(qty) * current_price}
                         )
                     )
                     self.record_trade_result(True, 0.0)
                     continue
 
-                # FORENSIC FIX #9: EXPLICIT TAKE PROFIT FOR SHORTS (PREDICTIVE LIMIT)
-                if tp_pct > 0:
+                # FORENSIC FIX #9: SHORT PREDICTIVE LIMIT TP
+                # CIRUGÍA-V100: Gated by USE_PREDICTIVE_TP (now False)
+                if tp_pct > 0 and getattr(Config.Risk, 'USE_PREDICTIVE_TP', False):
                     if not pos.get("tp_limit_placed"):
                         tp_price_val = entry_price * (1 - tp_pct)
                         logger.info(f"🎯 [PREDICTIVE LIMIT] SHORT {symbol} | Placing Resting TP at {tp_price_val:.4f} (+{tp_pct*100:.2f}%)")
                         pos["tp_limit_placed"] = True
+                        pos['exit_pending_time'] = time.time()
                         stop_signals.append(
                             SignalEvent(
                                 strategy_id="PLACE_TP_LIMIT",
@@ -2614,26 +3015,39 @@ class RiskManager:
                                 metadata={"tp_price": tp_price_val}
                             )
                         )
-                    # FORENSIC-V60 FIX: Always evaluate TP fallback (was elif, now separate if)
-                    # QUÉ: Changed from `elif` to standalone `if` so the TP is evaluated
-                    #   on EVERY check_stops call, including the first one.
-                    if current_price <= (entry_price * (1 - tp_pct)):
-                        tp_pnl_pct = ((entry_price - current_price) / entry_price) * 100
-                        print(
-                            f"🎯 [SHORT {pos_horizon}] TAKE PROFIT {symbol}! +{tp_pnl_pct:.2f}%"
+
+                # CIRUGÍA-V100: SHORT TAKE PROFIT EVALUATION — ALWAYS ACTIVE
+                # QUÉ: Evaluación directa del precio vs TP target para SHORT.
+                # POR QUÉ: Independiente de PREDICTIVE_TP. Si precio cayó al TP, cerrar.
+                # PARA QUÉ: Con TP=0.80% (corregido), capturar ganancias reales.
+                if tp_pct > 0:
+                    print(f"DEBUG SHORT TP {symbol} ({pos_horizon}): entry={entry_price}, current={current_price}, tp_pct={tp_pct}, target={entry_price * (1 - tp_pct)}, qty={qty}")
+                
+                if tp_pct > 0 and current_price <= (entry_price * (1 - tp_pct)):
+                    tp_pnl_pct = ((entry_price - current_price) / entry_price) * 100
+                    print(
+                        f"🎯 [SHORT {pos_horizon}] TAKE PROFIT {symbol}! +{tp_pnl_pct:.2f}%"
+                    )
+                    exit_votes.append({"vote": "EXIT", "reason": f"TAKE_PROFIT: +{tp_pnl_pct:.2f}%"})
+                    pos['exit_pending_time'] = time.time()
+                    stop_signals.append(
+                        SignalEvent(
+                            strategy_id="TAKE_PROFIT",
+                            symbol=symbol,
+                            datetime=now,
+                            signal_type=SignalType.EXIT,
+                            strength=1.0,
+                            horizon=pos_horizon,
+                            metadata={"exit_reason": f"TAKE_PROFIT: +{tp_pnl_pct:.2f}%", "dollar_size": abs(qty) * current_price}
                         )
-                        stop_signals.append(
-                            SignalEvent(
-                                strategy_id="TAKE_PROFIT",
-                                symbol=symbol,
-                                datetime=now,
-                                signal_type=SignalType.EXIT,
-                                strength=1.0,
-                                horizon=pos_horizon,
-                            )
-                        )
-                        self.record_trade_result(True, tp_pnl_pct)
-                        continue
+                    )
+                    self.record_trade_result(True, tp_pnl_pct)
+                    has_exit = True
+                    pos['_exit_votes'] = exit_votes
+                    pos['_hold_votes'] = hold_votes
+                    continue
+                else:
+                    hold_votes.append({"vote": "HOLD", "reason": f"TP_NOT_REACHED: req +{tp_pct*100:.2f}%, curr +{unrealized_pnl_pct:.2f}%"})
 
                 # 2 & 3. 3-STAGE ADAPTIVE TRAILING + TURBO-BREAKEVEN
                 # FORENSIC-V11: BBO Maker fee for round-trip (same fix as LONG side)
@@ -2643,37 +3057,33 @@ class RiskManager:
                 peak_pnl = ((entry_price - lwm) / entry_price) * 100
                 tp_target_pct = tp_pct * 100 if tp_pct > 0 else 1.0  # Safe fallback
 
-                # ⚡ Turbo-Breakeven (Stage 0): Immediate capital protection
-                # FORENSIC-V44 FIX #4: RESTORE IMMEDIATE TURBO-BREAKEVEN (SHORT mirror)
-                if pos_horizon == "SCALPING":
-                    # FORENSIC-V60 FIX: Dynamic TP-relative TURBO-BREAKEVEN (SHORT)
-                    turbo_threshold_pct = tp_target_pct * 0.75
-                    min_threshold = fee_buffer * 100 * 1.2
-                    turbo_threshold_pct = max(turbo_threshold_pct, min_threshold)
-                else:
-                    turbo_threshold_pct = fee_buffer * 100 * 4.0
-
-                if peak_pnl >= turbo_threshold_pct:
-                    # We lock in entry_price - fee_buffer - round trip slippage - net profit
-                    turbo_be_price = entry_price * (
-                        1 - fee_buffer - 0.0001
-                    )  # 0.01% net profit after fees
-                    if current_price > turbo_be_price:  # Price bounced back up
-                        print(
-                            f"⚡ [SHORT {pos_horizon}] TURBO-BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}% gave us edge. Bailing at {current_price:.4f}"
-                        )
-                        stop_signals.append(
-                            SignalEvent(
-                                strategy_id="TURBO_BE",
-                                symbol=symbol,
-                                datetime=now,
-                                signal_type=SignalType.EXIT,
-                                strength=1.0,
-                                horizon=pos_horizon,
-                            )
-                        )
-                        self.record_trade_result(True, unrealized_pnl_pct)
-                        continue
+                # ⚡ Turbo-Breakeven (Stage 0): DISABLED
+                # CIRUGÍA-V100: TURBO_BE disabled for SHORTS (mirror of LONG-side disable).
+                # QUÉ: SHORT TURBO_BE was active while LONG was disabled → asymmetric bleeding.
+                # POR QUÉ: 3,510 TURBO_BE exits with net PnL -6.61 (73% were losses).
+                #   BUY side: 1,999 exits → PnL -5.21 | SELL side: 1,537 exits → PnL -1.40
+                #   Both sides net negative → system is better off letting trails handle exits.
+                # PARA QUÉ: Let TRAIL_STAGE_3_TIGHT handle profitable exits (83.7% WR, +8.26 PnL).
+                # if pos_horizon == "SCALPING":
+                #     turbo_threshold_pct = tp_target_pct * 0.75
+                #     min_threshold = fee_buffer * 100 * 1.2
+                #     turbo_threshold_pct = max(turbo_threshold_pct, min_threshold)
+                # else:
+                #     turbo_threshold_pct = fee_buffer * 100 * 4.0
+                #
+                # if peak_pnl >= turbo_threshold_pct:
+                #     turbo_be_price = entry_price * (1 - fee_buffer - 0.0001)
+                #     if current_price > turbo_be_price:
+                #         print(f"⚡ [SHORT {pos_horizon}] TURBO-BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}%")
+                #         pos['exit_pending_time'] = time.time()
+                #         stop_signals.append(
+                #             SignalEvent(
+                #                 strategy_id="TURBO_BE", symbol=symbol, datetime=now,
+                #                 signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon,
+                #             )
+                #         )
+                #         self.record_trade_result(True, unrealized_pnl_pct)
+                #         continue
 
                 progress = peak_pnl / tp_target_pct if tp_target_pct > 0 else 0
 
@@ -2703,6 +3113,8 @@ class RiskManager:
                     print(
                         f"🛡️/💰 [SHORT {pos_horizon}] {trail_name} {symbol}! Triggered at {current_price:.4f} (Peak: +{peak_pnl:.2f}%)"
                     )
+                    exit_votes.append({"vote": "EXIT", "reason": f"TRAILING_STOP: {trail_name}"})
+                    pos['exit_pending_time'] = time.time()
                     stop_signals.append(
                         SignalEvent(
                             strategy_id=trail_name,
@@ -2711,16 +3123,25 @@ class RiskManager:
                             signal_type=SignalType.EXIT,
                             strength=1.0,
                             horizon=pos_horizon,
+                            metadata={"exit_reason": f"TRAILING_STOP:{trail_name}", "dollar_size": abs(qty) * current_price}
                         )
                     )
                     self.record_trade_result(True, unrealized_pnl_pct)
+                    has_exit = True
+                    pos['_exit_votes'] = exit_votes
+                    pos['_hold_votes'] = hold_votes
                     continue
+                else:
+                    if trail_name:
+                        hold_votes.append({"vote": "HOLD", "reason": f"TRAILING_STOP_SAFE: {trail_name}"})
 
                 # 4. Initial Hard Stop
                 if current_price > (entry_price * (1 + sl_pct)):
                     print(
                         f"🛑 SHORT HARD SL [{pos_horizon}] {symbol}! {unrealized_pnl_pct:.2f}%"
                     )
+                    exit_votes.append({"vote": "EXIT", "reason": f"HARD_SL: {unrealized_pnl_pct:.2f}%"})
+                    pos['exit_pending_time'] = time.time()
                     stop_signals.append(
                         SignalEvent(
                             strategy_id="HARD_SL",
@@ -2729,10 +3150,20 @@ class RiskManager:
                             signal_type=SignalType.EXIT,
                             strength=1.0,
                             horizon=pos_horizon,
+                            metadata={"exit_reason": f"HARD_SL: {unrealized_pnl_pct:.2f}%", "dollar_size": abs(qty) * current_price}
                         )
                     )
                     self.record_trade_result(False, unrealized_pnl_pct)
+                    has_exit = True
+                    pos['_exit_votes'] = exit_votes
+                    pos['_hold_votes'] = hold_votes
                     continue
+                else:
+                    hold_votes.append({"vote": "HOLD", "reason": f"SL_SAFE: req -{sl_pct*100:.2f}%, curr {unrealized_pnl_pct:.2f}%"})
+
+            if not has_exit:
+                pos['_exit_votes'] = exit_votes
+                pos['_hold_votes'] = hold_votes
 
         # ═══════════════════════════════════════════════════════════════
         # FORENSIC-V44 FIX #3: ENRICH EXIT SIGNALS WITH METADATA
@@ -2900,10 +3331,15 @@ class RiskManager:
         max_var_limit = total_equity * var_pct
 
         # 2. Estimate Current VaR using MARGIN (not notional)
-        # FORENSIC-V24: Use margin-based exposure to match equity-based limit
+        # FORENSIC FIX #12: Use virtual_ledger for GROSS exposure (not netted aggregate).
+        # aggregate positions.items() underestimates when LONG + SHORT partially cancel.
         current_margin_exposure = 0.0
-        for s, pos in self.portfolio.positions.items():
-            notional = abs(pos["quantity"] * pos["current_price"])
+        for v_key, pos in self.portfolio.virtual_ledger.items():
+            qty = pos.get('quantity', 0)
+            if abs(qty) < 1e-8:
+                continue
+            price = pos.get('current_price', pos.get('avg_price', 0))
+            notional = abs(qty * price)
             lev = pos.get("leverage", getattr(Config, "BINANCE_LEVERAGE", 10)) or 10
             current_margin_exposure += notional / lev
 
@@ -2969,7 +3405,7 @@ class RiskManager:
         
         merit = stats_strat.get('merit_factor', 1.0)
         
-        if (stats_setup and stats_setup["win_rate"] >= 0.60) or merit > 1.2:
+        if (stats_setup and stats_setup['win_rate'] >= Config.Risk.RISK_THRESHOLDS['merit_win_rate_min']) or merit > Config.Risk.RISK_THRESHOLDS['merit_score_high']:
             # God Mode Unlocking: Unbounded for ELITE regimes with > 60% HitRate to fulfill exponential compound goal.
             logger.info(
                 f"🧬 [MERIT] Elite Strategy {strategy_id} / Setup {setup_type} unlocked! Capacity: UNBOUNDED"
@@ -2998,7 +3434,7 @@ class RiskManager:
         final_mult = (merit_factor * 0.7) + (wr_setup * 2.0 * 0.3) # WR 0.5 -> 1.0 multiplier
         
         # Safety Clamping per User Growth Target
-        if merit_factor > 1.5:
+        if merit_factor > Config.Risk.RISK_THRESHOLDS['merit_factor_expansion']:
              logger.info(f"🚀 [GOLDEN-ID] Strategy {strategy_id} is DOMINATING. Applying 1.5x Aggression.")
              final_mult = max(final_mult, 1.5)
 

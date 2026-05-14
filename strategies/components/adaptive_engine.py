@@ -25,7 +25,7 @@ class AdaptiveMLParameterEngine:
         # FORENSIC-1: Correcting Scalping bounds.
         # Scalping needs TP around 0.4% (0.4) and SL around 0.2% (0.2)
         'scalping': {
-            'lookahead':       (3.0, 10.0),
+            'lookahead':       (15.0, 30.0),  # FIXED: 3-10 min = pure noise → 15-30 min for meaningful prediction
             'label_threshold': (0.0004, 0.0020),
             'retrain_interval':(90.0, 360.0),
             'dd_stress_limit': (0.40, 0.70),

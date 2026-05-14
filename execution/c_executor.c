@@ -1529,7 +1529,7 @@ struct __pyx_opt_args_10c_executor_17FastBinanceSigner_build_fapi_order;
 /* "c_executor.pyx":35
  *         return signature
  * 
- *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False):             # <<<<<<<<<<<<<<
+ *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False, str positionSide="BOTH"):             # <<<<<<<<<<<<<<
  *         """
  *         Constructs the exact HTTP query and headers for Binance Futures (fapi) order endpoint.
 */
@@ -1538,6 +1538,7 @@ struct __pyx_opt_args_10c_executor_17FastBinanceSigner_build_fapi_order {
   double price;
   PyObject *timeInForce;
   int reduceOnly;
+  PyObject *positionSide;
 };
 
 /* "c_executor.pyx":15
@@ -2453,7 +2454,7 @@ static const char __pyx_k_api_key_secret_key[] = "api_key, secret_key";
 /* #### Code section: decls ### */
 static int __pyx_pf_10c_executor_17FastBinanceSigner___init__(struct __pyx_obj_10c_executor_FastBinanceSigner *__pyx_v_self, PyObject *__pyx_v_api_key, PyObject *__pyx_v_secret_key); /* proto */
 static PyObject *__pyx_pf_10c_executor_17FastBinanceSigner_2sign_query(struct __pyx_obj_10c_executor_FastBinanceSigner *__pyx_v_self, PyObject *__pyx_v_query_string); /* proto */
-static PyObject *__pyx_pf_10c_executor_17FastBinanceSigner_4build_fapi_order(struct __pyx_obj_10c_executor_FastBinanceSigner *__pyx_v_self, PyObject *__pyx_v_symbol, PyObject *__pyx_v_side, PyObject *__pyx_v_order_type, double __pyx_v_quantity, double __pyx_v_price, PyObject *__pyx_v_timeInForce, int __pyx_v_reduceOnly); /* proto */
+static PyObject *__pyx_pf_10c_executor_17FastBinanceSigner_4build_fapi_order(struct __pyx_obj_10c_executor_FastBinanceSigner *__pyx_v_self, PyObject *__pyx_v_symbol, PyObject *__pyx_v_side, PyObject *__pyx_v_order_type, double __pyx_v_quantity, double __pyx_v_price, PyObject *__pyx_v_timeInForce, int __pyx_v_reduceOnly, PyObject *__pyx_v_positionSide); /* proto */
 static PyObject *__pyx_pf_10c_executor_17FastBinanceSigner_6__reduce_cython__(struct __pyx_obj_10c_executor_FastBinanceSigner *__pyx_v_self); /* proto */
 static PyObject *__pyx_pf_10c_executor_17FastBinanceSigner_8__setstate_cython__(struct __pyx_obj_10c_executor_FastBinanceSigner *__pyx_v_self, PyObject *__pyx_v___pyx_state); /* proto */
 static PyObject *__pyx_pf_10c_executor_fast_json_dump(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_data); /* proto */
@@ -2486,7 +2487,7 @@ typedef struct {
   __Pyx_CachedCFunction __pyx_umethod_PyDict_Type_values;
   PyObject *__pyx_tuple[1];
   PyObject *__pyx_codeobj_tab[6];
-  PyObject *__pyx_string_tab[103];
+  PyObject *__pyx_string_tab[106];
   PyObject *__pyx_number_tab[3];
 /* #### Code section: module_state_contents ### */
 /* CommonTypesMetaclass.module_state_decls */
@@ -2546,91 +2547,94 @@ static __pyx_mstatetype * const __pyx_mstate_global = &__pyx_mstate_global_stati
 #define __pyx_kp_u_gc __pyx_string_tab[15]
 #define __pyx_kp_u_isenabled __pyx_string_tab[16]
 #define __pyx_kp_u_newOrderRespType_RESULT __pyx_string_tab[17]
-#define __pyx_kp_u_price __pyx_string_tab[18]
-#define __pyx_kp_u_quantity __pyx_string_tab[19]
-#define __pyx_kp_u_recvWindow_60000 __pyx_string_tab[20]
-#define __pyx_kp_u_reduceOnly_true __pyx_string_tab[21]
-#define __pyx_kp_u_side __pyx_string_tab[22]
-#define __pyx_kp_u_signature __pyx_string_tab[23]
-#define __pyx_kp_u_stringsource __pyx_string_tab[24]
-#define __pyx_kp_u_symbol __pyx_string_tab[25]
-#define __pyx_kp_u_timeInForce __pyx_string_tab[26]
-#define __pyx_kp_u_timestamp __pyx_string_tab[27]
-#define __pyx_kp_u_type __pyx_string_tab[28]
-#define __pyx_n_u_FastBinanceSigner __pyx_string_tab[29]
-#define __pyx_n_u_FastBinanceSigner___reduce_cytho __pyx_string_tab[30]
-#define __pyx_n_u_FastBinanceSigner___setstate_cyt __pyx_string_tab[31]
-#define __pyx_n_u_FastBinanceSigner_build_fapi_ord __pyx_string_tab[32]
-#define __pyx_n_u_FastBinanceSigner_sign_query __pyx_string_tab[33]
-#define __pyx_n_u_GTC __pyx_string_tab[34]
-#define __pyx_n_u_LIMIT __pyx_string_tab[35]
-#define __pyx_n_u_Pyx_PyDict_NextRef __pyx_string_tab[36]
-#define __pyx_n_u_STOP __pyx_string_tab[37]
-#define __pyx_n_u_TAKE_PROFIT __pyx_string_tab[38]
-#define __pyx_n_u_api_key __pyx_string_tab[39]
-#define __pyx_n_u_asyncio_coroutines __pyx_string_tab[40]
-#define __pyx_n_u_build_fapi_order __pyx_string_tab[41]
-#define __pyx_n_u_c_executor __pyx_string_tab[42]
-#define __pyx_n_u_cline_in_traceback __pyx_string_tab[43]
-#define __pyx_n_u_data __pyx_string_tab[44]
-#define __pyx_n_u_dict __pyx_string_tab[45]
-#define __pyx_n_u_dict_2 __pyx_string_tab[46]
-#define __pyx_n_u_dumps __pyx_string_tab[47]
-#define __pyx_n_u_fast_json_dump __pyx_string_tab[48]
-#define __pyx_n_u_func __pyx_string_tab[49]
-#define __pyx_n_u_getstate __pyx_string_tab[50]
-#define __pyx_n_u_hashlib __pyx_string_tab[51]
-#define __pyx_n_u_hexdigest __pyx_string_tab[52]
-#define __pyx_n_u_hmac __pyx_string_tab[53]
-#define __pyx_n_u_is_coroutine __pyx_string_tab[54]
-#define __pyx_n_u_items __pyx_string_tab[55]
-#define __pyx_n_u_json __pyx_string_tab[56]
-#define __pyx_n_u_main __pyx_string_tab[57]
-#define __pyx_n_u_module __pyx_string_tab[58]
-#define __pyx_n_u_name __pyx_string_tab[59]
-#define __pyx_n_u_new __pyx_string_tab[60]
-#define __pyx_n_u_new_2 __pyx_string_tab[61]
-#define __pyx_n_u_order_type __pyx_string_tab[62]
-#define __pyx_n_u_orjson __pyx_string_tab[63]
-#define __pyx_n_u_pop __pyx_string_tab[64]
-#define __pyx_n_u_price_2 __pyx_string_tab[65]
-#define __pyx_n_u_pyx_checksum __pyx_string_tab[66]
-#define __pyx_n_u_pyx_result __pyx_string_tab[67]
-#define __pyx_n_u_pyx_state __pyx_string_tab[68]
-#define __pyx_n_u_pyx_type __pyx_string_tab[69]
-#define __pyx_n_u_pyx_unpickle_FastBinanceSigner __pyx_string_tab[70]
-#define __pyx_n_u_pyx_vtable __pyx_string_tab[71]
-#define __pyx_n_u_qualname __pyx_string_tab[72]
-#define __pyx_n_u_quantity_2 __pyx_string_tab[73]
-#define __pyx_n_u_query_string __pyx_string_tab[74]
-#define __pyx_n_u_reduce __pyx_string_tab[75]
-#define __pyx_n_u_reduceOnly __pyx_string_tab[76]
-#define __pyx_n_u_reduce_cython __pyx_string_tab[77]
-#define __pyx_n_u_reduce_ex __pyx_string_tab[78]
-#define __pyx_n_u_rstrip __pyx_string_tab[79]
-#define __pyx_n_u_secret_key __pyx_string_tab[80]
-#define __pyx_n_u_self __pyx_string_tab[81]
-#define __pyx_n_u_set_name __pyx_string_tab[82]
-#define __pyx_n_u_setdefault __pyx_string_tab[83]
-#define __pyx_n_u_setstate __pyx_string_tab[84]
-#define __pyx_n_u_setstate_cython __pyx_string_tab[85]
-#define __pyx_n_u_sha256 __pyx_string_tab[86]
-#define __pyx_n_u_side_2 __pyx_string_tab[87]
-#define __pyx_n_u_sign_query __pyx_string_tab[88]
-#define __pyx_n_u_state __pyx_string_tab[89]
-#define __pyx_n_u_symbol_2 __pyx_string_tab[90]
-#define __pyx_n_u_test __pyx_string_tab[91]
-#define __pyx_n_u_time __pyx_string_tab[92]
-#define __pyx_n_u_timeInForce_2 __pyx_string_tab[93]
-#define __pyx_n_u_update __pyx_string_tab[94]
-#define __pyx_n_u_use_setstate __pyx_string_tab[95]
-#define __pyx_n_u_values __pyx_string_tab[96]
-#define __pyx_kp_b_iso88591_6_q __pyx_string_tab[97]
-#define __pyx_kp_b_iso88591_A_WAQ_T_Qd_G8S_q __pyx_string_tab[98]
-#define __pyx_kp_b_iso88591_T_4q_G1F_a_vWE_Q_q_t9G5_4_7_q_2 __pyx_string_tab[99]
-#define __pyx_kp_b_iso88591_k_l_A_A_X_X_Y_3at5_2Q_1_Qa_1A_1 __pyx_string_tab[100]
-#define __pyx_kp_b_iso88591_q_0_kQR_HAQ_7_314H_VW_1 __pyx_string_tab[101]
-#define __pyx_kp_b_iso88591_q_a __pyx_string_tab[102]
+#define __pyx_kp_u_positionSide __pyx_string_tab[18]
+#define __pyx_kp_u_price __pyx_string_tab[19]
+#define __pyx_kp_u_quantity __pyx_string_tab[20]
+#define __pyx_kp_u_recvWindow_60000 __pyx_string_tab[21]
+#define __pyx_kp_u_reduceOnly_true __pyx_string_tab[22]
+#define __pyx_kp_u_side __pyx_string_tab[23]
+#define __pyx_kp_u_signature __pyx_string_tab[24]
+#define __pyx_kp_u_stringsource __pyx_string_tab[25]
+#define __pyx_kp_u_symbol __pyx_string_tab[26]
+#define __pyx_kp_u_timeInForce __pyx_string_tab[27]
+#define __pyx_kp_u_timestamp __pyx_string_tab[28]
+#define __pyx_kp_u_type __pyx_string_tab[29]
+#define __pyx_n_u_BOTH __pyx_string_tab[30]
+#define __pyx_n_u_FastBinanceSigner __pyx_string_tab[31]
+#define __pyx_n_u_FastBinanceSigner___reduce_cytho __pyx_string_tab[32]
+#define __pyx_n_u_FastBinanceSigner___setstate_cyt __pyx_string_tab[33]
+#define __pyx_n_u_FastBinanceSigner_build_fapi_ord __pyx_string_tab[34]
+#define __pyx_n_u_FastBinanceSigner_sign_query __pyx_string_tab[35]
+#define __pyx_n_u_GTC __pyx_string_tab[36]
+#define __pyx_n_u_LIMIT __pyx_string_tab[37]
+#define __pyx_n_u_Pyx_PyDict_NextRef __pyx_string_tab[38]
+#define __pyx_n_u_STOP __pyx_string_tab[39]
+#define __pyx_n_u_TAKE_PROFIT __pyx_string_tab[40]
+#define __pyx_n_u_api_key __pyx_string_tab[41]
+#define __pyx_n_u_asyncio_coroutines __pyx_string_tab[42]
+#define __pyx_n_u_build_fapi_order __pyx_string_tab[43]
+#define __pyx_n_u_c_executor __pyx_string_tab[44]
+#define __pyx_n_u_cline_in_traceback __pyx_string_tab[45]
+#define __pyx_n_u_data __pyx_string_tab[46]
+#define __pyx_n_u_dict __pyx_string_tab[47]
+#define __pyx_n_u_dict_2 __pyx_string_tab[48]
+#define __pyx_n_u_dumps __pyx_string_tab[49]
+#define __pyx_n_u_fast_json_dump __pyx_string_tab[50]
+#define __pyx_n_u_func __pyx_string_tab[51]
+#define __pyx_n_u_getstate __pyx_string_tab[52]
+#define __pyx_n_u_hashlib __pyx_string_tab[53]
+#define __pyx_n_u_hexdigest __pyx_string_tab[54]
+#define __pyx_n_u_hmac __pyx_string_tab[55]
+#define __pyx_n_u_is_coroutine __pyx_string_tab[56]
+#define __pyx_n_u_items __pyx_string_tab[57]
+#define __pyx_n_u_json __pyx_string_tab[58]
+#define __pyx_n_u_main __pyx_string_tab[59]
+#define __pyx_n_u_module __pyx_string_tab[60]
+#define __pyx_n_u_name __pyx_string_tab[61]
+#define __pyx_n_u_new __pyx_string_tab[62]
+#define __pyx_n_u_new_2 __pyx_string_tab[63]
+#define __pyx_n_u_order_type __pyx_string_tab[64]
+#define __pyx_n_u_orjson __pyx_string_tab[65]
+#define __pyx_n_u_pop __pyx_string_tab[66]
+#define __pyx_n_u_positionSide_2 __pyx_string_tab[67]
+#define __pyx_n_u_price_2 __pyx_string_tab[68]
+#define __pyx_n_u_pyx_checksum __pyx_string_tab[69]
+#define __pyx_n_u_pyx_result __pyx_string_tab[70]
+#define __pyx_n_u_pyx_state __pyx_string_tab[71]
+#define __pyx_n_u_pyx_type __pyx_string_tab[72]
+#define __pyx_n_u_pyx_unpickle_FastBinanceSigner __pyx_string_tab[73]
+#define __pyx_n_u_pyx_vtable __pyx_string_tab[74]
+#define __pyx_n_u_qualname __pyx_string_tab[75]
+#define __pyx_n_u_quantity_2 __pyx_string_tab[76]
+#define __pyx_n_u_query_string __pyx_string_tab[77]
+#define __pyx_n_u_reduce __pyx_string_tab[78]
+#define __pyx_n_u_reduceOnly __pyx_string_tab[79]
+#define __pyx_n_u_reduce_cython __pyx_string_tab[80]
+#define __pyx_n_u_reduce_ex __pyx_string_tab[81]
+#define __pyx_n_u_rstrip __pyx_string_tab[82]
+#define __pyx_n_u_secret_key __pyx_string_tab[83]
+#define __pyx_n_u_self __pyx_string_tab[84]
+#define __pyx_n_u_set_name __pyx_string_tab[85]
+#define __pyx_n_u_setdefault __pyx_string_tab[86]
+#define __pyx_n_u_setstate __pyx_string_tab[87]
+#define __pyx_n_u_setstate_cython __pyx_string_tab[88]
+#define __pyx_n_u_sha256 __pyx_string_tab[89]
+#define __pyx_n_u_side_2 __pyx_string_tab[90]
+#define __pyx_n_u_sign_query __pyx_string_tab[91]
+#define __pyx_n_u_state __pyx_string_tab[92]
+#define __pyx_n_u_symbol_2 __pyx_string_tab[93]
+#define __pyx_n_u_test __pyx_string_tab[94]
+#define __pyx_n_u_time __pyx_string_tab[95]
+#define __pyx_n_u_timeInForce_2 __pyx_string_tab[96]
+#define __pyx_n_u_update __pyx_string_tab[97]
+#define __pyx_n_u_use_setstate __pyx_string_tab[98]
+#define __pyx_n_u_values __pyx_string_tab[99]
+#define __pyx_kp_b_iso88591_6_q __pyx_string_tab[100]
+#define __pyx_kp_b_iso88591_A_WAQ_T_Qd_G8S_q __pyx_string_tab[101]
+#define __pyx_kp_b_iso88591_T_4q_G1F_a_vWE_Q_q_t9G5_4_7_q_2 __pyx_string_tab[102]
+#define __pyx_kp_b_iso88591_k_l_A_A_X_X_p_p_q_3at5_2Q_1_Qa __pyx_string_tab[103]
+#define __pyx_kp_b_iso88591_q_0_kQR_HAQ_7_314H_VW_1 __pyx_string_tab[104]
+#define __pyx_kp_b_iso88591_q_a __pyx_string_tab[105]
 #define __pyx_float_0_0 __pyx_number_tab[0]
 #define __pyx_int_1000 __pyx_number_tab[1]
 #define __pyx_int_209022941 __pyx_number_tab[2]
@@ -2652,7 +2656,7 @@ static CYTHON_SMALL_CODE int __pyx_m_clear(PyObject *m) {
   Py_CLEAR(clear_module_state->__pyx_type_10c_executor_FastBinanceSigner);
   for (int i=0; i<1; ++i) { Py_CLEAR(clear_module_state->__pyx_tuple[i]); }
   for (int i=0; i<6; ++i) { Py_CLEAR(clear_module_state->__pyx_codeobj_tab[i]); }
-  for (int i=0; i<103; ++i) { Py_CLEAR(clear_module_state->__pyx_string_tab[i]); }
+  for (int i=0; i<106; ++i) { Py_CLEAR(clear_module_state->__pyx_string_tab[i]); }
   for (int i=0; i<3; ++i) { Py_CLEAR(clear_module_state->__pyx_number_tab[i]); }
 /* #### Code section: module_state_clear_contents ### */
 /* CommonTypesMetaclass.module_state_clear */
@@ -2680,7 +2684,7 @@ static CYTHON_SMALL_CODE int __pyx_m_traverse(PyObject *m, visitproc visit, void
   Py_VISIT(traverse_module_state->__pyx_type_10c_executor_FastBinanceSigner);
   for (int i=0; i<1; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_tuple[i]); }
   for (int i=0; i<6; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_codeobj_tab[i]); }
-  for (int i=0; i<103; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_string_tab[i]); }
+  for (int i=0; i<106; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_string_tab[i]); }
   for (int i=0; i<3; ++i) { __Pyx_VISIT_CONST(traverse_module_state->__pyx_number_tab[i]); }
 /* #### Code section: module_state_traverse_contents ### */
 /* CommonTypesMetaclass.module_state_traverse */
@@ -3020,7 +3024,7 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_sign_query(struct __py
  *         cdef str signature = hmac.new(self.secret_key, query_bytes, hashlib.sha256).hexdigest()
  *         return signature             # <<<<<<<<<<<<<<
  * 
- *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False):
+ *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False, str positionSide="BOTH"):
 */
   __Pyx_XDECREF(__pyx_r);
   __Pyx_INCREF(__pyx_v_signature);
@@ -3179,7 +3183,7 @@ static PyObject *__pyx_pf_10c_executor_17FastBinanceSigner_2sign_query(struct __
 /* "c_executor.pyx":35
  *         return signature
  * 
- *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False):             # <<<<<<<<<<<<<<
+ *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False, str positionSide="BOTH"):             # <<<<<<<<<<<<<<
  *         """
  *         Constructs the exact HTTP query and headers for Binance Futures (fapi) order endpoint.
 */
@@ -3195,6 +3199,7 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
   double __pyx_v_price = ((double)0.0);
   PyObject *__pyx_v_timeInForce = ((PyObject*)__pyx_mstate_global->__pyx_n_u_GTC);
   int __pyx_v_reduceOnly = ((int)0);
+  PyObject *__pyx_v_positionSide = ((PyObject*)__pyx_mstate_global->__pyx_n_u_BOTH);
   PY_LONG_LONG __pyx_v_timestamp;
   PyObject *__pyx_v_params = 0;
   PyObject *__pyx_v_query_string = 0;
@@ -3214,10 +3219,11 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
   PY_LONG_LONG __pyx_t_9;
   PyObject *__pyx_t_10 = NULL;
   PyObject *__pyx_t_11 = NULL;
-  int __pyx_t_12;
+  PyObject *__pyx_t_12 = NULL;
   int __pyx_t_13;
   int __pyx_t_14;
-  PyObject *__pyx_t_15[3];
+  int __pyx_t_15;
+  PyObject *__pyx_t_16[3];
   int __pyx_lineno = 0;
   const char *__pyx_filename = NULL;
   int __pyx_clineno = 0;
@@ -3229,6 +3235,9 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
         __pyx_v_timeInForce = __pyx_optional_args->timeInForce;
         if (__pyx_optional_args->__pyx_n > 2) {
           __pyx_v_reduceOnly = __pyx_optional_args->reduceOnly;
+          if (__pyx_optional_args->__pyx_n > 3) {
+            __pyx_v_positionSide = __pyx_optional_args->positionSide;
+          }
         }
       }
     }
@@ -3275,8 +3284,8 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
         }
         #endif
         {
-          PyObject *__pyx_callargs[8] = {__pyx_t_3, __pyx_v_symbol, __pyx_v_side, __pyx_v_order_type, __pyx_t_5, __pyx_t_6, __pyx_v_timeInForce, __pyx_t_7};
-          __pyx_t_2 = __Pyx_PyObject_FastCall((PyObject*)__pyx_t_4, __pyx_callargs+__pyx_t_8, (8-__pyx_t_8) | (__pyx_t_8*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
+          PyObject *__pyx_callargs[9] = {__pyx_t_3, __pyx_v_symbol, __pyx_v_side, __pyx_v_order_type, __pyx_t_5, __pyx_t_6, __pyx_v_timeInForce, __pyx_t_7, __pyx_v_positionSide};
+          __pyx_t_2 = __Pyx_PyObject_FastCall((PyObject*)__pyx_t_4, __pyx_callargs+__pyx_t_8, (9-__pyx_t_8) | (__pyx_t_8*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
           __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
           __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
           __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
@@ -3352,7 +3361,7 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
  *         cdef list params = [
  *             f"symbol={symbol}",             # <<<<<<<<<<<<<<
  *             f"side={side}",
- *             f"type={order_type}",
+ *             f"positionSide={positionSide}",
 */
   __pyx_t_1 = __Pyx_PyUnicode_Unicode(__pyx_v_symbol); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 42, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
@@ -3364,8 +3373,8 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
  *         cdef list params = [
  *             f"symbol={symbol}",
  *             f"side={side}",             # <<<<<<<<<<<<<<
+ *             f"positionSide={positionSide}",
  *             f"type={order_type}",
- *             f"quantity={quantity:.6f}".rstrip('0').rstrip('.'),
 */
   __pyx_t_1 = __Pyx_PyUnicode_Unicode(__pyx_v_side); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 43, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
@@ -3376,66 +3385,79 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
   /* "c_executor.pyx":44
  *             f"symbol={symbol}",
  *             f"side={side}",
- *             f"type={order_type}",             # <<<<<<<<<<<<<<
+ *             f"positionSide={positionSide}",             # <<<<<<<<<<<<<<
+ *             f"type={order_type}",
  *             f"quantity={quantity:.6f}".rstrip('0').rstrip('.'),
- *             f"newOrderRespType=RESULT",
 */
-  __pyx_t_1 = __Pyx_PyUnicode_Unicode(__pyx_v_order_type); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 44, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_PyUnicode_Unicode(__pyx_v_positionSide); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 44, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
-  __pyx_t_4 = __Pyx_PyUnicode_Concat(__pyx_mstate_global->__pyx_kp_u_type, __pyx_t_1); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 44, __pyx_L1_error)
+  __pyx_t_4 = __Pyx_PyUnicode_Concat(__pyx_mstate_global->__pyx_kp_u_positionSide, __pyx_t_1); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 44, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
   /* "c_executor.pyx":45
  *             f"side={side}",
+ *             f"positionSide={positionSide}",
+ *             f"type={order_type}",             # <<<<<<<<<<<<<<
+ *             f"quantity={quantity:.6f}".rstrip('0').rstrip('.'),
+ *             f"newOrderRespType=RESULT",
+*/
+  __pyx_t_1 = __Pyx_PyUnicode_Unicode(__pyx_v_order_type); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 45, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_1);
+  __pyx_t_6 = __Pyx_PyUnicode_Concat(__pyx_mstate_global->__pyx_kp_u_type, __pyx_t_1); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 45, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_6);
+  __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+
+  /* "c_executor.pyx":46
+ *             f"positionSide={positionSide}",
  *             f"type={order_type}",
  *             f"quantity={quantity:.6f}".rstrip('0').rstrip('.'),             # <<<<<<<<<<<<<<
  *             f"newOrderRespType=RESULT",
  *             f"recvWindow=60000",
 */
-  __pyx_t_10 = PyFloat_FromDouble(__pyx_v_quantity); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 45, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_10);
-  __pyx_t_11 = __Pyx_PyObject_Format(__pyx_t_10, __pyx_mstate_global->__pyx_kp_u_6f); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 45, __pyx_L1_error)
+  __pyx_t_11 = PyFloat_FromDouble(__pyx_v_quantity); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 46, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_11);
-  __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-  __pyx_t_10 = __Pyx_PyUnicode_Concat(__pyx_mstate_global->__pyx_kp_u_quantity, __pyx_t_11); if (unlikely(!__pyx_t_10)) __PYX_ERR(0, 45, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_10);
+  __pyx_t_12 = __Pyx_PyObject_Format(__pyx_t_11, __pyx_mstate_global->__pyx_kp_u_6f); if (unlikely(!__pyx_t_12)) __PYX_ERR(0, 46, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_12);
   __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
-  __pyx_t_3 = __pyx_t_10;
-  __Pyx_INCREF(__pyx_t_3);
+  __pyx_t_11 = __Pyx_PyUnicode_Concat(__pyx_mstate_global->__pyx_kp_u_quantity, __pyx_t_12); if (unlikely(!__pyx_t_11)) __PYX_ERR(0, 46, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_11);
+  __Pyx_DECREF(__pyx_t_12); __pyx_t_12 = 0;
+  __pyx_t_10 = __pyx_t_11;
+  __Pyx_INCREF(__pyx_t_10);
   __pyx_t_8 = 0;
   {
-    PyObject *__pyx_callargs[2] = {__pyx_t_3, __pyx_mstate_global->__pyx_kp_u_0};
-    __pyx_t_5 = __Pyx_PyObject_FastCallMethod((PyObject*)__pyx_mstate_global->__pyx_n_u_rstrip, __pyx_callargs+__pyx_t_8, (2-__pyx_t_8) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
-    __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
-    __Pyx_DECREF(__pyx_t_10); __pyx_t_10 = 0;
-    if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 45, __pyx_L1_error)
-    __Pyx_GOTREF(__pyx_t_5);
+    PyObject *__pyx_callargs[2] = {__pyx_t_10, __pyx_mstate_global->__pyx_kp_u_0};
+    __pyx_t_3 = __Pyx_PyObject_FastCallMethod((PyObject*)__pyx_mstate_global->__pyx_n_u_rstrip, __pyx_callargs+__pyx_t_8, (2-__pyx_t_8) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
+    __Pyx_XDECREF(__pyx_t_10); __pyx_t_10 = 0;
+    __Pyx_DECREF(__pyx_t_11); __pyx_t_11 = 0;
+    if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 46, __pyx_L1_error)
+    __Pyx_GOTREF(__pyx_t_3);
   }
-  __pyx_t_6 = __pyx_t_5;
-  __Pyx_INCREF(__pyx_t_6);
+  __pyx_t_5 = __pyx_t_3;
+  __Pyx_INCREF(__pyx_t_5);
   __pyx_t_8 = 0;
   {
-    PyObject *__pyx_callargs[2] = {__pyx_t_6, __pyx_mstate_global->__pyx_kp_u_};
+    PyObject *__pyx_callargs[2] = {__pyx_t_5, __pyx_mstate_global->__pyx_kp_u_};
     __pyx_t_1 = __Pyx_PyObject_FastCallMethod((PyObject*)__pyx_mstate_global->__pyx_n_u_rstrip, __pyx_callargs+__pyx_t_8, (2-__pyx_t_8) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
-    __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
-    __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-    if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 45, __pyx_L1_error)
+    __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
+    __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
+    if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 46, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_1);
   }
 
-  /* "c_executor.pyx":48
+  /* "c_executor.pyx":49
  *             f"newOrderRespType=RESULT",
  *             f"recvWindow=60000",
  *             f"timestamp={timestamp}"             # <<<<<<<<<<<<<<
  *         ]
  * 
 */
-  __pyx_t_5 = __Pyx_PyUnicode_From_PY_LONG_LONG(__pyx_v_timestamp, 0, ' ', 'd'); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 48, __pyx_L1_error)
+  __pyx_t_3 = __Pyx_PyUnicode_From_PY_LONG_LONG(__pyx_v_timestamp, 0, ' ', 'd'); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 49, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_3);
+  __pyx_t_5 = __Pyx_PyUnicode_Concat(__pyx_mstate_global->__pyx_kp_u_timestamp, __pyx_t_3); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 49, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_6 = __Pyx_PyUnicode_Concat(__pyx_mstate_global->__pyx_kp_u_timestamp, __pyx_t_5); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 48, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_6);
-  __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+  __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
 
   /* "c_executor.pyx":41
  *         """
@@ -3444,112 +3466,115 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
  *             f"symbol={symbol}",
  *             f"side={side}",
 */
-  __pyx_t_5 = PyList_New(7); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 41, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_5);
+  __pyx_t_3 = PyList_New(8); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 41, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_3);
   __Pyx_GIVEREF(__pyx_t_7);
-  if (__Pyx_PyList_SET_ITEM(__pyx_t_5, 0, __pyx_t_7) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
+  if (__Pyx_PyList_SET_ITEM(__pyx_t_3, 0, __pyx_t_7) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
   __Pyx_GIVEREF(__pyx_t_2);
-  if (__Pyx_PyList_SET_ITEM(__pyx_t_5, 1, __pyx_t_2) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
+  if (__Pyx_PyList_SET_ITEM(__pyx_t_3, 1, __pyx_t_2) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
   __Pyx_GIVEREF(__pyx_t_4);
-  if (__Pyx_PyList_SET_ITEM(__pyx_t_5, 2, __pyx_t_4) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
+  if (__Pyx_PyList_SET_ITEM(__pyx_t_3, 2, __pyx_t_4) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
+  __Pyx_GIVEREF(__pyx_t_6);
+  if (__Pyx_PyList_SET_ITEM(__pyx_t_3, 3, __pyx_t_6) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
   __Pyx_GIVEREF(__pyx_t_1);
-  if (__Pyx_PyList_SET_ITEM(__pyx_t_5, 3, __pyx_t_1) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
+  if (__Pyx_PyList_SET_ITEM(__pyx_t_3, 4, __pyx_t_1) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
   __Pyx_INCREF(__pyx_mstate_global->__pyx_kp_u_newOrderRespType_RESULT);
   __Pyx_GIVEREF(__pyx_mstate_global->__pyx_kp_u_newOrderRespType_RESULT);
-  if (__Pyx_PyList_SET_ITEM(__pyx_t_5, 4, __pyx_mstate_global->__pyx_kp_u_newOrderRespType_RESULT) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
+  if (__Pyx_PyList_SET_ITEM(__pyx_t_3, 5, __pyx_mstate_global->__pyx_kp_u_newOrderRespType_RESULT) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
   __Pyx_INCREF(__pyx_mstate_global->__pyx_kp_u_recvWindow_60000);
   __Pyx_GIVEREF(__pyx_mstate_global->__pyx_kp_u_recvWindow_60000);
-  if (__Pyx_PyList_SET_ITEM(__pyx_t_5, 5, __pyx_mstate_global->__pyx_kp_u_recvWindow_60000) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
-  __Pyx_GIVEREF(__pyx_t_6);
-  if (__Pyx_PyList_SET_ITEM(__pyx_t_5, 6, __pyx_t_6) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
+  if (__Pyx_PyList_SET_ITEM(__pyx_t_3, 6, __pyx_mstate_global->__pyx_kp_u_recvWindow_60000) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
+  __Pyx_GIVEREF(__pyx_t_5);
+  if (__Pyx_PyList_SET_ITEM(__pyx_t_3, 7, __pyx_t_5) != (0)) __PYX_ERR(0, 41, __pyx_L1_error);
   __pyx_t_7 = 0;
   __pyx_t_2 = 0;
   __pyx_t_4 = 0;
-  __pyx_t_1 = 0;
   __pyx_t_6 = 0;
-  __pyx_v_params = ((PyObject*)__pyx_t_5);
+  __pyx_t_1 = 0;
   __pyx_t_5 = 0;
+  __pyx_v_params = ((PyObject*)__pyx_t_3);
+  __pyx_t_3 = 0;
 
-  /* "c_executor.pyx":51
+  /* "c_executor.pyx":52
  *         ]
  * 
  *         if order_type == "LIMIT" or order_type == "STOP" or order_type == "TAKE_PROFIT":             # <<<<<<<<<<<<<<
  *             params.append(f"price={price:.6f}".rstrip('0').rstrip('.'))
  *             params.append(f"timeInForce={timeInForce}")
 */
-  __pyx_t_13 = (__Pyx_PyUnicode_Equals(__pyx_v_order_type, __pyx_mstate_global->__pyx_n_u_LIMIT, Py_EQ)); if (unlikely((__pyx_t_13 < 0))) __PYX_ERR(0, 51, __pyx_L1_error)
-  if (!__pyx_t_13) {
+  __pyx_t_14 = (__Pyx_PyUnicode_Equals(__pyx_v_order_type, __pyx_mstate_global->__pyx_n_u_LIMIT, Py_EQ)); if (unlikely((__pyx_t_14 < 0))) __PYX_ERR(0, 52, __pyx_L1_error)
+  if (!__pyx_t_14) {
   } else {
-    __pyx_t_12 = __pyx_t_13;
+    __pyx_t_13 = __pyx_t_14;
     goto __pyx_L4_bool_binop_done;
   }
-  __pyx_t_13 = (__Pyx_PyUnicode_Equals(__pyx_v_order_type, __pyx_mstate_global->__pyx_n_u_STOP, Py_EQ)); if (unlikely((__pyx_t_13 < 0))) __PYX_ERR(0, 51, __pyx_L1_error)
-  if (!__pyx_t_13) {
+  __pyx_t_14 = (__Pyx_PyUnicode_Equals(__pyx_v_order_type, __pyx_mstate_global->__pyx_n_u_STOP, Py_EQ)); if (unlikely((__pyx_t_14 < 0))) __PYX_ERR(0, 52, __pyx_L1_error)
+  if (!__pyx_t_14) {
   } else {
-    __pyx_t_12 = __pyx_t_13;
+    __pyx_t_13 = __pyx_t_14;
     goto __pyx_L4_bool_binop_done;
   }
-  __pyx_t_13 = (__Pyx_PyUnicode_Equals(__pyx_v_order_type, __pyx_mstate_global->__pyx_n_u_TAKE_PROFIT, Py_EQ)); if (unlikely((__pyx_t_13 < 0))) __PYX_ERR(0, 51, __pyx_L1_error)
-  __pyx_t_12 = __pyx_t_13;
+  __pyx_t_14 = (__Pyx_PyUnicode_Equals(__pyx_v_order_type, __pyx_mstate_global->__pyx_n_u_TAKE_PROFIT, Py_EQ)); if (unlikely((__pyx_t_14 < 0))) __PYX_ERR(0, 52, __pyx_L1_error)
+  __pyx_t_13 = __pyx_t_14;
   __pyx_L4_bool_binop_done:;
-  if (__pyx_t_12) {
+  if (__pyx_t_13) {
 
-    /* "c_executor.pyx":52
+    /* "c_executor.pyx":53
  * 
  *         if order_type == "LIMIT" or order_type == "STOP" or order_type == "TAKE_PROFIT":
  *             params.append(f"price={price:.6f}".rstrip('0').rstrip('.'))             # <<<<<<<<<<<<<<
  *             params.append(f"timeInForce={timeInForce}")
  * 
 */
-    __pyx_t_2 = PyFloat_FromDouble(__pyx_v_price); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 52, __pyx_L1_error)
+    __pyx_t_4 = PyFloat_FromDouble(__pyx_v_price); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 53, __pyx_L1_error)
+    __Pyx_GOTREF(__pyx_t_4);
+    __pyx_t_2 = __Pyx_PyObject_Format(__pyx_t_4, __pyx_mstate_global->__pyx_kp_u_6f); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 53, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_2);
-    __pyx_t_7 = __Pyx_PyObject_Format(__pyx_t_2, __pyx_mstate_global->__pyx_kp_u_6f); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 52, __pyx_L1_error)
-    __Pyx_GOTREF(__pyx_t_7);
+    __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+    __pyx_t_4 = __Pyx_PyUnicode_Concat(__pyx_mstate_global->__pyx_kp_u_price, __pyx_t_2); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 53, __pyx_L1_error)
+    __Pyx_GOTREF(__pyx_t_4);
     __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-    __pyx_t_2 = __Pyx_PyUnicode_Concat(__pyx_mstate_global->__pyx_kp_u_price, __pyx_t_7); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 52, __pyx_L1_error)
-    __Pyx_GOTREF(__pyx_t_2);
-    __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
-    __pyx_t_4 = __pyx_t_2;
-    __Pyx_INCREF(__pyx_t_4);
-    __pyx_t_8 = 0;
-    {
-      PyObject *__pyx_callargs[2] = {__pyx_t_4, __pyx_mstate_global->__pyx_kp_u_0};
-      __pyx_t_1 = __Pyx_PyObject_FastCallMethod((PyObject*)__pyx_mstate_global->__pyx_n_u_rstrip, __pyx_callargs+__pyx_t_8, (2-__pyx_t_8) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
-      __Pyx_XDECREF(__pyx_t_4); __pyx_t_4 = 0;
-      __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-      if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 52, __pyx_L1_error)
-      __Pyx_GOTREF(__pyx_t_1);
-    }
-    __pyx_t_6 = __pyx_t_1;
+    __pyx_t_6 = __pyx_t_4;
     __Pyx_INCREF(__pyx_t_6);
     __pyx_t_8 = 0;
     {
-      PyObject *__pyx_callargs[2] = {__pyx_t_6, __pyx_mstate_global->__pyx_kp_u_};
-      __pyx_t_5 = __Pyx_PyObject_FastCallMethod((PyObject*)__pyx_mstate_global->__pyx_n_u_rstrip, __pyx_callargs+__pyx_t_8, (2-__pyx_t_8) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
+      PyObject *__pyx_callargs[2] = {__pyx_t_6, __pyx_mstate_global->__pyx_kp_u_0};
+      __pyx_t_1 = __Pyx_PyObject_FastCallMethod((PyObject*)__pyx_mstate_global->__pyx_n_u_rstrip, __pyx_callargs+__pyx_t_8, (2-__pyx_t_8) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
       __Pyx_XDECREF(__pyx_t_6); __pyx_t_6 = 0;
-      __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-      if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 52, __pyx_L1_error)
-      __Pyx_GOTREF(__pyx_t_5);
+      __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+      if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 53, __pyx_L1_error)
+      __Pyx_GOTREF(__pyx_t_1);
     }
-    __pyx_t_14 = __Pyx_PyList_Append(__pyx_v_params, __pyx_t_5); if (unlikely(__pyx_t_14 == ((int)-1))) __PYX_ERR(0, 52, __pyx_L1_error)
-    __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+    __pyx_t_5 = __pyx_t_1;
+    __Pyx_INCREF(__pyx_t_5);
+    __pyx_t_8 = 0;
+    {
+      PyObject *__pyx_callargs[2] = {__pyx_t_5, __pyx_mstate_global->__pyx_kp_u_};
+      __pyx_t_3 = __Pyx_PyObject_FastCallMethod((PyObject*)__pyx_mstate_global->__pyx_n_u_rstrip, __pyx_callargs+__pyx_t_8, (2-__pyx_t_8) | (1*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
+      __Pyx_XDECREF(__pyx_t_5); __pyx_t_5 = 0;
+      __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+      if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 53, __pyx_L1_error)
+      __Pyx_GOTREF(__pyx_t_3);
+    }
+    __pyx_t_15 = __Pyx_PyList_Append(__pyx_v_params, __pyx_t_3); if (unlikely(__pyx_t_15 == ((int)-1))) __PYX_ERR(0, 53, __pyx_L1_error)
+    __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
 
-    /* "c_executor.pyx":53
+    /* "c_executor.pyx":54
  *         if order_type == "LIMIT" or order_type == "STOP" or order_type == "TAKE_PROFIT":
  *             params.append(f"price={price:.6f}".rstrip('0').rstrip('.'))
  *             params.append(f"timeInForce={timeInForce}")             # <<<<<<<<<<<<<<
  * 
  *         if reduceOnly:
 */
-    __pyx_t_5 = __Pyx_PyUnicode_Unicode(__pyx_v_timeInForce); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 53, __pyx_L1_error)
-    __Pyx_GOTREF(__pyx_t_5);
-    __pyx_t_1 = __Pyx_PyUnicode_Concat(__pyx_mstate_global->__pyx_kp_u_timeInForce, __pyx_t_5); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 53, __pyx_L1_error)
+    __pyx_t_3 = __Pyx_PyUnicode_Unicode(__pyx_v_timeInForce); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 54, __pyx_L1_error)
+    __Pyx_GOTREF(__pyx_t_3);
+    __pyx_t_1 = __Pyx_PyUnicode_Concat(__pyx_mstate_global->__pyx_kp_u_timeInForce, __pyx_t_3); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 54, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_1);
-    __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-    __pyx_t_14 = __Pyx_PyList_Append(__pyx_v_params, __pyx_t_1); if (unlikely(__pyx_t_14 == ((int)-1))) __PYX_ERR(0, 53, __pyx_L1_error)
+    __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
+    __pyx_t_15 = __Pyx_PyList_Append(__pyx_v_params, __pyx_t_1); if (unlikely(__pyx_t_15 == ((int)-1))) __PYX_ERR(0, 54, __pyx_L1_error)
     __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-    /* "c_executor.pyx":51
+    /* "c_executor.pyx":52
  *         ]
  * 
  *         if order_type == "LIMIT" or order_type == "STOP" or order_type == "TAKE_PROFIT":             # <<<<<<<<<<<<<<
@@ -3558,7 +3583,7 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
 */
   }
 
-  /* "c_executor.pyx":55
+  /* "c_executor.pyx":56
  *             params.append(f"timeInForce={timeInForce}")
  * 
  *         if reduceOnly:             # <<<<<<<<<<<<<<
@@ -3567,16 +3592,16 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
 */
   if (__pyx_v_reduceOnly) {
 
-    /* "c_executor.pyx":56
+    /* "c_executor.pyx":57
  * 
  *         if reduceOnly:
  *             params.append("reduceOnly=true")             # <<<<<<<<<<<<<<
  * 
  *         cdef str query_string = "&".join(params)
 */
-    __pyx_t_14 = __Pyx_PyList_Append(__pyx_v_params, __pyx_mstate_global->__pyx_kp_u_reduceOnly_true); if (unlikely(__pyx_t_14 == ((int)-1))) __PYX_ERR(0, 56, __pyx_L1_error)
+    __pyx_t_15 = __Pyx_PyList_Append(__pyx_v_params, __pyx_mstate_global->__pyx_kp_u_reduceOnly_true); if (unlikely(__pyx_t_15 == ((int)-1))) __PYX_ERR(0, 57, __pyx_L1_error)
 
-    /* "c_executor.pyx":55
+    /* "c_executor.pyx":56
  *             params.append(f"timeInForce={timeInForce}")
  * 
  *         if reduceOnly:             # <<<<<<<<<<<<<<
@@ -3585,67 +3610,67 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
 */
   }
 
-  /* "c_executor.pyx":58
+  /* "c_executor.pyx":59
  *             params.append("reduceOnly=true")
  * 
  *         cdef str query_string = "&".join(params)             # <<<<<<<<<<<<<<
  *         cdef str signature = self.sign_query(query_string)
  * 
 */
-  __pyx_t_1 = PyUnicode_Join(__pyx_mstate_global->__pyx_kp_u__2, __pyx_v_params); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 58, __pyx_L1_error)
+  __pyx_t_1 = PyUnicode_Join(__pyx_mstate_global->__pyx_kp_u__2, __pyx_v_params); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 59, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_v_query_string = ((PyObject*)__pyx_t_1);
   __pyx_t_1 = 0;
 
-  /* "c_executor.pyx":59
+  /* "c_executor.pyx":60
  * 
  *         cdef str query_string = "&".join(params)
  *         cdef str signature = self.sign_query(query_string)             # <<<<<<<<<<<<<<
  * 
  *         cdef str final_query = f"{query_string}&signature={signature}"
 */
-  __pyx_t_1 = ((struct __pyx_vtabstruct_10c_executor_FastBinanceSigner *)__pyx_v_self->__pyx_vtab)->sign_query(__pyx_v_self, __pyx_v_query_string, 0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 59, __pyx_L1_error)
+  __pyx_t_1 = ((struct __pyx_vtabstruct_10c_executor_FastBinanceSigner *)__pyx_v_self->__pyx_vtab)->sign_query(__pyx_v_self, __pyx_v_query_string, 0); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 60, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_v_signature = ((PyObject*)__pyx_t_1);
   __pyx_t_1 = 0;
 
-  /* "c_executor.pyx":61
+  /* "c_executor.pyx":62
  *         cdef str signature = self.sign_query(query_string)
  * 
  *         cdef str final_query = f"{query_string}&signature={signature}"             # <<<<<<<<<<<<<<
  * 
  *         cdef dict headers = {
 */
-  __pyx_t_1 = __Pyx_PyUnicode_Unicode(__pyx_v_query_string); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 61, __pyx_L1_error)
+  __pyx_t_1 = __Pyx_PyUnicode_Unicode(__pyx_v_query_string); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 62, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
-  __pyx_t_5 = __Pyx_PyUnicode_Unicode(__pyx_v_signature); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 61, __pyx_L1_error)
+  __pyx_t_3 = __Pyx_PyUnicode_Unicode(__pyx_v_signature); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 62, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_3);
+  __pyx_t_16[0] = __pyx_t_1;
+  __pyx_t_16[1] = __pyx_mstate_global->__pyx_kp_u_signature;
+  __pyx_t_16[2] = __pyx_t_3;
+  __pyx_t_5 = __Pyx_PyUnicode_Join(__pyx_t_16, 3, __Pyx_PyUnicode_GET_LENGTH(__pyx_t_1) + 11 + __Pyx_PyUnicode_GET_LENGTH(__pyx_t_3), 127 | __Pyx_PyUnicode_MAX_CHAR_VALUE(__pyx_t_1) | __Pyx_PyUnicode_MAX_CHAR_VALUE(__pyx_t_3));
+  if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 62, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
-  __pyx_t_15[0] = __pyx_t_1;
-  __pyx_t_15[1] = __pyx_mstate_global->__pyx_kp_u_signature;
-  __pyx_t_15[2] = __pyx_t_5;
-  __pyx_t_6 = __Pyx_PyUnicode_Join(__pyx_t_15, 3, __Pyx_PyUnicode_GET_LENGTH(__pyx_t_1) + 11 + __Pyx_PyUnicode_GET_LENGTH(__pyx_t_5), 127 | __Pyx_PyUnicode_MAX_CHAR_VALUE(__pyx_t_1) | __Pyx_PyUnicode_MAX_CHAR_VALUE(__pyx_t_5));
-  if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 61, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_6);
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-  __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
-  __pyx_v_final_query = ((PyObject*)__pyx_t_6);
-  __pyx_t_6 = 0;
+  __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
+  __pyx_v_final_query = ((PyObject*)__pyx_t_5);
+  __pyx_t_5 = 0;
 
-  /* "c_executor.pyx":64
+  /* "c_executor.pyx":65
  * 
  *         cdef dict headers = {
  *             "X-MBX-APIKEY": self.api_key,             # <<<<<<<<<<<<<<
  *             "Content-Type": "application/x-www-form-urlencoded"
  *         }
 */
-  __pyx_t_6 = __Pyx_PyDict_NewPresized(2); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 64, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_6);
-  if (PyDict_SetItem(__pyx_t_6, __pyx_mstate_global->__pyx_kp_u_X_MBX_APIKEY, __pyx_v_self->api_key) < (0)) __PYX_ERR(0, 64, __pyx_L1_error)
-  if (PyDict_SetItem(__pyx_t_6, __pyx_mstate_global->__pyx_kp_u_Content_Type, __pyx_mstate_global->__pyx_kp_u_application_x_www_form_urlencode) < (0)) __PYX_ERR(0, 64, __pyx_L1_error)
-  __pyx_v_headers = ((PyObject*)__pyx_t_6);
-  __pyx_t_6 = 0;
+  __pyx_t_5 = __Pyx_PyDict_NewPresized(2); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 65, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_5);
+  if (PyDict_SetItem(__pyx_t_5, __pyx_mstate_global->__pyx_kp_u_X_MBX_APIKEY, __pyx_v_self->api_key) < (0)) __PYX_ERR(0, 65, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_t_5, __pyx_mstate_global->__pyx_kp_u_Content_Type, __pyx_mstate_global->__pyx_kp_u_application_x_www_form_urlencode) < (0)) __PYX_ERR(0, 65, __pyx_L1_error)
+  __pyx_v_headers = ((PyObject*)__pyx_t_5);
+  __pyx_t_5 = 0;
 
-  /* "c_executor.pyx":68
+  /* "c_executor.pyx":69
  *         }
  * 
  *         return ("/fapi/v1/order", final_query, headers)             # <<<<<<<<<<<<<<
@@ -3653,25 +3678,25 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
  * cpdef bytes fast_json_dump(dict data):
 */
   __Pyx_XDECREF(__pyx_r);
-  __pyx_t_6 = PyTuple_New(3); if (unlikely(!__pyx_t_6)) __PYX_ERR(0, 68, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_6);
+  __pyx_t_5 = PyTuple_New(3); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 69, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_5);
   __Pyx_INCREF(__pyx_mstate_global->__pyx_kp_u_fapi_v1_order);
   __Pyx_GIVEREF(__pyx_mstate_global->__pyx_kp_u_fapi_v1_order);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 0, __pyx_mstate_global->__pyx_kp_u_fapi_v1_order) != (0)) __PYX_ERR(0, 68, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_5, 0, __pyx_mstate_global->__pyx_kp_u_fapi_v1_order) != (0)) __PYX_ERR(0, 69, __pyx_L1_error);
   __Pyx_INCREF(__pyx_v_final_query);
   __Pyx_GIVEREF(__pyx_v_final_query);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 1, __pyx_v_final_query) != (0)) __PYX_ERR(0, 68, __pyx_L1_error);
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_5, 1, __pyx_v_final_query) != (0)) __PYX_ERR(0, 69, __pyx_L1_error);
   __Pyx_INCREF(__pyx_v_headers);
   __Pyx_GIVEREF(__pyx_v_headers);
-  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_6, 2, __pyx_v_headers) != (0)) __PYX_ERR(0, 68, __pyx_L1_error);
-  __pyx_r = ((PyObject*)__pyx_t_6);
-  __pyx_t_6 = 0;
+  if (__Pyx_PyTuple_SET_ITEM(__pyx_t_5, 2, __pyx_v_headers) != (0)) __PYX_ERR(0, 69, __pyx_L1_error);
+  __pyx_r = ((PyObject*)__pyx_t_5);
+  __pyx_t_5 = 0;
   goto __pyx_L0;
 
   /* "c_executor.pyx":35
  *         return signature
  * 
- *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False):             # <<<<<<<<<<<<<<
+ *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False, str positionSide="BOTH"):             # <<<<<<<<<<<<<<
  *         """
  *         Constructs the exact HTTP query and headers for Binance Futures (fapi) order endpoint.
 */
@@ -3687,6 +3712,7 @@ static PyObject *__pyx_f_10c_executor_17FastBinanceSigner_build_fapi_order(struc
   __Pyx_XDECREF(__pyx_t_7);
   __Pyx_XDECREF(__pyx_t_10);
   __Pyx_XDECREF(__pyx_t_11);
+  __Pyx_XDECREF(__pyx_t_12);
   __Pyx_AddTraceback("c_executor.FastBinanceSigner.build_fapi_order", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = 0;
   __pyx_L0:;
@@ -3724,11 +3750,12 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   double __pyx_v_price;
   PyObject *__pyx_v_timeInForce = 0;
   int __pyx_v_reduceOnly;
+  PyObject *__pyx_v_positionSide = 0;
   #if !CYTHON_METH_FASTCALL
   CYTHON_UNUSED Py_ssize_t __pyx_nargs;
   #endif
   CYTHON_UNUSED PyObject *const *__pyx_kwvalues;
-  PyObject* values[7] = {0,0,0,0,0,0,0};
+  PyObject* values[8] = {0,0,0,0,0,0,0,0};
   int __pyx_lineno = 0;
   const char *__pyx_filename = NULL;
   int __pyx_clineno = 0;
@@ -3744,11 +3771,15 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   #endif
   __pyx_kwvalues = __Pyx_KwValues_FASTCALL(__pyx_args, __pyx_nargs);
   {
-    PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_symbol_2,&__pyx_mstate_global->__pyx_n_u_side_2,&__pyx_mstate_global->__pyx_n_u_order_type,&__pyx_mstate_global->__pyx_n_u_quantity_2,&__pyx_mstate_global->__pyx_n_u_price_2,&__pyx_mstate_global->__pyx_n_u_timeInForce_2,&__pyx_mstate_global->__pyx_n_u_reduceOnly,0};
+    PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_symbol_2,&__pyx_mstate_global->__pyx_n_u_side_2,&__pyx_mstate_global->__pyx_n_u_order_type,&__pyx_mstate_global->__pyx_n_u_quantity_2,&__pyx_mstate_global->__pyx_n_u_price_2,&__pyx_mstate_global->__pyx_n_u_timeInForce_2,&__pyx_mstate_global->__pyx_n_u_reduceOnly,&__pyx_mstate_global->__pyx_n_u_positionSide_2,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
     if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 35, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
+        case  8:
+        values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 35, __pyx_L3_error)
+        CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
         if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 35, __pyx_L3_error)
@@ -3783,11 +3814,16 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
       if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "build_fapi_order", 0) < (0)) __PYX_ERR(0, 35, __pyx_L3_error)
       if (!values[5]) values[5] = __Pyx_NewRef(((PyObject*)__pyx_mstate_global->__pyx_n_u_GTC));
+      if (!values[7]) values[7] = __Pyx_NewRef(((PyObject*)__pyx_mstate_global->__pyx_n_u_BOTH));
       for (Py_ssize_t i = __pyx_nargs; i < 4; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("build_fapi_order", 0, 4, 7, i); __PYX_ERR(0, 35, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("build_fapi_order", 0, 4, 8, i); __PYX_ERR(0, 35, __pyx_L3_error) }
       }
     } else {
       switch (__pyx_nargs) {
+        case  8:
+        values[7] = __Pyx_ArgRef_FASTCALL(__pyx_args, 7);
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[7])) __PYX_ERR(0, 35, __pyx_L3_error)
+        CYTHON_FALLTHROUGH;
         case  7:
         values[6] = __Pyx_ArgRef_FASTCALL(__pyx_args, 6);
         if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[6])) __PYX_ERR(0, 35, __pyx_L3_error)
@@ -3813,6 +3849,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
         default: goto __pyx_L5_argtuple_error;
       }
       if (!values[5]) values[5] = __Pyx_NewRef(((PyObject*)__pyx_mstate_global->__pyx_n_u_GTC));
+      if (!values[7]) values[7] = __Pyx_NewRef(((PyObject*)__pyx_mstate_global->__pyx_n_u_BOTH));
     }
     __pyx_v_symbol = ((PyObject*)values[0]);
     __pyx_v_side = ((PyObject*)values[1]);
@@ -3829,10 +3866,11 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
     } else {
       __pyx_v_reduceOnly = ((int)0);
     }
+    __pyx_v_positionSide = ((PyObject*)values[7]);
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("build_fapi_order", 0, 4, 7, __pyx_nargs); __PYX_ERR(0, 35, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("build_fapi_order", 0, 4, 8, __pyx_nargs); __PYX_ERR(0, 35, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -3847,7 +3885,8 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_side), (&PyUnicode_Type), 1, "side", 1))) __PYX_ERR(0, 35, __pyx_L1_error)
   if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_order_type), (&PyUnicode_Type), 1, "order_type", 1))) __PYX_ERR(0, 35, __pyx_L1_error)
   if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_timeInForce), (&PyUnicode_Type), 1, "timeInForce", 1))) __PYX_ERR(0, 35, __pyx_L1_error)
-  __pyx_r = __pyx_pf_10c_executor_17FastBinanceSigner_4build_fapi_order(((struct __pyx_obj_10c_executor_FastBinanceSigner *)__pyx_v_self), __pyx_v_symbol, __pyx_v_side, __pyx_v_order_type, __pyx_v_quantity, __pyx_v_price, __pyx_v_timeInForce, __pyx_v_reduceOnly);
+  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_positionSide), (&PyUnicode_Type), 1, "positionSide", 1))) __PYX_ERR(0, 35, __pyx_L1_error)
+  __pyx_r = __pyx_pf_10c_executor_17FastBinanceSigner_4build_fapi_order(((struct __pyx_obj_10c_executor_FastBinanceSigner *)__pyx_v_self), __pyx_v_symbol, __pyx_v_side, __pyx_v_order_type, __pyx_v_quantity, __pyx_v_price, __pyx_v_timeInForce, __pyx_v_reduceOnly, __pyx_v_positionSide);
 
   /* function exit code */
   goto __pyx_L0;
@@ -3866,7 +3905,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_10c_executor_17FastBinanceSigner_4build_fapi_order(struct __pyx_obj_10c_executor_FastBinanceSigner *__pyx_v_self, PyObject *__pyx_v_symbol, PyObject *__pyx_v_side, PyObject *__pyx_v_order_type, double __pyx_v_quantity, double __pyx_v_price, PyObject *__pyx_v_timeInForce, int __pyx_v_reduceOnly) {
+static PyObject *__pyx_pf_10c_executor_17FastBinanceSigner_4build_fapi_order(struct __pyx_obj_10c_executor_FastBinanceSigner *__pyx_v_self, PyObject *__pyx_v_symbol, PyObject *__pyx_v_side, PyObject *__pyx_v_order_type, double __pyx_v_quantity, double __pyx_v_price, PyObject *__pyx_v_timeInForce, int __pyx_v_reduceOnly, PyObject *__pyx_v_positionSide) {
   PyObject *__pyx_r = NULL;
   __Pyx_RefNannyDeclarations
   PyObject *__pyx_t_1 = NULL;
@@ -3876,10 +3915,11 @@ static PyObject *__pyx_pf_10c_executor_17FastBinanceSigner_4build_fapi_order(str
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("build_fapi_order", 0);
   __Pyx_XDECREF(__pyx_r);
-  __pyx_t_2.__pyx_n = 3;
+  __pyx_t_2.__pyx_n = 4;
   __pyx_t_2.price = __pyx_v_price;
   __pyx_t_2.timeInForce = __pyx_v_timeInForce;
   __pyx_t_2.reduceOnly = __pyx_v_reduceOnly;
+  __pyx_t_2.positionSide = __pyx_v_positionSide;
   __pyx_t_1 = __pyx_vtabptr_10c_executor_FastBinanceSigner->build_fapi_order(__pyx_v_self, __pyx_v_symbol, __pyx_v_side, __pyx_v_order_type, __pyx_v_quantity, 1, &__pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 35, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_r = __pyx_t_1;
@@ -4317,7 +4357,7 @@ static PyObject *__pyx_pf_10c_executor_17FastBinanceSigner_8__setstate_cython__(
   return __pyx_r;
 }
 
-/* "c_executor.pyx":70
+/* "c_executor.pyx":71
  *         return ("/fapi/v1/order", final_query, headers)
  * 
  * cpdef bytes fast_json_dump(dict data):             # <<<<<<<<<<<<<<
@@ -4345,16 +4385,16 @@ static PyObject *__pyx_f_10c_executor_fast_json_dump(PyObject *__pyx_v_data, CYT
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("fast_json_dump", 0);
 
-  /* "c_executor.pyx":74
+  /* "c_executor.pyx":75
  *     Bypasses GIL using orjson (which natively releases GIL).
  *     """
  *     return orjson.dumps(data)             # <<<<<<<<<<<<<<
 */
   __Pyx_XDECREF(__pyx_r);
   __pyx_t_2 = NULL;
-  __Pyx_GetModuleGlobalName(__pyx_t_3, __pyx_mstate_global->__pyx_n_u_orjson); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 74, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_3, __pyx_mstate_global->__pyx_n_u_orjson); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 75, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
-  __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_t_3, __pyx_mstate_global->__pyx_n_u_dumps); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 74, __pyx_L1_error)
+  __pyx_t_4 = __Pyx_PyObject_GetAttrStr(__pyx_t_3, __pyx_mstate_global->__pyx_n_u_dumps); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 75, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
   __pyx_t_5 = 1;
@@ -4374,15 +4414,15 @@ static PyObject *__pyx_f_10c_executor_fast_json_dump(PyObject *__pyx_v_data, CYT
     __pyx_t_1 = __Pyx_PyObject_FastCall((PyObject*)__pyx_t_4, __pyx_callargs+__pyx_t_5, (2-__pyx_t_5) | (__pyx_t_5*__Pyx_PY_VECTORCALL_ARGUMENTS_OFFSET));
     __Pyx_XDECREF(__pyx_t_2); __pyx_t_2 = 0;
     __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
-    if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 74, __pyx_L1_error)
+    if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 75, __pyx_L1_error)
     __Pyx_GOTREF(__pyx_t_1);
   }
-  if (!(likely(PyBytes_CheckExact(__pyx_t_1))||((__pyx_t_1) == Py_None) || __Pyx_RaiseUnexpectedTypeError("bytes", __pyx_t_1))) __PYX_ERR(0, 74, __pyx_L1_error)
+  if (!(likely(PyBytes_CheckExact(__pyx_t_1))||((__pyx_t_1) == Py_None) || __Pyx_RaiseUnexpectedTypeError("bytes", __pyx_t_1))) __PYX_ERR(0, 75, __pyx_L1_error)
   __pyx_r = ((PyObject*)__pyx_t_1);
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "c_executor.pyx":70
+  /* "c_executor.pyx":71
  *         return ("/fapi/v1/order", final_query, headers)
  * 
  * cpdef bytes fast_json_dump(dict data):             # <<<<<<<<<<<<<<
@@ -4444,32 +4484,32 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   {
     PyObject ** const __pyx_pyargnames[] = {&__pyx_mstate_global->__pyx_n_u_data,0};
     const Py_ssize_t __pyx_kwds_len = (__pyx_kwds) ? __Pyx_NumKwargs_FASTCALL(__pyx_kwds) : 0;
-    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 70, __pyx_L3_error)
+    if (unlikely(__pyx_kwds_len) < 0) __PYX_ERR(0, 71, __pyx_L3_error)
     if (__pyx_kwds_len > 0) {
       switch (__pyx_nargs) {
         case  1:
         values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 70, __pyx_L3_error)
+        if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 71, __pyx_L3_error)
         CYTHON_FALLTHROUGH;
         case  0: break;
         default: goto __pyx_L5_argtuple_error;
       }
       const Py_ssize_t kwd_pos_args = __pyx_nargs;
-      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "fast_json_dump", 0) < (0)) __PYX_ERR(0, 70, __pyx_L3_error)
+      if (__Pyx_ParseKeywords(__pyx_kwds, __pyx_kwvalues, __pyx_pyargnames, 0, values, kwd_pos_args, __pyx_kwds_len, "fast_json_dump", 0) < (0)) __PYX_ERR(0, 71, __pyx_L3_error)
       for (Py_ssize_t i = __pyx_nargs; i < 1; i++) {
-        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("fast_json_dump", 1, 1, 1, i); __PYX_ERR(0, 70, __pyx_L3_error) }
+        if (unlikely(!values[i])) { __Pyx_RaiseArgtupleInvalid("fast_json_dump", 1, 1, 1, i); __PYX_ERR(0, 71, __pyx_L3_error) }
       }
     } else if (unlikely(__pyx_nargs != 1)) {
       goto __pyx_L5_argtuple_error;
     } else {
       values[0] = __Pyx_ArgRef_FASTCALL(__pyx_args, 0);
-      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 70, __pyx_L3_error)
+      if (!CYTHON_ASSUME_SAFE_MACROS && unlikely(!values[0])) __PYX_ERR(0, 71, __pyx_L3_error)
     }
     __pyx_v_data = ((PyObject*)values[0]);
   }
   goto __pyx_L6_skip;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("fast_json_dump", 1, 1, 1, __pyx_nargs); __PYX_ERR(0, 70, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("fast_json_dump", 1, 1, 1, __pyx_nargs); __PYX_ERR(0, 71, __pyx_L3_error)
   __pyx_L6_skip:;
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L3_error:;
@@ -4480,7 +4520,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_data), (&PyDict_Type), 1, "data", 1))) __PYX_ERR(0, 70, __pyx_L1_error)
+  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_data), (&PyDict_Type), 1, "data", 1))) __PYX_ERR(0, 71, __pyx_L1_error)
   __pyx_r = __pyx_pf_10c_executor_fast_json_dump(__pyx_self, __pyx_v_data);
 
   /* function exit code */
@@ -4509,7 +4549,7 @@ static PyObject *__pyx_pf_10c_executor_fast_json_dump(CYTHON_UNUSED PyObject *__
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("fast_json_dump", 0);
   __Pyx_XDECREF(__pyx_r);
-  __pyx_t_1 = __pyx_f_10c_executor_fast_json_dump(__pyx_v_data, 1); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 70, __pyx_L1_error)
+  __pyx_t_1 = __pyx_f_10c_executor_fast_json_dump(__pyx_v_data, 1); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 71, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __pyx_r = __pyx_t_1;
   __pyx_t_1 = 0;
@@ -5501,7 +5541,7 @@ __Pyx_RefNannySetupContext("PyInit_c_executor", 0);
   /* "c_executor.pyx":35
  *         return signature
  * 
- *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False):             # <<<<<<<<<<<<<<
+ *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False, str positionSide="BOTH"):             # <<<<<<<<<<<<<<
  *         """
  *         Constructs the exact HTTP query and headers for Binance Futures (fapi) order endpoint.
 */
@@ -5541,19 +5581,19 @@ __Pyx_RefNannySetupContext("PyInit_c_executor", 0);
   if (__Pyx_SetItemOnTypeDict(__pyx_mstate_global->__pyx_ptype_10c_executor_FastBinanceSigner, __pyx_mstate_global->__pyx_n_u_setstate_cython, __pyx_t_8) < (0)) __PYX_ERR(1, 16, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
 
-  /* "c_executor.pyx":70
+  /* "c_executor.pyx":71
  *         return ("/fapi/v1/order", final_query, headers)
  * 
  * cpdef bytes fast_json_dump(dict data):             # <<<<<<<<<<<<<<
  *     """
  *     Bypasses GIL using orjson (which natively releases GIL).
 */
-  __pyx_t_8 = __Pyx_CyFunction_New(&__pyx_mdef_10c_executor_1fast_json_dump, 0, __pyx_mstate_global->__pyx_n_u_fast_json_dump, NULL, __pyx_mstate_global->__pyx_n_u_c_executor, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[4])); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 70, __pyx_L1_error)
+  __pyx_t_8 = __Pyx_CyFunction_New(&__pyx_mdef_10c_executor_1fast_json_dump, 0, __pyx_mstate_global->__pyx_n_u_fast_json_dump, NULL, __pyx_mstate_global->__pyx_n_u_c_executor, __pyx_mstate_global->__pyx_d, ((PyObject *)__pyx_mstate_global->__pyx_codeobj_tab[4])); if (unlikely(!__pyx_t_8)) __PYX_ERR(0, 71, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_8);
   #if CYTHON_COMPILING_IN_CPYTHON && PY_VERSION_HEX >= 0x030E0000
   PyUnstable_Object_EnableDeferredRefcount(__pyx_t_8);
   #endif
-  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_fast_json_dump, __pyx_t_8) < (0)) __PYX_ERR(0, 70, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_mstate_global->__pyx_d, __pyx_mstate_global->__pyx_n_u_fast_json_dump, __pyx_t_8) < (0)) __PYX_ERR(0, 71, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_8); __pyx_t_8 = 0;
 
   /* "(tree fragment)":4
@@ -5640,11 +5680,11 @@ static int __Pyx_InitCachedConstants(__pyx_mstatetype *__pyx_mstate) {
   /* "c_executor.pyx":35
  *         return signature
  * 
- *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False):             # <<<<<<<<<<<<<<
+ *     cpdef tuple build_fapi_order(self, str symbol, str side, str order_type, double quantity, double price=0.0, str timeInForce="GTC", bint reduceOnly=False, str positionSide="BOTH"):             # <<<<<<<<<<<<<<
  *         """
  *         Constructs the exact HTTP query and headers for Binance Futures (fapi) order endpoint.
 */
-  __pyx_mstate_global->__pyx_tuple[0] = PyTuple_Pack(3, __pyx_mstate_global->__pyx_float_0_0, __pyx_mstate_global->__pyx_n_u_GTC, Py_False); if (unlikely(!__pyx_mstate_global->__pyx_tuple[0])) __PYX_ERR(0, 35, __pyx_L1_error)
+  __pyx_mstate_global->__pyx_tuple[0] = PyTuple_Pack(4, __pyx_mstate_global->__pyx_float_0_0, __pyx_mstate_global->__pyx_n_u_GTC, Py_False, __pyx_mstate_global->__pyx_n_u_BOTH); if (unlikely(!__pyx_mstate_global->__pyx_tuple[0])) __PYX_ERR(0, 35, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_mstate_global->__pyx_tuple[0]);
   __Pyx_GIVEREF(__pyx_mstate_global->__pyx_tuple[0]);
   #if CYTHON_IMMORTAL_CONSTANTS
@@ -5677,42 +5717,42 @@ static int __Pyx_InitCachedConstants(__pyx_mstatetype *__pyx_mstate) {
 static int __Pyx_InitConstants(__pyx_mstatetype *__pyx_mstate) {
   CYTHON_UNUSED_VAR(__pyx_mstate);
   {
-    const struct { const unsigned int length: 8; } index[] = {{1},{1},{3},{12},{4},{179},{12},{1},{1},{8},{33},{14},{7},{6},{14},{2},{9},{23},{6},{9},{16},{15},{5},{11},{14},{7},{12},{10},{5},{17},{35},{37},{34},{28},{3},{5},{20},{4},{11},{7},{18},{16},{10},{18},{4},{8},{5},{5},{14},{8},{12},{7},{9},{4},{13},{5},{4},{8},{10},{8},{3},{7},{10},{6},{3},{5},{14},{12},{11},{10},{32},{14},{12},{8},{12},{10},{10},{17},{13},{6},{10},{4},{12},{10},{12},{19},{6},{4},{10},{5},{6},{8},{4},{11},{6},{12},{6},{15},{45},{112},{247},{58},{11}};
-    #if (CYTHON_COMPRESS_STRINGS) == 3 && __PYX_LIMITED_VERSION_HEX >= 0x030e0000 /* compression: zstd (1117 bytes) */
-const char* const cstring = "(\265/\375`\213\005\235\"\0006}\321<\000\265s\374\177k\352\273_\377\375\367\357W\277\372\325\257~\353_\253\343\333\026\255\355\311\377\225\255\245\311%iH\021\321\002\226\000\360 \001\000@D\r\001\000o&\211 \001\t\022D\026\006\265\000\266\000\277\000\343Y~\264v\037\332\304\265\217\375O\3220\327c\317g\262\316\262\243\371{\177\363\370c\231\367\223'\272\312\235em\305\343\361V\275\217\254I\323\304\177\307\021\267l\000\305\324\300b\257\325\217\313\315\352\207\365\234\3042\277\323\247\036E\016\333\326w\227\272\343^\356\2159\304\376\\\334\177\353\034\233b\331\305\361\177\213h\351\023k0\221\305\273\270u'5J\023k\245\310\237sLf\032\312E\336\363\017\375)\216\033\213#'#\253XLL\334\347\367\254\317\316E\037\371\035\237O\323\344\217\"\327\342.o\335\367\"v|\353\342\367]\342\274\351\233\255\372\376\276\313\227Z\t\013\204\025C\267s\\\343f\016\035\307{q\307#.c\332g|\366\273\365%3\377\255;Z\236ef\225:o\037\307\276\307\315`29:\261\033S\363\232\305rf;\265\327\351\275\307\271=k\230\236/v\357\014v\003\263y\231\315\370\316Guw<\313{\307\216;\357\317\357\315\367^\326\371;\2377\336\332\245s,\323]f\016w^\312l\330\347tw\221%-\347\343,\237O\264\344g\347+\256?\321\216\267M\363\r\327\217\232?zv\227\217\3349\237\321\361O\220\022\027\257\034\267\366\331\345?]\276\256\373\306\250\316\365\346\314\206g'F\307e\362\327\311\341\375\036\271\316\266\363\003\002-\t;\263\242\250\035I\227J\234\206\252\264A}PcR\237\337\316\250\3004\304\253\207*\223\266\322\231\037\3124\324\251#*E:\373)\350~\013\247\241P\2200hGxr4\023,jW\354\270\312\326\207u\246^\234\206\262\366\325\372\260\026k\206\301\313\250\244\352\322\210\264\344\207\032\0008%\225\214\370\243$\336=G\277\343\321D\357-!\t\3017\316q\355\307\032\371\274\377\231\237\233\275\277\227\244\341\276{\022\227\265\271\321N\242\374\317\034\312q\371o\331\274\327,\315\263\274\274\377\034\336O\242c\251q\356\362\334w}\271\276\031\347n\235\277M\217\275\277\3214y\343\370vm7o\264v\357\335%\017\270%hu\354\207iX22\r}z\204\nG4#\302V+\242\232\244D4\253\206\203\320\3014\324\221\tqA""\025 B\013\"\nu*\206\t\211]\255\031\014\302\324\253\264\302\250\026\250\241\301\t\251\005T\001S2\204\251\365T1\330\027[!\260\212'$U\353\207pBJ\261%\226\025L\0059\200c+km,\001K\262\252\326\0165\245r\244\rG<X\003t\340l\315\352\260N\2509U\371\241\014\000\010\222RjI\235H@\rU\300\024\220\243\035Y\031k[\t\326\223\304\313\0015\304\251,\205@\r[jEH_\361*\262j\030\000\034$\005\000\005\374\374\004\274\002^%\022\000 \tg\022\246\220d1\241\304\021\016\310kq\253\321\206,\010u\252#\223 Q;\322\006v( \2040TV=!AG\005S\243 \005I\3323\205\371d\230\202:h9C\r\354\2013\n\"<&\025\016\306`6)e@\370\035k@gU\320X6O\024\257\314x\336e\265|%\247agsPy\361\365\0059R\376\207\257K\371\t\352\246\230c\327\032\332a\241:n\313D\331\202\016\021\230\313VG\362\340T\276BB\215\200\276\202\022\214xb\343\0238\206t3,$\201\237\334\t\310\302I\360\016\313\"O\000\016zobP04\206\203\306\222\233\003H`\035 <xZ\342\361\204jD\010\343n\334\254Y\305[\204\360K\332:\n\321\023\343\253K,\016\370@\340\r\301%iI\357\035\002}\n\311\2367{\362\216\033S\362X\355\315\021\020\201K\007\264\312\230)Fn\303\257\031d\030q\351n\355\035\260\323\366e>p\303\242\304\232\236\r\241\255\205\206\322@\333d>\002\340P\030\013\340\263\010O\205\225L\345\250G\260\356\035";
-    PyObject *data = __Pyx_DecompressString(cstring, 1117, 3);
+    const struct { const unsigned int length: 9; } index[] = {{1},{1},{3},{12},{4},{179},{12},{1},{1},{8},{33},{14},{7},{6},{14},{2},{9},{23},{13},{6},{9},{16},{15},{5},{11},{14},{7},{12},{10},{5},{4},{17},{35},{37},{34},{28},{3},{5},{20},{4},{11},{7},{18},{16},{10},{18},{4},{8},{5},{5},{14},{8},{12},{7},{9},{4},{13},{5},{4},{8},{10},{8},{3},{7},{10},{6},{3},{12},{5},{14},{12},{11},{10},{32},{14},{12},{8},{12},{10},{10},{17},{13},{6},{10},{4},{12},{10},{12},{19},{6},{4},{10},{5},{6},{8},{4},{11},{6},{12},{6},{15},{45},{112},{261},{58},{11}};
+    #if (CYTHON_COMPRESS_STRINGS) == 3 && __PYX_LIMITED_VERSION_HEX >= 0x030e0000 /* compression: zstd (1140 bytes) */
+const char* const cstring = "(\265/\375`\266\005U#\000\226\276\325<\000\265s\374\177k\364[\377\352U\365\355W\277\372\325\257~\353_\253\363g\213\326\366\344\377\312\326\322\344\2224\244\210h\001K\000x\220\000\000 \242\206\000\2007\223D\220\200\004\t\"\013\003\271\000\273\000\304\0007\363E\223\374p\021}\350\022\333>\366\377X\303\\\213=_\3312\311~\346\357\375\315\342\213d\336?\232'Kg\2226\026\217\307c\365>\262\036\313\022\377\025E\334\262\001\024S\023\223\301X?.7\254\237\326\363\021\313<\221\356\371M-\206\034\267\255\357&u\307\235\334\033s\204\375y\270\037\3279.C\262\207\342\377\016O\322\027\332ba\213\367p\353>\352\263\026\332\310\220?\347x\314\265\223\207\274\347\037z3\0247\016GNFX\262\030Y\270\315\357Y\233\235\207\276\361;6\277\246\307\027C\256\303M\342\272\357%\354\030\327\303\357\233\304\371\322Gc\365\375}\223/\266\222\026H+\034\333x\251;E\361^\334\261\230\313\270\366\031\233\375n}\307\314\177\353~\222&\231[\244\316\333\307\261\357s\264\230L\216\216\354\306\324\300h\262\034\332\216\355uz\357qn\317\032\246\347\223\335K\213\335\304l^h3>\363\317\335\025M\362^\261\343\316\373\363{\363\275\267e\376\316\347\215\267v\351\034\313\320\320r\\\372\253\324\341\316I\231\035{\235\356\257\221\254\351|\234\345\263y\222\334\354|\345\365\346\331\361\276i\276\301\3774\373\3137\356\234\317\247\370&H\311\213G\212[\373\020\3457_\276\256\373\306\347\356\365Y\233\345\353E\275\2439Y\322lxvbt^%\177\235\034\336o\221\353\034\354\010+\300\222\2543*J\332\225v\250\004\252]\241\r\351C\032\203\372\374\210\216\nN-V=R\031\324\205\316\374R\247v\227\216\244\024(\355\247\260\373-\240Z\241\240`\320N\360$i\006\311\210e\255\242:S\037TZz\201jg,\214\365Y-\324\014\003\330\221)\335\241\021h\311/5\000\200Z2\035\361?GL\364\374\374\216\305\362\274\267\204$\004\3438\307\266\027m\343\363\376f~^\366\376\336\261\206;\321\217\271\254\313}\366\361\344o\352N\236\313\217\313\345\275%Y\232\344\345\375\353\360\376\361\024I\215u\227\353\276\353\313\365\315X\207\353\374oZ\354=\256\246G\034\307\270{\273y\237\266{\357&\371\320\355\001\230%`w\353\307\2515""\035\235Z\237\236\240B\022\315H\320\305\212\244&h\021\215\252\341\020t8\265:\263`\016I\005\210\300\202\204\301]\212qRZYj\006CP\0053\2510\251E\2525@)\271\200+`JFP\245\232)\306\n[+\004\324\020\245\264r\375\020PJ\252\325\264\266\220TH\034@\221\235\261\267\225`%QWjG\252J9\320\206$\216T\003t\340k\215\352\240N\244\031U\371\245\014\000\010\226T\251)\235HH\265+\240\n\310\301\212\353l\275\251\004*J\002\226\246Z\230C\252\305\350\014\205H\265\256\264\"\244\253X\025Q5\014\000\016\226\002v\001e\031\360\363\023\000\013\200\231F\000\200\245\334)\250R\232\311\202\022I9 \217\305\254\006\033\262\020\334\255\222L\220\212\002y( \204(\245\254z\361HG\005S#IA\222\366\014\205\361\345\200\236\nh9\006\036\354\2013\322\342\315\245X\0176`\352\225\212\"<\033KAGH\320X=Y\204\305\226\006\320\376\341f\303l\0058\354\324u\266\006U\026_[ GJ\177\370D)\017A\035\022{t\315\201\035&\224\343\272a\2242H\261\201\275q5e\017Z\337+\024T\016\000O\020c\020\325o\274\001s\220\000\205\210%p4>\007[x\331\335\344Y$ZA#\357\317\030,\032\215\212 \363\344\322\3014\360\006\234\034|-\361xE\363|\rD\250q)~\372\254\312-f\370%]\272\021\262\021\003\240K\304\014x\224\300\r\361J\261\244\346\216\256\306=o\317\225=A\215\23399\257\366f\021\204\321\325\002Ze\314\024gwx\1773\2500&.\202l\247\001\003\r[*\333\t\202\021\366\317\032\234\315\3226\207\246k\300lr\031\203\252\010\370s\035O\t+\t\313\021\225\260\336;";
+    PyObject *data = __Pyx_DecompressString(cstring, 1140, 3);
     if (unlikely(!data)) __PYX_ERR(0, 1, __pyx_L1_error)
     const char* const bytes = __Pyx_PyBytes_AsString(data);
     #if !CYTHON_ASSUME_SAFE_MACROS
     if (likely(bytes)); else { Py_DECREF(data); __PYX_ERR(0, 1, __pyx_L1_error) }
     #endif
-    #elif (CYTHON_COMPRESS_STRINGS) == 2 /* compression: bz2 (1212 bytes) */
-const char* const cstring = "BZh91AY&SY\210\310(\016\000\000k\377\377\377\377\377\336\365\307\377\377\277\357\377\343\277\377\377\346@@@@@@@@@@@@@\000@\000P\003\314\315X\000\320,\303Q)\352y4\324\311\372\247\251\246\231=#\031@3H\032\031\017Q\247\250\000\001\243@\000\006LM4\364\232i\350D\322Sjz\014\232O\023)\345=L\322y\020\031\000\003F\200\r\032\032\001\240\r\006\215\250\362\2004\003M\020\010&\232S\300 \232\2311=OS\304\217Pz\214\207\242\014\206\200\000\000\006\201\241\247\224\365\036\207\000\000\000\000\000\000\000\003@\000\000\000\000\000\000\000\007\000\000\000\000\000\000\000\003@\000\000\000\000\000\000\000\016\021 \350\0253\304\322\224\221\212;\352\206\307\333e$\316b\226q\365\207\370#\205q\350P \232/\310zHH\224%\0106H\013\337\005\214\000L\271\337\24475\242HjO\377\231\363\272\341\tQ&C\347T\031\334\306\"\212\3679\356\005D\017\341>\377{\255\336\354w{\375w\177\215\037\325\334\256\034vV\3054\330H\"\242\211\250a\213\030\232\327\343\204\3105M\352\007\222\000\037\014*\313\005~\376,&\333\017\316f\334\222D\0202\227\274\231\207L\020\335Z\307\362\344\\\247\257\0330 (\347\r7 \233\275f\013\204\244\270\"\243s:\356&\331\251\302er\201\"Y\307\177\035\311+J\234\033\241\001\360\270f{\000\216\262\32728\364\247\204\350\243!\240X'0\020N\022\355\013H:\237\202\014\203\272Pn+? \324\216\005\230(9\\\363\357N`@\253#*P\310(*c%jC\313\032\331@Dh\375]\213\354K\305\224\010;\222z\2251x)d\234\242N\352\302\000>\200\204\303\310H\341s\201+4A1\341~G<\364A\342\212\215\202;7\357[\262\370\276\234\r\016\304\000\264An\035\240\340\315\036\"\342C\331ID\200 H\240\211Z\3249\255U\035.J8\232\360\307\223\372oc\203\241$\235\024&\377r#.\2421GNaXG\343~[\020^T\3468#\273\220\035\353n\032\006\270\031\006\255\031k\301td\024L<#(\016v\247\353:\025\352\021\204k|\000(\030\013^\331E|\271\335\\\373y0\332\201\326\r\207\031XBI\362\307\324\313\241\333\031\261b\272\361\2454\005\271\200\020I\207\262\275\230\226$\276L\324ir\336\026\372\353`\224_%\314\3515B\222t\235a\222\010\202t\021\251\" \366uQ\301\252\306\204\330\207\227\224\272\002i\217\001\034\232Fm\376""\327;\235\373\310X\356\253V0\353\356\224\001\265\365\347|\210\304t9Bh\003\002V\027\217Hh\005)\270\023JI\006\325{\301?\332\336+\250Z\301k\350M_\222\010m|^\240\216\270\364{\231\265\203\306q\223_\032\245V\r\233\345\220DMa\244I\362\273lHI\010\265`&\266\253\327d\020\244\r\240\252\341\034\324xHNa)%|\316c\020\2074\302\247XF\347U:\027\214\342W\266z\200\224\001\"\342%l\264\026\2054\005\0228\214\330\240\2241V#\000\252F\nQ\315\002(\000qc\025\262n\273\034\357\t\273\253\256\302\243\322\3637\302\360\216\313g\003\001\t\244\205\304Sd\242\335e\266\000q\256\211\342\025\001J\024\203=-\251[*\206\007jS\304\370\n\350\005\206\007-<l\213\351\346\352\247E\321@\t8D\310\300Z\307q\3540wO\221fu\266\331\271\370\302y\032\206\200\301\342\034\014\000\326t\025\350\t\3237ar`\002X\220k\320\302\275a!AJ\007\010P\t>h%S\240$[g\307\267\376J\207\206\021S-\333\210\347\330Tu+\301M<\014\302\361\266[\014z|1z,\274\261<\357!\t)\206\263\305\211K\260\246Xn\002\201\317\336\274\t\370\210\230m\036\346{\017o\244\235AP\225[\337\300O\264\002\240Q\375\212\024\006\265+\0365\310\233\243D\221\366Y\372t4\305\347\245\276\017\372\007\257if\261\350\303\350\203\301\262\267U\272\366\230\006\257]o\326\250M,Q\252\254{\020\370\375\304G\217\032j\203\321\032\235 f_\302\022L\201\236\252\r\000a)\214,G4Vb\354\004P\224\346j\260\347\t*\254\223 \257!\235\237-*\223;\270\364i\347\325\371\355\3633\342E\2529\260(\247\204\305\323\343.\214\246g\374\014/\244\201w\200]\311\024\341BB# \2408";
-    PyObject *data = __Pyx_DecompressString(cstring, 1212, 2);
+    #elif (CYTHON_COMPRESS_STRINGS) == 2 /* compression: bz2 (1262 bytes) */
+const char* const cstring = "BZh91AY&SY\331\237\324i\000\000n\377\377\377\377\377\336\365\307\377\377\277\357\377\343\277\377\377\346@@@@@@@@@@@@@\000@\000P\003\354\330f\256\333\331\232\266x\303T\364\224\332e6\231\245Oe'\232\006\230\224\365\017\nhdzC\324z\236\240\365\001\241\352z \000\006mOS4\207\252m\036\240\321\004h\236Q\201S\374\221G\244\036\241\352hzO\324\206\217P\006\2004\000\003@\000\000\001\352\000\320\2154M&\232\223G\246\247\251\372)\3524\000\032\006\215\014\2152\000\000\000\000\000\006 \036\241SOT\3210&h\000M0\000\004\300&L\206\231\030F\000\021\201\006\021\204\006C\r\023P\243\323\032\243Cj\017\324\201\240\000\000\003@\000\000\000\000\000\000\006A \n\004\301L\322\030\310\201\025\222\037~\001\3043\361\022\027\366\367\014cn\312\214r\204$)\027\023\202T\266A<\242\"fFd`\352\210\030\353\004h\020+\267\226\300\354U\010\221\314\277\330\226U\326!\032\nF\026S\203\237\210\330P\212\364z\2404\020?t\2654\263\264\264~Z\234\207\376\034\337G\377\024?.jQ\024R\335\232\272\352\255)\202j\205\247\274\327\017wc\351\246\342Xu\301\350\306\037\233\365\373\253\026\017\255\264\352 \341\005\221\365\306\345\204\354\020\332\237\242F\320U\264L\333\027\304\246\253\3741\327Q-\271a\260\354\357z\347\350\365:j\342I\235:o\022\002\347l\306\3306;\267\363PhO; \273\253\301l \246\273\314'\253\226\000\256\374\273\236\000P\032\340Je7\3359\235^\026`^\240\207\n\217\344\211\304\231LP<\010\213\020\254\265\305)\0205\006\037|\2340\236\213\306z\266g\316\253\242pA<\254E@9f\223\354\204\225\354i3\236\326*\275vT\323\341\250\000j\3643\336Etd\240/\323\230\031\267\031n=Of\017A\220a1\313\306\312\253`\254\264e\272\0320\002\241\004\254t\003\303\234\332\006\3630\256C2(\003\002&A\215)@\367T\2106\337\271Tf\331\343\315\367OK{\211\205$\250\005oN0\375i\212c\301\000\320K\255oq\n\r\007\003\274\331W\001\357\252\254^\030\000\270,\275\221M\272\332!\004\202\202r\000\367\330\267\337\nl\r\006\245q\000d\022\005\325\245\341\277\313\024\331\006\246\262t\335 n\031\31268\3011l\257l\373\352\316\2024hK\021*\310T B\002\020\214\220lE\001%\000\014`1\214\256\000\003\200o""\364\261\022Y\343\300\"\016&[\334\370\272b\210\276/\265\004\211\004\006w\214XL \256|\332\335\226\235\t8\302\232\231M\020\220\253\274c6\001\013y\365U\363`r\264R\321>\035\003 \023\207\014\2240\305'}H\005|\t\242|*S\0029d\r\014\224\t\2052BC\366\200\245\276\330}\340\264\001O\324\272\246\341XbDVT\0063\206\177V\355\360\243Z.`\326!N\320\303\252\215\300\302I\rp\212\306\275\310\210\211\030\251 $\225\"\246\020`!\201\261\010\217\rv\205\005\tH\025\021E\221\3356\004p\220 \262\210\346U\311%5\213\003(\304\352\305+#+\346h\304\2164%\310\016b\331\315\222\360\214Sp\336\334\001\367\364\253Y\327\006\002x\022\241\250\335!Vq(\205\312\301[zh\324\034x\362\350\205_\214\224\200\005\230(\346\025<eNd\250\260.\000\016\0251\330\301\340\"D2q\033%\274\204\301\001 \366L\222\225\304\033(\0168\215\362\350=\034\311\205\233\262\332-\204\001\231\320%11\242\332\225L\201\252\351jt\350\354Q$B\n\3528`@\330r\355\000\021\232qM\2203c\255Eh\255\201\034r\030(8S|F`\346'0\241\246\004\226\202\021\223\340\"n\303\301\253\306S\033PH'\315\220\224\267\032\006{oK\203I)\024\r\301\246x\361\360cY!\231D\226,\301\031\231N\323\323\245\006\251\311\361d\006AK\266\200$\317\"\236\350\353\330\343\324\362\027\224j\227\237\027j\332\275 j\217?*\343\276[\273<\220o \314%\350CSf\237\034#\tf\031\272\014D\"\3168>\245\265o\373m\247\007\3462\217\206=\010\327>\215\017q\340\336\306N\217\r+Y\034\305\270\034\2337\006\010\026\026\262\357\203\336\324\2445\216\221\326\242\017<X\347j\216Kg\255z\266\021-+\262]\243W\3345\350\272\245\340Sj\233[aH\257\300\323tkL\311fDeK!R\014V\320d\315\310\363\227\344\336\321\221\313\3301\215e\020n\377\213\271\"\234(Hl\317\3524\200";
+    PyObject *data = __Pyx_DecompressString(cstring, 1262, 2);
     if (unlikely(!data)) __PYX_ERR(0, 1, __pyx_L1_error)
     const char* const bytes = __Pyx_PyBytes_AsString(data);
     #if !CYTHON_ASSUME_SAFE_MACROS
     if (likely(bytes)); else { Py_DECREF(data); __PYX_ERR(0, 1, __pyx_L1_error) }
     #endif
-    #elif (CYTHON_COMPRESS_STRINGS) != 0 /* compression: zlib (1095 bytes) */
-const char* const cstring = "x\332}S\317S\333F\024\306\304\245\246q\223:\244M\246I'2\303\204\036j\363#@\322\246n\307!@<$\301\006\267\220C\272\263H\317\266by%kW6\236Ig8\372\250\243\216:\352\250\243\217\0349\372\350#\177\002\177B\337J`\322\222\251\306\332}z\373~|\373\275\317\371\305\374Zm\335d\002\230\310U{\026\2745\031\276\002\024\321\240BY\357\211\206\311\024\235+\032\030\372!\330T\200\321S\270\260uU\200-\203\230R\336(\347V\236\255(\224i\212\r\037@\025\\\341\316\241jP\316\201+fM9ttC\350L\021\330\200\347\225RM\351\231\216\302\0004E\230\212\205q\237&\210\0060\205\203\220\2062O\0313\005\025\272\311\010\246\353\254>\257h\272\215M\364\016\310\354Mjp\310\037\344\336\2748\310\025\313\245\355\215w\217\177\247\232F0\013\250e\031\272\032%/\034\345\272\335n\256f\332\255\234c\033\300TS\003M%p\004\252#L;o\365\2164\235\323C\003\200\311u\241F-}\241\263\264`\332\032\330uU\347\261_c\320\335\221\256]\340\226d\254\260\273\261\367\307\353\252\205\224@\241\355P&t\321+ \302\316\276\3164\263[X[\304\307\006\315Qa\207\031\275\202\260\035\340\272\006\205\307\\\2573*\034\033\n\277JJY\235\233\216\255\302o\274\327:4\215\202\320[Pb\233&\272\"\233\013\332\262\n\222\304\302&\345\342\205\316(Sa\017\213\200}\315\221'$\356I\324h\210\204|.\004i\306\252\342\377\202\344\3604\"\331 \021\025\327#\3445H\333\001\273\267U]\177]zS\252\022R\356\035\341\373\022eB\336\302\221\330\205\332^u\247\\-no\220\362\356\316f\251*\3535\241Gy\217\251\272\231WM\333tP#\300\377\333\357jF\252\201\347DG!\330T\205C\25265*(!\232\354\022o\232\323\262x\r\021\222\017\034\257#?\t\2519L\305sR\277\274,iP\336@=7\000g^G^\033-\252\022\235\2231\n]@\213G%H\213bG|Z\246\346\030 -F[\270\243\016.\226\010\246T'\230\266\314\261L+R\003!(*\2426@mr\247\025\177\331\300\035C\304\366\005\030i\312\344\330r\230\245\253Mlt\215\347\370\274#\244\n%\014\324\232\021C\271T]4\003\022Ki<~r%\275k\222\030;\340\010M\231hqPm\020r4\034\214Z\244\220\213\013\243\245A\215F\360\307\272!\237\321\020o\320\345\3255)\361+eD\021\261\256\tA\013kHI\177\"q\307\302i\202\303a\\\260C\r\374\247\034'\316S\023_""\244\373k\356wn\333K\034\027\361sz\326\177\030\354\207\305\2602J\375\340U\375\273~\305\327\202\\\370\367\311\326\351\263\341\336\373\341\373\277F\251\333\375v\234{\253_u\277\367V\274\366(\231\356o\271K\356\246\367\223OG\311/\217;\375}w\303\273\353a\231;nv\224\272\347\266\317p\021\336\317\376V\260\032\336\010W\302\217'OO\2632\266\215\025\207\267\227\303\271\220\206\335A\363\364\336\260\\9\373\267+3L6\317'&\214Dq\022\267\342\344\201\334\016&\337M\236\17751=\347?\361\251/\242\262\313\022\370\003oi\224\376\326\255\270t\224\236AT\305\361\2060\274\224?\345\327\203J\240\205\363\203\314 ;J\177\035\375\356{\t/s>51\235\356?wU\357\276?\343o\007\034cf\006\333'\034\221\246\357\270\363^\306\373\321\317\372\253\301TP\017+\2416\230?\311\234\214\217\362A\"\310\234\245n\366\227.=\331\263\224\342\337\300x<\210\t}\020\024\003\274\335#\317\3663\303\331_\006\331\301\322Yjz\224~\350\275\364\023r+J\014\231\3417\263~.@\232\317\222\217\274\366PY\014o\016\236\2374\207\225\335Qrf83\347\277\222u${\037\335\247\036\022\374$\\\032\256\274:\2755\374s\177\224D\004\307\211Qr!h\207S!\375\007\371\336\215/";
-    PyObject *data = __Pyx_DecompressString(cstring, 1095, 1);
+    #elif (CYTHON_COMPRESS_STRINGS) != 0 /* compression: zlib (1117 bytes) */
+const char* const cstring = "x\332}S\317S\333F\024\306\304\245\246q\223:\244M\246I'\"\303\204\036j\023\010\220\264\251\3331\t\277\206$\330\340\026zHw\026\351\331\336X^\311\332\025\3063\351\014G\037u\324QG\035u\364\221#G\037u\344O\340O\350[\031\234\244d\252\261\264o\337\276\037\337~\357s\341qa\271\366\302\342\022\270\314W\2736\274\2618\276\0224\331\240R{\321\225\r\213kLh\006\230\354\000\034*\301\354jB:L\227\340\250 \256\225W\313\371\305g\213\032\345\206\346\300;\320\245\320\204{\240\233T\010\020\232U\323\016\\fJ\3065\211\rDA\333\254i]\313\3258\200\241IK\2631\356\343\004\331\000\256\t\220\312\320f)\347\226\244\222Y\234`:\343\365Y\315`\0166a\207\240\262\327\250)\240\260\237\177\275\262\237/\2257\267V\377z\364;5\014\202Y@m\333dz\222<w\224\357t:\371\232\345\264\362\256c\002\327-\003\014\235\300\021\350\256\264\234\202\335=2\230\240\007&\000W\337\271\032\265\331\334\341\374\234\345\030\340\324u&\206~\203Cg[\271v@\330\212\261\342\316\352\356\037\257\252\266%\230j\264\313\014(\332\310\017\024\333.\345\222\311n\021\341\036\3561nX\235\342\362c|\0340\\\035\266\271\331-J\307\005\241R\036\tV\347T\272\016\024\177U\374\362\272\260\\G\207\337D\267u`\231E\311Z\260\311\327,t%\266\220\264e\027\025\243\305\225\355\352\306\032\025r\205q\312u\330\305B\340\\q\024\010\031\366%z2UB>\027\202\274ce\371\177Aj\232\006Q\364\220\204\233\253\021\352*\244\355\202\323]\257\276x\265\371z\263JH\271{\204\357K\324\ry\003Gr\007j\273\325\355r\265\264\265J\312;\333k\233UU\257\t]*\272\\gVA\267\034\313E\321\200\370o\277\017C\323M<'\014\225\341P\035\016\250\3364\250\244\204\030\252\313p1\334\226-j\210\220\274\023x\035\265%\244\346r\035\317I\375\362\262\244AE\003\005\336\000\024A\035\271m\264\250N\230 #\024LBK$%H\213bG|Z\226\341\232\240,N[\270\2420.>\tL%W\260\034\225c[\366\307\362H\324A\010*\216\350\r\320\233\302m\rw\016\010\327\224C\373\002\2302U\241\241\345r\233\351Mlz\205\363\341\371\241T\022U\220P{\346\020\326\245\n\223y\220\241\264FR \037\244xE\036#\007\034\241\251\022m\001\272\003R\215I\200YK\324rqy\264\014\250\321\004\376HC\3443z""\022\r\272\260\264\254$\377A%I\304P\347\204\240\2055\224\304?\222\274k\343d\301\0250*xHM\374\347\034\247\3163c_d{\313\336w^\333O\035\227p;\3710\270\037\356E\245\250\022g~\360\253\301\355\240\022\030a>\372\347d\375\364\331`\367\355\340\355\337q\346f\257=\314\275\321\253z\337\373\213~;Ng{\353\336\274\267\346\377\024\3208\375\345\361ao\317[\365o\373X\346\2267\035g\356x\3553\374H\377\347`=\\\212\256E\213\321\373\223\247\247\323*\266\215\025\0077\027\242\231\210F\235~\363\364\316\240\\9\373\324\225\033\244\233\347ccf\2524\216Ki|_-\373\343\266Z\354\361\366\370\371Wc\2233\301\223\200\0062\251\276\240\360\337\363\347\343\354\267^\305\243qv\n\301\225\342,\272\374\322h\207\240\374L0\021\324\303JhD\263\375\\\177:\316~\235\374\356\372)?w>16\231\355=\367t\377n0\025l\205\002c\246\372['\002qgoy\263~\316\3771\230\016\226\302\211\260\036U\"\243?{\222;\031\035\025\302T\230;\313\\\357\315_z\246\3172Zp\r\343\361`H\357\275\260\024\342]\037\370N\220\033<\374\245?\335\237?\313L\306\331\373\376\313 \245\226\222\302\220\033|\3630\310\207H\372Y\372\201\337\036h\217\243\353\375\347'\315Ae'NO\r\246f\202\rUGq\371\336{\352#\335O\242\371\301\342\306\351\215\301\237{q\032\021\034\247\342\364\\\330\216&\"\372/_3\235\032";
+    PyObject *data = __Pyx_DecompressString(cstring, 1117, 1);
     if (unlikely(!data)) __PYX_ERR(0, 1, __pyx_L1_error)
     const char* const bytes = __Pyx_PyBytes_AsString(data);
     #if !CYTHON_ASSUME_SAFE_MACROS
     if (likely(bytes)); else { Py_DECREF(data); __PYX_ERR(0, 1, __pyx_L1_error) }
     #endif
-    #else /* compression: none (1675 bytes) */
-const char* const bytes = ".0.6fContent-TypeNoneNote that Cython is deliberately stricter than PEP-484 and rejects subclasses of builtin types. If you need to pass subclasses then set the 'annotation_typing' directive to False.X-MBX-APIKEY&?add_noteapplication/x-www-form-urlencodedc_executor.pyxdisableenable/fapi/v1/ordergcisenablednewOrderRespType=RESULTprice=quantity=recvWindow=60000reduceOnly=trueside=&signature=<stringsource>symbol=timeInForce=timestamp=type=FastBinanceSignerFastBinanceSigner.__reduce_cython__FastBinanceSigner.__setstate_cython__FastBinanceSigner.build_fapi_orderFastBinanceSigner.sign_queryGTCLIMIT__Pyx_PyDict_NextRefSTOPTAKE_PROFITapi_keyasyncio.coroutinesbuild_fapi_orderc_executorcline_in_tracebackdata__dict___dictdumpsfast_json_dump__func____getstate__hashlibhexdigesthmac_is_coroutineitemsjson__main____module____name__new__new__order_typeorjsonpopprice__pyx_checksum__pyx_result__pyx_state__pyx_type__pyx_unpickle_FastBinanceSigner__pyx_vtable____qualname__quantityquery_string__reduce__reduceOnly__reduce_cython____reduce_ex__rstripsecret_keyself__set_name__setdefault__setstate____setstate_cython__sha256sidesign_querystatesymbol__test__timetimeInForceupdateuse_setstatevalues\200\001\360\010\000\005\014\2106\220\026\220q\230\001\200A\360\010\000\t\"\240\034\250W\260A\260Q\330\010\035\230T\240\024\240Q\240d\250-\260}\300G\3108\320S]\320]^\330\010\017\210q\200\001\360\010\000\005\016\210T\220\032\2304\230q\330\004\014\210G\2201\220F\230,\240a\330\004\007\200v\210W\220E\230\024\230Q\330\010\022\220!\330\010\027\220q\340\010\027\220t\2309\240G\2505\260\003\2604\260|\3007\310!\330\004\007\200q\330\010\017\320\0172\260$\260a\260w\270k\310\027\320PQ\340\010\017\320\0172\260$\260a\260w\270k\310\021\320\004k\360\000\000l\001A\002\360\000\000A\002X\002\360\000\000X\002Y\002\360\n\000\t$\2403\240a\240t\2505\260\003\2602\260Q\330\010\033\2301\330\014\025\220Q\220a\330\014\023\2201\220A\330\014\023\2201\220A\330\014\027\220q\230\010\240\006\240g\250Q\250d\260'\270\021\270!\330\014\r""\330\014\r\330\014\030\230\001\230\021\360\006\000\t\014\210;\220c\230\030\240\023\240K\250s\260'\270\023\270K\300s\310!\330\014\022\220'\230\021\230(\240!\2405\250\006\250g\260Q\260d\270'\300\021\300!\330\014\022\220'\230\021\230.\250\001\250\021\340\010\013\2101\330\014\022\220'\230\021\230!\340\010 \240\003\2405\250\001\250\021\330\010\035\230T\240\033\250A\250Q\340\010\037\230r\240\021\320\":\270!\2701\340\010\t\330\014\034\230D\240\001\330\014\034\230A\360\006\000\t\021\320\020\"\240-\250q\200\001\340\004\037\230q\320 0\260\013\270;\300k\320QR\330\004\023\320\023$\240H\250A\250Q\330\004\007\200|\2207\230!\330\0103\2601\3204H\310\016\320VW\330\004\013\2101\200\001\330\004/\250q\260\006\260a";
+    #else /* compression: none (1718 bytes) */
+const char* const bytes = ".0.6fContent-TypeNoneNote that Cython is deliberately stricter than PEP-484 and rejects subclasses of builtin types. If you need to pass subclasses then set the 'annotation_typing' directive to False.X-MBX-APIKEY&?add_noteapplication/x-www-form-urlencodedc_executor.pyxdisableenable/fapi/v1/ordergcisenablednewOrderRespType=RESULTpositionSide=price=quantity=recvWindow=60000reduceOnly=trueside=&signature=<stringsource>symbol=timeInForce=timestamp=type=BOTHFastBinanceSignerFastBinanceSigner.__reduce_cython__FastBinanceSigner.__setstate_cython__FastBinanceSigner.build_fapi_orderFastBinanceSigner.sign_queryGTCLIMIT__Pyx_PyDict_NextRefSTOPTAKE_PROFITapi_keyasyncio.coroutinesbuild_fapi_orderc_executorcline_in_tracebackdata__dict___dictdumpsfast_json_dump__func____getstate__hashlibhexdigesthmac_is_coroutineitemsjson__main____module____name__new__new__order_typeorjsonpoppositionSideprice__pyx_checksum__pyx_result__pyx_state__pyx_type__pyx_unpickle_FastBinanceSigner__pyx_vtable____qualname__quantityquery_string__reduce__reduceOnly__reduce_cython____reduce_ex__rstripsecret_keyself__set_name__setdefault__setstate____setstate_cython__sha256sidesign_querystatesymbol__test__timetimeInForceupdateuse_setstatevalues\200\001\360\010\000\005\014\2106\220\026\220q\230\001\200A\360\010\000\t\"\240\034\250W\260A\260Q\330\010\035\230T\240\024\240Q\240d\250-\260}\300G\3108\320S]\320]^\330\010\017\210q\200\001\360\010\000\005\016\210T\220\032\2304\230q\330\004\014\210G\2201\220F\230,\240a\330\004\007\200v\210W\220E\230\024\230Q\330\010\022\220!\330\010\027\220q\340\010\027\220t\2309\240G\2505\260\003\2604\260|\3007\310!\330\004\007\200q\330\010\017\320\0172\260$\260a\260w\270k\310\027\320PQ\340\010\017\320\0172\260$\260a\260w\270k\310\021\320\004k\360\000\000l\001A\002\360\000\000A\002X\002\360\000\000X\002p\002\360\000\000p\002q\002\360\n\000\t$\2403\240a\240t\2505\260\003\2602\260Q\330\010\033\2301\330\014\025\220Q\220a\330\014\023\2201\220A\330\014\033\2301\230A\330\014\023\2201\220A\330""\014\027\220q\230\010\240\006\240g\250Q\250d\260'\270\021\270!\330\014\r\330\014\r\330\014\030\230\001\230\021\360\006\000\t\014\210;\220c\230\030\240\023\240K\250s\260'\270\023\270K\300s\310!\330\014\022\220'\230\021\230(\240!\2405\250\006\250g\260Q\260d\270'\300\021\300!\330\014\022\220'\230\021\230.\250\001\250\021\340\010\013\2101\330\014\022\220'\230\021\230!\340\010 \240\003\2405\250\001\250\021\330\010\035\230T\240\033\250A\250Q\340\010\037\230r\240\021\320\":\270!\2701\340\010\t\330\014\034\230D\240\001\330\014\034\230A\360\006\000\t\021\320\020\"\240-\250q\200\001\340\004\037\230q\320 0\260\013\270;\300k\320QR\330\004\023\320\023$\240H\250A\250Q\330\004\007\200|\2207\230!\330\0103\2601\3204H\310\016\320VW\330\004\013\2101\200\001\330\004/\250q\260\006\260a";
     PyObject *data = NULL;
     CYTHON_UNUSED_VAR(__Pyx_DecompressString);
     #endif
     PyObject **stringtab = __pyx_mstate->__pyx_string_tab;
     Py_ssize_t pos = 0;
-    for (int i = 0; i < 97; i++) {
+    for (int i = 0; i < 100; i++) {
       Py_ssize_t bytes_length = index[i].length;
       PyObject *string = PyUnicode_DecodeUTF8(bytes + pos, bytes_length, NULL);
-      if (likely(string) && i >= 29) PyUnicode_InternInPlace(&string);
+      if (likely(string) && i >= 30) PyUnicode_InternInPlace(&string);
       if (unlikely(!string)) {
         Py_XDECREF(data);
         __PYX_ERR(0, 1, __pyx_L1_error)
@@ -5720,7 +5760,7 @@ const char* const bytes = ".0.6fContent-TypeNoneNote that Cython is deliberately
       stringtab[i] = string;
       pos += bytes_length;
     }
-    for (int i = 97; i < 103; i++) {
+    for (int i = 100; i < 106; i++) {
       Py_ssize_t bytes_length = index[i].length;
       PyObject *string = PyBytes_FromStringAndSize(bytes + pos, bytes_length);
       stringtab[i] = string;
@@ -5731,14 +5771,14 @@ const char* const bytes = ".0.6fContent-TypeNoneNote that Cython is deliberately
       }
     }
     Py_XDECREF(data);
-    for (Py_ssize_t i = 0; i < 103; i++) {
+    for (Py_ssize_t i = 0; i < 106; i++) {
       if (unlikely(PyObject_Hash(stringtab[i]) == -1)) {
         __PYX_ERR(0, 1, __pyx_L1_error)
       }
     }
     #if CYTHON_IMMORTAL_CONSTANTS
     {
-      PyObject **table = stringtab + 97;
+      PyObject **table = stringtab + 100;
       for (Py_ssize_t i=0; i<6; ++i) {
         #if CYTHON_COMPILING_IN_CPYTHON_FREETHREADING
         #if PY_VERSION_HEX < 0x030E0000
@@ -5825,9 +5865,9 @@ static int __Pyx_CreateCodeObjects(__pyx_mstatetype *__pyx_mstate) {
     __pyx_mstate_global->__pyx_codeobj_tab[0] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_c_executor_pyx, __pyx_mstate->__pyx_n_u_sign_query, __pyx_mstate->__pyx_kp_b_iso88591_A_WAQ_T_Qd_G8S_q, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[0])) goto bad;
   }
   {
-    const __Pyx_PyCode_New_function_description descr = {8, 0, 0, 8, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 35};
-    PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_self, __pyx_mstate->__pyx_n_u_symbol_2, __pyx_mstate->__pyx_n_u_side_2, __pyx_mstate->__pyx_n_u_order_type, __pyx_mstate->__pyx_n_u_quantity_2, __pyx_mstate->__pyx_n_u_price_2, __pyx_mstate->__pyx_n_u_timeInForce_2, __pyx_mstate->__pyx_n_u_reduceOnly};
-    __pyx_mstate_global->__pyx_codeobj_tab[1] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_c_executor_pyx, __pyx_mstate->__pyx_n_u_build_fapi_order, __pyx_mstate->__pyx_kp_b_iso88591_k_l_A_A_X_X_Y_3at5_2Q_1_Qa_1A_1, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[1])) goto bad;
+    const __Pyx_PyCode_New_function_description descr = {9, 0, 0, 9, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 35};
+    PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_self, __pyx_mstate->__pyx_n_u_symbol_2, __pyx_mstate->__pyx_n_u_side_2, __pyx_mstate->__pyx_n_u_order_type, __pyx_mstate->__pyx_n_u_quantity_2, __pyx_mstate->__pyx_n_u_price_2, __pyx_mstate->__pyx_n_u_timeInForce_2, __pyx_mstate->__pyx_n_u_reduceOnly, __pyx_mstate->__pyx_n_u_positionSide_2};
+    __pyx_mstate_global->__pyx_codeobj_tab[1] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_c_executor_pyx, __pyx_mstate->__pyx_n_u_build_fapi_order, __pyx_mstate->__pyx_kp_b_iso88591_k_l_A_A_X_X_p_p_q_3at5_2Q_1_Qa, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[1])) goto bad;
   }
   {
     const __Pyx_PyCode_New_function_description descr = {1, 0, 0, 4, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 1};
@@ -5840,7 +5880,7 @@ static int __Pyx_CreateCodeObjects(__pyx_mstatetype *__pyx_mstate) {
     __pyx_mstate_global->__pyx_codeobj_tab[3] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_stringsource, __pyx_mstate->__pyx_n_u_setstate_cython, __pyx_mstate->__pyx_kp_b_iso88591_q_a, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[3])) goto bad;
   }
   {
-    const __Pyx_PyCode_New_function_description descr = {1, 0, 0, 1, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 70};
+    const __Pyx_PyCode_New_function_description descr = {1, 0, 0, 1, (unsigned int)(CO_OPTIMIZED|CO_NEWLOCALS), 71};
     PyObject* const varnames[] = {__pyx_mstate->__pyx_n_u_data};
     __pyx_mstate_global->__pyx_codeobj_tab[4] = __Pyx_PyCode_New(descr, varnames, __pyx_mstate->__pyx_kp_u_c_executor_pyx, __pyx_mstate->__pyx_n_u_fast_json_dump, __pyx_mstate->__pyx_kp_b_iso88591_6_q, tuple_dedup_map); if (unlikely(!__pyx_mstate_global->__pyx_codeobj_tab[4])) goto bad;
   }

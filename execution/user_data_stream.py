@@ -1,16 +1,11 @@
 import asyncio
 import json
-import time
-import hmac
-import hashlib
+from core.events import FillEvent, OrderEvent
 import websockets
 import ssl
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
 from config import Config
 from utils.logger import logger
-from core.events import FillEvent, OrderEvent, SignalEvent, SignalType
-from utils.error_handler import retry_on_api_error
 import aiohttp
 
 class UserDataStream:
@@ -252,6 +247,37 @@ class UserDataStream:
             except Exception as e:
                 logger.debug(f"[UserStream] Order lookup failed: {e}")
 
+            # FORENSIC FIX: Extract Horizon from Native clientOrderId
+            client_oid = o.get('c', '')
+            if client_oid and client_oid.startswith('ctos_'):
+                parts = client_oid.split('_')
+                if len(parts) >= 2:
+                    _real_horizon = parts[1] # e.g., 'SCALPING' or 'SWING'
+                    logger.info(f"🧬 [UserStream] Recovered Horizon '{_real_horizon}' from clientOrderId: {client_oid}")
+
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC FIX: NATIVE HEDGE MODE INFERENCE (Zombie Killer)
+            # QUÉ: Si el OrderManager falla (o se reinició), usamos los
+            #   campos nativos de Binance para deducir is_close de forma infalible.
+            # ═══════════════════════════════════════════════════════════════
+            # 'ps' = positionSide (LONG, SHORT, BOTH)
+            # 'R' = reduceOnly (bool)
+            pos_side = o.get('ps', 'BOTH')
+            is_reduce_only = o.get('R', False)
+            
+            # Infer is_close natively
+            native_is_close = is_reduce_only
+            if pos_side == 'LONG' and side == 'SELL': native_is_close = True
+            elif pos_side == 'SHORT' and side == 'BUY': native_is_close = True
+            
+            # Use tracked metadata if available, otherwise trust Binance native payload
+            final_is_close = _real_metadata.get('is_close', _real_metadata.get('is_exit', native_is_close))
+            _real_metadata['is_close'] = final_is_close
+            _real_metadata['is_exit'] = final_is_close # Sync both
+            
+            # Add strict context to metadata to help Portfolio route the fill
+            _real_metadata['binance_position_side'] = pos_side
+
             fill_event = FillEvent(
                 timeindex=datetime.now(timezone.utc),
                 symbol=symbol_ccxt,
@@ -262,7 +288,7 @@ class UserDataStream:
                 fill_price=last_price,
                 order_id=order_id,
                 commission=float(o.get('n', 0)),
-                is_closed=(status == 'FILLED'),
+                is_closed=final_is_close, # NATIVE HEDGE INFERENCE INSTEAD OF STATUS=='FILLED' (which only means order is filled, not position closed)
                 strategy_id=_real_strategy,
                 order_type=None,
                 setup_type=_real_setup,

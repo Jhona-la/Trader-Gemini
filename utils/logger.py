@@ -131,7 +131,7 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
 
     # B. Main File Handler (JSON, DEBUG+)
     # PHASE 47.3: Adaptive backtest logging for Windows (Avoid Error 32)
-    is_backtest = "backtest" in sys.argv[0] or "auditor" in sys.argv[0]
+    is_backtest = any(x in sys.argv[0].lower() for x in ["backtest", "auditor", "diag", "bt", "test"])
     is_windows = os.name == 'nt'
     
     if is_windows and is_backtest:

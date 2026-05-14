@@ -4,10 +4,7 @@ Combina simplicidad del scalping con robustez del análisis técnico avanzado
 """
 
 import os
-import time
 import numpy as np
-import pandas as pd
-import talib
 from core.events import SignalEvent
 from core.enums import SignalType
 from datetime import datetime, timezone
@@ -100,7 +97,7 @@ class HybridScalpingStrategy(Strategy):
         
         # Horizon-specific operational params
         self.HORIZON_TIMEFRAMES = h_params.get('timeframes', ['5m', '15m', '1h'])
-        self.PRIMARY_TF = h_params.get('primary_tf', '5m')
+        self.PRIMARY_TF = h_params.get('primary_tf', '5m' if horizon.upper() == 'SCALPING' else '1h')
         self.MIN_VOLUME_RATIO = h_params.get('min_volume_ratio', 0.70)
         self.COOLDOWN_SECONDS = h_params.get('cooldown_seconds', 90)
         self.MAX_HOLD_BARS = h_params.get('max_hold_bars', 60)
@@ -129,17 +126,17 @@ class HybridScalpingStrategy(Strategy):
         self.PROFILES = {
             'AGGRESSIVE': {
                 'tp_pct': 0.025, 'sl_pct': 0.008, 
-                'adx_threshold': 18, 'strength_threshold': 0.45,
+                'adx_threshold': 20, 'strength_threshold': 0.70,
                 'atr_sl_mult': 1.5, 'atr_tp_mult': 3.5, 'trailing_rsi': 70
             },
             'BALANCED': {
                 'tp_pct': 0.030, 'sl_pct': 0.010,
-                'adx_threshold': 18, 'strength_threshold': 0.50,
+                'adx_threshold': 20, 'strength_threshold': 0.75,
                 'atr_sl_mult': 2.0, 'atr_tp_mult': 4.0, 'trailing_rsi': 65
             },
             'CONSERVATIVE': {
                 'tp_pct': 0.040, 'sl_pct': 0.020,
-                'adx_threshold': 20, 'strength_threshold': 0.55,
+                'adx_threshold': 22, 'strength_threshold': 0.80,
                 'atr_sl_mult': 2.5, 'atr_tp_mult': 5.0, 'trailing_rsi': 60
             }
         }
@@ -271,8 +268,8 @@ class HybridScalpingStrategy(Strategy):
                     if loaded:
                         self.genotypes[symbol] = loaded
                         found_genes = loaded.genes
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Silent exception caught: {e}")
         
         # 2. Case: Not found -> Auto-Spawn
         if not found_genes:
@@ -296,9 +293,19 @@ class HybridScalpingStrategy(Strategy):
         # Phase 2 FIX: Config is the master source of truth for Generation 0.
         if generation == 0:
             final_params['strength_threshold'] = getattr(self, 'STRENGTH_THRESHOLD', Config.Strategies.SCALPING_PARAMS.get('strength_threshold', 0.55))
-            final_params['adx_threshold'] = getattr(self, 'ADX_THRESHOLD', final_params.get('adx_threshold', 25))
-            final_params['tp_pct'] = getattr(self, 'TP_PCT', final_params.get('tp_pct'))
+            
+            # FORENSIC-V81: HYPER-EVOLVER MUTATIONS INJECTION
+            # FIX-FORENSIC-V82: Mutations lives in Config.Strategies, NOT Config root!
+            # Bug: getattr(Config, 'Mutations', {}) always returned {} because
+            # Mutations is defined at Config.Strategies.Mutations (config.py L498).
+            # Impact: ALL Optuna-optimized parameters (80% WR) were NEVER applied.
+            mutations = getattr(Config.Strategies, 'Mutations', {})
+            final_params['adx_threshold'] = mutations.get('adx_threshold', getattr(self, 'ADX_THRESHOLD', final_params.get('adx_threshold', 25)))
+            final_params['strength_threshold'] = mutations.get('strength_threshold', final_params.get('strength_threshold', 0.55))
+            final_params['tp_pct'] = mutations.get('max_tp_cap', getattr(self, 'TP_PCT', final_params.get('tp_pct')))
+            # [CIRUGÍA #1] SL comes directly from SCALPING_PARAMS, not via sl_multiplier
             final_params['sl_pct'] = getattr(self, 'SL_PCT', final_params.get('sl_pct'))
+            
             final_params['rsi_buy'] = self.RSI_OVERSOLD
             final_params['rsi_sell'] = self.RSI_OVERBOUGHT
             final_params['bb_std'] = self.BB_STD
@@ -428,7 +435,7 @@ class HybridScalpingStrategy(Strategy):
                     if inds:
                         timeframe_data[tf] = {'data': data, 'inds': inds}
             except Exception as e:
-                pass
+                logger.debug(f"Silent exception caught: {e}")
         
         return timeframe_data
 
@@ -456,17 +463,17 @@ class HybridScalpingStrategy(Strategy):
                     
                     # Bonus por RSI (Using last index)
                     last_rsi = inds['rsi'][-1]
-                    if 40 <= last_rsi <= 60:
+                    if Config.Strategies.TECHNICAL_THRESHOLDS['rsi_pullback_uptrend'] <= last_rsi <= Config.Strategies.TECHNICAL_THRESHOLDS['rsi_rally_downtrend']:
                         tf_score += 0.2
-                    elif inds['in_uptrend'][-1] and last_rsi < 40:
+                    elif inds['in_uptrend'][-1] and last_rsi < Config.Strategies.TECHNICAL_THRESHOLDS['rsi_pullback_uptrend']:
                         tf_score += 0.3  # Pullback en uptrend
-                    elif inds['in_downtrend'][-1] and last_rsi > 60:
+                    elif inds['in_downtrend'][-1] and last_rsi > Config.Strategies.TECHNICAL_THRESHOLDS['rsi_rally_downtrend']:
                         tf_score += 0.3  # Rally en downtrend (Corrected Logic)
-                    elif last_rsi < 30 or last_rsi > 70:
+                    elif last_rsi < Config.Strategies.TECHNICAL_THRESHOLDS['rsi_extreme_low'] or last_rsi > Config.Strategies.TECHNICAL_THRESHOLDS['rsi_extreme_high']:
                         tf_score += 0.4  # VITAL FIX: Extreme RSI means Mean Reversion is possible!
                     
                     # Bonus por volumen (V5.45 Relaxed for Alts)
-                    vol_thresh = 1.2 if is_btc else 1.1 # Reduced from 1.5 to 1.2 for BTC to catch more MR Setups
+                    vol_thresh = Config.Strategies.TECHNICAL_THRESHOLDS['vol_ratio_btc'] if is_btc else Config.Strategies.TECHNICAL_THRESHOLDS['vol_ratio_alts'] # Reduced from 1.5 to 1.2 for BTC to catch more MR Setups
                     if inds['volume_ratio'][-1] > vol_thresh:
                         tf_score += 0.2
                     
@@ -543,11 +550,11 @@ class HybridScalpingStrategy(Strategy):
             elif 'CHOPPY' in regime:
                 regime_mult = 0.75 # Stops más cerrados
                 
-            if vol_ratio > 1.2: # Volatilidad expandiéndose (Mechas largas)
+            if vol_ratio > Config.Strategies.TECHNICAL_THRESHOLDS['vol_ratio_high']: # Volatilidad expandiéndose (Mechas largas)
                 # El mercado está loco: Ampliamos red de pesca de profit, y alejamos stop loss del ruido
                 atr_sl_mult = base_sl_mult * 1.2 * regime_mult
                 atr_tp_mult = base_tp_mult * 1.5
-            elif vol_ratio < 0.8: # Volatilidad muy baja (Laterales estrechos)
+            elif vol_ratio < Config.Strategies.TECHNICAL_THRESHOLDS['vol_ratio_low']: # Volatilidad muy baja (Laterales estrechos)
                 # El mercado está muerto: TPs ultracortos, SL muy pegados
                 atr_sl_mult = base_sl_mult * 0.8 * regime_mult
                 atr_tp_mult = base_tp_mult * 0.8
@@ -584,8 +591,11 @@ class HybridScalpingStrategy(Strategy):
             # ════════════════════════════════════════════════════════════════
             is_scalping = hasattr(self, 'horizon') and self.horizon == 'SCALPING'
             if is_scalping:
-                max_tp_cap = 0.0025  # FORENSIC-V80: Increased to 0.25% to allow trades to reach real profit.
-                max_sl_cap = 0.0025  # 0.25% — survives ~3x M1 ATR noise
+                # [CIRUGÍA #1] RAISED FROM 0.25% TO 1.0% — WAS ROOT CAUSE OF ZOMBIE TRADES
+                # The 0.25% cap made TP unreachable, causing 98.8% zombie exits.
+                # Now aligned with Config.Strategies.SCALPING_PARAMS (0.80% TP / 0.40% SL)
+                max_tp_cap = 0.0100  # 1.00% — allows Config TP of 0.80% to pass through
+                max_sl_cap = 0.0060  # 0.60% — allows Config SL of 0.40% to pass through
             else:
                 max_tp_cap = getattr(Config.Strategies, 'MAX_EVO_TP', 0.30)
                 max_sl_cap = getattr(Config.Strategies, 'MAX_EVO_SL', 0.15)
@@ -652,7 +662,8 @@ class HybridScalpingStrategy(Strategy):
             'bb_position': 0.5,
             'atr': inds['atr'][idx],
             'close': last_close,
-            'adx': inds['adx'][idx]
+            'adx': inds['adx'][idx],
+            'macd_hist': inds['macd_hist'][idx] if 'macd_hist' in inds else 0.0
         }
         
         # BB Position Calculation
@@ -787,19 +798,19 @@ class HybridScalpingStrategy(Strategy):
         setups['short_volume_explicit'] = (
             is_red_candle
             and (last_close_val < vwap)
-            and (last_vol_ratio > 1.5)
+            and (last_vol_ratio > Config.Strategies.TECHNICAL_THRESHOLDS['vol_ratio_expansion'])
         )
         # VOLUME LONG: Vela verde + close sobre VWAP + volumen alto
         setups['long_volume_explicit'] = (
             is_green_candle
             and (last_close_val > vwap)
-            and (last_vol_ratio > 1.5)
+            and (last_vol_ratio > Config.Strategies.TECHNICAL_THRESHOLDS['vol_ratio_expansion'])
         )
 
         # VOLATILITY GATE (applies to both SHORT and LONG extremes in SCALPING)
         volatility_pct = setups['atr'] / last_close if last_close > 0 else 0
-        setups['_short_vol_gate_pass'] = (volatility_pct < 0.025)  # < 2.5% ATR/Price
-        setups['_long_vol_gate_pass'] = (volatility_pct < 0.025)
+        setups['_short_vol_gate_pass'] = (volatility_pct < Config.Strategies.TECHNICAL_THRESHOLDS['volatility_gate_pct'])  # < 2.5% ATR/Price
+        setups['_long_vol_gate_pass'] = (volatility_pct < Config.Strategies.TECHNICAL_THRESHOLDS['volatility_gate_pct'])
         setups['_vwap'] = vwap
         # ================================================================
 
@@ -817,31 +828,27 @@ class HybridScalpingStrategy(Strategy):
         setups['short_mean_rev'] = price_at_upper and rsi_overbought and high_volume and is_range
         
         # ================================================================
-        # FORENSIC-AUDIT-FIX: SCALPING PROXIMITY SETUPS
-        # QUÉ: Setups más permisivos que no requieren extremos simultáneos.
-        # POR QUÉ: La combinación price_at_BB + RSI_extreme + high_volume
-        #   ocurre ~0.01% de las barras en 5m. Para scalping con $13,
-        #   necesitamos al menos 10-20 trades/día.
-        # CÓMO: Si el precio está CERCA del BB (dentro del 30%) Y el RSI
-        #   está en zona oversold/overbought (no extremo), activamos setup.
-        # CUÁNDO: Solo en horizonte SCALPING.
-        # EVIDENCIA: Diagnostic mostró RSI=40, bb_position=0.19, 0 setups.
+        # 👻 RESURRECCIÓN FANTASMA: PROXIMITY SETUPS
+        # Se reactivan para encontrar MÁS trades, pero con validación
+        # estricta de ADX y volumen para evitar "basura".
         # ================================================================
         if self.horizon == 'SCALPING' and not setups['long_mean_rev'] and not setups['short_mean_rev']:
             # Proximity: BB position < 0.25 (close to lower) or > 0.75 (close to upper)
             bb_pos = setups['bb_position']
-            rsi_trending_low = last_rsi < 45  # RSI leaning bearish (not extreme)
-            rsi_trending_high = last_rsi > 55  # RSI leaning bullish (not extreme)
+            rsi_trending_low = last_rsi < 35 
+            rsi_trending_high = last_rsi > 65 
+            vol_ok = last_vol_ratio > 0.8
+            adx_strong = setups['adx'] > 20 # Filtro anti-ruido
             
-            # Volume minimum for proximity (more relaxed)
-            vol_ok = last_vol_ratio > 0.5
+            bb_pos_lower = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('bb_pos_lower_prox', 0.25)
+            bb_pos_upper = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('bb_pos_upper_prox', 0.75)
             
-            if bb_pos < 0.25 and rsi_trending_low and vol_ok and is_range:
+            if bb_pos < bb_pos_lower and rsi_trending_low and vol_ok and is_range and adx_strong:
                 setups['long_mean_rev'] = True
-                logger.debug(f"🔍 [PROXIMITY SETUP] {symbol} LONG: BB={bb_pos:.2f}, RSI={last_rsi:.1f}")
-            elif bb_pos > 0.75 and rsi_trending_high and vol_ok and is_range:
+                logger.debug(f"👻 [FANTASMA] Proximity LONG activado para {self.symbol}")
+            elif bb_pos > bb_pos_upper and rsi_trending_high and vol_ok and is_range and adx_strong:
                 setups['short_mean_rev'] = True
-                logger.debug(f"🔍 [PROXIMITY SETUP] {symbol} SHORT: BB={bb_pos:.2f}, RSI={last_rsi:.1f}")
+                logger.debug(f"👻 [FANTASMA] Proximity SHORT activado para {self.symbol}")
         
         # 2. MOMENTUM (Optimizado para Nivel Supremo-V3 con VCP & ADX)
         # MACD variables ya declaradas arriba (macd, macd_sig, macd_hist, macd_prev_hist)
@@ -886,7 +893,6 @@ class HybridScalpingStrategy(Strategy):
             # ================================================================
             scalp_vol = last_vol_ratio > 0.9
             
-            from config import Config
             symmetric_shorts = getattr(Config.Strategies, 'SYMMETRIC_SHORTS_SCALPING', False)
             
             # MOMENTUM (now enabled for SCALPING with relaxed VCP)
@@ -1196,14 +1202,14 @@ class HybridScalpingStrategy(Strategy):
                     volatility = setups['atr'] / setups['close']
                     
                     # Adaptar umbral de confluencia a la volatilidad reciente
-                    # Si hay mucha volatilidad extrema, asumo spread más caro y reduzco ruido
-                    base_strength = params.get('strength_threshold', 0.80) if params else 0.80
+                    # [FORENSIC-RECAL] Tightened penalty: old +0.05 at 0.5% ATR was near-permanent in M5 crypto
+                    base_strength = params.get('strength_threshold', 0.45) if params else 0.45
                     dynamic_strength = base_strength
                     
-                    if volatility > 0.005:  # High recent volatility 
-                        dynamic_strength += 0.05 # Requerir más confirmación (spread ancho, movimientos violentos)
+                    if volatility > 0.010:  # [FORENSIC-RECAL] Only extreme volatility (>1.0% ATR/Price)
+                        dynamic_strength += 0.02 # Mild penalty (was +0.05, killed all signals)
                     elif volatility < 0.001: # Ultra Low Volatility
-                        dynamic_strength -= 0.05 # Bajar exigencias porque no hay estallidos falsos
+                        dynamic_strength -= 0.03 # Relax threshold for flat markets
                         
                     params['strength_threshold'] = dynamic_strength
                     
@@ -1349,8 +1355,12 @@ class HybridScalpingStrategy(Strategy):
                 current_close = setups.get('close', 1)
                 atr_pct = current_atr / current_close if current_close > 0 else 0
                 
-                # Para Scalping, necesitamos al menos 0.15% de movimiento natural en una vela.
-                min_atr_required = 0.0015 if self.horizon == 'SCALPING' else 0.0035
+                # FORENSIC-V81: Reduced from 0.15% to 0.04% for SCALPING
+                # QUÉ: BTC/SOL/BNB/XRP natural 1-min ATR is ~0.05%. Old 0.08% blocked 90%+ of entries.
+                # POR QUÉ: En periodos de baja volatilidad, BTC cae a ~0.04% ATR en M1.
+                # PARA QUÉ: Permitir trades en TODOS los regímenes de volatilidad, dejando que
+                #   el position sizing y el TP/SL se adapten al ATR real.
+                min_atr_required = 0.0004 if self.horizon == 'SCALPING' else 0.0025
                 
                 if atr_pct < min_atr_required:
                     logger.warning(f"🛑 [VOLATILITY BLOCK] {symbol} ATR {atr_pct*100:.3f}% < {min_atr_required*100:.3f}%")
@@ -1540,9 +1550,9 @@ class HybridScalpingStrategy(Strategy):
                     
                     logger.debug(f"⚡ [V5.6 DPE] {symbol}: Volatility Auto-tuned -> SL={final_sl_pct*100:.2f}%, TP={final_tp_pct*100:.2f}%")
                 else:
-                    # Fallback crítico
-                    final_sl_pct = 0.01
-                    final_tp_pct = 0.02
+                    # Fallback crítico usando Config centralizado
+                    final_sl_pct = Config.Strategies.SWING_PARAMS['sl_pct'] if self.horizon == 'SWING' else Config.Strategies.SCALPING_PARAMS['sl_pct']
+                    final_tp_pct = Config.Strategies.SWING_PARAMS['tp_pct'] if self.horizon == 'SWING' else Config.Strategies.SCALPING_PARAMS['tp_pct']
 
 
                 # ── FASE 25: VETO CUÁNTICO (Microestructura / Order Flow) ──
@@ -1656,7 +1666,7 @@ class HybridScalpingStrategy(Strategy):
                     
                     # ── V5.15 Symmetry Breaker: Elastic SL/TP ──
                     # If Sophia's predicted range is wider than ATR, we trust the horizon
-                    if sophia_report.win_probability > 0.85:
+                    if sophia_report.win_probability > Config.Strategies.TECHNICAL_THRESHOLDS['sophia_win_prob_high']:
                         pred_tp = abs(sophia_report.expected_high_pct if signal_type == SignalType.LONG else sophia_report.expected_low_pct)
                         pred_sl = abs(sophia_report.expected_low_pct if signal_type == SignalType.LONG else sophia_report.expected_high_pct)
                         
@@ -1665,7 +1675,7 @@ class HybridScalpingStrategy(Strategy):
                             final_tp_pct = min(final_tp_pct * 1.5, pred_tp)
                         
                         # Symmetry Breaker: Wider SL if WinProb is elite to avoid "Symmetry Lock" noise
-                        if sophia_report.win_probability > 0.92:
+                        if sophia_report.win_probability > Config.Strategies.TECHNICAL_THRESHOLDS['sophia_win_prob_supreme']:
                             final_sl_pct *= 1.35 # Extra breathing room for the predator
                             logger.debug(f"🔓 [V5.15 CHRONOS] Symmetry Breaker Active for {symbol}: SL expanded x1.35")
 
@@ -1692,9 +1702,9 @@ class HybridScalpingStrategy(Strategy):
                     
                     hurdle = base_hurdle
                     
-                    is_divine = sophia_report.superposition_coherence > 0.85
-                    is_harmonic = sophia_report.superposition_coherence > 0.7 or sophia_report.singularity_horizon > 0.7
-                    is_resonant = sophia_report.resonance_index > 0.6
+                    is_divine = sophia_report.superposition_coherence > Config.Strategies.TECHNICAL_THRESHOLDS['sophia_superposition_divine']
+                    is_harmonic = sophia_report.superposition_coherence > Config.Strategies.TECHNICAL_THRESHOLDS['sophia_superposition_harmonic'] or sophia_report.singularity_horizon > Config.Strategies.TECHNICAL_THRESHOLDS['sophia_superposition_harmonic']
+                    is_resonant = sophia_report.resonance_index > Config.Strategies.TECHNICAL_THRESHOLDS['sophia_resonance_index']
                     
                     if is_divine:
                         hurdle = base_hurdle * 0.5  # FORENSIC FIX: was hardcoded 0.01
@@ -1718,33 +1728,53 @@ class HybridScalpingStrategy(Strategy):
                         logger.warning(f"🛑 [ORACLE BLOCK] {symbol} rejected: Omni Score {omni:.3f} < {hurdle:.3f}")
                         continue
 
-                    # CONSENSO PONDERADO v1.0 — Sophia Confidence Gate
-                    # QUÉ: Sophia NO bloquea, REDUCE strength proporcionalmente.
-                    # POR QUÉ: Una señal técnica con WP=54% no es basura — es "indecisa".
-                    #   El RiskManager ya reduce sizing para señales débiles.
-                    # PARA QUÉ: Preservar trades donde Technical tiene razón pero Sophia duda.
-                    if sophia_report.win_probability < 0.70:
+                    # ═══════════════════════════════════════════════════════════
+                    # CTOS OMNIPOTENCE: WIN PROBABILITY HARD GATE
+                    # QUÉ: Bloqueo DURO si la probabilidad de ganar < 48%.
+                    # POR QUÉ: En backtest, Sophia empieza con prior ~50% (sin modelo pre-entrenado).
+                    #   El threshold de 52% bloqueaba 100% de señales por cold start del modelo.
+                    #   El sistema aún protege vía: ORACLE SCORE hurdle, ADX gate, PREDICTION_GATE.
+                    # PARA QUÉ: Permitir entrada y aprendizaje adaptativo del modelo.
+                    # CÓMO: Hard block solo por debajo de 48%. Soft penalty entre 48-70%.
+                    # ═══════════════════════════════════════════════════════════
+                    if sophia_report.win_probability < 0.48:
+                        logger.warning(f"🛑 [WP GATE] {symbol} BLOCKED: Win Prob {sophia_report.win_probability*100:.1f}% < 48% (coin flip territory)")
+                        continue
+                    
+                    if sophia_report.win_probability < Config.Strategies.TECHNICAL_THRESHOLDS['sophia_win_prob_min']:
                         sophia_penalty = max(0.5, sophia_report.win_probability / 0.70)
                         strength *= sophia_penalty
                         logger.info(f"🧠 [CONSENSUS] {symbol}: Sophia penalty x{sophia_penalty:.2f} (WP={sophia_report.win_probability*100:.1f}% < 70%)")
                     
                     # ── V5.45: SOVEREIGN ADAPTIVE LEVERAGE ──
-                    # Leverage is dictated by the Market Order (1 - Entropy).
-                    # Higher order = More trust = Higher leverage.
+                    # Leverage is dictated by the Market Order (1 - Entropy) & H values.
                     entropy_norm = sophia_report.decision_entropy # 0 to 1.585
                     order_factor = max(0.2, 1.0 - (entropy_norm / 1.585))
                     
-                    leverage = 10.0 + (order_factor * 20.0) # Adaptive from 10x to 30x
+                    # QUÉ: Apalancamiento Cuántico basado en Incertidumbre de Sophia
+                    if entropy_norm > 1.0:
+                        # Fat-Tails / Alta Incertidumbre -> Protección de Micro-Cuenta
+                        leverage = 2.0 + (order_factor * 5.0)  # Rango ~2x a 5x
+                        logger.debug(f"⚖️ [ADAPTIVE LEV] {symbol} | Alta Incertidumbre (H={entropy_norm:.2f}). Leverage reducido.")
+                    elif entropy_norm > 0.5:
+                        # Condición Normal
+                        leverage = 10.0 + (order_factor * 10.0) # Rango ~10x a ~15x
+                    else:
+                        # Certeza Cuántica -> Maximizar ganancia
+                        leverage = 20.0 + (order_factor * 10.0) # Rango ~20x a 30x
+                        logger.debug(f"⚖️ [ADAPTIVE LEV] {symbol} | Certeza Alta (H={entropy_norm:.2f}). Apalancamiento Agresivo.")
                     
                     if is_divine:
-                        leverage *= 1.5 # Extra power for Divine states (up to 45x)
+                        leverage *= 1.5 # Extra power for Divine states
+                        
+                    leverage = min(leverage, getattr(Config, "MAX_LEVERAGE", 30.0))
                         
                     logger.info(f"⚖️ [ADAPTIVE LEVERAGE] {symbol}: Order={order_factor:.2f} → Leverage={leverage:.1f}x")
                     
                     # ── V5.33: QUANTUM SCALP LOGIC ──
                     # If butterfly force is high, we reduce expected exit time to capture micro-patterns.
                     original_exit = sophia_report.expected_exit_mins
-                    if sophia_report.butterfly_force > 1.5:
+                    if sophia_report.butterfly_force > Config.Strategies.TECHNICAL_THRESHOLDS['sophia_butterfly_force']:
                         sophia_report.expected_exit_mins *= 0.5
                         sophia_report.time_to_tp_mins *= 0.5
                         logger.info(f"⚡ [QUANTUM SCALP] {symbol}: Reducing duration to {sophia_report.expected_exit_mins:.1f}m (B_Force={sophia_report.butterfly_force:.2f})")
@@ -1754,20 +1784,20 @@ class HybridScalpingStrategy(Strategy):
                     # ── TP/SL MODIFIERS (Not gates — they adjust, never block) ──
                     
                     # V5.16 Hologram: Trajectory TP Expansion (capped in V5.27)
-                    if sophia_report.path_score > 0.80:
+                    if sophia_report.path_score > Config.Strategies.TECHNICAL_THRESHOLDS['sophia_path_score']:
                         final_tp_pct *= 1.10  # V5.27: Reduced from 1.15 to 1.10
                         logger.debug(f"🚀 [HOLOGRAM] Explosive Trajectory! TP Expanded to {final_tp_pct*100:.2f}%")
 
                     # V5.17 Sovereign: Regime-Specific TP (moderated in V5.27)
-                    if sophia_report.hurst_exponent > 0.55:
+                    if sophia_report.hurst_exponent > Config.Strategies.TECHNICAL_THRESHOLDS['sophia_hurst_trend']:
                         final_tp_pct *= 1.1  # V5.27: Reduced from 1.2 to 1.1 (lightning scalp priority)
                         logger.debug(f"📈 [SOVEREIGN] Trending Regime (H={sophia_report.hurst_exponent:.2f})! TP x1.1")
-                    elif sophia_report.hurst_exponent < 0.42:
+                    elif sophia_report.hurst_exponent < Config.Strategies.TECHNICAL_THRESHOLDS['sophia_hurst_mean_rev']:
                         final_tp_pct *= 0.85
                         logger.debug(f"🔄 [SOVEREIGN] Mean Rev Regime (H={sophia_report.hurst_exponent:.2f}). Scalp Mode.")
 
                     # V5.19 Apex: TP Expansion (Whale Power — capped in V5.27)
-                    if sophia_report.whale_ratio > 5.0:
+                    if sophia_report.whale_ratio > Config.Strategies.TECHNICAL_THRESHOLDS['sophia_whale_ratio']:
                         final_tp_pct *= 1.25  # V5.27: Reduced from 1.5 to 1.25
                         logger.info(f"🐋 [APEX] Whale Movement! TP Expanded x1.25 to {final_tp_pct*100:.2f}%")
 
@@ -1787,9 +1817,11 @@ class HybridScalpingStrategy(Strategy):
                         final_sl_pct = 0.030
                     
                     # V5.26: ENFORCE R:R > 1.0 (TP must be >= SL)
-                    if final_tp_pct < final_sl_pct:
-                        final_tp_pct = final_sl_pct * 1.2  # At least 1.2:1 R:R
-                        logger.debug(f"⚖️ [V5.26 R:R] Enforced minimum R:R 1.2:1 → TP={final_tp_pct*100:.2f}%, SL={final_sl_pct*100:.2f}%")
+                    # [GOLDEN-V4 FIX]: Disabled! Scalping needs inverted R:R (SL 1.5x TP) to absorb noise.
+                    # Forcing TP to be 1.2x SL pushes the target out of reach and causes 70% ZOMBIE exits.
+                    # if final_tp_pct < final_sl_pct:
+                    #     final_tp_pct = final_sl_pct * 1.2  # At least 1.2:1 R:R
+                    #     logger.debug(f"⚖️ [V5.26 R:R] Enforced minimum R:R 1.2:1 → TP={final_tp_pct*100:.2f}%, SL={final_sl_pct*100:.2f}%")
 
                     logger.info(f"   💭 {sophia_narrative}")
                     
@@ -1861,17 +1893,17 @@ class HybridScalpingStrategy(Strategy):
                 _metadata['neural_bias'] = neural_bias # For telemetry
                 
                 # ════════════════════════════════════════════════════════════════
-                # FORENSIC-V70: FINAL HARD CAP before emission
-                # QUÉ: Cap absoluto después de TODOS los modificadores (Sophia,
-                #   Hologram, Sovereign, Apex, R:R) para evitar inflación.
-                # POR QUÉ: Los multiplicadores apilados (1.5*1.1*1.1*1.25)
-                #   pueden inflar TP de 0.20% → 0.57%, inalcanzable en M1.
-                # PARA QUÉ: Garantizar que NINGÚN trade scalping salga con
-                #   TP > 0.10% hacia risk_manager/check_stops.
+                # FORENSIC-V81: FINAL HARD CAP before emission (GOLDEN GENOTYPE)
+                # QUÉ: Cap absoluto post-modificadores alineado con Hyper-Evolver.
+                # POR QUÉ: El cap anterior de 0.10% dejaba solo 0.06% neto
+                #   después de fees RT (0.04%), haciendo el TP inalcanzable.
+                #   Esto causaba el 84% de exits como TIME_STOP_ZOMBIE.
+                # PARA QUÉ: Permitir TP viable de 0.163% (net ~0.12% after fees).
+                # GOLDEN GENOTYPE: TP=0.163%, SL=0.188% (Optuna Trial #47)
                 # ════════════════════════════════════════════════════════════════
                 if self.horizon == 'SCALPING':
-                    final_tp_pct = min(final_tp_pct, 0.0010)  # 0.10% hard cap (M1 ATR calibrated)
-                    final_sl_pct = min(final_sl_pct, 0.0015)  # 0.15% hard cap (M1 ATR calibrated)
+                    final_tp_pct = min(final_tp_pct, 0.0150)  # CTOS PHASE 3: Increased from 0.0020 to 0.0150 (1.5%) to allow Config.Strategies TP
+                    final_sl_pct = min(final_sl_pct, 0.0080)  # CTOS PHASE 3: Increased from 0.0020 to 0.0080 (0.8%) to avoid noise stop-outs
                 
                 signal = SignalEvent(
                     strategy_id=detailed_id,
@@ -1898,6 +1930,7 @@ class HybridScalpingStrategy(Strategy):
                         'expected_low': sophia_report.expected_low_pct if sophia_report else 0.0,
                         'path_score': sophia_report.path_score if sophia_report else 0.5,
                         'hurst': sophia_report.hurst_exponent if sophia_report else 0.5,
+                        'leverage': round(leverage, 1), # Inyectar apalancamiento adaptativo
                         'quantum_leverage': sophia_report.quantum_leverage if sophia_report else 1.0,
                         'vortex_pulse': sophia_report.vortex_pulse if sophia_report else 0.0,
                         'is_vortex': sophia_report.is_vortex_regime if sophia_report else False
@@ -1932,6 +1965,8 @@ class HybridScalpingStrategy(Strategy):
                       f"Confluence={confluence_score:.2f}, Vol={setups['volume_ratio']:.1f}x")
                 
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 print(f"❌ Error processing {symbol}: {e}")
                 continue
 

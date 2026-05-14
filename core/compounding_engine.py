@@ -95,7 +95,7 @@ class CompoundingEngine:
         x = max(-20.0, min(20.0, x))
         return 1.0 / (1.0 + math.exp(-x))
 
-    def get_horizon_allocation(self, equity: float) -> Tuple[float, float]:
+    def get_horizon_allocation(self, equity: float, timestamp_ms: float = None) -> Tuple[float, float]:
         """
         Returns (scalping_pct, swing_pct) based on current equity.
 
@@ -110,8 +110,10 @@ class CompoundingEngine:
         Returns:
             tuple: (scalping_pct, swing_pct) donde ambos suman 1.0
         """
-        now = time.time()
-        if now - self._last_recalc < self._recalc_interval:
+        now = (timestamp_ms / 1000.0) if timestamp_ms else time.time()
+        
+        # In backtest, time can jump fast, so recalculate logic is fine as long as we use simulated time.
+        if now - self._last_recalc < self._recalc_interval and timestamp_ms is None:
             return (self._cached_scalping_pct, self._cached_swing_pct)
 
         self._last_recalc = now
@@ -225,6 +227,44 @@ class CompoundingEngine:
             "current_drawdown_pct": round(dd * 100, 2),
             "elapsed_hours": round(elapsed_hours, 1),
             "samples": len(self._compound_log),
+        }
+
+    def get_growth_roadmap(self, current_equity: float = None, current_day: int = 1, avg_net_pnl_per_trade: float = 0.0, trades_today: int = 0) -> Dict:
+        """
+        📊 Growth Roadmap Calculator
+
+        QUÉ: Calcula cuántos trades necesitamos para duplicar capital en 15 días.
+        POR QUÉ: Sin un roadmap concreto, el objetivo "100% en 15 días" es abstracto.
+        PARA QUÉ: Cada notificación de cierre muestra progreso real hacia la meta.
+        CÓMO: target_equity = eq * (1.0473 ^ day). trades = gap / avg_pnl.
+        CUÁNDO: Llamado desde portfolio en cada cierre de trade.
+        """
+        eq = current_equity or self.last_equity or self.initial_capital
+        
+        # 100% in 15 days: 2^(1/15) = 1.047294
+        daily_growth_factor = math.pow(2.0, 1.0 / 15.0)
+        daily_growth_pct = (daily_growth_factor - 1.0) * 100.0
+        
+        expected_start = self.initial_capital * math.pow(daily_growth_factor, max(0, current_day - 1))
+        target_end = expected_start * daily_growth_factor
+        
+        daily_usd_target = target_end - expected_start
+        usd_progress = eq - expected_start
+        
+        avg_win_usd = max(avg_net_pnl_per_trade, 0.05)
+        remaining_usd = max(0.0, target_end - eq)
+        trades_needed = math.ceil(remaining_usd / avg_win_usd)
+        
+        on_track = eq >= target_end
+        
+        return {
+            "daily_target_pct": round(daily_growth_pct, 2),
+            "daily_target_usd": round(daily_usd_target, 2),
+            "target_equity_end_of_day": round(target_end, 2),
+            "usd_progress_today": round(usd_progress, 2),
+            "trades_needed_today": trades_needed if not on_track else 0,
+            "avg_win_usd": round(avg_win_usd, 2),
+            "on_track": on_track
         }
 
     def get_metrics(self) -> Dict:

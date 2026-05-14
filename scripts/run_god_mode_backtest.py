@@ -49,6 +49,7 @@ from datetime import datetime, timezone, timedelta
 from queue import Queue
 import numpy as np
 import pandas as pd
+import gc  # FIX-FORENSIC-V82: Moved from hot loop (L946) to top-level
 
 # ─── Project Root ───
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -93,19 +94,16 @@ from core.enums import EventType, SignalType, OrderSide, OrderType
 from core.api_manager import APIManager
 from core.meta_arbitrator import meta_arbitrator
 
-# ─── GET REAL PRODUCTION BALANCE ───
-api_mgr = APIManager()
-try:
-    prod_balance = api_mgr.get_production_balance()
-    real_capital = (
-        prod_balance.get("total_equity", Config.INITIAL_CAPITAL)
-        if prod_balance
-        else Config.INITIAL_CAPITAL
-    )
-    print(f"💰 PRODUCTION BALANCE: ${real_capital:.2f}")
-except Exception as e:
-    print(f"⚠️ Could not fetch production balance: {e}")
-    real_capital = Config.INITIAL_CAPITAL
+# ─── DETERMINISTIC CAPITAL FOR BACKTEST (FORENSIC-V82 FIX) ───
+# QUÉ: Usa Config.INITIAL_CAPITAL en vez del balance real de la API.
+# POR QUÉ: Llamar a APIManager().get_production_balance() en module-level
+#   hacía que el capital del backtest cambiara con cada ejecución ($7.50
+#   el lunes, $15.20 el miércoles). Esto hacía imposible comparar
+#   optimizaciones porque el capital inicial era una variable no controlada.
+# PARA QUÉ: Resultados BIT-A-BIT reproducibles entre ejecuciones.
+# CÓMO: Siempre usar Config.INITIAL_CAPITAL ($13.0) como base.
+real_capital = Config.INITIAL_CAPITAL
+print(f"💰 BACKTEST CAPITAL (DETERMINISTIC): ${real_capital:.2f}")
 
 # ─── PRODUCTION PORTFOLIO (THE REAL ONE) ───
 from core.portfolio import Portfolio
@@ -943,7 +941,7 @@ def run_global_backtest(
             # PARA QUÉ: Estabilidad absoluta en simulaciones pesadas.
             # ═══════════════════════════════════════════════════════════════
             if epoch_count % 100 == 0:
-                import gc
+                # FIX-FORENSIC-V82: 'import gc' moved to top-level (L52)
                 # Aggressive Epoch GC to prevent RAM crashes
                 for g_strat in global_epoch_strategies:
                     if hasattr(g_strat, 'last_processed_times') and len(g_strat.last_processed_times) > 500:
@@ -1175,8 +1173,9 @@ def run_global_backtest(
                                     events_queue.put(sig)
                                     pending_exits.add(_exit_key)
                                     # DEBUG: print(f"  🎯 [WICK_HIT] Exit signal for {_exit_key} at {test_price}")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        import traceback
+                        logger.error(f"❌ [BACKTEST] Error in check_stops for {symbol}: {e}\n{traceback.format_exc()}")
                 
                 # Reset to Close price for strategy inference (B5)
                 portfolio.update_market_price(symbol, close_price)
@@ -1448,6 +1447,11 @@ def run_global_backtest(
                     continue
     
                 if order is None:
+                    # Clear pending exits to prevent permanent lock-up if generation fails
+                    _hz_fallback = getattr(event, 'horizon', 'SCALPING')
+                    _key = f"{getattr(event, 'symbol', '?')}_{_hz_fallback}"
+                    pending_exits.discard(_key)
+                    
                     rejected_count += 1
                     # Extract specific rejection reason from stdout
                     _captured = _f_capture.getvalue()
@@ -1754,6 +1758,8 @@ def run_global_backtest(
                 portfolio.update_fill(close_fill)
                 fill_count += 1
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 logger.warning(f"Failed to close {v_key}: {e}")
     
         # ─────────────────────────────────────────────────────────────────────────
@@ -1789,8 +1795,10 @@ def run_global_backtest(
             max_dd = float(np.max(dd)) * 100
     
         # Win rate from kelly tracking
-        total_wl = risk_manager.win_count + risk_manager.loss_count
-        win_rate = (risk_manager.win_count / total_wl * 100) if total_wl > 0 else 0
+        total_wins = sum(perf.get("wins", 0) for perf in portfolio.strategy_performance.values())
+        total_losses = sum(perf.get("losses", 0) for perf in portfolio.strategy_performance.values())
+        total_wl = total_wins + total_losses
+        win_rate = (total_wins / total_wl * 100) if total_wl > 0 else 0
     
         # Sharpe from equity curve
         sharpe = 0
@@ -1819,6 +1827,8 @@ def run_global_backtest(
                 "final_capital": round(final_equity, 4),
                 "total_return_pct": round(total_return, 2),
                 "total_trades": total_trades,
+                "wins": total_wins,
+                "losses": total_losses,
                 "signals_generated": signal_count,
                 "orders_generated": order_count,
                 "orders_rejected": rejected_count,
@@ -2123,8 +2133,9 @@ def run_global_backtest(
             _forensic_exporter = ForensicExporter()
             _trade_list = []
             for ledger_name in ["scalping_ledger", "swing_ledger"]:
-                ledger = getattr(portfolio, ledger_name, {})
-                for trades in ledger.values():
+                ledger = getattr(portfolio, ledger_name, [])
+                trades_iter = ledger.values() if isinstance(ledger, dict) else ledger
+                for trades in trades_iter:
                     if isinstance(trades, list):
                         _trade_list.extend(trades)
                     elif isinstance(trades, dict):
@@ -2167,7 +2178,9 @@ def run_global_backtest(
             del strategies_map
         if 'global_epoch_strategies' in locals():
             del global_epoch_strategies
-        import gc
+        # FIX-FORENSIC-V82: 'import gc' was here but caused UnboundLocalError
+        # at L959 because Python treats gc as local for the entire function scope.
+        # gc is now imported at module level (L52).
         gc.collect()
 
 
@@ -2268,15 +2281,19 @@ def main():
         symbols = Config.CRYPTO_FUTURES_PAIRS
     else:
         symbols = [s.strip() for s in args.symbols.split(",")]
-        # Normalize format
-        normalized = []
-        for s in symbols:
-            s = s.upper().replace("/", "")
-            if s.endswith("USDT"):
-                normalized.append(f"{s[:-4]}/USDT")
-            else:
-                normalized.append(s)
-        symbols = normalized
+        
+    # Sync with Config so Gatekeeper works correctly in Backtest
+    Config.TRADING_PAIRS = symbols
+    
+    # Normalize format
+    normalized = []
+    for s in symbols:
+        s = s.upper().replace("/", "")
+        if s.endswith("USDT"):
+            normalized.append(f"{s[:-4]}/USDT")
+        else:
+            normalized.append(s)
+    symbols = normalized
 
     print(f"\n🎯 Symbols to backtest: {symbols}")
 

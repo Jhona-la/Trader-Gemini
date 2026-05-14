@@ -905,6 +905,10 @@ with tab1:
                     
                     pnl_color = "#3fb950" if upnl > 0 else "#f85149"
                     
+                    exec_pol = pos.get('exec_policy', 'MAKER_ONLY')
+                    trail_pol = pos.get('trail_policy', 'STRUCTURED')
+                    pol_color = "#d29922" if exec_pol == 'TAKER_TOLERANT' else "#3fb950"
+                    
                     st.markdown(f"""
                     <div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px; margin-bottom: 8px;">
                         <div style="font-weight: 600; font-size: 14px;">{sym}</div>
@@ -912,6 +916,7 @@ with tab1:
                         <div style="font-size: 11px; color: #8b949e;">Qty: {abs(qty):.4f}</div>
                         <div style="font-size: 11px; color: #8b949e;">Entry: ${avg_price:.4f}</div>
                         <div style="font-size: 14px; color: {pnl_color}; font-weight: 600;">PnL: ${upnl:+.2f}</div>
+                        <div style="margin-top: 6px; font-size: 10px; color: {pol_color};">⚡ {exec_pol} | 🛡️ {trail_pol}</div>
                     </div>
                     """, unsafe_allow_html=True)
         else:

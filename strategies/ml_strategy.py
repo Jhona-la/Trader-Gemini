@@ -1,3 +1,4 @@
+import sys
 """
 ML STRATEGY HÍBRIDA DEFINITIVA ULTIMATE
 Combina TODO lo mejor de ambas versiones para crecimiento exponencial con riesgo controlado.
@@ -27,15 +28,13 @@ try:
     from pandas.errors import PerformanceWarning
 
     warnings.filterwarnings("ignore", category=PerformanceWarning)
-except:
-    pass
+except Exception as e:
+    logger.debug(f"Silent exception caught: {e}")
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", message=".*sklearn.utils.parallel.delayed.*")
 
-import copy
 import threading
 from collections import Counter, deque
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import numpy as np
@@ -68,7 +67,6 @@ from strategies.components.adaptive_engine import (
 from strategies.components.feature_engineering import (
     FeatureEngineering,  # Phase I: Refactoring
 )
-from strategies.components.models.factory import ModelFactory  # Phase I: Refactoring
 from strategies.components.signal_generator import (
     SignalGenerator,  # Phase I: Refactoring
 )
@@ -78,7 +76,6 @@ from strategies.phalanx import (  # PHASE 13: Phalanx-Omega Protocol
 )
 from utils.debug_tracer import trace_execution
 from utils.logger import logger
-from utils.math_helpers import safe_div
 from utils.math_kernel import (  # Fast Math for Oracle
     calculate_ema_jit,
     calculate_rsi_jit,
@@ -116,15 +113,11 @@ import time
 
 import joblib
 
-from core.enums import EventType, OrderSide, OrderType, SignalType
 from core.ml_governance import MLGovernance
 from core.online_learning import OnlineLearner
 from core.reward_system import RewardSystem, TradeOutcome
 from data.feature_store import FeatureStore
 from ml.replay_buffer import PrioritizedReplayBuffer
-from sophia.rewards import TesisDecayReason, reward_engine
-from strategies.ml_worker import train_model_process  # WORKER IMPORT
-from utils.shm_utils import SharedMemoryManager  # Phase 10
 
 # Global Process Pool for Training (Singleton)
 # Limit to cpu_count - 2 to leave room for Engine and Data Loader
@@ -546,8 +539,9 @@ class MLStrategyHybridUltimate(Strategy):
         self._last_prediction_time = None
         self._label_mapping = {
             0: -1,
-            1: 1,
-        }  # Default mapping for inference before training
+            1: 0,
+            2: 1,
+        }  # PHASE 7: Default 3-class mapping (SHORT/HOLD/LONG)
 
         # ============================================================
         # ✅ MONITORING Y ESTADÍSTICAS COMPLETAS
@@ -690,6 +684,18 @@ class MLStrategyHybridUltimate(Strategy):
             return "UNKNOWN", 0.0
 
         try:
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC-V50 FIX: CAST ALL COLUMNS TO FLOAT64
+            # QUÉ: Convierte columnas float32 a float64 antes de cálculos.
+            # POR QUÉ: talib y numpy lanzaban 'input array type is not double'
+            #   porque el DataFrame contenía float32 desde el data provider.
+            # PARA QUÉ: Que el régimen se detecte SIEMPRE, no quede UNKNOWN.
+            # ═══════════════════════════════════════════════════════════════
+            float32_cols = df.select_dtypes(include=['float32']).columns
+            if len(float32_cols) > 0:
+                df = df.copy()
+                df[float32_cols] = df[float32_cols].astype(np.float64)
+
             # Indicadores principales
             current_adx = df["adx"].iloc[-1] if "adx" in df.columns else 20
             current_atr_pct = (
@@ -697,9 +703,18 @@ class MLStrategyHybridUltimate(Strategy):
             )
             rsi_std = df["rsi_14"].tail(20).std() if "rsi_14" in df.columns else 15
 
-            # Volatilidad y tendencia
-            price_volatility = df["close"].pct_change().tail(20).std()
-            volume_volatility = df["volume"].pct_change().tail(20).std()
+            # Volatilidad y tendencia (Vectorizado numpy para latencia < 5ms)
+            close_vals = df["close"].values[-21:]
+            if len(close_vals) > 1:
+                price_volatility = float(np.std(np.diff(close_vals) / close_vals[:-1]))
+            else:
+                price_volatility = 0.0
+                
+            vol_vals = df["volume"].values[-21:]
+            if len(vol_vals) > 1:
+                volume_volatility = float(np.std(np.diff(vol_vals) / (vol_vals[:-1] + 1e-9)))
+            else:
+                volume_volatility = 0.0
 
             # Tendencia EMAs
             closes = df["close"].values.astype(np.float64)
@@ -725,29 +740,29 @@ class MLStrategyHybridUltimate(Strategy):
             }
 
             # ✅ TRENDING: ADX alto + tendencia fuerte + volatilidad controlada
-            if current_adx > 25:
+            if current_adx > Config.Strategies.ML_THRESHOLDS['regime_adx_trend']:
                 regime_scores["TRENDING"] += 0.4
-            if trend_strength > 0.025:
+            if trend_strength > Config.Strategies.ML_THRESHOLDS['regime_trend_strength']:
                 regime_scores["TRENDING"] += 0.3
-            if current_atr_pct < 0.03:
+            if current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_trend_max']:
                 regime_scores["TRENDING"] += 0.2
-            if volume_volatility < 0.5:
+            if volume_volatility < Config.Strategies.ML_THRESHOLDS['regime_vol_volatility_max']:
                 regime_scores["TRENDING"] += 0.1
 
             # ✅ VOLATILE: ATR alto + RSI volátil + alta volatilidad precio
-            if current_atr_pct > 0.035:
+            if current_atr_pct > Config.Strategies.ML_THRESHOLDS['regime_atr_volatile_min']:
                 regime_scores["VOLATILE"] += 0.5
-            if rsi_std > 18:
+            if rsi_std > Config.Strategies.ML_THRESHOLDS['regime_rsi_std_volatile']:
                 regime_scores["VOLATILE"] += 0.3
-            if price_volatility > 0.035:
+            if price_volatility > Config.Strategies.ML_THRESHOLDS['regime_price_vol_volatile']:
                 regime_scores["VOLATILE"] += 0.2
 
             # ✅ RANGING: ADX bajo + RSI estable + baja volatilidad
-            if current_adx < 20:  # Un poco más permisivo que 18
+            if current_adx < Config.Strategies.ML_THRESHOLDS['regime_adx_range_max']:  # Un poco más permisivo que 18
                 regime_scores["RANGING"] += 0.3
-            if rsi_std < 10:  # Un poco más permisivo que 8
+            if rsi_std < Config.Strategies.ML_THRESHOLDS['regime_rsi_std_range_max']:  # Un poco más permisivo que 8
                 regime_scores["RANGING"] += 0.3
-            if current_atr_pct < 0.015:  # < 1.5%
+            if current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_range_max']:  # < 1.5%
                 regime_scores["RANGING"] += 0.2
 
             # ✅ STAGNANT (ZOMBIE): Volatilidad nula o insignificante
@@ -756,17 +771,17 @@ class MLStrategyHybridUltimate(Strategy):
             identical_bars = (df["high"] == df["low"]).sum() / len(df)
 
             if (
-                current_atr_pct < 0.0005
-                or price_spread < 0.0002
-                or identical_bars > 0.85
+                current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_zombie_1']
+                or price_spread < Config.Strategies.ML_THRESHOLDS['regime_spread_zombie']
+                or identical_bars > Config.Strategies.ML_THRESHOLDS['regime_ident_bars_zombie']
             ):
                 regime_scores["STAGNANT"] += 0.8
-            elif current_atr_pct < 0.0015:  # < 0.15%
+            elif current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_zombie_2']:  # < 0.15%
                 regime_scores["STAGNANT"] += 0.5
                 regime_scores["RANGING"] += 0.1
 
             # ✅ MIXED: Sin señales claras o transición
-            if max(regime_scores.values()) < 0.45:
+            if max(regime_scores.values()) < Config.Strategies.ML_THRESHOLDS['mixed_regime_max_score']:
                 regime_scores["MIXED"] = 1.0
 
             # Determinar régimen dominante
@@ -824,7 +839,7 @@ class MLStrategyHybridUltimate(Strategy):
 
         # Solo cambiar si hay confianza suficiente o es consistente o es el primer update real
         is_initial = self.market_regime == "UNKNOWN" and len(self.regime_history) >= 1
-        if confidence > 0.55 or smoothed_regime == self.market_regime or is_initial:
+        if confidence > Config.Strategies.ML_THRESHOLDS['confidence_regime_change'] or smoothed_regime == self.market_regime or is_initial:
             with self._state_lock:
                 old_regime = self.market_regime
                 self.market_regime = smoothed_regime
@@ -910,8 +925,10 @@ class MLStrategyHybridUltimate(Strategy):
             self.LOOKAHEAD_BARS = int(self.LOOKAHEAD_BARS * 60) # Scale hours to minutes
 
         # Apply to Strategy State
+        # FORENSIC FIX: Raised floor from 0.40→0.55. Trades at 0.40 had catastrophic WR (16.7%).
+        # With $13 capital, every low-confidence trade is pure fee drain ($10.73 in fees vs -$5.05 PnL).
         self.adaptive_confidence_threshold = max(
-            0.40, min(0.90, self.BASE_CONFIDENCE_THRESHOLD + threshold_mod)
+            0.55, min(0.90, self.BASE_CONFIDENCE_THRESHOLD + threshold_mod)
         )
 
         # Scale Targets based on Volatility/Agression
@@ -937,7 +954,7 @@ class MLStrategyHybridUltimate(Strategy):
         # --- PHASE 14: HMM TRANSITION RISK ADJUSTMENT ---
         # Si el riesgo de transición es elevado (>40%), somos más conservadores.
         trans_risk = self.last_hmm_info.get("transition_risk", 0.0)
-        if trans_risk > 0.40:
+        if trans_risk > Config.Strategies.ML_THRESHOLDS['hmm_transition_risk_high']:
             self.adaptive_confidence_threshold += 0.05
             self.aggressiveness_factor *= 0.8
             logger.info(
@@ -1093,10 +1110,12 @@ class MLStrategyHybridUltimate(Strategy):
                 labels[i] = 1 if ret > 0 else -1
             else:
                 ret = (future_close_last - current_price) / current_price
-                noise_threshold = max(tp_target * 0.5, fee_threshold * 2.0)
-                if ret > noise_threshold:
+                # FIX ANTI-MENTIRA OFFLINE: Only assign a label if the price reached at least 80% of the target.
+                # If it just drifted a little bit, it's NOT a successful prediction of the magnitude.
+                strict_threshold = max(tp_target * 0.8, fee_threshold * 3.0)
+                if ret > strict_threshold:
                     labels[i] = 1
-                elif ret < -noise_threshold:
+                elif ret < -strict_threshold:
                     labels[i] = -1
                 # else: labels[i] = 0 (already initialized)
 
@@ -1159,16 +1178,41 @@ class MLStrategyHybridUltimate(Strategy):
             f"🔍 DEBUG ML [{self.symbol}]: Rows={len(df)}, AvgVol={vol_mean:.4f}%, mult={mult:.2f}, Est.Target={tp_mean:.4f}, Labels={label_counts}"
         )
 
-        df_signals = df[df["label"] != 0]
+        # ═══════════════════════════════════════════════════════════════
+        # PHASE 7 FIX: 3-CLASS ML MODEL & CLASS IMBALANCE
+        # QUÉ: Mantenemos la clase 0 (Hold/Ruido) pero con subsampling.
+        # POR QUÉ: Al eliminar la clase 0, el modelo solo aprendía a predecir
+        #   subidas o bajadas, forzando trades en mercados planos (Choppy).
+        # PARA QUÉ: Permitir que el modelo identifique el ruido y no opere.
+        # ═══════════════════════════════════════════════════════════════
+        # import pandas as pd
+        df_long = df[df["label"] == 1]
+        df_short = df[df["label"] == -1]
+        df_hold = df[df["label"] == 0]
+        
+        target_size = max(5, int((len(df_long) + len(df_short)) / 2))
+        
+        if len(df_hold) > target_size:
+            df_hold_sub = df_hold.sample(n=target_size, random_state=42)
+        else:
+            df_hold_sub = df_hold
+            
+        df_signals = pd.concat([df_long, df_short, df_hold_sub]).sort_index()
 
-        # SUPREMO-V4: ELEVAR REQUISITOS DE ENTRENAMIENTO (EVOLUTIVIDAD)
-        # QUÉ: Incrementamos drásticamente el mínimo de señales para entrenar.
-        # POR QUÉ: Evita el overfitting masivo y modelos que "apuestan" al azar.
-        min_signals = 100  # Antes 30
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC-V50 FIX: MINIMUM TRAINING SAMPLES (ANTI-OVERFITTING)
+        # QUÉ: Incrementamos el mínimo de señales para entrenar.
+        # POR QUÉ: Con 76 samples y 80 features (ratio 0.95:1) el modelo
+        #   memorizaba ruido → Training Score 0.54 = moneda al aire.
+        #   Regla de oro: mínimo 10:1 (samples:features).
+        # PARA QUÉ: Forzar al modelo a tener datos SUFICIENTES para
+        #   generalizar. Mejor NO entrenar que entrenar con basura.
+        # ═══════════════════════════════════════════════════════════════
+        min_signals = 150  # Producción: requiere datos significativos
         if getattr(self, "is_sandbox", False) or (
             self.data_provider and getattr(self.data_provider, "is_backtest", False)
         ):
-            min_signals = 5  # Permitir entreno en backtest con poca data
+            min_signals = 150  # CTOS Phase 5: Minimum 150 samples required even in backtest to prevent 80-feature overfitting
 
         if len(df_signals) < min_signals:
             # --- NEW: Data Quality Audit (Transparencia) ---
@@ -1196,8 +1240,39 @@ class MLStrategyHybridUltimate(Strategy):
             "timestamp",
             "datetime",
             "symbol",
+            # ════════════════════════════════════════════════════════════════
+            # FORENSIC FIX: GHOST FEATURES — Live-only websocket data.
+            # QUÉ: These features are ALWAYS 0.0 during backtest/training
+            #   because they only populate from real-time websockets.
+            # POR QUÉ: XGBoost learns to ignore them (weight≈0) during training,
+            #   but in production they receive real values the model never saw,
+            #   creating unpredictable inference artifacts.
+            # PARA QUÉ: Eliminate Train≠Live divergence entirely.
+            # CUÁNDO: During feature column selection for training AND inference.
+            # DÓNDE: strategies/ml_strategy.py → _train_models()
+            # QUIÉN: Quant Developer + QA Engineer
+            # ════════════════════════════════════════════════════════════════
+            "vbi", "vbi_avg", "liq_intensity",           # HFT websocket only
+            "funding_rate", "oi", "oi_delta",             # Derivatives REST (unreliable in BT)
+            "funding_distortion",                         # Derived from funding_rate
+            "l2_ofi", "l2_spread", "l2_microprice_dist",  # L2 orderbook snapshot only
         ]
-        feature_cols = [c for c in df_signals.columns if c not in exclude_cols]
+        
+        # ════════════════════════════════════════════════════════════════
+        # FORENSIC-V50 FIX: ML FEATURE REDUCTION (TOP 20)
+        # QUÉ: Limitar el entrenamiento a las top 20 features más predictivas.
+        # POR QUÉ: Demasiadas features causan overfitting masivo en M1.
+        # PARA QUÉ: Evitar memorización de ruido y aumentar generalización.
+        # ════════════════════════════════════════════════════════════════
+        top_20_features = [
+            'returns_5', 'returns_10', 'roc_10', 'rsi_14', 'atr_pct', 
+            'macd_hist', 'bb_position', 'bb_width', 'stoch_k', 'adx', 
+            'volume_ratio', 'gk_vol', 'hurst_memory', 'volatility_ransac', 
+            'micro_imbalance', 'spread_squeeze', 'scalp_velocity_1', 
+            'scalp_rsi_divergence', 'micro_label', 'market_cluster'
+        ]
+        
+        feature_cols = [c for c in df_signals.columns if c in top_20_features and c not in exclude_cols]
 
         X = df_signals[feature_cols]
         y = df_signals["label"]
@@ -1205,10 +1280,8 @@ class MLStrategyHybridUltimate(Strategy):
         # CRITICAL: Remap labels for XGBoost compatibility
         # XGBoost expects classes starting from 0: [0, 1, 2, ...]
         # Our labels are [-1, 0, 1] -> remap to [0, 1, 2]
-        # Note: We filter df_signals where label != 0, so we only have [-1, 1]
-        # Remap: -1 -> 0, 1 -> 1
-        y = y.map({-1: 0, 1: 1})
-        self._label_mapping = {0: -1, 1: 1}  # For inverse mapping during inference
+        y = y.map({-1: 0, 0: 1, 1: 2})
+        self._label_mapping = {0: -1, 1: 0, 2: 1}  # For inverse mapping during inference
 
         # DEBUG: Verificar si las features son válidas
         std_zero_cols = X.columns[X.std() == 0].tolist()
@@ -1332,7 +1405,7 @@ class MLStrategyHybridUltimate(Strategy):
             y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
             # Anti-Crash for Extreme Imbalance (Ensure both classes exist)
-            import pandas as pd
+            # import pandas as pd
 
             if len(np.unique(y_train)) < 2:
                 logger.warning(
@@ -1411,8 +1484,8 @@ class MLStrategyHybridUltimate(Strategy):
                         logger.debug(
                             f"🔄 [{self.symbol}] Feature mismatch for incremental learning. Resetting XGB."
                         )
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Silent exception caught: {e}")
 
             # Intentar fit con warm-start; si falla (base_score incompatibility),
             # hacer fresh fit sin modelo previo
@@ -1507,6 +1580,20 @@ class MLStrategyHybridUltimate(Strategy):
             logger.info(
                 f"📥 [{self.symbol}] Local Training finished. Score: {score:.3f}"
             )
+
+            # Train DeepPredictor LSTM
+            try:
+                from models.deep_predictor import deep_predictor
+                if hasattr(self, 'scaler') and self.scaler is not None:
+                    try:
+                        X_dp = self.scaler.transform(X)
+                    except Exception:
+                        X_dp = X.values
+                else:
+                    X_dp = X.values
+                deep_predictor.train_model(X_dp, y.values if hasattr(y, 'values') else y, seq_len=10, epochs=10)
+            except Exception as e:
+                logger.error(f"DeepPredictor train failed: {e}")
 
             # ═══════════════════════════════════════════════════════════════
             # OPT-3: AGGRESSIVE GC POST-TRAINING
@@ -1633,7 +1720,6 @@ class MLStrategyHybridUltimate(Strategy):
             # --- PHASE 5 AITS: Train PPO Agent ---
             if hasattr(self, "last_ppo_state") and self.last_ppo_state is not None:
                 try:
-                    from ml.ppo_agent import ppo_agent
                     if not hasattr(self, "ppo_memory"):
                         from ml.replay_buffer import PrioritizedReplayBuffer
                         self.ppo_memory = PrioritizedReplayBuffer(capacity=5000)
@@ -2092,7 +2178,8 @@ class MLStrategyHybridUltimate(Strategy):
             deep_probs = deep_predictor.predict_probs(seq_scaled)
             deep_array = np.array([deep_probs["SHORT"], deep_probs["LONG"]]) # Mapping to 2 classes
             
-            # Soft-Ensemble: We give 15% weight to Deep Learning and 85% to Tree Ensemble
+            # AITS Layer 3: DeepPredictor Blending
+            # Now that it's actually trained, we blend 15% of its sequence awareness.
             if len(deep_array) == len(ensemble_proba):
                 ensemble_proba = ensemble_proba * 0.85 + deep_array * 0.15
 
@@ -2103,6 +2190,13 @@ class MLStrategyHybridUltimate(Strategy):
             predicted_class = self._label_mapping.get(
                 classes[pred_idx], classes[pred_idx]
             )
+
+            # CTOS Phase 5: Hard Confidence Floor (Anti-Noise Filter)
+            # Si el modelo no está al menos 55% seguro, descartar la señal inmediatamente.
+            # No permitimos que PPO o HotAdapter resuciten una señal estadísticamente débil.
+            if raw_confidence < 0.55:
+                self.analysis_stats["filtered_conf"] += 1
+                return
 
             # ═══════════════════════════════════════════════════════════════
             # PHASE 5 AITS: REINFORCEMENT LEARNING CORE (PPO SIZING)
@@ -2315,13 +2409,13 @@ class MLStrategyHybridUltimate(Strategy):
             )
 
             # FORENSIC-3: OMEGA AI INTEGRATION
-            _returns = (
-                df["close"]
-                .pct_change()
-                .replace([np.inf, -np.inf], np.nan)
-                .dropna()
-                .values
-            )
+            # Vectorized numpy returns for < 1ms latency
+            _cvals = df["close"].values
+            if len(_cvals) > 1:
+                _returns = np.diff(_cvals) / _cvals[:-1]
+                _returns = _returns[~np.isnan(_returns) & ~np.isinf(_returns)]
+            else:
+                _returns = np.array([])
             
             sophia_report_dict = {}
             if hasattr(self, 'sophia') and self.sophia:
@@ -2501,15 +2595,19 @@ class MLStrategyHybridUltimate(Strategy):
                 "Learning_Rate": float(self.learning_rate),
             }
 
-            # Log a monitor
-            monitor_log.log_ml_prediction(
-                symbol=self.symbol,
-                model_name="Hybrid_Ensemble_Ultimate",
-                prediction=1 if signal_type == SignalType.LONG else -1,
-                confidence=float(confidence),
-                features=metrics,
-                decision=signal_type.name,
-            )
+            # FORENSIC FIX #21: RECONNECT monitor_log (was incorrectly commented out)
+            try:
+                from core.transparent_logger import monitor_log
+                monitor_log.log_ml_prediction(
+                    symbol=self.symbol,
+                    model_name="Hybrid_Ensemble_Ultimate",
+                    prediction=1 if signal_type == SignalType.LONG else -1,
+                    confidence=float(confidence),
+                    features=metrics,
+                    decision=signal_type.name,
+                )
+            except Exception as e:
+                logger.debug(f"monitor_log error: {e}")
 
             # Log a consola
             logger.info(
@@ -3078,20 +3176,26 @@ class MLStrategyHybridUltimate(Strategy):
 
             # ============================================================
             # ✅ PREDICTIVE DECAY EXIT LOGIC (Fase 1)
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC FIX #10: portfolio.positions (aggregate) NO tiene
+            #   campo 'direction'. pos.get('direction','') SIEMPRE retornaba
+            #   '' → is_long/is_short SIEMPRE False → CÓDIGO MUERTO.
+            # FIX: Usar get_horizon_position() y derivar dirección de qty.
             # ============================================================
-            if getattr(self, 'portfolio', None) and self.symbol in self.portfolio.positions:
-                pos = self.portfolio.positions[self.symbol]
-                pos_side = pos.get('direction', '')
-                
-                is_long = pos_side == 'LONG'
-                is_short = pos_side == 'SHORT'
-                
-                if is_long and confidence < 0.40:
-                    logger.warning(f"📉 [PREDICTIVE DECAY] Confidence for LONG dropped to {confidence:.2f} < 0.40. Exiting {self.symbol}...")
-                    signal_type = SignalType.EXIT
-                elif is_short and confidence > 0.60:
-                    logger.warning(f"📈 [PREDICTIVE DECAY] Confidence for SHORT dropped (LONG prob={confidence:.2f} > 0.60). Exiting {self.symbol}...")
-                    signal_type = SignalType.EXIT
+            if getattr(self, 'portfolio', None):
+                _decay_horizon = getattr(self, '_active_horizon', 'SCALPING')
+                _decay_pos = self.portfolio.get_horizon_position(self.symbol, _decay_horizon)
+                if _decay_pos:
+                    _decay_qty = _decay_pos.get('quantity', 0)
+                    is_long = _decay_qty > 0
+                    is_short = _decay_qty < 0
+                    
+                    if is_long and confidence < 0.40:
+                        logger.warning(f"📉 [PREDICTIVE DECAY] Confidence for LONG dropped to {confidence:.2f} < 0.40. Exiting {self.symbol} ({_decay_horizon})...")
+                        signal_type = SignalType.EXIT
+                    elif is_short and confidence > 0.60:
+                        logger.warning(f"📈 [PREDICTIVE DECAY] Confidence for SHORT dropped (LONG prob={confidence:.2f} > 0.60). Exiting {self.symbol} ({_decay_horizon})...")
+                        signal_type = SignalType.EXIT
 
             # Logic for Signal Creation (Professor Method)
             # QUÉ: Generación de evento de señal asíncrono.
@@ -3333,7 +3437,7 @@ class MLStrategyHybridUltimate(Strategy):
                                         details={"score": score, "min_acc": min_acc}
                                     )
                                 except Exception as e:
-                                    pass
+                                    logger.debug(f"Silent exception caught: {e}")
 
                                 # NO actualizamos, pero limpiamos flag de entrenamiento
                                 with self._state_lock:
@@ -3394,7 +3498,7 @@ class MLStrategyHybridUltimate(Strategy):
                                 details={"score": score, "duration": duration, "features": len(feature_cols)}
                             )
                         except Exception as e:
-                            pass
+                            logger.debug(f"Silent exception caught: {e}")
                     else:
                         # ⚠️ Training failed or score below threshold.
                         # Do NOT mark as trained yet to allow retries,
@@ -3451,13 +3555,17 @@ class MLStrategyHybridUltimate(Strategy):
                             details={"error": str(e)}
                         )
                     except Exception as ignore:
-                        pass
+                        logger.debug(f"Silent exception caught: {e}")
                 finally:
                     # MODO PROFESOR: Liberar RAM agresivamente
                     gc.collect()
 
+        # OPTIMIZACIÓN RAM (Memoria Omnisciente):
+        # copy.deepcopy() sobre 5000+ barras bloqueaba el CPU y duplicaba el consumo de RAM.
+        # En su lugar pasamos un shallow copy ya que la estructura dict/list es generada de nuevo por data_provider.
+        safe_bars = bars.copy() if isinstance(bars, dict) else bars[:] if isinstance(bars, list) else bars
         self._training_thread = threading.Thread(
-            target=train_bg, args=(copy.deepcopy(bars), train_type), daemon=True
+            target=train_bg, args=(safe_bars, train_type), daemon=True
         )
         self._training_thread.start()
 
@@ -3574,6 +3682,14 @@ class MLStrategyHybridUltimate(Strategy):
                 }
             joblib.dump(meta, meta_path, compress=1)
 
+            # Save DeepPredictor
+            try:
+                from models.deep_predictor import deep_predictor
+                dp_path = os.path.join(xgb_dir, f"{safe_sym}_deep.pth")
+                deep_predictor.save(dp_path)
+            except Exception as e:
+                pass
+
             # === SECONDARY: RF/GB with minimal compression (B1 FIX) ===
             # compress=1 instead of compress=5 → 3x faster, ~10% larger
             model_file = os.path.join(self.models_dir, f"models_{sym_path}.joblib")
@@ -3592,6 +3708,7 @@ class MLStrategyHybridUltimate(Strategy):
                     "gb_model": self.gb_model,
                     "scaler": self.scaler,
                     "feature_cols": self._feature_cols,
+                    "label_mapping": self._label_mapping,  # PHASE 7: Persist 3-class mapping
                     "last_training_score": self.last_training_score,
                     "training_iteration": self.training_iteration,
                     "performance_history": list(self.performance_history),
@@ -3617,7 +3734,8 @@ class MLStrategyHybridUltimate(Strategy):
                 "gb": model_file,
                 "scaler": model_file,
             }
-            self.ml_governance.register_model(self.symbol, metrics, comp_paths)
+            governance_sym = f"{self.symbol}{suffix}"
+            self.ml_governance.register_model(governance_sym, metrics, comp_paths)
 
             logger.info(
                 f"💾 [{self.symbol}] Models persisted: XGBoost→UBJSON, RF/GB→Joblib(c=1)"
@@ -3633,7 +3751,13 @@ class MLStrategyHybridUltimate(Strategy):
         """
         import joblib
 
-        gov_model = self.ml_governance.get_production_model(self.symbol)
+        suffix = (
+            self.par_engine.get_model_suffix()
+            if hasattr(self, "par_engine")
+            else ""
+        )
+        governance_sym = f"{self.symbol}{suffix}"
+        gov_model = self.ml_governance.get_production_model(governance_sym)
         if gov_model:
             try:
                 path = gov_model["path"]
@@ -3711,6 +3835,16 @@ class MLStrategyHybridUltimate(Strategy):
                 except Exception as e:
                     logger.error(f"Failed to load Supreme UBJ: {e}")
 
+            # Load DeepPredictor
+            try:
+                from models.deep_predictor import deep_predictor
+                safe_sym_dp = self.symbol.replace("/", "") + suffix
+                dp_path = os.path.join("models", f"{safe_sym_dp}_deep.pth")
+                if os.path.exists(dp_path):
+                    deep_predictor.load(dp_path)
+            except Exception as e:
+                pass
+
             if supreme_loaded:
                 return
 
@@ -3766,6 +3900,20 @@ class MLStrategyHybridUltimate(Strategy):
                         )
                         self.last_training_score = state.get("last_training_score", 0)
                         self.training_iteration = state.get("training_iteration", 0)
+
+                        # PHASE 7: Restore 3-class label mapping from persisted state
+                        saved_mapping = state.get("label_mapping")
+                        if saved_mapping:
+                            self._label_mapping = saved_mapping
+                        else:
+                            # Legacy 2-class model loaded → derive mapping from model classes
+                            if self.rf_model and hasattr(self.rf_model, 'classes_'):
+                                n_classes = len(self.rf_model.classes_)
+                                if n_classes == 3:
+                                    self._label_mapping = {0: -1, 1: 0, 2: 1}
+                                else:
+                                    self._label_mapping = {0: -1, 1: 1}
+                                logger.info(f"🔄 [{self.symbol}] Derived label_mapping from model classes ({n_classes} classes)")
 
                         hist = state.get("performance_history", [])
                         self.performance_history = deque(hist, maxlen=100)
@@ -3871,7 +4019,7 @@ class MLStrategyHybridUltimate(Strategy):
                         top_features.items(), key=lambda x: x[1], reverse=True
                     )[:20]
                     feature_importance = dict(sorted_features)
-                except:
+                except Exception:
                     feature_importance = {}
 
             return {
@@ -4044,6 +4192,122 @@ class MLStrategyHybridUltimate(Strategy):
         logger.info(f"🔧 Aggressiveness set to {level:.2f}")
 
     # ============================================================
+    # 🧠 COGNITIVE TRADE MANAGEMENT (Phase 5)
+    # ============================================================
+
+    def request_exit_opinion(self, pos_data: dict) -> dict:
+        """
+        Evalúa de forma inteligente si una posición abierta debe cerrarse, 
+        diferenciando el "Ruido de Mercado" de una "Reversión Estructural".
+        
+        Args:
+            pos_data: Dict con data de la posición (symbol, direction, entry_price, pnl_pct, etc)
+        Returns:
+            (action, reason): action puede ser "KEEP_OPEN" o "CLOSE"
+        """
+        try:
+            symbol = pos_data.get('symbol', self.symbol)
+            direction = pos_data.get('direction', 'LONG')
+            pnl_pct = pos_data.get('pnl_pct', 0.0)
+            
+            bars = self.data_provider.get_latest_bars(symbol, n=50)
+            if bars is None or len(bars) < 20:
+                return {"vote": "HOLD", "reason": "⏳ Evaluando (Datos insuficientes)"}
+                
+            df = self._prepare_features(bars, regime_aware=False)
+            if df is None or df.empty:
+                return {"vote": "HOLD", "reason": "⏳ Evaluando (Features no listos)"}
+                
+            current_row = df.iloc[-1]
+            atr_pct = current_row.get('atr_pct', 0.0) / 100.0 if current_row.get('atr_pct', 0.0) > 1.0 else current_row.get('atr_pct', 0.0)
+            adx = current_row.get('adx', 0)
+            
+            # Obtener convicción de ML actual
+            ml_confidence = 0.5
+            if hasattr(self, '_proba_history') and len(self._proba_history) > 0:
+                import numpy as np
+                smoothed = np.mean(self._proba_history, axis=0)
+                pred_idx = np.argmax(smoothed)
+                model_classes = getattr(self.rf_model, "classes_", getattr(self.xgb_model, "classes_", None))
+                if model_classes is not None:
+                    pred_dir = self._label_mapping.get(model_classes[pred_idx], model_classes[pred_idx])
+                    if (pred_dir == 1 and direction == 'LONG') or (pred_dir == -1 and direction == 'SHORT'):
+                        ml_confidence = smoothed[pred_idx]
+                    else:
+                        ml_confidence = 1.0 - smoothed[pred_idx]
+
+            # 1. Agotamiento Predictivo Matemático (Alpha Decay)
+            edge_prob = ml_confidence
+            elapsed_bars = 0
+            if 'duration_seconds' in pos_data:
+                elapsed_bars = pos_data['duration_seconds'] / 60.0
+            elif 'entry_time' in pos_data:
+                import time
+                from datetime import datetime, timezone
+                entry_ts = pos_data['entry_time']
+                try:
+                    if hasattr(entry_ts, 'timestamp'):
+                        elapsed_seconds = time.time() - entry_ts.timestamp()
+                    else:
+                        elapsed_seconds = (datetime.now(timezone.utc) - entry_ts).total_seconds()
+                    elapsed_bars = elapsed_seconds / 60.0
+                except: pass
+
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC FIX #11: self.engine NUNCA se inyecta en la estrategia.
+            #   register_strategy() inyecta self.sophia pero NO self.engine.
+            #   Además, prediction_tracker vive en risk_manager, no en engine.
+            # FIX: Usar _engine_ref (inyectado por fix #11 en engine.py)
+            #   y acceder via risk_manager.prediction_tracker.
+            # ═══════════════════════════════════════════════════════════════
+            _engine_ref = getattr(self, '_engine_ref', None)
+            _rm = getattr(_engine_ref, 'risk_manager', None) if _engine_ref else None
+            _pt = getattr(_rm, 'prediction_tracker', None) if _rm else None
+            if _pt and hasattr(_pt, 'calculate_realtime_edge'):
+                edge_prob = _pt.calculate_realtime_edge(
+                    strategy_id=self.id, 
+                    elapsed_bars=max(1, elapsed_bars), 
+                    horizon=pos_data.get('horizon', 'SCALPING')
+                )
+
+            if pnl_pct > 0.005:  # Ganancia > 0.5%
+                if edge_prob < 0.45:
+                    logger.info(f"🧠 [COGNITIVE EXIT] {symbol} {direction} | Agotamiento Predictivo Matemático (Edge {edge_prob:.2%}). Asegurando PnL: {pnl_pct:.2%}")
+                    return {"vote": "EXIT", "reason": f"Agotamiento de momentum matemático ({edge_prob:.2%})"}
+            
+            # 2. Reversión Estructural vs Ruido
+            if pnl_pct < 0:  # Drawdown
+                drawdown_magnitude = abs(pnl_pct)
+                atr_threshold = atr_pct * 1.5
+                
+                if drawdown_magnitude > atr_threshold:
+                    if ml_confidence < 0.55:
+                        logger.warning(f"⚠️ [STRUCTURAL REVERSAL] {symbol} {direction} | Rompimiento de ATR ({drawdown_magnitude:.2%} > {atr_threshold:.2%}) y ML bajo ({ml_confidence:.2%}). Abortando!")
+                        return {"vote": "EXIT", "reason": "Reversión estructural confirmada por ML"}
+                else:
+                    if adx > 25 and ml_confidence > 0.55:
+                        logger.debug(f"🛡️ [NOISE FILTER] {symbol} {direction} ignorando retroceso de {drawdown_magnitude:.2%} (ATR {atr_threshold:.2%}). Tendencia firme.")
+                        return {"vote": "HOLD", "reason": "Ruido de mercado, tendencia intacta"}
+
+            # 3. Dynamic Targets (Phase 8)
+            dynamic_targets = {"tp_mult": 1.0, "sl_mult": 1.0}
+            if ml_confidence > 0.70:
+                dynamic_targets["tp_mult"] = 1.5  # Let winners run
+            elif ml_confidence < 0.50:
+                dynamic_targets["tp_mult"] = 0.5  # Secure profit
+                dynamic_targets["sl_mult"] = 0.8  # Tighten SL
+
+            return {
+                "vote": "HOLD", 
+                "reason": "Posición sana (Mantenimiento Dinámico)",
+                "dynamic_targets": dynamic_targets
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in request_exit_opinion: {e}")
+            return {"vote": "HOLD", "reason": "Error de Evaluación Cognitiva"}
+
+    # ============================================================
     # ✅ CLEANUP Y DESTRUCTOR
     # ============================================================
 
@@ -4054,7 +4318,7 @@ class MLStrategyHybridUltimate(Strategy):
                 self.executor.shutdown(wait=False)
 
             logger.info(f"🧹 ML Hybrid Ultimate Strategy for {self.symbol} cleaned up")
-        except:
+        except Exception:
             pass
 
 
@@ -4082,11 +4346,15 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
     Consensus: Organic Confluence (min 2/3 engines > 0.60)
     """
 
-    # Consensus threshold (UNIFIED)
-    ENSEMBLE_CONSENSUS_THRESHOLD = (
-        0.55  # FIX: Bajado de 0.75 → ML-dominant, TECH es apoyo
-    )
-    MIN_ENGINES_REQUIRED = 1  # FIX: Con sentimiento muerto, ML solo puede operar
+    # ═══════════════════════════════════════════════════════════════
+    # FORENSIC-V50 FIX: UNIFIED CONSENSUS THRESHOLD
+    # QUÉ: Un solo threshold para todo el sistema (era 0.55/0.60/0.78).
+    # POR QUÉ: 3 valores compitiendo causaba que señales válidas con
+    #   ML=0.76 fueran bloqueadas por threshold dinámico de 0.78.
+    # PARA QUÉ: Consistencia — el mismo número aparece en logs y cálculos.
+    # ═══════════════════════════════════════════════════════════════
+    ENSEMBLE_CONSENSUS_THRESHOLD = 0.55
+    MIN_ENGINES_REQUIRED = 1  # Sentimiento muerto → ML solo puede operar
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -4102,7 +4370,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
         # Engine tracking
         self.engine_scores = {"ml": 0.0, "sentiment": 0.0, "technical": 0.0}
         self.engines_active = 0
-        self.consensus_threshold = 0.60
+        self.consensus_threshold = self.ENSEMBLE_CONSENSUS_THRESHOLD  # UNIFIED: same value everywhere
 
         logger.info(f"🟢 [{self.symbol}] UNIVERSAL ENSEMBLE STRATEGY INITIALIZED")
         logger.info(f"   Consensus Threshold: {self.ENSEMBLE_CONSENSUS_THRESHOLD}")
@@ -4114,28 +4382,28 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
         """
         Adaptive Evolution Protocol: Temporal Confidence Decay.
 
-        QUÉ: Factor de confianza temporal para el ML (0.5 a 1.0).
-        POR QUÉ: El modelo XGBoost genera predicciones con la misma confianza
-                  sin importar si ha procesado 100 o 10000 barras. En las primeras
-                  barras, las features (zscore_20, rsi_14) NO tienen contexto macro
-                  suficiente, causando 'Underfitting Temporal' en ventanas de 15D.
-        PARA QUÉ: Reducir la confianza de las primeras predicciones para evitar
-                   señales falsas que destruyen el Win Rate en horizontes intermedios.
-        CÓMO: Primer 20% → factor 0.5, 20-50% → factor 0.75, 50%+ → factor 1.0
-        CUÁNDO: Cada ciclo de _run_inference(), antes del cálculo de confluencia.
-        DÓNDE: strategies/ml_strategy.py → UniversalEnsembleStrategy
-        QUIÉN: Motor ML (XGBoost/RF/GB ensemble).
+        ═══════════════════════════════════════════════════════════════
+        FORENSIC-V50 FIX: GENTLER RAMP (NO MORE 50% CLIFF)
+        QUÉ: Factor de confianza temporal SUAVIZADO (0.75 a 1.0).
+        POR QUÉ: La versión anterior cortaba ML al 50% durante el 20%
+                  inicial del backtest, matando ~288 barras de un backtest
+                  de 1 día. Esto destruía el Win Rate tempranamente.
+        PARA QUÉ: Penalizar suavemente (no guillotinar) las primeras
+                   predicciones. El modelo con 50+ features aún tiene
+                   poder predictivo parcial desde la barra ~100.
+        CÓMO: Primer 10% → factor 0.75, 10-25% → ramp 0.75→1.0, 25%+ → 1.0
+        ═══════════════════════════════════════════════════════════════
         """
         if total_bars <= 0:
             return 1.0
 
         progress = bars_processed / total_bars
 
-        if progress < 0.20:
-            return 0.50  # ML still learning context
-        elif progress < 0.50:
-            # Linear interpolation from 0.50 to 1.0 between 20% and 50%
-            return 0.50 + (progress - 0.20) * (0.50 / 0.30)
+        if progress < 0.10:
+            return 0.75  # Gentle reduction, not 50% guillotine
+        elif progress < 0.25:
+            # Linear interpolation from 0.75 to 1.0 between 10% and 25%
+            return 0.75 + (progress - 0.10) * (0.25 / 0.15)
         else:
             return 1.0  # Full context available
 
@@ -4294,8 +4562,8 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                             else SignalType.SHORT,
                             strength=final_confidence, ml_confidence=final_confidence,
                             current_price=bars[-1]["close"],
-                            sl_pct=0.005,
-                            tp_pct=0.015,
+                            sl_pct=Config.Strategies.SWING_PARAMS['sl_pct'] if getattr(self, "horizon", "SCALPING") == 'SWING' else Config.Strategies.SCALPING_PARAMS['sl_pct'],
+                            tp_pct=Config.Strategies.SWING_PARAMS['tp_pct'] if getattr(self, "horizon", "SCALPING") == 'SWING' else Config.Strategies.SCALPING_PARAMS['tp_pct'],
                             horizon=getattr(self, "horizon", "SCALPING"),
                             predicted_magnitude=0.015,
                             predicted_duration=self.LOOKAHEAD_BARS,
@@ -4414,7 +4682,11 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             pred_idx = np.argmax(smoothed_proba)
             raw_confidence = smoothed_proba[pred_idx]
             direction = self._label_mapping.get(classes[pred_idx], classes[pred_idx])
-
+            
+            # PHASE 7 FIX: Anti-Noise Gate
+            if direction == 0:
+                logger.debug(f"🔇 [ML NOISE REJECT] {self.symbol} | Model predicted HOLD (Noise). No signal generated.")
+                return
             # Adaptive Evolution Protocol: Temporal Confidence Decay
             # Reduce ML confidence during early bars when context is insufficient
             temporal_factor = self._calculate_temporal_confidence(
@@ -4431,23 +4703,13 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             # The meta-learner weights [w1, w2, w3] allow it to trust RF, XGB, GB differently.
             # So `last_ensemble_input` should be the confidence of each model in the CHOSEN direction.
 
-            chosen_idx = (
-                1 if direction == 1 else 0
-            )  # Assuming 1=LONG, 0=SHORT in probas (check classes_)
-            # If classes_ are [-1, 1], then index for -1 is 0, for 1 is 1.
-            # If classes_ are [0, 1], then index for 0 is 0, for 1 is 1.
+            # PHASE 7 FIX: 3-Class Indexing
+            chosen_idx = 2 if direction == 1 else 0
 
-            # Map direction to index
-            ml_idx = 0
-            if hasattr(self.rf_model, "classes_"):
-                # Find index of 'direction' in classes_
-                # If direction is not in classes (e.g. mapped), we need to revert mapping?
-                # _label_mapping maps internal class to 1/-1.
-                # Let's assume binary classifier.
-                if direction == 1:
-                    ml_idx = 1
-                else:
-                    ml_idx = 0
+            # PHASE 7 FIX: 3-Class PPO Ensemble Input Indexing
+            # Map direction to the correct probability index in the 3-class model
+            # Classes: [0=SHORT, 1=HOLD, 2=LONG]
+            ml_idx = chosen_idx  # Already calculated: 2 for LONG, 0 for SHORT
 
             self.last_ensemble_input = np.array(
                 [rf_proba[ml_idx], xgb_proba[ml_idx], gb_proba[ml_idx]]
@@ -4570,8 +4832,8 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                                 "inds": {"rsi": _rsi, "in_uptrend": _in_up, "in_downtrend": _in_dn},
                                 "data": _macro_bars,
                             }
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Silent exception caught: {e}")
 
                 if _oracle_tf_data:
                     _oracle_verdict = MultiHorizonOracle.evaluate_clash_vector(
@@ -4603,9 +4865,23 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             # QUÉ: Cerrar posición si la confianza ML decae en la dirección abierta.
             # POR QUÉ: Solo existía en _process_ml_results (async handler).
             # PARA QUÉ: Cerrar proactivamente trades que el modelo ya no respalda.
-            # ============================================================
+            # ════════════════════════════════════════════════════════════════
+            # FORENSIC-V49 FIX: PREDICTIVE_DECAY DISABLED FOR SCALPING
+            # QUÉ: Desactivar PREDICTIVE_DECAY como exit para Scalping.
+            # POR QUÉ: La auditoría forense mostró que esta estrategia tiene
+            #   un WR del 33% (9W/18L) y destruyó -$1.36 del capital en 1 día.
+            #   El modelo ML cambia de dirección demasiado rápido en M1/M5,
+            #   cerrando trades que habrían sido ganadores 2-3 barras después.
+            # PARA QUÉ: Delegar las salidas de Scalping al ExitOracle, FLIP_EXIT
+            #   (69% WR, +$0.61) y los SL/TP mecánicos.
+            # CUÁNDO: Solo se aplica en SWING con confianza > 0.80 (extrema).
+            # ════════════════════════════════════════════════════════════════
+            _current_horizon = getattr(self, 'horizon', 'SCALPING')
+            _decay_enabled = _current_horizon == "SWING"  # ONLY for Swing
+            _decay_threshold = 0.80  # Raised from 0.60 to 0.80 (extreme conviction only)
+            
             signal_type = SignalType.LONG if direction == 1 else SignalType.SHORT
-            if getattr(self, 'portfolio', None):
+            if _decay_enabled and getattr(self, 'portfolio', None):
                 for v_key, v_pos in getattr(self.portfolio, 'virtual_ledger', {}).items():
                     if v_key.startswith(f"{self.symbol}_") and v_pos.get('quantity', 0) != 0:
                         pos_qty = v_pos.get('quantity', 0)
@@ -4625,8 +4901,8 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                             
                         fee_headroom_ok = not (0 < pnl_pct < 0.0015)
                         
-                        # If we're LONG but ML now predicts SHORT with high conf → EXIT
-                        if is_long_pos and direction == -1 and final_confidence > 0.60:
+                        # If we're LONG but ML now predicts SHORT with EXTREME conf → EXIT
+                        if is_long_pos and direction == -1 and final_confidence > _decay_threshold:
                             if fee_headroom_ok:
                                 logger.warning(f"📉 [ENSEMBLE DECAY EXIT] Confidence flipped against LONG {self.symbol} (SHORT conf={final_confidence:.2f}). Exiting...")
                                 _decay_exit = SignalEvent(
@@ -4637,7 +4913,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                                     signal_type=SignalType.EXIT,
                                     strength=final_confidence, ml_confidence=final_confidence,
                                     current_price=current_row["close"],
-                                    horizon=getattr(self, 'horizon', 'SCALPING'),
+                                    horizon=_current_horizon,
                                     metadata={'urgent': False, 'actual_order_type': 'limit', 'is_tp_limit': True},
                                 )
                                 self.events_queue.put(_decay_exit)
@@ -4645,8 +4921,8 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                             else:
                                 logger.info(f"🛡️ [FEE HEADROOM] Blocked decay exit for LONG {self.symbol} due to tiny profit ({pnl_pct*100:.3f}%).")
                                 
-                        # If we're SHORT but ML now predicts LONG with high conf → EXIT
-                        if is_short_pos and direction == 1 and final_confidence > 0.60:
+                        # If we're SHORT but ML now predicts LONG with EXTREME conf → EXIT
+                        if is_short_pos and direction == 1 and final_confidence > _decay_threshold:
                             if fee_headroom_ok:
                                 logger.warning(f"📈 [ENSEMBLE DECAY EXIT] Confidence flipped against SHORT {self.symbol} (LONG conf={final_confidence:.2f}). Exiting...")
                                 _decay_exit = SignalEvent(
@@ -4657,13 +4933,15 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                                     signal_type=SignalType.EXIT,
                                     strength=final_confidence, ml_confidence=final_confidence,
                                     current_price=current_row["close"],
-                                    horizon=getattr(self, 'horizon', 'SCALPING'),
+                                    horizon=_current_horizon,
                                     metadata={'urgent': False, 'actual_order_type': 'limit', 'is_tp_limit': True},
                                 )
                                 self.events_queue.put(_decay_exit)
                                 return
                             else:
                                 logger.info(f"🛡️ [FEE HEADROOM] Blocked decay exit for SHORT {self.symbol} due to tiny profit ({pnl_pct*100:.3f}%).")
+            elif not _decay_enabled:
+                signal_type = SignalType.LONG if direction == 1 else SignalType.SHORT
 
             # 6. SIGNAL CREATION
             tp_target = self.current_tp_target
@@ -4686,13 +4964,13 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             sophia_report_dict = {}
             if hasattr(self, 'sophia') and self.sophia:
                 try:
-                    _returns = (
-                        df["close"]
-                        .pct_change()
-                        .replace([np.inf, -np.inf], np.nan)
-                        .dropna()
-                        .values
-                    )
+                    # Vectorized numpy returns for < 1ms latency
+                    _cvals = df["close"].values
+                    if len(_cvals) > 1:
+                        _returns = np.diff(_cvals) / _cvals[:-1]
+                        _returns = _returns[~np.isnan(_returns) & ~np.isinf(_returns)]
+                    else:
+                        _returns = np.array([])
                     sophia_report = self.sophia.analyze(
                         symbol=self.symbol,
                         direction=signal_type.name,
@@ -4960,7 +5238,9 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
         """
         Motor ML: Weighted average of ensemble models.
         """
-        idx = 1 if direction == 1 else 0  # LONG = idx 1, SHORT = idx 0
+        # PHASE 7 FIX: 3-Class Mapping
+        # In our 3-class model, class 2 = LONG (1), class 0 = SHORT (-1), class 1 = HOLD (0)
+        idx = 2 if direction == 1 else 0
 
         ml_score = (
             rf_proba[idx] * self.base_rf_weight
@@ -5160,17 +5440,22 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
 
         # ============================================================
         # ⏳ SYNTHETIC MULTI-HORIZON LOGIC (H5, H15, H30)
-        # ============================================================
-        # H5 (Short): Momentum-heavy (Tech + Sent)
-        h5_score = (technical_score * 0.6) + (sentiment_score * 0.4)
+        # ═══════════════════════════════════════════════════════════
+        # FORENSIC-V50 FIX: SENTIMENT REMOVED FROM HORIZONS
+        # QUÉ: Eliminamos sentiment_score de H5/H15/H30.
+        # POR QUÉ: sentiment_score SIEMPRE retorna 0.50 (no hay feed
+        #   real). Esto diluía H5 en -20%, H15 en -16% constante,
+        #   arrastrando señales fuertes debajo del threshold.
+        # PARA QUÉ: Multi-horizon refleja realidad (ML + Technical).
+        # ═══════════════════════════════════════════════════════════
+        # H5 (Short): Pure Technical Momentum
+        h5_score = technical_score
 
-        # H15 (Mid): Pure consensus
-        h15_score = (
-            (ml_score * 0.34) + (technical_score * 0.33) + (sentiment_score * 0.33)
-        )
+        # H15 (Mid): Balanced ML + Technical
+        h15_score = (ml_score * 0.50) + (technical_score * 0.50)
 
         # H30 (Full): ML Dominant (Original Model Horizon)
-        h30_score = (ml_score * 0.7) + (((technical_score + sentiment_score) / 2) * 0.3)
+        h30_score = (ml_score * 0.75) + (technical_score * 0.25)
 
         multi_horizon = {
             "h5": max(0.0, min(1.0, h5_score)),
@@ -5179,31 +5464,35 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
         }
 
         # FIX: engines_passing basado en threshold relativo al motor
-        # ML puede pasar solo si es muy alto (≥0.85)
-        # TECH necesita ≥ threshold
-        # Cualquier combinación con ML alto es válida
         ml_passes = ml_score >= dynamic_threshold
         tech_passes = technical_score >= (
             dynamic_threshold * 0.70
         )  # TECH threshold más bajo
-        ml_dominant = ml_score >= 0.85  # ML muy alto = override suave
+        ml_dominant = ml_score >= 0.80  # FIXED: 0.85→0.80 (menos restrictivo)
 
         engines_passing = sum([ml_passes, tech_passes])
 
         # Calculate weighted final confidence
         final_confidence = (
-            ml_score * 0.70  # FIX: 70% ML (era 60%)
-            + technical_score * 0.30  # FIX: 30% TECH (sentimiento = 0%)
+            ml_score * 0.70  # 70% ML
+            + technical_score * 0.30  # 30% TECH (sentimiento = 0%)
         )
 
         # is_valid: ML+TECH alineados, O ML muy dominante con apoyo parcial, O final_confidence altísimo
         is_valid = (engines_passing >= self.MIN_ENGINES_REQUIRED) or (
-            ml_dominant and technical_score >= 0.35
-        ) or (final_confidence >= 0.85)
+            ml_dominant and technical_score >= 0.30
+        ) or (final_confidence >= 0.78)
 
-        # Apply penalty if not enough engines agree (requiring 2)
-        if engines_passing < 2 and final_confidence < 0.85:
-            penalty = 0.8 if engines_passing == 1 else 0.6
+        # ═══════════════════════════════════════════════════════════
+        # FORENSIC-V50 FIX: SOFTER SINGLE-ENGINE PENALTY
+        # QUÉ: Reducimos penalty de 0.80 a 0.90 para 1 engine.
+        # POR QUÉ: Con ML=0.76 y penalty 0.80 → 0.608, que no pasa
+        #   el threshold de 0.60. Pero ML=0.76 ES una señal fuerte.
+        # PARA QUÉ: Permitir que ML-dominant opere cuando tiene alta
+        #   confianza, aunque Technical no confirme al 100%.
+        # ═══════════════════════════════════════════════════════════
+        if engines_passing < 2 and final_confidence < 0.78:
+            penalty = 0.90 if engines_passing == 1 else 0.70
             final_confidence *= penalty
 
         self.engines_active = engines_passing
@@ -5239,8 +5528,9 @@ def _add_ensemble_methods_to_base():
 
     def compute_organic_confluence(self, df, direction, rf_proba, xgb_proba, gb_proba):
         """Simplified organic confluence for base class."""
-        # ML Engine Score
-        idx = 1 if direction == 1 else 0
+        # PHASE 7 FIX: 3-Class Mapping
+        # In our 3-class model, class 2 = LONG (1), class 0 = SHORT (-1), class 1 = HOLD (0)
+        idx = 2 if direction == 1 else 0
         ml_score = (
             rf_proba[idx] * self.base_rf_weight
             + xgb_proba[idx] * self.base_xgb_weight

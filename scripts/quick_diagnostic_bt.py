@@ -11,6 +11,7 @@ from core.enums import EventType, SignalType, OrderSide, OrderType
 from core.portfolio import Portfolio
 from risk.risk_manager import RiskManager
 from queue import Queue
+from utils.cooldown_manager import cooldown_manager
 from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
@@ -35,13 +36,12 @@ if os.path.exists(lock_file):
     os.remove(lock_file)
     print("Removed STOP_TRADING.LOCK")
 
-# Download 1 day BTC
-print("Downloading 1 day BTC/USDT...")
-df = fetch_binance_data('BTC/USDT', days=1)
-print(f"Got {len(df)} bars")
+from core.backtest_infra import fetch_multi_symbol_data
 
-symbols = ['BTC/USDT']
-all_data = {'BTC/USDT': df}
+# Download 1 day data for top 5 symbols
+print("Downloading 1 day Top 5 symbols...")
+symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT']
+all_data = fetch_multi_symbol_data(symbols, days=1)
 events_queue = Queue()
 dp = BacktestDataProvider(events_queue, symbols, all_data)
 
@@ -90,6 +90,8 @@ class SimpleExecutor:
         
         meta = order.metadata.copy() if order.metadata else {}
         meta['actual_order_type'] = 'limit'
+        meta['is_close'] = getattr(order, 'is_close', False)
+        meta['is_exit'] = getattr(order, 'is_exit', False)
         
         return FillEvent(
             timeindex=self.current_bar_time,  # P2-FIX #9: Use candle timestamp, not wall-clock
@@ -138,26 +140,61 @@ for epoch in range(total):
     for evt in market_events:
         portfolio.update_market_price(evt.symbol, evt.close_price)
 
-    
     if bar_time:
         executor.current_bar_time = bar_time
+        cooldown_manager.set_virtual_time(bar_time)
     
     if epoch < warmup:
         continue
     
     # Check stops with candle timestamp and intra-bar evaluation
+    # FORENSIC-V81: Process EXIT signals IMMEDIATELY (not batched)
+    # QUÉ: Exit signals from check_stops are now executed inline.
+    # POR QUÉ: Batching them to the queue caused re-entry loops:
+    #   check_stops → EXIT signal → queue → strategy generates RE-ENTRY → drain processes both
+    #   → net result: position closes then immediately re-opens → infinite zombie cycle.
+    # PARA QUÉ: Guarantee position closure before any new entry signal is generated.
+    def _process_exit_signals_immediately(stop_sigs, price):
+        """Execute EXIT signals inline without going through the event queue."""
+        if not stop_sigs:
+            return
+        for sig in stop_sigs:
+            strategy_id = getattr(sig, 'strategy_id', '')
+            sym = getattr(sig, 'symbol', '')
+            hor = getattr(sig, 'horizon', 'SCALPING')
+            
+            # Pre-check: does position exist?
+            pre_pos = portfolio.get_horizon_position(sym, hor)
+            pre_qty = pre_pos.get('quantity', 0) if pre_pos else 0
+            
+            order = rm.generate_order(sig, price)
+            if order:
+                fill = executor.execute(order, price)
+                if fill:
+                    portfolio.update_fill(fill)
+                    
+                    # Post-check: did position close?
+                    post_pos = portfolio.get_horizon_position(sym, hor)
+                    post_qty = post_pos.get('quantity', 0) if post_pos else 0
+                    
+                    if strategy_id == 'TIME_STOP_ZOMBIE':
+                        print(f"  [DEBUG-ZOMBIE] {sym} {hor} pre={pre_qty:.8f} post={post_qty:.8f} close?={fill.metadata.get('is_close', False) if hasattr(fill, 'metadata') and fill.metadata else getattr(fill, 'is_close', False)}")
+                    
+                    if strategy_id == 'TIME_STOP_ZOMBIE' and abs(post_qty) > 1e-8:
+                        print(f"  ⚠️ ZOMBIE EXIT FAILED: {sym} {hor} | pre_qty={pre_qty:.8f} -> post_qty={post_qty:.8f} | order.dir={order.direction} order.qty={order.quantity:.8f}")
+            elif strategy_id == 'TIME_STOP_ZOMBIE':
+                print(f"  ⚠️ ZOMBIE ORDER=None: {sym} {hor} | pre_qty={pre_qty:.8f} | pos_exists={pre_pos is not None}")
+
+    
     try:
         for evt in market_events:
             bar = dp.get_latest_bars(evt.symbol, n=1)
             if bar is not None and len(bar) > 0:
-                # First check at adverse price (intra-bar worst case)
                 # --- INTRA-BAR ADVERSE PRICE (SL check) ---
                 for v_key, vpos in list(portfolio.virtual_ledger.items()):
                     qty = vpos.get('quantity', 0)
                     if abs(qty) < 1e-8:
                         continue
-                    # FORENSIC-V50 FIX: Extract symbol correctly from v_key
-                    # v_key format: "BTC/USDT_SCALPING_LONG" → split by _SCALPING or _SWING
                     pos_sym = v_key.split('_SCALPING')[0].split('_SWING')[0]
                     if pos_sym != evt.symbol:
                         continue
@@ -167,9 +204,7 @@ for epoch in range(total):
                         portfolio.update_market_price(evt.symbol, float(bar['high'][-1]))
                 
                 stop_sigs = rm.check_stops(portfolio, dp, symbol_filter=evt.symbol, now=bar_time)
-                if stop_sigs:
-                    for sig in stop_sigs:
-                        events_queue.put(sig)
+                _process_exit_signals_immediately(stop_sigs, float(bar['close'][-1]))
                 
                 # --- INTRA-BAR FAVORABLE PRICE (TP check) ---
                 for v_key, vpos in list(portfolio.virtual_ledger.items()):
@@ -185,18 +220,28 @@ for epoch in range(total):
                         portfolio.update_market_price(evt.symbol, float(bar['low'][-1]))
                 
                 stop_sigs = rm.check_stops(portfolio, dp, symbol_filter=evt.symbol, now=bar_time)
-                if stop_sigs:
-                    for sig in stop_sigs:
-                        events_queue.put(sig)
+                _process_exit_signals_immediately(stop_sigs, float(bar['close'][-1]))
                 
                 # Restore close price
                 portfolio.update_market_price(evt.symbol, evt.close_price)
             
             # Also check at close
             stop_sigs = rm.check_stops(portfolio, dp, symbol_filter=evt.symbol, now=bar_time)
-            if stop_sigs:
-                for sig in stop_sigs:
-                    events_queue.put(sig)
+            _process_exit_signals_immediately(stop_sigs, evt.close_price)
+        
+        # FORENSIC-V81: Global check_stops (no symbol_filter) to catch zombies
+        # on symbols that have no MarketEvent in this epoch.
+        # QUÉ: Evalúa TODAS las posiciones abiertas, incluso si su símbolo
+        #   no tiene datos de mercado en este epoch.
+        # POR QUÉ: SOL/BNB zombies vivían 11+ horas porque solo se evaluaban
+        #   cuando tenían market events, pero la timeline global avanzaba sin ellos.
+        if bar_time:
+            global_stops = rm.check_stops(portfolio, dp, now=bar_time)
+            if global_stops:
+                for sig in global_stops:
+                    price = dp.get_latest_price(sig.symbol) or 0
+                    if price:
+                        _process_exit_signals_immediately([sig], price)
     except Exception as e:
         print(f"[WARN] check_stops error: {e}")
 
@@ -280,6 +325,7 @@ for v_key, vpos in list(portfolio.virtual_ledger.items()):
         strategy_id='DIAG_CLOSE',
         fill_price=price,
         horizon=horizon,
+        metadata={'is_close': True}
     )
     portfolio.update_fill(close_fill)
     fills_total += 1
@@ -326,5 +372,21 @@ if portfolio.trade_history:
     print(f"    EXIT REASONS:")
     for reason, count in sorted(exit_counts.items(), key=lambda x: x[1], reverse=True):
         print(f"      {reason}: {count}")
+
+    print(f"\n  LOSING TRADES ANATOMY (Top 10 Worst):")
+    losing_trades = sorted([t for t in portfolio.trade_history if t['net_pnl'] < 0], key=lambda x: x['net_pnl'])
+    for idx, t in enumerate(losing_trades[:10]):
+        print(f"    [{idx+1}] {t['direction']} {t['symbol']} | Reason: {t['exit_reason']}")
+        print(f"        Entry: ${t['entry_price']:.2f} | Exit: ${t['exit_price']:.2f} | Setup: {t['setup_type']}")
+        print(f"        Gross PnL: ${t['gross_pnl']:.4f} | Fees: ${t['fees_paid']:.4f} | Net: ${t['net_pnl']:.4f}")
+        print(f"        Duration: {t['duration_seconds']}s")
+    
+    print(f"\n  WINNING TRADES ANATOMY (Top 5 Best):")
+    winning_trades = sorted([t for t in portfolio.trade_history if t['net_pnl'] > 0], key=lambda x: -x['net_pnl'])
+    for idx, t in enumerate(winning_trades[:5]):
+        print(f"    [{idx+1}] {t['direction']} {t['symbol']} | Reason: {t['exit_reason']}")
+        print(f"        Entry: ${t['entry_price']:.2f} | Exit: ${t['exit_price']:.2f} | Setup: {t['setup_type']}")
+        print(f"        Gross PnL: ${t['gross_pnl']:.4f} | Fees: ${t['fees_paid']:.4f} | Net: ${t['net_pnl']:.4f}")
+        print(f"        Duration: {t['duration_seconds']}s")
 
 print(f"{'='*60}")

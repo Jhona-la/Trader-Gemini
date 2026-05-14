@@ -1,8 +1,6 @@
 
 import os
-import sys
 import time
-import asyncio
 from utils.logger import setup_logger
 from config import Config
 
@@ -126,14 +124,14 @@ class KillSwitch:
         # 2. Hard Capital Floor Protection
         if self.portfolio:
             current_capital = self.portfolio.get_total_equity()
-            # LEAN_MODE: Wider floor for micro-accounts ($13)
-            # QUÉ: 4% floor = $12.48 — too tight for normal scalping oscillations.
-            # POR QUÉ: Con $13, un drawdown de $0.52 (4%) es normal en 1 hora de trading.
-            # PARA QUÉ: Permitir que el sistema trabaje sin auto-matarse prematuramente.
-            if getattr(Config, 'LEAN_MODE', False):
-                max_loss_floor_pct = 0.25  # 25% absolute floor ($9.75 on $13)
-            else:
-                max_loss_floor_pct = 0.04 * h_sqrt  # 1D = 4%, 30D = 21.9%
+            # FORENSIC-CTOS: USE CONFIG MAX_DRAWDOWN AS CAPITAL FLOOR
+            # QUÉ: Sincronizar el floor del Kill Switch con Config.Risk.MAX_DRAWDOWN.
+            # POR QUÉ: El hardcoded 4% = $12.48 en cuenta de $13. Un solo trade con 10x
+            #   leverage que se mueva -0.5% ya pierde $0.65 (5%). El Kill Switch mataba
+            #   el engine ANTES de que los SL/TP pudieran actuar.
+            # PARA QUÉ: Dar espacio real al sistema para operar. MAX_DRAWDOWN=15% ya está
+            #   validado en Config como el límite soberano.
+            max_loss_floor_pct = getattr(Config.Risk, 'MAX_DRAWDOWN', 15.0) / 100.0
             min_capital = Config.INITIAL_CAPITAL * max(0.01, (1.0 - max_loss_floor_pct))
             
             if current_capital <= min_capital and current_capital > 0:

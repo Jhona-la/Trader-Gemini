@@ -1,10 +1,8 @@
 
 import os
 import sys
-import time
 import asyncio
 import logging
-from datetime import datetime, timezone
 
 # Ensure root
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,11 +18,9 @@ Config.TRADING_PAIRS = ['BTC/USDT']
 # No, "Test de Humo con Capital Real" implies checking if we CAN trade.
 # But I will put a safety block in Executor if I can, or just trust the logic won't trigger in 30s.
 
-from core.engine import Engine
 from data.binance_loader import BinanceData
 from core.portfolio import Portfolio
 from execution.binance_executor import BinanceExecutor
-from utils.logger import logger
 
 # Setup Logger to Console
 logging.basicConfig(level=logging.INFO)

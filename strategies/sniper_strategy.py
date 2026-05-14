@@ -47,9 +47,45 @@ class SniperStrategy(Strategy):
         lbl = "[SCL]" if horizon == "SCALPING" else "[SWG]"
         self.strategy_id = f"{lbl}_SNIPER_{horizon}"
         
+        # ================================================================
+        # PHASE FORENSIC-4: HORIZON-AWARE PARAMETER LOADING
+        # QUÉ: Carga parámetros especializados según el horizonte.
+        # POR QUÉ: Sniper con SWING necesita ATR multipliers más amplios,
+        #   RSI periods más largos y TP/SL targets mayores.
+        # CÓMO: Lee Config.Strategies.SCALPING_PARAMS o SWING_PARAMS.
+        # CUÁNDO: En cada instanciación de la estrategia.
+        # DÓNDE: strategies/sniper_strategy.py → __init__
+        # QUIÉN: SniperStrategy
+        # ================================================================
+        if horizon.upper() == 'SCALPING':
+            h_params = getattr(Config.Strategies, 'SCALPING_PARAMS', {})
+        elif horizon.upper() == 'SWING':
+            h_params = getattr(Config.Strategies, 'SWING_PARAMS', {})
+        else:
+            h_params = {}
+        
+        # Indicator periods — HORIZON-AWARE
+        self.RSI_PERIOD = h_params.get('rsi_period', Config.Sniper.RSI_PERIOD)
+        self.RSI_OVERSOLD = h_params.get('rsi_buy', Config.Sniper.RSI_OVERSOLD)
+        self.RSI_OVERBOUGHT = h_params.get('rsi_sell', Config.Sniper.RSI_OVERBOUGHT)
+        self.BB_PERIOD = h_params.get('bb_period', Config.Sniper.BB_PERIOD)
+        self.BB_STD = h_params.get('bb_std', Config.Sniper.BB_STD)
+        self.ATR_PERIOD = h_params.get('atr_period', 14)
+        
+        # TP/SL — HORIZON-AWARE (critical for sizing)
+        self.TP_PCT = h_params.get('tp_pct', 0.0080)
+        self.SL_PCT = h_params.get('sl_pct', 0.0040)
+        
+        # ATR Multipliers — HORIZON-AWARE
+        self.ATR_SL_MULT = h_params.get('atr_sl_mult', 2.0 if horizon == 'SCALPING' else 3.0)
+        self.ATR_TP_MULT = h_params.get('atr_tp_mult', 3.0 if horizon == 'SCALPING' else 4.5)
+        
+        # Operational params — HORIZON-AWARE
+        self.COOLDOWN_SECONDS = h_params.get('cooldown_seconds', 20 if horizon == 'SCALPING' else 1800)
+        self.STRENGTH_THRESHOLD = h_params.get('strength_threshold', 0.57)
+        
         # Whitelist filter (Disabled - Now using Dynamic Basket)
         self.whitelist = getattr(Config.Sniper, 'WHITELIST', [])
-        # self.symbol_list = [s for s in data_provider.symbol_list if s in self.whitelist]
         
         # Order Flow & Regime (Phase 13/14)
         self.of_analyzer = OrderFlowAnalyzer()
@@ -58,7 +94,7 @@ class SniperStrategy(Strategy):
         self.last_signal_time = {}
         self.signal_count = 0
         
-        logger.info(f"🎯 SNIPER STRATEGY INITIALIZED (PHALANX-OMEGA V3)")
+        logger.info(f"🎯 SNIPER [{horizon}] INITIALIZED | TP={self.TP_PCT*100:.2f}% SL={self.SL_PCT*100:.2f}% | RSI={self.RSI_PERIOD} | ATR_SL={self.ATR_SL_MULT}x ATR_TP={self.ATR_TP_MULT}x")
     
     def calculate_signals(self, event):
         """Main signal generation loop."""
@@ -98,8 +134,8 @@ class SniperStrategy(Strategy):
                         signal_type=signal_type,
                         strength=1.0,  # Max conviction
                         atr=0.0, # Will be dynamically calculated in risk_manager or executor
-                        tp_pct=0.015, # Quick 1.5% TP for bounce
-                        sl_pct=0.005, # Tight 0.5% SL
+                        tp_pct=self.TP_PCT,
+                        sl_pct=self.SL_PCT,
                         current_price=event_data.get('price', 0),
                         leverage=Config.BINANCE_LEVERAGE,
                         horizon=self.horizon,
@@ -130,11 +166,11 @@ class SniperStrategy(Strategy):
                 if self.portfolio and hasattr(self.portfolio, 'risk_manager'):
                     self.portfolio.risk_manager.update_leverage_and_params(vol, "ADAPTIVE")
 
-                # 0. Local Cooldown Check
+                # 0. Local Cooldown Check — HORIZON-AWARE
                 # FORENSIC FIX: Use event.timestamp for backtest parity, fallback to now
                 now = getattr(event, 'timestamp', datetime.now(timezone.utc))
                 if symbol in self.last_signal_time:
-                    if (now - self.last_signal_time[symbol]).total_seconds() < 20:
+                    if (now - self.last_signal_time[symbol]).total_seconds() < self.COOLDOWN_SECONDS:
                         continue
                 
                 # D2 FIX: Pass pre-fetched bars to avoid redundant API call
@@ -287,20 +323,20 @@ class SniperStrategy(Strategy):
         # =====================================================================
         # LAYER C: Fee & Risk Validation
         # =====================================================================
-        atr = talib.ATR(highs, lows, closes, timeperiod=14)[-1]
+        atr = talib.ATR(highs, lows, closes, timeperiod=self.ATR_PERIOD)[-1]
         
-        # FIXED: Leverage capped at 12x
+        # Dynamic leverage from SafeLeverageCalculator
         leverage = self._calculate_dynamic_leverage(atr, current_price)
         if leverage == 0:
             return None
         
-        # FIXED: R:R for scalping (1.5:1 instead of 3:1)
+        # HORIZON-AWARE: Use ATR multipliers from Config params
         if layer_a_direction == 'LONG':
-            stop_price = current_price - (atr * 2.0)     # 2x ATR stop
-            target_price = current_price + (atr * 3.0)   # 3x ATR target = 1.5:1 R:R
+            stop_price = current_price - (atr * self.ATR_SL_MULT)
+            target_price = current_price + (atr * self.ATR_TP_MULT)
         else:
-            stop_price = current_price + (atr * 2.0)
-            target_price = current_price - (atr * 3.0)
+            stop_price = current_price + (atr * self.ATR_SL_MULT)
+            target_price = current_price - (atr * self.ATR_TP_MULT)
         
         # FIXED: Dynamic capital from portfolio
         capital = self.portfolio.get_total_equity() if self.portfolio else 12.0
@@ -404,21 +440,21 @@ class SniperStrategy(Strategy):
         return signal
     
     def _analyze_technical(self, closes: np.ndarray, highs: np.ndarray, lows: np.ndarray) -> Dict:
-        """Layer A: Technical indicator analysis (SAME AS ORIGINAL)."""
+        """Layer A: Technical indicator analysis — HORIZON-AWARE."""
         results = {}
         
-        # 1. RSI Divergence
-        rsi = talib.RSI(closes, timeperiod=Config.Sniper.RSI_PERIOD)
+        # 1. RSI Divergence — uses horizon-loaded period
+        rsi = talib.RSI(closes, timeperiod=self.RSI_PERIOD)
         current_rsi = rsi[-1]
         prev_rsi = rsi[-5]
         
         price_lower = closes[-1] < closes[-5]
         rsi_higher = current_rsi > prev_rsi
-        bullish_div = price_lower and rsi_higher and current_rsi < Config.Sniper.RSI_OVERSOLD + 10
+        bullish_div = price_lower and rsi_higher and current_rsi < self.RSI_OVERSOLD + 10
         
         price_higher = closes[-1] > closes[-5]
         rsi_lower = current_rsi < prev_rsi
-        bearish_div = price_higher and rsi_lower and current_rsi > Config.Sniper.RSI_OVERBOUGHT - 10
+        bearish_div = price_higher and rsi_lower and current_rsi > self.RSI_OVERBOUGHT - 10
         
         results['rsi_divergence'] = {
             'signal': 'LONG' if bullish_div else ('SHORT' if bearish_div else 'NEUTRAL'),
@@ -439,11 +475,11 @@ class SniperStrategy(Strategy):
             'value': hist[-1]
         }
         
-        # 3. Bollinger Band Rejection
+        # 3. Bollinger Band Rejection — uses horizon-loaded params
         upper, middle, lower = talib.BBANDS(closes, 
-                                             timeperiod=Config.Sniper.BB_PERIOD,
-                                             nbdevup=Config.Sniper.BB_STD,
-                                             nbdevdn=Config.Sniper.BB_STD)
+                                             timeperiod=self.BB_PERIOD,
+                                             nbdevup=self.BB_STD,
+                                             nbdevdn=self.BB_STD)
         
         touch_lower = lows[-2] <= lower[-2]
         bounce_up = closes[-1] > closes[-2]
@@ -494,13 +530,15 @@ class SniperStrategy(Strategy):
     def _validate_trade_economics(self, entry_price: float, target_price: float, 
                                    stop_price: float, capital: float, leverage: int) -> Dict:
         """
-        Layer C: Validate trade profitability after fees.
+        Layer C: Validate trade profitability after fees — UNIFIED FEE SOURCE.
         """
         position_value = capital * leverage
         
-        # FIXED: Use correct fee (0.0375% taker with BNB)
-        taker_fee = 0.000375
-        fee = position_value * taker_fee * 2  # Round trip
+        # [UNIFIED] Use Config.BINANCE_*_FEE_BNB — single source of truth
+        maker_fee = getattr(Config, 'BINANCE_MAKER_FEE_BNB', 0.0002)
+        taker_fee = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375)
+        # Round trip: entry (maker via BBO) + exit (worst case taker)
+        fee = position_value * (maker_fee + taker_fee)
         
         if entry_price > 0:
             profit_pct = abs(target_price - entry_price) / entry_price
