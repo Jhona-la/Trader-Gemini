@@ -86,6 +86,10 @@ class HybridScalpingStrategy(Strategy):
         self.TP_PCT = h_params.get('tp_pct', getattr(Config.Strategies, 'TECH_TP_PCT', 0.015))
         self.SL_PCT = h_params.get('sl_pct', getattr(Config.Strategies, 'TECH_SL_PCT', 0.02))
         
+        # ATR Multipliers - HORIZON-AWARE
+        self.ATR_SL_MULT_BASE = h_params.get('atr_sl_mult', 1.5)
+        self.ATR_TP_MULT_BASE = h_params.get('atr_tp_mult', 3.0)
+        
         # Filtro de tendencia — HORIZON-AWARE
         self.EMA_FAST = h_params.get('ema_fast', getattr(Config.Strategies, 'TECH_EMA_FAST', 20))
         self.EMA_SLOW = h_params.get('ema_slow', getattr(Config.Strategies, 'TECH_EMA_SLOW', 50))
@@ -412,7 +416,20 @@ class HybridScalpingStrategy(Strategy):
         # FORENSIC-1: Only process timeframes relevant to this horizon
         # Scalping: 1m, 5m, 15m | Swing: 1h, 4h, 1d
         all_tf_bars = {'1m': 300, '5m': 300, '15m': 200, '1h': 300, '4h': 300, '1d': 100, '1w': 100}
-        allowed_tfs = self.HORIZON_TIMEFRAMES if hasattr(self, 'HORIZON_TIMEFRAMES') else ['5m', '15m', '1h']
+        allowed_tfs = list(self.HORIZON_TIMEFRAMES) if hasattr(self, 'HORIZON_TIMEFRAMES') else ['5m', '15m', '1h']
+        # QUÉ: Asegurar la inyección de datos macro (1d, 1w) en el ledger de indicadores del horizonte.
+        # POR QUÉ: El oráculo macro (`MultiHorizonOracle.evaluate_clash_vector`) evalúa obligatoriamente
+        #   las tendencias estructurales en 1d y 1w. Si faltan en `allowed_tfs`, el oráculo retorna
+        #   `NO_MACRO_DATA` (is_vetoed=False), desactivando silenciosamente la protección y
+        #   causando pérdidas masivas en pullbacks durante caídas generalizadas.
+        # PARA QUÉ: Reducir pérdidas por trade contra-tendencia en el micro-capital de $13 USD.
+        # CÓMO: Copiamos `self.HORIZON_TIMEFRAMES` como lista y forzamos la inclusión de `1d` y `1w`.
+        # CUÁNDO: Ejecutado en cada actualización de vela.
+        # DÓNDE: En `strategies/technical.py::get_multi_timeframe_data`.
+        # QUIÊN: Modificado por el Quant Developer y el Arquitecto Senior.
+        for tf in ['1d', '1w']:
+            if tf not in allowed_tfs:
+                allowed_tfs.append(tf)
         
         for tf in allowed_tfs:
             n_bars = all_tf_bars.get(tf, 200)
@@ -431,7 +448,31 @@ class HybridScalpingStrategy(Strategy):
                 # get_latest_bars now returns structured array
                 data = self.data_provider.get_latest_bars(symbol, n=n_bars, timeframe=tf)
                 if data is not None and len(data) >= (30 if tf not in ('1w', '1d', '4h') else 10):
-                    inds = self.calculate_indicators(data, time_multiplier=time_multiplier)
+                    # ═══════════════════════════════════════════════════════════════
+                    # FORENSIC-V99: O(1) LAZY EVALUATION CACHE (QUANTUM SPEED)
+                    # QUÉ: Caching de indicadores basado en la última vela cerrada.
+                    # POR QUÉ: Antes, el bot recalculaba MACD/RSI/BB sobre 300 velas
+                    #   para gráficas de 1H y 1D a CADA MINUTO. Un desperdicio de 99.9%.
+                    # PARA QUÉ: Reducir la complejidad O(N) a O(1), acelerando el backtest x100.
+                    # CÓMO: Hash basado en symbol_tf_timestamp_idx[-2].
+                    # ═══════════════════════════════════════════════════════════════
+                    last_closed_ts = data['timestamp'][-2] if len(data) > 1 else 0
+                    cache_key = f"{symbol}_{tf}_{last_closed_ts}_{time_multiplier}"
+                    
+                    if not hasattr(self, '_macro_ind_cache'):
+                        self._macro_ind_cache = {}
+                        
+                    if cache_key in self._macro_ind_cache:
+                        inds = self._macro_ind_cache[cache_key]
+                    else:
+                        inds = self.calculate_indicators(data, time_multiplier=time_multiplier)
+                        self._macro_ind_cache[cache_key] = inds
+                        
+                        # Limpieza de memoria O(1) agresiva (evitar OOM)
+                        keys_to_del = [k for k in self._macro_ind_cache.keys() if k.startswith(f"{symbol}_{tf}_") and k != cache_key]
+                        for k in keys_to_del:
+                            del self._macro_ind_cache[k]
+                    
                     if inds:
                         timeframe_data[tf] = {'data': data, 'inds': inds}
             except Exception as e:
@@ -591,11 +632,10 @@ class HybridScalpingStrategy(Strategy):
             # ════════════════════════════════════════════════════════════════
             is_scalping = hasattr(self, 'horizon') and self.horizon == 'SCALPING'
             if is_scalping:
-                # [CIRUGÍA #1] RAISED FROM 0.25% TO 1.0% — WAS ROOT CAUSE OF ZOMBIE TRADES
-                # The 0.25% cap made TP unreachable, causing 98.8% zombie exits.
-                # Now aligned with Config.Strategies.SCALPING_PARAMS (0.80% TP / 0.40% SL)
-                max_tp_cap = 0.0100  # 1.00% — allows Config TP of 0.80% to pass through
-                max_sl_cap = 0.0060  # 0.60% — allows Config SL of 0.40% to pass through
+                # [CIRUGÍA #1] REDUCED FROM 1.0% TO 0.50%
+                # TP > 0.50% is unrealistic for M1 scalping and reduces win rate.
+                max_tp_cap = 0.0050  # 0.50% cap
+                max_sl_cap = 0.0050  # 0.50% cap
             else:
                 max_tp_cap = getattr(Config.Strategies, 'MAX_EVO_TP', 0.30)
                 max_sl_cap = getattr(Config.Strategies, 'MAX_EVO_SL', 0.15)
@@ -647,8 +687,26 @@ class HybridScalpingStrategy(Strategy):
         adx_thresh = self._get_dynamic_adx_threshold(inds)
         
         last_close = data['close'][idx]
+        last_open = data['open'][idx]
         last_rsi = inds['rsi'][idx]
         last_vol_ratio = inds['volume_ratio'][idx]
+        
+        # MICRO-STRUCTURE ANALYSIS (Phase 7 Predictive Edge)
+        last_low = data['low'][idx]
+        last_high = data['high'][idx]
+        
+        body_top = max(last_open, last_close)
+        body_bottom = min(last_open, last_close)
+        body_size = body_top - body_bottom
+        upper_wick = last_high - body_top
+        lower_wick = body_bottom - last_low
+        
+        # Avoid division by zero
+        safe_body = max(body_size, last_close * 0.0001)
+        
+        # Pin Bar logic (Wick Rejection)
+        is_bullish_pin = (lower_wick > safe_body * 1.5) and (upper_wick < safe_body * 1.0)
+        is_bearish_pin = (upper_wick > safe_body * 1.5) and (lower_wick < safe_body * 1.0)
         
         setups = {
             'long_mean_rev': False,
@@ -673,14 +731,9 @@ class HybridScalpingStrategy(Strategy):
         
         # 1. MEAN REVERSION (Flexibilizar si no hay tendencia clara)
         # SUPREMO-V4: PROTECCIÓN CONTRA FALLING KNIVES (INTEGRALIDAD)
-        # No permitimos Mean Reversion si el ADX es muy alto (tendencia fuerte)
-        # a menos que el RSI sea ABSOLUTAMENTE extremo (pánico/euforia final).
         adx_extreme = setups['adx'] > 35
         is_strong_trend = setups['adx'] > adx_thresh
         
-        # DEFINICIÓN DE SETUPS ORIGINALES (Optimizado para SUPREMO-V3)
-        last_low = data['low'][idx]
-        last_high = data['high'][idx]
         price_at_lower = last_low <= bbl  # Use wick for scalping detection
         price_at_upper = last_high >= bbu # Use wick for scalping detection
         rsi_oversold = last_rsi < rsi_buy
@@ -821,34 +874,32 @@ class HybridScalpingStrategy(Strategy):
             
         high_volume = last_vol_ratio > vol_min
         
-        # SUPREMO-V4: is_range ya fue calculado arriba con filtros de tendencia fuerte.
-        
-        # MEAN_REV: Stricter setup requiring high volume confluence and avoiding explicit trend opposition unless ranging
-        setups['long_mean_rev'] = price_at_lower and rsi_oversold and high_volume and is_range
-        setups['short_mean_rev'] = price_at_upper and rsi_overbought and high_volume and is_range
-        
-        # ================================================================
-        # 👻 RESURRECCIÓN FANTASMA: PROXIMITY SETUPS
-        # Se reactivan para encontrar MÁS trades, pero con validación
-        # estricta de ADX y volumen para evitar "basura".
-        # ================================================================
-        if self.horizon == 'SCALPING' and not setups['long_mean_rev'] and not setups['short_mean_rev']:
-            # Proximity: BB position < 0.25 (close to lower) or > 0.75 (close to upper)
-            bb_pos = setups['bb_position']
-            rsi_trending_low = last_rsi < 35 
-            rsi_trending_high = last_rsi > 65 
-            vol_ok = last_vol_ratio > 0.8
-            adx_strong = setups['adx'] > 20 # Filtro anti-ruido
+        # PHASE 7: Predictive Edge for MEAN_REV
+        if self.horizon == 'SCALPING':
+            # TRUE SCALPING MEAN REVERSION: Wick Rejection of Bollinger Bands
+            # We don't wait for RSI. If the wick pierced the band and closed back inside as a pin bar, we enter.
+            setups['long_mean_rev'] = price_at_lower and is_bullish_pin and high_volume and not adx_extreme
+            setups['short_mean_rev'] = price_at_upper and is_bearish_pin and high_volume and not adx_extreme
             
-            bb_pos_lower = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('bb_pos_lower_prox', 0.25)
-            bb_pos_upper = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('bb_pos_upper_prox', 0.75)
-            
-            if bb_pos < bb_pos_lower and rsi_trending_low and vol_ok and is_range and adx_strong:
-                setups['long_mean_rev'] = True
-                logger.debug(f"👻 [FANTASMA] Proximity LONG activado para {self.symbol}")
-            elif bb_pos > bb_pos_upper and rsi_trending_high and vol_ok and is_range and adx_strong:
-                setups['short_mean_rev'] = True
-                logger.debug(f"👻 [FANTASMA] Proximity SHORT activado para {self.symbol}")
+            # PROXIMITY SETUPS: Now backed by Wick analysis instead of pure random BB position
+            if not setups['long_mean_rev'] and not setups['short_mean_rev']:
+                bb_pos = setups['bb_position']
+                bb_pos_lower = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('bb_pos_lower_prox', 0.25)
+                bb_pos_upper = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('bb_pos_upper_prox', 0.75)
+                vol_ok = last_vol_ratio > 0.8
+                adx_strong = setups['adx'] > 20
+                
+                # If near the lower band, and there is a bullish wick (not strictly a pin bar, but strong rejection)
+                if bb_pos < bb_pos_lower and (lower_wick > safe_body) and vol_ok and is_range and adx_strong:
+                    setups['long_mean_rev'] = True
+                    logger.debug(f"👻 [FANTASMA] Proximity LONG activado para {self.symbol} (Wick Rejection)")
+                elif bb_pos > bb_pos_upper and (upper_wick > safe_body) and vol_ok and is_range and adx_strong:
+                    setups['short_mean_rev'] = True
+                    logger.debug(f"👻 [FANTASMA] Proximity SHORT activado para {self.symbol} (Wick Rejection)")
+        else:
+            # SWING: Legacy Stricter setup
+            setups['long_mean_rev'] = price_at_lower and rsi_oversold and high_volume and is_range
+            setups['short_mean_rev'] = price_at_upper and rsi_overbought and high_volume and is_range
         
         # 2. MOMENTUM (Optimizado para Nivel Supremo-V3 con VCP & ADX)
         # MACD variables ya declaradas arriba (macd, macd_sig, macd_hist, macd_prev_hist)
@@ -876,38 +927,32 @@ class HybridScalpingStrategy(Strategy):
         
         is_swing = self.horizon == 'SWING'
         
+        # Phase 7: Predictive Edge for MOMENTUM
         if is_swing:
             setups['long_momentum'] = setups['in_uptrend'] and momentum_accel and adx_trend_confirmed and vcp_confirmed and not rsi_exhausted_long
             setups['short_momentum'] = setups['in_downtrend'] and momentum_accel and adx_trend_confirmed and vcp_confirmed and not rsi_exhausted_short
             setups['long_scalp_break'] = False
             setups['short_scalp_break'] = False
         else:
-            # ================================================================
-            # FORENSIC REMEDIATION: Re-enable MOMENTUM for SCALPING
-            # QUÉ: long_momentum estaba forzado a False, creando sesgo SHORT.
-            # POR QUÉ: Sin momentum LONG, el sistema solo entraba LONG en
-            #   mean_reversion (raro) y scalp_break (restrictivo).
-            # PARA QUÉ: Permitir que el sistema capture micro-tendencias LONG
-            #   durante breakouts de consolidación en SCALPING.
-            # CÓMO: Usamos los mismos filtros que SWING pero con VCP relajado.
-            # ================================================================
-            scalp_vol = last_vol_ratio > 0.9
+            # TRUE SCALPING MOMENTUM (VCP BREAKOUT):
+            # Rather than waiting for lagging MACD across zero, we anticipate the breakout when:
+            # 1. We had VCP contraction recently (mean_bbw is small, current_bbw is expanding)
+            # 2. Volume is expanding massively (vol_ratio > 1.5)
+            # 3. Price closes aggressively outside or very near the bands
+            scalp_vol_surge = last_vol_ratio > 1.5
+            
+            # Use strict VCP setup
+            setups['long_momentum'] = setups['in_uptrend'] and vcp_expansion and scalp_vol_surge and price_at_upper and not rsi_exhausted_long
+            setups['short_momentum'] = setups['in_downtrend'] and vcp_expansion and scalp_vol_surge and price_at_lower and not rsi_exhausted_short
+            
+            # SCALP BREAKOUTS (Explosive wicks)
+            setups['long_scalp_break'] = momentum_accel and scalp_vol_surge and (last_close > bbu) and not rsi_exhausted_long
             
             symmetric_shorts = getattr(Config.Strategies, 'SYMMETRIC_SHORTS_SCALPING', False)
-            
-            # MOMENTUM (now enabled for SCALPING with relaxed VCP)
-            scalp_momentum_ok = momentum_accel and adx_trend_confirmed and scalp_vol
-            setups['long_momentum'] = setups['in_uptrend'] and scalp_momentum_ok and not rsi_exhausted_long
-            setups['short_momentum'] = setups['in_downtrend'] and scalp_momentum_ok and not rsi_exhausted_short
-            
-            # SCALP BREAKOUTS
-            setups['long_scalp_break'] = setups['in_uptrend'] and momentum_accel and scalp_vol and last_close >= bbu and not rsi_exhausted_long
             if symmetric_shorts:
-                short_condition = (setups['in_downtrend'] or (macd_hist < 0 and last_rsi < 55)) and momentum_accel and scalp_vol and last_close <= bbl and not rsi_exhausted_short
+                setups['short_scalp_break'] = momentum_accel and scalp_vol_surge and (last_close < bbl) and not rsi_exhausted_short
             else:
-                short_condition = setups['in_downtrend'] and momentum_accel and scalp_vol and last_close <= bbl and not rsi_exhausted_short
-                
-            setups['short_scalp_break'] = short_condition
+                setups['short_scalp_break'] = setups['in_downtrend'] and momentum_accel and scalp_vol_surge and (last_close < bbl) and not rsi_exhausted_short
         
         # Phase 5.7 Cognitive Auto-Tuning (Self-Healing Interception)
         allowed_setups = params.get('allowed_setups', 'ALL_SETUPS') if params else 'ALL_SETUPS'
@@ -1301,8 +1346,16 @@ class HybridScalpingStrategy(Strategy):
                     # CÓMO: Veto total solo si clash > 0.85 (extremo). De lo contrario, penalty.
                     if oracle_verdict['is_vetoed']:
                         clash = oracle_verdict['clash_score']
-                        if clash > 0.85:
-                            # HARD VETO: Solo para clash extremo (macro y micro completamente opuestos)
+                        # QUÉ: Reducción del umbral de veto duro del oráculo macro de 0.85 a 0.60.
+                        # POR QUÉ: Un clash_score > 0.60 indica una fuerte contradicción entre la señal y la macro-tendencia.
+                        #   Dado el capital micro de $13 USD, no podemos permitirnos asumir riesgos innecesarios.
+                        # PARA QUÉ: Evitar pérdidas en condiciones de mercado donde el contexto estructural es hostil.
+                        # CÓMO: Cambiando la condición de descarte directo de `clash > 0.85` a `clash > 0.60`.
+                        # CUÁNDO: Al evaluar señales generadas antes de ser enviadas a la cola de eventos.
+                        # DÓNDE: En `strategies/technical.py` L1317.
+                        # QUIÊN: Modificado por el Risk Manager y el Quant Developer.
+                        if clash > 0.60:
+                            # HARD VETO: Solo para clash extremo/fuerte (macro y micro opuestos)
                             logger.info(
                                 f"🔮 [ORACLE VETO] {symbol} {direction_str} BLOCKED (EXTREME) | "
                                 f"Clash: {clash:.1%} | Macro: {oracle_verdict['macro_context']}"
@@ -1902,8 +1955,10 @@ class HybridScalpingStrategy(Strategy):
                 # GOLDEN GENOTYPE: TP=0.163%, SL=0.188% (Optuna Trial #47)
                 # ════════════════════════════════════════════════════════════════
                 if self.horizon == 'SCALPING':
-                    final_tp_pct = min(final_tp_pct, 0.0150)  # CTOS PHASE 3: Increased from 0.0020 to 0.0150 (1.5%) to allow Config.Strategies TP
-                    final_sl_pct = min(final_sl_pct, 0.0080)  # CTOS PHASE 3: Increased from 0.0020 to 0.0080 (0.8%) to avoid noise stop-outs
+                    # FORENSIC-V156: Strict Caps to prevent Sophia from inflating TP/SL beyond M1 viability.
+                    # TP > 0.40% is unrealistic for pure Scalping and causes Zombie trades.
+                    final_tp_pct = min(final_tp_pct, 0.0040)  # Cap at 0.40%
+                    final_sl_pct = min(final_sl_pct, 0.0040)  # Cap at 0.40%
                 
                 signal = SignalEvent(
                     strategy_id=detailed_id,
@@ -1923,6 +1978,8 @@ class HybridScalpingStrategy(Strategy):
                     current_price=setups['close'],
                     metadata={
                         **_metadata,
+                        'atr_pct': current_atr / setups['close'] if setups['close'] > 0 else 0.001,
+                        'volatility': setups['atr'] / setups['close'] if setups['close'] > 0 else 0.001,
                         'exhaustion': self.sophia.calibrator.calculate_exhaustion(inds_primary['macd_hist'], setups['rsi']) if hasattr(self, 'sophia') and self.sophia else 0.0,  # C-2 FIX: was inds_5m
                         'boost_factor': sophia_report.metadata.get('boost_factor', 1.0) if sophia_report else 1.0,
                         'win_prob': sophia_report.win_probability if sophia_report else 0.5,

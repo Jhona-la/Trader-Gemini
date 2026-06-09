@@ -48,7 +48,8 @@ async def test_broken_connection_recovery():
         strategy_id="CHAOS",
         symbol="BTC/USDT",
         datetime=datetime.now(timezone.utc),
-        signal_type=SignalType.LONG
+        signal_type=SignalType.LONG,
+        horizon="SCALPING"
     )
     
     # This should be caught by error_handler and logged, not crash the engine

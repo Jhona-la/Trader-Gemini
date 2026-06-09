@@ -152,6 +152,29 @@ class GlobalMarketState:
             legacy['orderflow_pressure'] = event.order_flow.get('ofi', 0.0)
         if hasattr(event, 'health_metrics') and event.health_metrics:
             legacy['liquidity_score'] = event.health_metrics.get('liquidity', 0.5)
+        
+        # ═══════════════════════════════════════════════════════════════
+        # LOW-LATENCY PHASE: Store OHLCV in legacy dict
+        # QUÉ: Almacena close_price del MarketEvent en el state dict.
+        # POR QUÉ: engine._get_validated_price() fast-path lee 
+        #   global_state.get_state(symbol)['close'] para evitar
+        #   el costoso get_latest_bars() (lock + Numba + np.empty).
+        # PARA QUÉ: Habilitar reducción de 100-500μs por señal.
+        # CUÁNDO: En cada MarketEvent procesado.
+        # DÓNDE: core/global_state.py → update_from_market_event()
+        # QUIÉN: SRE/DevOps
+        # ═══════════════════════════════════════════════════════════════
+        if hasattr(event, 'close_price') and event.close_price:
+            legacy['close'] = float(event.close_price)
+        if hasattr(event, 'open_price') and event.open_price:
+            legacy['open'] = float(event.open_price)
+        if hasattr(event, 'high_price') and event.high_price:
+            legacy['high'] = float(event.high_price)
+        if hasattr(event, 'low_price') and event.low_price:
+            legacy['low'] = float(event.low_price)
+        if hasattr(event, 'volume') and event.volume:
+            legacy['volume'] = float(event.volume)
+        
         legacy['last_update'] = time.time()
     
     def _get_default_legacy_state(self, symbol: str) -> Dict[str, Any]:

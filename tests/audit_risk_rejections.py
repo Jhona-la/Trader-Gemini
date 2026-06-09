@@ -69,8 +69,8 @@ def trace_risk_manager_rejections():
     # We also need to inspect _calculate_order_params which fails internally
     # We will call it directly
     
-    print("\n--- Testing `size_position` ---")
-    size_margin = risk_manager.size_position(mock_signal, current_price)
+    size_result = risk_manager.size_position(mock_signal.symbol, current_price=current_price, signal_metadata=mock_signal.metadata)
+    size_margin = size_result.get("dollar_size", 0.0) if isinstance(size_result, dict) else (size_result or 0.0)
     print(f"Sizing Result: ${size_margin:.4f} USD Margin generated")
     if size_margin == 0:
         print("❌ FAILED AT size_position!")

@@ -5,6 +5,7 @@ import re
 import shutil
 from datetime import datetime
 import logging
+import pandas as pd
 
 logger = logging.getLogger("MLGovernance")
 

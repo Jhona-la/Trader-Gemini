@@ -7,7 +7,7 @@ warnings.filterwarnings('ignore')
 
 # Root path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.backtest_infra import fetch_binance_data, calculate_metrics
+from core.backtest_infra import fetch_binance_data, calculate_metrics, run_backtest
 
 ALL_RESULTS = {}
 

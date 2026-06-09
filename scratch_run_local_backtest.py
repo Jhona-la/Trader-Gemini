@@ -22,7 +22,7 @@ all_data = {}
 for fname in os.listdir(data_dir):
     if fname.endswith("_1m.csv"):
         sym_raw = fname.replace("_1m.csv", "").replace("_", "/")
-        if sym_raw not in ["BTC/USDT"]: continue  # Quick validation: BTC only
+        if sym_raw not in ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "DOGE/USDT"]: continue
         df = pd.read_csv(os.path.join(data_dir, fname))
         if 'datetime' in df.columns:
             df['datetime'] = pd.to_datetime(df['datetime'])
@@ -39,12 +39,12 @@ for fname in os.listdir(data_dir):
         
         df = df[['open', 'high', 'low', 'close', 'volume']]
         
-        # Quick validation: 1 day
-        df = df.tail(120)
+        # 1440 mins/day * 2 days = 2880
+        df = df.tail(2880)
         
         all_data[sym_raw] = df
         symbols_available.append(sym_raw)
-        print(f"  ✅ Loaded {sym_raw}: {len(df):,} bars ({len(df)/1440:.1f} days)")
+        print(f"  ✅ Loaded {sym_raw}: {len(df):,} bars ({len(df)/1440:.2f} days)")
 
 if not all_data:
     print("❌ No local CSV data found.")
@@ -62,7 +62,7 @@ logging.getLogger("trader_gemini").setLevel(logging.WARNING)
 results = run_global_backtest(
     all_data=all_data,
     symbols=symbols_available,
-    days=1,
+    days=2,
     initial_capital=13.0,
     verbose=False,
 )
@@ -76,14 +76,26 @@ if results:
     metrics = results.get("metrics", {})
     trades = results.get("trades", [])
     
-    print(f"  💰 Final Capital:    ${results.get('final_capital', 0):.2f}")
-    print(f"  📈 Total Return:     {metrics.get('total_return', 0):.2f}%")
+    initial_cap = results.get('config', {}).get('initial_capital', 13.0)
+    final_cap = metrics.get('final_capital', initial_cap)
+    net_pnl = final_cap - initial_cap
+    total_trades = metrics.get('total_trades', 0)
+    avg_trade_pnl = net_pnl / total_trades if total_trades > 0 else 0.0
+    
+    # Calculate Profit Factor from trades
+    all_trades = results.get('trade_history', {}).get('scalping', []) + results.get('trade_history', {}).get('swing', [])
+    wins_pnl = sum([t.get('net_pnl', 0) for t in all_trades if t.get('net_pnl', 0) > 0])
+    losses_pnl = abs(sum([t.get('net_pnl', 0) for t in all_trades if t.get('net_pnl', 0) < 0]))
+    profit_factor = wins_pnl / losses_pnl if losses_pnl > 0 else (99.9 if wins_pnl > 0 else 0.0)
+    
+    print(f"  💰 Final Capital:    ${final_cap:.2f}")
+    print(f"  📈 Total Return:     {metrics.get('total_return_pct', 0):.2f}%")
     print(f"  🏆 Win Rate:         {metrics.get('win_rate', 0):.1f}%")
     print(f"  📊 Sharpe Ratio:     {metrics.get('sharpe_ratio', 0):.3f}")
     print(f"  📉 Max Drawdown:     {metrics.get('max_drawdown_pct', 0):.2f}%")
-    print(f"  🔄 Total Trades:     {metrics.get('total_trades', len(trades))}")
-    print(f"  💵 Avg Trade PnL:    ${metrics.get('avg_trade_pnl_usd', 0):.4f}")
-    print(f"  🏭 Profit Factor:    {metrics.get('profit_factor', 0):.2f}")
+    print(f"  🔄 Total Trades:     {total_trades}")
+    print(f"  💵 Avg Trade PnL:    ${avg_trade_pnl:.4f}")
+    print(f"  🏭 Profit Factor:    {profit_factor:.2f}")
     
     # CompoundingEngine validation
     try:

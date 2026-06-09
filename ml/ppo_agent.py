@@ -52,7 +52,7 @@ class PPOAgent:
     Proximal Policy Optimization Agent.
     Handles continuous action spaces for dynamic position sizing and confidence vetoing.
     """
-    def __init__(self, state_dim: int = 15, lr: float = 3e-4, gamma: float = 0.99, clip_eps: float = 0.2):
+    def __init__(self, state_dim: int = 18, lr: float = 3e-4, gamma: float = 0.99, clip_eps: float = 0.2):
         self.state_dim = state_dim
         self.gamma = gamma
         self.clip_eps = clip_eps

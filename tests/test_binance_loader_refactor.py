@@ -30,6 +30,9 @@ class TestBinanceLoader(unittest.TestCase):
             [1600000060000, '102.0', '108.0', '101.0', '107.0', '15.0', 1600000120000]
         ]
         
+        import time
+        mock_client_instance.get_server_time.return_value = {'serverTime': int(time.time() * 1000)}
+
         # Initialize Loader
         events_queue = Queue()
         symbol_list = ['BTC/USDT', 'ETH/USDT']

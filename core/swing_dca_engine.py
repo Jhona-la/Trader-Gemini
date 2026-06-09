@@ -214,7 +214,7 @@ class SwingDCAEngine:
                     setups=pseudo_setups,
                     confluence_score=0.8,
                     tp_pct=pos.get('tp_pct', 0.045),
-                    sl_pct=Config.Strategies.SWING_PARAMS['sl_pct'],
+                    sl_pct=Config.Horizons.Swing['sl_pct'],
                     returns=returns,
                     ttl_seconds=self.cooldown_s,
                     regime=global_regime

@@ -24,24 +24,25 @@ class AdaptiveMLParameterEngine:
     RANGES = {
         # FORENSIC-1: Correcting Scalping bounds.
         # Scalping needs TP around 0.4% (0.4) and SL around 0.2% (0.2)
+        # NANO-LATENCY TENSOR REFINEMENT: Aggressive noise rejection filters.
         'scalping': {
-            'lookahead':       (15.0, 30.0),  # FIXED: 3-10 min = pure noise → 15-30 min for meaningful prediction
-            'label_threshold': (0.0004, 0.0020),
+            'lookahead':       (10.0, 20.0),  # Midpoint = 15. Matches train_supreme.py
+            'label_threshold': (0.0008, 0.0025), # REFINED: Higher base threshold to filter noise
             'retrain_interval':(90.0, 360.0),
             'dd_stress_limit': (0.40, 0.70),
-            'ml_confidence':   (0.65, 0.85),
+            'ml_confidence':   (0.70, 0.90), # REFINED: Extreme sniper confidence required
             'vol_sensitivity': (-0.08, 0.05),
             'balance_cap':     (0.55, 0.80),
-            'sl_mult':         (0.15, 0.50), # Corrected for Scalping (0.15% to 0.50%)
-            'tp_mult':         (0.30, 1.00), # Corrected for Scalping (0.30% to 1.00%)
+            'sl_mult':         (0.15, 0.40), # REFINED: Tighter SL for scalping
+            'tp_mult':         (0.30, 0.80), # REFINED: Tighter TP for guaranteed hits
             'cooldown':        (10.0, 40.0),
-            'decay_exit_threshold': (0.35, 0.55),
+            'decay_exit_threshold': (0.40, 0.60), # REFINED: Faster decay recognition
             'trail_start_pct': (0.50, 0.80),
             'trail_dist_pct':  (0.05, 0.20),
             'momentum_exit_accel': (0.005, 0.015),
         },
         'swing': {
-            'lookahead':       (10.0, 40.0),
+            'lookahead':       (40.0, 80.0),  # Midpoint = 60. Matches train_supreme.py
             'label_threshold': (0.0010, 0.0050),
             'retrain_interval':(1000.0, 5000.0),
             'dd_stress_limit': (0.30, 0.50),
@@ -73,7 +74,7 @@ class AdaptiveMLParameterEngine:
         """
         # Resolver horizonte: horizon_str tiene prioridad, horizon_days como fallback
         if horizon_days is not None:
-            self.is_scalping = (horizon_days == 0) # 0 = Scalping, 1+ = Swing
+            self.is_scalping = (horizon_days <= 1) # <=1 = Scalping, 2+ = Swing
         else:
             horizon_str_upper = horizon_str.upper()
             self.is_scalping = (horizon_str_upper == 'SCALPING' or horizon_str_upper == '1D')

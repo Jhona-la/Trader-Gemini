@@ -55,8 +55,8 @@ def run_forensic_audit():
     print("📊 VIRTUAL LEDGER STATE:")
     print("="*60)
     
-    scalp_key = "BTC/USDT_SCALPING"
-    swing_key = "BTC/USDT_SWING"
+    scalp_key = "BTC/USDT_SCALPING_LONG"
+    swing_key = "BTC/USDT_SWING_LONG"
     
     has_scalp = scalp_key in portfolio.virtual_ledger
     has_swing = swing_key in portfolio.virtual_ledger

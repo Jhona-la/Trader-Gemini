@@ -91,7 +91,8 @@ class TestPrecisionAxioma:
             quantity=1.0,
             direction=OrderSide.SELL,
             fill_cost=60.0, # Made $10
-            commission=0.0 
+            commission=0.0,
+            metadata={'is_close': True}
         )
         
         # Mocking an evil float discrepancy in Python Core
@@ -102,9 +103,8 @@ class TestPrecisionAxioma:
         
         port.update_fill(close_event)
         
-        # The drift tracking should have caught the difference between the pre-sell state and post-sell expected
-        drift = port.precision_drift_accumulated
-        
-        # It's greater than 0
-        assert drift > Decimal('0.0'), f"Drift missing! Drift={drift}"
+        # The Axioma Protocol (verify_accounting_equation) should detect the violation 
+        # of the Conservation of Capital (theoretical != actual) and poison the PnL.
+        import math
+        assert math.isnan(port.realized_pnl), f"Axioma Protocol failed to poison system! Realized PnL: {port.realized_pnl}"
 

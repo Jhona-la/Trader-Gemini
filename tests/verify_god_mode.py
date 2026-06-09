@@ -11,6 +11,7 @@ import unittest
 import pandas as pd
 from data.database import DatabaseHandler
 from execution.liquidity_guardian import LiquidityGuardian
+from strategies.technical import HybridScalpingStrategy
 
 class TestGodMode(unittest.TestCase):
     
@@ -19,13 +20,14 @@ class TestGodMode(unittest.TestCase):
         print("\nTesting Phase 19: Float32 Optimization...")
         strategy = HybridScalpingStrategy(None, None)
         
-        # Create Dummy Data
-        df = pd.DataFrame({
-            'high': np.random.rand(100).astype('float64'),
-            'low': np.random.rand(100).astype('float64'),
-            'close': np.random.rand(100).astype('float64'),
-            'volume': np.random.rand(100).astype('float64')
-        })
+        # Create Dummy Data (Structured Numpy Array to match production recarray format)
+        dtype_spec = [('high', 'f8'), ('low', 'f8'), ('close', 'f8'), ('volume', 'f8'), ('timestamp', 'O')]
+        df = np.zeros(100, dtype=dtype_spec)
+        df['high'] = np.random.rand(100)
+        df['low'] = np.random.rand(100)
+        df['close'] = np.random.rand(100)
+        df['volume'] = np.random.rand(100)
+        df['timestamp'] = pd.date_range(start='2026-01-01', periods=100)
         
         processed_df = strategy.calculate_indicators(df)
         
@@ -36,14 +38,21 @@ class TestGodMode(unittest.TestCase):
     def test_phase_43_db_healing(self):
         """Verify Database Auto-Healing logic."""
         print("\nTesting Phase 43: DB Auto-Healing...")
+        from config import Config
         db_name = "test_god_mode.db"
-        if os.path.exists(db_name): os.remove(db_name)
+        db_path = os.path.join(Config.DATA_DIR, db_name)
+        if os.path.exists(db_path):
+            try: os.remove(db_path)
+            except: pass
         
         db = DatabaseHandler(db_name)
         db.create_tables()
         self.assertTrue(db.check_integrity())
         
-        # Corrupt the DB manually
+        # Corrupt the DB manually (close connection first to avoid Windows file locks)
+        if db.conn:
+            db.conn.close()
+            db.conn = None
         with open(db.db_path, 'wb') as f:
             f.write(b'CORRUPTED_DATA_HEADER')
             
@@ -61,9 +70,9 @@ class TestGodMode(unittest.TestCase):
         
         # Clean up
         db2.close()
-        for f in os.listdir('.'):
+        for f in os.listdir(Config.DATA_DIR):
             if f.startswith(db_name):
-                try: os.remove(f)
+                try: os.remove(os.path.join(Config.DATA_DIR, f))
                 except: pass
 
     def test_phase_33_spoofing(self):

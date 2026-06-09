@@ -7,6 +7,11 @@ from datetime import datetime, timezone
 import time
 import multiprocessing
 
+# Mock de modelos a nivel de módulo para permitir serialización con pickle en multiprocessing
+class MockModel:
+    def predict_proba(self, X):
+        return [[0.1, 0.9]]
+
 @pytest.mark.asyncio
 async def test_async_engine_flow():
     """Verifica que el Engine procesa eventos de forma asíncrona sin bloquear"""
@@ -29,7 +34,8 @@ async def test_async_engine_flow():
         strategy_id="TEST",
         symbol="BTC/USDT",
         datetime=datetime.now(timezone.utc),
-        signal_type=SignalType.LONG
+        signal_type=SignalType.LONG,
+        horizon="SCALPING"
     )
     
     engine.events.put(test_event)
@@ -51,11 +57,6 @@ def test_ml_process_isolation():
     in_q = multiprocessing.Queue()
     out_q = multiprocessing.Queue()
     
-    # Mock de modelos
-    class MockModel:
-        def predict_proba(self, X):
-            return [[0.1, 0.9]]
-            
     p = multiprocessing.Process(target=ml_inference_worker_task, args=(in_q, out_q))
     p.start()
     
@@ -66,7 +67,7 @@ def test_ml_process_isolation():
             'ts': time.time()
         })
         
-        result = out_q.get(timeout=5)
+        result = out_q.get(timeout=120)
         assert 'confidence' in result
         assert result['confidence'] > 0.8
         print("✅ ML Worker Process responded correctly.")

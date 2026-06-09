@@ -79,6 +79,17 @@ def test_no_syntax_errors():
             with open(py_file, 'r', encoding='utf-8') as f:
                 code = f.read()
             compile(code, str(py_file), 'exec')
+        except UnicodeDecodeError as e:
+            print(f"  ⚠️  UnicodeDecodeError in {py_file.relative_to(project_root)}: {e}")
+            try:
+                with open(py_file, 'r', encoding='utf-16') as f:
+                    code = f.read()
+                compile(code, str(py_file), 'exec')
+            except Exception as e2:
+                syntax_errors.append({
+                    'file': str(py_file.relative_to(project_root)),
+                    'error': f"Encoding/Syntax Error: {e2}"
+                })
         except SyntaxError as e:
             syntax_errors.append({
                 'file': str(py_file.relative_to(project_root)),

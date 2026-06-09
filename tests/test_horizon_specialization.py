@@ -57,7 +57,7 @@ def test_horizon_config_loading():
     assert strat_scalp.SL_PCT < strat_swing.SL_PCT, "Scalping SL should be smaller than Swing SL"
     
     # 2. Verify Primary Timeframe
-    assert strat_scalp.PRIMARY_TF == '5m'
+    assert strat_scalp.PRIMARY_TF == '1m'  # Config.Horizons.Scalping['primary_tf'] = '1m' (HFT)
     assert strat_swing.PRIMARY_TF == '1h'
     
     print(f"Scalp: TP={strat_scalp.TP_PCT*100}%, SL={strat_scalp.SL_PCT*100}%")

@@ -8,9 +8,12 @@ from utils.logger import logger
 
 class DatabaseHandler:
     def __init__(self, db_name="trader_gemini.db"):
-        self.db_path = os.path.join(Config.DATA_DIR, db_name)
+        self.lock = threading.Lock()  # Lock initialized first
+        if getattr(Config, 'IS_BACKTEST', False):
+            self.db_path = "file:trader_gemini_mem?mode=memory&cache=shared"
+        else:
+            self.db_path = os.path.join(Config.DATA_DIR, db_name)
         self.conn = None
-        self.lock = threading.Lock()  # FORENSIC FIX #4: Thread safety for pruning/awareness
         self.create_tables()
 
     def get_connection(self):
@@ -19,31 +22,50 @@ class DatabaseHandler:
         """
         try:
             if self.conn is None:
-                # FIXED: Python 3.12 Compatibility (Rule 5.1)
-                # Register explicit adapters for datetime
-                import sqlite3
-                sqlite3.register_adapter(datetime, lambda x: x.isoformat())
-                
-                # Check if converters already registered to avoid errors in some envs
-                try:
-                    sqlite3.register_converter("timestamp", lambda x: datetime.fromisoformat(x.decode()))
-                    sqlite3.register_converter("datetime", lambda x: datetime.fromisoformat(x.decode()))
-                except:
-                    pass
-                
-                self.conn = sqlite3.connect(
-                    self.db_path, 
-                    check_same_thread=False,
-                    detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
-                )
-                self.conn.row_factory = sqlite3.Row  # Return rows as dictionaries
-                
-                # OPTIMIZATION: Enable WAL Mode for high concurrency (Rule 5.1)
-                self.conn.execute("PRAGMA journal_mode=WAL;")
-                self.conn.execute("PRAGMA synchronous=NORMAL;")
+                with self.lock:
+                    if self.conn is None:
+                        # FIXED: Python 3.12 Compatibility (Rule 5.1)
+                        # Register explicit adapters for datetime
+                        import sqlite3
+                        sqlite3.register_adapter(datetime, lambda x: x.isoformat())
+                        
+                        # Check if converters already registered to avoid errors in some envs
+                        try:
+                            sqlite3.register_converter("timestamp", lambda x: datetime.fromisoformat(x.decode()))
+                            sqlite3.register_converter("datetime", lambda x: datetime.fromisoformat(x.decode()))
+                        except:
+                            pass
+                        
+                        is_mem = "mode=memory" in self.db_path or self.db_path == ":memory:"
+                        self.conn = sqlite3.connect(
+                            self.db_path, 
+                            check_same_thread=False,
+                            detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
+                            uri=is_mem
+                        )
+                        self.conn.row_factory = sqlite3.Row  # Return rows as dictionaries
+                        
+                        # OPTIMIZATION: Enable WAL Mode for high concurrency (Rule 5.1)
+                        if not is_mem:
+                            self.conn.execute("PRAGMA journal_mode=WAL;")
+                            self.conn.execute("PRAGMA synchronous=NORMAL;")
+                            # Nano-latency DB enhancements (PHASE 52)
+                            self.conn.execute("PRAGMA mmap_size=30000000000;") # 30GB memory map
+                        else:
+                            self.conn.execute("PRAGMA journal_mode=MEMORY;")
+                            self.conn.execute("PRAGMA temp_store=MEMORY;")
+                            
+                        self.conn.execute("PRAGMA temp_store=MEMORY;")     # Temp tables in RAM
+                        self.conn.execute("PRAGMA cache_size=-64000;")     # 64MB page cache
             return self.conn
         except sqlite3.Error as e:
             logger.error(f"Database connection error: {e}")
+            if self.conn:
+                try:
+                    self.conn.close()
+                except Exception:
+                    pass
+                self.conn = None
             return None
 
     def check_integrity(self):
@@ -52,7 +74,10 @@ class DatabaseHandler:
         Runs PRAGMA integrity_check. If failed, rotates DB.
         """
         conn = self.get_connection()
-        if not conn: return False
+        if not conn:
+            logger.error("🚨 DB CONNECTION FAILED: Healing database...")
+            self.heal_database()
+            return False
         
         try:
             cursor = conn.cursor()
@@ -329,7 +354,8 @@ class DatabaseHandler:
             existing_trade_cols = [col[1] for col in cursor.fetchall()]
             trade_cols_to_add = {
                 'trade_id': 'TEXT',
-                'thought_id': 'TEXT'
+                'thought_id': 'TEXT',
+                'horizon': 'TEXT DEFAULT "SCALPING"'
             }
             for col_name, col_type in trade_cols_to_add.items():
                 if col_name not in existing_trade_cols:
@@ -341,7 +367,8 @@ class DatabaseHandler:
             existing_sig_cols = [col[1] for col in cursor.fetchall()]
             sig_cols_to_add = {
                 'trade_id': 'TEXT',
-                'thought_id': 'TEXT'
+                'thought_id': 'TEXT',
+                'horizon': 'TEXT DEFAULT "SCALPING"'
             }
             for col_name, col_type in sig_cols_to_add.items():
                 if col_name not in existing_sig_cols:
@@ -609,28 +636,33 @@ class DatabaseHandler:
         """
         Logs a executed trade.
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
 
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO trades (symbol, side, quantity, price, timestamp, order_type, strategy_id, pnl, commission, trade_id, thought_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                trade_dict.get('symbol'),
-                trade_dict.get('side'),
-                trade_dict.get('quantity'),
-                trade_dict.get('price'),
-                trade_dict.get('timestamp', datetime.now(timezone.utc)),
-                trade_dict.get('order_type', 'MARKET'),
-                trade_dict.get('strategy_id', 'UNKNOWN'),
-                trade_dict.get('pnl', 0.0),
-                trade_dict.get('commission', 0.0),
-                trade_dict.get('trade_id', None),
-                trade_dict.get('thought_id', None)
-            ))
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO trades (symbol, side, quantity, price, timestamp, order_type, strategy_id, pnl, commission, trade_id, thought_id, horizon)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    trade_dict.get('symbol'),
+                    trade_dict.get('side'),
+                    trade_dict.get('quantity'),
+                    trade_dict.get('price'),
+                    trade_dict.get('timestamp', datetime.now(timezone.utc)),
+                    trade_dict.get('order_type', 'MARKET'),
+                    trade_dict.get('strategy_id', 'UNKNOWN'),
+                    trade_dict.get('pnl', 0.0),
+                    trade_dict.get('commission', 0.0),
+                    trade_dict.get('trade_id', None),
+                    trade_dict.get('thought_id', None),
+                    trade_dict.get('horizon', 'SCALPING')
+                ))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging trade: {e}")
 
@@ -638,59 +670,71 @@ class DatabaseHandler:
         """
         Logs a generated signal.
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
 
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO signals (symbol, signal_type, strength, timestamp, strategy_id, trade_id, thought_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                signal_event.symbol,
-                signal_event.signal_type.name if hasattr(signal_event.signal_type, 'name') else str(signal_event.signal_type),
-                signal_event.strength,
-                signal_event.timestamp if hasattr(signal_event, 'timestamp') else signal_event.datetime,
-                getattr(signal_event, 'strategy_id', 'UNKNOWN'),
-                getattr(signal_event, 'trade_id', None),
-                getattr(signal_event, 'metadata', {}).get('thought_id', None) if hasattr(signal_event, 'metadata') and signal_event.metadata else None
-            ))
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO signals (symbol, signal_type, strength, timestamp, strategy_id, trade_id, thought_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    signal_event.symbol,
+                    signal_event.signal_type.name if hasattr(signal_event.signal_type, 'name') else str(signal_event.signal_type),
+                    signal_event.strength,
+                    signal_event.timestamp if hasattr(signal_event, 'timestamp') else signal_event.datetime,
+                    getattr(signal_event, 'strategy_id', 'UNKNOWN'),
+                    getattr(signal_event, 'trade_id', None),
+                    getattr(signal_event, 'metadata', {}).get('thought_id', None) if hasattr(signal_event, 'metadata') and signal_event.metadata else None
+                ))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging signal: {e}")
 
     def log_thought(self, thought_id, trade_id, symbol, strategy_id, horizon, direction, market_state, metrics):
         """Logs a pre-decision thought process."""
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO thoughts (thought_id, trade_id, symbol, strategy_id, horizon, direction, market_state, metrics, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                thought_id, trade_id, symbol, strategy_id, horizon, direction,
-                json.dumps(market_state) if isinstance(market_state, dict) else str(market_state),
-                json.dumps(metrics) if isinstance(metrics, dict) else str(metrics),
-                datetime.now(timezone.utc)
-            ))
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO thoughts (thought_id, trade_id, symbol, strategy_id, horizon, direction, market_state, metrics, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    thought_id, trade_id, symbol, strategy_id, horizon, direction,
+                    json.dumps(market_state) if isinstance(market_state, dict) else str(market_state),
+                    json.dumps(metrics) if isinstance(metrics, dict) else str(metrics),
+                    datetime.now(timezone.utc)
+                ))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging thought: {e}")
 
     def log_exit_decision(self, trade_id, symbol, exit_reason, proposing_strategy, oracle_verdict, pnl_at_decision):
         """Logs a centralized exit decision."""
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO exit_decisions (trade_id, symbol, exit_reason, proposing_strategy, oracle_verdict, pnl_at_decision, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                trade_id, symbol, exit_reason, proposing_strategy, oracle_verdict, pnl_at_decision, datetime.now(timezone.utc)
-            ))
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO exit_decisions (trade_id, symbol, exit_reason, proposing_strategy, oracle_verdict, pnl_at_decision, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    trade_id, symbol, exit_reason, proposing_strategy, oracle_verdict, pnl_at_decision, datetime.now(timezone.utc)
+                ))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging exit decision: {e}")
 
@@ -699,35 +743,39 @@ class DatabaseHandler:
         Upserts a position state.
         If quantity is 0, marks as CLOSED or deletes.
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
 
         try:
-            cursor = conn.cursor()
-            
-            if quantity == 0:
-                # Close position
-                cursor.execute("DELETE FROM positions WHERE symbol = ?", (symbol,))
-            else:
-                # Upsert
-                cursor.execute('''
-                    INSERT INTO positions (symbol, quantity, entry_price, current_price, unrealized_pnl, timestamp, status, sl_pct, tp_pct, horizon, strategy_id)
-                    VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
-                    ON CONFLICT(symbol) DO UPDATE SET
-                        quantity=excluded.quantity,
-                        entry_price=excluded.entry_price,
-                        current_price=excluded.current_price,
-                        unrealized_pnl=excluded.unrealized_pnl,
-                        timestamp=excluded.timestamp,
-                        sl_pct=excluded.sl_pct,
-                        tp_pct=excluded.tp_pct,
-                        horizon=excluded.horizon,
-                        strategy_id=excluded.strategy_id
-                ''', (
-                    symbol, quantity, entry_price, current_price, pnl, datetime.now(timezone.utc), sl_pct, tp_pct, horizon, strategy_id
-                ))
-            
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                
+                if quantity == 0:
+                    # Close position
+                    cursor.execute("DELETE FROM positions WHERE symbol = ?", (symbol,))
+                else:
+                    # Upsert
+                    cursor.execute('''
+                        INSERT INTO positions (symbol, quantity, entry_price, current_price, unrealized_pnl, timestamp, status, sl_pct, tp_pct, horizon, strategy_id)
+                        VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
+                        ON CONFLICT(symbol) DO UPDATE SET
+                            quantity=excluded.quantity,
+                            entry_price=excluded.entry_price,
+                            current_price=excluded.current_price,
+                            unrealized_pnl=excluded.unrealized_pnl,
+                            timestamp=excluded.timestamp,
+                            sl_pct=excluded.sl_pct,
+                            tp_pct=excluded.tp_pct,
+                            horizon=excluded.horizon,
+                            strategy_id=excluded.strategy_id
+                    ''', (
+                        symbol, quantity, entry_price, current_price, pnl, datetime.now(timezone.utc), sl_pct, tp_pct, horizon, strategy_id
+                    ))
+                
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error updating position for {symbol}: {e}")
 
@@ -736,28 +784,32 @@ class DatabaseHandler:
         Retrieves all open positions for crash recovery.
         Returns a dictionary compatible with Portfolio.positions.
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return {}
+
         conn = self.get_connection()
         if not conn: return {}
 
         try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM positions WHERE status = 'OPEN'")
-            rows = cursor.fetchall()
-            
-            positions = {}
-            for row in rows:
-                keys = row.keys()
-                positions[row['symbol']] = {
-                    'quantity': row['quantity'],
-                    'entry_price': row['entry_price'],
-                    'current_price': row['current_price'],
-                    'unrealized_pnl': row['unrealized_pnl'],
-                    'sl_pct': row['sl_pct'] if 'sl_pct' in keys else None,
-                    'tp_pct': row['tp_pct'] if 'tp_pct' in keys else None,
-                    'horizon': row['horizon'] if 'horizon' in keys else 'SCALPING',
-                    'strategy_id': row['strategy_id'] if 'strategy_id' in keys else 'UNKNOWN'
-                }
-            return positions
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM positions WHERE status = 'OPEN'")
+                rows = cursor.fetchall()
+                
+                positions = {}
+                for row in rows:
+                    keys = row.keys()
+                    positions[row['symbol']] = {
+                        'quantity': row['quantity'],
+                        'entry_price': row['entry_price'],
+                        'current_price': row['current_price'],
+                        'unrealized_pnl': row['unrealized_pnl'],
+                        'sl_pct': row['sl_pct'] if 'sl_pct' in keys else None,
+                        'tp_pct': row['tp_pct'] if 'tp_pct' in keys else None,
+                        'horizon': row['horizon'] if 'horizon' in keys else 'SCALPING',
+                        'strategy_id': row['strategy_id'] if 'strategy_id' in keys else 'UNKNOWN'
+                    }
+                return positions
         except sqlite3.Error as e:
             logger.error(f"Error fetching open positions: {e}")
             return {}
@@ -766,101 +818,121 @@ class DatabaseHandler:
         """
         Logs an error to the database.
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
 
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO errors (module, message, severity, timestamp)
-                VALUES (?, ?, ?, ?)
-            ''', (module, str(message), severity, datetime.now(timezone.utc)))
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO errors (module, message, severity, timestamp)
+                    VALUES (?, ?, ?, ?)
+                ''', (module, str(message), severity, datetime.now(timezone.utc)))
+                conn.commit()
         except sqlite3.Error as e:
             # Fallback to file logger if DB fails
             logger.error(f"Failed to log error to DB: {e}")
 
-    # ═══════════════════════════════════════════════════════════════
-    # CTOS PHASE 2: OMNISCIENT LOGGING METHODS
-    # ═══════════════════════════════════════════════════════════════
-
     def log_strategy_performance(self, strategy_id: str, is_win: bool, pnl: float, rr_ratio: float):
         """Actualiza el scorecard de la estrategia."""
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            win_val = 1 if is_win else 0
-            loss_val = 0 if is_win else 1
-            
-            cursor.execute('''
-                INSERT INTO strategy_report_card (strategy_id, total_trades, wins, losses, win_rate, total_pnl, avg_rr_ratio)
-                VALUES (?, 1, ?, ?, ?, ?, ?)
-                ON CONFLICT(strategy_id) DO UPDATE SET
-                    total_trades = total_trades + 1,
-                    wins = wins + ?,
-                    losses = losses + ?,
-                    win_rate = CAST((wins + ?) AS REAL) / (total_trades + 1),
-                    total_pnl = total_pnl + ?,
-                    avg_rr_ratio = ((avg_rr_ratio * total_trades) + ?) / (total_trades + 1),
-                    last_updated = ?
-            ''', (
-                strategy_id, win_val, loss_val, 1.0 if is_win else 0.0, pnl, rr_ratio,
-                win_val, loss_val, win_val, pnl, rr_ratio, datetime.now(timezone.utc)
-            ))
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                win_val = 1 if is_win else 0
+                loss_val = 0 if is_win else 1
+                
+                cursor.execute('''
+                    INSERT INTO strategy_report_card (strategy_id, total_trades, wins, losses, win_rate, total_pnl, avg_rr_ratio)
+                    VALUES (?, 1, ?, ?, ?, ?, ?)
+                    ON CONFLICT(strategy_id) DO UPDATE SET
+                        total_trades = total_trades + 1,
+                        wins = wins + ?,
+                        losses = losses + ?,
+                        win_rate = CAST((wins + ?) AS REAL) / (total_trades + 1),
+                        total_pnl = total_pnl + ?,
+                        avg_rr_ratio = ((avg_rr_ratio * total_trades) + ?) / (total_trades + 1),
+                        last_updated = ?
+                ''', (
+                    strategy_id, win_val, loss_val, 1.0 if is_win else 0.0, pnl, rr_ratio,
+                    win_val, loss_val, win_val, pnl, rr_ratio, datetime.now(timezone.utc)
+                ))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging strategy performance: {e}")
 
     def log_prediction(self, symbol: str, horizon: str, predicted_direction: str, confidence: float, actual_outcome: str, pnl: float, prediction_time):
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO prediction_log (symbol, horizon, predicted_direction, confidence, actual_outcome, pnl_realized, prediction_time, resolution_time)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (symbol, horizon, predicted_direction, confidence, actual_outcome, pnl, prediction_time, datetime.now(timezone.utc)))
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO prediction_log (symbol, horizon, predicted_direction, confidence, actual_outcome, pnl_realized, prediction_time, resolution_time)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (symbol, horizon, predicted_direction, confidence, actual_outcome, pnl, prediction_time, datetime.now(timezone.utc)))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging prediction: {e}")
 
     def log_position_heartbeat(self, trade_id: str, symbol: str, unrealized_pnl: float, current_price: float, dist_tp: float, dist_sl: float, regime: str):
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO position_heartbeat (trade_id, symbol, unrealized_pnl, current_price, distance_to_tp, distance_to_sl, market_regime, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (trade_id, symbol, unrealized_pnl, current_price, dist_tp, dist_sl, regime, datetime.now(timezone.utc)))
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO position_heartbeat (trade_id, symbol, unrealized_pnl, current_price, distance_to_tp, distance_to_sl, market_regime, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (trade_id, symbol, unrealized_pnl, current_price, dist_tp, dist_sl, regime, datetime.now(timezone.utc)))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging position heartbeat: {e}")
 
     def log_balance_snapshot(self, equity: float, available_margin: float, used_margin: float, open_positions: int):
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO balance_ledger (total_equity, available_margin, used_margin, open_positions_count, timestamp)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (equity, available_margin, used_margin, open_positions, datetime.now(timezone.utc)))
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO balance_ledger (total_equity, available_margin, used_margin, open_positions_count, timestamp)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (equity, available_margin, used_margin, open_positions, datetime.now(timezone.utc)))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging balance snapshot: {e}")
 
     def log_market_regime(self, regime_name: str, btc_trend: str, global_volatility: float):
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO market_regime_history (regime_name, btc_trend, global_volatility, timestamp)
-                VALUES (?, ?, ?, ?)
-            ''', (regime_name, btc_trend, global_volatility, datetime.now(timezone.utc)))
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO market_regime_history (regime_name, btc_trend, global_volatility, timestamp)
+                    VALUES (?, ?, ?, ?)
+                ''', (regime_name, btc_trend, global_volatility, datetime.now(timezone.utc)))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging market regime: {e}")
 
@@ -884,33 +956,37 @@ class DatabaseHandler:
         PARA QUÉ: Feedback loop → rechazar estrategias con accuracy < 50%.
         CÓMO: Se llama al ABRIR (con predicción) y al CERRAR (con resultado real).
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            _entry_ts = entry_time
-            if _entry_ts is not None:
-                if hasattr(_entry_ts, 'isoformat'):
-                    _entry_ts = _entry_ts.isoformat()
-                else:
-                    _entry_ts = str(_entry_ts)
+            with self.lock:
+                cursor = conn.cursor()
+                _entry_ts = entry_time
+                if _entry_ts is not None:
+                    if hasattr(_entry_ts, 'isoformat'):
+                        _entry_ts = _entry_ts.isoformat()
+                    else:
+                        _entry_ts = str(_entry_ts)
 
-            cursor.execute('''
-                INSERT INTO prediction_audit (
+                cursor.execute('''
+                    INSERT INTO prediction_audit (
+                        trade_id, thought_id, strategy_id, symbol, horizon, direction,
+                        predicted_magnitude_pct, predicted_duration_bars, predicted_target_price,
+                        confidence, actual_magnitude_pct, actual_duration_bars, actual_exit_price,
+                        was_correct, optimal_exit_price, optimal_exit_bar, missed_profit_pct,
+                        entry_time, resolution_time
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
                     trade_id, thought_id, strategy_id, symbol, horizon, direction,
                     predicted_magnitude_pct, predicted_duration_bars, predicted_target_price,
                     confidence, actual_magnitude_pct, actual_duration_bars, actual_exit_price,
                     was_correct, optimal_exit_price, optimal_exit_bar, missed_profit_pct,
-                    entry_time, resolution_time
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                trade_id, thought_id, strategy_id, symbol, horizon, direction,
-                predicted_magnitude_pct, predicted_duration_bars, predicted_target_price,
-                confidence, actual_magnitude_pct, actual_duration_bars, actual_exit_price,
-                was_correct, optimal_exit_price, optimal_exit_bar, missed_profit_pct,
-                _entry_ts, datetime.now(timezone.utc)
-            ))
-            conn.commit()
+                    _entry_ts, datetime.now(timezone.utc)
+                ))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging prediction audit: {e}")
 
@@ -922,27 +998,31 @@ class DatabaseHandler:
         """
         📊 CTOS-P3: Actualiza la predicción con el resultado real al cerrar el trade.
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE prediction_audit SET
-                    actual_magnitude_pct = ?,
-                    actual_duration_bars = ?,
-                    actual_exit_price = ?,
-                    was_correct = ?,
-                    optimal_exit_price = ?,
-                    optimal_exit_bar = ?,
-                    missed_profit_pct = ?,
-                    resolution_time = ?
-                WHERE trade_id = ? AND strategy_id = ?
-            ''', (
-                actual_magnitude_pct, actual_duration_bars, actual_exit_price,
-                was_correct, optimal_exit_price, optimal_exit_bar, missed_profit_pct,
-                datetime.now(timezone.utc), trade_id, strategy_id
-            ))
-            conn.commit()
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE prediction_audit SET
+                        actual_magnitude_pct = ?,
+                        actual_duration_bars = ?,
+                        actual_exit_price = ?,
+                        was_correct = ?,
+                        optimal_exit_price = ?,
+                        optimal_exit_bar = ?,
+                        missed_profit_pct = ?,
+                        resolution_time = ?
+                    WHERE trade_id = ? AND strategy_id = ?
+                ''', (
+                    actual_magnitude_pct, actual_duration_bars, actual_exit_price,
+                    was_correct, optimal_exit_price, optimal_exit_bar, missed_profit_pct,
+                    datetime.now(timezone.utc), trade_id, strategy_id
+                ))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error updating prediction audit: {e}")
 
@@ -957,21 +1037,25 @@ class DatabaseHandler:
         POR QUÉ: Para saber por qué las estrategias de cierre no cerraron a tiempo.
         PARA QUÉ: Diagnosticar trades perdedores — qué estrategia debió cerrar y no lo hizo.
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO exit_strategy_log (
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO exit_strategy_log (
+                        trade_id, symbol, bar_number, strategy_id, action, reason,
+                        unrealized_pnl, price_at_decision, was_overridden, override_reason, timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
                     trade_id, symbol, bar_number, strategy_id, action, reason,
-                    unrealized_pnl, price_at_decision, was_overridden, override_reason, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                trade_id, symbol, bar_number, strategy_id, action, reason,
-                unrealized_pnl, price_at_decision, was_overridden, override_reason,
-                datetime.now(timezone.utc)
-            ))
-            conn.commit()
+                    unrealized_pnl, price_at_decision, was_overridden, override_reason,
+                    datetime.now(timezone.utc)
+                ))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging exit strategy decision: {e}")
 
@@ -992,38 +1076,35 @@ class DatabaseHandler:
         POR QUÉ: Para reconstruir la historia completa de cada trade.
         PARA QUÉ: Identificar el punto óptimo de cierre que nunca se tomó.
         CÓMO: Se llama desde update_market_price() cada N ticks.
-        
-        PHASE 4 ENRICHMENT:
-        - oracle_prediction_magnitude: Lo que la estrategia predijo como % de movimiento
-        - oracle_prediction_target_price: Precio objetivo predicho
-        - oracle_prediction_time_bars: Barras estimadas para alcanzar objetivo
-        - direction: LONG/SHORT
-        - entry_size_usd: Tamaño en USD al abrir
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO trade_chronicle (
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO trade_chronicle (
+                        trade_id, symbol, horizon, tick_number, current_price, entry_price,
+                        unrealized_pnl_pct, distance_to_tp_pct, distance_to_sl_pct,
+                        mfe_so_far, mae_so_far, market_regime, volatility_1m,
+                        strategies_voting_exit, strategies_voting_hold,
+                        oracle_prediction_magnitude, oracle_prediction_target_price,
+                        oracle_prediction_time_bars, direction, entry_size_usd,
+                        timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
                     trade_id, symbol, horizon, tick_number, current_price, entry_price,
                     unrealized_pnl_pct, distance_to_tp_pct, distance_to_sl_pct,
                     mfe_so_far, mae_so_far, market_regime, volatility_1m,
                     strategies_voting_exit, strategies_voting_hold,
                     oracle_prediction_magnitude, oracle_prediction_target_price,
                     oracle_prediction_time_bars, direction, entry_size_usd,
-                    timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                trade_id, symbol, horizon, tick_number, current_price, entry_price,
-                unrealized_pnl_pct, distance_to_tp_pct, distance_to_sl_pct,
-                mfe_so_far, mae_so_far, market_regime, volatility_1m,
-                strategies_voting_exit, strategies_voting_hold,
-                oracle_prediction_magnitude, oracle_prediction_target_price,
-                oracle_prediction_time_bars, direction, entry_size_usd,
-                datetime.now(timezone.utc)
-            ))
-            conn.commit()
+                    datetime.now(timezone.utc)
+                ))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging trade chronicle: {e}")
 
@@ -1032,32 +1113,32 @@ class DatabaseHandler:
                           supported_directions: str = None, symbols: str = None):
         """
         🧠 CTOS-P4: Registra una estrategia en el registro de awareness.
-        
-        QUÉ: Cada estrategia se registra al iniciar con sus capabilities.
-        POR QUÉ: Para que el sistema sepa qué estrategias existen y qué pueden hacer.
-        PARA QUÉ: Awareness inter-estrategia y diagnóstico forense.
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO strategy_awareness (
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO strategy_awareness (
+                        strategy_id, strategy_type, capabilities, supported_horizons,
+                        supported_directions, symbols, last_updated
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(strategy_id) DO UPDATE SET
+                        strategy_type=excluded.strategy_type,
+                        capabilities=excluded.capabilities,
+                        supported_horizons=excluded.supported_horizons,
+                        supported_directions=excluded.supported_directions,
+                        symbols=excluded.symbols,
+                        last_updated=excluded.last_updated
+                ''', (
                     strategy_id, strategy_type, capabilities, supported_horizons,
-                    supported_directions, symbols, last_updated
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(strategy_id) DO UPDATE SET
-                    strategy_type=excluded.strategy_type,
-                    capabilities=excluded.capabilities,
-                    supported_horizons=excluded.supported_horizons,
-                    supported_directions=excluded.supported_directions,
-                    symbols=excluded.symbols,
-                    last_updated=excluded.last_updated
-            ''', (
-                strategy_id, strategy_type, capabilities, supported_horizons,
-                supported_directions, symbols, datetime.now(timezone.utc)
-            ))
-            conn.commit()
+                    supported_directions, symbols, datetime.now(timezone.utc)
+                ))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error registering strategy: {e}")
 
@@ -1067,21 +1148,25 @@ class DatabaseHandler:
         """
         🌐 CTOS-P4: Snapshot del estado del sistema completo.
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO system_self_awareness (
+            with self.lock:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO system_self_awareness (
+                        total_strategies, total_symbols, active_horizons,
+                        active_modes, system_state, capabilities_json, timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
                     total_strategies, total_symbols, active_horizons,
-                    active_modes, system_state, capabilities_json, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                total_strategies, total_symbols, active_horizons,
-                active_modes, system_state, capabilities_json,
-                datetime.now(timezone.utc)
-            ))
-            conn.commit()
+                    active_modes, system_state, capabilities_json,
+                    datetime.now(timezone.utc)
+                ))
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"Error logging system awareness: {e}")
 
@@ -1091,88 +1176,84 @@ class DatabaseHandler:
         Logs trade and updates position in a SINGLE transaction.
         Ensures data consistency if bot crashes immediately after trade.
         """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
 
         try:
-            cursor = conn.cursor()
-            
-            _ts = trade_dict.get('timestamp')
-            if _ts is not None:
-                if hasattr(_ts, 'isoformat'):
-                    _ts = _ts.isoformat()
+            with self.lock:
+                cursor = conn.cursor()
+                
+                _ts = trade_dict.get('timestamp')
+                if _ts is not None:
+                    if hasattr(_ts, 'isoformat'):
+                        _ts = _ts.isoformat()
+                    else:
+                        _ts = str(_ts)
                 else:
-                    _ts = str(_ts)
-            else:
-                _ts = datetime.now(timezone.utc).isoformat()
-            
-            # 1. Log Trade
-            cursor.execute('''
-                INSERT INTO trades (symbol, side, quantity, price, timestamp, order_type, strategy_id, pnl, commission, trade_id, thought_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                trade_dict.get('symbol'),
-                trade_dict.get('side'),
-                trade_dict.get('quantity'),
-                trade_dict.get('price'),
-                _ts,
-                trade_dict.get('order_type', 'MARKET'),
-                trade_dict.get('strategy_id', 'UNKNOWN'),
-                trade_dict.get('pnl', 0.0),
-                trade_dict.get('commission', 0.0),
-                trade_dict.get('trade_id'),
-                trade_dict.get('thought_id')
-            ))
-            
-            # 2. Update Position
-            symbol = position_dict['symbol']
-            quantity = position_dict['quantity']
-            
-            if quantity == 0:
-                # Close position
-                cursor.execute("DELETE FROM positions WHERE symbol = ?", (symbol,))
-            else:
-                # Upsert
+                    _ts = datetime.now(timezone.utc).isoformat()
+                
+                # 1. Log Trade
                 cursor.execute('''
-                    INSERT INTO positions (symbol, quantity, entry_price, current_price, unrealized_pnl, timestamp, status, sl_pct, tp_pct, horizon, strategy_id)
-                    VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
-                    ON CONFLICT(symbol) DO UPDATE SET
-                        quantity=excluded.quantity,
-                        entry_price=excluded.entry_price,
-                        current_price=excluded.current_price,
-                        unrealized_pnl=excluded.unrealized_pnl,
-                        timestamp=excluded.timestamp,
-                        sl_pct=excluded.sl_pct,
-                        tp_pct=excluded.tp_pct,
-                        horizon=excluded.horizon,
-                        strategy_id=excluded.strategy_id
+                    INSERT INTO trades (symbol, side, quantity, price, timestamp, order_type, strategy_id, pnl, commission, trade_id, thought_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                    symbol, quantity, position_dict['entry_price'], 
-                    position_dict['current_price'], position_dict.get('pnl', 0.0), 
-                    datetime.now(timezone.utc).isoformat(),
-                    position_dict.get('sl_pct'),
-                    position_dict.get('tp_pct'),
-                    position_dict.get('horizon', 'SCALPING'),
-                    position_dict.get('strategy_id', 'UNKNOWN')
+                    trade_dict.get('symbol'),
+                    trade_dict.get('side'),
+                    trade_dict.get('quantity'),
+                    trade_dict.get('price'),
+                    _ts,
+                    trade_dict.get('order_type', 'MARKET'),
+                    trade_dict.get('strategy_id', 'UNKNOWN'),
+                    trade_dict.get('pnl', 0.0),
+                    trade_dict.get('commission', 0.0),
+                    trade_dict.get('trade_id'),
+                    trade_dict.get('thought_id')
                 ))
-            
-            conn.commit()
-            # logger.info(f"✅ Atomic DB Update: {symbol} Trade Logged & Position Updated")
-            
+                
+                # 2. Update Position
+                symbol = position_dict['symbol']
+                quantity = position_dict['quantity']
+                
+                if quantity == 0:
+                    # Close position
+                    cursor.execute("DELETE FROM positions WHERE symbol = ?", (symbol,))
+                else:
+                    # Upsert
+                    cursor.execute('''
+                        INSERT INTO positions (symbol, quantity, entry_price, current_price, unrealized_pnl, timestamp, status, sl_pct, tp_pct, horizon, strategy_id)
+                        VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
+                        ON CONFLICT(symbol) DO UPDATE SET
+                            quantity=excluded.quantity,
+                            entry_price=excluded.entry_price,
+                            current_price=excluded.current_price,
+                            unrealized_pnl=excluded.unrealized_pnl,
+                            timestamp=excluded.timestamp,
+                            sl_pct=excluded.sl_pct,
+                            tp_pct=excluded.tp_pct,
+                            horizon=excluded.horizon,
+                            strategy_id=excluded.strategy_id
+                    ''', (
+                        symbol, quantity, position_dict['entry_price'], 
+                        position_dict['current_price'], position_dict.get('pnl', 0.0), 
+                        datetime.now(timezone.utc).isoformat(),
+                        position_dict.get('sl_pct'),
+                        position_dict.get('tp_pct'),
+                        position_dict.get('horizon', 'SCALPING'),
+                        position_dict.get('strategy_id', 'UNKNOWN')
+                    ))
+                
+                conn.commit()
         except sqlite3.Error as e:
             logger.error(f"⚠️ FATAL: Atomic DB Update failed: {e}")
             conn.rollback()
 
     def log_system_awareness_snapshot(self, active_strategies: dict, open_positions: dict):
-        """
-        CTOS Phase 5: Registrar la conciencia sistémica en el momento T.
-        
-        FORENSIC FIX #3: Renombrado de log_system_awareness → log_system_awareness_snapshot
-        QUÉ: Evita colisión con el log_system_awareness(total_strategies, ...) de L940.
-        POR QUÉ: Python sobrescribe silenciosamente el primer método con el segundo.
-        PARA QUÉ: Ambas funcionalidades coexisten sin conflicto.
-        CÓMO: Usa get_connection() (patrón thread-safe del resto del archivo).
-        """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
@@ -1190,15 +1271,9 @@ class DatabaseHandler:
             logger.error(f"Error logging system awareness snapshot: {e}")
 
     def prune_historical_data(self, days_to_keep=7):
-        """
-        👨‍🏫 MODO PROFESOR:
-        QUÉ: Sistema de limpieza autónoma de memoria (Memoria Omnisciente).
-        POR QUÉ: Durante uptimes prolongados (semanas/meses), las tablas de logs (signals, thoughts, chronicles) crecen exponencialmente, saturando el WAL y causando latencia en el I/O.
-        PARA QUÉ: Eliminar registros forenses antiguos preservando solo la historia reciente (X días) y el ledger financiero principal.
-        CÓMO: Ejecutando sentencias DELETE FROM basadas en el timestamp y ejecutando VACUUM para recuperar espacio en disco.
-        
-        FORENSIC FIX #4: Usa get_connection() + self.lock en lugar de self.conn directo.
-        """
+        if getattr(Config, 'IS_BACKTEST', False):
+            return
+
         conn = self.get_connection()
         if not conn: return
         try:
@@ -1240,10 +1315,18 @@ class DatabaseHandler:
                     cursor.execute('VACUUM')
                 except Exception as ve:
                     logger.debug(f"VACUUM skipped: {ve}")
-                
         except Exception as e:
             logger.error(f"❌ [DATABASE] Error durante pruning: {e}")
 
     def close(self):
-        if self.conn:
-            self.conn.close()
+        """
+        Closes the SQLite database connection and releases file locks.
+        """
+        with self.lock:
+            if self.conn:
+                try:
+                    self.conn.close()
+                    logger.info("🔌 SQLite connection successfully closed.")
+                except Exception as e:
+                    logger.error(f"Error closing SQLite connection: {e}")
+                self.conn = None

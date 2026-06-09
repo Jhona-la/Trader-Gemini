@@ -165,7 +165,7 @@ class OverconfidencePenalizer:
             
             # FORENSIC-4: Brier threshold scaling based on horizon
             dynamic_threshold = self.brier_threshold
-            if str(horizon_profile) in ['MID_TERM', 'LONG_TERM'] or (isinstance(horizon_profile, (int, float)) and horizon_profile >= 10):
+            if str(horizon_profile).upper() == 'SWING':
                 dynamic_threshold += 0.03 # Allow ~0.23 max error on SWING because of multi-day noise.
 
             if avg_brier > dynamic_threshold:
@@ -248,9 +248,9 @@ class FalsePositiveAnalyzer:
         is_loss = actual_pnl <= 0
         
         # FORENSIC-4: Horizon Aware Confidence scaling
-        horizon = sophia_report.get('horizon_profile', 'SHORT_TERM') # Matches profile from Sophia (Int = Days)
+        horizon = sophia_report.get('horizon_profile', 'SCALPING') # Matches profile from Sophia
         # If it's a longer term horizon, max statistical confidence ceiling compresses due to multi-day entropy.
-        threshold = 0.75 if (str(horizon) in ['MID_TERM', 'LONG_TERM'] or (isinstance(horizon, (int, float)) and horizon >= 10)) else self.HIGH_CONFIDENCE_THRESHOLD
+        threshold = 0.75 if str(horizon).upper() == 'SWING' else self.HIGH_CONFIDENCE_THRESHOLD
         
         is_high_conf = predicted_prob >= threshold
 
@@ -350,7 +350,7 @@ class TimeDeviationAnalyzer:
         elif ratio > 2.0 and actual_pnl <= 0:
             classification = "VOLATILITY_STALL"
         elif ratio < 0.5:
-            if actual_pnl > 0 and (predicted_duration_mins > 60 or horizon_profile in ['MID_TERM', 'LONG_TERM']):
+            if actual_pnl > 0 and (predicted_duration_mins > 60 or str(horizon_profile).upper() == 'SWING'):
                 classification = "ALPHA_STRIKE" # FORENSIC-4: Win before 50% time bound on a high timeframe is a Strike.
             else:
                 classification = "PREMATURE_EXIT"

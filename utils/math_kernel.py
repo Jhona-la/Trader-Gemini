@@ -6,7 +6,7 @@ from numba import njit, prange, float64, int64
 # ==============================================================================
 
 @njit(cache=True)
-def compute_alpha_decay_jit(time_held_sec: float, ttl_sec: float) -> float:
+def compute_time_decay_jit(time_held_sec: float, ttl_sec: float) -> float:
     """
     Computes a bayesian probability decay multiplier based on holding time.
     Uses a smooth decay curve that accelerates towards 0 as time_held approaches TTL.
@@ -193,7 +193,7 @@ def calculate_ema_jit(prices, period):
         
     return ema
 
-@njit(fastmath=True, parallel=True, cache=True)
+@njit(fastmath=True, cache=True)
 def calculate_rsi_jit(prices, period=14):
     """
     Relative Strength Index - JIT Compiled
@@ -248,7 +248,7 @@ def calculate_rsi_jit(prices, period=14):
             
     return rsi
 
-@njit(fastmath=True, parallel=True, cache=True)
+@njit(fastmath=True, cache=True)
 def calculate_bollinger_jit(prices, period=20, std_dev=2.0):
     """
     Bollinger Bands - JIT Compiled
@@ -299,7 +299,7 @@ def calculate_bollinger_jit(prices, period=20, std_dev=2.0):
         
     return upper, middle, lower
 
-@njit(parallel=True, cache=True)
+@njit(cache=True)
 def calculate_bollinger_robust_jit(prices, period=20, std_dev=2.0, threshold_ratio=3.0, iterations=30):
     """
     Bollinger Bands Robustos (RANSAC Volatility) - Fase 10
@@ -314,7 +314,7 @@ def calculate_bollinger_robust_jit(prices, period=20, std_dev=2.0, threshold_rat
     if n < period:
         return upper, middle, lower
         
-    for i in prange(period - 1, n):
+    for i in range(period - 1, n):
         window = prices[i - period + 1 : i + 1]
         
         # Calcular robust stats
@@ -1030,7 +1030,15 @@ def pearson_correlation_jit(x, y):
         sum_xy += xi * yi
         
     numerator = (n * sum_xy) - (sum_x * sum_y)
-    denominator = np.sqrt((n * sum_x2 - sum_x * sum_x) * (n * sum_y2 - sum_y * sum_y))
+    
+    val_x = n * sum_x2 - sum_x * sum_x
+    val_y = n * sum_y2 - sum_y * sum_y
+    if val_x < 0.0:
+        val_x = 0.0
+    if val_y < 0.0:
+        val_y = 0.0
+        
+    denominator = np.sqrt(val_x * val_y)
     
     if denominator == 0.0:
         return 0.0

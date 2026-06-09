@@ -6,9 +6,14 @@ import os
 from core.shadow_darwin import ShadowDarwin
 from core.simulation import SimDataProvider
 from core.genotype import Genotype
+from config import Config
 
 class TestShadowDarwin(unittest.TestCase):
     def setUp(self):
+        # Allow evolution by unlocking golden baseline
+        self.original_locked = Config.Strategies.GOLDEN_BASELINE_LOCKED
+        Config.Strategies.GOLDEN_BASELINE_LOCKED = False
+
         # Create Dummy Data
         dates = pd.date_range(start='2024-01-01', periods=100, freq='1min')
         df = pd.DataFrame({
@@ -34,9 +39,17 @@ class TestShadowDarwin(unittest.TestCase):
             os.makedirs("data/genotypes")
 
     def tearDown(self):
+        # Restore baseline lock
+        Config.Strategies.GOLDEN_BASELINE_LOCKED = self.original_locked
+
         # Clean up created genes
-        if os.path.exists("data/genotypes/BTCUSDT_gene.json"):
-            os.remove("data/genotypes/BTCUSDT_gene.json")
+        for file in [
+            "data/genotypes/BTCUSDT_gene.json",
+            "data/genotypes/BTCUSDT_gene_alpha.json",
+            "data/genotypes/BTCUSDT_gene_beta_1.json"
+        ]:
+            if os.path.exists(file):
+                os.remove(file)
 
     def test_initialization(self):
         self.darwin.initialize_population('BTC/USDT')

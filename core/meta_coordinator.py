@@ -227,43 +227,83 @@ class MetaCoordinator:
     # ════════════════════════════════════════════════════════════════
     
     def resolve_intents(self, intents_to_process: List[SignalEvent]) -> tuple:
-        """Resolves conflicts among a batch of intents."""
+        """Resolves conflicts among a batch of intents using the unified ConsensusFilter."""
+        from core.consensus_filter import get_consensus_filter
+        consensus = get_consensus_filter()
+        
         approved_intents = []
         rejected_intents = []
         
-        # Step 1: Invariant Filter
-        invariant_passed = []
-        for intent in intents_to_process:
-            if self._check_invariants(intent):
-                invariant_passed.append(intent)
+        # Filtro de Consenso Omnisciente
+        passed_intents = []
+        veto_reasons = {}
         
-        # Step 2: Graph Veto Filter
-        graph_passed = []
-        for intent in invariant_passed:
-            if self._apply_graph_vetoes(intent):
-                graph_passed.append(intent)
-            else:
-                rejected_intents.append({"intent": intent, "reason": "GRAPH_INSTITUTIONAL_VETO"})
+        for intent in intents_to_process:
+            # Detectar precio actual
+            price = getattr(intent, 'price', 0.0)
+            if not price and hasattr(intent, 'metadata') and intent.metadata:
+                price = intent.metadata.get('close', 0.0)
                 
+            passed, reason = consensus.check_signal(
+                signal_event=intent,
+                portfolio=getattr(self, 'portfolio', None),
+                current_price=price,
+                risk_manager=getattr(self, 'risk_manager', None),
+                meta_coordinator=self
+            )
+            
+            # CRITICAL FIX: Actually enforce Invariants and Graph Vetoes!
+            if passed:
+                if intent.signal_type == SignalType.EXIT:
+                    # EXIT signals bypass invariants, graph vetoes, and opening validations
+                    pass
+                else:
+                    if not self._check_invariants(intent):
+                        passed = False
+                        reason = "INVARIANT_VETO"
+                    elif not self._apply_graph_vetoes(intent):
+                        passed = False
+                        reason = "GRAPH_VETO"
+                    else:
+                        from core.asset_intelligence import get_asset_intelligence
+                        passed_ai, reason_ai = get_asset_intelligence().verify_opening(intent, getattr(self, 'portfolio', None))
+                        if not passed_ai:
+                            passed = False
+                            reason = reason_ai
+            
+            if passed:
+                passed_intents.append(intent)
+            else:
+                passed_intents.append(None) # Para alineación con el registro de pensamientos
+                veto_reasons[id(intent)] = reason
+                rejected_intents.append({"intent": intent, "reason": reason})
+
         # ════════════════════════════════════════════════════════════════
         # CTOS PHASE 3: OMNISCIENT EXIT TRACKING & CONFLICT RESOLUTION
         # ════════════════════════════════════════════════════════════════
         # Document all intents to thoughts DB before resolving final conflicts
-        for intent in intents_to_process:
+        for i, intent in enumerate(intents_to_process):
             thought_id = f"THOUGHT_{uuid.uuid4().hex[:8]}"
-            if not hasattr(intent, 'metadata') or not intent.metadata:
-                intent.metadata = {}
-            intent.metadata['thought_id'] = thought_id
+            import dataclasses
+            current_metadata = getattr(intent, 'metadata', None) or {}
+            new_metadata = dict(current_metadata)
+            new_metadata['thought_id'] = thought_id
+            
+            if dataclasses.is_dataclass(intent):
+                intent = dataclasses.replace(intent, metadata=new_metadata)
+                intents_to_process[i] = intent
+            else:
+                if not hasattr(intent, 'metadata') or not intent.metadata:
+                    intent.metadata = {}
+                intent.metadata['thought_id'] = thought_id
             
             # Determine outcome so far
             status = "PENDING"
             reason = "Awaiting Conflict Resolution"
-            if intent not in invariant_passed:
+            
+            if passed_intents[i] is None:
                 status = "VETOED"
-                reason = "INVARIANT_FAILED"
-            elif intent not in graph_passed:
-                status = "VETOED"
-                reason = "GRAPH_VETO"
+                reason = veto_reasons.get(id(intent), "UNKNOWN_VETO")
                 
             direction = "EXIT" if intent.signal_type == SignalType.EXIT else ("LONG" if intent.signal_type == SignalType.LONG else "SHORT")
             
@@ -275,8 +315,11 @@ class MetaCoordinator:
                 horizon=getattr(intent, 'horizon', 'SCALPING'),
                 direction=f"{direction} ({status}: {reason})",
                 market_state={}, # Will be enriched by engine
-                metrics={"confidence": getattr(intent, 'confidence', getattr(intent, 'strength', 0))}
+                metrics={"confidence": float(getattr(intent, 'confidence', getattr(intent, 'strength', 0)))}
             )
+            
+        # Limpiar la lista de pasados para el Step 3
+        graph_passed = [x for x in passed_intents if x is not None]
                 
         # Step 3: Intra-Horizon Conflict Resolution
         # Group by (symbol, horizon) to allow cross-horizon hedging

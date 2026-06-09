@@ -51,6 +51,7 @@ class TestExecutorImmutability(unittest.IsolatedAsyncioTestCase):
         self.executor.data_provider = MagicMock() # Injected DataProvider
         self.executor.order_manager = None # Added missing attribute
         self.executor.latency_violations = 0
+        self.executor._leverage_cache = {}
         
         # Mock exchange & guardian
         self.executor.exchange = MagicMock()
@@ -135,9 +136,9 @@ class TestExecutorImmutability(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_args['type'], 'LIMIT', "VWAP logic should downgrade to LIMIT")
         
         expected_vwap_price = 50000.1 * 0.9995
-        # The executor adds spread_adj=0.0001 for BUY Sniper orders
-        expected_final = expected_vwap_price * 1.0001 
-        
+        # The executor adds spread_adj=0.0 for GTX Maker orders (SCALPING)
+        expected_final = expected_vwap_price
+    
         self.assertAlmostEqual(float(call_args['price']), expected_final, delta=0.1)
         
         # Check event is UNMODIFIED

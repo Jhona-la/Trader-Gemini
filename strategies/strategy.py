@@ -19,3 +19,14 @@ class Strategy(ABC):
         Signal the strategy to stop processing and cleanup resources.
         """
         pass
+
+    def check_exit(self, position, current_price, data_provider, now=None):
+        """
+        Evaluate and return an exit SignalEvent if this strategy determines the position should close.
+        Returns None if position should remain open.
+        
+        [INTELLIGENT EXIT]: Las estrategias deben sobreescribir este método 
+        consultando a su IA interna (ej. self.sophia) para determinar la salud del trade
+        en tiempo real (win_probability).
+        """
+        return None

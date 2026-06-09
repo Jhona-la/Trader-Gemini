@@ -62,7 +62,7 @@ class AutoCorrectionEngine:
     def correct_high_fee_ratio(self, issue: Dict[str, Any]) -> str:
         """Aumenta dinámicamente el TARGET mínimo de Take Profit para sobrevivir comisiones."""
         # Modificar el parámetro real en SCALPING_PARAMS
-        current_tp = Config.Strategies.SCALPING_PARAMS.get('tp_pct', 0.0035)
+        current_tp = Config.Horizons.Scalping.get('tp_pct', 0.0035)
         # FORENSIC-V60 FIX: Reduced multiplier from 1.25x to 1.10x
         # QUÉ: 1.25x geometric increase was pushing TP to 1.50% in ~5 iterations.
         # POR QUÉ: BTC 5m candles rarely reach 1.50% without retracing.
@@ -73,7 +73,7 @@ class AutoCorrectionEngine:
         if new_tp > 0.004:
             new_tp = 0.004
             
-        Config.Strategies.SCALPING_PARAMS['tp_pct'] = new_tp
+        Config.Horizons.Scalping['tp_pct'] = new_tp
         return f"Increased SCALPING_PARAMS['tp_pct'] to {new_tp*100:.2f}% to compensate for fee drag."
 
     def correct_frequent_small_losses(self, issue: Dict[str, Any]) -> str:

@@ -70,6 +70,17 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     - FILE (MAIN): DEBUG+ (JSON format)
     - FILE (ERROR): ERROR+ (JSON format)
     """
+    # Detect if we are running in a multiprocessing child process
+    import multiprocessing
+    current_proc = multiprocessing.current_process()
+    if current_proc.name != 'MainProcess':
+        # Child process: return a silent NullHandler logger to prevent file locks on Windows
+        logger = logging.getLogger(name)
+        logger.setLevel(logging.WARNING)
+        if not logger.handlers:
+            logger.addHandler(logging.NullHandler())
+        return logger
+
     # Create logs directory if it doesn't exist
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -131,7 +142,7 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
 
     # B. Main File Handler (JSON, DEBUG+)
     # PHASE 47.3: Adaptive backtest logging for Windows (Avoid Error 32)
-    is_backtest = any(x in sys.argv[0].lower() for x in ["backtest", "auditor", "diag", "bt", "test"])
+    is_backtest = any(x in sys.argv[0].lower() for x in ["backtest", "audit", "forensic", "diag", "bt", "test", "god_mode", "walk_forward", "hyper", "optimization", "omega"])
     is_windows = os.name == 'nt'
     
     if is_windows and is_backtest:
@@ -237,6 +248,16 @@ def stop_logger():
             print("✅ Logging system stopped gracefully.")
         except Exception as e:
             print(f"⚠️ Error stopping logger: {e}")
+            
+    # Flush Omniscient Tracer
+    try:
+        from core.omniscient_tracer import tracer
+        tracer.stop()
+        print("✅ Omniscient Tracer stopped gracefully.")
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"⚠️ Error stopping Omniscient Tracer: {e}")
 
 def get_log_queue_status():
     """Returns the current size of the log queue to monitor backpressure"""

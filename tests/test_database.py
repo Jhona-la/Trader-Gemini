@@ -46,11 +46,7 @@ def test_database_initialization():
         for table in tables:
             assert table in existing_tables, f"Table {table} not created"
             print(f"  ✅ Table '{table}' exists")
-        
-        return True
-    except AssertionError as e:
-        print(f"  ❌ FAILED: {e}")
-        return False
+            
     finally:
         test_db.close()
         # Cleanup
@@ -93,13 +89,6 @@ def test_trade_logging():
         assert result['quantity'] == 0.001, "Trade quantity mismatch"
         print("  ✅ Trade data verified in database")
         
-        return True
-    except AssertionError as e:
-        print(f"  ❌ FAILED: {e}")
-        return False
-    except Exception as e:
-        print(f"  ❌ ERROR: {e}")
-        return False
     finally:
         test_db.close()
         if os.path.exists(db_path):
@@ -148,13 +137,6 @@ def test_position_persistence():
         assert 'ETH/USDT' not in positions, "Closed position still in database"
         print("  ✅ Closed position removed from active positions")
         
-        return True
-    except AssertionError as e:
-        print(f"  ❌ FAILED: {e}")
-        return False
-    except Exception as e:
-        print(f"  ❌ ERROR: {e}")
-        return False
     finally:
         test_db.close()
         if os.path.exists(db_path):
@@ -209,14 +191,7 @@ def test_crash_recovery_simulation():
             print(f"  ✅ {symbol}: Verified (Qty: {recovered_positions[symbol]['quantity']})")
         
         test_db_recovery.close()
-        return True
         
-    except AssertionError as e:
-        print(f"  ❌ FAILED: {e}")
-        return False
-    except Exception as e:
-        print(f"  ❌ ERROR: {e}")
-        return False
     finally:
         if os.path.exists(db_path):
             os.remove(db_path)
@@ -227,12 +202,21 @@ def run_all_tests():
     print("🗄️ TRADER GEMINI - DATABASE TEST SUITE")
     print("="*70)
     
-    results = {
-        'Database Initialization': test_database_initialization(),
-        'Trade Logging': test_trade_logging(),
-        'Position Persistence': test_position_persistence(),
-        'Crash Recovery': test_crash_recovery_simulation()
+    tests = {
+        'Database Initialization': test_database_initialization,
+        'Trade Logging': test_trade_logging,
+        'Position Persistence': test_position_persistence,
+        'Crash Recovery': test_crash_recovery_simulation
     }
+    
+    results = {}
+    for name, test_func in tests.items():
+        try:
+            test_func()
+            results[name] = True
+        except Exception as e:
+            print(f"  ❌ FAILED: {test_name if 'test_name' in locals() else name}: {e}")
+            results[name] = False
     
     print("\n" + "="*70)
     print("📊 TEST RESULTS")

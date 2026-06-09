@@ -15,11 +15,14 @@ class MockDataProvider:
         return self.positions
         
     def get_latest_bars(self, symbol, n=300, timeframe='5m'):
+        # Map pandas timeframe suffix 'm' (months) to 'min' (minutes) to prevent DateTime OutOfBounds overflow
+        if timeframe.endswith('m'):
+            timeframe = timeframe + 'in'
+            
         # Generate synthetic data (Structured Array)
         dates = pd.date_range(start='2024-01-01', periods=n, freq=timeframe)
         dtype = [('timestamp', 'datetime64[us]'), ('open', 'f8'), ('high', 'f8'), ('low', 'f8'), ('close', 'f8'), ('volume', 'f8')]
         data = np.zeros(n, dtype=dtype)
-        
         
         # Simple trend with NOISE
         prices = np.linspace(100, 110, n)
@@ -34,6 +37,9 @@ class MockDataProvider:
         data['volume'] = 1000.0 + np.random.normal(0, 100, n)
         
         return data
+
+    def get_order_flow_metrics(self, symbol):
+        return {}
 
 class MockQueue:
     def put(self, item):
@@ -54,7 +60,8 @@ class TestStrategyOnlineLearning(unittest.TestCase):
             'adx_threshold': 20,
             'strength_threshold': 0.6,
             'tp_pct': 0.015,
-            'sl_pct': 0.02
+            'sl_pct': 0.02,
+            'use_fused_path': True
         })
         
         orig_weights = np.array(genotype.genes['brain_weights']).copy()
@@ -71,6 +78,16 @@ class TestStrategyOnlineLearning(unittest.TestCase):
         
         # 3. Run Tick 2 (Should Trigger Learning from Tick 1)
         # Price moved up -> Should learn positive reinforcement (?)
+        # We must call process_reward to trigger weight update on trade completion
+        trade = {
+            'symbol': 'BTC/USDT',
+            'pnl_usd': 5.0,
+            'metadata': {
+                'setup_type': 'MOMENTUM'
+            }
+        }
+        strategy.process_reward(trade)
+        
         event2 = MarketEvent(symbol='BTC/USDT', close_price=101.0, timestamp=datetime.now(timezone.utc))
         strategy.generate_signals(event2)
         

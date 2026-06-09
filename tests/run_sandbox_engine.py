@@ -74,6 +74,15 @@ class MockDataProvider(DataProvider):
         """Mock for strategy compatibility."""
         return {}
 
+    def get_derivatives_metrics(self, symbol: str) -> dict:
+        return {'funding_rate': 0.0, 'oi': 0.0, 'oi_delta': 0.0, 'liquidations': 0.0}
+
+    def get_order_flow_metrics(self, symbol: str) -> dict:
+        return {}
+
+    def get_orderbook(self, symbol: str):
+        return None
+
 class MockExecutionHandler:
     """
     Simula interceptar el OrderEvent de la IA y rellenar un FillEvent asincrónicamente

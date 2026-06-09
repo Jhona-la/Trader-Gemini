@@ -335,6 +335,44 @@ class DatabaseHandler:
             )
         """)
         
+        # ═══════════════════════════════════════════════════════════════
+        # TABLE 7: strategy_report_card — Gobernanza evolutiva
+        # ═══════════════════════════════════════════════════════════════
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS strategy_report_card (
+                strategy_id TEXT PRIMARY KEY,
+                total_trades INTEGER,
+                wins INTEGER,
+                losses INTEGER,
+                win_rate REAL,
+                total_pnl REAL,
+                last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # ═══════════════════════════════════════════════════════════════
+        # TABLE 8: session_ledger — Crecimiento compuesto
+        # ═══════════════════════════════════════════════════════════════
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS session_ledger (
+                session_id TEXT PRIMARY KEY,
+                start_equity REAL,
+                end_equity REAL,
+                total_trades INTEGER,
+                wins INTEGER,
+                losses INTEGER,
+                gross_pnl REAL,
+                total_fees REAL,
+                net_pnl REAL,
+                best_trade_pnl REAL,
+                worst_trade_pnl REAL,
+                avg_trade_duration_sec REAL,
+                symbols_traded TEXT,
+                start_time TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Create indexes for fast querying
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_chronicle_trade ON trade_chronicle(trade_id)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_chronicle_symbol ON trade_chronicle(symbol)")
@@ -342,6 +380,7 @@ class DatabaseHandler:
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_exit_dec_strat ON exit_decisions(strategy_id)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_pred_audit_strat ON prediction_audit(strategy_id)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_pred_audit_symbol ON prediction_audit(symbol)")
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_rep_card_strat ON strategy_report_card(strategy_id)")
         
         self.conn.commit()
         

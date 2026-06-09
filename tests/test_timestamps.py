@@ -5,6 +5,8 @@ from utils.time_helpers import ensure_utc_aware
 from config import Config
 from dataclasses import FrozenInstanceError
 
+from core.enums import SignalType
+
 class TestTimestamps(unittest.TestCase):
     def test_ensure_utc_aware_valid(self):
         """Valid UTC datetime should pass."""
@@ -34,7 +36,8 @@ class TestTimestamps(unittest.TestCase):
                 strategy_id="TEST",
                 symbol="BTC/USDT",
                 datetime=naive_dt,
-                signal_type="LONG"
+                signal_type=SignalType.LONG,
+                horizon="SCALPING"
             )
             
     def test_signal_event_immutability(self):
@@ -44,7 +47,8 @@ class TestTimestamps(unittest.TestCase):
             strategy_id="TEST",
             symbol="BTC/USDT",
             datetime=dt,
-            signal_type="LONG"
+            signal_type=SignalType.LONG,
+            horizon="SCALPING"
         )
         
         with self.assertRaises(FrozenInstanceError):

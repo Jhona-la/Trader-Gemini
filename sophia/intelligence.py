@@ -222,6 +222,7 @@ class SophiaReport:
     # Block 1.46: The Neuro-Evolutionary Fabric (V5.46) [NEW]
     meta_reasoning: Dict = field(default_factory=dict)
     parameter_drift: float = 0.0    # Suggested infinitesimal shift (±0.000001%)
+    n_observations: int = 0
     
     # Metadata
     timestamp: str = ""
@@ -276,7 +277,8 @@ class SophiaReport:
             'noise_trend': getattr(self, 'noise_trend', "STABLE"),
             'omniscient_score': round(getattr(self, 'omniscient_score', 0.0), 4),
             'meta_reasoning': getattr(self, 'meta_reasoning', {}),
-            'parameter_drift': round(getattr(self, 'parameter_drift', 0.0), 9)
+            'parameter_drift': round(getattr(self, 'parameter_drift', 0.0), 9),
+            'n_observations': getattr(self, 'n_observations', 0)
         }
 
 
@@ -355,13 +357,26 @@ class MultiHorizonOracle:
                  is_vetoed = True
 
         # ================================================================
-        # IMPLEMENTACIÓN DE SHORTS SIMÉTRICOS (Sophia AI)
+        # IMPLEMENTACIÓN SIMÉTRICA DE SCALPING (Sophia AI)
+        # QUÉ: Modulación y endurecimiento de la regla de relajación de veto para horizontes rápidos.
+        # POR QUÉ: En scalping/microscalping se relajaba el veto del oráculo al 100% (is_vetoed=False)
+        #   para capturar rebotes locales, pero esto ignoraba movimientos direccionales masivos (crash/pump)
+        #   donde operar contra-macro resulta en liquidaciones y stop-outs recurrentes.
+        # PARA QUÉ: Permitir operaciones en rebotes cortos manteniendo la protección contra caídas verticales.
+        # CÓMO: Si la divergencia macro es extrema (`clash_score > 0.70`), se mantiene el veto estricto (`is_vetoed=True`)
+        #   y no se relaja el score. De lo contrario, se permite relajar.
+        # CUÁNDO: Ejecutado al evaluar el clash vector de temporalidades altas.
+        # DÓNDE: En `sophia/intelligence.py` :: `evaluate_clash_vector`.
+        # QUIÊN: Modificado por el Quant Developer y el Risk Manager.
         # ================================================================
-        if horizon == 'SCALPING' and direction == 'SHORT':
-            # Evitar que el macro (1D/1W alcista) bloquee un scalp ultrarrápido bajista
-            is_vetoed = False
-            clash_score = clash_score * 0.5  # Relajar penalización al 50%
-            details.append("SCALP_SHORT_RELAXED")
+        if horizon.upper() in ('SCALPING', 'MICROSCALPING', 'MSC'):
+            if clash_score > 0.70:
+                is_vetoed = True
+                details.append(f"SCALP_{direction}_CLASH_VETO")
+            else:
+                is_vetoed = False
+                clash_score = clash_score * 0.5  # Relajar penalización al 50%
+                details.append(f"SCALP_{direction}_RELAXED")
         # ================================================================
                  
         context = " | ".join(details)
@@ -1478,13 +1493,25 @@ class SophiaIntelligence:
         chaos_vote = (energy_norm * 0.4) + (noise_inv * 0.3) + (path_score * 0.3)
         
         # 4. Fee Headroom Vote (Weight: 15%)
+        # [FORENSIC-AUDIT-V1] FIX: Use actual fee based on BBO config (Maker vs Taker)
+        # POR QUÉ: Old logic always used TAKER fee × 2.5 = 0.188% threshold,
+        #   which blocked ALL scalping trades on M1/M5 (ATR typically 0.05-0.12%).
+        # PARA QUÉ: With LIMIT BBO enabled, actual round-trip fee is 0.04% (Maker).
+        #   A 1.5x multiplier gives threshold = 0.06%, achievable on most symbols.
         from config import Config
-        round_trip_fee = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375) * 2
-        min_required_headroom = round_trip_fee * 2.5
+        _exec_cfg = getattr(Config, 'Execution', None)
+        if _exec_cfg and getattr(_exec_cfg, 'USE_LIMIT_BBO_ENTRIES', True) and getattr(_exec_cfg, 'USE_LIMIT_BBO_EXITS', True):
+            round_trip_fee = getattr(Config, 'BINANCE_MAKER_FEE_BNB', 0.0002) * 2
+        else:
+            round_trip_fee = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375) * 2
+        min_required_headroom = max(0.00015, round_trip_fee * 1.1)  # [PHOENIX V3] Was 1.5x. Scalping captures intra-candle volatility.
         atr_pct = features.get('atr_pct', 0.01)
         
-        fee_vote = min(1.0, atr_pct / min_required_headroom) if min_required_headroom > 0 else 1.0
-        if fee_vote < 1.0:
+        if atr_pct >= min_required_headroom:
+            fee_vote = 1.0
+        else:
+            # Prevent instant signal death; if ML is highly confident, it can overcome a 0.5 fee vote.
+            fee_vote = max(0.5, atr_pct / min_required_headroom)
             logger.warning(f"💸 [FEE VOTE] {symbol} ATR {atr_pct*100:.3f}% < {min_required_headroom*100:.3f}%. Vote: {fee_vote:.2f}")
         
         # 5. Historical WinRate Vote (Weight: 10%)
@@ -1607,7 +1634,7 @@ class SophiaIntelligence:
         # PARA QUÉ: Ensure Sophia can still generate signals in high-noise environments.
         # A floor of 0.25 means "low confidence but actionable" — combined with base_omni 0.40,
         # omni_score = 0.40 × 0.25 = 0.10, which can pass the entry gate (0.18-0.25).
-        certainty = max(certainty, 0.25)
+        certainty = max(certainty, 0.60)
         
         omni_score = base_omni * certainty
         
@@ -1726,6 +1753,7 @@ class SophiaIntelligence:
             direction=direction,
             signal_strength=signal_strength,
             market_regime=regime,
+            n_observations=self.calibrator.observed_wins + self.calibrator.observed_losses,
             metadata={
                 'boost_factor': 1.5 if win_prob > 0.90 else (1.2 if win_prob > 0.85 else 1.0),
                 'calibrated': win_prob > 0.6

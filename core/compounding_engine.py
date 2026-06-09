@@ -188,7 +188,7 @@ class CompoundingEngine:
         if len(self._compound_log) < 2:
             return {
                 "actual_growth_pct": 0.0,
-                "theoretical_daily_target_pct": 4.73,  # 100% in 15 days = ~4.73%/day
+                "theoretical_daily_target_pct": 100.0,  # 100% daily target (24h doubling)
                 "velocity_ratio": 0.0,
                 "phase": self._growth_phase,
                 "peak_equity": self.peak_equity,
@@ -206,9 +206,8 @@ class CompoundingEngine:
         actual_growth = (last_eq - first_eq) / max(first_eq, 0.01)
         actual_daily = actual_growth / max(elapsed_days, 0.001)
 
-        # Theoretical: 100% in 15 days = compound daily rate
-        # (1 + r)^15 = 2.0 → r = 2^(1/15) - 1 ≈ 4.73%/day
-        theoretical_daily = 0.0473
+        # Theoretical: 100% growth target every 24 hours (2.0x compounding daily rate)
+        theoretical_daily = 1.00
 
         # Velocity ratio: how fast are we vs. target
         velocity_ratio = actual_daily / theoretical_daily if theoretical_daily > 0 else 0.0
@@ -241,9 +240,9 @@ class CompoundingEngine:
         """
         eq = current_equity or self.last_equity or self.initial_capital
         
-        # 100% in 15 days: 2^(1/15) = 1.047294
-        daily_growth_factor = math.pow(2.0, 1.0 / 15.0)
-        daily_growth_pct = (daily_growth_factor - 1.0) * 100.0
+        # 100% growth target every 24 hours (2.0x compounding daily rate)
+        daily_growth_factor = 2.0
+        daily_growth_pct = 100.0
         
         expected_start = self.initial_capital * math.pow(daily_growth_factor, max(0, current_day - 1))
         target_end = expected_start * daily_growth_factor

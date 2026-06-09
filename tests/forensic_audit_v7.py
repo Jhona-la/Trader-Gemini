@@ -628,7 +628,7 @@ try:
           f"Found: {found_hacks}" if found_hacks else "Clean - no backtest-only code")
 
     # 9.4 Closed-bar logic check (anti-repainting)
-    tech_src = inspect.getsource(HybridScalpingStrategy.detect_scalping_setup)
+    tech_src = inspect.getsource(HybridScalpingStrategy.detect_setup)
     uses_closed_bar = "idx = -2" in tech_src or "[-2]" in tech_src
     audit("PARITY", "Closed-bar logic (anti-repainting)",
           uses_closed_bar,

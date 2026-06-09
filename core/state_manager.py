@@ -51,7 +51,9 @@ class AtomicStateManager:
             # Critical for HFT where dashboard reads while engine writes
             cls._db_conn.execute("PRAGMA journal_mode=WAL")
             cls._db_conn.execute("PRAGMA synchronous=NORMAL")  # Balance speed/safety
-            cls._db_conn.execute("PRAGMA cache_size=-8000")     # 8MB cache
+            cls._db_conn.execute("PRAGMA cache_size=-64000")    # 64MB cache (Nano-latency)
+            cls._db_conn.execute("PRAGMA mmap_size=30000000000") # 30GB mem map (Nano-latency)
+            cls._db_conn.execute("PRAGMA temp_store=MEMORY")    # RAM temp store
             cls._db_conn.execute("PRAGMA busy_timeout=5000")    # 5s busy wait
             
             # Create checkpoint table
@@ -195,10 +197,22 @@ class AtomicStateManager:
     def save_json_atomic(path: str, data: Dict[str, Any]):
         """
         Saves dict to JSON atomically (legacy method, preserved).
+        
+        FORENSIC FIX: Normalize paths to prevent Windows WinError 2.
+        QUÉ: Normaliza path con os.path.normpath(os.path.abspath()) antes de operar.
+        POR QUÉ: Dashboard threads pasan paths con '/' pero os.replace() en Windows
+          necesita backslashes consistentes. Mezclar separadores causa WinError 2.
+        PARA QUÉ: Estabilizar escrituras atómicas de live_status.json en Windows.
         """
+        # FORENSIC FIX: Canonical path normalization (Windows mixed-separator fix)
+        path = os.path.normpath(os.path.abspath(path))
         dir_name = os.path.dirname(path)
         base_name = os.path.basename(path)
-        tmp_path = os.path.join(dir_name, f".{base_name}.tmp")
+        tmp_path = os.path.normpath(os.path.join(dir_name, f".{base_name}.tmp"))
+        
+        # Ensure directory exists (prevents WinError 2 on first write)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
         
         try:
             # 1. Write to Temp File

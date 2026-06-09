@@ -122,8 +122,9 @@ class OrderFlowAnalyzer:
             last = price_action[-1]
             curr_vol = float(last['volume'])
             
-            # Use NumPy vectorization
-            avg_vol = np.mean(price_action[-11:-1]['volume'])
+            # Extract volumes properly since price_action is a list of dicts
+            vols = [float(b['volume']) for b in price_action[-11:-1]]
+            avg_vol = np.mean(vols) if vols else 0.0
             
             if avg_vol > 0 and curr_vol < (avg_vol * 1.8):
                 return {'detected': False, 'type': 'NONE', 'reason': ''}
@@ -215,8 +216,24 @@ class PhalanxStrategy(Strategy):
                 except Exception:
                     metrics = None
             
-            # Convert last 20 rows to list of dicts for analyzer
-            price_action = data.iloc[-20:].to_dict('records')
+            # FORENSIC-DCA FIX #9: Robust multi-type conversion for price action data
+            if hasattr(data, 'iloc'):
+                price_action = data.iloc[-20:].to_dict('records')
+            elif isinstance(data, list):
+                price_action = data[-20:]
+            elif isinstance(data, dict):
+                keys = list(data.keys())
+                n_items = len(data[keys[0]])
+                price_action = []
+                for i in range(max(0, n_items - 20), n_items):
+                    price_action.append({k: data[k][i] for k in keys})
+            elif hasattr(data, 'dtype') and hasattr(data.dtype, 'names') and data.dtype.names is not None:
+                price_action = []
+                names = data.dtype.names
+                for row in data[-20:]:
+                    price_action.append({name: row[name] for name in names})
+            else:
+                price_action = list(data)[-20:]
             
             absorption = self.analyzer.is_absorption_detected(price_action, metrics)
             if absorption['detected']:
@@ -228,11 +245,11 @@ class PhalanxStrategy(Strategy):
                 # POR QUÉ: 1% SL con 10x leverage = -10% loss, demasiado para $13.
                 # PARA QUÉ: Consistencia con las SL/TP de las estrategias principales.
                 if self.horizon == 'SCALPING':
-                    tp_pct = Config.Strategies.SCALPING_PARAMS.get('tp_pct', 0.006)
-                    sl_pct = Config.Strategies.SCALPING_PARAMS.get('sl_pct', 0.0075)
+                    tp_pct = Config.Horizons.Scalping.get('tp_pct', 0.006)
+                    sl_pct = Config.Horizons.Scalping.get('sl_pct', 0.0075)
                 else:
-                    tp_pct = Config.Strategies.SWING_PARAMS.get('tp_pct', 0.045)
-                    sl_pct = Config.Strategies.SWING_PARAMS.get('sl_pct', 0.025)
+                    tp_pct = Config.Horizons.Swing.get('tp_pct', 0.045)
+                    sl_pct = Config.Horizons.Swing.get('sl_pct', 0.025)
                 
                 # SOPHIA INTEGRATION
                 sophia_report_dict = {}
@@ -262,7 +279,7 @@ class PhalanxStrategy(Strategy):
                     sophia_report_dict = sophia_report.to_dict()
 
                 signal = SignalEvent(
-                    strategy_id="PHALANX",
+                    strategy_id=self.strategy_id,
                     symbol=symbol,
                     datetime=datetime.now(timezone.utc),
                     signal_type=signal_type,

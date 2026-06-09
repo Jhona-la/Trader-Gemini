@@ -1,4 +1,6 @@
 import numpy as np
+import threading
+import time
 from typing import Dict, Any, List, Tuple
 from core.genotype import Genotype
 from core.enums import SignalType
@@ -15,6 +17,8 @@ class NeuralBridge:
         # Dimensions: 
         # Market (4 features * window) + VBI (1 * window) + Liq (1 * window) + Portfolio (3) + Genotype (2)
         self.input_dim = (6 * observation_window) + 3 + 2 
+        self._lock = threading.Lock()
+        self._insights = {}  # Key: (symbol, strategy_id), Value: (insight_dict, timestamp) 
 
     def get_state_tensor(self, 
                          market_data: Any, # SimDataProvider window or equivalent
@@ -179,14 +183,23 @@ class NeuralBridge:
         [PHASE 3: Neural Insight]
         Broadcasts neural confidence and direction for monitoring.
         """
-        # For now, pass to avoid blocking the hot path.
-        pass
+        with self._lock:
+            self._insights[(symbol, strategy_id)] = (insight, time.time())
 
     def query_insight(self, symbol: str, insight_type: str) -> Dict[str, Any]:
         """
         Retrieves the latest insight for a symbol/type if available.
+        Checks for TTL (300 seconds default).
         """
-        return {}  # Placeholder to prevent SniperStrategy crashes
+        with self._lock:
+            key = (symbol, insight_type)
+            if key in self._insights:
+                insight, timestamp = self._insights[key]
+                if time.time() - timestamp < 300:
+                    return insight
+                else:
+                    del self._insights[key]
+        return {}
 
     def cleanup(self):
         """Phase 8: Cleanup neural bridge resources."""

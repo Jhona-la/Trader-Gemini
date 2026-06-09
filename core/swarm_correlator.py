@@ -61,7 +61,7 @@ class SwarmCorrelator:
             self.correlations[symbol] = corr
             
             # If we have enough symbols, initialize and update Hypergraph (AITS Phase 3)
-            if len(self._all_returns) > 5:
+            if len(self._all_returns) >= 3:
                 if self.hypergraph is None:
                     self.hypergraph = MarketHypergraph(list(self._all_returns.keys()))
                 

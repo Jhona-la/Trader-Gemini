@@ -10,6 +10,7 @@ import pandas as pd
 from core.enums import TradeDirection, TradeStatus, EventType, OrderSide, OrderType, SignalType
 from core.events import SignalEvent
 from core.reward_system import TradeOutcome
+from core.omniscient_tracer import omniscient_trace
 from utils.logger import logger
 from utils.notifier import Notifier
 from data.database import DatabaseHandler
@@ -492,12 +493,18 @@ class Portfolio:
         #   Si ambos están vacíos, los valores DEBEN ser cero por definición.
         # CUÁNDO: Cada vez que se consulta available cash.
         # ═══════════════════════════════════════════════════════════════
-        has_physical = any(abs(p.get('quantity', 0)) > 1e-8 for p in self.positions.values())
-        has_virtual = any(abs(p.get('quantity', 0)) > 1e-8 for p in self.virtual_ledger.values())
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC-V99: HFT O(1) STATE EVALUATION
+        # QUÉ: Reemplazo de iteradores O(N) por evaluaciones booleanas/len O(1).
+        # POR QUÉ: Las List Comprehensions consumían ciclos en el hot-path del Event Loop.
+        # PARA QUÉ: Reducir latencia del Portfolio de microsegundos a nanosegundos.
+        # ═══════════════════════════════════════════════════════════════
+        has_physical = len(self.positions) > 0
+        has_virtual = any(v['quantity'] != 0 for v in self.virtual_ledger.values()) if self.virtual_ledger else False
         
         if not has_physical and not has_virtual:
             if self.used_margin > 0.01 or self.pending_cash > 0.01:
-                logger.warning(
+                logger.debug(
                     f"🔧 [RECONCILE] No positions open but used_margin=${self.used_margin:.4f}, "
                     f"pending_cash=${self.pending_cash:.4f} → RESETTING to 0 (leak fix)"
                 )
@@ -513,26 +520,17 @@ class Portfolio:
             return total_avail
             
         # ═══════════════════════════════════════════════════════════════
-        # PHASE 7 AITS: DYNAMIC HORIZON ALLOCATION (CompoundingEngine)
-        # QUÉ: Reemplaza el 60/40 hardcoded por una sigmoid adaptativa.
-        # POR QUÉ: Con $13, el 85% debe estar en Scalping para superar
-        #   el mínimo notional de Binance. A $200+, el balance se iguala.
-        # PARA QUÉ: Maximizar velocidad de duplicación (15 días target)
-        #   adaptando la asignación al equity en tiempo real.
-        # CÓMO: CompoundingEngine.get_horizon_allocation(equity) retorna
-        #   (scalping_pct, swing_pct) basado en una función sigmoide.
-        # CUÁNDO: Cada consulta de available cash por horizonte.
-        # DÓNDE: core/portfolio.py → _get_available_cash_internal()
-        # QUIÉN: Portfolio + CompoundingEngine (singleton)
+        # HORIZON ALLOCATION (Silos)
+        # QUÉ: Reemplaza la lógica dinámica para forzar silos fijos.
+        # POR QUÉ: Evitar que Scalping, Microscalping y Swing se roben capital.
         # ═══════════════════════════════════════════════════════════════
-        try:
-            ce = get_compounding_engine()
-            equity_now = getattr(self, '_equity_cache', self.current_cash)
-            scalp_pct, swing_pct = ce.get_horizon_allocation(equity_now)
-        except Exception:
-            scalp_pct, swing_pct = 0.70, 0.30  # Safe fallback
+        micro_pct = getattr(Config, 'MICROSCALPING_MARGIN_CAP', 0.40)
+        scalp_pct = getattr(Config, 'SCALPING_MARGIN_CAP', 0.40)
+        swing_pct = getattr(Config, 'SWING_MARGIN_CAP', 0.20)
         
-        if horizon == 'SCALPING':
+        if horizon == 'MICROSCALPING':
+            alloc_pct = micro_pct
+        elif horizon == 'SCALPING':
             alloc_pct = scalp_pct
         elif horizon == 'SWING':
             alloc_pct = swing_pct
@@ -555,7 +553,13 @@ class Portfolio:
                         horizon_used += (qty * avg_price)
                         
         # FORENSIC FIX: Track pending cash per horizon using order_id prefix
-        horizon_prefix = "SCL" if horizon == "SCALPING" else "SWG"
+        if horizon == "MICROSCALPING":
+            horizon_prefix = "MSC"
+        elif horizon == "SCALPING":
+            horizon_prefix = "SCL"
+        else:
+            horizon_prefix = "SWG"
+            
         horizon_pending = sum(
             amt for oid, amt in self._pending_reservations.items() 
             if f"TG_{horizon_prefix}_" in oid
@@ -563,6 +567,30 @@ class Portfolio:
         
         # Rigorous Partitioning: Available in this Silo = Allocated Total - Used - Pending
         horizon_avail = allocated_total - horizon_used - horizon_pending
+        
+        # ═══════════════════════════════════════════════════════════════
+        # SOFT CAP FOR MICRO-ACCOUNTS (< $50 USD) - ASYMMETRIC PRIORITY
+        # QUÉ: Exposición Dinámica con Prioridad en Cascada.
+        # POR QUÉ: Con micro-cuentas ($13 USD), el capital no alcanza para
+        #   abrir Swing y Scalping en simultáneo si Swing agota el margen.
+        #   Scalping (alta velocidad, mayor WR esperado) debe tener prioridad.
+        # PARA QUÉ: Maximizar la rotación (Velocity of Money).
+        # CÓMO: 
+        #   - SCALPING recibe hasta el 90% del margen disponible.
+        #   - SWING se bloquea si consumirlo dejaría el balance total por
+        #     debajo de una reserva inamovible de liquidez de $6 USD (mínimo de Binance).
+        # CUÁNDO: Siempre que self.current_cash < 50.0.
+        # QUIÉN: Arquitecto Senior y Quant Developer.
+        # ═══════════════════════════════════════════════════════════════
+        if self.current_cash < 50.0:
+            if horizon in ("SCALPING", "MICROSCALPING"):
+                soft_cap = total_avail * 0.90
+                horizon_avail = max(horizon_avail, soft_cap)
+            elif horizon == "SWING":
+                # Swing only gets what remains after reserving $6 USD for Scalping.
+                scalp_reserve_usd = 6.0
+                soft_cap_swing = max(0.0, total_avail - scalp_reserve_usd)
+                horizon_avail = max(horizon_avail, min(soft_cap_swing, total_avail * 0.90))
         
         # FORENSIC TRACE: Why is cash 0?
         if min(total_avail, horizon_avail) <= 0.1:
@@ -719,9 +747,11 @@ class Portfolio:
         """Cancela una orden y libera su margen reservado."""
         meta = getattr(order_event, 'metadata', {}) or {}
         reserved_amt = meta.get('dollar_size')
-        if reserved_amt:
-            self.release_order_margin(reserved_amt)
-            logger.info(f"🚫 Order Cancelled/Expired: {order_event.symbol} | Released ${reserved_amt:.2f}")
+        order_id = meta.get('client_order_id')
+        if reserved_amt or order_id:
+            safe_amt = float(reserved_amt) if reserved_amt is not None else 0.0
+            self.release_order_margin(amount=reserved_amt, order_id=order_id)
+            logger.info(f"🚫 Order Cancelled/Expired: {order_event.symbol} | Released ${safe_amt:.2f} (ID: {order_id})")
 
     def get_active_symbols(self):
         return list(self.positions.keys())
@@ -744,6 +774,20 @@ class Portfolio:
 
         self.guard.acquire()
         try:
+            # 👻 FORENSIC-V130: GHOST TICK PREVENTION FOR MFE/MAE
+            # QUÉ: Evitar que un spike anómalo de la API altere HWM/LWM.
+            # POR QUÉ: Un ghost tick dispararía el HWM, causando que el Trailing Stop
+            #   se active prematuramente en el siguiente tick normal.
+            _is_ghost_tick = False
+            _last_p = getattr(self, '_last_prices', {}).get(symbol)
+            if _last_p and _last_p > 0:
+                _jump = abs(price - _last_p) / _last_p
+                # Si el tick salta más de 2% de golpe, es probablemente un artefacto de la API
+                # o un flash event que no debe cristalizarse en el HWM de inmediato.
+                if _jump > 0.02:
+                    _is_ghost_tick = True
+                    logger.warning(f"👻 [GHOST TICK DETECTED] {symbol}: Jump {_jump*100:.2f}% ({_last_p} → {price}). Protecting HWM/LWM.")
+
             self._last_prices[symbol] = price  # Meritocracy Bridge (Phase 3.13)
             if symbol not in self.positions:
                 self.positions[symbol] = {
@@ -767,10 +811,11 @@ class Portfolio:
                      self.positions[symbol]['high_water_mark'] = price
                      
                 # Track Gloabl HWM/LWM during trade
-                if price > self.positions[symbol]['high_water_mark']:
-                    self.positions[symbol]['high_water_mark'] = price
-                if price < self.positions[symbol]['low_water_mark']:
-                    self.positions[symbol]['low_water_mark'] = price
+                if not _is_ghost_tick:
+                    if price > self.positions[symbol]['high_water_mark']:
+                        self.positions[symbol]['high_water_mark'] = price
+                    if price < self.positions[symbol]['low_water_mark']:
+                        self.positions[symbol]['low_water_mark'] = price
                     
             # --- 🛡️ PHASE 15: HEDGE MODE SYNC ---
             # 🛡️ VIRTUAL LEDGER SYNC: Propagate real-time price to all horizon sub-positions
@@ -780,10 +825,11 @@ class Portfolio:
                     if 'high_water_mark' not in vpos: vpos['high_water_mark'] = price
                     if 'low_water_mark' not in vpos: vpos['low_water_mark'] = price
                     
-                    if price > vpos['high_water_mark']:
-                        vpos['high_water_mark'] = price
-                    if vpos['low_water_mark'] == 0 or price < vpos['low_water_mark']:
-                        vpos['low_water_mark'] = price
+                    if not _is_ghost_tick:
+                        if price > vpos['high_water_mark']:
+                            vpos['high_water_mark'] = price
+                        if vpos['low_water_mark'] == 0 or price < vpos['low_water_mark']:
+                            vpos['low_water_mark'] = price
             
             
             # DB Snapshot prep (Copy inside lock)
@@ -979,6 +1025,7 @@ class Portfolio:
                     except Exception as e:
                         logger.debug(f"[SOPHIA] Intent store skipped: {e}")
 
+    @omniscient_trace(layer="MEMORY")
     def _update_virtual_ledger(self, event) -> float:
         """🛡️ Phase 1 (Virtual Ledger): Isolates Avg Entry Price for Scalping vs Swing safely. Returns isolated PnL."""
         horizon = getattr(event, 'horizon', 'SCALPING')
@@ -1011,6 +1058,7 @@ class Portfolio:
                 pos_side = 'LONG' if direction_val == 'BUY' else 'SHORT'
             
         v_key = f"{event.symbol}_{horizon}_{pos_side}"
+        existing_qty = self.virtual_ledger[v_key].get('quantity', 0.0) if v_key in self.virtual_ledger else 0.0
         
         if v_key not in self.virtual_ledger:
             # Initialize specialized ledger for this horizon and side
@@ -1036,12 +1084,62 @@ class Portfolio:
                 'predicted_duration': getattr(event, 'predicted_duration', None),
                 'predicted_magnitude': getattr(event, 'predicted_magnitude', None),
                 'metadata': getattr(event, 'metadata', {}) or {},
-                'exit_pending_time': 0 # FORENSIC FIX: Initialize exit race condition lock
+                'exit_pending_time': 0, # FORENSIC FIX: Initialize exit race condition lock
+                'state': 'OPENING',
+                # === TRAILING ENGINE V7 FIELDS ===
+                'mfe_atr': 0.0,
+                'fase_actual': 'FASE_0_RIESGO_INICIAL',
+                'ratio_captura': 0.0,
+                'trail_stop_price': 0.0,
+                'strategy_family': 'DEFAULT'
             }
             
         pos = self.virtual_ledger[v_key]
-        price = getattr(event, 'fill_price', getattr(event, 'price', 0.0))
-        if price == 0: return 0.0 # Skip invalid physics
+        
+        # Enforce strict ownership: verify that the exit signal's strategy_id or horizon matches the position's opener_strategy_id before closing.
+        existing_qty = pos.get('quantity', 0.0)
+        is_exit_fill = False
+        if existing_qty > 0 and event.direction == OrderSide.SELL:
+            is_exit_fill = True
+        elif existing_qty < 0 and event.direction == OrderSide.BUY:
+            is_exit_fill = True
+            
+        if is_exit_fill:
+            opener_strat = pos.get('opener_strategy_id', 'Unknown')
+            evt_strat = getattr(event, 'strategy_id', 'Unknown')
+            system_exits = {'99', 'EXIT', 'EMERGENCY_EXIT', 'KILL_SWITCH', 'risk_manager', 'RiskManager', 'Unknown', 'HARD_SL', 'TIME_STOP_ZOMBIE', 'HARD_SCALP_TIMEOUT', 'ZOMBIE_FLAT_MARKET', 'ZOMBIE', 'BACKTEST_CLOSE', 'DIAG_CLOSE'}
+            
+            is_sys_exit = (
+                evt_strat in system_exits or
+                any(evt_strat.startswith(p) for p in ("HARD_", "SPAP_", "TRAIL_", "WEAK_", "V7_", "CLOSE_", "TIME_", "MOMENT_", "LONG_", "SHORT_"))
+            )
+
+            
+            if not is_sys_exit and opener_strat != 'Unknown' and evt_strat != opener_strat:
+                logger.error(
+                    f"🛡️ [OWNERSHIP VIOLATION] Strategy {evt_strat} attempted to close position "
+                    f"owned by {opener_strat} for {event.symbol} ({horizon}). Blocking ledger update!"
+                )
+                return 0.0
+
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC FIX: None-coalescing price derivation
+        # QUÉ: getattr(event, 'fill_price', default) returns None when
+        #   the attribute EXISTS but is None — NOT the default value.
+        # POR QUÉ: This caused `float * None` → TypeError, silently
+        #   leaving quantity=0 in the ledger → exits never fire.
+        # CÓMO: Explicit None-check chain: fill_price → fill_cost/qty → price
+        # ═══════════════════════════════════════════════════════════════
+        price = getattr(event, 'fill_price', None)
+        if price is None or price == 0:
+            # Derive from fill_cost / quantity (the canonical source)
+            qty = getattr(event, 'quantity', 0)
+            fc = getattr(event, 'fill_cost', 0)
+            if qty > 0 and fc > 0:
+                price = fc / qty
+            else:
+                price = getattr(event, 'price', None) or 0.0
+        if not price or price == 0: return 0.0 # Skip invalid physics
         
         # Update SL/TP if event provides new targets (Dynamic Calibration)
         if getattr(event, 'sl_pct', None): pos['sl_pct'] = event.sl_pct
@@ -1122,7 +1220,7 @@ class Portfolio:
                 total_cost = (abs(pos['quantity']) * pos['avg_price']) + fill_cost
                 pos['quantity'] -= event.quantity
                 pos['avg_price'] = total_cost / abs(pos['quantity'])
-                if pos['quantity'] == event.quantity: # New entry
+                if pos['quantity'] == -event.quantity: # New entry
                     pos['entry_time'] = self._get_current_time()
                     pos['opener_strategy_id'] = getattr(event, 'strategy_id', 'Unknown')
                     pos['ml_confidence'] = (getattr(event, 'metadata', {}) or {}).get('ml_confidence', (getattr(event, 'metadata', {}) or {}).get('strength', 0.0))
@@ -1150,7 +1248,70 @@ class Portfolio:
         if pos.get('low_water_mark', 0) == 0 or price < pos.get('low_water_mark', 0):
             pos['low_water_mark'] = price
             
-        logger.info(f"📓 [LEDGER] {v_key} | Qty: {pos['quantity']:.4f} | Avg: ${pos['avg_price']:.2f} | Unrealized PnL: ${isolated_pnl:.4f} | Target SL: {pos.get('sl_pct')}")
+        # Determine the final state of the position
+        if abs(pos['quantity']) < 1e-8:
+            pos['state'] = 'CLOSED'
+        elif pos.get('exit_pending_time', 0) > 0:
+            pos['state'] = 'CLOSING'
+        elif pos.get('high_water_mark', 0) > pos['avg_price'] * 1.002:
+            pos['state'] = 'TRAILING'
+        else:
+            pos['state'] = 'ACTIVE'
+            
+        new_qty = pos.get('quantity', 0.0)
+        
+        # Did the position close or flip?
+        if (existing_qty != 0.0 and new_qty == 0.0) or (existing_qty * new_qty < 0):
+            from core.senior_auditor import SeniorAuditor
+            SeniorAuditor().log_trade_lifecycle(
+                trade_id=pos.get('trade_id') or getattr(event, 'trade_id', None),
+                action="EXIT",
+                details={
+                    "symbol": event.symbol,
+                    "horizon": horizon,
+                    "pos_side": pos_side,
+                    "exit_price": price,
+                    "gross_pnl": isolated_pnl,
+                    "exit_reason": getattr(event, 'exit_reason', 'FLIP_EXIT' if (existing_qty * new_qty < 0) else 'NORMAL_CLOSE')
+                }
+            )
+
+        # Did a new position open or flip?
+        if (existing_qty == 0.0 and new_qty != 0.0) or (existing_qty * new_qty < 0):
+            from core.senior_auditor import SeniorAuditor, STRATEGY_DNA
+            from core.asset_intelligence import get_asset_intelligence
+            strat_key = SeniorAuditor()._map_strategy_name(pos.get('opener_strategy_id', 'TFTF'))
+            dna = STRATEGY_DNA.get(strat_key, {})
+            profile = get_asset_intelligence().get_profile(event.symbol)
+            
+            dna_snapshot = dict(dna)
+            dna_snapshot["ASIMETRIAS_DEL_ACTIVO_SNAP"] = {
+                "min_signal_threshold": profile.min_signal_threshold,
+                "factor_sizing": profile.factor_sizing,
+                "stop_atr_mult": profile.stop_atr_mult,
+                "kelly_fraction": profile.kelly_fraction,
+                "tier": str(profile.tier),
+                "volatility": str(profile.volatility)
+            }
+            pos['strategy_dna'] = dna_snapshot
+            
+            SeniorAuditor().log_trade_lifecycle(
+                trade_id=pos.get('trade_id') or getattr(event, 'trade_id', None),
+                action="ENTRY",
+                details={
+                    "symbol": event.symbol,
+                    "horizon": horizon,
+                    "pos_side": pos_side,
+                    "entry_price": price,
+                    "quantity": abs(new_qty),
+                    "sl_pct": pos.get('sl_pct'),
+                    "tp_pct": pos.get('tp_pct'),
+                    "opener_strategy_id": pos.get('opener_strategy_id'),
+                    "strategy_dna": dna_snapshot
+                }
+            )
+            
+        logger.info(f"📓 [LEDGER] {v_key} | State: {pos['state']} | Qty: {pos['quantity']:.4f} | Avg: ${pos['avg_price']:.2f} | Unrealized PnL: ${isolated_pnl:.4f} | Target SL: {pos.get('sl_pct')}")
         return isolated_pnl
 
     def _record_closed_trade(self, event, pos, closed_qty, entry_price, exit_price, gross_pnl):
@@ -1307,7 +1468,7 @@ class Portfolio:
         # QUÉ: Mantener eficiencia de memoria limitando historiales en RAM.
         # POR QUÉ: Evitar consumo infinito durante backtests o runs de varios días.
         # ═══════════════════════════════════════════════════════════════
-        if trade_data['horizon'] == 'SCALPING':
+        if trade_data['horizon'] in ('SCALPING', 'MICROSCALPING'):
             self.scalping_ledger.append(trade_data)
             if len(self.scalping_ledger) > 50:
                 self.scalping_ledger.pop(0)
@@ -1316,7 +1477,7 @@ class Portfolio:
             if len(self.swing_ledger) > 50:
                 self.swing_ledger.pop(0)
             
-        logger.debug(f"📓 [ROUTED TRADE] {trade_data['horizon']} | {event.symbol} Neto: ${net_pnl:.4f} | T: {duration}s")
+        logger.info(f"📓 [TRADE CLOSED] {trade_data['horizon']} | {event.symbol} Neto: ${net_pnl:.4f} | Gross: ${gross_pnl:.4f} | Fees: ${total_fees:.4f} | T: {duration}s | Reason: {exit_reason}")
         
         # Meritocracy Central (Phase 3.9): Record for setup-based sizing
         self.trade_history.append(trade_data)
@@ -1520,15 +1681,16 @@ class Portfolio:
             entry_pos['cognitive_anchor'] = {
                 'initial_strength': meta.get('signal_strength', 0.8),
                 'initial_prob': meta.get('sophia', {}).get('win_probability', 0.5),
-                'ttl_seconds': meta.get('ttl', 180.0 if entry_pos.get('horizon') == 'SCALPING' else 3600.0)
+                'ttl_seconds': meta.get('ttl', 180.0 if entry_pos.get('horizon') in ('SCALPING', 'MICROSCALPING') else 3600.0)
             }
         else:
             entry_pos['cognitive_anchor'] = {
                 'initial_strength': 0.8,
                 'initial_prob': 0.5,
-                'ttl_seconds': 180.0 if entry_pos.get('horizon') == 'SCALPING' else 3600.0
+                'ttl_seconds': 180.0 if entry_pos.get('horizon') in ('SCALPING', 'MICROSCALPING') else 3600.0
             }
 
+    @omniscient_trace(layer="MEMORY")
     def update_fill(self, event) -> Optional[Tuple[float, TradeOutcome]]:
         """Atomically update portfolio state. Returns (realized PnL, TradeOutcome) if closed."""
         if event.type == EventType.FILL:
@@ -1627,10 +1789,11 @@ class Portfolio:
                     self.used_margin = new_used_margin
                 
                 # 3. Synchronize Aggregate 'self.positions' for Dashboard/API compatibility
-                agg_qty = sum(v['quantity'] for k, v in self.virtual_ledger.items() if k.startswith(f"{event.symbol}_"))
-                if agg_qty == 0:
+                active_virtual = [v for k, v in self.virtual_ledger.items() if k.startswith(f"{event.symbol}_") and abs(v['quantity']) > 1e-8]
+                if not active_virtual:
                     self.positions.pop(event.symbol, None)
                 else:
+                    agg_qty = sum(v['quantity'] for v in active_virtual)
                     if event.symbol not in self.positions:
                         self.positions[event.symbol] = {
                             'quantity': 0, 'avg_price': 0, 'current_price': fill_price, 
@@ -1639,9 +1802,9 @@ class Portfolio:
                             'strategy_version': getattr(event, 'strategy_version', '1.0.0')
                         }
                     
-                    total_notional = sum(abs(v['quantity']) * v['avg_price'] for k, v in self.virtual_ledger.items() if k.startswith(f"{event.symbol}_"))
+                    total_notional = sum(abs(v['quantity']) * v['avg_price'] for v in active_virtual)
                     self.positions[event.symbol]['quantity'] = agg_qty
-                    self.positions[event.symbol]['avg_price'] = total_notional / abs(agg_qty)
+                    self.positions[event.symbol]['avg_price'] = total_notional / sum(abs(v['quantity']) for v in active_virtual) if total_notional > 0 else 0
                     self.positions[event.symbol]['current_price'] = fill_price
                     _seg = (getattr(event, 'metadata', {}) or {}).get('segment_policy')
                     self.positions[event.symbol]['exec_policy'] = getattr(_seg, 'execution_type', 'MAKER_ONLY') if _seg else 'MAKER_ONLY'
@@ -1731,7 +1894,8 @@ class Portfolio:
             # ════════════════════════════════════════════════════════════════
             try:
                 from core.global_state import global_state
-                _open_count = sum(1 for v in self.virtual_ledger.values() if v.get('quantity', 0) != 0)
+                # O(1) Fast path logic instead of sum(1 for ...)
+                _open_count = sum(1 for v in self.virtual_ledger.values() if v.get('quantity', 0) != 0) if self.virtual_ledger else 0
                 _equity = self.get_total_equity()
                 global_state.update_portfolio_snapshot(
                     equity=_equity,
@@ -1979,6 +2143,10 @@ class Portfolio:
                             fill_price = getattr(event, 'fill_price', 0.0) or 0.0
                             sophia_data = intent.sophia_report or {}
                             
+                            # CRITICAL FIX: Inject real execution horizon so Nemesis doesn't fallback to SHORT_TERM
+                            if 'horizon_profile' not in sophia_data:
+                                sophia_data['horizon_profile'] = getattr(event, 'horizon', 'SCALPING')
+                            
                             nemesis_report = self.nemesis_engine.full_autopsy(
                                 trade_id=trade_id,
                                 symbol=event.symbol,
@@ -2047,6 +2215,8 @@ class Portfolio:
         except Exception as e:
             logger.debug(f"[CTOS] Session log skipped: {e}")
 
+        if hasattr(self, 'io_executor') and self.io_executor:
+            self.io_executor.shutdown(wait=True)
         if hasattr(self, 'db') and self.db:
             self.db.close()
         logger.info("✅ Portfolio: Shutdown complete.")
@@ -2145,222 +2315,73 @@ class Portfolio:
 
     @trace_execution
     def check_exits(self, data_provider, events_queue):
-        # LAYER 1: Portfolio-based exit monitoring (VIRTUAL LEDGER AWARE).
-        # Now iterates the virtual_ledger (composite keys) so that SCALPING and SWING
-        # positions have INDEPENDENT SL/TP/Trailing calculations.
-        #
-        # Thresholds (SCALPING - tight, fast):
-        # - Stop Loss: -0.25%
-        # - Take Profit: +0.50%
-        # - Trailing Stop: -0.15% from peak
-        #
-        # Thresholds (SWING - wider, patient):
-        # - Stop Loss: -1.0%
-        # - Take Profit: +2.5%
-        # - Trailing Stop: -0.5% from peak
-        from core.events import SignalEvent
-        
-        # --- HORIZON-SPECIFIC THRESHOLDS ---
-        THRESHOLDS = {
-            'SCALPING': {'sl': -0.0025, 'tp': 0.005, 'trail': -0.0015, 'trail_min_profit': 0.002},
-            'SWING':    {'sl': -0.010,  'tp': 0.025, 'trail': -0.005,  'trail_min_profit': 0.005},
-        }
-        DEFAULT_THRESHOLDS = THRESHOLDS['SCALPING']
-        
-        # Snapshot virtual ledger to avoid RuntimeError
-        self.guard.acquire()
-        try:
-            vl_snapshot = list(self.virtual_ledger.items())
-        finally:
-            self.guard.release()
-
-        now_utc = self._get_current_time()
-
-        for v_key, vpos in vl_snapshot:
-            if vpos['quantity'] == 0:
-                continue
-            
-            # Resolve the real symbol (strip "_SCALPING" or "_SWING" suffix)
-            horizon = vpos.get('horizon', 'SCALPING')
-            symbol = v_key.rsplit(f'_{horizon}', 1)[0] if f'_{horizon}' in v_key else v_key
-            
-            # Use the VIRTUAL ledger's avg_price (isolated per horizon)
-            current_price = vpos.get('current_price', 0)
-            entry_price = vpos.get('avg_price', 0)
-            quantity = vpos['quantity']
-            
-            # Sync current_price from physical positions if virtual is stale
-            if current_price == 0 and symbol in self.positions:
-                current_price = self.positions[symbol].get('current_price', 0)
-                vpos['current_price'] = current_price
-            
-            if current_price == 0 or entry_price == 0:
-                continue
-            
-            th = THRESHOLDS.get(horizon, DEFAULT_THRESHOLDS)
-            
-            if quantity > 0:  # LONG
-                pnl_pct = (current_price - entry_price) / entry_price
-                hwm = vpos.get('high_water_mark', current_price)
-                drawdown_from_peak = (current_price - hwm) / hwm if hwm > 0 else 0
-            else: # SHORT
-                pnl_pct = (entry_price - current_price) / entry_price
-                lwm = vpos.get('low_water_mark', current_price)
-                drawup_from_low = (lwm - current_price) / lwm if lwm > 0 else 0
-
-                
-            has_decay_exit = False
-            # ═══════════════════════════════════════════════════════════════
-            # CTOS PHASE 4: EXIT STRATEGY VOTE COLLECTION
-            # QUÉ: Registra qué estrategia de cierre votó EXIT vs HOLD.
-            # POR QUÉ: Sin esto, no sabemos por qué un trade no se cerró a tiempo.
-            # PARA QUÉ: Diagnosticar trades perdedores — "quién debió cerrar y no lo hizo".
-            # CÓMO: Cada evaluador registra su voto en exit_strategy_log (DB).
-            # ═══════════════════════════════════════════════════════════════
-            trade_id_for_log = vpos.get('trade_id')
-            unrealized_pnl_usd = pnl_pct * abs(quantity) * entry_price
-            exit_votes = []
-            hold_votes = []
-            
-            # ═══════════════════════════════════════════════════════════════
-            # CTOS Phase 5: ORACLE TARGET EXIT
-            # QUÉ: Si alcanzamos la magnitud que la IA predijo originalmente, salir inmediatamente.
-            # ═══════════════════════════════════════════════════════════════
-            _pred_mag = vpos.get('predicted_magnitude') or vpos.get('metadata', {}).get('predicted_magnitude', 0)
-            if _pred_mag and _pred_mag > 0.0015 and pnl_pct >= _pred_mag * 0.95:
-                logger.info(f"🔮 [ORACLE TARGET] {horizon} TARGET SECURED {symbol}: +{pnl_pct*100:.2f}% (Pred: {_pred_mag*100:.2f}%)")
-                events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                has_decay_exit = True
-                exit_votes.append("ORACLE_TARGET_REACHED")
-                if trade_id_for_log:
-                    self.io_executor.submit(self.db.log_exit_strategy_decision, trade_id_for_log, symbol, 0, "ORACLE_TARGET_REACHED", "EXIT", f"pred={_pred_mag*100:.2f}%_actual={pnl_pct*100:.2f}%", unrealized_pnl_usd, current_price)
-                vpos['_exit_votes'] = exit_votes
-                vpos['_hold_votes'] = hold_votes
-                continue
-
-            # ═══════════════════════════════════════════════════════════════
-            # PHASE 3 FIX: DELEGATED TO EXIT ORACLE
-            # QUÉ: Lógicas de Cognitive Decay y Dynamic Target eliminadas.
-            # POR QUÉ: Portfolio solo debe ser un contador mecánico (SL/TP/Trail).
-            # PARA QUÉ: Evitar conflicto con RiskManager y ExitOracle.
-            # ═══════════════════════════════════════════════════════════════
-
-            if has_decay_exit:
-                # Store votes on the position for chronicle
-                vpos['_exit_votes'] = exit_votes
-                vpos['_hold_votes'] = hold_votes
-                continue
-
-            # Standard SL/TP/Trailing evaluation with vote logging
-            exit_triggered = False
-            exit_reason = None
-            
-            if quantity > 0:  # LONG
-                if pnl_pct < th['sl']:
-                    logger.warning(f"🛑 [{horizon}] STOP LOSS for {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                    exit_triggered = True
-                    exit_reason = "STOP_LOSS"
-                    exit_votes.append("STOP_LOSS")
-                else:
-                    hold_votes.append("SL_HOLD")
-                    
-                if pnl_pct > th['tp']:
-                    if not exit_triggered:
-                        logger.info(f"💰 [{horizon}] TAKE PROFIT for {symbol}: {pnl_pct*100:.2f}%")
-                        events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                        exit_triggered = True
-                        exit_reason = "TAKE_PROFIT"
-                    exit_votes.append("TAKE_PROFIT")
-                else:
-                    hold_votes.append("TP_HOLD")
-                    
-                if drawdown_from_peak < th['trail'] and pnl_pct > th['trail_min_profit']:
-                    if not exit_triggered:
-                        logger.info(f"📉 [{horizon}] TRAILING STOP for {symbol}: Peak {hwm:.4f}, Now {current_price:.4f}")
-                        events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                        exit_triggered = True
-                        exit_reason = "TRAILING_STOP"
-                    exit_votes.append("TRAILING_STOP")
-                else:
-                    hold_votes.append("TRAIL_HOLD")
-                    
-            elif quantity < 0:  # SHORT
-                if pnl_pct < th['sl']:
-                    logger.warning(f"🛑 [{horizon}] STOP LOSS SHORT {symbol}: {pnl_pct*100:.2f}%")
-                    events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                    exit_triggered = True
-                    exit_reason = "STOP_LOSS"
-                    exit_votes.append("STOP_LOSS")
-                else:
-                    hold_votes.append("SL_HOLD")
-                    
-                if pnl_pct > th['tp']:
-                    if not exit_triggered:
-                        logger.info(f"💰 [{horizon}] TAKE PROFIT SHORT {symbol}: {pnl_pct*100:.2f}%")
-                        events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                        exit_triggered = True
-                        exit_reason = "TAKE_PROFIT"
-                    exit_votes.append("TAKE_PROFIT")
-                else:
-                    hold_votes.append("TP_HOLD")
-                    
-                if drawup_from_low < th['trail'] and pnl_pct > th['trail_min_profit']:
-                    if not exit_triggered:
-                        logger.info(f"📈 [{horizon}] TRAILING STOP SHORT {symbol}: Low {lwm:.4f}, Now {current_price:.4f}")
-                        events_queue.put(SignalEvent(strategy_id="99", symbol=symbol, datetime=now_utc, signal_type=SignalType.EXIT, strength=1.0, horizon=horizon))
-                        exit_triggered = True
-                        exit_reason = "TRAILING_STOP"
-                    exit_votes.append("TRAILING_STOP")
-                else:
-                    hold_votes.append("TRAIL_HOLD")
-            
-            # Log the winning exit vote to DB
-            if exit_triggered and trade_id_for_log:
-                self.io_executor.submit(self.db.log_exit_strategy_decision, trade_id_for_log, symbol, 0, exit_reason, "EXIT", f"pnl={pnl_pct*100:.2f}%_votes={','.join(exit_votes)}", unrealized_pnl_usd, current_price)
-            
-            # Store votes on position for chronicle enrichment
-            vpos['_exit_votes'] = exit_votes
-            vpos['_hold_votes'] = hold_votes
+        """
+        Legacy Portfolio-based exit monitoring.
+        DEPRECATED: Risk management has been centralized in RiskManager.check_stops().
+        This method is now a no-op to prevent duplicate exit signal emissions with conflicting thresholds.
+        """
+        pass
 
 
     @trace_execution
-    def get_smart_kelly_sizing(self, symbol: str, strategy_id: str) -> float:
-        # DYNAMIC CAPITAL ALLOCATION (Smart Kelly - Phase 13)
-        # Uses real historical Payoff Ratio (Avg Win / Avg Loss) for precise sizing.
+    def get_smart_kelly_sizing(self, symbol: str, strategy_id: str, is_micro_account: bool = False, horizon: str = "SCALPING") -> float:
+        """
+        [PHASE 3.2] Kelly Criterion Dinámico para Micro-Cuentas
+        QUÉ: Calcula la fracción óptima del capital a arriesgar/invertir.
+        POR QUÉ: Maximiza el crecimiento geométrico. En micro-cuentas ($13),
+           aplicamos Full Kelly (agresivo) con techo alto para escapar rápido del fondo.
+           En cuentas estándar (>= $50), usamos Half-Kelly o Quarter-Kelly por seguridad.
+        """
         perf = self.strategy_performance.get(strategy_id, {'pnl': 0.0, 'wins': 0, 'losses': 0, 'trades': 0})
         total_trades = perf['trades']
         
-        # Bootstrap default if insufficient data
-        if total_trades < 10: return 0.02
-        
+        # Default allocation ratios when lacking data
+        if total_trades < 5: 
+            if self.kelly_winrate > 0.0:
+                win_rate = self.kelly_winrate
+                loss_rate = 1.0 - win_rate
+                b = self.kelly_payoff_ratio if self.kelly_payoff_ratio > 0.0 else 2.0
+                kelly_f = win_rate - (loss_rate / b)
+                if is_micro_account:
+                    multiplier = 1.0 if horizon == "MICROSCALPING" else 0.8
+                    return max(0.02, min(0.15, kelly_f * multiplier)) # Fallback a 0.02 mínimo para permitir exploración
+                else:
+                    return max(0.01, min(0.25, kelly_f * 0.5)) # Fallback a 0.01 mínimo
+            return 0.10 if is_micro_account else 0.05
+            
         wins = perf['wins']
         losses = perf['losses']
         
-        if wins == 0: return 0.005 # Minimal size if no wins yet
-        if losses == 0: return 0.05 # Max cap if no losses yet (start strong)
+        if wins == 0: return 0.10 if is_micro_account else 0.01  # Penalty
+        if losses == 0: return 0.15 if is_micro_account else 0.10 # Perfect streak
         
         win_rate = wins / total_trades
         loss_rate = 1.0 - win_rate
         
-        # Calculate Real Payoff Ratio (b)
         total_win_amt = perf.get('total_win_pnl', 0.0)
         total_loss_amt = perf.get('total_loss_pnl', 0.0)
         
-        avg_win = total_win_amt / wins
+        avg_win = total_win_amt / wins if wins > 0 else 0.0
         avg_loss = total_loss_amt / losses if losses > 0 else 1.0
         
-        if avg_loss == 0: b = 2.0 # Safety default
-        else: b = avg_win / avg_loss
+        b = avg_win / avg_loss if avg_loss > 0 else 2.0
+        
+        if b <= 0: return 0.10 if is_micro_account else 0.01
         
         # Kelly Formula: f = p - q/b
-        if b <= 0: return 0.005
-        
         kelly_f = win_rate - (loss_rate / b)
         
-        # Fractional Kelly (Safety Factor 0.5)
-        # Cap at 5% risk per trade for HFT
-        final_size = max(0.005, min(0.05, kelly_f * 0.5))
+        if is_micro_account:
+            # [HOTFIX] Kelly reducido para Micro Cuentas (max 15%)
+            # Multiplicador adaptativo: Escalar el Kelly bruto
+            multiplier = 1.0 if horizon == "MICROSCALPING" else 0.8
+            final_size = max(0.02, min(0.15, kelly_f * multiplier))
+        else:
+            # Half-Kelly for Standard accounts
+            final_size = max(0.01, min(0.25, kelly_f * 0.5))
+            
+        import logging
+        logging.getLogger("TraderGemini").debug(f"📐 [SMART KELLY] {strategy_id} WR:{win_rate:.2f} B:{b:.2f} KF:{kelly_f:.3f} -> Alloc:{final_size*100:.1f}%")
         
         return final_size
 
@@ -2712,7 +2733,7 @@ class Portfolio:
                 'session_growth_pct': _session_growth_pct,
                 'daily_target_pct': _daily_target_pct,
                 'growth_progress': _growth_progress,
-                'thought_id': getattr(event, 'metadata', {}).get('thought_id', 'N/A'),
+                'thought_id': (getattr(event, 'metadata', {}) or {}).get('thought_id', 'N/A'),
                 # CTOS Phase 3: Prediction audit fields
                 'prediction_audit': {
                     'predicted_magnitude': _pred_mag,
@@ -2786,7 +2807,7 @@ class Portfolio:
                 'pnl': notif_pnl,
                 'commission': notif_commission,
                 'trade_id': notif_trade_id,
-                'thought_id': getattr(event, 'metadata', {}).get('thought_id', None)
+                'thought_id': (getattr(event, 'metadata', {}) or {}).get('thought_id', None)
             }
             
             # Use the position AFTER the fill, which is stored in self.positions

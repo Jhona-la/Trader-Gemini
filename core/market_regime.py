@@ -1,6 +1,6 @@
 import talib
 import numpy as np
-from utils.math_kernel import calculate_ema_jit
+from utils.math_kernel import calculate_ema_jit, calculate_adx_jit, calculate_atr_jit
 from utils.logger import logger
 from typing import Dict
 from core.market_regime_hmm import HiddenMarkovModelDetector
@@ -22,7 +22,8 @@ class MarketRegimeDetector:
         self.market_breadth = {'sentiment': 'UNKNOWN', 'bull_pct': 0.0, 'bear_pct': 0.0}
         self.regime_history = {}
         self.last_hurst = 0.5
-        self.hmm_detector = HiddenMarkovModelDetector()
+        self.hmm_detectors = {}  # Isolated HMM instances per symbol
+        self.hmm_update_counts = {}  # Track ticks for rolling calibration
         self.transition_risk = 0.0
         # Adaptive Evolution Protocol: Horizon-Aware Hysteresis
         self.hysteresis_window = 3  # Default (backward-compatible)
@@ -147,16 +148,36 @@ class MarketRegimeDetector:
             
             # --- PHASE 14: HMM REINFORCEMENT ---
             if len(bars_1m) >= 100:
-                close_prices = bars_1m['close']
+                # Check if it's a DataFrame, list of dicts, or recarray
+                if hasattr(bars_1m, 'iloc'):
+                    close_prices = np.array(bars_1m['close'], dtype=np.float64)
+                elif hasattr(bars_1m, 'to_pandas'):
+                    close_prices = np.array(bars_1m.to_pandas()['close'], dtype=np.float64)
+                elif isinstance(bars_1m, list) and len(bars_1m) > 0 and isinstance(bars_1m[0], dict):
+                    close_prices = np.array([b['close'] for b in bars_1m], dtype=np.float64)
+                else:
+                    close_prices = np.array(bars_1m['close'], dtype=np.float64)
+                    
                 rets = np.zeros(len(close_prices), dtype=np.float64)
                 if len(close_prices) > 1:
                     rets[1:] = np.diff(close_prices) / close_prices[:-1]
                     rets = np.nan_to_num(rets, nan=0.0, posinf=0.0, neginf=0.0)
                 
-                hmm_regime, trans_risk, _ = self.hmm_detector.update(rets)
+                # Instanciar HMM específico por símbolo para evitar contaminación
+                if symbol not in self.hmm_detectors:
+                    self.hmm_detectors[symbol] = HiddenMarkovModelDetector()
+                    self.hmm_detectors[symbol].calibrate(rets)
+                    self.hmm_update_counts[symbol] = 0
+                
+                # Calibración adaptiva rodante cada 1440 ticks (1 día en 1m)
+                self.hmm_update_counts[symbol] += 1
+                if self.hmm_update_counts[symbol] % 1440 == 0:
+                    self.hmm_detectors[symbol].calibrate(rets)
+                
+                hmm_regime, trans_risk, _ = self.hmm_detectors[symbol].update(rets)
                 self.transition_risk = trans_risk
                 
-                if hmm_regime == 'TREND_BEAR' and final_regime == 'TRENDING_BULL':
+                if hmm_regime == 'TRENDING_BEAR' and final_regime == 'TRENDING_BULL':
                     logger.warning(f"⚠️ [HMM Divergence] HMM=BEAR, TA=BULL for {symbol}. Risk: {trans_risk:.2f}")
 
             return final_regime
@@ -181,9 +202,30 @@ class MarketRegimeDetector:
         """
         try:
             from utils.math_kernel import calculate_hurst_exponent, compute_fuzzy_regime_scores_jit
-            c = bars['close'].astype(np.float64)
-            h = bars['high'].astype(np.float64)
-            l = bars['low'].astype(np.float64)
+            
+            # --- O(1) ZERO-COPY NATIVE EXTRACTION ---
+            if isinstance(bars, np.ndarray) and getattr(bars.dtype, 'names', None):
+                # Backtest Mode (Structured Arrays) - Ultra Fast Path
+                c = bars['close'].astype(np.float64)
+                h = bars['high'].astype(np.float64)
+                l = bars['low'].astype(np.float64)
+            elif isinstance(bars, dict) and 'close' in bars:
+                c = np.array(bars['close'], dtype=np.float64)
+                h = np.array(bars['high'], dtype=np.float64)
+                l = np.array(bars['low'], dtype=np.float64)
+            elif hasattr(bars, 'iloc'):
+                # Live Mode (Pandas)
+                c = bars['close'].values.astype(np.float64)
+                h = bars['high'].values.astype(np.float64)
+                l = bars['low'].values.astype(np.float64)
+            elif isinstance(bars, list) and len(bars) > 0 and isinstance(bars[0], dict):
+                c = np.array([b.get('close', 0.0) for b in bars], dtype=np.float64)
+                h = np.array([b.get('high', 0.0) for b in bars], dtype=np.float64)
+                l = np.array([b.get('low', 0.0) for b in bars], dtype=np.float64)
+            else:
+                c = np.array(bars['close'], dtype=np.float64)
+                h = np.array(bars['high'], dtype=np.float64)
+                l = np.array(bars['low'], dtype=np.float64)
             
             # --- Lógica Difusa (Probabilities) ---
             # Dynamic ADX scaling based on Horizon Profile
@@ -196,7 +238,7 @@ class MarketRegimeDetector:
             ema_period = max(20, int(50 * tm))
             
             # ADX and EMA with Dynamic Periods
-            adx = talib.ADX(h, l, c, timeperiod=adx_period)[-1]
+            adx = calculate_adx_jit(h, l, c, period=adx_period)[-1]
             ema_trend = calculate_ema_jit(c, ema_period)[-1]
             is_bullish = c[-1] > ema_trend
             
@@ -315,6 +357,130 @@ class MarketRegimeDetector:
         Kept for transition.
         """
         return self.detect_regime('BTC/USDT', btc_bars_1m, btc_bars_5m, None, btc_bars_1h)
+        
+    def detect_ml_regime(self, df) -> tuple[str, float, dict]:
+        """
+        Detección avanzada de régimen ML con múltiples capas de validación.
+        (Migrated from MLStrategy for centralization)
+        """
+        from config import Config
+        from collections import Counter
+        
+        if len(df) < 50:
+            return "UNKNOWN", 0.0, {}
+
+        try:
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC-V50 FIX: CAST ALL COLUMNS TO FLOAT64
+            # ═══════════════════════════════════════════════════════════════
+            float32_cols = df.select_dtypes(include=['float32']).columns
+            if len(float32_cols) > 0:
+                df = df.copy()
+                df[float32_cols] = df[float32_cols].astype(np.float64)
+
+            # Indicadores principales
+            current_adx = df["adx"].iloc[-1] if "adx" in df.columns else 20
+            current_atr_pct = (
+                (df["atr_pct"].iloc[-1] / 100) if "atr_pct" in df.columns else 0.01
+            )
+            rsi_std = df["rsi_14"].tail(20).std() if "rsi_14" in df.columns else 15
+
+            # Volatilidad y tendencia (Vectorizado numpy para latencia < 5ms)
+            close_vals = df["close"].values[-21:]
+            if len(close_vals) > 1:
+                price_volatility = float(np.std(np.diff(close_vals) / close_vals[:-1]))
+            else:
+                price_volatility = 0.0
+                
+            vol_vals = df["volume"].values[-21:]
+            if len(vol_vals) > 1:
+                volume_volatility = float(np.std(np.diff(vol_vals) / (vol_vals[:-1] + 1e-9)))
+            else:
+                volume_volatility = 0.0
+
+            # Tendencia EMAs
+            closes = df["close"].values.astype(np.float64)
+            try:
+                ema20 = float(calculate_ema_jit(closes, period=20)[-1])
+            except Exception:
+                ema20 = closes[-1]
+            try:
+                ema50 = float(calculate_ema_jit(closes, period=50)[-1])
+            except Exception:
+                ema50 = closes[-1]
+            trend_strength = abs(ema20 - ema50) / ema50 if ema50 > 0 else 0
+
+            # Sistema de scoring mejorado
+            regime_scores = {
+                "TRENDING": 0.0,
+                "RANGING": 0.0,
+                "VOLATILE": 0.0,
+                "STAGNANT": 0.0,
+                "MIXED": 0.0,
+            }
+
+            # ✅ TRENDING: ADX alto + tendencia fuerte + volatilidad controlada
+            if current_adx > Config.Strategies.ML_THRESHOLDS['regime_adx_trend']:
+                regime_scores["TRENDING"] += 0.4
+            if trend_strength > Config.Strategies.ML_THRESHOLDS['regime_trend_strength']:
+                regime_scores["TRENDING"] += 0.3
+            if current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_trend_max']:
+                regime_scores["TRENDING"] += 0.2
+            if volume_volatility < Config.Strategies.ML_THRESHOLDS['regime_vol_volatility_max']:
+                regime_scores["TRENDING"] += 0.1
+
+            # ✅ VOLATILE: ATR alto + RSI volátil + alta volatilidad precio
+            if current_atr_pct > Config.Strategies.ML_THRESHOLDS['regime_atr_volatile_min']:
+                regime_scores["VOLATILE"] += 0.5
+            if rsi_std > Config.Strategies.ML_THRESHOLDS['regime_rsi_std_volatile']:
+                regime_scores["VOLATILE"] += 0.3
+            if price_volatility > Config.Strategies.ML_THRESHOLDS['regime_price_vol_volatile']:
+                regime_scores["VOLATILE"] += 0.2
+
+            # ✅ RANGING: ADX bajo + RSI estable + baja volatilidad
+            if current_adx < Config.Strategies.ML_THRESHOLDS['regime_adx_range_max']:
+                regime_scores["RANGING"] += 0.3
+            if rsi_std < Config.Strategies.ML_THRESHOLDS['regime_rsi_std_range_max']:
+                regime_scores["RANGING"] += 0.3
+            if current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_range_max']:
+                regime_scores["RANGING"] += 0.2
+
+            # ✅ STAGNANT (ZOMBIE): Volatilidad nula o insignificante
+            price_spread = (df["high"].max() - df["low"].min()) / df["close"].mean()
+            identical_bars = (df["high"] == df["low"]).sum() / len(df)
+
+            if (
+                current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_zombie_1']
+                or price_spread < Config.Strategies.ML_THRESHOLDS['regime_spread_zombie']
+                or identical_bars > Config.Strategies.ML_THRESHOLDS['regime_ident_bars_zombie']
+            ):
+                regime_scores["STAGNANT"] += 0.8
+            elif current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_zombie_2']:
+                regime_scores["STAGNANT"] += 0.5
+                regime_scores["RANGING"] += 0.1
+
+            # ✅ MIXED: Sin señales claras o transición
+            if max(regime_scores.values()) < Config.Strategies.ML_THRESHOLDS['mixed_regime_max_score']:
+                regime_scores["MIXED"] = 1.0
+
+            # Determinar régimen dominante
+            best_regime_pair = max(regime_scores.items(), key=lambda x: x[1])
+            best_regime = best_regime_pair[0]
+            confidence = min(best_regime_pair[1] * 1.2, 1.0)  # Boost de confianza
+
+            # --- MÉTRICAS ESTADÍSTICAS PARA LOGGING ---
+            stats = {
+                "adx": float(current_adx),
+                "atr_pct": float(current_atr_pct) * 100,
+                "rsi_std": float(rsi_std),
+                "trend_strength": float(trend_strength) * 100,
+            }
+
+            return best_regime, confidence, stats
+
+        except Exception as e:
+            logger.error(f"Error detecting ML regime: {e}")
+            return "UNKNOWN", 0.0, {}
     
     def get_regime_advice(self, regime):
         """
@@ -363,6 +529,48 @@ class MarketRegimeDetector:
             
         return advice
 
+    def get_directional_bias(self, regime: str, horizon: str, direction: str) -> float:
+        """
+        [CAPA 4: LONG/SHORT INTELLIGENCE]
+        Matriz de Neuroplasticidad Direccional consciente del Horizonte.
+        Retorna la compatibilidad de 0.0 (Veto Absoluto) a 1.0 (Máxima).
+        """
+        is_bull = regime == 'TRENDING_BULL'
+        is_bear = regime == 'TRENDING_BEAR'
+        is_chop = regime in ('CHOPPY', 'ZOMBIE', 'HIGH_VOLATILITY')
+        
+        horizon = horizon.upper()
+        direction = direction.upper()
+        
+        # --- SWING / MACRO (Seguidores de Tendencia Estrictos) ---
+        if horizon in ('SWING', 'MACRO'):
+            if is_bull:
+                return 1.0 if direction == 'LONG' else 0.0
+            elif is_bear:
+                return 1.0 if direction == 'SHORT' else 0.0
+            elif is_chop:
+                return 0.0 # Veto absoluto: Swing no opera en chop/zombie
+            else: # RANGING, MEAN_REVERTING
+                return 0.5
+                
+        # --- SCALPING / MICROSCALPING (Bidireccionales Adaptativos) ---
+        elif horizon in ('SCALPING', 'MICROSCALPING'):
+            if is_bull:
+                # Permitir shorts rápidos de mean-reversion (ej. pullback al EMA)
+                return 1.0 if direction == 'LONG' else 0.7
+            elif is_bear:
+                # Permitir longs rápidos por rebotes de sobreventa extrema
+                return 1.0 if direction == 'SHORT' else 0.7
+            elif is_chop:
+                # Microscalping puede sobrevivir en chop, pero con precaución.
+                return 0.5
+            else: # RANGING, MEAN_REVERTING
+                # Ideal para el scalper bidireccional
+                return 1.0
+                
+        # Fallback de seguridad
+        return 0.5
+
     def get_learning_factor(self, regime: str) -> float:
         """
         Retorna un multiplicador para el Learning Rate basado en el Régimen.
@@ -396,7 +604,7 @@ class MarketRegimeDetector:
                 return False
                 
             # Calculate ATR (can be JIT optimized later)
-            atr_arr = talib.ATR(highs, lows, closes, timeperiod=atr_period)
+            atr_arr = calculate_atr_jit(highs, lows, closes, period=atr_period)
             current_atr = atr_arr[-1]
             
             # Current True Range
@@ -430,8 +638,8 @@ class MarketRegimeDetector:
             highs = bars_1m['high'].astype(np.float64)
             lows = bars_1m['low'].astype(np.float64)
             
-            adx = talib.ADX(highs, lows, closes, timeperiod=14)
-            atr = talib.ATR(highs, lows, closes, timeperiod=14)
+            adx = calculate_adx_jit(highs, lows, closes, period=14)
+            atr = calculate_atr_jit(highs, lows, closes, period=14)
             
             if len(adx) < 5 or len(atr) < 5: 
                 return {"forecast": "STABLE", "tension": 0.0}
@@ -452,4 +660,155 @@ class MarketRegimeDetector:
             }
         except:
             return {"forecast": "UNKNOWN", "tension": 0.0}
+
+    def calculate_isn_and_med(self, symbol: str, df, sl_score: float, sc_score: float, funding_rate: float = 0.0) -> dict:
+        """
+        [MÓDULO DUAL - Inteligencia Bidireccional]
+        Calcula el Índice de Sesgo Neto (ISN) y determina el Mapa de Estado Direccional (MED).
+        Retorna un dict con {'isn': int, 'med': str, 'volatility': float}
+        """
+        if df is None or len(df) < 50:
+            return {'isn': 0, 'med': 'MED-4', 'volatility': 0.0}
+            
+        try:
+            # Extract float arrays safely (O(1) memory view)
+            if isinstance(df, np.ndarray) and getattr(df.dtype, 'names', None):
+                c = df['close'].astype(np.float64)
+                h = df['high'].astype(np.float64)
+                l = df['low'].astype(np.float64)
+                v = df['volume'].astype(np.float64)
+            elif hasattr(df, 'iloc'):
+                c = df['close'].values.astype(np.float64)
+                h = df['high'].values.astype(np.float64)
+                l = df['low'].values.astype(np.float64)
+                v = df['volume'].values.astype(np.float64)
+            elif isinstance(df, list) and len(df) > 0 and isinstance(df[0], dict):
+                c = np.array([b.get('close', 0.0) for b in df], dtype=np.float64)
+                h = np.array([b.get('high', 0.0) for b in df], dtype=np.float64)
+                l = np.array([b.get('low', 0.0) for b in df], dtype=np.float64)
+                v = np.array([b.get('volume', 0.0) for b in df], dtype=np.float64)
+            else:
+                c = np.array(df['close'], dtype=np.float64)
+                h = np.array(df['high'], dtype=np.float64)
+                l = np.array(df['low'], dtype=np.float64)
+                v = np.array(df['volume'], dtype=np.float64)
+            
+            # EMA Calculations
+            ema50 = calculate_ema_jit(c, 50)[-1]
+            ema200 = calculate_ema_jit(c, 200)[-1]
+            
+            # ADX Calculation
+            adx_arr = calculate_adx_jit(h, l, c, period=14)
+            adx = adx_arr[-1]
+            
+            # ATR y Volatilidad
+            atr_arr = calculate_atr_jit(h, l, c, period=14)
+            current_atr_pct = (atr_arr[-1] / c[-1]) * 100
+            
+            # CVD Proxy (Sign of price change * volume)
+            if len(c) > 20:
+                price_changes = np.diff(c[-21:])
+                signs = np.sign(price_changes)
+                cvd_proxy = np.sum(signs * v[-20:])
+                cvd_points = 15 if cvd_proxy > 0 else -15
+            else:
+                cvd_proxy = 0
+                cvd_points = 0
+            
+            # Puntos Funding
+            from config import Config
+            funding_points = 0
+            if funding_rate >= getattr(Config.DualDirectional, 'FUNDING_EXTREME_POS', 0.0005):
+                funding_points = -20 # Extreme pos funding favors short
+            elif funding_rate <= getattr(Config.DualDirectional, 'FUNDING_EXTREME_NEG', -0.0002):
+                funding_points = 20  # Extreme neg funding favors long
+                
+            # Puntos Tendencia (Macro)
+            trend_points = 0
+            if c[-1] > ema50 and ema50 > ema200 and adx > 25:
+                trend_points = 30
+            elif c[-1] < ema50 and ema50 < ema200 and adx > 25:
+                trend_points = -30
+                
+            # Puntos Modelo (Basado en SL y SC)
+            model_points = 0
+            if sl_score > sc_score and sl_score > 65:
+                model_points = 25
+            elif sc_score > sl_score and sc_score > 65:
+                model_points = -25
+                
+            # Calcular ISN Final (-100 a +100)
+            isn = cvd_points + funding_points + trend_points + model_points
+            isn = max(min(isn, 100), -100)
+            
+            # Mapa de Estado Direccional (MED)
+            if isn > 50:
+                med = 'MED-1' # Bullish Extremo
+            elif 15 <= isn <= 50:
+                med = 'MED-2' # Bullish Moderado
+            elif -14 <= isn <= 14:
+                # Volatility threshold relative to normally expected ATR %
+                if current_atr_pct > 0.15: # Arbitrary high-vol threshold
+                    med = 'MED-3' # Rango Estructural
+                else:
+                    med = 'MED-4' # Rango Volátil / Choppy
+            elif -50 <= isn <= -15:
+                med = 'MED-5' # Bearish Moderado
+            else:
+                med = 'MED-6' # Bearish Extremo
+                
+            # Override global regime logic for compatibility
+            self.last_regime[symbol] = med
+            
+            return {
+                'isn': isn,
+                'med': med,
+                'volatility': current_atr_pct,
+                'cvd_proxy': cvd_proxy
+            }
+            
+        except Exception as e:
+            logger.error(f"Error en calculate_isn_and_med: {e}")
+            return {'isn': 0, 'med': 'MED-4', 'volatility': 0.0}
+
+    def get_hmm_risk_multiplier(self, symbol: str, direction: str) -> float:
+        """
+        [CAPA 14: HMM DIVERGENCE PROTECTION]
+        QUÉ: Retorna un multiplicador de riesgo (0.25 a 1.0) basado en la alineación HMM.
+        POR QUÉ: Si la tendencia técnica (EMA) dice comprar (LONG) pero la distribución de 
+                 retornos de Markov (HMM) es fuertemente bajista, es una trampa mortal de distribución.
+        PARA QUÉ: Reducir pérdidas y subir WR a ~100% filtrando trade traps.
+        """
+        try:
+            if symbol not in self.hmm_detectors:
+                return 1.0
+                
+            hmm = self.hmm_detectors[symbol]
+            # Determinar el estado más probable y su probabilidad
+            state_idx = int(np.argmax(hmm.state_probabilities))
+            hmm_regime = hmm.REGIMES.get(state_idx, 'UNKNOWN')
+            prob = hmm.state_probabilities[state_idx]
+            
+            direction = direction.upper()
+            
+            # Divergencia 1: Queriendo ir LONG cuando HMM es fuertemente bajista (TRENDING_BEAR)
+            if direction == 'LONG' and hmm_regime == 'TRENDING_BEAR' and prob > 0.60:
+                logger.warning(f"🛡️ [HMM VETO] Long divergence on {symbol}. HMM is TRENDING_BEAR ({prob:.0%}). Risk Multiplier applied.")
+                return 0.25
+                
+            # Divergencia 2: Queriendo ir SHORT cuando HMM es fuertemente alcista (TRENDING_BULL)
+            if direction == 'SHORT' and hmm_regime == 'TRENDING_BULL' and prob > 0.60:
+                logger.warning(f"🛡️ [HMM VETO] Short divergence on {symbol}. HMM is TRENDING_BULL ({prob:.0%}). Risk Multiplier applied.")
+                return 0.25
+                
+            # Divergencia 3: Queriendo operar en alta volatilidad caótica (CHOPPY)
+            if hmm_regime == 'CHOPPY' and prob > 0.70:
+                logger.warning(f"🛡️ [HMM VETO] High Choppiness on {symbol} ({prob:.0%}). Reducing risk.")
+                return 0.50
+                
+            return 1.0
+        except Exception as e:
+            logger.error(f"Error in get_hmm_risk_multiplier: {e}")
+            return 1.0
+
 

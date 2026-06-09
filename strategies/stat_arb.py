@@ -172,7 +172,7 @@ class StatArbStrategy(Strategy):
     QUÉ: Estrategia de arbitraje estadístico por cointegración.
     POR QUÉ: Arbitraje estadístico en SWING captura mean-reversion
       de spreads a largo plazo, necesita TP/SL más amplios.
-    CÓMO: Lee Config.Strategies.SCALPING_PARAMS o SWING_PARAMS.
+    CÓMO: Lee Config.Horizons.Scalping o SWING_PARAMS.
     DÓNDE: strategies/stat_arb.py → StatArbStrategy
     QUIÉN: StatArbStrategy (Quant Developer)
     ═══════════════════════════════════════════════════════════════
@@ -190,9 +190,9 @@ class StatArbStrategy(Strategy):
         # PHASE FORENSIC-4: HORIZON-AWARE PARAMETER LOADING
         # ================================================================
         if horizon.upper() == 'SCALPING':
-            h_params = getattr(Config.Strategies, 'SCALPING_PARAMS', {})
+            h_params = getattr(Config.Horizons, 'Scalping', {})
         elif horizon.upper() == 'SWING':
-            h_params = getattr(Config.Strategies, 'SWING_PARAMS', {})
+            h_params = getattr(Config.Horizons, 'Swing', {})
         else:
             h_params = {}
         
@@ -223,8 +223,8 @@ class StatArbStrategy(Strategy):
             px = data_x['close'].values[-500:]
             py = data_y['close'].values[-500:]
             
-            # FORENSIC-4 FIX: Correct method name
-            coint = self.engine.lite_engle_granger(px, py)
+            # FORENSIC-4 FIX: Correct method name and regression order (regress py on px)
+            coint = self.engine.lite_engle_granger(py, px)
             
             if coint.is_cointegrated and abs(coint.z_score) > 2.0:
                 signal_type = SignalType.SHORT if coint.z_score > 0 else SignalType.LONG
@@ -250,11 +250,12 @@ class StatArbStrategy(Strategy):
                     sophia_report_dict = sophia_report.to_dict()
                     
                 signal = SignalEvent(
-                    strategy_id="STATARB",
+                    strategy_id=self.strategy_id,
                     symbol=y_sym,
                     datetime=datetime.now(timezone.utc),
                     signal_type=signal_type,
                     strength=0.85,
+                    ml_confidence=sophia_report.win_probability if 'sophia_report' in locals() and sophia_report else 0.5,
                     atr=0.0,
                     tp_pct=self.TP_PCT,
                     sl_pct=self.SL_PCT,
@@ -269,3 +270,33 @@ class StatArbStrategy(Strategy):
             
     def calculate_signals(self, event):
         self.generate_signals(event)
+
+    def check_exit(self, position, current_price, data_provider, now=None):
+        if now is None:
+            now = datetime.now(timezone.utc)
+            
+        qty = position.get("quantity", 0.0)
+        symbol = position.get("symbol")
+        pos_horizon = position.get("horizon", self.horizon)
+        
+        # 🧠 [INTELLIGENT EXIT]: Sophia AI Real-time validation
+        if hasattr(self, 'sophia') and self.sophia:
+            try:
+                df_primary = data_provider.get_data(symbol, "5m")
+                if df_primary is not None and not df_primary.empty:
+                    sophia_report = self.sophia.get_insight(symbol, df_primary)
+                    if sophia_report:
+                        current_prob = sophia_report.win_probability
+                        if current_prob < 0.45:
+                            logger.warning(f"🧠 [SOPHIA EXIT] StatArb {symbol} AI confidence dropped to {current_prob:.2f}")
+                            return SignalEvent(
+                                strategy_id="SOPHIA_EMERGENCY_EXIT",
+                                symbol=symbol,
+                                datetime=now,
+                                signal_type=SignalType.EXIT,
+                                horizon=pos_horizon,
+                                metadata={"exit_reason": f"SOPHIA_LOSS_OF_CONFIDENCE:{current_prob:.2f}"}
+                            )
+            except Exception as e:
+                logger.debug(f"⚠️ Sophia exit check failed for {symbol}: {e}")
+        return None

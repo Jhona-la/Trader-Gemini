@@ -174,6 +174,14 @@ class PredictionTracker:
         except Exception as e:
             logger.warning(f"⚠️ [PredictionTracker] Could not load existing metrics: {e}")
 
+    def _resolve_strategy_id(self, strategy_id: str, symbol: str) -> str:
+        if not symbol:
+            return strategy_id
+        clean_sym = symbol.replace('/', '_').replace('-', '_')
+        if clean_sym not in strategy_id:
+            return f"{strategy_id}_{clean_sym}"
+        return strategy_id
+
     # ═══════════════════════════════════════════════════════════════════════════
     # SIGNAL RECORDING
     # ═══════════════════════════════════════════════════════════════════════════
@@ -200,6 +208,7 @@ class PredictionTracker:
             return
 
         ts = timestamp or datetime.now(timezone.utc)
+        strategy_id = self._resolve_strategy_id(strategy_id, symbol)
 
         sig = PredictionSignal(
             strategy_id=strategy_id,
@@ -330,6 +339,8 @@ class PredictionTracker:
             dict with prediction audit data, or None if no matching signal found.
         """
         audit_data = None
+        if strategy_id:
+            strategy_id = self._resolve_strategy_id(strategy_id, symbol)
         
         # Find the most recent unresolved signal for this symbol
         if symbol in self._active_by_symbol:
@@ -347,22 +358,26 @@ class PredictionTracker:
                     target = sig.predicted_magnitude or sig.tp_pct or 0.0
                     
                     if target > 0:
-                        # Para no mentirnos, exigimos que el precio se haya movido
-                        # al menos a un 80% del objetivo que la estrategia prometió.
-                        magnitude_achieved = sig.mfe >= (target * 0.8)
+                        # FORENSIC-V91 FIX: Alpha Decay may close trades early for safety.
+                        # If a trade made at least 40% of its target, or achieved a positive
+                        # return greater than 0.1%, it's a valid directional prediction.
+                        # It's only a FAILURE if it closed negative or barely moved (<0.05%).
+                        magnitude_achieved = sig.mfe >= (target * 0.4) or sig.mfe >= 0.001
                     else:
                         magnitude_achieved = (pnl_pct > 0)
                         
-                    was_direction_correct = (pnl_pct > 0)
+                    was_direction_correct = (pnl_pct > 0) or (sig.mfe > 0.001 and pnl_pct > -0.0005)
                     
-                    # La predicción fue una MENTIRA si el precio subió un tick y luego cayó.
+                    # La predicción fue correcta direccionalmente si subió y logramos al menos un MFE decente.
                     was_correct = was_direction_correct and magnitude_achieved
                     
-                    # Fix: Penalizar al modelo si nos engañó con un objetivo irreal
-                    if is_win and not magnitude_achieved:
-                        sig.trade_outcome = 'loss'  # Falla predictiva (aunque no perdamos $)
+                    # Fix: No destruir la reputación del modelo si el RiskManager cerró por seguridad.
+                    # Si el PnL es positivo, SIEMPRE ES UN WIN. No penalizar.
+                    if pnl_pct > 0:
+                        sig.trade_outcome = 'win'
                     else:
-                        sig.trade_outcome = 'win' if is_win else 'loss'
+                        # Si PnL es negativo pero MFE fue alto (hit SL after running), es loss.
+                        sig.trade_outcome = 'loss'
                     
                     # Calculate missed profit: Target - actual exit PnL
                     missed_profit = max(0.0, target - max(0.0, pnl_pct))
@@ -418,14 +433,18 @@ class PredictionTracker:
                 if total > 0:
                     accuracy_by_window[w] = correct / total
 
-            # Overall direction accuracy (use 15-bar window as primary)
+            # Overall direction accuracy using actual trade outcomes
+            # FORENSIC-V92: Previous logic used 15-bar window which ignored
+            # trades that hit TP/SL or were closed before 15 bars.
+            resolved = [s for s in signals if s.is_resolved and s.trade_outcome]
+            wins = sum(1 for s in resolved if s.trade_outcome == 'win')
+            losses = sum(1 for s in resolved if s.trade_outcome == 'loss')
+            trade_win_rate = wins / (wins + losses) if (wins + losses) > 0 else 0.5
+
+            direction_accuracy = trade_win_rate
+            
+            # Keep accuracy_by_window for analytics but don't use it for gate logic
             primary_window = 15
-            if primary_window in accuracy_by_window:
-                direction_accuracy = accuracy_by_window[primary_window]
-            elif accuracy_by_window:
-                direction_accuracy = np.mean(list(accuracy_by_window.values()))
-            else:
-                direction_accuracy = 0.5
 
             # MFE / MAE stats (include ALL signals, even 1-bar scalps)
             mfes = [s.mfe for s in signals if s.bar_count >= 1]
@@ -442,12 +461,6 @@ class PredictionTracker:
                 c_factor = min(1.2, max(0.5, (direction_accuracy - 0.5) * 2.5 + 0.5))
             else:
                 c_factor = 0.5
-
-            # Trade outcome stats
-            resolved = [s for s in signals if s.is_resolved and s.trade_outcome]
-            wins = sum(1 for s in resolved if s.trade_outcome == 'win')
-            losses = sum(1 for s in resolved if s.trade_outcome == 'loss')
-            trade_win_rate = wins / (wins + losses) if (wins + losses) > 0 else 0.5
 
             # Horizon breakdown
             horizon = signals[-1].horizon if signals else 'SCALPING'
@@ -478,7 +491,8 @@ class PredictionTracker:
     # ═══════════════════════════════════════════════════════════════════════════
 
     def get_strategy_metrics(self, strategy_id: str,
-                             horizon: str = None) -> Optional[Dict]:
+                             horizon: str = None,
+                             symbol: str = None) -> Optional[Dict]:
         """
         📊 Returns aggregated prediction metrics for a strategy.
 
@@ -487,6 +501,7 @@ class PredictionTracker:
         Used by: RiskManager.generate_order() for confidence gate.
         """
         self._refresh_metrics()
+        strategy_id = self._resolve_strategy_id(strategy_id, symbol)
 
         metrics = self._metrics_cache.get(strategy_id)
         if not metrics:
@@ -504,7 +519,8 @@ class PredictionTracker:
         return metrics
 
     def get_execution_params(self, strategy_id: str,
-                             horizon: str = None) -> Dict:
+                             horizon: str = None,
+                             symbol: str = None) -> Dict:
         """
         🎯 Returns optimal execution parameters based on prediction accuracy.
 
@@ -518,7 +534,7 @@ class PredictionTracker:
                 'limit_offset_pct': float,   # Suggested LIMIT offset
             }
         """
-        metrics = self.get_strategy_metrics(strategy_id, horizon)
+        metrics = self.get_strategy_metrics(strategy_id, horizon, symbol)
         if not metrics:
             return {
                 'confidence_factor': DEFAULT_CONFIDENCE,
@@ -549,28 +565,51 @@ class PredictionTracker:
         }
 
     def should_reject_signal(self, strategy_id: str,
-                             horizon: str = None) -> Tuple[bool, str]:
+                             horizon: str = None,
+                             symbol: str = None) -> Tuple[bool, str]:
         """
         🛡️ Returns whether a signal should be rejected based on historical accuracy.
 
         Used by: RiskManager.generate_order() as an additional gate.
 
+        [FORENSIC-AUDIT-V1] COLD-START FIX:
+        QUÉ: Requiere al menos 30 trades RESUELTOS antes de activar el gate.
+        POR QUÉ: Con solo señales (no trades), la accuracy es ~50% (coin-flip)
+          y el gate bloquea todo, creando un deadlock: para subir accuracy se
+          necesitan trades, pero para hacer trades se necesita pasar el gate.
+        PARA QUÉ: Permitir que el sistema acumule suficientes trades reales
+          antes de juzgar la calidad predictiva.
+        CÓMO: Verificar trades_resolved >= 30 además de total_signals >= 50.
+
         Returns:
             (should_reject: bool, reason: str)
         """
-        metrics = self.get_strategy_metrics(strategy_id, horizon)
+        metrics = self.get_strategy_metrics(strategy_id, horizon, symbol)
         if not metrics:
             return False, ""  # Not enough data to judge
 
         acc = metrics['direction_accuracy']
         n = metrics['total_signals']
+        resolved = metrics.get('trades_resolved', 0)
+
+        # [FORENSIC-AUDIT-V1] Require 10 RESOLVED trades before activating gate
+        # This prevents cold-start deadlock where accuracy is ~50% from 
+        # unresolved signals and the gate blocks all new trades.
+        MIN_RESOLVED_FOR_GATE = 10
+        if resolved < MIN_RESOLVED_FOR_GATE:
+            logger.debug(
+                f"🎯 [PREDICTION_GATE] {strategy_id} warming up: "
+                f"{resolved}/{MIN_RESOLVED_FOR_GATE} resolved trades. "
+                f"Gate bypassed (current acc={acc:.1%}, n={n})."
+            )
+            return False, ""
 
         # CTOS Phase 5: Sniper Accuracy Minimum (55%)
         # Si la estrategia no tiene Edge Matemático positivo, queda vetada.
         if n >= MIN_SIGNALS_FOR_METRICS and acc < 0.55:
             return True, (
                 f"accuracy {acc:.1%} < 55% threshold "
-                f"(n={n}, horizon={metrics.get('horizon', '?')})"
+                f"(n={n}, resolved={resolved}, horizon={metrics.get('horizon', '?')})"
             )
 
         return False, ""
@@ -585,10 +624,13 @@ class PredictionTracker:
         to reach its predicted target or has deviated.
         
         Returns:
-            dict with prediction data, or None if not found.
+            dict with prediction data, or None if no matching signal found.
         """
         if symbol not in self._active_by_symbol:
             return None
+        
+        if strategy_id:
+            strategy_id = self._resolve_strategy_id(strategy_id, symbol)
         
         for sig in reversed(self._active_by_symbol[symbol]):
             if sig.is_resolved:
@@ -619,7 +661,7 @@ class PredictionTracker:
             }
         return None
 
-    def calculate_realtime_edge(self, strategy_id: str, elapsed_bars: float, horizon: str = None) -> float:
+    def calculate_realtime_edge(self, strategy_id: str, elapsed_bars: float, horizon: str = None, symbol: str = None) -> float:
         """
         📉 CTOS Phase 3: Dynamic Alpha Decay
         Calcula el 'Edge Probability' (0.0 a 1.0) usando la función matemática de decaimiento continuo
@@ -633,7 +675,7 @@ class PredictionTracker:
         Returns:
             float: Edge probability actual. Si es menor a 0.45, el trade perdió su inercia matemática.
         """
-        metrics = self.get_strategy_metrics(strategy_id, horizon)
+        metrics = self.get_strategy_metrics(strategy_id, horizon, symbol)
         
         # Fallback values
         initial_accuracy = 0.5

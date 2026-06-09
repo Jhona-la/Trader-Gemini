@@ -24,8 +24,8 @@ def objective(trial, all_data, symbols, horizon_days, strategy_name='Technical')
     # ── ESPACIO DE BÚSQUEDA ──────────────────────────────────────────────────
     
     # 1. SL/TP Calibration
-    sl_pct = trial.suggest_float('sl_pct', 0.0010, 0.0050, step=0.0005)
-    tp_sl_ratio = trial.suggest_float('tp_sl_ratio', 1.5, 4.0, step=0.25)
+    sl_pct = trial.suggest_float('sl_pct', 0.0010, 0.0030, step=0.0005)
+    tp_sl_ratio = trial.suggest_float('tp_sl_ratio', 1.5, 2.5, step=0.25)
     tp_pct = sl_pct * tp_sl_ratio
     
     # 2. Sensibilidad
@@ -33,19 +33,19 @@ def objective(trial, all_data, symbols, horizon_days, strategy_name='Technical')
     ml_confidence = trial.suggest_float('ml_confidence', 0.48, 0.65, step=0.02)
     
     # 3. Trailing & Scaling
-    cooldown_sec = trial.suggest_int('cooldown_seconds', 15, 60, step=15)
+    cooldown_sec = trial.suggest_int('cooldown_seconds', 60, 300, step=60)
     
     # ── INYECTAR PARÁMETROS EN CONFIGURACIÓN GLOBAL ──────────────────────────
-    _orig_scalp = Config.Strategies.SCALPING_PARAMS.copy()
-    _orig_swing = Config.Strategies.SWING_PARAMS.copy()
+    _orig_scalp = Config.Horizons.Scalping.copy()
+    _orig_swing = Config.Horizons.Swing.copy()
     _orig_min_conf = Config.Strategies.ML_MIN_CONFIDENCE
     
     try:
         # Parchar la configuración específica del horizonte
         if horizon_days <= 1:
-            params = Config.Strategies.SCALPING_PARAMS
+            params = Config.Horizons.Scalping
         else:
-            params = Config.Strategies.SWING_PARAMS
+            params = Config.Horizons.Swing
             
         params['sl_pct'] = sl_pct
         params['tp_pct'] = tp_pct
@@ -66,8 +66,8 @@ def objective(trial, all_data, symbols, horizon_days, strategy_name='Technical')
         return -100.0
     finally:
         # Limpieza Incondicional de la estructura mutada
-        Config.Strategies.SCALPING_PARAMS = _orig_scalp
-        Config.Strategies.SWING_PARAMS = _orig_swing
+        Config.Horizons.Scalping = _orig_scalp
+        Config.Horizons.Swing = _orig_swing
         Config.Strategies.ML_MIN_CONFIDENCE = _orig_min_conf
         
     # ── EVALUAR RESULTADO A PARTIR DE GOD MODE MÉTRICAS ──────────────────────

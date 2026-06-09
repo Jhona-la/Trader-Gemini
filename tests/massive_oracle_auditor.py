@@ -13,7 +13,7 @@ import numpy as np
 sys.path.insert(0, os.getcwd())
 
 from config import Config
-from core.backtest_infra import fetch_binance_data, calculate_metrics
+from core.backtest_infra import fetch_binance_data, calculate_metrics, run_backtest
 
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):

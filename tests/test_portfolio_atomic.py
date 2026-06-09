@@ -31,14 +31,17 @@ class TestPortfolioAtomic(unittest.TestCase):
                 
                 # 2. Occasional fills
                 if i % 10 == 0:
+                    from datetime import datetime, timezone
                     fill = FillEvent(
-                        timestamp_ns=time.time_ns(),
-                        timeindex=time.time_ns(),
+                        timeindex=datetime.now(timezone.utc),
                         symbol=symbol,
                         exchange="BINANCE",
                         quantity=0.1,
                         direction=OrderSide.BUY if (i // 10) % 2 == 0 else OrderSide.SELL,
-                        fill_cost=5000.0 if (i // 10) % 2 == 0 else 5100.0
+                        fill_cost=5000.0 if (i // 10) % 2 == 0 else 5100.0,
+                        fill_price=50000.0 if (i // 10) % 2 == 0 else 51000.0,
+                        commission=0.002,
+                        horizon="SCALPING"
                     )
                     portfolio.update_fill(fill)
                 i += 1

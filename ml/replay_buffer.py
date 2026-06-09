@@ -30,7 +30,7 @@ class PrioritizedReplayBuffer:
         que las nuevas experiencias sean muestreadas al menos una vez.
         """
         # Calcular error/prioridad inicial
-        max_prio = self.priorities.max() if self.buffer else 1.0
+        max_prio = max(self.priorities.max() if self.buffer else 1.0, 1.0)
         
         # Inyectar severidad si Axioma falló duro
         if "THESIS" in axioma_reason or "CRASH" in axioma_reason:

@@ -17,6 +17,10 @@ logger = setup_logger('test_connectivity')
 import pytest
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv('RUN_LIVE_TESTS') != 'TRUE',
+    reason="Skipping live websocket test to avoid Windows heap corruption and real network dependency. Set RUN_LIVE_TESTS=TRUE to run."
+)
 async def test_websocket():
     logger.info("Testing WebSocket Connectivity...")
     
@@ -42,7 +46,7 @@ async def test_websocket():
                 bars = loader.get_latest_bars(sym)
                 if bars:
                     latest = bars[-1]
-                    logger.info(f"Received {sym}: {latest['close']} @ {latest['datetime']}")
+                    logger.info(f"Received {sym}: {latest['close']} @ {latest['timestamp']}")
                 else:
                     logger.warning(f"No data for {sym} yet")
                     

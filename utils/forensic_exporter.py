@@ -17,7 +17,7 @@ QUIÉN: QA Engineer + Quant Developer
 """
 
 import os
-import json
+from utils.fast_json import FastJson as json
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
@@ -53,8 +53,7 @@ class ForensicExporter:
             "timestamp": datetime.utcnow().isoformat(),
             **alpha_leak
         }
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2)
+        json.dump_to_file(data, path)
         logger.info(f"📊 [FORENSIC] Alpha Leak Table exported to {path}")
         return path
 

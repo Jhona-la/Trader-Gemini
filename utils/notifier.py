@@ -574,10 +574,63 @@ class Notifier:
                 if _p_target:
                     msg += f" → `${float(_p_target):,.2f}`"
                 msg += "\n"
+            
+            # Full Candle Prediction Extracted from Metadata
+            _p_high = td.metadata.get('predicted_next_high')
+            _p_low = td.metadata.get('predicted_next_low')
+            if _p_high is not None and _p_low is not None:
+                msg += f"   🕯️ Vela Próxima: `[↑{float(_p_high)*100:.2f}% ↓{float(_p_low)*100:.2f}%]`\n"
+                
             if _p_dur:
-                msg += f"   Tiempo: `~{_p_dur} barras`\n"
+                msg += f"   ⏱️ Tiempo (TTP): `~{_p_dur} barras`\n"
             if _p_conf:
-                msg += f"   Confianza: `{float(_p_conf)*100:.1f}%`\n"
+                msg += f"   🤖 Confianza IA: `{float(_p_conf)*100:.1f}%`\n"
+                
+            omni_route = td.metadata.get('omni_route')
+            if omni_route:
+                bar_dur = omni_route.get('bar_duration', '1 minuto')
+                total_c = omni_route.get('total_candles', 1000)
+                
+                msg += f"\n🌌 *OMNISCIENCE ({total_c} Velas de {bar_dur}):*\n"
+                
+                # Macro peak and dump with time labels
+                msg += f"   ⛰️ Peak: `+{omni_route.get('macro_peak_pct', 0.0):.2f}%`"
+                if 'macro_peak_usd' in omni_route:
+                    msg += f" → `${omni_route['macro_peak_usd']:,.2f}`"
+                msg += f" (en `{omni_route.get('macro_peak_time', 'N/A')}`, barra {omni_route.get('macro_peak_bars', 0)})\n"
+                msg += f"   🕳️ Dump: `{omni_route.get('macro_dump_pct', 0.0):.2f}%`"
+                if 'macro_dump_usd' in omni_route:
+                    msg += f" → `${omni_route['macro_dump_usd']:,.2f}`"
+                msg += f" (en `{omni_route.get('macro_dump_time', 'N/A')}`, barra {omni_route.get('macro_dump_bars', 0)})\n"
+                
+                # Individual candles (first 5)
+                first_candles = omni_route.get('first_10_candles', [])[:5]
+                if first_candles:
+                    msg += f"\n   🕯️ *Próximas Velas (cada una = {bar_dur}):*\n"
+                    for c in first_candles:
+                        icon = "🟢" if c.get('bullish', True) else "🔴"
+                        msg += (
+                            f"   {icon} `T+{c['bar']}` ({c.get('time', '?')}): "
+                            f"O=`${c['open_usd']:,.2f}` H=`${c['high_usd']:,.2f}` "
+                            f"L=`${c['low_usd']:,.2f}` C=`${c['close_usd']:,.2f}` "
+                            f"| Tamaño: `${c['candle_size_usd']:.2f}` (`{c['candle_size_pct']:.2f}%`)\n"
+                        )
+                
+                # Key waypoints (T+10, T+50, T+100, T+500, T+1000)
+                waypoints = omni_route.get('waypoints', [])
+                if len(waypoints) > 2:
+                    msg += f"\n   📍 *Waypoints Clave:*\n"
+                    for wp in waypoints[2:]:  # Skip T+1 and T+5 (already shown above)
+                        icon = "📈" if wp.get('close_pct', 0) > 0 else "📉"
+                        msg += (
+                            f"   {icon} `T+{wp['bar']}` ({wp.get('time', '?')}): "
+                            f"`{wp['close_pct']:+.2f}%` → `${wp['close_usd']:,.2f}` "
+                            f"| Vela: `${wp['candle_size_usd']:.2f}` (`{wp['candle_size_pct']:.2f}%`)\n"
+                        )
+                        
+                inf_ms = omni_route.get('inference_ms', 0)
+                if inf_ms > 0:
+                    msg += f"   ⚡ Latencia: `{inf_ms:.1f}ms`\n"
 
         _open_size = trade_data.get('open_size_usd', 0.0)
         if _open_size > 0:
@@ -748,21 +801,58 @@ class Notifier:
 
         if _p_mag or _p_dur:
             pred_icon = "✅" if _was_correct else "❌"
-            msg += f"🧠 *Predicción de Estrategia:* {pred_icon}\n"
+            msg += f"🧠 *Predicción Direccional (MFE IA):* {pred_icon}\n"
             if _p_mag:
-                msg += f"   Se predijo magnitud: `+{float(_p_mag)*100:.2f}%`"
+                pred_mag_pct = float(_p_mag) * 100
+                msg += f"   🎯 IA Predijo MFE: `+{pred_mag_pct:.2f}%` a favor"
                 if _p_target:
-                    msg += f" → `${float(_p_target):,.2f}`"
+                    msg += f" → `${float(_p_target):,.4f}`"
                 msg += "\n"
-                msg += f"   Realidad lograda: `{td.net_pnl_pct:+,.2f}%`\n"
+                
+                # Realidad: Comparamos con el MFE real que tuvo el trade, NO con el PnL neto
+                msg += f"   📊 Realidad (MFE): `+{td.mfe_pct:.2f}%` a favor\n"
+                
+                # Error Absoluto
+                abs_error = abs(pred_mag_pct - td.mfe_pct)
+                msg += f"   📏 Precisión Mag: `Error de {abs_error:.2f}%`\n"
+                
+                # PnL final comparado con MFE
+                msg += f"   💰 PnL Final capturado: `{td.net_pnl_pct:+,.2f}%`\n"
+                
+            _p_high = td.metadata.get('predicted_next_high')
+            _p_low = td.metadata.get('predicted_next_low')
+            if _p_high is not None and _p_low is not None:
+                msg += f"   🕯️ Vela IA: `[↑{float(_p_high)*100:.2f}% ↓{float(_p_low)*100:.2f}%]`\n"
+                
             if _p_dur:
-                msg += f"   Se predijo tiempo: `{_p_dur} barras`\n"
-                msg += f"   Realidad tiempo: `{td.duration}`\n"
-            msg += f"   {pred_icon} Predicción {'ACERTADA' if _was_correct else 'FALLIDA'}\n"
+                msg += f"   ⏱️ IA Predijo Tiempo: `{_p_dur} barras`\n"
+                msg += f"   ⏳ Realidad Tiempo: `{td.duration}`\n"
+                
+            msg += f"   {pred_icon} Veredicto IA: {'ACERTADA' if _was_correct else 'FALLIDA'}\n"
+            
             if _optimal_exit:
-                msg += f"   💡 Punto óptimo (MFE): `${float(_optimal_exit):,.4f}`\n"
+                msg += f"   💡 Precio Óptimo (Cima del MFE): `${float(_optimal_exit):,.4f}`\n"
             if _missed_profit and float(_missed_profit) > 0:
-                msg += f"   🕳️ Ganancia perdida: `{float(_missed_profit)*100:.2f}%`\n"
+                msg += f"   🕳️ Dinero dejado en la mesa: `{float(_missed_profit)*100:.2f}%`\n"
+            
+            # Omniscient Route Retrospective
+            omni_route = td.metadata.get('omni_route')
+            if omni_route:
+                bar_dur = omni_route.get('bar_duration', '1 minuto')
+                msg += f"\n🌌 *Ruta Omnisciente (barras de {bar_dur}):*\n"
+                msg += (
+                    f"   ⛰️ IA Predijo Peak: `+{omni_route.get('macro_peak_pct', 0.0):.2f}%`"
+                )
+                if 'macro_peak_usd' in omni_route:
+                    msg += f" → `${omni_route['macro_peak_usd']:,.2f}`"
+                msg += f" en `{omni_route.get('macro_peak_time', 'N/A')}`\n"
+                msg += (
+                    f"   🕳️ IA Predijo Dump: `{omni_route.get('macro_dump_pct', 0.0):.2f}%`"
+                )
+                if 'macro_dump_usd' in omni_route:
+                    msg += f" → `${omni_route['macro_dump_usd']:,.2f}`"
+                msg += f" en `{omni_route.get('macro_dump_time', 'N/A')}`\n"
+                msg += f"   📊 Realidad (MFE): `+{td.mfe_pct:.2f}%` | MAE: `{td.mae_pct:.2f}%`\n"
 
         # B) Size Tracking: Open → Close
         _open_sz = trade_data.get('open_size_usd', 0.0)
@@ -1494,14 +1584,16 @@ class Notifier:
     # ══════════════════════════════════════════════════════════════════════
 
     @staticmethod
-    def shutdown():
+    def shutdown(wait=True):
         """Graceful shutdown of the ThreadPoolExecutor."""
         if Notifier._executor:
             try:
-                Notifier._executor.shutdown(wait=False)
+                Notifier._executor.shutdown(wait=wait)
                 logger.info("📢 Notifier: ThreadPool shutdown complete.")
             except Exception:
                 pass
+            finally:
+                Notifier._executor = None
 
     @staticmethod
     def get_rate_limiter_status() -> Dict[str, int]:

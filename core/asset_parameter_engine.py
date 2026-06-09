@@ -40,7 +40,9 @@ class AssetProfile:
         'symbol', 'atr_14_pct', 'avg_daily_range_pct', 'volatility_pct',
         'optimal_tp_scalping', 'optimal_sl_scalping',
         'optimal_tp_swing', 'optimal_sl_swing',
-        'last_price', 'last_calculated', 'data_points'
+        'last_price', 'last_calculated', 'data_points',
+        'atr_1m_pct', 'atr_5m_pct', 'atr_1h_pct',
+        'leverage_scalping', 'leverage_swing', 'max_risk_pct'
     ]
     
     def __init__(self, symbol: str):
@@ -55,6 +57,12 @@ class AssetProfile:
         self.last_price = 0.0
         self.last_calculated = 0.0
         self.data_points = 0
+        self.atr_1m_pct = 0.0
+        self.atr_5m_pct = 0.0
+        self.atr_1h_pct = 0.0
+        self.leverage_scalping = 10
+        self.leverage_swing = 10
+        self.max_risk_pct = 0.02
     
     def to_dict(self):
         return {
@@ -98,11 +106,11 @@ class AssetParameterEngine:
     MIN_RR_RATIO = 1.5        # NEVER trade with R:R below this
     
     # Scalping bounds
-    SCALPING_SL_MIN = 0.0015  # 0.15% — min SL (below this = noise death)
-    SCALPING_SL_MAX = 0.008   # 0.80% — max SL (above this = too much risk)
-    SCALPING_TP_MIN = 0.003   # 0.30% — min TP (below this = fee death)
-    SCALPING_TP_MAX = 0.015   # 1.50% — max TP (above this = unreachable in M5)
-    SCALPING_ATR_MULT = 0.40  # SL = 40% of ATR (tight but above noise)
+    SCALPING_SL_MIN = 0.0015  # 0.15% — min SL (floor to survive noise)
+    SCALPING_SL_MAX = 0.0150  # 1.50% — max SL (Reality Veto — prevents Zombies)
+    SCALPING_TP_MIN = 0.0020  # 0.20% — min TP (floor TP)
+    SCALPING_TP_MAX = 0.0300  # 3.00% — max TP (Reality Veto — prevents Zombies)
+    SCALPING_ATR_MULT = 1.0   # SL = 100% of ATR (allow more breathing room)
     
     # Swing bounds
     SWING_SL_MIN = 0.008      # 0.80% — min SL for swing
@@ -121,6 +129,21 @@ class AssetParameterEngine:
         self._profiles: dict[str, AssetProfile] = {}
         self._initialized = False
         self._last_global_calc = 0.0
+        
+        # Load optimal profiles from optimal_profiles.json if present
+        self.calibrated_profiles = {}
+        try:
+            import os
+            import json
+            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            prof_path = os.path.join(root_dir, 'optimal_profiles.json')
+            if os.path.exists(prof_path):
+                with open(prof_path, 'r') as f:
+                    self.calibrated_profiles = json.load(f)
+                logger.info(f"🧠 [AssetParamEngine] Loaded optimal profiles from {prof_path} for horizons: {list(self.calibrated_profiles.keys())}")
+        except Exception as e:
+            logger.warning(f"⚠️ [AssetParamEngine] Could not load optimal_profiles.json: {e}")
+            
         logger.info("🧠 [AssetParamEngine] Initialized — Dynamic TP/SL calibration active")
     
     def get_profile(self, symbol: str) -> AssetProfile:
@@ -129,34 +152,152 @@ class AssetParameterEngine:
         if clean not in self._profiles:
             self._profiles[clean] = AssetProfile(clean)
         return self._profiles[clean]
-    
-    def get_tp(self, symbol: str, horizon: str = "SCALPING") -> float:
+
+    def get_leverage(self, symbol: str, horizon: str = "SCALPING") -> int:
         """
-        QUÉ: Retorna el TP óptimo para este activo y horizonte.
-        PARA QUÉ: El RiskManager usa este valor en vez de un hardcode estático.
+        QUÉ: Retorna el apalancamiento objetivo dinámico por activo.
+        POR QUÉ: BTC puede usar 20x, WIF solo 2x. Limita el riesgo estructural.
+        """
+        from config import Config
+        prof = Config.SymbolProfiles.get(symbol)
+        base_lev = prof.get("base_leverage", 5)
+        
+        # OMEGA: Swing horizon may need slightly more leverage to meet notional if SL is wider
+        # But we cap safely.
+        if horizon.upper() == "SWING":
+            return min(base_lev, 20)
+        return base_lev
+
+    def get_risk_pct(self, symbol: str) -> float:
+        """
+        QUÉ: Retorna el porcentaje máximo de riesgo permitido para el activo.
+        """
+        from config import Config
+        prof = Config.SymbolProfiles.get(symbol)
+        return prof.get("max_risk_pct", 0.02)
+
+    
+    def get_tp(self, symbol: str, horizon: str = "SCALPING", direction: str = "LONG") -> float:
+        """
+        QUÉ: Retorna el TP óptimo para este activo y horizonte, ajustado por dirección.
         """
         profile = self.get_profile(symbol)
-        if horizon == "SWING":
-            return profile.optimal_tp_swing
-        return profile.optimal_tp_scalping
+        clean = symbol.replace("/", "").upper()
+        horizon_key = horizon.upper()
+        
+        # Resolve correct SL first (which resolves the correct ATR dynamically)
+        sl = self.get_sl(symbol, horizon, direction)
+        
+        # 1. Check if we have calibrated profile override
+        lookup_horizon = "SCALPING" if horizon_key == "MICROSCALPING" else horizon_key
+        if lookup_horizon in self.calibrated_profiles:
+            prof_data = None
+            for k, v in self.calibrated_profiles[lookup_horizon].items():
+                if k.replace("/", "").upper() == clean:
+                    prof_data = v
+                    break
+            if prof_data and 'tp_rr_ratio' in prof_data:
+                import numpy as np
+                tp_rr_ratio = prof_data['tp_rr_ratio']
+                
+                # Apply short asymmetry if short
+                if direction.upper() == "SHORT":
+                    tp_rr_ratio *= 0.8
+                    
+                raw_tp = sl * tp_rr_ratio
+                if horizon_key == "SWING":
+                    return float(np.clip(raw_tp, self.SWING_TP_MIN, self.SWING_TP_MAX * 1.5))
+                else:
+                    return float(np.clip(raw_tp, self.SCALPING_TP_MIN, self.SCALPING_TP_MAX * 1.5))
+                    
+        # 2. [SHORT INTELLIGENCE: Mantener R:R de 2:1 basado en el SL ampliado]
+        if direction.upper() == "SHORT":
+            raw_tp = sl * 2.0
+            import numpy as np
+            if horizon_key == "SWING":
+                return float(np.clip(raw_tp, self.SWING_TP_MIN, self.SWING_TP_MAX * 1.5))
+            else:
+                return float(np.clip(raw_tp, self.SCALPING_TP_MIN, self.SCALPING_TP_MAX * 1.5))
+                
+        # 3. Dynamic fallback for LONG without overrides (Target 2:1 R:R)
+        import numpy as np
+        raw_tp = sl * 2.0
+        if horizon_key == "SWING":
+            return float(np.clip(raw_tp, self.SWING_TP_MIN, self.SWING_TP_MAX))
+        else:
+            return float(np.clip(raw_tp, self.SCALPING_TP_MIN, self.SCALPING_TP_MAX))
     
-    def get_sl(self, symbol: str, horizon: str = "SCALPING") -> float:
+    def get_sl(self, symbol: str, horizon: str = "SCALPING", direction: str = "LONG") -> float:
         """
-        QUÉ: Retorna el SL óptimo para este activo y horizonte.
+        QUÉ: Retorna el SL óptimo para este activo y horizonte, ajustado por dirección.
         """
         profile = self.get_profile(symbol)
+        clean = symbol.replace("/", "").upper()
+        horizon_key = horizon.upper()
+        
+        # Resolve correct ATR for this horizon
+        atr = profile.atr_1h_pct if horizon_key == "SWING" else (profile.atr_1m_pct if horizon_key == "MICROSCALPING" else profile.atr_5m_pct)
+        if atr <= 0:
+            atr = profile.atr_14_pct
+        if atr <= 0:
+            atr = 0.005  # standard fallback 0.5%
+        
+        # Check if we have calibrated profile override
+        lookup_horizon = "SCALPING" if horizon_key == "MICROSCALPING" else horizon_key
+        if lookup_horizon in self.calibrated_profiles:
+            prof_data = None
+            for k, v in self.calibrated_profiles[lookup_horizon].items():
+                if k.replace("/", "").upper() == clean:
+                    prof_data = v
+                    break
+            if prof_data and 'sl_atr_mult' in prof_data:
+                import numpy as np
+                sl_mult = prof_data['sl_atr_mult']
+                
+                # Apply short asymmetry if short
+                if direction.upper() == "SHORT":
+                    sl_mult *= 1.2
+                    
+                raw_sl = atr * sl_mult
+                if horizon_key == "SWING":
+                    return float(np.clip(raw_sl, self.SWING_SL_MIN, self.SWING_SL_MAX * 1.5))
+                else:
+                    return float(np.clip(raw_sl, self.SCALPING_SL_MIN, self.SCALPING_SL_MAX * 1.5))
+                    
+        # [SHORT INTELLIGENCE: Stop Placement asimétrico]
+        if direction.upper() == "SHORT":
+            import numpy as np
+            sym = symbol.replace("/", "").upper()
+            
+            # Fallo Tipo 3: Multiplicadores ATR más amplios para Shorts
+            if "BTC" in sym: mult = 1.8
+            elif "ETH" in sym: mult = 2.0
+            elif "BNB" in sym or "XRP" in sym: mult = 2.3
+            elif "SOL" in sym: mult = 2.5
+            elif sym in ["DOGE", "SHIB", "PEPE", "FLOKI", "WIF"]: mult = 3.0
+            else: mult = 2.5
+            
+            # Escalar proporcionalmente al horizonte
+            base_mult = mult if horizon_key == "SWING" else mult * (self.SCALPING_ATR_MULT / self.SWING_ATR_MULT)
+            raw_sl = atr * base_mult
+            
+            if horizon_key == "SWING":
+                return float(np.clip(raw_sl, self.SWING_SL_MIN, self.SWING_SL_MAX * 1.5))
+            else:
+                return float(np.clip(raw_sl, self.SCALPING_SL_MIN, self.SCALPING_SL_MAX * 1.5))
+                
         if horizon == "SWING":
             return profile.optimal_sl_swing
         return profile.optimal_sl_scalping
     
-    def get_params(self, symbol: str, horizon: str = "SCALPING") -> dict:
+    def get_params(self, symbol: str, horizon: str = "SCALPING", direction: str = "LONG") -> dict:
         """
         QUÉ: Retorna dict completo {tp_pct, sl_pct, atr_pct, rr_ratio} para un activo.
         PARA QUÉ: Compatibilidad con horizon_params dict en risk_manager.
         """
         profile = self.get_profile(symbol)
-        tp = self.get_tp(symbol, horizon)
-        sl = self.get_sl(symbol, horizon)
+        tp = self.get_tp(symbol, horizon, direction)
+        sl = self.get_sl(symbol, horizon, direction)
         return {
             "take_profit_pct": tp,
             "stop_loss_pct": sl,
@@ -166,7 +307,7 @@ class AssetParameterEngine:
         }
     
     def calibrate_from_bars(self, symbol: str, closes: np.ndarray, 
-                            highs: np.ndarray, lows: np.ndarray) -> AssetProfile:
+                            highs: np.ndarray, lows: np.ndarray, horizon: str = "SCALPING") -> AssetProfile:
         """
         QUÉ: Calibra el perfil de un activo usando datos OHLCV reales.
         POR QUÉ: Solo datos reales pueden decir la "personalidad" del activo.
@@ -181,6 +322,7 @@ class AssetParameterEngine:
             closes: Array de precios de cierre
             highs: Array de precios máximos
             lows: Array de precios mínimos
+            horizon: El horizonte temporal de calibración (SCALPING, SWING, MICROSCALPING)
         """
         clean = symbol.replace("/", "").upper()
         profile = self.get_profile(clean)
@@ -216,6 +358,16 @@ class AssetParameterEngine:
             
             # Store raw metrics
             profile.atr_14_pct = float(atr_14_pct)
+            
+            # Store horizon-specific ATR
+            horizon_key = horizon.upper()
+            if horizon_key == "SWING":
+                profile.atr_1h_pct = float(atr_14_pct)
+            elif horizon_key == "MICROSCALPING":
+                profile.atr_1m_pct = float(atr_14_pct)
+            else:
+                profile.atr_5m_pct = float(atr_14_pct)
+                
             profile.avg_daily_range_pct = float(daily_range_pct)
             profile.volatility_pct = float(volatility_pct)
             profile.last_price = float(last_price)
@@ -227,33 +379,79 @@ class AssetParameterEngine:
             # ═══════════════════════════════════════════════════════════════
             
             # --- SCALPING ---
-            raw_sl_scalp = atr_14_pct * self.SCALPING_ATR_MULT
+            # Check if we have calibrated profile override
+            horizon_key = "SCALPING"
+            cal_sl_mult = None
+            cal_tp_rr = None
+            if horizon_key in self.calibrated_profiles:
+                for k, v in self.calibrated_profiles[horizon_key].items():
+                    if k.replace("/", "").upper() == clean:
+                        cal_sl_mult = v.get('sl_atr_mult')
+                        cal_tp_rr = v.get('tp_rr_ratio')
+                        break
+            
+            if cal_sl_mult is not None:
+                raw_sl_scalp = atr_14_pct * cal_sl_mult
+            else:
+                # Capa 6: Sniper Mode - Dynamic ATR Multiplier based on symbol noise
+                if "BTC" in clean:
+                    dynamic_scalp_mult = 0.40
+                elif "ETH" in clean or "BNB" in clean:
+                    dynamic_scalp_mult = 0.60
+                elif "SOL" in clean or "XRP" in clean or clean in ["DOGE", "SHIB", "PEPE", "FLOKI", "WIF"]:
+                    dynamic_scalp_mult = 0.85
+                else:
+                    dynamic_scalp_mult = 0.70
+                raw_sl_scalp = atr_14_pct * dynamic_scalp_mult
+                
             sl_scalp = float(np.clip(raw_sl_scalp, self.SCALPING_SL_MIN, self.SCALPING_SL_MAX))
             
-            # TP = SL * R:R ratio (minimum 1.5x, target 2.0x)
-            raw_tp_scalp = sl_scalp * 2.0  # Target 2:1 R:R
+            if cal_tp_rr is not None:
+                raw_tp_scalp = sl_scalp * cal_tp_rr
+            else:
+                raw_tp_scalp = sl_scalp * 2.0  # Target 2:1 R:R
+                
             tp_scalp = float(np.clip(raw_tp_scalp, self.SCALPING_TP_MIN, self.SCALPING_TP_MAX))
             
             # Enforce minimum R:R after clamping
             if tp_scalp / sl_scalp < self.MIN_RR_RATIO:
-                # Tighten SL to restore R:R
-                sl_scalp = tp_scalp / self.MIN_RR_RATIO
-                sl_scalp = float(np.clip(sl_scalp, self.SCALPING_SL_MIN, self.SCALPING_SL_MAX))
+                # Widen TP to restore R:R instead of tightening SL to prevent premature noise stop-outs
+                tp_scalp = sl_scalp * self.MIN_RR_RATIO
+                tp_scalp = float(np.clip(tp_scalp, self.SCALPING_TP_MIN, self.SCALPING_TP_MAX))
             
             profile.optimal_sl_scalping = sl_scalp
             profile.optimal_tp_scalping = tp_scalp
             
             # --- SWING ---
-            raw_sl_swing = atr_14_pct * self.SWING_ATR_MULT
+            horizon_key = "SWING"
+            cal_sl_mult = None
+            cal_tp_rr = None
+            if horizon_key in self.calibrated_profiles:
+                for k, v in self.calibrated_profiles[horizon_key].items():
+                    if k.replace("/", "").upper() == clean:
+                        cal_sl_mult = v.get('sl_atr_mult')
+                        cal_tp_rr = v.get('tp_rr_ratio')
+                        break
+            
+            if cal_sl_mult is not None:
+                raw_sl_swing = atr_14_pct * cal_sl_mult
+            else:
+                raw_sl_swing = atr_14_pct * self.SWING_ATR_MULT
+                
             sl_swing = float(np.clip(raw_sl_swing, self.SWING_SL_MIN, self.SWING_SL_MAX))
             
-            raw_tp_swing = sl_swing * 2.0  # Target 2:1 R:R
+            if cal_tp_rr is not None:
+                raw_tp_swing = sl_swing * cal_tp_rr
+            else:
+                raw_tp_swing = sl_swing * 2.0  # Target 2:1 R:R
+                
             tp_swing = float(np.clip(raw_tp_swing, self.SWING_TP_MIN, self.SWING_TP_MAX))
             
             # Enforce minimum R:R after clamping
             if tp_swing / sl_swing < self.MIN_RR_RATIO:
-                sl_swing = tp_swing / self.MIN_RR_RATIO
-                sl_swing = float(np.clip(sl_swing, self.SWING_SL_MIN, self.SWING_SL_MAX))
+                # Widen TP to restore R:R instead of tightening SL to prevent premature noise stop-outs
+                tp_swing = sl_swing * self.MIN_RR_RATIO
+                tp_swing = float(np.clip(tp_swing, self.SWING_TP_MIN, self.SWING_TP_MAX))
             
             profile.optimal_sl_swing = sl_swing
             profile.optimal_tp_swing = tp_swing
@@ -273,20 +471,46 @@ class AssetParameterEngine:
             logger.error(f"[AssetParamEngine] Calibration error {clean}: {e}")
             return profile
     
-    def calibrate_from_data_handler(self, symbol: str, data_handler=None) -> AssetProfile:
+    def calibrate_from_data_handler(self, symbol: str, data_handler=None, horizon: str = "SCALPING") -> AssetProfile:
         """
         QUÉ: Calibra usando el data_handler del sistema (producción).
         POR QUÉ: En producción, los datos vienen del data_handler, no de parquet.
+        
+        FORENSIC-V130: HORIZON-AWARE ATR CALIBRATION
+        QUÉ: El ATR usado para calibrar TP/SL DEBE calcularse en el
+          timeframe operativo del horizonte.
+        POR QUÉ: ATR-14 en 1m = ~7 minutos de contexto (insuficiente para Swing).
+          ATR-14 en 1h = 14 horas de contexto (correcto para Swing).
+        PARA QUÉ: Calibrar TP/SL que sean matemáticamente alcanzables en
+          la temporalidad real de operación.
+        CÓMO: SCALPING → 5m (ATR-14 = 70min), SWING → 1h (ATR-14 = 14h).
         """
-        if data_handler is None:
+        if data_handler is None or not hasattr(data_handler, "get_latest_bars"):
+            try:
+                from data.data_provider import get_data_provider
+                data_handler = get_data_provider()
+            except Exception:
+                pass
+        
+        if data_handler is None or not hasattr(data_handler, "get_latest_bars"):
             try:
                 from core.data_handler import get_data_handler
-                data_handler = get_data_handler()
-            except ImportError:
-                return self.get_profile(symbol)
+                dh_candidate = get_data_handler()
+                if dh_candidate and hasattr(dh_candidate, "get_latest_bars"):
+                    data_handler = dh_candidate
+            except Exception:
+                pass
+        
+        if data_handler is None or not hasattr(data_handler, "get_latest_bars"):
+            # Fallback to current cached profile if no source with get_latest_bars is available
+            return self.get_profile(symbol)
         
         try:
-            bars = data_handler.get_latest_bars(symbol, n=200)
+            # ═══════════════════════════════════════════════════════════════
+            # FORENSIC-V130: Route to horizon-appropriate timeframe
+            # ═══════════════════════════════════════════════════════════════
+            _atr_tf = '1m' if horizon == 'MICROSCALPING' else ('5m' if horizon == 'SCALPING' else '1h')
+            bars = data_handler.get_latest_bars(symbol, n=200, timeframe=_atr_tf)
             if bars is None or len(bars) < 20:
                 return self.get_profile(symbol)
             
@@ -294,7 +518,7 @@ class AssetParameterEngine:
             highs = np.array(bars['high'], dtype=np.float64)
             lows = np.array(bars['low'], dtype=np.float64)
             
-            return self.calibrate_from_bars(symbol, closes, highs, lows)
+            return self.calibrate_from_bars(symbol, closes, highs, lows, horizon=horizon)
         except Exception as e:
             logger.error(f"[AssetParamEngine] DH calibration error {symbol}: {e}")
             return self.get_profile(symbol)

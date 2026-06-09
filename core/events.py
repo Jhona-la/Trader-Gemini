@@ -4,10 +4,10 @@ All events are frozen dataclasses to prevent race conditions.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 from utils.time_helpers import ensure_utc_aware
-from core.enums import EventType, SignalType, OrderSide, OrderType
+from core.enums import EventType, SignalType, OrderSide, OrderType, SignalState
 
 
 import time
@@ -123,10 +123,22 @@ class SignalEvent(Event):
     # ⚡ Nano-Speeds QoS Priority (0 = Critical/Scalping, 1 = Normal/Swing, 2 = Background)
     priority: int = 1
     
+    # NEXUS Lifecycle and Traceability
+    state: SignalState = SignalState.GENERATED
+    prediction_id: Optional[str] = None
+    features_snapshot: Optional[Dict[str, Any]] = None
+    expiration_timestamp: Optional[datetime] = None
+    namespace: Optional[str] = None
+    tension: float = 0.0
+    temporal_size_modifier: float = 1.0
+    
     type: EventType = field(default=EventType.SIGNAL, init=False)
 
     def __post_init__(self):
-        """Validate datetime is UTC-aware and ensure trade_id"""
+        """Validate datetime is UTC-aware, generate prediction/trade telemetry, expiration timestamp, and namespace"""
+        if self.horizon not in ("SCALPING", "MICROSCALPING", "SWING"):
+            raise ValueError(f"Invalid horizon: {self.horizon}")
+
         try:
             ensure_utc_aware(self.datetime)
         except ValueError as e:
@@ -135,12 +147,38 @@ class SignalEvent(Event):
         # Auto-generate trade_id and thought_id if missing (using object.__setattr__ because frozen=True)
         if not self.trade_id:
             # Prefix based on horizon to prevent cross-contamination
-            prefix = "SCL" if getattr(self, "horizon", "SCALPING") == "SCALPING" else "SWG"
+            hz = getattr(self, "horizon", "SCALPING")
+            prefix = "MSC" if hz == "MICROSCALPING" else ("SCL" if hz == "SCALPING" else "SWG")
             short_id = f"[{prefix}]-TRD-{str(uuid.uuid4())[:6].upper()}"
             object.__setattr__(self, 'trade_id', short_id)
             
         if not self.thought_id:
             object.__setattr__(self, 'thought_id', f"THOUGHT-{str(uuid.uuid4())[:6].upper()}")
+
+        if not self.prediction_id:
+            object.__setattr__(self, 'prediction_id', f"PRED-{str(uuid.uuid4())[:8].upper()}")
+
+        # Compute expiration_timestamp if not provided and ttl is set
+        if not self.expiration_timestamp:
+            ttl_val = self.ttl
+            if ttl_val is None:
+                max_age = 60.0
+                try:
+                    from config import Config
+                    max_age = Config.MAX_SIGNAL_AGE
+                except Exception:
+                    pass
+                ttl_val = max_age
+            object.__setattr__(self, 'expiration_timestamp', self.datetime + timedelta(seconds=ttl_val))
+
+        # Generate namespace if missing
+        if not self.namespace:
+            import hashlib
+            ts_str = str(int(self.datetime.timestamp()))
+            raw_str = f"{self.strategy_id}:{self.symbol}:{self.signal_type.name if hasattr(self.signal_type, 'name') else str(self.signal_type)}:{ts_str}"
+            h = hashlib.md5(raw_str.encode('utf-8')).hexdigest()[:8].upper()
+            sig_dir = self.signal_type.name if hasattr(self.signal_type, 'name') else str(self.signal_type)
+            object.__setattr__(self, 'namespace', f"SIGNAL::{self.strategy_id}::{self.symbol}::{sig_dir}::{ts_str}::{h}")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -197,6 +235,18 @@ class OrderEvent(Event):
     is_close: bool = False  # True if this is a full position close
     
     type: EventType = field(default=EventType.ORDER, init=False)
+
+    def __post_init__(self):
+        if self.horizon not in ("SCALPING", "MICROSCALPING", "SWING"):
+            raise ValueError(f"Invalid horizon: {self.horizon}")
+        
+        # Auto-generate trade_id and thought_id if missing
+        if not self.trade_id:
+            hz = getattr(self, "horizon", "SCALPING")
+            prefix = "MSC" if hz == "MICROSCALPING" else ("SCL" if hz == "SCALPING" else "SWG")
+            import uuid
+            short_id = f"[{prefix}]-ORD-{str(uuid.uuid4())[:6].upper()}"
+            object.__setattr__(self, 'trade_id', short_id)
 
     def print_order(self):
         """Debug print for order details"""
@@ -264,6 +314,8 @@ class FillEvent(Event):
     
     def __post_init__(self):
         """Validate that timeindex is UTC-aware"""
+        if self.horizon not in ("SCALPING", "MICROSCALPING", "SWING"):
+            raise ValueError(f"Invalid horizon: {self.horizon}")
         try:
             ensure_utc_aware(self.timeindex)
         except ValueError as e:

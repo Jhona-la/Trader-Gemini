@@ -2,7 +2,7 @@
 
 Este documento cartografía la arquitectura definitiva de grado institucional del proyecto **Trader Gemini**, un sistema de High-Frequency Trading (HFT) Multi-Horizonte (Scalping + Swing) diseñado para operar con latencias submilisegundo en Binance.
 
-**Última Actualización:** 2026-04-01  
+**Última Actualización:** 2026-05-20  
 **Capital Base:** $13 USD → Duplicación exponencial cada 15 días  
 **Activos:** 25 pares trading con modelos XGBoost individuales
 
@@ -655,3 +655,125 @@ graph TD
 | Recuperación fallos | < 2 segundos | state_manager.py |
 | Precisión señales | > 60% walk-forward | walk_forward.py |
 | Coverage tests | > 80% críticos | pytest tests/ |
+
+---
+
+## 🎯 XI. CENTRALIZACIÓN ASPECTUAL (AOP) & CORRECCIONES FORENSES
+
+### 1. Decoradores Centralizados (`utils/common.py`)
+
+**QUÉ:** Patrón Aspect-Oriented Programming (AOP) que centraliza la validación de datos y telemetría de rendimiento en decoradores reutilizables.
+
+**POR QUÉ:** Antes, cada estrategia (`technical.py`, `sniper_strategy.py`, `statistical.py`) duplicaba ~20 líneas idénticas de validación de salud de datos y medición de latencia al inicio de sus métodos `generate_signals()`. Esto violaba DRY y creaba divergencias silenciosas.
+
+**PARA QUÉ:** Garantizar que TODA estrategia valide los datos de mercado con los mismos umbrales y exporte métricas de latencia al mismo destino Prometheus, sin código duplicado.
+
+**CÓMO:**
+
+| Decorador | Función | Ubicación |
+|---|---|---|
+| `@validate_market_data` | Verifica `health_metrics.score` del evento. Si < 50 → SKIP. Si < 80 → WARNING. | `utils/common.py:13` |
+| `@performance_timer` | Mide `time.perf_counter_ns()` y exporta a Prometheus vía `metrics.record_tick_latency()`. | `utils/common.py:40` |
+
+**CUÁNDO:** Ejecutados en cada invocación de `generate_signals()` de cualquier estrategia decorada.
+
+**DÓNDE:** Definidos en `utils/common.py`, aplicados en `strategies/technical.py`, `strategies/sniper_strategy.py`, `strategies/statistical.py`.
+
+**QUIÉN:** El intérprete Python aplica los decoradores automáticamente como wrappers `functools.wraps`.
+
+---
+
+### 2. Corrección BUG #12: NameError `tf` en WebSocket Live (`data/binance_loader.py`)
+
+**QUÉ:** La variable `tf` (timeframe) se usaba en `_process_kline_event()` para detección de gaps (línea 1370) y métricas de salud (línea 1386) ANTES de ser definida (era definida en línea 1383).
+
+**POR QUÉ:** Un `NameError` silencioso bloqueaba TODA la ingesta de datos WebSocket en producción. Los tests unitarios no lo detectaban porque inyectaban datos pre-procesados (mocks) que nunca pasaban por `_process_kline_event`.
+
+**PARA QUÉ:** Desbloquear el flujo real de datos en producción. Sin este fix, el bot operaba con buffers vacíos y nunca generaba señales.
+
+**CÓMO:** Se relocalizó el parsing de timeframe (líneas 1327-1334) ANTES de su uso:
+
+```python
+# ─── DETERMINE TIMEFRAME (tf) ─── (AHORA en línea 1327)
+tf = '1m'
+if '@kline_5m' in stream_name: tf = '5m'
+elif '@kline_15m' in stream_name: tf = '15m'
+elif '@kline_1h' in stream_name: tf = '1h'
+elif '@kline_1d' in stream_name: tf = '1d'
+elif '@kline_1w' in stream_name: tf = '1w'
+```
+
+**CUÁNDO:** Activado en cada mensaje WebSocket kline recibido de Binance.
+
+**DÓNDE:** `data/binance_loader.py`, método `_process_kline_event()`, líneas 1327-1334.
+
+**QUIÉN:** Clase `BinanceData`, responsable de toda la ingesta de datos en tiempo real.
+
+---
+
+### 3. Virtual Netting Ledger (Aislamiento Dual-Horizon)
+
+**QUÉ:** Arquitectura de ledger virtual que permite que las posiciones de Scalping (1m) y Swing (1h) coexistan sin interferencia sobre el mismo símbolo en el exchange.
+
+**POR QUÉ:** Binance solo permite UNA posición por símbolo en modo Hedge. Si Scalping abre LONG y Swing abre SHORT sobre BTCUSDT, se anulan mutuamente. El Virtual Netting resuelve esto manteniendo posiciones lógicas aisladas.
+
+**PARA QUÉ:** Operar simultáneamente en ambos horizontes temporales sin que las señales de uno pisen al otro, maximizando oportunidades con $13 USD.
+
+**CÓMO:** Llaves compuestas `{symbol}_{horizon}_{side}` en el ledger de `core/portfolio.py`:
+
+```
+BTCUSDT_SCALPING_LONG  → Posición lógica Scalping
+BTCUSDT_SWING_SHORT    → Posición lógica Swing (independiente)
+```
+
+La posición física en Binance es el NETO de ambas. El `RiskManager.check_stops()` evalúa SL/TP por horizonte de forma independiente.
+
+**CUÁNDO:** En cada apertura y cierre de posición, y en cada tick de evaluación de stops.
+
+**DÓNDE:** `core/portfolio.py` (Virtual Ledger), `risk/risk_manager.py` (Check Stops), `execution/binance_executor.py` (`_place_protective_orders` delegado a Virtual NO-OP).
+
+**QUIÉN:** `Portfolio` (ledger), `RiskManager` (evaluación), `BinanceExecutor` (ejecución neta).
+
+---
+
+### 4. Utilidades DRY Centralizadas (`utils/common.py`)
+
+| Función | Propósito | Evita Duplicación En |
+|---|---|---|
+| `build_testnet_urls()` | URLs Binance Testnet estandarizadas | `binance_loader.py`, `binance_executor.py` |
+| `validate_non_zero()` | Validación de cantidades/precios | Múltiples módulos de ejecución |
+| `format_position_for_display()` | Formato PnL consistente | `portfolio.py`, `dashboard/app.py` |
+| `safe_float_conversion()` | Conversión float robusta | Toda la capa de datos |
+| `calculate_position_value()` | Valor nocional de posición | `risk_manager.py`, `portfolio.py` |
+
+---
+
+### 5. Cumplimiento de la Especificación NEXUS (Estado Centralizado e Inmutabilidad)
+
+**QUÉ:** Implementación rigurosa de las reglas de control de estado descentralizado, no interferencia (no-interference), inmutabilidad de eventos de señales y conciliación de saldo real vs virtual.
+
+**POR QUÉ:**
+1. Las modificaciones directas de atributos en eventos mutables causaban inconsistencias de hilo y excepciones en objetos de tipo `frozen`.
+2. Una estrategia de salida no debía cerrar o alterar el stop loss de posiciones abiertas por otra estrategia (Ownership Violation).
+3. Los desfases temporales acumulados en el cálculo local de posiciones requerían una conciliación forzada con la API real del Exchange (Binance) cada 60 segundos.
+
+**PARA QUÉ:** Proteger la cuenta micro de $13 USD garantizando una ejecución segura, determinista y auditada en tiempo real.
+
+**CÓMO:**
+* **Ciclo de Vida de Señal Inmutable:** `SignalEvent` es inmutable. Toda mutación del estado (`GENERATED` → `EVALUATING` → `APPROVED`/`REJECTED`/`EXPIRED` → `EXECUTED`) se hace mediante copias puras usando `dataclasses.replace(event, state=...)`.
+* **Namespace Único y Expiración Absoluta:** Cada señal autogenera un ID único formateado como `SIGNAL::{STRATEGY}::{ASSET}::{DIRECTION}::{TIMESTAMP}::{HASH}` y calcula un timestamp absoluto de vencimiento (`expiration_timestamp`), validado en `engine.py`.
+* **Propiedad Exclusiva (Exclusive Ownership):** El método `_update_virtual_ledger` en `core/portfolio.py` y la generación de órdenes en `risk/risk_manager.py` validan que el `strategy_id` del evento de cierre coincida exactamente con el de apertura (`opener_strategy_id`), exceptuando salidas del sistema (`HARD_SL`, `ZOMBIE`) o prefijos de seguridad autorizados (`HARD_`, `SPAP_`, `TRAIL_`, `WEAK_`).
+* **Bucle de Reconciliación Asíncrono:** Un hilo de conciliación periódica en `core/engine.py` sincroniza el estado de las posiciones con CCXT cada 60 segundos.
+
+**CUÁNDO:**
+* El namespace e inmutabilidad se validan en tiempo de instanciación del evento de señal.
+* El ownership se verifica en cada orden de salida o fill recibido.
+* La reconciliación asíncrona se ejecuta cada 60.000 ms.
+
+**DÓNDE:**
+* `core/events.py` (Clase `SignalEvent`).
+* `core/engine.py` (Validación TTL y `_reconciliation_loop`).
+* `core/portfolio.py` (Máquina de estados de posiciones: `OPENING`, `ACTIVE`, `TRAILING`, `CLOSING`, `CLOSED`).
+* `risk/risk_manager.py` (Validación de propiedad en órdenes).
+
+**QUIÉN:** `SignalEvent` (inmutabilidad y namespace), `Engine` (event loop y reconciliación), `Portfolio` (control de estados y neteo virtual), `RiskManager` (stops y stops-ownership).

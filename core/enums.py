@@ -15,6 +15,14 @@ class SignalType(str, Enum):
     NEUTRAL = "NEUTRAL"
     HOLD = "HOLD"        # Do not trade (used by order flow veto)
 
+class SignalState(str, Enum):
+    GENERATED = "GENERATED"
+    EVALUATING = "EVALUATING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
+    EXECUTED = "EXECUTED"
+
 class OrderSide(str, Enum):
     BUY = "BUY"
     SELL = "SELL"

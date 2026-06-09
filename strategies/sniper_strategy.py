@@ -16,7 +16,7 @@ OPTIMIZATIONS:
 """
 
 import numpy as np
-import talib
+from utils.math_kernel import calculate_bollinger_jit, calculate_atr_jit, calculate_rsi_jit, calculate_macd_jit
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
@@ -25,6 +25,7 @@ from core.events import SignalEvent
 from core.enums import SignalType
 from config import Config
 from utils.logger import logger
+from utils.common import validate_market_data, performance_timer
 from utils.safe_leverage import safe_leverage_calculator
 from core.neural_bridge import neural_bridge
 from .phalanx import OrderFlowAnalyzer, OnlineGARCH  # PHASE 13 + D1 FIX: Module-level import
@@ -52,17 +53,20 @@ class SniperStrategy(Strategy):
         # QUÉ: Carga parámetros especializados según el horizonte.
         # POR QUÉ: Sniper con SWING necesita ATR multipliers más amplios,
         #   RSI periods más largos y TP/SL targets mayores.
-        # CÓMO: Lee Config.Strategies.SCALPING_PARAMS o SWING_PARAMS.
+        # CÓMO: Lee Config.Horizons.Scalping o SWING_PARAMS.
         # CUÁNDO: En cada instanciación de la estrategia.
         # DÓNDE: strategies/sniper_strategy.py → __init__
         # QUIÉN: SniperStrategy
         # ================================================================
         if horizon.upper() == 'SCALPING':
-            h_params = getattr(Config.Strategies, 'SCALPING_PARAMS', {})
+            h_params = getattr(Config.Horizons, 'Scalping', {})
+            self.primary_tf = h_params.get('primary_tf', '1m') if h_params else '1m'
         elif horizon.upper() == 'SWING':
-            h_params = getattr(Config.Strategies, 'SWING_PARAMS', {})
+            h_params = getattr(Config.Horizons, 'Swing', {})
+            self.primary_tf = h_params.get('primary_tf', '1h') if h_params else '1h'
         else:
             h_params = {}
+            self.primary_tf = '5m'
         
         # Indicator periods — HORIZON-AWARE
         self.RSI_PERIOD = h_params.get('rsi_period', Config.Sniper.RSI_PERIOD)
@@ -96,6 +100,8 @@ class SniperStrategy(Strategy):
         
         logger.info(f"🎯 SNIPER [{horizon}] INITIALIZED | TP={self.TP_PCT*100:.2f}% SL={self.SL_PCT*100:.2f}% | RSI={self.RSI_PERIOD} | ATR_SL={self.ATR_SL_MULT}x ATR_TP={self.ATR_TP_MULT}x")
     
+    @validate_market_data
+    @performance_timer
     def calculate_signals(self, event):
         """Main signal generation loop."""
         if not Config.Sniper.ENABLED:
@@ -150,7 +156,7 @@ class SniperStrategy(Strategy):
                     continue # Skip standard analysis
                     
                 # D2 FIX: Single data fetch for both GARCH and analysis
-                bars = self.data_provider.get_latest_bars(symbol, n=200)
+                bars = self.data_provider.get_latest_bars(symbol, n=200, timeframe=self.primary_tf)
                 if len(bars) < 2:
                     continue
                 
@@ -198,7 +204,7 @@ class SniperStrategy(Strategy):
         """Run simplified 2-layer confluence + Phase 13 Order Flow analysis."""
         
         # D2 FIX: Use pre-fetched bars to avoid redundant API call
-        bars = prefetched_bars if prefetched_bars is not None else self.data_provider.get_latest_bars(symbol, n=200)
+        bars = prefetched_bars if prefetched_bars is not None else self.data_provider.get_latest_bars(symbol, n=200, timeframe=self.primary_tf)
         if len(bars) < 100:
             return None
         
@@ -225,12 +231,14 @@ class SniperStrategy(Strategy):
         # QUÉ: Exige que la volatilidad esté en expansión.
         # POR QUÉ: Sniper es pésimo en mercados planos. Solo disparar si la banda se abre.
         # =====================================================================
-        upper, middle, lower = talib.BBANDS(closes, timeperiod=20, nbdevup=2.0, nbdevdn=2.0)
+        upper, middle, lower = calculate_bollinger_jit(closes, period=20, std_dev=2.0)
         bbw = (upper - lower) / middle
-        # Require BBW to be expanding (current > previous)
+        # Require BBW to be expanding or at least not in an extreme squeeze
         if len(bbw) >= 2 and bbw[-1] <= bbw[-2]:
-            # logger.debug(f"[{symbol}] Sniper blocked by BBW Compression (No Volatility Expansion)")
-            return None
+            bbw_10pct = np.percentile(bbw, 10)
+            if bbw[-1] < bbw_10pct:
+                logger.debug(f"[{symbol}] Sniper blocked by BBW Extreme Squeeze (BBW={bbw[-1]:.4f} < 10th pct={bbw_10pct:.4f})")
+                return None
             
         z_scores = calculate_zscore_jit(closes, period=20)
         current_z = z_scores[-1]
@@ -300,7 +308,12 @@ class SniperStrategy(Strategy):
         # Normalize signal strength (layer_a_score out of 3.5 max)
         sig_str = min(1.0, layer_a_score / 3.5)
         
-        # Trend alignment proxy from Z-Score and direction
+        # ═══════════════════════════════════════════════════════
+        # FORENSIC-FIX #5: SNIPER BAYESIAN INVERSION
+        # QUÉ: Alinear la fuerza de tendencia con MOMENTUM/BREAKOUT.
+        # POR QUÉ: Sniper busca rompimientos con flujo de órdenes. Para LONG, 
+        #   el precio debe estar rompiendo al alza (Z > 0), no cayendo (Z < 0).
+        # ═══════════════════════════════════════════════════════
         trend_str_val = 1.0 if (layer_a_direction == 'LONG' and current_z > 0) or (layer_a_direction == 'SHORT' and current_z < 0) else -1.0
         
         bayes_prob = bayesian_probability_jit(
@@ -323,7 +336,7 @@ class SniperStrategy(Strategy):
         # =====================================================================
         # LAYER C: Fee & Risk Validation
         # =====================================================================
-        atr = talib.ATR(highs, lows, closes, timeperiod=self.ATR_PERIOD)[-1]
+        atr = calculate_atr_jit(highs, lows, closes, period=self.ATR_PERIOD)[-1]
         
         # Dynamic leverage from SafeLeverageCalculator
         leverage = self._calculate_dynamic_leverage(atr, current_price)
@@ -444,7 +457,7 @@ class SniperStrategy(Strategy):
         results = {}
         
         # 1. RSI Divergence — uses horizon-loaded period
-        rsi = talib.RSI(closes, timeperiod=self.RSI_PERIOD)
+        rsi = calculate_rsi_jit(closes, period=self.RSI_PERIOD)
         current_rsi = rsi[-1]
         prev_rsi = rsi[-5]
         
@@ -462,10 +475,10 @@ class SniperStrategy(Strategy):
         }
         
         # 2. MACD Crossover
-        macd, signal, hist = talib.MACD(closes, 
-                                         fastperiod=Config.Sniper.MACD_FAST,
-                                         slowperiod=Config.Sniper.MACD_SLOW,
-                                         signalperiod=Config.Sniper.MACD_SIGNAL)
+        macd, signal, hist = calculate_macd_jit(closes, 
+                                         fast_period=Config.Sniper.MACD_FAST,
+                                         slow_period=Config.Sniper.MACD_SLOW,
+                                         signal_period=Config.Sniper.MACD_SIGNAL)
         
         bullish_cross = hist[-2] < 0 and hist[-1] > 0
         bearish_cross = hist[-2] > 0 and hist[-1] < 0
@@ -476,10 +489,9 @@ class SniperStrategy(Strategy):
         }
         
         # 3. Bollinger Band Rejection — uses horizon-loaded params
-        upper, middle, lower = talib.BBANDS(closes, 
-                                             timeperiod=self.BB_PERIOD,
-                                             nbdevup=self.BB_STD,
-                                             nbdevdn=self.BB_STD)
+        upper, middle, lower = calculate_bollinger_jit(closes, 
+                                             period=self.BB_PERIOD,
+                                             std_dev=self.BB_STD)
         
         touch_lower = lows[-2] <= lower[-2]
         bounce_up = closes[-1] > closes[-2]

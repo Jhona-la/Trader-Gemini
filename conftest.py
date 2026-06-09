@@ -28,6 +28,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ['TRADER_GEMINI_ENV'] = 'TEST'
 os.environ['BINANCE_USE_TESTNET'] = 'True'
 os.environ['BINANCE_USE_DEMO'] = 'True'
+os.environ['TELEGRAM_ENABLED'] = 'False'
+os.environ['EMAIL_ENABLED'] = 'False'
+os.environ['WANDB_MODE'] = 'disabled'
+
 
 
 # =============================================================================
@@ -203,6 +207,13 @@ def mock_portfolio(mock_config, temp_data_dir):
     )
     
     yield portfolio
+
+    try:
+        if hasattr(portfolio, 'io_executor') and portfolio.io_executor:
+            portfolio.io_executor.shutdown(wait=False)
+        portfolio.close()
+    except Exception:
+        pass
 
 
 @pytest.fixture
@@ -389,6 +400,18 @@ def pytest_unconfigure(config):
     """
     🏁 Pytest Unconfigure Hook: Runs after all tests.
     """
+    try:
+        from utils.notifier import Notifier
+        Notifier.shutdown(wait=False)
+    except Exception:
+        pass
+    try:
+        from core.shared_pools import SharedPools
+        if SharedPools._instance is not None:
+            SharedPools.get_instance().shutdown(wait=False)
+            SharedPools._instance = None
+    except Exception:
+        pass
     TestSecurityGuard.unlock()
     print("\n🔓 TestSecurityGuard: UNLOCKED")
 

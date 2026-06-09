@@ -155,9 +155,46 @@ class SimulationEngine:
                          entry_idx = 0
             
             else:
-                # Fallback / Hybrid Logic (Placeholder)
-                pass
+                # Fast Technical Execution (Fallback / Hybrid)
+                window = int(genes.get('rsi_window', 14))
+                fast_window = int(genes.get('macd_fast', 8))
                 
+                if i > window:
+                    # Very fast SMA calculation
+                    fast_sma = np.mean(closes[i-fast_window:i])
+                    slow_sma = np.mean(closes[i-window:i])
+                    
+                    if position is None:
+                        # ENTRY LOGIC
+                        if fast_sma > slow_sma * (1 + genes.get('trend_confirmation_threshold', 0.001)/1000): # Slight threshold
+                            position = 'LONG'
+                            entry_price = current_close
+                            entry_idx = i
+                        elif fast_sma < slow_sma * (1 - genes.get('trend_confirmation_threshold', 0.001)/1000):
+                            position = 'SHORT'
+                            entry_price = current_close
+                            entry_idx = i
+                    else:
+                        # EXIT LOGIC
+                        pnl = (current_close - entry_price)/entry_price if position == 'LONG' else (entry_price - current_close)/entry_price
+                        
+                        # Check Stops
+                        if pnl <= -sl_pct or pnl >= tp_pct:
+                            trades.append(TradeResult(pnl, (i - entry_idx)*60, pnl > 0))
+                            position = None
+                            entry_idx = 0
+                            continue
+                            
+                        # Technical Reversal Exit
+                        if position == 'LONG' and fast_sma < slow_sma:
+                            trades.append(TradeResult(pnl, (i - entry_idx)*60, pnl > 0))
+                            position = None
+                            entry_idx = 0
+                        elif position == 'SHORT' and fast_sma > slow_sma:
+                            trades.append(TradeResult(pnl, (i - entry_idx)*60, pnl > 0))
+                            position = None
+                            entry_idx = 0
+        
         return trades
 
     # --- HELPER: Fast RSI (Numpy) ---

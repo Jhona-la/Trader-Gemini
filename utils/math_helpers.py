@@ -32,9 +32,14 @@ def safe_div(a, b, fill_value=0.0):
     # Identify invalid indices:
     # 1. Infinite results (division by zero)
     # 2. NaN results (0/0 or NaN input)
-    # mask = ~np.isfinite(result) # This catches Inf and NaN
+    mask = ~np.isfinite(result) # This catches Inf and NaN
     
-    # More explicit replacement:
-    result[~np.isfinite(result)] = fill_value
+    # Replace invalid values with fill_value:
+    # If fill_value is array-like, only assign corresponding indices to prevent shape mismatch
+    if np.isscalar(fill_value):
+        result[mask] = fill_value
+    else:
+        fill_arr = np.array(fill_value, dtype=float)
+        result[mask] = fill_arr[mask]
     
     return result

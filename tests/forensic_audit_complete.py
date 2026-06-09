@@ -241,7 +241,7 @@ def audit_risk():
     
     # 4.4 Kill Switch drawdown verify
     max_dd = getattr(Config.Risk, 'MAX_DRAWDOWN', 0.02)
-    sl = getattr(Config.Strategies.SCALPING_PARAMS, 'sl_pct', 0.02)
+    sl = getattr(Config.Horizons.Scalping, 'sl_pct', 0.02)
     log_finding("INFO", "RIESGO",
         f"Kill Switch: MAX_DRAWDOWN = {max_dd*100:.1f}%",
         f"Con $13 capital, kill switch se activa con pérdida de ${CAPITAL * max_dd:.2f}. "

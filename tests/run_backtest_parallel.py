@@ -12,9 +12,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
 try:
-    from core.backtest_infra import fetch_binance_data, calculate_metrics
+    from core.backtest_infra import fetch_binance_data, calculate_metrics, run_backtest
 except ImportError:
-    from core.backtest_infra import fetch_binance_data, calculate_metrics
+    from core.backtest_infra import fetch_binance_data, calculate_metrics, run_backtest
 
 def process_symbol(symbol):
     """

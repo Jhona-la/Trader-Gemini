@@ -38,8 +38,8 @@ async def run_wealth_test():
         print("✅ ÉXITO: Swing fue correctamente bloqueado para evitar Funding Drag.")
         
     print("\n📊 Análisis de Parámetros Activos:")
-    print(f"SL: {Config.Strategies.SCALPING_PARAMS['sl_pct']*100:.2f}%")
-    print(f"TP: {Config.Strategies.SCALPING_PARAMS['tp_pct']*100:.2f}%")
+    print(f"SL: {Config.Horizons.Scalping['sl_pct']*100:.2f}%")
+    print(f"TP: {Config.Horizons.Scalping['tp_pct']*100:.2f}%")
     
     # 2. Check telegram Notifier (Simulate call)
     from utils.notifier import Notifier

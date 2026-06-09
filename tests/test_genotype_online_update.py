@@ -15,8 +15,8 @@ class TestGenotypeOnlineUpdate(unittest.TestCase):
         original_weights = np.array(genotype.genes['brain_weights'])
         original_matrix = original_weights.reshape(input_dim, output_dim)
         
-        # 2. Setup Learner
-        learner = OnlineLearner(learning_rate=0.1, clip_value=1.0)
+        # 2. Setup Learner (Disable weight decay to test exact delta)
+        learner = OnlineLearner(learning_rate=0.1, clip_value=1.0, weight_decay=0.0)
         
         # 3. Simulate an Interaction
         inputs = np.ones(input_dim)

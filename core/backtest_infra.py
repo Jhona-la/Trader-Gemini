@@ -124,51 +124,104 @@ class BacktestDataProvider(DataProvider):
             symbol_list: Lista de símbolos (e.g., ['BTC/USDT', 'ETH/USDT', ...]).
             historical_data: dict {symbol: DataFrame con OHLCV indexado por datetime}.
         """
+        from data.data_provider import register_data_provider
+        register_data_provider(self)
         self.events_queue = events_queue
         self.symbol_list = symbol_list
+
+        # Monkey-patch time module to return virtual time during backtest
+        try:
+            import time
+            orig_time = getattr(time, "_orig_time", None)
+            if orig_time is None:
+                orig_time = time.time
+                time._orig_time = orig_time
+
+            orig_time_ns = getattr(time, "_orig_time_ns", None)
+            if orig_time_ns is None:
+                orig_time_ns = time.time_ns
+                time._orig_time_ns = orig_time_ns
+
+            def virtual_time():
+                if hasattr(self, "current_time_ms") and self.current_time_ms > 0:
+                    return self.current_time_ms / 1000.0
+                return orig_time()
+
+            def virtual_time_ns():
+                if hasattr(self, "current_time_ms") and self.current_time_ms > 0:
+                    return int(self.current_time_ms * 1_000_000)
+                return orig_time_ns()
+
+            time.time = virtual_time
+            time.time_ns = virtual_time_ns
+        except Exception:
+            pass
+
         # FORENSIC FIX: Do NOT store the raw DataFrame dictionary to prevent RAM leaks (OOM)
         # We only need the NumPy structured arrays which are highly memory efficient.
         self.historical_data = None 
         self.is_backtest = True
 
-        # Pre-allocate structured arrays for Zero-Copy parity
-        self.struct_data = {s: {} for s in symbol_list}
+        # O(1) Cache systems at epoch level to eradicate redundant searchsorted & DataFrame allocations
+        self._epoch_idx_cache = {}  # (symbol, timeframe) -> idx
+        self._epoch_bars_cache = {} # (symbol, timeframe, n) -> result numpy array view
+        self._epoch_df_cache = {}   # (symbol, limit) -> pandas DataFrame
 
-        import gc
-
-        for s in symbol_list:
-            df_1m = historical_data[s]
-            self.struct_data[s]["1m"] = self._df_to_struct(df_1m)
-
-            # Resampled timeframes for multi-TF strategies
-            for tf in ["5min", "15min", "1h", "1D", "1W"]:
-                df_res = (
-                    df_1m.resample(tf)
-                    .agg(
-                        {
-                            "open": "first",
-                            "high": "max",
-                            "low": "min",
-                            "close": "last",
-                            "volume": "sum",
-                        }
-                    )
-                    .dropna()
-                )
-                key = (
-                    tf.lower()
-                    .replace("min", "m")
-                    .replace("h", "h")
-                    .replace("d", "d")
-                    .replace("w", "w")
-                )
-                self.struct_data[s][key] = self._df_to_struct(df_res)
-                del df_res
+        # Check if historical_data is already pre-resampled structured data
+        is_pre_resampled = False
+        if historical_data:
+            try:
+                first_val = next(iter(historical_data.values()))
+                if isinstance(first_val, dict) and "1m" in first_val:
+                    is_pre_resampled = True
+            except Exception:
+                pass
                 
-            # Free memory immediately after struct is built for this symbol
-            historical_data[s] = None
-            del df_1m
-            gc.collect()
+        if is_pre_resampled:
+            self.struct_data = historical_data
+        else:
+            # Pre-allocate structured arrays for Zero-Copy parity
+            self.struct_data = {s: {} for s in symbol_list}
+
+            import gc
+
+            for s in symbol_list:
+                df_1m = historical_data[s]
+                self.struct_data[s]["1m"] = self._df_to_struct(df_1m)
+
+                # Resampled timeframes for multi-TF strategies
+                # FORENSIC-V2 FIX #2: Added "4h" for SWING strategies
+                # QUÉ: SWING usa timeframes=['1h','4h','1d'] pero '4h' no se resampleaba.
+                # POR QUÉ: get_latest_bars(symbol, n, timeframe='4h') retornaba None.
+                # PARA QUÉ: SWING puede calcular confluencia multi-TF completa.
+                for tf in ["3min", "5min", "15min", "1h", "4h", "1D", "1W"]:
+                    df_res = (
+                        df_1m.resample(tf)
+                        .agg(
+                            {
+                                "open": "first",
+                                "high": "max",
+                                "low": "min",
+                                "close": "last",
+                                "volume": "sum",
+                            }
+                        )
+                        .dropna()
+                    )
+                    key = (
+                        tf.lower()
+                        .replace("min", "m")
+                        .replace("h", "h")
+                        .replace("d", "d")
+                        .replace("w", "w")
+                    )
+                    self.struct_data[s][key] = self._df_to_struct(df_res)
+                    del df_res
+                    
+                # Free memory immediately after struct is built for this symbol
+                historical_data[s] = None
+                del df_1m
+                gc.collect()
 
 
         # ═══════════════════════════════════════════════════════════════
@@ -207,15 +260,31 @@ class BacktestDataProvider(DataProvider):
         return res
 
     def get_latest_bars(self, symbol, n=1, timeframe="1m"):
-        """Retorna vista de arreglo estructurado (Ultra-Fast slicing, Zero-Copy)."""
+        """Retorna vista de arreglo estructurado (Ultra-Fast slicing, Zero-Copy) con caché a nivel de epoch."""
+        cache_key = (symbol, timeframe, n)
+        if cache_key in self._epoch_bars_cache:
+            return self._epoch_bars_cache[cache_key]
+
         try:
             arr = self.struct_data[symbol][timeframe]
-            idx = np.searchsorted(arr["timestamp"], self.current_time_ms, side="right")
+            
+            # Cache searchsorted idx per (symbol, timeframe) to avoid O(log N) redundancy
+            idx_key = (symbol, timeframe)
+            if idx_key in self._epoch_idx_cache:
+                idx = self._epoch_idx_cache[idx_key]
+            else:
+                idx = np.searchsorted(arr["timestamp"], self.current_time_ms, side="right")
+                self._epoch_idx_cache[idx_key] = idx
+                
             if idx == 0:
+                self._epoch_bars_cache[cache_key] = None
                 return None
             start = max(0, idx - n)
-            return arr[start:idx]
+            result = arr[start:idx]
+            self._epoch_bars_cache[cache_key] = result
+            return result
         except Exception:
+            self._epoch_bars_cache[cache_key] = None
             return None
 
     def get_latest_bars_5m(self, symbol, n=1):
@@ -235,6 +304,31 @@ class BacktestDataProvider(DataProvider):
         """Helper for exit logic."""
         bars = self.get_latest_bars(symbol, 1)
         return float(bars[-1]["close"]) if bars is not None and len(bars) > 0 else None
+
+    def get_data(self, symbol, limit=500):
+        """
+        Retorna los últimos `limit` bars como un DataFrame de Pandas para compatibilidad
+        con Phalanx, Arbitrage y StatArb, utilizando caché a nivel de epoch.
+        """
+        cache_key = (symbol, limit)
+        if cache_key in self._epoch_df_cache:
+            return self._epoch_df_cache[cache_key]
+
+        bars = self.get_latest_bars(symbol, n=limit, timeframe="1m")
+        if bars is None or len(bars) == 0:
+            df = pd.DataFrame()
+            self._epoch_df_cache[cache_key] = df
+            return df
+        # Convert structured array to DataFrame
+        df = pd.DataFrame(bars)
+        # Convert timestamp (ms) to DatetimeIndex
+        df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('datetime', inplace=True)
+        
+        # Return a copy to prevent strategies from modifying the cached DataFrame index/columns in place
+        df_copy = df.copy()
+        self._epoch_df_cache[cache_key] = df_copy
+        return df_copy
 
     def get_symbol_precision(self, symbol):
         """Mock for strategy compatibility."""
@@ -284,9 +378,16 @@ class BacktestDataProvider(DataProvider):
 
         self.current_time_ms = int(self.global_timeline[self.current_epoch_idx])
         self.current_epoch_idx += 1
+        
+        # Limpiar O(1) caches on epoch transition
+        self._epoch_idx_cache.clear()
+        self._epoch_bars_cache.clear()
+        self._epoch_df_cache.clear()
         self.current_index = self.current_epoch_idx  # Legacy compat
 
-        current_ts = pd.to_datetime(self.current_time_ms, unit="ms", utc=True)
+        # OPTIMIZACIÓN EXTREMA: Evitamos pd.to_datetime (Pandas) en el hot loop.
+        # datetime.fromtimestamp nativo de C es 50x más rápido.
+        current_ts = datetime.fromtimestamp(self.current_time_ms / 1000.0, tz=timezone.utc)
 
         # Emit MarketEvent for EVERY symbol that has data at this epoch
         for symbol in self.symbol_list:
@@ -359,9 +460,10 @@ class BacktestPortfolio:
         # Key: f"{symbol}_{horizon}" → position_data
         self.virtual_ledger = {}
 
-        # v2.0: Capital partitioning (60% Scalping / 40% Swing) - Production Parity
-        self.scalping_capital_pct = 0.60
-        self.swing_capital_pct = 0.40
+        # v2.0: Capital partitioning (40% Microscalping / 40% Scalping / 20% Swing) - Production Parity
+        self.microscalping_capital_pct = 0.40
+        self.scalping_capital_pct = 0.40
+        self.swing_capital_pct = 0.20
 
         # [P0 FIX] Price cache for RiskManager compatibility
         # Required by risk_manager.size_position() to get current prices
@@ -477,7 +579,9 @@ class BacktestPortfolio:
         total_available = max(0, self.current_capital - locked_capital)
 
         # Horizon partition
-        if horizon == "SCALPING":
+        if horizon == "MICROSCALPING":
+            horizon_budget = self.current_capital * self.microscalping_capital_pct
+        elif horizon == "SCALPING":
             horizon_budget = self.current_capital * self.scalping_capital_pct
         elif horizon == "SWING":
             horizon_budget = self.current_capital * self.swing_capital_pct
@@ -916,3 +1020,280 @@ def calculate_metrics(portfolio: BacktestPortfolio) -> dict:
         "peak_capital": round(portfolio.peak_equity, 2),
         "symbol_breakdown": symbol_stats,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Single-Symbol compatibility wrappers for legacy test scripts
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def handle_trade_exit(portfolio, strategy, trade, current_time):
+    """
+    Standardized Cognitive Exit Handler (Phase 47.3 / Retro-compatibility)
+    Computes Post-Mortem, updates Meta-Optimizer and appends Decision Logs if present.
+    """
+    if not trade: 
+        return None
+
+    symbol = trade['symbol']
+    duration_sec = (current_time - trade['entry_time']).total_seconds() if 'entry_time' in trade else 0
+    
+    pm_result = None
+    if hasattr(portfolio, 'post_mortem') and portfolio.post_mortem:
+        try:
+            pm_result = portfolio.post_mortem.compute_post_mortem(
+                trade_id=f"{symbol}_{trade['entry_time'].timestamp()}",
+                actual_pnl=trade['pnl_usd'],
+                duration_seconds=duration_sec
+            )
+        except Exception:
+            pass
+            
+    if pm_result:
+        try:
+            from core.meta_optimizer import meta_optimizer
+            meta_optimizer.process_trade_result(pm_result, strategy.genotypes.get(symbol))
+        except Exception:
+            pass
+    
+    reasoning = None
+    if hasattr(strategy, 'process_reward'):
+        try:
+            reasoning = strategy.process_reward(trade)
+        except Exception:
+            pass
+            
+    if reasoning and hasattr(portfolio, 'decision_logs') and isinstance(portfolio.decision_logs, list):
+        try:
+            portfolio.decision_logs.append({
+                'timestamp': current_time.isoformat() if hasattr(current_time, 'isoformat') else str(current_time),
+                'symbol': symbol,
+                'pnl_usd': float(trade['pnl_usd']),
+                'reasoning': reasoning
+            })
+        except Exception:
+            pass
+    
+    return reasoning
+
+
+def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
+    """
+    Ejecuta el backtest de un solo símbolo bar-a-bar con la estrategia configurada.
+    
+    QUÉ: Simulación tick-by-tick compatible con los scripts de pruebas unitarias y de horizontes.
+    POR QUÉ: Resuelve NameError: name 'run_backtest' is not defined.
+    PARA QUÉ: Permitir validación rápida de la lógica de trading y gestión de riesgo.
+    CÓMO: Instancia un BacktestDataProvider, BacktestPortfolio, y procesa la timeline.
+    """
+    from queue import Queue
+    import pandas as pd
+    from core.events import MarketEvent, SignalEvent
+    from core.enums import SignalType
+    from strategies.technical import HybridScalpingStrategy
+    from utils.logger import logger
+    
+    events_queue = Queue()
+    historical_data = {symbol: data}
+    
+    # Inicializar DataProvider y Portfolio usando parámetros de Config
+    data_provider = BacktestDataProvider(events_queue, [symbol], historical_data)
+    portfolio = BacktestPortfolio(INITIAL_CAPITAL, LEVERAGE)
+    
+    # Determinar si usamos ML o la estrategia Técnica
+    use_ml = os.environ.get("USE_ML_STRATEGY", "False").upper() == "TRUE"
+    
+    if use_ml:
+        try:
+            from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy
+            strategy = MLStrategy(data_provider, events_queue, symbol=symbol)
+            strategy.is_sandbox = True
+            strategy.min_bars_to_train = 300
+            
+            from strategies.components.feature_engineering import FeatureEngineering
+            from strategies.components.signal_generator import SignalGenerator
+            strategy.feature_engineer = FeatureEngineering()
+            strategy.signal_generator = SignalGenerator(strategy.strategy_id)
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo inicializar MLStrategy: {e}. Usando HybridScalpingStrategy.")
+            strategy = HybridScalpingStrategy(data_provider, events_queue)
+    else:
+        strategy = HybridScalpingStrategy(data_provider, events_queue)
+        
+    warmup_bars = 100
+    bar_count = 0
+    signals_generated = 0
+    trades_executed = 0
+    last_loss_time = {}
+    COOLDOWN_MINUTES = 30
+    
+    horizon = getattr(strategy, "horizon", "SCALPING")
+    
+    while data_provider.continue_backtest:
+        data_provider.update_bars()
+        bar_count += 1
+        
+        if bar_count < warmup_bars:
+            continue
+            
+        bars = data_provider.get_latest_bars(symbol, 1)
+        if bars is None or len(bars) == 0:
+            continue
+            
+        current_bar = bars[-1]
+        current_price = float(current_bar['close'])
+        current_time = pd.to_datetime(current_bar['timestamp'], unit='ms', utc=True)
+        high = float(current_bar['high'])
+        low = float(current_bar['low'])
+        
+        portfolio._last_prices[symbol] = current_price
+        
+        # 1. Gestionar salidas de posiciones abiertas (SL/TP)
+        if symbol in portfolio.positions:
+            pos = portfolio.positions[symbol]
+            entry = pos['entry']
+            side = pos['side']
+            stored_sl = pos.get('sl_price')
+            stored_tp = pos.get('tp_price')
+            
+            # Valores por defecto de seguridad
+            if stored_sl is None:
+                stored_sl = entry * 0.985 if side == 'LONG' else entry * 1.015
+            if stored_tp is None:
+                stored_tp = entry * 1.01 if side == 'LONG' else entry * 0.99
+                
+            # Trailing stop adaptativo (Breakeven al 80% del camino)
+            trailing_threshold = 0.80
+            if side == 'LONG':
+                tp_dist = stored_tp - entry
+                breakeven_target = entry + tp_dist * trailing_threshold
+                if high >= breakeven_target and stored_sl < entry:
+                    breakeven_sl = entry * 1.001
+                    pos['sl_price'] = breakeven_sl
+                    stored_sl = breakeven_sl
+                    
+                # Evaluar hit de SL/TP
+                if low <= stored_sl:
+                    pos['exit_reason'] = 'BREAK_EVEN' if stored_sl > entry else 'STOP_LOSS'
+                    trade = portfolio.close_position(symbol, stored_sl, current_time)
+                    if trade:
+                        trades_executed += 1
+                        handle_trade_exit(portfolio, strategy, trade, current_time)
+                        if trade.get('pnl_usd', 0) < 0:
+                            last_loss_time[symbol] = current_time
+                elif high >= stored_tp:
+                    pos['exit_reason'] = 'TAKE_PROFIT'
+                    trade = portfolio.close_position(symbol, stored_tp, current_time)
+                    if trade:
+                        trades_executed += 1
+                        handle_trade_exit(portfolio, strategy, trade, current_time)
+            else: # SHORT
+                tp_dist = entry - stored_tp
+                breakeven_target = entry - tp_dist * trailing_threshold
+                if low <= breakeven_target and stored_sl > entry:
+                    breakeven_sl = entry * 0.999
+                    pos['sl_price'] = breakeven_sl
+                    stored_sl = breakeven_sl
+                    
+                # Evaluar hit de SL/TP
+                if high >= stored_sl:
+                    pos['exit_reason'] = 'BREAK_EVEN' if stored_sl < entry else 'STOP_LOSS'
+                    trade = portfolio.close_position(symbol, stored_sl, current_time)
+                    if trade:
+                        trades_executed += 1
+                        handle_trade_exit(portfolio, strategy, trade, current_time)
+                        if trade.get('pnl_usd', 0) < 0:
+                            last_loss_time[symbol] = current_time
+                elif low <= stored_tp:
+                    pos['exit_reason'] = 'TAKE_PROFIT'
+                    trade = portfolio.close_position(symbol, stored_tp, current_time)
+                    if trade:
+                        trades_executed += 1
+                        handle_trade_exit(portfolio, strategy, trade, current_time)
+                        
+        # 2. Calcular señales de la estrategia
+        strategy.bought[symbol] = symbol in portfolio.positions
+        market_event = MarketEvent(symbol=symbol, close_price=current_price, timestamp=current_time)
+        
+        # Invocar la generación de señales de forma síncrona o asíncrona
+        import inspect
+        if inspect.iscoroutinefunction(getattr(strategy, 'calculate_signals', None)):
+            import asyncio
+            try:
+                loop = asyncio.new_event_loop()
+                loop.run_until_complete(strategy.calculate_signals(market_event))
+                loop.close()
+            except Exception as e:
+                logger.error(f"Error en estrategia asíncrona: {e}")
+        else:
+            strategy.calculate_signals(market_event)
+            
+        # 3. Procesar las señales generadas en la cola de eventos
+        while not events_queue.empty():
+            event = events_queue.get()
+            if not isinstance(event, SignalEvent):
+                continue
+                
+            # Gestión de señales de salida explícitas
+            if event.signal_type == SignalType.EXIT:
+                if symbol in portfolio.positions:
+                    trade = portfolio.close_position(symbol, current_price, current_time)
+                    if trade:
+                        trades_executed += 1
+                        handle_trade_exit(portfolio, strategy, trade, current_time)
+                continue
+                
+            # Gestión de señales de entrada (LONG/SHORT)
+            if symbol not in portfolio.positions:
+                if symbol in last_loss_time:
+                    elapsed = (current_time - last_loss_time[symbol]).total_seconds() / 60.0
+                    meta = getattr(event, 'metadata', {}) or {}
+                    strength_val = getattr(event, 'strength', meta.get('strength', 0.0))
+                    if elapsed < COOLDOWN_MINUTES and strength_val < 0.85:
+                        continue
+                        
+                signals_generated += 1
+                
+                # Metadata y Sizing
+                raw_sl_pct = getattr(event, 'sl_pct', 1.5) or 1.5
+                sl_decimal = raw_sl_pct / 100.0 if raw_sl_pct > 0.1 else raw_sl_pct
+                tp_pct = getattr(event, 'tp_pct', 2.0) or 2.0
+                tp_decimal = tp_pct / 100.0 if tp_pct > 0.1 else tp_pct
+                
+                current_cap = portfolio.current_capital
+                risk_pct = 0.03
+                risk_usd = current_cap * risk_pct
+                size_usd = risk_usd / sl_decimal if sl_decimal > 0 else (current_cap * 1.5)
+                
+                max_size = current_cap * LEVERAGE
+                size_usd = min(size_usd, max_size)
+                if size_usd * LEVERAGE < 5.0:
+                    size_usd = 5.0 / LEVERAGE
+                    
+                if size_usd > current_cap * LEVERAGE:
+                    continue
+                    
+                side = 'LONG' if event.signal_type == SignalType.LONG else 'SHORT'
+                sl_price = current_price * (1 - sl_decimal) if side == 'LONG' else current_price * (1 + sl_decimal)
+                tp_price = current_price * (1 + tp_decimal) if side == 'LONG' else current_price * (1 - tp_decimal)
+                
+                meta_dict = event.metadata if event.metadata else {}
+                meta_dict['horizon'] = horizon
+                
+                portfolio.open_position_with_metadata(
+                    symbol=symbol,
+                    side=side,
+                    price=current_price,
+                    size_usd=size_usd,
+                    timestamp=current_time,
+                    metadata=meta_dict,
+                    sl_price=sl_price,
+                    tp_price=tp_price
+                )
+                
+    return {
+        'portfolio': portfolio,
+        'bars_processed': bar_count,
+        'signals': signals_generated,
+        'signals_generated': signals_generated
+    }
+

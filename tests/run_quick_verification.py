@@ -8,7 +8,7 @@ os.environ['BINANCE_USE_DEMO'] = 'True'
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.backtest_infra import fetch_binance_data, INITIAL_CAPITAL
+from core.backtest_infra import fetch_binance_data, INITIAL_CAPITAL, run_backtest
 import pandas as pd
 
 def run_quick_verification():

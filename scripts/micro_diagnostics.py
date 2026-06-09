@@ -31,10 +31,10 @@ def patch_config(tp_val, sl_val, fee_val, initial_balance=13.0):
         Config.Strategies = DummyStrats()
     
     if not hasattr(Config.Strategies, 'SCALPING_PARAMS'):
-        Config.Strategies.SCALPING_PARAMS = {}
+        Config.Horizons.Scalping = {}
     
-    Config.Strategies.SCALPING_PARAMS['tp_pct'] = tp_val
-    Config.Strategies.SCALPING_PARAMS['sl_pct'] = sl_val
+    Config.Horizons.Scalping['tp_pct'] = tp_val
+    Config.Horizons.Scalping['sl_pct'] = sl_val
 
     # Ensure technical uses this
     Config.Strategies.TECH_TP_PCT = tp_val

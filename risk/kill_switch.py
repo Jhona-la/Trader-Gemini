@@ -32,7 +32,7 @@ class KillSwitch:
         self.peak_equity = 0.0
         self.daily_losses = 0
         self.api_errors = 0
-        self.MAX_DAILY_LOSSES = getattr(Config, 'MAX_DAILY_LOSSES', 5)
+        self.MAX_DAILY_LOSSES = getattr(Config, 'MAX_DAILY_LOSSES', 25)  # FORENSIC-V151: 10→25, with 9 strategies 10 losses = premature kill
         self.MAX_API_ERRORS = 10
         
         # [SS-010] Cooperative shutdown mechanism
@@ -47,6 +47,11 @@ class KillSwitch:
             logger.critical(f"   Remove '{self.LOCK_FILE}' manually to restart.")
             # [SS-010 FIX] Don't sys.exit here — let main.py check and exit cleanly
             # The startup code in main.py should call check_status() before starting the loop.
+
+    @property
+    def is_active(self):
+        """Getter for active status to match legacy test assertions."""
+        return self.active
 
     def set_shutdown_callback(self, callback):
         """

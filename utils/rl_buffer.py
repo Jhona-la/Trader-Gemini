@@ -49,10 +49,10 @@ def jit_sample(
         # We can't easily return empty with correct shape without alloc
         # Accessing empty buffer is UB/Logic error usually.
         return (
-            np.zeros((batch_size, s_buffer.shape[1]), dtype=float32),
-            np.zeros(batch_size, dtype=float32),
-            np.zeros(batch_size, dtype=float32),
-            np.zeros((batch_size, sn_buffer.shape[1]), dtype=float32)
+            np.zeros((batch_size, s_buffer.shape[1]), dtype=np.float32),
+            np.zeros(batch_size, dtype=np.float32),
+            np.zeros(batch_size, dtype=np.float32),
+            np.zeros((batch_size, sn_buffer.shape[1]), dtype=np.float32)
         )
         
     # Generate random indices
@@ -60,10 +60,10 @@ def jit_sample(
     
     # Alloc outputs
     # Note: allocating inside jit is fast enough for small batches
-    batch_s = np.empty((batch_size, s_buffer.shape[1]), dtype=float32)
-    batch_a = np.empty(batch_size, dtype=float32)
-    batch_r = np.empty(batch_size, dtype=float32)
-    batch_sn = np.empty((batch_size, sn_buffer.shape[1]), dtype=float32)
+    batch_s = np.empty((batch_size, s_buffer.shape[1]), dtype=np.float32)
+    batch_a = np.empty(batch_size, dtype=np.float32)
+    batch_r = np.empty(batch_size, dtype=np.float32)
+    batch_sn = np.empty((batch_size, sn_buffer.shape[1]), dtype=np.float32)
     
     for i in range(batch_size):
         idx = indices[i]

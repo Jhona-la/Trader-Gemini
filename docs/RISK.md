@@ -146,3 +146,155 @@ El límite de pérdida máxima permitida (`MAX_DRAWDOWN`) ya no es estático del
 ### 3. Pisos de Capital Dinámicos
 El `CRITICAL_CAPITAL_FLOOR` se ajusta automáticamente según el valor del Tick y el Horizonte, garantizando que el bot siempre tenga margen suficiente para ejecutar órdenes LIMIT sin entrar en colisión con los mínimos del exchange de Binance bajo alta volatilidad.
 
+### 4. Aislamiento y Control de Microscalping (Ultra HFT)
+Para operaciones en el horizonte de `MICROSCALPING` (TP=0.25% y SL=0.20%), el sistema utiliza un control estricto de fricción. Las llaves del libro mayor virtual se aíslan bajo el formato `{symbol}_MICROSCALPING_{side}` para evitar colisiones de órdenes, y el Risk Manager las procesa de manera nativa mapeando las salidas y actualizando los precios utilizando el flujo real de datos, protegiendo la cuenta de $13 USD contra el Fee Drag mediante la preferencia de comisiones Maker.
+
+---
+
+## 🔒 VI. CONTROL DE PROPIEDAD EXCLUSIVA Y PREFIJOS DE SEGURIDAD (MODO PROFESOR)
+
+Para evitar interferencias destructivas en el Ledger Virtual (por colisiones de órdenes entre los motores de Scalping y Swing), la arquitectura implementa una política estricta de propiedad de posición:
+
+### 1. Propiedad Exclusiva de Posiciones (Strict Ownership Verification)
+- **QUÉ**: Es una validación lógica que impide que una estrategia modifique, actualice los stops o cierre una posición que fue abierta por otra estrategia diferente.
+- **POR QUÉ**: Previamente, cualquier orden de salida o señal `EXIT` emitida por un módulo (ej. `TechnicalStrategy` de Scalping) podía cerrar indiscriminadamente posiciones de otra estrategia (ej. `MLStrategy` de Swing) si compartían el mismo símbolo. Esto arruinaba la gestión de posición y provocaba pérdidas por cierre prematuro de posiciones ganadoras a largo plazo.
+- **PARA QUÉ**: Aislar las tesis operativas por horizonte temporal. Un trade Swing debe ser gestionado exclusivamente por sus parámetros Swing, y un trade Scalping por sus propios stops rápidos.
+- **CÓMO**: En `core/portfolio.py` (método `_update_virtual_ledger()`) y en `risk/risk_manager.py` (métodos `check_stops()` y `_generate_exit_order()`), cada orden de salida se somete a verificación. Si el `strategy_id` del emisor no coincide exactamente con el `opener_strategy_id` registrado en la posición, la orden de salida es vetada de inmediato, a menos que cumpla con las excepciones de seguridad del sistema.
+- **CUÁNDO**: Se evalúa en cada iteración del Risk Manager al chequear stops, y en el Portfolio al procesar eventos de ejecución de llenado (Fills).
+- **DÓNDE**: Implementado en el Ledger Virtual (`core/portfolio.py`) y en la capa de control de riesgo (`risk/risk_manager.py`).
+- **QUIÉN**: El `Portfolio` (como custodio del Ledger) y el `RiskManager` (como árbitro de órdenes) co-ejecutan la validación.
+
+### 2. Prefijos de Seguridad y Salidas del Sistema (Whitelisted Safety Exits)
+- **QUÉ**: Son excepciones a la regla de propiedad exclusiva que permiten que ciertos sistemas de seguridad globales o módulos transversales del bot ejecuten cierres forzados sobre cualquier posición.
+- **POR QUÉ**: Si la regla de propiedad fuera 100% rígida, un sistema de emergencia general (como el Kill-Switch, el trailing stop adaptativo de la cuenta o el cierre por tiempo extremo) no podría cerrar una posición abierta por otra estrategia en caso de pánico, resultando en pérdidas catastróficas.
+- **PARA QUÉ**: Permitir la coexistencia de la propiedad exclusiva con salvaguardas sistémicas globales frente a cisnes negros o fallos de conexión.
+- **CÓMO**: Se define una lista blanca de prefijos válidos de salida defensiva: `HARD_` (Stops duros / KillSwitch), `SPAP_` (Sophia Panic Exits), `TRAIL_` (Sistemas Trailing transversales), y `WEAK_` (Filtros de debilidad estructural). Si la orden o señal de salida empieza con uno de estos prefijos (ej. `"HARD_SL"` o `"SPAP_L_CAPTURE"`), la verificación de propiedad exclusiva se omite, permitiendo el cierre seguro de la posición.
+- **CUÁNDO**: Al procesar y validar el emisor de la orden de salida en la capa de riesgo.
+- **DÓNDE**: En `risk/risk_manager.py` (clase `RiskManager`) y `core/portfolio.py`.
+- **QUIÉN**: El `RiskManager` valida el prefijo en la señal de salida y autoriza la emisión de la orden a Binance.
+
+
+## ⚖️ VII. MÓDULO MAESTRO — INTELIGENCIA DIFERENCIAL DE ACTIVOS Y SISTEMAS DE APERTURA/CIERRE (MODO PROFESOR)
+
+### 1. Inteligencia Diferencial de Activos (Asset-Specific Intelligence)
+- **QUÉ**: Una capa de inteligencia transversal que clasifica y parametriza los activos del basket operativo según cuatro dimensiones fundamentales: Jerarquía de Liderazgo (Tiers 0-4), Perfil de Liquidez (Niveles 1-5), Perfil de Volatilidad (Perfiles A-D) y Mapa de Catalizadores (Tipos 1-6).
+- **POR QUÉ**: Los mercados de criptomonedas no son homogéneos. BTC (Tier 0) se comporta de forma institucional y eficiente, mientras que DOGE (Tier 4) responde puramente a dinámicas de sentimiento y manipulación retail. Tratar a todos los activos con los mismos parámetros de stop loss, sizing y compatibilidad de estrategia destruye cuentas con capitales ajustados ($13 USD).
+- **PARA QUÉ**: Asegurar que cada señal se evalúa bajo las reglas del activo correspondiente, reduciendo significativamente el drawdown, optimizando los stops dinámicos (multiplicadores ATR) y adaptando la fracción de Kelly (desde 1/2 en BTC hasta 1/4 en DOGE).
+- **CÓMO**: Implementado mediante la clase `AssetIntelligence` en `core/asset_intelligence.py` que almacena los perfiles específicos de BTC, ETH, BNB, SOL, XRP y DOGE.
+- **CUÁNDO**: Se activa en el flujo de entrada de señales (`verify_opening`) y en la monitorización de salidas (`verify_closing`).
+- **DÓNDE**: `core/asset_intelligence.py`.
+- **QUIÉN**: Diseñado por el Arquitecto Senior y el Quant Developer del equipo Trader Gemini.
+
+### 2. Pipeline de Apertura Secuencial (A1-A7)
+- **QUÉ**: Un sistema de 7 filtros ineludibles que valida y calibra la apertura de nuevas posiciones.
+- **POR QUÉ**: Previene la entrada de operaciones en regímenes erróneos, timing desfavorable, con señales débiles, o bajo riesgo regulatorio y cortes de red.
+- **PARA QUÉ**: Maximizar la probabilidad de acierto (Win Rate) a mercado real y proteger el capital inicial.
+- **CÓMO**:
+  1. **A1 (Régimen)**: Valida con el detector de régimen. TFTF requiere tendencia; Mean Reversion está prohibido en tendencias.
+  2. **A2 (Timing)**: Bloquea aperturas durante cooldowns macro o períodos de baja liquidez.
+  3. **A3 (Puntuación Primaria)**: Exige un umbral de confianza específico para cada activo (BTC >= 0.72, DOGE >= 0.78).
+  4. **A4 (Confluencia y Compatibilidad)**: Filtra por la matriz de estrategias permitidas (ej. Mean Reversion prohibida en DOGE).
+  5. **A5 (Riesgo y Sizing)**: Enforza un límite de 3 posiciones abiertas simultáneas y valida el tamaño mínimo de Binance ($5 USD).
+  6. **A6 (No-Colisión y Catalizadores)**: Bloquea operaciones bajo cortes de red (outages en SOL) o riesgos regulatorios (XRP).
+  7. **A7 (Calibración)**: Calcula los niveles de stop y liquidación virtual.
+- **CUÁNDO**: En cada evaluación de señal en `MetaCoordinator` antes del motor de ejecución.
+- **DÓNDE**: En `core/asset_intelligence.py` (`verify_opening`) and `core/meta_coordinator.py`.
+- **QUIÉN**: Ejecutado por el `MetaCoordinator`.
+
+### 3. Pipeline de Cierre Dinámico (C1-C7)
+- **QUÉ**: Un sistema de 7 prioridades que monitoriza las salidas de las posiciones activas en tiempo real.
+- **POR QUÉ**: El edge de una estrategia reside principalmente en su salida. Salir tarde destruye las micro-cuentas por mechas en contra.
+- **PARA QUÉ**: Asegurar salidas limpias ante stops duros, invalidación de tesis técnica, trailing adaptativo, límites de tiempo o emergencias.
+- **CÓMO**:
+  1. **C1 (Stop Loss Inicial)**: Cierre inamovible basado en estructura.
+  - **C2 (Invalidación de Contexto)**: Cierra proactivamente ante cambios adversos (ej. ADX de TFTF cae por debajo de 20).
+  - **C3 (Cierre Parcial Progresivo)**: Materializa ganancias en objetivos de beneficio (R1, R2).
+  - **C4 (Trailing Stop Adaptativo)**: Sigue la tendencia tras asegurar beneficios.
+  - **C5 (Tiempo Límite)**: Expiración incondicional (1 hora para Scalping, 48 horas para Swing).
+  - **C6 (Reversión de Señal)**: Cierra al invertirse la dirección del timeframe.
+  - **C7 (Emergencia)**: Liquidación a mercado inmediata ante cisnes negros o outages detectados.
+- **CUÁNDO**: Evaluado en cada tick del ledger virtual en `check_stops()`.
+- **DÓNDE**: `core/asset_intelligence.py` (`verify_closing`) y `risk/risk_manager.py`.
+- **QUIÉN**: Orquestado por el `RiskManager`.
+
+
+## ⏳ VIII. AUDITORÍA TEMPORAL Y COMPORTAMIENTO EVOLUTIVO DEL SISTEMA (MODO PROFESOR)
+
+Para blindar el capital de $13 USD y garantizar el crecimiento compuesto exponencial bajo el mandato del **PROMPT SUPREMO**, la arquitectura incorpora un motor supervisor que controla el comportamiento temporal, el envejecimiento de capital depositado y los niveles de degradación de la rentabilidad del bot.
+
+### 1. Checklist de Inicialización de Fase 0 (System Init Validation)
+- **QUÉ**: Protocolo de verificación estricto de 9 pasos previos a la operación que se ejecuta en los primeros 5 minutos del bot.
+- **POR QUÉ**: Previene la activación de órdenes reales en situaciones de inestabilidad de red, falta de liquidez en buffers, desincronización de base de datos o fallos del event loop.
+- **PARA QUÉ**: Garantizar que el sistema inicia en un estado 100% óptimo y seguro.
+- **CÓMO**: El supervisor evalúa: latencia de WebSocket (<200ms), recepción activa de ticks para todos los pares configurados en `TRADING_PAIRS`, presencia de datos históricos en el Feature Store, carga exitosa de modelos ML, accesibilidad a bases de datos, consistencia del `OmniscientRegistry`, Portfolio Heat = 0, Kill Switches cargados (no activos) y disponibilidad de fondos reales de Binance.
+- **CUÁNDO**: En el arranque inmediato del bot.
+- **DÓNDE**: `core/temporal_supervisor.py` (`verify_initialization_checklist()`).
+- **QUIÉN**: El `TemporalSupervisor`.
+
+### 2. Control de Sub-fases del Primer Ciclo
+- **QUÉ**: Restricciones de tamaño de posición (size) y puntuación de señal (score) basadas en el tiempo transcurrido desde el arranque del ciclo (72 horas).
+- **POR QUÉ**: Evita la sobreexposición en los primeros momentos del arranque, permitiendo al bot "calentar" sus buffers y confirmar si la estrategia se encuentra en fase alineada ("On-Track").
+- **PARA QUÉ**: Evitar pérdidas masivas inmediatas por falsos arranques de mercado.
+- **CÓMO**:
+  1. `OBSERVACION` (Minuto 0-30): Veto total (`allowed = False`) de toda señal.
+  2. `HORA_1` (Minuto 30-60): Máximo 25% del sizing permitido, penalización de +15 puntos en la exigencia de score.
+  3. `HORA_2_4` (Horas 1-4): Máximo 50% de sizing, +10 en score. A la hora 2 se evalúa el rendimiento acumulado: si el P&L es inferior a -1.0%, se fuerza el `conservative_mode` reduciendo a la mitad el tamaño del trade por el resto de la sesión.
+  4. `HORA_4_8` (Horas 4-8): Máximo 70% de sizing.
+  5. `OPERACION_NORMAL` (Horas 8+): 100% del sizing permitido.
+- **CUÁNDO**: Interceptado dinámicamente antes de enviar señales al Risk Manager.
+- **DÓNDE**: `core/temporal_supervisor.py` (`apply_temporal_constraints()`).
+- **QUIÉN**: Co-ejecutado por el `TemporalSupervisor` y validado por el `RiskManager`.
+
+### 3. Protocolo de Inyección de Capital (Gradual Capital Deployment)
+- **QUÉ**: Detección automatizada de depósitos externos y su incorporación progresiva en el capital disponible para el trading durante un periodo de 4 semanas.
+- **POR QUÉ**: Un incremento brusco del balance debido a un depósito manual altera drásticamente los cálculos de tamaño de posición por Kelly, pudiendo causar un sobredimensionamiento catastrófico antes de validar que los modelos se comportan correctamente bajo el nuevo volumen.
+- **PARA QUÉ**: Atenuar el impacto de nuevas inyecciones de capital y evitar el aumento descontrolado del riesgo de ruina.
+- **CÓMO**: El supervisor calcula la diferencia de efectivo contra el P&L de trading (`delta_cash - delta_pnl`). Si es mayor a $1.00 USD, detecta una inyección y registra el evento en el `OmniscientRegistry`. El capital inyectado se somete a un filtro de no-despliegue gradual:
+  - Semana 1 (Días 0-7): 75% del depósito no es deployable (25% disponible).
+  - Semana 2 (Días 8-14): 50% del depósito no es deployable (50% disponible).
+  - Semana 3 (Días 15-21): 25% del depósito no es deployable (75% disponible).
+  - Semana 4 (Días 22-28+): 0% no deployable (100% disponible).
+- **CUÁNDO**: Evaluado en el loop de fondo cada minuto.
+- **DÓNDE**: `core/temporal_supervisor.py` (`get_deployable_capital_reduction()`).
+- **QUIÉN**: El `TemporalSupervisor` calcula la reducción y el `RiskManager` la descuenta en `size_position()`.
+
+### 4. Niveles de Degradación Sistémica (Systemic Degradation Alerts)
+- **QUÉ**: Evaluación estadística automatizada de la performance del sistema al finalizar cada ciclo de 72 horas para declarar niveles de degradación operativa.
+- **POR QUÉ**: Identifica el deterioro de la ventaja estadística (edge) debido a cambios drásticos en el régimen del mercado, reduciendo el riesgo de forma proactiva antes de que la cuenta sufra un drawdown severo.
+- **PARA QUÉ**: Garantizar la antifragilidad adaptativa y aplicar salvaguardas sin intervención humana.
+- **CÓMO**: El supervisor evalúa Profit Factor, Win Rate, SHS y Drawdown de los ciclos completados:
+  - **Nivel 1 (Alerta Amarilla)**: PF entre 1.2 y 1.5, o caída de Win Rate > 10% consecutiva, o SHS < 70. Acción: reduce el sizing de entrada al 70% y aumenta los filtros de score en +15 puntos.
+  - **Nivel 2 (Alerta Naranja)**: PF < 1.2 consecutiva, Drawdown > 30%, o SHS < 60. Acción: reduce el sizing al 50% y aumenta la exigencia de score en +30 puntos.
+  - **Nivel 3 (Alerta Roja)**: Pérdida neta en el ciclo, Drawdown > 50%, o SHS < 40. Acción: dispara de inmediato el Kill Switch general deteniendo la operación del bot.
+- **CUÁNDO**: Al final de cada ciclo de 72 horas.
+- **DÓNDE**: `core/temporal_supervisor.py` (`_execute_cycle_transition()`).
+- **QUIÉN**: El `TemporalSupervisor` y el `RiskManager`.
+
+---
+
+## 🕵️ IX. MÓDULO AUDIT SENIOR (ACS, ACI, AEA, ACR, ATA)
+
+El **MÓDULO AUDIT SENIOR** introduce un gobierno omnisciente del ciclo de vida de cada trade, garantizando que el motor de ejecución razone íntimamente sobre el contexto de la tesis que abrió la posición.
+
+### 🧬 1. Estrategia ADN Registry
+El sistema formaliza el mapa genético (`STRATEGY_DNA`) de 11 estrategias operativas (TFTF, OB_RETEST, LCA, MRBB, WYCKOFF, VBA, MBV, FRA, SC, STATARB, OCS). Cada una registra:
+- Tesis y condiciones necesarias/suficientes.
+- Indicadores críticos de confirmación e invalidación.
+- Ventana temporal de validez técnica.
+- Asimetrías de apalancamiento y mitigación por activo.
+
+### 🚦 2. Roles de Auditoría Senior
+1. **ACS (Auditor de Coherencia Estratégica)**: Valida la coherencia de régimen de mercado al momento de apertura (ej. TFTF exige tendencia; MRBB exige lateralización) e intercepta cierres por invalidación de indicadores clave (ej. caída de ADX < 20).
+2. **ACI (Auditor de Continuidad de Inteligencia)**: Vigila constantemente que el bot no opere a "ciegas" debido a cortes de datos o desactualización de variables.
+3. **AEA (Auditor de Especificidad Activo-Estrategia)**: Calibra el sizing y valida el alineamiento direccional con el líder del mercado (BTC) para los Tiers inferiores.
+4. **ACR (Auditor de Captura de Rentabilidad)**: Optimiza los ratios de Take Profit y persigue el precio mediante stops de arrastre basados en el perfil del activo.
+5. **ATA (Auditor de Trazabilidad y Aprendizaje)**: Escribe una bitácora detallada y persistente en `logs/audit_chronicle.json` registrando cada `ENTRY`, `HEARTBEAT` y `EXIT` para cerrar el bucle de aprendizaje automático (learning loops).
+
+### 🚨 3. Protocolo de Degradación por Ceguera
+El auditor de continuidad (ACI) mide el retraso (*lag*) del feed de datos en tiempo real. Si detecta anomalías de red o desconexiones, activa progresivamente:
+
+| Nivel de Degradación | Condición de Activación | Acción y Penalización Aplicada |
+| :--- | :--- | :--- |
+| **Nivel 1: Alerta Parcial** | *Lag* > Límite del Horizonte (ej. > 45s en Scalping) | Generación de advertencia y registro de Warning. Se activa el modo defensivo. |
+| **Nivel 2: Reducción Crítica** | *Lag* > 3x Límite o Predicción Expirada | Reducción inmediata a la mitad (Halving) del tamaño de la posición o congelamiento de márgenes. |
+| **Nivel 3: Cierre de Emergencia** | *Lag* > 10x Límite | Salida inmediata a mercado (Emergency Exit) para salvar la cuenta de $13 USD de cisnes negros. |

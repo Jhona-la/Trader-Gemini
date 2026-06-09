@@ -11,11 +11,11 @@ print("=" * 60)
 print("P2 FORENSIC: SL/TP PARAMETER PARITY AUDIT")
 print("=" * 60)
 
-print(f"\n[Config.Strategies.SCALPING_PARAMS]")
+print(f"\n[Config.Horizons.Scalping]")
 print(f"  tp_pct = {scalp.get('tp_pct', 'MISSING')} = {scalp.get('tp_pct', 0)*100:.2f}%")
 print(f"  sl_pct = {scalp.get('sl_pct', 'MISSING')} = {scalp.get('sl_pct', 0)*100:.2f}%")
 
-print(f"\n[Config.Strategies.SWING_PARAMS]")
+print(f"\n[Config.Horizons.Swing]")
 print(f"  tp_pct = {swing.get('tp_pct', 'MISSING')} = {swing.get('tp_pct', 0)*100:.2f}%")
 print(f"  sl_pct = {swing.get('sl_pct', 'MISSING')} = {swing.get('sl_pct', 0)*100:.2f}%")
 

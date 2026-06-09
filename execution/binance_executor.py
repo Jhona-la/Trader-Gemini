@@ -174,10 +174,11 @@ class BinanceExecutor:
                 return []
             
             # 2. PHASE 14: PREDICTIVE RATE LIMIT CHECK
-            # Estimated weight: order=1, others=1. Heavy endpoints handled by buffer.
             is_safe, wait_time = self.rate_limiter.check_limit(weight_cost=1)
             if not is_safe:
-                # BLOCKING WAIT (Safety first)
+                if wait_time > 0.5:
+                    logger.warning(f"⚠️ [RATE LIMIT] Aborting request to {path} to avoid ThreadPool deadlock ({wait_time}s)")
+                    raise ccxt.RateLimitExceeded(f"Rate limit wait too long: {wait_time}s")
                 time.sleep(wait_time)
             
             # 3. EXECUTE REQUEST
@@ -373,7 +374,10 @@ class BinanceExecutor:
                 'leverage': int(target_leverage)
             })
             self._leverage_cache[symbol_id] = target_leverage
-            metrics.increment("leverage_adjustments")
+            if hasattr(metrics, 'increment'):
+                metrics.increment("leverage_adjustments")
+            elif hasattr(metrics, 'inc'):
+                metrics.inc("leverage_adjustments")
         except Exception as e:
             err_msg = str(e)
             if "No need to change" in err_msg:
@@ -423,8 +427,8 @@ class BinanceExecutor:
         
         try:
             # 1. MARKETS LOADED CHECK
-            if not self.exchange.markets:
-                self.exchange.load_markets()
+            if not self.async_exchange.markets:
+                await self.async_exchange.load_markets()
             
             market = self.exchange.market(symbol_ccxt)
             symbol_id = market['id']
@@ -581,7 +585,7 @@ class BinanceExecutor:
                 strategy_name = getattr(event, 'strategy_id', '')
                 is_emergency = strategy_name in ("EMERGENCY_EXIT", "KILL_SWITCH", "HARD_SL", "TIME_STOP")
                 is_trailing = "TRAIL" in strategy_name
-                is_active_exit = is_emergency or is_trailing or ("EXIT" in strategy_name) or ("PREDICTION" in strategy_name) or ("TURBO" in strategy_name)
+                is_active_exit = is_emergency or is_trailing or ("EXIT" in strategy_name) or ("PREDICTION" in strategy_name) or ("TURBO" in strategy_name) or ("CLOSE" in strategy_name)
                 is_resting_tp = metadata.get('is_tp_limit', False) if metadata else False
 
                 if is_emergency:
@@ -645,11 +649,19 @@ class BinanceExecutor:
                     try:
                         bid, ask = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
                         if side == 'buy':
-                            smart_price = bid # Top of book bid
+                            smart_price = min(smart_price, bid) if smart_price is not None else bid
                         else:
-                            smart_price = ask # Bottom of book ask
+                            smart_price = max(smart_price, ask) if smart_price is not None else ask
                     except Exception as e:
                         logger.warning(f"⚠️ Could not fetch orderbook for Maker pricing: {e}")
+
+                if smart_price is None:
+                    try:
+                        bid, ask = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
+                        smart_price = bid if side == 'buy' else ask
+                    except Exception as e:
+                        logger.warning(f"⚠️ Fallback pricing failed: {e}")
+                        return
 
                 if side == 'buy': smart_price *= (1 + spread_adj)
                 else: smart_price *= (1 - spread_adj)
@@ -675,7 +687,7 @@ class BinanceExecutor:
                     reference_price = px_tup[0] if side == 'sell' else px_tup[1]
                 # Fallback: ticker
                 if not reference_price or reference_price <= 0:
-                    ticker = self.exchange.fetch_ticker(symbol_ccxt)
+                    ticker = await self.async_exchange.fetch_ticker(symbol_ccxt)
                     reference_price = float(ticker.get('last', 0))
             except Exception as e:
                 logger.warning(f"⚠️ [FAT FINGER] Could not get reference price for {symbol}: {e}")
@@ -704,7 +716,6 @@ class BinanceExecutor:
             if _cancel_tp and (getattr(event, 'is_exit', False) or getattr(event, 'is_close', False)):
                 logger.info(f"🗑️ [PREDICTIVE LIMIT] Cancelling resting TP limit for {symbol_ccxt} before Market exit...")
                 try:
-                    import asyncio
                     # ccxt soporta cancel_all_orders para casi todos
                     await asyncio.wait_for(self.async_exchange.cancel_all_orders(symbol_ccxt), timeout=4.0)
                     logger.info(f"✅ [PREDICTIVE LIMIT] Pending TP orders cancelled for {symbol_ccxt}.")
@@ -818,7 +829,6 @@ class BinanceExecutor:
                 order = order_raw # Simplified mapping
             else:
                 # SPOT
-                import asyncio
                 import ccxt
                 try:
                     spot_params = {}
@@ -1819,7 +1829,6 @@ class BinanceExecutor:
         # Safe fallback for Backtest/Offline Demo
         if getattr(Config, 'BINANCE_USE_DEMO', False): return
         
-        import asyncio
         import ccxt
         
         while chases < max_chases:

@@ -41,16 +41,19 @@ class CooldownManager:
         # BUG #55 FIX: Respect Config.COOLDOWN_PERIOD_SECONDS if available
         from config import Config
         # ================================================================
-        # FORENSIC-RESCUE-PROTOCOL: COOLDOWNS RESTORED
-        # QUÉ: Tiempos mínimos entre trades por nivel.
-        # POR QUÉ: Bypass anterior de 0.0s causaba overtrading extremo 
-        #   y re-entradas suicidas en la misma vela de 5m.
-        # PARA QUÉ: Preservar capital y obligar al bot a esperar nueva info.
+        # FORENSIC-RESCUE-PROTOCOL: COOLDOWNS RESTORED & HORIZON-AWARE
+        # QUÉ: Tiempos mínimos entre trades por nivel y por horizonte.
+        # POR QUÉ: Bypass anterior de 0.0s causaba overtrading extremo.
+        #   Ahora separamos Scalping (60s) de Swing (1h) para evitar que
+        #   un trade de scalping bloquee una señal legítima de swing.
+        # PARA QUÉ: Coexistencia perfecta sin interferencias cruzadas.
         # ================================================================
-        self.GLOBAL_COOLDOWN = 0.0 # 0s global is fine (symbols independent)
-        self.SYMBOL_COOLDOWN = 300.0 # 5 minutes (1 candle)
-        self.PATTERN_COOLDOWN = 300.0 # 5 minutes
-        self.STRATEGY_COOLDOWN = 60.0 # 1 minute
+        self.GLOBAL_COOLDOWN = 0.0
+        self.SCALPING_SYMBOL_COOLDOWN = 60.0    # 1 min
+        self.SWING_SYMBOL_COOLDOWN = 3600.0     # 1 hora
+        self.SCALPING_PATTERN_COOLDOWN = 60.0
+        self.SWING_PATTERN_COOLDOWN = 3600.0
+        self.STRATEGY_COOLDOWN = 0.0  # FORENSIC FIX: was 60.0, blocking multi-symbol parallel execution
         
         # State tracking
         self.last_global_trade: Optional[datetime] = None
@@ -94,33 +97,34 @@ class CooldownManager:
             return True
 
     
-    def can_trade_symbol(self, symbol: str) -> bool:
-        """Check symbol-specific cooldown"""
+    def can_trade_symbol(self, symbol: str, horizon: str = "SCALPING") -> bool:
+        """Check symbol-specific cooldown, segregated by horizon to prevent cross-horizon blocking."""
         with self._state_lock:
-            if symbol not in self.last_symbol_trade:
+            key = f"{symbol}_{horizon}"
+            if key not in self.last_symbol_trade:
                 return True
             
-            elapsed = (self._get_now() - self.last_symbol_trade[symbol]).total_seconds()
-            if elapsed < self.SYMBOL_COOLDOWN:
-                self.blocked_count[f'symbol_{symbol}'] += 1
+            elapsed = (self._get_now() - self.last_symbol_trade[key]).total_seconds()
+            cooldown_val = self.SCALPING_SYMBOL_COOLDOWN if horizon in ["SCALPING", "MICROSCALPING"] else self.SWING_SYMBOL_COOLDOWN
+            if elapsed < cooldown_val:
+                self.blocked_count[f'symbol_{key}'] += 1
                 return False
             return True
 
-    
-    def can_trade_pattern(self, symbol: str, pattern: str) -> bool:
-        """Check pattern-specific cooldown"""
+    def can_trade_pattern(self, symbol: str, pattern: str, horizon: str = "SCALPING") -> bool:
+        """Check pattern-specific cooldown, segregated by horizon."""
         with self._state_lock:
-            key = f"{symbol}_{pattern}"
+            key = f"{symbol}_{pattern}_{horizon}"
             if key not in self.last_pattern_trade:
                 return True
             
             elapsed = (self._get_now() - self.last_pattern_trade[key]).total_seconds()
-            if elapsed < self.PATTERN_COOLDOWN:
-                self.blocked_count[f'pattern_{pattern}'] += 1
+            cooldown_val = self.SCALPING_PATTERN_COOLDOWN if horizon in ["SCALPING", "MICROSCALPING"] else self.SWING_PATTERN_COOLDOWN
+            if elapsed < cooldown_val:
+                self.blocked_count[f'pattern_{key}'] += 1
                 return False
             return True
 
-    
     def can_trade_strategy(self, strategy_id: str) -> bool:
         """Check strategy-specific cooldown"""
         with self._state_lock:
@@ -133,9 +137,17 @@ class CooldownManager:
                 return False
             return True
 
-    
+    def can_evaluate(self, strategy_id: str, symbol: str) -> bool:
+        """Check if a strategy can be evaluated for a specific symbol."""
+        with self._state_lock:
+            if not self.can_trade_strategy(strategy_id):
+                return False
+            if not self.can_trade_symbol(symbol, horizon="SCALPING"):
+                return False
+            return True
+
     def can_trade(self, symbol: str, pattern: Optional[str] = None, 
-                  strategy_id: Optional[str] = None) -> tuple:
+                  strategy_id: Optional[str] = None, horizon: str = "SCALPING") -> tuple:
         """
         Comprehensive check - all cooldowns.
         
@@ -146,14 +158,14 @@ class CooldownManager:
         if not self.can_trade_global():
             return False, f"Global cooldown ({self.GLOBAL_COOLDOWN}s)"
         
-        # Level 2: Symbol
-        if not self.can_trade_symbol(symbol):
-            remaining = self.get_remaining_cooldown(symbol, 'symbol')
+        # Level 2: Symbol (Horizon-Aware)
+        if not self.can_trade_symbol(symbol, horizon=horizon):
+            remaining = self.get_remaining_cooldown(symbol, 'symbol', horizon=horizon)
             return False, f"Symbol cooldown ({remaining:.0f}s remaining)"
         
-        # Level 3: Pattern (optional)
-        if pattern and not self.can_trade_pattern(symbol, pattern):
-            remaining = self.get_remaining_cooldown(symbol, 'pattern', pattern)
+        # Level 3: Pattern (Horizon-Aware)
+        if pattern and not self.can_trade_pattern(symbol, pattern, horizon=horizon):
+            remaining = self.get_remaining_cooldown(symbol, 'pattern', pattern=pattern, horizon=horizon)
             return False, f"Pattern cooldown ({remaining:.0f}s remaining)"
         
         # Level 4: Strategy (optional)
@@ -164,38 +176,42 @@ class CooldownManager:
         # Level 5: Loss Streak Custom Cooldown
         with self._state_lock:
             if hasattr(self, 'custom_cooldowns'):
-                loss_key = f"loss_streak_{symbol}"
+                loss_key = f"loss_streak_{symbol}_{horizon}"
                 if loss_key in self.custom_cooldowns:
                     now = self._get_now()
                     last_time = self.custom_cooldowns[loss_key]
                     elapsed = (now - last_time).total_seconds()
-                    # RESCUE PROTOCOL: Check for 1800s (30m) instead of 300s
-                    if elapsed < 1800:
-                        remaining = 1800 - elapsed
+                    # RESCUE PROTOCOL: Check for config value instead of hardcoded 1800s
+                    try:
+                        from config import Config
+                        cooldown_val = getattr(Config, 'COOLDOWN_PERIOD_SECONDS', 1800)
+                    except ImportError:
+                        cooldown_val = 1800
+                    if elapsed < cooldown_val:
+                        remaining = cooldown_val - elapsed
                         return False, f"Loss streak cooldown ({remaining:.0f}s remaining)"
         
         return True, "OK"
     
     def record_trade(self, symbol: str, pattern: Optional[str] = None, 
-                     strategy_id: Optional[str] = None):
-        """Record that a trade was executed"""
+                     strategy_id: Optional[str] = None, horizon: str = "SCALPING"):
+        """Record that a trade was executed (segregated by horizon)"""
         with self._state_lock:
             now = self._get_now()
 
-            
             # Update all levels
             self.last_global_trade = now
-            self.last_symbol_trade[symbol] = now
+            self.last_symbol_trade[f"{symbol}_{horizon}"] = now
             
             if pattern:
-                key = f"{symbol}_{pattern}"
+                key = f"{symbol}_{pattern}_{horizon}"
                 self.last_pattern_trade[key] = now
             
             if strategy_id:
                 self.last_strategy_trade[strategy_id] = now
     
     def get_remaining_cooldown(self, identifier: str, level: str, 
-                               pattern: Optional[str] = None) -> float:
+                               pattern: Optional[str] = None, horizon: str = "SCALPING") -> float:
         """Get remaining cooldown time in seconds"""
         with self._state_lock:
             now = self._get_now()
@@ -207,17 +223,20 @@ class CooldownManager:
                 return max(0, self.GLOBAL_COOLDOWN - elapsed)
             
             elif level == 'symbol':
-                if identifier not in self.last_symbol_trade:
+                key = f"{identifier}_{horizon}"
+                if key not in self.last_symbol_trade:
                     return 0.0
-                elapsed = (now - self.last_symbol_trade[identifier]).total_seconds()
-                return max(0, self.SYMBOL_COOLDOWN - elapsed)
+                elapsed = (now - self.last_symbol_trade[key]).total_seconds()
+                cooldown_val = self.SCALPING_SYMBOL_COOLDOWN if horizon in ["SCALPING", "MICROSCALPING"] else self.SWING_SYMBOL_COOLDOWN
+                return max(0, cooldown_val - elapsed)
             
             elif level == 'pattern':
-                key = f"{identifier}_{pattern}"
+                key = f"{identifier}_{pattern}_{horizon}"
                 if key not in self.last_pattern_trade:
                     return 0.0
                 elapsed = (now - self.last_pattern_trade[key]).total_seconds()
-                return max(0, self.PATTERN_COOLDOWN - elapsed)
+                cooldown_val = self.SCALPING_PATTERN_COOLDOWN if horizon in ["SCALPING", "MICROSCALPING"] else self.SWING_PATTERN_COOLDOWN
+                return max(0, cooldown_val - elapsed)
             
             elif level == 'strategy':
                 if identifier not in self.last_strategy_trade:

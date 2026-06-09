@@ -25,9 +25,14 @@ from utils.fast_strings import intern_string # Phase 21: String Interning Optimi
 from utils.shm_utils import SharedMemoryManager # Phase 11: SHM Bridge
 from strategies.components.microstructure import MicrostructureAnalyzer # Phase 25: Nadir-Soberano
 
+# [MÓDULO OMEGA] - Dimensión 1: Validación de Datos
+from data.validators.ohlcv_validator import OHLCVValidator
+
 
 class BinanceData(DataProvider):
     def __init__(self, events_queue, symbol_list):
+        from data.data_provider import register_data_provider
+        register_data_provider(self)
         self.events_queue = events_queue
         self.symbol_list = symbol_list
         self._running = True
@@ -68,7 +73,7 @@ class BinanceData(DataProvider):
         self.last_depth_update = {s: 0.0 for s in self.symbol_list}
 
         # 🔍 PHASE 3 (Data Integrity): Sliding window for gap detection
-        self.latest_data = collections.defaultdict(list)  # {symbol: [bar_dict, ...]}
+        self.latest_data = collections.defaultdict(lambda: collections.deque(maxlen=20))  # O(1) bounded buffer
         self.data_health_metrics = collections.defaultdict(lambda: {"gaps": 0, "last_backfill": 0})
 
 
@@ -77,8 +82,31 @@ class BinanceData(DataProvider):
             self._init_symbol_buffer(s)
             
         # 4. Thread Safety Lock
-        import threading
-        self._data_lock = threading.Lock()
+        import contextlib
+        self._data_lock = contextlib.nullcontext()
+
+        # ═══════════════════════════════════════════════════════════════
+        # LOW-LATENCY PHASE: ZERO-ALLOC OUTPUT BUFFERS
+        # QUÉ: Pre-allocar buffers de salida para get_latest_bars().
+        # POR QUÉ: Antes, np.empty() creaba un array nuevo en CADA llamada.
+        #   Con 26 símbolos × ~20 llamadas/tick = ~520 allocaciones/min
+        #   que presionan al GC.
+        # PARA QUÉ: Eliminar allocaciones de heap en hot-path (~30-100μs/llamada).
+        # CÓMO: Pre-allocar con capacidad máxima; devolver slice/view.
+        # CUÁNDO: Al inicializar BinanceData.
+        # DÓNDE: data/binance_loader.py → __init__()
+        # QUIÉN: SRE/DevOps + Quant Developer
+        # ═══════════════════════════════════════════════════════════════
+        self._BAR_STRUCT_DTYPE = np.dtype([
+            ('timestamp', 'i8'), ('open', 'f4'), ('high', 'f4'),
+            ('low', 'f4'), ('close', 'f4'), ('volume', 'f4')
+        ])
+        self._BAR_OUTPUT_MAX = 2000  # Max bars any caller could request
+        self._bar_output_cache = {}
+        for s in self.symbol_list:
+            self._bar_output_cache[s] = np.empty(self._BAR_OUTPUT_MAX, dtype=self._BAR_STRUCT_DTYPE)
+        # Timeframe → buffer dict for O(1) lookup (replaces if/elif chain)
+        self._timeframe_map = None  # Lazy init after buffers ready
 
         # 5. Synchronous Client Initialization (Rest, etc.)
         self._init_sync_client()
@@ -325,6 +353,28 @@ class BinanceData(DataProvider):
                 
         asyncio.create_task(depth_listener())
 
+        # 👣 PHASE 13: Capa 4 Footprint Reconstructor
+        async def trades_listener():
+            try:
+                streams = [f"{sym.replace('/', '').lower()}@aggTrade" for sym in self.symbol_list]
+                logger.info(f"👣 [WebSockets] Footprint Reconstructor listening to {len(streams)} streams...")
+                multiplex_socket = self.bsm.multiplex_socket(streams)
+                
+                async with multiplex_socket as ts:
+                    while self._running:
+                        try:
+                            msg = await ts.recv()
+                            self._process_trade_msg(msg)
+                        except asyncio.TimeoutError:
+                            continue
+                        except Exception as e:
+                            logger.error(f"Trades stream err: {e}")
+                            await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Trades listener fatal: {e}")
+                
+        asyncio.create_task(trades_listener())
+
     def _process_depth_msg(self, msg):
         """
         Processes @depth10@100ms messages and updates the Cython OrderBook.
@@ -364,6 +414,60 @@ class BinanceData(DataProvider):
         except Exception as e:
             # Silently drop malformed depth updates to prevent log spam
             pass
+
+    def _process_trade_msg(self, msg):
+        """
+        [Capa 4] Intra-vela Footprint Reconstructor (Simplified).
+        Processes @aggTrade messages to calculate Cumulative Volume Delta (CVD) and buying/selling pressure.
+        """
+        try:
+            if 'data' not in msg or 'e' not in msg['data'] or msg['data']['e'] != 'aggTrade':
+                return
+                
+            data = msg['data']
+            symbol_raw = data.get('s', '')
+            symbol = f"{symbol_raw[:-4]}/{symbol_raw[-4:]}" if symbol_raw.endswith('USDT') else symbol_raw
+            
+            if symbol not in self.order_flow_metrics:
+                self.order_flow_metrics[symbol] = {
+                    'buy_volume': 0.0,
+                    'sell_volume': 0.0,
+                    'cvd': 0.0,
+                    'last_reset': time.time()
+                }
+                
+            metrics = self.order_flow_metrics[symbol]
+            
+            # Reset intra-vela metrics every 60 seconds (1-minute candle approximation)
+            now = time.time()
+            if now - metrics['last_reset'] >= 60.0:
+                metrics['buy_volume'] = 0.0
+                metrics['sell_volume'] = 0.0
+                metrics['cvd'] = 0.0
+                metrics['last_reset'] = now
+                
+            qty = float(data.get('q', 0))
+            is_buyer_maker = data.get('m', False)
+            
+            # In Binance, if buyer is maker, the trade was initiated by the seller (sell market order)
+            if is_buyer_maker:
+                metrics['sell_volume'] += qty
+                metrics['cvd'] -= qty
+            else:
+                metrics['buy_volume'] += qty
+                metrics['cvd'] += qty
+                
+        except Exception as e:
+            pass
+
+    def get_order_flow_metrics(self, symbol: str) -> dict:
+        """
+        Returns real-time intra-vela order flow metrics (CVD, buy/sell volume).
+        """
+        if symbol not in self.order_flow_metrics:
+            return {'buy_volume': 0.0, 'sell_volume': 0.0, 'cvd': 0.0}
+        # Return a copy to avoid race conditions during dict access
+        return dict(self.order_flow_metrics[symbol])
 
     def _process_liquidation_msg(self, msg):
         """
@@ -598,18 +702,28 @@ class BinanceData(DataProvider):
     def get_latest_bars(self, symbol, n=1, timeframe='1m'):
         """
         Returns NumPy Structured Array (Phase 4 Zero-Copy).
-        Represents OHLCVT data without Pandas overhead.
+        
+        LOW-LATENCY OPTIMIZATION:
+        QUÉ: Reutiliza buffers pre-allocados en vez de np.empty() por llamada.
+        POR QUÉ: np.empty() + field assignment = ~30-100μs de allocation.
+        PARA QUÉ: Reducir GC pressure y latencia en hot-path.
+        CÓMO: Pre-allocado en __init__; aquí solo se hace slice + copyto.
+        CUÁNDO: En cada tick de mercado, múltiples veces por símbolo.
+        DÓNDE: data/binance_loader.py → get_latest_bars()
+        QUIÉN: Quant Developer + SRE/DevOps
         """
         try:
+            # O(1) timeframe lookup (replaces if/elif chain)
+            if self._timeframe_map is None:
+                self._timeframe_map = {
+                    '1m': self.buffers_1m, '5m': self.buffers_5m,
+                    '15m': self.buffers_15m, '1h': self.buffers_1h,
+                    '4h': self.buffers_4h, '1d': self.buffers_1d,
+                    '1w': self.buffers_1w,
+                }
+            target_map = self._timeframe_map.get(timeframe, self.buffers_1m)
+
             with self._data_lock:
-                target_map = self.buffers_1m
-                if timeframe == '5m': target_map = self.buffers_5m
-                elif timeframe == '15m': target_map = self.buffers_15m
-                elif timeframe == '1h': target_map = self.buffers_1h
-                elif timeframe == '4h': target_map = self.buffers_4h
-                elif timeframe == '1d': target_map = self.buffers_1d
-                elif timeframe == '1w': target_map = self.buffers_1w
-                
                 if symbol not in target_map:
                     return None
                 
@@ -619,27 +733,52 @@ class BinanceData(DataProvider):
                 # Retrieve from Numba (as tuple of arrays)
                 t, o, h, l, c, v = buf.get_last(n)
                 
-                # Convert to Structured Array
-                # Dtype definition matches SUPREMO-V3 standard
-                struct_dtype = [
-                    ('timestamp', 'i8'), ('open', 'f4'), ('high', 'f4'), 
-                    ('low', 'f4'), ('close', 'f4'), ('volume', 'f4')
-                ]
+                actual_len = len(t)
+                if actual_len == 0:
+                    return None
                 
-                # Optimized construction
-                res = np.empty(len(t), dtype=struct_dtype)
-                res['timestamp'] = t
-                res['open'] = o
-                res['high'] = h
-                res['low'] = l
-                res['close'] = c
-                res['volume'] = v
-                
-                return res
+                # ZERO-ALLOC: Reuse pre-allocated buffer
+                cache = self._bar_output_cache.get(symbol)
+                if cache is not None and actual_len <= self._BAR_OUTPUT_MAX:
+                    res = cache[:actual_len]
+                    res['timestamp'] = t
+                    res['open'] = o
+                    res['high'] = h
+                    res['low'] = l
+                    res['close'] = c
+                    res['volume'] = v
+                    # Return a COPY of the slice to prevent caller mutation
+                    # (cost: ~5-15μs for small arrays, but safe)
+                    return res.copy()
+                else:
+                    # Fallback: new allocation for unknown symbols or oversized requests
+                    res = np.empty(actual_len, dtype=self._BAR_STRUCT_DTYPE)
+                    res['timestamp'] = t
+                    res['open'] = o
+                    res['high'] = h
+                    res['low'] = l
+                    res['close'] = c
+                    res['volume'] = v
+                    return res
 
         except Exception as e:
             logger.error(f"Error getting structured {timeframe} bars for {symbol}: {e}")
             return None
+
+    def get_data(self, symbol, limit=500):
+        """
+        Retorna los últimos `limit` bars como un DataFrame de Pandas para compatibilidad
+        con Phalanx, Arbitrage y StatArb.
+        """
+        bars = self.get_latest_bars(symbol, n=limit, timeframe="1m")
+        if bars is None or len(bars) == 0:
+            return pd.DataFrame()
+        # Convert structured array to DataFrame
+        df = pd.DataFrame(bars)
+        # Convert timestamp (ms) to DatetimeIndex
+        df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('datetime', inplace=True)
+        return df
 
 
     def _fetch_deep_history_worker(self, symbol, interval, hours, dest_dict, limit_per_req=1000, buffer_multiplier=1.2):
@@ -696,11 +835,21 @@ class BinanceData(DataProvider):
             # Process and store
             processed_bars = []
             for c in all_candles:
+                # OMEGA Validation (Dimensión 1)
+                o, h, l, cl, v = float(c[1]), float(c[2]), float(c[3]), float(c[4]), float(c[5])
+                
+                # O1: High/Low Physics
+                if h < max(o, cl) - 1e-8 or l > min(o, cl) + 1e-8:
+                    continue
+                # O3: Zero Volume with price movement
+                if o != cl and v <= 0:
+                    continue
+                    
                 # No pd.to_datetime here (Phase 1: Zero-Pandas)
                 processed_bars.append({
                     'symbol': symbol,
                     'timestamp': int(c[0]),
-                    'open': float(c[1]), 'high': float(c[2]), 'low': float(c[3]), 'close': float(c[4]), 'volume': float(c[5])
+                    'open': o, 'high': h, 'low': l, 'close': cl, 'volume': v
                 })
             
             # RAM OPTIMIZATION (Filled into Ring Buffers)
@@ -733,6 +882,18 @@ class BinanceData(DataProvider):
                     np.float32(c['close']),
                     np.float32(c['volume'])
                 )
+            
+            if interval == '1m':
+                with self._data_lock:
+                    for c in processed_bars:
+                        self.latest_data[symbol].append({
+                            'datetime': datetime.fromtimestamp(c['timestamp']/1000.0, tz=timezone.utc),
+                            'open': float(c['open']),
+                            'high': float(c['high']),
+                            'low': float(c['low']),
+                            'close': float(c['close']),
+                            'volume': float(c['volume'])
+                        })
             
             logger.info(f"Loaded {len(processed_bars)} {interval} bars for {symbol}")
             
@@ -776,8 +937,17 @@ class BinanceData(DataProvider):
         
         # Wait for all to complete
         from concurrent.futures import as_completed
+        errors = []
         for f in as_completed(futures):
-            pass # exceptions logged in worker
+            try:
+                f.result()
+            except Exception as e:
+                errors.append(e)
+                logger.error(f"❌ [INITIAL HISTORY] Error fetching symbol: {e}")
+                
+        if errors:
+            raise RuntimeError(f"Failed to fetch initial history for one or more symbols: {errors}")
+
 
     def fetch_initial_history_1h(self):
         """Fetches ~200 hours of 1h data in PARALLEL."""
@@ -908,9 +1078,34 @@ class BinanceData(DataProvider):
                 if '1m' in data_packet:
                     bar = data_packet['1m']
                     ts = bar['timestamp']
+                    o, h, l, cl, v = bar['open'], bar['high'], bar['low'], bar['close'], bar['volume']
+                    
+                    # 🛡️ [DATA GUARDIAN] Integridad Forense y OMEGA O1/O3
+                    if np.isnan(cl) or cl <= 0 or v < 0:
+                        logger.error(f"🚨 [DATA GUARDIAN] DATOS CORRUPTOS (NaN/Cero) en {s}. Ignorando frame.")
+                        continue
+                        
+                    if h < max(o, cl) - 1e-8 or l > min(o, cl) + 1e-8:
+                        logger.warning(f"🛡️ [OMEGA] {s}: O1 Validation Failed. Dropping corrupt candle (High/Low physics).")
+                        continue
+                        
+                    if o != cl and v <= 0:
+                        logger.warning(f"🛡️ [OMEGA] {s}: O3 Validation Failed. Dropping zero-volume candle with price movement.")
+                        continue
+                        
                     with self._data_lock:
                          buf = self.buffers_1m[s]
                          last_t_arr = buf.get_last(1)
+                         
+                         # Gap Detection
+                         if last_t_arr is not None and len(last_t_arr) > 0:
+                             last_ts = last_t_arr['timestamp'][0]
+                             time_diff = ts - last_ts
+                             if time_diff > 60000 and last_ts != ts:
+                                 missed = int((time_diff/60000)-1)
+                                 logger.warning(f"⚠️ [DATA GUARDIAN] GAP en {s}: Faltan {missed} velas de 1m.")
+                                 self.data_health_metrics[s]["gaps"] += 1
+                                 
                          if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
                               buf.rewind_one()
                          
@@ -1196,9 +1391,9 @@ class BinanceData(DataProvider):
                     if 'kline' in stream_name:
                         self._process_kline_event(data, stream_name)
                     elif 'bookTicker' in stream_name:
-                        self._process_book_ticker(data)
+                        pass # self._process_book_ticker(data)
                     elif 'forceOrder' in stream_name:
-                        self._process_liquidation(data)
+                        self._process_liquidation_msg(data)
                     elif 'depth5' in stream_name:
                         self._process_depth_level5(data, stream_name)
                     elif 'aggTrade' in stream_name:
@@ -1296,6 +1491,15 @@ class BinanceData(DataProvider):
             
             is_closed = kline['x']  # Boolean: Is this kline closed?
             
+            # ─── DETERMINE TIMEFRAME (tf) ───
+            # PHASE 33: Multi-Timeframe Routing via stream_name parameter
+            tf = '1m'
+            if '@kline_5m' in stream_name: tf = '5m'
+            elif '@kline_15m' in stream_name: tf = '15m'
+            elif '@kline_1h' in stream_name: tf = '1h'
+            elif '@kline_1d' in stream_name: tf = '1d' # Phase 4
+            elif '@kline_1w' in stream_name: tf = '1w' # Phase 4
+
             # Extract data with Phase 4: Downcasting (float32 for memory)
             # [NANO-SPEED] Extirpado pd.to_datetime del loop caliente
             timestamp_ms = int(kline['t'])
@@ -1305,12 +1509,17 @@ class BinanceData(DataProvider):
             close_price = np.float32(kline['c'])
             volume = np.float32(kline['v'])
 
-            # DATA QUALITY FILTER (Rule 3.2 - Refined)
-            if not is_closed:
-                if volume <= 0 or (high_price == low_price):
-                    return
-            elif volume <= 0:
-                logger.debug(f"🕳️ [Loader] Liquidity Hole in {internal_symbol}: Zero volume bar recorded for time continuity.")
+            # DATA QUALITY FILTER (Módulo OMEGA - Dimensión 1)
+            prev_close = None
+            if self.latest_data[internal_symbol]:
+                prev_close = float(self.latest_data[internal_symbol][-1]['close'])
+                
+            is_valid = OHLCVValidator.validate_kline(
+                open_price, high_price, low_price, close_price, volume, is_closed, previous_close=prev_close
+            )
+            
+            if not is_valid:
+                return  # Skip bad tick
 
             # GAP DETECTION (Rule 3.2 - Hardened)
             health_score = 100.0
@@ -1340,8 +1549,6 @@ class BinanceData(DataProvider):
                     'close': close_price
                 }
                 self.latest_data[internal_symbol].append(bar_dict)
-                if len(self.latest_data[internal_symbol]) > 10:
-                    self.latest_data[internal_symbol].pop(0)
 
 
 
@@ -1353,13 +1560,6 @@ class BinanceData(DataProvider):
             }
             
             # ─── BUFFER UPDATE (Thread-Safe) ───
-            # PHASE 33: Multi-Timeframe Routing via stream_name parameter
-            tf = '1m'
-            if '@kline_5m' in stream_name: tf = '5m'
-            elif '@kline_15m' in stream_name: tf = '15m'
-            elif '@kline_1h' in stream_name: tf = '1h'
-            elif '@kline_1d' in stream_name: tf = '1d' # Phase 4
-            elif '@kline_1w' in stream_name: tf = '1w' # Phase 4
             
             target_map = self.buffers_1m
             if tf == '5m': target_map = self.buffers_5m
@@ -1400,10 +1600,10 @@ class BinanceData(DataProvider):
                 except Exception:
                     pass
 
-            # Time-based throttle: at most once every 2s per symbol
+            # Time-based throttle: at most once every 0.1s per symbol
             if not should_trigger:
                 last_t = self.last_event_time.get(internal_symbol, 0)
-                if now_ts - last_t > 2.0:
+                if now_ts - last_t > 0.1:
                     should_trigger = True
             
             # ─── FIRE MARKET EVENT ───
@@ -1469,6 +1669,7 @@ class BinanceData(DataProvider):
                 '5m': Client.KLINE_INTERVAL_5MINUTE,
                 '15m': Client.KLINE_INTERVAL_15MINUTE,
                 '1h': Client.KLINE_INTERVAL_1HOUR,
+                '4h': Client.KLINE_INTERVAL_4HOUR,
                 '1d': Client.KLINE_INTERVAL_1DAY,
                 '1w': Client.KLINE_INTERVAL_1WEEK
             }
@@ -1493,20 +1694,81 @@ class BinanceData(DataProvider):
 
             logger.info(f"✅ [Backfill] Successfully recovered {len(candles)} candles for {symbol}")
             
-            # Insert into Buffer (must be careful with order, but since we are inserting 
-            # intermediate bars, and the ring buffer is chronological, we might need a 
-            # more sophisticated buffer that supports insertion. For now, we push them.)
-            # WARNING: RingBuffer usually only supports appending. 
-            # If we push "missing" candles AFTER a newer candle has arrived, the order is broken.
-            # FIX: We should ideally have a 'SortedBuffer' or trigger a full local buffer refresh.
-            # For HFT, we will just log and maybe update a 'Gap Flag'.
+            # ═══════════════════════════════════════════════════════════════
+            # CONSOLIDATE NUMBA RING BUFFER AFTER REST BACKFILL
+            # ═══════════════════════════════════════════════════════════════
+            if timeframe == '1m': target_map = self.buffers_1m
+            elif timeframe == '5m': target_map = self.buffers_5m
+            elif timeframe == '15m': target_map = self.buffers_15m
+            elif timeframe == '1h': target_map = self.buffers_1h
+            elif timeframe == '4h': target_map = self.buffers_4h
+            elif timeframe == '1d': target_map = self.buffers_1d
+            elif timeframe == '1w': target_map = self.buffers_1w
+            else: target_map = self.buffers_1m
+
+            if symbol in target_map:
+                buf = target_map[symbol]
+                
+                # Fetch existing candles in the RingBuffer
+                with self._data_lock:
+                    size = buf.size
+                    if size > 0:
+                        t_arr, o_arr, h_arr, l_arr, c_arr, v_arr = buf.get_last(size)
+                        existing_candles = []
+                        for i in range(size):
+                            existing_candles.append({
+                                'timestamp': int(t_arr[i]),
+                                'open': float(o_arr[i]),
+                                'high': float(h_arr[i]),
+                                'low': float(l_arr[i]),
+                                'close': float(c_arr[i]),
+                                'volume': float(v_arr[i])
+                            })
+                    else:
+                        existing_candles = []
+                
+                # Parse new REST candles
+                new_candles = []
+                for c in candles:
+                    new_candles.append({
+                        'timestamp': int(c[0]),
+                        'open': float(c[1]),
+                        'high': float(c[2]),
+                        'low': float(c[3]),
+                        'close': float(c[4]),
+                        'volume': float(c[5])
+                    })
+                
+                # De-duplicate by timestamp
+                merged = {}
+                for cand in existing_candles + new_candles:
+                    merged[cand['timestamp']] = cand
+                
+                # Sort chronologically
+                sorted_candles = [merged[ts] for ts in sorted(merged.keys())]
+                
+                # Clear and re-populate the Numba RingBuffer atomically
+                with self._data_lock:
+                    buf.head = 0
+                    buf.size = 0
+                    to_push = sorted_candles[-buf.capacity:] if len(sorted_candles) > buf.capacity else sorted_candles
+                    for cand in to_push:
+                        buf.push(
+                            cand['timestamp'],
+                            np.float32(cand['open']),
+                            np.float32(cand['high']),
+                            np.float32(cand['low']),
+                            np.float32(cand['close']),
+                            np.float32(cand['volume'])
+                        )
+                
+                logger.info(f"📊 [Backfill] Re-populated Numba buffer for {symbol} ({timeframe}) with {len(to_push)} sorted bars.")
             
-            # TODO: Implement SortedBuffer for gaps. 
-            # CURRENT: Inform the system that a gap was filled via health metrics.
             self.data_health_metrics[symbol]['gaps'] += len(candles)
             
         except Exception as e:
             logger.error(f"Error in backfill for {symbol}: {e}")
+
 
     def _process_depth_level5(self, data, stream_name):
         """
@@ -1910,55 +2172,6 @@ class BinanceData(DataProvider):
                 logger.info("✅ Binance WebSocket Client Closed.")
         except Exception as e:
             logger.error(f"Error closing socket client: {e}")
-    async def start_socket(self):
-        """
-        [PHASE 99] WebSocket Implementation with Bandwidth Throttling (VANGUARDIA-SOBERANA).
-        """
-        try:
-            if not self.client:
-                # Initialize Async Client
-                api_key = Config.BINANCE_API_KEY
-                api_secret = Config.BINANCE_SECRET_KEY
-                
-                # Determine Environment
-                testnet = Config.BINANCE_USE_TESTNET
-                if testnet:
-                    logger.info("🔌 [Socket] Connecting to TESTNET...")
-                else:
-                    logger.info("🔌 [Socket] Connecting to LIVE...")
-
-                self.client = await AsyncClient.create(api_key, api_secret, testnet=testnet)
-                self.bsm = BinanceSocketManager(self.client)
-            
-            # Construct Streams
-            # We want: <symbol>@depth5@100ms and <symbol>@trade
-            # Note: For HFT we might want @bookTicker for speed, but user asked for LOB depth scaling.
-            # So standard is depth5.
-            streams = []
-            for s in self.symbol_list:
-                clean = s.replace('/', '').lower()
-                streams.append(f"{clean}@depth5@100ms")
-                streams.append(f"{clean}@trade")
-                
-            logger.info(f"🔌 [Socket] Subscribing to {len(streams)} streams...")
-            
-            # Start Multiplex Socket
-            self.socket = self.bsm.multiplex_socket(streams)
-            
-            # Start Event Loop
-            async with self.socket as tscm:
-                while self._running:
-                    try:
-                        msg = await tscm.recv()
-                        if msg:
-                            await self._handle_socket_message(msg)
-                    except Exception as e:
-                        logger.error(f"❌ Socket Error: {e}")
-                        # Reconnect logic should be handled by outer loop or supervisor
-                        await asyncio.sleep(5)
-                        
-        except Exception as e:
-            logger.critical(f"❌ Critical Socket Failure: {e}")
 
     async def _handle_socket_message(self, msg):
         """
@@ -1991,19 +2204,98 @@ class BinanceData(DataProvider):
             if '@depth' in stream:
                 self._process_depth_update(data)
             elif '@trade' in stream:
-                 self._process_trade_update(data)
+                self._process_trade_update(data)
+            elif '@forceOrder' in stream:
+                self._process_force_order(data)
+            elif '@markPrice' in stream:
+                self._process_mark_price(data)
                  
         except Exception as e:
             logger.error(f"Msg Handler Error: {e}")
 
     def _process_depth_update(self, data):
-        # Implementation of pushing Bids/Asks to SHM or Buffers
-        # For now, we update the LOB snapshot in memory
-        pass
+        """
+        Updates the internal L2 OrderBook and calculates OFI.
+        """
+        try:
+            symbol = data.get('s')
+            if not symbol: return
+            
+            internal_sym = symbol
+            if symbol not in self.symbol_list:
+                for s in self.symbol_list:
+                    if s.replace('/', '') == symbol:
+                        internal_sym = s
+                        break
+                        
+            if internal_sym not in getattr(self, 'orderbooks', {}):
+                return
+                
+            ob = self.orderbooks[internal_sym]
+            
+            bids = data.get('b', [])
+            asks = data.get('a', [])
+            
+            for b in bids:
+                ob.update_bid(float(b[0]), float(b[1]))
+            for a in asks:
+                ob.update_ask(float(a[0]), float(a[1]))
+                
+            # Update metrics
+            if internal_sym not in self.order_flow_metrics:
+                self.order_flow_metrics[internal_sym] = {}
+                
+            self.order_flow_metrics[internal_sym]['l2_ofi'] = ob.calculate_ofi()
+            self.order_flow_metrics[internal_sym]['l2_spread'] = ob.calculate_spread()
+            
+            # Calc distance to microprice
+            micro = ob.calculate_microprice()
+            best_bid = float(bids[0][0]) if bids else micro
+            best_ask = float(asks[0][0]) if asks else micro
+            mid = (best_bid + best_ask) / 2.0
+            
+            # We store the microprice distance relative to mid
+            dist = (micro - mid) / (mid + 1e-9) if mid > 0 else 0.0
+            self.order_flow_metrics[internal_sym]['l2_microprice_dist'] = dist
+            
+        except Exception as e:
+            pass
 
     def _process_trade_update(self, data):
-        # Update price, volume buffers
-        pass 
+        """
+        Processes standard trades and calculates Whale Flow Proxy.
+        """
+        try:
+            symbol = data.get('s')
+            if not symbol: return
+            
+            internal_sym = symbol
+            if symbol not in self.symbol_list:
+                for s in self.symbol_list:
+                    if s.replace('/', '') == symbol:
+                        internal_sym = s
+                        break
+                        
+            qty = float(data.get('q', 0))
+            price = float(data.get('p', 0))
+            is_buyer_mm = data.get('m', False)
+            trade_usd = qty * price
+            
+            # 🐋 Whale Flow Proxy: Trades > $100k USD
+            if trade_usd > 100000:
+                if not hasattr(self, 'derivatives_metrics'):
+                    self.derivatives_metrics = {}
+                if internal_sym not in self.derivatives_metrics:
+                    self.derivatives_metrics[internal_sym] = {'funding_rate': 0.0, 'oi': 0.0, 'oi_delta': 0.0, 'liquidations': 0.0, 'whale_flow': 0.0}
+                
+                # Positive if market buy (buyer maker = False), Negative if market sell (buyer maker = True)
+                flow = trade_usd if not is_buyer_mm else -trade_usd
+                self.derivatives_metrics[internal_sym]['whale_flow'] = self.derivatives_metrics[internal_sym].get('whale_flow', 0.0) + flow
+                
+            # Passthrough to agg trade logic for delta and VPIN
+            self._process_agg_trade(data)
+        except Exception as e:
+            pass 
 
     # ------------------------------------------------------------------
     # PHASE 99: BUFFER RESET (Manual Close Protocol)
@@ -2045,7 +2337,7 @@ class BinanceData(DataProvider):
             return pl.DataFrame()
             
         # Construct Polars DataFrame directly from Numpy arrays (Arrow Zero-Copy)
-        return pl.DataFrame({
+        pldf = pl.DataFrame({
             "timestamp": t,
             "open": o,
             "high": h,
@@ -2056,6 +2348,23 @@ class BinanceData(DataProvider):
             pl.col("timestamp").cast(pl.Int64),
             pl.col("close").cast(pl.Float32)
         )
+        
+        # [VISION INJECTION] Merge historical L2 and AggTrades if present
+        try:
+            import os
+            import glob
+            sym_clean = symbol.replace("/", "").upper()
+            cache_dir = "data/cache_parquet"
+            vision_files = glob.glob(f"{cache_dir}/{sym_clean}_vision_*.parquet")
+            if vision_files and timeframe == '1m':
+                dfs = [pl.read_parquet(f) for f in vision_files]
+                if dfs:
+                    vision_df = pl.concat(dfs).unique("timestamp_ms")
+                    pldf = pldf.join(vision_df, left_on="timestamp", right_on="timestamp_ms", how="left").fill_null(0.0)
+        except Exception as e:
+            pass
+            
+        return pldf
 
     def get_order_flow_metrics(self, symbol: str) -> dict:
         """
@@ -2087,7 +2396,8 @@ class BinanceData(DataProvider):
             'funding_rate': 0.0,
             'oi': 0.0,
             'oi_delta': 0.0,
-            'liquidations': 0.0
+            'liquidations': 0.0,
+            'whale_flow': 0.0
         })
 
     def get_orderbook(self, symbol: str):

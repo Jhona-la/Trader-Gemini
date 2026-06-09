@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 from dotenv import load_dotenv
 from core.enums import TimeFrame
 from core.secure_store import SecureString
@@ -52,6 +53,82 @@ class EncryptedConfigMeta(type):
         # Support both standard name and user's alias in .env
         return cls._get_secure('WANDB_API_KEY', 'WANDB_API_KEY') or os.getenv('WandB_Key', '')
 
+class OmniscientRegistry:
+    """
+    Capa 2: Centralized Omniscient Registry.
+    Tracks FIXED (immutable bounds) and ADAPTIVE values.
+    Enforces priority of FIXED values over ADAPTIVE adjustments.
+    """
+    FIXED_VALUES = {
+        'MAX_DRAWDOWN': 35.0,               # Max Drawdown before emergency stop (increased for micro accounts)
+        'MAX_RISK_PER_TRADE': 0.05,         # 5% max risk per trade
+        'MIN_NOTIONAL_USD': 5.05,           # Binance minimum order notional
+        'MAX_LEVERAGE': 20,                 # Maximum allowed leverage
+        'MAX_CONCURRENT_POSITIONS': 5,      # Concentrated capital limit
+        'MAX_SL_PCT_LIMIT': 0.05,           # Hard limit for Stop Loss (5%)
+        'MIN_PROFIT_AFTER_FEES': 0.0015,    # Minimum viability net threshold ( lowered to 0.15% for Scalping )
+    }
+
+    def __init__(self, config_ref):
+        self._config = config_ref
+        self._adaptive_cache = {}
+        self.logger = logging.getLogger("OmniscientRegistry")
+
+    def get_value(self, name: str, horizon: str = None) -> Any:
+        # 1. First Priority: Check FIXED values
+        if name in self.FIXED_VALUES:
+            return self.FIXED_VALUES[name]
+        
+        # 2. Horizon-aware adaptive values
+        if horizon:
+            h_upper = horizon.upper()
+            h_obj = getattr(self._config, "Horizons", None)
+            if h_obj:
+                # Find matching attribute in class Horizons
+                h_name = "Microscalping" if h_upper == "MICROSCALPING" else ("Scalping" if h_upper == "SCALPING" else "Swing")
+                h_dict = getattr(h_obj, h_name, None)
+                if h_dict and name in h_dict:
+                    return h_dict[name]
+        
+        # 3. Standard global configuration attributes
+        if hasattr(self._config, name):
+            return getattr(self._config, name)
+            
+        # Fallback to cache
+        return self._adaptive_cache.get(name)
+
+    def update_adaptive_value(self, name: str, new_val: Any, horizon: str = None) -> bool:
+        # Check against FIXED boundaries
+        if name == 'leverage' or name == 'BINANCE_LEVERAGE':
+            max_lev = self.FIXED_VALUES['MAX_LEVERAGE']
+            if new_val > max_lev:
+                self.logger.warning(f"🛡️ [Capa 2 Registry] Blocked update for {name}: {new_val}x exceeds FIXED MAX_LEVERAGE ({max_lev}x)")
+                return False
+        elif name == 'sl_pct' or name == 'SL_PCT':
+            max_sl = self.FIXED_VALUES['MAX_SL_PCT_LIMIT']
+            if new_val > max_sl:
+                self.logger.warning(f"🛡️ [Capa 2 Registry] Clipped {name}: {new_val*100:.2f}% exceeds FIXED MAX_SL_PCT_LIMIT ({max_sl*100:.2f}%)")
+                new_val = max_sl
+        
+        # Write to config if attribute exists
+        if horizon:
+            h_obj = getattr(self._config, "Horizons", None)
+            if h_obj:
+                h_name = "Microscalping" if horizon.upper() == "MICROSCALPING" else ("Scalping" if horizon.upper() == "SCALPING" else "Swing")
+                h_dict = getattr(h_obj, h_name, None)
+                if h_dict and name in h_dict:
+                    h_dict[name] = new_val
+                    return True
+        
+        if hasattr(self._config, name):
+            setattr(self._config, name, new_val)
+            return True
+            
+        self._adaptive_cache[name] = new_val
+        return True
+
+from typing import Any
+
 class Config(metaclass=EncryptedConfigMeta):
     # ========================================================================
     # GLOBAL SETTINGS
@@ -74,7 +151,7 @@ class Config(metaclass=EncryptedConfigMeta):
     # ════════════════════════════════════════════════════════════════
     LEAN_MODE = False  # Set to False to run ALL strategies (Full Mode)
     ACTIVE_TRADING_LIMIT = 10  # Solo opera los Top 10, mide los siguientes 16
-    LEAN_ML_ENABLED = True  # ML Strategy: RE-ENABLED (consensus system handles quality)
+    LEAN_ML_ENABLED = False  # ML Strategy: TEMPORARILY DISABLED (Fix #1 to avoid short bias loss)
     LEAN_TRADING_PAIRS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']  # Focus on high liquidity
 
 
@@ -88,15 +165,16 @@ class Config(metaclass=EncryptedConfigMeta):
     
     # 🔐 PHASE 17 (SOVEREIGN-DEPLOY): HARDENED PRODUCTION KEYS
     # OVERRIDEN BY BLOCK G PROTOCOL: PAPER TRADING ENABLED
-    BINANCE_USE_TESTNET = True
-    BINANCE_USE_DEMO = True
+    BINANCE_USE_TESTNET = os.getenv('BINANCE_USE_TESTNET', 'True').lower() == 'true'
+    BINANCE_USE_DEMO = os.getenv('BINANCE_USE_DEMO', 'True').lower() == 'true'
     
     # === BINANCE FUTURES SETTINGS ===
     # Default: USDT-Margined Futures (standard). 
     # For COIN-Margined, code modifications in binance_executor would be needed (defaultType='delivery').
     # BUG #33 FIX: Changed default to False to allow Spot mode. CLI --mode argument will override this.
     BINANCE_USE_FUTURES = True  # Set to True to trade on Binance Futures instead of Spot
-    BINANCE_LEVERAGE = 10  # Leverage for Futures trading (CONTROLLED: 10x for $13 to bypass $5 notional limit)
+    BINANCE_LEVERAGE = 20  # FORENSIC FIX: 20x leverage for $13 account to bypass BTC 0.001 ($70) notional limits
+    LEVERAGE_SWING = 20  # FORENSIC FIX: Swing needs 20x to reach $70 minimum notional with $3.90 margin
     BINANCE_MARGIN_TYPE = "ISOLATED"  # Options: "ISOLATED" or "CROSS"
     BINANCE_TAKER_FEE_BNB = 0.000375 # 0.0375% (with BNB discount)
     BINANCE_MAKER_FEE_BNB = 0.0002   # 0.02% (LIMIT orders = Maker fee, FORENSIC FIX #4)
@@ -152,26 +230,269 @@ class Config(metaclass=EncryptedConfigMeta):
     
     # FUTURES Trading Pairs (Verified available in Demo Trading)
     # Note: SHIB, PEPE, FLOKI, BONK not available in Futures Demo
-    # Total: 26 pairs (10 Core + 16 Prospects)
+    # CIRUGÍA-V131: Concentrate $13 capital in Top 5 Elite pairs to prevent margin fragmentation
     CORE_SYMBOLS = [
-        "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "DOGE/USDT",
-        "ADA/USDT", "AVAX/USDT", "SUI/USDT", "ETC/USDT", "NEAR/USDT"
+        "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
+        "DOGE/USDT", "ADA/USDT", "AVAX/USDT", "LINK/USDT", "LTC/USDT"
     ]
     
     PROSPECT_SYMBOLS = [
-        "ARB/USDT", "OP/USDT", "PAXG/USDT", "POL/USDT", "RENDER/USDT",
-        "TIA/USDT", "UNI/USDT", "WIF/USDT", "XRP/USDT", "DOT/USDT",
-        "ATOM/USDT", "LINK/USDT", "MATIC/USDT", "LTC/USDT", "BCH/USDT", "TRX/USDT"
+        "DOT/USDT", "UNI/USDT", "ATOM/USDT", "ETC/USDT", "NEAR/USDT",
+        "FTM/USDT", "FIL/USDT", "LDO/USDT", "OP/USDT", "ARB/USDT",
+        "APT/USDT", "SUI/USDT", "PEPE/USDT", "AAVE/USDT", "COMP/USDT",
+        "WIF/USDT"
     ]
     
     CRYPTO_FUTURES_PAIRS = CORE_SYMBOLS + PROSPECT_SYMBOLS
-    # [CIRUGÍA #5] Re-added DOT, XRP, ATOM etc into PROSPECT for measurement (Shadow Mode)
     
     # Auto-select correct pairs based on mode
     # BUG #14 FIX: Binance Testnet SPOT is UNRELIABLE (most pairs don't exist)
     # Solution: SPOT only works in PRODUCTION, Testnet/Demo users should use FUTURES
     # SINGLE SOURCE OF TRUTH: Initial capital for $13 micro-scalping strategy (SOVEREIGN-DEPLOY)
     INITIAL_CAPITAL = 13.0  # Base capital for sizing and HWM
+
+    # ================================================================
+    # FORENSIC-V156: PER-SYMBOL TRADING PROFILES
+    # QUÉ: Cada moneda tiene características únicas de volatilidad,
+    #   spread, y bias direccional que requieren parámetros diferenciados.
+    # POR QUÉ: BTC LONG = 0% WR (-$0.91), BTC SHORT = 100% WR (+$0.26).
+    #   El sistema trataba todas las monedas igual → pérdidas evitables.
+    # PARA QUÉ: Adaptar SL/TP/confianza por moneda para maximizar
+    #   rentabilidad y minimizar trades tóxicos.
+    # CÓMO: Multipliers sobre SL/TP base + bias direccional sobre confianza.
+    # CUÁNDO: Evaluado en consensus_filter.py y risk_manager.py.
+    # DÓNDE: Config.SymbolProfiles
+    # QUIÉN: Arquitecto Senior + Quant Developer
+    # ================================================================
+    class SymbolProfiles:
+        """Per-symbol trading characteristics based on forensic backtest data."""
+        PROFILES = {
+            "BTC/USDT": {
+                "sl_mult": 1.4,
+                "tp_mult": 1.0,
+                "long_bias": -0.03,
+                "short_bias": +0.05,
+                "min_confidence": 0.45,
+                "max_concurrent": 1,
+                "category": "MAJOR",
+                "base_leverage": 20,         # SOVEREIGN: Max leverage due to low vol
+                "max_risk_pct": 0.05,        # SOVEREIGN: 5% risk cap
+                "default_atr_pct": 0.0025,
+                "trail_protect_atr": 1.0,
+                "trail_pursue_atr": 1.8,
+                "trail_capture_atr": 0.6,
+                "momentum_sensitivity": 0.8,
+                "sl_min": 72, "sc_min": 78, "isn_threshold": 10,
+                "kelly_factor_long": 1.00, "kelly_factor_short": 0.90,
+                "atr_stop_long": 1.5, "atr_stop_short": 1.8,
+            },
+            "ETH/USDT": {
+                "sl_mult": 1.1,
+                "tp_mult": 1.0,
+                "long_bias": 0.0,
+                "short_bias": +0.05,
+                "min_confidence": 0.42,
+                "max_concurrent": 2,
+                "category": "MAJOR",
+                "base_leverage": 15,         # SOVEREIGN: Medium-high leverage
+                "max_risk_pct": 0.04,        # SOVEREIGN: 4% risk cap
+                "default_atr_pct": 0.0045,
+                "trail_protect_atr": 0.9,
+                "trail_pursue_atr": 1.5,
+                "trail_capture_atr": 0.5,
+                "momentum_sensitivity": 1.0,
+                "sl_min": 68, "sc_min": 74, "isn_threshold": 10,
+                "kelly_factor_long": 1.00, "kelly_factor_short": 0.85,
+                "atr_stop_long": 1.7, "atr_stop_short": 2.0,
+            },
+            "SOL/USDT": {
+                "sl_mult": 1.0,
+                "tp_mult": 1.0,
+                "long_bias": 0.0,
+                "short_bias": 0.0,
+                "min_confidence": 0.45,
+                "max_concurrent": 2,
+                "category": "ALT",
+                "base_leverage": 10,         # SOVEREIGN: Volatile, lower leverage
+                "max_risk_pct": 0.03,        # SOVEREIGN: 3% risk cap
+                "default_atr_pct": 0.0065,
+                "trail_protect_atr": 0.8,
+                "trail_pursue_atr": 1.2,
+                "trail_capture_atr": 0.4,
+                "momentum_sensitivity": 1.3,
+                "sl_min": 65, "sc_min": 70, "isn_threshold": 10,
+                "kelly_factor_long": 0.80, "kelly_factor_short": 0.70,
+                "atr_stop_long": 2.0, "atr_stop_short": 2.5,
+            },
+            "BNB/USDT": {
+                "sl_mult": 1.1,
+                "tp_mult": 1.0,
+                "long_bias": 0.0,
+                "short_bias": 0.0,
+                "min_confidence": 0.50,
+                "max_concurrent": 1,
+                "category": "ALT",
+                "base_leverage": 15,
+                "max_risk_pct": 0.04,
+                "default_atr_pct": 0.0040,
+                "trail_protect_atr": 0.9,
+                "trail_pursue_atr": 1.4,
+                "trail_capture_atr": 0.5,
+                "momentum_sensitivity": 1.0,
+                "sl_min": 65, "sc_min": 70, "isn_threshold": 10,
+                "kelly_factor_long": 0.90, "kelly_factor_short": 0.75,
+                "atr_stop_long": 2.0, "atr_stop_short": 2.3,
+            },
+            "XRP/USDT": {
+                "sl_mult": 1.0,
+                "tp_mult": 1.0,
+                "long_bias": 0.0,
+                "short_bias": 0.0,
+                "min_confidence": 0.50,
+                "max_concurrent": 1,
+                "category": "ALT",
+                "base_leverage": 10,
+                "max_risk_pct": 0.03,
+                "default_atr_pct": 0.0055,
+                "trail_protect_atr": 0.8,
+                "trail_pursue_atr": 1.3,
+                "trail_capture_atr": 0.4,
+                "momentum_sensitivity": 1.2,
+                "sl_min": 68, "sc_min": 75, "isn_threshold": 10,
+                "kelly_factor_long": 0.75, "kelly_factor_short": 0.65,
+                "atr_stop_long": 2.0, "atr_stop_short": 2.3,
+            },
+            "DOGE/USDT": {
+                "sl_mult": 1.5,              # Wide SL for extreme noise
+                "tp_mult": 1.2,
+                "long_bias": 0.0,
+                "short_bias": 0.0,
+                "min_confidence": 0.55,
+                "max_concurrent": 1,
+                "category": "MEME",
+                "base_leverage": 5,          # SOVEREIGN: Strict leverage on memecoins
+                "max_risk_pct": 0.02,        # SOVEREIGN: Lowest risk cap
+                "default_atr_pct": 0.0080,
+                "trail_protect_atr": 0.7,
+                "trail_pursue_atr": 1.1,
+                "trail_capture_atr": 0.3,
+                "momentum_sensitivity": 1.5,
+                "sl_min": 60, "sc_min": 65, "isn_threshold": 10,
+                "kelly_factor_long": 0.60, "kelly_factor_short": 0.50,
+                "atr_stop_long": 2.5, "atr_stop_short": 3.0,
+            },
+            "ADA/USDT": {
+                "sl_mult": 1.1,
+                "tp_mult": 1.0,
+                "long_bias": 0.0,
+                "short_bias": 0.0,
+                "min_confidence": 0.50,
+                "max_concurrent": 1,
+                "category": "ALT",
+                "base_leverage": 10,
+                "max_risk_pct": 0.03,
+                "default_atr_pct": 0.0050,
+                "trail_protect_atr": 0.9,
+                "trail_pursue_atr": 1.4,
+                "trail_capture_atr": 0.5,
+                "momentum_sensitivity": 1.0,
+                "sl_min": 65, "sc_min": 72, "isn_threshold": 10,
+                "kelly_factor_long": 0.80, "kelly_factor_short": 0.75,
+                "atr_stop_long": 2.0, "atr_stop_short": 2.5,
+            },
+            "AVAX/USDT": {
+                "sl_mult": 1.2,
+                "tp_mult": 1.0,
+                "long_bias": 0.0,
+                "short_bias": 0.0,
+                "min_confidence": 0.50,
+                "max_concurrent": 1,
+                "category": "ALT",
+                "base_leverage": 8,
+                "max_risk_pct": 0.03,
+                "default_atr_pct": 0.0060,
+                "trail_protect_atr": 0.8,
+                "trail_pursue_atr": 1.3,
+                "trail_capture_atr": 0.4,
+                "momentum_sensitivity": 1.2,
+                "sl_min": 65, "sc_min": 70, "isn_threshold": 10,
+                "kelly_factor_long": 0.75, "kelly_factor_short": 0.70,
+                "atr_stop_long": 2.2, "atr_stop_short": 2.6,
+            },
+            "LINK/USDT": {
+                "sl_mult": 1.1,
+                "tp_mult": 1.0,
+                "long_bias": 0.0,
+                "short_bias": 0.0,
+                "min_confidence": 0.50,
+                "max_concurrent": 1,
+                "category": "ALT",
+                "base_leverage": 10,
+                "max_risk_pct": 0.03,
+                "default_atr_pct": 0.0050,
+                "trail_protect_atr": 0.9,
+                "trail_pursue_atr": 1.4,
+                "trail_capture_atr": 0.5,
+                "momentum_sensitivity": 1.1,
+                "sl_min": 65, "sc_min": 70, "isn_threshold": 10,
+                "kelly_factor_long": 0.80, "kelly_factor_short": 0.75,
+                "atr_stop_long": 2.0, "atr_stop_short": 2.4,
+            },
+        }
+        DEFAULT = {
+            "sl_mult": 1.0, "tp_mult": 1.0,
+            "long_bias": 0.0, "short_bias": 0.0,
+            "min_confidence": 0.50, "max_concurrent": 1,
+            "category": "OTHER",
+            "base_leverage": 5,          # SOVEREIGN: Safe default
+            "max_risk_pct": 0.02,        # SOVEREIGN: Safe default risk
+            "default_atr_pct": 0.0050,
+            "trail_protect_atr": 0.9,
+            "trail_pursue_atr": 1.4,
+            "trail_capture_atr": 0.5,
+            "momentum_sensitivity": 1.0,
+            "sl_min": 65, "sc_min": 72, "isn_threshold": 15,
+            "kelly_factor_long": 0.70, "kelly_factor_short": 0.60,
+            "atr_stop_long": 2.0, "atr_stop_short": 2.5,
+        }
+
+        @classmethod
+        def get(cls, symbol: str) -> dict:
+            """Get profile for a symbol, normalizing BTC/USDT and BTCUSDT formats."""
+            norm = symbol.replace("USDT", "/USDT") if "/" not in symbol else symbol
+            return cls.PROFILES.get(norm, cls.DEFAULT)
+
+    # ════════════════════════════════════════════════════════════════
+    # 🏃 MOTOR DE PERSECUCIÓN DINÁMICA DE GANANCIAS (SISTEMA V7)
+    # ════════════════════════════════════════════════════════════════
+    class Trailing:
+        """Configuración maestra para el Motor Dinámico de Persecución de Ganancias (v7)"""
+        TRAILING_ASSET_PROFILES = {
+            "BTC/USDT": {"pullback_tol": 0.40, "trail_f1": 1.5, "trail_f2": 1.2, "trail_f3": 1.0, "trail_runner": 0.8},
+            "ETH/USDT": {"pullback_tol": 0.45, "trail_f1": 1.7, "trail_f2": 1.4, "trail_f3": 1.2, "trail_runner": 1.0},
+            "BNB/USDT": {"pullback_tol": 0.35, "trail_f1": 2.0, "trail_f2": 1.6, "trail_f3": 1.3, "trail_runner": 1.1},
+            "SOL/USDT": {"pullback_tol": 0.60, "trail_f1": 2.0, "trail_f2": 1.8, "trail_f3": 1.5, "trail_runner": 1.3},
+            "XRP/USDT": {"pullback_tol": 0.45, "trail_f1": 1.8, "trail_f2": 1.5, "trail_f3": 1.3, "trail_runner": 1.0},
+            "DOGE/USDT": {"pullback_tol": 0.30, "trail_f1": 2.5, "trail_f2": 2.0, "trail_f3": 1.5, "trail_runner": 1.0},
+            "DEFAULT": {"pullback_tol": 0.40, "trail_f1": 2.0, "trail_f2": 1.5, "trail_f3": 1.2, "trail_runner": 1.0}
+        }
+        
+        STRATEGY_FAMILY_PROFILES = {
+            "MOMENTUM": {"r1_pct": 0.25, "r2_pct": 0.25, "runner_pct": 0.50},
+            "MEAN_REVERSION": {"r1_pct": 0.40, "r2_pct": 0.50, "runner_pct": 0.10},
+            "STRUCTURE": {"r1_pct": 0.50, "r2_pct": 0.30, "runner_pct": 0.20},
+            "ORDERFLOW": {"r1_pct": 0.60, "r2_pct": 0.30, "runner_pct": 0.10},
+            "DEFAULT": {"r1_pct": 0.50, "r2_pct": 0.30, "runner_pct": 0.20}
+        }
+
+        @classmethod
+        def get_asset_profile(cls, symbol: str) -> dict:
+            norm = symbol.replace("USDT", "/USDT") if "/" not in symbol else symbol
+            return cls.TRAILING_ASSET_PROFILES.get(norm, cls.TRAILING_ASSET_PROFILES["DEFAULT"])
+            
+        @classmethod
+        def get_family_profile(cls, family: str) -> dict:
+            return cls.STRATEGY_FAMILY_PROFILES.get(family.upper(), cls.STRATEGY_FAMILY_PROFILES["DEFAULT"])
 
     # MANDATORY TAGGING SYSTEM - SCALPING VS SWING
     STRATEGY_LABELS = {
@@ -193,16 +514,16 @@ class Config(metaclass=EncryptedConfigMeta):
 
     
     # Risk settings for Multi-Symbol Coordination
-    MAX_CONCURRENT_POSITIONS = 26 # FORENSIC-V17: 26 (one per symbol) — NO LIMITS per user request
-    COOLDOWN_PERIOD_SECONDS = 0    # FORENSIC-V17: 0s — allow immediate re-entry for micro-scalping
+    MAX_CONCURRENT_POSITIONS = 5   # CIRUGÍA-V131: 5 (one per Elite symbol) — concentrate $13 capital
+    COOLDOWN_PERIOD_SECONDS = 300  # FORENSIC-V17: 300s — prevent immediate toxic re-entries
     MAX_POSITIONS_PER_SYMBOL = 1   # Still 1 per symbol to prevent double-spending on same asset
     
     # Position Sizing Configuration
-    POSITION_SIZE_MICRO_ACCOUNT = 0.30   # GOD MODE: 30% per trade → $3.90 margin × 10x = $39 notional
+    POSITION_SIZE_MICRO_ACCOUNT = 0.05   # [HOTFIX] Bajado de 30% a 5% por trade → $0.65 margen × 10x = $6.5 notional
     POSITION_SIZE_SMALL_ACCOUNT = 0.15   # Lowered from 20%
     
     # Trade Validation Thresholds
-    MIN_PROFIT_AFTER_FEES = 0.003  # 0.3% minimum net profit
+    MIN_PROFIT_AFTER_FEES = 0.0015 # 0.15% minimum net profit
     MIN_RR_RATIO = 1.5             # 1.5:1 R:R minimum
     
     # Risk Management
@@ -220,13 +541,14 @@ class Config(metaclass=EncryptedConfigMeta):
     
     # === RISK CAPITOL HIERARCHY (USER RULE PRESERVATION) ===
     class Risk:
-        MAX_DRAWDOWN = 15.0           # 15.0% max drawdown (SOVEREIGN LIMIT) - Increased from 1.5% for $13 micro-accounts
+        MAX_DRAWDOWN = 35.0           # 35.0% max drawdown (SOVEREIGN LIMIT) - Increased from 15% for $13 micro-accounts
         DEFAULT_BOOTSTRAP_WR = 0.52 
         BOOTSTRAP_TRADES = 20
         MAX_RISK_PER_TRADE = 0.05  
         STOP_LOSS_PCT = 0.02       
         MAX_SLIPPAGE_PCT = 0.001
         USE_PREDICTIVE_TP = False     # CIRUGÍA-V100: DISABLED — net PnL -4.65 after fees (769 trades, 47% WR). Trailing stops are superior.
+        TOXIC_ASSETS = ["DOT/USDT", "ATOM/USDT", "XRP/USDT"]  # XRP blacklisted due to -1.30 PnL drag.
         
         # ════════════════════════════════════════════════════════════════
         # 🛡️ RISK THRESHOLDS — ERADICATING MAGIC NUMBERS (PHASE 2)
@@ -240,7 +562,7 @@ class Config(metaclass=EncryptedConfigMeta):
             'petim_exhaustion_pnl': -0.02,
             'swing_min_equity_block': 50.0,
             'zombie_hours_held': 7.5,
-            'zombie_pnl_max': 0.5,
+            'zombie_pnl_max': 0.005,  # 0.5% (typo fix: was 0.5 = 50% profit)
             'merit_win_rate_min': 0.60,
             'merit_score_high': 1.2,
             'merit_factor_expansion': 1.5,
@@ -285,22 +607,140 @@ class Config(metaclass=EncryptedConfigMeta):
             elif horizon_days <= 15: return '1h'
             else: return '4h'
 
+    # ═══════════════════════════════════════════════════════════════
+    # MARGIN SILOS: Data-driven allocation from backtest 3051676c.
+    # Scalping: 85% — Fast recycled margin (Módulo Omega)
+    # Swing: 15% — Complementary slow trades (Módulo Omega)
+    # ═══════════════════════════════════════════════════════════════
+    MICROSCALPING_MARGIN_CAP = 0.00  # DISABLED (Merged into Scalping)
+    SCALPING_MARGIN_CAP = 0.85       # PRIMARY: Módulo Omega Compounding Engine
+    SWING_MARGIN_CAP = 0.15          # SECONDARY: Complementary
+
+    # === HORIZON SETTINGS ===
+    class Horizons:
+        Microscalping = {
+            # FORENSIC-V155: TP 0.60%→0.35%, SL stays 0.50%
+            # DATA: 0/35 trades hit TP at 0.60%. Winners exit TIMEOUT at +0.10-0.73%.
+            # 0.35% TP is achievable in 2-5 candles. SL 0.50% survives BTC noise.
+            # WR improvement compensates for lower R:R (Kelly-optimal at WR>40%).
+            'tp_pct': 0.0035,         # 0.35% TP (optimized for M1-M3 micro movements)
+            'sl_pct': 0.0050,         # 0.50% SL (optimized to survive M1-M3 noise)
+            'max_hold_time': 1800,    # 30 minutes max hold time
+            'rsi_period': 5,
+            'rsi_buy': 30,
+            'rsi_sell': 70,
+            'bb_period': 10,
+            'bb_std': 1.5,
+            'ema_fast': 8,
+            'ema_slow': 21,
+            'ema_trend': 50,
+            'atr_period': 7,
+            'adx_period': 7,
+            'timeframes': ['1m', '3m', '5m'],
+            'primary_tf': '1m', 
+            'min_volume_ratio': 0.5,
+            'cooldown_seconds': 5,
+            'max_hold_bars': 30,
+            'strength_threshold': 0.35, 
+            'atr_sl_mult': 2.0,
+            'atr_tp_mult': 1.5,       # FORENSIC-V155: 2.5→1.5 (tighter TP capture)
+            'sophia_refit': 10,
+        }
+
+        Scalping = {
+            # FORENSIC-V156: TP 0.35%, SL 0.35% (1:1 Base RR)
+            # TP 0.35% is within reach. SL 0.35% survives normal noise but protects better.
+            'tp_pct': 0.0035,         # 0.35% TP (optimized for M5 scalping)
+            'sl_pct': 0.0035,         # 0.35% SL (balanced with TP for higher WR)
+            'max_hold_time': 7200,    # [ROUND4-OPT] Límite estricto e incondicional de tiempo en segundos (2 horas)
+            'rsi_period': 5,          # GOLDEN: RSI ultra-rápido
+            'rsi_buy': 35,            # GOLDEN: Wider zone
+            'rsi_sell': 65,           # GOLDEN: Wider zone
+            'bb_period': 10,          # GOLDEN: Bollinger rápido
+            'bb_std': 1.5,            # GOLDEN: Tighter bands
+            'ema_fast': 8,            # GOLDEN: EMA rápida
+            'ema_slow': 21,           # GOLDEN: EMA lenta
+            'ema_trend': 50,          # GOLDEN: Trend filter
+            'atr_period': 7,          # GOLDEN: ATR corto
+            'adx_period': 7,          # GOLDEN: ADX rápido
+            'timeframes': ['1m', '5m', '15m'],
+            'primary_tf': '1m', 
+            'min_volume_ratio': 0.4,
+            'cooldown_seconds': 15,
+            'max_hold_bars': 120,      # [ROUND3-OPT] Alineado con max_hold_time a 2 horas (120m) para dar espacio real
+            'strength_threshold': 0.45, 
+            'atr_sl_mult': 2.0,       # V156: Lowered from 3.0 to tighten stops and improve R:R
+            'atr_tp_mult': 2.0,       # V156: Lowered from 3.5 to make TP more reachable
+            'sophia_refit': 50,
+        }
+        
+        Swing = {
+            'tp_pct': 0.045,          # 4.5% TP
+            'sl_pct': 0.025,          # 2.5% SL
+            'rsi_period': 14,         # RSI estándar
+            'rsi_buy': 35,            # Oversold conservador
+            'rsi_sell': 65,           # Overbought conservador
+            'bb_period': 20,          # Bollinger estándar
+            'bb_std': 2.0,            # Bandas estándar
+            'ema_fast': 20,           # EMA estándar
+            'ema_slow': 50,           # EMA media
+            'ema_trend': 200,         # Golden Cross filter
+            'atr_period': 14,         # ATR estándar
+            'adx_period': 14,         # ADX estándar
+            'timeframes': ['1h', '4h', '1d'],  
+            'primary_tf': '1h',       
+            'min_volume_ratio': 1.0,  
+            'cooldown_seconds': 3600, 
+            'max_hold_bars': 96,      
+            'strength_threshold': 0.45, # [ROUND3-OPT] Reducido de 0.55 a 0.45 para reactivar Swing y evitar sobre-filtrado
+            'atr_sl_mult': 3.0,       
+            'atr_tp_mult': 4.5,       
+            'sophia_refit': 24,       
+        }
+        
+        Mutations = {
+            'min_atr_required': 0.0004,    
+            'adx_threshold': 18,           
+            'strength_threshold': 0.45,    
+            'max_tp_cap': 0.0035,          # Tighter cap for 1m micro-scalping
+            'max_sl_cap': 0.0025,          # Defensive SL cap
+        }
+        
+        GlobalThresholds = {
+            'rsi_pullback_uptrend': 40,
+            'rsi_rally_downtrend': 60,
+            'rsi_extreme_low': 30,
+            'rsi_extreme_high': 70,
+            'vol_ratio_btc': 1.2,
+            'vol_ratio_alts': 1.1,
+            'vol_ratio_expansion': 1.5,
+            'vol_ratio_high': 1.2,
+            'vol_ratio_low': 0.8,
+            'volatility_gate_pct': 0.025,
+            'bb_pos_lower_prox': 0.25,
+            'bb_pos_upper_prox': 0.75,
+            # ═══════════════════════════════════════════════════════════════
+            # AUDIT FIX: Sophia thresholds data-driven from backtest:
+            #   conf < 0.60: 22% WR (worse than coin-flip)
+            #   conf 0.60-0.65: 33% WR (still below breakeven)
+            #   conf >= 0.65: 50% WR (actionable edge)
+            # POR QUÉ: 0.65 is the inflection point where WR crosses 50%.
+            # ═══════════════════════════════════════════════════════════════
+            'sophia_win_prob_min': 0.50,  # FORENSIC-V150: Lowered from 0.65→0.50 (0.65 blocked 170+ signals, actual WR=46% not 100%)
+            'sophia_win_prob_high': 0.75,
+            'sophia_win_prob_supreme': 0.88,
+            'sophia_superposition_divine': 0.72,
+            'sophia_superposition_harmonic': 0.58,
+            'sophia_resonance_index': 0.52,
+            'sophia_butterfly_force': 1.2,
+            'sophia_path_score': 0.65,
+            'sophia_hurst_trend': 0.55,
+            'sophia_hurst_mean_rev': 0.42,
+            'sophia_whale_ratio': 5.0,
+        }
+
     # === STRATEGY SETTINGS (Nesting required by loader) ===
     class Strategies:
-        # Technical Strategy settings
-        TECH_RSI_PERIOD = 14
-        TECH_RSI_BUY = 35    
-        TECH_RSI_SELL = 65   
-        TECH_EMA_FAST = 20 # SHORT-TERM (Changed from 50)
-        TECH_EMA_SLOW = 50 # MEDIUM-TERM (Changed from 200)
-        TECH_ADX_THRESHOLD = 18 # [HYPER-EVOLVER-V2] Golden Genotype: ADX 18 (80% WR, 50 trials)
-        TECH_BB_PERIOD = 20
-        TECH_BB_STD = 2.0
-        TECH_TP_PCT = 0.0080 # [ZOMBIE-FIX] SYNCED with SCALPING_PARAMS — TP=0.80% (Net TP=0.743% after fees. Old 0.30% was impossible: net 0.243% < fees)
-        TECH_SL_PCT = 0.0040 # [ZOMBIE-FIX] SYNCED with SCALPING_PARAMS — SL=0.40% (R:R net=1.63:1 @ 38% WR breakeven)
-        SYMMETRIC_SHORTS_SCALPING = True  # Habilita cortos en contra-tendencia para micro-cuentas
-        SHORT_SL_MULTIPLIER = 1.2         # 20% tightening on SL for shorts (e.g. 0.5% / 1.2 = 0.41%)
-        SHORT_TP_MULTIPLIER = 0.8         # 20% tightening on TP for shorts (e.g. 1.0% * 0.8 = 0.8%)
         
         # ================================================================
         # 🏆 GOLDEN BASELINE — FROZEN PARAMETERS (2024-04-24 to 2024-05-09)
@@ -343,53 +783,7 @@ class Config(metaclass=EncryptedConfigMeta):
             },
         }
         
-        SCALPING_PARAMS = {
-            'tp_pct': 0.0080,         # [ZOMBIE-FIX] TP 0.80% — Net after fees: 0.743%. Old 0.30% was impossible (net 0.243% < SL 0.257%)
-            'sl_pct': 0.0040,         # [ZOMBIE-FIX] SL 0.40% — R:R net 1.63:1 (breakeven at 38% WR). Old 0.20% = sub-fee territory
-            'rsi_period': 5,          # GOLDEN: RSI ultra-rápido
-            'rsi_buy': 35,            # GOLDEN: Wider zone
-            'rsi_sell': 65,           # GOLDEN: Wider zone
-            'bb_period': 10,          # GOLDEN: Bollinger rápido
-            'bb_std': 1.5,            # GOLDEN: Tighter bands
-            'ema_fast': 8,            # GOLDEN: EMA rápida
-            'ema_slow': 21,           # GOLDEN: EMA lenta
-            'ema_trend': 50,          # GOLDEN: Trend filter
-            'atr_period': 7,          # GOLDEN: ATR corto
-            'adx_period': 7,          # GOLDEN: ADX rápido
-            'timeframes': ['1m', '5m', '15m'],
-            'primary_tf': '5m',
-            'min_volume_ratio': 0.4,
-            'cooldown_seconds': 15,
-            'max_hold_bars': 120,
-            'strength_threshold': 0.45, # [FORENSIC-RECAL] Lowered from 0.57 → 0.45. Multiplicative model max ≈0.55. Old threshold killed ALL signals.
-            'atr_sl_mult': 3.0,
-            'atr_tp_mult': 3.5,
-            'sophia_refit': 50,
-        }
-        
-        SWING_PARAMS = {
-            'tp_pct': 0.045,          # 4.5% TP — captura de tendencia
-            'sl_pct': 0.025,          # 2.5% SL — respiración holgada
-            'rsi_period': 14,         # RSI estándar
-            'rsi_buy': 35,            # Oversold conservador
-            'rsi_sell': 65,           # Overbought conservador
-            'bb_period': 20,          # Bollinger estándar
-            'bb_std': 2.0,            # Bandas estándar
-            'ema_fast': 20,           # EMA estándar
-            'ema_slow': 50,           # EMA media
-            'ema_trend': 200,         # Golden Cross filter
-            'atr_period': 14,         # ATR estándar
-            'adx_period': 14,         # ADX estándar
-            'timeframes': ['1h', '4h', '1d'],  # Solo timeframes largos
-            'primary_tf': '1h',       # Timeframe principal
-            'min_volume_ratio': 1.0,  # Volumen confirmado
-            'cooldown_seconds': 3600, # 1h cooldown entre trades
-            'max_hold_bars': 96,      # Max 96 velas (4 días en 1h)
-            'strength_threshold': 0.55, # Umbral medio
-            'atr_sl_mult': 3.0,       # FORENSIC-V14: SL amplio (3x ATR)
-            'atr_tp_mult': 4.5,       # TP grande (4.5x ATR)
-            'sophia_refit': 24,       # Recalibrate clusters once per day (H1/H4)
-        }
+
         
         # ════════════════════════════════════════════════════════════════
         # 📉 DCA AUTOMÁTICO SWING — PROMEDIAR PRECIO ESCALONADO
@@ -417,7 +811,18 @@ class Config(metaclass=EncryptedConfigMeta):
             RECALC_TP = True                        # Recalcular TP tras promediar
             RECALC_SL = False                       # NO ensanchar SL (mantener riesgo controlado)
             MIN_MARGIN_FOR_DCA = 0.50               # Mínimo $0.50 margen libre para DCA
-        
+        # ═══════════════════════════════════════════════════════════════
+        # AUDIT FIX: SCALPING_PARAMS and SWING_PARAMS REMOVED here.
+        # POR QUÉ: Estas definiciones eran SIEMPRE sobreescritas por
+        #   L918-920: Config.Strategies.SCALPING_PARAMS = Config.Horizons.Scalping
+        # PARA QUÉ: Eliminar código muerto que confunde y puede causar
+        #   divergencias silenciosas (ej: strength_threshold 0.55 vs 0.45).
+        # DÓNDE: La ÚNICA fuente de verdad es Config.Horizons.Scalping/Swing
+        #   (asignada a Strategies.SCALPING_PARAMS/SWING_PARAMS en L918-920).
+        # ═══════════════════════════════════════════════════════════════
+        # SCALPING_PARAMS → assigned from Config.Horizons.Scalping at module bottom
+        # SWING_PARAMS → assigned from Config.Horizons.Swing at module bottom
+
         # ML Strategy settings
         ML_RETRAIN_INTERVAL = 240   
         ML_MIN_CONFIDENCE = 0.015   
@@ -469,8 +874,9 @@ class Config(metaclass=EncryptedConfigMeta):
         
         # Mean Reversion parameters
         STAT_WINDOW = 20
-        STAT_Z_ENTRY = 1.5
-        STAT_Z_EXIT = 0.0
+        STAT_Z_ENTRY = 2.0
+        # FORENSIC-V139: Require overshoot to cover fees. Was 0.0.
+        STAT_Z_EXIT = -0.3
         
         # --- PHASE 4-6 MATH PARAMETERS ---
         # Statistical
@@ -479,7 +885,7 @@ class Config(metaclass=EncryptedConfigMeta):
         STAT_HURST_THRESHOLD = 0.5    # 0.5 = Random Walk
         
         # ML / Risk
-        ML_KELLY_FRACTION = 0.1       # Sovereign-Deploy: Fractional Kelly (f*/10)
+        ML_KELLY_FRACTION = 1.0       # [ShadowDarwin] 100% Full Kelly for Aggressive Exponential Compounding
         ANALYTICS_EXPECTANCY_WINDOW = 20 # Rolling window for Kill Switch
         
         # Adaptive Technical
@@ -495,13 +901,7 @@ class Config(metaclass=EncryptedConfigMeta):
         # DÓNDE: config.py → consumido por strategies/technical.py
         # QUIÉN: Hyper-Evolver Optuna Engine
         # ════════════════════════════════════════════════════════════════
-        Mutations = {
-            'min_atr_required': 0.0004,    # [GOLDEN-V4] 0.04% — allows ALL M5 symbols
-            'adx_threshold': 18,           # ADX filter — blocks chop without killing trends
-            'strength_threshold': 0.45,    # [FORENSIC-RECAL] Synced with SCALPING_PARAMS. Old 0.57 produced 0 trades in 7-day BT.
-            'max_tp_cap': 0.0080,          # [ZOMBIE-FIX] SYNCED with SCALPING_PARAMS.tp_pct (0.80%). Old 0.30% was mathematically impossible
-            # 'sl_multiplier' REMOVED — [CIRUGÍA #1] SL now comes directly from SCALPING_PARAMS.sl_pct
-        }
+
     
         # ════════════════════════════════════════════════════════════════
         # 📐 TECHNICAL THRESHOLDS — ERADICATING MAGIC NUMBERS (PHASE 2)
@@ -518,30 +918,101 @@ class Config(metaclass=EncryptedConfigMeta):
             'vol_ratio_btc': 1.2,
             'vol_ratio_alts': 1.1,
             'vol_ratio_expansion': 1.5,
-        
             'vol_ratio_high': 1.2,
             'vol_ratio_low': 0.8,
             'volatility_gate_pct': 0.025,
-        
             'bb_pos_lower_prox': 0.25,
             'bb_pos_upper_prox': 0.75,
-        
-            # Sophia Oracle validation (RESCUE PROTOCOL: Increased to 0.85)
-            'sophia_win_prob_min': 0.85,
-            'sophia_win_prob_high': 0.90,
-            'sophia_win_prob_supreme': 0.95,
-        
-            'sophia_superposition_divine': 0.85,
-            'sophia_superposition_harmonic': 0.70,
-            'sophia_resonance_index': 0.60,
-        
-            'sophia_butterfly_force': 1.5,
-            'sophia_path_score': 0.80,
+            # AUDIT FIX: Synced with GlobalThresholds above
+            'sophia_win_prob_min': 0.50,  # SSOT: synced from GlobalThresholds (FORENSIC-V150)
+            'sophia_win_prob_high': 0.72,
+            'sophia_win_prob_supreme': 0.85,
+            'sophia_superposition_divine': 0.70,
+            'sophia_superposition_harmonic': 0.55,
+            'sophia_resonance_index': 0.50,
+            'sophia_butterfly_force': 1.2,
+            'sophia_path_score': 0.65,
             'sophia_hurst_trend': 0.55,
             'sophia_hurst_mean_rev': 0.42,
             'sophia_whale_ratio': 5.0,
         }
-    
+    # ========================================================================
+    # === BIDIRECTIONAL INTELLIGENCE MODULE (Oportunidad Dual) ===
+    # ========================================================================
+    class DualDirectional:
+        # UA3: Umbrales mínimos de señal (SL/SC) e ISN por activo
+        THRESHOLDS = {
+            'BTC/USDT': {'sl_min': 72, 'isn_long': 10, 'sc_min': 78, 'isn_short': -10},
+            'ETH/USDT': {'sl_min': 68, 'isn_long': 10, 'sc_min': 74, 'isn_short': -10},
+            'BNB/USDT': {'sl_min': 65, 'isn_long': 10, 'sc_min': 70, 'isn_short': -10},
+            'SOL/USDT': {'sl_min': 65, 'isn_long': 10, 'sc_min': 70, 'isn_short': -10},
+            'XRP/USDT': {'sl_min': 68, 'isn_long': 10, 'sc_min': 75, 'isn_short': -10},
+            'DEFAULT_T3': {'sl_min': 65, 'isn_long': 15, 'sc_min': 72, 'isn_short': -15},
+            'DEFAULT_T4': {'sl_min': 78, 'isn_long': 20, 'sc_min': 85, 'isn_short': -20}
+        }
+        
+        # UA5: Multiplicadores ATR para Stops (Long vs Short)
+        ATR_STOP_MULT = {
+            'BTC/USDT': {'long': 1.5, 'short': 1.8},
+            'ETH/USDT': {'long': 1.7, 'short': 2.0},
+            'BNB/USDT': {'long': 2.0, 'short': 2.3},
+            'SOL/USDT': {'long': 2.0, 'short': 2.5},
+            'XRP/USDT': {'long': 2.0, 'short': 2.3},
+            'DEFAULT_T3': {'long': 2.0, 'short': 2.5},
+            'DEFAULT_T4': {'long': 2.5, 'short': 3.0}
+        }
+        
+        # UA5: Factor Kelly Asimétrico (Reducción de exposición para cortos)
+        KELLY_FACTOR_SHORT = {
+            'BTC/USDT': 0.90,
+            'ETH/USDT': 0.85,
+            'BNB/USDT': 0.75,
+            'SOL/USDT': 0.70,
+            'XRP/USDT': 0.65,
+            'DEFAULT_T3': 0.60,
+            'DEFAULT_T4': 0.40
+        }
+        
+        # CIERRE UNIFICADO (Parte VI): Nivel de R1 y R2 en ATR
+        CLOSURE_ATR_TARGETS = {
+            'BTC/USDT': {'long_r1': 1.5, 'short_r1': 1.2, 'long_r2': 3.0, 'short_r2': 2.0},
+            'ETH/USDT': {'long_r1': 1.8, 'short_r1': 1.4, 'long_r2': 3.0, 'short_r2': 2.0},
+            'SOL/USDT': {'long_r1': 2.0, 'short_r1': 1.0, 'long_r2': 4.0, 'short_r2': 1.5},
+            'XRP/USDT': {'long_r1': 1.5, 'short_r1': 1.0, 'long_r2': 3.0, 'short_r2': 2.0},
+            'DEFAULT_T3': {'long_r1': 1.5, 'short_r1': 1.2, 'long_r2': 3.0, 'short_r2': 2.0},
+            'DEFAULT_T4': {'long_r1': 1.5, 'short_r1': 1.0, 'long_r2': 3.0, 'short_r2': 2.0}
+        }
+        
+        # CIERRE UNIFICADO (Parte VI): Porcentajes de Cierre
+        CLOSURE_PCT = {
+            'long_r1_pct': 0.25,
+            'short_r1_pct': 0.50,
+            'long_r2_pct': 0.30,
+            'short_r2_pct': 0.30,
+            'long_runner': 0.35,
+            'short_runner': 0.20
+        }
+        
+        # Trailing Stop en ATR
+        TRAILING_ATR = {
+            'BTC/USDT': {'long': 1.5, 'short': 1.0},
+            'ETH/USDT': {'long': 1.7, 'short': 1.2},
+            'SOL/USDT': {'long': 2.0, 'short': 1.5},
+            'DEFAULT_T4': {'long': 2.5, 'short': 2.0}
+        }
+        
+        # Funding Rate Rules (Base 8h)
+        FUNDING_EXTREME_POS = 0.0005 # 0.05%
+        FUNDING_MODERATE_POS = 0.0001 # 0.01%
+        FUNDING_MODERATE_NEG = -0.00005 # -0.005%
+        FUNDING_EXTREME_NEG = -0.0002 # -0.02%
+    # ========================================================================
+    # === SCORING & BREAKEVEN (Phase 1 Antifragil) ===
+    # ========================================================================
+    class Scoring:
+        MIN_PASS_SCORE = 75
+        BREAKEVEN_SAFETY_MARGIN_MULTIPLIER = 1.5
+
     # Phase 99: WandB Tracking
     WANDB_ENTITY = "jhonala-none"
     
@@ -852,6 +1323,22 @@ def validate_institutional_policy():
             sys.exit(1)
     
     return True
+
+# Unificación de alias para evitar divergencias entre Horizons y Strategies (SSOT)
+Config.Strategies.MICROSCALPING_PARAMS = Config.Horizons.Microscalping
+Config.Strategies.SCALPING_PARAMS = Config.Horizons.Scalping
+Config.Strategies.SWING_PARAMS = Config.Horizons.Swing
+Config.registry = OmniscientRegistry(Config)
+
+# ═══════════════════════════════════════════════════════════════
+# SSOT SYNC: Sophia thresholds → single source from GlobalThresholds
+# POR QUÉ: Antes había valores duplicados en GlobalThresholds y
+#   TECHNICAL_THRESHOLDS que podían divergir silenciosamente.
+# PARA QUÉ: Un cambio en GlobalThresholds se propaga a todas partes.
+# ═══════════════════════════════════════════════════════════════
+_sophia_keys = [k for k in Config.Horizons.GlobalThresholds if k.startswith('sophia_')]
+for _k in _sophia_keys:
+    Config.Strategies.TECHNICAL_THRESHOLDS[_k] = Config.Horizons.GlobalThresholds[_k]
 
 # Run validation on import
 Config.check_types()

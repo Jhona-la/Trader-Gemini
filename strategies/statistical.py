@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import talib # Added for trend calculation
+from utils.math_kernel import calculate_adx_jit, calculate_atr_jit, calculate_ema_jit
 from utils.math_helpers import safe_div
 from .strategy import Strategy
 from core.events import SignalEvent
@@ -10,6 +10,7 @@ from utils.cooldown_manager import cooldown_manager
 from utils.analytics import AnalyticsEngine
 from core.data_handler import get_data_handler
 from utils.logger import logger
+from utils.common import validate_market_data, performance_timer
 from utils.statistics_pro import StatisticsPro
 from core.neural_bridge import neural_bridge
 
@@ -24,18 +25,26 @@ class StatisticalStrategy(Strategy):
         self.pair = pair # Tuple of two symbols (Y, X) where Spread = Y - beta*X or Ratio = Y/X
         self.horizon = horizon
         self.priority = priority
+        self.strategy_id = f"STAT_V1_{horizon}"
         self.window = Config.Strategies.STAT_WINDOW
         self.long_window = self.window * 10 # Phase 7+: 200 bars for long-term baseline
         self.z_base = Config.Strategies.STAT_Z_ENTRY
         self.z_entry = Config.Strategies.STAT_Z_ENTRY
         self.z_exit = Config.Strategies.STAT_Z_EXIT
-        self.invested = 0 # 0 = None, 1 = Long Spread, -1 = Short Spread
+        self.invested = {} # Dict-based isolation per coin: y_sym -> state (-1, 0, 1)
         
         # Phase 6: Permissive Mode Override
         if Config.BINANCE_USE_DEMO and getattr(Config.Strategies, 'PERMISSIVE_MODE', False):
             # Lower Z-Entry slightly for more frequency in Demo Competition
             self.z_entry = Config.Strategies.STAT_Z_ENTRY * 0.8 # 20% more permissive
             print(f"🧪 LAB MODE: {self.pair} using Permissive Z-Entry={self.z_entry:.2f}")
+            
+        if self.horizon == 'SCALPING':
+            self.primary_tf = getattr(Config.Horizons, 'Scalping', {}).get('primary_tf', '1m')
+        elif self.horizon == 'SWING':
+            self.primary_tf = getattr(Config.Horizons, 'Swing', {}).get('primary_tf', '1h')
+        else:
+            self.primary_tf = '5m'
 
     def _check_proactive_expectancy(self, symbol) -> bool:
         """
@@ -77,6 +86,8 @@ class StatisticalStrategy(Strategy):
             logger.error(f"⚠️ Expectancy check error: {e}")
             return True # Fail open to avoid freezing strategy on error
 
+    @validate_market_data
+    @performance_timer
     def calculate_signals(self, event):
         try:
             if event.type != EventType.MARKET:
@@ -95,8 +106,8 @@ class StatisticalStrategy(Strategy):
 
                 # Get latest bars for both assets
                 try:
-                    bars_y = self.data_provider.get_latest_bars(y_sym, n=self.window)
-                    bars_x = self.data_provider.get_latest_bars(x_sym, n=self.window)
+                    bars_y = self.data_provider.get_latest_bars(y_sym, n=self.window, timeframe=self.primary_tf)
+                    bars_x = self.data_provider.get_latest_bars(x_sym, n=self.window, timeframe=self.primary_tf)
                 except KeyError:
                     continue 
 
@@ -123,7 +134,7 @@ class StatisticalStrategy(Strategy):
                     h_val = StatisticsPro.calculate_hurst_exponent(closes_simple)
                     if h_val > 0.70: # Extreme Trend
                         print(f"📉 [Hurst] {y_sym}: Blocked. Extreme Trend (H={h_val:.2f} > 0.70).")
-                        return
+                        continue
                     elif h_val > 0.55:
                          print(f"⚠️ [Hurst] {y_sym}: Caution (H={h_val:.2f}). Market trending.")
 
@@ -138,7 +149,7 @@ class StatisticalStrategy(Strategy):
                     market_regime = regime_meta.get('symbol_regimes', {}).get(y_sym, regime_meta.get('sentiment', 'UNKNOWN'))
                 if market_regime == "TRENDING" and h_val > 0.60:
                     logger.info(f"🛑 [STAT REGIME BLOCK] {y_sym}: Mean reversion blocked in TRENDING regime (H={h_val:.2f}).")
-                    return
+                    continue
                 
                 # BUG #55 FIX: Ensure data alignment and correct Ratio High/Low calculation
                 # 1. Align Data by Timestamp (Crucial for correlation/cointegration)
@@ -168,7 +179,7 @@ class StatisticalStrategy(Strategy):
                     common_timestamps = sorted(list(set(y_dict.keys()) & set(x_dict.keys())))
                     
                     if len(common_timestamps) < self.window:
-                        return # Not enough overlapping data
+                        continue # Not enough overlapping data
                     
                     # Reconstruct aligned lists
                     bars_y_aligned = [y_dict[ts] for ts in common_timestamps]
@@ -202,21 +213,31 @@ class StatisticalStrategy(Strategy):
                 
                 # Calculate Ratio ADX
                 try:
-                    ratio_adx = talib.ADX(ratio_highs, ratio_lows, ratios, timeperiod=14)[-1]
+                    ratio_adx = calculate_adx_jit(ratio_highs, ratio_lows, ratios, period=14)[-1]
                 except Exception:
                     ratio_adx = 0
                 
                 # Handle NaN
                 if np.isnan(ratio_adx):
                     ratio_adx = 0
+
+                # ═══════════════════════════════════════════════════════
+                # FORENSIC-FIX #4: ATR ARRAY MISALIGNMENT
+                # QUÉ: Calcular ATR usando el historial COMPLETO, no el alineado.
+                # POR QUÉ: Al alinear timestamps y borrar "huecos", se crean gaps falsos 
+                #   en la serie de tiempo que destruyen el cálculo de True Range.
+                # ═══════════════════════════════════════════════════════
+                full_highs_y = np.array([b['high'] for b in bars_y], dtype=np.float64)
+                full_lows_y = np.array([b['low'] for b in bars_y], dtype=np.float64)
+                full_closes_y = np.array([b['close'] for b in bars_y], dtype=np.float64)
                 
-                # Calculate ATR for volatility-based sizing
+                full_highs_x = np.array([b['high'] for b in bars_x], dtype=np.float64)
+                full_lows_x = np.array([b['low'] for b in bars_x], dtype=np.float64)
+                full_closes_x = np.array([b['close'] for b in bars_x], dtype=np.float64)
+                
                 # We use the ATR of the asset we are buying (Y or X)
-                closes_y = np.array([b['close'] for b in bars_y], dtype=np.float64)  # F6
-                atr_y = talib.ATR(highs_y, lows_y, closes_y, timeperiod=14)[-1]
-                
-                closes_x = np.array([b['close'] for b in bars_x], dtype=np.float64)  # F6
-                atr_x = talib.ATR(highs_x, lows_x, closes_x, timeperiod=14)[-1]
+                atr_y = calculate_atr_jit(full_highs_y, full_lows_y, full_closes_y, period=14)[-1]
+                atr_x = calculate_atr_jit(full_highs_x, full_lows_x, full_closes_x, period=14)[-1]
 
                 # Calculate Rolling OLS Beta (Dynamic Hedge Ratio)
                 # Phase 4 Math Upgrade
@@ -245,15 +266,24 @@ class StatisticalStrategy(Strategy):
                 else:
                     z_window = self.window
 
-                # Rolling Z-Score on spread
-                roll_mean = pd.Series(spread).rolling(window=z_window).mean().values
-                roll_std = pd.Series(spread).rolling(window=z_window).std().values
+                # ═══════════════════════════════════════════════════════
+                # FORENSIC-FIX: ZERO-PANDAS Z-SCORE & ROLLING STATS
+                # QUÉ: Reemplazar pd.Series.rolling() (O(N)) por np.std/np.mean (O(1)).
+                # POR QUÉ: Evitar overhead inmenso en el hot-path del motor HFT.
+                # ═══════════════════════════════════════════════════════
+                eff_window = min(z_window, len(spread))
+                if eff_window > 0:
+                    spread_slice = spread[-eff_window:]
+                    mean_last = float(np.mean(spread_slice))
+                    std_last = float(np.std(spread_slice, ddof=1)) if eff_window > 1 else 0.0
+                else:
+                    mean_last, std_last = 0.0, 0.0
                 
                 # Current Z
-                if roll_std[-1] > 0 and np.isfinite(roll_std[-1]):
-                    z_score = (spread[-1] - roll_mean[-1]) / roll_std[-1]
+                if std_last > 0 and np.isfinite(std_last):
+                    z_score = (spread[-1] - mean_last) / std_last
                 else:
-                    z_score = 0
+                    z_score = 0.0
                 
                 # Log critical math stats
                 # print(f"DEBUG STATS: Beta(RANSAC)={beta:.4f} HL={half_life:.1f} win={z_window} Z={z_score:.2f}")
@@ -277,12 +307,12 @@ class StatisticalStrategy(Strategy):
                 
                 # PHASE 7+: ADAPTIVE Z-SCORE & VOLATILITY SYNC
                 # Calculate short-term spread std FIRST (was missing, caused NameError)
-                std_spread = roll_std[-1] if np.isfinite(roll_std[-1]) and roll_std[-1] > 0 else np.std(spread)
+                std_spread = std_last if np.isfinite(std_last) and std_last > 0 else float(np.std(spread))
 
                 # 1. Long-term baseline (sigma_long)
                 try:
-                    bars_y_long = self.data_provider.get_latest_bars(y_sym, n=self.long_window)
-                    bars_x_long = self.data_provider.get_latest_bars(x_sym, n=self.long_window)
+                    bars_y_long = self.data_provider.get_latest_bars(y_sym, n=self.long_window, timeframe=self.primary_tf)
+                    bars_x_long = self.data_provider.get_latest_bars(x_sym, n=self.long_window, timeframe=self.primary_tf)
                     if bars_y_long is not None and bars_x_long is not None and len(bars_y_long) >= 100:
                         y_long = np.array([b['close'] for b in bars_y_long], dtype=np.float64)  # F6
                         x_long = np.array([b['close'] for b in bars_x_long], dtype=np.float64)  # F6
@@ -308,12 +338,14 @@ class StatisticalStrategy(Strategy):
                     adaptive_z *= 1.25 # 25% penalty
                 
                 # 5. Flash Crash & Micro-Capital Protection
-                # If volatility spikes > 3x normal, increase z to a level that effectively bans trading
+                # If volatility spikes > 25x normal, increase z to a level that effectively bans trading
                 # FORENSIC-V47: Added sanity check — if std_long < 1e-6 (no baseline yet), vol_ratio is meaningless
-                if vol_ratio > 3.0 and std_long > 1e-6:
+                # Warmup check: only apply volatility shield if we have at least 90% of the long window
+                if bars_y_long is not None and len(bars_y_long) >= int(self.long_window * 0.9) and vol_ratio > 25.0 and std_long > 1e-6:
                     adaptive_z *= 2.0
-                    if vol_ratio < 50.0:  # Only print for real spikes, not near-zero baseline artifacts
-                        print(f"🚨 [FLASH CRASH ALERT] Volatility {vol_ratio:.1f}x above baseline. Shielding $13.50.")
+                    if vol_ratio < 100.0:  # Adjusted print threshold for real spikes
+                        shielded_amount = self.portfolio.get_total_equity() if self.portfolio else 13.00
+                        print(f"🚨 [FLASH CRASH ALERT] Volatility {vol_ratio:.1f}x above baseline. Shielding ${shielded_amount:.2f}.")
 
                 # Cap adaptive Z to avoid extreme values but keep it high
                 effective_z_entry = min(5.0, max(self.z_base, adaptive_z))
@@ -378,7 +410,7 @@ class StatisticalStrategy(Strategy):
                     print(f"⚠️  STAT STRATEGY BROKEN STATE: {y_sym}={qty_y}, {x_sym}={qty_x}")
                 
                 # Update local state to match reality
-                self.invested = current_state
+                self.invested[y_sym] = current_state
                 
                 # Phase 8: Neural Bridge Publication (Broadcasting Conviction)
                 neural_bridge.publish_insight(
@@ -402,17 +434,17 @@ class StatisticalStrategy(Strategy):
                         from datetime import datetime, timezone
                         signal_timestamp = datetime.now(timezone.utc)
                         
-                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
                     if qty_x != 0:
                         print(f"  🚑 Closing naked leg {x_sym}")
                         
                         from datetime import datetime, timezone
                         signal_timestamp = datetime.now(timezone.utc)
                         
-                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
-                    return # Stop processing
+                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                    continue # Stop processing for this symbol
 
-                if self.invested == 0:
+                if self.invested.get(y_sym, 0) == 0:
                     if z_score < -effective_z_entry:
                         # Check Trend for Y (ETH)
                         trend_y = self._get_1h_trend(y_sym)
@@ -425,7 +457,7 @@ class StatisticalStrategy(Strategy):
                             
                             # PROACTIVE EXPECTANCY CHECK (Phase 5)
                             if not self._check_proactive_expectancy(y_sym):
-                                return
+                                continue
                                 
                             # ── SOPHIA-INTELLIGENCE: Pre-trade XAI Analysis ──
                             sophia_report_dict_y = {}
@@ -436,18 +468,24 @@ class StatisticalStrategy(Strategy):
                                     signal_strength=strength,
                                     setups={'z_score': z_score, 'pair': x_sym},
                                     confluence_score=1.0,
-                                    tp_pct=Config.Strategies.SWING_PARAMS['tp_pct'] if self.horizon == 'SWING' else Config.Strategies.SCALPING_PARAMS['tp_pct'],
-                                    sl_pct=Config.Strategies.SWING_PARAMS['sl_pct'] if self.horizon == 'SWING' else Config.Strategies.SCALPING_PARAMS['sl_pct'],
+                                    tp_pct=Config.Horizons.Swing['tp_pct'] if self.horizon == 'SWING' else Config.Horizons.Scalping['tp_pct'],
+                                    sl_pct=Config.Horizons.Swing['sl_pct'] if self.horizon == 'SWING' else Config.Horizons.Scalping['sl_pct'],
                                     returns=None,
                                     ttl_seconds=3600.0 if self.horizon == 'SWING' else 300.0,
                                     regime="RANGING", # Pairs trading usually implies ranging/mean rev
                                 )
                     
-                                # FORENSIC-V42: DYNAMIC EXACTITUDE THRESHOLD
-                                stat_veto = 0.55  # Mean reversion is more tolerant
-                                if sophia_report.win_probability < stat_veto:
-                                    logger.info(f"🛑 [SOPHIA VETO] {y_sym} Stat Signal Blocked. Exactitude ({sophia_report.win_probability*100:.1f}%) < {stat_veto*100:.0f}%.")
-                                    return
+                                # FORENSIC-V42: DYNAMIC EXACTITUDE THRESHOLD & COLD-START BYPASS
+                                _sophia_n = getattr(sophia_report, 'n_observations', 0) or getattr(sophia_report, 'sample_size', 0)
+                                _sophia_entropy = getattr(sophia_report, 'decision_entropy', 99.0)
+                                
+                                if _sophia_n < 20 or _sophia_entropy > 1.2:
+                                    logger.info(f"🧠 [SOPHIA BYPASS] {y_sym} Stat Sophia BYPASS (cold-start: n={_sophia_n}, H={_sophia_entropy:.2f}). No veto applied.")
+                                else:
+                                    stat_veto = 0.48  # Lowered from 0.55 to prevent cold-start locks
+                                    if sophia_report.win_probability < stat_veto:
+                                        logger.info(f"🛑 [SOPHIA VETO] {y_sym} Stat Signal Blocked. Exactitude ({sophia_report.win_probability*100:.1f}%) < {stat_veto*100:.0f}%.")
+                                        continue
                                 sophia_report_dict_y = sophia_report.to_dict()
 
                             print(f"ENTRY LONG SPREAD: Buy {y_sym}, Short {x_sym} (Z={z_score:.2f}, Strength={strength:.2f}, 1h Trend: {trend_y})")
@@ -455,8 +493,8 @@ class StatisticalStrategy(Strategy):
                             from datetime import datetime, timezone
                             signal_timestamp = datetime.now(timezone.utc)
                             
-                            self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
-                            self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
+                            self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
+                            self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
                             # self.invested = 1 # Wait for fill
                             
                     elif z_score > effective_z_entry:
@@ -471,7 +509,7 @@ class StatisticalStrategy(Strategy):
                             
                             # PROACTIVE EXPECTANCY CHECK (Phase 5)
                             if not self._check_proactive_expectancy(y_sym): # Check primary driver
-                                return
+                                continue
 
                             # ── SOPHIA-INTELLIGENCE: Pre-trade XAI Analysis ──
                             sophia_report_dict_y = {}
@@ -482,18 +520,24 @@ class StatisticalStrategy(Strategy):
                                     signal_strength=strength,
                                     setups={'z_score': z_score, 'pair': x_sym},
                                     confluence_score=1.0,
-                                    tp_pct=Config.Strategies.SWING_PARAMS['tp_pct'] if self.horizon == 'SWING' else Config.Strategies.SCALPING_PARAMS['tp_pct'],
-                                    sl_pct=Config.Strategies.SWING_PARAMS['sl_pct'] if self.horizon == 'SWING' else Config.Strategies.SCALPING_PARAMS['sl_pct'],
+                                    tp_pct=Config.Horizons.Swing['tp_pct'] if self.horizon == 'SWING' else Config.Horizons.Scalping['tp_pct'],
+                                    sl_pct=Config.Horizons.Swing['sl_pct'] if self.horizon == 'SWING' else Config.Horizons.Scalping['sl_pct'],
                                     returns=None,
                                     ttl_seconds=3600.0 if self.horizon == 'SWING' else 300.0,
                                     regime="RANGING", # Pairs trading usually implies ranging/mean rev
                                 )
                     
-                                # FORENSIC-V42: DYNAMIC EXACTITUDE THRESHOLD
-                                stat_veto = 0.55  # Mean reversion is more tolerant
-                                if sophia_report.win_probability < stat_veto:
-                                    logger.info(f"🛑 [SOPHIA VETO] {y_sym} Stat Signal Blocked. Exactitude ({sophia_report.win_probability*100:.1f}%) < {stat_veto*100:.0f}%.")
-                                    return
+                                # FORENSIC-V42: DYNAMIC EXACTITUDE THRESHOLD & COLD-START BYPASS
+                                _sophia_n = getattr(sophia_report, 'n_observations', 0) or getattr(sophia_report, 'sample_size', 0)
+                                _sophia_entropy = getattr(sophia_report, 'decision_entropy', 99.0)
+                                
+                                if _sophia_n < 20 or _sophia_entropy > 1.2:
+                                    logger.info(f"🧠 [SOPHIA BYPASS] {y_sym} Stat Sophia BYPASS (cold-start: n={_sophia_n}, H={_sophia_entropy:.2f}). No veto applied.")
+                                else:
+                                    stat_veto = 0.48  # Lowered from 0.55 to prevent cold-start locks
+                                    if sophia_report.win_probability < stat_veto:
+                                        logger.info(f"🛑 [SOPHIA VETO] {y_sym} Stat Signal Blocked. Exactitude ({sophia_report.win_probability*100:.1f}%) < {stat_veto*100:.0f}%.")
+                                        continue
                                 sophia_report_dict_y = sophia_report.to_dict()
 
                             print(f"ENTRY SHORT SPREAD: Short {y_sym}, Buy {x_sym} (Z={z_score:.2f}, Strength={strength:.2f}, 1h Trend: {trend_x})")
@@ -501,11 +545,11 @@ class StatisticalStrategy(Strategy):
                             from datetime import datetime, timezone
                             signal_timestamp = datetime.now(timezone.utc)
                             
-                            self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
-                            self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
+                            self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
+                            self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
                             # self.invested = -1 # Wait for fill
 
-                elif self.invested == 1:
+                elif self.invested.get(y_sym, 0) == 1:
                     # Exit Long Spread when Z-score returns to mean
                     if z_score >= -self.z_exit:
                         print(f"EXIT LONG SPREAD (Z={z_score:.2f})")
@@ -513,10 +557,10 @@ class StatisticalStrategy(Strategy):
                         from datetime import datetime, timezone
                         signal_timestamp = datetime.now(timezone.utc)
                         
-                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
-                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
 
-                elif self.invested == -1:
+                elif self.invested.get(y_sym, 0) == -1:
                     # Exit Short Spread when Z-score returns to mean
                     if z_score <= self.z_exit:
                         print(f"EXIT SHORT SPREAD (Z={z_score:.2f})")
@@ -524,8 +568,8 @@ class StatisticalStrategy(Strategy):
                         from datetime import datetime, timezone
                         signal_timestamp = datetime.now(timezone.utc)
                         
-                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
-                        self.events_queue.put(SignalEvent(strategy_id="STAT_V1", symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
         except Exception as e:
             print(f"⚠️  Statistical Strategy Error: {e}")
 
@@ -538,8 +582,8 @@ class StatisticalStrategy(Strategy):
             if bars_1h is not None and len(bars_1h) >= 200:
                 closes_1h = np.array([b['close'] for b in bars_1h[:-1]], dtype=np.float64)  # F6: float64 for talib
                 if len(closes_1h) >= 200:
-                    ema_50 = talib.EMA(closes_1h, timeperiod=50)[-1]
-                    ema_200 = talib.EMA(closes_1h, timeperiod=200)[-1]
+                    ema_50 = calculate_ema_jit(closes_1h, period=50)[-1]
+                    ema_200 = calculate_ema_jit(closes_1h, period=200)[-1]
                     return 'UP' if ema_50 > ema_200 else 'DOWN'
         except:
             pass

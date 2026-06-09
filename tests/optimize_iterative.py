@@ -6,7 +6,7 @@ Usa backtest de 1 día (rápido) para iteración veloz.
 import sys, os, io, contextlib, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.backtest_infra import fetch_binance_data, calculate_metrics, BacktestPortfolio, INITIAL_CAPITAL, LEVERAGE
+from core.backtest_infra import fetch_binance_data, calculate_metrics, BacktestPortfolio, INITIAL_CAPITAL, LEVERAGE, run_backtest
 import core.backtest_infra as bt_module
 
 print("="*60)

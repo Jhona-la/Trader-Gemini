@@ -1,4 +1,23 @@
 import os
+
+# ═══════════════════════════════════════════════════════════════
+# HARDWARE UNLOCK (RYZEN 7 5700U OPTIMIZATION - LIVE)
+# QUÉ: Fuerza a C++ y Python a usar los 16 hilos del CPU
+# POR QUÉ: Reduce drásticamente la latencia de inferencia en Producción.
+# ═══════════════════════════════════════════════════════════════
+os.environ["OMP_NUM_THREADS"] = "16"
+os.environ["MKL_NUM_THREADS"] = "16"
+os.environ["OPENBLAS_NUM_THREADS"] = "16"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "16"
+os.environ["NUMEXPR_NUM_THREADS"] = "16"
+
+try:
+    import torch
+    torch.set_num_threads(16)
+    torch.set_grad_enabled(False)  # Producción tampoco entrena, solo infiere.
+except ImportError:
+    pass
+
 import sys
 import time
 import asyncio
@@ -488,11 +507,15 @@ async def main():
         else:
             await asyncio.sleep(1)
     
-    # Sentiment Engine
-    # [Phase 6 Audit] DISABLED due to missing dependencies (nltk, feedparser)
-    # sentiment_loader = SentimentLoader()
-    # sentiment_loader.start_background_thread()
-    sentiment_loader = None # Mock for strategy injection
+    # Sentiment Engine — Phase 8: NLP Ensemble (FinBERT + CryptoBERT)
+    # [Phase 6 Audit] Old TextBlob-based SentimentLoader was disabled.
+    # [Phase 8] Replaced with institutional-grade HuggingFace NLP ensemble.
+    # Models load lazily on first RSS poll (5 min cycle). Features decay
+    # exponentially to 0.0 if no fresh news arrives.
+    from data.news_sentiment_nlp import news_sentiment
+    news_sentiment.start_background()
+    sentiment_loader = None  # Legacy param — FeatureEngineering now uses news_sentiment singleton directly
+    logger.info("📰 [Phase 8] News Sentiment NLP Engine activated (FinBERT + CryptoBERT).")
     
     # Executor
     print("DEBUG: Instanciando BinanceExecutor...")
@@ -586,17 +609,25 @@ async def main():
     except Exception as e:
         logger.warning(f"Could not init Sniper Strategy: {e}")
     
-    # Technical Strategy — DUAL HORIZON (ALWAYS ACTIVE — 73.5% WR proven)
+    # Technical Strategy — MULTI-HORIZON (ALWAYS ACTIVE — 73.5% WR proven)
     try:
-        tech_scalp = TechnicalStrategy(data_handler, events_queue, horizon="SCALPING")
+        from strategies.scalping_motor import ScalpingMotor
+        from strategies.swing_motor import SwingMotor
+        
+        tech_micro = TechnicalStrategy(data_handler, events_queue, horizon="MICROSCALPING")
+        strategies.append(tech_micro)
+        engine.register_strategy(tech_micro)
+        logger.info("✅ TechnicalStrategy [MICROSCALPING] registered.")
+
+        tech_scalp = ScalpingMotor(data_handler, events_queue)
         strategies.append(tech_scalp)
         engine.register_strategy(tech_scalp)
-        logger.info("✅ TechnicalStrategy [SCALPING] registered.")
+        logger.info("✅ ScalpingMotor [SCALPING] registered.")
         
-        tech_swing = TechnicalStrategy(data_handler, events_queue, horizon="SWING")
+        tech_swing = SwingMotor(data_handler, events_queue)
         strategies.append(tech_swing)
         engine.register_strategy(tech_swing)
-        logger.info("✅ TechnicalStrategy [SWING] registered.")
+        logger.info("✅ SwingMotor [SWING] registered.")
     except Exception as e:
         logger.warning(f"Could not init Technical Strategy: {e}")
 
@@ -813,8 +844,8 @@ async def main():
             'testnet': Config.BINANCE_USE_TESTNET,
             'demo': Config.BINANCE_USE_DEMO,
             'max_drawdown': Config.Risk.MAX_DRAWDOWN,
-            'tp_scalp': Config.Strategies.SCALPING_PARAMS.get('tp_pct', 0.006),
-            'sl_scalp': Config.Strategies.SCALPING_PARAMS.get('sl_pct', 0.0075),
+            'tp_scalp': Config.Horizons.Scalping.get('tp_pct', 0.006),
+            'sl_scalp': Config.Horizons.Scalping.get('sl_pct', 0.0075),
             'symbols_list': Config.TRADING_PAIRS,
         })
     except Exception as e:
@@ -824,10 +855,7 @@ async def main():
     engine_task = asyncio.create_task(engine.start())
     user_stream_task = asyncio.create_task(executor.user_stream.start())
     
-    # 4.1.5 Liquidation Sniper Websockets (Phase 1 Power)
-    if hasattr(data_handler, 'start_websockets'):
-        logger.info("🩸 Starting Liquidation Sniper Websockets...")
-        websockets_task = asyncio.create_task(data_handler.start_websockets())
+    # 4.1.5 Liquidation Sniper Websockets (Phase 1 Power) - DISABLED (Redundant with start_socket)
     
     # 4.2. Background Task for Metrics & Heartbeat
     loop_count = 0

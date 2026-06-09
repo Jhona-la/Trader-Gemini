@@ -42,9 +42,16 @@ def validate_forensic_db():
                 lines = f.readlines()
                 # Find the last trade close message
                 for line in reversed(lines):
-                    data = json.loads(line)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except Exception as je:
+                        print(f"Failed to parse line: {repr(line)}: {je}")
+                        continue
                     msg = data.get("message", "")
-                    if "TRADE CERRADO" in msg and "Cortex ID" in msg:
+                    if "TRADE CERRADO" in msg:
                         print(msg)
                         break
         except Exception as e:

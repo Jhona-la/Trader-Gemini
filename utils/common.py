@@ -5,6 +5,68 @@ This module consolidates duplicate code patterns found across the codebase
 to follow the DRY (Don't Repeat Yourself) principle.
 """
 
+import time
+import functools
+from utils.logger import logger
+from utils.metrics_exporter import metrics
+
+def validate_market_data(func):
+    """
+    Decorator to validate market data event health before executing a strategy signal method.
+    If the event is poor quality (score < 50), it skips processing.
+    If the event has low quality (score < 80), it issues a warning and proceeds.
+    """
+    @functools.wraps(func)
+    def wrapper(self, event=None, *args, **kwargs):
+        if event is not None:
+            health = getattr(event, 'health_metrics', None)
+            if health:
+                score = health.get('score', 100)
+                symbol = getattr(event, 'symbol', getattr(self, 'symbol', 'UNKNOWN'))
+                if score < 50:
+                    logger.warning(
+                        f"⚠️ [DATA-HEALTH] Skipping {symbol} due to CRITICAL poor integrity: "
+                        f"{score:.1f}% (Gap: {health.get('gap_s', 0)}s)"
+                    )
+                    return None
+                elif score < 80:
+                    logger.warning(
+                        f"⚠️ [DATA-HEALTH] Low integrity warning for {symbol}: "
+                        f"{score:.1f}% (Gap: {health.get('gap_s', 0)}s)"
+                    )
+        return func(self, event, *args, **kwargs)
+    return wrapper
+
+def performance_timer(func):
+    """
+    Decorator to measure execution time in nanoseconds and log/export it.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start_ns = time.perf_counter_ns()
+        result = func(*args, **kwargs)
+        duration_ns = time.perf_counter_ns() - start_ns
+        duration_ms = duration_ns / 1_000_000.0
+        
+        # Determine strategy name and symbol for context
+        self_obj = args[0] if args else None
+        strategy_id = getattr(self_obj, 'strategy_id', 'UNKNOWN_STRATEGY')
+        symbol = getattr(self_obj, 'symbol', 'UNKNOWN')
+        
+        # Log to debug
+        logger.debug(f"⏱️ [{strategy_id}] {func.__name__} executed in {duration_ns:,} ns ({duration_ms:.4f} ms) for {symbol}")
+        
+        # Pushes to Prometheus via metrics exporter if applicable (microseconds)
+        if symbol != 'UNKNOWN' and hasattr(metrics, 'record_tick_latency'):
+            try:
+                metrics.record_tick_latency(symbol, duration_ns / 1000.0)
+            except Exception:
+                pass
+            
+        return result
+    return wrapper
+
+
 def build_testnet_urls():
     """
     Generate standardized Binance Testnet/Demo URL configuration for CCXT.

@@ -54,6 +54,14 @@ class Genotype:
             self.genes['brain_weights'] = weights.tolist()
 
 
+    def get(self, key: str, default: Any = None) -> Any:
+        val = self.genes.get(key)
+        if val is None:
+            val = self.genes.get(key.upper())
+        if val is None:
+            val = self.genes.get(key.lower())
+        return default if val is None else val
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 

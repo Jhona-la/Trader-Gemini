@@ -264,6 +264,8 @@ try:
     )
     
     size = rm.size_position(mock_signal, current_price=60000.0)
+    if isinstance(size, dict):
+        size = size.get("dollar_size", 0.0)
     
     audit("SIZING", f"Position size for $13 BTC LONG",
           size > 0,
@@ -367,7 +369,7 @@ try:
         'Sophia Omniscient Gate': 'omni < hurdle' in tech_src,
         'Volatility Minimum': 'Low volatility' in tech_src or 'volatility' in tech_src.lower(),
         'XRP Trend Alignment': 'XRP' in tech_src,
-        'Closed-Bar Logic': 'idx = -2' in inspect.getsource(HybridScalpingStrategy.detect_scalping_setup) or '[-2]' in inspect.getsource(HybridScalpingStrategy.detect_scalping_setup),
+        'Closed-Bar Logic': 'idx = -2' in inspect.getsource(HybridScalpingStrategy.detect_setup) or '[-2]' in inspect.getsource(HybridScalpingStrategy.detect_setup),
     }
     
     audit("FILTERS", f"Total 'continue' gates in generate_signals",

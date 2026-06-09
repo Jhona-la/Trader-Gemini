@@ -176,7 +176,7 @@ def diagnose():
         confluence_score = strategy.calculate_multi_timeframe_confluence(timeframe_data)
         
         # 2. Setups
-        setups = strategy.detect_scalping_setup(pkg_5m)
+        setups = strategy.detect_setup(pkg_5m)
         if not setups: continue
         
         volatility = setups['atr'] / setups['close']

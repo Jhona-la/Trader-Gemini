@@ -41,3 +41,23 @@ class DataProvider(ABC):
         Returns the OrderBook instance for a symbol to access L2 metrics (OFI, Spread, Microprice).
         """
         pass
+
+
+# Global active provider registry
+_active_provider = None
+
+def register_data_provider(provider):
+    """
+    QUÉ: Registra el proveedor de datos activo del sistema.
+    POR QUÉ: Centralizar el acceso a los datos OHLCV en todo el ciclo de vida del bot.
+    """
+    global _active_provider
+    _active_provider = provider
+
+def get_data_provider():
+    """
+    QUÉ: Obtiene el proveedor de datos registrado actualmente.
+    POR QUÉ: Permite que motores de cálculo o risk managers accedan a datos sin acoplamiento.
+    """
+    return _active_provider
+

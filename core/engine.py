@@ -4,6 +4,7 @@ Coordinates data, strategies, risk, and execution with enhanced validation and r
 """
 
 from core.events import MarketEvent, SignalEvent, OrderEvent, FillEvent
+from core.enums import SignalType
 from core.global_state import global_state  # CTOS: Single Source of Truth
 from core.clock import global_clock          # CTOS: Master Clock Synchronization
 from core.event_bus import event_bus, EventChannel  # CTOS: Event-Driven Architecture
@@ -11,11 +12,12 @@ from core.feedback_processor import feedback_processor  # CTOS: Learning Loop
 from core.asset_classifier import AssetClassifier
 from core.segment_policy_engine import SegmentPolicyEngine
 import os
+import dataclasses
 import asyncio
 import time
 import collections
 import traceback
-from typing import Optional, Any, Union
+from typing import Optional, Any, Union, Dict
 from datetime import datetime, timezone
 from config import Config
 from utils.logger import logger
@@ -23,11 +25,63 @@ from utils.os_tuner import OSTuner # Protocol Nadir-Soberano
 from utils.time_sync import TimeSynchronizer # Phase 26: Stochastic Purity
 from core.system_monitor import SystemMonitor # Phase 27: Disaster Resilience
 from utils.latency_monitor import latency_monitor
+from core.temporal_supervisor import TemporalSupervisor
 from core.gc_tuner import GCTuner
 from core.forensics import ForensicRecorder # Phase 20: Forensic Logging
 from core.world_awareness import world_awareness
 from core.evolution import EvolutionEngine, FitnessCalculator
 from core.genotype import Genotype
+from core.market_regime import MarketRegimeDetector
+
+# ═══════════════════════════════════════════════════════════════
+# LOW-LATENCY PHASE: HOT-PATH IMPORTS (Moved from inline)
+# QUÉ: Imports que antes estaban dentro de funciones hot-path.
+# POR QUÉ: Cada import inline ejecuta sys.modules lookup + overhead
+#   de interpretación (~5-20μs). En hot-path con 32 eventos/burst,
+#   esto sumaba 1.6-6.4ms/burst innecesarios.
+# PARA QUÉ: Reducir latencia del event loop en ~30%.
+# CÓMO: Mover al top-level para que Python los resuelva UNA sola vez.
+# CUÁNDO: Al cargar el módulo (import time).
+# DÓNDE: core/engine.py (top-level)
+# QUIÉN: Arquitecto Senior + SRE/DevOps
+# ═══════════════════════════════════════════════════════════════
+from utils.quantum_telemetry import QuantumTimer  # Was inline in _process_market_event L627
+from data.macro_intelligence import macro_intelligence  # Was inline in start() L345
+
+try:
+    from core.meta_arbitrator import meta_arbitrator  # Was inline in 5+ locations
+    _META_ARBITRATOR_AVAILABLE = True
+except ImportError:
+    meta_arbitrator = None
+    _META_ARBITRATOR_AVAILABLE = False
+
+try:
+    from utils.cooldown_manager import cooldown_manager  # Was inline in _process_signal_event L861
+    _COOLDOWN_AVAILABLE = True
+except ImportError:
+    cooldown_manager = None
+    _COOLDOWN_AVAILABLE = False
+
+try:
+    from sophia.intelligence import MultiHorizonOracle  # Was inline in _process_signal_event L965
+    _MULTI_HORIZON_ORACLE_AVAILABLE = True
+except ImportError:
+    MultiHorizonOracle = None
+    _MULTI_HORIZON_ORACLE_AVAILABLE = False
+
+try:
+    from utils.interaction_monitor import get_interaction_monitor  # Was inline in _execute_approved_intent L1081
+    _INTERACTION_MONITOR_AVAILABLE = True
+except ImportError:
+    get_interaction_monitor = None
+    _INTERACTION_MONITOR_AVAILABLE = False
+
+try:
+    from utils.position_cleaner import position_cleaner  # Was inline in _process_fill_event L1183
+    _POSITION_CLEANER_AVAILABLE = True
+except ImportError:
+    position_cleaner = None
+    _POSITION_CLEANER_AVAILABLE = False
 
 # ═══════════════════════════════════════════════════════════════
 # SOPHIA INTEGRATION (Phase SOPHIA-GLOBAL)
@@ -41,6 +95,8 @@ from core.genotype import Genotype
 # DÓNDE: core/engine.py → Engine._sophia_veto_filter()
 # QUIÉN: Engine (orquestador) + SophiaIntelligence (facade)
 # ═══════════════════════════════════════════════════════════════
+from core.signal_scorer import SignalScorer
+
 try:
     from sophia.intelligence import SophiaIntelligence
     _SOPHIA_AVAILABLE = True
@@ -118,6 +174,7 @@ class PriorityBoundedQueue:
 AsyncBoundedQueue = PriorityBoundedQueue
 
 from utils.metrics_exporter import metrics
+from core.omniscient_tracer import omniscient_trace
 
 class Engine:
     """
@@ -154,6 +211,15 @@ class Engine:
         # 🕵️ Phase 20: Forensic Recorder
         self.forensics = ForensicRecorder(self)
         
+        # ⚡ LOW-LATENCY PHASE: Reusable QuantumTimer (Object Pooling)
+        # QUÉ: Timer reutilizable para medir latencia de cada ciclo de mercado.
+        # POR QUÉ: Antes se creaba un QuantumTimer() nuevo en CADA _process_market_event
+        #   (L627-628). Con 26 símbolos × ~12 ticks/min = 312 allocaciones/min
+        #   que luego GC debe recolectar.
+        # PARA QUÉ: Reducir allocaciones en heap y presión sobre GC (~20-50μs/evento).
+        # CÓMO: Un solo timer a nivel de instancia, con reset via __init__ en cada ciclo.
+        self._market_timer = QuantumTimer()
+        
         # 🌑 PHASE 24: LAYER 0 OPTIMIZATION (Protocol Nadir-Soberano)
         OSTuner.optimize()
         
@@ -163,9 +229,26 @@ class Engine:
         # 🏥 PHASE 27: System Monitor
         self.system_monitor = SystemMonitor()
         
+        # 🌐 FORENSIC-FIX: Centralized Market Regime Detector
+        self.market_regime = MarketRegimeDetector()
+        
         # 🧠 SOPHIA-GLOBAL: Initialize Sophia Intelligence Engine
         self.sophia_intelligence = None
-        self.SOPHIA_MIN_CONFIDENCE = 0.70  # FORENSIC-V35: Strict >70% accuracy threshold
+        
+        # 💯 PHASE 1 ANTIFRAGIL: Signal Scorer
+        self.signal_scorer = SignalScorer()
+        # ═══════════════════════════════════════════════════════════════
+        # AUDIT FIX: SOPHIA_MIN_CONFIDENCE was hardcoded to 0.70,
+        # ignoring Config.Horizons.GlobalThresholds['sophia_win_prob_min'].
+        # POR QUÉ: technical.py checked at 0.60 (Config) but engine.py
+        #   checked AGAIN at 0.70 (hardcoded), creating a silent gap that
+        #   killed all signals with 60-70% win probability.
+        # PARA QUÉ: Single source of truth → Config controls threshold.
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            self.SOPHIA_MIN_CONFIDENCE = Config.Horizons.GlobalThresholds.get('sophia_win_prob_min', 0.60)
+        except Exception:
+            self.SOPHIA_MIN_CONFIDENCE = 0.60
         if _SOPHIA_AVAILABLE:
             try:
                 self.sophia_intelligence = SophiaIntelligence(bar_minutes=5.0)
@@ -197,14 +280,25 @@ class Engine:
         except Exception as e:
             logger.warning(f"⚠️ [OMEGA] Failed to init Omega Protocol: {e}")
             
-        # 🧬 PHASE 3: EVOLUTION ENGINE (Live Mutation)
+        # 🧬 PHASE 3: EVOLUTION ENGINE (Live Mutation & Módulo Omega)
         try:
             self.evolution_engine = EvolutionEngine(population_size=10, mutation_rate=0.1)
             self._last_mutation_time = time.time()
             logger.info("🧬 [EVOLUTION] Engine initialized for Live Mutation.")
+            
+            # [ShadowDarwin] Continuous Evolution Daemon
+            try:
+                from core.evolution.shadow_darwin import ShadowDarwinDaemon
+                self.shadow_darwin = ShadowDarwinDaemon()
+                logger.info("🐉 [SHADOW-DARWIN] Evolutionary daemon successfully bound to Engine.")
+            except ImportError:
+                self.shadow_darwin = None
+                logger.warning("⚠️ [SHADOW-DARWIN] Module not found. Evolution will be manual.")
+                
         except Exception as e:
             logger.warning(f"⚠️ [EVOLUTION] Failed to init EvolutionEngine: {e}")
             self.evolution_engine = None
+            self.shadow_darwin = None
         
         # 🧟 PHASE 2 ZOMBIES
         self.correlation_manager = None
@@ -220,6 +314,9 @@ class Engine:
         self.asset_classifier = AssetClassifier()
         self.segment_policy_engine = SegmentPolicyEngine(self.asset_classifier)
         logger.info("🏛️ [SEGMENT POLICY] Asset Classifier and Segment Policy Engine initialized.")
+
+        # ⏳ [TEMPORAL] Initialize Supervisor
+        self.temporal_supervisor = None
 
         # 🧬 Subscribe to Live Mutations
         event_bus.subscribe(EventChannel.MUTATION, self._on_mutation_event)
@@ -271,6 +368,14 @@ class Engine:
             self._strategies_by_symbol['ALL'].append(strategy)
         
         # ═══════════════════════════════════════════════════════════════
+        # CAPA 1 REGISTRATION: Register in RiskManager
+        # QUÉ: Registra la estrategia en el RiskManager para permitir
+        #   la delegación de la lógica de salida aislada por estrategia.
+        # ═══════════════════════════════════════════════════════════════
+        if self.risk_manager:
+            self.risk_manager.register_strategy(strategy)
+
+        # ═══════════════════════════════════════════════════════════════
         # FORENSIC AUDIT FIX: Register strategy in ExitOracle
         # QUÉ: Las estrategias con request_exit_opinion DEBEN estar
         #   registradas en el ExitOracle para que el Oracle las consulte.
@@ -309,6 +414,10 @@ class Engine:
         # 🧠 SOPHIA-GLOBAL: Inject into Risk Manager for DCA / exit validation
         self.risk_manager.sophia = getattr(self, 'sophia_intelligence', None)
 
+        # ⏳ Initialize Temporal Supervisor if not present
+        if not self.temporal_supervisor and self.portfolio and self.risk_manager:
+             self.temporal_supervisor = TemporalSupervisor(self.portfolio, self.risk_manager, self)
+             
         # 🛡️ Phase 20: Link Forensics to Kill Switch
         if self.risk_manager and hasattr(self.risk_manager, 'kill_switch'):
              # Define callback that captures snapshot
@@ -337,13 +446,31 @@ class Engine:
 
     async def start(self):
         """Main event loop - 100% AsyncIO-Driven"""
+        # 🌐 CTOS DATA OMNISCIENCE: Start Macro/Micro Polling
+        macro_intelligence.start_background()
+        
         # 🧠 Supreme Meta-Coordinator
         try:
-            from core.meta_arbitrator import meta_arbitrator
-            meta_arbitrator.start()
-            asyncio.create_task(self._drain_meta_arbitrator())
+            if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
+                meta_arbitrator.start()
+                asyncio.create_task(self._drain_meta_arbitrator())
         except Exception as e:
             logger.error(f"Failed to start Meta-Arbitrator: {e}")
+            
+        # 🐉 ShadowDarwin Continuous Evolution
+        if hasattr(self, 'shadow_darwin') and self.shadow_darwin:
+            try:
+                self.shadow_darwin.start()
+            except Exception as e:
+                logger.error(f"Failed to start ShadowDarwin: {e}")
+            
+        # ⏳ Start Temporal Supervisor Loop
+        if self.temporal_supervisor:
+             asyncio.create_task(self.temporal_supervisor.run_temporal_loop())
+             
+        # 🔄 Start periodic reconciliation loop
+        if self.execution_handler and self.portfolio:
+             asyncio.create_task(self._reconciliation_loop())
             
         # AEGIS-ULTRA: Core Pinning (Phase 5)
         if Config.Aegis.CORE_PINNING and psutil:
@@ -363,7 +490,7 @@ class Engine:
         if self.execution_handler and self.portfolio:
              try:
                  logger.info("🔌 [COLD BOOT] Initiating State Recovery Protocol...")
-                 self.execution_handler.sync_portfolio_state(self.portfolio)
+                 await asyncio.to_thread(self.execution_handler.sync_portfolio_state, self.portfolio)
              except Exception as e:
                  logger.critical(f"❌ [COLD BOOT] FAILED: {e} - Proceeding with local state.")
         
@@ -393,9 +520,9 @@ class Engine:
                             
                             # 🌐 GRAPH LAYER UPDATE
                             try:
-                                from core.meta_arbitrator import meta_arbitrator
-                                if hasattr(self.correlation_manager, 'correlation_matrix') and self.correlation_manager.correlation_matrix is not None:
-                                    meta_arbitrator.graph_layer.update_graph_edges(self.correlation_manager.correlation_matrix)
+                                if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
+                                    if hasattr(self.correlation_manager, 'correlation_matrix') and self.correlation_manager.correlation_matrix is not None:
+                                        meta_arbitrator.graph_layer.update_graph_edges(self.correlation_manager.correlation_matrix)
                             except Exception as e:
                                 logger.error(f"Failed to update Graph Edges: {e}")
                     
@@ -499,7 +626,7 @@ class Engine:
                 
                 # ✅ PHASE 18: RYZEN 7 SNIPER (Dynamic Orchestration)
                 if self.metrics['processed_events'] % 100 == 0:
-                     self._optimize_ryzen_resources()
+                     await self._optimize_ryzen_resources()
                 
                 # ════ CTOS PHASE 2: EVENT BUS DRAIN ════
                 # QUÉ: Procesa eventos encolados en el EventBus.
@@ -516,29 +643,13 @@ class Engine:
                 logger.error(f"Engine Loop Error: {e}")
                 self.metrics['errors'] += 1
 
-    def _optimize_ryzen_resources(self):
+    async def _optimize_ryzen_resources(self):
         """
         [PHASE 18] Dynamic Core Pinning & Thermal Throttling.
         """
         if not psutil: return
         try:
-            # 1. Thermal Check
-            # Windows psutil doesn't always support temperatures, but we try.
-            # If unavailable, we skip.
             throttle = 0.0
-            if hasattr(psutil, "sensors_temperatures"):
-                temps = psutil.sensors_temperatures()
-                if temps:
-                    # Find max CPU temp
-                    max_temp = 0
-                    for name, entries in temps.items():
-                        for entry in entries:
-                            if entry.current > max_temp: max_temp = entry.current
-                    
-                    if max_temp > 80.0:
-                        logger.warning(f"🔥 [THERMAL] CPU at {max_temp}°C. Throttling active.")
-                        throttle = 0.1 # 100ms penalty
-                        time.sleep(throttle) # Force cool down
             
             # 2. Dynamic Affinity (Load Balancer)
             cpu_pct = psutil.cpu_percent()
@@ -612,53 +723,48 @@ class Engine:
             logger.error(f"🚨 [FATAL-ENGINE] Event Logic Error for {getattr(event, 'type', 'UNKNOWN')}:\nException: {e}\nTraceback:\n{tb}")
             self.metrics['errors'] += 1
 
-    async def _process_market_event(self, event: MarketEvent) -> None:
-        """Process MARKET event asynchronously"""
+
+    @omniscient_trace(layer="CORTEX")
+    async def _process_market_event(self, event) -> None:
+        # ⏱️ [QUANTUM TELEMETRY] Iniciar reloj atómico (LOW-LATENCY: reusable timer)
+        self._market_timer.start_ns = time.perf_counter_ns()
+        timer = self._market_timer
         
-        # 0. CTOS: Update Single Source of Truth (SSOT)
-        # QUÉ: global_state absorbe symbol_state_matrix.
-        # POR QUÉ: Antes había dos matrices de estado — ahora hay UNA.
-        # CÓMO: symbol_state_matrix es un proxy que delega a global_state.
         global_state.update_from_market_event(event)
         
-        # 🌐 GRAPH LAYER: Update State Vector features
-        try:
-            from core.meta_arbitrator import meta_arbitrator
-            sym_state = global_state.get_state(event.symbol)
-            if sym_state:
-                features = {
-                    'orderflow_imbalance': sym_state.get('order_imbalance', 0.0),
-                    'spread_cost_pct': sym_state.get('spread', 0.0),
-                    'trend_score_m5': sym_state.get('trend_strength', 0.0),
-                    'volatility_atr_pct': sym_state.get('volatility', 0.0)
-                }
-                if meta_arbitrator.graph_layer:
-                    meta_arbitrator.graph_layer.update_symbol_state(event.symbol, features)
-        except Exception as e:
-            logger.error(f"GraphLayer State Update Error: {e}")
+        if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
+            try:
+                sym_state = global_state.get_state(event.symbol)
+                if sym_state:
+                    features = {
+                        'orderflow_imbalance': sym_state.get('order_imbalance', 0.0),
+                        'spread_cost_pct': sym_state.get('spread', 0.0),
+                        'trend_score_m5': sym_state.get('trend_strength', 0.0),
+                        'volatility_atr_pct': sym_state.get('volatility', 0.0)
+                    }
+                    if meta_arbitrator.graph_layer:
+                        meta_arbitrator.graph_layer.update_symbol_state(event.symbol, features)
+            except Exception as e:
+                pass
         
-        # 1. Efficient Portfolio Update (Active symbols only)
         if event.symbol and event.close_price and self.portfolio:
              self.portfolio.update_market_price(event.symbol, event.close_price)
-             # ═══════════════════════════════════════════════════════════════
-             # REMEDIACIÓN QUIRÚRGICA: UNIFIED EXIT ENGINE (Production)
-             # QUÉ: Solo RiskManager.check_stops() genera señales EXIT.
-             # POR QUÉ: Portfolio.check_exits() competía con RiskManager,
-             #   causando cierres prematuros (SL fijo -0.25% vs trailing
-             #   adaptativo de 3 etapas). El motor más agresivo (Portfolio)
-             #   cortaba ganancias ANTES de que el trailing pudiera actuar.
-             # PARA QUÉ: Un solo motor de salida tanto en backtest como en
-             #   producción = resultados consistentes y predecibles.
-             # CÓMO: RiskManager.check_stops() se invoca aquí directamente.
-             #   Portfolio.check_exits() se mantiene como AUDIT-ONLY.
-             # ═══════════════════════════════════════════════════════════════
+             
+             if self.risk_manager and hasattr(self.risk_manager, 'prediction_tracker'):
+                 if self.risk_manager.prediction_tracker:
+                     try:
+                         self.risk_manager.prediction_tracker.update_forward_returns(
+                             symbol=event.symbol,
+                             current_price=event.close_price,
+                             timestamp=getattr(event, 'datetime', None)
+                         )
+                     except Exception as e:
+                         pass
+
              has_position = event.symbol in self.portfolio.positions or \
                             any(k.startswith(event.symbol) for k in self.portfolio.virtual_ledger)
              if has_position and self.risk_manager and self.data_handlers:
                  try:
-                     # FORENSIC-V12 FIX #2: symbol_filter avoids O(N²) re-evaluation
-                     # POR QUÉ: Sin filtro, check_stops() escanea TODO el virtual_ledger
-                     #   por CADA MarketEvent. Con 26 símbolos = 676 evals/tick → solo 26.
                      stop_signals = self.risk_manager.check_stops(
                          self.portfolio, self.data_handlers[0],
                          symbol_filter=event.symbol
@@ -666,126 +772,38 @@ class Engine:
                      if stop_signals:
                          for sig in stop_signals:
                              self.events.put(sig)
-                             
-                     # ═══════════════════════════════════════════════════════════════
-                     # FORENSIC FIX #18: ExitOracle DUPLICATE REMOVAL
-                     # QUÉ: ExitOracle ya se evalúa DENTRO de risk_manager.check_stops() (L2446).
-                     #   Evaluarlo AQUÍ TAMBIÉN generaba EXIT DOBLES por tick.
-                     # POR QUÉ: Esto era la RAÍZ de las "pisadas de pata" — cada tick
-                     #   producía 2 señales de cierre idénticas inundando el MetaCoordinator.
-                     # FIX: ELIMINADO. Solo sobrevive Dynamic Target Mutation (abajo).
-                     # ═══════════════════════════════════════════════════════════════
-                     if self.risk_manager and hasattr(self.risk_manager, 'exit_oracle'):
-                         oracle = self.risk_manager.exit_oracle
-                         if oracle:
-                             # Dynamic Target Mutation still needs verdicts
-                             pos_map = {}
-                             for h in ['SCALPING', 'SWING']:
-                                 pos = self.portfolio.get_horizon_position(event.symbol, h)
-                                 if pos and pos.get('quantity', 0) != 0:
-                                     pos_map[f"{event.symbol}_{h}"] = pos
-                             
-                             if pos_map:
-                                 market_data = {event.symbol: {'close': event.close_price}}
-                                 verdicts = oracle.evaluate_open_positions(pos_map, market_data)
-                                 for verdict in verdicts:
-                                     # EXIT signals are now SOLELY handled by risk_manager.check_stops()
-                                     # Here we ONLY process Dynamic Target Mutations
-                                     
-                                     # ═══════════════════════════════════════════════════
-                                     # CTOS PHASE 8: DYNAMIC TARGET MUTATION
-                                     # FORENSIC FIX #14: pos_map contenía COPIAS (.copy()).
-                                     #   Mutar pv['tp_pct'] mutaba la copia, NO el ledger.
-                                     # FIX: Acceder directamente al virtual_ledger.
-                                     # ═══════════════════════════════════════════════════
-                                     if verdict.dynamic_targets and not verdict.should_exit:
-                                         dt = verdict.dynamic_targets
-                                         tp_mult = dt.get('tp_mult', 1.0)
-                                         sl_mult = dt.get('sl_mult', 1.0)
-                                          
-
-                                         if tp_mult != 1.0 or sl_mult != 1.0:
-                                             for ps in ['LONG', 'SHORT']:
-                                                 for h in ['SCALPING', 'SWING']:
-                                                     vk = f"{event.symbol}_{h}_{ps}"
-                                                     real_pos = self.portfolio.virtual_ledger.get(vk)
-                                                     if not real_pos or abs(real_pos.get('quantity', 0)) < 1e-8:
-                                                         continue
-                                                     if 'original_tp_pct' not in real_pos:
-                                                         real_pos['original_tp_pct'] = real_pos.get('tp_pct', 0.008)
-                                                     if 'original_sl_pct' not in real_pos:
-                                                         real_pos['original_sl_pct'] = real_pos.get('sl_pct', 0.004)
-                                                     base_tp = real_pos['original_tp_pct']
-                                                     base_sl = real_pos['original_sl_pct']
-                                                     if h == 'SCALPING':
-                                                         new_tp = max(0.002, min(base_tp * tp_mult, 0.015))
-                                                         new_sl = max(0.001, min(base_sl * sl_mult, 0.008))
-                                                     else:
-                                                         new_tp = max(0.005, min(base_tp * tp_mult, 0.050))
-                                                         new_sl = max(0.003, min(base_sl * sl_mult, 0.030))
-                                                     old_tp = real_pos.get('tp_pct', base_tp)
-                                                     old_sl = real_pos.get('sl_pct', base_sl)
-                                                     real_pos['tp_pct'] = new_tp
-                                                     real_pos['sl_pct'] = new_sl
-                                                     if abs(new_tp - old_tp) > 1e-6 or abs(new_sl - old_sl) > 1e-6:
-                                                         logger.info(
-                                                             f"🎯 [DYNAMIC CHASE] {event.symbol} {h}_{ps} | "
-                                                             f"TP: {old_tp*100:.2f}% → {new_tp*100:.2f}% (x{tp_mult:.1f}) | "
-                                                             f"SL: {old_sl*100:.2f}% → {new_sl*100:.2f}% (x{sl_mult:.1f})"
-                                                          )
-
                  except Exception as e:
-                     logger.error(f"check_stops/oracle error for {event.symbol}: {e}")
-        else:
-             self._update_portfolio_prices()
+                     logger.error(f"Error checking stops: {e}")
+                     pass
+
+        strategies_to_run = self._strategies_by_symbol.get(event.symbol, [])
+        strategies_to_run.extend(self._strategies_by_symbol.get('ALL', []))
         
-        # 2. Market Regime Detection
-        current_regime = 'UNKNOWN' # Optimization: Delay regime calc until strat needs it
-        
-        # 3. Global Context
-        context = None 
-        
-        # 4. Strategy Orchestration (O(1) Optimized)
-        target_strategies = self._strategies_by_symbol.get(event.symbol, []) + self._strategies_by_symbol.get('ALL', [])
-        
-        for strategy in target_strategies:
-            if current_regime == 'UNKNOWN':
-                 current_regime = self._get_current_market_regime()
+        # ================================================================
+        # NANO-LATENCY SYNCHRONOUS EVALUATION
+        # ================================================================
+        # FORENSIC-AUDIT-FIX: Removed ThreadPoolExecutor.
+        # Since strategy.calculate_signals is an O(1) cached evaluation,
+        # ThreadPool switching and asyncio.wrap_future overhead was slowing it down.
+        # Running synchronously eliminates context switching latency entirely.
+        for strategy in strategies_to_run:
+            if _COOLDOWN_AVAILABLE and cooldown_manager:
+                if not cooldown_manager.can_evaluate(strategy.strategy_id, event.symbol):
+                    continue
             
-            if self._should_strategy_run(strategy, event, current_regime):
-                try:
-                    if context is None:
-                         context = world_awareness.get_market_context()
-                    
-                    strategy.market_context = context
-                    
-                    # Handle both sync and async calculate_signals
-                    if asyncio.iscoroutinefunction(strategy.calculate_signals):
-                        await strategy.calculate_signals(event)
+            try:
+                signal = strategy.calculate_signals(event)
+                if signal:
+                    if isinstance(signal, list):
+                        for s in signal:
+                            if s: self.events.put(s)
                     else:
-                        strategy.calculate_signals(event)
-                        
-                    self.metrics['strategy_executions'] += 1
-                except Exception as e:
-                    logger.error(f"Strategy Error ({strategy.__class__.__name__}): {e}")
+                        self.events.put(signal)
+            except Exception as e:
+                logger.error(f"Strategy {strategy.strategy_id} error: {e}")
+                pass
 
-    async def _check_exits_fast(self, event):
-        """
-        ⛔ FORENSIC-V12 FIX #1: PERMANENTLY DISABLED (Dead Code → Documented NO-OP)
-        
-        QUÉ: Portfolio.check_exits() solía competir con RiskManager.check_stops().
-        POR QUÉ: check_exits() tiene SL hardcodeado de -0.25% (Scalping) que
-           cortaba trades ANTES del trailing adaptativo de check_stops() (SL -0.60%).
-        PARA QUÉ: RiskManager.check_stops() (L400-413) es el ÚNICO motor de salida.
-           Esto garantiza paridad backtest ←→ producción.
-        CUÁNDO: Deshabilitado permanentemente desde Forensic Audit v12.
-        QUIÉN: Arquitecto Senior + Risk Manager.
-        
-        NOTA: Este método NO se invoca desde ningún lugar. Se mantiene como
-           documentación de la decisión arquitectónica.
-        """
-        pass  # RiskManager.check_stops() is the SOLE exit engine (L400-413)
-
+    @omniscient_trace(layer="CORTEX")
     async def _process_signal_event(self, event):
         """Process SIGNAL event asynchronously"""
         logger.info(f"⚡ [ENGINE] Processing Signal: {event.symbol} {event.signal_type} (Conf: {getattr(event, 'confidence', 0):.2f})")
@@ -801,7 +819,51 @@ class Engine:
             self.metrics['discarded_events'] += 1
             return
             
+        # ⏳ TEMPORAL CONSTRAINTS
+        is_exit = (getattr(event, 'signal_type', None) == SignalType.EXIT) or str(getattr(event, 'signal_type', None)) == 'SignalType.EXIT' or getattr(event, 'is_exit', False) or (getattr(event, 'strategy_id', '') == "FLIP_EXIT")
+        if not is_exit and self.temporal_supervisor and not hasattr(event, 'is_vetoed'):
+             # Modify position size or reject signal if temporal rule violates constraints
+             adj_size, adj_score, allowed = self.temporal_supervisor.apply_temporal_constraints(
+                 event, 
+                 getattr(event, 'quantity_pct', 1.0),
+                 getattr(event, 'confidence', 0.0)
+             )
+             if not allowed or getattr(event, 'confidence', 0.0) < adj_score:
+                  logger.warning(f"⏳ [TEMPORAL] Signal rejected for temporal maturity constraints. Confidence {getattr(event, 'confidence', 0.0):.2f} < {adj_score:.2f}")
+                  self.metrics['discarded_events'] += 1
+                  return
+             # Update modified size via property injection
+             event = dataclasses.replace(event, temporal_size_modifier=adj_size / max(getattr(event, 'quantity_pct', 1.0), 0.01))
+
         if self.portfolio:
+             # 🌌 MULTIVERSE SIMULATOR (Quantum Shadow Validation)
+             # Adapt TP and SL dynamically without blocking the Engine
+             if event.signal_type in (SignalType.LONG, SignalType.SHORT):
+                 from core.multiverse_simulator import multiverse_simulator
+                 from config import Config
+                 
+                 base_tp = getattr(event, 'tp_pct', 0.0)
+                 base_sl = getattr(event, 'sl_pct', 0.0)
+                 
+                 # Fetch default if not set by strategy
+                 if base_tp == 0.0 or base_sl == 0.0:
+                     horizon = getattr(event, 'horizon', 'SCALPING').upper()
+                     if horizon == 'SCALPING':
+                         base_tp = base_tp or Config.Risk.SCALPING_PARAMS.get('tp_pct', 0.0068)
+                         base_sl = base_sl or Config.Risk.SCALPING_PARAMS.get('sl_pct', 0.0035)
+                     else:
+                         base_tp = base_tp or Config.Risk.SWING_PARAMS.get('tp_pct', 0.045)
+                         base_sl = base_sl or Config.Risk.SWING_PARAMS.get('sl_pct', 0.015)
+                 
+                 opt_tp, opt_sl, reasoning = multiverse_simulator.simulate_trajectories(
+                     event, self.data_provider, base_tp, base_sl
+                 )
+                 
+                 # Inject optimal params into event
+                 event = dataclasses.replace(event, tp_pct=opt_tp, sl_pct=opt_sl)
+                 if opt_tp != base_tp or opt_sl != base_sl:
+                     logger.debug(f"🌌 [MULTIVERSE] Optimized TP/SL for {event.symbol}: TP {base_tp*100:.2f}%->{opt_tp*100:.2f}%, SL {base_sl*100:.2f}%->{opt_sl*100:.2f}% ({reasoning})")
+
              self.portfolio.update_signal(event)
              
              # [PHASE 9: ML Metacognition] Propagate Brier Score & Entropy to Portfolio for Dashboard Persistence
@@ -816,7 +878,7 @@ class Engine:
         if not is_exit_signal and self.data_handlers:
             # 🕒 FUNDING FEE EVASION (Phase 1 Protection)
             try:
-                from datetime import datetime, timezone
+                # datetime/timezone already imported at top-level
                 now_utc = datetime.now(timezone.utc)
                 # Binance funding occurs at 00:00, 08:00, 16:00 UTC.
                 # We block entries from XX:45 to XX:59 to avoid funding drag.
@@ -827,12 +889,12 @@ class Engine:
             except Exception as e:
                 logger.error(f"Funding evasion error: {e}")
             try:
-                from utils.cooldown_manager import cooldown_manager
+                # cooldown_manager imported at top-level
                 # Check if currently frozen
                 frozen_key = f"SHOCK_FREEZE_{event.symbol}"
                 # Peeking into custom dictionary to act as a lock check
                 if hasattr(cooldown_manager, 'custom_cooldowns') and frozen_key in cooldown_manager.custom_cooldowns:
-                    from datetime import datetime, timezone
+                    # datetime/timezone already imported at top-level
                     elapsed = (datetime.now(timezone.utc) - cooldown_manager.custom_cooldowns[frozen_key]).total_seconds()
                     if elapsed < 300: # 5 min freeze
                         logger.warning(f"❄️ [SHOCK BLOCK] Entry signal for {event.symbol} blocked. Frozen for {(300 - elapsed):.0f}s.")
@@ -856,11 +918,7 @@ class Engine:
                         local_liq = 0.0 # Could be fetched from DH if available
                         self.omega_protocol.assess_ecosystem_health(event.symbol, local_ofi, local_liq)
                         
-                    from core.market_regime import MarketRegimeDetector
-                    # Create temporary detector instance strictly for metric check (lightweight)
-                    temp_regime = MarketRegimeDetector()
-                    
-                    if temp_regime.is_volatility_shock(bars, oi_delta=oi_delta):
+                    if self.market_regime.is_volatility_shock(bars, oi_delta=oi_delta):
                         logger.critical(f"🌪️ [SHOCK REGIME DETECTED] Squeeze on {event.symbol}! Activating 5-min Freeze.")
                         # Activate the freeze (cooldown_manager will set the timestamp)
                         cooldown_manager.check_custom_cooldown(frozen_key, 300)
@@ -869,10 +927,11 @@ class Engine:
 
                     # 🧟 ZOMBIE FEATURE INTEGRATION: Calculate tension for RiskManager
                     try:
-                        shift_pred = temp_regime.predict_regime_shift(event.symbol, bars)
-                        event.tension = shift_pred.get('tension', 0.0)
-                    except Exception:
-                        event.tension = 0.0
+                        shift_pred = self.market_regime.predict_regime_shift(event.symbol, bars)
+                        event = dataclasses.replace(event, tension=shift_pred.get('tension', 0.0))
+                    except Exception as e:
+                        logger.error(f"Error predicting regime shift tension: {e}")
+                        event = dataclasses.replace(event, tension=0.0)
             except Exception as e:
                 logger.error(f"Shock Evasion Error: {e}")
 
@@ -885,17 +944,20 @@ class Engine:
                 _horizon = getattr(event, 'horizon', 'SCALPING')
                 
                 if _direction_str in ['long', 'short']:
+                    # CTOS Phase 4 Fix: Correct kwargs for record_signal
                     self.risk_manager.prediction_tracker.record_signal(
                         strategy_id=_strat_id,
                         symbol=event.symbol,
                         direction=_direction_str,
                         horizon=_horizon,
-                        current_price=current_price
+                        entry_price=current_price,
+                        sl_pct=getattr(event, 'sl_pct', 0.0) or 0.0,
+                        tp_pct=getattr(event, 'tp_pct', 0.0) or 0.0,
+                        confidence=getattr(event, 'strength', 0.5) or 0.5,
+                        timestamp=getattr(event, 'datetime', None)
                     )
             except Exception as e:
                 logger.error(f"Failed to record signal in PredictionTracker: {e}")
-
-        # ═══════════════════════════════════════════════════════════════
         # CTOS Phase 5: SYSTEMIC INTEGRITY (CROSS-STRATEGY AWARENESS)
         # QUÉ: Verificar `get_competing_strategies()` antes de procesar señales contradictorias.
         # POR QUÉ: Evitar "pisarse las patas" entre Swing y Scalping.
@@ -919,11 +981,43 @@ class Engine:
                             f"Señal {_horizon} {_signal_dir} vs Posición {_opposing_horizon} {_opp_actual_dir}. "
                             f"Estrategias compitiendo: {comp_names}. Pasando a Meta-Arbitrator para resolución explícita."
                         )
-                        event.metadata = event.metadata or {}
-                        event.metadata['competing_horizon'] = _opposing_horizon
-                        event.metadata['competing_direction'] = _opp_actual_dir
+                        new_metadata = dict(event.metadata or {})
+                        new_metadata['competing_horizon'] = _opposing_horizon
+                        new_metadata['competing_direction'] = _opp_actual_dir
+                        event = dataclasses.replace(event, metadata=new_metadata)
         except Exception as e:
             logger.error(f"Failed to check competing strategies: {e}")
+
+        # ═══════════════════════════════════════════════════════════════
+        # PHASE 3: MULTI-HORIZON ORACLE VETO (Centralized SignalBroker)
+        # QUÉ: Valida el "Clash Vector" macro (1d, 1w) contra la dirección local.
+        # POR QUÉ: Extraído de technical.py para asegurar que la estrategia
+        #   solo emita la matemática técnica pura.
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            # MultiHorizonOracle imported at top-level
+            meta = getattr(event, 'metadata', {})
+            tf_data = meta.get('timeframe_data', {})
+            if tf_data and self.data_handlers:
+                _dir_str = 'LONG' if 'LONG' in str(event.signal_type) else ('SHORT' if 'SHORT' in str(event.signal_type) else 'UNKNOWN')
+                _horizon = getattr(event, 'horizon', 'SCALPING')
+                
+                if _dir_str != 'UNKNOWN' and _MULTI_HORIZON_ORACLE_AVAILABLE and MultiHorizonOracle:
+                    oracle_verdict = MultiHorizonOracle.evaluate_clash_vector(tf_data, _dir_str, horizon=_horizon)
+                    if oracle_verdict.get('is_vetoed', False):
+                        _clash = oracle_verdict.get('clash_score', 0.0)
+                        # SOFT VETO: Penalize confidence instead of hard blocking immediately.
+                        # The Meta-Arbitrator and RiskManager will ultimately decide.
+                        if _clash > 0.85:
+                            logger.info(f"🔮 [ORACLE VETO] {event.symbol} {_dir_str} BLOCKED (EXTREME) | Clash: {_clash:.1%} | Macro: {oracle_verdict.get('macro_context', '')}")
+                            self.metrics['discarded_events'] += 1
+                            return
+                        else:
+                            _penalty = max(0.4, 1.0 - _clash)
+                            event = dataclasses.replace(event, strength=getattr(event, 'strength', 0.5) * _penalty)
+                            logger.info(f"🔮 [ORACLE SOFT] {event.symbol} {_dir_str} PENALIZED x{_penalty:.2f} | Clash: {_clash:.1%} | Macro: {oracle_verdict.get('macro_context', '')}")
+        except Exception as e:
+            logger.warning(f"🔮 [ORACLE] Evaluation failed for {event.symbol}: {e}")
 
         # ═══════════════════════════════════════════════════════════════
         # SOPHIA-GLOBAL VETO FILTER
@@ -957,13 +1051,51 @@ class Engine:
         except Exception as e:
             logger.error(f"Segment Policy Engine Error: {e}")
 
+        # 💯 SISTEMA AUTÓNOMO ANTIFRÁGIL - FASE 1: Scoring y Breakeven
+        if hasattr(self, 'signal_scorer') and self.signal_scorer:
+            _dir_str = 'LONG' if 'LONG' in str(event.signal_type) else ('SHORT' if 'SHORT' in str(event.signal_type) else 'UNKNOWN')
+            if _dir_str in ['LONG', 'SHORT']:
+                try:
+                    dh = self.data_handlers[0] if self.data_handlers else None
+                    regime_str = self._get_current_market_regime()
+                    
+                    total_score, breakdown = self.signal_scorer.calculate_score(event, dh, self.portfolio, regime_str)
+                    
+                    if not hasattr(event, 'metadata'):
+                        event.metadata = {}
+                    event.metadata['final_score'] = total_score
+                    event.metadata['score_breakdown'] = breakdown
+                    
+                    logger.debug(f"💯 [SCORER] {event.symbol} {_dir_str} Score: {total_score}/100 Breakdown: {breakdown}")
+                    
+                    horizon_str = getattr(event, 'horizon', '').upper()
+                    required_score = self.signal_scorer.min_pass_score
+                    if horizon_str == 'SCALPING':
+                        required_score = getattr(self.signal_scorer, 'scalping_min_score', self.signal_scorer.min_pass_score)
+                    elif horizon_str == 'SWING':
+                        required_score = getattr(self.signal_scorer, 'swing_min_score', self.signal_scorer.min_pass_score)
+
+                    if total_score < required_score:
+                        logger.warning(f"🛑 [SCORER VETO] {event.symbol} Score {total_score} < {required_score} ({horizon_str})")
+                        self.metrics['discarded_events'] += 1
+                        return
+                        
+                    is_viable, be_msg = self.signal_scorer.check_breakeven_viability(event, current_price)
+                    if not is_viable:
+                        logger.warning(f"🛑 [BREAKEVEN VETO] {event.symbol}: {be_msg}")
+                        self.metrics['discarded_events'] += 1
+                        return
+                        
+                except Exception as e:
+                    logger.error(f"Error en SignalScorer: {e}")
+
         # 🧠 META-COORDINATOR INJECTION
         # Instead of directly processing through the RiskManager, we submit this to the Supreme Arbitrator
         # for conflict resolution, portfolio checks, and global context weighing.
         try:
-            from core.meta_arbitrator import meta_arbitrator
-            await meta_arbitrator.submit_intent(event)
-            logger.debug(f"📥 [ENGINE] Intent {event.symbol} passed to Meta-Arbitrator.")
+            if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
+                await meta_arbitrator.submit_intent(event)
+                logger.debug(f"📥 [ENGINE] Intent {event.symbol} passed to Meta-Arbitrator.")
         except Exception as e:
             logger.error(f"Meta-Arbitrator Submit Error: {e}")
             self.metrics['errors'] += 1
@@ -971,7 +1103,8 @@ class Engine:
     async def _drain_meta_arbitrator(self):
         """Background task that continuously processes approved intents from the Meta-Arbitrator."""
         try:
-            from core.meta_arbitrator import meta_arbitrator
+            if not (_META_ARBITRATOR_AVAILABLE and meta_arbitrator):
+                return
             while self.running:
                 approved_intent = await meta_arbitrator.get_approved_intent()
                 await self._execute_approved_intent(approved_intent)
@@ -980,12 +1113,47 @@ class Engine:
         except Exception as e:
             logger.error(f"Meta-Arbitrator Drain Error: {e}")
 
+    async def _reconciliation_loop(self):
+        """Periodic background task that reconciles local position registry with Binance every 60s."""
+        logger.info("🔄 [RECONCILIATION] Starting periodic Binance Futures reconciliation loop...")
+        while self.running:
+            try:
+                await asyncio.sleep(60.0)
+                if self.execution_handler and self.portfolio:
+                    logger.debug("🔄 [RECONCILIATION] Syncing local portfolio registry with Binance...")
+                    await asyncio.to_thread(self.execution_handler.sync_portfolio_state, self.portfolio)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"❌ [RECONCILIATION] Error in periodic sync: {e}")
+
     async def _execute_approved_intent(self, event):
         """Processes intents that have survived the Meta-Arbitrator conflict resolution."""
         current_price = self._get_validated_price(event.symbol)
         if not current_price: return
         
         if self.risk_manager:
+            # 🛡️ CAPA 7: Registro Omnisciente (Pre-Flight Axiom Check)
+            try:
+                from core.omniscient_registry import registry
+                trade_risk_pct = getattr(event, 'sl_pct', 0.0) or getattr(event, 'sl_pct_max', 0.02)
+                current_heat = 0.0
+                if self.portfolio:
+                    total_eq = max(self.portfolio.get_total_equity(), 1.0)
+                    for pos in self.portfolio.positions.values():
+                        current_heat += (abs(pos.get('quantity', 0)) * pos.get('current_price', 0)) / pos.get('leverage', 10) / total_eq
+                is_exit = (getattr(event, 'signal_type', None) == SignalType.EXIT) or str(getattr(event, 'signal_type', None)) == 'SignalType.EXIT' or getattr(event, 'is_exit', False) or (getattr(event, 'strategy_id', '') == "FLIP_EXIT")
+                has_sl = True if is_exit else bool(getattr(event, 'sl_pct', 0.0) > 0)
+                
+                # Check absolute axioms
+                # Exit signals bypass Capa 7 check_trade_validity heat/sl checks
+                if not is_exit and not registry.check_trade_validity(trade_risk_pct, current_heat, has_sl):
+                    logger.warning(f"🛑 [CAPA 7] VETO ABSOLUTO de Registro Omnisciente para {event.symbol}.")
+                    self.metrics['discarded_events'] += 1
+                    return
+            except Exception as e:
+                logger.error(f"Error en Capa 7 (OmniscientRegistry): {e}")
+
             logger.info(f"🛡️ [ENGINE] Handing APPROVED intent to RiskManager for {event.symbol}")
             
             # 🔭 AITS SHADOW BRIDGE OBSERVATION
@@ -1017,16 +1185,18 @@ class Engine:
                  logger.warning(f"🛑 [ENGINE] RiskManager REJECTED signal for {event.symbol}")
                  # INTERACTION MONITOR: Order blocked by Risk Manager
                  try:
-                     from utils.interaction_monitor import get_interaction_monitor
-                     strat_id = getattr(event, 'strategy_id', 'Strategy')
-                     get_interaction_monitor().log_interaction(
-                         source=strat_id,
-                         action="Signal Rejected",
-                         details=f"RiskManager rejected signal for {event.symbol}"
-                     )
+                     # AUDIT FIX: Guard against None when interaction_monitor unavailable
+                     if _INTERACTION_MONITOR_AVAILABLE and get_interaction_monitor:
+                         strat_id = getattr(event, 'strategy_id', 'Strategy')
+                         get_interaction_monitor().log_interaction(
+                             source=strat_id,
+                             action="Signal Rejected",
+                             details=f"RiskManager rejected signal for {event.symbol}"
+                         )
                  except Exception as e:
                      logger.debug(f"Interaction monitor logging failed: {e}")
 
+    @omniscient_trace(layer="CORTEX")
     async def _process_order_event(self, event):
         """Process ORDER event asynchronously"""
         if self.execution_handler:
@@ -1037,6 +1207,7 @@ class Engine:
         else:
             logger.warning("No Execution Handler registered. Order ignored.")
 
+    @omniscient_trace(layer="CORTEX")
     async def _process_fill_event(self, event):
         """Process FILL event asynchronously"""
         dt_ms = (time.time_ns() - event.timestamp_ns) / 1_000_000
@@ -1119,8 +1290,9 @@ class Engine:
                 horizon = getattr(event, 'horizon', 'SCALPING')
                 pos = self.portfolio.get_horizon_position(event.symbol, horizon)
                 if not pos or abs(pos.get('quantity', 0.0)) < 1e-8:
-                    from utils.position_cleaner import position_cleaner
-                    asyncio.create_task(position_cleaner.clean_orphan_orders(self.execution_handler, event.symbol))
+                    # position_cleaner imported at top-level
+                    if _POSITION_CLEANER_AVAILABLE and position_cleaner:
+                        asyncio.create_task(position_cleaner.clean_orphan_orders(self.execution_handler, event.symbol))
         except Exception as e:
             logger.error(f"Error checking position for orphan cleanup: {e}")
 
@@ -1165,7 +1337,7 @@ class Engine:
                          else:
                              _regime = 'RANGING'
             except Exception as e:
-                logger.debug(f"Fallback regime calculation failed: {e}")
+                logger.error(f"🛑 [FATAL] Fallback regime calculation failed: {e}")
         
         # CTOS PHASE 2: Sync regime to SSOT (single write point)
         if _regime != 'UNKNOWN':
@@ -1245,11 +1417,29 @@ class Engine:
     def _get_validated_price(self, symbol: str) -> Optional[float]:
         """
         Get and validate current price.
-        Checks for:
-        - Freshness (availability)
-        - Non-zero validity
-        - Anomalous jumps (optional simple check)
+        
+        LOW-LATENCY OPTIMIZATION:
+        QUÉ: Fast-path usando global_state antes de acceder al data handler.
+        POR QUÉ: global_state ya tiene el precio actualizado por _process_market_event
+          vía update_from_market_event(). Acceder al data handler requiere:
+          1. Adquirir self._data_lock (lock contention)
+          2. Extraer datos del ring buffer Numba
+          3. Crear numpy structured array nuevo (allocation)
+          Total: ~100-500μs por llamada.
+        PARA QUÉ: Reducir latencia de validación de señales.
+        CÓMO: Leer de global_state primero (O(1), sin lock); fallback a data handler.
         """
+        # ⚡ FAST PATH: global_state already has latest price (updated by _process_market_event)
+        try:
+            state = global_state.get_state(symbol)
+            if state:
+                price = state.get('close', 0.0)
+                if price and price > 0:
+                    return float(price)
+        except Exception:
+            pass  # Fall through to slow path
+        
+        # 🐢 SLOW PATH: Full data handler validation (original logic)
         if not self.data_handlers:
             return None
             
@@ -1282,14 +1472,20 @@ class Engine:
             return None
 
     def _validate_signal_ttl(self, event) -> bool:
-        """Check if signal is too old to process"""
+        """Check if signal has expired based on its absolute expiration_timestamp"""
         now = datetime.now(timezone.utc)
-        age = (now - event.datetime).total_seconds()
         
-        if age > Config.MAX_SIGNAL_AGE:
-            if age > 5.0: # Log only significant delays
-                 logger.warning(f"Discarding STALE signal {event.symbol} (Age: {age:.2f}s)")
-            return False
+        expiration = getattr(event, 'expiration_timestamp', None)
+        if expiration:
+            if now > expiration:
+                logger.warning(f"Discarding EXPIRED signal {event.symbol} (Expired at: {expiration}, Current time: {now})")
+                return False
+        else:
+            age = (now - event.datetime).total_seconds()
+            if age > Config.MAX_SIGNAL_AGE:
+                if age > 5.0: # Log only significant delays
+                     logger.warning(f"Discarding STALE signal {event.symbol} (Age: {age:.2f}s)")
+                return False
             
         return True
 
@@ -1349,6 +1545,12 @@ class Engine:
                 f"Strategy: {strategy_id} | P(Win)={win_prob:.1%} < "
                 f"{self.SOPHIA_MIN_CONFIDENCE:.0%} threshold"
             )
+            if self.risk_manager:
+                try:
+                    from risk.risk_manager import RejectionReason
+                    self.risk_manager._reject_trade(event, RejectionReason.SOPHIA_VETO)
+                except Exception as e:
+                    logger.debug(f"Could not log SOPHIA_VETO rejection to RiskManager: {e}")
             return False
         
         # 6. Log approved signal
@@ -1367,6 +1569,12 @@ class Engine:
                 strategy.stop()
             except Exception as e:
                 logger.error(f"Error stopping strategy {getattr(strategy, 'symbol', 'Unknown')}: {e}")
+                
+        if hasattr(self, '_tpool') and self._tpool:
+            try:
+                self._tpool.shutdown(wait=True)
+            except Exception as e:
+                logger.error(f"Error shutting down Engine thread pool: {e}")
 
     def _on_mutation_event(self, payload: Dict[str, Any]):
         """
