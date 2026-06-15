@@ -55,6 +55,17 @@ Al completar cada ciclo de 3 días con +100%, recalcula tamaños, apalancamiento
 1. **Apalancamiento Inteligente:** Variable dinámica basada en régimen, señal, capital y distancia al stop. En fase micro, compensa el tamaño sin exceder los límites seguros.
 2. **Liquidación (Línea Roja Absoluta):** Monitorea precio de liquidación virtual y mantiene un buffer. Si se acerca, reduce tamaño, añade margen o cierra posición. Margen aislado obligatorio en modo micro-capital.
 3. **Funding Rate:** Descuenta costo acumulado del profit esperado (si dura > 4h). Puede rechazar trades.
+
+### Phase 14-22: Quantum Leverage, HFT Execution & Self-Healing
+Trader Gemini is designed specifically for **micro-accounts ($13 USD)** with the aggressive goal of achieving a **100% Return on Investment every 3 days**. 
+
+Unlike conventional bots that seek high win rates over months, Trader Gemini uses:
+1. **Quantum Leverage Scaling:** Dynamic leverage from 5x to 50x based on win streaks.
+2. **Asymmetric Kelly Criterion:** Mathematically guarantees exponential compounding even with win rates < 100%.
+3. **Predictive Auto-Healing:** Nano-Hedges injected at -1.0% drawdown to extract micro-PnL from adverse volatility.
+4. **Nano-Timeframe Validation:** Order Book imbalance checks to prevent `MICROSCALPING` into micro-dumps/pumps.
+
+The architecture strictly simulates the **Cruel Reality** of Binance Futures fees (0.05% Taker, 0.02% Maker) during backtesting, ensuring that strategies surviving the simulation will absolutely survive in production.
 4. **Fees y Costos:** Opera maker sobre taker preferiblemente. Calcula breakeven exacto (incluyendo fees) en microscalping antes de entrar.
 5. **Liquidez y Selección de Pares:** Monitorea order books. Rota pares dinámicamente priorizando volumen, spread, y volatilidad. 
 

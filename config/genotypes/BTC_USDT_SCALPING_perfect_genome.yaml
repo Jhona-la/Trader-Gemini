@@ -1,16 +1,21 @@
 symbol: BTC/USDT
 horizon: SCALPING
-sl_pct: 0.0015
-tp_sl_ratio: 2.0
+sl_pct: 0.002
+tp_sl_ratio: 1.5
 tp_pct: 0.003
-strength_threshold: 0.35
+strength_threshold: 0.3
 ml_confidence: 0.6000000000000001
-adx_threshold: 25
-cooldown_seconds: 270
-zombie_chaser_atr_mult: 0.7
+adx_threshold: 15
+cooldown_seconds: 80
+zombie_chaser_atr_mult: 1.0
+ml_kelly_fraction: 0.8
+compounding_growth_factor: 0.65
+max_concurrent_trades: 5
+max_drawdown_limit: 0.02
+global_stop_loss_pct: 0.13
 performance:
-  win_rate: 55.6
-  pnl_usd: -0.04720000000000013
-  trades: 9
-  max_dd_pct: 0.36
-timestamp: '2026-06-08T12:48:56.435936'
+  win_rate: 0
+  pnl_usd: 0.0
+  trades: 0
+  max_dd_pct: 0.0
+timestamp: '2026-06-15T09:07:43.282359'

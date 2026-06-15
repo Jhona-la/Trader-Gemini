@@ -125,9 +125,9 @@ class SwingDCAEngine:
         if entry_price <= 0 or current_price <= 0:
             return None
 
-        # ── Gate 2: Solo posiciones SWING ──
+        # ── Gate 2: Horizontes Permitidos (SWING y MICROSCALPING Safe-Grid) ──
         horizon = pos.get('horizon', 'SCALPING')
-        if horizon != 'SWING':
+        if horizon not in ('SWING', 'MICROSCALPING'):
             return None
 
         # ── Calcular PnL no realizado ──

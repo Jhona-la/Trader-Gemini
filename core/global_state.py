@@ -83,6 +83,7 @@ class GlobalMarketState:
         # 4. Macro & System State
         self.market_regime: str = "UNKNOWN"
         self.correlation_matrix: Dict[str, Dict[str, float]] = {}
+        self.btc_velocity: float = 0.0  # 🔮 Phase 5: Multi-Coin Oracle velocity
         
         # 5. Portfolio & Risk Projections
         self.portfolio: PortfolioSnapshot = PortfolioSnapshot()
@@ -134,6 +135,14 @@ class GlobalMarketState:
             updates['orderflow_imbalance'] = of.get('ofi', 0.0)
             updates['spread_cost_pct'] = of.get('spread_pct', 0.0)
             updates['liquidity_depth'] = of.get('depth', 0.0)
+            
+            # L2 Orderbook Vectorization
+            micro_price = of.get('micro_price', 0.0)
+            if micro_price > 0 and hasattr(event, 'close_price') and event.close_price > 0:
+                updates['microprice'] = micro_price
+                updates['microprice_divergence'] = (micro_price - event.close_price) / event.close_price
+            elif micro_price > 0:
+                updates['microprice'] = micro_price
         
         # Extract from health_metrics if present
         if hasattr(event, 'health_metrics') and event.health_metrics:
@@ -216,9 +225,20 @@ class GlobalMarketState:
         """Returns canonical features for a symbol (populated by FeatureEngine)."""
         return self.canonical_features.get(symbol, {})
 
-    def get_open_position(self, symbol: str) -> Optional[PositionState]:
-        """Returns active position state for a symbol."""
-        return self.active_positions.get(symbol)
+    def get_open_position(self, symbol: str, horizon: str = None) -> Optional[PositionState]:
+        """Returns active position state for a symbol, optionally filtered by horizon."""
+        # FASE 7: active_positions keys are v_keys like 'BTC/USDT_SCALPING_LONG'
+        for v_key, pos in self.active_positions.items():
+            if pos.symbol == symbol:
+                if horizon:
+                    # Check if the horizon is in the v_key, or if pos has horizon attr
+                    if hasattr(pos, 'horizon') and pos.horizon == horizon:
+                        return pos
+                    if horizon in v_key:
+                        return pos
+                else:
+                    return pos
+        return None
     
     def update_symbol_vector(self, symbol: str, data: Dict[str, float]):
         """Updates the typed vector for a specific symbol."""

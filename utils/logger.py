@@ -11,7 +11,7 @@ from logging.handlers import RotatingFileHandler
 try:
     import orjson
     def json_dumps(obj):
-        return orjson.dumps(obj).decode('utf-8')
+        return orjson.dumps(obj, option=orjson.OPT_SERIALIZE_NUMPY).decode('utf-8')
 except ImportError:
     import json
     import json
@@ -35,30 +35,59 @@ class SensitiveDataFilter(logging.Filter):
 class JSONFormatter(logging.Formatter):
     """
     Custom formatter to output logs in JSON format for machine ingestion (Splunk/ELK).
+    Supports Supreme Audit Framework (Omniscient Hexagonal Format).
     """
     def format(self, record):
-        # AEGIS-ULTRA: Loki-Compatible JSON Structure (Phase 8)
+        # Base format
         log_record = {
             "ts": datetime.fromtimestamp(record.created).isoformat(), # ISO 8601
             "level": record.levelname,
             "component": getattr(record, "component", record.name),
-            "trade_id": getattr(record, "trade_id", None),
-            "strategy_id": getattr(record, "strategy_id", None),
-            "regime": getattr(record, "regime", None),          # Phase 4 Risk Orchestration
-            "kelly_frac": getattr(record, "kelly_frac", None),  # Phase 4 Kelly Fraction Sizing
             "msg": record.getMessage(),
             "line": record.lineno,
             "file": record.filename
         }
         
-        # Prune None values (Bandwidth Opt)
+        # Inject Hexagonal Omniscient Audit Data if present
+        if hasattr(record, "omni_event") and isinstance(record.omni_event, dict):
+            log_record["omni_event"] = record.omni_event
+            
+        # Legacy attributes (Phase 4, 8)
+        for attr in ["trade_id", "strategy_id", "regime", "kelly_frac"]:
+            if hasattr(record, attr):
+                log_record[attr] = getattr(record, attr)
+        
+        # Prune None values
         log_record = {k: v for k, v in log_record.items() if v is not None}
         
-        # Include exception info if present
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
             
         return json_dumps(log_record)
+
+def log_supreme_event(logger_instance, level: int, event_id: str, 
+                     que_ocurrio: dict, por_que_ocurrio: dict, 
+                     como_ocurrio: dict, donde_ocurrio: dict, 
+                     quien_lo_provoco: dict, contexto_adicional: dict = None):
+    """
+    Registra un evento estructurado bajo el Framework de Auditoría Omnisciente (FASE 99).
+    """
+    import time
+    omni_data = {
+        "id_evento": event_id,
+        "timestamp_utc": time.time(),
+        "que_ocurrio": que_ocurrio,
+        "por_que_ocurrio": por_que_ocurrio,
+        "como_ocurrio": como_ocurrio,
+        "donde_ocurrio": donde_ocurrio,
+        "quien_lo_provoco": quien_lo_provoco
+    }
+    if contexto_adicional:
+        omni_data["contexto_adicional"] = contexto_adicional
+        
+    msg_summary = f"[{que_ocurrio.get('tipo_evento', 'EVENT')}] {que_ocurrio.get('descripcion', '')} -> {que_ocurrio.get('resultado', '')}"
+    logger_instance.log(level, msg_summary, extra={"omni_event": omni_data})
+
 
 def setup_logger(name='trader_gemini', log_dir='logs'):
     """
@@ -142,7 +171,7 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
 
     # B. Main File Handler (JSON, DEBUG+)
     # PHASE 47.3: Adaptive backtest logging for Windows (Avoid Error 32)
-    is_backtest = any(x in sys.argv[0].lower() for x in ["backtest", "audit", "forensic", "diag", "bt", "test", "god_mode", "walk_forward", "hyper", "optimization", "omega"])
+    is_backtest = any(x in sys.argv[0].lower() for x in ["backtest", "audit", "forensic", "diag", "bt", "test", "god_mode", "walk_forward", "hyper", "optimization", "omega", "evolver"])
     is_windows = os.name == 'nt'
     
     if is_windows and is_backtest:

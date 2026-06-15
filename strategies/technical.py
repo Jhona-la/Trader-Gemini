@@ -64,9 +64,11 @@ class HybridScalpingStrategy(Strategy):
         # QUIÉN: HybridScalpingStrategy
         # ================================================================
         if horizon.upper() == 'SCALPING':
-            h_params = getattr(Config.Strategies, 'SCALPING_PARAMS', {})
+            h_params = getattr(Config.Horizons, 'Scalping', {})
         elif horizon.upper() == 'SWING':
-            h_params = getattr(Config.Strategies, 'SWING_PARAMS', {})
+            h_params = getattr(Config.Horizons, 'Swing', {})
+        elif horizon.upper() == 'MICROSCALPING':
+            h_params = getattr(Config.Horizons, 'Microscalping', {})
         else:
             h_params = {}
         
@@ -750,6 +752,32 @@ class HybridScalpingStrategy(Strategy):
         else:
             is_range = not is_strong_trend or rsi_oversold or rsi_overbought
         
+        # [QUANTUM EVOLUTION: FASE 12.1] Liquidity Void Sniping (Mechas Asesinas)
+        # QUÉ: Cazamos ineficiencias de precio ultra-rápidas donde el precio cae/sube abruptamente
+        #      y retrocede al instante, dejando una mecha gigante.
+        # POR QUÉ: Los barridos de stops (Stop Hunts) crean vacíos de liquidez. Entrar en el rechazo
+        #          es el setup de mayor win-rate para scalping puro.
+        # CÓMO: Verificamos si la vela total es grande (> 2x ATR) y si la mecha representa > 80% de toda la vela.
+        setups['liquidity_void_long'] = False
+        setups['liquidity_void_short'] = False
+        if self.horizon in ("MICROSCALPING", "SCALPING"):
+            atr_norm = setups['atr']
+            total_size = last_high - last_low
+            
+            if total_size > 0 and atr_norm > 0 and total_size > (atr_norm * 2.0):
+                lower_wick_ratio = lower_wick / total_size
+                upper_wick_ratio = upper_wick / total_size
+                
+                # Mecha inferior gigante (Flash Crash / Barrido de Longs) -> Entramos LONG
+                if lower_wick_ratio > 0.80:
+                    setups['liquidity_void_long'] = True
+                    logger.warning(f"🕳️ [LIQUIDITY SNIPE] {self.symbol} Flash Crash detectado! Wick: {lower_wick_ratio*100:.1f}%. Disparando LONG.")
+                
+                # Mecha superior gigante (Flash Pump / Barrido de Shorts) -> Entramos SHORT
+                elif upper_wick_ratio > 0.80:
+                    setups['liquidity_void_short'] = True
+                    logger.warning(f"🕳️ [LIQUIDITY SNIPE] {self.symbol} Flash Pump detectado! Wick: {upper_wick_ratio*100:.1f}%. Disparando SHORT.")
+        
         # ================================================================
         # IMPLEMENTACIÓN DE SHORTS SIMÉTRICOS V2 (Advanced Filters)
         # QUÉ: Filtros precisos para señales SHORT con confirmación multi-señal.
@@ -897,9 +925,10 @@ class HybridScalpingStrategy(Strategy):
                     setups['short_mean_rev'] = True
                     logger.debug(f"👻 [FANTASMA] Proximity SHORT activado para {self.symbol} (Wick Rejection)")
         else:
-            # SWING: Legacy Stricter setup
-            setups['long_mean_rev'] = price_at_lower and rsi_oversold and high_volume and is_range
-            setups['short_mean_rev'] = price_at_upper and rsi_overbought and high_volume and is_range
+            # SWING (FASE 7): Relaxed setup (Trend Reversal Anticipation)
+            # Quitamos 'high_volume' y 'is_range' para forzar a la IA a capturar el pivot rápido.
+            setups['long_mean_rev'] = price_at_lower and rsi_oversold
+            setups['short_mean_rev'] = price_at_upper and rsi_overbought
         
         # 2. MOMENTUM (Optimizado para Nivel Supremo-V3 con VCP & ADX)
         # MACD variables ya declaradas arriba (macd, macd_sig, macd_hist, macd_prev_hist)
@@ -929,8 +958,9 @@ class HybridScalpingStrategy(Strategy):
         
         # Phase 7: Predictive Edge for MOMENTUM
         if is_swing:
-            setups['long_momentum'] = setups['in_uptrend'] and momentum_accel and adx_trend_confirmed and vcp_confirmed and not rsi_exhausted_long
-            setups['short_momentum'] = setups['in_downtrend'] and momentum_accel and adx_trend_confirmed and vcp_confirmed and not rsi_exhausted_short
+            # FASE 7: Swing Momentum acelerado (No exigimos VCP estricto con expansión de volumen inmediata)
+            setups['long_momentum'] = setups['in_uptrend'] and momentum_accel and adx_trend_confirmed and not rsi_exhausted_long
+            setups['short_momentum'] = setups['in_downtrend'] and momentum_accel and adx_trend_confirmed and not rsi_exhausted_short
             setups['long_scalp_break'] = False
             setups['short_scalp_break'] = False
         else:
@@ -1012,6 +1042,30 @@ class HybridScalpingStrategy(Strategy):
         else: vol_mult = 0.90
         strength *= vol_mult
         
+        # 🌊 FASE 13: MICROSTRUCTURE BOOSTERS (Dark Pool, Gamma Risk, Magnetic Pull)
+        of_metrics = setups.get('order_flow', {})
+        if of_metrics:
+            # Gamma Expansion Risk: Volatilidad comprimida con alto volumen = Breakout inminente
+            if of_metrics.get('gamma_expansion_risk'):
+                strength *= 1.20
+            
+            # Dark Pool Tracking: Ballenas atacando en la misma dirección = Ultra convicción
+            dp_side = of_metrics.get('dark_pool_side')
+            if dp_side:
+                is_long = setups.get('long_mean_rev') or setups.get('long_momentum') or setups.get('long_scalp_break') or setups.get('long_rsi_explicit') or setups.get('long_macd_explicit') or setups.get('long_bb_explicit') or setups.get('long_volume_explicit')
+                if (is_long and dp_side == 'BUY') or (not is_long and dp_side == 'SELL'):
+                    strength *= 1.30
+                else:
+                    strength *= 0.80 # Dark Pool en contra
+                    
+            # Magnetic Pull: Atracción por niveles de liquidación cuántica
+            pull_up = of_metrics.get('magnetic_pull_up', 0.0)
+            pull_down = of_metrics.get('magnetic_pull_down', 0.0)
+            if pull_up > 0 and pull_down > 0:
+                is_long = setups.get('long_mean_rev') or setups.get('long_momentum') or setups.get('long_scalp_break') or setups.get('long_rsi_explicit') or setups.get('long_macd_explicit') or setups.get('long_bb_explicit') or setups.get('long_volume_explicit')
+                if (is_long and pull_up > pull_down * 1.5) or (not is_long and pull_down > pull_up * 1.5):
+                    strength *= 1.15
+        
         # 4. BONUS POR RSI EXTREMO (Solo para Mean Reversion)
         if (setups.get('long_mean_rev') or setups.get('short_mean_rev')) and (setups['rsi'] < 25 or setups['rsi'] > 75):
             strength *= 1.15
@@ -1066,6 +1120,18 @@ class HybridScalpingStrategy(Strategy):
             if volatility > 0.015:
                 strength *= 1.1 # Inverse penalty
             logger.debug(f"🚀 [CATALYST] Predator Aggression Active (x1.35).")
+            
+        # FASE 68: VPIN Toxicity Hard Block (Institucional Dump Protection)
+        vpin = of_metrics.get('vpin_toxicity', 0.0)
+        if vpin > 0.80:
+            is_long = setups.get('long_mean_rev') or setups.get('long_momentum') or setups.get('long_scalp_break') or setups.get('long_rsi_explicit') or setups.get('long_macd_explicit') or setups.get('long_bb_explicit') or setups.get('long_volume_explicit')
+            delta_flow = of_metrics.get('delta', 0.0)
+            
+            # Si es largo pero el flujo es negativo (ventas), o es corto y flujo es positivo (compras)
+            if (is_long and delta_flow < 0) or (not is_long and delta_flow > 0):
+                if hasattr(logger, 'warning'):
+                    logger.warning(f"☠️ [VPIN TOXICITY] HARD BLOCK! VPIN: {vpin:.2f} | Delta: {delta_flow:.0f}. Operación bloqueada contra cuchillo cayendo.")
+                strength = 0.0
         
         return min(strength, 1.0)
 
@@ -1164,6 +1230,55 @@ class HybridScalpingStrategy(Strategy):
                 if len(data_primary) < 5:
                     continue
 
+                # --- Mutación 22: Z-Score Flash-Crash Interceptor ---
+                of_metrics = self.data_provider.get_order_flow_metrics(symbol) if hasattr(self.data_provider, 'get_order_flow_metrics') else None
+                if of_metrics and of_metrics.get('flash_crash_anomaly', False):
+                    direction = of_metrics.get('flash_crash_direction')
+                    if direction:
+                        logger.critical(f"🚨 [FLASH-CRASH ANOMALY] {symbol} {direction} Triggered! Z-Score > 5 detected.")
+                        flash_signal = SignalType.LONG if direction == 'BUY' else SignalType.SHORT
+                        
+                        event_out = SignalEvent(
+                            symbol=symbol,
+                            signal_type=flash_signal,
+                            strength=1.0,
+                            horizon='MICROSCALPING',
+                            metrics={'setup_type': 'FLASH_CRASH_REVERSION', 'strength': 1.0, 'order_flow': of_metrics},
+                            strategy_id=self.strategy_id
+                        )
+                        event_out.is_urgent = True
+                        self.events_queue.put(event_out)
+                        continue
+
+                # 🚀 [PHASE 9] L2 Wick Sniper (Front-Running)
+                if of_metrics:
+                    of_delta = of_metrics.get('delta', 0.0)
+                    tot_vol = of_metrics.get('total_volume', 1.0)
+                    of_imbalance = of_delta / tot_vol if tot_vol > 0 else 0.0
+                    
+                    if abs(of_imbalance) > 0.85: # Threshold brutal de vaciado L2
+                        if of_imbalance < -0.85: # Vendedores atrapados = Reversal LONG
+                            sniper_signal = SignalType.LONG
+                            logger.critical(f"🎯 [WICK SNIPER] {symbol} Delta Masivo Negativo ({of_imbalance*100:.1f}%) absorbido. Disparando LONG Front-Run.")
+                        elif of_imbalance > 0.85: # Compradores atrapados = Reversal SHORT
+                            sniper_signal = SignalType.SHORT
+                            logger.critical(f"🎯 [WICK SNIPER] {symbol} Delta Masivo Positivo ({of_imbalance*100:.1f}%) absorbido. Disparando SHORT Front-Run.")
+                        else:
+                            sniper_signal = None
+                            
+                        if sniper_signal:
+                            event_out = SignalEvent(
+                                symbol=symbol,
+                                signal_type=sniper_signal,
+                                strength=1.0,  # Máxima convicción
+                                horizon='MICROSCALPING',
+                                metrics={'setup_type': 'L2_WICK_SNIPER', 'strength': 1.0, 'order_flow': of_metrics},
+                                strategy_id=self.strategy_id
+                            )
+                            event_out.is_urgent = True
+                            self.events_queue.put(event_out)
+                            continue
+
                 # Retrieve Brain for this symbol
                 # This ensures we have a genotype (created by get_symbol_params if needed)
                 # But get_symbol_params returns genes dict, we need the object for update.
@@ -1261,7 +1376,10 @@ class HybridScalpingStrategy(Strategy):
                     # 5. Determinar dirección y tipo de setup V5.8
                     signal_type = None
                     setup_type = "UNKNOWN"
-                    if setups.get('long_mean_rev') or setups.get('short_mean_rev'):
+                    if setups.get('liquidity_void_long') or setups.get('liquidity_void_short'):
+                        signal_type = SignalType.LONG if setups.get('liquidity_void_long') else SignalType.SHORT
+                        setup_type = "LIQUIDITY_VOID_SNIPER"
+                    elif setups.get('long_mean_rev') or setups.get('short_mean_rev'):
                         signal_type = SignalType.LONG if setups.get('long_mean_rev') else SignalType.SHORT
                         setup_type = "MEAN_REV"
                     elif setups.get('long_momentum') or setups.get('short_momentum'):
@@ -1326,8 +1444,82 @@ class HybridScalpingStrategy(Strategy):
                     setup_type = "FUSED_ML"
 
                 if signal_type is None:
+                    try:
+                        from core.global_state import global_state
+                        global_state.update_symbol_vector(symbol, {
+                            "tech_long_active": 0,
+                            "tech_short_active": 0
+                        })
+                    except Exception:
+                        pass
                     continue
+                else:
+                    try:
+                        from core.global_state import global_state
+                        global_state.update_symbol_vector(symbol, {
+                            "tech_long_active": 1 if signal_type == SignalType.LONG else 0,
+                            "tech_short_active": 1 if signal_type == SignalType.SHORT else 0
+                        })
+                    except Exception:
+                        pass
                 
+                # 🔮 FASE 5: MULTI-COIN ORACLE (LEAD-LAG ARBITRAGE)
+                if symbol != "BTC/USDT":
+                    try:
+                        from core.global_state import global_state
+                        btc_vel = getattr(global_state, 'btc_velocity', 0.0)
+                        if btc_vel > 0.005 and signal_type == SignalType.LONG:
+                            logger.critical(f"🚀 [MULTI-COIN ORACLE] BTC Velocity ALTA ({btc_vel:.4f}). Technical LONG acelerado en {symbol}!")
+                            # In technical, maybe skip the veto checks or boost confidence
+                            # Confidence isn't explicitly used here to veto, but we can bypass the oracle veto later
+                            pass
+                        elif btc_vel < -0.005 and signal_type == SignalType.SHORT:
+                            logger.critical(f"📉 [MULTI-COIN ORACLE] BTC Velocity NEGATIVA ({btc_vel:.4f}). Technical SHORT acelerado en {symbol}!")
+                    except Exception as e:
+                        pass
+                
+                # ═══════════════════════════════════════════════════
+                # Mutación 39: BAYESIAN MIRAGE (SPOOFING VETO)
+                # ═══════════════════════════════════════════════════
+                # QUÉ: Protege contra "Liquidity Traps" (muros falsos).
+                # POR QUÉ: Si entramos LONG apoyados en un gran Bid Wall, y este
+                #   fue calculado como Spoofing (>80%), nos van a liquidar cuando lo quiten.
+                direction_str = 'LONG' if signal_type == SignalType.LONG else 'SHORT'
+                
+                _of_metrics = self.data_provider.get_order_flow_metrics(symbol) if hasattr(self.data_provider, 'get_order_flow_metrics') else None
+                if _of_metrics:
+                    _prob_buy = _of_metrics.get('spoofing_prob_buy', 0.0)
+                    _prob_sell = _of_metrics.get('spoofing_prob_sell', 0.0)
+                    
+                    if direction_str == 'LONG' and _prob_buy > 0.80:
+                        logger.warning(f"🚨 [BAYESIAN MIRAGE] {symbol} LONG VETOED. Fake Buy Wall (Trap) Detected (Prob: {_prob_buy:.1%})")
+                        continue
+                        
+                    if direction_str == 'SHORT' and _prob_sell > 0.80:
+                        logger.warning(f"🚨 [BAYESIAN MIRAGE] {symbol} SHORT VETOED. Fake Sell Wall (Trap) Detected (Prob: {_prob_sell:.1%})")
+                        continue
+
+                # ═══════════════════════════════════════════════════════════════
+                # 🚀 FASE 12: CROSS-HORIZON RESONANCE (Filtro Cuántico)
+                # QUÉ: Suprime operaciones Scalp/Microscalp contra la tendencia Swing activa.
+                # POR QUÉ: Un Swing activo significa que el sesgo macro es fuerte en esa dirección.
+                # ═══════════════════════════════════════════════════════════════
+                portfolio = getattr(self, 'portfolio', None) or (getattr(self, '_engine_ref', None).portfolio if getattr(self, '_engine_ref', None) else None)
+                if portfolio and self.horizon in ("SCALPING", "MICROSCALPING", "MICRO"):
+                    active_pos = portfolio.positions.get(symbol, [])
+                    swing_opposing = any(
+                        p.get('horizon') == "SWING" and 
+                        ((p['direction'] == 1 and direction_str == "SHORT") or
+                         (p['direction'] == -1 and direction_str == "LONG"))
+                        for p in active_pos
+                    )
+                    if swing_opposing:
+                        logger.info(
+                            f"🛑 [CROSS-HORIZON RESONANCE] {symbol} {direction_str} BLOCKED | "
+                            f"Opposing active SWING position detected."
+                        )
+                        continue
+
                 # ═══════════════════════════════════════════════════
                 # PHASE 3: MULTI-HORIZON ORACLE VETO
                 # ═══════════════════════════════════════════════════
@@ -1345,7 +1537,26 @@ class HybridScalpingStrategy(Strategy):
                     # PARA QUÉ: Reducir la tasa de rechazo de señales sin eliminar la protección.
                     # CÓMO: Veto total solo si clash > 0.85 (extremo). De lo contrario, penalty.
                     if oracle_verdict['is_vetoed']:
-                        clash = oracle_verdict['clash_score']
+                        # 🔮 FASE 5: MULTI-COIN ORACLE (LEAD-LAG ARBITRAGE)
+                        # Bypass the veto if BTC velocity strongly supports this signal
+                        btc_vel_bypass = False
+                        if symbol != "BTC/USDT":
+                            try:
+                                from core.global_state import global_state
+                                btc_vel = getattr(global_state, 'btc_velocity', 0.0)
+                                if btc_vel > 0.005 and signal_type == SignalType.LONG:
+                                    btc_vel_bypass = True
+                                    logger.critical(f"🚀 [MULTI-COIN ORACLE] Ignorando Veto Macro para {symbol} LONG debido a BTC Velocity ({btc_vel:.4f}).")
+                                elif btc_vel < -0.005 and signal_type == SignalType.SHORT:
+                                    btc_vel_bypass = True
+                                    logger.critical(f"📉 [MULTI-COIN ORACLE] Ignorando Veto Macro para {symbol} SHORT debido a BTC Velocity ({btc_vel:.4f}).")
+                            except Exception as e:
+                                pass
+                                
+                        if btc_vel_bypass:
+                            pass # We ignore the veto completely
+                        else:
+                            clash = oracle_verdict['clash_score']
                         # QUÉ: Reducción del umbral de veto duro del oráculo macro de 0.85 a 0.60.
                         # POR QUÉ: Un clash_score > 0.60 indica una fuerte contradicción entre la señal y la macro-tendencia.
                         #   Dado el capital micro de $13 USD, no podemos permitirnos asumir riesgos innecesarios.
@@ -1392,6 +1603,13 @@ class HybridScalpingStrategy(Strategy):
                            (signal_type == SignalType.SHORT and trend_1h > 0):
                             continue
 
+                # 🌊 FASE 13: Microstructure Data Integration
+                if '_of_metrics' in locals() and _of_metrics:
+                    setups['order_flow'] = _of_metrics
+                else:
+                    _of_metrics = self.data_provider.get_order_flow_metrics(symbol) if hasattr(self.data_provider, 'get_order_flow_metrics') else {}
+                    setups['order_flow'] = _of_metrics
+                
                 # 6. Calcular fuerza (Pasando Símbolo y Setup_Type para Asimetría V5.8)
                 strength = self.calculate_signal_strength(setups, confluence_score, volatility, symbol, setup_type)
                 
@@ -1408,15 +1626,22 @@ class HybridScalpingStrategy(Strategy):
                 current_close = setups.get('close', 1)
                 atr_pct = current_atr / current_close if current_close > 0 else 0
                 
-                # FORENSIC-V81: Reduced from 0.15% to 0.04% for SCALPING
-                # QUÉ: BTC/SOL/BNB/XRP natural 1-min ATR is ~0.05%. Old 0.08% blocked 90%+ of entries.
-                # POR QUÉ: En periodos de baja volatilidad, BTC cae a ~0.04% ATR en M1.
-                # PARA QUÉ: Permitir trades en TODOS los regímenes de volatilidad, dejando que
-                #   el position sizing y el TP/SL se adapten al ATR real.
-                min_atr_required = 0.0004 if self.horizon == 'SCALPING' else 0.0025
+                # MÓDULO HORIZON: Pre-consensus ATR filter — horizon-differentiated
+                # QUÉ: Mínimo ATR requerido para generar señal, adaptado al horizonte.
+                # POR QUÉ: MICRO tolera ATR más bajo (SL ajustado protege), SWING necesita más.
+                # HORIZONTE | min_atr | Razón
+                # MICRO     | 0.02%  | Micro-edges en mercados quietos
+                # SCALP     | 0.04%  | Balance frecuencia/calidad
+                # SWING     | 0.15%  | Solo movimientos significativos
+                if self.horizon == 'MICROSCALPING':
+                    min_atr_required = 0.0002  # HORIZONTE: MICRO | 0.02%
+                elif self.horizon == 'SCALPING':
+                    min_atr_required = 0.0004  # HORIZONTE: SCALP | 0.04%
+                else:
+                    min_atr_required = 0.0015  # HORIZONTE: SWING | 0.15%
                 
                 if atr_pct < min_atr_required:
-                    logger.warning(f"🛑 [VOLATILITY BLOCK] {symbol} ATR {atr_pct*100:.3f}% < {min_atr_required*100:.3f}%")
+                    logger.warning(f"🛑 [VOLATILITY BLOCK] {symbol} {self.horizon} ATR {atr_pct*100:.3f}% < {min_atr_required*100:.3f}%")
                     continue
                 
                 if current_adx < ADX_THRESH:
@@ -1596,7 +1821,7 @@ class HybridScalpingStrategy(Strategy):
                     # PARA QUÉ: Permitir scalping durante consolidación en majors.
                     vol_ratio = current_atr / current_price
                     is_major = any(m in symbol for m in ['BTC', 'ETH', 'BNB', 'SOL'])
-                    vol_floor = 0.0003 if is_major else 0.0008  # 0.03% majors, 0.08% alts
+                    vol_floor = 0.0001 if is_major else 0.0002  # 0.01% majors, 0.02% alts (Relaxed for Micro-Scalping)
                     if vol_ratio < vol_floor:
                         logger.debug(f"💤 [V5.6] {symbol} Skipping: Low volatility ({vol_ratio*100:.3f}% < {vol_floor*100:.2f}%).")
                         continue
@@ -1748,10 +1973,10 @@ class HybridScalpingStrategy(Strategy):
                     #   generando 65+ zombies por backtest (TIME_STOP 90 min).
                     # PARA QUÉ: Reducir drásticamente los TIME_STOP_ZOMBIE, subiendo el Win Rate.
                     # ================================================================
-                    base_hurdle = 0.38  # FORENSIC FIX: was 0.03
+                    base_hurdle = 0.20  # FORENSIC FIX: was 0.38
                     if 'BTC' not in symbol:
-                        base_hurdle = 0.35  # FORENSIC FIX: was 0.025
-                        logger.debug(f"🔓 [V5.50 ALT-GATE] Using 0.35 hurdle for {symbol}")
+                        base_hurdle = 0.15  # FORENSIC FIX: was 0.35
+                        logger.debug(f"🔓 [V5.50 ALT-GATE] Using {base_hurdle} hurdle for {symbol}")
                     
                     hurdle = base_hurdle
                     
@@ -1945,6 +2170,26 @@ class HybridScalpingStrategy(Strategy):
                 
                 _metadata['neural_bias'] = neural_bias # For telemetry
                 
+                # 🧠 MUTACIÓN 42: Q-Learning On-The-Fly TP/SL Adjustment
+                try:
+                    from core.q_learning import q_agent
+                    # Build State Key
+                    regime = sophia_report.is_vortex_regime if sophia_report else False
+                    vol_level = int(min(5, (current_atr / setups['close']) / 0.001))
+                    q_state_key = q_agent._get_state_key(str(regime), vol_level, 0)
+                    
+                    action_idx, (tp_q_mult, sl_q_mult) = q_agent.get_action(q_state_key)
+                    final_tp_pct *= tp_q_mult
+                    final_sl_pct *= sl_q_mult
+                    
+                    # Store pending trade for reward linkage
+                    q_agent.pending_trades[symbol] = (q_state_key, action_idx)
+                    logger.debug(f"🧠 [Q-LEARNING] Adjusted TP/SL -> Action {action_idx} ({tp_q_mult}x, {sl_q_mult}x)")
+                    _metadata['q_action'] = action_idx
+                except Exception as e:
+                    logger.debug(f"Q-Learning hook failed: {e}")
+
+                
                 # ════════════════════════════════════════════════════════════════
                 # FORENSIC-V81: FINAL HARD CAP before emission (GOLDEN GENOTYPE)
                 # QUÉ: Cap absoluto post-modificadores alineado con Hyper-Evolver.
@@ -1954,7 +2199,20 @@ class HybridScalpingStrategy(Strategy):
                 # PARA QUÉ: Permitir TP viable de 0.163% (net ~0.12% after fees).
                 # GOLDEN GENOTYPE: TP=0.163%, SL=0.188% (Optuna Trial #47)
                 # ════════════════════════════════════════════════════════════════
-                if self.horizon == 'SCALPING':
+                if self.horizon == 'MICROSCALPING':
+                    # [QUANTUM EVOLUTION: FASE 2] Greedy Dynamic TP
+                    # El Breakeven cuántico ya nos protege, así que podemos ser avariciosos en setups extremos.
+                    if strength > 0.85:
+                        final_tp_pct *= 1.5
+                        logger.info(f"💎 [GREEDY TP] Microscalping TP expanded x1.5 to {final_tp_pct*100:.2f}% (High Strength)")
+                    elif setup_type == "LIQUIDITY_VOID_REVERSION":
+                        final_tp_pct *= 2.0
+                        logger.info(f"🕳️ [GREEDY TP] Microscalping TP expanded x2.0 to {final_tp_pct*100:.2f}% (Liquidity Void)")
+                        
+                    final_tp_pct = min(final_tp_pct, 0.0080) # Cap at 0.80% for micro
+                    final_sl_pct = min(final_sl_pct, 0.0030) # Cap at 0.30% for micro
+                    
+                elif self.horizon == 'SCALPING':
                     # FORENSIC-V156: Strict Caps to prevent Sophia from inflating TP/SL beyond M1 viability.
                     # TP > 0.40% is unrealistic for pure Scalping and causes Zombie trades.
                     final_tp_pct = min(final_tp_pct, 0.0040)  # Cap at 0.40%
@@ -2074,6 +2332,50 @@ class HybridScalpingStrategy(Strategy):
             else:
                 mem['state'] = 'NORMAL'
 
+    def _reconstruct_neural_state(self, closes, volumes, ps, gene_params, l2_state, window=5) -> np.ndarray:
+        """
+        Phase 48: Reconstructs the 25-feature state tensor for learning.
+        Must match core/fused_strategy_kernel.py logic exactly.
+        """
+        n = len(closes)
+        state = np.zeros(25, dtype=np.float32)
+        if n < 30: return state
+        
+        # 1. Returns (5)
+        for i in range(window):
+            idx = n - window + i
+            state[i] = (closes[idx] - closes[idx-1]) / closes[idx-1]
+            
+        # 2. Volumes (5)
+        vol_sum = np.sum(volumes[n-20:n])
+        mean_vol = vol_sum / 20.0 if vol_sum > 0 else 1.0
+        for i in range(window):
+            idx = n - window + i
+            state[5+i] = volumes[idx] / mean_vol
+            
+        # 3. Momentum Proxy (5)
+        for i in range(window):
+            idx = n - window + i
+            mom = (closes[idx] / closes[idx-2] - 1.0) if idx >= 2 else 0.0
+            state[10+i] = mom
+            
+        # Placeholder
+        for i in range(window):
+            state[15+i] = 0.0
+            
+        # Inject L2 Data (Phase 66: Orderbook Vectorization)
+        state[18] = l2_state[0] # ofi
+        state[19] = l2_state[1] # microprice_divergence
+            
+        # 4. Portfolio & Genes
+        state[20] = ps[0]
+        state[21] = ps[1]
+        state[22] = ps[2]
+        state[23] = gene_params[0]
+        state[24] = gene_params[1]
+        
+        return state
+
     def get_fused_insight(self, symbol, data, portfolio_state=None):
         """
         [PHASE 65] Fused End-to-End Decision.
@@ -2112,8 +2414,16 @@ class HybridScalpingStrategy(Strategy):
         # State Reconstruction (Phase 48: For Learning Feedback)
         state_tensor = self._reconstruct_neural_state(closes, volumes, ps, gene_params)
         
+        # L2 State Extraction from SSOT (GlobalMarketState)
+        from core.global_state import global_state
+        l2_state = np.zeros(2, dtype=np.float32)
+        if symbol in global_state.symbol_states:
+            sv = global_state.symbol_states[symbol]
+            l2_state[0] = sv.orderflow_imbalance
+            l2_state[1] = sv.microprice_divergence
+        
         action_scores = fused_compute_step(
-            closes, volumes, ps, gene_params, weights_arr
+            closes, volumes, ps, gene_params, weights_arr, l2_state
         )
         
         # 5. Decode Decision

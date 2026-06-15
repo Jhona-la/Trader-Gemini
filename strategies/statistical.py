@@ -314,9 +314,14 @@ class StatisticalStrategy(Strategy):
                     bars_y_long = self.data_provider.get_latest_bars(y_sym, n=self.long_window, timeframe=self.primary_tf)
                     bars_x_long = self.data_provider.get_latest_bars(x_sym, n=self.long_window, timeframe=self.primary_tf)
                     if bars_y_long is not None and bars_x_long is not None and len(bars_y_long) >= 100:
-                        y_long = np.array([b['close'] for b in bars_y_long], dtype=np.float64)  # F6
-                        x_long = np.array([b['close'] for b in bars_x_long], dtype=np.float64)  # F6
-                        spread_long = safe_div(y_long, x_long)
+                        # FORENSIC-FIX: Use structured array direct access instead of list comprehension
+                        y_long = np.array(bars_y_long['close'], dtype=np.float64)  
+                        x_long = np.array(bars_x_long['close'], dtype=np.float64)  
+                        
+                        # FORENSIC-FIX: Match the scale of short-term spread! 
+                        # Short-term spread uses log prices and beta. Long-term MUST use the same formula.
+                        # Using safe_div(y, x) creates a scale mismatch, resulting in absurd vol_ratios (e.g., 33.3x)
+                        spread_long = np.log(y_long) - beta * np.log(x_long)
                         std_long = np.std(spread_long[np.isfinite(spread_long)])
                     else:
                         std_long = std_spread
@@ -432,14 +437,14 @@ class StatisticalStrategy(Strategy):
                         print(f"  🚑 Closing naked leg {y_sym}")
                         
                         from datetime import datetime, timezone
-                        signal_timestamp = datetime.now(timezone.utc)
+                        signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                         
                         self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
                     if qty_x != 0:
                         print(f"  🚑 Closing naked leg {x_sym}")
                         
                         from datetime import datetime, timezone
-                        signal_timestamp = datetime.now(timezone.utc)
+                        signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                         
                         self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
                     continue # Stop processing for this symbol
@@ -491,7 +496,7 @@ class StatisticalStrategy(Strategy):
                             print(f"ENTRY LONG SPREAD: Buy {y_sym}, Short {x_sym} (Z={z_score:.2f}, Strength={strength:.2f}, 1h Trend: {trend_y})")
                             
                             from datetime import datetime, timezone
-                            signal_timestamp = datetime.now(timezone.utc)
+                            signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                             
                             self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
                             self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
@@ -543,7 +548,7 @@ class StatisticalStrategy(Strategy):
                             print(f"ENTRY SHORT SPREAD: Short {y_sym}, Buy {x_sym} (Z={z_score:.2f}, Strength={strength:.2f}, 1h Trend: {trend_x})")
                             
                             from datetime import datetime, timezone
-                            signal_timestamp = datetime.now(timezone.utc)
+                            signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                             
                             self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
                             self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
@@ -555,7 +560,7 @@ class StatisticalStrategy(Strategy):
                         print(f"EXIT LONG SPREAD (Z={z_score:.2f})")
                         
                         from datetime import datetime, timezone
-                        signal_timestamp = datetime.now(timezone.utc)
+                        signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                         
                         self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
                         self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
@@ -566,7 +571,7 @@ class StatisticalStrategy(Strategy):
                         print(f"EXIT SHORT SPREAD (Z={z_score:.2f})")
                         
                         from datetime import datetime, timezone
-                        signal_timestamp = datetime.now(timezone.utc)
+                        signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                         
                         self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
                         self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))

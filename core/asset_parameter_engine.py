@@ -40,9 +40,11 @@ class AssetProfile:
         'symbol', 'atr_14_pct', 'avg_daily_range_pct', 'volatility_pct',
         'optimal_tp_scalping', 'optimal_sl_scalping',
         'optimal_tp_swing', 'optimal_sl_swing',
+        'optimal_tp_micro', 'optimal_sl_micro',  # HORIZON: MICRO
         'last_price', 'last_calculated', 'data_points',
         'atr_1m_pct', 'atr_5m_pct', 'atr_1h_pct',
-        'leverage_scalping', 'leverage_swing', 'max_risk_pct'
+        'leverage_scalping', 'leverage_swing', 'leverage_micro',  # HORIZON: MICRO
+        'max_risk_pct'
     ]
     
     def __init__(self, symbol: str):
@@ -54,6 +56,8 @@ class AssetProfile:
         self.optimal_sl_scalping = 0.002
         self.optimal_tp_swing = 0.045
         self.optimal_sl_swing = 0.025
+        self.optimal_tp_micro = 0.0020  # HORIZON: MICRO default
+        self.optimal_sl_micro = 0.0012  # HORIZON: MICRO default
         self.last_price = 0.0
         self.last_calculated = 0.0
         self.data_points = 0
@@ -62,6 +66,7 @@ class AssetProfile:
         self.atr_1h_pct = 0.0
         self.leverage_scalping = 10
         self.leverage_swing = 10
+        self.leverage_micro = 15  # HORIZON: MICRO default
         self.max_risk_pct = 0.02
     
     def to_dict(self):
@@ -99,20 +104,28 @@ class AssetParameterEngine:
     """
     
     # ═══════════════════════════════════════════════════════════════
-    # IMMUTABLE SAFETY CONSTRAINTS
+    # IMMUTABLE SAFETY CONSTRAINTS — PER HORIZON
     # These floors and ceilings can NEVER be violated.
     # POR QUÉ: Mathematical survival — R:R < 1.5:1 with WR < 65% = guaranteed ruin.
+    # MÓDULO HORIZON: Each horizon has its own bounds.
     # ═══════════════════════════════════════════════════════════════
     MIN_RR_RATIO = 1.5        # NEVER trade with R:R below this
     
-    # Scalping bounds
+    # MICROSCALPING bounds — HORIZON: MICRO
+    MICRO_SL_MIN = 0.0005     # 0.05% — tight noise floor
+    MICRO_SL_MAX = 0.0030     # 0.30% — max SL for micro
+    MICRO_TP_MIN = 0.0008     # 0.08% — min TP for micro
+    MICRO_TP_MAX = 0.0060     # 0.60% — max TP for micro
+    MICRO_ATR_MULT = 0.40     # SL = 40% of ATR-1m (very tight)
+    
+    # Scalping bounds — HORIZON: SCALP
     SCALPING_SL_MIN = 0.0015  # 0.15% — min SL (floor to survive noise)
     SCALPING_SL_MAX = 0.0150  # 1.50% — max SL (Reality Veto — prevents Zombies)
     SCALPING_TP_MIN = 0.0020  # 0.20% — min TP (floor TP)
     SCALPING_TP_MAX = 0.0300  # 3.00% — max TP (Reality Veto — prevents Zombies)
     SCALPING_ATR_MULT = 1.0   # SL = 100% of ATR (allow more breathing room)
     
-    # Swing bounds
+    # Swing bounds — HORIZON: SWING
     SWING_SL_MIN = 0.008      # 0.80% — min SL for swing
     SWING_SL_MAX = 0.050      # 5.00% — max SL for swing
     SWING_TP_MIN = 0.015      # 1.50% — min TP for swing
@@ -153,37 +166,48 @@ class AssetParameterEngine:
             self._profiles[clean] = AssetProfile(clean)
         return self._profiles[clean]
 
+    def _get_bounds(self, horizon_key: str) -> tuple:
+        """
+        MÓDULO HORIZON: Return (sl_min, sl_max, tp_min, tp_max, atr_mult) for horizon.
+        QUÉ: Resolver los bounds de TP/SL por horizonte.
+        POR QUÉ: MICRO necesita bounds mucho más ajustados que SCALP/SWING.
+        """
+        if horizon_key == "MICROSCALPING":
+            return (self.MICRO_SL_MIN, self.MICRO_SL_MAX,
+                    self.MICRO_TP_MIN, self.MICRO_TP_MAX, self.MICRO_ATR_MULT)
+        elif horizon_key == "SWING":
+            return (self.SWING_SL_MIN, self.SWING_SL_MAX,
+                    self.SWING_TP_MIN, self.SWING_TP_MAX, self.SWING_ATR_MULT)
+        else:  # SCALPING (default)
+            return (self.SCALPING_SL_MIN, self.SCALPING_SL_MAX,
+                    self.SCALPING_TP_MIN, self.SCALPING_TP_MAX, self.SCALPING_ATR_MULT)
+
     def get_leverage(self, symbol: str, horizon: str = "SCALPING") -> int:
         """
-        QUÉ: Retorna el apalancamiento objetivo dinámico por activo.
-        POR QUÉ: BTC puede usar 20x, WIF solo 2x. Limita el riesgo estructural.
+        QUÉ: Retorna el apalancamiento objetivo dinámico por activo y horizonte.
         """
         from config import Config
-        prof = Config.SymbolProfiles.get(symbol)
-        base_lev = prof.get("base_leverage", 5)
-        
-        # OMEGA: Swing horizon may need slightly more leverage to meet notional if SL is wider
-        # But we cap safely.
-        if horizon.upper() == "SWING":
-            return min(base_lev, 20)
-        return base_lev
+        prof = Config.SymbolProfiles.get(symbol, horizon)
+        return prof.get("base_leverage", 5)
 
-    def get_risk_pct(self, symbol: str) -> float:
+    def get_risk_pct(self, symbol: str, horizon: str = "SCALPING") -> float:
         """
-        QUÉ: Retorna el porcentaje máximo de riesgo permitido para el activo.
+        QUÉ: Retorna el porcentaje máximo de riesgo permitido para el activo y horizonte.
         """
         from config import Config
-        prof = Config.SymbolProfiles.get(symbol)
+        prof = Config.SymbolProfiles.get(symbol, horizon)
         return prof.get("max_risk_pct", 0.02)
 
     
     def get_tp(self, symbol: str, horizon: str = "SCALPING", direction: str = "LONG") -> float:
         """
         QUÉ: Retorna el TP óptimo para este activo y horizonte, ajustado por dirección.
+        MÓDULO HORIZON: Uses _get_bounds() for horizon-specific clipping.
         """
         profile = self.get_profile(symbol)
         clean = symbol.replace("/", "").upper()
         horizon_key = horizon.upper()
+        sl_min, sl_max, tp_min, tp_max, _ = self._get_bounds(horizon_key)
         
         # Resolve correct SL first (which resolves the correct ATR dynamically)
         sl = self.get_sl(symbol, horizon, direction)
@@ -197,35 +221,20 @@ class AssetParameterEngine:
                     prof_data = v
                     break
             if prof_data and 'tp_rr_ratio' in prof_data:
-                import numpy as np
                 tp_rr_ratio = prof_data['tp_rr_ratio']
-                
-                # Apply short asymmetry if short
                 if direction.upper() == "SHORT":
                     tp_rr_ratio *= 0.8
-                    
                 raw_tp = sl * tp_rr_ratio
-                if horizon_key == "SWING":
-                    return float(np.clip(raw_tp, self.SWING_TP_MIN, self.SWING_TP_MAX * 1.5))
-                else:
-                    return float(np.clip(raw_tp, self.SCALPING_TP_MIN, self.SCALPING_TP_MAX * 1.5))
+                return float(np.clip(raw_tp, tp_min, tp_max * 1.5))
                     
         # 2. [SHORT INTELLIGENCE: Mantener R:R de 2:1 basado en el SL ampliado]
         if direction.upper() == "SHORT":
             raw_tp = sl * 2.0
-            import numpy as np
-            if horizon_key == "SWING":
-                return float(np.clip(raw_tp, self.SWING_TP_MIN, self.SWING_TP_MAX * 1.5))
-            else:
-                return float(np.clip(raw_tp, self.SCALPING_TP_MIN, self.SCALPING_TP_MAX * 1.5))
+            return float(np.clip(raw_tp, tp_min, tp_max * 1.5))
                 
         # 3. Dynamic fallback for LONG without overrides (Target 2:1 R:R)
-        import numpy as np
         raw_tp = sl * 2.0
-        if horizon_key == "SWING":
-            return float(np.clip(raw_tp, self.SWING_TP_MIN, self.SWING_TP_MAX))
-        else:
-            return float(np.clip(raw_tp, self.SCALPING_TP_MIN, self.SCALPING_TP_MAX))
+        return float(np.clip(raw_tp, tp_min, tp_max))
     
     def get_sl(self, symbol: str, horizon: str = "SCALPING", direction: str = "LONG") -> float:
         """
@@ -234,6 +243,7 @@ class AssetParameterEngine:
         profile = self.get_profile(symbol)
         clean = symbol.replace("/", "").upper()
         horizon_key = horizon.upper()
+        sl_min, sl_max, tp_min, tp_max, atr_mult = self._get_bounds(horizon_key)
         
         # Resolve correct ATR for this horizon
         atr = profile.atr_1h_pct if horizon_key == "SWING" else (profile.atr_1m_pct if horizon_key == "MICROSCALPING" else profile.atr_5m_pct)
@@ -251,22 +261,14 @@ class AssetParameterEngine:
                     prof_data = v
                     break
             if prof_data and 'sl_atr_mult' in prof_data:
-                import numpy as np
                 sl_mult = prof_data['sl_atr_mult']
-                
-                # Apply short asymmetry if short
                 if direction.upper() == "SHORT":
                     sl_mult *= 1.2
-                    
                 raw_sl = atr * sl_mult
-                if horizon_key == "SWING":
-                    return float(np.clip(raw_sl, self.SWING_SL_MIN, self.SWING_SL_MAX * 1.5))
-                else:
-                    return float(np.clip(raw_sl, self.SCALPING_SL_MIN, self.SCALPING_SL_MAX * 1.5))
+                return float(np.clip(raw_sl, sl_min, sl_max * 1.5))
                     
         # [SHORT INTELLIGENCE: Stop Placement asimétrico]
         if direction.upper() == "SHORT":
-            import numpy as np
             sym = symbol.replace("/", "").upper()
             
             # Fallo Tipo 3: Multiplicadores ATR más amplios para Shorts
@@ -280,14 +282,13 @@ class AssetParameterEngine:
             # Escalar proporcionalmente al horizonte
             base_mult = mult if horizon_key == "SWING" else mult * (self.SCALPING_ATR_MULT / self.SWING_ATR_MULT)
             raw_sl = atr * base_mult
-            
-            if horizon_key == "SWING":
-                return float(np.clip(raw_sl, self.SWING_SL_MIN, self.SWING_SL_MAX * 1.5))
-            else:
-                return float(np.clip(raw_sl, self.SCALPING_SL_MIN, self.SCALPING_SL_MAX * 1.5))
+            return float(np.clip(raw_sl, sl_min, sl_max * 1.5))
                 
-        if horizon == "SWING":
+        # Default LONG fallback — MÓDULO HORIZON: per-horizon profiles
+        if horizon_key == "SWING":
             return profile.optimal_sl_swing
+        elif horizon_key == "MICROSCALPING":
+            return profile.optimal_sl_micro
         return profile.optimal_sl_scalping
     
     def get_params(self, symbol: str, horizon: str = "SCALPING", direction: str = "LONG") -> dict:

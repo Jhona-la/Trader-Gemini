@@ -3,7 +3,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import numpy as np
-from utils.logger import logger
+from utils.logger import logger, log_supreme_event
 from data.database import DatabaseHandler
 from core.enums import TradeDirection
 import uuid
@@ -139,22 +139,42 @@ class ExitOracle:
             if duration_mins > target_mins:
                 omni_peak_passed = True
 
-        # Adaptive Hard Caps
-        adaptive_scalp_ttl = 60.0
-        if horizon == 'SCALPING' and duration_mins > adaptive_scalp_ttl:
-            if pnl_pct < 0.0:
-                return "CLOSE_ML_ALPHA_DECAY", f"ML Scalping Hard TTL ({duration_mins:.1f}m > {adaptive_scalp_ttl:.0f}m max)"
-            elif pnl_pct > 0.0:
-                pos_data['chasing_mode'] = True
-                logger.info(f"⏳ [CHASING MODE] ML Scalping trade exceeded TTL ({duration_mins:.1f}m) but profitable (+{pnl_pct*100:.2f}%). Activating Chasing Mode.")
-        elif horizon == 'SWING' and duration_mins > 360.0:
-            if pnl_pct < 0.0:
-                return "CLOSE_ML_ALPHA_DECAY", f"ML Swing Hard TTL ({duration_mins:.1f}m > 360m, PnL={pnl_pct*100:.2f}%)"
-            elif pnl_pct > 0.0:
-                pos_data['chasing_mode'] = True
-                logger.info(f"⏳ [CHASING MODE] ML Swing trade exceeded TTL ({duration_mins:.1f}m) but profitable (+{pnl_pct*100:.2f}%). Activating Chasing Mode.")
+        # ════════════════════════════════════════════════════════════════
+        # 📉 ALPHA DECAY ENGINE (SCALPING vs SWING)
+        # ════════════════════════════════════════════════════════════════
+        import math
+        
+        # Inyección Dinámica del Perfil Adaptativo
+        profile = pos_data.get('metadata', {}).get('adaptive_profile', {})
+        max_ttl_scalp = profile.get('alpha_max_ttl', 60.0) if horizon == 'SCALPING' else 60.0
+        max_ttl_swing = profile.get('alpha_max_ttl', 360.0) if horizon == 'SWING' else 360.0
+        
+        # Función de Retención del Alpha (1.0 = Max Edge, 0.0 = Dead Edge)
+        alpha_retention = 1.0
+        
+        if horizon == 'SCALPING':
+            # Exponential Decay: e^(-lambda * t)
+            lambda_scalp = profile.get('alpha_decay_lambda', 0.05)
+            alpha_retention = math.exp(-lambda_scalp * duration_mins)
+            
+            if duration_mins > max_ttl_scalp:
+                if pnl_pct < 0.0:
+                    return "CLOSE_ML_ALPHA_DECAY", f"Scalping Hard TTL ({duration_mins:.1f}m > {max_ttl_scalp:.0f}m)"
+                elif pnl_pct > 0.0:
+                    pos_data['chasing_mode'] = True
+                    logger.info(f"⏳ [CHASING MODE] Scalping trade > TTL ({duration_mins:.1f}m) but +{pnl_pct*100:.2f}%. Activating Chasing.")
+        else:
+            # SWING: Linear Decay: 1 - (t / max_ttl)
+            alpha_retention = max(0.0, 1.0 - (duration_mins / max_ttl_swing))
+            
+            if duration_mins > max_ttl_swing:
+                if pnl_pct < 0.0:
+                    return "CLOSE_ML_ALPHA_DECAY", f"Swing Hard TTL ({duration_mins:.1f}m > {max_ttl_swing:.0f}m)"
+                elif pnl_pct > 0.0:
+                    pos_data['chasing_mode'] = True
+                    logger.info(f"⏳ [CHASING MODE] Swing trade > TTL ({duration_mins:.1f}m) but +{pnl_pct*100:.2f}%. Activating Chasing.")
 
-        # Trajectory-based decisions
+        # Trajectory-based decisions with Dynamic Decay
         if pred_magnitude and pred_magnitude > 0 and pred_duration and pred_duration > 0:
             progress_ratio = abs(pnl_pct) / pred_magnitude if pred_magnitude > 0 else 0
             time_ratio = duration_mins / max(1, pred_duration)
@@ -163,8 +183,11 @@ class ExitOracle:
                 return "CLOSE_ML_ALPHA_DECAY", f"Omniscience Evasion (Projected adverse excursion, locking {pnl_pct*100:.2f}% profit)"
             elif omni_peak_passed and pnl_pct > 0.002 and time_ratio > 1.1:
                 return "CLOSE_ML_ALPHA_DECAY", f"Omniscience Peak Passed (Duration {duration_mins:.0f}m > projected peak, locking {pnl_pct*100:.2f}%)"
-            elif time_ratio > 0.8 and progress_ratio < 0.3 and pnl_pct < 0.0006:
-                return "CLOSE_ML_ALPHA_DECAY", f"ML Prediction Miss (Progress={progress_ratio*100:.0f}% in {time_ratio*100:.0f}% time)"
+            
+            # Decay-aware prediction miss
+            threshold_time = 0.8 if horizon == 'SWING' else 0.6
+            if time_ratio > threshold_time and progress_ratio < 0.3 and pnl_pct < 0.0006:
+                return "CLOSE_ML_ALPHA_DECAY", f"ML Prediction Miss under Alpha Decay (Retention={alpha_retention:.2f}, Progress={progress_ratio*100:.0f}%)"
             elif time_ratio > 1.5 and pnl_pct < 0.0006:
                 return "CLOSE_ML_ALPHA_DECAY", f"ML Time Exhaustion (>{int(pred_duration*1.5)}m, PnL={pnl_pct*100:.2f}%)"
         
@@ -174,18 +197,37 @@ class ExitOracle:
                 elapsed_bars=duration_mins,
                 horizon=horizon
             )
+            # Edge weighted by alpha retention
+            dynamic_edge = edge_prob * alpha_retention
+            
+            # FORENSIC AUDIT: Record dynamic decay metrics
+            if 'metrics' not in pos_data:
+                pos_data['metrics'] = {}
+            pos_data['metrics']['alpha_retention'] = alpha_retention
+            pos_data['metrics']['dynamic_edge'] = dynamic_edge
+            pos_data['metrics']['alpha_decay'] = 1.0 - alpha_retention
+            
+            # CORRELACIÓN ADAPTIVE PROFILE ENGINE LOGGING
+            if int(duration_mins) > pos_data.get('_last_decay_log_min', -1) and duration_mins > 0:
+                pos_data['_last_decay_log_min'] = int(duration_mins)
+                logger.debug(f"📉 [ALPHA DECAY AUDIT] {symbol} ({horizon}) | "
+                             f"Lambda: {profile.get('alpha_decay_lambda', 0):.4f} | "
+                             f"MaxTTL: {profile.get('alpha_max_ttl', 0):.1f} | "
+                             f"Retention: {alpha_retention:.2f} | "
+                             f"BaseEdge: {edge_prob:.2f} | "
+                             f"DynEdge: {dynamic_edge:.2f} | PnL: {pnl_pct*100:.2f}%")
+            
             critical_threshold = 0.45
             if pnl_pct >= 0.0006:
                 critical_threshold = 0.35
                 
-            if edge_prob < critical_threshold:
-                if not (0 < pnl_pct < 0.0015 and edge_prob >= 0.25):
-                    return "CLOSE_ML_ALPHA_DECAY", f"ML Alpha Decay (Edge={edge_prob:.2f} < {critical_threshold}, PnL={pnl_pct*100:.2f}%)"
+            if dynamic_edge < critical_threshold:
+                if not (0 < pnl_pct < 0.0015 and dynamic_edge >= 0.25):
+                    return "CLOSE_ML_ALPHA_DECAY", f"ML Alpha Decay (DynamicEdge={dynamic_edge:.2f} < {critical_threshold}, PnL={pnl_pct*100:.2f}%)"
         else:
-            # Fallback legacy threshold
-            base_threshold = 15.0 if horizon == 'SCALPING' else 180.0
-            if duration_mins > base_threshold and pnl_pct < 0.0006:
-                return "CLOSE_ML_ALPHA_DECAY", f"Fallback ML Alpha Decay ({duration_mins:.1f}m, PnL={pnl_pct*100:.2f}%)"
+            # Fallback threshold adjusted by Decay
+            if alpha_retention < 0.15 and pnl_pct < 0.0006:
+                return "CLOSE_ML_ALPHA_DECAY", f"Alpha Depleted (Retention < 0.15, {duration_mins:.1f}m, PnL={pnl_pct*100:.2f}%)"
 
         return "KEEP_OPEN", ""
 
@@ -213,20 +255,24 @@ class ExitOracle:
         from utils.math_kernel import calculate_rsi_jit, calculate_bollinger_jit
 
         # 1. RSI Extreme Exit
+        profile = pos_data.get('metadata', {}).get('adaptive_profile', {})
+        # Fallback to Config if metadata not injected (retro-compatibility)
+        if not profile:
+            from config import Config
+            profile = Config.SymbolProfiles.get(symbol, horizon)
+            
+        rsi_overbought = profile.get('rsi_overbought', 80.0 if horizon == 'SCALPING' else 75.0)
+        rsi_oversold = profile.get('rsi_oversold', 20.0 if horizon == 'SCALPING' else 25.0)
+
         rsi_vals = calculate_rsi_jit(closes, period=14)
         if len(rsi_vals) > 0 and not np.isnan(rsi_vals[-1]):
             rsi = rsi_vals[-1]
             if direction == 1:
-                rsi_overbought = 80.0 if horizon == 'SCALPING' else 75.0
                 if rsi > rsi_overbought:
-                    # FORENSIC-V90: Avoid premature fee-drag exits under $13 capital.
-                    # Only exit on RSI overbought if we have at least 0.15% profit to cover fees.
                     if horizon != 'SCALPING' or pnl_pct >= 0.0015:
                         return "CLOSE_TECH_REVERSAL", f"Technical Overbought RSI ({rsi:.1f} > {rsi_overbought:.0f})"
             else:
-                rsi_oversold = 20.0 if horizon == 'SCALPING' else 25.0
                 if rsi < rsi_oversold:
-                    # Only exit on RSI oversold if we have at least 0.15% profit to cover fees.
                     if horizon != 'SCALPING' or pnl_pct >= 0.0015:
                         return "CLOSE_TECH_REVERSAL", f"Technical Oversold RSI ({rsi:.1f} < {rsi_oversold:.0f})"
 
@@ -620,6 +666,36 @@ class ExitOracle:
                 verdicts.append(verdict)
                 if should_exit:
                     logger.info(f"🔮 [ExitOracle] EXIT APPROVED for {symbol} ({trade_id}) - Reason: {final_reason}")
+                    
+                    import logging
+                    log_supreme_event(
+                        logger_instance=logger,
+                        level=logging.INFO,
+                        event_id=f"ORACLE_EXIT_{trade_id}",
+                        que_ocurrio={
+                            "tipo_evento": "EXIT_DECISION",
+                            "descripcion": f"Cierre aprobado para {symbol} ({horizon})",
+                            "resultado": "EXIT_APPROVED"
+                        },
+                        por_que_ocurrio={
+                            "razon_principal": final_reason,
+                            "estrategias_proponentes": votes_to_exit,
+                            "ratio_consenso": consensus_ratio
+                        },
+                        como_ocurrio={
+                            "pnl_actual": pnl,
+                            "tiempo_abierto_mins": duration_mins,
+                            "motor_decisor": engine_id
+                        },
+                        donde_ocurrio={
+                            "modulo": "ExitOracle",
+                            "funcion": "evaluate_open_positions"
+                        },
+                        quien_lo_provoco={
+                            "componente": "OracleConsensus",
+                            "metadata_trade": pos_data.get('metadata', {})
+                        }
+                    )
                 else:
                     logger.debug(f"🔮 [ExitOracle] UPDATE TARGETS for {symbol} ({trade_id}) - {dynamic_targets}")
             

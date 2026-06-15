@@ -15,18 +15,19 @@ def benchmark_fused_kernel():
     closes = np.random.randn(n_bars).astype(np.float32) + 100
     volumes = np.random.randn(n_bars).astype(np.float32) * 100 + 1000
     
-    portfolio_state = np.array([1.0, 0.05, 0.2], dtype=np.float32)
-    gene_params = np.array([0.02, 0.015], dtype=np.float32)
-    brain_weights = np.random.randn(100).astype(np.float32)
+    portfolio_state = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+    genes = np.array([0.02, 0.015], dtype=np.float32)
+    weights = np.random.randn(100).astype(np.float32)
+    l2_state = np.array([0.1, -0.05], dtype=np.float32)
     
-    # Warm-up
-    fused_compute_step(closes, volumes, portfolio_state, gene_params, brain_weights)
+    # JIT Compile
+    fused_compute_step(closes, volumes, portfolio_state, genes, weights, l2_state)
     
     # 1. Measure Single Step Latency
     n_iterations = 10000
     start = time.perf_counter()
     for _ in range(n_iterations):
-        res = fused_compute_step(closes, volumes, portfolio_state, gene_params, brain_weights)
+        res = fused_compute_step(closes, volumes, portfolio_state, genes, weights, l2_state)
     end = time.perf_counter()
     
     avg_lat = (end - start) * 1e6 / n_iterations # Microseconds

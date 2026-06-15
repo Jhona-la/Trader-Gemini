@@ -1068,19 +1068,19 @@ class SophiaIntelligence:
         """
         if horizon_days <= 1:
             self.chaos_dampening_factor = 1.0
-            self.certainty_floor = 0.65  # [PHASE 3] DARWINIAN VETO: 65% min confidence
+            self.certainty_floor = 0.50  # [PHASE 11] AGGRESSIVE SCALPING for micro-accounts
             self.horizon_profile = 'SCALPING'
         elif horizon_days <= 7:
             self.chaos_dampening_factor = 0.7
-            self.certainty_floor = 0.65
+            self.certainty_floor = 0.55
             self.horizon_profile = 'SHORT_TERM'
         elif horizon_days <= 15:
             self.chaos_dampening_factor = 0.5
-            self.certainty_floor = 0.65
+            self.certainty_floor = 0.60
             self.horizon_profile = 'MID_TERM'
         else:
             self.chaos_dampening_factor = 0.3
-            self.certainty_floor = 0.75
+            self.certainty_floor = 0.65
             self.horizon_profile = 'MACRO'
         
         logger.info(

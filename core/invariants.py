@@ -33,11 +33,12 @@ class SystemInvariants:
 
     @staticmethod
     def _check_self_hedging(intent: TradeIntent) -> Tuple[bool, str]:
-        """Evita abrir un LONG si ya hay un SHORT activo en el mismo símbolo."""
-        pos = global_state.get_open_position(intent.symbol)
+        """Evita abrir un LONG si ya hay un SHORT activo en el mismo símbolo (intra-horizon)."""
+        intent_horizon = getattr(intent, 'horizon', 'SCALPING')
+        pos = global_state.get_open_position(intent.symbol, horizon=intent_horizon)
         if pos and pos.quantity != 0:
             if pos.direction != intent.direction and intent.direction != 'EXIT':
-                return False, f"Self-Hedging Blocked: Existing {pos.direction}, Intent {intent.direction}"
+                return False, f"Self-Hedging Blocked ({intent_horizon}): Existing {pos.direction}, Intent {intent.direction}"
         return True, ""
 
     @staticmethod

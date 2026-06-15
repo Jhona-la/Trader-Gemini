@@ -20,9 +20,18 @@ class CostGuard:
             if not Config.BINANCE_USE_FUTURES:
                 return True
                 
-            # Fetch Funding Rate
-            funding_info = exchange.fetch_funding_rate(symbol)
-            funding_rate = funding_info.get('fundingRate', 0)
+            # ⚡ FASE 10: Zero-Latency Check (RAM)
+            from data.data_provider import get_data_provider
+            dp = get_data_provider()
+            
+            funding_rate = 0.0
+            if dp:
+                metrics = dp.get_derivatives_metrics(symbol)
+                if metrics and 'funding_rate' in metrics:
+                    funding_rate = float(metrics['funding_rate'])
+            
+            # Si no hay data de websocket aún, intentamos fallback pero NO bloqueamos
+            # Si funding_rate es 0.0, asumimos seguro para no frenar la orden.
             
             # Logic:
             # - Si vamos LONG y funding es POSITIVO -> Pagamos nosotros. (Malo si es muy alto)

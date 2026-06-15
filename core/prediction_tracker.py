@@ -465,6 +465,20 @@ class PredictionTracker:
             # Horizon breakdown
             horizon = signals[-1].horizon if signals else 'SCALPING'
 
+            # CTOS Phase 6: Hyper-Growth (Streak Tracking)
+            current_win_streak = 0
+            current_loss_streak = 0
+            if resolved:
+                for s in reversed(resolved):
+                    if s.trade_outcome == 'win':
+                        if current_loss_streak > 0:
+                            break
+                        current_win_streak += 1
+                    elif s.trade_outcome == 'loss':
+                        if current_win_streak > 0:
+                            break
+                        current_loss_streak += 1
+
             new_cache[strat_id] = {
                 'strategy_id': strat_id,
                 'horizon': horizon,
@@ -481,6 +495,8 @@ class PredictionTracker:
                 'trades_resolved': wins + losses,
                 'trades_won': wins,
                 'trades_lost': losses,
+                'current_win_streak': current_win_streak,
+                'current_loss_streak': current_loss_streak,
             }
 
         self._metrics_cache = new_cache

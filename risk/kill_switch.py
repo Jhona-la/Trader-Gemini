@@ -23,7 +23,9 @@ class KillSwitch:
     3. Atomic Lock: File-based persistence to prevent auto-restart loops.
     """
     
-    LOCK_FILE = "STOP_TRADING.LOCK"
+    @property
+    def LOCK_FILE(self):
+        return os.path.join(Config.DATA_DIR, "STOP_TRADING.LOCK")
     
     def __init__(self, portfolio):
         self.portfolio = portfolio

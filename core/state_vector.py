@@ -17,6 +17,9 @@ class SymbolStateVector:
     orderflow_imbalance: float = 0.0      # +1.0 (Compradores agresivos) a -1.0 (Vendedores agresivos)
     spread_cost_pct: float = 0.0          # Costo relativo del spread
     liquidity_depth: float = 0.0          # Volumen agregado en +- 0.5% del BBO
+    microprice: float = 0.0               # L2 Microprice (Cython)
+    microprice_divergence: float = 0.0    # Divergence between L1 MidPrice and L2 Microprice
+    vpin_toxicity: float = 0.0            # FASE 68: Volume-Synchronized Probability of Informed Trading
     
     # --- Momentum & Volatilidad (Kinetics) ---
     trend_score_m5: float = 0.0           # Fuerza direccional (-1 a 1)
@@ -32,12 +35,22 @@ class SymbolStateVector:
     contagion_pressure: float = 0.0       # Riesgo de arrastre por caídas de símbolos correlacionados
     cluster_id: int = -1                  # Identificador del sub-grafo de correlación (ej. Memecoins=1, L1=2)
     
+    # --- OmniScore Fusion Components ---
+    ml_bull_score: float = 0.5            # ML long confidence (0-1)
+    ml_bear_score: float = 0.5            # ML short confidence (0-1)
+    tech_long_active: int = 0             # 1 if technical long is active, else 0
+    tech_short_active: int = 0            # 1 if technical short is active, else 0
+    phalanx_sig: int = 0                  # Phalanx strategy signal
+    statarb_sig: int = 0                  # StatArb strategy signal
+    
     def as_array(self) -> np.ndarray:
         """Vector numérico puro para procesamiento rápido en ML y Matrices."""
         return np.array([
             self.orderflow_imbalance,
             self.spread_cost_pct,
             self.liquidity_depth,
+            self.microprice,
+            self.microprice_divergence,
             self.trend_score_m5,
             self.hurst_exponent,
             self.volatility_atr_pct,

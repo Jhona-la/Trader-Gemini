@@ -311,6 +311,21 @@ class FillEvent(Event):
     metadata: Optional[Dict[str, Any]] = None # Phase 31 Fix: Carry metadata from Order
     
     type: EventType = field(default=EventType.FILL, init=False)
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ExecutionFailedEvent(Event):
+    """
+    Handles the event of an Order failing to execute.
+    This enables decoupling the Executor from the Portfolio in multiprocessing environments.
+    """
+    symbol: str
+    quantity: float
+    price: float
+    direction: OrderSide
+    reason: str
+    strategy_id: Optional[str] = None
+    trade_id: Optional[str] = None
+    type: EventType = field(default=EventType.ORDER, init=False) # Maps to execution loop
     
     def __post_init__(self):
         """Validate that timeindex is UTC-aware"""

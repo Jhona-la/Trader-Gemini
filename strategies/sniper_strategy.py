@@ -97,6 +97,11 @@ class SniperStrategy(Strategy):
         
         self.last_signal_time = {}
         self.signal_count = 0
+        self._current_event_time = None
+
+    def _now(self):
+        """Forensic Time Fix: Return event timestamp if available, else system time"""
+        return self._current_event_time if self._current_event_time else datetime.now(tz=timezone.utc)
         
         logger.info(f"🎯 SNIPER [{horizon}] INITIALIZED | TP={self.TP_PCT*100:.2f}% SL={self.SL_PCT*100:.2f}% | RSI={self.RSI_PERIOD} | ATR_SL={self.ATR_SL_MULT}x ATR_TP={self.ATR_TP_MULT}x")
     
@@ -107,6 +112,9 @@ class SniperStrategy(Strategy):
         if not Config.Sniper.ENABLED:
             return
         
+        # Forensic Fix: Sync strategy clock to market event clock
+        self._current_event_time = getattr(event, 'timestamp', self._now())
+
         # Session filter
         if Config.Sniper.REQUIRE_ACTIVE_SESSION and not self._is_active_session():
             return
@@ -136,7 +144,7 @@ class SniperStrategy(Strategy):
                     signal = SignalEvent(
                         strategy_id="SNIPER_LIQ_SQUEEZE",
                         symbol=symbol,
-                        datetime=getattr(event, 'timestamp', datetime.now(timezone.utc)),
+                        datetime=getattr(event, 'timestamp', self._now()),
                         signal_type=signal_type,
                         strength=1.0,  # Max conviction
                         atr=0.0, # Will be dynamically calculated in risk_manager or executor
@@ -152,12 +160,12 @@ class SniperStrategy(Strategy):
                         }
                     )
                     self.events_queue.put(signal)
-                    self.last_signal_time[symbol] = getattr(event, 'timestamp', datetime.now(timezone.utc))
+                    self.last_signal_time[symbol] = getattr(event, 'timestamp', self._now())
                     continue # Skip standard analysis
                     
                 # D2 FIX: Single data fetch for both GARCH and analysis
                 bars = self.data_provider.get_latest_bars(symbol, n=200, timeframe=self.primary_tf)
-                if len(bars) < 2:
+                if bars is None or len(bars) < 2:
                     continue
                 
                 # PHASE 14: Update GARCH Volatility (reuse bars from single fetch)
@@ -174,7 +182,7 @@ class SniperStrategy(Strategy):
 
                 # 0. Local Cooldown Check — HORIZON-AWARE
                 # FORENSIC FIX: Use event.timestamp for backtest parity, fallback to now
-                now = getattr(event, 'timestamp', datetime.now(timezone.utc))
+                now = getattr(event, 'timestamp', self._now())
                 if symbol in self.last_signal_time:
                     if (now - self.last_signal_time[symbol]).total_seconds() < self.COOLDOWN_SECONDS:
                         continue
@@ -191,7 +199,7 @@ class SniperStrategy(Strategy):
     
     def _is_active_session(self) -> bool:
         """Check if current time is within London or NY session."""
-        now = datetime.now(timezone.utc)
+        now = self._now()
         hour = now.hour
         
         sessions = Config.Sniper.ACTIVE_SESSIONS
@@ -424,13 +432,13 @@ class SniperStrategy(Strategy):
             sophia_report_dict = sophia_report.to_dict()
         
         # FIXED: Pass ALL metadata in constructor (frozen dataclass)
-        signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc)) if hasattr(self, 'event') else datetime.now(timezone.utc) # fallback
+        signal_timestamp = getattr(event, 'timestamp', self._now()) if hasattr(self, 'event') else self._now() # fallback
         # Wait, we don't have event in _analyze_symbol directly, let's just use datetime.now or pass it down.
         # Actually, let's just use datetime.now here. It's only for the SignalEvent creation time. 
         signal = SignalEvent(
             strategy_id="SNIPER",
             symbol=symbol,
-            datetime=datetime.now(timezone.utc),
+            datetime=self._now(),
             signal_type=signal_type,
             strength=strength,
             atr=atr,

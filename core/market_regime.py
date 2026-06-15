@@ -195,6 +195,30 @@ class MarketRegimeDetector:
             return self.last_regime[symbol]
         return self.global_regime
 
+    def get_regime_locks(self, symbol=None) -> Dict[str, bool]:
+        """
+        🚀 FASE 22: Clasificador Estricto de Regímenes
+        Genera candados estrictos para evitar cruces mortales entre horizontes.
+        """
+        regime = self.get_current_regime(symbol)
+        locks = {
+            'LOCK_SWING': False,
+            'LOCK_SCALP_LONG': False,
+            'LOCK_SCALP_SHORT': False
+        }
+        
+        if regime in ['CHOPPY', 'RANGING']:
+            # Prohibido Swing en mercados laterales/ruidosos
+            locks['LOCK_SWING'] = True
+        elif regime == 'TRENDING_BULL':
+            # Prohibido short-scalping (contra tendencia) en Bull fuerte
+            locks['LOCK_SCALP_SHORT'] = True
+        elif regime == 'TRENDING_BEAR':
+            # Prohibido long-scalping (contra tendencia) en Bear fuerte
+            locks['LOCK_SCALP_LONG'] = True
+            
+        return locks
+
     def _detect_single_scale_regime(self, bars) -> str:
         """
         Helper para detectar el régimen en una sola escala temporal.
@@ -544,12 +568,16 @@ class MarketRegimeDetector:
         
         # --- SWING / MACRO (Seguidores de Tendencia Estrictos) ---
         if horizon in ('SWING', 'MACRO'):
-            if is_bull:
+            if is_chop:
+                # [QUANTUM EVOLUTION] Machine Learning Regime Oracle Veto
+                # Veto absoluto: Swing no opera en chop/zombie. Además, alerta para liquidar.
+                from logger import logger
+                logger.warning("🔮 [REGIME ORACLE] Régimen lateral detectado. VETO ABSOLUTO a Swing. Cierre recomendado si el funding es adverso.")
+                return 0.0
+            elif is_bull:
                 return 1.0 if direction == 'LONG' else 0.0
             elif is_bear:
                 return 1.0 if direction == 'SHORT' else 0.0
-            elif is_chop:
-                return 0.0 # Veto absoluto: Swing no opera en chop/zombie
             else: # RANGING, MEAN_REVERTING
                 return 0.5
                 

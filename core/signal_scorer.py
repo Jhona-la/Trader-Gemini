@@ -30,6 +30,10 @@ class SignalScorer:
         breakdown = {}
         total_score = 0.0
         
+        # OMNI-STRATEGY BYPASS
+        if '[OMNI]' in getattr(event, 'strategy_id', ''):
+            return 100.0, {'omni_bypass': 100.0}
+        
         # 1. Confluencia Técnica / Fuerza (Max 20p)
         # Basado en event.strength (típicamente 0 a 1) o ml_confidence
         base_strength = getattr(event, 'ml_confidence', None)

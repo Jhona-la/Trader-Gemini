@@ -5,6 +5,20 @@ from numba import njit, prange, float64, int64
 # 🧠 FASE 10: QUANTITATIVE MASTERY (Hurst & RANSAC)
 # ==============================================================================
 
+@njit(fastmath=True, cache=True)
+def compute_microprice_jit(bid_price: float, bid_vol: float, ask_price: float, ask_vol: float) -> float:
+    """
+    [PHASE 11] Micro-Price Calculation - JIT Compiled.
+    Computes the volume-weighted fair price using Level 1 Order Book depth.
+    Formula: (Bid * AskVol + Ask * BidVol) / (BidVol + AskVol)
+    """
+    total_vol = bid_vol + ask_vol
+    if total_vol <= 0.0:
+        return (bid_price + ask_price) / 2.0
+        
+    return (bid_price * ask_vol + ask_price * bid_vol) / total_vol
+
+
 @njit(cache=True)
 def compute_time_decay_jit(time_held_sec: float, ttl_sec: float) -> float:
     """
@@ -1043,3 +1057,49 @@ def pearson_correlation_jit(x, y):
     if denominator == 0.0:
         return 0.0
     return numerator / denominator
+
+@njit(fastmath=True, cache=True)
+def compute_micro_regime_hmm_jit(tick_returns):
+    """
+    [MUTACIÓN 33] Micro-Regime HMM (Markov Simplificado) - JIT
+    Evalúa retornos tick-a-tick para determinar sub-regímenes.
+    0: NORMAL
+    1: HFT_CHOP (Alta volatilidad sin dirección)
+    2: TOXIC_ACCUMULATION (Direccionalidad extrema, block trades)
+    3: FLASH_RECOVERY (Rebote violento tras un spike)
+    """
+    n = len(tick_returns)
+    if n < 10:
+        return 0
+        
+    sum_ret = 0.0
+    sum_abs_ret = 0.0
+    for i in range(n):
+        sum_ret += tick_returns[i]
+        sum_abs_ret += abs(tick_returns[i])
+        
+    mean_ret = sum_ret / n
+    
+    sum_sq = 0.0
+    for i in range(n):
+        d = tick_returns[i] - mean_ret
+        sum_sq += d * d
+    var_ret = sum_sq / n
+    std_ret = np.sqrt(var_ret)
+    
+    current_ret = tick_returns[-1]
+    
+    # Toxic Accumulation: High directional volume, sustained mean return > std
+    if abs(mean_ret) > std_ret * 1.5 and std_ret > 0.0001:
+        return 2 # TOXIC_ACCUMULATION
+        
+    # Flash Recovery: Current tick is massive (Z-Score > 3)
+    if std_ret > 0 and abs((current_ret - mean_ret) / std_ret) > 3.0:
+        return 3 # FLASH_RECOVERY
+        
+    # HFT Chop: High absolute returns but mean return is 0
+    if sum_abs_ret / n > 0.0005 and abs(mean_ret) < 0.0001:
+        return 1 # HFT_CHOP
+        
+    return 0 # NORMAL
+

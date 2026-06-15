@@ -1,4 +1,3 @@
-
 from setuptools import setup, Extension
 try:
     from Cython.Build import cythonize
@@ -6,11 +5,14 @@ except ImportError:
     print("❌ Cython not installed. Install with: pip install cython")
     exit(1)
 
+import numpy as np
+
 extensions = [
     Extension(
         "core.c_orderbook",
         ["core/c_orderbook.pyx"],
-        language="c++"
+        language="c++",
+        include_dirs=[np.get_include()]
     )
 ]
 

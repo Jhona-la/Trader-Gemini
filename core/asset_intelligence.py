@@ -381,10 +381,12 @@ class AssetIntelligence:
             if getattr(global_state, 'xrp_regulatory_block', False):
                 return False, "FAIL_A6: Blocked by XRP active regulatory risk"
                 
-        # Sentimiento para DOGE (Tier 4)
-        if "SENTIMENT_CATALYST_REQUIRED" in profile.restrictions:
-            if not getattr(global_state, 'doge_sentiment_catalyst', False):
-                return False, "FAIL_A6: Blocked DOGE trade due to missing sentiment catalyst (Elon Musk Tweet)"
+        # MÓDULO HORIZON: DOGE Tier 4 protection via strength penalty instead of hard block.
+        # QUÉ: DOGE ya no se bloquea al 100% por falta de catalizador.
+        # POR QUÉ: global_state.doge_sentiment_catalyst nunca se setea → 140 bloqueos inútiles.
+        # PARA QUÉ: Permitir DOGE trades con protección via 1/4 Kelly + Tier 4 threshold (0.60).
+        # CÓMO: El strength penalty se aplica downstream en el consensus filter.
+        # MANTIENE: Tier 4 min_signal_threshold=0.60, kelly=0.25, factor_sizing=0.50
                 
         # ---------------------------------------------------------------------
         # Paso A7 — EJECUCIÓN DE APERTURA (CALIBRACIONES)

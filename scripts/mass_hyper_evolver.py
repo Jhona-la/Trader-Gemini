@@ -48,9 +48,12 @@ def objective(trial, all_data, symbol, days, horizon):
     
     # ── ESPACIO DE MUTACIÓN ──
     # 1. Técnico & ML
-    strength_threshold = trial.suggest_float('strength_threshold', 0.25, 0.75, step=0.05)
-    ml_confidence = trial.suggest_float('ml_confidence', 0.40, 0.75, step=0.05)
-    adx_threshold = trial.suggest_int('adx_threshold', 15, 40)
+    omni_master_threshold = trial.suggest_float('omni_master_threshold', 0.5, 2.5, step=0.1)
+    omni_w_tech = trial.suggest_float('omni_w_tech', 0.5, 2.0, step=0.1)
+    omni_w_phalanx = trial.suggest_float('omni_w_phalanx', 0.1, 1.0, step=0.1)
+    omni_w_statarb = trial.suggest_float('omni_w_statarb', 0.1, 1.0, step=0.1)
+    rsi_buy = trial.suggest_int('rsi_buy', 25, 45, step=5)
+    rsi_sell = trial.suggest_int('rsi_sell', 55, 75, step=5)
     cooldown_seconds = trial.suggest_int('cooldown_seconds', 10, 300, step=10)
     
     # 2. Riesgo y Cierres
@@ -60,6 +63,16 @@ def objective(trial, all_data, symbol, days, horizon):
     
     # 3. Zombie-Chaser (Novedad)
     zombie_chaser_atr_mult = trial.suggest_float('zombie_chaser_atr_mult', 0.2, 2.0, step=0.1)
+    
+    # 4. Compounding & Risk Multipliers (Phase 14)
+    ml_kelly_fraction = trial.suggest_float('ml_kelly_fraction', 0.5, 1.5, step=0.1)
+    compounding_growth_factor = trial.suggest_float('compounding_growth_factor', 0.1, 0.8, step=0.05)
+    
+    # 5. System-Wide Risk Management (Phase 16 - User Request)
+    # Permite a la IA descubrir el límite de concurrencia y tolerancia a pérdidas del sistema completo
+    max_concurrent_trades = trial.suggest_int('max_concurrent_trades', 1, 5)
+    max_drawdown_limit = trial.suggest_float('max_drawdown_limit', 0.02, 0.10, step=0.01)
+    global_stop_loss_pct = trial.suggest_float('global_stop_loss_pct', 0.05, 0.20, step=0.01)
     
     # ── INYECTAR EN CONFIG GLOBAL ──
     if horizon == "SCALPING":
@@ -74,16 +87,41 @@ def objective(trial, all_data, symbol, days, horizon):
         config_dict.update({
             'sl_pct': sl_pct,
             'tp_pct': tp_pct,
-            'strength_threshold': strength_threshold,
-            'adx_threshold': adx_threshold,
+            'rsi_buy': rsi_buy,
+            'rsi_sell': rsi_sell,
             'cooldown_seconds': cooldown_seconds
         })
         
-        Config.Strategies.ML_MIN_CONFIDENCE = ml_confidence
+        if not hasattr(Config, 'OmniScore'):
+            Config.OmniScore = type('OmniScore', (), {})
+            
+        _orig_omni_master = getattr(Config.OmniScore, 'master_threshold', 1.5)
+        _orig_omni_tech = getattr(Config.OmniScore, 'w_technical', 1.0)
+        _orig_omni_phalanx = getattr(Config.OmniScore, 'w_phalanx', 0.5)
+        _orig_omni_statarb = getattr(Config.OmniScore, 'w_statarb', 0.5)
+        
+        Config.OmniScore.master_threshold = omni_master_threshold
+        Config.OmniScore.w_technical = omni_w_tech
+        Config.OmniScore.w_phalanx = omni_w_phalanx
+        Config.OmniScore.w_statarb = omni_w_statarb
         
         if not hasattr(Config.Strategies, 'Mutations'):
             Config.Strategies.Mutations = {}
         Config.Strategies.Mutations['zombie_chaser_atr_mult'] = zombie_chaser_atr_mult
+        
+        # [PHASE 8 & 14] Activar Quantum Compounding para que el Target Exponencial sea medible
+        _orig_kelly = getattr(Config.Risk, 'ML_KELLY_FRACTION', 1.0)
+        _orig_comp_growth = getattr(Config.Risk, 'COMPOUNDING_GROWTH_FACTOR', 0.30)
+        _orig_max_concurrent = getattr(Config.Risk, 'MAX_CONCURRENT_TRADES_TOTAL', 4)
+        _orig_max_dd = getattr(Config.Risk, 'MAX_DRAWDOWN_LIMIT', 0.05)
+        _orig_global_sl = getattr(Config.Risk, 'GLOBAL_STOP_LOSS_PCT', 0.10)
+        
+        Config.Risk.COMPOUNDING_ENABLED = True
+        Config.Risk.ML_KELLY_FRACTION = ml_kelly_fraction
+        Config.Risk.COMPOUNDING_GROWTH_FACTOR = compounding_growth_factor
+        Config.Risk.MAX_CONCURRENT_TRADES_TOTAL = max_concurrent_trades
+        Config.Risk.MAX_DRAWDOWN_LIMIT = max_drawdown_limit
+        Config.Risk.GLOBAL_STOP_LOSS_PCT = global_stop_loss_pct
         
         # MUDAR AL MOTOR: Evitar que haga spam de prints y crashee la terminal
         logging.disable(logging.CRITICAL)
@@ -96,18 +134,32 @@ def objective(trial, all_data, symbol, days, horizon):
                 days=days,
                 initial_capital=13.0,
                 verbose=False,
-                isolated_strategy="technical"
+                isolated_strategy="omni"
             )
         logging.disable(logging.NOTSET)
+        logging.disable(logging.NOTSET)
     except Exception as e:
+        logging.disable(logging.NOTSET)
         logger.error(f"❌ Error trial: {e}")
+        import traceback
+        traceback.print_exc()
         return -1000.0
     finally:
-        # Restaurar configuración original IN-PLACE
+        logging.disable(logging.NOTSET)
         config_dict.update(_orig_config)
-        Config.Strategies.ML_MIN_CONFIDENCE = _orig_ml_conf
+        
+        Config.OmniScore.master_threshold = _orig_omni_master
+        Config.OmniScore.w_technical = _orig_omni_tech
+        Config.OmniScore.w_phalanx = _orig_omni_phalanx
+        Config.OmniScore.w_statarb = _orig_omni_statarb
+        
+        Config.Risk.ML_KELLY_FRACTION = _orig_kelly
+        Config.Risk.COMPOUNDING_GROWTH_FACTOR = _orig_comp_growth
+        Config.Risk.MAX_CONCURRENT_TRADES_TOTAL = _orig_max_concurrent
+        Config.Risk.MAX_DRAWDOWN_LIMIT = _orig_max_dd
+        Config.Risk.GLOBAL_STOP_LOSS_PCT = _orig_global_sl
 
-    # ── EVALUAR FITNESS COMPUESTO ──
+    # ── EVALUAR FITNESS COMPUESTO (QUANTUM EXPONENTIAL TARGET) ──
     metrics = result.get('metrics', {})
     trades = metrics.get('total_trades', 0)
     pnl_usd = metrics.get('final_capital', 13.0) - 13.0
@@ -115,23 +167,31 @@ def objective(trial, all_data, symbol, days, horizon):
     win_rate = metrics.get('win_rate', 0)
     
     # Penalizaciones (Survival Filters)
-    if trades < 5:
-        score = -500.0 + trades  # Demasiado conservador, no aprovecha oportunidades
-    elif max_dd > 0.05:
-        score = -1000.0 * max_dd  # Hard Cap: Max Drawdown 5% (Ideal < 1.5%)
-    elif win_rate < 50.0:
-        score = -200.0 + win_rate # Castigar debajo de coin-flip
+    if trades < 3:
+        score = -500.0 + trades  # Demasiado conservador
+    elif max_dd > 0.08:
+        score = -1000.0 * max_dd  # Hard Cap: Max Drawdown 8%
+    
+    # Target de crecimiento: 100% de ROI cada 3 días
+    target_capital = 13.0 * (2 ** (days / 3.0))
+    target_pnl = target_capital - 13.0
+
+    # User Mandate: WR no necesita ser 100%, pero el PnL debe crecer de forma compuesta (100% cada 3 días)
+    if win_rate < 50.0:
+        score = -200.0 + win_rate # Castigo para estrategias que sangran capital
     else:
-        dd_penalty = max(0.001, max_dd)
-        calmar = pnl_usd / (dd_penalty * 13.0)
+        # El objetivo principal es el hiper-crecimiento exponencial del PnL Neto
+        score = pnl_usd
         
-        wr_bonus = 0
-        if win_rate >= 80:
-            wr_bonus = (win_rate - 80) * 10
-        if win_rate >= 95:
-            wr_bonus += 500  # Santo Grial
+        # Super-bonificación si se logra el objetivo de 100% ROI cada 3 días
+        if pnl_usd >= target_pnl:
+            score += 5000.0 + (pnl_usd - target_pnl) * 2.0
             
-        score = (pnl_usd * 50) + calmar + wr_bonus + (trades * 0.1)
+        # Pequeño bonus para estabilizar la selección entre PnLs similares
+        if win_rate >= 80:
+            score += 10.0
+        if max_dd < 0.02:
+            score += 5.0
     
     # Guardar atributos de monitoreo
     trial.set_user_attr('trades', trades)
@@ -149,9 +209,18 @@ def objective(trial, all_data, symbol, days, horizon):
     return score
 
 def optimize_coin(symbol, all_data, days, n_trials, horizon):
+    # [PHASE 15 ISOLATION]
+    # Set unique ENV_ID for this specific optimization thread so it doesn't lock DBs
+    env_id = f"evo_{symbol.replace('/', '')}_{horizon}"
+    os.environ["TG_ENV_ID"] = env_id
+    Config.ENV_ID = env_id
+    Config.DATA_DIR = f"dashboard/data/futures_{env_id}"
+    os.makedirs(Config.DATA_DIR, exist_ok=True)
+
     logger.info(f"🧬 Iniciando Evolución Masiva para {symbol} | Horizonte: {horizon} | {days} Días | {n_trials} Trials")
     
-    study_name = f'evo_{symbol.replace("/", "")}_{horizon}_{days}D'
+    study_name = f'evo_{symbol.replace("/", "")}_{horizon}_{days}D_V14'
+    # Use global Optuna DB so all workers share studies
     db_path = f'sqlite:///data/mass_evolver.db'
     
     # Algoritmo similar a Random Forest: Tree-structured Parzen Estimator (Multivariado)
@@ -205,6 +274,11 @@ def optimize_coin(symbol, all_data, days, n_trials, horizon):
         'adx_threshold': best.params.get('adx_threshold'),
         'cooldown_seconds': best.params.get('cooldown_seconds'),
         'zombie_chaser_atr_mult': best.params.get('zombie_chaser_atr_mult'),
+        'ml_kelly_fraction': best.params.get('ml_kelly_fraction'),
+        'compounding_growth_factor': best.params.get('compounding_growth_factor'),
+        'max_concurrent_trades': best.params.get('max_concurrent_trades'),
+        'max_drawdown_limit': best.params.get('max_drawdown_limit'),
+        'global_stop_loss_pct': best.params.get('global_stop_loss_pct'),
         'performance': {
             'win_rate': best.user_attrs['win_rate'],
             'pnl_usd': best.user_attrs['pnl_usd'],
@@ -241,7 +315,12 @@ def optimize_coin(symbol, all_data, days, n_trials, horizon):
         'Strength': best.params.get('strength_threshold'), 
         'ADX': best.params.get('adx_threshold'),
         'Cooldown': best.params.get('cooldown_seconds'), 
-        'ZombieMulti': best.params.get('zombie_chaser_atr_mult')
+        'ZombieMulti': best.params.get('zombie_chaser_atr_mult'),
+        'Kelly_Frac': best.params.get('ml_kelly_fraction'),
+        'Comp_Factor': best.params.get('compounding_growth_factor'),
+        'MaxConcurrent': best.params.get('max_concurrent_trades'),
+        'MaxDDLimit': best.params.get('max_drawdown_limit'),
+        'GlobalSLPct': best.params.get('global_stop_loss_pct')
     }])
     
     if os.path.exists(parquet_path):
@@ -261,11 +340,9 @@ if __name__ == '__main__':
     parser.add_argument('--trials', type=int, default=100, help='Trials por moneda')
     args = parser.parse_args()
     
-    # Top 10 Volatile/Liquid Coins para Scalping
+    # Top 3 Volatile/Liquid Coins para Scalping (Phase 14 Fast Discovery)
     TARGET_COINS = [
-        "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", 
-        "XRP/USDT", "DOGE/USDT", "ADA/USDT", "AVAX/USDT", 
-        "LINK/USDT", "PEPE/USDT"
+        "BTC/USDT", "ETH/USDT", "SOL/USDT"
     ]
     HORIZONS = ["SCALPING", "SWING"]
     

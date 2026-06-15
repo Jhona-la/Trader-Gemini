@@ -117,78 +117,224 @@ class ConsensusFilter:
         except Exception as profile_err:
             logger.error(f"❌ Error in symbol profile check: {profile_err}")
             
-        # Gate 1: Kill Switch
+        # =========================================================================
+        # 🚀 FASE 0: OMNISCORE FUSION (The Perfect Binomial)
+        # QUÉ: Integra señales de ML y Technical de forma asíncrona usando el SSOT.
+        # POR QUÉ: Las estrategias son asíncronas. Para que el bot sea 100% igual
+        #   al backtest, la decisión debe basarse en el estado combinado de TODAS.
+        # =========================================================================
+        try:
+            # Config already imported at module level (line 23)
+            if getattr(Config, 'OmniScore', None) and getattr(Config.OmniScore, 'master_threshold', 0.0) > 0.0:
+                from core.global_state import global_state
+                sv = global_state.get_symbol_vector(symbol)
+                
+                # In backtest mode, global_state may not have symbol vectors.
+                # Skip this production-only OmniScore gate entirely.
+                if sv is None:
+                    raise RuntimeError("BACKTEST_BYPASS: No symbol vector available")
+                
+                # Fetch thresholds & weights
+                master_th = Config.OmniScore.master_threshold
+                ml_th_long = Config.OmniScore.ml_threshold_bull
+                ml_th_short = Config.OmniScore.ml_threshold_bear
+                w_ml = Config.OmniScore.w_ml
+                w_tech = Config.OmniScore.w_technical
+                
+                tech_active = 0
+                ml_active = 0
+                
+                # Identify caller and state
+                caller_id = getattr(signal_event, 'strategy_id', 'UNKNOWN').lower()
+                direction = "LONG" if signal_event.signal_type == SignalType.LONG else "SHORT"
+                
+                if direction == "LONG":
+                    # Determine tech active
+                    if "tech" in caller_id:
+                        tech_active = 1
+                    else:
+                        tech_active = sv.tech_long_active
+                        
+                    # Determine ml active
+                    if "ml" in caller_id:
+                        # Event caller is ML, so we trust its internal confidence if it fired
+                        # Or we use the global state
+                        ml_active = 1 if getattr(signal_event, 'confidence', sv.ml_bull_score) >= ml_th_long else 0
+                    else:
+                        ml_active = 1 if sv.ml_bull_score >= ml_th_long else 0
+                        
+                else: # SHORT
+                    # Determine tech active
+                    if "tech" in caller_id:
+                        tech_active = 1
+                    else:
+                        tech_active = sv.tech_short_active
+                        
+                    # Determine ml active
+                    if "ml" in caller_id:
+                        ml_active = 1 if getattr(signal_event, 'confidence', sv.ml_bear_score) >= ml_th_short else 0
+                    else:
+                        ml_active = 1 if sv.ml_bear_score >= ml_th_short else 0
+                        
+                # Additional modules
+                phalanx_active = sv.phalanx_sig if hasattr(sv, 'phalanx_sig') else 0
+                w_phalanx = getattr(Config.OmniScore, 'w_phalanx', 0.0)
+                
+                statarb_active = sv.statarb_sig if hasattr(sv, 'statarb_sig') else 0
+                w_statarb = getattr(Config.OmniScore, 'w_statarb', 0.0)
+                
+                # Base OmniScore
+                omniscore = (tech_active * w_tech) + (ml_active * w_ml) + (phalanx_active * w_phalanx) + (statarb_active * w_statarb)
+                
+                if omniscore < master_th:
+                    return self._fail(
+                        f"OMNISCORE_VETO ({symbol} {direction} OmniScore={omniscore:.2f} < {master_th:.2f} | "
+                        f"Tech:{tech_active} ML:{ml_active})"
+                    )
+                
+                # FASE 36: OMNISCORE ADAPTATIVE PENALTIES (Soft Vetos)
+                # Instead of completely blocking trades because 1 sub-system disagreed, 
+                # we apply penalties. If OmniScore survives, the trade executes.
+                penalty = 0.0
+
+                # Soft Gate 4: Regime Mismatch
+                if risk_manager:
+                    global_regime = getattr(risk_manager, "global_regime", "UNKNOWN")
+                    if not risk_manager._validate_regime_veto(symbol, signal_event.signal_type):
+                        penalty += 0.20
+                        logger.debug(f"  [OmniScore] Penalty -0.20 for Regime Mismatch ({global_regime})")
+
+                # Soft Gate 4.5: Strategic Regime
+                if risk_manager:
+                    current_regime = getattr(risk_manager, "current_regime", "UNKNOWN")
+                    if ("VOLATILE" in current_regime or "CHOPPY" in current_regime) and strategy_id == "TECHNICAL_STRATEGY":
+                        penalty += 0.15
+                    if "TRENDING" in current_regime and strategy_id == "STATISTICAL_REVERSION":
+                        penalty += 0.15
+
+                # Soft Gate 5: Tension
+                tension = getattr(signal_event, "tension", 0.0)
+                if tension > 1.5 or tension < -1.5:
+                    penalty += 0.10
+
+                # Soft Gate 7: Correlation Risk
+                if risk_manager and hasattr(risk_manager, "correlation_manager") and risk_manager.correlation_manager:
+                    active_symbols = list(set(
+                        v_key.split('_')[0] for v_key, pos in portfolio.virtual_ledger.items()
+                        if abs(pos.get("quantity", 0)) > 1e-8
+                    ))
+                    if active_symbols:
+                        safe, reason = risk_manager.correlation_manager.check_correlation_risk(symbol, active_symbols)
+                        if not safe:
+                            penalty += 0.25
+                            logger.debug(f"  [OmniScore] Penalty -0.25 for High Correlation")
+
+                # Soft Gate 8: Sentiment Divergence
+                if risk_manager and hasattr(risk_manager, "sentiment_processor") and risk_manager.sentiment_processor:
+                    mood = risk_manager.sentiment_processor.get_market_mood()
+                    if sig_type_str == "LONG" and mood < -0.5:
+                        penalty += 0.15
+                    elif sig_type_str == "SHORT" and mood > 0.5:
+                        penalty += 0.15
+
+                # Soft Gate 9: Liquidity Vacuum
+                if horizon == "SCALPING" and risk_manager and hasattr(risk_manager, "liquidity_guardian") and risk_manager.liquidity_guardian:
+                    quality = risk_manager.liquidity_guardian.get_market_quality_score(symbol)
+                    if quality < 30:
+                        penalty += 0.20
+
+                # Soft Gate 10: Contagion & Topology
+                if meta_coordinator and hasattr(meta_coordinator, "graph_layer") and meta_coordinator.graph_layer:
+                    state = meta_coordinator.graph_layer.state_matrix.get(symbol)
+                    if direction == "LONG":
+                        contagion_risk = meta_coordinator.graph_layer.get_contagion_risk(symbol)
+                        if contagion_risk > 0.50:
+                            penalty += 0.30
+                    if state:
+                        if direction == "LONG" and state.orderflow_imbalance < -0.60:
+                            penalty += 0.20
+                        if direction == "SHORT" and state.orderflow_imbalance > 0.60:
+                            penalty += 0.20
+                        ecosystem_gravity = meta_coordinator.graph_layer.get_ecosystem_gravity()
+                        if direction == "LONG" and ecosystem_gravity < -2.0 and state.eigenvector_centrality > 0.1:
+                            penalty += 0.25
+
+                # Final Evaluation
+                final_score = omniscore - penalty
+                if final_score < master_th:
+                    return self._fail(f"OMNISCORE_SOFT_VETOS_DEPLETED (Init:{omniscore:.2f} - Penalty:{penalty:.2f} = {final_score:.2f} < {master_th:.2f})")
+                
+                logger.info(f"🧠 [OmniScore] {symbol} {direction} APPROVED | Final Score: {final_score:.2f} (Init: {omniscore:.2f}, Pen: {penalty:.2f})")
+                
+        except Exception as e:
+            logger.error(f"❌ Error in OmniScore Fusion Gate: {e}")
+            pass
+            
+        # Gate 1: Kill Switch (HARD BLOCK)
         if risk_manager:
             if not risk_manager._validate_kill_switch():
                 return self._fail("KILL_SWITCH_ACTIVE")
         elif getattr(Config, "KILL_SWITCH_ACTIVE", False):
             return self._fail("KILL_SWITCH_ACTIVE")
 
-        # Gate 2: Fee Drag Filter
-        # QUÉ: Bloquea trades donde la volatilidad actual (ATR) es tan baja que 
-        #   no cubre ni siquiera las comisiones.
-        # POR QUÉ: Las matemáticas del micro-scalping exigen que el mercado 
-        #   tenga amplitud. Operar sin spread destruye el equity por fees.
+        # Gate 2: Fee Drag Filter (HARD BLOCK)
         try:
             if getattr(Config.Execution, "USE_LIMIT_BBO_ENTRIES", True) and getattr(Config.Execution, "USE_LIMIT_BBO_EXITS", True):
                 round_trip_fee = getattr(Config, 'BINANCE_MAKER_FEE_BNB', 0.0002) * 2
             else:
                 round_trip_fee = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375) * 2
             
-            # Minimum TP expected is typically ~0.3%. ATR must support this movement
-            # ATR check: Current ATR percentage must be > round_trip_fee * 3.0
+            _HORIZON_GATE_MULT = {
+                'MICROSCALPING': 1.5,
+                'SCALPING': 2.0,
+                'SWING': 2.8,
+            }
+            _gate_mult = _HORIZON_GATE_MULT.get(horizon, 2.0)
+            
+            dna_mult = getattr(Config.Risk, 'CONSENSUS_FEE_MULT', None)
+            if dna_mult is not None:
+                _gate_mult = dna_mult
+            
             _sig_meta = getattr(signal_event, "metadata", {}) or {}
             atr_pct = _sig_meta.get("atr_pct", 0.0)
+            _fee_threshold = round_trip_fee * _gate_mult
             
-            if atr_pct > 0:
-                if atr_pct < (round_trip_fee * 3.0):
-                    logger.warning(f"🛑 [VOLATILITY BLOCK] {symbol} ATR {atr_pct*100:.3f}% < {round_trip_fee*3.0*100:.3f}% (3.0x round-trip fee).")
-                    return self._fail(f"FEE_DRAG_ATR ({atr_pct*100:.3f}% < fee_buffer)")
+            if atr_pct > 0 and atr_pct < _fee_threshold:
+                logger.warning(f"🛑 [VOLATILITY BLOCK] {symbol} {horizon} ATR {atr_pct*100:.3f}% < {_fee_threshold*100:.3f}% ({_gate_mult}x round-trip fee).")
+                return self._fail(f"FEE_DRAG_ATR ({atr_pct*100:.3f}% < fee_buffer {_gate_mult}x)")
         except Exception as e:
             logger.error(f"❌ Error in Fee Drag filter: {e}")
 
-        # Gate 3: Frequency Limits
+        # Gate 3: Frequency Limits (HARD BLOCK)
         if risk_manager:
             if not risk_manager._validate_frequency_limits(symbol, signal_event.signal_type):
                 return self._fail("FREQUENCY_LIMIT_EXCEEDED")
 
-        # Gate 3.5: Cooldown Check (Horizon-Aware)
+        # Gate 3.5: Cooldown Check (HARD BLOCK)
         strategy_id = getattr(signal_event, "strategy_id", "Unknown")
         from utils.cooldown_manager import cooldown_manager
-        can_trade_res = cooldown_manager.can_trade(symbol, strategy_id=strategy_id, horizon=horizon)
+        
+        _volatility = getattr(signal_event, "metadata", {}).get("atr_ratio", 1.0) if isinstance(getattr(signal_event, "metadata", {}), dict) else 1.0
+        _streak = 0
+        if risk_manager and risk_manager.portfolio:
+            _streak = getattr(risk_manager.portfolio, "_win_streak", 0)
+
+        can_trade_res = cooldown_manager.can_trade(
+            symbol, 
+            strategy_id=strategy_id, 
+            horizon=horizon,
+            volatility_factor=_volatility,
+            win_streak=_streak
+        )
         if not can_trade_res[0]:
             return self._fail(f"COOLDOWN_ACTIVE ({can_trade_res[1]})")
 
-        # Gate 4: Regime Veto
-        if risk_manager:
-            if not risk_manager._validate_regime_veto(symbol, signal_event.signal_type):
-                global_regime = getattr(risk_manager, "global_regime", "UNKNOWN")
-                return self._fail(f"REGIME_MISMATCH ({sig_type_str} vs {global_regime})")
-
-        # Gate 4.5: Strategic Regime Veto (Final Quality Filter)
-        if risk_manager:
-            current_regime = getattr(risk_manager, "current_regime", "UNKNOWN")
-            if ("VOLATILE" in current_regime or "CHOPPY" in current_regime) and strategy_id == "TECHNICAL_STRATEGY":
-                return self._fail(f"STRATEGIC_REGIME_VETO_{current_regime}_TECHNICAL")
-            if "TRENDING" in current_regime and strategy_id == "STATISTICAL_REVERSION":
-                return self._fail(f"STRATEGIC_REGIME_VETO_{current_regime}_STATISTICAL")
-
-        # Gate 5: Regime Tension Veto
-        tension = getattr(signal_event, "tension", 0.0)
-        if tension > 1.5 or tension < -1.5:
-            return self._fail(f"REGIME_TENSION_EXCESSIVE (tension={tension:.2f})")
-
-        # =====================================================================
-        # BANDA 2: INVARIANTES AXIOMÁTICOS DEL GRAFO & ORÁCULOS DE MERCADO
-        # =====================================================================
-        
-        # Gate 6: Invariantes Estricto (De invariants.py)
+        # Gate 6: Invariantes Estricto (HARD BLOCK)
         if meta_coordinator:
             if hasattr(meta_coordinator, "_check_invariants"):
                 if not meta_coordinator._check_invariants(signal_event):
                     return self._fail("SYSTEM_INVARIANT_VIOLATION")
         else:
-            # Fallback local a invariants
             from core.invariants import invariants
             from core.structs import TradeIntent
             direction = "LONG" if signal_event.signal_type == SignalType.LONG else "SHORT"
@@ -208,59 +354,7 @@ class ConsensusFilter:
             if not passed:
                 return self._fail(f"SYSTEM_INVARIANT_VIOLATION ({reason})")
 
-        # =====================================================================
-        # BANDA 3: VETOS TOPOLÓGICOS Y ANÁLISIS DE CORRELACIÓN Y SENTIMIENTO
-        # =====================================================================
-        
-        # Gate 7: Asset Correlation Risk
-        if risk_manager and hasattr(risk_manager, "correlation_manager") and risk_manager.correlation_manager:
-            active_symbols = list(set(
-                v_key.split('_')[0] for v_key, pos in portfolio.virtual_ledger.items()
-                if abs(pos.get("quantity", 0)) > 1e-8
-            ))
-            if active_symbols:
-                safe, reason = risk_manager.correlation_manager.check_correlation_risk(symbol, active_symbols)
-                if not safe:
-                    return self._fail(f"HIGH_CORRELATION_VETO ({reason})")
-
-        # Gate 8: Market Sentiment Veto
-        if risk_manager and hasattr(risk_manager, "sentiment_processor") and risk_manager.sentiment_processor:
-            mood = risk_manager.sentiment_processor.get_market_mood()
-            if sig_type_str == "LONG" and mood < -0.5:
-                return self._fail(f"SENTIMENT_DIVERGENCE (LONG but Mood={mood:.2f})")
-            elif sig_type_str == "SHORT" and mood > 0.5:
-                return self._fail(f"SENTIMENT_DIVERGENCE (SHORT but Mood={mood:.2f})")
-
-        # Gate 9: Liquidity Vacuum Veto
-        if horizon == "SCALPING" and risk_manager and hasattr(risk_manager, "liquidity_guardian") and risk_manager.liquidity_guardian:
-            quality = risk_manager.liquidity_guardian.get_market_quality_score(symbol)
-            if quality < 30:
-                return self._fail(f"LIQUIDITY_VACUUM (Quality={quality:.1f} < 30)")
-
-        # Gate 10: Graph Theory & Contagion Veto
-        if meta_coordinator and hasattr(meta_coordinator, "graph_layer") and meta_coordinator.graph_layer:
-            direction = "LONG" if signal_event.signal_type == SignalType.LONG else "SHORT"
-            state = meta_coordinator.graph_layer.state_matrix.get(symbol)
-            
-            # 1. Contagio
-            if direction == "LONG":
-                contagion_risk = meta_coordinator.graph_layer.get_contagion_risk(symbol)
-                if contagion_risk > 0.50:
-                    return self._fail(f"GRAPH_CONTAGION_RISK (Risk={contagion_risk:.2f})")
-            
-            if state:
-                # 2. Microstructure desbalance
-                if direction == "LONG" and state.orderflow_imbalance < -0.60:
-                    return self._fail(f"ORDERFLOW_IMBALANCE (Imbalance={state.orderflow_imbalance:.2f})")
-                if direction == "SHORT" and state.orderflow_imbalance > 0.60:
-                    return self._fail(f"ORDERFLOW_IMBALANCE (Imbalance={state.orderflow_imbalance:.2f})")
-                
-                # 3. Ecosystem Gravity
-                ecosystem_gravity = meta_coordinator.graph_layer.get_ecosystem_gravity()
-                if direction == "LONG" and ecosystem_gravity < -2.0 and state.eigenvector_centrality > 0.1:
-                    return self._fail(f"ECOSYSTEM_GRAVITY_VETO (Gravity={ecosystem_gravity:.2f})")
-
-        # Si supera todos los gates, ¡APROBADA!
+        # Si supera todos los gates fuertes y sobrevivió a las penalidades suaves, ¡APROBADA!
         self._metrics["passed"] += 1
         return True, "APPROVED"
 

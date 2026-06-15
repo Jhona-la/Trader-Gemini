@@ -71,14 +71,7 @@ from config import Config
 from core.engine import Engine
 from data.binance_loader import BinanceData
 from risk.risk_manager import RiskManager
-from strategies.sniper_strategy import SniperStrategy
-from strategies.statistical import StatisticalStrategy
-from strategies.phalanx import PhalanxStrategy
-from strategies.stat_arb import StatArbStrategy
-from strategies.arbitrage import ArbitrageStrategy
-from data.sentiment_loader import SentimentLoader
-from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy  # ← UNIVERSAL ENSEMBLE FOR ALL SYMBOLS
-from core.portfolio import Portfolio
+from strategies.omni_strategy import OmniStrategy # FASE 32: BINOMIO PERFECTO EN PRODUCCION
 from core.micro_awareness import MicroAccountAwareness
 from core.events import OrderEvent, SignalEvent
 from core.enums import OrderSide, OrderType
@@ -86,6 +79,7 @@ from core.market_regime import MarketRegimeDetector
 from core.order_manager import OrderManager
 from core.market_scanner import MarketScanner
 from core.strategy_selector import StrategySelector
+from core.portfolio import Portfolio
 from execution.binance_executor import BinanceExecutor
 from utils.logger import logger
 from core.neural_bridge import neural_bridge
@@ -317,11 +311,12 @@ async def market_adaptive_loop(engine: Engine, data_handler: BinanceData, scanne
                     logger.info("📡 Waiting 30s for new symbol history...")
                     await asyncio.sleep(30)
                 
-                # D. Register new strategies (DUAL HORIZON)
+                # D. Register new ML strategies (DUAL HORIZON)
                 for s in to_add:
                     try:
                         is_leader = ('BTC' in s)
                         # Scalping Engine
+                        from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy
                         ml_strat_scalp = MLStrategy(
                             data_provider=data_handler,
                             events_queue=events_queue,
@@ -348,7 +343,7 @@ async def market_adaptive_loop(engine: Engine, data_handler: BinanceData, scanne
                         ml_strat_swing.strategy_id += "_SWING"
                         engine.register_strategy(ml_strat_swing)
                     except Exception as e:
-                        logger.error(f"Failed to spawn adaptive strategy for {s}: {e}")
+                        logger.error(f"Failed to spawn adaptive ML strategy for {s}: {e}")
 
                 logger.info("✅ Adaptive Swap Complete.")
             
@@ -448,7 +443,12 @@ async def main():
     import queue
     import threading
     from core.market_scanner import MarketScanner
+    from strategies.omni_strategy import OmniStrategy
     from strategies.technical import HybridScalpingStrategy as TechnicalStrategy
+    from strategies.vacuum_sniper import VacuumSniperStrategy
+    from strategies.asymmetric_mm import AsymmetricMMStrategy
+    from strategies.cvd_sniper import CVDSniperStrategy
+    from strategies.dark_pool_surfer import DarkPoolSurferStrategy
     
     # Events Queue (Thread-Safe)
     events_queue = queue.Queue()
@@ -470,6 +470,13 @@ async def main():
             
     # Update data handler with the selected elite basket (downloads history in background)
     await data_handler.update_symbol_list(Config.TRADING_PAIRS)
+    
+    # 🛡️ SOVEREIGN CONTEXT MEMORY (Phase 3 Mutación)
+    from core.sovereign_memory import ZmqKVServer
+    memory_server = ZmqKVServer(port=5557)
+    memory_server_task = asyncio.create_task(memory_server.start())
+    # Esperar a que el puerto se abra antes de crear el cliente
+    await asyncio.sleep(0.1)
     
     portfolio = Portfolio(
         initial_capital=Config.INITIAL_CAPITAL,
@@ -517,11 +524,37 @@ async def main():
     sentiment_loader = None  # Legacy param — FeatureEngineering now uses news_sentiment singleton directly
     logger.info("📰 [Phase 8] News Sentiment NLP Engine activated (FinBERT + CryptoBERT).")
     
-    # Executor
-    print("DEBUG: Instanciando BinanceExecutor...")
+    # ═══════════════════════════════════════════════════════════════
+    # MUTACIÓN 2: ZERO-MQ IPC ARCHITECTURE INITIALIZATION
+    # ═══════════════════════════════════════════════════════════════
+    from core.zmq_bus import ZmqPullNode, ZmqPushNode
+    engine_pull_node = ZmqPullNode(bind_port=5555)            # Engine listens here
+    executor_push_node = ZmqPushNode(target_port=5556)        # Engine pushes orders here
+    
+    executor_pull_node = ZmqPullNode(bind_port=5556)          # Executor listens here
+    engine_push_node = ZmqPushNode(target_port=5555)          # Executor pushes fills here
+    loader_push_node = ZmqPushNode(target_port=5555)          # Loader pushes market events here
+    
+    data_handler.zmq_push = loader_push_node
+    
+    # Executor - Phase 36: Paper Trading Mock Executor Injection
+    print("DEBUG: Instanciando Executor...")
     try:
-        executor = BinanceExecutor(events_queue, portfolio=portfolio, data_provider=data_handler, micro_awareness=micro_awareness)
-        print("DEBUG: BinanceExecutor instanciado exitosamente.")
+        if Config.BINANCE_USE_TESTNET or getattr(Config, 'BINANCE_USE_DEMO', False):
+            print("⚡ [SYSTEM] MOCK EXECUTOR ACTIVATED (Phase 36 Paper Trading)")
+            from execution.mock_executor import MockExecutor
+            executor = MockExecutor(leverage=Config.BINANCE_LEVERAGE)
+            # Inject required attributes mock executor doesn't natively handle via __init__
+            executor.events_queue = events_queue
+            executor.portfolio = portfolio
+            executor.data_provider = data_handler
+            executor.micro_awareness = micro_awareness
+        else:
+            executor = BinanceExecutor(events_queue, portfolio=portfolio, data_provider=data_handler, micro_awareness=micro_awareness)
+        
+        executor.zmq_pull = executor_pull_node
+        executor.zmq_push = engine_push_node
+        print("DEBUG: Executor instanciado exitosamente.")
     except Exception as e:
         print(f"DEBUG CRITICAL FAIL en BinanceExecutor: {e}")
         import traceback
@@ -530,6 +563,8 @@ async def main():
     
     # Engine
     engine = Engine(events_queue)
+    engine.zmq_pull = engine_pull_node
+    engine.zmq_push = executor_push_node
     engine.register_data_handler(data_handler)
     engine.register_portfolio(portfolio)
     engine.register_risk_manager(risk_manager)
@@ -555,149 +590,62 @@ async def main():
     # ════════════════════════════════════════════════════════════════
     logger.info(f"🎯 [INTEGRAL MODE] Operating with {len(Config.TRADING_PAIRS)} symbols (Full basket)")
     
-    # ML Strategy (one per symbol) — DISABLED IN LEAN MODE
-    if getattr(Config, 'LEAN_ML_ENABLED', True):
-        for symbol in Config.TRADING_PAIRS:
-            try:
-                is_leader = ('BTC' in symbol)
-                
-                # --- 1. SCALPING ENGINE (High Frequency) ---
-                ml_strat_scalp = MLStrategy(
-                    data_provider=data_handler,
-                    events_queue=events_queue,
-                    symbol=symbol,
-                    lookback=Config.Strategies.ML_LOOKBACK_BARS,
-                    sentiment_loader=sentiment_loader,
-                    portfolio=portfolio,
-                    risk_manager=risk_manager if is_leader else None,
-                    horizon="SCALPING"
-                )
-                strategies.append(ml_strat_scalp)
-                engine.register_strategy(ml_strat_scalp)
-                
-                # --- 2. SWING ENGINE (Longer Term) ---
-                ml_strat_swing = MLStrategy(
-                    data_provider=data_handler,
-                    events_queue=events_queue,
-                    symbol=symbol,
-                    lookback=Config.Strategies.ML_LOOKBACK_BARS,
-                    sentiment_loader=sentiment_loader,
-                    portfolio=portfolio,
-                    risk_manager=None,
-                    horizon="SWING"
-                )
-                ml_strat_swing.strategy_id += "_SWING"
-                strategies.append(ml_strat_swing)
-                engine.register_strategy(ml_strat_swing)
-                
-            except Exception as e:
-                logger.warning(f"Could not init ML Strategies for {symbol}: {e}")
-    else:
-        logger.info("🎯 [LEAN MODE] ML Strategy DISABLED (accuracy 42-52% = destructive). Using Technical only.")
-    
-    # Sniper Strategy - DUAL HORIZON (RE-ENABLED: Integral Consensus)
+    # 🎯 FASE 32: OMNI-STRATEGY (Santo Grial Unificado)
+    # Reemplaza todo el ruido aislado por una sumatoria perfecta de Tech+ML+Phalanx+StatArb
     try:
-        sniper_scalp = SniperStrategy(data_handler, events_queue, executor, portfolio, horizon="SCALPING")
-        strategies.append(sniper_scalp)
-        engine.register_strategy(sniper_scalp)
-        logger.info("✅ SniperStrategy [SCALPING] registered (Integral).")
-
-        sniper_swing = SniperStrategy(data_handler, events_queue, executor, portfolio, horizon="SWING")
-        strategies.append(sniper_swing)
-        engine.register_strategy(sniper_swing)
-        logger.info("✅ SniperStrategy [SWING] registered (Integral).")
-    except Exception as e:
-        logger.warning(f"Could not init Sniper Strategy: {e}")
-    
-    # Technical Strategy — MULTI-HORIZON (ALWAYS ACTIVE — 73.5% WR proven)
-    try:
-        from strategies.scalping_motor import ScalpingMotor
-        from strategies.swing_motor import SwingMotor
+        omni_scalp = OmniStrategy(data_handler, events_queue, horizon="SCALPING")
+        engine.register_strategy(omni_scalp)
+        logger.info("✅ OmniStrategy [SCALPING] registered.")
         
-        tech_micro = TechnicalStrategy(data_handler, events_queue, horizon="MICROSCALPING")
-        strategies.append(tech_micro)
-        engine.register_strategy(tech_micro)
-        logger.info("✅ TechnicalStrategy [MICROSCALPING] registered.")
-
-        tech_scalp = ScalpingMotor(data_handler, events_queue)
-        strategies.append(tech_scalp)
-        engine.register_strategy(tech_scalp)
-        logger.info("✅ ScalpingMotor [SCALPING] registered.")
-        
-        tech_swing = SwingMotor(data_handler, events_queue)
-        strategies.append(tech_swing)
-        engine.register_strategy(tech_swing)
-        logger.info("✅ SwingMotor [SWING] registered.")
+        omni_swing = OmniStrategy(data_handler, events_queue, horizon="SWING")
+        engine.register_strategy(omni_swing)
+        logger.info("✅ OmniStrategy [SWING] registered.")
     except Exception as e:
-        logger.warning(f"Could not init Technical Strategy: {e}")
-
+        logger.error(f"Error registering OmniStrategy: {e}")
+        
+        
     # ════════════════════════════════════════════════════════════════
-    # INTEGRAL MODE: Statistical re-enabled, Phalanx/StatArb/Arb still gated
-    # QUÉ: Statistical aporta señales de reversión a la media complementarias.
-    # POR QUÉ: Phalanx/StatArb/Arbitrage generan EXIT sin posición (44% ruido).
-    # PARA QUÉ: Consenso ponderado necesita diversidad de señales.
+    # FORENSIC-V47 / PHASE 32: Legacy Isolated Strategies REMOVED.
+    # El OmniStrategy (registrado arriba) ahora unifica Tech + ML + Phalanx + StatArb 
+    # utilizando el "Omni-Score" Genético Ponderado.
+    # SIN EMBARGO, MLStrategy DEBE instanciarse por símbolo para poder entrenar y evaluar!
     # ════════════════════════════════════════════════════════════════
-    # Statistical Strategy — DUAL HORIZON (RE-ENABLED: Integral)
-    try:
-        stat_scalp = StatisticalStrategy(data_handler, events_queue, horizon="SCALPING")
-        strategies.append(stat_scalp)
-        engine.register_strategy(stat_scalp)
-        logger.info("✅ StatisticalStrategy [SCALPING] registered (Integral).")
-        
-        stat_swing = StatisticalStrategy(data_handler, events_queue, horizon="SWING")
-        strategies.append(stat_swing)
-        engine.register_strategy(stat_swing)
-        logger.info("✅ StatisticalStrategy [SWING] registered (Integral).")
-    except Exception as e:
-        logger.warning(f"Could not init Statistical Strategy: {e}")
-    # ════════════════════════════════════════════════════════════════
-    # FORENSIC-V47: INTEGRAL MODE — ALL STRATEGIES ALWAYS ACTIVE
-    # QUÉ: Removido el gate LEAN_MODE que bloqueaba Phalanx/StatArb/Arbitrage.
-    # POR QUÉ: El backtest opera con 7 estrategias, producción debe ser igual.
-    #   La Dead Zone + consenso ponderado filtran el ruido de EXIT sin posición.
-    # PARA QUÉ: Paridad total backtest ↔ producción.
-    # ════════════════════════════════════════════════════════════════
-    # Phalanx Strategy — DUAL HORIZON
-    try:
-        phalanx_scalp = PhalanxStrategy(data_handler, events_queue, horizon="SCALPING")
-        strategies.append(phalanx_scalp)
-        engine.register_strategy(phalanx_scalp)
-        logger.info("✅ PhalanxStrategy [SCALPING] registered (Integral).")
-        
-        phalanx_swing = PhalanxStrategy(data_handler, events_queue, horizon="SWING")
-        strategies.append(phalanx_swing)
-        engine.register_strategy(phalanx_swing)
-        logger.info("✅ PhalanxStrategy [SWING] registered (Integral).")
-    except Exception as e:
-        logger.warning(f"Could not init Phalanx Strategy: {e}")
+    from strategies.ml_strategy import MLStrategy
+    for symbol in Config.TRADING_PAIRS:
+        try:
+            is_leader = "BTC" in symbol
+            
+            # ── SCALPING ENGINE ──
+            ml_scalp = MLStrategy(
+                data_provider=data_handler,
+                events_queue=events_queue,
+                symbol=symbol,
+                lookback=Config.Strategies.ML_LOOKBACK_BARS,
+                sentiment_loader=sentiment_loader,
+                portfolio=portfolio,
+                risk_manager=risk_manager if is_leader else None,
+                horizon="SCALPING"
+            )
+            engine.register_strategy(ml_scalp)
 
-    # StatArb Strategy — DUAL HORIZON
-    try:
-        statarb_scalp = StatArbStrategy(data_handler, events_queue, horizon="SCALPING")
-        strategies.append(statarb_scalp)
-        engine.register_strategy(statarb_scalp)
-        logger.info("✅ StatArbStrategy [SCALPING] registered (Integral).")
-        
-        statarb_swing = StatArbStrategy(data_handler, events_queue, horizon="SWING")
-        strategies.append(statarb_swing)
-        engine.register_strategy(statarb_swing)
-        logger.info("✅ StatArbStrategy [SWING] registered (Integral).")
-    except Exception as e:
-        logger.warning(f"Could not init StatArb Strategy: {e}")
+            # ── SWING ENGINE ──
+            ml_swing = MLStrategy(
+                data_provider=data_handler,
+                events_queue=events_queue,
+                symbol=symbol,
+                lookback=Config.Strategies.ML_LOOKBACK_BARS,
+                sentiment_loader=sentiment_loader,
+                portfolio=portfolio,
+                risk_manager=None,
+                horizon="SWING"
+            )
+            ml_swing.strategy_id += "_SWING"
+            engine.register_strategy(ml_swing)
+            strategies.append(ml_scalp)
+            strategies.append(ml_swing)
+        except Exception as e:
+            logger.error(f"⚠️ Failed to init ML strategy for {symbol}: {e}")
 
-    # Arbitrage Strategy — DUAL HORIZON
-    try:
-        arbitrage_scalp = ArbitrageStrategy(data_handler, events_queue, horizon="SCALPING")
-        strategies.append(arbitrage_scalp)
-        engine.register_strategy(arbitrage_scalp)
-        logger.info("✅ ArbitrageStrategy [SCALPING] registered (Integral).")
-        
-        arbitrage_swing = ArbitrageStrategy(data_handler, events_queue, horizon="SWING")
-        strategies.append(arbitrage_swing)
-        engine.register_strategy(arbitrage_swing)
-        logger.info("✅ ArbitrageStrategy [SWING] registered (Integral).")
-    except Exception as e:
-        logger.warning(f"Could not init Arbitrage Strategy: {e}")
     
     logger.info(f"[OK] Registered {len(strategies)} strategies in the Engine.")
     
@@ -802,11 +750,20 @@ async def main():
     regime_detector = MarketRegimeDetector(events_queue=events_queue)
     regime_task = asyncio.create_task(global_regime_loop(regime_detector, data_handler, risk_manager, portfolio))
     
+    # 🌌 MUTACIÓN 4: QUANTUM ROUTER INJECTION
+    from core.quantum_router import QuantumRouter
+    quantum_router = QuantumRouter(portfolio, selector, regime_detector)
+    engine.quantum_router = quantum_router
+    logger.info("🌌 [QUANTUM] Adaptive Meta-Orchestrator Online.")
+    
     # PHASE 9/41: ORDER MANAGER
     order_manager = OrderManager(executor, data_provider=data_handler)
     executor.order_manager = order_manager
     engine.register_order_manager(order_manager)
     order_task = asyncio.create_task(order_manager_loop(order_manager))
+    
+    # MUTACIÓN 2: START EXECUTOR ZMQ LOOP
+    executor_zmq_task = asyncio.create_task(executor.start_zmq_loop())
     
     # PHASE 99: USER DATA STREAM (Manual Close Detection)
     # [Phase 6 Audit] DISABLED to prevent conflict with execution/user_data_stream.py
@@ -1029,9 +986,11 @@ async def main():
     engine.stop()
     
     # Cancel all background tasks
-    tasks = [ws_task, adaptive_task, meta_task, regime_task, order_task, heartbeat_task, engine_task, user_stream_task]
+    tasks = [ws_task, adaptive_task, meta_task, regime_task, order_task, heartbeat_task, engine_task, user_stream_task, memory_server_task]
     for task in tasks:
         task.cancel()
+        
+    memory_server.stop()
     
     # Wait for tasks to clean up
     await asyncio.gather(*tasks, return_exceptions=True)

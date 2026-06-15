@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import collections
 import numpy as np
 import polars as pl
+import orjson # Direct native C-rust import for maximum websocket parsing speed
 from utils.fast_json import FastJson as json  # Phase 1: Zero-Latency Serialization
 from utils.hft_buffer import NumbaStructuredRingBuffer, NumbaRingBuffer # Phase 4: Structured Buffers
 import os # Phase 5
@@ -24,6 +25,7 @@ import pyarrow # Phase 5 Check
 from utils.fast_strings import intern_string # Phase 21: String Interning Optimization
 from utils.shm_utils import SharedMemoryManager # Phase 11: SHM Bridge
 from strategies.components.microstructure import MicrostructureAnalyzer # Phase 25: Nadir-Soberano
+from utils.math_kernel import compute_microprice_jit # Phase 11: Micro-Price JIT
 
 # [MÓDULO OMEGA] - Dimensión 1: Validación de Datos
 from data.validators.ohlcv_validator import OHLCVValidator
@@ -37,8 +39,11 @@ class BinanceData(DataProvider):
         self.symbol_list = symbol_list
         self._running = True
         
-        # 1. Thread Pool for Parallel Fetching (I/O Bound)
-        self.executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="BinanceFetch")
+        # ZMQ IPC Node
+        self.zmq_push = None
+        
+        # 1. Thread Pool for Parallel Fetching (I/O Bound) - Phase 24: Nanosecond Boot
+        self.executor = ThreadPoolExecutor(max_workers=30, thread_name_prefix="BinanceFetch")
         
         # 2. Data Buffers Dictionary Initialization (Phase 9/98)
         self.buffers_1m = {}
@@ -54,6 +59,13 @@ class BinanceData(DataProvider):
         self.liquidity_cache = {}
         # PHASE 13: Order Flow Metrics
         self.order_flow_metrics = {}
+        
+        # PHASE 4: Quantum Time-Warping (Volume-based candles)
+        self.quantum_bars = {}
+        
+        # MUTACIÓN 36: Quantum Ping-Drift
+        self.ws_latency_history = collections.deque(maxlen=50)
+        self.current_ws_latency = 0.0
         
         # PHASE 29: Derivatives Metrics (OI, Funding)
         self.derivatives_metrics = {}
@@ -84,6 +96,29 @@ class BinanceData(DataProvider):
         # 4. Thread Safety Lock
         import contextlib
         self._data_lock = contextlib.nullcontext()
+        
+        # 5. Mutación 5: Crash-Loop Mitigation
+        self.watchdog_running = False
+        self.last_ws_msg_time = time.time()
+
+        # ═══════════════════════════════════════════════════════════════
+        # PHASE 5.3: ANTI-SPOOFING ML (Wall Tracking & Fake Wall Detection)
+        # QUÉ: Tracker de muros del Order Book para detectar spoofing.
+        # POR QUÉ: Las ballenas ponen muros falsos (10-50x volumen normal)
+        #   que desaparecen en milisegundos para manipular el precio.
+        # PARA QUÉ: Detectar la cancelación del muro (>80% vol desaparece
+        #   en <500ms) e inyectar señal CONTRARIA al muro falso.
+        # CÓMO: Guardamos snapshot del L5 cada tick. Si un muro grande
+        #   existía en t-1 pero desapareció en t, es spoofing.
+        # CUÁNDO: En cada actualización de `@depth5@100ms`.
+        # DÓNDE: data/binance_loader.py → _process_depth_level5()
+        # QUIÉN: BinanceData (detector), Engine (consumidor de señal)
+        # ═══════════════════════════════════════════════════════════════
+        self._wall_tracker = {}  # {symbol: {'bid_wall': float, 'ask_wall': float, 'bid_wall_price': float, 'ask_wall_price': float, 'timestamp': float}}
+        self._spoof_cooldown = {}  # {symbol: float (timestamp)} — Prevent spam
+        self._WALL_MULTIPLIER = 5.0  # A wall is 5x the average of other levels
+        self._SPOOF_CANCEL_RATIO = 0.80  # 80% disappearance = spoof confirmed
+        self._SPOOF_COOLDOWN_S = 3.0  # 3s cooldown between spoof signals per symbol
 
         # ═══════════════════════════════════════════════════════════════
         # LOW-LATENCY PHASE: ZERO-ALLOC OUTPUT BUFFERS
@@ -158,6 +193,17 @@ class BinanceData(DataProvider):
             logger.info(f"🧠 [SHM] Initialized Shared Memory for {len(self.shm_managers)} symbols")
         except Exception as e:
             logger.error(f"SHM Setup Error: {e}")
+
+    def _push_event(self, event):
+        """Helper to push events to either ZMQ or local Queue depending on architecture."""
+        if self.zmq_push:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.zmq_push.push(event))
+            except RuntimeError:
+                self.zmq_push.push_sync(event)
+        else:
+            self.events_queue.put(event)
 
     async def _watchdog_loop(self):
         """
@@ -296,7 +342,7 @@ class BinanceData(DataProvider):
     async def start_websockets(self):
         """
         [PHASE 1] Liquidation Sniper & Order Flow
-        Connects to Binance Async Websockets to listen to @forceOrder
+        [MUTACIÓN 30] Multi-Socket Multiplexing (Redundancia Entrelazada)
         """
         api_key = Config.BINANCE_API_KEY
         api_secret = Config.BINANCE_SECRET_KEY
@@ -306,72 +352,77 @@ class BinanceData(DataProvider):
             self.client = await AsyncClient.create(api_key, api_secret, testnet=testnet)
             self.bsm = BinanceSocketManager(self.client)
             
-        async def liquidation_listener():
-            try:
-                # To get all liquidations, we can use the multiplex socket
-                streams = [f"{sym.replace('/', '').lower()}@forceOrder" for sym in self.symbol_list]
-                
-                logger.info(f"🌊 [WebSockets] Liquidation Sniper listening to {len(streams)} streams...")
-                multiplex_socket = self.bsm.multiplex_socket(streams)
-                async with multiplex_socket as ts:
-                    while self._running:
-                        try:
-                            msg = await ts.recv()
-                            self._process_liquidation_msg(msg)
-                        except asyncio.TimeoutError:
-                            continue
-                        except Exception as e:
-                            logger.error(f"Liquidation stream err: {e}")
-                            await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"Liquidation listener fatal: {e}")
+        import collections
+        self.seen_events = collections.OrderedDict()
+        
+        def is_duplicate(event_id):
+            if event_id in self.seen_events:
+                return True
+            self.seen_events[event_id] = True
+            if len(self.seen_events) > 5000:
+                self.seen_events.popitem(last=False)
+            return False
 
-        # Start background task
+        async def _run_multiplex(streams, process_func, stream_type):
+            async def _worker(worker_id):
+                try:
+                    multiplex_socket = self.bsm.multiplex_socket(streams)
+                    async with multiplex_socket as ts:
+                        while self._running:
+                            try:
+                                msg = await ts.recv()
+                                # Extracción de Unique ID para deduplicación O(1)
+                                uid = None
+                                if stream_type == 'depth':
+                                    uid = msg.get('data', {}).get('lastUpdateId')
+                                elif stream_type == 'trades':
+                                    uid = msg.get('data', {}).get('a') # Aggregate trade ID
+                                elif stream_type == 'liquidations':
+                                    data = msg.get('data', {}).get('o', {})
+                                    uid = f"{data.get('s')}_{data.get('S')}_{data.get('p')}_{data.get('q')}_{data.get('T')}"
+                                
+                                if uid and is_duplicate(f"{stream_type}_{uid}"):
+                                    continue
+                                    
+                                # Mutación 36: Quantum Ping-Drift (Latency tracking)
+                                event_time = msg.get('data', {}).get('E', 0)
+                                if event_time > 0:
+                                    local_time = int(time.time() * 1000)
+                                    latency = local_time - event_time
+                                    # Evitar relojes desincronizados absurdos
+                                    if 0 <= latency < 5000:
+                                        self.ws_latency_history.append(latency)
+                                        self.current_ws_latency = sum(self.ws_latency_history) / len(self.ws_latency_history)
+                                        
+                                process_func(msg)
+                            except asyncio.TimeoutError:
+                                continue
+                            except Exception as e:
+                                logger.error(f"{stream_type} worker {worker_id} err: {e}")
+                                await asyncio.sleep(1)
+                except Exception as e:
+                    logger.error(f"{stream_type} worker {worker_id} fatal: {e}")
+            
+            # Spawn 3 workers idénticos compitiendo (Multiplexación HFT)
+            logger.info(f"🌐 [WebSockets] Lanzando enjambre redundante (x3) para {stream_type} en {len(streams)} streams...")
+            workers = [_worker(i) for i in range(1, 4)]
+            await asyncio.gather(*workers)
+
+        async def liquidation_listener():
+            streams = [f"{sym.replace('/', '').lower()}@forceOrder" for sym in self.symbol_list]
+            await _run_multiplex(streams, self._process_liquidation_msg, 'liquidations')
+
         asyncio.create_task(liquidation_listener())
         
-        # 🌊 PHASE 10: Market Microstructure (L2 OrderBook Listener)
-        # Limit to BTC and ETH initially to save bandwidth/CPU unless throttled.
-        # We will subscribe to all but throttle the math update to 500ms.
         async def depth_listener():
-            try:
-                streams = [f"{sym.replace('/', '').lower()}@depth10@100ms" for sym in self.symbol_list]
-                logger.info(f"📊 [WebSockets] L2 Orderbook listening to {len(streams)} streams...")
-                multiplex_socket = self.bsm.multiplex_socket(streams)
-                
-                async with multiplex_socket as ts:
-                    while self._running:
-                        try:
-                            msg = await ts.recv()
-                            self._process_depth_msg(msg)
-                        except asyncio.TimeoutError:
-                            continue
-                        except Exception as e:
-                            logger.error(f"Depth stream err: {e}")
-                            await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"Depth listener fatal: {e}")
+            streams = [f"{sym.replace('/', '').lower()}@depth10@100ms" for sym in self.symbol_list]
+            await _run_multiplex(streams, self._process_depth_msg, 'depth')
                 
         asyncio.create_task(depth_listener())
 
-        # 👣 PHASE 13: Capa 4 Footprint Reconstructor
         async def trades_listener():
-            try:
-                streams = [f"{sym.replace('/', '').lower()}@aggTrade" for sym in self.symbol_list]
-                logger.info(f"👣 [WebSockets] Footprint Reconstructor listening to {len(streams)} streams...")
-                multiplex_socket = self.bsm.multiplex_socket(streams)
-                
-                async with multiplex_socket as ts:
-                    while self._running:
-                        try:
-                            msg = await ts.recv()
-                            self._process_trade_msg(msg)
-                        except asyncio.TimeoutError:
-                            continue
-                        except Exception as e:
-                            logger.error(f"Trades stream err: {e}")
-                            await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"Trades listener fatal: {e}")
+            streams = [f"{sym.replace('/', '').lower()}@aggTrade" for sym in self.symbol_list]
+            await _run_multiplex(streams, self._process_trade_msg, 'trades')
                 
         asyncio.create_task(trades_listener())
 
@@ -401,15 +452,79 @@ class BinanceData(DataProvider):
             
             ob = self.orderbooks[symbol]
             
+            # Whale tracking (Bloques grandes > $100k)
+            whale_bid_vol = 0.0
+            whale_ask_vol = 0.0
+            total_bid_vol = 0.0
+            total_ask_vol = 0.0
+            
             # Update Bids
             for bid in data.get('bids', []):
-                ob.update_bid(float(bid[0]), float(bid[1]))
+                price = float(bid[0])
+                qty = float(bid[1])
+                ob.update_bid(price, qty)
+                usd_val = price * qty
+                total_bid_vol += usd_val
+                if usd_val > 100000: # 100k USD wall
+                    whale_bid_vol += usd_val
                 
             # Update Asks
             for ask in data.get('asks', []):
-                ob.update_ask(float(ask[0]), float(ask[1]))
+                price = float(ask[0])
+                qty = float(ask[1])
+                ob.update_ask(price, qty)
+                usd_val = price * qty
+                total_ask_vol += usd_val
+                if usd_val > 100000:
+                    whale_ask_vol += usd_val
                 
-            # The metrics (OFI, Spread, Microprice) are now instantly available in Cython
+            # Calcular Order Flow Imbalance (OFI) simplificado
+            imbalance = (total_bid_vol - total_ask_vol) / (total_bid_vol + total_ask_vol) if (total_bid_vol + total_ask_vol) > 0 else 0
+            
+            # [PHASE 11] Micro-Price Cython Optimization
+            best_bid_price, best_bid_vol = 0.0, 0.0
+            best_ask_price, best_ask_vol = 0.0, 0.0
+            if data.get('bids'):
+                best_bid_price, best_bid_vol = float(data['bids'][0][0]), float(data['bids'][0][1])
+            if data.get('asks'):
+                best_ask_price, best_ask_vol = float(data['asks'][0][0]), float(data['asks'][0][1])
+                
+            micro_price = compute_microprice_jit(best_bid_price, best_bid_vol, best_ask_price, best_ask_vol)
+            
+            if symbol not in self.order_flow_metrics:
+
+                self.order_flow_metrics[symbol] = {
+                    'buy_volume': 0.0, 'sell_volume': 0.0, 'cvd': 0.0, 'last_reset': time.time()
+                }
+                
+            self.order_flow_metrics[symbol]['ofi'] = imbalance
+            self.order_flow_metrics[symbol]['whale_bid_vol'] = whale_bid_vol
+            self.order_flow_metrics[symbol]['whale_ask_vol'] = whale_ask_vol
+            self.order_flow_metrics[symbol]['micro_price'] = micro_price
+            
+            # 🔮 FASE 5: VISIÓN DE RAYOS X (LOB HEATMAP)
+            spoof_buy = whale_bid_vol / (total_bid_vol + 1e-8) if total_bid_vol > 0 else 0.0
+            spoof_sell = whale_ask_vol / (total_ask_vol + 1e-8) if total_ask_vol > 0 else 0.0
+            self.order_flow_metrics[symbol]['spoofing_prob_buy'] = spoof_buy
+            self.order_flow_metrics[symbol]['spoofing_prob_sell'] = spoof_sell
+            
+            # Si más del 85% de la liquidez es de ballenas, es altamente probable que sea Spoofing (Muro falso)
+            is_toxic = spoof_buy > 0.85 or spoof_sell > 0.85
+            
+            # Iceberg proxy: Divergencia severa entre OFI (Limit Orders) y CVD (Market Orders)
+            # Ejemplo: OFI muy alcista (+0.8) pero CVD muy negativo = Órdenes limitadas ocultas absorbiendo ventas (Iceberg Buy)
+            cvd = self.order_flow_metrics[symbol].get('cvd', 0.0)
+            iceberg_score = 0.0
+            if imbalance > 0.6 and cvd < -50000:
+                iceberg_score = 0.9 # Hidden Buy Iceberg
+            elif imbalance < -0.6 and cvd > 50000:
+                iceberg_score = -0.9 # Hidden Sell Iceberg
+                
+            self.order_flow_metrics[symbol]['iceberg_score'] = iceberg_score
+            self.order_flow_metrics[symbol]['is_toxic'] = is_toxic
+            
+            
+            # The metrics (OFI, Spread, Microprice) are now instantly available in Cython and local metrics dict
             
         except Exception as e:
             # Silently drop malformed depth updates to prevent log spam
@@ -427,6 +542,28 @@ class BinanceData(DataProvider):
             data = msg['data']
             symbol_raw = data.get('s', '')
             symbol = f"{symbol_raw[:-4]}/{symbol_raw[-4:]}" if symbol_raw.endswith('USDT') else symbol_raw
+            
+            # 🔮 [PHASE 5] MULTI-COIN ORACLE (LEAD-LAG ARBITRAGE)
+            # QUÉ: Rastrea la velocidad de BTC/USDT para inyectar factor de aceleración a Altcoins.
+            if symbol == 'BTC/USDT':
+                if not hasattr(self, '_btc_oracle_data'):
+                    self._btc_oracle_data = {'last_price': float(data.get('p', 0)), 'last_time': time.time(), 'velocity': 0.0}
+                else:
+                    curr_price = float(data.get('p', 0))
+                    curr_time = time.time()
+                    dt = curr_time - self._btc_oracle_data['last_time']
+                    if dt >= 0.1: # Calculate velocity every 100ms max to avoid noise
+                        dp = (curr_price - self._btc_oracle_data['last_price']) / self._btc_oracle_data['last_price']
+                        # Velocity: % change per second
+                        velocity = dp / dt 
+                        # Decay velocity slightly over time if dt is large
+                        self._btc_oracle_data['velocity'] = self._btc_oracle_data['velocity'] * 0.9 + velocity * 0.1
+                        self._btc_oracle_data['last_price'] = curr_price
+                        self._btc_oracle_data['last_time'] = curr_time
+                        
+                        # Store in global state for Engine/Strategies to read
+                        from core.state_manager import global_state
+                        global_state.btc_velocity = self._btc_oracle_data['velocity']
             
             if symbol not in self.order_flow_metrics:
                 self.order_flow_metrics[symbol] = {
@@ -514,7 +651,7 @@ class BinanceData(DataProvider):
             # routes this event to strategies (without close_price, the event
             # falls into the else branch and never reaches calculate_signals).
             # ═══════════════════════════════════════════════════════════════
-            self.events_queue.put(MarketEvent(
+            self._push_event(MarketEvent(
                 symbol=symbol, 
                 close_price=price,
                 order_flow={
@@ -601,6 +738,10 @@ class BinanceData(DataProvider):
         avg = sum(self.latency_history) / len(self.latency_history)
         mx = max(self.latency_history)
         return avg, mx
+        
+    def get_ws_latency(self) -> float:
+        """Devuelve la latencia promedio del WebSocket en ms (Mutación 36)."""
+        return self.current_ws_latency
         
     def _init_symbol_buffer(self, symbol):
         """Initialize HFT structured buffers for a symbol (Phase 4)."""
@@ -1103,16 +1244,23 @@ class BinanceData(DataProvider):
                              time_diff = ts - last_ts
                              if time_diff > 60000 and last_ts != ts:
                                  missed = int((time_diff/60000)-1)
-                                 logger.warning(f"⚠️ [DATA GUARDIAN] GAP en {s}: Faltan {missed} velas de 1m.")
+                                 logger.error(f"🚨 [DATA GUARDIAN] GAP CRÍTICO en {s}: Faltan {missed} velas de 1m. Abortando trading.")
                                  self.data_health_metrics[s]["gaps"] += 1
                                  
+                                 # PHASE 10: Circuit Breaker on Zero-Gap Violation
+                                 try:
+                                     from core.state_manager import global_state
+                                     global_state.data_integrity_compromised = True
+                                     global_state.circuit_breaker_active = True
+                                 except ImportError:
+                                     pass
                          if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
                               buf.rewind_one()
                          
                          buf.push(ts, np.float32(bar['open']), np.float32(bar['high']), 
                                   np.float32(bar['low']), np.float32(bar['close']), np.float32(bar['volume']))
                          
-                         self.events_queue.put(MarketEvent(symbol=s, close_price=bar['close'], timestamp=datetime.now()))
+                         self._push_event(MarketEvent(symbol=s, close_price=bar['close'], timestamp=datetime.now()))
 
                 if '5m' in data_packet:
                     bar = data_packet['5m']
@@ -1383,6 +1531,8 @@ class BinanceData(DataProvider):
                     
                     if not msg or 'data' not in msg:
                         continue
+                        
+                    self.last_ws_msg_time = time.time()
                     
                     # Routing based on stream name or content
                     stream_name = msg.get('stream', '')
@@ -1391,7 +1541,7 @@ class BinanceData(DataProvider):
                     if 'kline' in stream_name:
                         self._process_kline_event(data, stream_name)
                     elif 'bookTicker' in stream_name:
-                        pass # self._process_book_ticker(data)
+                        self._process_book_ticker(data)
                     elif 'forceOrder' in stream_name:
                         self._process_liquidation_msg(data)
                     elif 'depth5' in stream_name:
@@ -1405,24 +1555,89 @@ class BinanceData(DataProvider):
             raise e # Propagate to main restart loop
 
 
+    def _process_book_ticker(self, data):
+        """
+        [QUANTUM EVOLUTION] LOB Imbalance Sniping (Nanosecond Injection)
+        Process Best Bid / Best Ask updates to calculate Order Book Imbalance.
+        Imbalance = (Bid Qty - Ask Qty) / (Bid Qty + Ask Qty)
+        +1.0 means extreme BUY pressure (Empty Ask side)
+        -1.0 means extreme SELL pressure (Empty Bid side)
+        """
+        try:
+            symbol = data.get('s')
+            if not symbol:
+                return
+                
+            bid_qty = float(data.get('B', 0.0))
+            ask_qty = float(data.get('A', 0.0))
+            bid_price = float(data.get('b', 0.0))
+            ask_price = float(data.get('a', 0.0))
+            
+            if bid_qty + ask_qty > 0:
+                imbalance = (bid_qty - ask_qty) / (bid_qty + ask_qty)
+            else:
+                imbalance = 0.0
+                
+            if not hasattr(self, 'lob_imbalance'):
+                self.lob_imbalance = {}
+                
+            # Normalize internal symbol
+            internal_symbol = symbol
+            if symbol.endswith('USDT') and symbol not in self.symbol_list:
+                test_sym = f"{symbol[:-4]}/USDT"
+                if test_sym in self.symbol_list:
+                    internal_symbol = test_sym
+            
+            self.lob_imbalance[internal_symbol] = {
+                'imbalance': imbalance,
+                'bid_price': bid_price,
+                'ask_price': ask_price,
+                'timestamp': time.time()
+            }
+            
+            # Emit to Order Flow metrics for existing downstream listeners
+            if internal_symbol in self.order_flow_metrics:
+                self.order_flow_metrics[internal_symbol]['lob_imbalance'] = imbalance
+                
+        except Exception as e:
+            logger.error(f"Error processing bookTicker: {e}")
+
     def _force_restart_socket(self):
         """
         Phase 16: Recovery Callback
         """
         logger.warning("🚨 [Watchdog] Forcing WebSocket Restart...")
         if hasattr(self, 'socket'):
-            # This implementation depends on library.
-            # Best way: Cancel the task or Throw exception into loop?
-            # We are in a different thread (Watchdog). We can't await.
-            # We can set a flag or try to close from here (Thread-safe?)
             try:
-                # Close client connection to trigger exception in read loop
                 asyncio.run_coroutine_threadsafe(self.client.close_connection(), asyncio.get_event_loop())
             except Exception as e:
                 logger.error(f"Restart failed: {e}")
+
+    async def _watchdog_loop(self):
+        """
+        Mutación 5: Crash-Loop Mitigation.
+        Monitors WebSocket health and forces a reconnect if silent for > 60s.
+        """
+        self.watchdog_running = True
+        logger.info("🐕 [Mutación 5] Async Watchdog Started")
+        
+        # Grace period for connection startup
+        await asyncio.sleep(15) 
+        self.last_ws_msg_time = time.time()
+        
+        while self._running:
+            await asyncio.sleep(10)
+            
+            if time.time() - self.last_ws_msg_time > 60:
+                logger.critical("🚨 [WATCHDOG] WebSocket silent for > 60s. Forcing restart...")
+                if hasattr(self, 'client') and self.client:
+                    try:
+                        await self.client.close_connection()
+                    except Exception as e:
+                        logger.error(f"Failed to close WS connection: {e}")
                 
-
-
+                # Reset timestamp to avoid infinite trigger while reconnecting
+                self.last_ws_msg_time = time.time()
     def _process_kline_event(self, kline_data, stream_name):
         """
         ⚡ PHASE OMNI: FIXED Kline Event Processor + Jitter Tracking.
@@ -1525,32 +1740,30 @@ class BinanceData(DataProvider):
             health_score = 100.0
             gap_detected = False
             
-            with self._data_lock:
-                if self.latest_data[internal_symbol]:
-                    last_bar = self.latest_data[internal_symbol][-1]
-                    last_ts_ms = int(last_bar['datetime'].timestamp() * 1000)
-                    time_diff_s = (timestamp_ms - last_ts_ms) / 1000.0
+            # Lockless window append (sliding window is thread safe for single producer)
+            if self.latest_data[internal_symbol]:
+                last_bar = self.latest_data[internal_symbol][-1]
+                last_ts_ms = int(last_bar['datetime'].timestamp() * 1000)
+                time_diff_s = (timestamp_ms - last_ts_ms) / 1000.0
+                
+                if time_diff_s > 65 and is_closed:
+                    gap_detected = True
+                    health_score = max(0.0, 100.0 - (time_diff_s / 60.0) * 10)
+                    logger.warning(f"🚨 GAP DETECTED in {internal_symbol}: {time_diff_s}s interval. Dispatching Backfill...")
                     
-                    if time_diff_s > 65 and is_closed:
-                        gap_detected = True
-                        health_score = max(0.0, 100.0 - (time_diff_s / 60.0) * 10)
-                        logger.warning(f"🚨 GAP DETECTED in {internal_symbol}: {time_diff_s}s interval. Dispatching Backfill...")
-                        
-                        # Dispatch Backfill (Async task to not block WebSocket thread)
-                        if hasattr(self, 'loop') and self.loop:
-                            asyncio.run_coroutine_threadsafe(
-                                self._backfill_gap(internal_symbol, tf, last_ts_ms, timestamp_ms), 
-                                self.loop
-                            )
-                        
-                # Update sliding window for next gap check
-                bar_dict = {
-                    'datetime': datetime.fromtimestamp(timestamp_ms/1000.0, tz=timezone.utc),
-                    'close': close_price
-                }
-                self.latest_data[internal_symbol].append(bar_dict)
-
-
+                    # Dispatch Backfill (Async task to not block WebSocket thread)
+                    if hasattr(self, 'loop') and self.loop:
+                        asyncio.run_coroutine_threadsafe(
+                            self._backfill_gap(internal_symbol, tf, last_ts_ms, timestamp_ms), 
+                            self.loop
+                        )
+                    
+            # Update sliding window for next gap check
+            bar_dict = {
+                'datetime': datetime.fromtimestamp(timestamp_ms/1000.0, tz=timezone.utc),
+                'close': close_price
+            }
+            self.latest_data[internal_symbol].append(bar_dict)
 
             health_metrics = {
                 "score": health_score,
@@ -1559,7 +1772,7 @@ class BinanceData(DataProvider):
                 "stale": False
             }
             
-            # ─── BUFFER UPDATE (Thread-Safe) ───
+            # ─── BUFFER UPDATE (Thread-Safe & Lockless) ───
             
             target_map = self.buffers_1m
             if tf == '5m': target_map = self.buffers_5m
@@ -1570,13 +1783,13 @@ class BinanceData(DataProvider):
             
             ts_ms = int(kline['t'])  # Raw exchange timestamp
             
-            with self._data_lock:
-                buf = target_map[internal_symbol]
-                last_arr = buf.get_last(1)
-                if last_arr is not None and len(last_arr) > 0 and last_arr['timestamp'][0] == ts_ms:
-                    buf.rewind_one()
-                
-                buf.push(ts_ms, open_price, high_price, low_price, close_price, volume)
+            buf = target_map[internal_symbol]
+            last_arr = buf.get_last(1)
+            if last_arr is not None and len(last_arr) > 0 and last_arr['timestamp'][0] == ts_ms:
+                buf.rewind_one()
+            
+            # Atomic Numba buffer append
+            buf.push(ts_ms, open_price, high_price, low_price, close_price, volume)
             
             # ─── MARKET EVENT TRIGGER (THROTTLED) ───
             should_trigger = is_closed
@@ -1620,10 +1833,10 @@ class BinanceData(DataProvider):
                         micro_metrics = self.microstructure[internal_symbol].get_metrics()
                         of_metrics.update(micro_metrics)
                     
-                    self.events_queue.put(MarketEvent(
+                    self._push_event(MarketEvent(
                         symbol=internal_symbol,
                         close_price=close_price,
-                        timestamp=datetime.now(timezone.utc),
+                        timestamp=datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc),
                         order_flow=of_metrics,
                         health_metrics=health_metrics,
                         is_closed=is_closed
@@ -1634,10 +1847,10 @@ class BinanceData(DataProvider):
                     metrics['last_update'] = time.time()
                 else:
                     # Trigger without order flow if not available
-                    self.events_queue.put(MarketEvent(
+                    self._push_event(MarketEvent(
                         symbol=internal_symbol,
                         close_price=close_price,
-                        timestamp=datetime.now(timezone.utc),
+                        timestamp=datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc),
                         health_metrics=health_metrics,
                         is_closed=is_closed
                     ))
@@ -1829,29 +2042,178 @@ class BinanceData(DataProvider):
                     float(asks[0][0]), float(asks[0][1])
                 )
             
-            # [PHASE 11] SHM Write (Zero-Copy Export)
+            # ═══════════════════════════════════════════════════════════════
+            # PHASE 5.3: ANTI-SPOOFING DETECTION (Fake Wall Hunter)
+            # QUÉ: Detecta spoofing comparando muros entre snapshots.
+            # POR QUÉ: Un muro que desaparece >80% en <500ms es manipulación.
+            # PARA QUÉ: Inyectar señal CONTRARIA al muro para robar liquidez.
+            # CÓMO:
+            #   1. Identifica el nivel con mayor volumen (bid/ask)
+            #   2. Si ese volumen es >5x el promedio → es un "muro"
+            #   3. Compara con el snapshot anterior del mismo nivel
+            #   4. Si >80% del muro desapareció en <500ms → SPOOF!
+            #   5. Inyecta SignalEvent en CONTRA del muro falso
+            # ═══════════════════════════════════════════════════════════════
+            try:
+                # Identify walls: level with max volume on each side
+                max_bid_vol = 0.0
+                max_bid_price = 0.0
+                max_ask_vol = 0.0
+                max_ask_price = 0.0
+                other_bid_sum = 0.0
+                other_ask_sum = 0.0
+                
+                for i in range(min(5, len(bids))):
+                    vol = float(bids[i][1])
+                    if vol > max_bid_vol:
+                        other_bid_sum += max_bid_vol  # Previous max becomes 'other'
+                        max_bid_vol = vol
+                        max_bid_price = float(bids[i][0])
+                    else:
+                        other_bid_sum += vol
+                        
+                for i in range(min(5, len(asks))):
+                    vol = float(asks[i][1])
+                    if vol > max_ask_vol:
+                        other_ask_sum += max_ask_vol
+                        max_ask_vol = vol
+                        max_ask_price = float(asks[i][0])
+                    else:
+                        other_ask_sum += vol
+                
+                # Check if max level qualifies as a "wall"
+                avg_bid_other = other_bid_sum / max(1, min(5, len(bids)) - 1) if len(bids) > 1 else 0.0
+                avg_ask_other = other_ask_sum / max(1, min(5, len(asks)) - 1) if len(asks) > 1 else 0.0
+                
+                bid_is_wall = max_bid_vol > avg_bid_other * self._WALL_MULTIPLIER and avg_bid_other > 0
+                ask_is_wall = max_ask_vol > avg_ask_other * self._WALL_MULTIPLIER and avg_ask_other > 0
+                
+                # Compare with previous snapshot
+                prev = self._wall_tracker.get(internal_sym)
+                
+                if prev and (now - prev['timestamp']) < 0.5:  # <500ms between snapshots
+                    # Check BID wall cancellation (whale removed buy wall → SHORT signal)
+                    if prev.get('bid_is_wall', False) and prev['bid_wall'] > 0:
+                        # Was there a wall at this price level before?
+                        current_vol_at_price = 0.0
+                        for i in range(min(5, len(bids))):
+                            if abs(float(bids[i][0]) - prev['bid_wall_price']) < 0.01:
+                                current_vol_at_price = float(bids[i][1])
+                                break
+                        
+                        cancel_ratio = 1.0 - (current_vol_at_price / prev['bid_wall']) if prev['bid_wall'] > 0 else 0.0
+                        
+                        if cancel_ratio >= self._SPOOF_CANCEL_RATIO:
+                            # SPOOF CONFIRMED! Bid wall was fake → Price will DROP
+                            last_spoof = self._spoof_cooldown.get(internal_sym, 0.0)
+                            if (now - last_spoof) > self._SPOOF_COOLDOWN_S:
+                                self._spoof_cooldown[internal_sym] = now
+                                mid_price = (max_bid_price + max_ask_price) / 2 if max_ask_price > 0 else max_bid_price
+                                logger.warning(
+                                    f"🕵️ [ANTI-SPOOF] {internal_sym} BID WALL FAKE! "
+                                    f"Vol {prev['bid_wall']:.2f} → {current_vol_at_price:.2f} "
+                                    f"({cancel_ratio*100:.0f}% cancelled in {(now - prev['timestamp'])*1000:.0f}ms). "
+                                    f"Firing SHORT signal!"
+                                )
+                                from core.events import SignalEvent, SignalType
+                                spoof_signal = SignalEvent(
+                                    strategy_id="ANTI_SPOOF_SNIPER",
+                                    symbol=internal_sym,
+                                    datetime=datetime.now(timezone.utc),
+                                    signal_type=SignalType.SHORT,
+                                    strength=0.90,
+                                    confidence=0.85,
+                                    horizon="MICROSCALPING",
+                                    metadata={
+                                        "trigger": "bid_wall_spoof",
+                                        "cancel_ratio": cancel_ratio,
+                                        "wall_vol": prev['bid_wall'],
+                                        "setup_type": "MOMENTUM_SPOOF",
+                                        "momentum": 0.85,
+                                    }
+                                )
+                                spoof_signal.priority = 0  # Ultra-high priority
+                                self._push_event(spoof_signal)
+                    
+                    # Check ASK wall cancellation (whale removed sell wall → LONG signal)
+                    if prev.get('ask_is_wall', False) and prev['ask_wall'] > 0:
+                        current_vol_at_price = 0.0
+                        for i in range(min(5, len(asks))):
+                            if abs(float(asks[i][0]) - prev['ask_wall_price']) < 0.01:
+                                current_vol_at_price = float(asks[i][1])
+                                break
+                        
+                        cancel_ratio = 1.0 - (current_vol_at_price / prev['ask_wall']) if prev['ask_wall'] > 0 else 0.0
+                        
+                        if cancel_ratio >= self._SPOOF_CANCEL_RATIO:
+                            # SPOOF CONFIRMED! Ask wall was fake → Price will PUMP
+                            last_spoof = self._spoof_cooldown.get(internal_sym, 0.0)
+                            if (now - last_spoof) > self._SPOOF_COOLDOWN_S:
+                                self._spoof_cooldown[internal_sym] = now
+                                mid_price = (max_bid_price + max_ask_price) / 2 if max_ask_price > 0 else max_bid_price
+                                logger.warning(
+                                    f"🕵️ [ANTI-SPOOF] {internal_sym} ASK WALL FAKE! "
+                                    f"Vol {prev['ask_wall']:.2f} → {current_vol_at_price:.2f} "
+                                    f"({cancel_ratio*100:.0f}% cancelled in {(now - prev['timestamp'])*1000:.0f}ms). "
+                                    f"Firing LONG signal!"
+                                )
+                                from core.events import SignalEvent, SignalType
+                                spoof_signal = SignalEvent(
+                                    strategy_id="ANTI_SPOOF_SNIPER",
+                                    symbol=internal_sym,
+                                    datetime=datetime.now(timezone.utc),
+                                    signal_type=SignalType.LONG,
+                                    strength=0.90,
+                                    confidence=0.85,
+                                    horizon="MICROSCALPING",
+                                    metadata={
+                                        "trigger": "ask_wall_spoof",
+                                        "cancel_ratio": cancel_ratio,
+                                        "wall_vol": prev['ask_wall'],
+                                        "setup_type": "MOMENTUM_SPOOF",
+                                        "momentum": 0.85,
+                                    }
+                                )
+                                spoof_signal.priority = 0
+                                self._push_event(spoof_signal)
+                
+                # Update wall tracker snapshot
+                self._wall_tracker[internal_sym] = {
+                    'bid_wall': max_bid_vol,
+                    'ask_wall': max_ask_vol,
+                    'bid_wall_price': max_bid_price,
+                    'ask_wall_price': max_ask_price,
+                    'bid_is_wall': bid_is_wall,
+                    'ask_is_wall': ask_is_wall,
+                    'timestamp': now
+                }
+            except Exception as e:
+                logger.debug(f"Anti-spoof tracking error: {e}")
+            
+            # [PHASE 11 / NANO-SPEED] SHM Write (Zero-Copy Export sin allocaciones de listas)
             if internal_sym in self.shm_managers:
                 # Structure: [Bid1P, Bid1Q, Bid2P, Bid2Q ... Ask1P, Ask1Q ...]
                 # Top 5 Bids (10 floats) + Top 5 Asks (10 floats)
                 shm_arr = self.shm_managers[internal_sym]['arr']
                 
-                # Flatten top 5
-                # bids[:5] -> [[p,q], [p,q]...]
-                flat = []
+                idx = 0
                 for i in range(5):
                     if i < len(bids):
-                        flat.extend([float(bids[i][0]), float(bids[i][1])])
+                        shm_arr[idx] = float(bids[i][0])
+                        shm_arr[idx+1] = float(bids[i][1])
                     else:
-                        flat.extend([0.0, 0.0])
+                        shm_arr[idx] = 0.0
+                        shm_arr[idx+1] = 0.0
+                    idx += 2
                 
                 for i in range(5):
                     if i < len(asks):
-                        flat.extend([float(asks[i][0]), float(asks[i][1])])
+                        shm_arr[idx] = float(asks[i][0])
+                        shm_arr[idx+1] = float(asks[i][1])
                     else:
-                        flat.extend([0.0, 0.0])
-                
-                # Write to SHM
-                shm_arr[:] = flat[:]
+                        shm_arr[idx] = 0.0
+                        shm_arr[idx+1] = 0.0
+                    idx += 2
             
         except Exception as e:
             logger.debug(f"Error in depth5 processing: {e}")
@@ -1872,29 +2234,102 @@ class BinanceData(DataProvider):
                         internal_sym = s
                         break
             
+            price = float(data['p'])
             qty = float(data['q'])
             is_buyer_mm = data['m'] # True = Sell (at Bid), False = Buy (at Ask)
             
             delta_val = -qty if is_buyer_mm else qty
             
-            # Use a decay or window for Delta? 
-            # For micro-scalping, we want the "current" momentum.
-            # We add to current delta and it will be reset or decayed by the strategy.
             if internal_sym not in self.order_flow_metrics:
                 self.order_flow_metrics[internal_sym] = {
                     'imbalance': 1.0, 'bid_vol_5': 0.0, 'ask_vol_5': 0.0, 
                     'delta': 0.0, 'last_update': 0
                 }
             
-            # Cumulative Delta (Strategy will reset this every bar or use moving window)
             self.order_flow_metrics[internal_sym]['delta'] += delta_val
             
             # 🌊 PHASE 25: Microstructure Analysis (VPIN)
-            # data['p'] = price, data['q'] = qty
-            self.microstructure[internal_sym].on_trade(
-                float(data['p']), qty, is_buyer_mm
-            )
+            self.microstructure[internal_sym].on_trade(price, qty, is_buyer_mm)
             
+            # ═══════════════════════════════════════════════════════════════
+            # PHASE 4: QUANTUM TIME-WARPING (Volume-based Candles)
+            # QUÉ: Generar velas basadas en volumen operado (ej. $100k USD) en lugar de tiempo.
+            # POR QUÉ: Extraer ruido en periodos de baja volatilidad y capturar explosiones de alta frecuencia.
+            # ═══════════════════════════════════════════════════════════════
+            dollar_vol = price * qty
+            quantum_threshold = getattr(Config, 'QUANTUM_VOLUME_USD', 100_000.0)
+            
+            # FASE 68: VPIN Toxicity Tracking
+            if not hasattr(self, '_vpin_buckets'):
+                self._vpin_buckets = {}
+            if internal_sym not in self._vpin_buckets:
+                self._vpin_buckets[internal_sym] = {'buy_vol': 0.0, 'sell_vol': 0.0, 'history': []}
+                
+            vbucket = self._vpin_buckets[internal_sym]
+            if is_buyer_mm:
+                vbucket['sell_vol'] += dollar_vol
+            else:
+                vbucket['buy_vol'] += dollar_vol
+            
+            if internal_sym not in self.quantum_bars:
+                self.quantum_bars[internal_sym] = {
+                    'open': price, 'high': price, 'low': price, 'close': price,
+                    'volume_usd': 0.0, 'start_ts': time.time()
+                }
+                
+            qbar = self.quantum_bars[internal_sym]
+            qbar['high'] = max(qbar['high'], price)
+            qbar['low'] = min(qbar['low'], price)
+            qbar['close'] = price
+            qbar['volume_usd'] += dollar_vol
+            
+            if qbar['volume_usd'] >= quantum_threshold:
+                # 🚀 KLINE CUÁNTICO COMPLETADO!
+                
+                # Calcular VPIN Toxicity (Fase 68)
+                imbalance = abs(vbucket['buy_vol'] - vbucket['sell_vol'])
+                vbucket['history'].append(imbalance / max(qbar['volume_usd'], 1.0))
+                if len(vbucket['history']) > 50:
+                    vbucket['history'].pop(0)
+                
+                current_vpin = sum(vbucket['history']) / len(vbucket['history'])
+                vbucket['buy_vol'] = 0.0
+                vbucket['sell_vol'] = 0.0
+                
+                # Inyectar VPIN al SSOT Global
+                try:
+                    from core.global_state import GlobalMarketState
+                    ssot = GlobalMarketState()
+                    if internal_sym in ssot.symbol_states:
+                        ssot.symbol_states[internal_sym].vpin_toxicity = current_vpin
+                except Exception as e:
+                    pass
+                
+                # Generamos evento de mercado asíncrono puro de volumen.
+                of_metrics = self.order_flow_metrics[internal_sym].copy()
+                of_metrics['vpin_toxicity'] = current_vpin
+                
+                if internal_sym in self.microstructure:
+                    of_metrics.update(self.microstructure[internal_sym].get_metrics())
+                    
+                self._push_event(MarketEvent(
+                    symbol=internal_sym,
+                    close_price=qbar['close'],
+                    timestamp=datetime.now(timezone.utc),
+                    order_flow=of_metrics,
+                    is_closed=True,
+                    health_metrics={"score": 100.0, "gap_s": 0, "tf": "quantum", "stale": False}
+                ))
+                
+                logger.info(f"🌌 [QUANTUM BAR] {internal_sym} Cerrada! Vol: ${qbar['volume_usd']:.0f} | O:{qbar['open']} H:{qbar['high']} L:{qbar['low']} C:{qbar['close']} | VPIN: {current_vpin:.2f} | Duración: {(time.time() - qbar['start_ts']):.2f}s")
+                
+                # Reset
+                self.quantum_bars[internal_sym] = {
+                    'open': price, 'high': price, 'low': price, 'close': price,
+                    'volume_usd': 0.0, 'start_ts': time.time()
+                }
+                self.order_flow_metrics[internal_sym]['delta'] = 0.0
+                
         except Exception as e:
             logger.debug(f"Error in aggTrade processing: {e}")
 
@@ -1931,13 +2366,19 @@ class BinanceData(DataProvider):
             import threading
             def _fetch_all_history():
                 try:
-                    self.fetch_initial_history()
-                    self.fetch_initial_history_1h()
-                    self.fetch_initial_history_4h()
-                    self.fetch_initial_history_5m()
-                    self.fetch_initial_history_15m()
-                    self.fetch_initial_history_1d()
-                    self.fetch_initial_history_1w()
+                    # Phase 24: Parallelize the timeframe fetches themselves
+                    timeframes = [
+                        self.fetch_initial_history,
+                        self.fetch_initial_history_1h,
+                        self.fetch_initial_history_4h,
+                        self.fetch_initial_history_5m,
+                        self.fetch_initial_history_15m,
+                        self.fetch_initial_history_1d,
+                        self.fetch_initial_history_1w
+                    ]
+                    from concurrent.futures import ThreadPoolExecutor
+                    with ThreadPoolExecutor(max_workers=7) as tf_executor:
+                        list(tf_executor.map(lambda f: f(), timeframes))
                     logger.info("✅ Dynamic update history fetch complete.")
                 except Exception as e:
                     logger.error(f"Error fetching dynamic history: {e}")
@@ -1991,6 +2432,39 @@ class BinanceData(DataProvider):
                 
                 if internal_sym in self.vbi_history:
                     self.vbi_history[internal_sym].push(np.float32(vbi))
+                    
+                # 🚀 FASE 3: Francotirador de Desequilibrio Derivado (LOB Velocity)
+                if not hasattr(self, 'last_vbi'):
+                    self.last_vbi = {}
+                    self.last_vbi_vel = {}
+                
+                last_v = self.last_vbi.get(internal_sym, vbi)
+                vel = vbi - last_v
+                last_vel = self.last_vbi_vel.get(internal_sym, 0.0)
+                accel = vel - last_vel
+                
+                self.last_vbi[internal_sym] = vbi
+                self.last_vbi_vel[internal_sym] = vel
+                
+                # Si la aceleración del desequilibrio es extrema (ej: un whale pone orden masiva repentina)
+                if abs(accel) >= 0.75:
+                    from core.events import SignalEvent, SignalType
+                    import datetime
+                    side = SignalType.LONG if accel > 0 else SignalType.SHORT
+                    logger.critical(f"🎯 [LOB SNIPER] Aceleración Extrema detectada en {internal_sym}: {accel:.2f}")
+                    
+                    sig = SignalEvent(
+                        strategy_id="LOB_DERIVATIVE_SNIPER",
+                        symbol=internal_sym,
+                        datetime=datetime.datetime.now(),
+                        signal_type=side,
+                        strength=1.0,
+                        confidence=0.99, # Alta convicción para fractional Kelly
+                        horizon="MICROSCALPING",
+                        metadata={"accel": accel, "trigger": "lob_velocity", "reward_risk_ratio": 2.5}
+                    )
+                    sig.priority = 0
+                    self._push_event(sig)
 
         except Exception as e:
             logger.debug(f"Error in VBI calc: {e}")
@@ -2385,6 +2859,8 @@ class BinanceData(DataProvider):
         if internal_sym in getattr(self, 'microstructure', {}):
             micro_metrics = self.microstructure[internal_sym].get_metrics()
             of_metrics.update(micro_metrics)
+            # Mutación 13: Expose explicit toxicity_index
+            of_metrics['toxicity_index'] = micro_metrics.get('vpin', 0.0)
             
         return of_metrics
 

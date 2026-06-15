@@ -97,15 +97,30 @@ class CooldownManager:
             return True
 
     
-    def can_trade_symbol(self, symbol: str, horizon: str = "SCALPING") -> bool:
-        """Check symbol-specific cooldown, segregated by horizon to prevent cross-horizon blocking."""
+    def can_trade_symbol(self, symbol: str, horizon: str = "SCALPING", volatility_factor: float = 1.0, win_streak: int = 0) -> bool:
+        """Check symbol-specific cooldown, segregated by horizon.
+           FASE 9.5 DYNAMIC COOLDOWN: SCALPING cooldown is reduced in high volatility or winning streaks.
+        """
         with self._state_lock:
             key = f"{symbol}_{horizon}"
             if key not in self.last_symbol_trade:
                 return True
             
             elapsed = (self._get_now() - self.last_symbol_trade[key]).total_seconds()
-            cooldown_val = self.SCALPING_SYMBOL_COOLDOWN if horizon in ["SCALPING", "MICROSCALPING"] else self.SWING_SYMBOL_COOLDOWN
+            
+            if horizon in ["SCALPING", "MICROSCALPING"]:
+                # Dynamic cooldown calculation
+                base_cd = self.SCALPING_SYMBOL_COOLDOWN
+                # Max 60% reduction from volatility
+                vol_mult = max(0.4, 1.0 - (volatility_factor * 0.2)) 
+                # Max 40% reduction from win streak
+                streak_mult = max(0.6, 1.0 - (win_streak * 0.1))
+                cooldown_val = base_cd * vol_mult * streak_mult
+                # Hard minimum of 15 seconds to prevent spam
+                cooldown_val = max(15.0, cooldown_val)
+            else:
+                cooldown_val = self.SWING_SYMBOL_COOLDOWN
+
             if elapsed < cooldown_val:
                 self.blocked_count[f'symbol_{key}'] += 1
                 return False
@@ -147,7 +162,8 @@ class CooldownManager:
             return True
 
     def can_trade(self, symbol: str, pattern: Optional[str] = None, 
-                  strategy_id: Optional[str] = None, horizon: str = "SCALPING") -> tuple:
+                  strategy_id: Optional[str] = None, horizon: str = "SCALPING",
+                  volatility_factor: float = 1.0, win_streak: int = 0) -> tuple:
         """
         Comprehensive check - all cooldowns.
         
@@ -158,8 +174,8 @@ class CooldownManager:
         if not self.can_trade_global():
             return False, f"Global cooldown ({self.GLOBAL_COOLDOWN}s)"
         
-        # Level 2: Symbol (Horizon-Aware)
-        if not self.can_trade_symbol(symbol, horizon=horizon):
+        # Level 2: Symbol (Horizon-Aware & Dynamic)
+        if not self.can_trade_symbol(symbol, horizon=horizon, volatility_factor=volatility_factor, win_streak=win_streak):
             remaining = self.get_remaining_cooldown(symbol, 'symbol', horizon=horizon)
             return False, f"Symbol cooldown ({remaining:.0f}s remaining)"
         

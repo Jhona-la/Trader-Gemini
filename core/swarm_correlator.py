@@ -71,6 +71,8 @@ class SwarmCorrelator:
                         pair_corr = np.corrcoef(target_returns, other_ret)[0, 1]
                         if not np.isnan(pair_corr):
                             self.hypergraph.update_correlation_edge(symbol, other_sym, pair_corr)
+                            # Add Fréchet edge
+                            self.hypergraph.update_frechet_edge(symbol, other_sym, target_returns, other_ret)
                             
                 # Recompute graph topology
                 self.hypergraph.compute_topology()

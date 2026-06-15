@@ -40,7 +40,24 @@ class LiquidityGuardian:
             if bids and asks:
                 return bids[0][0], asks[0][0]
                 
-        # 2. Fallback to Ticker (Faster than order book depth REST call)
+        # ⚡ FASE 10: Zero-Latency Websocket Fallback
+        from data.data_provider import get_data_provider
+        dp = get_data_provider()
+        if dp:
+            # Remover /USDT para obtener el symbol interno
+            internal_sym = symbol.replace('/', '') if Config.BINANCE_USE_FUTURES else symbol
+            ob = dp.get_orderbook(internal_sym)
+            if ob:
+                bid, ask = ob.get_best_bid_ask()
+                if bid > 0 and ask > 0:
+                    return bid, ask
+            # Fallback a última vela si el OB no está listo
+            bars = dp.get_latest_bars(internal_sym, 1)
+            if not bars.empty and 'close' in bars.columns:
+                last_price = float(bars['close'].iloc[-1])
+                return last_price, last_price
+                
+        # 3. Fallback to Ticker (REST API - Last Resort)
         try:
             ticker = self.exchange.fetch_ticker(symbol)
             bid = ticker.get('bid', 0.0)
@@ -79,8 +96,26 @@ class LiquidityGuardian:
             if symbol in self.order_book_cache and (current_time - self.order_book_cache[symbol]['timestamp'] < self.cache_ttl):
                 order_book = self.order_book_cache[symbol]['data']
             else:
-                # Bloqueante REST API Call - Optimizado a 1 llamada por segundo máximo por símbolo
-                order_book = self.exchange.fetch_order_book(symbol, limit=limit)
+                # ⚡ FASE 10: Zero-Latency Websocket OrderBook
+                from data.data_provider import get_data_provider
+                dp = get_data_provider()
+                order_book = None
+                
+                if dp:
+                    internal_sym = symbol.replace('/', '') if Config.BINANCE_USE_FUTURES else symbol
+                    ob = dp.get_orderbook(internal_sym)
+                    if ob:
+                        # Extract Bids/Asks in ccxt format: [[price, qty], ...]
+                        bids = [[p, q] for p, q in ob.bids.items()]
+                        bids.sort(key=lambda x: x[0], reverse=True)
+                        asks = [[p, q] for p, q in ob.asks.items()]
+                        asks.sort(key=lambda x: x[0])
+                        order_book = {'bids': bids[:limit], 'asks': asks[:limit]}
+                
+                if not order_book:
+                    # Bloqueante REST API Call - Last Resort
+                    order_book = self.exchange.fetch_order_book(symbol, limit=limit)
+                    
                 self.order_book_cache[symbol] = {'data': order_book, 'timestamp': current_time}
             
             bids = order_book['bids'] # Compras [[price, qty], ...]
@@ -159,6 +194,53 @@ class LiquidityGuardian:
         except Exception as e:
             logger.error(f"⚠️ LiquidityGuardian Error: {e}")
             return {"is_safe": True, "reason": "Error fallback (Safe mode)"} # Fail open to avoid blocking trades during API errors
+
+    def check_order_book_imbalance(self, symbol: str, side: str, depth: int = 10, threshold_ratio: float = 2.5) -> Tuple[bool, str]:
+        """
+        🚀 FASE 22: Nano-Timeframe Validation
+        Analiza el desbalance del Order Book para evitar entrar justo antes de un micro-dump o micro-pump.
+        Retorna (is_safe, reason).
+        """
+        import time
+        current_time = time.time()
+        order_book = None
+        
+        if symbol in self.order_book_cache and (current_time - self.order_book_cache[symbol]['timestamp'] < self.cache_ttl):
+            order_book = self.order_book_cache[symbol]['data']
+        else:
+            from data.data_provider import get_data_provider
+            dp = get_data_provider()
+            if dp:
+                internal_sym = symbol.replace('/', '') if getattr(Config, 'BINANCE_USE_FUTURES', False) else symbol
+                ob = dp.get_orderbook(internal_sym)
+                if ob:
+                    bids = [[p, q] for p, q in ob.bids.items()]
+                    bids.sort(key=lambda x: x[0], reverse=True)
+                    asks = [[p, q] for p, q in ob.asks.items()]
+                    asks.sort(key=lambda x: x[0])
+                    order_book = {'bids': bids, 'asks': asks}
+        
+        if not order_book or not order_book['bids'] or not order_book['asks']:
+            return True, "No OB data, assuming safe"
+            
+        bids = order_book['bids'][:depth]
+        asks = order_book['asks'][:depth]
+        
+        bid_vol = sum([b[1] for b in bids])
+        ask_vol = sum([a[1] for a in asks])
+        
+        if bid_vol == 0 or ask_vol == 0:
+            return True, "OB too thin"
+            
+        # Si vamos LONG, queremos que los BIDs apoyen. Si los ASKs (ventas) aplastan a los BIDs, es un muro en contra.
+        if side.upper() == 'BUY':
+            if ask_vol > bid_vol * threshold_ratio:
+                return False, f"OB Imbalance AGAINST LONG: Asks({ask_vol:.2f}) > Bids({bid_vol:.2f}) x {threshold_ratio}"
+        elif side.upper() == 'SELL':
+            if bid_vol > ask_vol * threshold_ratio:
+                return False, f"OB Imbalance AGAINST SHORT: Bids({bid_vol:.2f}) > Asks({ask_vol:.2f}) x {threshold_ratio}"
+                
+        return True, "OB Balanced"
 
     def _detect_walls(self, bids: List, asks: List) -> Dict:
         """

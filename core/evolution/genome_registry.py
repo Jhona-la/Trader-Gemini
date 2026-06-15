@@ -85,3 +85,36 @@ class GenomeRegistry:
         if key in self.genomes:
             return self.genomes[key]['genes']
         return None
+
+    def apply_rl_gradient(self, symbol: str, horizon: str, gradients: dict):
+        """
+        [NanoRL] Aplica un gradiente (ascenso/descenso estocástico) a los genes activos.
+        Muta el valor en memoria y lo guarda.
+        """
+        key = f"{symbol}_{horizon}"
+        if key not in self.genomes:
+            return
+            
+        genes = self.genomes[key]['genes']
+        
+        for g_key, grad in gradients.items():
+            if g_key in genes:
+                # Si el gen es entero, acumulamos el gradiente fraccional en una memoria fantasma?
+                # Para simplificar y por performance, simplemente usamos flotantes o redondeamos si es explícitamente int.
+                current_val = genes[g_key]
+                if isinstance(current_val, int) and not isinstance(current_val, bool):
+                    # Acumuladores probabilísticos (Estocástico)
+                    import random
+                    if random.random() < abs(grad):
+                        genes[g_key] += 1 if grad > 0 else -1
+                else:
+                    genes[g_key] += grad
+                    
+                # Sanity Caps (Hard limits)
+                if 'rsi' in g_key:
+                    genes[g_key] = max(10, min(90, genes[g_key]))
+                elif 'mult' in g_key or 'std' in g_key:
+                    genes[g_key] = max(0.5, min(10.0, genes[g_key]))
+
+        self.genomes[key]['timestamp'] = datetime.utcnow().isoformat()
+        self._save()

@@ -11,6 +11,7 @@ from utils.latency_monitor import latency_monitor
 from .user_data_stream import UserDataStream  # [Dept 3 Fix]
 import time
 import asyncio
+import aiohttp
 import numpy as np
 import ccxt.async_support as ccxt_async
 
@@ -22,10 +23,14 @@ class BinanceExecutor:
     """
     def __init__(self, events_queue, portfolio=None, data_provider=None, micro_awareness=None):
         self.events_queue = events_queue
-        self.portfolio = portfolio  # Reference for cash release on failure
+        self.portfolio = portfolio  # Reference for cash release on failure (fallback)
         self.data_provider = data_provider # Source for VWAP and market data
         self.micro_awareness = micro_awareness # Conciencia de cuenta micro
         self.order_manager = None   # Set during engine initialization
+        
+        # ZMQ IPC Nodes
+        self.zmq_push = None
+        self.zmq_pull = None
         
         # Configure Exchange
         options = {
@@ -92,6 +97,7 @@ class BinanceExecutor:
             
         # Phase 15: Leverage Cache & Management
         self._leverage_cache = {} # symbol -> leverage
+        self._margin_cache = {}   # symbol -> bool (is_isolated)
         if Config.BINANCE_USE_FUTURES:
             logger.info("⚡ Binance Executor: FUTURES MODE ENABLED (Programmatic Leverage Active)")
         
@@ -133,17 +139,43 @@ class BinanceExecutor:
         except ImportError:
             logger.warning("⚠️ [EXEC] c_executor not compiled. Using pure CCXT.")
 
+        # ⚡ FASE 12.5: ZERO-LATENCY WEBSOCKET EXECUTOR
+        self.ws_executor = None
+        try:
+            from execution.ws_order_executor import WSOrderExecutor
+            self.ws_executor = WSOrderExecutor(
+                api_key, 
+                secret_key, 
+                is_testnet=Config.BINANCE_USE_TESTNET, 
+                is_futures=Config.BINANCE_USE_FUTURES
+            )
+            logger.info("⚡ [WS-EXEC] WSOrderExecutor instance created.")
+        except Exception as e:
+            logger.error(f"❌ [WS-EXEC] Failed to initialize WSOrderExecutor: {e}")
+
         # ===================================================================
         # Async Exchange Initialization
         # ===================================================================
-        self.async_exchange = ccxt_async.binance({
+        # 🚀 FASE 21: Neural Matrix Execution (HFT Optimization)
+        # Refinando keep-alive limits de aiohttp para HFT. Reducimos latencia reconexión.
+        try:
+            connector = aiohttp.TCPConnector(limit=100, keepalive_timeout=60, ttl_dns_cache=300)
+            session = aiohttp.ClientSession(connector=connector)
+        except Exception:
+            session = None
+
+        async_options = {
             'apiKey': api_key,
             'secret': secret_key,
             'enableRateLimit': True,
             'adjustForTimeDifference': True,
             'timeout': 10000, 
             'options': options
-        })
+        }
+        if session:
+            async_options['session'] = session
+
+        self.async_exchange = ccxt_async.binance(async_options)
         if is_demo_futures and hasattr(self.async_exchange, 'enable_demo_trading'):
             self.async_exchange.enable_demo_trading(True)
             logger.info("  ⚡ Async CCXT initialized with Demo Trading")
@@ -385,7 +417,121 @@ class BinanceExecutor:
             else:
                 logger.warning(f"⚠️ [LEVERAGE-FAIL] Could not set leverage to {target_leverage}x for {symbol_id}: {e}")
 
-    # Removed @trace_execution to prevent issues with async
+    async def _ensure_margin_isolated(self, symbol_id: str):
+        """
+        ⚡ NANO-EXECUTION: Programmatically sets margin type to ISOLATED to protect capital.
+        """
+        if self._margin_cache.get(symbol_id):
+            return
+            
+        try:
+            logger.info(f"⚡ [EXEC] Enforcing ISOLATED margin for {symbol_id}")
+            await self.async_exchange.fapiPrivatePostMarginType({
+                'symbol': symbol_id,
+                'marginType': 'ISOLATED'
+            })
+            self._margin_cache[symbol_id] = True
+        except Exception as e:
+            err_msg = str(e)
+            if "No need to change" in err_msg:
+                self._margin_cache[symbol_id] = True
+            else:
+                logger.warning(f"⚠️ [MARGIN-FAIL] Could not set ISOLATED margin for {symbol_id}: {e}")
+
+    async def _ghost_maker_execution(self, event, symbol_id, symbol_ccxt, side, pos_side, qty_precision, max_retries=5, fallback_timeout=3.0):
+        """
+        👻 MUTACIÓN 24: GHOST-MAKER (Rebate Arbitrage)
+        Despliega órdenes LIMIT POST-ONLY que persiguen dinámicamente el BBO (Best Bid/Offer).
+        Si el precio se escapa, ajusta. Si expira el fallback_timeout, tira MARKET panic.
+        """
+        import time
+        start_time = time.time()
+        order_type = 'LIMIT'
+        
+        for attempt in range(max_retries):
+            # Check timeout
+            if time.time() - start_time > fallback_timeout:
+                logger.warning(f"👻⏰ [GHOST-MAKER] Timeout exceeded ({fallback_timeout}s) for {symbol_id}. Triggering Fallback to MARKET.")
+                break
+                
+            try:
+                # To exit a LONG (side=SELL), we want to post at ASK (to be Maker)
+                # To exit a SHORT (side=BUY), we want to post at BID (to be Maker)
+                px_tup = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
+                target_px = px_tup[1] if side.upper() == 'SELL' else px_tup[0]
+                
+                # Safety fallback si orderbook is zero
+                if target_px <= 0:
+                     logger.warning(f"👻⚠️ [GHOST-MAKER] Orderbook returned 0. Falling back to trigger price.")
+                     target_px = event.price if event.price else px_tup[0]
+                     
+                px_str = self.exchange.price_to_precision(symbol_ccxt, target_px)
+                
+                params = {
+                    'symbol': symbol_id,
+                    'side': side.upper(),
+                    'type': order_type,
+                    'quantity': qty_precision,
+                    'positionSide': pos_side,
+                    'newOrderRespType': 'RESULT',
+                    'price': px_str,
+                    'timeInForce': 'GTX', # POST-ONLY!
+                    'reduceOnly': 'true'
+                }
+                
+                logger.info(f"👻 [GHOST-MAKER] Deploying Post-Only Limit at {px_str} (Attempt {attempt+1}/{max_retries})")
+                res = await self.async_exchange.fapiPrivatePostOrder(params)
+                order_id = res.get('orderId')
+                
+                # Wait briefly for fill (Dynamic micro-delay)
+                await asyncio.sleep(0.35)
+                
+                # Check status
+                status_res = await self.async_exchange.fapiPrivateGetOrder({
+                    'symbol': symbol_id,
+                    'orderId': order_id
+                })
+                
+                status = status_res.get('status')
+                if status in ['FILLED', 'REJECTED']:
+                    logger.info(f"👻✅ [GHOST-MAKER] Order {order_id} reached final status: {status}")
+                    return status_res
+                
+                if status == 'CANCELED':
+                    # Podría haber sido rechazada por ser Maker taker-crossing (GTX)
+                    logger.warning(f"👻⚠️ [GHOST-MAKER] Order was canceled (GTX collision?). Retrying...")
+                    continue
+                
+                # If NEW or PARTIALLY_FILLED, the market might have moved away
+                logger.debug(f"👻🏃 [GHOST-MAKER] Market moved away (status: {status}). Cancelling {order_id} to chase...")
+                await self.async_exchange.fapiPrivateDeleteOrder({
+                    'symbol': symbol_id,
+                    'orderId': order_id
+                })
+                
+            except Exception as e:
+                err_str = str(e)
+                if 'Margin is insufficient' in err_str:
+                    logger.warning(f"👻⚠️ [GHOST-MAKER] Insufficient margin. Aborting Ghost-Maker.")
+                    break
+                if 'Post only order will be rejected' in err_str or 'Order would immediately match' in err_str:
+                    logger.warning(f"👻⚠️ [GHOST-MAKER] GTX collision. Chasing...")
+                    continue
+                logger.warning(f"👻⚠️ [GHOST-MAKER] Error on attempt {attempt}: {e}")
+                
+        # FALLBACK A MARKET
+        logger.warning(f"🚨 [GHOST-MAKER FALLBACK] Executing Taker MARKET for {symbol_id} to guarantee execution.")
+        fallback_params = {
+            'symbol': symbol_id,
+            'side': side.upper(),
+            'type': 'MARKET',
+            'quantity': qty_precision,
+            'positionSide': pos_side,
+            'newOrderRespType': 'RESULT',
+            'reduceOnly': 'true'
+        }
+        return await self.async_exchange.fapiPrivatePostOrder(fallback_params)
+
     async def execute_order(self, event):
         """
         🚀 SUPREMO-V3: ULTRA-LOW LATENCY EXECUTION
@@ -393,6 +539,39 @@ class BinanceExecutor:
         """
         if event.type != 'ORDER': return
         
+        # 🔫 [FASE 20] GRID BURST GENERATOR (Ametralladora L2)
+        # QUÉ: Si la orden es marcada como "Grid Burst", la dividimos en 3 micro-órdenes.
+        metadata = dict(event.metadata) if event.metadata else {}
+        if metadata.get('is_grid_burst', False):
+            logger.critical(f"🔫 [GRID BURST] Desplegando Ametralladora L2 para {event.symbol}!")
+            import copy
+            
+            # Remove flag to prevent infinite recursion
+            base_metadata = copy.deepcopy(metadata)
+            base_metadata['is_grid_burst'] = False
+            base_metadata['sniper_mode'] = True # Force aggressive pricing
+            
+            qty_per_bullet = event.quantity / 3.0
+            price_offset = 0.0005 # 0.05% separation
+            
+            tasks = []
+            for i in range(3):
+                bullet_event = copy.deepcopy(event)
+                bullet_event.quantity = qty_per_bullet
+                bullet_event.metadata = copy.deepcopy(base_metadata)
+                
+                # Offset price based on step
+                if bullet_event.price and bullet_event.price > 0:
+                    offset_multiplier = 1 + (price_offset * i) if event.direction.value == 'BUY' else 1 - (price_offset * i)
+                    bullet_event.price = bullet_event.price * offset_multiplier
+                
+                # Fire bullet concurrently
+                tasks.append(asyncio.create_task(self.execute_order(bullet_event)))
+            
+            # Wait for all bullets to execute
+            await asyncio.gather(*tasks, return_exceptions=True)
+            return
+
         start_exec = time.perf_counter()
         
         # 🧬 [Phase 19] SHADOW MODE INTERCEPTION
@@ -437,13 +616,23 @@ class BinanceExecutor:
             # Ensures the exchange is set to the correct leverage FOR THIS SPECIFIC HORIZON
             target_leverage = getattr(event, 'leverage', None)
             if target_leverage and Config.BINANCE_USE_FUTURES:
-                await self._ensure_leverage(symbol_id, target_leverage)
-            
+                # ⚡ FASE 10: Zero-Latency Fire-and-Forget
+                asyncio.create_task(self._ensure_margin_isolated(symbol_id))
+                asyncio.create_task(self._ensure_leverage(symbol_id, target_leverage))
+            # 🚀 FASE 22: Nano-Timeframe Validation (Order Book Imbalance)
+            # Solo para MICROSCALPING: Si el Order Book está demasiado en contra, abortamos antes de entrar
+            pos_horizon = getattr(event, 'horizon', '')
+            if pos_horizon == 'MICROSCALPING' and not getattr(event, 'is_exit', False):
+                is_balanced, imbalance_reason = self.guardian.check_order_book_imbalance(symbol_ccxt, side, depth=10, threshold_ratio=2.5)
+                if not is_balanced:
+                    logger.warning(f"🛑 [NANO-VALIDATION] MICROSCALPING Aborted for {symbol}: {imbalance_reason}")
+                    return
+                    
             # 🛡️ PHASE II: ANTI-SLIPPAGE (Order Book Depth Check)
             # If MARKET order and liquidity is thin, downgrade to LIMIT or abort.
             if order_type == 'market':
                 try:
-                    bid, ask = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
+                    bid, ask = self.guardian.get_fast_bid_ask(symbol_ccxt)
                     
                     if bid > 0 and ask > 0:
                         spread_pct = (ask - bid) / bid
@@ -478,40 +667,44 @@ class BinanceExecutor:
                      logger.info(f"🧠 [SOR] Regime {current_regime} detected. Switching MARKET -> LIMIT (Maker Priority).")
                      order_type = 'limit'
                      # Post at Order Book Top
-                     bid, ask = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
+                     bid, ask = self.guardian.get_fast_bid_ask(symbol_ccxt)
                      price = bid if side == 'buy' else ask
             
             if side == 'buy': # Only check for BUYS (Entry/Cover)
                 try:
                     quote_currency = market['quote']
-                    last_px = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
+                    last_px = self.guardian.get_fast_bid_ask(symbol_ccxt)
                     last_price = last_px[0] if last_px[0] > 0 else 1.0 # fallback bid
                     cost_est = event.quantity * (price if price else last_price)
                     
-                    # Fetch Balance (Optimized: fetch only what's needed if supported, else full)
-                    # CCXT fetch_balance is cached by default in some modes, but we want FRESH.
-                    # params={'type': 'future'} if futures
                     params = {}
                     if Config.BINANCE_USE_FUTURES: params['type'] = 'future'
                     
-                    # We use a specialized light check or full fetch
-                    # Note: frequent fetching hits rate limits. We rely on 'User Data Stream' mostly,
-                    # but for "Atomic" check we might double check if we are close to edge.
-                    # Optimization: Only check if local estimate is within 10% of total equity?
-                    # No, user wants invalidation.
-                    
-                    # Rate Limit Protection: Only fetch if > 1s since last fetch?
-                    # Start with standard fetch.
                     balance = await self.async_exchange.fetch_free_balance(params=params)
                     available = balance.get(quote_currency, 0.0)
                     
                     if available < cost_est:
                          logger.error(f"🚫 [ATOMIC] INSUFFICIENT FUNDS! Need: {cost_est:.2f} {quote_currency}, Avail: {available:.2f}")
-                         if self.portfolio: self.portfolio.release_cash(cost_est)
+                         if self.zmq_push:
+                             from core.events import ExecutionFailedEvent
+                             asyncio.create_task(self.zmq_push.push(ExecutionFailedEvent(
+                                 symbol=symbol, quantity=event.quantity, price=cost_est, direction=event.direction,
+                                 reason="INSUFFICIENT_FUNDS", strategy_id=getattr(event, 'strategy_id', None), trade_id=getattr(event, 'trade_id', None)
+                             )))
+                         elif self.portfolio: 
+                             self.portfolio.release_cash(cost_est)
                          return
                          
                 except Exception as e:
                     logger.warning(f"⚠️ Balance Check Skipped: {e}")
+
+            # ⚡ ZERO-LATENCY WEBSOCKET CONNECTION MANAGER
+            if self.ws_executor and not self.ws_executor.running:
+                logger.info("⚡ [WS-EXEC] Lazy starting WS connection...")
+                await self.ws_executor.start()
+                for _ in range(5):
+                    if self.ws_executor.is_ready(): break
+                    await asyncio.sleep(0.1)
 
 
             # 2. EXIT PRIORITY (Rule 2.1) - Skip Guardian if EXIT
@@ -525,10 +718,36 @@ class BinanceExecutor:
                 is_scalp_limit = (order_type == 'limit' and getattr(event, 'horizon', '') == 'SCALPING')
                 should_bypass = is_post_only or is_scalp_limit
                 
+                # 🌊 FASE 13: Microstructure Veto
+                if self.data_provider and hasattr(self.data_provider, 'microstructure'):
+                    internal_sym = symbol_ccxt.replace('/', '')
+                    if internal_sym in self.data_provider.microstructure:
+                        micro = self.data_provider.microstructure[internal_sym].get_metrics()
+                        
+                        # Veto si hay Spoofing en nuestra contra, o toxicidad extrema
+                        if micro.get('is_toxic', False) or micro.get('is_spoofing', False) or micro.get('gamma_expansion_risk', False):
+                            logger.warning(f"🛑 [MICRO-VETO] Entry blocked for {symbol_ccxt} due to Toxic Order Flow / Spoofing / Gamma Risk.")
+                            if self.zmq_push:
+                                from core.events import ExecutionFailedEvent
+                                asyncio.create_task(self.zmq_push.push(ExecutionFailedEvent(
+                                    symbol=symbol, quantity=event.quantity, price=price or 0.0, direction=event.direction,
+                                    reason="MICROSTRUCTURE_TOXIC_FLOW", strategy_id=getattr(event, 'strategy_id', None), trade_id=getattr(event, 'trade_id', None)
+                                )))
+                            elif self.portfolio: 
+                                self.portfolio.release_cash(event.quantity * (price if price else 0))
+                            return
+
                 liquidity = await asyncio.to_thread(self.guardian.analyze_liquidity, symbol, event.quantity, event.direction.name, should_bypass)
                 if not liquidity['is_safe']:
                     logger.warning(f"🛡️ [GUARDIAN] Order Blocked: {liquidity['reason']}")
-                    if self.portfolio: self.portfolio.release_cash(event.quantity * price if price else 0)
+                    if self.zmq_push:
+                        from core.events import ExecutionFailedEvent
+                        asyncio.create_task(self.zmq_push.push(ExecutionFailedEvent(
+                            symbol=symbol, quantity=event.quantity, price=price or 0.0, direction=event.direction,
+                            reason=liquidity['reason'], strategy_id=getattr(event, 'strategy_id', None), trade_id=getattr(event, 'trade_id', None)
+                        )))
+                    elif self.portfolio: 
+                        self.portfolio.release_cash(event.quantity * price if price else 0)
                     return
                 
                 # ✅ PHASE II.6: VWAP-RELATIVE EXECUTION (Smart Execution)
@@ -564,12 +783,58 @@ class BinanceExecutor:
                 rebate_priority = getattr(self.portfolio, 'rebate_priority', True)
                 
                 # FORENSIC FIX: Force Maker-Only for Scalping Entries
-                is_scalping_entry = (getattr(event, 'horizon', '') == 'SCALPING') and not getattr(event, 'is_exit', False) and not getattr(event, 'is_close', False)
+                is_scalping_entry = (getattr(event, 'horizon', '') == 'SCALPING' or getattr(event, 'horizon', '') == 'MICROSCALPING') and not getattr(event, 'is_exit', False) and not getattr(event, 'is_close', False)
                 
+                # [QUANTUM EVOLUTION] LOB Imbalance Sniping (Nanosecond Injection)
+                imbalance = 0.0
+                if self.data_provider and hasattr(self.data_provider, 'lob_imbalance') and symbol in self.data_provider.lob_imbalance:
+                    imbalance = self.data_provider.lob_imbalance[symbol].get('imbalance', 0.0)
+                    
                 if is_scalping_entry:
-                    logger.info(f"🛡️ [FORENSIC-SOR] SCALPING Entry Detected for {symbol}: Forcing LIMIT (GTX/Post-Only) to stop Fee Bleed.")
-                    order_type = 'limit'
-                    metadata['timeInForce'] = 'GTX'
+                    if (side == 'buy' and imbalance > 0.85) or (side == 'sell' and imbalance < -0.85):
+                        # 🔫 [FASE 20] Ametralladora L2 (Grid Burst)
+                        logger.critical(f"🔫 [GRID BURST] LOB Imbalance EXTREMO {imbalance:+.2f} for {symbol}. Inyectando Grid Flash!")
+                        
+                        import copy
+                        qty_per_bullet = event.quantity / 3.0
+                        price_offset = 0.0005 # 0.05% separation
+                        
+                        tasks = []
+                        for i in range(3):
+                            bullet = copy.deepcopy(event)
+                            bullet.quantity = qty_per_bullet
+                            if bullet.metadata is None: bullet.metadata = {}
+                            bullet.metadata['sniper_mode'] = True # Force aggressive
+                            bullet.metadata['timeInForce'] = 'GTC'
+                            
+                            # Reference price
+                            ref_price = self.data_provider.lob_imbalance[symbol].get('ask_price', price) if side == 'buy' else self.data_provider.lob_imbalance[symbol].get('bid_price', price)
+                            
+                            if ref_price and ref_price > 0:
+                                offset = 1 + (price_offset * i) if side == 'buy' else 1 - (price_offset * i)
+                                bullet.price = ref_price * offset
+                            
+                            # Call internally bypass
+                            tasks.append(asyncio.create_task(self.execute_order(bullet)))
+                            
+                        # Fire and forget bullets, abort this single execution
+                        asyncio.create_task(asyncio.gather(*tasks, return_exceptions=True))
+                        return
+                        
+                    elif (side == 'buy' and imbalance > 0.6) or (side == 'sell' and imbalance < -0.6):
+                        # Extreme Imbalance in our favor: Vacuum detected.
+                        # Convert to aggressive Limit (cross spread to guarantee fill while attempting Maker rebate)
+                        logger.info(f"🎯 [SNIPER] LOB Imbalance {imbalance:+.2f} for {symbol}. Inyectando Limit agresivo.")
+                        order_type = 'limit'
+                        metadata['timeInForce'] = 'GTC' # Not GTX, we want to cross if needed, but we try Limit first
+                        if side == 'buy':
+                            price = self.data_provider.lob_imbalance[symbol].get('ask_price', price) # Hit ask
+                        else:
+                            price = self.data_provider.lob_imbalance[symbol].get('bid_price', price) # Hit bid
+                    else:
+                        logger.info(f"🛡️ [FORENSIC-SOR] SCALPING Entry Detected for {symbol}: Forcing LIMIT (GTX/Post-Only) to stop Fee Bleed.")
+                        order_type = 'limit'
+                        metadata['timeInForce'] = 'GTX'
                 elif order_type == 'limit' and is_urgent:
                     logger.info("⚡ [SOR] Urgency detected: Switching LIMIT to MARKET to ensure entry.")
                     order_type = 'market'
@@ -665,6 +930,18 @@ class BinanceExecutor:
 
                 if side == 'buy': smart_price *= (1 + spread_adj)
                 else: smart_price *= (1 - spread_adj)
+                
+            # 🏎️ [MUTACIÓN 36] QUANTUM PING-DRIFT COMPENSATOR
+            # Detectamos si el data_provider tiene latencia WebSocket
+            # Si latency > 30ms y somos 'limit', empujamos un poco más agresivo 
+            # para no quedar colgados por el drift temporal.
+            if order_type == 'limit' and self.data_provider and hasattr(self.data_provider, 'get_ws_latency'):
+                ws_latency = self.data_provider.get_ws_latency()
+                if ws_latency > 30.0:
+                    drift_compensator = 0.0001 * min(ws_latency / 100.0, 5.0) # Max 0.05% compensation
+                    logger.info(f"⏱️ [PING-DRIFT] Latency {ws_latency:.1f}ms. Applying +{drift_compensator:.4%} drift compensation to {symbol} (Anticipatory Slippage).")
+                    if side == 'buy': smart_price *= (1 + drift_compensator)
+                    else: smart_price *= (1 - drift_compensator)
             
             price_precision = self.exchange.price_to_precision(symbol_ccxt, smart_price)
             final_price = float(price_precision)
@@ -701,8 +978,15 @@ class BinanceExecutor:
                         f"order_price={final_price:.6f} vs market={reference_price:.6f} "
                         f"(deviation={deviation:.2%} > {FAT_FINGER_THRESHOLD:.0%})"
                     )
-                    if self.portfolio and side == 'buy':
-                        self.portfolio.release_cash(event.quantity * (event.price or 0))
+                    if side == 'buy':
+                        if self.zmq_push:
+                            from core.events import ExecutionFailedEvent
+                            asyncio.create_task(self.zmq_push.push(ExecutionFailedEvent(
+                                symbol=symbol, quantity=event.quantity, price=event.price or 0.0, direction=event.direction,
+                                reason="FAT_FINGER", strategy_id=getattr(event, 'strategy_id', None), trade_id=getattr(event, 'trade_id', None)
+                            )))
+                        elif self.portfolio:
+                            self.portfolio.release_cash(event.quantity * (event.price or 0))
                     return
                 elif deviation > FAT_FINGER_THRESHOLD * 0.5:  # Warn at 2.5%
                     logger.warning(
@@ -724,6 +1008,28 @@ class BinanceExecutor:
 
             # 4. SEND ORDER
             logger.info(f"⚡ [EXEC] {order_type.upper()} {side.upper()} {symbol} | Qty: {final_qty} | P: {final_price}")
+            
+            # 👻 MUTACIÓN 24: GHOST-MAKER INTERCEPTOR
+            is_ghost_maker = metadata.get('use_ghost_maker', False) if metadata else False
+            if is_ghost_maker and Config.BINANCE_USE_FUTURES:
+                pos_side = 'LONG' if side.upper() == 'SELL' else 'SHORT' # Exits invert direction
+                try:
+                    order_raw = await self._ghost_maker_execution(event, symbol_id, symbol_ccxt, side, pos_side, qty_precision)
+                    if order_raw and 'orderId' in order_raw:
+                        logger.info(f"👻🏁 [GHOST-MAKER] Successful execution for {symbol}. OrderID: {order_raw['orderId']}")
+                        # Publicar evento de orden exitosa (simulando flow)
+                        if self.zmq_push:
+                            from core.events import OrderEvent
+                            asyncio.create_task(self.zmq_push.push(OrderEvent(
+                                symbol=symbol, order_type='LIMIT', quantity=final_qty, direction=event.direction,
+                                price=float(order_raw.get('avgPrice', order_raw.get('price', 0))), 
+                                status='FILLED' if order_raw.get('status') == 'FILLED' else 'SUBMITTED',
+                                trade_id=getattr(event, 'trade_id', None),
+                                strategy_id="GHOST_MAKER_EXIT"
+                            )))
+                    return
+                except Exception as e:
+                    logger.error(f"🚨 [GHOST-MAKER CRASH] {e}. Falling back to normal execution.")
             
             if Config.BINANCE_USE_FUTURES:
                 # Use Raw API for minimum latency
@@ -749,7 +1055,6 @@ class BinanceExecutor:
                 }
                 
                 # FORENSIC FIX: Inject Horizon into clientOrderId for perfect WebSocket tracking
-                import uuid
                 pos_horizon = getattr(event, 'horizon', 'SCALPING')
                 uid = uuid.uuid4().hex[:8]
                 params['newClientOrderId'] = f"ctos_{pos_horizon}_{uid}"
@@ -767,10 +1072,83 @@ class BinanceExecutor:
                 if metadata.get("is_tp_limit", False):
                     params['reduceOnly'] = 'true'
                 
-                import ccxt
+                # ccxt already imported at top
+                
+                # --- 18. MICRO-GRID SWARM INJECTION ---
+                is_swarm = (pos_horizon == 'MICROSCALPING' and order_type == 'limit' and not is_exit_signal and not getattr(event, 'is_close', False))
+                order_raw = None
+                
+                if is_swarm:
+                    logger.info(f"🐝 [MUTACION 18] Micro-Grid Swarm Initiated for {symbol}. Fragmenting {qty_precision} into 3 nodes.")
+                    tick_vol = 0.0002
+                    if metadata and 'metrics' in metadata:
+                        tick_vol = metadata.get('metrics', {}).get('order_flow', {}).get('tick_volatility', 0.0002)
+                    
+                    grid_weights = [0.4, 0.3, 0.3]
+                    multipliers = [0, 1.5, 3.0] # Spaced by 1.5x tick_vol
+                    tasks = []
+                    
+                    for i, w in enumerate(grid_weights):
+                        sub_qty = self.exchange.amount_to_precision(symbol_ccxt, event.quantity * w)
+                        if side.upper() == 'BUY':
+                            sub_px = final_price * (1 - (tick_vol * multipliers[i]))
+                        else:
+                            sub_px = final_price * (1 + (tick_vol * multipliers[i]))
+                            
+                        sub_px_str = self.exchange.price_to_precision(symbol_ccxt, sub_px)
+                        sub_params = params.copy()
+                        sub_params['quantity'] = sub_qty
+                        sub_params['price'] = sub_px_str
+                        sub_params['newClientOrderId'] = f"ctos_{pos_horizon}_{uid}_{i}"
+                        tasks.append(self.async_exchange.fapiPrivatePostOrder(sub_params))
+                    
+                    try:
+                        results = await asyncio.gather(*tasks, return_exceptions=True)
+                        for res in results:
+                            if isinstance(res, dict) and 'orderId' in res:
+                                if order_raw is None: order_raw = res
+                        if not order_raw:
+                            raise RuntimeError(f"All Grid orders failed: {results}")
+                    except Exception as e:
+                        logger.error(f"⚠️ [SWARM ERROR]: {e}")
+                        raise
+
+                # ⚡ FASE 12.5: ZERO-LATENCY WEBSOCKET EXECUTION
+                elif getattr(self, 'ws_executor', None) and self.ws_executor.is_ready():
+                    logger.info("⚡ [WS-EXEC] Routing order through Zero-Latency WebSocket...")
+                    max_bbo_retries = 3
+                    bbo_attempts = 0
+                    
+                    while bbo_attempts < max_bbo_retries:
+                        try:
+                            order_raw = await self.ws_executor.place_order(params)
+                            break
+                        except Exception as e:
+                            err_msg = str(e)
+                            if "immediately match" in err_msg.lower() and params.get('timeInForce') == 'GTX':
+                                bbo_attempts += 1
+                                if bbo_attempts >= max_bbo_retries:
+                                    logger.warning(f"⚠️ [BBO MAKER REJECTED] WS order {side} {symbol_id} would cross spread. Fallback to GTC.")
+                                    params['timeInForce'] = 'GTC'
+                                    continue
+                                
+                                logger.info(f"🔄 [BBO CHASE] Repricing {symbol_id} GTX WS-order (Attempt {bbo_attempts}/{max_bbo_retries})...")
+                                px_tup = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
+                                new_price = px_tup[0] if side.upper() == 'BUY' else px_tup[1]
+                                params['price'] = self.exchange.price_to_precision(symbol_ccxt, new_price)
+                                await asyncio.sleep(0.05)
+                            else:
+                                logger.warning(f"⚠️ [WS-EXEC] WS Order Failed ({e}). Falling back to Cython/REST.")
+                                order_raw = None
+                                break
+
+                    # If WS failed for non-GTX reasons, we fall back to CCXT
+                    if not order_raw:
+                        logger.info("📡 [WS-FALLBACK] Executing via CCXT REST...")
+                        order_raw = await self.async_exchange.fapiPrivatePostOrder(params)
+
                 # ⚡ NATIVE C-LEVEL EXECUTION (AITS Phase 4)
-                if getattr(self, 'fast_signer', None) and not getattr(Config, 'BINANCE_USE_DEMO', False) and not Config.BINANCE_USE_TESTNET:
-                    import aiohttp
+                elif getattr(self, 'fast_signer', None) and not getattr(Config, 'BINANCE_USE_DEMO', False) and not Config.BINANCE_USE_TESTNET:
                     if self.http_session is None or self.http_session.closed:
                         # Re-use connection pool for sub-millisecond execution
                         connector = aiohttp.TCPConnector(keepalive_timeout=60, limit=100)
@@ -785,47 +1163,81 @@ class BinanceExecutor:
                     )
                     url = f"https://fapi.binance.com{endpoint}?{query}"
                     
+                    max_bbo_retries = 3
+                    
                     try:
-                        async with self.http_session.post(url, headers=headers) as resp:
-                            order_raw = await resp.json()
-                            if 'code' in order_raw and int(order_raw['code']) < 0:
-                                err_msg = order_raw.get('msg', '')
-                                if "immediately match" in err_msg.lower() and params.get('timeInForce') == 'GTX':
-                                    raise ccxt.ExchangeError(err_msg)
-                                else:
-                                    logger.error(f"Binance API Error: {order_raw}")
-                                    raise ccxt.ExchangeError(f"Binance API Error: {err_msg}")
-                    except ccxt.ExchangeError as e:
-                        if "immediately match" in str(e).lower() and params.get('timeInForce') == 'GTX':
-                            logger.warning(f"⚠️ [BBO MAKER REJECTED] Futures order {side} {symbol_id} would cross spread. Fallback to GTC to secure fill.")
-                            endpoint, query, headers = self.fast_signer.build_fapi_order(
-                                symbol_id, side.upper(), order_type.upper(), float(qty_precision), 
-                                float(price_precision) if order_type == 'limit' else 0.0,
-                                "GTC",
-                                bool(params.get('reduceOnly', False)),
-                                pos_side
-                            )
-                            url = f"https://fapi.binance.com{endpoint}?{query}"
+                        bbo_attempts = 0
+                        while bbo_attempts < max_bbo_retries:
                             async with self.http_session.post(url, headers=headers) as resp:
                                 order_raw = await resp.json()
-                        else:
-                            raise e
+                                if 'code' in order_raw and int(order_raw['code']) < 0:
+                                    err_msg = order_raw.get('msg', '')
+                                    if "immediately match" in err_msg.lower() and params.get('timeInForce') == 'GTX':
+                                        bbo_attempts += 1
+                                        if bbo_attempts >= max_bbo_retries:
+                                            logger.warning(f"⚠️ [BBO MAKER REJECTED] Futures order {side} {symbol_id} would cross spread. Max retries reached. Fallback to GTC to secure fill.")
+                                            endpoint, query, headers = self.fast_signer.build_fapi_order(
+                                                symbol_id, side.upper(), order_type.upper(), float(qty_precision), 
+                                                float(price_precision) if order_type == 'limit' else 0.0,
+                                                "GTC",
+                                                bool(params.get('reduceOnly', False)),
+                                                pos_side
+                                            )
+                                            url = f"https://fapi.binance.com{endpoint}?{query}"
+                                            continue # Try GTC
+                                        
+                                        # Reprice and retry BBO
+                                        logger.info(f"🔄 [BBO CHASE] Repricing {symbol_id} GTX order (Attempt {bbo_attempts}/{max_bbo_retries})...")
+                                        px_tup = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
+                                        new_price = px_tup[0] if side.upper() == 'BUY' else px_tup[1]
+                                        price_precision = self.exchange.price_to_precision(symbol_ccxt, new_price)
+                                        
+                                        endpoint, query, headers = self.fast_signer.build_fapi_order(
+                                            symbol_id, side.upper(), order_type.upper(), float(qty_precision), 
+                                            float(price_precision),
+                                            "GTX",
+                                            bool(params.get('reduceOnly', False)),
+                                            pos_side
+                                        )
+                                        url = f"https://fapi.binance.com{endpoint}?{query}"
+                                        await asyncio.sleep(0.05)
+                                    else:
+                                        logger.error(f"Binance API Error: {order_raw}")
+                                        raise ccxt.ExchangeError(f"Binance API Error: {err_msg}")
+                                else:
+                                    break # Order succeeded
                     except asyncio.TimeoutError:
                         logger.critical(f"🛑 [TIMEOUT] Futures order {side} {symbol_id} hung >9s! OS Network Blocked.")
                         raise RuntimeError("API Timeout / Disconnect in execution")
                 else:
-                    try:
-                        order_raw = await asyncio.wait_for(self.async_exchange.fapiPrivatePostOrder(params), timeout=9.0)
-                    except asyncio.TimeoutError:
-                        logger.critical(f"🛑 [TIMEOUT] Futures order {side} {symbol_id} hung >9s! OS Network Blocked.")
-                        raise RuntimeError("API Timeout / Disconnect in execution")
-                    except ccxt.ExchangeError as e:
-                        if "immediately match" in str(e).lower() and params.get('timeInForce') == 'GTX':
-                            logger.warning(f"⚠️ [BBO MAKER REJECTED] Futures order {side} {symbol_id} would cross spread. Fallback to GTC to secure fill.")
-                            params['timeInForce'] = 'GTC'
+                    max_bbo_retries = 3
+                    bbo_attempts = 0
+                    while bbo_attempts < max_bbo_retries:
+                        try:
                             order_raw = await asyncio.wait_for(self.async_exchange.fapiPrivatePostOrder(params), timeout=9.0)
-                        else:
-                            raise e
+                            break # Success
+                        except asyncio.TimeoutError:
+                            logger.critical(f"🛑 [TIMEOUT] Futures order {side} {symbol_id} hung >9s! OS Network Blocked.")
+                            raise RuntimeError("API Timeout / Disconnect in execution")
+                        except ccxt.ExchangeError as e:
+                            if "immediately match" in str(e).lower() and params.get('timeInForce') == 'GTX':
+                                bbo_attempts += 1
+                                if bbo_attempts >= max_bbo_retries:
+                                    if pos_horizon in ('MICROSCALPING', 'SCALPING'):
+                                        logger.warning(f"⚠️ [BBO MAKER REJECTED] {side} {symbol_id} crossed spread. STRICT POST_ONLY for {pos_horizon}. ABORTING to prevent taker fee.")
+                                        raise RuntimeError(f"Strict POST_ONLY rule violated for {pos_horizon}. Order aborted to prevent Taker fees.")
+                                    else:
+                                        logger.warning(f"⚠️ [BBO MAKER REJECTED] Futures order {side} {symbol_id} would cross spread. Max retries. Fallback to GTC to secure fill.")
+                                        params['timeInForce'] = 'GTC'
+                                        continue
+                                
+                                logger.info(f"🔄 [BBO CHASE] Repricing {symbol_id} GTX order (Attempt {bbo_attempts}/{max_bbo_retries})...")
+                                px_tup = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
+                                new_price = px_tup[0] if side.upper() == 'BUY' else px_tup[1]
+                                params['price'] = self.exchange.price_to_precision(symbol_ccxt, new_price)
+                                await asyncio.sleep(0.05)
+                            else:
+                                raise e
                 order = order_raw # Simplified mapping
             else:
                 # SPOT
@@ -858,15 +1270,28 @@ class BinanceExecutor:
             exec_latency = (end_exec - start_exec) * 1000
             latency_monitor.track('order_to_send', exec_latency)
             
-            # [SOVEREIGN-DEPLOY] Latency Guard (< 200ms threshold)
-            if exec_latency > 200.0:
-                self.latency_violations += 1
-                logger.warning(f"⚠️ [LATENCY] Order execution took {exec_latency:.2f}ms (>200ms). Violation {self.latency_violations}/3.")
+            # [SOVEREIGN-DEPLOY] Latency Guard (Average > 150ms blocks MICROSCALPING)
+            if not hasattr(self, '_latency_samples'):
+                self._latency_samples = []
+            
+            self._latency_samples.append(exec_latency)
+            if len(self._latency_samples) > 5:
+                self._latency_samples.pop(0)
+                
+            avg_latency = sum(self._latency_samples) / len(self._latency_samples)
+            
+            if avg_latency > 150.0:
+                self.latency_violations = getattr(self, 'latency_violations', 0) + 1
+                logger.warning(f"⚠️ [LATENCY] Avg latency {avg_latency:.2f}ms (>150ms). Violation {self.latency_violations}/3. MICROSCALPING disabled temporarily.")
+                if self.portfolio:
+                    # Temporarily instruct portfolio/risk to block scalping via a flag
+                    self.portfolio.microscalping_disabled_until = time.time() + 60.0 # block for 60s
+                
                 if self.latency_violations >= 3:
-                    logger.critical(f"🚨 [PANIC] 3 Consecutive High-Latency Orders! Engaging PASSIVE MODE/LOCK.")
+                    logger.critical(f"🚨 [PANIC] 3 Consecutive High-Latency averages! Engaging PASSIVE MODE/LOCK.")
                     try:
                         with open("EMERGENCY_KILL_SWITCH.lock", "w") as f:
-                            f.write(f"LATENCY_PANIC: {exec_latency:.2f}ms")
+                            f.write(f"LATENCY_PANIC: {avg_latency:.2f}ms")
                     except Exception as e:
                         logger.error(f"Failed to write lock: {e}")
             else:
@@ -894,6 +1319,20 @@ class BinanceExecutor:
                         max_chases=5
                     )
                 )
+                
+                # 🌊 FASE 12: ADVERSE SELECTION VETO MONITOR (Only for entries)
+                is_exit_or_close = getattr(event, 'is_exit', False) or getattr(event, 'is_close', False)
+                if not is_exit_or_close:
+                    asyncio.create_task(
+                        self._adverse_selection_monitor(
+                            symbol_ccxt=symbol_ccxt,
+                            symbol_id=symbol_id,
+                            side=side,
+                            order_id=order_id,
+                            original_price=final_price,
+                            event=event
+                        )
+                    )
             
             # [DF-C7] PARTIAL FILL DETECTION & WARNING
             if not is_fully_filled and filled_qty > 0:
@@ -981,7 +1420,11 @@ class BinanceExecutor:
                 # FORENSIC FIX #2: Carry metadata for fee attribution + margin release
                 metadata=_order_metadata,
             )
-            await self.events_queue.put(fill_event)
+            
+            if self.zmq_push:
+                asyncio.create_task(self.zmq_push.push(fill_event))
+            else:
+                await self.events_queue.put(fill_event)
             
             # 6. TRACKING & PROTECTIVE ORDERS
             # ═══════════════════════════════════════════════════════════════
@@ -1039,8 +1482,41 @@ class BinanceExecutor:
         PARA QUÉ: Permitir que Portfolio.py y RiskManager.check_stops() ejecuten 
           cierres milimétricos, aislando lógicamente Scalping y Swing en una cuenta micro.
         """
-        logger.info(f"🛡️ [VIRTUAL SL/TP] Delegando Stops al Neural Ledger para evitar pisada de pies en {symbol_id} ({pos_side})")
-        return
+        logger.info(f"🛡️ [VIRTUAL SL/TP] Delegando Stops al Neural Ledger (Shadow Mode) para evitar cacería en {symbol_id} ({pos_side})")
+        
+        # 👻 MUTACIÓN 29: SHADOW STOPS PURos + CATASTROPHE STOP
+        # En lugar de enviar nuestro SL real al Exchange (donde pueden cazarlo), 
+        # enviamos un "Catastrophe Stop" a 10% de distancia por si se corta el internet,
+        # pero el SL real se queda en memoria RAM.
+        catastrophe_sl_pct = 0.10 # 10% de caída máxima tolerada por apagón
+        if side.upper() == 'BUY':  # LONG
+            stop_side = 'SELL'
+            catastrophe_price = entry_price * (1 - catastrophe_sl_pct)
+        else:                      # SHORT
+            stop_side = 'BUY'
+            catastrophe_price = entry_price * (1 + catastrophe_sl_pct)
+            
+        symbol_ccxt = symbol_id.replace('USDT', '/USDT')
+        catastrophe_price_str = self.exchange.price_to_precision(symbol_ccxt, catastrophe_price)
+        qty_str = self.exchange.amount_to_precision(symbol_ccxt, quantity)
+        
+        try:
+            stop_params = {
+                'symbol': symbol_id,
+                'side': stop_side,
+                'positionSide': pos_side,
+                'type': 'STOP_MARKET',
+                'quantity': qty_str,
+                'stopPrice': catastrophe_price_str,
+                'reduceOnly': 'true',
+                'newOrderRespType': 'RESULT'
+            }
+            stop_order = await self.async_exchange.fapiPrivatePostOrder(stop_params)
+            logger.info(f"  🛑 [CATASTROPHE STOP] Red de seguridad colocada en {catastrophe_price_str} (Order ID: {stop_order.get('orderId')})")
+        except Exception as e:
+            logger.error(f"⚠️ Error colocando Catastrophe Stop: {e}")
+            
+        return # Salimos para NO enviar el Take Profit ni el Stop Loss reales
         
         # ═══════════════════════════════════════════════════════════════
         # BBO ARCHITECTURE: STOP (Limit) + TAKE_PROFIT (Limit)
@@ -1151,6 +1627,12 @@ class BinanceExecutor:
                 # FALLBACK: If TAKE_PROFIT (Limit) is rejected, try TAKE_PROFIT_MARKET
                 if use_limit_protective and 'TAKE_PROFIT' == tp_params.get('type', ''):
                     logger.warning(f"  ⚠️ [BBO-FALLBACK] TP Limit rejected: {e}. Falling back to TAKE_PROFIT_MARKET.")
+                    # ⚡ FASE 12.5: Restauramos el código original porque inyectamos WS-cancel mal aquí
+                    # El fallo original de ccxt fallaba sin variables
+                    # Wait, there was NO original fapiPrivateDeleteOrder here in the codebase!
+                    # Ah, there was no delete here originally, wait... actually there wasn't.
+                    # Wait, the fallback to MARKET didn't require deleting if it was rejected!
+                    # I will just remove the injected ws_executor logic here.
                     tp_params['type'] = 'TAKE_PROFIT_MARKET'
                     tp_params.pop('price', None)
                     tp_params.pop('timeInForce', None)
@@ -1181,12 +1663,17 @@ class BinanceExecutor:
             symbol_id = market['id']
             
             if Config.BINANCE_USE_FUTURES:
-                # FUTURES: fapiPrivateDeleteOrder
-                result = await self.async_exchange.fapiPrivateDeleteOrder({
-                    'symbol': symbol_id,
-                    'orderId': order_id,
-                    'recvWindow': 60000
-                })
+                # ⚡ FASE 12.5: WS CANCEL
+                if getattr(self, 'ws_executor', None) and self.ws_executor.is_ready():
+                    logger.info(f"⚡ [WS-EXEC] Cancelling order {order_id} via WS")
+                    result = await self.ws_executor.cancel_order(symbol=symbol_id, order_id=order_id)
+                else:
+                    # FUTURES: fapiPrivateDeleteOrder
+                    result = await self.async_exchange.fapiPrivateDeleteOrder({
+                        'symbol': symbol_id,
+                        'orderId': order_id,
+                        'recvWindow': 60000
+                    })
                 logger.info(f"🗑️ [EXEC] Deleted Futures Order: {order_id} ({symbol})")
             else:
                 # SPOT
@@ -1414,6 +1901,65 @@ class BinanceExecutor:
         Calls get_all_balances and returns primary USDT-M balance.
         """
         return self.get_all_balances()
+
+    async def audit_position_sync(self):
+        """
+        AUDIT DEPT: Ghost Position Catcher
+        Ejecuta cada 5 minutos. Compara las posiciones reales en Binance con el ledger interno del portfolio.
+        Si encuentra discrepancias críticas (Posición en Binance que no existe localmente), lanza alerta.
+        """
+        logger.info("🛡️ [AUDIT] Iniciando tarea de sincronización de Posiciones Fantasma...")
+        try:
+            while True:
+                await asyncio.sleep(300) # Check every 5 minutes
+                if not self.portfolio or not Config.BINANCE_USE_FUTURES:
+                    continue
+                    
+                try:
+                    positions = await self.async_exchange.fapiPrivateV2GetPositionRisk()
+                    for pos in positions:
+                        amt = float(pos.get('positionAmt', 0))
+                        if abs(amt) > 0:
+                            sym = pos.get('symbol', '')
+                            # Translate symbol (BTCUSDT -> BTC/USDT)
+                            if not '/' in sym and sym.endswith('USDT'):
+                                sym = f"{sym[:-4]}/USDT"
+                            
+                            # Check if we have this tracked
+                            local_qty = 0.0
+                            if sym in self.portfolio.positions:
+                                local_qty = self.portfolio.positions[sym].get('quantity', 0.0)
+                                
+                            if abs(amt) > 1e-8 and abs(local_qty) < 1e-8:
+                                logger.critical(f"🚨 [GHOST POSITION] Binance reporta {amt} {sym} abierto, pero Portfolio local tiene 0. Riesgo de liquidación silenciosa.")
+                                # Action: Notify Telegram or Emergency Close
+                                from utils.notifier import Notifier
+                                Notifier.send_telegram(f"🚨 GHOST POSITION DETECTED: {sym} Amt={amt}. Por favor revisa Binance inmediatamente.", "CRITICAL")
+                except Exception as e:
+                    logger.error(f"⚠️ [AUDIT] Error verificando posiciones fantasma: {e}")
+        except asyncio.CancelledError:
+            pass
+
+    async def start_zmq_loop(self):
+        """Phase OMNI: Decoupled OS-Level Event Ingestion via ZMQ."""
+        if not self.zmq_pull:
+            return
+            
+        # Start Hardened Audits
+        asyncio.create_task(self.audit_position_sync())
+        self._latency_samples = []
+            
+        logger.info("🔄 [ZMQ] Starting Executor PULL Loop...")
+        from core.events import OrderEvent
+        try:
+            while True:
+                event = await self.zmq_pull.pull()
+                if isinstance(event, OrderEvent):
+                    await self.execute_order(event)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Executor ZMQ Pull Error: {e}")
 
     def sync_portfolio_state(self, portfolio):
         """
@@ -1931,6 +2477,104 @@ class BinanceExecutor:
                 
             except Exception as e:
                 logger.error(f"💥 [FATAL CHASE] Failed to force Market Fill after chasing timeout: {e}")
+
+    async def transfer_to_spot(self, asset: str, amount: float) -> bool:
+        """
+        FASE 5: Auto-Secuestro de Capital.
+        Transfiere fondos desde USD-M Futures hacia Spot para aislar el capital (Risk-Free Mode).
+        """
+        if not Config.BINANCE_USE_FUTURES:
+            logger.warning("⚠️ No se puede transferir a Spot porque no estamos en modo Futures.")
+            return False
+            
+        try:
+            logger.critical(f"🏦 [AUTO-SECUESTRO] Iniciando transferencia de {amount} {asset} de Futures a Spot...")
+            # type 2: UMfuture_main (Futures to Spot)
+            params = {
+                'asset': asset,
+                'amount': self.exchange.currency_to_precision(asset, amount) if hasattr(self.exchange, 'currency_to_precision') else round(amount, 4),
+                'type': 2 
+            }
+            res = await self.async_exchange.sapiPostFuturesTransfer(params)
+            tran_id = res.get('tranId')
+            logger.critical(f"🛡️ [RISK-FREE MODE] ¡Éxito! Transacción ID: {tran_id}. Semilla inicial de ${amount} {asset} asegurada en Spot.")
+            return True
+        except Exception as e:
+            logger.error(f"❌ [AUTO-SECUESTRO] Falló la transferencia: {e}")
+            return False
+
+    async def _adverse_selection_monitor(self, symbol_ccxt: str, symbol_id: str, side: str, order_id: str, original_price: float, event):
+        """
+        🌊 FASE 12: ADVERSE SELECTION VETO & SYNTHETIC QUEUE ESTIMATOR
+        Monitorea el Order Book Imbalance (OBI) y la posición en la cola de una orden LIMIT.
+        Si la liquidez se vuelve tóxica, CANCELA la orden para evitar ser atropellado por un muro institucional.
+        """
+        if getattr(Config, 'BINANCE_USE_DEMO', False): return
+        
+        # Permitimos a la orden descansar brevemente en el LOB
+        await asyncio.sleep(0.1)
+        
+        # Evaluamos por un máximo de 10 segundos
+        for _ in range(50):
+            await asyncio.sleep(0.2)
+            
+            imbalance = 0.0
+            micro = {}
+            if self.data_provider and hasattr(self.data_provider, 'microstructure'):
+                internal_sym = symbol_ccxt.replace('/', '')
+                if internal_sym in self.data_provider.microstructure:
+                    micro = self.data_provider.microstructure[internal_sym].get_metrics()
+                    imbalance = micro.get('obi', 0.0)
+            elif self.data_provider and hasattr(self.data_provider, 'lob_imbalance'):
+                internal_sym = symbol_ccxt.replace('/', '')
+                if internal_sym in self.data_provider.lob_imbalance:
+                    imbalance = self.data_provider.lob_imbalance[internal_sym].get('imbalance', 0.0)
+            
+            # Criterios Tóxicos (Adverse Selection)
+            # LONG Limit: Si OBI se vuelve muy negativo, viene una cascada de ventas
+            # SHORT Limit: Si OBI se vuelve muy positivo, viene una estampida de compras
+            is_toxic = False
+            toxic_reason = ""
+            
+            # 🌊 FASE 13: Iceberg, VPIN & Spoofing Check
+            if side.upper() == 'BUY':
+                if imbalance < -0.75:
+                    is_toxic, toxic_reason = True, "Cascada de Ventas (OBI < -0.75)"
+                elif micro.get('iceberg_score', 0.0) > 0.8 and micro.get('dark_pool_side') == 'SELL':
+                    is_toxic, toxic_reason = True, "Iceberg de Venta Activo (Score > 0.8)"
+                elif micro.get('vpin', 0.0) > 0.7:
+                    is_toxic, toxic_reason = True, "Flujo Tóxico (VPIN > 0.7)"
+                elif micro.get('is_spoofing') and micro.get('spoofing_side') == 'BUY':
+                    is_toxic, toxic_reason = True, "Mirage: Falsa Pared de Compra (Spoofing)"
+            else:
+                if imbalance > 0.75:
+                    is_toxic, toxic_reason = True, "Estampida de Compras (OBI > 0.75)"
+                elif micro.get('iceberg_score', 0.0) > 0.8 and micro.get('dark_pool_side') == 'BUY':
+                    is_toxic, toxic_reason = True, "Iceberg de Compra Activo (Score > 0.8)"
+                elif micro.get('vpin', 0.0) > 0.7:
+                    is_toxic, toxic_reason = True, "Flujo Tóxico (VPIN > 0.7)"
+                elif micro.get('is_spoofing') and micro.get('spoofing_side') == 'SELL':
+                    is_toxic, toxic_reason = True, "Mirage: Falsa Pared de Venta (Spoofing)"
+                
+            if is_toxic:
+                logger.critical(f"🌊🛑 [ADVERSE SELECTION VETO] {symbol_id} {side} LIMIT Order {order_id} bloqueada en cola. Mercado tóxico: {toxic_reason}. Ejecutando CANCEL de emergencia!")
+                try:
+                    if Config.BINANCE_USE_FUTURES:
+                        await self.async_exchange.fapiPrivateDeleteOrder({'symbol': symbol_id, 'orderId': order_id})
+                    else:
+                        await self.async_exchange.cancel_order(order_id, symbol_ccxt)
+                        
+                    # Emitir evento de fallo de ejecución para limpiar el Portfolio margin
+                    if self.zmq_push:
+                        from core.events import ExecutionFailedEvent
+                        asyncio.create_task(self.zmq_push.push(ExecutionFailedEvent(
+                            symbol=event.symbol, quantity=event.quantity, price=original_price, direction=event.direction,
+                            reason=f"ADVERSE_SELECTION_{toxic_reason}", strategy_id=getattr(event, 'strategy_id', None), trade_id=getattr(event, 'trade_id', None)
+                        )))
+                except Exception as e:
+                    if 'Unknown order' not in str(e):
+                        logger.warning(f"⚠️ [ADVERSE SELECTION] No se pudo cancelar orden {order_id}: {e}")
+                return # Detener monitoreo
 
     async def stop(self):
         """Graceful shutdown"""

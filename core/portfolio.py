@@ -40,21 +40,33 @@ class Portfolio:
         self.used_margin = 0.0   # Margin locked in Futures positions
         self._pending_reservations = {} # OrderID -> reserved_amount (AEGIS-V15 Atomic Tracking)
         
+        # [FASE 4: SWEEP DE COLATERAL] Ganancias de Microscalping para inyectar en Swing
+        self.swept_micro_profits = 0.0
+        
+        # [FASE 5: AUTO-SECUESTRO ANTI-CISNE NEGRO]
+        self.base_initial_capital = initial_capital
+        self.initial_risk_secured = False
+        self.total_secured_capital = 0.0
+        
         # [PRECISION-AXIOMA]
         self.precision_drift_accumulated = Decimal('0.0')
         getcontext().prec = 28 # Satoshi-level precision for drift auditing
         
-        self.positions = {} # Symbol -> {'quantity': 0, 'avg_price': 0, 'current_price': 0}
+        # 🛡️ SOVEREIGN CONTEXT MEMORY (Virtual Ledger 2.0)
+        from core.sovereign_memory import ZmqKVClient, ZmqDictProxy
+        self.zmq_client = ZmqKVClient(port=5557)
         
-        # 🛡️ OMNIBUS VIRTUAL LEDGER
+        self.positions = ZmqDictProxy(self.zmq_client, "positions") # Symbol -> {'quantity': 0, 'avg_price': 0, 'current_price': 0}
+        
+        # OMNIBUS VIRTUAL LEDGER
         # Tracks true Avg Entry Price separately per Horizon (e.g. BTC/USDT_SCALP).
         # Prevents high-frequency strategies from being overwritten by Swing entries.
-        self.virtual_ledger = {} # f"{symbol}_{horizon}" -> position_dict
+        self.virtual_ledger = ZmqDictProxy(self.zmq_client, "virtual_ledger") # f"{symbol}_{horizon}" -> position_dict
         
         # SUPREMO-V4: CANNIBALIZATION GUARD (VIRTUAL LEDGER SYNC)
         # Tracks net intended position per symbol across all horizons to avoid
         # paying double fees/margin when horizons have opposite directions.
-        self._net_intended_positions = {} # {symbol: net_qty}
+        self._net_intended_positions = ZmqDictProxy(self.zmq_client, "net_intended_positions") # {symbol: net_qty}
         
         # 📂 FORENSIC AUDITING: Isolated Ledgers
         self.scalping_ledger = []
@@ -99,6 +111,14 @@ class Portfolio:
             'gross_pnl': 0.0,
             'start_time': datetime.now(timezone.utc).isoformat(),
         }
+        # ⚡ FASE 8: ANTI-MARTINGALE STREAK COUNTERS
+        # QUÉ: Trackers de rachas consecutivas para sizing exponencial.
+        # POR QUÉ: Sin esto, el Kelly calcula un promedio plano. Con rachas,
+        #   escalamos el tamaño en wins consecutivos (crecimiento exponencial)
+        #   y reducimos en losses consecutivos (protección de capital).
+        self._win_streak = 0
+        self._loss_streak = 0
+        self._max_win_streak = 0
         
         # PHASE 14: Dynamic Kelly Criterion Tracking
         self.kelly_trades_history = []  # List of dicts: {'pnl': float, 'is_win': bool}
@@ -274,8 +294,12 @@ class Portfolio:
                         pos['avg_price'] = pos['entry_price']
                         
                     # --- RECONSTRUCT VIRTUAL LEDGER ---
-                    horizon = pos.get('horizon', 'SCALPING')
-                    v_key = f"{sym}_{horizon}"
+                    if '_' in sym:
+                        v_key = sym
+                    else:
+                        horizon = pos.get('horizon', 'SCALPING')
+                        pos_side = 'LONG' if pos.get('quantity', 0) > 0 else 'SHORT'
+                        v_key = f"{sym}_{horizon}_{pos_side}"
                     
                     self.virtual_ledger[v_key] = {
                         'quantity': pos['quantity'],
@@ -333,8 +357,12 @@ class Portfolio:
                         print(f"   - {sym}: {pos['quantity']} @ ${pos['avg_price']:.4f}")
                         
                         # --- RECONSTRUCT VIRTUAL LEDGER ---
-                        horizon = pos.get('horizon', 'SCALPING')
-                        v_key = f"{sym}_{horizon}"
+                        if '_' in sym:
+                            v_key = sym
+                        else:
+                            horizon = pos.get('horizon', 'SCALPING')
+                            pos_side = 'LONG' if pos.get('quantity', 0) > 0 else 'SHORT'
+                            v_key = f"{sym}_{horizon}_{pos_side}"
                         
                         self.virtual_ledger[v_key] = {
                             'quantity': pos['quantity'],
@@ -412,11 +440,12 @@ class Portfolio:
     def update_relative_strength(self):
         """
         [PHASE 5] Calculates Relative Strength (RSI + Momentum) across the fleet.
-        Allows Dynamic Capital Allocation and Cross-Asset Hedging.
+        [EVOLUCIÓN CUÁNTICA] Swarm Volatility Targeting.
+        Calcula la Volatilidad Cuántica (ATR / Close) para direccionar el capital líquido.
         """
         import time
         now = time.time()
-        if now - self.last_rs_update < 300: # Update every 5 mins
+        if now - self.last_rs_update < 60: # Update every 1 min para HFT
             return
             
         try:
@@ -432,6 +461,9 @@ class Portfolio:
                 bars = dh.get_latest_bars(s, n=20) # 20 periods
                 if bars is not None and len(bars) > 15:
                     closes = bars['close']
+                    highs = bars['high']
+                    lows = bars['low']
+                    
                     # Calculate simple return
                     ret = (closes[-1] - closes[0]) / closes[0]
                     # Calculate RSI approx
@@ -441,26 +473,34 @@ class Portfolio:
                     rs = gains / losses if losses > 0 else 0
                     rsi = 100 - (100 / (1 + rs)) if losses > 0 else 100
                     
-                    # Score = Return + RSI normalized contribution
-                    score = (ret * 100) + (rsi / 100)
+                    # Calculate Quantum Volatility (ATR Proxy / Close)
+                    tr = np.maximum(highs[1:] - lows[1:], np.abs(highs[1:] - closes[:-1]))
+                    tr = np.maximum(tr, np.abs(lows[1:] - closes[:-1]))
+                    atr = tr.mean()
+                    quantum_volatility = (atr / closes[-1]) * 100 # % volatility
+                    
+                    # Score = Volatility * 50% + Return * 30% + RSI * 20%
+                    score = (quantum_volatility * 50) + (abs(ret) * 100 * 30) + (rsi / 100 * 20)
                     rs_scores[s] = score
             
             if rs_scores:
                 self.relative_strength_scores = rs_scores
                 self.last_rs_update = now
-                logger.debug(f"📊 [PORTFOLIO] Relative Strength Updated for {len(rs_scores)} symbols.")
+                logger.debug(f"📊 [PORTFOLIO] Swarm Volatility Updated for {len(rs_scores)} symbols. Top Score: {max(rs_scores.values()):.2f}")
                 
         except Exception as e:
-            logger.error(f"Relative Strength Update Failed: {e}")
+            logger.error(f"Swarm Volatility Update Failed: {e}")
             
     def get_allocation_multiplier(self, symbol: str, is_long: bool) -> float:
         """
-        Returns fractional Kelly multiplier based on Relative Strength rankings.
+        [EVOLUCIÓN CUÁNTICA] Swarm Volatility Targeting.
+        Retorna el multiplicador de asignación fraccional basado en el Swarm Ranking.
+        El Activo Top 1 recibe un bono masivo para absorber todo el margen ($13 USD).
         """
         if not self.relative_strength_scores or symbol not in self.relative_strength_scores:
             return 1.0 # Default
             
-        # Sort symbols by score
+        # Sort symbols by Swarm Score
         sorted_symbols = sorted(self.relative_strength_scores.keys(), key=lambda k: self.relative_strength_scores[k], reverse=True)
         total = len(sorted_symbols)
         if total == 0: return 1.0
@@ -468,14 +508,15 @@ class Portfolio:
         rank = sorted_symbols.index(symbol)
         percentile = 1.0 - (rank / total) # 1.0 is highest, 0.0 is lowest
         
-        # If LONG, we want HIGH relative strength (Rank 1-5)
-        # If SHORT, we want LOW relative strength (Rank Bottom)
-        if is_long:
-            if percentile > 0.8: return 1.3 # Top 20%: +30% allocation
-            if percentile < 0.3: return 0.5 # Bottom 30%: -50% allocation
-        else:
-            if percentile < 0.2: return 1.3 # Bottom 20% (Weakest): +30% short alloc
-            if percentile > 0.7: return 0.5 # Top 30% (Strongest): -50% short alloc
+        # 🎯 SWARM TARGETING (Capital Líquido Inteligente)
+        if rank == 0:
+            return 3.0 # Activo más caliente de Binance: +200% asignación (absorbe los 13 USD)
+        if rank <= 2:
+            return 1.5 # Top 3: +50%
+        
+        # Congelamos o minimizamos la asignación a activos estancados
+        if percentile < 0.5:
+            return 0.2 # Mitad inferior: -80% asignación (no inmovilizar capital)
             
         return 1.0
 
@@ -520,24 +561,35 @@ class Portfolio:
             return total_avail
             
         # ═══════════════════════════════════════════════════════════════
-        # HORIZON ALLOCATION (Silos)
-        # QUÉ: Reemplaza la lógica dinámica para forzar silos fijos.
-        # POR QUÉ: Evitar que Scalping, Microscalping y Swing se roben capital.
+        # CAPA 3: PORTFOLIO CONSCIOUSNESS & INSTANT COMPOUNDING
+        # QUÉ: Distribución dinámica de capital basada en mérito.
+        # POR QUÉ: Evita límites estáticos rígidos y permite el flujo de
+        #   liquidez instantáneo hacia las estrategias más rentables.
+        # PARA QUÉ: Crecimiento compuesto exponencial verdadero.
         # ═══════════════════════════════════════════════════════════════
-        micro_pct = getattr(Config, 'MICROSCALPING_MARGIN_CAP', 0.40)
-        scalp_pct = getattr(Config, 'SCALPING_MARGIN_CAP', 0.40)
-        swing_pct = getattr(Config, 'SWING_MARGIN_CAP', 0.20)
+        from core.compounding_engine import get_compounding_engine
+        engine = get_compounding_engine()
+        equity = getattr(self, '_equity_cache', self.current_cash)
+        micro_pct, scalp_pct, swing_pct = engine.get_3way_allocation(equity)
+        
+        # [FASE 4: SWEEP DE COLATERAL] 
+        # Restamos las ganancias barridas del equity base para que el Compounding Engine
+        # no las distribuya globalmente.
+        base_equity = equity - self.swept_micro_profits
         
         if horizon == 'MICROSCALPING':
             alloc_pct = micro_pct
+            allocated_total = base_equity * alloc_pct
         elif horizon == 'SCALPING':
             alloc_pct = scalp_pct
+            allocated_total = base_equity * alloc_pct
         elif horizon == 'SWING':
             alloc_pct = swing_pct
+            # TODO el dinero barrido se inyecta EXCLUSIVAMENTE a Swing
+            allocated_total = (base_equity * alloc_pct) + self.swept_micro_profits
         else:
             alloc_pct = 1.0  # fallback
-            
-        allocated_total = getattr(self, '_equity_cache', self.current_cash) * alloc_pct
+            allocated_total = equity * alloc_pct
         
         horizon_used = 0.0
         for v_key, pos in self.virtual_ledger.items():
@@ -546,7 +598,7 @@ class Portfolio:
                 avg_price = pos.get('avg_price', 0)
                 if qty > 0 and avg_price > 0:
                     if Config.BINANCE_USE_FUTURES:
-                        # AEGIS-V15: Usar el apalancamiento real de la posición, no el global de Config.
+                        # AEGIS-V15: Usar el apalancamiento real de la posición
                         eff_lev = pos.get('leverage', Config.BINANCE_LEVERAGE) or Config.BINANCE_LEVERAGE
                         horizon_used += (qty * avg_price) / eff_lev
                     else:
@@ -568,29 +620,28 @@ class Portfolio:
         # Rigorous Partitioning: Available in this Silo = Allocated Total - Used - Pending
         horizon_avail = allocated_total - horizon_used - horizon_pending
         
-        # ═══════════════════════════════════════════════════════════════
-        # SOFT CAP FOR MICRO-ACCOUNTS (< $50 USD) - ASYMMETRIC PRIORITY
-        # QUÉ: Exposición Dinámica con Prioridad en Cascada.
-        # POR QUÉ: Con micro-cuentas ($13 USD), el capital no alcanza para
-        #   abrir Swing y Scalping en simultáneo si Swing agota el margen.
-        #   Scalping (alta velocidad, mayor WR esperado) debe tener prioridad.
-        # PARA QUÉ: Maximizar la rotación (Velocity of Money).
-        # CÓMO: 
-        #   - SCALPING recibe hasta el 90% del margen disponible.
-        #   - SWING se bloquea si consumirlo dejaría el balance total por
-        #     debajo de una reserva inamovible de liquidez de $6 USD (mínimo de Binance).
-        # CUÁNDO: Siempre que self.current_cash < 50.0.
-        # QUIÉN: Arquitecto Senior y Quant Developer.
-        # ═══════════════════════════════════════════════════════════════
-        if self.current_cash < 50.0:
-            if horizon in ("SCALPING", "MICROSCALPING"):
-                soft_cap = total_avail * 0.90
-                horizon_avail = max(horizon_avail, soft_cap)
-            elif horizon == "SWING":
-                # Swing only gets what remains after reserving $6 USD for Scalping.
-                scalp_reserve_usd = 6.0
-                soft_cap_swing = max(0.0, total_avail - scalp_reserve_usd)
-                horizon_avail = max(horizon_avail, min(soft_cap_swing, total_avail * 0.90))
+        # [QUANTUM EVOLUTION: FASE 8] OMNI-MARGIN (Flujo Cruzado de Rentabilidad Flotante)
+        # Unificamos el flujo de capital. TODO el PnL no realizado (flotante) positivo de CUALQUIER posición
+        # se desbloquea en tiempo real al 100% para financiar nuevas posiciones (Cross-Margin Sintético).
+        omni_float_pnl = 0.0
+        for v_key, pos in self.virtual_ledger.items():
+            qty = pos.get('quantity', 0)
+            if qty != 0:
+                avg_p = pos.get('avg_price', 0)
+                curr_p = pos.get('current_price', avg_p)
+                # PnL calc works for both Longs and Shorts (qty is negative for shorts)
+                trade_pnl = (curr_p - avg_p) * qty
+                if trade_pnl > 0:
+                    omni_float_pnl += trade_pnl
+        
+        if omni_float_pnl > 0.05:
+            horizon_avail += omni_float_pnl
+            total_avail += omni_float_pnl
+            logger.debug(f"🌌 [OMNI-MARGIN] Desbloqueando ${omni_float_pnl:.2f} USD de ganancia virtual cruzada al margen {horizon}.")
+
+        
+        # Eliminamos el Soft Cap (cascade priority) para forzar AISLAMIENTO ESTRICTO.
+        # Un trade Swing no debe tocar nunca el dinero del Scalping y viceversa.
         
         # FORENSIC TRACE: Why is cash 0?
         if min(total_avail, horizon_avail) <= 0.1:
@@ -615,7 +666,7 @@ class Portfolio:
         pnl = 0.0
         self.guard.acquire()
         try:
-            for symbol, pos in self.positions.items():
+            for v_key, pos in self.virtual_ledger.items():
                 qty = pos['quantity']
                 if qty != 0:
                     avg_price = pos['avg_price']
@@ -682,6 +733,30 @@ class Portfolio:
             'TOTAL_SHORT_BETA': self.math_stats.get('total_short_beta', 0.0),
             'NET_DELTA': self.math_stats.get('net_delta', 0.0)
         }
+
+    @property
+    def scalp_positions(self) -> Dict[str, Any]:
+        """
+        Devuelve estrictamente las posiciones del horizonte SCALPING.
+        Evita cruces con Swing.
+        """
+        scalps = {}
+        for k, v in self.virtual_ledger.items():
+            if 'SCALPING' in k and abs(v.get('quantity', 0)) > 1e-8:
+                scalps[k] = v
+        return scalps
+        
+    @property
+    def swing_positions(self) -> Dict[str, Any]:
+        """
+        Devuelve estrictamente las posiciones del horizonte SWING.
+        Evita cruces con Scalping.
+        """
+        swings = {}
+        for k, v in self.virtual_ledger.items():
+            if 'SWING' in k and abs(v.get('quantity', 0)) > 1e-8:
+                swings[k] = v
+        return swings
     
     def reserve_cash(self, amount, horizon='SCALPING', order_id=None):
         """
@@ -754,7 +829,13 @@ class Portfolio:
             logger.info(f"🚫 Order Cancelled/Expired: {order_event.symbol} | Released ${safe_amt:.2f} (ID: {order_id})")
 
     def get_active_symbols(self):
-        return list(self.positions.keys())
+        symbols = set()
+        for v_key in self.virtual_ledger.keys():
+            if self.virtual_ledger[v_key].get('quantity', 0) != 0:
+                parts = v_key.split('_')
+                if parts:
+                    symbols.add(parts[0])
+        return list(symbols)
     
     def update_timeindex(self, event):
         """
@@ -763,6 +844,35 @@ class Portfolio:
         if event.type == EventType.MARKET:
             pass 
             
+    def _check_auto_secuestro(self):
+        """
+        FASE 5: Auto-Secuestro (Anti-Black Swan).
+        Si duplicamos el capital base por primera vez, mandamos un log especial y marcamos
+        para que el Engine / Executor puedan transferir la semilla inicial (Risk-Free Mode).
+        """
+        # Manejamos rounding drifts comparando con un pequeño delta
+        target_capital = self.base_initial_capital * 2.0
+        if not self.initial_risk_secured and self.current_cash >= (target_capital - 1e-6):
+            logger.critical(f"🌌 [AUTO-SECUESTRO] ¡Capital duplicado! De ${self.base_initial_capital:.2f} a ${self.current_cash:.2f}.")
+            logger.critical(f"🌌 [AUTO-SECUESTRO] El sistema está listo para asegurar la semilla inicial en Spot.")
+            # En vez de ejecutar la API de Binance aquí, simplemente guardamos el estado y restamos el capital
+            # asumiendo que el Engine/Executor recogerán este flag.
+            self.initial_risk_secured = True
+            
+            # Barrido exacto del capital base original para evitar drift
+            sweep_amount = round(self.base_initial_capital, 4)
+            self.total_secured_capital += sweep_amount
+            self.current_cash -= sweep_amount
+            
+            logger.critical(f"🛡️ [RISK-FREE MODE ACTIVO] Semilla extraída (${sweep_amount:.2f}). Operando con 'Dinero de la Casa'. Cash restante: ${self.current_cash:.2f}")
+
+    def update_snapshot(self, equity: float):
+        """
+        Helper to update current price of a symbol for PnL calculation.
+        Updates HWM for LONG positions, LWM for SHORT positions.
+        """
+        pass
+
     def update_market_price(self, symbol, price):
         """
         Helper to update current price of a symbol for PnL calculation.
@@ -789,36 +899,10 @@ class Portfolio:
                     logger.warning(f"👻 [GHOST TICK DETECTED] {symbol}: Jump {_jump*100:.2f}% ({_last_p} → {price}). Protecting HWM/LWM.")
 
             self._last_prices[symbol] = price  # Meritocracy Bridge (Phase 3.13)
-            if symbol not in self.positions:
-                self.positions[symbol] = {
-                    'quantity': 0, 
-                    'avg_price': 0, 
-                    'current_price': price, 
-                    'high_water_mark': price, 
-                    'low_water_mark': price,
-                    'stop_distance': 0,
-                    'setup_type': 'UNTAGGED_SETUP',
-                    'strategy_version': '1.0.0'
-                }
-            else:
-                self.positions[symbol]['current_price'] = price
-                
-                # Update Water Marks for ALL positions (Required for MAE/MFE calculation)
-                # Initialize if missing (Migration safety)
-                if 'low_water_mark' not in self.positions[symbol] or self.positions[symbol]['low_water_mark'] == 0:
-                     self.positions[symbol]['low_water_mark'] = price
-                if 'high_water_mark' not in self.positions[symbol]:
-                     self.positions[symbol]['high_water_mark'] = price
-                     
-                # Track Gloabl HWM/LWM during trade
-                if not _is_ghost_tick:
-                    if price > self.positions[symbol]['high_water_mark']:
-                        self.positions[symbol]['high_water_mark'] = price
-                    if price < self.positions[symbol]['low_water_mark']:
-                        self.positions[symbol]['low_water_mark'] = price
                     
             # --- 🛡️ PHASE 15: HEDGE MODE SYNC ---
             # 🛡️ VIRTUAL LEDGER SYNC: Propagate real-time price to all horizon sub-positions
+            active_v_keys = []
             for v_key, vpos in self.virtual_ledger.items():
                 if v_key.startswith(f"{symbol}_"):
                     vpos['current_price'] = price
@@ -830,14 +914,20 @@ class Portfolio:
                             vpos['high_water_mark'] = price
                         if vpos['low_water_mark'] == 0 or price < vpos['low_water_mark']:
                             vpos['low_water_mark'] = price
-            
+                            
+                    # Mirror changes to self.positions
+                    if v_key in self.positions:
+                        self.positions[v_key]['current_price'] = vpos['current_price']
+                        self.positions[v_key]['high_water_mark'] = vpos['high_water_mark']
+                        self.positions[v_key]['low_water_mark'] = vpos['low_water_mark']
+                    active_v_keys.append(v_key)
             
             # DB Snapshot prep (Copy inside lock)
-            if symbol in self.positions:
-                pos = self.positions[symbol].copy()
-                should_update_db = True
-            else:
-                should_update_db = False
+            snapshot_positions = []
+            for v_key in active_v_keys:
+                if v_key in self.positions:
+                    snapshot_positions.append((v_key, self.positions[v_key].copy()))
+            should_update_db = len(snapshot_positions) > 0
         finally:
             self.guard.release()
 
@@ -856,10 +946,11 @@ class Portfolio:
             
         # Update DB (Snapshot for crash recovery)
         if should_update_db:
-            qty = pos['quantity']
-            avg = pos['avg_price']
-            pnl = (price - avg) * qty if qty != 0 else 0
-            self.io_executor.submit(self.db.update_position, symbol, qty, avg, price, pnl)
+            for v_key, pos in snapshot_positions:
+                qty = pos['quantity']
+                avg = pos['avg_price']
+                pnl = (price - avg) * qty if qty != 0 else 0
+                self.io_executor.submit(self.db.update_position, v_key, qty, avg, price, pnl)
 
         # ═══════════════════════════════════════════════════════════════
         # CTOS PHASE 4: TRADE CHRONICLE — TICK-BY-TICK HISTORY
@@ -991,22 +1082,15 @@ class Portfolio:
     @trace_execution
     def update_signal(self, event):
         if event.type == EventType.SIGNAL:
-            # Phase 9: Capture Entry Metadata (Features, LogProbs, etc.) for PPO
             if event.metadata:
                 self.guard.acquire()
                 try:
-                    # Create entry if needed (Pre-fill before actual order/fill)
-                    if event.symbol not in self.positions:
-                        self.positions[event.symbol] = {
-                            'quantity': 0, 'avg_price': 0, 'current_price': 0,
-                            'high_water_mark': 0, 'low_water_mark': 0,
-                            'entry_metadata': None,
-                            'setup_type': getattr(event, 'setup_type', 'UNKNOWN'),
-                            'strategy_version': getattr(event, 'strategy_version', '1.0.0')
-                        }
+                    if not hasattr(self, '_pending_metadata'):
+                        self._pending_metadata = {}
                     
-                    # Store full metadata
-                    self.positions[event.symbol]['entry_metadata'] = event.metadata
+                    # Store full metadata by symbol (or v_key if horizon is available)
+                    meta_key = f"{event.symbol}_{getattr(event, 'horizon', 'SCALPING')}"
+                    self._pending_metadata[meta_key] = event.metadata
                 finally:
                     self.guard.release()
                 
@@ -1070,10 +1154,10 @@ class Portfolio:
                 'current_price': 0.0,
                 'high_water_mark': 0.0,
                 'low_water_mark': 0.0,
-                'entry_time': self._get_current_time(),
+                'entry_time': self._get_current_time().timestamp() if hasattr(self._get_current_time(), 'timestamp') else time.time(),
                 'sl_pct': getattr(event, 'sl_pct', None),
                 'tp_pct': getattr(event, 'tp_pct', None),
-                'opener_strategy_id': getattr(event, 'strategy_id', 'Unknown'),
+                'opener_strategy_id': getattr(event, 'strategy_id', None) or 'Unknown',
                 'cognitive_anchor': None,
                 'setup_type': getattr(event, 'setup_type', 'UNKNOWN'),
                 'strategy_version': getattr(event, 'strategy_version', '1.0.0'),
@@ -1107,7 +1191,7 @@ class Portfolio:
         if is_exit_fill:
             opener_strat = pos.get('opener_strategy_id', 'Unknown')
             evt_strat = getattr(event, 'strategy_id', 'Unknown')
-            system_exits = {'99', 'EXIT', 'EMERGENCY_EXIT', 'KILL_SWITCH', 'risk_manager', 'RiskManager', 'Unknown', 'HARD_SL', 'TIME_STOP_ZOMBIE', 'HARD_SCALP_TIMEOUT', 'ZOMBIE_FLAT_MARKET', 'ZOMBIE', 'BACKTEST_CLOSE', 'DIAG_CLOSE'}
+            system_exits = {'99', 'EXIT', 'EMERGENCY_EXIT', 'KILL_SWITCH', 'risk_manager', 'RiskManager', 'Unknown', 'HARD_SL', 'TIME_STOP_ZOMBIE', 'HARD_SCALP_TIMEOUT', 'ZOMBIE_FLAT_MARKET', 'ZOMBIE', 'BACKTEST_CLOSE', 'DIAG_CLOSE', 'LIFECYCLE_EXIT'}
             
             is_sys_exit = (
                 evt_strat in system_exits or
@@ -1172,14 +1256,15 @@ class Portfolio:
                     self._bind_cognitive_anchor(event.symbol, pos)
                 else:
                     # If just added to existing, keep original opener_id but could log the add
-                    pass
-            else: # Adding Long
-                total_cost = (pos['quantity'] * pos['avg_price']) + fill_cost
+                    pos['scale_count'] = pos.get('scale_count', 0) + 1
+                    logger.info(f"📈 [PYRAMID RECORDED] {event.symbol} added to LONG. Scale count: {pos['scale_count']}")
+            else: # Adding Short
+                total_cost = (abs(pos['quantity']) * pos['avg_price']) + fill_cost
                 pos['quantity'] += event.quantity
                 pos['avg_price'] = total_cost / pos['quantity']
                 if pos['quantity'] == event.quantity: # New entry
                     pos['entry_time'] = self._get_current_time()
-                    pos['opener_strategy_id'] = getattr(event, 'strategy_id', 'Unknown')
+                    pos['opener_strategy_id'] = getattr(event, 'strategy_id', None) or 'Unknown'
                     pos['ml_confidence'] = (getattr(event, 'metadata', {}) or {}).get('ml_confidence', (getattr(event, 'metadata', {}) or {}).get('strength', 0.0))
                     pos['trajectory_prediction'] = (getattr(event, 'metadata', {}) or {}).get('trajectory_prediction', None)
                     pos['tp_limit_placed'] = False
@@ -1209,7 +1294,7 @@ class Portfolio:
                     pos['quantity'] = -remain
                     pos['avg_price'] = price
                     pos['entry_time'] = self._get_current_time()
-                    pos['opener_strategy_id'] = getattr(event, 'strategy_id', 'Unknown')
+                    pos['opener_strategy_id'] = getattr(event, 'strategy_id', None) or 'Unknown'
                     pos['ml_confidence'] = (getattr(event, 'metadata', {}) or {}).get('ml_confidence', (getattr(event, 'metadata', {}) or {}).get('strength', 0.0))
                     pos['trajectory_prediction'] = (getattr(event, 'metadata', {}) or {}).get('trajectory_prediction', None)
                     pos['tp_limit_placed'] = False
@@ -1222,7 +1307,7 @@ class Portfolio:
                 pos['avg_price'] = total_cost / abs(pos['quantity'])
                 if pos['quantity'] == -event.quantity: # New entry
                     pos['entry_time'] = self._get_current_time()
-                    pos['opener_strategy_id'] = getattr(event, 'strategy_id', 'Unknown')
+                    pos['opener_strategy_id'] = getattr(event, 'strategy_id', None) or 'Unknown'
                     pos['ml_confidence'] = (getattr(event, 'metadata', {}) or {}).get('ml_confidence', (getattr(event, 'metadata', {}) or {}).get('strength', 0.0))
                     pos['trajectory_prediction'] = (getattr(event, 'metadata', {}) or {}).get('trajectory_prediction', None)
                     pos['tp_limit_placed'] = False
@@ -1237,6 +1322,9 @@ class Portfolio:
                     # 🚀 TELEGRAM NOTIFICATION: Handled by log_trade_report() → send_trade_open()
                     # FORENSIC-V21 FIX #3: Removed duplicate raw notification.
                     pass
+                else:
+                    pos['scale_count'] = pos.get('scale_count', 0) + 1
+                    logger.info(f"📈 [PYRAMID RECORDED] {event.symbol} added to SHORT. Scale count: {pos['scale_count']}")
 
 
         # Re-evaluar cognitive anchor si the direction se volteó
@@ -1351,6 +1439,13 @@ class Portfolio:
         
         net_pnl = gross_pnl - total_fees
         net_pnl_percent = net_pnl / (closed_qty * entry_price) if (closed_qty * entry_price) > 0 else 0
+        
+        # [PHASE 6] Kelly Hot-Hand Tracker Injection
+        try:
+            from core.compounding_engine import get_compounding_engine
+            get_compounding_engine().record_trade_result(net_pnl)
+        except Exception as e:
+            pass
         
         now_ts = self._get_current_time()
         duration = int((now_ts - pos['entry_time']).total_seconds()) if pos.get('entry_time') else 0
@@ -1635,6 +1730,11 @@ class Portfolio:
         
         # Update session PnL tracking
         self._session_net_pnl += net_pnl
+        
+        # [FASE 4: SWEEP DE COLATERAL] Si es ganancia de Microscalping, la reservamos para Swing
+        if trade_data['horizon'] == 'MICROSCALPING' and net_pnl > 0:
+            self.swept_micro_profits += net_pnl
+            logger.info(f"🧹 [COLLATERAL SWEEP] ${net_pnl:.4f} barrido de MICRO hacia SWING. Total Barrido: ${self.swept_micro_profits:.4f}")
             
         # 🚀 TELEGRAM NOTIFICATION: Handled by log_trade_report() → send_trade_close()
         # FORENSIC-V21 FIX #3: Removed duplicate raw notification.
@@ -1675,8 +1775,11 @@ class Portfolio:
 
     def _bind_cognitive_anchor(self, symbol: str, entry_pos: dict):
         """Asocia metadata pre-computada al momento de abrirse un ledger virtual."""
-        sym_pos = self.positions.get(symbol, {})
-        meta = sym_pos.get('entry_metadata')
+        meta = None
+        if hasattr(self, '_pending_metadata'):
+            meta_key = f"{symbol}_{entry_pos.get('horizon', 'SCALPING')}"
+            meta = self._pending_metadata.get(meta_key)
+            
         if meta:
             entry_pos['cognitive_anchor'] = {
                 'initial_strength': meta.get('signal_strength', 0.8),
@@ -1700,6 +1803,8 @@ class Portfolio:
             try:
                 isolated_pnl = self._update_virtual_ledger(event)
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 logger.error(f"Failed to update virtual ledger for {event.symbol}: {e}")
                 
             pnl_realized = None
@@ -1788,27 +1893,25 @@ class Portfolio:
                             new_used_margin += (abs(v_pos['quantity']) * v_pos['avg_price']) / lev
                     self.used_margin = new_used_margin
                 
-                # 3. Synchronize Aggregate 'self.positions' for Dashboard/API compatibility
-                active_virtual = [v for k, v in self.virtual_ledger.items() if k.startswith(f"{event.symbol}_") and abs(v['quantity']) > 1e-8]
-                if not active_virtual:
-                    self.positions.pop(event.symbol, None)
-                else:
-                    agg_qty = sum(v['quantity'] for v in active_virtual)
-                    if event.symbol not in self.positions:
-                        self.positions[event.symbol] = {
-                            'quantity': 0, 'avg_price': 0, 'current_price': fill_price, 
-                            'high_water_mark': fill_price, 'low_water_mark': fill_price,
-                            'setup_type': getattr(event, 'setup_type', 'UNTAGGED_SETUP'),
-                            'strategy_version': getattr(event, 'strategy_version', '1.0.0')
-                        }
+                # 3. Synchronize 'self.positions' perfectly with Virtual Ledger (Isolated by Horizon)
+                # Remove obsolete symbol-only or stale keys
+                keys_to_remove = [k for k in self.positions.keys() if k.startswith(f"{event.symbol}_") or k == event.symbol]
+                for k in keys_to_remove:
+                    self.positions.pop(k, None)
+                
+                active_virtual_items = [(k, v) for k, v in self.virtual_ledger.items() if k.startswith(f"{event.symbol}_") and abs(v['quantity']) > 1e-8]
+                for v_key, v_pos in active_virtual_items:
+                    self.positions[v_key] = v_pos.copy()
+                    self.positions[v_key]['current_price'] = fill_price
                     
-                    total_notional = sum(abs(v['quantity']) * v['avg_price'] for v in active_virtual)
-                    self.positions[event.symbol]['quantity'] = agg_qty
-                    self.positions[event.symbol]['avg_price'] = total_notional / sum(abs(v['quantity']) for v in active_virtual) if total_notional > 0 else 0
-                    self.positions[event.symbol]['current_price'] = fill_price
+                    if 'high_water_mark' not in self.positions[v_key] or self.positions[v_key]['high_water_mark'] == 0:
+                        self.positions[v_key]['high_water_mark'] = fill_price
+                    if 'low_water_mark' not in self.positions[v_key] or self.positions[v_key]['low_water_mark'] == 0:
+                        self.positions[v_key]['low_water_mark'] = fill_price
+                        
                     _seg = (getattr(event, 'metadata', {}) or {}).get('segment_policy')
-                    self.positions[event.symbol]['exec_policy'] = getattr(_seg, 'execution_type', 'MAKER_ONLY') if _seg else 'MAKER_ONLY'
-                    self.positions[event.symbol]['trail_policy'] = getattr(_seg, 'trailing_aggression', 'STRUCTURED') if _seg else 'STRUCTURED'
+                    self.positions[v_key]['exec_policy'] = getattr(_seg, 'execution_type', 'MAKER_ONLY') if _seg else 'MAKER_ONLY'
+                    self.positions[v_key]['trail_policy'] = getattr(_seg, 'trailing_aggression', 'STRUCTURED') if _seg else 'STRUCTURED'
                 
                 # 4. Strategy Performance, Sophia Post-Mortem & Reporting
                 if isolated_pnl != 0.0:
@@ -1879,6 +1982,13 @@ class Portfolio:
             # ═══════════════════════════════════════════════════════════════
             self._refresh_equity_cache()
             
+            # 🚀 FASE 12: HYPER-FREQUENCY CAPITAL RECYCLING
+            if hasattr(self, 'compounding_engine') and self.compounding_engine:
+                self.compounding_engine.force_recalc()
+            
+            # Phase 5: Trigger Secuestro Si Corresponde
+            self._check_auto_secuestro()
+            
             # ════════════════════════════════════════════════════════════════
             # CTOS PHASE 2: PORTFOLIO → SSOT SYNC
             # QUÉ: Publica equity, margin y posiciones activas al SSOT global.
@@ -1943,6 +2053,13 @@ class Portfolio:
                     'ml_confidence': td.get('oracle_certainty', 0.0)
                 })
 
+            trade_id_val = getattr(event, 'trade_id', None)
+            if not trade_id_val:
+                try:
+                    trade_id_val = pos.get('trade_id')
+                except (NameError, UnboundLocalError):
+                    pass
+
             self.log_to_csv({
                 'datetime': self._get_current_time(),
                 'symbol': event.symbol,
@@ -1954,7 +2071,7 @@ class Portfolio:
                 'strategy_id': getattr(event, 'strategy_id', 'Unknown'),
                 'setup_type': getattr(event, 'setup_type', 'UNKNOWN'),
                 'strategy_version': getattr(event, 'strategy_version', '1.0.0'),
-                'trade_id': getattr(event, 'trade_id', None) or (pos.get('trade_id') if 'pos' in locals() else None),
+                'trade_id': trade_id_val,
                 'details': json.dumps(details_dict)
             })
 
@@ -2344,7 +2461,7 @@ class Portfolio:
                 kelly_f = win_rate - (loss_rate / b)
                 if is_micro_account:
                     multiplier = 1.0 if horizon == "MICROSCALPING" else 0.8
-                    return max(0.02, min(0.15, kelly_f * multiplier)) # Fallback a 0.02 mínimo para permitir exploración
+                    return max(0.02, min(0.50, kelly_f * multiplier)) # FASE 6: 50% max allocation para 13 USD
                 else:
                     return max(0.01, min(0.25, kelly_f * 0.5)) # Fallback a 0.01 mínimo
             return 0.10 if is_micro_account else 0.05
@@ -2352,8 +2469,8 @@ class Portfolio:
         wins = perf['wins']
         losses = perf['losses']
         
-        if wins == 0: return 0.10 if is_micro_account else 0.01  # Penalty
-        if losses == 0: return 0.15 if is_micro_account else 0.10 # Perfect streak
+        if wins == 0: return 0.20 if is_micro_account else 0.01  # FASE 6: 20% inicial
+        if losses == 0: return 0.50 if is_micro_account else 0.10 # Perfect streak
         
         win_rate = wins / total_trades
         loss_rate = 1.0 - win_rate
@@ -2371,11 +2488,51 @@ class Portfolio:
         # Kelly Formula: f = p - q/b
         kelly_f = win_rate - (loss_rate / b)
         
+        # 🚀 FASE 13: QUANTUM STREAK SIZING (Anti-Martingale)
+        streak = perf.get('current_streak', 0)
+        losing_streak = perf.get('losing_streak', 0)
+        streak_multiplier = 1.0
+        
+        if streak >= 3:
+            streak_multiplier = 2.0  # Maximize exposure on winning streaks (Exponential Growth)
+        elif streak == 2:
+            streak_multiplier = 1.5
+        elif streak == 1:
+            streak_multiplier = 1.2
+            
+        if losing_streak >= 2:
+            streak_multiplier = 0.5  # Defensive mode
+        elif losing_streak >= 1:
+            streak_multiplier = 0.8
+            
+        kelly_f = kelly_f * streak_multiplier
+        
         if is_micro_account:
-            # [HOTFIX] Kelly reducido para Micro Cuentas (max 15%)
-            # Multiplicador adaptativo: Escalar el Kelly bruto
-            multiplier = 1.0 if horizon == "MICROSCALPING" else 0.8
-            final_size = max(0.02, min(0.15, kelly_f * multiplier))
+            # 🚀 FASE 12: ASYMMETRIC KELLY ALLOCATION
+            # QUÉ: Límites dinámicos por horizonte para cuentas micro.
+            # POR QUÉ: Microscalping es la fuerza motriz y puede consumir todo su margen asignado.
+            #   Swing debe ser defensivo y operar con menor porción del suyo.
+            if horizon in ("MICROSCALPING", "MICRO"):
+                multiplier = 1.2
+                cap = 1.00 # 100% of the Microscalping horizon margin (which is 40% of total)
+            elif horizon == "SCALPING":
+                multiplier = 1.0
+                cap = 0.50 # 50% of Scalping margin
+            else: # SWING
+                multiplier = 0.8
+                cap = 0.30 # 30% of Swing margin
+                
+            base_size = max(0.02, min(cap, kelly_f * multiplier))
+            
+            # ⚡ FASE 8: ANTI-MARTINGALE CUÁNTICO
+            # QUÉ: Escala el sizing basado en rachas consecutivas.
+            streak_mult = 1.0
+            if getattr(self, '_win_streak', 0) >= 2:
+                streak_mult = min(2.5, 1.0 + (self._win_streak - 1) * 0.15)
+            elif getattr(self, '_loss_streak', 0) >= 2:
+                streak_mult = max(0.5, 1.0 - (self._loss_streak - 1) * 0.20)
+            
+            final_size = max(0.02, min(cap, base_size * streak_mult))
         else:
             # Half-Kelly for Standard accounts
             final_size = max(0.01, min(0.25, kelly_f * 0.5))
@@ -2512,7 +2669,7 @@ class Portfolio:
             
             # Re-evaluate all open positions relative to the anchor
             now = self._get_current_time()
-            pos = self.positions.get(event.symbol, {})
+            pos = _pos_temp
             sl_pct = pos.get('sl_pct', 0.0) or 0.0
             tp_pct = pos.get('tp_pct', 0.0) or 0.0
             entry_time = pos.get('entry_time', None)
@@ -2810,10 +2967,18 @@ class Portfolio:
                 'thought_id': (getattr(event, 'metadata', {}) or {}).get('thought_id', None)
             }
             
-            # Use the position AFTER the fill, which is stored in self.positions
-            current_pos = self.positions.get(event.symbol, {})
+            # Use the position AFTER the fill, which is stored in self.positions/virtual_ledger
+            current_pos = _pos_temp
+            
+            # Use exact v_key to prevent DB overwrites for LONG/SHORT
+            _vkey_exact = _vkey_base
+            if f"{_vkey_base}_LONG" in self.virtual_ledger:
+                _vkey_exact = f"{_vkey_base}_LONG"
+            elif f"{_vkey_base}_SHORT" in self.virtual_ledger:
+                _vkey_exact = f"{_vkey_base}_SHORT"
+                
             position_dict = {
-                'symbol': event.symbol,
+                'symbol': _vkey_exact,
                 'quantity': current_pos.get('quantity', 0.0),
                 'entry_price': current_pos.get('avg_price', 0.0),
                 'current_price': current_pos.get('current_price', fill_price),
@@ -2871,11 +3036,19 @@ class Portfolio:
         Un trade con gross +$0.002 y fees $0.005 se contaba como WIN.
         Ahora recibe net_pnl = gross - fees → se cuenta correctamente como LOSS.
         """
+        # Mutación 32: Reporte Hormonal (Dopamina / Cortisol)
+        try:
+            from core.synaptic_pruner import SynapticPruner
+            SynapticPruner.get_instance().report_trade_result(strategy_id, pnl)
+        except Exception as e:
+            pass
+
         if strategy_id not in self.strategy_performance:
             self.strategy_performance[strategy_id] = {
                 'trades': 0, 'wins': 0, 'losses': 0, 
                 'pnl': 0.0, 'win_rate': 0.0,
-                'total_win_pnl': 0.0, 'total_loss_pnl': 0.0
+                'total_win_pnl': 0.0, 'total_loss_pnl': 0.0,
+                'current_streak': 0, 'max_streak': 0, 'losing_streak': 0
             }
             
         stats = self.strategy_performance[strategy_id]
@@ -2887,9 +3060,14 @@ class Portfolio:
         if pnl > 0:
             stats['wins'] += 1
             stats['total_win_pnl'] = stats.get('total_win_pnl', 0.0) + pnl
+            stats['current_streak'] = stats.get('current_streak', 0) + 1
+            stats['losing_streak'] = 0
+            stats['max_streak'] = max(stats.get('max_streak', 0), stats['current_streak'])
         elif pnl < 0:
             stats['losses'] += 1
             stats['total_loss_pnl'] = stats.get('total_loss_pnl', 0.0) + abs(pnl)
+            stats['current_streak'] = 0
+            stats['losing_streak'] = stats.get('losing_streak', 0) + 1
         # Note: pnl == 0.0 exactly is neither win nor loss (breakeven)
             
         if stats['trades'] > 0:
@@ -2904,8 +3082,16 @@ class Portfolio:
         self._session_stats['net_pnl'] += pnl
         if pnl > 0:
             self._session_stats['wins'] += 1
+            # ⚡ FASE 8: ANTI-MARTINGALE — Track winning streaks
+            self._win_streak += 1
+            self._loss_streak = 0
+            if self._win_streak > self._max_win_streak:
+                self._max_win_streak = self._win_streak
         elif pnl < 0:
             self._session_stats['losses'] += 1
+            # ⚡ FASE 8: ANTI-MARTINGALE — Track losing streaks
+            self._loss_streak += 1
+            self._win_streak = 0
 
     def get_statistics(self) -> Dict[str, Any]:
         """

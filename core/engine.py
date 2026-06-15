@@ -110,10 +110,9 @@ except ImportError:
 
 class PriorityBoundedQueue:
     """
-    HFT Multi-Level Ring Buffer Queue (Phase OMNI: QOS Priority).
+    HFT Multi-Level Ring Buffer Queue (Mutación 37: Zero-Copy Architecture).
     - Uses collections.deque(maxlen) per priority level for O(1) auto-drop.
-    - Non-blocking PUT.
-    - Async GET (Checks Priority 0 -> 1 -> 2).
+    - Spin-lock style bursting to avoid asyncio.Event overhead.
     """
     def __init__(self, maxsize=5000):
         self._deques = {
@@ -122,50 +121,50 @@ class PriorityBoundedQueue:
             2: collections.deque(maxlen=maxsize)  # Background: Market Data, Metrics
         }
         self._event = asyncio.Event()
+        self._items_count = 0
     
     def put(self, item):
         """Put item into queue based on priority."""
         priority = getattr(item, 'priority', 1) 
-        # Market events & Fills don't have priority by default.
-        # Fills should be 0. Market can be 2. Let's infer if missing.
         if not hasattr(item, 'priority'):
             if hasattr(item, 'type'):
-                # Handle Enum Types safely
                 type_name = getattr(item.type, 'name', str(item.type))
-                if type_name == 'FILL':
+                if type_name in ('FILL', 'MARKET'):
                     priority = 0
-                elif type_name == 'MARKET':
-                    priority = 0  # SUPREMO-V4: Market data is CRITICAL for HFT
                 else:
                     priority = 1
             else:
                 priority = 1
                 
-        # Clamp priority
         priority = max(0, min(2, priority))
         self._deques[priority].append(item)
-        self._event.set()
+        self._items_count += 1
+        
+        # Optimización HFT: Solo interactuamos con el Event si no está seteado
+        if not self._event.is_set():
+            self._event.set()
 
     async def get(self):
-        """Wait for and get next item strictly respecting priority."""
+        """Wait for and get next item strictly respecting priority. Spin-yield optimized."""
         while True:
             # Fast path
-            for p in range(3):
-                if self._deques[p]:
-                    return self._deques[p].popleft()
+            if self._items_count > 0:
+                for p in range(3):
+                    if self._deques[p]:
+                        self._items_count -= 1
+                        return self._deques[p].popleft()
             
-            # Slow path: wait
+            # Slow path: prepare to wait
             self._event.clear()
             
-            # Double-check
-            for p in range(3):
-                if self._deques[p]:
-                    return self._deques[p].popleft()
+            # Double-check para evitar race conditions (Kernel Bypass simulation)
+            if self._items_count > 0:
+                continue
             
             await self._event.wait()
 
     def empty(self):
-        return not any(d for d in self._deques.values())
+        return self._items_count == 0
 
     def task_done(self):
         pass # Not tracked for speed
@@ -187,12 +186,17 @@ class Engine:
         self.events = events_queue if events_queue else PriorityBoundedQueue(maxsize=5000) # Fast QoS queue
         self.data_handlers = []
         self.strategies = []
-        self._strategies_by_symbol = collections.defaultdict(list) # O(1) Optimization
+        self._strategies_by_symbol = collections.defaultdict(list) # Storage
+        self._active_strategies = collections.defaultdict(list)    # O(1) Pre-calculated Cache
         self.execution_handler = None
         self.portfolio = None
         self.risk_manager = None
         self.order_manager = None
         self.running = True
+        
+        # ZMQ IPC Nodes
+        self.zmq_pull = None
+        self.zmq_push = None
         
         # Strategy Coordination
         self._strategy_cooldowns = {}
@@ -237,6 +241,11 @@ class Engine:
         
         # 💯 PHASE 1 ANTIFRAGIL: Signal Scorer
         self.signal_scorer = SignalScorer()
+        
+        # 🧠 PHASE 69: CPU-Optimized NanoRL Agent
+        from core.evolution.genome_registry import GenomeRegistry
+        from core.evolution.rl_agent import NanoRLAgent
+        self.rl_agent = NanoRLAgent(GenomeRegistry(Config))
         # ═══════════════════════════════════════════════════════════════
         # AUDIT FIX: SOPHIA_MIN_CONFIDENCE was hardcoded to 0.70,
         # ignoring Config.Horizons.GlobalThresholds['sophia_win_prob_min'].
@@ -289,7 +298,7 @@ class Engine:
             # [ShadowDarwin] Continuous Evolution Daemon
             try:
                 from core.evolution.shadow_darwin import ShadowDarwinDaemon
-                self.shadow_darwin = ShadowDarwinDaemon()
+                self.shadow_darwin = ShadowDarwinDaemon(data_provider=self.data_provider)
                 logger.info("🐉 [SHADOW-DARWIN] Evolutionary daemon successfully bound to Engine.")
             except ImportError:
                 self.shadow_darwin = None
@@ -366,6 +375,14 @@ class Engine:
         else:
             # Multi-symbol strategies
             self._strategies_by_symbol['ALL'].append(strategy)
+            
+        # 🚀 PHASE 16: O(1) Pre-Calculated Strategy Cache
+        # Rebuild cache whenever a strategy is registered
+        self._active_strategies.clear()
+        for sym, strats in self._strategies_by_symbol.items():
+            if sym != 'ALL':
+                self._active_strategies[sym] = strats + self._strategies_by_symbol.get('ALL', [])
+        self._active_strategies['ALL'] = self._strategies_by_symbol.get('ALL', [])
         
         # ═══════════════════════════════════════════════════════════════
         # CAPA 1 REGISTRATION: Register in RiskManager
@@ -413,6 +430,12 @@ class Engine:
         
         # 🧠 SOPHIA-GLOBAL: Inject into Risk Manager for DCA / exit validation
         self.risk_manager.sophia = getattr(self, 'sophia_intelligence', None)
+        
+        # 🚀 PHASE 16 NANO-OPTIMIZATION: Pre-cache function pointers
+        self._risk_check_stops = self.risk_manager.check_stops
+        self._prediction_tracker_update = None
+        if hasattr(self.risk_manager, 'prediction_tracker') and self.risk_manager.prediction_tracker:
+            self._prediction_tracker_update = self.risk_manager.prediction_tracker.update_forward_returns
 
         # ⏳ Initialize Temporal Supervisor if not present
         if not self.temporal_supervisor and self.portfolio and self.risk_manager:
@@ -449,6 +472,14 @@ class Engine:
         # 🌐 CTOS DATA OMNISCIENCE: Start Macro/Micro Polling
         macro_intelligence.start_background()
         
+        # 🪐 [MUTACIÓN 28] START BTC GRAVITY LOADER
+        try:
+            from data.btc_gravity_loader import BTCGravityLoader
+            self.btc_gravity_loader = BTCGravityLoader(callback=self._on_btc_flash_spike)
+            asyncio.create_task(self.btc_gravity_loader.start())
+        except Exception as e:
+            logger.error(f"Failed to start BTC Gravity Loader: {e}")
+        
         # 🧠 Supreme Meta-Coordinator
         try:
             if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
@@ -471,6 +502,10 @@ class Engine:
         # 🔄 Start periodic reconciliation loop
         if self.execution_handler and self.portfolio:
              asyncio.create_task(self._reconciliation_loop())
+             
+        # 🔄 ZMQ IPC Bridge Loop
+        if self.zmq_pull:
+             asyncio.create_task(self._zmq_pull_loop())
             
         # AEGIS-ULTRA: Core Pinning (Phase 5)
         if Config.Aegis.CORE_PINNING and psutil:
@@ -643,6 +678,40 @@ class Engine:
                 logger.error(f"Engine Loop Error: {e}")
                 self.metrics['errors'] += 1
 
+    def _on_btc_flash_spike(self, spike_data):
+        """
+        [MUTACIÓN 28] NEURAL LATENCY CALLBACK
+        Se ejecuta en nanosegundos cuando BTC da un salto de 5+ Desviaciones.
+        """
+        if not self.running:
+            return
+            
+        direction = spike_data.get("direction")
+        z_score = spike_data.get("z_score")
+        
+        logger.critical(f"🪐 [BTC GRAVITY] Recibida Señal Front-Running: {direction} (Z: {z_score:.2f})")
+        
+        from core.events import SignalEvent, SignalType
+        import datetime
+        
+        for symbol in self._strategies_by_symbol.keys():
+            if symbol == "ALL" or symbol == "BTCUSDT":
+                continue
+                
+            sig_type = SignalType.LONG if direction == "LONG" else SignalType.SHORT
+            event = SignalEvent(
+                strategy_id="BTC_NEURAL_LATENCY",
+                symbol=symbol,
+                datetime=datetime.datetime.now(),
+                signal_type=sig_type,
+                strength=1.0,
+                confidence=0.99,
+                horizon="MICROSCALPING",
+                metadata={"z_score": z_score, "trigger": "btc_gravity"}
+            )
+            event.priority = 0
+            self.events.put(event)
+
     async def _optimize_ryzen_resources(self):
         """
         [PHASE 18] Dynamic Core Pinning & Thermal Throttling.
@@ -750,64 +819,217 @@ class Engine:
         if event.symbol and event.close_price and self.portfolio:
              self.portfolio.update_market_price(event.symbol, event.close_price)
              
-             if self.risk_manager and hasattr(self.risk_manager, 'prediction_tracker'):
-                 if self.risk_manager.prediction_tracker:
-                     try:
-                         self.risk_manager.prediction_tracker.update_forward_returns(
-                             symbol=event.symbol,
-                             current_price=event.close_price,
-                             timestamp=getattr(event, 'datetime', None)
-                         )
-                     except Exception as e:
-                         pass
+             # 🚀 PHASE 16 NANO-OPTIMIZATION: Use pre-cached function pointer
+             if getattr(self, '_prediction_tracker_update', None):
+                 try:
+                     self._prediction_tracker_update(
+                         symbol=event.symbol,
+                         current_price=event.close_price,
+                         timestamp=getattr(event, 'datetime', None)
+                     )
+                 except Exception:
+                     pass
 
              has_position = event.symbol in self.portfolio.positions or \
                             any(k.startswith(event.symbol) for k in self.portfolio.virtual_ledger)
-             if has_position and self.risk_manager and self.data_handlers:
-                 try:
-                     stop_signals = self.risk_manager.check_stops(
-                         self.portfolio, self.data_handlers[0],
-                         symbol_filter=event.symbol
-                     )
-                     if stop_signals:
-                         for sig in stop_signals:
-                             self.events.put(sig)
-                 except Exception as e:
-                     logger.error(f"Error checking stops: {e}")
-                     pass
+                            
+             if has_position:
+                 # 🧠 PHASE 69: NanoRL Agent Continuous Reward (Tick Penalty)
+                 if getattr(self, 'rl_agent', None):
+                     try:
+                         pos = self.portfolio.positions.get(event.symbol)
+                         if pos:
+                             unrealized_pnl = self.portfolio._calculate_unrealized_pnl(pos, event.close_price)
+                             duration_s = (datetime.datetime.now(datetime.timezone.utc) - pos['datetime']).total_seconds()
+                             self.rl_agent.apply_tick_penalty(event.symbol, pos.get('horizon', 'SCALPING'), unrealized_pnl, duration_s)
+                     except Exception as e:
+                         pass
 
-        strategies_to_run = self._strategies_by_symbol.get(event.symbol, [])
-        strategies_to_run.extend(self._strategies_by_symbol.get('ALL', []))
+                 if getattr(self, '_risk_check_stops', None) and self.data_handlers:
+                     try:
+                         stop_signals = self._risk_check_stops(
+                             self.portfolio, self.data_handlers[0],
+                             symbol_filter=event.symbol
+                         )
+                         if stop_signals:
+                             for sig in stop_signals:
+                                 self.events.put(sig)
+                     except Exception as e:
+                         logger.error(f"Error checking stops: {e}")
+                         pass
+
+        # 💥 FASE 3: GAMMA SQUEEZE RADAR (Detección de Liquidaciones)
+        # QUÉ: Dispara un LONG inmediato si se detecta una liquidación masiva de SHORTs.
+        # POR QUÉ: Las liquidaciones obligan a compras a mercado (Short Squeeze).
+        if hasattr(event, 'order_flow') and event.order_flow and event.order_flow.get('liquidation', False):
+            side = event.order_flow.get('side')
+            usd_value = event.order_flow.get('usd_value', 0)
+            if side == 'BUY' and usd_value >= 200000: # Liquidación de SHORT > $200k
+                logger.warning(f"💥 [GAMMA SQUEEZE RADAR] Massive SHORT Liquidation on {event.symbol}: ${usd_value:,.2f}! Firing SCALPING LONG!")
+                sig = SignalEvent(
+                    strategy_id="GAMMA_SQUEEZE_RADAR",
+                    symbol=event.symbol,
+                    datetime=getattr(event, 'datetime', None),
+                    signal_type=SignalType.LONG,
+                    strength=1.0,
+                    confidence=0.99,
+                    horizon="SCALPING",
+                    metadata={"trigger": "gamma_squeeze", "usd_value": usd_value}
+                )
+                sig.priority = 0
+                self.events.put(sig)
+
+        # 🚀 PHASE 16 NANO-OPTIMIZATION: O(1) List retrieval without runtime allocations
+        # Previously generated a new list in every single tick: .get(sym, []) + .extend(.get('ALL'))
+        strategies_to_run = self._active_strategies.get(event.symbol, self._active_strategies.get('ALL', []))
+        if not strategies_to_run:
+            return
         
         # ================================================================
-        # NANO-LATENCY SYNCHRONOUS EVALUATION
+        # NANO-LATENCY SYNCHRONOUS EVALUATION & QUANTUM ROUTING (MUTACIÓN 4)
         # ================================================================
-        # FORENSIC-AUDIT-FIX: Removed ThreadPoolExecutor.
-        # Since strategy.calculate_signals is an O(1) cached evaluation,
-        # ThreadPool switching and asyncio.wrap_future overhead was slowing it down.
-        # Running synchronously eliminates context switching latency entirely.
-        for strategy in strategies_to_run:
-            if _COOLDOWN_AVAILABLE and cooldown_manager:
-                if not cooldown_manager.can_evaluate(strategy.strategy_id, event.symbol):
-                    continue
-            
+        if hasattr(self, 'quantum_router') and getattr(self, 'quantum_router', None) is not None:
             try:
-                signal = strategy.calculate_signals(event)
-                if signal:
-                    if isinstance(signal, list):
-                        for s in signal:
-                            if s: self.events.put(s)
-                    else:
-                        self.events.put(signal)
+                unified_signal = self.quantum_router.evaluate_tick(event, strategies_to_run, event.close_price)
+                if unified_signal:
+                    self.events.put(unified_signal)
             except Exception as e:
-                logger.error(f"Strategy {strategy.strategy_id} error: {e}")
-                pass
+                logger.error(f"🌌 [QUANTUM] Error in evaluate_tick: {e}")
+        else:
+            # Fallback legacy routing
+            for strategy in strategies_to_run:
+                if _COOLDOWN_AVAILABLE and cooldown_manager:
+                    if not cooldown_manager.can_evaluate(strategy.strategy_id, event.symbol):
+                        continue
+                try:
+                    signal = strategy.calculate_signals(event)
+                    if signal:
+                        if isinstance(signal, list):
+                            for s in signal:
+                                if s: self.events.put(s)
+                        else:
+                            self.events.put(signal)
+                except Exception as e:
+                    logger.error(f"Strategy {strategy.strategy_id} error: {e}")
+                    pass
 
     @omniscient_trace(layer="CORTEX")
     async def _process_signal_event(self, event):
         """Process SIGNAL event asynchronously"""
         logger.info(f"⚡ [ENGINE] Processing Signal: {event.symbol} {event.signal_type} (Conf: {getattr(event, 'confidence', 0):.2f})")
         
+        # 🛡️ FASE 9: CORRELATION SHIELD (Diversificación Inteligente)
+        # QUÉ: Evita abrir posiciones en la misma dirección para activos altamente correlacionados.
+        # POR QUÉ: Si BTC, ETH y SOL caen juntos, tener 3 LONGs activos multiplica el drawdown x3.
+        # CÓMO: Si hay señal ENTRY para ETH/SOL, revisa si ya existe un trade abierto
+        #   en BTC en la MISMA dirección y mismo horizonte. Si sí, la bloquea.
+        from core.events import SignalType
+        _is_exit = event.signal_type == SignalType.EXIT
+        
+        if not _is_exit and event.symbol in ("ETH/USDT", "SOL/USDT") and self.portfolio:
+            _dir_str = "LONG" if event.signal_type == SignalType.LONG else ("SHORT" if event.signal_type == SignalType.SHORT else None)
+            _horizon = getattr(event, 'horizon', 'SCALPING')
+            # FORENSIC FIX: Bypass correlation shield for Scalping to allow simultaneous compound trades.
+            if _dir_str and _horizon not in ('SCALPING', 'MICROSCALPING'):
+                # Buscar si BTC ya tiene una posición abierta en la misma dirección y horizonte
+                btc_pos = self.portfolio.get_horizon_position("BTC/USDT", _horizon)
+                if btc_pos and btc_pos.get("quantity", 0) != 0:
+                    btc_dir = "LONG" if btc_pos["quantity"] > 0 else "SHORT"
+                    if btc_dir == _dir_str:
+                        # logger.warning(f"🛡️ [CORRELATION SHIELD] VETO {event.symbol} {_dir_str} {_horizon} — BTC ya está {_dir_str}.") # INFO logging disabled in hot loop
+                        self.metrics['discarded_events'] += 1
+                        return
+                        
+        # 🚀 FASE 22: CLASIFICADOR ESTRICTO DE REGÍMENES
+        # QUÉ: Bloquea señales que van en contra de las condiciones de mercado (ej. Swing en Choppy, Scalp Long en Bear).
+        # POR QUÉ: Evita "Cruces Mortales" donde un sistema es destruido por operar en el entorno equivocado.
+        if not _is_exit and self.portfolio and hasattr(self.portfolio, 'market_regime') and self.portfolio.market_regime:
+            try:
+                locks = self.portfolio.market_regime.get_regime_locks(event.symbol)
+                _horizon = getattr(event, 'horizon', 'SCALPING')
+                _dir_str = "LONG" if getattr(event, 'signal_type', None) == SignalType.LONG else ("SHORT" if getattr(event, 'signal_type', None) == SignalType.SHORT else None)
+                
+                is_locked = False
+                lock_reason = ""
+                
+                if _horizon == 'SWING' and locks.get('LOCK_SWING'):
+                    is_locked = True
+                    lock_reason = "SWING prohibido en mercado CHOPPY/RANGING"
+                elif _horizon in ('SCALPING', 'MICROSCALPING'):
+                    if _dir_str == "LONG" and locks.get('LOCK_SCALP_LONG'):
+                        is_locked = True
+                        lock_reason = "SCALP LONG suicida en fuerte tendencia BEAR"
+                    elif _dir_str == "SHORT" and locks.get('LOCK_SCALP_SHORT'):
+                        is_locked = True
+                        lock_reason = "SCALP SHORT suicida en fuerte tendencia BULL"
+                
+                if is_locked:
+                    logger.warning(f"🔒 [REGIME LOCK] VETO {event.symbol} {_dir_str} {_horizon}: {lock_reason}")
+                    self.metrics['discarded_events'] += 1
+                    return
+            except Exception as e:
+                logger.error(f"Error en Regime Validation: {e}")
+        
+        # Mutación 35: Genetic Pruning (Cross-Fertilization Matrix)
+        try:
+            from core.synaptic_pruner import SynapticPruner
+            from core.events import SignalType
+            trust_multiplier, tp_mod, sl_mod = SynapticPruner.get_instance().get_genetic_modifiers(getattr(event, 'strategy_id', 'UNKNOWN'))
+            effective_conf = getattr(event, 'confidence', 0.0) * trust_multiplier
+            is_exit_signal = getattr(event, 'signal_type', None) == SignalType.EXIT or str(getattr(event, 'signal_type', None)) == 'SignalType.EXIT'
+            
+            # FORENSIC FIX: Lower the hardcoded 0.70 to 0.50 so we don't veto ML signals that the Evolver deemed profitable.
+            if not is_exit_signal and getattr(event, 'confidence', 0.0) > 0 and effective_conf < 0.50:
+                logger.warning(f"🧠✂️ [SYNAPTIC PRUNING] Signal {event.symbol} from {getattr(event, 'strategy_id', 'UNKNOWN')} rejected. Trust: {trust_multiplier:.2f}. Effective Conf: {effective_conf:.2f}")
+                self.metrics['discarded_events'] += 1
+                return
+                
+            # Aplicar Mutación Genética de TP y SL
+            if not is_exit_signal and hasattr(event, 'metadata') and isinstance(event.metadata, dict):
+                if 'tp_pct' in event.metadata:
+                    original_tp = event.metadata['tp_pct']
+                    event.metadata['tp_pct'] *= tp_mod
+                    if tp_mod != 1.0:
+                        logger.info(f"🧬 [MUTACIÓN TP] {event.symbol}: {original_tp:.4f} -> {event.metadata['tp_pct']:.4f}")
+                if 'sl_pct' in event.metadata:
+                    original_sl = event.metadata['sl_pct']
+                    event.metadata['sl_pct'] *= sl_mod
+                    if sl_mod != 1.0:
+                        logger.info(f"🧬 [MUTACIÓN SL] {event.symbol}: {original_sl:.4f} -> {event.metadata['sl_pct']:.4f}")
+                        
+        except Exception as e:
+            logger.error(f"Error in Genetic Pruning: {e}")
+
+        # ⚡ FASE 8: EXPRESS LANE (Signal Gauntlet Fast-Track)
+        # QUÉ: Señales de ultra-alta confianza saltan los filtros intermedios.
+        # POR QUÉ: 15+ filtros secuenciales matan el ~90% de señales válidas.
+        #   Sin trades suficientes, el compounding exponencial es imposible.
+        # CÓMO: Si strength >= 0.95 Y viene de una estrategia élite (LIQ_SNIPER, 
+        #   o tiene sophia WP >= 0.85), salta directo al Meta-Arbitrator.
+        # CUÁNDO: Solo para ENTRY signals, nunca para EXIT.
+        _strength = getattr(event, 'strength', 0.0) or 0.0
+        _strategy = getattr(event, 'strategy_id', '') or ''
+        _sophia_wp = getattr(event, 'metadata', {}).get('sophia', {}).get('win_probability', 0.0) if hasattr(event, 'metadata') and isinstance(event.metadata, dict) else 0.0
+        _is_elite = 'LIQ_SNIPER' in _strategy.upper() or 'OMNI' in _strategy.upper() or _sophia_wp >= 0.85
+        
+        if not _is_exit and _strength >= 0.95 and _is_elite:
+            # logger.debug(f"🚀 [EXPRESS LANE] {event.symbol} from {_strategy} (str={_strength:.2f}, sophia={_sophia_wp:.2f}) → FAST-TRACKED to Meta-Arbitrator!")
+            # Still validate price (essential safety)
+            current_price = self._get_validated_price(event.symbol)
+            if current_price:
+                # Update portfolio signal metadata
+                if self.portfolio:
+                    self.portfolio.update_signal(event)
+                # Submit directly to Meta-Arbitrator
+                try:
+                    if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
+                        await meta_arbitrator.submit_intent(event)
+                        logger.debug(f"📥 [EXPRESS] Intent {event.symbol} fast-tracked to Meta-Arbitrator.")
+                except Exception as e:
+                    logger.error(f"Express Lane Meta-Arbitrator Error: {e}")
+                return
+            # If price validation fails, fall through to normal pipeline
+
         if not self._validate_signal_ttl(event):
             logger.warning(f"❌ [ENGINE] Signal {event.symbol} rejected: TTL Expired")
             self.metrics['discarded_events'] += 1
@@ -820,8 +1042,7 @@ class Engine:
             return
             
         # ⏳ TEMPORAL CONSTRAINTS
-        is_exit = (getattr(event, 'signal_type', None) == SignalType.EXIT) or str(getattr(event, 'signal_type', None)) == 'SignalType.EXIT' or getattr(event, 'is_exit', False) or (getattr(event, 'strategy_id', '') == "FLIP_EXIT")
-        if not is_exit and self.temporal_supervisor and not hasattr(event, 'is_vetoed'):
+        if not _is_exit and self.temporal_supervisor and not getattr(event, 'is_vetoed', False):
              # Modify position size or reject signal if temporal rule violates constraints
              adj_size, adj_score, allowed = self.temporal_supervisor.apply_temporal_constraints(
                  event, 
@@ -846,14 +1067,24 @@ class Engine:
                  base_sl = getattr(event, 'sl_pct', 0.0)
                  
                  # Fetch default if not set by strategy
+                 # FORENSIC-V162: SSOT is Config.Horizons
                  if base_tp == 0.0 or base_sl == 0.0:
-                     horizon = getattr(event, 'horizon', 'SCALPING').upper()
-                     if horizon == 'SCALPING':
-                         base_tp = base_tp or Config.Risk.SCALPING_PARAMS.get('tp_pct', 0.0068)
-                         base_sl = base_sl or Config.Risk.SCALPING_PARAMS.get('sl_pct', 0.0035)
+                     horizon_str = getattr(event, 'horizon', 'SCALPING').upper()
+                     _horizons = getattr(Config, 'Horizons', None)
+                     
+                     if horizon_str == 'MICROSCALPING':
+                         _params = getattr(_horizons, 'Microscalping', {}) if _horizons else {}
+                     elif horizon_str == 'SCALPING':
+                         _params = getattr(_horizons, 'Scalping', {}) if _horizons else {}
                      else:
-                         base_tp = base_tp or Config.Risk.SWING_PARAMS.get('tp_pct', 0.045)
-                         base_sl = base_sl or Config.Risk.SWING_PARAMS.get('sl_pct', 0.015)
+                         _params = getattr(_horizons, 'Swing', {}) if _horizons else {}
+                         
+                     # We use the raw 'tp_pct' and 'sl_pct' fields as base fallbacks if per-asset isn't available
+                     fallback_tp = _params.get('tp_pct', 0.0055)
+                     fallback_sl = _params.get('sl_pct', 0.0035)
+                     
+                     base_tp = base_tp or fallback_tp
+                     base_sl = base_sl or fallback_sl
                  
                  opt_tp, opt_sl, reasoning = multiverse_simulator.simulate_trajectories(
                      event, self.data_provider, base_tp, base_sl
@@ -874,7 +1105,7 @@ class Engine:
                      self.portfolio.current_ppo_entropy = event.metadata['ppo_entropy']
 
         # --- SHOCK REGIME & FUNDING EVASION (DYNAMIC FREEZE) ---
-        is_exit_signal = hasattr(event, 'signal_type') and str(event.signal_type) == 'SignalType.EXIT'
+        is_exit_signal = hasattr(event, 'signal_type') and event.signal_type in ('EXIT', 'SignalType.EXIT', SignalType.EXIT)
         if not is_exit_signal and self.data_handlers:
             # 🕒 FUNDING FEE EVASION (Phase 1 Protection)
             try:
@@ -959,32 +1190,11 @@ class Engine:
             except Exception as e:
                 logger.error(f"Failed to record signal in PredictionTracker: {e}")
         # CTOS Phase 5: SYSTEMIC INTEGRITY (CROSS-STRATEGY AWARENESS)
-        # QUÉ: Verificar `get_competing_strategies()` antes de procesar señales contradictorias.
-        # POR QUÉ: Evitar "pisarse las patas" entre Swing y Scalping.
-        # ═══════════════════════════════════════════════════════════════
+        # 🚀 Mutación 38 (Multi-Horizonte): Se permite la coexistencia pacífica de 
+        # Scalping y Swing en el mismo símbolo (Hedge Mode nativo de Binance).
+        # Ya no aplicamos vetos direccionales locales porque el virtual_ledger aísla el PnL.
         try:
-            _signal_dir = 'LONG' if 'LONG' in str(event.signal_type) else ('SHORT' if 'SHORT' in str(event.signal_type) else None)
-            if _signal_dir and self.portfolio:
-                _horizon = getattr(event, 'horizon', 'SCALPING')
-                _opposing_horizon = 'SWING' if _horizon == 'SCALPING' else 'SCALPING'
-                _opp_pos = self.portfolio.get_horizon_position(event.symbol, _opposing_horizon)
-                
-                if _opp_pos and _opp_pos.get('quantity', 0) != 0:
-                    _opp_actual_dir = 'LONG' if _opp_pos['quantity'] > 0 else 'SHORT'
-                    if _opp_actual_dir != _signal_dir:
-                        # Obtenemos las estrategias que compiten
-                        competing = global_state.get_competing_strategies(event.symbol, _opposing_horizon)
-                        comp_names = [c.get('strategy_id') for c in competing]
-                        
-                        logger.warning(
-                            f"⚠️ [SYSTEMIC INTEGRITY] Conflicto direccional en {event.symbol}: "
-                            f"Señal {_horizon} {_signal_dir} vs Posición {_opposing_horizon} {_opp_actual_dir}. "
-                            f"Estrategias compitiendo: {comp_names}. Pasando a Meta-Arbitrator para resolución explícita."
-                        )
-                        new_metadata = dict(event.metadata or {})
-                        new_metadata['competing_horizon'] = _opposing_horizon
-                        new_metadata['competing_direction'] = _opp_actual_dir
-                        event = dataclasses.replace(event, metadata=new_metadata)
+            pass # Lógica removida para permitir Entrelazamiento Multi-Horizonte sin penalizaciones.
         except Exception as e:
             logger.error(f"Failed to check competing strategies: {e}")
 
@@ -999,7 +1209,7 @@ class Engine:
             meta = getattr(event, 'metadata', {})
             tf_data = meta.get('timeframe_data', {})
             if tf_data and self.data_handlers:
-                _dir_str = 'LONG' if 'LONG' in str(event.signal_type) else ('SHORT' if 'SHORT' in str(event.signal_type) else 'UNKNOWN')
+                _dir_str = 'LONG' if event.signal_type in ('LONG', 'SignalType.LONG', SignalType.LONG) else ('SHORT' if event.signal_type in ('SHORT', 'SignalType.SHORT', SignalType.SHORT) else 'UNKNOWN')
                 _horizon = getattr(event, 'horizon', 'SCALPING')
                 
                 if _dir_str != 'UNKNOWN' and _MULTI_HORIZON_ORACLE_AVAILABLE and MultiHorizonOracle:
@@ -1009,9 +1219,12 @@ class Engine:
                         # SOFT VETO: Penalize confidence instead of hard blocking immediately.
                         # The Meta-Arbitrator and RiskManager will ultimately decide.
                         if _clash > 0.85:
-                            logger.info(f"🔮 [ORACLE VETO] {event.symbol} {_dir_str} BLOCKED (EXTREME) | Clash: {_clash:.1%} | Macro: {oracle_verdict.get('macro_context', '')}")
-                            self.metrics['discarded_events'] += 1
-                            return
+                            if _horizon in ('SCALPING', 'MICROSCALPING'):
+                                logger.info(f"🔮 [ORACLE BYPASS] {event.symbol} {_dir_str} ALLOWED despite extreme clash (Macro: {oracle_verdict.get('macro_context', '')}) due to {_horizon} horizon.")
+                            else:
+                                logger.info(f"🔮 [ORACLE VETO] {event.symbol} {_dir_str} BLOCKED (EXTREME) | Clash: {_clash:.1%} | Macro: {oracle_verdict.get('macro_context', '')}")
+                                self.metrics['discarded_events'] += 1
+                                return
                         else:
                             _penalty = max(0.4, 1.0 - _clash)
                             event = dataclasses.replace(event, strength=getattr(event, 'strength', 0.5) * _penalty)
@@ -1053,7 +1266,7 @@ class Engine:
 
         # 💯 SISTEMA AUTÓNOMO ANTIFRÁGIL - FASE 1: Scoring y Breakeven
         if hasattr(self, 'signal_scorer') and self.signal_scorer:
-            _dir_str = 'LONG' if 'LONG' in str(event.signal_type) else ('SHORT' if 'SHORT' in str(event.signal_type) else 'UNKNOWN')
+            _dir_str = 'LONG' if event.signal_type in ('LONG', 'SignalType.LONG', SignalType.LONG) else ('SHORT' if event.signal_type in ('SHORT', 'SignalType.SHORT', SignalType.SHORT) else 'UNKNOWN')
             if _dir_str in ['LONG', 'SHORT']:
                 try:
                     dh = self.data_handlers[0] if self.data_handlers else None
@@ -1061,10 +1274,16 @@ class Engine:
                     
                     total_score, breakdown = self.signal_scorer.calculate_score(event, dh, self.portfolio, regime_str)
                     
-                    if not hasattr(event, 'metadata'):
-                        event.metadata = {}
-                    event.metadata['final_score'] = total_score
-                    event.metadata['score_breakdown'] = breakdown
+                    _meta = getattr(event, 'metadata', None)
+                    if _meta is None:
+                        _meta = {}
+                        try:
+                            object.__setattr__(event, 'metadata', _meta)
+                        except (AttributeError, TypeError):
+                            pass
+                    
+                    _meta['final_score'] = total_score
+                    _meta['score_breakdown'] = breakdown
                     
                     logger.debug(f"💯 [SCORER] {event.symbol} {_dir_str} Score: {total_score}/100 Breakdown: {breakdown}")
                     
@@ -1089,6 +1308,21 @@ class Engine:
                 except Exception as e:
                     logger.error(f"Error en SignalScorer: {e}")
 
+        # ⚡ FASE 14: CAPITAL ROTATOR
+        if self.portfolio and getattr(event, 'confidence', 0.0) >= 0.85 and not is_exit_signal:
+            try:
+                from core.capital_rotator import capital_rotator
+                horizon = getattr(event, 'horizon', 'SCALPING')
+                req_margin = 5.0  # minimal safe margin assumption
+                avail_cash = self.portfolio.get_available_cash(horizon=horizon)
+                if avail_cash < req_margin:
+                    kill_signal = capital_rotator.evaluate_opportunity(event, self.portfolio, req_margin)
+                    if kill_signal:
+                        # Submit the kill signal to the engine queue immediately
+                        self.events.put(kill_signal)
+            except Exception as e:
+                logger.error(f"Capital Rotator Error: {e}")
+
         # 🧠 META-COORDINATOR INJECTION
         # Instead of directly processing through the RiskManager, we submit this to the Supreme Arbitrator
         # for conflict resolution, portfolio checks, and global context weighing.
@@ -1112,6 +1346,26 @@ class Engine:
             pass
         except Exception as e:
             logger.error(f"Meta-Arbitrator Drain Error: {e}")
+
+    async def _zmq_pull_loop(self):
+        """Background task that pulls events from ZMQ and injects them into the Engine's main queue."""
+        logger.info("🔄 [ZMQ] Starting Engine PULL Loop...")
+        from core.events import ExecutionFailedEvent, FillEvent, MarketEvent
+        try:
+            while self.running:
+                event = await self.zmq_pull.pull()
+                
+                # Handling ExecutionFailedEvent to release cash
+                if isinstance(event, ExecutionFailedEvent):
+                    if self.portfolio:
+                        self.portfolio.release_cash(event.quantity * event.price)
+                    continue
+                    
+                self.events.put(event)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"ZMQ Pull Error: {e}")
 
     async def _reconciliation_loop(self):
         """Periodic background task that reconciles local position registry with Binance every 60s."""
@@ -1161,7 +1415,7 @@ class Engine:
                 try:
                     sig_dict = {
                         "symbol": event.symbol,
-                        "side": "BUY" if "LONG" in str(event.signal_type) else ("SELL" if "SHORT" in str(event.signal_type) else "EXIT"),
+                        "side": "BUY" if event.signal_type in ('LONG', 'SignalType.LONG', SignalType.LONG) else ("SELL" if event.signal_type in ('SHORT', 'SignalType.SHORT', SignalType.SHORT) else "EXIT"),
                         "quantity": getattr(event, 'suggested_quantity', 0.0),
                         "price": current_price,
                         "confidence": getattr(event, 'confidence', 0.0),
@@ -1175,12 +1429,14 @@ class Engine:
                 except Exception as e:
                     logger.error(f"[SHADOW] Observation error: {e}")
                     
-            order_event = self.risk_manager.generate_order(event, current_price)
-            if order_event:
-                logger.info(f"🚀 [ENGINE] Order Generated by RiskManager for {event.symbol}: {order_event.quantity} {order_event.side}")
-                dt_ms = (time.time_ns() - event.timestamp_ns) / 1_000_000
-                latency_monitor.track('signal_to_order', dt_ms)
-                self.events.put(order_event)
+            order_result = self.risk_manager.generate_order(event, current_price)
+            if order_result:
+                orders = order_result if isinstance(order_result, list) else [order_result]
+                for order_event in orders:
+                    logger.info(f"🚀 [ENGINE] Order Generated by RiskManager for {event.symbol}: {order_event.quantity} {order_event.direction}")
+                    dt_ms = (time.time_ns() - getattr(event, 'timestamp_ns', time.time_ns())) / 1_000_000
+                    latency_monitor.track('signal_to_order', dt_ms)
+                    self.events.put(order_event)
             else:
                  logger.warning(f"🛑 [ENGINE] RiskManager REJECTED signal for {event.symbol}")
                  # INTERACTION MONITOR: Order blocked by Risk Manager
@@ -1199,11 +1455,19 @@ class Engine:
     @omniscient_trace(layer="CORTEX")
     async def _process_order_event(self, event):
         """Process ORDER event asynchronously"""
-        if self.execution_handler:
-            if asyncio.iscoroutinefunction(self.execution_handler.execute_order):
-                await self.execution_handler.execute_order(event)
+        if self.zmq_push:
+            await self.zmq_push.push(event)
+        elif self.execution_handler:
+            # FASE 68: Netting Engine Interception
+            if not hasattr(self, '_netting_engine'):
+                from execution.netting_engine import ExecutionNettor
+                self._netting_engine = ExecutionNettor(self.execution_handler)
+            
+            # Pasamos el evento a traves del nettor en lugar del execution_handler directo
+            if asyncio.iscoroutinefunction(self._netting_engine.execute_order):
+                await self._netting_engine.execute_order(event)
             else:
-                self.execution_handler.execute_order(event)
+                self._netting_engine.execute_order(event)
         else:
             logger.warning("No Execution Handler registered. Order ignored.")
 
@@ -1237,6 +1501,29 @@ class Engine:
                     if getattr(strategy, 'symbol', None) == event.symbol and \
                        hasattr(strategy, 'update_recursive_weights'):
                         strategy.update_recursive_weights(trade_outcome)
+                        
+                        # PHASE 10: HOT ADAPTER RL REAL-TIME FEEDBACK
+                        if hasattr(strategy, 'hot_adapter') and strategy.hot_adapter and pnl is not None:
+                            _closed = getattr(self.portfolio, '_last_closed_trade_data', None) if self.portfolio else None
+                            if _closed:
+                                _dir = str(_closed.get('direction', 'LONG')).upper()
+                                _pnl_pct = float(pnl) # This needs to be a percentage. PNL in engine might be absolute? 
+                                # Wait, we can calculate percentage from entry_price and quantity, but usually pnl is % in some places?
+                                # _last_closed_trade_data has 'net_pnl_pct' probably? Or we can just pass PNL if HotAdapter expects magnitude.
+                                _net_pnl_pct = float(_closed.get('net_pnl_pct', pnl / 100.0))
+                                strategy.hot_adapter.update_weights(event.symbol, pnl > 0, _net_pnl_pct, _dir)
+                                logger.debug(f"🧠 [HOT-ADAPTER] Engine updated RL Memory for {event.symbol} {_dir} (PnL: {_net_pnl_pct:.2f}%)")
+                                logger.debug(f"🧠 [HOT-ADAPTER] Engine updated RL Memory for {event.symbol} {_dir} (PnL: {_net_pnl_pct:.2f}%)")
+
+                # 🧠 PHASE 69: NanoRL Agent Discrete Reward
+                if getattr(self, 'rl_agent', None):
+                    _closed = getattr(self.portfolio, '_last_closed_trade_data', {}) if self.portfolio else {}
+                    self.rl_agent.process_trade_closure(
+                        symbol=event.symbol, 
+                        horizon=getattr(event, 'horizon', 'SCALPING'), 
+                        net_pnl=pnl, 
+                        trade_metadata=_closed
+                    )
 
                 # ════════════════════════════════════════════════════════════════
                 # CTOS PHASE 2: FEEDBACK LOOP + EVENT BUS FILL PUBLISH
@@ -1277,6 +1564,13 @@ class Engine:
                 except Exception as e:
                     logger.error(f"EventBus publish FILLS error: {e}")
 
+                # 🏦 FASE 5: TRIGGER AUTO-SECUESTRO API TRANSFER
+                if getattr(self.portfolio, 'initial_risk_secured', False) and not getattr(self, '_has_secured_risk_api', False):
+                    self._has_secured_risk_api = True
+                    if self.execution_handler and hasattr(self.execution_handler, 'transfer_to_spot'):
+                        amount_to_secure = getattr(self.portfolio, 'base_initial_capital', 13.0)
+                        logger.critical("🚨 [PHASE 5] Triggering API call to sweep initial capital to Spot!")
+                        asyncio.create_task(self.execution_handler.transfer_to_spot('USDT', amount_to_secure))
         
         if self.order_manager and hasattr(event, 'order_id') and event.order_id:
             if asyncio.iscoroutinefunction(self.order_manager.remove_order):
@@ -1367,6 +1661,17 @@ class Engine:
             if not getattr(strategy, 'handles_tick_data', False):
                 return False
 
+        # 0.8 Micro-Regime HMM (Mutación 33)
+        # Filtrado de HFT basado en volatilidad de micro-estructura
+        if hasattr(event, 'microstructure'):
+            hmm_state = event.microstructure.get('hmm_state', 0)
+            is_trend_strategy = "Sniper" in strat_name or "Trend" in strat_name or "Momentum" in strat_name
+            if hmm_state == 2 and not is_trend_strategy:
+                # TOXIC_ACCUMULATION: Se aproxima un block trade, bloquear contra-tendencia.
+                return False
+            if hmm_state == 1 and is_trend_strategy:
+                # HFT_CHOP: Alta volatilidad sin dirección, bloquear estrategias de tendencia.
+                return False
 
         # 1. Regime Compatibility
         if 'Statistical' in strat_name:
@@ -1509,8 +1814,14 @@ class Engine:
         Returns:
             True = signal passes, False = signal vetoed.
         """
+        # FASE 32: OMNI-SCORE BYPASS
+        # El OmniStrategy ya fusiona matemáticamente las predicciones ML y técnicas.
+        # Volver a pasar por Sophia sería redundante y causaría bloqueos falsos.
+        if 'OMNI' in getattr(event, 'strategy_id', '').upper():
+            return True
+
         # EXIT signals always pass — never block a protective close
-        is_exit = hasattr(event, 'signal_type') and 'EXIT' in str(event.signal_type)
+        is_exit = hasattr(event, 'signal_type') and event.signal_type in ('EXIT', 'SignalType.EXIT', SignalType.EXIT)
         if is_exit:
             return True
         
@@ -1575,6 +1886,13 @@ class Engine:
                 self._tpool.shutdown(wait=True)
             except Exception as e:
                 logger.error(f"Error shutting down Engine thread pool: {e}")
+                
+        # ⚡ FASE 12.5: Apagado seguro del WS Executor
+        if hasattr(self, 'execution_handler') and getattr(self.execution_handler, 'ws_executor', None):
+            try:
+                asyncio.run(self.execution_handler.ws_executor.stop())
+            except Exception as e:
+                logger.error(f"Error stopping WSOrderExecutor: {e}")
 
     def _on_mutation_event(self, payload: Dict[str, Any]):
         """

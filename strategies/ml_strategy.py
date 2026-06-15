@@ -40,10 +40,6 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 import talib
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.preprocessing import StandardScaler
-from xgboost import XGBClassifier
 
 from config import Config
 from utils.notifier import Notifier
@@ -152,7 +148,10 @@ def ml_inference_worker_task(in_q, out_q):
         try:
             data = in_q.get()
             X, rf, xgb, gb = data["X"], data["rf"], data["xgb"], data["gb"]
-
+            
+            # FORENSIC-V100: STRICT np.float32 INJECTION (NANO-LATENCY)
+            if not isinstance(X, np.ndarray) or X.dtype != np.float32 or not X.flags['C_CONTIGUOUS']:
+                X = np.ascontiguousarray(X, dtype=np.float32)
             # Heavy inference via JIT Kernels
             if isinstance(rf, dict) and "tree_offsets" in rf:
                 rf_p = predict_rf_jit(
@@ -266,7 +265,7 @@ def ml_inference_worker_task(in_q, out_q):
 # QUÉ: Semáforo para controlar cuántas estrategias entrenan simultáneamente.
 # POR QUÉ: Con 24 símbolos, n_jobs=-1 causa agotamiento de RAM instantáneo (97%+).
 # PARA QUÉ: Estabilizar el sistema y permitir que el trading continúe sin lag.
-TRAINING_LIMITER = threading.BoundedSemaphore(value=14) # QUANTUM OVERCLOCK
+TRAINING_LIMITER = threading.BoundedSemaphore(value=2) # PHASE 24: Prevent CPU Freeze during boot
 
 
 class MLStrategyHybridUltimate(Strategy):
@@ -300,7 +299,7 @@ class MLStrategyHybridUltimate(Strategy):
         # --- SUPREMO-V4 / MÓDULO OMEGA (FASE D): H1-H8 ISOLATION PROTOCOL ---
         # Aislar los modelos según su horizonte temporal estricto (H1 a H8) para
         # evitar polinización cruzada entre modelos de Scalping y Swing.
-        base_models_dir = models_dir if models_dir else os.path.join(getattr(Config, "BASE_DIR", "."), ".models")
+        base_models_dir = models_dir if models_dir else os.path.join(getattr(Config, "BASE_DIR", "."), getattr(Config, "MODEL_DIR", ".models"))
         
         # Mapeo de Horizontes H1-H8 según Módulo OMEGA
         self.horizon_mapping = {
@@ -370,6 +369,7 @@ class MLStrategyHybridUltimate(Strategy):
         self.rf_model = None
         self.xgb_model = None
         self.gb_model = None
+        from sklearn.preprocessing import StandardScaler
         self.scaler = StandardScaler()
         
         # 🧠 PHASE 8: PETIM INTEGRATION
@@ -447,8 +447,8 @@ class MLStrategyHybridUltimate(Strategy):
             f"🔮 [ML-Horizon] Scaled Prediction Window: {self.LOOKAHEAD_BARS} bars (Horizon: {self.horizon_str})"
         )
 
-        self.current_tp_target = np.clip(self.BASE_TP_TARGET, 0.001, 0.05 if self.horizon_str == 'SCALPING' else 0.15)
-        self.current_sl_target = np.clip(self.BASE_SL_TARGET, 0.001, 0.03 if self.horizon_str == 'SCALPING' else 0.10)
+        self.current_tp_target = np.clip(self.BASE_TP_TARGET, 0.001, 0.05 if self.horizon_str in ['SCALPING', 'MICROSCALPING'] else 0.15)
+        self.current_sl_target = np.clip(self.BASE_SL_TARGET, 0.001, 0.03 if self.horizon_str in ['SCALPING', 'MICROSCALPING'] else 0.10)
         self.volatility_multiplier = 1.0
 
         # ============================================================
@@ -457,7 +457,12 @@ class MLStrategyHybridUltimate(Strategy):
         self.MIN_MODEL_ACCURACY = 0.35  # Aggressive: 35% accuracy floor (ML > Random)
 
         # Umbrales base optimizados para SMART GROWTH MODE
-        self.BASE_CONFIDENCE_THRESHOLD = self.par_engine.get("ml_confidence")
+        # FASE 30: Read from Genetic DNA if available
+        dna_bull = Config.Strategies.ML_THRESHOLDS.get('confidence_bull')
+        if dna_bull is not None:
+            self.BASE_CONFIDENCE_THRESHOLD = dna_bull
+        else:
+            self.BASE_CONFIDENCE_THRESHOLD = self.par_engine.get("ml_confidence")
         self.BASE_CONFLUENCE_LONG = 0.25  # More permissive confluence
         self.BASE_CONFLUENCE_SHORT = -0.30  # Más permisivo
 
@@ -489,8 +494,8 @@ class MLStrategyHybridUltimate(Strategy):
         # === FORENSIC-3: CENTRAL AI ORCHESTRATION (SOPHIA) ===
         # Compute bar mins dynamically based on horizon
         tf_to_mins = {"1m": 1.0, "5m": 5.0, "15m": 15.0, "30m": 30.0, "1h": 60.0, "4h": 240.0, "1d": 1440.0}
-        primary_tf = getattr(self, "PRIMARY_TF", "5m" if horizon.upper() == "SCALPING" else "1h")
-        bar_mins = tf_to_mins.get(primary_tf, 5.0 if horizon.upper() == "SCALPING" else 60.0)
+        primary_tf = getattr(self, "PRIMARY_TF", "5m" if horizon.upper() in ["SCALPING", "MICROSCALPING"] else "1h")
+        bar_mins = tf_to_mins.get(primary_tf, 5.0 if horizon.upper() in ["SCALPING", "MICROSCALPING"] else 60.0)
         # OPTIMIZACIÓN RAM: Singleton por horizonte (2 instancias vs 42)
         self.sophia = SophiaIntelligence.get_instance(bar_minutes=bar_mins)
         # Apply Horizon profile to prevent false Chaos Dampening
@@ -535,15 +540,24 @@ class MLStrategyHybridUltimate(Strategy):
         # Cargar modelos previos si existen (Prioridad: MLGovernance)
         # SUPREME BLOCK V: Bypass Governance to force new XGB JSON models
         # self._load_governed_model()
-        self._load_models()
+        # [PHASE 17] Lazy Loading: Do not load models on boot.
+        self._models_loaded = False
+        # self._load_models()
 
         # ============================================================
         # ✅ DETECCIÓN DE RÉGIMEN DE MERCADO AVANZADA
         # ============================================================
-        # DETECCIÓN DE RÉGIMEN DE MERCADO AVANZADA
+        self._current_event_time = None
         self.market_regime = "UNKNOWN"
         self.regime_history = deque(maxlen=15)
-        self.last_regime_update = datetime.now(timezone.utc) - pd.Timedelta(
+        self.regime_accuracy = {
+            "TRENDING": [],
+            "RANGING": [],
+            "VOLATILE": [],
+            "MIXED": [],
+            "UNKNOWN": [],
+        }
+        self.last_regime_update = self._now() - pd.Timedelta(
             minutes=5
         )  # Allow immediate update
         self.regime_confidence = 0.0
@@ -564,7 +578,7 @@ class MLStrategyHybridUltimate(Strategy):
         # ✅ SISTEMA DE APRENDIZAJE ADAPTATIVO
         # ============================================================
         self.learning_rate = 1.0
-        self.aggressiveness_factor = 1.0  # Factor de agresividad dinámico
+        self.aggressiveness_factor = 1.25  # [FASE 11] Factor de agresividad elevado para cuentas de $13
         self.win_streak = 0
         self.loss_streak = 0
 
@@ -604,14 +618,6 @@ class MLStrategyHybridUltimate(Strategy):
             "UNKNOWN": 0,
         }
 
-        self.regime_accuracy = {
-            "TRENDING": [],
-            "RANGING": [],
-            "VOLATILE": [],
-            "MIXED": [],
-            "UNKNOWN": [],
-        }
-
         # ============================================================
         # ✅ CONFIGURACIÓN DE CRECIMIENTO EXPONENCIAL
         # ============================================================
@@ -619,10 +625,6 @@ class MLStrategyHybridUltimate(Strategy):
         self.position_sizing_mode = "KELLY"  # Kelly, FIXED, VOLATILITY
         self.kelly_fraction = 0.5  # Fracción de Kelly para riesgo controlado
         # self.base_position_size = 0.95  # DELEGADO AL RISK MANAGER (40%)
-
-        # Phase 5: Dynamic Math Utils
-        # from utils.statistics_pro import StatisticsPro (Deprecated in Phase 13 for Inline Kelly)
-        # self.stats_pro = StatisticsPro()
 
         # Meta de 12 USD a 100K USD
         self.initial_capital = 12.0
@@ -638,6 +640,10 @@ class MLStrategyHybridUltimate(Strategy):
         )
         logger.info(f"🎯 OBJECTIVE: ${self.initial_capital} → ${self.target_capital}")
         logger.info(f"⚙️  Mode: Exponential Growth (Aggressive with Risk Control)")
+
+    def _now(self):
+        """Forensic Time Fix: Return event timestamp if available, else system time"""
+        return getattr(self, '_current_event_time', None) if getattr(self, '_current_event_time', None) else datetime.now(tz=timezone.utc)
 
     def _calculate_dynamic_sizing(self, confidence, volatility):
         """
@@ -743,7 +749,7 @@ class MLStrategyHybridUltimate(Strategy):
         """
         Actualizar régimen con suavizado y persistencia
         """
-        current_time = datetime.now(timezone.utc)
+        current_time = self._now()
 
         # EXCEPCIÓN: Si es UNKNOWN, actualizar siempre para inicializar
         if (
@@ -852,7 +858,12 @@ class MLStrategyHybridUltimate(Strategy):
         threshold_mod = advice.get("threshold_mod", 0.0)
         scale_factor = advice.get("scale", 0.0)
         # 3. Apply Adaptive Engine Values (Update bases dynamically)
-        self.BASE_CONFIDENCE_THRESHOLD = self.par_engine.get("ml_confidence")
+        # FASE 30: Read from Genetic DNA if available
+        dna_bull = Config.Strategies.ML_THRESHOLDS.get('confidence_bull')
+        if dna_bull is not None:
+            self.BASE_CONFIDENCE_THRESHOLD = dna_bull
+        else:
+            self.BASE_CONFIDENCE_THRESHOLD = self.par_engine.get("ml_confidence")
         self.BASE_TP_TARGET = self.par_engine.get("tp_mult") / 100.0
         self.BASE_SL_TARGET = self.par_engine.get("sl_mult") / 100.0
         self.LOOKAHEAD_BARS = self.par_engine.get("lookahead")
@@ -945,6 +956,11 @@ class MLStrategyHybridUltimate(Strategy):
         """
         n = len(df)
         lookahead = self.par_engine.get("lookahead")
+        
+        # [FASE 3: Pesimismo Cuántico] Restricción brutal de lookahead para Microscalping
+        if getattr(self, "horizon_str", "") == "MICROSCALPING":
+            lookahead = min(lookahead, 2) # Máximo 2 barras para evitar ambigüedad de ruido intradiario
+            
         dd_stress_limit = self.par_engine.get("dd_stress_limit")
         fee_threshold = getattr(Config, "BINANCE_TAKER_FEE_BNB", 0.00075) * 2 * 1.5
 
@@ -1201,7 +1217,8 @@ class MLStrategyHybridUltimate(Strategy):
             'macd_hist', 'bb_position', 'bb_width', 'stoch_k', 'adx', 
             'volume_ratio', 'gk_vol', 'hurst_memory', 'volatility_ransac', 
             'micro_imbalance', 'spread_squeeze', 'scalp_velocity_1', 
-            'scalp_rsi_divergence', 'micro_label', 'market_cluster'
+            'scalp_rsi_divergence', 'micro_label', 'market_cluster',
+            'graph_centrality', 'graph_pagerank'
         ]
         
         feature_cols = [c for c in df_signals.columns if c in top_20_features and c not in exclude_cols]
@@ -1210,10 +1227,13 @@ class MLStrategyHybridUltimate(Strategy):
         y = df_signals["label"]
 
         # CRITICAL: Remap labels for XGBoost compatibility
-        # XGBoost expects classes starting from 0: [0, 1, 2, ...]
-        # Our labels are [-1, 0, 1] -> remap to [0, 1, 2]
-        y = y.map({-1: 0, 0: 1, 1: 2})
-        self._label_mapping = {0: -1, 1: 0, 2: 1}  # For inverse mapping during inference
+        # XGBoost dynamically expects [0, 1, ..., k-1]
+        from sklearn.preprocessing import LabelEncoder
+        if not hasattr(self, "label_encoder"):
+            self.label_encoder = LabelEncoder()
+        
+        y_encoded = self.label_encoder.fit_transform(y)
+        y = pd.Series(y_encoded, index=y.index)
 
         # DEBUG: Verificar si las features son válidas
         std_zero_cols = X.columns[X.std() == 0].tolist()
@@ -1237,6 +1257,12 @@ class MLStrategyHybridUltimate(Strategy):
             indices = list(range(n_samples))
             splitter = [(indices, indices)]
         else:
+            # Phase 24: Lazy Imports
+            from sklearn.model_selection import TimeSeriesSplit
+            from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+            from sklearn.preprocessing import StandardScaler
+            from xgboost import XGBClassifier
+
             tscv = TimeSeriesSplit(n_splits=3)
             # ═══════════════════════════════════════════════════════════════
             # FORENSIC-V31: EMBARGO GAP IN CV SPLITS
@@ -1991,7 +2017,7 @@ class MLStrategyHybridUltimate(Strategy):
                     adx = last_row.get("adx", 0)
                     trend_power = last_row.get("trend_power", 0)
 
-                    labels = ["M1", "M5", "M15", "M30"] if getattr(self, "horizon", "SCALPING") == "SCALPING" else ["H1", "H4", "H12", "D1"]
+                    labels = ["M1", "M5", "M15", "M30"] if getattr(self, "horizon", "SCALPING") in ["SCALPING", "MICROSCALPING"] else ["H1", "H4", "H12", "D1"]
                     oracle_msg = (
                         f"\n🔮 [UNIFIED ORACLE] {self.symbol} | TRAINING | Last CV: {self.last_training_score:.3f}\n"
                         f"   Engines Passing: 0/3 | Threshold: {self.consensus_threshold}\n"
@@ -2062,7 +2088,12 @@ class MLStrategyHybridUltimate(Strategy):
             else:
                 rf_proba = self.rf_model.predict_proba(X_scaled)[0]
 
-            xgb_proba = self.xgb_model.predict_proba(X_scaled)[0]
+            try:
+                booster = self.xgb_model.get_booster() if hasattr(self.xgb_model, 'get_booster') else self.xgb_model
+                _xgb_p = float(booster.inplace_predict(X_scaled)[0])
+                xgb_proba = np.array([1.0 - _xgb_p, _xgb_p])
+            except Exception:
+                xgb_proba = self.xgb_model.predict_proba(X_scaled)[0]
 
             if isinstance(gb, dict) and "init_score" in gb:
                 gb_proba_1 = predict_gb_jit(
@@ -2123,9 +2154,12 @@ class MLStrategyHybridUltimate(Strategy):
             )
 
             # CTOS Phase 5: Hard Confidence Floor (Anti-Noise Filter)
-            # Si el modelo no está al menos 55% seguro, descartar la señal inmediatamente.
-            # No permitimos que PPO o HotAdapter resuciten una señal estadísticamente débil.
-            if raw_confidence < 0.55:
+            # FASE 30: Use dynamic DNA threshold based on direction
+            floor_threshold = Config.Strategies.ML_THRESHOLDS.get('confidence_bull', 0.55)
+            if predicted_class == "SHORT" and 'confidence_bear' in Config.Strategies.ML_THRESHOLDS:
+                floor_threshold = Config.Strategies.ML_THRESHOLDS['confidence_bear']
+                
+            if raw_confidence < floor_threshold:
                 self.analysis_stats["filtered_conf"] += 1
                 return
 
@@ -2154,7 +2188,7 @@ class MLStrategyHybridUltimate(Strategy):
                     current_row.get("volume_zscore", 0), # 1
                     math_hurst, # 1
                     reg_trend, reg_vol, reg_range, # 3
-                    1.0 if self.horizon_str == "SCALPING" else 0.0, # 1
+                    1.0 if self.horizon_str in ["SCALPING", "MICROSCALPING"] else 0.0, # 1
                     asset_hash, # 1
                     float(current_row.get("normalized_spread", 0.0) or current_row.get("spread_squeeze", 0.0) or 0.0) # 1
                 ], dtype=np.float32)
@@ -2195,12 +2229,15 @@ class MLStrategyHybridUltimate(Strategy):
                 logger.error(f"PPO Agent inference error: {e}")
                 confidence = raw_confidence
                 
-            # Legacy HotAdapter as Fallback
-            if self.hot_adapter and 'ppo_action' not in locals():
+            # PHASE 10: HotAdapterRL Always-On Active Memory
+            if self.hot_adapter:
                 _tentative_dir = "LONG" if predicted_class == 1 else "SHORT"
                 _bias = self.hot_adapter.get_bias(self.symbol, _tentative_dir)
-                if _bias < 1.0:
-                    confidence = raw_confidence * _bias
+                
+                # Apply asymmetric online bias
+                confidence = min(0.99, confidence * _bias)
+                if _bias != 1.0:
+                    logger.debug(f"🧠 [HOT-ADAPTER] {_tentative_dir} confidence adjusted by bias {_bias:.2f}x -> {confidence:.3f}")
 
             # =========================================================
             # PHASE 4: MULTI-HORIZON ORACLE VETO (Causal Reasoner)
@@ -2266,6 +2303,28 @@ class MLStrategyHybridUltimate(Strategy):
                     return
             except Exception as e:
                 logger.error(f"Oracle ML Integration Error on {self.symbol}: {e}")
+
+            # ═══════════════════════════════════════════════════════════════
+            # 🚀 FASE 12: CROSS-HORIZON RESONANCE (Filtro Cuántico)
+            # QUÉ: Suprime operaciones Scalp/Microscalp contra la tendencia Swing activa.
+            # POR QUÉ: Un Swing activo significa que el sesgo macro es fuerte en esa dirección.
+            #   Operar un SCALP en contra es exponerse a la tendencia pesada del sistema.
+            # ═══════════════════════════════════════════════════════════════
+            if self.portfolio and self.horizon_str in ("SCALPING", "MICROSCALPING", "MICRO"):
+                active_pos = self.portfolio.positions.get(self.symbol, [])
+                swing_opposing = any(
+                    p.get('horizon') == "SWING" and 
+                    ((p['direction'] == 1 and signal_type_raw == "SHORT") or
+                     (p['direction'] == -1 and signal_type_raw == "LONG"))
+                    for p in active_pos
+                )
+                if swing_opposing:
+                    logger.info(
+                        f"🛑 [CROSS-HORIZON RESONANCE] {self.symbol} {signal_type_raw} BLOCKED | "
+                        f"Opposing active SWING position detected."
+                    )
+                    self.analysis_stats["filtered_conf"] += 1
+                    return
 
             # 6. SIGNAL GENERATION (Delegated to Component)
             # Retrieve Dynamic Advice based on Regime
@@ -2410,6 +2469,14 @@ class MLStrategyHybridUltimate(Strategy):
                     logger.info(f"🛑 [SOPHIA VETO] {self.symbol} ML Signal Blocked. Exactitude ({sophia_report.win_probability*100:.1f}%) < 70%.")
                     self.analysis_stats["filtered_conf"] += 1
                     return
+                    
+                # [FASE 3: Filtro Cuántico "The Vortex Gate"]
+                if getattr(self, "horizon_str", "") == "MICROSCALPING":
+                    if sophia_report.vortex_pulse < 1.5:
+                        logger.info(f"🌀 [VORTEX GATE] {self.symbol} Microscalping Signal Blocked. Market is dead (Vortex: {sophia_report.vortex_pulse:.2f}).")
+                        self.analysis_stats["filtered_conf"] += 1
+                        return
+                        
                 sophia_report_dict = sophia_report.to_dict()
 
             # FIXED: Create SignalEvent with ALL metadata in constructor (frozen dataclass)
@@ -2418,7 +2485,7 @@ class MLStrategyHybridUltimate(Strategy):
                 strategy_id=detailed_id,
                 setup_type="ML_PREDICTION",
                 symbol=self.symbol,
-                datetime=datetime.now(timezone.utc),
+                datetime=self._now(),
                 signal_type=signal_type,
                 strength=confidence, ml_confidence=confidence,
                 atr=current_row["atr"],  # FIXED: Use current_row
@@ -2439,7 +2506,7 @@ class MLStrategyHybridUltimate(Strategy):
             self.performance_history.append(0)
             self.signal_history.append(
                 {
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": self._now(),
                     "type": signal_type,
                     "confidence": confidence,
                     "regime": self.market_regime,
@@ -2478,7 +2545,7 @@ class MLStrategyHybridUltimate(Strategy):
             if len(self.performance_history) >= 15:
                 self._update_model_weights()
 
-            self._last_prediction_time = datetime.now(timezone.utc)
+            self._last_prediction_time = self._now()
 
         except Exception as e:
             logger.error(f"ML Inference error {self.symbol}: {e}", exc_info=True)
@@ -2616,7 +2683,7 @@ class MLStrategyHybridUltimate(Strategy):
         """
         try:
             telemetry = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": self._now().isoformat(),
                 "consensus_score": float(consensus),
                 "votes": {
                     "RL": float(votes[0]),
@@ -2647,20 +2714,28 @@ class MLStrategyHybridUltimate(Strategy):
         if event.type != EventType.MARKET:
             return
 
+        # Forensic Fix: Sync strategy clock to market event clock
+        self._current_event_time = getattr(event, 'timestamp', self._now())
+
         # Throttling: máximo 1 predicción por segundo (Excepto Sandbox)
-        current_time = datetime.now(timezone.utc)
+        current_time = self._now()
         if not getattr(self, "is_sandbox", False):
-            throttle_seconds = 1.0 if getattr(self, "horizon_str", "SCALPING") == "SCALPING" else 60.0
+            throttle_seconds = 1.0 if getattr(self, "horizon_str", "SCALPING") in ["SCALPING", "MICROSCALPING"] else 60.0
             if (
                 self._last_prediction_time
                 and (current_time - self._last_prediction_time).total_seconds() < throttle_seconds
             ):
                 return
 
-        # Execute async task in the current thread's new event loop
-        # Since this is called from a ThreadPool, asyncio.run is safe and necessary.
+        # Execute async task dynamically checking if an event loop is already running
         try:
-            asyncio.run(self._async_process_v3(event))
+            try:
+                loop = asyncio.get_running_loop()
+                # A loop is already running in this thread, schedule it as a task
+                loop.create_task(self._async_process_v3(event))
+            except RuntimeError:
+                # No loop is running in this thread, use asyncio.run
+                asyncio.run(self._async_process_v3(event))
         except Exception as e:
             logger.error(f"Error in async ML processing: {e}")
 
@@ -2670,6 +2745,11 @@ class MLStrategyHybridUltimate(Strategy):
             return
 
         try:
+            # [PHASE 17] Zero-Latency Boot: Lazy load models only on first tick
+            if not getattr(self, "_models_loaded", False):
+                self._load_models()
+                self._models_loaded = True
+
             self.loop_count += 1
 
             # C-1 FIX: Lazy bind Némesis→Sophia feedback loop on first invocation
@@ -2790,13 +2870,18 @@ class MLStrategyHybridUltimate(Strategy):
             else:
                 gb_p = gb.predict_proba(X)[0][1] if hasattr(gb, "predict_proba") else 0.5
                 
+            # Compute ensemble confidence directly
+            w_rf, w_xgb, w_gb = self.base_rf_weight, self.base_xgb_weight, self.base_gb_weight
+            conf = float(rf_p * w_rf + xgb_p * w_xgb + gb_p * w_gb)
+
             results = {
                 "symbol": self.symbol,
-                "rf_p": float(rf_p),
-                "xgb_p": float(xgb_p),
-                "gb_p": float(gb_p),
+                "rf": float(rf_p),
+                "xgb": float(xgb_p),
+                "gb": float(gb_p),
+                "confidence": conf,
                 "ts": time.time(),
-                "weights": (self.base_rf_weight, self.base_xgb_weight, self.base_gb_weight),
+                "weights": (w_rf, w_xgb, w_gb),
             }
             
             await self._process_ml_results(results)
@@ -2915,6 +3000,32 @@ class MLStrategyHybridUltimate(Strategy):
         try:
             confidence = results["confidence"]
             rf_p, xgb_p, gb_p = results["rf"], results["xgb"], results["gb"]
+            
+            # Sync ML Confidence to SSOT (OmniScore Component)
+            try:
+                from core.global_state import global_state
+                # Assuming 'confidence' represents LONG probability. Short probability is 1 - confidence.
+                global_state.update_symbol_vector(self.symbol, {
+                    "ml_bull_score": confidence,
+                    "ml_bear_score": 1.0 - confidence
+                })
+            except Exception as e:
+                pass
+
+            # 🔮 FASE 5: MULTI-COIN ORACLE (LEAD-LAG ARBITRAGE)
+            # Inyectamos factor de aceleración si BTC tiene alta velocidad
+            if self.symbol != "BTC/USDT":
+                try:
+                    from core.global_state import global_state
+                    btc_vel = getattr(global_state, 'btc_velocity', 0.0)
+                    if btc_vel > 0.005: # BTC saltando rápido hacia arriba (>0.5% por seg)
+                        logger.critical(f"🚀 [MULTI-COIN ORACLE] BTC Velocity ALTA ({btc_vel:.4f}). Acelerando LONG para {self.symbol}!")
+                        confidence = min(0.99, confidence + 0.15) # Empuja hacia LONG
+                    elif btc_vel < -0.005: # BTC cayendo rápido
+                        logger.critical(f"📉 [MULTI-COIN ORACLE] BTC Velocity NEGATIVA ({btc_vel:.4f}). Acelerando SHORT para {self.symbol}!")
+                        confidence = max(0.01, confidence - 0.15) # Empuja hacia SHORT
+                except Exception as e:
+                    pass
 
             # Determine preliminary signal type
             threshold = self.adaptive_confidence_threshold
@@ -2924,22 +3035,34 @@ class MLStrategyHybridUltimate(Strategy):
                 else (SignalType.SHORT if confidence <= (1.0 - threshold) else SignalType.HOLD)
             )
 
-            # 🌊 FASE 25: VETO CUÁNTICO (Nadir-Soberano Order Flow)
+            # 🌊 FASE 5: ANTI-SPOOFING ML (Cacería de Muros Falsos)
             of_metrics = self.data_provider.get_order_flow_metrics(self.symbol)
-            if of_metrics and signal_type != SignalType.HOLD:
+            if of_metrics:
                 is_toxic = of_metrics.get("is_toxic", False)
                 vpin = of_metrics.get("vpin", 0.5)
                 iceberg = of_metrics.get("iceberg_score", 0.0)
                 delta = of_metrics.get("rolling_delta_60s", 0.0)
+                
+                spoof_buy = of_metrics.get("spoofing_prob_buy", 0.0)
+                spoof_sell = of_metrics.get("spoofing_prob_sell", 0.0)
 
-                # Check for absolute veto
-                if is_toxic:
+                # Si detectamos un muro falso gigante de compra (> 85%), es manipulación.
+                # La ballena va a vender, así que nosotros lanzamos SHORT primero.
+                if spoof_buy > 0.85:
+                    logger.critical(f"🐋🔫 [ANTI-SPOOFING] FAKE BUY WALL DETECTADO en {self.symbol} ({spoof_buy*100:.1f}% liquidez de ballenas). Disparando SHORT en contra de la manipulación.")
+                    signal_type = SignalType.SHORT
+                    confidence = 0.99
+                # Si es un muro falso de venta, vamos LONG.
+                elif spoof_sell > 0.85:
+                    logger.critical(f"🐋🔫 [ANTI-SPOOFING] FAKE SELL WALL DETECTADO en {self.symbol} ({spoof_sell*100:.1f}% liquidez de ballenas). Disparando LONG en contra de la manipulación.")
+                    signal_type = SignalType.LONG
+                    confidence = 0.99
+                # Check for absolute veto on standard toxic flow
+                elif is_toxic and signal_type != SignalType.HOLD:
                     logger.warning(
-                        f"🌌 [VETO CUÁNTICO] Señal {signal_type.name} cancelada en {self.symbol}! Flujo Tóxico (VPIN: {vpin:.2f}, Iceberg: {iceberg:.2f})."
+                        f"🌌 [VETO CUÁNTICO] Señal {signal_type.name} cancelada en {self.symbol}! Flujo Tóxico Estándar (VPIN: {vpin:.2f}, Iceberg: {iceberg:.2f})."
                     )
-                    self.metrics["discarded_events"] = (
-                        self.metrics.get("discarded_events", 0) + 1
-                    )
+                    self.metrics["discarded_events"] = self.metrics.get("discarded_events", 0) + 1
                     return
 
                 # Check directional alignment with aggressive Delta
@@ -2952,6 +3075,17 @@ class MLStrategyHybridUltimate(Strategy):
                     logger.warning(
                         f"📈 [VETO CUÁNTICO] Señal SHORT cancelada! Presión de compra Market excesiva (Delta 60s: {delta:.2f})."
                     )
+                    return
+                    
+                # --- Mutación 39: Bayesian Mirage (Anti-Spoofing Veto) ---
+                spoof_buy_prob = of_metrics.get("spoofing_prob_buy", 0.0)
+                spoof_sell_prob = of_metrics.get("spoofing_prob_sell", 0.0)
+
+                if signal_type == SignalType.LONG and spoof_buy_prob > 0.80:
+                    logger.warning(f"🚨 [BAYESIAN MIRAGE] {self.symbol} LONG VETADA. Muro falso de compras (Trap) Prob: {spoof_buy_prob:.1%}.")
+                    return
+                elif signal_type == SignalType.SHORT and spoof_sell_prob > 0.80:
+                    logger.warning(f"🚨 [BAYESIAN MIRAGE] {self.symbol} SHORT VETADA. Muro falso de ventas (Trap) Prob: {spoof_sell_prob:.1%}.")
                     return
 
             # ============================================================
@@ -3119,6 +3253,13 @@ class MLStrategyHybridUltimate(Strategy):
                     f"🧱 [PHALANX] Absorption Detected: {absorption['type']} ({absorption['reason']})"
                 )
 
+            # Define of_analysis based on VBI
+            of_analysis = {"signal": 0, "strength": abs(vbi)}
+            if vbi > 0.6:
+                of_analysis["signal"] = 1
+            elif vbi < -0.6:
+                of_analysis["signal"] = -1
+
             # Logic: Imbalance acts as a massive confidence booster or veto
             if signal_type == SignalType.LONG:
                 # 1. Order Book Imbalance
@@ -3191,7 +3332,12 @@ class MLStrategyHybridUltimate(Strategy):
 
             # Only act if it's a trade signal
             if signal_type in [SignalType.LONG, SignalType.SHORT, SignalType.EXIT]:
+                # Si probabilities no existe, lo inferimos del confidence (que es P(Long))
+                prob_l = results.get("probabilities", {}).get("L", confidence if isinstance(confidence, float) else 0.0) if isinstance(results, dict) else confidence
+                prob_s = results.get("probabilities", {}).get("S", 1.0 - confidence if isinstance(confidence, float) else 0.0) if isinstance(results, dict) else 1.0 - confidence
                 metadata = {
+                    "prob_L": prob_l,
+                    "prob_S": prob_s,
                     "trail_start_pct": getattr(self, "par_engine", None).get(
                         "trail_start_pct"
                     )
@@ -3262,7 +3408,7 @@ class MLStrategyHybridUltimate(Strategy):
                     strategy_id=detailed_id,
                     setup_type="ML_PREDICTION",
                     symbol=self.symbol,
-                    datetime=datetime.now(timezone.utc),
+                    datetime=self._now(),
                     signal_type=signal_type,
                     strength=confidence, ml_confidence=confidence,
                     current_price=results.get("price", 0),
@@ -3285,7 +3431,7 @@ class MLStrategyHybridUltimate(Strategy):
                     insight={"confidence": confidence, "type": signal_type.name},
                 )
 
-                self._last_prediction_time = datetime.now(timezone.utc)
+                self._last_prediction_time = self._now()
                 self.total_signals_generated += 1
 
         except Exception as e:
@@ -3503,7 +3649,7 @@ class MLStrategyHybridUltimate(Strategy):
                             self.bars_since_train = 0
                             self.last_training_score = score
                             self.par_engine.feedback_training(score)
-                            self.last_training_time = datetime.now(timezone.utc)
+                            self.last_training_time = self._now()
                             self.training_iteration += 1
                             self.bars_since_incremental = 0
 
@@ -3621,6 +3767,17 @@ class MLStrategyHybridUltimate(Strategy):
         Actualizar resultado de un trade para aprendizaje continuo
         """
         try:
+            # PHASE 10: HotAdapterRL Active Memory
+            if hasattr(self, 'hot_adapter') and self.hot_adapter:
+                try:
+                    # Feed the PnL back into the hot adapter.
+                    # As we don't track exact prediction vs actual direction here,
+                    # we just feed the reward. The hot adapter stores state internally.
+                    self.hot_adapter.update_reward(profit_pct)
+                    logger.debug(f"🧠 [HOT-ADAPTER] Memoria activa actualizada con PnL: {profit_pct:.2f}%")
+                except Exception as e:
+                    logger.error(f"Error en HotAdapterRL update: {e}")
+
             # Actualizar historial de performance
             result_value = 1 if success else -1
             if len(self.performance_history) > 0:
@@ -3686,7 +3843,7 @@ class MLStrategyHybridUltimate(Strategy):
 
             # === PRIMARY: XGBoost NATIVE UBJSON (B3 FIX) ===
             # XGBoost has built-in binary serialization 10-100x faster than Pickle
-            xgb_dir = os.path.join("models")
+            xgb_dir = os.path.join(getattr(Config, "MODEL_DIR", "models"))
             os.makedirs(xgb_dir, exist_ok=True)
 
             xgb_ubj_path = os.path.join(xgb_dir, f"{safe_sym}_xgb.ubj")
@@ -3702,7 +3859,7 @@ class MLStrategyHybridUltimate(Strategy):
                     "last_training_score": self.last_training_score,
                     "training_iteration": self.training_iteration,
                     "performance_history": list(self.performance_history),
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": self._now(),
                     "base_rf_weight": self.base_rf_weight,
                     "base_xgb_weight": self.base_xgb_weight,
                     "base_gb_weight": self.base_gb_weight,
@@ -3739,7 +3896,7 @@ class MLStrategyHybridUltimate(Strategy):
                     "last_training_score": self.last_training_score,
                     "training_iteration": self.training_iteration,
                     "performance_history": list(self.performance_history),
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": self._now(),
                 }
 
             joblib.dump(state, model_file, compress=1)  # B1 FIX: compress=1
@@ -3835,15 +3992,20 @@ class MLStrategyHybridUltimate(Strategy):
             model_file = os.path.join(self.models_dir, f"models_{symbol_path}.joblib")
 
             # --- SUPREME PROTOCOL: NANO XGBoost UBJ Support ---
-            safe_sym = self.symbol.replace("/", "") + suffix
-            xgb_ubj_path = os.path.join("models", f"{safe_sym}_xgb.ubj")
-            xgb_reg_long_path = os.path.join("models", f"{safe_sym}_xgb_reg_long.ubj")
-            xgb_reg_short_path = os.path.join("models", f"{safe_sym}_xgb_reg_short.ubj")
-            meta_joblib_path = os.path.join("models", f"{safe_sym}_meta.joblib")
+            # En Vector Backtest / Entorno de Produccion, el sufijo suele ser _SCALPING o _SWING
+            horizon_suffix = f"_{getattr(self, 'horizon_str', 'SCALPING')}"
+            safe_sym = self.symbol.replace("/", "") + horizon_suffix
+            xgb_dir = getattr(Config, "MODEL_DIR", ".models")
+            
+            xgb_ubj_path = os.path.join(xgb_dir, f"{safe_sym}_xgb.ubj")
+            xgb_reg_long_path = os.path.join(xgb_dir, f"{safe_sym}_xgb_reg_long.ubj")
+            xgb_reg_short_path = os.path.join(xgb_dir, f"{safe_sym}_xgb_reg_short.ubj")
+            meta_joblib_path = os.path.join(xgb_dir, f"{safe_sym}_meta.joblib")
 
             supreme_loaded = False
             if os.path.exists(xgb_ubj_path) and os.path.exists(meta_joblib_path):
                 try:
+                    from xgboost import XGBClassifier
                     self.xgb_model = XGBClassifier(n_jobs=-1)
                     self.xgb_model.load_model(xgb_ubj_path)
                     
@@ -3856,9 +4018,9 @@ class MLStrategyHybridUltimate(Strategy):
                         self.xgb_regressor_short.load_model(xgb_reg_short_path)
                         
                         # Load new FULL CANDLE prediction regressors
-                        nh_path = os.path.join("models", f"{safe_sym}_xgb_reg_next_high.ubj")
-                        nl_path = os.path.join("models", f"{safe_sym}_xgb_reg_next_low.ubj")
-                        ttp_path = os.path.join("models", f"{safe_sym}_xgb_reg_ttp.ubj")
+                        nh_path = os.path.join(xgb_dir, f"{safe_sym}_xgb_reg_next_high.ubj")
+                        nl_path = os.path.join(xgb_dir, f"{safe_sym}_xgb_reg_next_low.ubj")
+                        ttp_path = os.path.join(xgb_dir, f"{safe_sym}_xgb_reg_ttp.ubj")
                         
                         if os.path.exists(nh_path):
                             self.xgb_reg_next_high = XGBRegressor(n_jobs=-1)
@@ -3910,7 +4072,7 @@ class MLStrategyHybridUltimate(Strategy):
             try:
                 from models.deep_predictor import deep_predictor
                 safe_sym_dp = self.symbol.replace("/", "") + suffix
-                dp_path = os.path.join("models", f"{safe_sym_dp}_deep.pth")
+                dp_path = os.path.join(xgb_dir, f"{safe_sym_dp}_deep.pth")
                 if os.path.exists(dp_path):
                     deep_predictor.load(dp_path)
             except Exception as e:
@@ -3927,7 +4089,7 @@ class MLStrategyHybridUltimate(Strategy):
                 is_stale = False
                 if save_time:
                     age_hours = (
-                        datetime.now(timezone.utc) - save_time
+                        self._now() - save_time
                     ).total_seconds() / 3600
                     if age_hours > 24:
                         is_stale = True
@@ -4320,7 +4482,7 @@ class MLStrategyHybridUltimate(Strategy):
                     if hasattr(entry_ts, 'timestamp'):
                         elapsed_seconds = time.time() - entry_ts.timestamp()
                     else:
-                        elapsed_seconds = (datetime.now(timezone.utc) - entry_ts).total_seconds()
+                        elapsed_seconds = (self._now() - entry_ts).total_seconds()
                     elapsed_bars = elapsed_seconds / 60.0
                 except: pass
 
@@ -4513,9 +4675,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                         )
                         if _df_regime is not None and not _df_regime.empty:
                             # Bypass throttle: reset timestamp para forzar update
-                            self.last_regime_update = datetime.now(
-                                timezone.utc
-                            ) - pd.Timedelta(minutes=10)
+                            self.last_regime_update = self._now() - pd.Timedelta(minutes=10)
                             self._update_market_regime(_df_regime)
                 except Exception:
                     pass  # Non-fatal: si falla, el régimen queda como estaba
@@ -4664,7 +4824,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                         SignalEvent(
                             strategy_id="SUPREME_XGB_V1",
                             symbol=self.symbol,
-                            datetime=datetime.now(timezone.utc),
+                            datetime=self._now(),
                             signal_type=SignalType.LONG
                             if direction == 1
                             else SignalType.SHORT,
@@ -4879,7 +5039,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             else:
                 concept = "Analyzing market structure..."
 
-            labels = ["M1", "M5", "M15", "M30"] if getattr(self, "horizon", "SCALPING") == "SCALPING" else ["H1", "H4", "H12", "D1"]
+            labels = ["M1", "M5", "M15", "M30"] if getattr(self, "horizon", "SCALPING") in ["SCALPING", "MICROSCALPING"] else ["H1", "H4", "H12", "D1"]
             oracle_msg = (
                 f"\n🔮 [UNIFIED ORACLE] {self.symbol} | {ready_status}\n"
                 f"   Engines Passing: {engines_passing}/3 | Threshold: {self.consensus_threshold}\n"
@@ -5022,7 +5182,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                                     strategy_id=f"{self.strategy_id}.PREDICTIVE_DECAY",
                                     setup_type="PREDICTIVE_DECAY_EXIT",
                                     symbol=self.symbol,
-                                    datetime=datetime.now(timezone.utc),
+                                    datetime=self._now(),
                                     signal_type=SignalType.EXIT,
                                     strength=final_confidence, ml_confidence=final_confidence,
                                     current_price=current_row["close"],
@@ -5042,7 +5202,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                                     strategy_id=f"{self.strategy_id}.PREDICTIVE_DECAY",
                                     setup_type="PREDICTIVE_DECAY_EXIT",
                                     symbol=self.symbol,
-                                    datetime=datetime.now(timezone.utc),
+                                    datetime=self._now(),
                                     signal_type=SignalType.EXIT,
                                     strength=final_confidence, ml_confidence=final_confidence,
                                     current_price=current_row["close"],
@@ -5103,7 +5263,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                         tp_pct=tp_target,
                         sl_pct=sl_target,
                         returns=_returns,
-                        ttl_seconds=300 if getattr(self, 'horizon_str', 'SCALPING') == 'SCALPING' else 3600,
+                        ttl_seconds=300 if getattr(self, 'horizon_str', 'SCALPING') in ['SCALPING', 'MICROSCALPING'] else 3600,
                         regime=self.market_regime,
                     )
                     # Dynamic Sophia Veto Threshold (55% - 65%)
@@ -5258,7 +5418,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                         waypoints = omni_route.get("waypoints", [])
                         current_horizon = getattr(self, "horizon", "SCALPING")
                         
-                        if current_horizon == "SCALPING" and len(waypoints) >= 2:
+                        if current_horizon in ["SCALPING", "MICROSCALPING"] and len(waypoints) >= 2:
                             # T+5 waypoint (5 min) for scalping
                             wp = waypoints[1]  # index 1 = T+5
                             omni_magnitude = abs(wp.get("close_pct", 0.0)) / 100.0
@@ -5306,7 +5466,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             # The Parity Gate (Friction Filter)
             # QUÉ: Exigir un mínimo predicho para cubrir comisiones + slippage.
             # POR QUÉ: Maker fees son 0.04% RT. Usar 0.10% para Scalping, 0.30% para Swing.
-            friction_threshold = 0.0025 if getattr(self, 'horizon_str', 'SCALPING') == 'SCALPING' else 0.0030
+            friction_threshold = 0.0025 if getattr(self, 'horizon_str', 'SCALPING') in ['SCALPING', 'MICROSCALPING'] else 0.0030
             if predicted_magnitude_real < friction_threshold:
                 logger.info(f"🛑 [{self.symbol}|{self.horizon_str}] Signal Rejected: Predicted Magnitude {predicted_magnitude_real*100:.3f}% < Friction ({friction_threshold*100:.2f}%).")
                 self.analysis_stats["filtered_conf"] += 1
@@ -5363,7 +5523,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                 strategy_id=detailed_id,
                 setup_type="ML_PREDICTION",
                 symbol=self.symbol,
-                datetime=datetime.now(timezone.utc),
+                datetime=self._now(),
                 signal_type=signal_type,
                 strength=final_confidence, ml_confidence=final_confidence,
                 atr=current_row["atr"],
@@ -5380,7 +5540,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             self.performance_history.append(0)
             self.signal_history.append(
                 {
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": self._now(),
                     "type": signal_type,
                     "confidence": final_confidence,
                     "engines": engines_passing,
@@ -5410,7 +5570,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             if len(self.performance_history) >= 15:
                 self._update_model_weights()
 
-            self._last_prediction_time = datetime.now(timezone.utc)
+            self._last_prediction_time = self._now()
             
             # [MEMORY OPTIMIZATION] Forced Garbage Collection Post-Inference
             # Required for HFT (micro-seconds) to prevent XGBoost memory creep

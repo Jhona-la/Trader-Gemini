@@ -281,7 +281,7 @@ class PhalanxStrategy(Strategy):
                 signal = SignalEvent(
                     strategy_id=self.strategy_id,
                     symbol=symbol,
-                    datetime=datetime.now(timezone.utc),
+                    datetime=getattr(event, 'timestamp', datetime.now(timezone.utc)),
                     signal_type=signal_type,
                     strength=0.85,
                     atr=0.0,

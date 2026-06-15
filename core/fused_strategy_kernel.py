@@ -9,6 +9,7 @@ def fused_compute_step(
     portfolio_state: np.ndarray, # [has_pos, pnl_norm, dur_norm]
     gene_params: np.ndarray,      # [sl_norm, tp_norm]
     brain_weights: np.ndarray,   # (25 * 4 = 100 flattened)
+    l2_state: np.ndarray,        # [ofi, microprice_divergence]
     window: int = 5
 ) -> np.ndarray:
     """
@@ -50,6 +51,10 @@ def fused_compute_step(
         state_tensor[10 + i] = mom
         # Placeholder for 4th feature
         state_tensor[15 + i] = 0.0
+        
+    # Inject L2 Data (Phase 66: Orderbook Vectorization)
+    state_tensor[18] = l2_state[0] # ofi
+    state_tensor[19] = l2_state[1] # microprice_divergence
         
     # 2. Add Portfolio & Gene (5 Features)
     state_tensor[20] = portfolio_state[0] # has_pos

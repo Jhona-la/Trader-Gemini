@@ -293,9 +293,14 @@ class MetaCoordinator:
                 intent = dataclasses.replace(intent, metadata=new_metadata)
                 intents_to_process[i] = intent
             else:
-                if not hasattr(intent, 'metadata') or not intent.metadata:
-                    intent.metadata = {}
-                intent.metadata['thought_id'] = thought_id
+                _meta = getattr(intent, 'metadata', None)
+                if _meta is None:
+                    _meta = {}
+                    try:
+                        object.__setattr__(intent, 'metadata', _meta)
+                    except (AttributeError, TypeError):
+                        pass
+                _meta['thought_id'] = thought_id
             
             # Determine outcome so far
             status = "PENDING"

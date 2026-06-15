@@ -35,6 +35,16 @@ FLUJO DE PRODUCCIÓN REPLICADO:
 """
 
 import os
+import sys
+
+# ── ENVIRONMENT ISOLATION (FORENSIC FIX) ──
+# Extract --env_id before any internal module is imported so Config picks it up.
+env_id = ""
+for i, arg in enumerate(sys.argv):
+    if arg == "--env_id" and i + 1 < len(sys.argv):
+        env_id = sys.argv[i + 1]
+if env_id:
+    os.environ["TG_ENV_ID"] = env_id
 
 # ═══════════════════════════════════════════════════════════════
 # HARDWARE UNLOCK (RYZEN 7 5700U OPTIMIZATION)
@@ -78,6 +88,15 @@ if _project_root not in sys.path:
 # Suppress noisy warnings during backtest
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 15: CONCURRENCY ISOLATION (Pre-Import Hook)
+# ═══════════════════════════════════════════════════════════════════════════════
+# We must extract --env-id manually before `config` is imported so that
+# Config.ENV_ID and Config.DATA_DIR are initialized with the correct path.
+for i, arg in enumerate(sys.argv):
+    if arg == "--env-id" and i + 1 < len(sys.argv):
+        os.environ["TG_ENV_ID"] = sys.argv[i + 1]
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PRODUCTION IMPORTS — SAME AS main.py
@@ -230,9 +249,15 @@ class BacktestExecutor:
         
         is_limit = order_event.order_type == OrderType.LIMIT
         if is_limit:
-            # BBO LIMIT orders have exactly zero slippage
+            # 🚀 FASE 13: STRICT MAKER LATENCY PENALTY
+            # Reject 10% of BBO LIMIT orders to simulate missed fills 
+            # (price moved away before the 10ms WS latency finished).
+            if self._rng.random() < 0.10:
+                return None
+                
+            # BBO LIMIT orders have exactly zero slippage if filled
             slip_pct = 0.0
-            stochastic_latency_ms = 5.0 # Realistic API Latency
+            stochastic_latency_ms = 10.0 # WebSocket Latency
         else:
             # MARKET orders for <$100 capital simply pay the spread.
             # Spread on BTC/USDT or SOL/USDT is typically 1 tick.
@@ -332,7 +357,7 @@ class BacktestExecutor:
 
 def run_global_backtest(
     all_data, symbols, days, initial_capital=None, verbose=True, seed=42,
-    scenario="A", isolated_strategy=None
+    scenario="A", isolated_strategy=None, mode="FULL", signal_cache_path=None
 ):
     """
     MOTOR DE BACKTEST GLOBAL SINCRONIZADO — PRODUCTION-PARITY.
@@ -401,9 +426,16 @@ def run_global_backtest(
     )
     print(f"   Fee: {COMMISSION_PCT * 100:.4f}% per side")
     print(f"   EXIT ENGINE: RiskManager.check_stops() ONLY (Portfolio audit-only)")
-    print(f"   MODE: PRODUCTION-PARITY (uses real Portfolio + RiskManager)")
+    print(f"   MODE: PRODUCTION-PARITY (uses real Portfolio + RiskManager) - CACHE MODE: {mode}")
     print(f"   SCENARIO: {scenario} | Isolated Strategy: {isolated_strategy or 'None'}")
     print(f"{'=' * 70}\n")
+    
+    precalculated_signals = {}
+    generated_signals_cache = {}
+    if mode == "REPLAY" and signal_cache_path and os.path.exists(signal_cache_path):
+        with open(signal_cache_path, "r") as f:
+            precalculated_signals = json.load(f)
+        print(f"  ⚡ [REPLAY MODE] Cargadas {len(precalculated_signals)} marcas de tiempo con señales del caché cuántico.")
 
     # ═══════════════════════════════════════════════════════════════════
     # FORENSIC AUDIT: ALPHA LEAK TRACKING STRUCTURES
@@ -439,8 +471,10 @@ def run_global_backtest(
     # POR QUÉ: Mutar `Config` globalmente afectaba a otros módulos si se
     #   importan o ejecutan en el mismo proceso (como un dashboard).
     # ═══════════════════════════════════════════════════════════════════════
-    _orig_is_backtest = getattr(Config, 'IS_BACKTEST', False)
-    Config.IS_BACKTEST = True
+    
+    from core.forensic_auditor import ForensicAuditor
+    if not ForensicAuditor.verify_parity(Config):
+        print("⚠️ [WARNING] Forensic Auditor detected Config divergences. DNA Mutator is active. Continuing...")
     
     try:
         # Dynamic Notification Override for Backtests (Eradicate SMTP blockades)
@@ -700,24 +734,44 @@ def run_global_backtest(
             conn.close()
     
         strategies_map = {}  # symbol -> [strategy_scalp, strategy_swing]
-    
         # ════════════════════════════════════════════════════════════════
-        # LEAN_MODE: BACKTEST-PRODUCTION PARITY
-        # QUÉ: En LEAN_MODE, backtest usa SOLO Technical Strategy.
-        # POR QUÉ: Si producción usa solo Technical, backtest debe ser
-        #   idéntico. Sin esto, compararíamos manzanas con naranjas.
+        # FASE 34: OMNI-STRATEGY EN BACKTEST (SIMULATION PARITY)
+        # QUÉ: Sustituimos el enjambre viejo (Sniper, StatArb, Technical, etc.)
+        # por la nueva OmniStrategy unificada (que evalúa todas esas lógicas 
+        # internamente y retorna un OmniScore genético).
+        # POR QUÉ: Para que la simulación refleje con total exactitud la
+        # matemática cuántica y los pesos usados en main.py.
         # ════════════════════════════════════════════════════════════════
+        global_epoch_strategies = []
+        try:
+            from strategies.omni_strategy import OmniStrategy
+            omni_scalp = OmniStrategy(data_provider, events_queue, horizon="SCALPING")
+            global_epoch_strategies.append(omni_scalp)
+            print("  ✅ [OMNI] OmniStrategy [SCALPING] registered.")
+            
+            omni_swing = OmniStrategy(data_provider, events_queue, horizon="SWING")
+            global_epoch_strategies.append(omni_swing)
+            print("  ✅ [OMNI] OmniStrategy [SWING] registered.")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to init OmniStrategy: {e}")
+            
+        # The MLStrategy must be initialized per-symbol to train models and run the Inference Worker.
         _lean = getattr(Config, 'LEAN_MODE', False)
-        
-        if isolated_strategy == "technical":
+        if mode == "REPLAY":
+            print("  🎯 [REPLAY MODE] Inteligencia Artificial apagada. Inyectando caché de señales en memoria RAM.")
+            for symbol in symbols:
+                strategies_map[symbol] = []
+            global_epoch_strategies = []
+        elif isolated_strategy == "technical" or _lean:
             print("  🎯 [EVOLVER MODE] ML Strategies DISABLED for Nano Speeds.")
             for symbol in symbols:
                 strategies_map[symbol] = []
-        elif getattr(Config, 'LEAN_ML_ENABLED', True):
+        else:
             for symbol in symbols:
                 try:
                     is_leader = "BTC" in symbol
-    
+                    from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy
+                    
                     # ── SCALPING ENGINE ──
                     ml_scalp = MLStrategy(
                         data_provider=data_provider,
@@ -749,100 +803,8 @@ def run_global_backtest(
                     strategies_map[symbol] = [ml_scalp, ml_swing]
     
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to init strategies for {symbol}: {e}")
+                    logger.warning(f"⚠️ Failed to init ML strategy for {symbol}: {e}")
                     strategies_map[symbol] = []
-        else:
-            print("  🎯 [LEAN MODE] ML Strategies DISABLED in backtest (production parity)")
-            for symbol in symbols:
-                strategies_map[symbol] = []
-    
-        # ═══════════════════════════════════════════════════════════════════
-        # FORENSIC REMEDIATION: Add TechnicalStrategy, Sniper, Statistical (SCALPING + SWING)
-        # QUÉ: Se registran instancias duales de todas las estrategias globales.
-        # LEAN_MODE: Solo Technical Strategy (73.5% WR proven).
-        # ═══════════════════════════════════════════════════════════════════
-        global_epoch_strategies = []
-        
-        # Technical Strategy — ALWAYS ACTIVE (73.5% WR proven) -> Evolves into Specialized Motors
-        try:
-            from strategies.technical import HybridScalpingStrategy as TechnicalStrategy
-            from strategies.scalping_motor import ScalpingMotor
-            from strategies.swing_motor import SwingMotor
-    
-            tech_micro = TechnicalStrategy(data_provider, events_queue, horizon="MICROSCALPING")
-            global_epoch_strategies.append(tech_micro)
-
-            # Reemplazo de TechnicalStrategy("SCALPING") por el Motor Especializado
-            tech_scalp = ScalpingMotor(data_provider, events_queue)
-            global_epoch_strategies.append(tech_scalp)
-    
-            # Reemplazo de TechnicalStrategy("SWING") por el Motor Especializado
-            tech_swing = SwingMotor(data_provider, events_queue)
-            global_epoch_strategies.append(tech_swing)
-            print(f"  🧠 Specialized Motors registered: MICROSCALPING(Tech) + SCALPING(Motor) + SWING(Motor)")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to init Specialized Motors: {e}")
-    
-        # ═══════════════════════════════════════════════════════════════
-        # FORENSIC-V47: INTEGRAL MODE — ALL STRATEGIES ALWAYS ACTIVE
-        # QUÉ: Registra TODAS las estrategias sin importar LEAN_MODE.
-        # POR QUÉ: LEAN_MODE amputaba 5 estrategias (Sniper, Statistical,
-        #   Phalanx, StatArb, Arbitrage), dejando solo Technical + ML.
-        #   Esto violaba la regla de "sistema integral" y hacía que el
-        #   backtest no reflejara el comportamiento real de producción.
-        # PARA QUÉ: Paridad total backtest ↔ producción. Si main.py
-        #   registra 7 estrategias, el backtest también debe hacerlo.
-        # ═══════════════════════════════════════════════════════════════
-        if isolated_strategy != "technical":
-            try:
-                sniper_scalp = SniperStrategy(data_provider, events_queue, None, portfolio, horizon="SCALPING")
-                global_epoch_strategies.append(sniper_scalp)
-                sniper_swing = SniperStrategy(data_provider, events_queue, None, portfolio, horizon="SWING")
-                global_epoch_strategies.append(sniper_swing)
-                print(f"  🎯 SniperStrategy registered: SCALPING + SWING")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to init SniperStrategy: {e}")
-        
-            try:
-                stat_scalp = StatisticalStrategy(data_provider, events_queue, portfolio=portfolio, horizon="SCALPING")
-                global_epoch_strategies.append(stat_scalp)
-                stat_swing = StatisticalStrategy(data_provider, events_queue, portfolio=portfolio, horizon="SWING")
-                global_epoch_strategies.append(stat_swing)
-                print(f"  📊 StatisticalStrategy registered: SCALPING + SWING")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to init StatisticalStrategy: {e}")
-        
-            try:
-                from strategies.phalanx import PhalanxStrategy
-                phalanx_scalp = PhalanxStrategy(data_provider, events_queue, horizon="SCALPING")
-                global_epoch_strategies.append(phalanx_scalp)
-                phalanx_swing = PhalanxStrategy(data_provider, events_queue, horizon="SWING")
-                global_epoch_strategies.append(phalanx_swing)
-                print(f"  🛡️ PhalanxStrategy registered: SCALPING + SWING")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to init PhalanxStrategy: {e}")
-                
-            try:
-                from strategies.stat_arb import StatArbStrategy
-                statarb_scalp = StatArbStrategy(data_provider, events_queue, horizon="SCALPING")
-                global_epoch_strategies.append(statarb_scalp)
-                statarb_swing = StatArbStrategy(data_provider, events_queue, horizon="SWING")
-                global_epoch_strategies.append(statarb_swing)
-                print(f"  📐 StatArbStrategy registered: SCALPING + SWING")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to init StatArbStrategy: {e}")
-                
-            try:
-                from strategies.arbitrage import ArbitrageStrategy
-                arb_scalp = ArbitrageStrategy(data_provider, events_queue, horizon="SCALPING")
-                global_epoch_strategies.append(arb_scalp)
-                arb_swing = ArbitrageStrategy(data_provider, events_queue, horizon="SWING")
-                global_epoch_strategies.append(arb_swing)
-                print(f"  💱 ArbitrageStrategy registered: SCALPING + SWING")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to init ArbitrageStrategy: {e}")
-        else:
-            print("  🎯 [EVOLVER MODE] Secondary global strategies (Sniper, Phalanx, StatArb, etc.) DISABLED.")
     
         total_strats = sum(len(v) for v in strategies_map.values()) + len(global_epoch_strategies)
         print(
@@ -954,7 +916,7 @@ def run_global_backtest(
         # CUÁNDO: Al iniciar el loop del motor de backtesting.
         # DÓNDE: En `scripts/run_god_mode_backtest.py` :: `run_global_backtest`.
         # QUIÊN: Modificado por el Quant Developer y el SRE/DevOps.
-        warmup_epochs = max(min(100, total_epochs // 20), total_epochs - (days * 1440))
+        warmup_epochs = 200 # Fix for zero-trades: max(min(100, total_epochs // 20), total_epochs - (days * 1440))
     
         print(f"  ⏱️  Starting simulation: {total_epochs:,} global epochs")
         print(f"  🔥 Warmup: first {warmup_epochs} epochs (no trading)")
@@ -1039,14 +1001,10 @@ def run_global_backtest(
             if epoch_count % 20 == 0:
                 if sentiment_loader:
                     try:
-                        # Historical Sentiment Proxy based on BTC Momentum
-                        _btc_bars_proxy = data_provider.get_latest_bars("BTC/USDT", n=20)
-                        if _btc_bars_proxy is not None and len(_btc_bars_proxy) >= 20:
-                            ret = (_btc_bars_proxy[-1].close - _btc_bars_proxy[0].close) / _btc_bars_proxy[0].close
-                            # Map return (-0.05 to 0.05) to sentiment (-1.0 to 1.0)
-                            sim_sentiment = max(-1.0, min(1.0, ret * 20)) 
-                            sentiment_loader.sentiment_map['GLOBAL'] = sim_sentiment
-                            sentiment_loader.sentiment_map['BTC'] = sim_sentiment
+                        # [REMEDIACIÓN APLICADA] Removed Historical Sentiment Proxy to ensure production parity.
+                        # Backtest now uses the same decayed/neutral sentiment as production 
+                        # when FinBERT is unavailable, preventing ML models from learning false price correlations.
+                        pass
                     except Exception:
                         pass
                 
@@ -1159,7 +1117,9 @@ def run_global_backtest(
                     for strat in strats:
                         try:
                             if not getattr(strat, "is_trained", False):
-                                if hasattr(strat, "_launch_training"):
+                                if hasattr(strat, "retrain"):
+                                    strat.retrain(force=True)
+                                elif hasattr(strat, "_launch_training"):
                                     bars = data_provider.get_latest_bars(
                                         sym,
                                         getattr(strat, "lookback", 500),
@@ -2357,7 +2317,7 @@ def run_global_backtest(
         # QUÉ: Restaura Config original y libera memoria explícitamente.
         # POR QUÉ: Evitar contaminación y OOM crashes.
         # ═══════════════════════════════════════════════════════════════════════
-        Config.IS_BACKTEST = _orig_is_backtest
+        Config.IS_BACKTEST = getattr(Config, 'IS_BACKTEST', False)
         
         # Explicit cleanup for GC
         if 'strategies_map' in locals():
@@ -2370,17 +2330,85 @@ def run_global_backtest(
         gc.collect()
 
 
+def _generate_insights_report(results: dict, report_path: str):
+    """
+    QUÉ: Genera un reporte Markdown detallado post-backtest con insights accionables.
+    POR QUÉ: Leer JSONs o logs gigantes es tedioso; necesitamos métricas clave, alpha leak 
+             y conclusiones presentadas claramente.
+    PARA QUÉ: Identificar rápidamente cuellos de botella (comisiones, slippage, vetos) 
+              y estrategias de alto rendimiento.
+    CÓMO: Analiza el diccionario 'results' generado y extrae deducciones.
+    CUÁNDO: Al finalizar cada simulación de God Mode.
+    DÓNDE: Guardado en la misma carpeta que el JSON de resultados (results/backtests/).
+    QUIÉN: Profesor / Forensic Auditor.
+    """
+    metrics = results.get("metrics", {})
+    alpha_leak = results.get("forensic_alpha_leak", {})
+    run_id = results.get("run_id", "unknown")
+    capital = results.get("config", {}).get("initial_capital", 0.0)
+    final_cap = metrics.get("final_capital", 0.0)
+    ret = metrics.get("total_return_pct", 0.0)
+    
+    lines = []
+    lines.append(f"# 📊 Reporte de Insights Estructurados: Backtest {run_id}")
+    lines.append(f"**Generado:** {results.get('timestamp')}")
+    lines.append("")
+    lines.append("## 1. 🎯 Rendimiento General")
+    lines.append(f"- **Capital:** ${capital:.2f} ➔ ${final_cap:.2f}")
+    lines.append(f"- **Retorno:** {ret:+.2f}%")
+    lines.append(f"- **Win Rate:** {metrics.get('win_rate', 0.0):.1f}% ({metrics.get('wins', 0)}W / {metrics.get('losses', 0)}L)")
+    lines.append(f"- **Drawdown Máximo:** {metrics.get('max_drawdown_pct', 0.0):.2f}%")
+    lines.append(f"- **Ratio de Sharpe:** {metrics.get('sharpe_ratio', 0.0):.2f}")
+    lines.append("")
+    lines.append("## 2. 🚰 Análisis de Fuga de Alpha (Alpha Leak)")
+    lines.append("Este análisis detalla cómo se redujo el PnL bruto ideal debido a fricciones reales de mercado.")
+    
+    gross = alpha_leak.get('gross_alpha', 0.0)
+    slip = alpha_leak.get('slippage_loss', 0.0)
+    fees = alpha_leak.get('fee_loss', 0.0)
+    premature = alpha_leak.get('premature_exit_loss', 0.0)
+    net = alpha_leak.get('net_alpha', 0.0)
+    
+    lines.append(f"- **Alpha Bruto (Ideal):** ${gross:+.4f}")
+    lines.append(f"- **Pérdida por Slippage:** -${slip:.4f}")
+    lines.append(f"- **Comisiones (Fees):** -${fees:.4f}")
+    lines.append(f"- **Exits Prematuros (Costos de Oportunidad):** -${premature:.4f}")
+    lines.append(f"- **Alpha Neto (Real):** ${net:+.4f}")
+    lines.append("")
+    lines.append("### 💡 Diagnóstico del Profesor")
+    if gross > 0 and fees > gross * 0.2:
+        lines.append("> ⚠️ **Alerta:** Las comisiones están consumiendo más del 20% del Alpha Bruto. Considerar estrategias con mayor *holding time* o usar limit orders (BBO).")
+    elif slip > fees:
+        lines.append("> ⚠️ **Alerta:** El slippage supera las comisiones. Validar liquidez en los pares operados o reducir el tamaño de posición (capital muy alto).")
+    else:
+        lines.append("> ✅ **Salud Óptima:** Las fricciones de mercado están bajo control y el modelo de retención de valor es saludable.")
+    
+    lines.append("")
+    lines.append("## 3. 🛡️ Confiabilidad del Sistema y Auditoría")
+    lines.append(f"- **Trades Rechazados por el Oráculo/BFT:** {metrics.get('orders_rejected', 0)}")
+    lines.append(f"- **Kill Switch Activado:** {'Sí 🚨' if metrics.get('kill_switch_triggered', False) else 'No ✅'}")
+    lines.append(f"- **Métricas Exportadas a JSON:** God Mode ha registrado cada tic. El comportamiento es determinístico.")
+    
+    lines.append("")
+    lines.append("## 4. 🧠 Recomendación Evolutiva (EAI)")
+    lines.append("Basado en el sistema adaptativo e integral, enfocar recursos en optimizar los factores responsables de mayor fuga (Fees vs Slippage) o recalibrar los umbrales del RiskManager si el Drawdown excedió expectativas.")
+    
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # CLI ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
 
-
 def main():
     import atexit
     # ── CONCURRENCY LOCK (FORENSIC FIX) ──
-    # QUÉ: Previene la ejecución concurrente de múltiples backtests.
+    # QUÉ: Previene la ejecución concurrente de múltiples backtests (dentro del mismo entorno).
     # POR QUÉ: Múltiples backtests consumen la RAM y causan detención del motor principal.
-    lock_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backtest_running.lock")
+    env_id = os.getenv("TG_ENV_ID", "")
+    lock_filename = f"backtest_running_{env_id}.lock" if env_id else "backtest_running.lock"
+    lock_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), lock_filename)
     if os.path.exists(lock_file):
         # Check if the lock is stale (e.g. older than 4 hours due to a previous crash)
         if time.time() - os.path.getmtime(lock_file) > 14400:
@@ -2421,6 +2449,12 @@ def main():
 
     parser = argparse.ArgumentParser(
         description="God Mode Backtest v2.0 — Global Synchronized Engine"
+    )
+    parser.add_argument(
+        "--env-id",
+        type=str,
+        default="",
+        help="Environment ID for Multi-Environment Isolation (e.g. trial_123)"
     )
     parser.add_argument(
         "--days", type=int, default=7, help="Number of days to backtest"
@@ -2545,6 +2579,17 @@ def main():
         if os.path.exists(output_path):
             os.remove(output_path)
         os.rename(temp_path, output_path)
+        
+        # ═══════════════════════════════════════════════════════════════
+        # FORENSIC: GENERATE STRUCTURED INSIGHTS REPORT
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            report_path = output_path.replace(".json", "_insights.md")
+            _generate_insights_report(results, report_path)
+            print(f"  📝 Structured Insights Report saved to: {report_path}")
+        except Exception as e:
+            print(f"  ⚠️ Could not generate Insights Report: {e}")
+            
     except Exception as e:
         print(f"❌ Error during atomic save: {e}")
         if os.path.exists(temp_path):

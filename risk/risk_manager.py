@@ -42,6 +42,8 @@ from core.enums import OrderSide, SignalType, OrderType
 from core.resolution_state import ResolutionState
 from risk.kill_switch import KillSwitch
 from core.swing_dca_engine import swing_dca_engine
+from core.scalp_dca_engine import scalp_dca_engine
+from core.pyramid_engine import pyramid_engine
 from sophia.exit_oracle import ExitOracle
 from utils.debug_tracer import trace_execution
 from utils.cooldown_manager import cooldown_manager
@@ -71,6 +73,7 @@ class RejectionReason:
     REGIME_VETO = "REGIME_ALIGNMENT_VETO"
     REGIME_TENSION = "REGIME_TENSION_EXCESSIVE"
     HIGH_CORRELATION = "SYSTEMIC_CORRELATION_VETO"
+    SYSTEMIC_LOAD = "SYSTEMIC_LOAD_VETO"
     SENTIMENT_DIVERGENCE = "SENTIMENT_DIVERGENCE_VETO"
     LIQUIDITY_VACUUM = "LIQUIDITY_VACUUM_VETO"
     PREDICTION_GATE = "STRATEGY_ACCURACY_BELOW_THRESHOLD"
@@ -217,6 +220,12 @@ class RiskManager:
         self.exit_oracle = ExitOracle(
             db_handler=getattr(self.portfolio, 'db', None) if self.portfolio else None
         )
+        
+        # ═══════════════════════════════════════════════════════════════
+        # TRAILING ENGINE (Dynamic ATR-based Trailing Stops)
+        # ═══════════════════════════════════════════════════════════════
+        from core.trailing_engine import TrailingEngine
+        self.trailing_engine = TrailingEngine(Config)
 
         # ═══════════════════════════════════════════════════════════════
         # PREDICTION TRACKER (Feedback Loop Closure)
@@ -349,39 +358,61 @@ class RiskManager:
         _scalp_cfg = getattr(Config.Strategies, 'SCALPING_PARAMS', {})
         _swing_cfg = getattr(Config.Strategies, 'SWING_PARAMS', {})
         _micro_cfg = getattr(Config.Strategies, 'MICROSCALPING_PARAMS', {})
+        
+        # ═══════════════════════════════════════════════════════════════
+        # MÓDULO HORIZON: Store per-asset TP/SL tables for resolution
+        # POR QUÉ: Un valor único de TP/SL para todos los activos es
+        #   suicidio estadístico. BTC (ATR~0.5%) ≠ DOGE (ATR~5%).
+        # PARA QUÉ: Cada trade usa parámetros calibrados al activo.
+        # ═══════════════════════════════════════════════════════════════
+        self._per_asset_tables = {
+            'MICROSCALPING': {
+                'tp': _micro_cfg.get('tp_pct_per_asset', {}),
+                'sl': _micro_cfg.get('sl_pct_per_asset', {}),
+            },
+            'SCALPING': {
+                'tp': _scalp_cfg.get('tp_pct_per_asset', {}),
+                'sl': _scalp_cfg.get('sl_pct_per_asset', {}),
+            },
+            'SWING': {
+                'tp': _swing_cfg.get('tp_pct_per_asset', {}),
+                'sl': _swing_cfg.get('sl_pct_per_asset', {}),
+            },
+        }
+        
         self.horizon_params = {
             "MICROSCALPING": {
                 "stop_loss_pct": _micro_cfg.get('sl_pct', getattr(
-                    Config, "STOP_LOSS_PCT_MICROSCALPING", 0.0020
-                )),  # 0.20%
+                    Config, "STOP_LOSS_PCT_MICROSCALPING", 0.0016
+                )),  # DEFAULT fallback for backward compat
                 "take_profit_pct": _micro_cfg.get('tp_pct', getattr(
-                    Config, "TAKE_PROFIT_PCT_MICROSCALPING", 0.0030
-                )),  # 0.30%
+                    Config, "TAKE_PROFIT_PCT_MICROSCALPING", 0.0027
+                )),  # DEFAULT fallback
                 "max_risk_pct": getattr(
-                    Config, "MAX_RISK_MICROSCALPING", 0.05
-                ),  # 5% del capital alloc
-                "leverage": getattr(Config, "LEVERAGE_MICROSCALPING", 20),
+                    Config, "MAX_RISK_MICROSCALPING", 0.003
+                ),  # HORIZON: MICRO — 0.3% risk (tight)
+                "leverage": getattr(Config, "LEVERAGE_MICROSCALPING", 15),
             },
             "SCALPING": {
                 "stop_loss_pct": _scalp_cfg.get('sl_pct', getattr(
-                    Config, "STOP_LOSS_PCT_SCALPING", 0.0025
-                )),  # 0.25% — OMEGA FIX: was 0.35% with TP=0.20% (inverted R:R!)
+                    Config, "STOP_LOSS_PCT_SCALPING", 0.0035
+                )),  # DEFAULT: 0.35%
                 "take_profit_pct": _scalp_cfg.get('tp_pct', getattr(
-                    Config, "TAKE_PROFIT_PCT_SCALPING", 0.0050
-                )),  # 0.50% — OMEGA FIX: was 0.20% (TP < SL = guaranteed losses)
+                    Config, "TAKE_PROFIT_PCT_SCALPING", 0.0055
+                )),  # DEFAULT: 0.55%
                 "max_risk_pct": getattr(
-                    Config, "MAX_RISK_SCALPING", 0.05
-                ),  # 5% del capital alloc
+                    Config, "MAX_RISK_SCALPING", 0.0055
+                ),  # HORIZON: SCALP — 0.55% risk
                 "leverage": getattr(Config, "LEVERAGE_SCALPING", 10),
             },
             "SWING": {
-                "stop_loss_pct": _swing_cfg.get('sl_pct', getattr(Config, "STOP_LOSS_PCT_SWING", 0.025)),  # 2.5%
+                "stop_loss_pct": _swing_cfg.get('sl_pct', getattr(Config, "STOP_LOSS_PCT_SWING", 0.015)),  # 1.5%
                 "take_profit_pct": _swing_cfg.get('tp_pct', getattr(
-                    Config, "TAKE_PROFIT_PCT_SWING", 0.045
-                )),  # 4.5% — synced with Config
+                    Config, "TAKE_PROFIT_PCT_SWING", 0.035
+                )),  # 3.5%
                 "max_risk_pct": getattr(
-                    Config, "MAX_RISK_SWING", 0.10
-                ),  # 10% del capital alloc
+                    Config, "MAX_RISK_SWING", 0.008
+                ),  # HORIZON: SWING — 0.8% risk
                 "leverage": getattr(Config, "LEVERAGE_SWING", 5),
             },
         }
@@ -392,6 +423,57 @@ class RiskManager:
     def register_strategy(self, strategy):
         """Dummy method for Engine-RiskManager coordination."""
         pass
+        
+    def cluster_volatility_surface(self, active_symbols_data: dict) -> dict:
+        """
+        [QUANTUM EVOLUTION] Superficie de Volatilidad Dinámica (DBScan-like logic)
+        Agrupa monedas en FLUID y DORMANT basado en el ATR normalizado.
+        """
+        clusters = {}
+        if not active_symbols_data:
+            return clusters
+            
+        atr_pcts = {}
+        for sym, data in active_symbols_data.items():
+            try:
+                # Extraemos el ATR% del timeframe de 1h
+                bars_1h = data.get('1h', [])
+                if len(bars_1h) >= 14:
+                    import numpy as np
+                    from utils.math_kernel import calculate_atr_jit
+                    
+                    if isinstance(bars_1h, np.ndarray) and getattr(bars_1h.dtype, 'names', None):
+                        c = bars_1h['close'].astype(np.float64)
+                        h = bars_1h['high'].astype(np.float64)
+                        l = bars_1h['low'].astype(np.float64)
+                    elif isinstance(bars_1h, list) and len(bars_1h) > 0 and isinstance(bars_1h[0], dict):
+                        c = np.array([b.get('close', 0.0) for b in bars_1h], dtype=np.float64)
+                        h = np.array([b.get('high', 0.0) for b in bars_1h], dtype=np.float64)
+                        l = np.array([b.get('low', 0.0) for b in bars_1h], dtype=np.float64)
+                    else:
+                        c = np.array(bars_1h['close'], dtype=np.float64)
+                        h = np.array(bars_1h['high'], dtype=np.float64)
+                        l = np.array(bars_1h['low'], dtype=np.float64)
+                        
+                    atr = calculate_atr_jit(h, l, c, period=14)[-1]
+                    atr_pct = (atr / c[-1]) * 100
+                    atr_pcts[sym] = atr_pct
+            except Exception as e:
+                pass
+                
+        if not atr_pcts:
+            return clusters
+            
+        # Simplified 1D Clustering (Mean threshold)
+        avg_atr = sum(atr_pcts.values()) / len(atr_pcts)
+        for sym, atr in atr_pcts.items():
+            if atr >= avg_atr * 0.8:
+                clusters[sym] = "FLUID"
+            else:
+                clusters[sym] = "DORMANT"
+                
+        self.volatility_clusters = clusters
+        return clusters
 
     def enforce_conservative_mode(self):
         self.conservative_mode = True
@@ -417,6 +499,18 @@ class RiskManager:
         # 1. Load static defaults
         base = dict(self.horizon_params.get(horizon, self.horizon_params["SCALPING"]))
         
+        # 1.5 MÓDULO HORIZON: Resolve per-asset TP/SL from Config tables
+        # POR QUÉ: BTC (ATR~0.5%) ≠ SOL (ATR~2.5%) ≠ DOGE (ATR~5%)
+        # PARA QUÉ: Cada activo recibe TP/SL calibrado a su volatilidad real
+        _asset_tables = self._per_asset_tables.get(horizon, {})
+        if _asset_tables:
+            _tp_table = _asset_tables.get('tp', {})
+            _sl_table = _asset_tables.get('sl', {})
+            if _tp_table:
+                base["take_profit_pct"] = _tp_table.get(symbol, _tp_table.get('DEFAULT', base["take_profit_pct"]))
+            if _sl_table:
+                base["stop_loss_pct"] = _sl_table.get(symbol, _sl_table.get('DEFAULT', base["stop_loss_pct"]))
+        
         # 2. Overlay dynamic ATR-based params if available
         if self.asset_param_engine is not None:
             profile = self.asset_param_engine.get_profile(symbol)
@@ -431,18 +525,42 @@ class RiskManager:
             
             if profile.last_calculated > 0:  # Profile has real data
                 dynamic = self.asset_param_engine.get_params(symbol, horizon, direction)
-                base["stop_loss_pct"] = dynamic["stop_loss_pct"]
-                base["take_profit_pct"] = dynamic["take_profit_pct"]
+                # MÓDULO HORIZON: Horizon-differentiated APE floor logic
+                # MICRO: APE has more freedom (market changes every second)
+                # SCALP: Balance — APE can vary ±30% from Config
+                # SWING: Config has more weight — APE ±20% only
+                config_tp = base["take_profit_pct"]
+                config_sl = base["stop_loss_pct"]
+                
+                # TP: APE can only WIDEN, never narrow below Config (ALL horizons)
+                base["take_profit_pct"] = max(dynamic["take_profit_pct"], config_tp)
+                
+                # SL: Horizon-differentiated flexibility
+                if horizon == 'MICROSCALPING':
+                    # MICRO: APE can widen up to 1.5x Config (fast markets need room)
+                    base["stop_loss_pct"] = min(dynamic["stop_loss_pct"], config_sl * 1.5)
+                    base["stop_loss_pct"] = max(base["stop_loss_pct"], config_sl * 0.8)  # floor at 80%
+                elif horizon == 'SCALPING':
+                    # SCALP: APE can vary ±30% from Config
+                    base["stop_loss_pct"] = max(config_sl * 0.7, min(dynamic["stop_loss_pct"], config_sl * 1.3))
+                else:
+                    # SWING: Config dominates, APE ±20% only
+                    base["stop_loss_pct"] = max(config_sl * 0.8, min(dynamic["stop_loss_pct"], config_sl * 1.2))
+                
+                if dynamic["take_profit_pct"] < config_tp:
+                    logger.warning(
+                        f"🛡️ [APE FLOOR] {symbol} {horizon}: APE tried TP={dynamic['take_profit_pct']*100:.3f}% "
+                        f"but Config floor is TP={config_tp*100:.3f}%. Using Config."
+                    )
             
             # SOVEREIGN: Always apply asset-specific leverage and risk caps
             base["leverage"] = self.asset_param_engine.get_leverage(symbol, horizon)
-            base["max_risk_pct"] = self.asset_param_engine.get_risk_pct(symbol)
+            base["max_risk_pct"] = self.asset_param_engine.get_risk_pct(symbol, horizon)
         
         # 3. SAFETY FLOOR: Enforce R:R >= 1.5:1 (IMMUTABLE)
         sl = base["stop_loss_pct"]
         tp = base["take_profit_pct"]
         if sl > 0 and tp / sl < 1.5:
-            # Widen TP to restore minimum R:R instead of tightening SL to prevent premature noise stop-outs
             base["take_profit_pct"] = sl * 1.5
             logger.warning(
                 f"🛡️ [R:R FLOOR] {symbol} {horizon}: Adjusted TP {tp*100:.3f}% → {base['take_profit_pct']*100:.3f}% to enforce R:R ≥ 1.5:1"
@@ -530,19 +648,85 @@ class RiskManager:
     # 🛡️ SUPREMO-V3: ATOMIC VALIDATION PIPELINE (ZERO-TRUST)
     # ============================================================
 
-    def _validate_fat_finger(self, price, symbol):
+    def _validate_streak_tilt(self):
         """
-        AUDIT DEPT C: Sanity Check (>5% Deviation)
-        Prevents orders with absurd prices due to API errors or bugs.
+        AUDIT DEPT: Tilt Protection (Racha de Pérdidas)
+        Si perdemos 3 operaciones consecutivas rápidas en menos de 30 minutos, pausamos por 30 minutos.
+        """
+        now = time.time()
+        
+        # Check if currently paused
+        if hasattr(self, '_tilt_pause_until') and now < self._tilt_pause_until:
+            remaining = (self._tilt_pause_until - now) / 60
+            logger.warning(f"🛑 [TILT VETO] Sistema pausado. Faltan {remaining:.1f} minutos para enfriamiento.")
+            return False
+            
+        # Count consecutive recent losses
+        if len(self._trade_cache) >= 3:
+            recent_trades = self._trade_cache[-3:]
+            # Only consider trades that are losses
+            losses = [t for t in recent_trades if not t.get("is_win", True)]
+            if len(losses) == 3:
+                # Check timeframe of these 3 losses. Since we don't store timestamp in cache currently,
+                # we assume if they are the last 3, it's a consecutive losing streak.
+                logger.critical(f"🛑 [TILT VETO] 3 Pérdidas consecutivas detectadas. Apagando motores por 30 minutos.")
+                self._tilt_pause_until = now + (30 * 60)
+                # Clear cache slightly to avoid re-triggering immediately after pause
+                self._trade_cache.append({"is_win": True, "pnl_pct": 0, "symbol": "DUMMY"}) 
+                return False
+        return True
+
+    def _enforce_daily_drawdown_limit(self, current_cash):
+        """
+        AUDIT DEPT: Daily Max Drawdown Halt (15%)
+        """
+        if not hasattr(self, '_daily_peak_cash'):
+            self._daily_peak_cash = current_cash
+            self._daily_peak_day = datetime.now(timezone.utc).day
+            
+        # Reset peak on new day
+        current_day = datetime.now(timezone.utc).day
+        if current_day != self._daily_peak_day:
+            self._daily_peak_cash = current_cash
+            self._daily_peak_day = current_day
+            
+        # Update peak
+        if current_cash > self._daily_peak_cash:
+            self._daily_peak_cash = current_cash
+            
+        # Check drawdown
+        if self._daily_peak_cash > 0:
+            drawdown = (self._daily_peak_cash - current_cash) / self._daily_peak_cash
+            max_dd = Config.Risk.MAX_DRAWDOWN / 100.0
+            if drawdown >= max_dd:
+                logger.critical(f"🛑 [DAILY DD HALT] Drawdown diario alcanzó {drawdown*100:.1f}% (Pico: ${self._daily_peak_cash:.2f}, Actual: ${current_cash:.2f}). Sistema bloqueado por hoy.")
+                return False
+        return True
+
+    def _validate_fat_finger(self, price, symbol, amount=None):
+        """
+        AUDIT DEPT C: Sanity Check (>5% Deviation) & Max Absolute USD Risk
+        Prevents orders with absurd prices or absolute risk > 5% of account.
         """
         if price <= 0:
             return False
 
-        # In a real scenario, we'd compare against a 1-minute moving average or order book mid-price.
-        # Here we use the last known price from Portfolio if available, or just pass if first trade.
+        if self.portfolio and amount:
+            current_cash = self.portfolio.get_total_equity()
+            notional = price * amount
+            # Asumimos un worst-case stop-loss del 1.5% antes de que actúe.
+            worst_case_risk = notional * 0.015  
+            max_allowed_risk = current_cash * 0.05
+            if worst_case_risk > max_allowed_risk:
+                logger.critical(f"🛑 [FAT FINGER] {symbol}: USD Risk (${worst_case_risk:.2f}) excede 5% de equity (${max_allowed_risk:.2f}). Bloqueado.")
+                return False
+
         last_price = None
-        if self.portfolio and symbol in self.portfolio.positions:
-            last_price = self.portfolio.positions[symbol].get("current_price")
+        if self.portfolio and hasattr(self.portfolio, "virtual_ledger"):
+            for k, v in self.portfolio.virtual_ledger.items():
+                if k.startswith(f"{symbol}_") and v.get("current_price"):
+                    last_price = v.get("current_price")
+                    break
 
         if last_price and last_price > 0:
             deviation = abs(price - last_price) / last_price
@@ -650,6 +834,46 @@ class RiskManager:
         #   El veto macro destruía el WinRate asfixiando señales perfectas.
         # PARA QUÉ: Libertad total de ejecución delegada puramente a la Inteligencia Artificial
         #   y al momentum inmediato.
+        
+        # [QUANTUM EVOLUTION] Kelly Resonance Matrix (Descorrelación Atómica)
+        if not hasattr(self, '_returns_history'):
+            self._returns_history = {}
+            
+        # Check current active positions
+        if self.portfolio and hasattr(self.portfolio, "virtual_ledger"):
+            active_symbols = set()
+            for k, v in self.portfolio.virtual_ledger.items():
+                qty = v.get("quantity", 0)
+                if abs(qty) > 1e-8:
+                    sym = k.split('_')[0] if '_' in k else k
+                    active_symbols.add(sym)
+                    
+            if len(active_symbols) > 0 and symbol not in active_symbols:
+                # We have open positions. Check correlation.
+                try:
+                    from data.data_provider import get_data_provider
+                    dp = get_data_provider()
+                    target_bars = dp.get_latest_bars(symbol, n=60)  # Last 60m
+                    if target_bars is not None and len(target_bars) >= 60:
+                        import numpy as np
+                        target_c = target_bars['close'].astype(np.float64)
+                        target_rets = np.diff(target_c) / target_c[:-1]
+                        
+                        for active_sym in active_symbols:
+                            active_bars = dp.get_latest_bars(active_sym, n=60)
+                            if active_bars is not None and len(active_bars) >= 60:
+                                active_c = active_bars['close'].astype(np.float64)
+                                active_rets = np.diff(active_c) / active_c[:-1]
+                                
+                                # Calcular correlación de Pearson
+                                if len(target_rets) == len(active_rets):
+                                    corr = np.corrcoef(target_rets, active_rets)[0, 1]
+                                    if corr > 0.65:
+                                        logger.warning(f"🛡️ [KELLY RESONANCE VETO] Señal de {symbol} bloqueada por alta correlación ({corr:.2f}) con la posición abierta en {active_sym}.")
+                                        return False
+                except Exception as e:
+                    logger.warning(f"Error calculating resonance matrix: {e}")
+
         return True
 
     def _validate_directional_safety(
@@ -992,16 +1216,16 @@ class RiskManager:
         """
         try:
             # Defensive Scaling (Risk Fortress)
-            kelly_mult = 0.25  # Quarter-Kelly for Scalping volatility
+            kelly_mult = 0.50  # [QUANTUM EVOLUTION] Half-Kelly for aggressive scaling instead of Quarter-Kelly
 
-            # Clamp between 0% and 40% exposure
+            # Clamp between 0% and 60% exposure (Relaxed for House Money)
             clamped = compute_kelly_fraction_jit(
                 p=float(p),
                 b=float(b),
                 apply_mult=apply_mult,
                 kelly_mult=float(kelly_mult),
                 stress_score=float(self.stress_score),
-                max_exposure=0.40,
+                max_exposure=0.60,
             )
 
             logger.debug(
@@ -1052,7 +1276,30 @@ class RiskManager:
 
             # 3. Defensive Scaling (Risk Fortress)
             # SOVEREIGN-DEPLOY: Absolute Fractional Kelly Enforcement (f*/10)
-            kelly_mult = getattr(Config.Strategies, "ML_KELLY_FRACTION", 0.25)
+            kelly_mult = getattr(Config.Strategies, "ML_KELLY_FRACTION", 0.50)
+
+            # [PHASE 2 - QUANTUM EVOLUTION] Hyper-Growth Kelly Asymmetry
+            # QUÉ: Multiplicador asimétrico basado en la racha de wins.
+            # POR QUÉ: Explotar el interés compuesto agresivamente cuando el modelo
+            # está en sincronía perfecta con el mercado (streak >= 3).
+            if self.prediction_tracker:
+                metrics = self.prediction_tracker.get_strategy_metrics(strategy_id, symbol=symbol)
+                if metrics:
+                    win_s = metrics.get('current_win_streak', 0)
+                    loss_s = metrics.get('current_loss_streak', 0)
+                    if win_s >= 2: # 2 wins in a row is enough to trust momentum
+                        momentum_multiplier = min(2.5, 1.0 + (win_s * 0.5))
+                        logger.info(f"🚀 [HYPER-GROWTH] {symbol} Win Streak: {win_s}. Multiplicando Kelly x{momentum_multiplier:.1f}")
+                        kelly_mult *= momentum_multiplier
+                    elif loss_s >= 2:
+                        logger.warning(f"🛡️ [DEFENSE MODE] {symbol} Loss Streak: {loss_s}. Reduciendo Kelly a la mitad.")
+                        kelly_mult *= 0.5
+
+            # [QUANTUM EVOLUTION] Volatility Clustering Veto
+            if hasattr(self, 'volatility_clusters') and symbol in self.volatility_clusters:
+                if self.volatility_clusters[symbol] == "DORMANT":
+                    logger.debug(f"💤 [CLUSTER VETO] {symbol} está DORMANT. Kelly=0.0")
+                    return 0.05  # Absolute minimum instead of 0 to keep heartbeat
 
             # Extreme Defense: If Ruin Risk (Stress Score) is low
             if self.stress_score < 90:
@@ -1082,8 +1329,8 @@ class RiskManager:
 
             # 5. Final Clamp
             return float(
-                max(0.05, min(fractional_kelly, 0.40))
-            )  # Min 5%, Max 40% (Aggressive for $12)
+                max(0.05, min(fractional_kelly, 0.60))
+            )  # Min 5%, Max 60% (Aggressive for $12)
 
         except Exception as e:
             logger.error(f"Kelly Error: {e}")
@@ -1159,9 +1406,38 @@ class RiskManager:
             {"is_win": is_win, "pnl_pct": pnl_pct, "symbol": symbol, "horizon": horizon}
         )
 
+        # 🧠 MUTACIÓN 42: Q-Learning Reward Update
+        try:
+            from core.q_learning import q_agent
+            if symbol in q_agent.pending_trades:
+                state_key, action_idx = q_agent.pending_trades[symbol]
+                reward = 1.0 if is_win else -1.0
+                if abs(pnl_pct) < 0.0005: reward = -0.1 # Penalty for stagnation
+                
+                # Assuming next_state is the same for simplicity
+                q_agent.update_q_value(state_key, action_idx, reward, state_key)
+                del q_agent.pending_trades[symbol]
+        except Exception as e:
+            logger.debug(f"Q-Learning hook failed: {e}")
+
         # Optional: Limit cache growth to last 1000 trades for performance
         if len(self._trade_cache) > 1000:
             self._trade_cache.pop(0)
+
+        # ═══════════════════════════════════════════════════════════════
+        # CAPA 3: PORTFOLIO CONSCIOUSNESS
+        # Export metrics to Compounding Engine for Merit-Based Reallocation
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            from core.compounding_engine import get_compounding_engine
+            horizon_trades = [t for t in self._trade_cache if t.get('horizon', 'SCALPING') == horizon]
+            if len(horizon_trades) > 0:
+                h_wins = sum(1 for t in horizon_trades if t['is_win'])
+                h_wr = h_wins / len(horizon_trades)
+                h_pnl = sum(t['pnl_pct'] for t in horizon_trades)
+                get_compounding_engine().update_horizon_performance(horizon, h_wr, h_pnl, len(horizon_trades))
+        except Exception as e:
+            logger.error(f"Failed to update horizon performance for {horizon}: {e}")
 
         # ═══════════════════════════════════════════════════════════════
         # PREDICTION TRACKER: OUTCOME PROPAGATION (Feedback Loop Closure)
@@ -1199,7 +1475,7 @@ class RiskManager:
             if self.stress_score < 90:
                 kelly_mult = 0.25  # Quarter-Kelly under stress
 
-            tick_kelly = float(max(0.05, min(raw_kelly * kelly_mult, 0.40)))
+            tick_kelly = float(max(0.05, min(raw_kelly * kelly_mult, 0.60)))
 
             # EMA smoothing to prevent whipsaw (alpha=0.2)
             if not hasattr(self, "_tick_kelly"):
@@ -1316,14 +1592,18 @@ class RiskManager:
         h_sqrt = math.sqrt(horizon_days)
 
         # 1. Base Multiplier por Volatilidad
-        # SUPREMO-V4: Cambio de SL fijo a dinámico (1.5x ATR)
-        # CTOS Phase 8: Multiplicador específico por horizonte.
+        # 🚀 FASE 3: Stop-Loss Cuántico Estocástico (Z-Score)
+        # QUÉ: Ubica el Stop Loss fuera del 'ruido' estadístico (Campana de Gauss).
+        # POR QUÉ: Evita los "cazadores de stops" poniendo la orden en zonas de 
+        #   probabilidad nula (<5%) de ser tocadas por fluctuaciones normales.
         if horizon == "SWING":
-            mult = 2.5
+            z_score = 3.0 # 3 Sigma (99.7% confidence)
         elif horizon == "MICROSCALPING":
-            mult = 1.2
+            z_score = 1.5 # 1.5 Sigma (86.6% confidence)
         else:
-            mult = 1.5  # SCALPING
+            z_score = 2.0 # 2 Sigma (95.4% confidence, SCALPING)
+            
+        mult = z_score
 
         # 2. Ajuste por Régimen de Mercado (ADAPTABILIDAD)
         # En CHOPPY, APRETAMOS el stop (no lo ampliamos) porque no queremos regalar capital al ruido.
@@ -1437,6 +1717,98 @@ class RiskManager:
 
             # 1. Obtener parámetros por horizonte (CTOS: ATR-calibrated per asset)
             h_params = self._get_asset_params(symbol, horizon, direction)
+            
+            # 1.1 [MUTACIÓN 14] Self-Healing Spread (Tick-Volatility Override)
+            if signal_metadata:
+                order_flow = signal_metadata.get('metrics', {}).get('order_flow', {})
+                tick_vol = order_flow.get('tick_volatility', 0.0)
+                if horizon in ('MICROSCALPING', 'SCALPING') and tick_vol > 0.0:
+                    new_tp = min(max(tick_vol * 15.0, 0.0015), 0.0060) # Min 0.15%, Max 0.60%
+                    new_sl = new_tp / 2.0 # Fixed R:R of 2:1 for Micro
+                    logger.info(f"🧬 [MUTACION 14] {symbol} {horizon} Self-Healing Spread Active! Vol: {tick_vol*100:.4f}% -> TP: {new_tp*100:.2f}%, SL: {new_sl*100:.2f}%")
+                    h_params["take_profit_pct"] = new_tp
+                    h_params["stop_loss_pct"] = new_sl
+            
+            # 1.5 [MUTACIÓN 13] Radar de Flujo Tóxico (VPIN)
+            if signal_metadata:
+                order_flow = signal_metadata.get('metrics', {}).get('order_flow', {})
+                vpin_toxicity = order_flow.get('toxicity_index', 0.0)
+                delta = order_flow.get('delta', 0.0)
+                
+                if horizon in ('MICROSCALPING', 'SCALPING') and vpin_toxicity > 0.8:
+                    if direction == "LONG" and delta < 0:
+                        logger.warning(f"🚫 [VPIN RADAR] {symbol} {horizon} LONG rechazado. Flujo Tóxico Institucional de Venta detectado (VPIN: {vpin_toxicity:.2f}).")
+                        signal_metadata["rejection_reason"] = "TOXIC_FLOW_VETO"
+                        return None
+                    elif direction == "SHORT" and delta > 0:
+                        logger.warning(f"🚫 [VPIN RADAR] {symbol} {horizon} SHORT rechazado. Flujo Tóxico Institucional de Compra detectado (VPIN: {vpin_toxicity:.2f}).")
+                        signal_metadata["rejection_reason"] = "TOXIC_FLOW_VETO"
+                        return None
+                        
+            # 1.6 [MUTACIÓN 17] Radar Anti-Spoofing
+            if signal_metadata:
+                order_flow = signal_metadata.get('metrics', {}).get('order_flow', {})
+                is_spoofing = order_flow.get('is_spoofing', False)
+                spoof_side = order_flow.get('spoofing_side', None)
+                if is_spoofing and spoof_side:
+                    if direction == "LONG" and spoof_side == "BUY":
+                        logger.warning(f"🚫 [SPOOF RADAR] {symbol} LONG rechazado. Muro de compra falso detectado (Spoofing). Nos intentan atrapar.")
+                        signal_metadata["rejection_reason"] = "SPOOFING_VETO"
+                        return None
+                    elif direction == "SHORT" and spoof_side == "SELL":
+                        logger.warning(f"🚫 [SPOOF RADAR] {symbol} SHORT rechazado. Muro de venta falso detectado (Spoofing).")
+                        signal_metadata["rejection_reason"] = "SPOOFING_VETO"
+                        return None
+                        
+            # 1.7 [MUTACIÓN 21] Gamma Expansion Veto
+            if signal_metadata:
+                order_flow = signal_metadata.get('metrics', {}).get('order_flow', {})
+                gamma_risk = order_flow.get('gamma_expansion_risk', False)
+                if gamma_risk and horizon in ('MICROSCALPING', 'SCALPING'):
+                    logger.warning(f"🚫 [GAMMA RADAR] {symbol} {horizon} rechazado. Aceleración volumétrica extrema (Gamma Trap). Riesgo de cacería inminente.")
+                    signal_metadata["rejection_reason"] = "GAMMA_VETO"
+                    return None
+                    
+            # 1.8 [MUTACIÓN 20] Liquidation Magnetic Pull Warning
+            if signal_metadata:
+                order_flow = signal_metadata.get('metrics', {}).get('order_flow', {})
+                pull_up = order_flow.get('magnetic_pull_up', 0.0)
+                pull_down = order_flow.get('magnetic_pull_down', 0.0)
+                
+                if (pull_up + pull_down) > 1000: # Solo alertar si el volumen en los buckets es significativo
+                    skew = pull_down / (pull_up + pull_down)
+                    if direction == "LONG" and skew > 0.8:
+                        logger.warning(f"🧲 [MAGNETIC WARNING] {symbol} LONG contra la gravedad. El {skew*100:.0f}% del imán de liquidez está ABAJO.")
+                    elif direction == "SHORT" and (1 - skew) > 0.8:
+                        logger.warning(f"🧲 [MAGNETIC WARNING] {symbol} SHORT contra la gravedad. El {(1-skew)*100:.0f}% del imán de liquidez está ARRIBA.")
+                        
+            # 1.9 [MUTACIÓN 23] Entropy Veto (Shannon Micro-Entropy)
+            if signal_metadata:
+                order_flow = signal_metadata.get('metrics', {}).get('order_flow', {})
+                high_entropy = order_flow.get('high_micro_entropy', False)
+                # No operamos si el mercado es azar puro (Entropía Máxima > 0.98)
+                if high_entropy and horizon in ('MICROSCALPING', 'SCALPING'):
+                    logger.warning(f"🎲 [ENTROPY VETO] {symbol} {horizon} rechazado. Microestructura en estado aleatorio (Ruido Blanco). Probabilidad de éxito ~50%.")
+                    signal_metadata["rejection_reason"] = "ENTROPY_VETO"
+                    return None
+
+            # 1.10 [PHASE 18] ABSOLUTE CERTAINTY VETO (100% WR Pursuit)
+            if signal_metadata:
+                ml_conf = signal_metadata.get('ml_confidence', signal_metadata.get('strength', 0.0))
+                order_flow = signal_metadata.get('metrics', {}).get('order_flow', {})
+                vpin_toxicity = order_flow.get('toxicity_index', 0.0)
+                entropy = order_flow.get('entropy', 0.0)
+                
+                # Para cuentas micro ($13 USD) buscando crecimiento exponencial, la certeza debe ser casi absoluta.
+                if horizon in ('MICROSCALPING', 'SCALPING'):
+                    if ml_conf < 0.85 or vpin_toxicity > 0.4 or entropy > 0.80:
+                        logger.warning(
+                            f"🛡️ [ABSOLUTE CERTAINTY VETO] {symbol} {horizon} rechazado. "
+                            f"Exigimos >85% Confianza, <0.4 VPIN, <0.8 Entropía. "
+                            f"(Actual: Conf={ml_conf*100:.1f}%, VPIN={vpin_toxicity:.2f}, Ent={entropy:.2f})"
+                        )
+                        signal_metadata["rejection_reason"] = "ABSOLUTE_CERTAINTY_VETO"
+                        return None
 
             # [MERITOCRACY] Merit-based risk adjustment
             sl_pct = h_params["stop_loss_pct"]
@@ -1456,6 +1828,25 @@ class RiskManager:
 
             # Get total equity for capital phases
             equity = self.portfolio.get_total_equity()
+            
+            # 🚀 FASE 11: ASYMMETRIC COMPOUNDING
+            # Capital semilla = $13. Todo excedente es "House Money"
+            seed_capital = getattr(Config, 'INITIAL_CAPITAL', 13.0)
+            house_money = max(0.0, equity - seed_capital)
+            asymmetric_mult = 1.0
+            
+            if house_money > 0.0:
+                hm_ratio = house_money / equity
+                # Multiplicador asimétrico de riesgo: 
+                # Leído desde Config (inyectado por el Evolucionador de Masas)
+                growth_factor = getattr(Config, "COMPOUNDING_GROWTH_FACTOR", 4.0)
+                asymmetric_mult = 1.0 + (hm_ratio * growth_factor) 
+                logger.debug(f"🎰 [ASYMMETRIC COMPOUNDING] House Money: ${house_money:.2f} ({hm_ratio*100:.1f}%). Multiplicador Riesgo Base: {asymmetric_mult:.2f}x (GF={growth_factor})")
+            else:
+                # Modo protección: si caemos de $13, reducimos riesgo
+                if equity < seed_capital * 0.90:
+                    asymmetric_mult = 0.5
+                    logger.warning(f"🛡️ [ASYMMETRIC DEFENSE] Equity bajo semilla (${equity:.2f} < ${seed_capital}). Riesgo reducido a la mitad.")
 
             # Enforce position limits and asset restrictions
             # Count positions globally
@@ -1479,15 +1870,80 @@ class RiskManager:
             # signal_metadata is passed from generate_order() which has the SignalEvent context
             target_leverage = signal_metadata.get("leverage", h_params["leverage"]) if signal_metadata else h_params["leverage"]
 
+            # [FASE 4: ASIMETRÍA EXPONENCIAL (KELLY DINÁMICO)]
+            ml_conf = signal_metadata.get('ml_confidence', signal_metadata.get('strength', 0.0)) if signal_metadata else 0.0
+            
+            vortex = 0.0
+            if signal_metadata:
+                sophia_rep = signal_metadata.get('metadata', {}).get('sophia', {})
+                vortex = sophia_rep.get('vortex_pulse', 0.0)
+
+            # Extraemos la Fracción de Kelly Optimizada desde Config
+            kelly_fraction = getattr(Config, "ML_KELLY_FRACTION", getattr(getattr(Config, "Strategies", object()), "ML_KELLY_FRACTION", 0.5))
+
+            if horizon in ("MICROSCALPING", "SCALPING"):
+                if ml_conf >= 0.85 and vortex >= 2.0:
+                    target_leverage = min(75, int(target_leverage * 3.5 * (kelly_fraction * 2)))
+                    logger.info(f"🚀 [QUANTUM KELLY] Confluencia Perfecta! Conf: {ml_conf*100:.1f}%, Vortex: {vortex:.2f} -> Leverage {target_leverage}x para {symbol}")
+                elif ml_conf >= 0.80:
+                    target_leverage = min(50, int(target_leverage * 2.0 * (kelly_fraction * 2)))
+                    logger.debug(f"🚀 [QUANTUM KELLY] High Confidence ({ml_conf*100:.1f}%) -> Boosted Leverage to {target_leverage}x")
+                elif ml_conf < 0.75:
+                    target_leverage = max(5, int(target_leverage * 0.5 * kelly_fraction))
+                    logger.debug(f"🛡️ [QUANTUM KELLY] Low Confidence ({ml_conf*100:.1f}%) -> Reduced Leverage to {target_leverage}x")
+
+            # 🚀 FASE 14: QUANTUM LEVERAGE SCALING (STREAK-BASED)
+            # QUÉ: Escala el apalancamiento basándose en rachas ganadoras consecutivas (Anti-Martingala Cuántica).
+            # POR QUÉ: Para duplicar el capital en 3 días (WR < 100%), maximizamos el PnL en buenas rachas.
+            win_streak = getattr(self.portfolio, '_win_streak', 0) if self.portfolio else 0
+            if win_streak >= 3:
+                streak_boost = min(3.0, 1.0 + (win_streak - 2) * 0.5) # Streak 3 = 1.5x, Streak 4 = 2.0x, Max = 3.0x
+                new_leverage = min(50, int(target_leverage * streak_boost))
+                if new_leverage > target_leverage:
+                    logger.info(f"🔥 [QUANTUM LEVERAGE] Streak de {win_streak} victorias! Escala apalancamiento de {target_leverage}x a {new_leverage}x")
+                    target_leverage = new_leverage
+
+            # 🚀 FASE 15: VOLATILITY SQUEEZE OVERDRIVE (Apalancamiento Cuántico)
+            bollinger_squeeze = False
+            gamma_expansion = False
+            if signal_metadata:
+                metadata = signal_metadata.get('metadata', {})
+                bollinger_squeeze = metadata.get('bollinger_squeeze', False)
+                gamma_expansion = metadata.get('gamma_expansion', False)
+                
+            if bollinger_squeeze and gamma_expansion:
+                target_leverage = min(50, int(target_leverage * 2.5))
+                logger.warning(f"⚡ [SQUEEZE OVERDRIVE] Compresión + Expansión detectada. Escala apalancamiento a {target_leverage}x para captura de Home Run en {symbol}")
+
             # Volatility-based adaptive leverage scaling to avoid margin destruction
             if sl_pct > 0:
                 # Limit the max loss of the margin to 15% (margin_risk_pct = 0.15)
                 margin_risk_pct = 0.15
-                target_leverage = int(max(1.0, min(target_leverage, margin_risk_pct / sl_pct)))
-                logger.debug(f"⚖️ [ADAPTIVE-LEVERAGE] Volatility adjusted leverage: target_leverage={target_leverage} (SL={sl_pct*100:.3f}%)")
+                vol_safe_leverage = int(max(1.0, min(target_leverage, margin_risk_pct / sl_pct)))
+                if vol_safe_leverage < target_leverage:
+                    logger.debug(f"⚖️ [ADAPTIVE-LEVERAGE] Volatility capped leverage from {target_leverage}x to {vol_safe_leverage}x (SL={sl_pct*100:.3f}%)")
+                target_leverage = vol_safe_leverage
 
             # 2. Calcular Capital Disponible para este horizonte
             available_cash = self.portfolio.get_available_cash(horizon=horizon)
+            
+            # 🚀 FASE 3: Asignación de Margen Cruzado por Horizon (Swing Collateral)
+            if horizon in ("MICROSCALPING", "SCALPING"):
+                swing_unrealized_pnl = 0.0
+                for v_key, pos in self.portfolio.virtual_ledger.items():
+                    if pos.get('horizon') == 'SWING' and symbol.replace('/', '') in v_key.replace('/', ''):
+                        qty = pos.get('quantity', 0.0)
+                        if abs(qty) > 1e-8:
+                            entry = pos.get('avg_price', current_price)
+                            if qty > 0:
+                                swing_unrealized_pnl += (current_price - entry) * qty
+                            else:
+                                swing_unrealized_pnl += (entry - current_price) * abs(qty)
+                
+                if swing_unrealized_pnl > 0.1: # Al menos 10 centavos de ganancia
+                    borrowed_margin = swing_unrealized_pnl * 0.8 # Pedimos prestado el 80% del flotante ganador
+                    available_cash += borrowed_margin
+                    logger.critical(f"💎 [CROSS-HORIZON COLLATERAL] {symbol}: {horizon} se apalanca en ganancia flotante de SWING! Margen Extra: ${borrowed_margin:.2f}")
             
             # Subtract non-deployable capital from injections
             ts = self.temporal_supervisor
@@ -1529,23 +1985,67 @@ class RiskManager:
                      signal_metadata["rejection_reason"] = RejectionReason.MARGIN_INSUFFICIENT
                  return None
 
-            # 3. Cálculo de Tamaño Nominal (Notional) via Fractional Kelly
+            # 3. Cálculo de Tamaño Nominal (Notional) via Fractional Kelly (Quantum Evolution)
+            resonance_multiplier = signal_metadata.get('resonance_multiplier', 1.0) if signal_metadata else 1.0
+
             if global_cash < 50.0:
-                # FORENSIC FIX: Micro-Account Strict $1-$2 Margin Limit per operation
-                # User directive: enforce $1-$2 max margin per operation to avoid rapid depletion.
-                if horizon in ("SCALPING", "MICROSCALPING"):
-                    # We want to use $1-$2 margin. So we take min of $2.00 and max of $1.00 or 15% of available_cash
-                    _margin_to_use = min(2.0, max(1.0, available_cash * 0.15))
-                else:
-                    _margin_to_use = min(1.5, max(1.0, available_cash * 0.10))
+                # [QUANTUM EVOLUTION] Interés Compuesto Dinámico y Quantum Kelly
+                compounding_multiplier = 1.0
                 
-                notional_size = _margin_to_use * target_leverage
+                # Fetch Quantum Kelly from CompoundingEngine
+                safe_kelly = 0.05 # default
+                if getattr(self.portfolio, 'compounding_engine', None):
+                    reward_risk = tp_pct / sl_pct if sl_pct > 0 else 1.0
+                    # For Microscalping, we allow higher max kelly cap (up to 40%)
+                    max_cap = 0.40 if horizon == "MICROSCALPING" else 0.30
+                    safe_kelly = self.portfolio.compounding_engine.get_quantum_kelly_fraction(
+                        win_probability=ml_conf, 
+                        reward_risk_ratio=reward_risk,
+                        max_kelly_cap=max_cap
+                    )
+                    logger.debug(f"🧠 [QUANTUM KELLY] W:{ml_conf*100:.1f}%, R:{reward_risk:.2f} -> Kelly Fraction: {safe_kelly*100:.1f}%")
+
+                # 🚀 FASE 19: Asymmetric Fractional Kelly (Anti-Martingale)
+                kelly_multiplier = 1.0
+                if getattr(self.portfolio, 'compounding_engine', None):
+                    kelly_multiplier = self.portfolio.compounding_engine.get_kelly_multiplier(horizon)
+                
+                # FORENSIC FIX: Micro-Account Strict Margin Limit per operation
+                # [QUANTUM EVOLUTION] Swarm Volatility Multiplier Injection + Asymmetric Compounding
+                _margin_to_use = available_cash * safe_kelly * resonance_multiplier * multiplier * asymmetric_mult * kelly_multiplier
+                
+                # Si el multiplicador es extremadamente alto (ej > 2.0x), permitimos absorber la liquidez disponible
+                if multiplier >= 1.5 or asymmetric_mult >= 1.5 or kelly_multiplier >= 1.5:
+                    _margin_to_use = min(available_cash * 0.95, _margin_to_use) # Absorbe hasta el 95% de la cuenta para home-runs
+                    logger.info(f"🍯 [SWARM/ASYMMETRIC] KellyMult={kelly_multiplier:.1f}x. Absorbiendo liquidez masiva (${_margin_to_use:.2f})")
+                
+                # Minimum viable logic:
+                if _margin_to_use < 1.0:
+                    _margin_to_use = 1.0
+                
+                # Drawdown Shield
+                initial_cap = getattr(Config, "INITIAL_CAPITAL", 13.0)
+                if global_cash < initial_cap:
+                    drawdown_pct = (initial_cap - global_cash) / initial_cap
+                    if drawdown_pct > 0.05:
+                        _margin_to_use = _margin_to_use * 0.5  # Drawdown Shield
+                        logger.warning(f"🛡️ [SHIELD] Drawdown: -{drawdown_pct*100:.1f}% -> Kelly Mult: 0.5x")
+                
+                # 🔀 MUTACIÓN 40: Pairs Trading Margin Split
+                is_paired = signal_metadata.get('is_paired', False) if signal_metadata else False
+                if is_paired:
+                    _margin_to_use = max(0.5, _margin_to_use / 2.0)
+                    logger.debug(f"⚖️ [PAIRS TRADING] Splitting micro margin to ${_margin_to_use:.2f}")
+                
+                # FASE 11: Asymmetric Leverage Application
+                final_leverage = min(75, int(target_leverage * asymmetric_mult))
+                notional_size = _margin_to_use * final_leverage
                 
                 # Minimum Binance enforcement
                 if notional_size < 5.5:
                     notional_size = 5.5
                     
-                logger.debug(f"📐 [MICRO-SIZING] Compounding Phase: {horizon} -> Margin ${_margin_to_use:.2f} at {target_leverage}x = Notional ${notional_size:.2f}")
+                logger.debug(f"📐 [MICRO-SIZING] Compounding Phase: {horizon} -> Margin ${_margin_to_use:.2f} at {final_leverage}x (Base: {target_leverage}x) = Notional ${notional_size:.2f}")
             else:
                 win_rate = self.get_win_rate()
                 
@@ -1574,20 +2074,26 @@ class RiskManager:
                     kelly_half = max(0.01, min(0.25, kelly_f * 0.5))  # Floor 1%, Cap 25%
                     
                     # Blend Kelly with the merit multiplier
-                    effective_risk = min(0.25, kelly_half * multiplier)
+                    effective_risk = min(0.25, kelly_half * multiplier * resonance_multiplier)
                     logger.debug(
                         f"📐 [KELLY] {symbol} | WR={win_rate:.2f} | K={kelly_f:.3f} | "
-                        f"½K={kelly_half:.3f} | Merit={multiplier:.2f} | EffRisk={effective_risk:.3f}"
+                        f"½K={kelly_half:.3f} | Merit={multiplier:.2f} | Res={resonance_multiplier:.1f} | EffRisk={effective_risk:.3f}"
                     )
                 else:
                     # Cold start: use conservative static risk until enough data
-                    effective_risk = min(0.20, h_params.get("max_risk_pct", risk_pct) * multiplier)
+                    effective_risk = min(0.20, h_params.get("max_risk_pct", risk_pct) * multiplier * resonance_multiplier)
                     logger.debug(
                         f"📐 [KELLY-COLD] {symbol} | Insufficient trades ({len(wins)}W/{len(losses)}L). "
-                        f"Using static risk={effective_risk:.3f}"
+                        f"Using static risk={effective_risk:.3f} | Res={resonance_multiplier:.1f}"
                     )
                 
                 risk_amount = available_cash * effective_risk
+                
+                # 🔀 MUTACIÓN 40: Pairs Trading Margin Split
+                is_paired = signal_metadata.get('is_paired', False) if signal_metadata else False
+                if is_paired:
+                    risk_amount /= 2.0
+                    logger.debug(f"⚖️ [PAIRS TRADING] Splitting risk amount to ${risk_amount:.2f}")
 
                 # Notional = Risk_Amount / SL_Pct
                 if sl_pct > 0:
@@ -1726,8 +2232,38 @@ class RiskManager:
         signal_event.metadata['rejection_reason'] = reason
         signal_event.metadata['rejected_at'] = time.time()
         
-        # Log estructurado con logger en lugar de print
+        # Log estructurado Omnisciente
+        import logging
+        from utils.logger import log_supreme_event, logger
+        
         logger.warning(f"🛑 [RISK VETO] Signal {signal_event.symbol} rejected. Reason: {reason}")
+        
+        log_supreme_event(
+            logger_instance=logger,
+            level=logging.WARNING,
+            event_id=f"RISK_VETO_{signal_event.symbol}_{int(time.time())}",
+            que_ocurrio={
+                "tipo_evento": "SIGNAL_REJECTED",
+                "descripcion": f"Señal de {getattr(signal_event, 'strategy_id', 'UNKNOWN')} rechazada",
+                "resultado": "VETO_ACTIVO"
+            },
+            por_que_ocurrio={
+                "razon_rechazo": reason,
+                "regimen_actual": self.current_regime
+            },
+            como_ocurrio={
+                "signal_type": str(getattr(signal_event, 'signal_type', 'N/A')),
+                "strength": getattr(signal_event, 'strength', 0.0)
+            },
+            donde_ocurrio={
+                "modulo": "RiskManager",
+                "funcion": "_reject_trade"
+            },
+            quien_lo_provoco={
+                "componente": "RiskGates",
+                "metadata_signal": getattr(signal_event, 'metadata', {})
+            }
+        )
         
         # Opcional: Registrar en telemetría forense si está disponible
         if self.portfolio and hasattr(self.portfolio, 'db') and self.portfolio.db:
@@ -1742,6 +2278,144 @@ class RiskManager:
                 pass
         return None
 
+    # ═══════════════════════════════════════════════════════════════
+    # PHASE 5.1: QUANTUM FEE HARVESTER (Maker Rebate Arbitrage)
+    # QUÉ: En régimen RANGING, coloca micro-órdenes Limit a ambos
+    #   lados del spread (bid y ask) para cosechar rebates Maker.
+    # POR QUÉ: Binance paga un rebate (~0.02%) por proveer liquidez
+    #   (Maker). En mercados laterales, no hay dirección de precio,
+    #   así que en vez de esperar, cosechamos comisiones del exchange.
+    # PARA QUÉ: Si el mercado no se mueve, seguimos ganando dinero
+    #   constante (100% WR en el rebate), construyendo capital base.
+    # CÓMO:
+    #   1. Detectar régimen RANGING (trend_strength < 0.15)
+    #   2. Verificar spread suficiente (bid < ask con gap razonable)
+    #   3. Colocar 2 órdenes LIMIT POST_ONLY: BUY en bid, SELL en ask
+    #   4. Sizing: 2% del equity (riesgo neto ~0 porque son opuestas)
+    #   5. TTL: 10s (si no se llena, cancelar y reintentar)
+    # CUÁNDO: Cuando strategy_id == "FEE_HARVEST" O régimen == RANGING
+    # DÓNDE: risk/risk_manager.py → _generate_fee_harvest_orders()
+    # QUIÉN: RiskManager (generador), Engine (ejecución)
+    # ═══════════════════════════════════════════════════════════════
+    def _generate_fee_harvest_orders(self, symbol: str, current_price: float) -> list:
+        """
+        Genera un par de órdenes Limit POST_ONLY (bid+ask) para
+        cosechar rebates Maker en mercados laterales.
+        Returns: list[OrderEvent] o None si no es viable.
+        """
+        if not self.portfolio:
+            return None
+            
+        # 1. Validate equity and compute sizing
+        total_equity = self.portfolio.get_total_equity()
+        if total_equity < 5.0:
+            return None  # Too little equity to harvest
+            
+        # 2. Check cooldown (max 1 harvest pair every 15s per symbol)
+        now = time.time()
+        if not hasattr(self, '_harvest_cooldown'):
+            self._harvest_cooldown = {}
+        last_harvest = self._harvest_cooldown.get(symbol, 0)
+        if (now - last_harvest) < 15.0:
+            return None
+            
+        # 3. Check that we're actually in RANGING regime
+        if self.global_regime not in ("RANGING", "ACCUMULATING"):
+            return None
+            
+        # 4. Get current spread from LOB data
+        try:
+            from core.data_handler import get_data_handler
+            dh = get_data_handler()
+            if dh and hasattr(dh, 'lob_imbalance'):
+                lob = dh.lob_imbalance.get(symbol)
+                if not lob or (now - lob.get('timestamp', 0)) > 5.0:
+                    return None  # Stale LOB data
+                bid_price = lob.get('bid_price', 0)
+                ask_price = lob.get('ask_price', 0)
+            else:
+                return None
+        except Exception:
+            return None
+            
+        if bid_price <= 0 or ask_price <= 0 or bid_price >= ask_price:
+            return None
+            
+        spread_pct = (ask_price - bid_price) / bid_price
+        # Only harvest if spread is reasonable (0.01% - 0.10%)
+        if spread_pct < 0.0001 or spread_pct > 0.001:
+            return None
+            
+        # 5. Compute harvest sizing (2% of equity, ultra-conservative)
+        harvest_usd = total_equity * 0.02
+        leverage = getattr(Config, "BINANCE_LEVERAGE", 10)
+        notional = harvest_usd * leverage
+        if notional < 5.05:  # Binance minimum
+            return None
+            
+        quantity = notional / current_price
+        
+        # 6. Generate paired orders
+        self._harvest_cooldown[symbol] = now
+        
+        orders = []
+        
+        # BUY order at best bid (passive)
+        buy_order = OrderEvent(
+            symbol=symbol,
+            order_type=OrderType.LIMIT,
+            quantity=quantity,
+            direction=OrderSide.BUY,
+            leverage=leverage,
+            strategy_id="FEE_HARVEST",
+            sl_pct=0.001,   # Tight 0.1% SL (safety net)
+            tp_pct=spread_pct * 0.5,  # TP at half-spread
+            price=bid_price,
+            ttl=10,  # 10 second TTL
+            horizon="MICROSCALPING",
+            priority=2,  # Low priority
+            metadata={
+                "timeInForce": "GTX",  # POST_ONLY (guaranteed Maker)
+                "is_fee_harvest": True,
+                "harvest_pair_id": f"HARV_{int(now)}_{symbol.replace('/', '')}",
+                "entry_mode": "FEE_HARVEST_BID",
+                "setup_type": "MOMENTUM_HARVEST",
+            }
+        )
+        orders.append(buy_order)
+        
+        # SELL order at best ask (passive)
+        sell_order = OrderEvent(
+            symbol=symbol,
+            order_type=OrderType.LIMIT,
+            quantity=quantity,
+            direction=OrderSide.SELL,
+            leverage=leverage,
+            strategy_id="FEE_HARVEST",
+            sl_pct=0.001,
+            tp_pct=spread_pct * 0.5,
+            price=ask_price,
+            ttl=10,
+            horizon="MICROSCALPING",
+            priority=2,
+            metadata={
+                "timeInForce": "GTX",
+                "is_fee_harvest": True,
+                "harvest_pair_id": f"HARV_{int(now)}_{symbol.replace('/', '')}",
+                "entry_mode": "FEE_HARVEST_ASK",
+                "setup_type": "MOMENTUM_HARVEST",
+            }
+        )
+        orders.append(sell_order)
+        
+        logger.info(
+            f"🌾 [FEE HARVEST] {symbol} | Bid: {bid_price:.4f} Ask: {ask_price:.4f} | "
+            f"Spread: {spread_pct*100:.4f}% | Qty: {quantity:.6f} | "
+            f"Est. Rebate: ${notional * 0.0002:.4f} per fill"
+        )
+        
+        return orders
+
     @trace_execution
     @omniscient_trace(layer="AMYGDALA")
     def generate_order(self, signal_event, current_price):
@@ -1753,11 +2427,22 @@ class RiskManager:
         CÓMO: Pipeline secuencial: Bypass → Validaciones → Sizing Kelly → Reserva → Construcción.
         """
         # ═══════════════════════════════════════════════════════════════
+        # PHASE 5.1: FEE HARVESTER EXPRESS LANE
+        # QUÉ: Si la señal viene del Fee Harvester, bypass al generador especializado.
+        # POR QUÉ: El harvester tiene sus propias reglas de sizing y validación.
+        # ═══════════════════════════════════════════════════════════════
+        _strategy_id = getattr(signal_event, 'strategy_id', '')
+        if _strategy_id == "FEE_HARVEST":
+            return self._generate_fee_harvest_orders(signal_event.symbol, current_price)
+        # ═══════════════════════════════════════════════════════════════
         # TOP 10 GATEKEEPER (MEASURE 16 PROSPECTS, TRADE 10 CORE)
         # ═══════════════════════════════════════════════════════════════
         from config import Config
-        existing_pos = self.portfolio.positions.get(signal_event.symbol)
-        existing_qty = existing_pos.get("quantity", 0.0) if existing_pos else 0.0
+        existing_qty = 0.0
+        if self.portfolio and hasattr(self.portfolio, "virtual_ledger"):
+            for k, v in self.portfolio.virtual_ledger.items():
+                if k.startswith(f"{signal_event.symbol}_"):
+                    existing_qty += abs(v.get("quantity", 0.0))
         
         # Determine if this is a prospect symbol
         is_prospect = False
@@ -1849,7 +2534,8 @@ class RiskManager:
                     "is_bbo_exit": True,
                     "is_exit": True,
                     "exit_mode": "LIMIT_CHASING",
-                    "cancel_tp_first": pos.get("tp_limit_placed", False)
+                    "cancel_tp_first": pos.get("tp_limit_placed", False),
+                    "use_ghost_maker": True # 👻 MUTACIÓN 24
                 }
 
             return OrderEvent(
@@ -1916,6 +2602,23 @@ class RiskManager:
                 if not safe:
                     return self._reject_trade(signal_event, RejectionReason.HIGH_CORRELATION)
                     
+        # 1.5 Mutación 1: Percepción Topológica Multidimensional (Carga Sistémica)
+        try:
+            from core.swarm_correlator import swarm_correlator
+            if hasattr(swarm_correlator, 'hypergraph') and swarm_correlator.hypergraph:
+                active_symbols = list(set(
+                    v_key.split('_')[0] for v_key, pos in self.portfolio.virtual_ledger.items()
+                    if abs(pos.get('quantity', 0)) > 1e-8
+                ))
+                if active_symbols:
+                    systemic_load = swarm_correlator.hypergraph.calculate_systemic_load(active_symbols, signal_event.symbol)
+                    if systemic_load > 0.75:  # Highly correlated (Pearson + Fréchet) to existing open positions
+                        logger.debug(f"🛡️ [HYPERGRAPH] Rejecting {signal_event.symbol} due to high systemic load ({systemic_load:.2f})")
+                        return self._reject_trade(signal_event, RejectionReason.SYSTEMIC_LOAD)
+        except Exception as e:
+            pass
+            
+                    
         # 2. Market Sentiment Veto
         if hasattr(self, 'sentiment_processor') and self.sentiment_processor:
             mood = self.sentiment_processor.get_market_mood()
@@ -1955,6 +2658,87 @@ class RiskManager:
             signal_event.symbol, signal_event.signal_type, horizon
         ):
             return self._reject_trade(signal_event, RejectionReason.DIRECTIONAL_SAFETY)
+
+        # [PHASE 5 - MULTI-VERSE STATE ISOLATION] Cross-Horizon Sincronía
+        # QUÉ: Permite operaciones contrarias (SWING SHORT vs SCALPING LONG) en el mismo activo.
+        # POR QUÉ: Binance Hedge Mode soporta ambas direcciones. SCALP y SWING son dimensiones
+        # independientes que no deben bloquearse entre sí.
+        cross_horizon_multiplier = 1.0
+        is_hedge_cover = False  # PHASE 5.2: Delta-Neutral Hedging Flag
+        if self.portfolio and signal_event.signal_type in [SignalType.LONG, SignalType.SHORT]:
+            opposing_horizon = "SWING" if horizon in ("SCALPING", "MICROSCALPING") else "SCALPING"
+            opposing_pos = self.portfolio.get_horizon_position(signal_event.symbol, opposing_horizon)
+            if opposing_pos and abs(opposing_pos.get('quantity', 0)) > 1e-8:
+                opp_qty = opposing_pos.get('quantity', 0)
+                is_long_signal = signal_event.signal_type == SignalType.LONG
+                is_opposing_long = opp_qty > 0
+                
+                if (is_long_signal and not is_opposing_long) or (not is_long_signal and is_opposing_long):
+                    # Multi-Verse State: Opposite direction allowed via Hedge Mode!
+                    # ═══════════════════════════════════════════════════════════════
+                    # PHASE 5.2: DELTA-NEUTRAL CROSS-HORIZON HEDGING
+                    # QUÉ: Detecta cuando un MICROSCALPING/SCALPING SHORT cubre
+                    #   un SWING LONG rentable (o viceversa).
+                    # POR QUÉ: Las caídas rápidas son las más lucrativas en scalping,
+                    #   pero cerrar el Swing interrumpe el interés compuesto.
+                    # PARA QUÉ: Ganar dinero durante la caída con el Short de scalping,
+                    #   protegiendo el capital no realizado del Swing. Doble ingreso.
+                    # CÓMO: Si el opposing_pos tiene PnL positivo (>0.1%), activamos
+                    #   modo HEDGED_COVER que:
+                    #   1. Marca la orden con metadata `is_hedge_cover: True`
+                    #   2. Boost de confianza +10% (el hedge tiene doble propósito)
+                    #   3. Reduce sizing al 50% del normal (delta-neutral parcial)
+                    # CUÁNDO: Cuando llega señal SHORT MICRO/SCALP y hay SWING LONG
+                    #   rentable, o señal LONG MICRO/SCALP y hay SWING SHORT rentable.
+                    # DÓNDE: risk/risk_manager.py → generate_order()
+                    # QUIÉN: RiskManager (decisión), Engine (ejecución)
+                    # ═══════════════════════════════════════════════════════════════
+                    opp_entry = opposing_pos.get('avg_price', 0)
+                    opp_current = opposing_pos.get('current_price', opp_entry)
+                    
+                    if opp_entry > 0 and opp_current > 0:
+                        if is_opposing_long:
+                            opp_pnl_pct = (opp_current - opp_entry) / opp_entry
+                        else:
+                            opp_pnl_pct = (opp_entry - opp_current) / opp_entry
+                        
+                        if opp_pnl_pct > 0.001:  # Opposing position is >0.1% in profit
+                            is_hedge_cover = True
+                            logger.info(
+                                f"🛡️💰 [DELTA-NEUTRAL HEDGE] {signal_event.symbol} | "
+                                f"{'SHORT' if not is_long_signal else 'LONG'} {horizon} HEDGING "
+                                f"{'LONG' if is_opposing_long else 'SHORT'} {opposing_horizon} | "
+                                f"Opposing PnL: +{opp_pnl_pct*100:.2f}% | "
+                                f"Mode: HEDGED_COVER (Delta-Neutral Partial)"
+                            )
+                    
+                    if not is_hedge_cover:
+                        logger.info(f"🌌 [MULTI-VERSE ISOLATION] Posición {horizon} contraria a {opposing_horizon} en {signal_event.symbol}. Operando en dual-hedge mode simultáneo.")
+                else:
+                    cross_horizon_multiplier = 1.5
+                    logger.info(f"🔥 [MARGIN RESONANCE] {signal_event.symbol} alineado ({horizon} & {opposing_horizon}). Sincronía total detectada, multiplicador x1.5 activado.")
+                    
+        # Apply the resonance multiplier or hedge metadata
+        _meta = getattr(signal_event, 'metadata', None)
+        if _meta is None:
+            _meta = {}
+            try:
+                object.__setattr__(signal_event, 'metadata', _meta)
+            except (AttributeError, TypeError):
+                pass
+                
+        if cross_horizon_multiplier > 1.0:
+            _meta['resonance_multiplier'] = cross_horizon_multiplier
+        if is_hedge_cover:
+            _meta['is_hedge_cover'] = True
+            _meta['hedge_sizing_factor'] = 0.50  # 50% sizing for delta-neutral
+            # Boost confidence for hedge trades (dual-purpose = higher expected value)
+            current_conf = getattr(signal_event, 'confidence', 0.5)
+            boosted_conf = min(1.0, current_conf * 1.10)  # +10%
+            try:
+                object.__setattr__(signal_event, 'confidence', boosted_conf)
+            except (AttributeError, TypeError):
+                pass
 
         # ═══════════════════════════════════════════════════════════════
         # FORENSIC-V29 FIX #1: ATOMIC FLIP-EXIT (CRITICAL)
@@ -2043,6 +2827,33 @@ class RiskManager:
                         horizon=horizon,
                     )
                     return self._generate_exit_order(flip_exit_signal, current_price)
+                else:
+                    # ═══════════════════════════════════════════════════════════════
+                    # 📈 QUANTUM PYRAMIDING (SCALE-IN ANTI-MARTINGALA)
+                    # QUÉ: Añade a una posición ganadora.
+                    # POR QUÉ: Exponencialidad del capital con riesgo controlado.
+                    # PARA QUÉ: Duplicar capital en 3 días.
+                    # ═══════════════════════════════════════════════════════════════
+                    unrealized_pnl = 0.0
+                    entry_price = existing_pos.get('avg_price', current_price)
+                    if existing_qty > 0:
+                        unrealized_pnl = (current_price - entry_price) / entry_price
+                    else:
+                        unrealized_pnl = (entry_price - current_price) / entry_price
+                        
+                    # Rule 1: Only add if trade is winning by at least 0.20% (Momentum confirmed)
+                    if unrealized_pnl < 0.002:
+                        logger.info(f"🚫 [PYRAMID BLOCKED] {signal_event.symbol} {horizon} | Must be +0.20% in profit to Scale-In. Current PnL: {unrealized_pnl*100:.2f}%")
+                        return self._reject_trade(signal_event, RejectionReason.PYRAMID_NOT_IN_PROFIT)
+                        
+                    # Rule 2: Max scale-ins. Tracked via 'scale_count' in Portfolio Virtual Ledger.
+                    scale_count = existing_pos.get('scale_count', 0)
+                    if scale_count >= getattr(Config.Strategies, 'MAX_PYRAMID_SCALE_INS', 2):
+                        logger.info(f"🚫 [PYRAMID BLOCKED] {signal_event.symbol} {horizon} | Max Scale-Ins reached ({scale_count}).")
+                        return self._reject_trade(signal_event, RejectionReason.PYRAMID_MAX_REACHED)
+                        
+                    logger.info(f"📈 [PYRAMID AUTHORIZED] {signal_event.symbol} {horizon} | Scale-In #{scale_count+1}. PnL: {unrealized_pnl*100:.2f}%")
+
 
         if not self._validate_margin_ratio():
             return self._reject_trade(signal_event, RejectionReason.MARGIN_RATIO)
@@ -2071,16 +2882,18 @@ class RiskManager:
             if horizon in ["SCALPING", "MICROSCALPING"]:
                 # Try to get setup_type from metadata if it wasn't a top-level attribute
                 _meta = getattr(signal_event, "metadata", {}) or {}
-                actual_setup_type = setup_type if setup_type != "generic" else _meta.get("setup_type", "UNKNOWN")
+                actual_setup_type = setup_type if setup_type not in (None, "generic") else _meta.get("setup_type", "UNKNOWN")
+                if actual_setup_type is None:
+                    actual_setup_type = "UNKNOWN"
                 
-                # We allow MOMENTUM or BREAKOUT. We reject MEAN_REV or UNKNOWN.
-                is_momentum = "MOMENTUM" in actual_setup_type.upper() or "BREAK" in actual_setup_type.upper()
+                # We allow MOMENTUM, BREAKOUT or LIQUIDITY_VOID. We reject standard MEAN_REV.
+                is_momentum = "MOMENTUM" in actual_setup_type.upper() or "BREAK" in actual_setup_type.upper() or "LIQUIDITY" in actual_setup_type.upper()
                 # Also check strategy_id just in case
                 if not is_momentum and ("MOMENTUM" in strategy_id.upper() or "BREAK" in strategy_id.upper() or "LCA" in strategy_id.upper()):
                     is_momentum = True
                     
                 if not is_momentum:
-                    logger.warning(f"🛡️ [SCALPING WR GUARD] Blocked {symbol} {horizon} trade: {actual_setup_type} / {strategy_id} is not MOMENTUM-based.")
+                    logger.warning(f"🛡️ [SCALPING WR GUARD] Blocked {symbol} {horizon} trade: {actual_setup_type} / {strategy_id} is not MOMENTUM or LIQUIDITY-based.")
                     return self._reject_trade(signal_event, RejectionReason.STRATEGY_DISABLED_BY_SETUP_FILTER)
 
             # Risk Gates & Cooldowns
@@ -2095,21 +2908,39 @@ class RiskManager:
                 return self._reject_trade(signal_event, RejectionReason.SECTOR_EXPOSURE)
 
             # Dynamic Capacity (Meritocracy)
-            open_positions = sum(
+            open_positions_for_horizon = sum(
                 1
                 for pos in self.portfolio.virtual_ledger.values()
-                if pos.get("quantity", 0) != 0
+                if pos.get("quantity", 0) != 0 and pos.get("horizon", "SCALPING") == horizon
             )
             dynamic_max = self._get_dynamic_max_positions(setup_type, strategy_id)
-            if open_positions >= dynamic_max and signal_event.signal_type in [
+            if open_positions_for_horizon >= dynamic_max and signal_event.signal_type in [
                 SignalType.LONG,
                 SignalType.SHORT,
             ]:
                 if not self.portfolio.has_position_for_horizon(symbol, horizon):
+                    logger.debug(f"🛡️ [CAPACITY] Horizon {horizon} limit reached ({dynamic_max}). Blocked {symbol}.")
                     return self._reject_trade(signal_event, RejectionReason.POSITION_LIMIT)
 
-            # Sizing (Meritocratic Kelly)
-            base_risk_pct = getattr(Config, "MAX_RISK_PER_TRADE", 0.05)
+            # 🚀 FASE 3: Sizing Geométrico (Dynamic Fractional Kelly)
+            from core.compounding_engine import get_compounding_engine
+            c_engine = get_compounding_engine()
+            
+            # Use Signal Confidence or default 0.55
+            win_prob = getattr(signal_event, 'confidence', 0.55)
+            # Extracted RR from strategy if available, else assume 2.0 (Asymmetric target)
+            meta_sig = getattr(signal_event, 'metadata', {})
+            rr_ratio = meta_sig.get('reward_risk_ratio', 2.0)
+            
+            # Quantum Kelly sizing (Max 30% per trade to allow 3-day exponential growth)
+            base_risk_pct = c_engine.get_quantum_kelly_fraction(win_prob, rr_ratio, max_kelly_cap=0.30)
+            
+            # 🚀 FASE 20: LIQUIDATION SQUEEZE ASYMMETRIC SIZING
+            # QUÉ: Atrapa vacíos de liquidez con el 95% del capital libre.
+            if meta_sig.get('is_liquidation_squeeze', False):
+                base_risk_pct = 0.95
+                logger.critical(f"🚀 [LIQ SQUEEZE] {symbol} | Aplicando Kelly Asimétrico Máximo (95%) para atrapar rebote de cascada.")
+            
             merit_mult = self._calculate_merit_multiplier(setup_type, strategy_id)
             
             # FORENSIC FIX: Modulate position sizing with PredictionTracker's confidence_factor
@@ -2166,6 +2997,11 @@ class RiskManager:
 
             if not params or params["quantity"] <= 0:
                 return self._reject_trade(signal_event, RejectionReason.SIZING_FAILED)
+
+            # 🚀 FASE 14: PYRAMID SIZING OVERRIDE
+            if _sig_meta.get("is_pyramid", False) and "pyramid_qty" in _sig_meta:
+                logger.info(f"📈 [PYRAMID OVERRIDE] Sizing replaced. Kelly: {params['quantity']} -> Pyramid Qty: {_sig_meta['pyramid_qty']}")
+                params["quantity"] = _sig_meta["pyramid_qty"]
 
             # 📊 [PHASE 10] PORTFOLIO VaR CHECK
             # QUÉ: Calcula si el nuevo trade rompe el presupuesto de riesgo sistémico.
@@ -2238,14 +3074,18 @@ class RiskManager:
             momentum_score = abs(_sig_meta.get('momentum', 0.0))
             atr_pct = _sig_meta.get('atr_pct', 0.0)
             
-            # Router Logic:
+            # Router Logic [PHASE 8 GHOST-MAKER ARBITRAGE]:
             #   Priority 0 → ALWAYS MARKET (emergency/kill_switch)
-            #   High Momentum (>0.6) or High ATR (>0.5%) → MARKET (price escaping)
-            #   Normal conditions → LIMIT (save fees, act as Maker)
+            #   Extreme Momentum (>0.90) or High ATR (>1.0%) → MARKET (price escaping)
+            #   Normal conditions → LIMIT (save fees, earn Maker rebate)
             if priority == 0:
                 order_type = OrderType.MARKET
                 entry_mode = "TAKER_PANIC"
-            elif momentum_score > 0.6 or atr_pct > 0.005:
+            elif "IMBALANCE" in setup_type.upper() or "SNIPER" in setup_type.upper():
+                order_type = OrderType.LIMIT
+                entry_mode = "MAKER_SNIPER"
+                logger.debug(f"🎯 [ROUTER] {symbol} → POST_ONLY SNIPER (Setup={setup_type})")
+            elif momentum_score > 0.90 or atr_pct > 0.01:
                 # Market is exploding directionally — fill is more important than fee
                 order_type = OrderType.MARKET
                 entry_mode = "TAKER_MOMENTUM"
@@ -2272,6 +3112,15 @@ class RiskManager:
                 "merit_mult": merit_mult,
                 "routing_reason": entry_mode,
             }
+            
+            # [SOVEREIGN-ADAPTIVE] Inject dynamic profile for tracking and closing
+            try:
+                from config import Config
+                dynamic_prof = Config.AdaptiveProfileEngine.get(symbol, horizon)
+                entry_metadata["adaptive_profile"] = dynamic_prof
+            except Exception as e:
+                logger.debug(f"Could not inject adaptive profile: {e}")
+
             if limit_offset_pct is not None:
                 entry_metadata["limit_offset_pct"] = limit_offset_pct
             if optimal_ttl_bars is not None:
@@ -2285,7 +3134,15 @@ class RiskManager:
             ):
                 entry_metadata["timeInForce"] = "GTX"
 
-            return OrderEvent(
+            # FASE 12.1: Liquidity Void Sniping (Mechas Asesinas)
+            # QUÉ: Si entramos por rechazo de mecha (Flash Crash/Pump), el precio se devuelve rápido.
+            # PARA QUÉ: Si no se cierra rápido, nos comemos la tendencia principal en contra.
+            base_ttl = optimal_ttl_bars * 60 if optimal_ttl_bars else (getattr(exec_config, "ENTRY_TTL_SECONDS", 30) if order_type == OrderType.LIMIT else 30)
+            if "LIQUIDITY" in setup_type.upper() or "VOID" in setup_type.upper() or "IMBALANCE" in setup_type.upper() or "SNIPER" in setup_type.upper():
+                base_ttl = 15  # Max 15 seconds for Order Book Imbalance & Voids (Hyper-fast in and out)
+                logger.debug(f"⚡ [HYPER-SNIPE] Enforcing ultra-fast TTL={base_ttl}s for {symbol} ({setup_type})")
+
+            base_order = OrderEvent(
                 symbol=symbol,
                 order_type=order_type,
                 quantity=params["quantity"],
@@ -2295,7 +3152,7 @@ class RiskManager:
                 sl_pct=params["sl_pct"],
                 tp_pct=params["tp_pct"],
                 price=current_price,
-                ttl=optimal_ttl_bars * 60 if optimal_ttl_bars else (getattr(exec_config, "ENTRY_TTL_SECONDS", 30) if order_type == OrderType.LIMIT else 30),
+                ttl=base_ttl,
                 horizon=horizon,
                 priority=priority,
                 trade_id=getattr(signal_event, 'trade_id', None),
@@ -2303,6 +3160,29 @@ class RiskManager:
                 is_shadow=getattr(signal_event, 'is_shadow', False),
                 metadata=entry_metadata,
             )
+
+            # [QUANTUM EVOLUTION: FASE 2] Grid HFT Intra-Vela
+            # Dividir el notional en 3 micro-órdenes limitadas si es Microscalping.
+            if horizon in ("MICROSCALPING", "SCALPING") and order_type == OrderType.LIMIT and params["quantity"] > 0:
+                qty_third = round(params["quantity"] / 3.0, 6)
+                orders = []
+                for i in range(3):
+                    offset = i * 0.001 # 0%, 0.1%, 0.2%
+                    if order_side == OrderSide.BUY:
+                        grid_price = current_price * (1.0 - offset)
+                    else:
+                        grid_price = current_price * (1.0 + offset)
+                    
+                    import copy
+                    grid_order = copy.deepcopy(base_order)
+                    grid_order.quantity = qty_third
+                    grid_order.price = grid_price
+                    orders.append(grid_order)
+                
+                logger.info(f"🕸️ [GRID HFT] Split {symbol} order into 3 limit steps starting at {current_price:.4f}")
+                return orders
+
+            return base_order
 
         except Exception as e:
             logger.error(f"❌ [MERCHANT-GOD] Order generation FATAL: {e}")
@@ -2391,6 +3271,20 @@ class RiskManager:
             print(f"💀 [AEGIS] Global Veto: {symbol} is BLACKLISTED (Toxic Asset)")
             return False
 
+        # 0.5. Hardened Audits (Tilt & Daily Drawdown)
+        if not self._validate_streak_tilt():
+            return False
+            
+        if self.portfolio:
+            current_cash = self.portfolio.get_total_equity()
+            if not self._enforce_daily_drawdown_limit(current_cash):
+                return False
+                
+            if hasattr(self.portfolio, 'microscalping_disabled_until'):
+                if time.time() < self.portfolio.microscalping_disabled_until:
+                    logger.warning(f"🛑 [LATENCY VETO] Operaciones bloqueadas temporalmente por latencia extrema de red.")
+                    return False
+
         # 1. Kill Switch Check
         if not self.kill_switch.check_status():
             print(
@@ -2408,7 +3302,8 @@ class RiskManager:
 
         # 3. Cooldown Check (FORENSIC FIX: unpack tuple)
         # cooldown_manager.can_trade devuelve (bool, reason)
-        can_trade_res = cooldown_manager.can_trade(symbol, strategy_id=strategy_id)
+        _streak = getattr(self.portfolio, "_win_streak", 0) if self.portfolio else 0
+        can_trade_res = cooldown_manager.can_trade(symbol, strategy_id=strategy_id, win_streak=_streak)
         if not can_trade_res[0]:
             print(
                 f"❄️ [AEGIS] Cooldown active for {symbol} under {strategy_id}. Reason: {can_trade_res[1]}"
@@ -2562,8 +3457,15 @@ class RiskManager:
                 )
                 
                 if oracle_decision != "KEEP_OPEN":
+                    # FORENSIC AUDIT: Extraer y loggear decaimiento de Alpha
+                    metrics = pos.get('metrics', {})
+                    alpha_ret = metrics.get('alpha_retention', 1.0)
+                    dyn_edge = metrics.get('dynamic_edge', 1.0)
                     logger.warning(f"🔮 [EXIT ORACLE] {oracle_decision} for {symbol} ({pos_horizon}): {oracle_reason}")
-                    exit_votes.append({"vote": "EXIT", "reason": f"ORACLE: {oracle_reason}"})
+                    if oracle_decision == "CLOSE_ML_ALPHA_DECAY":
+                        logger.warning(f"📉 [FORENSIC AUDIT] Alpha Decay Tracker | Retention: {alpha_ret:.2f} | Dynamic Edge: {dyn_edge:.2f}")
+                    
+                    exit_votes.append({"vote": "EXIT", "reason": f"ORACLE: {oracle_reason} (AlphaRet: {alpha_ret:.2f})"})
                     pos['exit_pending_time'] = time.time()
                     stop_signals.append(
                         SignalEvent(
@@ -2584,11 +3486,63 @@ class RiskManager:
                     hold_votes.append({"vote": "HOLD", "reason": "ORACLE: KEEP_OPEN"})
 
             # ════════════════════════════════════════════════════════════════
+            # 🧠 SOPHIA'S AMYGDALA & NEURAL ASYMMETRIC STOP-LOSS
+            # QUÉ: Cierra el trade antes de tocar el Stop Loss si detecta flujo tóxico,
+            #      y reduce dinámicamente el SL si detecta un muro institucional (Order Flow).
+            # POR QUÉ: Reduce las pérdidas a un 30% del riesgo inicial cuando el mercado está en contra irremediablemente.
+            # ════════════════════════════════════════════════════════════════
+            if pos_horizon in ("SCALPING", "MICROSCALPING"):
+                side = pos.get("side", "LONG")
+                pnl_pct = (current_price - entry_price) / entry_price if side == "LONG" else (entry_price - current_price) / entry_price
+                
+                # Obtener toxicidad de mercado actual
+                toxicity = 0.0
+                of_imbalance = 0.0
+                if data_provider:
+                    latest_metrics = data_provider.get_latest_metrics(symbol)
+                    toxicity = latest_metrics.get("vpin", 0.0) if latest_metrics else 0.0
+                    
+                    if hasattr(data_provider, "order_flow_metrics"):
+                        of_data = data_provider.order_flow_metrics.get(symbol, {})
+                        of_delta = of_data.get("delta", 0.0)
+                        tot_vol = of_data.get("total_volume", 1.0)
+                        of_imbalance = of_delta / tot_vol if tot_vol > 0 else 0.0
+
+                # ⚡ NEURAL ASYMMETRIC STOP-LOSS
+                # Si el desbalance de L2 es enorme en nuestra contra (> 300% equivalente, heurística: > 0.6 imbalance ratio)
+                # achicamos el SL actual al 50%.
+                if abs(of_imbalance) > 0.6:
+                    is_against = (side == "LONG" and of_imbalance < 0) or (side == "SHORT" and of_imbalance > 0)
+                    if is_against and not pos.get("neural_sl_applied"):
+                        current_sl = pos.get("sl_pct", 0.0040)
+                        new_sl = max(current_sl * 0.5, 0.0010)  # Min SL floor 0.1%
+                        pos["sl_pct"] = new_sl
+                        pos["neural_sl_applied"] = True
+                        logger.warning(f"🧠 [NEURAL SL] {symbol} Muro Institucional en contra detectado (Order Flow Imbalance: {of_imbalance*100:.1f}%). SL reducido de {current_sl*100:.2f}% a {new_sl*100:.2f}%")
+
+                # SOPHIA'S AMYGDALA: Toxic flow preemptive cut
+                if pnl_pct < -0.005 and toxicity > 0.8:
+                    logger.warning(f"🧠 [SOPHIA'S AMYGDALA] Muro Institucional Tóxico Detectado ({toxicity*100:.1f}%). Cortando pérdidas pre-emptivamente en {pnl_pct*100:.2f}% para {v_key}")
+                    exit_votes.append({"vote": "EXIT", "reason": "AMYGDALA_PREEMPTIVE_SL"})
+                    pos['exit_pending_time'] = time.time()
+                    stop_signals.append(
+                        SignalEvent(
+                            strategy_id="AMYGDALA_CUT",
+                            symbol=symbol,
+                            datetime=now,
+                            signal_type=SignalType.EXIT,
+                            horizon=pos_horizon,
+                            metadata={"exit_reason": "Pre-emptive Toxic SL", "dollar_size": abs(qty) * current_price}
+                        )
+                    )
+                    continue
+
+            # ════════════════════════════════════════════════════════════════
             # 📉 SWING DCA ENGINE INTEGRATION
             # QUÉ: Evaluación proactiva de promediación (DCA) para posiciones Swing.
             # POR QUÉ: Convertir margen libre en recuperación de drawdowns.
             # ════════════════════════════════════════════════════════════════
-            if pos_horizon == "SWING":
+            if pos_horizon in ("SWING", "MICROSCALPING"):
                 try:
                     available_cash_swing = portfolio.get_available_cash(horizon="SWING")
                     kill_switch_active = self.kill_switch.active if getattr(self, "kill_switch", None) else False
@@ -2609,6 +3563,74 @@ class RiskManager:
                         stop_signals.append(dca_signal)
                 except Exception as dca_e:
                     logger.error(f"⚠️ [DCA] Error evaluating {v_key}: {dca_e}")
+
+            # ⚡ FASE 9: SCALP DCA ENGINE INTEGRATION
+            if pos_horizon in ("SCALPING", "MICROSCALPING"):
+                try:
+                    scalp_dca_signal = scalp_dca_engine.evaluate_position(
+                        pos=pos,
+                        current_price=current_price,
+                        available_cash=portfolio.get_available_cash(horizon="SCALPING")
+                    )
+                    if scalp_dca_signal:
+                        pos['exit_pending_time'] = time.time()
+                        stop_signals.append(scalp_dca_signal)
+                except Exception as scalp_e:
+                    logger.error(f"⚠️ [SCALP-DCA] Error evaluating {v_key}: {scalp_e}")
+
+            # 🚀 FASE 14: ASYMMETRIC PYRAMIDING ENGINE
+            if pos_horizon in ("SCALPING", "MICROSCALPING"):
+                try:
+                    pyramid_signal = pyramid_engine.evaluate_position(
+                        pos=pos,
+                        current_price=current_price,
+                        available_cash=portfolio.get_available_cash(horizon="SCALPING")
+                    )
+                    if pyramid_signal:
+                        # Append the scale-in LONG/SHORT signal (Engine will process it via _process_signal_event)
+                        stop_signals.append(pyramid_signal)
+                except Exception as pyramid_e:
+                    logger.error(f"⚠️ [PYRAMID] Error evaluating {v_key}: {pyramid_e}")
+
+            # ⏱️ PHASE 13: TIME-STOP QUANTUM MECHANICS
+            # QUÉ: Cortar posiciones en Microscalping/Scalping que superen 90s sin profit significativo.
+            # POR QUÉ: Las posiciones estancadas (Zombie Trades) atan capital de alta rotación. En $13,
+            # rotar rápido y acumular Maker rebates es vital.
+            # FASE 8: Ignoramos el Time-Stop si la posición ha mutado (Horizon Mutation).
+            if pos_horizon in ("SCALPING", "MICROSCALPING") and not pos.get("mutated_runner"):
+                entry_ts = pos.get("entry_time")
+                if entry_ts:
+                    if isinstance(entry_ts, datetime) and isinstance(now, datetime):
+                        trade_age_sec = (now - entry_ts).total_seconds()
+                    elif isinstance(entry_ts, (int, float)):
+                        current_ts = now.timestamp() if isinstance(now, datetime) else time.time()
+                        trade_age_sec = current_ts - entry_ts
+                    else:
+                        trade_age_sec = 0.0
+                    
+                    if trade_age_sec > 90.0:  # 90 second limit
+                        # Verificar pnl real
+                        entry_price_ts = pos.get("avg_price", current_price)
+                        side = pos.get("side", "LONG")
+                        pnl_pct = (current_price - entry_price_ts) / entry_price_ts if side == "LONG" else (entry_price_ts - current_price) / entry_price_ts
+                        
+                        # Si no hay profit decente (> 0.05%), cerramos para rotar el capital.
+                        if pnl_pct < 0.0005: 
+                            logger.info(f"⏱️ [TIME-STOP] Cutting Zombie Trade {v_key} after {trade_age_sec:.1f}s (PnL: {pnl_pct*100:.3f}%)")
+                            exit_votes.append({"vote": "EXIT", "reason": "TIME_STOP_ZOMBIE"})
+                            pos['exit_pending_time'] = time.time()
+                            stop_signals.append(
+                                SignalEvent(
+                                    strategy_id="TIME_STOP_ZOMBIE",
+                                    symbol=symbol,
+                                    datetime=now,
+                                    signal_type=SignalType.EXIT,
+                                    horizon=pos_horizon,
+                                    metadata={"exit_reason": "TIME_STOP_ZOMBIE", "dollar_size": abs(pos.get("quantity", 0)) * current_price}
+                                )
+                            )
+                            has_exit = True
+                            continue
 
             # ================================================================
             # FORENSIC REMEDIATION: Horizon-aware SL/TP fallbacks
@@ -2649,7 +3671,7 @@ class RiskManager:
                 default_tp = _scalping_params.get("tp_pct", 0.0080)
             elif pos_horizon == "MICROSCALPING":
                 default_sl = _micro_params.get("sl_pct", 0.0020)
-                default_tp = _micro_params.get("tp_pct", 0.0030)
+                default_tp = _micro_params.get("tp_pct", 0.0055)  # FORENSIC-V160: Synced fallback with Config
             else:
                 default_sl = _swing_params.get("sl_pct", 0.025)
                 default_tp = _swing_params.get("tp_pct", 0.045)
@@ -2700,144 +3722,192 @@ class RiskManager:
                 if qty > 0
                 else ((entry_price - current_price) / entry_price) * 100
             )
-            # 🕰️ [FINOPS TIME-STOP] Protección de cuentas Micro ($13) y Capital Lockup
-            if "entry_time" in pos:
-                entry_time_val = pos["entry_time"]
-                if hasattr(entry_time_val, "timestamp"):
-                    entry_time_val = entry_time_val.timestamp()
-                
-                seconds_held = (now.timestamp() - entry_time_val)
-                
-                # 🚀 FORENSIC-V30: ZOMBIE CATCHER RECALIBRATION
-                # QUÉ: Diferenciar entre un mercado "plano" (True Zombie) y un "Slow Bleed".
-                # POR QUÉ: Salir de trades a los 7 minutos con -0.1% estaba cristalizando pérdidas innecesarias (24% de trades, 23% WR).
-                # PARA QUÉ: Reducir PnL negativo dando espacio a la volatilidad, o cortando si el tiempo es excesivo.
-                
-                # 🧠 PHASE 8: PETIM TIME-TO-EXHAUSTION
-                # FORENSIC FIX: petim_pred was undefined (original assignment was commented out).
-                # This caused NameError → silently killed ALL zombie/time-stop logic.
-                petim_pred = pos.get("trajectory_prediction")  # Restore from position metadata
-                expected_survival_s = None
-                if petim_pred and isinstance(petim_pred, dict) and "survival" in petim_pred:
-                    expected_survival_bars = petim_pred["survival"]
-                    expected_survival_s = expected_survival_bars * 60  # 1m bars
-                
-                if pos_horizon == "SCALPING":
-                    # Rango de precio desde que se abrió
-                    price_range_pct = ((hwm - lwm) / entry_price) * 100
+            
+            # 🚀 FASE 6: TRANSMUTACIÓN DINÁMICA (Runner Cuántico)
+            # QUÉ: Muta el comportamiento de las posiciones sin cambiar su ID en el Ledger.
+            # CÓMO: Widen SL/TP properties dynamically when PnL crosses thresholds.
+            current_mutation = pos.get("mutated_runner")
+            if pos_horizon == "MICROSCALPING":
+                if unrealized_pnl_pct >= 0.50 and current_mutation != "SCALPING":
+                    pos["mutated_runner"] = "SCALPING"
+                    # Adopt SCALPING params
+                    sl_pct = _scalping_params.get("sl_pct", 0.0040)
+                    tp_pct = _scalping_params.get("tp_pct", 0.0080)
+                    pos["sl_pct"] = sl_pct
+                    pos["tp_pct"] = tp_pct
+                    pos["high_water_mark"] = current_price # Reset trail start
+                    pos["low_water_mark"] = current_price
+                    logger.info(f"🧬 [TRANSMUTATION] {symbol} MICROSCALPING -> SCALPING (PnL: {unrealized_pnl_pct:.2f}%)")
                     
-                    # P2-FIX #3: M5-CALIBRATED ZOMBIE CATCHER
-                    # QUÉ: Antes: 900s (15 min) = 3 velas M5. Una consolidación
-                    #   normal de BTC de 3 velas activaba zombie matando trades.
-                    # AHORA: 2700s (45 min) = 9 velas M5. Da espacio real para
-                    #   que el mercado desarrolle el impulso predicho.
-                    # Slow Bleed: 3600s (1h) = 12 velas M5 sin progreso.
-                    # CIRUGÍA-V100: WIDENED ZOMBIE THRESHOLDS
-                    # QUÉ: Con TP=0.80% (corregido), el trade necesita más tiempo para desarrollarse.
-                    # POR QUÉ: Antes con TP=0.10%, 45min era "mucho tiempo".
-                    #   Ahora con TP=0.80%, 45min es el MÍNIMO esperado.
-                    # PARA QUÉ: Dar tiempo real al M5 para que el impulso se materialice.
-                    # CÓMO: true_zombie=60min, slow_bleed=75min, absolute=120min.
-                    # CIRUGÍA-CTOS: TIME-STOPS DINÁMICOS
-                    # QUÉ: Ya no cerramos trades "porque pasó 1 hora y media". 
-                    # POR QUÉ: Forzar cierres de tiempo ciega el bot a la predicción ampliada, cristalizando pérdidas justo antes de romper.
-                    # PARA QUÉ: Delegar el cierre al ExitOracle a menos que el trade sea verdaderamente un riesgo tóxico.
-                    
-                    # CIRUGÍA-CTOS: TIME-STOPS DINÁMICOS & ADAPTIVE HOLDING
-                    # El trade es zombie solo si está perdiendo dinero y lleva MUCHO tiempo.
-                    # CTOS Phase 3: Recalibrated for SCALPING (Aligning with 0.35% SL Floor).
-                    # is_true_zombie was killing trades at -0.15% after 15m, acting as a hidden tight SL!
-                    is_true_zombie = (seconds_held > 1800) and (unrealized_pnl_pct < -0.30) # 30 mins, near SL death
-                    is_slow_bleed = (seconds_held > 2700) and (unrealized_pnl_pct < -0.20)  # 45 mins max bleed
-                    
-                    # CTOS Phase 4: Flat Zombie Kill Switch
-                    # Si lleva 60 mins y sigue en negativo, abortar.
-                    is_flat_zombie = (seconds_held > 3600) and (unrealized_pnl_pct < 0.00)
-                    is_absolute_timeout = False # Delegated to ExitOracle / prediction_duration
-                    
-                    # PETIM Exhaustion
-                    is_petim_exhausted = expected_survival_s and (seconds_held > expected_survival_s * 2.0) and (unrealized_pnl_pct < -0.2)
-                    
-                    # CTOS Phase 5: Adaptive Holding (No matar si está progresando)
-                    # Si el MFE está en ganancia decente y sigue creciendo, le damos más tiempo.
-                    mfe_pct = ((hwm - entry_price) / entry_price * 100) if qty > 0 else ((entry_price - lwm) / entry_price * 100)
-                    is_growing = mfe_pct > 0.15 and unrealized_pnl_pct > -0.15
-                    
-                    # MEGA FORENSIC FIX #19: Wire predicted_duration_bars
-                    # QUÉ: Usar la predicción de duración del ML como base para el time-stop.
-                    # POR QUÉ: time-stops estáticos matan trades que el ML sabía que tomarían más tiempo.
-                    _pred_dur = pos.get('predicted_duration_bars')
-                    if _pred_dur and _pred_dur > 0:
-                        _pred_dur_s = _pred_dur * 60  # convert 1m bars to seconds
-                        # Extiende los thresholds estáticos si el ML predijo un trade largo
-                        if _pred_dur_s > 10800:
-                            is_true_zombie = (seconds_held > _pred_dur_s) and (unrealized_pnl_pct < -0.50)
-                            is_slow_bleed = (seconds_held > _pred_dur_s * 1.5) and (unrealized_pnl_pct < -1.0)
-                    
-                    
-                    if is_growing:
-                        is_true_zombie = False
-                        is_slow_bleed = False
-                        is_petim_exhausted = False
-                    
-                    # ZOMBIE-CHASER PROTOCOL (Specific to Coin's ATR)
-                    # If it's a zombie but we're in profit, DO NOT close. Activate tight Trailing Stop.
-                    coin_atr_pct = pos.get('atr_pct', 0.002) * 100  # Convert to percentage
-                    
-                    if is_true_zombie or is_slow_bleed or is_petim_exhausted or is_flat_zombie:
-                        if unrealized_pnl_pct > 0:
-                            # It's a Zombie in profit. Activate Chaser instead of killing it.
-                            is_true_zombie = False
-                            is_slow_bleed = False
-                            is_petim_exhausted = False
-                            is_flat_zombie = False
-                            pos['_zombie_chaser'] = True
-                            logger.info(f"🧟🚀 [ZOMBIE CHASER] {symbol} {pos_horizon} held for {seconds_held:.0f}s but is in profit (+{unrealized_pnl_pct:.2f}%). Activating Coin-Specific Chaser (ATR {coin_atr_pct:.2f}%).")
-                        else:
-                            reason = "PETIM EXHAUSTION" if is_petim_exhausted else ("FLAT MARKET" if is_flat_zombie else ("TRUE ZOMBIE" if is_true_zombie else "SLOW BLEED"))
-                            logger.warning(
-                                f"🧟 [ZOMBIE CATCHER - {reason}] {symbol} {pos_horizon} held for {seconds_held:.0f}s with PnL {unrealized_pnl_pct:.2f}%. Toxic holding. Exiting."
-                            )
-                            exit_votes.append({"vote": "EXIT", "reason": f"ZOMBIE: {reason}"})
-                            pos['exit_pending_time'] = time.time()
-                            stop_signals.append(
-                                SignalEvent(
-                                    strategy_id="TIME_STOP_ZOMBIE",
-                                    symbol=symbol,
-                                    datetime=now,
-                                    signal_type=SignalType.EXIT,
-                                    horizon=pos_horizon,
-                                    metadata={"exit_reason": "ZOMBIE_FLAT_MARKET", "dollar_size": abs(qty) * current_price}
-                                )
-                            )
-                            has_exit = True
-                            pos['_exit_votes'] = exit_votes
-                            pos['_hold_votes'] = hold_votes
-                            continue
-                    else:
-                        hold_votes.append({"vote": "HOLD", "reason": "ZOMBIE: GROWING/ALIVE"})
+            elif pos_horizon == "SCALPING" or current_mutation == "SCALPING":
+                if unrealized_pnl_pct >= 1.50 and current_mutation != "SWING":
+                    pos["mutated_runner"] = "SWING"
+                    # Adopt SWING params
+                    sl_pct = _swing_params.get("sl_pct", 0.025)
+                    tp_pct = _swing_params.get("tp_pct", 0.045)
+                    pos["sl_pct"] = sl_pct
+                    pos["tp_pct"] = tp_pct
+                    pos["high_water_mark"] = current_price # Reset trail start
+                    pos["low_water_mark"] = current_price
+                    logger.info(f"🧬 [TRANSMUTATION] {symbol} SCALPING -> SWING (PnL: {unrealized_pnl_pct:.2f}%)")
 
-                # Original FINOPS TIME-STOP for SWING
-                if pos_horizon in ["SWING", "MACRO"] and portfolio.get_total_equity() < Config.Risk.RISK_THRESHOLDS['swing_min_equity_block']:
-                    hours_held = seconds_held / 3600
-                    if (
-                        hours_held > Config.Risk.RISK_THRESHOLDS['zombie_hours_held'] and unrealized_pnl_pct < Config.Risk.RISK_THRESHOLDS['zombie_pnl_max']
-                    ):  # Si no ganamos al menos +0.5% en 7.5 hrs, abortar antes del funding
-                        logger.warning(
-                            f"🛑 [FINOPS TIME-STOP] {symbol} {pos_horizon} max holding time (7.5h) reached. Exiting to prevent Funding Fee bleed."
+            # ⚡ FASE 9.1: PARTIAL TP (Toma de Ganancias Parcial)
+            # QUÉ: Al alcanzar 50% del TP, cierra 50% de la posición y mueve SL a breakeven.
+            # POR QUÉ: Asegura ganancias sin sacrificar upside. El 50% restante corre con trailing.
+            # CÓMO: Emite una señal EXIT parcial (qty * 0.5) y modifica sl_pct a ~0%.
+            # CUÁNDO: Solo si no se ha hecho antes (partial_tp_done flag).
+            # DÓNDE: risk_manager.py check_stops() → después de Transmutación.
+            # QUIÉN: RiskManager → Portfolio (ejecución parcial).
+            tp_pct_abs = tp_pct * 100  # Convert to percentage for comparison
+            if (unrealized_pnl_pct >= tp_pct_abs * 0.50 and 
+                not pos.get("partial_tp_done", False) and
+                abs(qty) > 0 and tp_pct > 0):
+                
+                close_qty = abs(qty) * 0.50
+                if close_qty * current_price >= 5.0:  # Min notional $5 Binance
+                    logger.warning(f"💰 [PARTIAL TP] {symbol} {pos_horizon} — Cerrando 50% a +{unrealized_pnl_pct:.2f}% (TP target: {tp_pct_abs:.2f}%)")
+                    pos["partial_tp_done"] = True
+                    # Mover SL a breakeven (+0.01% buffer para fees)
+                    pos["sl_pct"] = 0.0001
+                    stop_signals.append(
+                        SignalEvent(
+                            strategy_id="PARTIAL_TP",
+                            symbol=symbol,
+                            datetime=now,
+                            signal_type=SignalType.EXIT,
+                            strength=1.0,
+                            horizon=pos_horizon,
+                            metadata={
+                                "exit_reason": f"PARTIAL_TP_50%_at_{unrealized_pnl_pct:.2f}%",
+                                "dollar_size": close_qty * current_price,
+                                "partial_close_qty": close_qty,
+                            }
                         )
+                    )
+
+            # ⚡ FASE 21: QUANTUM PYRAMIDING (Anti-Martingala Avanzado)
+            # QUÉ: Escalar exponencialmente usando la ganancia flotante (PnL no realizado).
+            # CÓMO: Llama a CompoundingEngine.get_pyramid_allocation() que decae 50%, 25%, 12.5%.
+            if unrealized_pnl_pct >= 1.50 and not pos.get('pyramiding_locked', False):
+                _pyramid_count = pos.get('pyramid_count', 0)
+                if _pyramid_count < getattr(Config.Risk, 'MAX_PYRAMID_STEPS', 2):
+                    unrealized_usd = (unrealized_pnl_pct / 100) * (abs(qty) * entry_price)
+                    from core.compounding_engine import get_compounding_engine
+                    ce = get_compounding_engine()
+                    pyramid_usd = ce.get_pyramid_allocation(unrealized_usd, abs(qty) * current_price, _pyramid_count)
+                    
+                    if pyramid_usd >= 5.0:  # Min notional $5 Binance
+                        from core.events import SignalType as ST
+                        pyramid_direction = ST.LONG if qty > 0 else ST.SHORT
+                        logger.warning(f"📐 [QUANTUM PYRAMID] {symbol} {pos_horizon} — Flotante +{unrealized_pnl_pct:.2f}%. Añadiendo ${pyramid_usd:.2f} (Layer {_pyramid_count})")
+                        
+                        pos['pyramid_count'] = _pyramid_count + 1
+                        pos['pyramiding_locked'] = True  # Bloqueado temporalmente hasta que se ejecute y promedie
+                        
+                        stop_signals.append(
+                            SignalEvent(
+                                strategy_id="PYRAMID_ADD",
+                                symbol=symbol,
+                                datetime=now,
+                                signal_type=pyramid_direction,
+                                strength=0.99,
+                                horizon=pos_horizon,
+                                metadata={
+                                    "exit_reason": "PYRAMID_SCALING",
+                                    "dollar_size": pyramid_usd,
+                                    "pyramid_qty": pyramid_usd / current_price,
+                                    "tp_pct": tp_pct,
+                                    "sl_pct": 0.0001,  # Breakeven SL
+                                }
+                            )
+                        )
+
+            # 🛡️ FASE 20: SWING-SCALP DELTA HEDGING (Cobertura Bidireccional)
+            # QUÉ: Si un trade SWING en ganancia retrocede significativamente, dispara un MICROSCALP en contra.
+            # POR QUÉ: Capturar el retroceso para generar liquidez adicional mientras el Swing "respira".
+            if pos_horizon == "SWING" and not pos.get("delta_hedge_done", False):
+                _peak = ((hwm - entry_price) / entry_price * 100) if qty > 0 else ((entry_price - lwm) / entry_price * 100)
+                if _peak >= 1.50: # Swing alcanzó al menos +1.5% de ganancia
+                    # Si retrocedió un 30% desde su pico...
+                    if unrealized_pnl_pct <= _peak * 0.70:
+                        from core.events import SignalType as ST
+                        hedge_direction = ST.SHORT if qty > 0 else ST.LONG
+                        logger.critical(f"🛡️ [DELTA HEDGE] {symbol} SWING retrocedió de +{_peak:.2f}% a +{unrealized_pnl_pct:.2f}%. Disparando cobertura {hedge_direction.name} MICROSCALP!")
+                        pos["delta_hedge_done"] = True
+                        stop_signals.append(
+                            SignalEvent(
+                                strategy_id="DELTA_HEDGE",
+                                symbol=symbol,
+                                datetime=now,
+                                signal_type=hedge_direction,
+                                strength=1.0,
+                                horizon="MICROSCALPING",
+                                metadata={
+                                    "exit_reason": "SWING_RETRACEMENT_HEDGE",
+                                    "dollar_size": abs(qty) * current_price * 0.5, # Hedge con la mitad del tamaño
+                                }
+                            )
+                        )
+            # 🏥 FASE 22: PREDICTIVE AUTO-HEALING (Sanación de Drawdown)
+            # QUÉ: Si un trade entra en -1.0% de Drawdown, emitimos un Microscalp de cobertura (Hedge) para ganar PnL.
+            # POR QUÉ: Evitar golpear el Stop Loss. Usamos la volatilidad en contra para generar micro-ganancias que compensen la pérdida flotante.
+            if unrealized_pnl_pct <= -1.0 and not pos.get("auto_healing_done", False):
+                from core.events import SignalType as ST
+                hedge_direction = ST.SHORT if qty > 0 else ST.LONG
+                logger.critical(f"🏥 [AUTO-HEALING] {symbol} {pos_horizon} en DRAWDOWN ({unrealized_pnl_pct:.2f}%). ¡Inyectando Nano-Hedge {hedge_direction.name} para sanar!")
+                pos["auto_healing_done"] = True
+                stop_signals.append(
+                    SignalEvent(
+                        strategy_id="AUTO_HEALING_HEDGE",
+                        symbol=symbol,
+                        datetime=now,
+                        signal_type=hedge_direction,
+                        strength=1.0,
+                        horizon="MICROSCALPING",
+                        metadata={
+                            "exit_reason": "DRAWDOWN_HEALING",
+                            "dollar_size": abs(qty) * current_price * 0.5, # 50% de peso para la cobertura
+                            "is_grid_burst": True # Activamos ametralladora para máxima probabilidad de acierto
+                        }
+                    )
+                )
+
+            # 🕰️ [MUTACIÓN 25] LIFECYCLE MANAGER (Erradicación de Time-Stops Rígidos)
+            if "entry_time" in pos:
+                try:
+                    from core.position_lifecycle import lifecycle_manager
+                    market_data = {}
+                    if data_provider and hasattr(data_provider, 'order_flow_metrics'):
+                        market_data = data_provider.order_flow_metrics.get(symbol, {})
+                    
+                    action, reason = lifecycle_manager.evaluate_health(pos, market_data, current_price, now)
+                    
+                    if action == "EXIT":
+                        logger.warning(f"🧟 [LIFECYCLE VETO] {symbol} {pos_horizon} cortado por {reason}.")
+                        exit_votes.append({"vote": "EXIT", "reason": f"LIFECYCLE: {reason}"})
                         pos['exit_pending_time'] = time.time()
                         stop_signals.append(
                             SignalEvent(
-                                strategy_id="TIME_STOP",
+                                strategy_id="LIFECYCLE_EXIT",
                                 symbol=symbol,
                                 datetime=now,
                                 signal_type=SignalType.EXIT,
-                                strength=1.0,
                                 horizon=pos_horizon,
+                                metadata={"exit_reason": reason, "dollar_size": abs(qty) * current_price}
                             )
                         )
+                        has_exit = True
+                        pos['_exit_votes'] = exit_votes
+                        pos['_hold_votes'] = hold_votes
+                        lifecycle_manager.clear_state(pos.get('trade_id') or symbol)
                         continue
+                    elif action == "SHIFT_UP":
+                        pos['_elastic_tp_expansion'] = True
+                        hold_votes.append({"vote": "HOLD", "reason": f"LIFECYCLE: {reason}"})
+                    else:
+                        hold_votes.append({"vote": "HOLD", "reason": "LIFECYCLE: HEALTHY"})
+                except Exception as e:
+                    logger.debug(f"[LIFECYCLE] Error evaluating {symbol}: {e}")
 
             # LONG POSITION
             if qty > 0:
@@ -2910,6 +3980,8 @@ class RiskManager:
                         continue
 
                 # Normal Turbo-Breakeven
+                # MÓDULO HORIZON FIX: Define tp_target_pct early to prevent UnboundLocalError
+                tp_target_pct = tp_pct * 100 if tp_pct > 0 else 1.0
                 if pos_horizon == 'SCALPING':
                     turbo_threshold = max(tp_target_pct * 0.75, fee_buffer * 3.0, coin_atr_pct * 1.5)
 
@@ -2917,29 +3989,37 @@ class RiskManager:
                 # QUÉ: Evaluación directa del precio vs TP target.
                 # POR QUÉ: Independiente de PREDICTIVE_TP. Si el precio llegó al TP, cerrar.
                 # PARA QUÉ: Con TP=0.80% (corregido), esta es la salida principal ganadora.
+                # 🚀 FASE 21: PARABOLIC SAR TRAILING (Auto-Take Profit Dinámico y Acelerado)
+                # QUÉ: En lugar de cerrar estáticamente en el TP, usamos la aceleración del SAR para capturar Squeezes.
+                # POR QUÉ: Para maximizar ganancias en velas explosivas y asegurar salida hiper-rápida al menor freno.
                 if tp_pct > 0 and current_price >= (entry_price * (1 + tp_pct)):
                     tp_pnl_pct = ((current_price - entry_price) / entry_price) * 100
-                    print(
-                        f"🎯 [LONG {pos_horizon}] TAKE PROFIT {symbol}! +{tp_pnl_pct:.2f}%"
-                    )
-                    exit_reason = f"TAKE_PROFIT: +{tp_pnl_pct:.2f}%"
-                    exit_votes.append({"vote": "EXIT", "reason": exit_reason})
-                    pos['exit_pending_time'] = time.time()
-                    stop_signals.append(
-                        SignalEvent(
-                            strategy_id="TAKE_PROFIT_LIMIT" if False else "TAKE_PROFIT_MARKET",
-                            symbol=symbol,
-                            datetime=now,
-                            signal_type=SignalType.EXIT,
-                            horizon=pos_horizon,
-                            metadata={"exit_reason": exit_reason, "dollar_size": abs(qty) * current_price}
-                        )
-                    )
-                    self.record_trade_result(True, tp_pnl_pct, symbol, pos_horizon)
-                    has_exit = True
-                    pos['_exit_votes'] = exit_votes
-                    pos['_hold_votes'] = hold_votes
-                    continue
+                    
+                    if not pos.get('parabolic_lock_active'):
+                        logger.warning(f"🚀 [PARABOLIC SAR ACTIVADO] LONG {symbol} {pos_horizon} superó TP (+{tp_pnl_pct:.2f}%).")
+                        pos['parabolic_lock_active'] = True
+                        pos['sar_af'] = 0.02
+                        pos['sar_ep'] = hwm
+                        pos['trail_stop_price'] = current_price * (1 - 0.0020) # Margen inicial 0.20%
+                    else:
+                        _af = pos.get('sar_af', 0.02)
+                        _ep = pos.get('sar_ep', hwm)
+                        _prev_sar = pos.get('trail_stop_price', current_price * (1 - 0.0020))
+                        
+                        if hwm > _ep:
+                            _af = min(0.20, _af + 0.02)
+                            _ep = hwm
+                            
+                        # Fórmula Parabolic SAR
+                        _new_sar = _prev_sar + _af * (_ep - _prev_sar)
+                        
+                        # Siempre garantizamos un trailing super ajustado (0.15%) como red de seguridad
+                        hyper_tight_trail = current_price * (1 - 0.0015)
+                        pos['trail_stop_price'] = max(_prev_sar, _new_sar, hyper_tight_trail)
+                        pos['sar_af'] = _af
+                        pos['sar_ep'] = _ep
+                        
+                    hold_votes.append({"vote": "HOLD", "reason": f"PARABOLIC_SAR: Tracking at +{tp_pnl_pct:.2f}% (AF: {pos.get('sar_af', 0.02):.2f})"})
                 else:
                     hold_votes.append({"vote": "HOLD", "reason": f"TP_NOT_REACHED: req +{tp_pct*100:.2f}%, curr +{unrealized_pnl_pct:.2f}%"})
 
@@ -3009,24 +4089,40 @@ class RiskManager:
                 #   de activar protección. Si llega a 75% y retrocede, ya fue
                 #   un buen trade que simplemente no cerró en TP perfecto.
                 # ═══════════════════════════════════════════════════════════════
-                # ⚡ Turbo-Breakeven (Stage 0): Disabled to test if tight TP triggers were causing premature exits.
-                # if pos_horizon == "SCALPING":
-                #     turbo_threshold_pct = tp_target_pct * 0.75
-                #     min_threshold = fee_buffer * 100 * 1.2
-                #     turbo_threshold_pct = max(turbo_threshold_pct, min_threshold)
-                # else:
-                #     turbo_threshold_pct = fee_buffer * 100 * 4.0
-                # 
-                # if peak_pnl >= turbo_threshold_pct:
-                #     turbo_be_price = entry_price * (1 + fee_buffer + 0.0001)
-                #     if current_price < turbo_be_price:
-                #         print(f"⚡ [LONG {pos_horizon}] TURBO-BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}% gave us edge. Bailing at {current_price:.4f}")
-                #         pos['exit_pending_time'] = time.time()
-                #         stop_signals.append(
-                #             SignalEvent(strategy_id="TURBO_BE", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon)
-                #         )
-                #         self.record_trade_result(True, unrealized_pnl_pct)
-                #         continue
+                # ⚡ QUANTUM BREAKEVEN (Stage 0): Re-habilitado para Supervivencia
+                golden = getattr(getattr(Config, "Strategies", None), "GOLDEN_EXITS", {}).get("TURBO_BE", {})
+                if pos_horizon == "MICROSCALPING":
+                    turbo_threshold_pct = tp_target_pct * golden.get("microscalping_threshold_pct_of_tp", 0.35)
+                    min_threshold = golden.get("min_microscalping_pct", 0.15)
+                elif pos_horizon == "SCALPING":
+                    turbo_threshold_pct = tp_target_pct * golden.get("scalping_threshold_pct_of_tp", 0.80)
+                    min_threshold = golden.get("min_scalping_pct", 0.48)
+                else:
+                    turbo_threshold_pct = tp_target_pct * golden.get("swing_threshold_pct_of_tp", 0.60)
+                    min_threshold = golden.get("min_swing_pct", 1.0)
+                
+                turbo_threshold_pct = max(turbo_threshold_pct, min_threshold, fee_buffer * 100 * 1.5)
+                
+                # 🚀 FASE 20: DYNAMIC BREAKEVEN OVERRIDE
+                # QUÉ: Permite a estrategias especializadas inyectar umbrales de breakeven ultra-rápidos
+                _meta_trailing = pos.get('metadata', {}).get('trailing_breakeven_pct')
+                if _meta_trailing:
+                    turbo_threshold_pct = _meta_trailing * 100
+                    logger.debug(f"⚡ [DYNAMIC BREAKEVEN] {symbol} | Overriding turbo threshold to {_meta_trailing*100:.2f}% (Metadata)")
+                
+                if peak_pnl >= turbo_threshold_pct:
+                    turbo_be_price = entry_price * (1 + fee_buffer + 0.0001)
+                    if current_price < turbo_be_price:
+                        print(f"⚡ [LONG {pos_horizon}] QUANTUM BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}%. Bailing at {current_price:.4f}")
+                        pos['exit_pending_time'] = time.time()
+                        stop_signals.append(
+                            SignalEvent(strategy_id="TURBO_BE", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon, metadata={"exit_reason": "QUANTUM_BREAKEVEN", "dollar_size": abs(qty) * current_price})
+                        )
+                        exit_votes.append({"vote": "EXIT", "reason": f"QUANTUM_BREAKEVEN: Peak +{peak_pnl:.2f}%"})
+                        has_exit = True
+                        pos['_exit_votes'] = exit_votes
+                        pos['_hold_votes'] = hold_votes
+                        continue
 
                 progress = peak_pnl / tp_target_pct if tp_target_pct > 0 else 0
 
@@ -3065,47 +4161,32 @@ class RiskManager:
                                 atr_pct = (atr_vals[-1] / closes[-1]) * 100
                         except Exception:
                             pass
+                # 📈 TRAILING ENGINE V7 INTEGRATION
+                pos['pos_side'] = 'LONG'
+                trail_res = self.trailing_engine.evaluate_trailing_mechanisms(
+                    pos, current_price, current_atr=atr_pct/100, data_pkg=None
+                )
                 
-                # Ajustar el "Choke Point" del Break-Even a la volatilidad
-                min_be_trigger = max(0.20, atr_pct * 0.8)
-
-                if pos.get('chasing_mode', False):
-                    # ZOMBIE CHASING MODE: Hiper-aggressive trailing for expired trades.
-                    trail_price = hwm - (hwm * (atr_pct * 0.3 / 100))
-                    trail_name = "TRAIL_CHASING_MODE"
-                elif progress >= 0.90:
-                    # Stage 3: Tight trail
-                    mult = 0.15 if pos_horizon in ["SCALPING", "MICROSCALPING"] else 0.30
-                    trail_price = hwm - ((hwm - entry_price) * mult * _cog_mult)
-                    trail_name = "TRAIL_STAGE_3_TIGHT"
-                elif progress >= 0.80:
-                    # Stage 2: Standard trail
-                    mult = 0.30 if pos_horizon in ["SCALPING", "MICROSCALPING"] else 0.50
-                    trail_price = hwm - ((hwm - entry_price) * mult * _cog_mult)
-                    trail_name = "TRAIL_STAGE_2_STD"
-                elif progress >= 0.60 or (pos_horizon in ["SCALPING", "MICROSCALPING"] and peak_pnl >= min_be_trigger):
-                    # Stage 1: Move to breakeven + round-trip fees
-                    be_safe_price = entry_price * (1 + fee_buffer + 0.0001)
-                    atr_mult = 0.5 if pos_horizon in ["SCALPING", "MICROSCALPING"] else 1.5
-                    chase_price = hwm - (hwm * (atr_pct * atr_mult / 100))
-                    trail_price = max(be_safe_price, chase_price)
-                    trail_name = "TRAIL_STAGE_1_BE"
-
-                if trail_price and current_price < trail_price:
+                trail_price = trail_res.get('stop_price')
+                trail_name = trail_res.get('active_mechanism')
+                force_close = trail_res.get('force_close')
+                
+                if force_close or (trail_price and current_price < trail_price):
+                    exit_reason_str = trail_res.get('reason') if force_close else f"TRAILING_STOP: {trail_name}"
                     print(
-                        f"🛡️/💰 [LONG {pos_horizon}] {trail_name} {symbol}! Triggered at {current_price:.4f} (Peak: +{peak_pnl:.2f}%)"
+                        f"🛡️/💰 [LONG {pos_horizon}] {trail_name or 'FORCE_CLOSE'} {symbol}! Triggered at {current_price:.4f} (Peak: +{peak_pnl:.2f}%)"
                     )
-                    exit_votes.append({"vote": "EXIT", "reason": f"TRAILING_STOP: {trail_name}"})
+                    exit_votes.append({"vote": "EXIT", "reason": exit_reason_str})
                     pos['exit_pending_time'] = time.time()
                     stop_signals.append(
                         SignalEvent(
-                            strategy_id=trail_name,
+                            strategy_id=trail_name or "FORCE_CLOSE",
                             symbol=symbol,
                             datetime=now,
                             signal_type=SignalType.EXIT,
                             strength=1.0,
                             horizon=pos_horizon,
-                            metadata={"exit_reason": f"TRAILING_STOP:{trail_name}", "dollar_size": abs(qty) * current_price}
+                            metadata={"exit_reason": exit_reason_str, "dollar_size": abs(qty) * current_price}
                         )
                     )
                     self.record_trade_result(True, unrealized_pnl_pct, symbol, pos_horizon)
@@ -3115,14 +4196,16 @@ class RiskManager:
                     continue
                 else:
                     if trail_name:
-                        hold_votes.append({"vote": "HOLD", "reason": f"TRAILING_STOP_SAFE: {trail_name}"})
+                        hold_votes.append({"vote": "HOLD", "reason": f"TRAILING_STOP_SAFE: {trail_name} at {trail_price:.4f}"})
 
-                # 3.5 Separar límites de Drawdown (1.5% max para Scalp desde HWM)
+                # 3.5 Separar límites de Drawdown adaptativo a la volatilidad
                 if pos_horizon in ["SCALPING", "MICROSCALPING"] and hwm > 0:
                     drawdown_from_peak = (hwm - current_price) / hwm
-                    if drawdown_from_peak >= 0.015:
-                        print(f"🚨 [DRAWDOWN LIMIT] LONG {symbol} {pos_horizon} exceeded 1.5% drawdown from peak. Exiting.")
-                        exit_votes.append({"vote": "EXIT", "reason": "MAX_DRAWDOWN_SCALP_1.5%"})
+                    # ⚡ FASE 11: Drawdown dinámico basado en ATR
+                    max_dd_limit = max(0.015, (atr_pct * 2.0) / 100)
+                    if drawdown_from_peak >= max_dd_limit:
+                        print(f"🚨 [DRAWDOWN LIMIT] LONG {symbol} {pos_horizon} exceeded {max_dd_limit*100:.2f}% drawdown from peak. Exiting.")
+                        exit_votes.append({"vote": "EXIT", "reason": f"MAX_DRAWDOWN_SCALP_{max_dd_limit*100:.2f}%"})
                         pos['exit_pending_time'] = time.time()
                         stop_signals.append(
                             SignalEvent(
@@ -3132,7 +4215,7 @@ class RiskManager:
                                 signal_type=SignalType.EXIT,
                                 strength=1.0,
                                 horizon=pos_horizon,
-                                metadata={"exit_reason": "MAX_DRAWDOWN_1.5%", "dollar_size": abs(qty) * current_price}
+                                metadata={"exit_reason": f"MAX_DRAWDOWN_{max_dd_limit*100:.2f}%", "dollar_size": abs(qty) * current_price}
                             )
                         )
                         self.record_trade_result(unrealized_pnl_pct > 0, unrealized_pnl_pct, symbol, pos_horizon)
@@ -3142,7 +4225,12 @@ class RiskManager:
                         continue
 
                 # 4. Initial Hard Stop Loss (Protective)
-                if current_price < (entry_price * (1 - sl_pct)):
+                # [FASE 4: QUANTUM SAFE-GRID] Extender SL si la Macro Tendencia (Swing) apoya la dirección
+                effective_sl_pct = sl_pct
+                if pos_horizon == "MICROSCALPING" and self.global_regime == 'TRENDING_BULL':
+                    effective_sl_pct = sl_pct * 3.0 # Dar espacio al DCA Engine para promediar
+                    
+                if current_price < (entry_price * (1 - effective_sl_pct)):
                     print(
                         f"🛑 HARD SL [{pos_horizon}] {symbol}! {unrealized_pnl_pct:.2f}%"
                     )
@@ -3207,36 +4295,40 @@ class RiskManager:
                             )
                         )
 
-                # CIRUGÍA-V100: SHORT TAKE PROFIT EVALUATION — ALWAYS ACTIVE
-                # QUÉ: Evaluación directa del precio vs TP target para SHORT.
-                # POR QUÉ: Independiente de PREDICTIVE_TP. Si precio cayó al TP, cerrar.
-                # PARA QUÉ: Con TP=0.80% (corregido), capturar ganancias reales.
+                # 🚀 FASE 21: PARABOLIC SAR TRAILING (Auto-Take Profit Dinámico y Acelerado)
+                # QUÉ: En lugar de cerrar estáticamente en el TP, usamos la aceleración del SAR para capturar Squeezes.
+                # POR QUÉ: Para maximizar ganancias en velas explosivas y asegurar salida hiper-rápida al menor freno.
                 if tp_pct > 0:
-                    print(f"DEBUG SHORT TP {symbol} ({pos_horizon}): entry={entry_price}, current={current_price}, tp_pct={tp_pct}, target={entry_price * (1 - tp_pct)}, qty={qty}")
+                    pass # print(f"DEBUG SHORT TP {symbol} ({pos_horizon}): entry={entry_price}, current={current_price}, tp_pct={tp_pct}, target={entry_price * (1 - tp_pct)}, qty={qty}")
                 
                 if tp_pct > 0 and current_price <= (entry_price * (1 - tp_pct)):
                     tp_pnl_pct = ((entry_price - current_price) / entry_price) * 100
-                    print(
-                        f"🎯 [SHORT {pos_horizon}] TAKE PROFIT {symbol}! +{tp_pnl_pct:.2f}%"
-                    )
-                    exit_votes.append({"vote": "EXIT", "reason": f"TAKE_PROFIT: +{tp_pnl_pct:.2f}%"})
-                    pos['exit_pending_time'] = time.time()
-                    stop_signals.append(
-                        SignalEvent(
-                            strategy_id="TAKE_PROFIT",
-                            symbol=symbol,
-                            datetime=now,
-                            signal_type=SignalType.EXIT,
-                            strength=1.0,
-                            horizon=pos_horizon,
-                            metadata={"exit_reason": f"TAKE_PROFIT: +{tp_pnl_pct:.2f}%", "dollar_size": abs(qty) * current_price}
-                        )
-                    )
-                    self.record_trade_result(True, tp_pnl_pct, symbol, pos_horizon)
-                    has_exit = True
-                    pos['_exit_votes'] = exit_votes
-                    pos['_hold_votes'] = hold_votes
-                    continue
+                    
+                    if not pos.get('parabolic_lock_active'):
+                        logger.warning(f"🚀 [PARABOLIC SAR ACTIVADO] SHORT {symbol} {pos_horizon} superó TP (+{tp_pnl_pct:.2f}%).")
+                        pos['parabolic_lock_active'] = True
+                        pos['sar_af'] = 0.02
+                        pos['sar_ep'] = lwm
+                        pos['trail_stop_price'] = current_price * (1 + 0.0020) # Margen inicial 0.20%
+                    else:
+                        _af = pos.get('sar_af', 0.02)
+                        _ep = pos.get('sar_ep', lwm)
+                        _prev_sar = pos.get('trail_stop_price', current_price * (1 + 0.0020))
+                        
+                        if lwm < _ep:
+                            _af = min(0.20, _af + 0.02)
+                            _ep = lwm
+                            
+                        # Fórmula Parabolic SAR (SHORT: resta, pero como invertimos el signo, sumamos)
+                        _new_sar = _prev_sar - _af * (_prev_sar - _ep)
+                        
+                        # Siempre garantizamos un trailing super ajustado (0.15%) como red de seguridad
+                        hyper_tight_trail = current_price * (1 + 0.0015)
+                        pos['trail_stop_price'] = min(_prev_sar, _new_sar, hyper_tight_trail)
+                        pos['sar_af'] = _af
+                        pos['sar_ep'] = _ep
+                        
+                    hold_votes.append({"vote": "HOLD", "reason": f"PARABOLIC_SAR: Tracking at +{tp_pnl_pct:.2f}% (AF: {pos.get('sar_af', 0.02):.2f})"})
                 else:
                     hold_votes.append({"vote": "HOLD", "reason": f"TP_NOT_REACHED: req +{tp_pct*100:.2f}%, curr +{unrealized_pnl_pct:.2f}%"})
 
@@ -3248,35 +4340,58 @@ class RiskManager:
                 peak_pnl = ((entry_price - lwm) / entry_price) * 100
                 tp_target_pct = tp_pct * 100 if tp_pct > 0 else 1.0  # Safe fallback
 
-                # ⚡ Turbo-Breakeven (Stage 0): DISABLED
-                # CIRUGÍA-V100: TURBO_BE disabled for SHORTS (mirror of LONG-side disable).
-                # QUÉ: SHORT TURBO_BE was active while LONG was disabled → asymmetric bleeding.
-                # POR QUÉ: 3,510 TURBO_BE exits with net PnL -6.61 (73% were losses).
-                #   BUY side: 1,999 exits → PnL -5.21 | SELL side: 1,537 exits → PnL -1.40
-                #   Both sides net negative → system is better off letting trails handle exits.
-                # PARA QUÉ: Let TRAIL_STAGE_3_TIGHT handle profitable exits (83.7% WR, +8.26 PnL).
-                # if pos_horizon == "SCALPING":
-                #     turbo_threshold_pct = tp_target_pct * 0.75
-                #     min_threshold = fee_buffer * 100 * 1.2
-                #     turbo_threshold_pct = max(turbo_threshold_pct, min_threshold)
-                # else:
-                #     turbo_threshold_pct = fee_buffer * 100 * 4.0
-                #
-                # if peak_pnl >= turbo_threshold_pct:
-                #     turbo_be_price = entry_price * (1 - fee_buffer - 0.0001)
-                #     if current_price > turbo_be_price:
-                #         print(f"⚡ [SHORT {pos_horizon}] TURBO-BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}%")
-                #         pos['exit_pending_time'] = time.time()
-                #         stop_signals.append(
-                #             SignalEvent(
-                #                 strategy_id="TURBO_BE", symbol=symbol, datetime=now,
-                #                 signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon,
-                #             )
-                #         )
-                #         self.record_trade_result(True, unrealized_pnl_pct)
-                #         continue
+                # ⚡ QUANTUM BREAKEVEN (Stage 0): Re-habilitado para Supervivencia
+                golden = getattr(getattr(Config, "Strategies", None), "GOLDEN_EXITS", {}).get("TURBO_BE", {})
+                if pos_horizon == "MICROSCALPING":
+                    turbo_threshold_pct = tp_target_pct * golden.get("microscalping_threshold_pct_of_tp", 0.35)
+                    min_threshold = golden.get("min_microscalping_pct", 0.15)
+                elif pos_horizon == "SCALPING":
+                    turbo_threshold_pct = tp_target_pct * golden.get("scalping_threshold_pct_of_tp", 0.80)
+                    min_threshold = golden.get("min_scalping_pct", 0.48)
+                else:
+                    turbo_threshold_pct = tp_target_pct * golden.get("swing_threshold_pct_of_tp", 0.60)
+                    min_threshold = golden.get("min_swing_pct", 1.0)
+                
+                turbo_threshold_pct = max(turbo_threshold_pct, min_threshold, fee_buffer * 100 * 1.5)
+                
+                if peak_pnl >= turbo_threshold_pct:
+                    turbo_be_price = entry_price * (1 - fee_buffer - 0.0001)
+                    if current_price > turbo_be_price:
+                        print(f"⚡ [SHORT {pos_horizon}] QUANTUM BREAKEVEN {symbol}! Peak +{peak_pnl:.2f}%. Bailing at {current_price:.4f}")
+                        pos['exit_pending_time'] = time.time()
+                        stop_signals.append(
+                            SignalEvent(strategy_id="TURBO_BE", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0, horizon=pos_horizon, metadata={"exit_reason": "QUANTUM_BREAKEVEN", "dollar_size": abs(qty) * current_price})
+                        )
+                        exit_votes.append({"vote": "EXIT", "reason": f"QUANTUM_BREAKEVEN: Peak +{peak_pnl:.2f}%"})
+                        has_exit = True
+                        pos['_exit_votes'] = exit_votes
+                        pos['_hold_votes'] = hold_votes
+                        continue
 
                 progress = peak_pnl / tp_target_pct if tp_target_pct > 0 else 0
+                
+                # 🏥 FASE 22: PREDICTIVE AUTO-HEALING (Sanación de Drawdown) SHORT
+                # QUÉ: Si un trade entra en -1.0% de Drawdown, emitimos un Microscalp de cobertura (Hedge) para ganar PnL.
+                if unrealized_pnl_pct <= -1.0 and not pos.get("auto_healing_done", False):
+                    from core.events import SignalType as ST
+                    hedge_direction = ST.LONG  # Para un SHORT en pérdida, el hedge es LONG
+                    logger.critical(f"🏥 [AUTO-HEALING] SHORT {symbol} {pos_horizon} en DRAWDOWN ({unrealized_pnl_pct:.2f}%). ¡Inyectando Nano-Hedge LONG para sanar!")
+                    pos["auto_healing_done"] = True
+                    stop_signals.append(
+                        SignalEvent(
+                            strategy_id="AUTO_HEALING_HEDGE",
+                            symbol=symbol,
+                            datetime=now,
+                            signal_type=hedge_direction,
+                            strength=1.0,
+                            horizon="MICROSCALPING",
+                            metadata={
+                                "exit_reason": "DRAWDOWN_HEALING",
+                                "dollar_size": abs(qty) * current_price * 0.5,
+                                "is_grid_burst": True
+                            }
+                        )
+                    )
 
                 trail_price = None
                 trail_name = None
@@ -3305,45 +4420,32 @@ class RiskManager:
                         except Exception:
                             pass
                 
-                min_be_trigger = max(0.20, atr_pct * 0.8)
-
-                if pos.get('chasing_mode', False):
-                    # ZOMBIE CHASING MODE: Hiper-aggressive trailing for expired trades.
-                    trail_price = lwm + (lwm * (atr_pct * 0.3 / 100))
-                    trail_name = "SHORT_TRAIL_CHASING_MODE"
-                elif progress >= 0.90:
-                    # Stage 3: Tight trail
-                    mult = 0.15 if pos_horizon in ["SCALPING", "MICROSCALPING"] else 0.30
-                    trail_price = lwm + ((entry_price - lwm) * mult)
-                    trail_name = "SHORT_TRAIL_STAGE_3_TIGHT"
-                elif progress >= 0.80:
-                    # Stage 2: Standard trail
-                    mult = 0.30 if pos_horizon in ["SCALPING", "MICROSCALPING"] else 0.50
-                    trail_price = lwm + ((entry_price - lwm) * mult)
-                    trail_name = "SHORT_TRAIL_STAGE_2_STD"
-                elif progress >= 0.60 or (pos_horizon in ["SCALPING", "MICROSCALPING"] and peak_pnl >= min_be_trigger):
-                    # Stage 1: Move to breakeven + round-trip fees
-                    be_safe_price = entry_price * (1 - fee_buffer - 0.0001)
-                    atr_mult = 0.5 if pos_horizon in ["SCALPING", "MICROSCALPING"] else 1.5
-                    chase_price = lwm + (lwm * (atr_pct * atr_mult / 100))
-                    trail_price = min(be_safe_price, chase_price)
-                    trail_name = "SHORT_TRAIL_STAGE_1_BE"
-
-                if trail_price and current_price > trail_price:
+                # 📈 TRAILING ENGINE V7 INTEGRATION
+                pos['pos_side'] = 'SHORT'
+                trail_res = self.trailing_engine.evaluate_trailing_mechanisms(
+                    pos, current_price, current_atr=atr_pct/100, data_pkg=None
+                )
+                
+                trail_price = trail_res.get('stop_price')
+                trail_name = trail_res.get('active_mechanism')
+                force_close = trail_res.get('force_close')
+                
+                if force_close or (trail_price and current_price > trail_price):
+                    exit_reason_str = trail_res.get('reason') if force_close else f"TRAILING_STOP: {trail_name}"
                     print(
-                        f"🛡️/💰 [SHORT {pos_horizon}] {trail_name} {symbol}! Triggered at {current_price:.4f} (Peak: +{peak_pnl:.2f}%)"
+                        f"🛡️/💰 [SHORT {pos_horizon}] {trail_name or 'FORCE_CLOSE'} {symbol}! Triggered at {current_price:.4f} (Peak: +{peak_pnl:.2f}%)"
                     )
-                    exit_votes.append({"vote": "EXIT", "reason": f"TRAILING_STOP: {trail_name}"})
+                    exit_votes.append({"vote": "EXIT", "reason": exit_reason_str})
                     pos['exit_pending_time'] = time.time()
                     stop_signals.append(
                         SignalEvent(
-                            strategy_id=trail_name,
+                            strategy_id=trail_name or "FORCE_CLOSE",
                             symbol=symbol,
                             datetime=now,
                             signal_type=SignalType.EXIT,
                             strength=1.0,
                             horizon=pos_horizon,
-                            metadata={"exit_reason": f"TRAILING_STOP:{trail_name}", "dollar_size": abs(qty) * current_price}
+                            metadata={"exit_reason": exit_reason_str, "dollar_size": abs(qty) * current_price}
                         )
                     )
                     self.record_trade_result(True, unrealized_pnl_pct, symbol, pos_horizon)
@@ -3353,14 +4455,16 @@ class RiskManager:
                     continue
                 else:
                     if trail_name:
-                        hold_votes.append({"vote": "HOLD", "reason": f"TRAILING_STOP_SAFE: {trail_name}"})
+                        hold_votes.append({"vote": "HOLD", "reason": f"TRAILING_STOP_SAFE: {trail_name} at {trail_price:.4f}"})
 
-                # 3.5 Separar límites de Drawdown (1.5% max para Scalp desde LWM)
+                # 3.5 Separar límites de Drawdown adaptativo a la volatilidad
                 if pos_horizon in ["SCALPING", "MICROSCALPING"] and lwm > 0:
                     drawdown_from_peak = (current_price - lwm) / lwm
-                    if drawdown_from_peak >= 0.015:
-                        print(f"🚨 [DRAWDOWN LIMIT] SHORT {symbol} {pos_horizon} exceeded 1.5% drawdown from peak. Exiting.")
-                        exit_votes.append({"vote": "EXIT", "reason": "MAX_DRAWDOWN_SCALP_1.5%"})
+                    # ⚡ FASE 11: Drawdown dinámico basado en ATR
+                    max_dd_limit = max(0.015, (atr_pct * 2.0) / 100)
+                    if drawdown_from_peak >= max_dd_limit:
+                        print(f"🚨 [DRAWDOWN LIMIT] SHORT {symbol} {pos_horizon} exceeded {max_dd_limit*100:.2f}% drawdown from peak. Exiting.")
+                        exit_votes.append({"vote": "EXIT", "reason": f"MAX_DRAWDOWN_SCALP_{max_dd_limit*100:.2f}%"})
                         pos['exit_pending_time'] = time.time()
                         stop_signals.append(
                             SignalEvent(
@@ -3370,7 +4474,7 @@ class RiskManager:
                                 signal_type=SignalType.EXIT,
                                 strength=1.0,
                                 horizon=pos_horizon,
-                                metadata={"exit_reason": "MAX_DRAWDOWN_1.5%", "dollar_size": abs(qty) * current_price}
+                                metadata={"exit_reason": f"MAX_DRAWDOWN_{max_dd_limit*100:.2f}%", "dollar_size": abs(qty) * current_price}
                             )
                         )
                         self.record_trade_result(unrealized_pnl_pct > 0, unrealized_pnl_pct, symbol, pos_horizon)
@@ -3380,7 +4484,12 @@ class RiskManager:
                         continue
 
                 # 4. Initial Hard Stop
-                if current_price > (entry_price * (1 + sl_pct)):
+                # [FASE 4: QUANTUM SAFE-GRID] Extender SL si la Macro Tendencia (Swing) apoya la dirección
+                effective_sl_pct = sl_pct
+                if pos_horizon == "MICROSCALPING" and self.global_regime == 'TRENDING_BEAR':
+                    effective_sl_pct = sl_pct * 3.0 # Dar espacio al DCA Engine para promediar
+                    
+                if current_price > (entry_price * (1 + effective_sl_pct)):
                     print(
                         f"🛑 SHORT HARD SL [{pos_horizon}] {symbol}! {unrealized_pnl_pct:.2f}%"
                     )

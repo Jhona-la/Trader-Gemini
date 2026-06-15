@@ -39,8 +39,8 @@ for fname in os.listdir(data_dir):
         
         df = df[['open', 'high', 'low', 'close', 'volume']]
         
-        # 1440 mins/day * 2 days = 2880
-        df = df.tail(2880)
+        # 1440 mins/day * 1 days = 1440
+        df = df.tail(1440)
         
         all_data[sym_raw] = df
         symbols_available.append(sym_raw)
@@ -59,13 +59,20 @@ from scripts.run_god_mode_backtest import run_global_backtest
 import logging
 logging.getLogger("trader_gemini").setLevel(logging.WARNING)
 
+import time
+start_time = time.perf_counter()
+
 results = run_global_backtest(
     all_data=all_data,
     symbols=symbols_available,
-    days=2,
+    days=1,
     initial_capital=13.0,
     verbose=False,
 )
+
+end_time = time.perf_counter()
+total_time = (end_time - start_time) * 1000
+print(f"\n⏱️ TOTAL BACKTEST EXECUTION TIME: {total_time:.2f} ms")
 
 # --- Print Results ---
 if results:
@@ -102,8 +109,10 @@ if results:
         from core.compounding_engine import get_compounding_engine
         ce = get_compounding_engine()
         ce_metrics = ce.get_metrics()
-        print(f"\n  🏦 CompoundingEngine:")
+        print(f"\n  🏦 CompoundingEngine (HORIZON-AWARE):")
         print(f"     Phase:       {ce_metrics['growth_phase']}")
+        print(f"     Regime:      {ce_metrics.get('regime', 'N/A')}")
+        print(f"     MICRO Alloc: {ce_metrics.get('micro_allocation', 0)*100:.1f}%")
         print(f"     SCL Alloc:   {ce_metrics['scalping_allocation']*100:.1f}%")
         print(f"     SWG Alloc:   {ce_metrics['swing_allocation']*100:.1f}%")
         print(f"     Peak Equity: ${ce_metrics['peak_equity']:.2f}")

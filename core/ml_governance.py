@@ -19,9 +19,10 @@ class MLGovernance:
     - POR QUÉ: No queremos que un modelo que "aprendió mal" tome decisiones con dinero real.
     - PARA QUÉ: Para tener trazabilidad total (saber qué versión del modelo hizo qué trade) y seguridad.
     """
-    def __init__(self, db_path="data/feature_store.db", models_root=".models"):
-        self.db_path = db_path
-        self.models_root = models_root
+    def __init__(self, db_path=None, models_root=None):
+        from config import Config
+        self.db_path = db_path or os.path.join(getattr(Config, "DATA_DIR", "data"), "feature_store.db")
+        self.models_root = models_root or getattr(Config, "MODEL_DIR", ".models")
         os.makedirs(self.models_root, exist_ok=True)
         
     def register_model(self, symbol, metrics, model_paths):

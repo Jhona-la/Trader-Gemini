@@ -227,14 +227,19 @@ class StatArbStrategy(Strategy):
             coint = self.engine.lite_engle_granger(py, px)
             
             if coint.is_cointegrated and abs(coint.z_score) > 2.0:
-                signal_type = SignalType.SHORT if coint.z_score > 0 else SignalType.LONG
-                current_price = data_y['close'].values[-1]
+                import uuid
+                pair_id = str(uuid.uuid4())
+                
+                signal_type_y = SignalType.SHORT if coint.z_score > 0 else SignalType.LONG
+                signal_type_x = SignalType.LONG if coint.z_score > 0 else SignalType.SHORT
+                current_price_y = data_y['close'].values[-1]
+                current_price_x = data_x['close'].values[-1]
                 
                 sophia_report_dict = {}
                 if hasattr(self, 'sophia') and self.sophia:
                     sophia_report = self.sophia.analyze(
                         symbol=y_sym,
-                        direction=signal_type.name,
+                        direction=signal_type_y.name,
                         signal_strength=0.85,
                         setups={'z_score': coint.z_score},
                         confluence_score=1.0,
@@ -249,22 +254,41 @@ class StatArbStrategy(Strategy):
                         return
                     sophia_report_dict = sophia_report.to_dict()
                     
-                signal = SignalEvent(
+                signal_y = SignalEvent(
                     strategy_id=self.strategy_id,
                     symbol=y_sym,
-                    datetime=datetime.now(timezone.utc),
-                    signal_type=signal_type,
+                    datetime=getattr(event, 'timestamp', datetime.now(timezone.utc)),
+                    signal_type=signal_type_y,
                     strength=0.85,
                     ml_confidence=sophia_report.win_probability if 'sophia_report' in locals() and sophia_report else 0.5,
                     atr=0.0,
                     tp_pct=self.TP_PCT,
                     sl_pct=self.SL_PCT,
-                    current_price=current_price,
+                    current_price=current_price_y,
                     horizon=self.horizon,
                     priority=self.priority,
-                    metadata={'sophia': sophia_report_dict, 'z_score': coint.z_score}
+                    metadata={'sophia': sophia_report_dict, 'z_score': coint.z_score, 'pair_id': pair_id, 'is_paired': True}
                 )
-                self.events_queue.put(signal)
+                
+                signal_x = SignalEvent(
+                    strategy_id=self.strategy_id,
+                    symbol=x_sym,
+                    datetime=getattr(event, 'timestamp', datetime.now(timezone.utc)),
+                    signal_type=signal_type_x,
+                    strength=0.85,
+                    ml_confidence=sophia_report.win_probability if 'sophia_report' in locals() and sophia_report else 0.5,
+                    atr=0.0,
+                    tp_pct=self.TP_PCT,
+                    sl_pct=self.SL_PCT,
+                    current_price=current_price_x,
+                    horizon=self.horizon,
+                    priority=self.priority,
+                    metadata={'z_score': coint.z_score, 'pair_id': pair_id, 'is_paired': True}
+                )
+                
+                self.events_queue.put(signal_y)
+                self.events_queue.put(signal_x)
+                logger.info(f"🔗 [STAT-ARB] Emitting paired signals: {y_sym} {signal_type_y.name} & {x_sym} {signal_type_x.name}")
         except Exception as e:
             logger.debug(f"Silent exception caught: {e}")
             
