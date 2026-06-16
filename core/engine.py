@@ -32,6 +32,7 @@ from core.world_awareness import world_awareness
 from core.evolution import EvolutionEngine, FitnessCalculator
 from core.genotype import Genotype
 from core.market_regime import MarketRegimeDetector
+from core.cross_exchange_intelligence import CrossExchangeIntelligenceEngine
 
 # ═══════════════════════════════════════════════════════════════
 # LOW-LATENCY PHASE: HOT-PATH IMPORTS (Moved from inline)
@@ -110,16 +111,23 @@ except ImportError:
 
 class PriorityBoundedQueue:
     """
-    HFT Multi-Level Ring Buffer Queue (Mutación 37: Zero-Copy Architecture).
-    - Uses collections.deque(maxlen) per priority level for O(1) auto-drop.
-    - Spin-lock style bursting to avoid asyncio.Event overhead.
+    HFT Multi-Level Ring Buffer Queue (Mutación 37 + Fase 27: Zero-Latency C-RingBuffer).
+    - Uses Cython NanoPriorityQueue for true lock-free event parsing.
+    - Preserves asyncio.Event only for the sleep-yield phase.
     """
     def __init__(self, maxsize=5000):
-        self._deques = {
-            0: collections.deque(maxlen=maxsize), # Critical: Fills, Executions, Scalping Signals
-            1: collections.deque(maxlen=maxsize), # Normal: Swing Signals, Generic Orders
-            2: collections.deque(maxlen=maxsize)  # Background: Market Data, Metrics
-        }
+        try:
+            from core.nano_core import NanoPriorityQueue
+            self.event_queue = NanoPriorityQueue(capacity=10000)
+            self._use_cython = True
+        except ImportError:
+            self._use_cython = False
+            self._deques = {
+                0: collections.deque(maxlen=maxsize), 
+                1: collections.deque(maxlen=maxsize), 
+                2: collections.deque(maxlen=maxsize)
+            }
+        
         self._event = asyncio.Event()
         self._items_count = 0
     
@@ -137,8 +145,13 @@ class PriorityBoundedQueue:
                 priority = 1
                 
         priority = max(0, min(2, priority))
-        self._deques[priority].append(item)
-        self._items_count += 1
+        
+        if self._use_cython:
+            self._queue.put(item, priority)
+            self._items_count = self._queue.qsize()
+        else:
+            self._deques[priority].append(item)
+            self._items_count = sum(len(d) for d in self._deques.values())
         
         # Optimización HFT: Solo interactuamos con el Event si no está seteado
         if not self._event.is_set():
@@ -149,10 +162,16 @@ class PriorityBoundedQueue:
         while True:
             # Fast path
             if self._items_count > 0:
-                for p in range(3):
-                    if self._deques[p]:
-                        self._items_count -= 1
-                        return self._deques[p].popleft()
+                if self._use_cython:
+                    item = self._queue.get()
+                    if item is not None:
+                        self._items_count = self._queue.qsize()
+                        return item
+                else:
+                    for p in range(3):
+                        if self._deques[p]:
+                            self._items_count -= 1
+                            return self._deques[p].popleft()
             
             # Slow path: prepare to wait
             self._event.clear()
@@ -243,9 +262,12 @@ class Engine:
         self.signal_scorer = SignalScorer()
         
         # 🧠 PHASE 69: CPU-Optimized NanoRL Agent
-        from core.evolution.genome_registry import GenomeRegistry
-        from core.evolution.rl_agent import NanoRLAgent
-        self.rl_agent = NanoRLAgent(GenomeRegistry(Config))
+        try:
+            from core.evolution.genome_registry import GenomeRegistry
+            from core.evolution.rl_agent import NanoRLAgent
+            self.rl_agent = NanoRLAgent(GenomeRegistry(Config))
+        except ImportError:
+            self.rl_agent = None
         # ═══════════════════════════════════════════════════════════════
         # AUDIT FIX: SOPHIA_MIN_CONFIDENCE was hardcoded to 0.70,
         # ignoring Config.Horizons.GlobalThresholds['sophia_win_prob_min'].
@@ -472,6 +494,15 @@ class Engine:
         # 🌐 CTOS DATA OMNISCIENCE: Start Macro/Micro Polling
         macro_intelligence.start_background()
         
+        # 🌐 [PHASE V] MULTI-SOURCE INTELLIGENCE ENGINE
+        try:
+            if self.data_handlers and hasattr(self.data_handlers[0], 'symbol_list'):
+                symbol_list = self.data_handlers[0].symbol_list
+                self.cross_exchange_engine = CrossExchangeIntelligenceEngine(symbol_list)
+                asyncio.create_task(self.cross_exchange_engine.start())
+        except Exception as e:
+            logger.error(f"Failed to start CrossExchangeIntelligenceEngine: {e}")
+        
         # 🪐 [MUTACIÓN 28] START BTC GRAVITY LOADER
         try:
             from data.btc_gravity_loader import BTCGravityLoader
@@ -550,16 +581,22 @@ class Engine:
                     if hasattr(self, 'correlation_manager') and self.correlation_manager:
                         now = time.time()
                         if now - getattr(self.correlation_manager, 'last_update', 0) > 300: # 5 mins
-                            self.correlation_manager.update_correlations()
                             self.correlation_manager.last_update = now
                             
-                            # 🌐 GRAPH LAYER UPDATE
-                            try:
-                                if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
-                                    if hasattr(self.correlation_manager, 'correlation_matrix') and self.correlation_manager.correlation_matrix is not None:
-                                        meta_arbitrator.graph_layer.update_graph_edges(self.correlation_manager.correlation_matrix)
-                            except Exception as e:
-                                logger.error(f"Failed to update Graph Edges: {e}")
+                            def _run_correlation_update():
+                                self.correlation_manager.update_correlations()
+                                # 🌐 GRAPH LAYER UPDATE
+                                try:
+                                    if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
+                                        if hasattr(self.correlation_manager, 'correlation_matrix') and self.correlation_manager.correlation_matrix is not None:
+                                            meta_arbitrator.graph_layer.update_graph_edges(
+                                                self.correlation_manager.correlation_matrix, 
+                                                current_symbols=self.correlation_manager.symbols
+                                            )
+                                except Exception as e:
+                                    logger.error(f"Failed to update Graph Edges: {e}")
+                                    
+                            asyncio.create_task(asyncio.to_thread(_run_correlation_update))
                     
                     # 🧬 LIVE MUTATION TRIGGER
                     if hasattr(self, 'evolution_engine') and self.evolution_engine:
@@ -574,10 +611,12 @@ class Engine:
                     now_time = time.time()
                     if now_time - getattr(self, '_last_db_prune_time', 0) > 86400: # Every 24 hours
                         if hasattr(self, 'portfolio') and hasattr(self.portfolio, 'db'):
-                            try:
-                                self.portfolio.db.prune_historical_data(days_to_keep=7)
-                            except Exception as e:
-                                logger.error(f"Error en Pruning de Memoria: {e}")
+                            def _prune_db():
+                                try:
+                                    self.portfolio.db.prune_historical_data(days_to_keep=7)
+                                except Exception as e:
+                                    logger.error(f"Error en Pruning de Memoria: {e}")
+                            asyncio.create_task(asyncio.to_thread(_prune_db))
                         self._last_db_prune_time = now_time
 
                     # ═══════════════════════════════════════════════════════════════
@@ -936,7 +975,7 @@ class Engine:
                 if btc_pos and btc_pos.get("quantity", 0) != 0:
                     btc_dir = "LONG" if btc_pos["quantity"] > 0 else "SHORT"
                     if btc_dir == _dir_str:
-                        # logger.warning(f"🛡️ [CORRELATION SHIELD] VETO {event.symbol} {_dir_str} {_horizon} — BTC ya está {_dir_str}.") # INFO logging disabled in hot loop
+                        logger.warning(f"🛡️ [CORRELATION SHIELD] VETO {event.symbol} {_dir_str} {_horizon} — BTC ya está {_dir_str}.")
                         self.metrics['discarded_events'] += 1
                         return
                         
@@ -1025,6 +1064,8 @@ class Engine:
                     if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
                         await meta_arbitrator.submit_intent(event)
                         logger.debug(f"📥 [EXPRESS] Intent {event.symbol} fast-tracked to Meta-Arbitrator.")
+                    else:
+                        await self._execute_approved_intent(event)
                 except Exception as e:
                     logger.error(f"Express Lane Meta-Arbitrator Error: {e}")
                 return
@@ -1330,6 +1371,8 @@ class Engine:
             if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
                 await meta_arbitrator.submit_intent(event)
                 logger.debug(f"📥 [ENGINE] Intent {event.symbol} passed to Meta-Arbitrator.")
+            else:
+                await self._execute_approved_intent(event)
         except Exception as e:
             logger.error(f"Meta-Arbitrator Submit Error: {e}")
             self.metrics['errors'] += 1
@@ -1391,17 +1434,19 @@ class Engine:
             try:
                 from core.omniscient_registry import registry
                 trade_risk_pct = getattr(event, 'sl_pct', 0.0) or getattr(event, 'sl_pct_max', 0.02)
+                horizon = getattr(event, 'timeframe', '1m')
                 current_heat = 0.0
                 if self.portfolio:
-                    total_eq = max(self.portfolio.get_total_equity(), 1.0)
-                    for pos in self.portfolio.positions.values():
-                        current_heat += (abs(pos.get('quantity', 0)) * pos.get('current_price', 0)) / pos.get('leverage', 10) / total_eq
+                    if horizon not in ["1m", "5m"]:
+                        current_heat = self.portfolio.math_stats.get('heat_swing', 0.0)
+                    else:
+                        current_heat = self.portfolio.math_stats.get('heat_scalp', 0.0)
                 is_exit = (getattr(event, 'signal_type', None) == SignalType.EXIT) or str(getattr(event, 'signal_type', None)) == 'SignalType.EXIT' or getattr(event, 'is_exit', False) or (getattr(event, 'strategy_id', '') == "FLIP_EXIT")
                 has_sl = True if is_exit else bool(getattr(event, 'sl_pct', 0.0) > 0)
                 
                 # Check absolute axioms
                 # Exit signals bypass Capa 7 check_trade_validity heat/sl checks
-                if not is_exit and not registry.check_trade_validity(trade_risk_pct, current_heat, has_sl):
+                if not is_exit and not registry.check_trade_validity(trade_risk_pct, current_heat, has_sl, horizon):
                     logger.warning(f"🛑 [CAPA 7] VETO ABSOLUTO de Registro Omnisciente para {event.symbol}.")
                     self.metrics['discarded_events'] += 1
                     return
@@ -1455,6 +1500,11 @@ class Engine:
     @omniscient_trace(layer="CORTEX")
     async def _process_order_event(self, event):
         """Process ORDER event asynchronously"""
+        # FORENSIC FIX: Track Hotpath E2E Latency (Tick -> Engine -> Order)
+        if hasattr(event, 't0_ns'):
+            latency_ns = time.perf_counter_ns() - event.t0_ns
+            latency_monitor.track_hotpath(latency_ns)
+
         if self.zmq_push:
             await self.zmq_push.push(event)
         elif self.execution_handler:
@@ -1464,10 +1514,34 @@ class Engine:
                 self._netting_engine = ExecutionNettor(self.execution_handler)
             
             # Pasamos el evento a traves del nettor en lugar del execution_handler directo
-            if asyncio.iscoroutinefunction(self._netting_engine.execute_order):
-                await self._netting_engine.execute_order(event)
-            else:
-                self._netting_engine.execute_order(event)
+            # FASE 4: HFT Execution Hardening - Fire and Forget para no bloquear el Engine
+            async def _fire_and_forget_execution():
+                try:
+                    if asyncio.iscoroutinefunction(self._netting_engine.execute_order):
+                        net_res = await self._netting_engine.execute_order(event)
+                    else:
+                        net_res = self._netting_engine.execute_order(event)
+                        
+                    if net_res and isinstance(net_res, dict) and net_res.get("status") == "NETTED":
+                        from core.events import FillEvent
+                        synthetic_fill = FillEvent(
+                            symbol=event.symbol,
+                            exchange="binance",
+                            quantity=event.quantity,
+                            direction=event.direction,
+                            fill_cost=event.quantity * event.price,
+                            commission=0.0,
+                            strategy_id=getattr(event, 'strategy_id', 'Unknown'),
+                            horizon=getattr(event, 'horizon', 'SCALPING'),
+                            metadata={"synthetic": True, "reason": "NETTED"},
+                            timestamp_ns=time.time_ns()
+                        )
+                        synthetic_fill.price = event.price
+                        self.events.put(synthetic_fill)
+                except Exception as e:
+                    logger.error(f"Fire-and-Forget Execution Error: {e}")
+            
+            asyncio.create_task(_fire_and_forget_execution())
         else:
             logger.warning("No Execution Handler registered. Order ignored.")
 
@@ -1893,6 +1967,13 @@ class Engine:
                 asyncio.run(self.execution_handler.ws_executor.stop())
             except Exception as e:
                 logger.error(f"Error stopping WSOrderExecutor: {e}")
+                
+        # 🌐 [PHASE V] MULTI-SOURCE INTELLIGENCE ENGINE
+        if hasattr(self, 'cross_exchange_engine') and self.cross_exchange_engine:
+            try:
+                asyncio.run(self.cross_exchange_engine.stop())
+            except Exception as e:
+                logger.error(f"Error stopping CrossExchangeEngine: {e}")
 
     def _on_mutation_event(self, payload: Dict[str, Any]):
         """

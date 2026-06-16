@@ -66,6 +66,10 @@ Unlike conventional bots that seek high win rates over months, Trader Gemini use
 4. **Nano-Timeframe Validation:** Order Book imbalance checks to prevent `MICROSCALPING` into micro-dumps/pumps.
 
 The architecture strictly simulates the **Cruel Reality** of Binance Futures fees (0.05% Taker, 0.02% Maker) during backtesting, ensuring that strategies surviving the simulation will absolutely survive in production.
+
+### Phase 23-32: Espejo Perfecto y Performance Cuántica (Grafo Vivo)
+1. **Paridad Simulada Absoluta (Espejo Perfecto):** El simulador de Backtesting DEBE replicar 1:1 las restricciones de producción. Esto incluye el `ConsensusFilter` unificado y la simulación estricta de los **Funding Rates** (cada 8h), garantizando que las estrategias SWING no infle ganancias falsas.
+2. **Performance Cuántica (GIL-Free & Pandas-Free):** Las rutas críticas HFT en los motores de ML operan exclusivamente utilizando slices en NumPy bruto. Operaciones pesadas (como iteraciones Pandas o bloqueos `gc.collect()`) están formalmente prohibidas en el *hot-path* para sostener un P99 de latencia inferior a 50ms.
 4. **Fees y Costos:** Opera maker sobre taker preferiblemente. Calcula breakeven exacto (incluyendo fees) en microscalping antes de entrar.
 5. **Liquidez y Selección de Pares:** Monitorea order books. Rota pares dinámicamente priorizando volumen, spread, y volatilidad. 
 

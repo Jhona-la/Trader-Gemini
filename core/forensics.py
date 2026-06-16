@@ -77,3 +77,18 @@ class ForensicRecorder:
         except Exception as e:
             logger.error(f"❌ Failed to save Forensic Snapshot: {e}")
             return None
+
+    @staticmethod
+    def generate_decision_hash(symbol: str, signal_type: str, price: float, confidence: float, horizon: str) -> str:
+        """
+        FORENSIC FIX: Mirror Backtesting Parity
+        QUÉ: Genera un hash determinista de una decisión de trading.
+        POR QUÉ: Permite verificar que el backtest y la producción
+          toman EXACTAMENTE la misma decisión ante los mismos datos.
+        """
+        import hashlib
+        # Redondeo estricto para evitar floats divergentes por arquitectura CPU
+        safe_price = f"{price:.4f}" if price else "0.0000"
+        safe_conf = f"{confidence:.4f}" if confidence else "0.0000"
+        payload = f"{symbol}|{signal_type}|{safe_price}|{safe_conf}|{horizon}"
+        return hashlib.sha256(payload.encode('utf-8')).hexdigest()[:16]

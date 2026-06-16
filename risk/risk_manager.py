@@ -247,10 +247,12 @@ class RiskManager:
         #   valores calibrados al ATR real de cada activo.
         # PARA QUÉ: R:R ≥ 1.5:1 SIEMPRE, para cada activo individual.
         # ═══════════════════════════════════════════════════════════════
+        print("DEBUG-RM: Init AssetParameterEngine...", flush=True)
         if _ASSET_PARAM_ENGINE_AVAILABLE:
             self.asset_param_engine = get_asset_parameter_engine()
         else:
             self.asset_param_engine = None
+        print("DEBUG-RM: AssetParameterEngine initialized.", flush=True)
 
         # Kelly Stats (Dynamic Genesis V5.0)
         self.win_count = 0
@@ -403,7 +405,7 @@ class RiskManager:
                 "max_risk_pct": getattr(
                     Config, "MAX_RISK_SCALPING", 0.0055
                 ),  # HORIZON: SCALP — 0.55% risk
-                "leverage": getattr(Config, "LEVERAGE_SCALPING", 10),
+                "leverage": getattr(Config, "LEVERAGE_SCALPING", 50),
             },
             "SWING": {
                 "stop_loss_pct": _swing_cfg.get('sl_pct', getattr(Config, "STOP_LOSS_PCT_SWING", 0.015)),  # 1.5%
@@ -413,12 +415,13 @@ class RiskManager:
                 "max_risk_pct": getattr(
                     Config, "MAX_RISK_SWING", 0.008
                 ),  # HORIZON: SWING — 0.8% risk
-                "leverage": getattr(Config, "LEVERAGE_SWING", 5),
+                "leverage": getattr(Config, "LEVERAGE_SWING", 30),
             },
         }
 
         # Sovereign-Deploy: Kill Switch L1 & Fractional Kelly
         self.consecutive_losses = {}
+        print("DEBUG-RM: RiskManager.__init__ completed successfully.", flush=True)
 
     def register_strategy(self, strategy):
         """Dummy method for Engine-RiskManager coordination."""
@@ -890,8 +893,12 @@ class RiskManager:
         if not self.portfolio:
             return True
 
+        # Determine the target direction for Hedge Mode awareness
+        sig_dir_str = getattr(signal_type, 'name', str(signal_type))
+        target_dir = "LONG" if sig_dir_str == "LONG" else "SHORT" if sig_dir_str == "SHORT" else None
+
         # [PHOENIX V3] Hedge Mode Aware: Use get_horizon_position instead of raw ledger lookup
-        v_pos = self.portfolio.get_horizon_position(symbol, horizon)
+        v_pos = self.portfolio.get_horizon_position(symbol, horizon, target_dir)
 
         if not v_pos:
             return True
@@ -1211,10 +1218,31 @@ class RiskManager:
 
     def _compute_kelly_math(self, p: float, b: float, apply_mult: bool = True) -> float:
         """
-        [PRECISION-AXIOMA] Core math for Kelly Criterion via Numba JIT.
-        Eliminates the millisecond-latency of Python Decimal overhead.
+        [PRECISION-AXIOMA] Core math for Kelly Criterion via C-Cython extension.
+        Eliminates the millisecond-latency of Python.
         """
         try:
+            from risk.c_risk import compute_kelly_fraction
+            
+            raw_k = compute_kelly_fraction(float(p), float(b))
+            
+            # Defensive Scaling (Risk Fortress)
+            kelly_mult = 0.50  # [QUANTUM EVOLUTION] Half-Kelly for aggressive scaling
+            
+            if apply_mult:
+                raw_k *= kelly_mult
+                
+            # Stress Drag Factor
+            raw_k *= (1.0 - float(self.stress_score))
+            
+            # Clamp between 0% and 60% exposure
+            clamped = min(max(raw_k, 0.0), 0.60)
+            
+            logger.debug(
+                f"📐 [Axioma-Kelly NANO] P:{p:.3f} B:{b:.3f} Final:{clamped:.4f}"
+            )
+            return float(clamped)
+        except ImportError:
             # Defensive Scaling (Risk Fortress)
             kelly_mult = 0.50  # [QUANTUM EVOLUTION] Half-Kelly for aggressive scaling instead of Quarter-Kelly
 
@@ -1229,7 +1257,7 @@ class RiskManager:
             )
 
             logger.debug(
-                f"📐 [Axioma-Kelly NANO] P:{p:.3f} B:{b:.3f} Final:{clamped:.4f}"
+                f"📐 [Axioma-Kelly NUMBA] P:{p:.3f} B:{b:.3f} Final:{clamped:.4f}"
             )
             return float(clamped)
 
@@ -1808,6 +1836,31 @@ class RiskManager:
                             f"(Actual: Conf={ml_conf*100:.1f}%, VPIN={vpin_toxicity:.2f}, Ent={entropy:.2f})"
                         )
                         signal_metadata["rejection_reason"] = "ABSOLUTE_CERTAINTY_VETO"
+                        return None
+
+            # 1.11 [FASE III] RIESGO ADAPTATIVO DE ALTA FRECUENCIA (Latencia & Spread)
+            if signal_metadata:
+                order_flow = signal_metadata.get('metrics', {}).get('order_flow', {})
+                
+                # A. Penalización por Latencia del Hot-Path
+                system_latency_ms = signal_metadata.get('system_latency_ms', 0.0)
+                if system_latency_ms > 0:
+                    if system_latency_ms > 50.0: # Si tardamos más de 50ms, el Scalping es suicidio
+                        if horizon in ('MICROSCALPING', 'SCALPING'):
+                            logger.warning(f"⏳ [LATENCY VETO] {symbol} {horizon} rechazado. Latencia del sistema ({system_latency_ms:.2f}ms) excede límite HFT (<50ms). Riesgo de slippage fatal.")
+                            signal_metadata["rejection_reason"] = "LATENCY_VETO"
+                            return None
+                    elif system_latency_ms > 20.0: # Si tardamos > 20ms, reducimos sizing a la mitad
+                        multiplier *= 0.5
+                        logger.warning(f"⏳ [LATENCY PENALTY] {symbol} {horizon} latencia subóptima ({system_latency_ms:.2f}ms). Reduciendo dimensionamiento a la mitad (50%).")
+                
+                # B. Ajuste Dinámico por Anchura de Spread
+                spread_pct = order_flow.get('spread_pct', 0.0)
+                if spread_pct > 0 and horizon in ('MICROSCALPING', 'SCALPING'):
+                    # Si el spread absorbe más del 30% del TP proyectado, abortamos
+                    if spread_pct > (h_params["take_profit_pct"] * 0.30):
+                        logger.warning(f"🧊 [SPREAD VETO] {symbol} {horizon} rechazado. Spread actual ({spread_pct*100:.4f}%) absorbe excesivamente el TP ({h_params['take_profit_pct']*100:.4f}%).")
+                        signal_metadata["rejection_reason"] = "SPREAD_VETO"
                         return None
 
             # [MERITOCRACY] Merit-based risk adjustment
@@ -2461,7 +2514,12 @@ class RiskManager:
         # ================================================================
         if getattr(signal_event, "strategy_id", "") == "PLACE_TP_LIMIT":
             horizon = getattr(signal_event, "horizon", "SCALPING")
-            pos = self.portfolio.get_horizon_position(signal_event.symbol, horizon) if self.portfolio else None
+            
+            sig_dir = getattr(signal_event, "direction", None)
+            sig_dir_str = sig_dir.name if hasattr(sig_dir, 'name') else str(sig_dir)
+            target_pos_dir = "LONG" if sig_dir_str == "SELL" else "SHORT" if sig_dir_str == "BUY" else None
+            
+            pos = self.portfolio.get_horizon_position(signal_event.symbol, horizon, target_pos_dir) if self.portfolio else None
             if not pos or abs(pos.get("quantity", 0)) < 1e-8:
                 return self._reject_trade(signal_event, RejectionReason.TP_LIMIT_NO_POSITION)
             
@@ -2501,8 +2559,13 @@ class RiskManager:
         _sig_type_str = getattr(signal_event.signal_type, "name", str(signal_event.signal_type))
         if _sig_type_str == "EXIT" or getattr(signal_event, "is_exit", False):
             horizon = getattr(signal_event, "horizon", "SCALPING")
+            
+            sig_dir = getattr(signal_event, "direction", None)
+            sig_dir_str = sig_dir.name if hasattr(sig_dir, 'name') else str(sig_dir)
+            target_pos_dir = "LONG" if sig_dir_str == "SELL" else "SHORT" if sig_dir_str == "BUY" else None
+
             pos = (
-                self.portfolio.get_horizon_position(signal_event.symbol, horizon)
+                self.portfolio.get_horizon_position(signal_event.symbol, horizon, target_pos_dir)
                 if self.portfolio
                 else None
             )
@@ -2667,7 +2730,12 @@ class RiskManager:
         is_hedge_cover = False  # PHASE 5.2: Delta-Neutral Hedging Flag
         if self.portfolio and signal_event.signal_type in [SignalType.LONG, SignalType.SHORT]:
             opposing_horizon = "SWING" if horizon in ("SCALPING", "MICROSCALPING") else "SCALPING"
-            opposing_pos = self.portfolio.get_horizon_position(signal_event.symbol, opposing_horizon)
+            
+            sig_dir_str = getattr(signal_event.signal_type, 'name', str(signal_event.signal_type))
+            target_dir = "LONG" if sig_dir_str == "LONG" else "SHORT"
+            opposing_dir = "SHORT" if target_dir == "LONG" else "LONG"
+            
+            opposing_pos = self.portfolio.get_horizon_position(signal_event.symbol, opposing_horizon, opposing_dir)
             if opposing_pos and abs(opposing_pos.get('quantity', 0)) > 1e-8:
                 opp_qty = opposing_pos.get('quantity', 0)
                 is_long_signal = signal_event.signal_type == SignalType.LONG
@@ -2744,7 +2812,10 @@ class RiskManager:
         # FORENSIC-V29 FIX #1: ATOMIC FLIP-EXIT (CRITICAL)
         # ═══════════════════════════════════════════════════════════════
         if self.portfolio and signal_event.signal_type in [SignalType.LONG, SignalType.SHORT]:
-            existing_pos = self.portfolio.get_horizon_position(signal_event.symbol, horizon)
+            sig_dir_str = getattr(signal_event.signal_type, 'name', str(signal_event.signal_type))
+            target_dir = "LONG" if sig_dir_str == "LONG" else "SHORT"
+            opposing_dir = "SHORT" if target_dir == "LONG" else "LONG"
+            existing_pos = self.portfolio.get_horizon_position(signal_event.symbol, horizon, opposing_dir)
             if existing_pos and abs(existing_pos.get('quantity', 0)) > 1e-8:
                 existing_qty = existing_pos.get('quantity', 0)
                 is_flip = (existing_qty > 0 and signal_event.signal_type == SignalType.SHORT) or \
@@ -2870,8 +2941,8 @@ class RiskManager:
                 return self._reject_trade(signal_event, "NO_PORTFOLIO")
 
             symbol = signal_event.symbol
-            strategy_id = getattr(signal_event, "strategy_id", "Unknown")
-            setup_type = getattr(signal_event, "setup_type", "generic")
+            strategy_id = getattr(signal_event, "strategy_id", "Unknown") or "Unknown"
+            setup_type = getattr(signal_event, "setup_type", None) or "generic"
 
             # FORENSIC FIX #4: ORPHAN GUARD
             if strategy_id == "Unknown" or not strategy_id:
@@ -3185,7 +3256,13 @@ class RiskManager:
             return base_order
 
         except Exception as e:
-            logger.error(f"❌ [MERCHANT-GOD] Order generation FATAL: {e}")
+            import traceback
+            logger.error(f"❌ [MERCHANT-GOD] Order generation FATAL: {e}\n{traceback.format_exc()}")
+            if 'client_order_id' in locals() and 'reservation_amount' in locals():
+                try:
+                    self.portfolio.release_order_margin(amount=reservation_amount, order_id=client_order_id)
+                except Exception as ex:
+                    logger.error(f"Error releasing margin during fallback: {ex}")
             return None
 
     def _generate_exit_order(self, signal_event, current_price):
@@ -3201,7 +3278,12 @@ class RiskManager:
 
             symbol = signal_event.symbol
             horizon = getattr(signal_event, "horizon", "SCALPING")
-            pos = self.portfolio.get_horizon_position(symbol, horizon)
+            
+            sig_dir = getattr(signal_event, "direction", None)
+            sig_dir_str = sig_dir.name if hasattr(sig_dir, 'name') else str(sig_dir)
+            target_pos_dir = "LONG" if sig_dir_str == "SELL" else "SHORT" if sig_dir_str == "BUY" else None
+            
+            pos = self.portfolio.get_horizon_position(symbol, horizon, target_pos_dir)
 
             if not pos or pos.get("quantity", 0) == 0:
                 return None
@@ -3455,6 +3537,24 @@ class RiskManager:
                     prediction_tracker=getattr(self, 'prediction_tracker', None),
                     current_time=now
                 )
+                
+                # ── APEX MODULE INJECTION ──
+                # Evaluate Apex Protocol limits (PVC, THS, VS, ZS)
+                if not hasattr(self, 'apex_engine'):
+                    from core.apex_module import ApexEngine
+                    self.apex_engine = ApexEngine()
+                
+                metrics_fn = getattr(data_provider, 'get_latest_metrics', None)
+                latest_metrics = metrics_fn(symbol) if metrics_fn else {}
+                pos['symbol'] = pos.get('symbol', symbol)
+                apex_eval = self.apex_engine.evaluate_position(pos, latest_metrics, now=now)
+                apex_action = apex_eval.get('action', 'HOLD')
+                if apex_action == 'CLOSE_ZOMBIE':
+                    oracle_decision = "CLOSE_ZOMBIE"
+                    oracle_reason = f"APEX PROTOCOL: Zombie Score {apex_eval.get('zs', 0):.2f} exceeded limits."
+                elif apex_action == 'HERO_UPGRADE':
+                    pos['horizon'] = 'SWING' # Upgrade horizon
+                    logger.info(f"🦸‍♂️ [APEX] Position upgraded to SWING due to high PVC.")
                 
                 if oracle_decision != "KEEP_OPEN":
                     # FORENSIC AUDIT: Extraer y loggear decaimiento de Alpha
@@ -3750,6 +3850,50 @@ class RiskManager:
                     pos["high_water_mark"] = current_price # Reset trail start
                     pos["low_water_mark"] = current_price
                     logger.info(f"🧬 [TRANSMUTATION] {symbol} SCALPING -> SWING (PnL: {unrealized_pnl_pct:.2f}%)")
+
+            # 🚀 NANO RISK ENGINE INJECTION 🚀
+            # QUÉ: Fast-path evaluation of core limits using Numba.
+            # POR QUÉ: Bypass redundant python floating point math if a core limit is hit.
+            # CÓMO: Llama a evaluate_sl_tp_trailing_jit. Si retorna 1 (SL), ejecutamos salida ultra-rápida.
+            from core.nano_risk_engine import evaluate_sl_tp_trailing_jit
+            
+            atr_pct_val = (pos.get('atr_pct', 0.002) * 100)
+            is_zombie_chaser = pos.get('_zombie_chaser', False)
+            elastic_tp_expansion = pos.get('_elastic_tp_expansion', False)
+            
+            nano_action = evaluate_sl_tp_trailing_jit(
+                current_price, 
+                entry_price, 
+                hwm, 
+                lwm, 
+                qty, 
+                sl_pct, 
+                tp_pct, 
+                atr_pct_val, 
+                is_zombie_chaser,
+                elastic_tp_expansion
+            )
+            
+            if nano_action == 1: # HARD SL
+                print(f"🛑 [NANO-JIT] HARD SL [{pos_horizon}] {symbol}! {unrealized_pnl_pct:.2f}%")
+                exit_votes.append({"vote": "EXIT", "reason": f"NANO_HARD_SL: {unrealized_pnl_pct:.2f}%"})
+                pos['exit_pending_time'] = time.time()
+                stop_signals.append(
+                    SignalEvent(
+                        strategy_id="NANO_HARD_SL", 
+                        symbol=symbol, 
+                        datetime=now, 
+                        signal_type=SignalType.EXIT, 
+                        strength=1.0, 
+                        horizon=pos_horizon, 
+                        metadata={"exit_reason": f"HARD_SL: {unrealized_pnl_pct:.2f}%", "dollar_size": abs(qty) * current_price}
+                    )
+                )
+                self.record_trade_result(False, unrealized_pnl_pct, symbol, pos_horizon)
+                has_exit = True
+                pos['_exit_votes'] = exit_votes
+                pos['_hold_votes'] = hold_votes
+                continue
 
             # ⚡ FASE 9.1: PARTIAL TP (Toma de Ganancias Parcial)
             # QUÉ: Al alcanzar 50% del TP, cierra 50% de la posición y mueve SL a breakeven.
@@ -4529,11 +4673,19 @@ class RiskManager:
         for sig in stop_signals:
             if getattr(sig, 'signal_type', None) == SignalType.EXIT:
                 _horizon = getattr(sig, 'horizon', 'SCALPING')
-                v_key = f"{sig.symbol}_{_horizon}"
                 
-                vpos = portfolio.virtual_ledger.get(f"{v_key}_LONG") or \
-                       portfolio.virtual_ledger.get(f"{v_key}_SHORT") or \
-                       portfolio.virtual_ledger.get(f"{v_key}", {})
+                sig_dir = getattr(sig, "direction", None)
+                sig_dir_str = sig_dir.name if hasattr(sig_dir, 'name') else str(sig_dir)
+                target_pos_dir = "LONG" if sig_dir_str == "SELL" else "SHORT" if sig_dir_str == "BUY" else None
+                
+                if target_pos_dir:
+                    v_key = f"{sig.symbol}_{_horizon}_{target_pos_dir}"
+                    vpos = portfolio.virtual_ledger.get(v_key, {})
+                else:
+                    v_key = f"{sig.symbol}_{_horizon}"
+                    vpos = portfolio.virtual_ledger.get(f"{v_key}_LONG") or \
+                           portfolio.virtual_ledger.get(f"{v_key}_SHORT") or \
+                           portfolio.virtual_ledger.get(f"{v_key}", {})
                 
                 orig_setup = vpos.get('setup_type')
                 orig_tid = vpos.get('trade_id')

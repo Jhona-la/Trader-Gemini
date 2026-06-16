@@ -1,0 +1,60 @@
+22:45:24 [INFO] 🛡️ [VAULT] Security Vault Initialized (AES-256 Ephemeral)
+22:45:33 [WARNING] 🧠 [DeepPredictor] PyTorch explicitly purged (Quantum-Nano Mode). Deep Layer bypassed.
+22:45:33 [WARNING] 🌌 [Omniscience] PyTorch explicitly purged (Quantum-Nano Mode). Omniscient Predictor bypassed.
+22:45:34 [INFO] 🌐 [MacroIntelligence] Initialized. Awaiting first data fetch.
+22:45:34 [INFO] 📰 [NLP Sentiment] Initialized. Models will load on first poll.
+22:45:38 [INFO] Binance Loader: Configured for LIVE
+22:45:40 [INFO] ✅ Binance REST API Connected
+22:45:40 [INFO] ⏱️ Time Sync OK (Diff: 309ms)
+22:45:40 [INFO] ⏳ [Data] Starting parallel history fetch...
+22:45:40 [INFO] 📂 [Persistence] Loading local Parquet cache...
+22:45:40 [INFO] 📂 [Persistence] Loaded 0 symbols from disk.
+22:45:40 [INFO] 🌍 [Data] Fetching missing 1 symbols from Binance API...
+22:45:42 [INFO] Loaded 6300 1m bars for BTC/USDT
+22:45:42 [INFO] Fetching 1h historical data (250h) in PARALLEL...
+22:45:43 [INFO] Loaded 250 1h bars for BTC/USDT
+22:45:43 [INFO] Fetching 4h macro historical data (400h) in PARALLEL...
+22:45:43 [INFO] Loaded 100 4h bars for BTC/USDT
+22:45:43 [INFO] Fetching 5m historical data (100h) in PARALLEL...
+22:45:44 [INFO] Loaded 1200 5m bars for BTC/USDT
+22:45:44 [INFO] Fetching 15m historical data (100h) in PARALLEL...
+22:45:44 [INFO] Loaded 400 15m bars for BTC/USDT
+22:45:44 [INFO] Fetching 1d macro historical data (500d) in PARALLEL...
+22:45:44 [INFO] Loaded 500 1d bars for BTC/USDT
+22:45:44 [INFO] Fetching 1w structural historical data (300w) in PARALLEL...
+22:45:44 [INFO] Loaded 300 1w bars for BTC/USDT
+22:45:44 [INFO] 🧠 [SHM] Initialized Shared Memory for 1 symbols
+22:45:44 [INFO] ⏳ [Data] Starting parallel history fetch...
+22:45:44 [INFO] 📂 [Persistence] Loading local Parquet cache...
+22:45:44 [INFO] 📂 [Persistence] Loaded 0 symbols from disk.
+22:45:44 [INFO] 🌍 [Data] Fetching missing 1 symbols from Binance API...
+22:45:47 [INFO] Loaded 6300 1m bars for BTC/USDT
+22:45:48 [INFO] 🎯 [[SCL]_Technical Momentum_SCALPING] Horizon=SCALPING | TP=0.8% SL=1.6% | RSI=5 | TFs=['1m', '5m', '15m'] | Primary=1m
+22:45:48 [INFO] 🧠 [SOPHIA] Intelligence engine initialized
+22:45:48 [INFO] 🧠 [SOPHIA] New singleton instance for 1.0min timeframe (total: 1)
+22:45:48 [INFO] 🧠 [SOPHIA] Horizon Profile: SCALPING → Chaos Dampening=1.0, Certainty Floor=0.5
+22:45:48 [INFO] 🧠 [SOPHIA INIT] Horizon: SCALPING | Primary TF: 1m | Bar Mins: 1.0 | Profile Days: 1
+22:45:48 [INFO] 🔧 [SharedPools] Initialized: Inference=4 threads, Training=2 threads, IO=2 threads (Total: 8)
+22:45:48 [INFO] 🚀 [PETIM] Multi-Task Predictor Loaded for BTC/USDT
+22:45:48 [INFO] 🔮 [ML-Horizon] Scaled Prediction Window: 15 bars (Horizon: SCALPING)
+22:45:48 [INFO] 🧠 [SOPHIA] Intelligence engine initialized
+22:45:48 [INFO] 🧠 [SOPHIA] New singleton instance for 5.0min timeframe (total: 2)
+22:45:48 [INFO] 🧠 [SOPHIA] Horizon Profile: SCALPING → Chaos Dampening=1.0, Certainty Floor=0.5
+22:45:49 [INFO] 🟢 ML HYBRID ULTIMATE STRATEGY [ENSEMBLE] INITIALIZED FOR BTC/USDT
+22:45:49 [INFO] 🎯 OBJECTIVE: $12.0 → $100000.0
+22:45:49 [INFO] ⚙️  Mode: Exponential Growth (Aggressive with Risk Control)
+22:45:49 [INFO] 🧹 ML Hybrid Ultimate Strategy for BTC/USDT cleaned up
+📊 Metrics Exporter Initialized (Phase 99: Per-Symbol + Health).
+
+══════════════════════════════════════════════════════════════════════
+🧬 [DNA-LOADER] Injecting Supreme Quantum DNA into Production Engine...
+   → Leverage Amplified: SCALP 50x | SWING 30x
+   → Metrics Scalp: TP: 0.76% | SL: 1.62%
+   → Metrics Swing: TP: 17.32% | SL: 3.13%
+   → OmniScore Weights: ML=0.55, TECH=0.54, THRESH=1.13
+══════════════════════════════════════════════════════════════════════
+
+🚀 Iniciando Auditoria Forense de Flujo de Datos...
+✅ Data recuperada exitosamente: 100 barras
+❌ Technical Strategy Error: 'HybridScalpingStrategy' object has no attribute 'generate_signal'
+❌ ML Strategy Error: 'MLStrategyHybridUltimate' object has no attribute 'predict'

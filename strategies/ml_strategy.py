@@ -40,7 +40,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 import talib
-
+from sklearn.preprocessing import StandardScaler
 from config import Config
 from utils.notifier import Notifier
 from core.enums import EventType, SignalType
@@ -592,9 +592,8 @@ class MLStrategyHybridUltimate(Strategy):
         self._last_prediction_time = None
         self._label_mapping = {
             0: -1,
-            1: 0,
-            2: 1,
-        }  # PHASE 7: Default 3-class mapping (SHORT/HOLD/LONG)
+            1: 1,
+        }  # FORENSIC FIX: Revert to 2-class (SHORT/LONG). 3-class breaks JIT kernel.
 
         # ============================================================
         # ✅ MONITORING Y ESTADÍSTICAS COMPLETAS
@@ -932,7 +931,8 @@ class MLStrategyHybridUltimate(Strategy):
             symbol=self.symbol,
             feature_store=self.feature_store,
             horizon=self.horizon_str,
-            return_polars=return_polars
+            return_polars=return_polars,
+            is_live=not getattr(self, 'is_sandbox', False)
         )
 
     def _validate_features(self, df):
@@ -1130,25 +1130,18 @@ class MLStrategyHybridUltimate(Strategy):
         )
 
         # ═══════════════════════════════════════════════════════════════
-        # PHASE 7 FIX: 3-CLASS ML MODEL & CLASS IMBALANCE
-        # QUÉ: Mantenemos la clase 0 (Hold/Ruido) pero con subsampling.
-        # POR QUÉ: Al eliminar la clase 0, el modelo solo aprendía a predecir
-        #   subidas o bajadas, forzando trades en mercados planos (Choppy).
-        # PARA QUÉ: Permitir que el modelo identifique el ruido y no opere.
+        # FORENSIC FIX: REVERT TO 2-CLASS (SHORT/LONG)
+        # QUÉ: Eliminamos df_hold.
+        # POR QUÉ: El Numba JIT compiler de inference (predict_rf_jit) SOLO 
+        #   soporta salida binaria. Meter 3 clases rompe las probabilidades 
+        #   y causa el error XGBoost 'got [1 2]'.
+        # PARA QUÉ: Evitar crashes y restaurar operaciones LONG que estaban
+        #   siendo mapeadas a HOLD.
         # ═══════════════════════════════════════════════════════════════
-        # import pandas as pd
         df_long = df[df["label"] == 1]
         df_short = df[df["label"] == -1]
-        df_hold = df[df["label"] == 0]
         
-        target_size = max(5, int((len(df_long) + len(df_short)) / 2))
-        
-        if len(df_hold) > target_size:
-            df_hold_sub = df_hold.sample(n=target_size, random_state=42)
-        else:
-            df_hold_sub = df_hold
-            
-        df_signals = pd.concat([df_long, df_short, df_hold_sub]).sort_index()
+        df_signals = pd.concat([df_long, df_short]).sort_index()
 
         # ═══════════════════════════════════════════════════════════════
         # FORENSIC-V50 FIX: MINIMUM TRAINING SAMPLES (ANTI-OVERFITTING)
@@ -1227,12 +1220,10 @@ class MLStrategyHybridUltimate(Strategy):
         y = df_signals["label"]
 
         # CRITICAL: Remap labels for XGBoost compatibility
-        # XGBoost dynamically expects [0, 1, ..., k-1]
-        from sklearn.preprocessing import LabelEncoder
-        if not hasattr(self, "label_encoder"):
-            self.label_encoder = LabelEncoder()
-        
-        y_encoded = self.label_encoder.fit_transform(y)
+        # XGBoost dynamically expects [0, 1] for binary classification
+        # FIX: Hardcode mapping so classes don't shift across batches
+        # -1 -> 0, 1 -> 1
+        y_encoded = y.map({-1: 0, 1: 1})
         y = pd.Series(y_encoded, index=y.index)
 
         # DEBUG: Verificar si las features son válidas
@@ -1259,7 +1250,8 @@ class MLStrategyHybridUltimate(Strategy):
         else:
             # Phase 24: Lazy Imports
             from sklearn.model_selection import TimeSeriesSplit
-            from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+            from sklearn.neural_network import MLPClassifier
+            from sklearn.linear_model import SGDClassifier
             from sklearn.preprocessing import StandardScaler
             from xgboost import XGBClassifier
 
@@ -1369,7 +1361,7 @@ class MLStrategyHybridUltimate(Strategy):
                 logger.warning(
                     f"⚠️ [{self.symbol}] Fold {fold} has only 1 class. Injecting synthetic samples to prevent XGB crash."
                 )
-                fake_y = pd.Series([0, 1], index=[-1, -2])
+                fake_y = pd.Series([-1, 1], index=[-1, -2])
                 fake_X = pd.DataFrame(
                     [X_train.iloc[0].values, X_train.iloc[0].values],
                     index=[-1, -2],
@@ -1383,19 +1375,19 @@ class MLStrategyHybridUltimate(Strategy):
             X_train_scaled = scaler.fit_transform(X_train).astype("float32")
             X_test_scaled = scaler.transform(X_test).astype("float32")
 
-            # 1. Random Forest (Paralelización completa)
-            # FORENSIC-V31: min_samples_leaf 3→5 for better generalization
-            rf = RandomForestClassifier(
-                n_estimators=n_estimators,
-                max_depth=max_depth_rf,
-                min_samples_split=min_samples_split,
-                min_samples_leaf=5,            # Was 3 → reduce leaf overfitting
-                max_features="sqrt",
-                n_jobs=-1,  # QUANTUM OVERCLOCK: Use all available cores
-                random_state=42 + self.training_iteration,
-                class_weight="balanced",
-            )
-            rf.fit(X_train_scaled, y_train)
+            # 1. MLP Classifier (Neural Network - Online Learning)
+            rf = getattr(self, "rf_model", None)
+            if not rf or not hasattr(rf, "partial_fit"):
+                rf = MLPClassifier(
+                    hidden_layer_sizes=(64, 32),
+                    learning_rate_init=0.01,
+                    max_iter=1,  # Fast single pass for online learning
+                    warm_start=True,
+                    random_state=42 + self.training_iteration
+                )
+            
+            # Use partial_fit for O(1) memory updates
+            rf.partial_fit(X_train_scaled, y_train, classes=np.array([0, 1]))
             rf_score = rf.score(X_test_scaled, y_test)
             cv_scores["rf"].append(rf_score)
 
@@ -1495,27 +1487,19 @@ class MLStrategyHybridUltimate(Strategy):
                 # Current fold results are kept as-is (valid baseline)
             cv_scores["xgb"].append(xgb_score)
 
-            # 3. Gradient Boosting (Persistent Warm Start - Rule 3.7)
-            # PROFESSOR METHOD: Reuse GB instance to accumulate knowledge.
-            gb = None
-            if hasattr(self, "gb_model") and self.gb_model is not None:
-                gb = self.gb_model
-                # Incrementar n_estimators para permitir warm_start real (FIX A-6: cap at 200)
-                gb.n_estimators = min(gb.n_estimators + 5, 200)
-                logger.debug(
-                    f"🔄 [{self.symbol}] Resuming GB with {gb.n_estimators} estimators (Warm Start)."
+            # 3. SGD Classifier (Linear Incremental - Rule 3.7)
+            # PROFESSOR METHOD: Reuse SGD instance for ultra-fast online updates.
+            gb = getattr(self, "gb_model", None)
+            if not gb or not hasattr(gb, "partial_fit"):
+                gb = SGDClassifier(
+                    loss="log_loss", # Provides predict_proba
+                    penalty="elasticnet",
+                    learning_rate="adaptive",
+                    eta0=0.01,
+                    random_state=42 + self.training_iteration
                 )
-            else:
-                gb = GradientBoostingClassifier(
-                    n_estimators=n_estimators,
-                    max_depth=max_depth_gb,
-                    learning_rate=learning_rate,
-                    subsample=subsample,
-                    random_state=42 + self.training_iteration,
-                    warm_start=True,
-                )
-
-            gb.fit(X_train_scaled, y_train)
+                
+            gb.partial_fit(X_train_scaled, y_train, classes=np.array([0, 1]))
             gb_score = gb.score(X_test_scaled, y_test)
             cv_scores["gb"].append(gb_score)
 
@@ -1552,19 +1536,19 @@ class MLStrategyHybridUltimate(Strategy):
                 f"📥 [{self.symbol}] Local Training finished. Score: {score:.3f}"
             )
 
-            # Train DeepPredictor LSTM
-            try:
-                from models.deep_predictor import deep_predictor
-                if hasattr(self, 'scaler') and self.scaler is not None:
-                    try:
-                        X_dp = self.scaler.transform(X)
-                    except Exception:
-                        X_dp = X.values
-                else:
-                    X_dp = X.values
-                deep_predictor.train_model(X_dp, y.values if hasattr(y, 'values') else y, seq_len=10, epochs=10)
-            except Exception as e:
-                logger.error(f"DeepPredictor train failed: {e}")
+            # Train DeepPredictor LSTM (DISABLED FOR NANO OPTIMIZATION - 16GB RAM / 0 GPU)
+            # try:
+            #     from models.deep_predictor import deep_predictor
+            #     if hasattr(self, 'scaler') and self.scaler is not None:
+            #         try:
+            #             X_dp = self.scaler.transform(X)
+            #         except Exception:
+            #             X_dp = X.values
+            #     else:
+            #         X_dp = X.values
+            #     deep_predictor.train_model(X_dp, y.values if hasattr(y, 'values') else y, seq_len=10, epochs=10)
+            # except Exception as e:
+            #     logger.error(f"DeepPredictor train failed: {e}")
 
             # ═══════════════════════════════════════════════════════════════
             # OPT-3: AGGRESSIVE GC POST-TRAINING
@@ -2062,8 +2046,14 @@ class MLStrategyHybridUltimate(Strategy):
             # Replace NaN with 0 in numpy directly
             np.nan_to_num(X_pred, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
 
-            # B4 FIX: Tree models are scale-invariant, skip scaler
-            X_scaled = X_pred
+            # FIX: Ensure scale-variant models (MLP, SGD) receive scaled data
+            if hasattr(self, 'scaler') and self.scaler is not None:
+                try:
+                    X_scaled = self.scaler.transform(X_pred)
+                except Exception:
+                    X_scaled = X_pred  # Fallback
+            else:
+                X_scaled = X_pred
 
             # Determine whether to use fast matrices or slow models
             rf = getattr(self, "rf_arrays", self.rf_model)
@@ -2199,22 +2189,28 @@ class MLStrategyHybridUltimate(Strategy):
                 # Modulación de la Confianza/Sizing
                 _tentative_dir = "LONG" if predicted_class == 1 else "SHORT"
                 
-                # Si el PPO está de acuerdo con la dirección (signo), aumentamos confianza
-                # Si el PPO difiere, la reducimos.
-                # Acción > 0 significa LONG, Acción < 0 significa SHORT.
-                ppo_aggressiveness = 1.0
-                if _tentative_dir == "LONG":
-                    if ppo_action > 0:
-                        ppo_aggressiveness = 1.0 + (ppo_action * 0.2) # Up to 20% boost
-                    else:
-                        ppo_aggressiveness = 1.0 + ppo_action # Penalty down to 0
-                else: # SHORT
-                    if ppo_action < 0:
-                        ppo_aggressiveness = 1.0 + (abs(ppo_action) * 0.2)
-                    else:
-                        ppo_aggressiveness = 1.0 - ppo_action
-                        
-                confidence = raw_confidence * max(0.1, ppo_aggressiveness)
+                # FIX: Bypass PPO until it has enough training data
+                ppo_trades = getattr(ppo_agent, 'total_updates', 0)
+                if ppo_trades < 50:
+                    confidence = raw_confidence
+                    logger.debug(f"🧠 [PPO-RL] BYPASS (Untrained: {ppo_trades}/50 trades). Conf: {confidence:.3f}")
+                else:
+                    # Si el PPO está de acuerdo con la dirección (signo), aumentamos confianza
+                    # Si el PPO difiere, la reducimos.
+                    # Acción > 0 significa LONG, Acción < 0 significa SHORT.
+                    ppo_aggressiveness = 1.0
+                    if _tentative_dir == "LONG":
+                        if ppo_action > 0:
+                            ppo_aggressiveness = 1.0 + (ppo_action * 0.2) # Up to 20% boost
+                        else:
+                            ppo_aggressiveness = 1.0 + ppo_action # Penalty down to 0
+                    else: # SHORT
+                        if ppo_action < 0:
+                            ppo_aggressiveness = 1.0 + (abs(ppo_action) * 0.2)
+                        else:
+                            ppo_aggressiveness = 1.0 - ppo_action
+                            
+                    confidence = raw_confidence * max(0.1, ppo_aggressiveness)
                 
                 logger.debug(
                     f"🧠 [PPO-RL] {_tentative_dir} | PPO Action: {ppo_action:.3f} | Conf: {raw_confidence:.3f} → {confidence:.3f}"
@@ -2310,13 +2306,13 @@ class MLStrategyHybridUltimate(Strategy):
             # POR QUÉ: Un Swing activo significa que el sesgo macro es fuerte en esa dirección.
             #   Operar un SCALP en contra es exponerse a la tendencia pesada del sistema.
             # ═══════════════════════════════════════════════════════════════
-            if self.portfolio and self.horizon_str in ("SCALPING", "MICROSCALPING", "MICRO"):
-                active_pos = self.portfolio.positions.get(self.symbol, [])
+            if self.portfolio and hasattr(self.portfolio, 'virtual_ledger') and self.horizon_str in ("SCALPING", "MICROSCALPING", "MICRO"):
                 swing_opposing = any(
-                    p.get('horizon') == "SWING" and 
-                    ((p['direction'] == 1 and signal_type_raw == "SHORT") or
-                     (p['direction'] == -1 and signal_type_raw == "LONG"))
-                    for p in active_pos
+                    ("SWING" in k and k.startswith(f"{self.symbol}_")) and
+                    ((v.get('quantity', 0) > 0 and signal_type_raw == "SHORT") or
+                     (v.get('quantity', 0) < 0 and signal_type_raw == "LONG"))
+                    for k, v in self.portfolio.virtual_ledger.items()
+                    if abs(v.get('quantity', 0)) > 1e-8
                 )
                 if swing_opposing:
                     logger.info(
@@ -2363,6 +2359,51 @@ class MLStrategyHybridUltimate(Strategy):
                 return
             if predicted_class == -1 and confluence > self.adaptive_confluence_short:
                 return
+
+            # 🌑 FASE 38: DARK ALPHA LAYER VETO (Hyperliquid Cascade Detection)
+            if self.horizon_str == 'SCALPING':
+                try:
+                    from core.global_state import global_state
+                    dark_pressure = getattr(global_state, 'dark_alpha_pressure', 0.0)
+                    
+                    # Positive pressure = Short Squeeze (Buy momentum)
+                    # Negative pressure = Long Cascade (Sell momentum)
+                    
+                    if predicted_class == 1 and dark_pressure < -250_000:
+                        logger.warning(f"🌑 [DARK ALPHA VETO] {self.symbol} LONG blocked | Huge DEX Long Liquidation: ${dark_pressure:,.2f}")
+                        self.analysis_stats["filtered_conf"] += 1
+                        return
+                        
+                    if predicted_class == -1 and dark_pressure > 250_000:
+                        logger.warning(f"🌑 [DARK ALPHA VETO] {self.symbol} SHORT blocked | Huge DEX Short Squeeze: ${dark_pressure:,.2f}")
+                        self.analysis_stats["filtered_conf"] += 1
+                        return
+                        
+                    # 🚨 RBF MEMPOOL PANIC OVERRIDE
+                    rbf_panic = getattr(global_state, 'rbf_panic_score', 0.0)
+                    if rbf_panic > 500.0:
+                        logger.warning(f"🚨 [MEMPOOL OVERRIDE] {self.symbol} RBF Panic detected ({rbf_panic:.2f} Gwei). Forcing execution!")
+                        # We bypass confluence restrictions because Mempool urgency is absolute priority
+                        confluence = 1.0 # Force max confluence to bypass further checks
+                        
+                except Exception as e:
+                    logger.debug(f"Dark Alpha / Mempool check failed: {e}")
+
+            # 🔮 FASE 20: PDC (Price Discovery Coefficient) Veto for Scalping
+            if self.horizon_str == 'SCALPING':
+                try:
+                    from core.global_state import global_state
+                    ce_metrics = getattr(global_state, 'cross_exchange_metrics', {})
+                    sym_pdc = ce_metrics.get(self.symbol, {})
+                    pdc_velocity = sym_pdc.get('pdc_velocity', 0.0)
+                    
+                    min_pdc = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('min_pdc_velocity', 0.05)
+                    if pdc_velocity < min_pdc:
+                        logger.warning(f"🛑 [PDC VETO] {self.symbol} SCALPING blocked | PDC Velocity: {pdc_velocity:.4f} < {min_pdc}")
+                        self.analysis_stats["filtered_conf"] += 1
+                        return
+                except Exception as e:
+                    logger.warning(f"⚠️ [PDC VETO] Error checking PDC for {self.symbol}: {e}")
 
             # ============ CREAR SEÑAL ============
             signal_type = SignalType.LONG if predicted_class == 1 else SignalType.SHORT
@@ -2481,6 +2522,7 @@ class MLStrategyHybridUltimate(Strategy):
 
             # FIXED: Create SignalEvent with ALL metadata in constructor (frozen dataclass)
             detailed_id = f"{self.strategy_id}.ML_PREDICTION"
+            real_current_price = float(bars['close'][-1])
             signal = SignalEvent(
                 strategy_id=detailed_id,
                 setup_type="ML_PREDICTION",
@@ -2491,7 +2533,7 @@ class MLStrategyHybridUltimate(Strategy):
                 atr=current_row["atr"],  # FIXED: Use current_row
                 tp_pct=tp_target,
                 sl_pct=sl_target,
-                current_price=current_row["close"],
+                current_price=real_current_price,
                 horizon=self.horizon_str,
                 predicted_magnitude=predicted_magnitude_real,
                 predicted_duration=predicted_duration_bars,
@@ -2510,7 +2552,7 @@ class MLStrategyHybridUltimate(Strategy):
                     "type": signal_type,
                     "confidence": confidence,
                     "regime": self.market_regime,
-                    "price": current_row["close"],
+                    "price": real_current_price,
                     "confluence": confluence,
                     "xai": xai_explanation,
                 }
@@ -2714,13 +2756,30 @@ class MLStrategyHybridUltimate(Strategy):
         if event.type != EventType.MARKET:
             return
 
+        # ============================================================
+        # ⏱️ ESPECIALIZACIÓN POR HORIZONTE (SCALPING vs SWING)
+        # ============================================================
+        is_swing = getattr(self, "horizon_str", "SCALPING") == "SWING"
+        is_closed = getattr(event, "is_closed", True)
+        
+        # FASE HORIZONS: Filtrado estricto por timeframe para evitar Phantom Triggers
+        event_tf = getattr(event, "timeframe", "1m")
+        target_tf = Config.Data.RESOLUTION if is_swing else "1m"
+        
+        if event_tf != target_tf:
+            return
+            
+        # SWING SOLO evalúa velas cerradas. Ignora el ruido HFT del websocket.
+        if is_swing and not is_closed:
+            return
+
         # Forensic Fix: Sync strategy clock to market event clock
         self._current_event_time = getattr(event, 'timestamp', self._now())
 
-        # Throttling: máximo 1 predicción por segundo (Excepto Sandbox)
+        # Throttling: máximo 2 predicciones por segundo en SCALPING
         current_time = self._now()
         if not getattr(self, "is_sandbox", False):
-            throttle_seconds = 1.0 if getattr(self, "horizon_str", "SCALPING") in ["SCALPING", "MICROSCALPING"] else 60.0
+            throttle_seconds = 0.5 if not is_swing else 10.0
             if (
                 self._last_prediction_time
                 and (current_time - self._last_prediction_time).total_seconds() < throttle_seconds
@@ -2795,8 +2854,11 @@ class MLStrategyHybridUltimate(Strategy):
                     vol = self.garch.update(last_ret)
                     # self.current_volatility = vol # Optional storage
 
-                await self._run_inference_v3(bars)
-
+                # FIX: If we are UniversalEnsembleStrategy, use its overridden _run_inference
+                if self.__class__.__name__ == "UniversalEnsembleStrategy":
+                    await asyncio.to_thread(self._run_inference)
+                else:
+                    await self._run_inference_v3(bars)
         except Exception as e:
             logger.error(f"ML Async error {self.symbol}: {e}")
 
@@ -2882,6 +2944,7 @@ class MLStrategyHybridUltimate(Strategy):
                 "confidence": conf,
                 "ts": time.time(),
                 "weights": (w_rf, w_xgb, w_gb),
+                "price": float(bars[-1][4]) if isinstance(bars, (list, tuple, np.ndarray)) and len(bars) > 0 else 0.0,
             }
             
             await self._process_ml_results(results)
@@ -3012,11 +3075,12 @@ class MLStrategyHybridUltimate(Strategy):
             except Exception as e:
                 pass
 
-            # 🔮 FASE 5: MULTI-COIN ORACLE (LEAD-LAG ARBITRAGE)
-            # Inyectamos factor de aceleración si BTC tiene alta velocidad
-            if self.symbol != "BTC/USDT":
-                try:
-                    from core.global_state import global_state
+            # 🔮 FASE 5: MULTI-COIN ORACLE (LEAD-LAG ARBITRAGE) + CROSS-EXCHANGE PDC
+            # Leemos el Price Discovery Coefficient (PDC) de Coinbase/Bybit para Latencia Negativa
+            try:
+                from core.global_state import global_state
+                # Check BTC Velocity first (Macro)
+                if self.symbol != "BTC/USDT":
                     btc_vel = getattr(global_state, 'btc_velocity', 0.0)
                     if btc_vel > 0.005: # BTC saltando rápido hacia arriba (>0.5% por seg)
                         logger.critical(f"🚀 [MULTI-COIN ORACLE] BTC Velocity ALTA ({btc_vel:.4f}). Acelerando LONG para {self.symbol}!")
@@ -3024,8 +3088,21 @@ class MLStrategyHybridUltimate(Strategy):
                     elif btc_vel < -0.005: # BTC cayendo rápido
                         logger.critical(f"📉 [MULTI-COIN ORACLE] BTC Velocity NEGATIVA ({btc_vel:.4f}). Acelerando SHORT para {self.symbol}!")
                         confidence = max(0.01, confidence - 0.15) # Empuja hacia SHORT
-                except Exception as e:
-                    pass
+                
+                # Check Cross-Exchange PDC (Micro / Sub-ms)
+                if hasattr(global_state, 'cross_exchange_metrics'):
+                    metrics = global_state.cross_exchange_metrics.get(self.symbol, {})
+                    pdc = metrics.get('pdc_signal', 0.0)
+                    
+                    if pdc > 0.3: # Fuerte Lead de Coinbase/Deribit ALCISTA
+                        logger.critical(f"🌌 [CROSS-EXCHANGE] Lead-Lag ALCISTA Detectado (PDC: {pdc:.2f}). Bias LONG Inyectado para {self.symbol}!")
+                        confidence = min(0.99, confidence + (pdc * 0.2)) # Max +0.2 bias
+                    elif pdc < -0.3: # Fuerte Lead de Coinbase/Deribit BAJISTA
+                        logger.critical(f"🌌 [CROSS-EXCHANGE] Lead-Lag BAJISTA Detectado (PDC: {pdc:.2f}). Bias SHORT Inyectado para {self.symbol}!")
+                        confidence = max(0.01, confidence + (pdc * 0.2)) # Max -0.2 bias
+                        
+            except Exception as e:
+                pass
 
             # Determine preliminary signal type
             threshold = self.adaptive_confidence_threshold
@@ -3129,7 +3206,13 @@ class MLStrategyHybridUltimate(Strategy):
                 logger.debug(f"Timeframe check error: {e}")
 
             # 2. ENSEMBLE CONSENSUS (RL + GA + OL)
-            rl_vote = confidence
+            # FIX: Ensure RL vote diverges from OL vote by incorporating PPO action history
+            try:
+                from ml.ppo_agent import ppo_agent
+                _last_ppo = getattr(self, "last_ppo_action", getattr(ppo_agent, "last_action", 0.0))
+                rl_vote = confidence * (1.0 + abs(_last_ppo) * 0.2) if _last_ppo != 0 else confidence * 1.02
+            except Exception:
+                rl_vote = confidence * 1.02
             ol_vote = (
                 rf_p * self.base_rf_weight
                 + xgb_p * self.base_xgb_weight
@@ -3422,7 +3505,7 @@ class MLStrategyHybridUltimate(Strategy):
 
                 # Async logging and publishing
                 # ... Simplified logging call ...
-                await self.events_queue.put(signal)
+                self.events_queue.put(signal)
 
                 # Update Neural Bridge insight in background
                 neural_bridge.publish_insight(
@@ -3631,16 +3714,9 @@ class MLStrategyHybridUltimate(Strategy):
                             logger.info(
                                 f"⚡ [{self.symbol}] Compilando árboles a matrices Numba..."
                             )
-                            self.rf_arrays = (
-                                compile_rf_to_numpy_batch(models["rf"])
-                                if models["rf"]
-                                else None
-                            )
-                            self.gb_arrays = (
-                                compile_gb_to_numpy_batch(models["gb"])
-                                if models["gb"]
-                                else None
-                            )
+                            # Modelos Online (MLP/SGD) no son árboles, omitir Numba JIT
+                            self.rf_arrays = None
+                            self.gb_arrays = None
                             cleaned_feature_cols = [
                                 col for col in feature_cols if col is not None
                             ]
@@ -4972,16 +5048,24 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             # The meta-learner weights [w1, w2, w3] allow it to trust RF, XGB, GB differently.
             # So `last_ensemble_input` should be the confidence of each model in the CHOSEN direction.
 
-            # PHASE 7 FIX: 3-Class Indexing
-            chosen_idx = 2 if direction == 1 else 0
-
             # PHASE 7 FIX: 3-Class PPO Ensemble Input Indexing
-            # Map direction to the correct probability index in the 3-class model
-            # Classes: [0=SHORT, 1=HOLD, 2=LONG]
-            ml_idx = chosen_idx  # Already calculated: 2 for LONG, 0 for SHORT
+            # For 3-class models: [0=SHORT, 1=HOLD, 2=LONG] (ml_idx=2 for LONG, 0 for SHORT)
+            # For 2-class models: [0=SHORT, 1=LONG] (ml_idx=1 for LONG, 0 for SHORT)
+            
+            # Auto-detect class size
+            num_classes = len(rf_proba) if rf_proba is not None else len(xgb_proba)
+            
+            if num_classes == 2:
+                ml_idx = 1 if direction == 1 else 0
+            else:
+                ml_idx = 2 if direction == 1 else 0
 
             self.last_ensemble_input = np.array(
-                [rf_proba[ml_idx], xgb_proba[ml_idx], gb_proba[ml_idx]]
+                [
+                    rf_proba[ml_idx] if rf_proba is not None else 0.0, 
+                    xgb_proba[ml_idx] if xgb_proba is not None else 0.0, 
+                    gb_proba[ml_idx] if gb_proba is not None else 0.0
+                ]
             )
 
             # Store state for PPO (Observation)
@@ -5369,7 +5453,9 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                                 df[mc] = 0.0
                         available_cols = reg_cols
                     
-                    latest_features = df[available_cols].iloc[[-1]].values
+                    # 🚀 QUANTUM PERFORMANCE FIX: Bypassing Pandas .iloc Overhead
+                    # Instead of creating intermediate DataFrame copies, we extract raw numpy array
+                    latest_features = df[available_cols].to_numpy()[-1].reshape(1, -1)
                     
                     if direction == 1:
                         # LONG: Predict Max Favorable Excursion upwards
@@ -5396,7 +5482,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                     
             # --- 🌌 CTOS OMNISCIENCE: Seq2Seq 1000-candle Trajectory ---
             omni_route = None
-            if omniscient_engine.model is not None:
+            if False and omniscient_engine.model is not None:  # DISABLED FOR NANO OPTIMIZATION
                 try:
                     # Get the last 60 rows of features
                     seq_features = df[available_cols].iloc[-60:].values
@@ -5573,9 +5659,11 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             self._last_prediction_time = self._now()
             
             # [MEMORY OPTIMIZATION] Forced Garbage Collection Post-Inference
-            # Required for HFT (micro-seconds) to prevent XGBoost memory creep
-            import gc
-            gc.collect()
+            # 🚨 FORENSIC-V4 QUANTUM FIX: REMOVED SYNCHRONOUS GC.COLLECT()
+            # Calling gc.collect() blocks the Python GIL for 10-50ms, destroying HFT latency.
+            # Memory should be handled asynchronously or organically by Python's Gen0 GC.
+            # import gc
+            # gc.collect()
 
         except Exception as e:
             logger.error(
@@ -6004,9 +6092,13 @@ def _add_ensemble_methods_to_base():
 
     def compute_organic_confluence(self, df, direction, rf_proba, xgb_proba, gb_proba):
         """Simplified organic confluence for base class."""
-        # PHASE 7 FIX: 3-Class Mapping
-        # In our 3-class model, class 2 = LONG (1), class 0 = SHORT (-1), class 1 = HOLD (0)
-        idx = 2 if direction == 1 else 0
+        # FIX: Auto-detect class count (2-class vs 3-class)
+        num_classes = len(rf_proba)
+        if num_classes == 2:
+            idx = 1 if direction == 1 else 0
+        else:
+            idx = 2 if direction == 1 else 0
+            
         ml_score = (
             rf_proba[idx] * self.base_rf_weight
             + xgb_proba[idx] * self.base_xgb_weight
@@ -6026,8 +6118,11 @@ def _add_ensemble_methods_to_base():
 
         if engines_passing < 2:
             final_conf *= 0.8  # Penalty
+            
+        # FIX: Return 4 values to match UniversalEnsembleStrategy signature
+        multi_horizon = {"h1": final_conf, "h5": final_conf, "h15": final_conf, "h30": final_conf}
 
-        return final_conf, engines_passing, engines_passing >= 2
+        return final_conf, engines_passing, engines_passing >= 2, multi_horizon
 
     # Add method if not exists
     if not hasattr(MLStrategyHybridUltimate, "compute_organic_confluence"):

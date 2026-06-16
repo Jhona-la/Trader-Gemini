@@ -44,6 +44,18 @@ class Genotype:
         "brain_weights": [] 
     })
 
+    def __post_init__(self):
+        # FASE 30: Integración con UniversalStrategyRegistry
+        # Expandir los genes base con todos los parámetros por defecto de las 30 estrategias
+        try:
+            from core.strategy_registry import UniversalStrategyRegistry
+            super_genes = UniversalStrategyRegistry.get_all_genes()
+            for key, val in super_genes.items():
+                if key not in self.genes:
+                    self.genes[key] = val
+        except Exception as e:
+            pass
+
     def init_brain(self, input_size: int, output_size: int):
         """Initialize random neural weights if empty"""
         if not self.genes.get('brain_weights'):

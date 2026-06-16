@@ -1,24 +1,23 @@
 @echo off
-title QUANTUM VECTOR TRAINER (FASE 6)
-color 0B
+setlocal
+color 0A
+title Trader Gemini - Quantum Vector Trainer
 
-echo ==============================================================================
-echo  🧬 QUANTUM VECTOR TRAINER - TRADER GEMINI SUPREME 🧬
-echo ==============================================================================
+echo =======================================================
+echo 🧬 INICIANDO ENTRENAMIENTO VECTORIAL CUANTICO (Fase 6)
+echo =======================================================
 echo.
-echo Optimizando entorno para maxima velocidad de entrenamiento (XGBoost Hist)...
+echo Esto entrenara los modelos XGBoost de alta velocidad 
+echo en formato binario compatible con JIT.
 echo.
 
-set OMP_NUM_THREADS=16
-set OPENBLAS_NUM_THREADS=16
-set MKL_NUM_THREADS=16
-set VECLIB_MAXIMUM_THREADS=16
-set NUMEXPR_NUM_THREADS=16
+set PYTHONPATH=%cd%
+call .venv\Scripts\activate
 
-call .venv\Scripts\activate.bat
-
-python scripts\vector_backtest\vector_trainer.py --days 15
+python scripts\vector_backtest\vector_trainer.py --days 30
 
 echo.
-echo Entrenamiento Cuantico Completado.
+echo =======================================================
+echo ✅ Entrenamiento Terminado. Los pesos estan en .models/
+echo =======================================================
 pause

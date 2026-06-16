@@ -80,8 +80,15 @@ from core.order_manager import OrderManager
 from core.market_scanner import MarketScanner
 from core.strategy_selector import StrategySelector
 from core.portfolio import Portfolio
+from risk.risk_manager import RiskManager
 from execution.binance_executor import BinanceExecutor
-from utils.logger import logger
+# FASE 30: C++ / Cython Execution Bridge
+try:
+    from execution.binance_executor_c import FastBinanceExecutor # Asumiendo que se compiló como .pyd/.so
+    CYTHON_EXECUTION_AVAILABLE = True
+except ImportError:
+    CYTHON_EXECUTION_AVAILABLE = False
+    
 from core.neural_bridge import neural_bridge
 from utils.telemetry import telemetry  # Phase 99: Fleet Telemetry
 from utils.efficacy_tracker import efficacy_tracker  # Phase 99: RL Feedback
@@ -550,7 +557,15 @@ async def main():
             executor.data_provider = data_handler
             executor.micro_awareness = micro_awareness
         else:
-            executor = BinanceExecutor(events_queue, portfolio=portfolio, data_provider=data_handler, micro_awareness=micro_awareness)
+            try:
+                if CYTHON_EXECUTION_AVAILABLE and not Config.BINANCE_USE_TESTNET and not Config.BINANCE_USE_DEMO:
+                    # Fast Path for Live Trading
+                    logger.info("🚀 [C++ Bridge] Initializing FastBinanceExecutor (Cython/C++) for Hot Path Execution.")
+                    executor = FastBinanceExecutor(Config.BINANCE_API_KEY, Config.BINANCE_API_SECRET, testnet=False)
+                else:
+                    executor = BinanceExecutor(events_queue, portfolio=portfolio, data_provider=data_handler, micro_awareness=micro_awareness)
+            except Exception as e:
+                executor = BinanceExecutor(events_queue, portfolio=portfolio, data_provider=data_handler, micro_awareness=micro_awareness)
         
         executor.zmq_pull = executor_pull_node
         executor.zmq_push = engine_push_node
@@ -590,61 +605,55 @@ async def main():
     # ════════════════════════════════════════════════════════════════
     logger.info(f"🎯 [INTEGRAL MODE] Operating with {len(Config.TRADING_PAIRS)} symbols (Full basket)")
     
-    # 🎯 FASE 32: OMNI-STRATEGY (Santo Grial Unificado)
-    # Reemplaza todo el ruido aislado por una sumatoria perfecta de Tech+ML+Phalanx+StatArb
-    try:
-        omni_scalp = OmniStrategy(data_handler, events_queue, horizon="SCALPING")
-        engine.register_strategy(omni_scalp)
-        logger.info("✅ OmniStrategy [SCALPING] registered.")
-        
-        omni_swing = OmniStrategy(data_handler, events_queue, horizon="SWING")
-        engine.register_strategy(omni_swing)
-        logger.info("✅ OmniStrategy [SWING] registered.")
-    except Exception as e:
-        logger.error(f"Error registering OmniStrategy: {e}")
-        
-        
-    # ════════════════════════════════════════════════════════════════
-    # FORENSIC-V47 / PHASE 32: Legacy Isolated Strategies REMOVED.
-    # El OmniStrategy (registrado arriba) ahora unifica Tech + ML + Phalanx + StatArb 
-    # utilizando el "Omni-Score" Genético Ponderado.
-    # SIN EMBARGO, MLStrategy DEBE instanciarse por símbolo para poder entrenar y evaluar!
-    # ════════════════════════════════════════════════════════════════
-    from strategies.ml_strategy import MLStrategy
-    for symbol in Config.TRADING_PAIRS:
-        try:
-            is_leader = "BTC" in symbol
-            
-            # ── SCALPING ENGINE ──
-            ml_scalp = MLStrategy(
-                data_provider=data_handler,
-                events_queue=events_queue,
-                symbol=symbol,
-                lookback=Config.Strategies.ML_LOOKBACK_BARS,
-                sentiment_loader=sentiment_loader,
-                portfolio=portfolio,
-                risk_manager=risk_manager if is_leader else None,
-                horizon="SCALPING"
-            )
-            engine.register_strategy(ml_scalp)
+    # 🎯 FASE 30: UNIVERSAL STRATEGY REGISTRY
+    # Reemplaza la inicialización manual hardcodeada. Carga TODAS las estrategias
+    # de la carpeta strategies/ automáticamente usando el UniversalStrategyAdapter.
+    from core.strategy_registry import UniversalStrategyRegistry
+    
+    # Preparamos las dependencias globales que las estrategias puedan pedir
+    global_dependencies = {
+        'data_provider': data_handler,
+        'events_queue': events_queue,
+        'portfolio': portfolio,
+        'executor': execution,
+        'risk_manager': risk_manager,
+        'sentiment_loader': sentiment_loader
+    }
 
-            # ── SWING ENGINE ──
-            ml_swing = MLStrategy(
-                data_provider=data_handler,
-                events_queue=events_queue,
-                symbol=symbol,
-                lookback=Config.Strategies.ML_LOOKBACK_BARS,
-                sentiment_loader=sentiment_loader,
-                portfolio=portfolio,
-                risk_manager=None,
-                horizon="SWING"
-            )
-            ml_swing.strategy_id += "_SWING"
-            engine.register_strategy(ml_swing)
-            strategies.append(ml_scalp)
-            strategies.append(ml_swing)
-        except Exception as e:
-            logger.error(f"⚠️ Failed to init ML strategy for {symbol}: {e}")
+    try:
+        # Instanciamos TODAS las estrategias detectadas para SCALPING
+        global_dependencies['horizon'] = "SCALPING"
+        all_scalp_strats = UniversalStrategyRegistry.create_all(**global_dependencies)
+        for strat in all_scalp_strats:
+            engine.register_strategy(strat)
+            strategies.append(strat)
+        logger.info(f"✅ Registradas {len(all_scalp_strats)} estrategias universales para [SCALPING]")
+
+        # Instanciamos TODAS las estrategias detectadas para SWING
+        global_dependencies['horizon'] = "SWING"
+        all_swing_strats = UniversalStrategyRegistry.create_all(**global_dependencies)
+        for strat in all_swing_strats:
+            # Añadir subfijo para evitar colisión de IDs en logs/métricas
+            if hasattr(strat, 'strategy_id'):
+                strat.strategy_id += "_SWING"
+            engine.register_strategy(strat)
+            strategies.append(strat)
+        logger.info(f"✅ Registradas {len(all_swing_strats)} estrategias universales para [SWING]")
+        
+    except Exception as e:
+        logger.error(f"❌ Error al registrar estrategias con UniversalRegistry: {e}")
+        
+        
+    # ════════════════════════════════════════════════════════════════
+    # NOTA: Las estrategias específicas por símbolo (como MLStrategy que necesita un `symbol`)
+    # pueden requerir instanciación iterativa si el Adapter universal no sabe multiplicarlas.
+    # El UniversalAdapter ya intenta pasar `symbol='ALL'` por defecto si lo piden.
+    # Para estrategias que sí o sí necesitan instanciarse por cada symbol, 
+    # deberían refactorizarse para escuchar a todos los símbolos (ej. Omni-Symbol approach),
+    # o bien registrarse localmente dentro de UniversalAdapter en futuras versiones.
+    # Por ahora mantenemos la inicialización por símbolo solo para MLStrategy si es estrictamente necesario,
+    # pero OmniStrategy/TechStrategy/Wyckoff/OrderFlow operan a nivel de DataProvider global.
+    # ════════════════════════════════════════════════════════════════
 
     
     logger.info(f"[OK] Registered {len(strategies)} strategies in the Engine.")
@@ -658,6 +667,16 @@ async def main():
 
     # 🧟 ZOMBIE FEATURE INTEGRATION: Activate latent AI and Evolution modules
     logger.info("🧟 [PHASE 2] Initializing Dormant Zombie Modules...")
+    
+    # 🌑 DARK ALPHA LAYER
+    try:
+        from core.dark_alpha_worker import dark_alpha_worker
+        from core.mempool_worker import mempool_worker
+        dark_alpha_worker.start()
+        mempool_worker.start()
+    except Exception as e:
+        logger.warning(f"Could not init DarkAlpha or Mempool Worker: {e}")
+
     try:
         from core.world_awareness import world_awareness
         logger.info("✅ WorldAwareness activated.")
@@ -808,7 +827,21 @@ async def main():
     except Exception as e:
         logger.warning(f"Could not send Telegram startup alert: {e}")
         
-    # 4.1. Initialize Engine Task & User Stream
+    # 4.1. Paper Trading Bootstrap (Fase 30)
+    # QUÉ: Cargar datos históricos MASIVOS antes de iniciar el motor
+    # POR QUÉ: Las estrategias basadas en EMAs largas o ML fallan si no tienen `lookback` en Paper Trading.
+    if args.mode == "paper" or Config.BINANCE_USE_TESTNET or Config.BINANCE_USE_DEMO:
+        logger.info("⏳ [BOOTSTRAP] Iniciando Warmup histórico de Paper Trading...")
+        try:
+            # 5 iteraciones * ~100 velas (dependiendo de data_handler) para llenar los buffers
+            for _ in range(5):
+                await data_handler.update_bars_async()
+                await asyncio.sleep(1)
+            logger.info("✅ [BOOTSTRAP] Warmup completado. Buffers llenos.")
+        except Exception as e:
+            logger.error(f"❌ Error en Warmup de Paper Trading: {e}")
+
+    # 4.2. Initialize Engine Task & User Stream
     engine_task = asyncio.create_task(engine.start())
     user_stream_task = asyncio.create_task(executor.user_stream.start())
     

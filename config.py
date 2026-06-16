@@ -335,7 +335,7 @@ class Config(metaclass=EncryptedConfigMeta):
                     "min_confidence": 0.45 if base["category"] == "MAJOR" else 0.50,
                     "rsi_overbought": int(75 + (5 if is_scalp else 0) - (vf * 2)),
                     "rsi_oversold": int(25 - (5 if is_scalp else 0) + (vf * 2)),
-                    "pullback_tol": 0.40 * vf,
+                    "pullback_tol": 0.50 * vf, # Ampliado para Post-Only
                     "strength_threshold": 0.55 if is_scalp else 0.45,
                 },
                 
@@ -599,47 +599,47 @@ class Config(metaclass=EncryptedConfigMeta):
             # Mecánica: Microestructura, order flow, OBI
             # ══════════════════════════════════════════════════════
             # PER-ASSET TP/SL (fallback when dynamic ATR unavailable)
-            'tp_pct': 0.0027,         # DEFAULT TP (backward compat)
+            'tp_pct': 0.0035,         # DEFAULT TP (increased to survive fees)
             'tp_pct_per_asset': {     # HORIZON: MICRO | Per-asset TP
-                'BTC/USDT': 0.0014,   # BTC: Low vol → tight TP
-                'ETH/USDT': 0.0017,   # ETH: Moderate vol
-                'BNB/USDT': 0.0021,   # BNB: Medium vol
-                'SOL/USDT': 0.0027,   # SOL: Higher vol
-                'XRP/USDT': 0.0022,   # XRP: Medium
-                'DOGE/USDT': 0.0038,  # DOGE: Highest vol → widest TP
-                'DEFAULT': 0.0027,    # Fallback for unknown assets
+                'BTC/USDT': 0.0025,   # BTC: Tight but survivable
+                'ETH/USDT': 0.0030,   # ETH: Moderate
+                'BNB/USDT': 0.0035,   # BNB: Medium
+                'SOL/USDT': 0.0040,   # SOL: Higher vol
+                'XRP/USDT': 0.0035,   # XRP: Medium
+                'DOGE/USDT': 0.0050,  # DOGE: Highest vol
+                'DEFAULT': 0.0035,    # Fallback
             },
-            'sl_pct': 0.0016,         # DEFAULT SL (backward compat)
+            'sl_pct': 0.0020,         # DEFAULT SL
             'sl_pct_per_asset': {     # HORIZON: MICRO | Per-asset SL
-                'BTC/USDT': 0.0009,
-                'ETH/USDT': 0.0011,
-                'BNB/USDT': 0.0013,
-                'SOL/USDT': 0.0016,
-                'XRP/USDT': 0.0013,
-                'DOGE/USDT': 0.0023,
-                'DEFAULT': 0.0017,
+                'BTC/USDT': 0.0015,
+                'ETH/USDT': 0.0018,
+                'BNB/USDT': 0.0020,
+                'SOL/USDT': 0.0025,
+                'XRP/USDT': 0.0020,
+                'DOGE/USDT': 0.0030,
+                'DEFAULT': 0.0020,
             },
-            'max_hold_time': 600,     # HORIZON: MICRO | 10 min max (was 1800)
+            'max_hold_time': 600,     # HORIZON: MICRO | 10 min max
             'rsi_period': 5,
-            'rsi_buy': 30,
-            'rsi_sell': 70,
+            'rsi_buy': 25,            # FILTER NOISE (was 30)
+            'rsi_sell': 75,           # FILTER NOISE (was 70)
             'bb_period': 10,
-            'bb_std': 1.5,
+            'bb_std': 2.0,            # Require 2 std deviations for extreme mean reversion
             'ema_fast': 8,
             'ema_slow': 21,
             'ema_trend': 50,
             'atr_period': 7,
             'adx_period': 7,
-            'timeframes': ['1m', '3m'],          # HORIZON: MICRO | only fast TFs
+            'timeframes': ['1m', '3m'],
             'primary_tf': '1m',
-            'min_volume_ratio': 0.5,
-            'cooldown_seconds': 15,               # HORIZON: MICRO | fast cycling
-            'max_hold_bars': 10,                  # HORIZON: MICRO | 10 bars × 1m = 10min
-            'strength_threshold': 0.42,           # HORIZON: MICRO | lower bar, SL protects
-            'atr_sl_mult': 2.0,
-            'atr_tp_mult': 1.5,
+            'min_volume_ratio': 0.8,              # Demand 80% more volume for validity (was 0.5)
+            'cooldown_seconds': 30,               # Slow down slightly to prevent cascading (was 15)
+            'max_hold_bars': 10,
+            'strength_threshold': 0.52,           # Demand higher ML strength (was 0.42)
+            'atr_sl_mult': 2.5,                   # More breathing room (was 2.0)
+            'atr_tp_mult': 2.5,                   # Aim higher R:R (was 1.5)
             'sophia_refit': 10,
-            'consensus_gate_mult': 1.5,           # HORIZON: MICRO | loose gate, more signals
+            'consensus_gate_mult': 2.0,           # Stricter consensus gate (was 1.5)
         }
 
         Scalping = {
@@ -1154,6 +1154,8 @@ class Config(metaclass=EncryptedConfigMeta):
     # QUIÉN: Arquitecto Senior + Risk Manager.
     class Execution:
         # ── BBO Post-Only Configuration ──
+        MAX_RETRIES = 5           # (Aumentado de 3) Binance rechaza frecuentemente en HFT
+        USE_NATIVE_STOPS = False  # FASE 29: Desactivado para evitar Cannibalization entre Scalping/Swing
         USE_LIMIT_BBO_ENTRIES = True       # Entries use LIMIT at Best Bid/Offer
         USE_LIMIT_BBO_EXITS = True         # [CIRUGÍA #7] Enabled to save 0.035% Taker fee. Scalping micro-profits CANNOT survive Taker fees.
         USE_LIMIT_PROTECTIVE_ORDERS = True # SL/TP on exchange: STOP (Limit) instead of STOP_MARKET
@@ -1169,10 +1171,10 @@ class Config(metaclass=EncryptedConfigMeta):
         
         # ── Protective Order Pricing ──
         # For STOP (Limit): How far below/above trigger to set the limit price
-        # 0.001 = 0.1% tolerance → if SL triggers at $100, limit at $99.90
-        STOP_LIMIT_TOLERANCE_PCT = 0.001
+        # 0.002 = 0.2% tolerance → para evitar quedar atrapado con Post-Only
+        STOP_LIMIT_TOLERANCE_PCT = 0.002
         # For TAKE_PROFIT (Limit): Set at exact trigger (Post-Only)
-        TP_LIMIT_TOLERANCE_PCT = 0.0005    # [FORENSIC V99] Allow TP to cross spread by 0.05% to avoid Zombie Trades
+        TP_LIMIT_TOLERANCE_PCT = 0.001     # [FORENSIC V99] Ampliado a 0.1% para evitar Zombie Trades
 
     # ========================================================================
     # === AEGIS-ULTRA PROTOCOL (Hardware & Math) ===
@@ -1372,12 +1374,14 @@ def validate_institutional_policy():
                  errors.append("❌ SAFETY: Sniper Mode is ENABLED in Production without FORCE_SNIPER_MAINNET=TRUE.")
         
         # 2. Leverage Caps
-        if Config.BINANCE_LEVERAGE > 5 and not Config.Sniper.ENABLED:
-            errors.append(f"❌ RISK: Leverage {Config.BINANCE_LEVERAGE}x exceeds Institutional Limit (5x).")
+        max_leverage = 55 if Config.INITIAL_CAPITAL <= 20 else 5
+        if Config.BINANCE_LEVERAGE > max_leverage and not Config.Sniper.ENABLED:
+            errors.append(f"❌ RISK: Leverage {Config.BINANCE_LEVERAGE}x exceeds Institutional Limit ({max_leverage}x).")
             
         # 3. Risk Limits
-        if Config.MAX_RISK_PER_TRADE > 0.051: # [SOVEREIGN-DEPLOY] Elevated Max Risk to 5% for micro-accounts
-            errors.append(f"❌ RISK: Max Risk {Config.MAX_RISK_PER_TRADE*100}% exceeds Institutional Limit (5%).")
+        max_risk = 0.25 if Config.INITIAL_CAPITAL <= 20 else 0.051
+        if Config.MAX_RISK_PER_TRADE > max_risk: 
+            errors.append(f"❌ RISK: Max Risk {Config.MAX_RISK_PER_TRADE*100}% exceeds Institutional Limit ({max_risk*100}%).")
             
         if errors:
             print("\n" + "="*70)

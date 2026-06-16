@@ -13,8 +13,9 @@ class LiquidityGuardian:
     - Calcula el Slippage esperado para asegurar R/R positivo.
     """
     
-    def __init__(self, exchange):
+    def __init__(self, exchange, async_exchange=None):
         self.exchange = exchange
+        self.async_exchange = async_exchange
         self.wall_threshold_multiplier = 5.0 # Un muro es 5x el volumen promedio del book
         
         # Phase 33: Anti-Spoofing Memory
@@ -25,7 +26,7 @@ class LiquidityGuardian:
         self.order_book_cache = {} # {symbol: {'data': order_book, 'timestamp': float}}
         self.cache_ttl = 1.0 # 1 Segundo máximo de vigencia
         
-    def get_fast_bid_ask(self, symbol: str) -> Tuple[float, float]:
+    async def get_fast_bid_ask(self, symbol: str) -> Tuple[float, float]:
         """
         [NANO-LATENCY] Fetches best BID and ASK from cache. 
         Falls back to Ticker if cache expired, avoiding blocking fetch_order_book in the critical path.
@@ -53,13 +54,29 @@ class LiquidityGuardian:
                     return bid, ask
             # Fallback a última vela si el OB no está listo
             bars = dp.get_latest_bars(internal_sym, 1)
-            if not bars.empty and 'close' in bars.columns:
-                last_price = float(bars['close'].iloc[-1])
+            # Manejar tanto DataFrames de Pandas como Numpy Arrays
+            has_data = False
+            last_price = 0.0
+            
+            if bars is not None:
+                if hasattr(bars, 'empty'): # Pandas
+                    if not bars.empty and 'close' in bars.columns:
+                        last_price = float(bars['close'].iloc[-1])
+                        has_data = True
+                elif isinstance(bars, np.ndarray): # Numpy Structured Array
+                    if bars.size > 0 and 'close' in bars.dtype.names:
+                        last_price = float(bars['close'][-1])
+                        has_data = True
+                        
+            if has_data:
                 return last_price, last_price
                 
         # 3. Fallback to Ticker (REST API - Last Resort)
         try:
-            ticker = self.exchange.fetch_ticker(symbol)
+            if self.async_exchange:
+                ticker = await self.async_exchange.fetch_ticker(symbol)
+            else:
+                ticker = self.exchange.fetch_ticker(symbol)
             bid = ticker.get('bid', 0.0)
             ask = ticker.get('ask', 0.0)
             if not bid or not ask:
@@ -70,7 +87,7 @@ class LiquidityGuardian:
             logger.warning(f"⚠️ [Fast Bid/Ask] Error fetching ticker for {symbol}: {e}")
             return 0.0, 0.0
 
-    def analyze_liquidity(self, symbol: str, quantity: float, side: str, bypass_guardian: bool = False) -> Dict:
+    async def analyze_liquidity(self, symbol: str, quantity: float, side: str, bypass_guardian: bool = False) -> Dict:
         """
         Realiza el triple chequeo de liquidez antes de disparar.
         """
@@ -113,8 +130,11 @@ class LiquidityGuardian:
                         order_book = {'bids': bids[:limit], 'asks': asks[:limit]}
                 
                 if not order_book:
-                    # Bloqueante REST API Call - Last Resort
-                    order_book = self.exchange.fetch_order_book(symbol, limit=limit)
+                    # Bloqueante REST API Call evitado mediante Async Exchange
+                    if self.async_exchange:
+                        order_book = await self.async_exchange.fetch_order_book(symbol, limit=limit)
+                    else:
+                        order_book = self.exchange.fetch_order_book(symbol, limit=limit)
                     
                 self.order_book_cache[symbol] = {'data': order_book, 'timestamp': current_time}
             

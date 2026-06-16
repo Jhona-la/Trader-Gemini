@@ -5,7 +5,8 @@ import glob
 from numba import njit, float64, int64
 from utils.math_kernel import (
     calculate_rsi_jit, calculate_bollinger_jit, calculate_ema_jit,
-    calculate_macd_jit, calculate_atr_jit, calculate_adx_jit
+    calculate_macd_jit, calculate_atr_jit, calculate_adx_jit,
+    calculate_quantum_features_batch_jit
 )
 from config import Config
 from datetime import datetime, timezone
@@ -26,7 +27,8 @@ def resolve_trades_jit(
     sl_pct: float,
     leverage: float,
     round_trip_fee: float,
-    max_duration: int
+    max_duration: int,
+    slippage_pct: float
 ):
     n = len(open_p)
     max_trades = len(long_idx) + len(short_idx)
@@ -34,12 +36,14 @@ def resolve_trades_jit(
     out_pct_ret = np.zeros(max_trades, dtype=np.float64)
     out_is_win = np.zeros(max_trades, dtype=np.int64) 
     out_is_long = np.zeros(max_trades, dtype=np.int64) 
+    out_entry_ts = np.zeros(max_trades, dtype=np.int64)
+    out_entry_price = np.zeros(max_trades, dtype=np.float64)
     count = 0
     
     for i in range(len(long_idx)):
         idx = long_idx[i]
         if idx >= n - 2: continue
-        entry_price = open_p[idx+1]
+        entry_price = open_p[idx+1] * (1.0 + slippage_pct)
         tp_price = entry_price * (1.0 + tp_pct)
         sl_price = entry_price * (1.0 - sl_pct)
         
@@ -57,33 +61,39 @@ def resolve_trades_jit(
                 break
                 
         if first_tp < first_sl:
-            pct_return = (tp_pct * 0.999 - round_trip_fee) * leverage
+            pct_return = (tp_pct - slippage_pct - round_trip_fee) * leverage
             out_exit_ts[count] = timestamps[first_tp]
             out_pct_ret[count] = pct_return
             out_is_win[count] = 1
             out_is_long[count] = 1
+            out_entry_ts[count] = timestamps[idx+1]
+            out_entry_price[count] = entry_price
             count += 1
         elif first_sl < first_tp:
-            pct_return = (-sl_pct * 1.001 - round_trip_fee) * leverage
+            pct_return = (-sl_pct - slippage_pct - round_trip_fee) * leverage
             out_exit_ts[count] = timestamps[first_sl]
             out_pct_ret[count] = pct_return
             out_is_win[count] = 0
             out_is_long[count] = 1
+            out_entry_ts[count] = timestamps[idx+1]
+            out_entry_price[count] = entry_price
             count += 1
         else:
             exit_idx = limit - 1
-            exit_price = close_p[exit_idx]
+            exit_price = close_p[exit_idx] * (1.0 - slippage_pct)
             pct_return = (((exit_price - entry_price) / entry_price) - round_trip_fee) * leverage
             out_exit_ts[count] = timestamps[exit_idx]
             out_pct_ret[count] = pct_return
             out_is_win[count] = 1 if pct_return > 0 else 0
             out_is_long[count] = 1
+            out_entry_ts[count] = timestamps[idx+1]
+            out_entry_price[count] = entry_price
             count += 1
 
     for i in range(len(short_idx)):
         idx = short_idx[i]
         if idx >= n - 2: continue
-        entry_price = open_p[idx+1]
+        entry_price = open_p[idx+1] * (1.0 - slippage_pct)
         tp_price = entry_price * (1.0 - tp_pct)
         sl_price = entry_price * (1.0 + sl_pct)
         
@@ -101,30 +111,36 @@ def resolve_trades_jit(
                 break
                 
         if first_tp < first_sl:
-            pct_return = (tp_pct * 0.999 - round_trip_fee) * leverage
+            pct_return = (tp_pct - slippage_pct - round_trip_fee) * leverage
             out_exit_ts[count] = timestamps[first_tp]
             out_pct_ret[count] = pct_return
             out_is_win[count] = 1
             out_is_long[count] = 0
+            out_entry_ts[count] = timestamps[idx+1]
+            out_entry_price[count] = entry_price
             count += 1
         elif first_sl < first_tp:
-            pct_return = (-sl_pct * 1.001 - round_trip_fee) * leverage
+            pct_return = (-sl_pct - slippage_pct - round_trip_fee) * leverage
             out_exit_ts[count] = timestamps[first_sl]
             out_pct_ret[count] = pct_return
             out_is_win[count] = 0
             out_is_long[count] = 0
+            out_entry_ts[count] = timestamps[idx+1]
+            out_entry_price[count] = entry_price
             count += 1
         else:
             exit_idx = limit - 1
-            exit_price = close_p[exit_idx]
+            exit_price = close_p[exit_idx] * (1.0 + slippage_pct)
             pct_return = (((entry_price - exit_price) / entry_price) - round_trip_fee) * leverage
             out_exit_ts[count] = timestamps[exit_idx]
             out_pct_ret[count] = pct_return
             out_is_win[count] = 1 if pct_return > 0 else 0
             out_is_long[count] = 0
+            out_entry_ts[count] = timestamps[idx+1]
+            out_entry_price[count] = entry_price
             count += 1
             
-    return out_exit_ts[:count], out_pct_ret[:count], out_is_win[:count], out_is_long[:count]
+    return out_exit_ts[:count], out_pct_ret[:count], out_is_win[:count], out_is_long[:count], out_entry_ts[:count], out_entry_price[:count]
 
 
 try:
@@ -159,6 +175,9 @@ class QuantumEngine:
 
         if _HAS_FE:
             self.fe = FeatureEngineering()
+            
+        # Symbolic mapping for Nano Engine
+        self.symbol_to_id = {sym: idx for idx, sym in enumerate(self.symbols)}
             
     def _precalculate_omni_features(self, df_pd, symbol, horizon_type):
         """
@@ -366,6 +385,8 @@ class QuantumEngine:
         ml_thresh_bull = float(dna.get(f'{prefix}ml_th_long', 0.55))
         ml_thresh_bear = float(dna.get(f'{prefix}ml_th_short', 0.55))
         omni_threshold = float(dna.get(f'{prefix}master_threshold', 1.0))
+        slippage_pct = float(dna.get('slippage_pct', 0.0002)) # 2 BPS slippage default
+        use_regime = float(dna.get('use_regime', 1.0)) > 0.5 # Default to true
         
         for symbol, arrs in data_dict.items():
             timestamps = arrs['timestamp']
@@ -399,6 +420,16 @@ class QuantumEngine:
             long_cond = (score_long >= omni_threshold) & valid_volatility
             short_cond = (score_short >= omni_threshold) & valid_volatility
             
+            # FASE 40: MARKET REGIME FILTERING (Hurst + ADX)
+            if use_regime:
+                adx = calculate_adx_jit(high, low, close, 14)
+                hurst_arr, _, _ = calculate_quantum_features_batch_jit(close, np.zeros(n), np.zeros(n), 20)
+                # Chop regime: Hurst < 0.45 OR (Hurst < 0.55 and ADX < 20)
+                is_chop = (hurst_arr < 0.45) | ((hurst_arr < 0.55) & (adx < 20.0))
+                # En chop, vetamos las señales direccionales (ML/Tech) a menos que sean mean reversion puras (statarb)
+                long_cond = long_cond & (~is_chop | (statarb == 1.0))
+                short_cond = short_cond & (~is_chop | (statarb == -1.0))
+            
             long_idx = np.where(long_cond)[0]
             short_idx = np.where(short_cond)[0]
             
@@ -407,15 +438,25 @@ class QuantumEngine:
                 max_duration = 60
                 
                 # Garantizamos que leverage sea un float simple
-                out_ts, out_ret, out_win, out_long = resolve_trades_jit(
+                out_ts, out_ret, out_win, out_long, out_entry_ts, out_entry_prices = resolve_trades_jit(
                     long_idx, short_idx,
                     arrs['open'], high, low, close, timestamps,
-                    float(tp_pct), float(sl_pct), float(leverage), float(round_trip_fee), int(max_duration)
+                    float(tp_pct), float(sl_pct), float(leverage), float(round_trip_fee), int(max_duration), float(slippage_pct)
                 )
                 
                 for k in range(len(out_ts)):
-                    is_win_bool = True if out_win[k] == 1 else False
-                    global_trades.append((out_ts[k], out_ret[k], is_win_bool, horizon_type))
+                    # Empaquetamos para el Nano Risk Engine
+                    sym_id = self.symbol_to_id.get(symbol, 99)
+                    global_trades.append({
+                        'entry_ts': out_entry_ts[k],
+                        'exit_ts': out_ts[k],
+                        'pct_ret': out_ret[k],
+                        'is_win': out_win[k],
+                        'is_long': out_long[k],
+                        'entry_price': out_entry_prices[k],
+                        'horizon': horizon_type,
+                        'symbol_id': sym_id
+                    })
 
     def run_vectorized_backtest(self, dna=None):
         """
@@ -432,60 +473,60 @@ class QuantumEngine:
         if self.horizon in ['SWING', 'BOTH']:
             self._simulate_horizon(self.data_1h, dna, prefix="swing_", gate_mult=2.8, global_trades=global_trades, horizon_type="SWING")
         
-        # 4. COMPOSICIÓN EXPONENCIAL AISLADA CONCURRENTEMENTE
-        global_trades.sort(key=lambda x: x[0])
-        
-        total_trades = 0
-        total_wins = 0
-        
-        # El capital se divide físicamente como en Producción (Virtual Ledger)
-        if self.horizon == 'BOTH':
-            scalp_capital = self.capital / 2.0
-            swing_capital = self.capital / 2.0
-        elif self.horizon == 'SCALPING':
-            scalp_capital = self.capital
-            swing_capital = 0.0
-        else:
-            scalp_capital = 0.0
-            swing_capital = self.capital
+        # FASE 51: NANO RISK ENGINE (Tratamiento Cuántico Fiel)
+        if len(global_trades) == 0:
+            return {'final_capital': self.capital, 'pnl': 0.0, 'max_drawdown': 0.0, 'win_rate': 0.0, 'trades': 0}
             
-        POSITION_SIZE_PCT = 0.30  # FASE 28: Fractional Kelly Parity
+        import numpy as np
+        from core.nano_risk_engine import simulate_nano_portfolio_events_jit
         
-        peak_capital = self.capital
-        max_drawdown = 0.0
+        n_trades = len(global_trades)
+        entry_ts = np.zeros(n_trades, dtype=np.int64)
+        exit_ts = np.zeros(n_trades, dtype=np.int64)
+        pct_ret = np.zeros(n_trades, dtype=np.float64)
+        is_win = np.zeros(n_trades, dtype=np.int32)
+        is_long = np.zeros(n_trades, dtype=np.int32)
+        entry_prices = np.zeros(n_trades, dtype=np.float64)
+        horizons = np.zeros(n_trades, dtype=np.int32) # 0=SCALP, 1=SWING
+        symbols = np.zeros(n_trades, dtype=np.int32)
+        
+        for idx, t in enumerate(global_trades):
+            entry_ts[idx] = t['entry_ts']
+            exit_ts[idx] = t['exit_ts']
+            pct_ret[idx] = t['pct_ret']
+            is_win[idx] = int(t['is_win'])
+            is_long[idx] = int(t['is_long'])
+            entry_prices[idx] = float(t['entry_price'])
+            horizons[idx] = 0 if t['horizon'] == "SCALP" else 1
+            symbols[idx] = t['symbol_id']
 
-        for ts, pct_return, is_win, horizon_type in global_trades:
-            # Re-inversión aislada por bucket con límite de Kelly
-            if horizon_type == "SCALP" and scalp_capital > 0:
-                capital_at_risk = scalp_capital * POSITION_SIZE_PCT
-                profit_or_loss = capital_at_risk * pct_return
-                scalp_capital += profit_or_loss
-                if scalp_capital <= 0.0: scalp_capital = 0.0
-            elif horizon_type == "SWING" and swing_capital > 0:
-                capital_at_risk = swing_capital * POSITION_SIZE_PCT
-                profit_or_loss = capital_at_risk * pct_return
-                swing_capital += profit_or_loss
-                if swing_capital <= 0.0: swing_capital = 0.0
-                
-            current_total = scalp_capital + swing_capital
-            if current_total > peak_capital:
-                peak_capital = current_total
-            
-            dd = (peak_capital - current_total) / peak_capital if peak_capital > 0 else 0
-            if dd > max_drawdown:
-                max_drawdown = dd
-                
-            total_trades += 1
-            if is_win:
-                total_wins += 1
-                
-        final_capital = scalp_capital + swing_capital
-        global_pnl = final_capital - self.capital
+        # Extraer Kelly parameters del DNA si existen, si no, Default 0.30 (30% capital alocado por trade)
+        leverage = float(dna.get('leverage', 10.0))
+        # Para el Nano Engine, el Leverage que se aplica al margen debe ser conocido
+        # Nota: si pasamos 10x, el notional_size = target_margin * leverage.
+        
+        # Call Numba JIT Function
+        final_capital, global_pnl, max_drawdown, win_rate, total_trades = simulate_nano_portfolio_events_jit(
+            entry_ts=entry_ts,
+            exit_ts=exit_ts,
+            pct_ret=pct_ret,
+            is_win=is_win,
+            is_long=is_long,
+            entry_prices=entry_prices,
+            horizons=horizons,
+            symbols=symbols,
+            initial_capital=self.capital,
+            min_notional=5.50,          # Binance minimum limits
+            kelly_fraction=float(dna.get('kelly_fraction', 0.30)),
+            max_concurrent=int(dna.get('max_concurrent', 5)),
+            leverage=leverage,
+            round_trip_fee=0.00075
+        )
             
         return {
             'final_capital': final_capital,
             'pnl': global_pnl,
             'max_drawdown': max_drawdown,
-            'win_rate': (total_wins / total_trades * 100) if total_trades > 0 else 0.0,
+            'win_rate': win_rate,
             'trades': total_trades
         }

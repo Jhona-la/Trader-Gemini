@@ -12,8 +12,9 @@ from config import Config
 from strategies.strategy import Strategy
 from utils.math_kernel import (
     calculate_rsi_jit, calculate_bollinger_robust_jit, calculate_ema_jit,
-    calculate_macd_jit, calculate_atr_jit, calculate_adx_jit
-) # Phase 3: Total Vectorization
+    calculate_macd_jit, calculate_atr_jit, calculate_adx_jit,
+    kalman_filter_1d_jit, fractional_differencing_jit
+) # Phase 3 & 5: Total Vectorization & Mathematical Refinement
 from core.neural_bridge import neural_bridge
 from core.genotype import Genotype  # Phase 1: Trinidad Omega
 from core.online_learning import OnlineLearner # Phase 46: Real-time Learning
@@ -144,6 +145,11 @@ class HybridScalpingStrategy(Strategy):
                 'tp_pct': 0.040, 'sl_pct': 0.020,
                 'adx_threshold': 22, 'strength_threshold': 0.80,
                 'atr_sl_mult': 2.5, 'atr_tp_mult': 5.0, 'trailing_rsi': 60
+            },
+            'NANO_MICRO': {
+                'tp_pct': 0.0035, 'sl_pct': 0.0020,
+                'adx_threshold': 15, 'strength_threshold': 0.40,
+                'atr_sl_mult': 2.5, 'atr_tp_mult': 2.5, 'trailing_rsi': 75
             }
         }
         
@@ -230,6 +236,8 @@ class HybridScalpingStrategy(Strategy):
         """Devuelve parámetros adaptados al símbolo (Merged Genotype + Legacy Profile + Optimized)"""
         # 0. Get Legacy Defaults for this symbol
         profile_key = self.SYMBOL_MAP.get(symbol, 'BALANCED')
+        if getattr(Config, 'INITIAL_CAPITAL', 1000) <= 20.0 or self.horizon == 'MICROSCALPING':
+            profile_key = 'NANO_MICRO'
         defaults = self.PROFILES.get(profile_key).copy()
         
         # FORENSIC-FIX: INJECT HORIZON-SPECIFIC BASE PARAMETERS
@@ -360,24 +368,30 @@ class HybridScalpingStrategy(Strategy):
             ema_t = max(20, int(self.EMA_TREND * time_multiplier))
             vol_p = max(5, int(20 * time_multiplier))
             atr_p = max(5, int(14 * time_multiplier))
+            # 🧮 FASE 5: Kalman Filter (Zero-Lag Smoothing)
+            kalman_closes = kalman_filter_1d_jit(closes, R=1e-4, Q=1e-5)
+            inds['kalman_close'] = kalman_closes
             
-            # 1. Bollinger Bands (Numba JIT RANSAC - Phase 10)
-            inds['bb_upper'], inds['bb_middle'], inds['bb_lower'] = calculate_bollinger_robust_jit(closes, bb_p, self.BB_STD)
+            # 1. Bollinger Bands (Numba JIT RANSAC - Phase 10) on Kalman Closes
+            inds['bb_upper'], inds['bb_middle'], inds['bb_lower'] = calculate_bollinger_robust_jit(kalman_closes, bb_p, self.BB_STD)
             
-            # 2. RSI (Numba JIT)
-            inds['rsi'] = calculate_rsi_jit(closes, rsi_p)
+            # 2. RSI (Numba JIT) on Kalman Closes
+            inds['rsi'] = calculate_rsi_jit(kalman_closes, rsi_p)
             
-            # 3. MACD (Phase 3 JIT)
-            inds['macd'], inds['macd_signal'], inds['macd_hist'] = calculate_macd_jit(closes, macd_f, macd_s, macd_sig)
+            # 3. MACD (Phase 3 JIT) on Kalman Closes
+            inds['macd'], inds['macd_signal'], inds['macd_hist'] = calculate_macd_jit(kalman_closes, macd_f, macd_s, macd_sig)
             
-            # 4. EMAs (Numba JIT)
-            inds['ema_fast'] = calculate_ema_jit(closes, ema_f)
-            inds['ema_slow'] = calculate_ema_jit(closes, ema_s)
-            inds['ema_trend'] = calculate_ema_jit(closes, ema_t)
+            # 4. EMAs (Numba JIT) on Kalman Closes
+            inds['ema_fast'] = calculate_ema_jit(kalman_closes, ema_f)
+            inds['ema_slow'] = calculate_ema_jit(kalman_closes, ema_s)
+            inds['ema_trend'] = calculate_ema_jit(kalman_closes, ema_t)
+            inds['ema_micro'] = calculate_ema_jit(kalman_closes, 3) # Nano-Core Micro Trend
             
             # 5. Trend Flags (Boolean Arrays)
             inds['in_uptrend'] = (inds['ema_fast'] > inds['ema_slow']) & (closes > inds['ema_trend'])
             inds['in_downtrend'] = (inds['ema_fast'] < inds['ema_slow']) & (closes < inds['ema_trend'])
+            inds['micro_trend_up'] = (closes > inds['ema_micro'])
+            inds['micro_trend_down'] = (closes < inds['ema_micro'])
             
             # 6. Volume Metrics
             # Simple Volume MA (Vectorized with Convolve)
@@ -906,8 +920,12 @@ class HybridScalpingStrategy(Strategy):
         if self.horizon == 'SCALPING':
             # TRUE SCALPING MEAN REVERSION: Wick Rejection of Bollinger Bands
             # We don't wait for RSI. If the wick pierced the band and closed back inside as a pin bar, we enter.
-            setups['long_mean_rev'] = price_at_lower and is_bullish_pin and high_volume and not adx_extreme
-            setups['short_mean_rev'] = price_at_upper and is_bearish_pin and high_volume and not adx_extreme
+            micro_trend_up = inds.get('micro_trend_up', [True]*len(data['close']))[idx]
+            micro_trend_down = inds.get('micro_trend_down', [True]*len(data['close']))[idx]
+            
+            # 🚨 $13 MICRO-ACCOUNT FILTER: Only trade with micro_trend to increase WR
+            setups['long_mean_rev'] = price_at_lower and is_bullish_pin and high_volume and not adx_extreme and micro_trend_up
+            setups['short_mean_rev'] = price_at_upper and is_bearish_pin and high_volume and not adx_extreme and micro_trend_down
             
             # PROXIMITY SETUPS: Now backed by Wick analysis instead of pure random BB position
             if not setups['long_mean_rev'] and not setups['short_mean_rev']:
@@ -971,18 +989,21 @@ class HybridScalpingStrategy(Strategy):
             # 3. Price closes aggressively outside or very near the bands
             scalp_vol_surge = last_vol_ratio > 1.5
             
+            micro_trend_up = inds.get('micro_trend_up', [True]*len(data['close']))[idx]
+            micro_trend_down = inds.get('micro_trend_down', [True]*len(data['close']))[idx]
+            
             # Use strict VCP setup
-            setups['long_momentum'] = setups['in_uptrend'] and vcp_expansion and scalp_vol_surge and price_at_upper and not rsi_exhausted_long
-            setups['short_momentum'] = setups['in_downtrend'] and vcp_expansion and scalp_vol_surge and price_at_lower and not rsi_exhausted_short
+            setups['long_momentum'] = setups['in_uptrend'] and vcp_expansion and scalp_vol_surge and price_at_upper and not rsi_exhausted_long and micro_trend_up
+            setups['short_momentum'] = setups['in_downtrend'] and vcp_expansion and scalp_vol_surge and price_at_lower and not rsi_exhausted_short and micro_trend_down
             
             # SCALP BREAKOUTS (Explosive wicks)
-            setups['long_scalp_break'] = momentum_accel and scalp_vol_surge and (last_close > bbu) and not rsi_exhausted_long
+            setups['long_scalp_break'] = momentum_accel and scalp_vol_surge and (last_close > bbu) and not rsi_exhausted_long and micro_trend_up
             
             symmetric_shorts = getattr(Config.Strategies, 'SYMMETRIC_SHORTS_SCALPING', False)
             if symmetric_shorts:
-                setups['short_scalp_break'] = momentum_accel and scalp_vol_surge and (last_close < bbl) and not rsi_exhausted_short
+                setups['short_scalp_break'] = momentum_accel and scalp_vol_surge and (last_close < bbl) and not rsi_exhausted_short and micro_trend_down
             else:
-                setups['short_scalp_break'] = setups['in_downtrend'] and momentum_accel and scalp_vol_surge and (last_close < bbl) and not rsi_exhausted_short
+                setups['short_scalp_break'] = setups['in_downtrend'] and momentum_accel and scalp_vol_surge and (last_close < bbl) and not rsi_exhausted_short and micro_trend_down
         
         # Phase 5.7 Cognitive Auto-Tuning (Self-Healing Interception)
         allowed_setups = params.get('allowed_setups', 'ALL_SETUPS') if params else 'ALL_SETUPS'
@@ -1463,20 +1484,36 @@ class HybridScalpingStrategy(Strategy):
                     except Exception:
                         pass
                 
-                # 🔮 FASE 5: MULTI-COIN ORACLE (LEAD-LAG ARBITRAGE)
+                # 🔮 FASE 5: MULTI-COIN ORACLE (LEAD-LAG ARBITRAGE) + CROSS-EXCHANGE
+                # 1. Macro BTC Bias
                 if symbol != "BTC/USDT":
                     try:
                         from core.global_state import global_state
                         btc_vel = getattr(global_state, 'btc_velocity', 0.0)
                         if btc_vel > 0.005 and signal_type == SignalType.LONG:
                             logger.critical(f"🚀 [MULTI-COIN ORACLE] BTC Velocity ALTA ({btc_vel:.4f}). Technical LONG acelerado en {symbol}!")
-                            # In technical, maybe skip the veto checks or boost confidence
-                            # Confidence isn't explicitly used here to veto, but we can bypass the oracle veto later
-                            pass
                         elif btc_vel < -0.005 and signal_type == SignalType.SHORT:
                             logger.critical(f"📉 [MULTI-COIN ORACLE] BTC Velocity NEGATIVA ({btc_vel:.4f}). Technical SHORT acelerado en {symbol}!")
                     except Exception as e:
                         pass
+                        
+                # 2. Micro Cross-Exchange PDC Bias (Coinbase/Deribit/Bybit)
+                cross_exchange_bypass = False
+                try:
+                    if hasattr(global_state, 'cross_exchange_metrics'):
+                        metrics = global_state.cross_exchange_metrics.get(symbol, {})
+                        pdc = metrics.get('pdc_signal', 0.0)
+                        
+                        if pdc > 0.3 and signal_type == SignalType.LONG:
+                            logger.critical(f"🌌 [CROSS-EXCHANGE] Fuerte PDC ALCISTA ({pdc:.2f}) en Coinbase/Bybit. Protegiendo señal LONG en {symbol} de vetos macro.")
+                            cross_exchange_bypass = True
+                            if 'strength' in locals(): strength = min(1.0, strength + 0.2)
+                        elif pdc < -0.3 and signal_type == SignalType.SHORT:
+                            logger.critical(f"🌌 [CROSS-EXCHANGE] Fuerte PDC BAJISTA ({pdc:.2f}) en Coinbase/Bybit. Protegiendo señal SHORT en {symbol} de vetos macro.")
+                            cross_exchange_bypass = True
+                            if 'strength' in locals(): strength = min(1.0, strength + 0.2)
+                except Exception as e:
+                    pass
                 
                 # ═══════════════════════════════════════════════════
                 # Mutación 39: BAYESIAN MIRAGE (SPOOFING VETO)
@@ -1553,7 +1590,7 @@ class HybridScalpingStrategy(Strategy):
                             except Exception as e:
                                 pass
                                 
-                        if btc_vel_bypass:
+                        if btc_vel_bypass or cross_exchange_bypass:
                             pass # We ignore the veto completely
                         else:
                             clash = oracle_verdict['clash_score']
@@ -1649,6 +1686,27 @@ class HybridScalpingStrategy(Strategy):
                     if atr_pct < (min_atr_required * 1.5):
                         logger.warning(f"🛑 [CHOP BLOCK] {symbol} ADX {current_adx:.1f} < {ADX_THRESH} and low ATR")
                         continue
+                
+                # 🔮 FASE 20: PDC (Price Discovery Coefficient) Veto for Scalping
+                if self.horizon == 'SCALPING':
+                    try:
+                        from core.global_state import global_state
+                        ce_metrics = getattr(global_state, 'cross_exchange_metrics', {})
+                        sym_pdc = ce_metrics.get(symbol, {})
+                        pdc_velocity = sym_pdc.get('pdc_velocity', 0.0)
+                        
+                        min_pdc = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('min_pdc_velocity', 0.05)
+                        if abs(pdc_velocity) < min_pdc: # Requerimos velocidad significativa (positiva o negativa dependiendo de la dirección, pero usemos valor absoluto de velocidad o convicción)
+                            # Actually, if signal_type is LONG, we want pdc_velocity > min_pdc
+                            # if signal_type is SHORT, we want pdc_velocity < -min_pdc
+                            # But wait, pdc is usually positive for lead-lag strength? 
+                            # If PDC Velocity is a magnitude, we just need pdc_velocity > min_pdc.
+                            # "Scalping strictly requires positive confirmation (PDC Velocity > threshold)."
+                            if pdc_velocity < min_pdc:
+                                logger.warning(f"🛑 [PDC VETO] {symbol} SCALPING blocked | PDC Velocity: {pdc_velocity:.4f} < {min_pdc}")
+                                continue
+                    except Exception as e:
+                        logger.warning(f"⚠️ [PDC VETO] Error checking PDC for {symbol}: {e}")
                 
                 # CONFIDENCE GATE: Strict threshold for Momentum to avoid low-quality entries
                 if setup_type == "MOMENTUM" and strength < 0.60:
@@ -2287,6 +2345,35 @@ class HybridScalpingStrategy(Strategy):
 
     def calculate_signals(self, event):
         """Wrapper para integración con framework existente"""
+        # ============================================================
+        # ⏱️ ESPECIALIZACIÓN POR HORIZONTE (SCALPING vs SWING)
+        # ============================================================
+        is_swing = getattr(self, "horizon", "SCALPING") == "SWING"
+        is_closed = getattr(event, "is_closed", True)
+        
+        # FASE HORIZONS: Filtrado estricto por timeframe para evitar Phantom Triggers
+        event_tf = getattr(event, "timeframe", "1m")
+        from config import Config
+        target_tf = Config.Data.RESOLUTION if is_swing else "1m"
+        
+        if event_tf != target_tf:
+            return
+            
+        # SWING SOLO evalúa velas cerradas. Ignora el ruido HFT del websocket.
+        if is_swing and not is_closed:
+            return
+
+        import time
+        current_time = time.time()
+        if not hasattr(self, '_last_prediction_time'):
+            self._last_prediction_time = 0
+            
+        throttle_seconds = 0.5 if not is_swing else 10.0
+        if (current_time - self._last_prediction_time) < throttle_seconds:
+            return
+            
+        self._last_prediction_time = current_time
+        
         self.generate_signals(event)
 
     def update_recursive_weights(self, trade_outcome):
@@ -2408,8 +2495,8 @@ class HybridScalpingStrategy(Strategy):
             ps[2] = min(portfolio_state.get('duration', 0) / 100.0, 1.0)
             
         # 4. Fused Compute
-        closes = data['close'].astype(np.float32)
-        volumes = data['volume'].astype(np.float32)
+        closes = data['close'].astype(np.float64)
+        volumes = data['volume'].astype(np.float64)
         
         # State Reconstruction (Phase 48: For Learning Feedback)
         state_tensor = self._reconstruct_neural_state(closes, volumes, ps, gene_params)
@@ -2446,36 +2533,6 @@ class HybridScalpingStrategy(Strategy):
         
         return decision, confidence
 
-    def _reconstruct_neural_state(self, closes, volumes, ps, gene_params, window=5) -> np.ndarray:
-        """
-        Phase 48: Reconstructs the 25-feature state tensor for learning.
-        Must match core/fused_strategy_kernel.py logic exactly.
-        """
-        n = len(closes)
-        state = np.zeros(25, dtype=np.float32)
-        if n < 30: return state
-        
-        # 1. Returns (5)
-        for i in range(window):
-            idx = n - window + i
-            state[i] = (closes[idx] - closes[idx-1]) / closes[idx-1]
-            
-        # 2. Volumes (5)
-        vol_sum = np.sum(volumes[n-20:n])
-        mean_vol = vol_sum / 20.0 if vol_sum > 0 else 1.0
-        for i in range(window):
-            idx = n - window + i
-            state[5+i] = volumes[idx] / mean_vol
-            
-        # 3. Momentum (5)
-        for i in range(window):
-            idx = n - window + i
-            state[10+i] = (closes[idx] / closes[idx-2] - 1.0) if idx >= 2 else 0.0
-            
-        # 4. Portfolio & Gene (5)
-        state[20:23] = ps
-        state[23:25] = gene_params
-        return state
 
     def process_reward(self, trade: dict):
         """

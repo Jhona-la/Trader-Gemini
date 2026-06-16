@@ -24,19 +24,21 @@ class GraphIntelligenceLayer:
         self.graph.add_nodes_from(symbols)
         self.last_update = datetime.now(timezone.utc).timestamp()
         
-    def update_graph_edges(self, correlation_matrix: np.ndarray):
+    def update_graph_edges(self, correlation_matrix: np.ndarray, current_symbols: List[str] = None):
         """
         Recibe una matriz de correlación (ej. calculada a partir de los últimos X retornos)
         y actualiza las aristas del grafo matemático.
         """
-        if correlation_matrix.shape != (len(self.symbols), len(self.symbols)):
+        symbols_to_use = current_symbols if current_symbols is not None else self.symbols
+        
+        if correlation_matrix.shape != (len(symbols_to_use), len(symbols_to_use)):
             logger.error("GraphIntelligenceLayer: Dimension mismatch in correlation matrix.")
             return
 
         self.graph.clear_edges()
         
-        for i, sym_a in enumerate(self.symbols):
-            for j, sym_b in enumerate(self.symbols):
+        for i, sym_a in enumerate(symbols_to_use):
+            for j, sym_b in enumerate(symbols_to_use):
                 if i != j:
                     weight = correlation_matrix[i, j]
                     # Solo conectamos si la correlación/causalidad es estadísticamente significativa

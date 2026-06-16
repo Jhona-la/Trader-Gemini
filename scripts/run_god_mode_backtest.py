@@ -35,6 +35,7 @@ FLUJO DE PRODUCCIÓN REPLICADO:
 """
 
 import os
+import json
 import sys
 
 # ── ENVIRONMENT ISOLATION (FORENSIC FIX) ──
@@ -242,32 +243,41 @@ class BacktestExecutor:
         if qty <= 0:
             return None
 
-        # ─── REALISTIC CAPITAL-AWARE SLIPPAGE ───
-        # FORENSIC-V139 FIX: Instead of adding arbitrary "latency penalties" that destroy scalping PnL,
-        # we model slippage based on capital size. Con $13 USD, el impacto en el Orderbook de Binance es CERO.
-        # Por tanto, la latencia es irrelevante para el fill price real, la orden se toma del BBO sin moverlo.
-        
+        # ─── REALISTIC CAPITAL-AWARE SLIPPAGE & LATENCY ───
         is_limit = order_event.order_type == OrderType.LIMIT
         if is_limit:
-            # 🚀 FASE 13: STRICT MAKER LATENCY PENALTY
-            # Reject 10% of BBO LIMIT orders to simulate missed fills 
-            # (price moved away before the 10ms WS latency finished).
-            if self._rng.random() < 0.10:
+            # 🚀 FASE 13: STRICT MAKER LATENCY PENALTY & BETA PARTIAL FILLS
+            # Simulated Latency (Lognormal distribution)
+            # µ = 2.3 (approx 10ms median), σ = 0.5 (heavy tail for network jitter)
+            latency_ms = self._rng.lognormal(2.3, 0.5)
+            
+            # If latency > 50ms, there's a 30% chance the Limit order misses the BBO
+            if latency_ms > 50.0 and self._rng.random() < 0.30:
                 return None
                 
-            # BBO LIMIT orders have exactly zero slippage if filled
+            # Beta distribution for Partial Fills
+            # Most fills are complete (alpha=5, beta=1), but sometimes partial
+            fill_ratio = self._rng.beta(5, 1)
+            # If fill > 95%, assume complete fill for simplicity, otherwise partial
+            if fill_ratio > 0.95:
+                fill_ratio = 1.0
+                
+            qty = qty * fill_ratio
+            if qty < 1e-8:
+                return None
+                
             slip_pct = 0.0
-            stochastic_latency_ms = 10.0 # WebSocket Latency
         else:
-            # MARKET orders for <$100 capital simply pay the spread.
-            # Spread on BTC/USDT or SOL/USDT is typically 1 tick.
-            # We set a realistic micro-slippage of 0.015% (1.5 bps).
-            slip_pct = 0.00015
-            stochastic_latency_ms = 15.0 # Realistic API Latency for Market
+            # MARKET orders suffer Slippage proportional to Latency
+            latency_ms = self._rng.lognormal(2.7, 0.6) # approx 15ms median, fatter tail
+            
+            # Base slippage of 0.015% (1.5 bps) + latency impact
+            # Every 10ms of latency adds 0.1 bps of slippage
+            latency_penalty = (latency_ms / 10.0) * 0.00001
+            slip_pct = 0.00015 + latency_penalty
             
         # EXECUTION LAG (DATA LEAKAGE PREVENTION)
         # Apply the realistic slippage directionally.
-        
         if order_event.direction == OrderSide.BUY:
             fill_price = price * (1 + slip_pct)
         else:
@@ -281,7 +291,7 @@ class BacktestExecutor:
             commission = fill_cost * COMMISSION_MAKER  # 0.02%
             actual_order_type = "limit"
         else:
-            commission = fill_cost * COMMISSION_TAKER  # 0.0375%
+            commission = fill_cost * COMMISSION_TAKER  # 0.0375% (changed to 0.04% elsewhere but uses constant)
             actual_order_type = "market"
 
         self.fills_count += 1
@@ -498,6 +508,7 @@ def run_global_backtest(
             auto_save=False,  # No periodic saves during backtest
         )
         portfolio.data_provider = data_provider
+        portfolio.metrics = {}
     
         # ═══════════════════════════════════════════════════════════════════
         # OMEGA FIX: BACKTEST POSITION ISOLATION
@@ -518,9 +529,12 @@ def run_global_backtest(
         print(f"  🔒 [OMEGA] Portfolio ISOLATION: cleared {len(portfolio.positions)} positions, virtual_ledger, margin.")
     
         # 1c. PRODUCTION RiskManager (THE REAL ONE)
+        import sys
+        print("DEBUG: Instantiating RiskManager...", flush=True)
         risk_manager = RiskManager(
             max_concurrent_positions=Config.MAX_CONCURRENT_POSITIONS, portfolio=portfolio
         )
+        print("DEBUG: RiskManager instantiated successfully.", flush=True)
         # ═══════════════════════════════════════════════════════════════════
         # FORENSIC-V31 FIX: BACKTEST COUNTER ISOLATION
         # QUÉ: Resetea win_count, loss_count y _trade_cache.
@@ -529,16 +543,25 @@ def run_global_backtest(
         #   inicio (empezando con 172+ wins).
         # ═══════════════════════════════════════════════════════════════════
         risk_manager.win_count = 0
+        print("DEBUG: win_count reset.", flush=True)
         risk_manager.loss_count = 0
+        print("DEBUG: loss_count reset.", flush=True)
         risk_manager._trade_cache = []
+        print("DEBUG: _trade_cache reset.", flush=True)
     
         # 1c-bis. PREDICTION TRACKER (Feedback Loop Closure for Backtest)
         # QUÉ: Inicializa tracker de precisión predictiva con paridad producción.
         # POR QUÉ: Si solo existe en producción, el backtest no puede medir
         #   prediction decay ni validar confidence_factor.
+        print("DEBUG: Importing PredictionTracker...", flush=True)
+        logger.info("DEBUG: Importing PredictionTracker inside run_god_mode_backtest")
         from core.prediction_tracker import PredictionTracker
+        print("DEBUG: Instantiating PredictionTracker...", flush=True)
+        logger.info("DEBUG: Instantiating PredictionTracker inside run_god_mode_backtest")
         prediction_tracker = PredictionTracker()
+        print("DEBUG: Assigning PredictionTracker...", flush=True)
         risk_manager.prediction_tracker = prediction_tracker
+        print("DEBUG: Assigned PredictionTracker.", flush=True)
     
         # ═══════════════════════════════════════════════════════════════════
         # FORENSIC-V47: MARKET REGIME DETECTOR (PRODUCTION PARITY)
@@ -550,8 +573,11 @@ def run_global_backtest(
         # PARA QUÉ: Paridad total — el backtest filtra igual que producción.
         # CÓMO: Se ejecuta cada 20 epochs en el main loop (ligero).
         # ═══════════════════════════════════════════════════════════════════
+        logger.info("DEBUG: Importing MarketRegimeDetector")
         from core.market_regime import MarketRegimeDetector
+        logger.info("DEBUG: Instantiating MarketRegimeDetector")
         regime_detector = MarketRegimeDetector(events_queue=events_queue)
+        logger.info("DEBUG: Setting horizon profile for MarketRegimeDetector")
         regime_detector.set_horizon_profile(days)  # Match backtest horizon
         portfolio.market_regime = regime_detector
         risk_manager.regime_detector = regime_detector
@@ -565,7 +591,9 @@ def run_global_backtest(
         #   que el sistema de producción.
         # ═══════════════════════════════════════════════════════════════════
         try:
+            logger.info("DEBUG: Importing SwarmCorrelator")
             from core.swarm_correlator import SwarmCorrelator
+            logger.info("DEBUG: Instantiating SwarmCorrelator")
             swarm = SwarmCorrelator()
             print("  🐝 [V48] SwarmCorrelator initialized (Backtest Parity)")
         except Exception as e:
@@ -573,7 +601,9 @@ def run_global_backtest(
             print(f"  ⚠️ [V48] SwarmCorrelator init failed: {e}")
 
         try:
+            logger.info("DEBUG: Importing SovereignOracle")
             from core.sovereign_oracle import SovereignOracle
+            logger.info("DEBUG: Instantiating SovereignOracle")
             sovereign_oracle = SovereignOracle()
             print("  🔮 [V48] SovereignOracle initialized (Backtest Parity)")
         except Exception as e:
@@ -581,7 +611,9 @@ def run_global_backtest(
             print(f"  ⚠️ [V48] SovereignOracle init failed: {e}")
 
         try:
+            logger.info("DEBUG: Importing MultiverseSimulator")
             from core.multiverse_simulator import MultiverseSimulator
+            logger.info("DEBUG: Instantiating MultiverseSimulator")
             multiverse = MultiverseSimulator()
             print("  🌌 [V48] MultiverseSimulator initialized (Backtest Parity)")
         except Exception as e:
@@ -589,7 +621,9 @@ def run_global_backtest(
             print(f"  ⚠️ [V48] MultiverseSimulator init failed: {e}")
 
         try:
+            logger.info("DEBUG: Importing StrategySelector")
             from core.strategy_selector import StrategySelector
+            logger.info("DEBUG: Instantiating StrategySelector")
             selector = StrategySelector(portfolio=portfolio, data_provider=data_handler if 'data_handler' in locals() else data_provider)
             print("  🎯 [V48] StrategySelector initialized (Backtest Parity)")
         except Exception as e:
@@ -597,7 +631,9 @@ def run_global_backtest(
             print(f"  ⚠️ [V48] StrategySelector init failed: {e}")
 
         try:
+            logger.info("DEBUG: Importing ShadowDarwin")
             from core.shadow_darwin import ShadowDarwin
+            logger.info("DEBUG: Instantiating ShadowDarwin")
             shadow_darwin = ShadowDarwin(data_provider=data_provider)
             print("  🧬 [V48] ShadowDarwin initialized (Backtest Parity)")
         except Exception as e:
@@ -606,7 +642,9 @@ def run_global_backtest(
 
         try:
             # We mock WorldAwareness and MicroAccountAwareness properties
+            logger.info("DEBUG: Importing MicroAccountAwareness")
             from core.micro_awareness import MicroAccountAwareness
+            logger.info("DEBUG: Instantiating MicroAccountAwareness")
             micro_awareness = MicroAccountAwareness()
             print("  🔬 [V48] MicroAccountAwareness initialized (Backtest Parity)")
         except Exception as e:
@@ -745,6 +783,10 @@ def run_global_backtest(
         global_epoch_strategies = []
         try:
             from strategies.omni_strategy import OmniStrategy
+            omni_micro = OmniStrategy(data_provider, events_queue, horizon="MICROSCALPING")
+            global_epoch_strategies.append(omni_micro)
+            print("  ✅ [OMNI] OmniStrategy [MICROSCALPING] registered.")
+
             omni_scalp = OmniStrategy(data_provider, events_queue, horizon="SCALPING")
             global_epoch_strategies.append(omni_scalp)
             print("  ✅ [OMNI] OmniStrategy [SCALPING] registered.")
@@ -762,16 +804,66 @@ def run_global_backtest(
             for symbol in symbols:
                 strategies_map[symbol] = []
             global_epoch_strategies = []
-        elif isolated_strategy == "technical" or _lean:
+        elif isolated_strategy in ["technical", "omni"] or _lean:
             print("  🎯 [EVOLVER MODE] ML Strategies DISABLED for Nano Speeds.")
             for symbol in symbols:
                 strategies_map[symbol] = []
         else:
+            # ── GLOBAL FLYWEIGHT POOL FOR DYNAMIC STRATEGIES ──
+            # Instantiating 30+ strategies per symbol (26) leads to 780+ objects
+            # causing severe RAM exhaustion and low CPU cache hit rates.
+            # We instantiate them ONCE and share the references (Stateless Flyweight).
+            import pkgutil
+            import importlib
+            import inspect
+            from strategies.strategy import Strategy
+            
+            global_dynamic_strats = []
+            for _, name, _ in pkgutil.iter_modules([os.path.join(_project_root, "strategies")]):
+                if name in ["ml_strategy", "omni_strategy", "strategy"]:
+                    continue
+                try:
+                    mod = importlib.import_module(f"strategies.{name}")
+                    for cname, obj in inspect.getmembers(mod, inspect.isclass):
+                        if issubclass(obj, Strategy) and obj is not Strategy:
+                            try:
+                                strat_instance = obj(data_provider=data_provider, events_queue=events_queue)
+                            except TypeError:
+                                try:
+                                    strat_instance = obj()
+                                except TypeError:
+                                    continue # Skip
+                            global_dynamic_strats.append(strat_instance)
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to dynamically load {name}: {e}")
+            
+            # ORACLE MODULE: Validate Strategy Count
+            total_strats = len(global_dynamic_strats) + 2 # +2 for Omni Scalp & Swing
+            print(f"  🧠 [ORACLE] Loaded {total_strats} dynamic sub-strategies.")
+            if total_strats < 15:
+                print(f"  ❌ [ORACLE] BACKTEST INVÁLIDO: Solo {total_strats}/30 estrategias activas. Un backtest incompleto mide una porción del sistema real. Corregir antes de continuar.")
+                # We will not raise an exception to not break existing testing entirely, but we log critically.
+                logger.critical(f"BACKTEST INVÁLIDO: Solo {total_strats} estrategias activas.")
+                    
             for symbol in symbols:
                 try:
                     is_leader = "BTC" in symbol
                     from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy
                     
+                    # ── MICROSCALPING ENGINE ──
+                    ml_micro = MLStrategy(
+                        data_provider=data_provider,
+                        events_queue=events_queue,
+                        symbol=symbol,
+                        lookback=min(Config.Strategies.ML_LOOKBACK_BARS, 2000),
+                        sentiment_loader=None,
+                        portfolio=portfolio,
+                        risk_manager=risk_manager if is_leader else None,
+                        horizon="MICROSCALPING",
+                        models_dir=backtest_models_dir,
+                        db_path=backtest_db_path,
+                    )
+
                     # ── SCALPING ENGINE ──
                     ml_scalp = MLStrategy(
                         data_provider=data_provider,
@@ -800,15 +892,19 @@ def run_global_backtest(
                         db_path=backtest_db_path,
                     )
     
-                    strategies_map[symbol] = [ml_scalp, ml_swing]
-    
+                    strategies_map[symbol] = [ml_micro, ml_scalp, ml_swing]
+                    
+                    # Append flyweight shared strategies
+                    strategies_map[symbol].extend(global_dynamic_strats)
+
+
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to init ML strategy for {symbol}: {e}")
+                    logger.warning(f"⚠️ Failed to init strategies for {symbol}: {e}")
                     strategies_map[symbol] = []
     
         total_strats = sum(len(v) for v in strategies_map.values()) + len(global_epoch_strategies)
         print(
-            f"  🧠 Total strategies registered: {total_strats} ({len(symbols)} symbols × 2 ML + {len(global_epoch_strategies)} Global)"
+            f"  🧠 Total strategies registered: {total_strats} ({len(symbols)} symbols × 3 ML + {len(global_epoch_strategies)} Global)"
         )
 
         # ═══════════════════════════════════════════════════════════════
@@ -916,11 +1012,20 @@ def run_global_backtest(
         # CUÁNDO: Al iniciar el loop del motor de backtesting.
         # DÓNDE: En `scripts/run_god_mode_backtest.py` :: `run_global_backtest`.
         # QUIÊN: Modificado por el Quant Developer y el SRE/DevOps.
-        warmup_epochs = 200 # Fix for zero-trades: max(min(100, total_epochs // 20), total_epochs - (days * 1440))
+        warmup_epochs = max(200, int(total_epochs - (days * 1440)))
     
         print(f"  ⏱️  Starting simulation: {total_epochs:,} global epochs")
         print(f"  🔥 Warmup: first {warmup_epochs} epochs (no trading)")
     
+        last_funding_ts = None
+        
+        # ═══════════════════════════════════════════════════════════════
+        # QUANTUM FAST-FORWARD: Skip 70 days of iteration completely!
+        # ═══════════════════════════════════════════════════════════════
+        if warmup_epochs > 0 and warmup_epochs < data_provider.total_epochs:
+            data_provider.current_epoch_idx = warmup_epochs
+            epoch_count = warmup_epochs
+
         while data_provider.continue_backtest:
             # ── ADVANCE GLOBAL TIMELINE ──
             data_provider.update_bars()
@@ -1161,6 +1266,34 @@ def run_global_backtest(
                 event = events_queue.get()
                 if event.type == EventType.MARKET:
                     market_events.append(event)
+    
+            # ── FASE 3 FORENSIC: FUNDING RATE SIMULATION (ESPEJO PERFECTO) ──
+            if market_events:
+                current_ts = market_events[0].timestamp
+                if isinstance(current_ts, datetime):
+                    current_unix = current_ts.timestamp()
+                else:
+                    current_unix = float(current_ts)
+                
+                if last_funding_ts is None:
+                    last_funding_ts = current_unix - (current_unix % (8 * 3600))
+                
+                # Check if we crossed an 8h boundary
+                if current_unix - last_funding_ts >= 8 * 3600:
+                    last_funding_ts += 8 * 3600
+                    # Apply funding fee (0.01%) for all open positions
+                    for v_key, pos in list(portfolio.virtual_ledger.items()):
+                        if abs(pos.get("quantity", 0)) > 1e-8:
+                            sym = pos.get("symbol", v_key.split("_")[0])
+                            price = data_provider.get_latest_price(sym)
+                            if price:
+                                # Standard funding rate of 0.01% every 8h
+                                fee = abs(pos["quantity"]) * price * 0.0001
+                                portfolio.current_cash -= fee
+                                portfolio.metrics["total_commission"] = portfolio.metrics.get("total_commission", 0.0) + fee
+                                if verbose:
+                                    print(f"💸 [FUNDING RATE] Deducted ${fee:.4f} for {v_key} (Swing Retention Cost)")
+
     
             # ── Phase B: Process Market Events (prices, exits, strategies) ──
             for event in market_events:
@@ -1415,6 +1548,10 @@ def run_global_backtest(
     
                     is_exit = event.signal_type == SignalType.EXIT
     
+                    # ─── FASE 1, FASE 9, FASE 22 MOVIDAS AL CONSENSUS FILTER ───
+                    # Para garantizar Paridad 1:1, los vetos de Funding, Correlación y Régimen
+                    # ahora se manejan exclusivamente en el MetaArbitrator a través del ConsensusFilter.
+    
                     # ✨ ENDGAME: Block new entries in last 30 minutes to ensure clean exits
                     if (
                         (total_epochs - epoch_count) <= 30
@@ -1510,6 +1647,15 @@ def run_global_backtest(
                     f"proposed {event.signal_type.name} confidence={getattr(event, 'strength', 0):.3f} "
                     f"horizon={getattr(event, 'horizon', '?')}"
                 )
+                from core.forensics import ForensicRecorder
+                _dh = ForensicRecorder.generate_decision_hash(
+                    event.symbol, 
+                    event.signal_type.name, 
+                    current_price, 
+                    getattr(event, 'strength', 0), 
+                    getattr(event, 'horizon', 'SCALPING')
+                )
+                forensic_logger.debug(f"[{_ts}] [PARITY_HASH] Decision Hash: {_dh}")
 
                 
                 # Scenario E: Isolate strategy
@@ -1827,7 +1973,19 @@ def run_global_backtest(
                     risk_manager.update_equity(eq)
                 except:
                     pass
-                    
+            
+            # ── QUANTUM-NANO MEMORY MANAGEMENT ──
+            if epoch_count > 0 and epoch_count % 5000 == 0:
+                # Global gc used
+                import psutil
+                gc.collect()
+                process = psutil.Process()
+                mem_mb = process.memory_info().rss / (1024 * 1024)
+                print(f"  🧹 [NANO-GC] Epoch {epoch_count:,} | RAM Usage: {mem_mb:.1f} MB")
+                if mem_mb > 3000:
+                    logger.warning(f"⚠️ HIGH RAM USAGE ({mem_mb:.1f} MB) - Forcing deep collection")
+                    gc.collect(generation=2)
+
             # Send mid-way Strategy Leaderboard
             if total_epochs > 0 and epoch_count == total_epochs // 2:
                 try:
@@ -2403,30 +2561,7 @@ def _generate_insights_report(results: dict, report_path: str):
 
 def main():
     import atexit
-    # ── CONCURRENCY LOCK (FORENSIC FIX) ──
-    # QUÉ: Previene la ejecución concurrente de múltiples backtests (dentro del mismo entorno).
-    # POR QUÉ: Múltiples backtests consumen la RAM y causan detención del motor principal.
-    env_id = os.getenv("TG_ENV_ID", "")
-    lock_filename = f"backtest_running_{env_id}.lock" if env_id else "backtest_running.lock"
-    lock_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), lock_filename)
-    if os.path.exists(lock_file):
-        # Check if the lock is stale (e.g. older than 4 hours due to a previous crash)
-        if time.time() - os.path.getmtime(lock_file) > 14400:
-            print(f"⚠️ Found stale lock file older than 4 hours. Removing it...")
-            try:
-                os.remove(lock_file)
-            except OSError:
-                pass
-        else:
-            print(f"🛑 [CONCURRENCY LOCK] A backtest is already running. Aborting this run to protect system memory.")
-            sys.exit(1)
-            
-    # Create lock
-    with open(lock_file, "w") as f:
-        f.write(str(os.getpid()))
-        
-    # Register cleanup
-    atexit.register(lambda: os.remove(lock_file) if os.path.exists(lock_file) else None)
+    # Lock file logic disabled in backtest to prevent crash blocks
 
     # ── PHASE 2 AUDIT PRE-FLIGHT CHECK ──
     print("🛡️ Executing Phase 2 Pre-flight Audit...")
@@ -2457,7 +2592,7 @@ def main():
         help="Environment ID for Multi-Environment Isolation (e.g. trial_123)"
     )
     parser.add_argument(
-        "--days", type=int, default=7, help="Number of days to backtest"
+        "--days", type=float, default=7.0, help="Number of days to backtest (can be float, e.g. 0.25)"
     )
     parser.add_argument(
         "--end",
@@ -2485,8 +2620,58 @@ def main():
                         help="Forensic Scenario: A=Full, B=No Reactive Exits, C=Market Only, D=Ideal Exec, E=Isolated")
     parser.add_argument("--isolated-strategy", type=str, default=None, 
                         help="Strategy ID to isolate (for Scenario E)")
+    parser.add_argument("--override", type=str, default=None,
+                        help="JSON string of Config overrides for Monte Carlo / Parametric executions.")
 
     args = parser.parse_args()
+    
+    if args.override:
+        import json
+        try:
+            overrides = json.loads(args.override)
+            logger.info(f"🧬 [DNA OVERRIDE] Applying Monte Carlo Parametric Overrides: {overrides}")
+            
+            # Helper to recursively update config dictionaries or classes
+            def update_config_dict(target_obj, overrides_dict):
+                if isinstance(target_obj, dict):
+                    for k, v in overrides_dict.items():
+                        if isinstance(v, dict) and k in target_obj and isinstance(target_obj[k], dict):
+                            update_config_dict(target_obj[k], v)
+                        else:
+                            target_obj[k] = v
+                else:
+                    for k, v in overrides_dict.items():
+                        if hasattr(target_obj, k):
+                            attr = getattr(target_obj, k)
+                            if isinstance(v, dict):
+                                if isinstance(attr, dict) or isinstance(attr, type):
+                                    update_config_dict(attr, v)
+                                else:
+                                    setattr(target_obj, k, v)
+                            else:
+                                setattr(target_obj, k, v)
+            
+            # Map DNA flat params to nested Config parameters
+            if "leverage" in overrides:
+                Config.BINANCE_LEVERAGE = overrides["leverage"]
+            if "tp_pct" in overrides:
+                setattr(Config.Risk, 'DEFAULT_TP_PCT', overrides["tp_pct"])
+            if "sl_pct" in overrides:
+                setattr(Config.Risk, 'DEFAULT_SL_PCT', overrides["sl_pct"])
+            if "max_risk_per_trade" in overrides:
+                Config.MAX_RISK_PER_TRADE = overrides["max_risk_per_trade"]
+                Config.Risk.MAX_RISK_PER_TRADE = overrides["max_risk_per_trade"]
+                
+            # Generic dictionary injector for Config (allows nested overrides like "Horizons": {"Scalping": {"rsi_buy": 25}})
+            update_config_dict(Config, overrides)
+            
+            # Also update TECHNICAL_PARAMS directly for retro-compatibility
+            for k in ["rsi_buy", "rsi_sell", "bb_std", "bb_period", "ema_fast", "ema_slow", "strength_threshold"]:
+                if k in overrides:
+                    Config.Strategies.TECHNICAL_PARAMS[k] = overrides[k]
+                    
+        except Exception as e:
+            logger.error(f"❌ Failed to parse or apply --override JSON: {e}")
 
     end_time = None
     if args.end:

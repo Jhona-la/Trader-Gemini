@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from core.state_vector import SymbolStateVector
 from core.structs import PositionState
 from core.clock import global_clock
+from core.dark_alpha_worker import dark_alpha_worker
+from core.mempool_worker import mempool_worker
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +86,9 @@ class GlobalMarketState:
         self.market_regime: str = "UNKNOWN"
         self.correlation_matrix: Dict[str, Dict[str, float]] = {}
         self.btc_velocity: float = 0.0  # 🔮 Phase 5: Multi-Coin Oracle velocity
+        self.cross_exchange_metrics: Dict[str, Dict[str, float]] = {}  # 🌐 Multi-Source Intelligence
+        self.dark_alpha_pressure: float = 0.0  # 🌑 DEX Cascade Pressure
+        self.rbf_panic_score: float = 0.0  # 🚨 Mempool Urgency
         
         # 5. Portfolio & Risk Projections
         self.portfolio: PortfolioSnapshot = PortfolioSnapshot()
@@ -104,6 +109,8 @@ class GlobalMarketState:
     def _on_tick(self, timestamp_ns: int):
         """Callback del Clock para firmar/congelar el estado actual."""
         self.timestamp_ns = timestamp_ns
+        self.dark_alpha_pressure = dark_alpha_worker.get_net_pressure()
+        self.rbf_panic_score = mempool_worker.get_panic_score()
 
     def freeze(self, current_ns: int):
         """Explicit freeze (for use outside clock subscription)."""

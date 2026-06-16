@@ -78,21 +78,32 @@ class OmniStrategy(Strategy):
             
             # Compatible con BacktestDataProvider (numpy structured array) Y producción (pandas DataFrame)
             _get = lambda arr, key: arr[key].values if hasattr(arr[key], 'values') else np.asarray(arr[key])
-            close = _get(bars, 'close').astype(np.float32)
-            high = _get(bars, 'high').astype(np.float32)
-            low = _get(bars, 'low').astype(np.float32)
-            open_p = _get(bars, 'open').astype(np.float32)
+            close = _get(bars, 'close').astype(np.float64)
+            high = _get(bars, 'high').astype(np.float64)
+            low = _get(bars, 'low').astype(np.float64)
+            open_p = _get(bars, 'open').astype(np.float64)
             
             current_price = close[-1]
             
-            # 2. INDICADORES TÉCNICOS
-            rsi_arr = calculate_rsi_jit(close, self.rsi_period)
-            bbu_arr, bbm_arr, bbl_arr = calculate_bollinger_robust_jit(close, self.bb_period, self.bb_std)
+            # 2. INDICADORES TÉCNICOS (NANOSECOND C-CORE)
+            try:
+                from strategies.math_core import fast_sma, fast_std, fast_rsi
+                rsi_val, _, _ = fast_rsi(close, self.rsi_period)
+                rsi = rsi_val
+                
+                sma_bb = fast_sma(close, self.bb_period)
+                std_bb = fast_std(close, self.bb_period)
+                bbu = sma_bb + std_bb * self.bb_std
+                bbl = sma_bb - std_bb * self.bb_std
+            except ImportError:
+                # Fallback
+                rsi_arr = calculate_rsi_jit(close, self.rsi_period)
+                bbu_arr, bbm_arr, bbl_arr = calculate_bollinger_robust_jit(close, self.bb_period, self.bb_std)
+                rsi = rsi_arr[-1]
+                bbl = bbl_arr[-1]
+                bbu = bbu_arr[-1]
+                
             atr_arr = calculate_atr_jit(high, low, close, 14)
-            
-            rsi = rsi_arr[-1]
-            bbl = bbl_arr[-1]
-            bbu = bbu_arr[-1]
             atr_pct = atr_arr[-1] / current_price
             
             fee_threshold = (Config.BINANCE_MAKER_FEE_BNB + Config.BINANCE_TAKER_FEE_BNB) * self.fee_mult
@@ -120,8 +131,14 @@ class OmniStrategy(Strategy):
             
             # 4. PROXIES SECUNDARIOS (Live)
             # StatArb Z-Score
-            sma_50 = np.mean(close[-50:])
-            std_50 = np.std(close[-50:])
+            try:
+                from strategies.math_core import fast_sma, fast_std
+                sma_50 = fast_sma(close, 50)
+                std_50 = fast_std(close, 50)
+            except ImportError:
+                sma_50 = np.mean(close[-50:])
+                std_50 = np.std(close[-50:])
+                
             z_score = (current_price - sma_50) / (std_50 + 1e-9)
             statarb_long = 1.0 if z_score <= -2.5 else 0.0
             statarb_short = 1.0 if z_score >= 2.5 else 0.0
@@ -145,6 +162,20 @@ class OmniStrategy(Strategy):
             sl_pct = h_params.get('sl_pct', 0.01)
 
             if score_long >= self.master_threshold:
+                metadata={'setup_type': 'MOMENTUM', 'omni_score': score_long, 'tp_pct': tp_pct, 'sl_pct': sl_pct}
+                
+                # 🚀 ZERO-QUEUE BYPASS (< 1us Execution)
+                if getattr(Config, 'BINANCE_USE_DEMO', False) == False and getattr(Config, 'BINANCE_USE_TESTNET', False) == False:
+                    if hasattr(self, '_engine_ref') and hasattr(self._engine_ref, 'executor'):
+                        if hasattr(self._engine_ref.executor, 'direct_fast_execute'):
+                            trade_cash = getattr(self.portfolio, 'current_cash', 13.0) * getattr(Config.Risk, 'ML_KELLY_FRACTION', 0.10)
+                            qty = round(trade_cash / current_price, 3)
+                            success = self._engine_ref.executor.direct_fast_execute(
+                                symbol.replace('/', ''), 'BUY', 'MARKET', qty, 0.0, "GTC", False, "BOTH"
+                            )
+                            if success:
+                                metadata['bypass_executed'] = True
+                                
                 sig = SignalEvent(
                     symbol=symbol,
                     signal_type=SignalType.LONG,
@@ -154,12 +185,27 @@ class OmniStrategy(Strategy):
                     ml_confidence=norm_score(score_long),
                     current_price=current_price,
                     horizon=self.horizon,
-                    metadata={'setup_type': 'MOMENTUM', 'omni_score': score_long, 'tp_pct': tp_pct, 'sl_pct': sl_pct}
+                    metadata=metadata
                 )
+                            
                 self.events_queue.put(sig)
                 logger.info(f"🟢 [OMNI-SCORE] {symbol} {self.horizon} LONG | Score: {score_long:.2f} >= {self.master_threshold} (T:{tech_long} M:{ml_long_sig} P:{phalanx_long} S:{statarb_long})")
                 
             elif score_short >= self.master_threshold:
+                metadata={'setup_type': 'MOMENTUM', 'omni_score': score_short, 'tp_pct': tp_pct, 'sl_pct': sl_pct}
+                
+                # 🚀 ZERO-QUEUE BYPASS (< 1us Execution)
+                if getattr(Config, 'BINANCE_USE_DEMO', False) == False and getattr(Config, 'BINANCE_USE_TESTNET', False) == False:
+                    if hasattr(self, '_engine_ref') and hasattr(self._engine_ref, 'executor'):
+                        if hasattr(self._engine_ref.executor, 'direct_fast_execute'):
+                            trade_cash = getattr(self.portfolio, 'current_cash', 13.0) * getattr(Config.Risk, 'ML_KELLY_FRACTION', 0.10)
+                            qty = round(trade_cash / current_price, 3)
+                            success = self._engine_ref.executor.direct_fast_execute(
+                                symbol.replace('/', ''), 'SELL', 'MARKET', qty, 0.0, "GTC", False, "BOTH"
+                            )
+                            if success:
+                                metadata['bypass_executed'] = True
+                                
                 sig = SignalEvent(
                     symbol=symbol,
                     signal_type=SignalType.SHORT,
@@ -169,8 +215,9 @@ class OmniStrategy(Strategy):
                     ml_confidence=norm_score(score_short),
                     current_price=current_price,
                     horizon=self.horizon,
-                    metadata={'setup_type': 'MOMENTUM', 'omni_score': score_short, 'tp_pct': tp_pct, 'sl_pct': sl_pct}
+                    metadata=metadata
                 )
+                            
                 self.events_queue.put(sig)
                 logger.info(f"🔴 [OMNI-SCORE] {symbol} {self.horizon} SHORT | Score: {score_short:.2f} >= {self.master_threshold} (T:{tech_short} M:{ml_short_sig} P:{phalanx_short} S:{statarb_short})")
                 

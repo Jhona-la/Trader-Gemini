@@ -382,7 +382,7 @@ class MarketRegimeDetector:
         """
         return self.detect_regime('BTC/USDT', btc_bars_1m, btc_bars_5m, None, btc_bars_1h)
         
-    def detect_ml_regime(self, df) -> tuple[str, float, dict]:
+    def detect_ml_regime(self, df, horizon: str = "SCALPING") -> tuple[str, float, dict]:
         """
         Detección avanzada de régimen ML con múltiples capas de validación.
         (Migrated from MLStrategy for centralization)
@@ -401,6 +401,11 @@ class MarketRegimeDetector:
             if len(float32_cols) > 0:
                 df = df.copy()
                 df[float32_cols] = df[float32_cols].astype(np.float64)
+
+            # Volatility scaling for Swing (1h/4h) vs Scalping (1m/5m)
+            vol_scale = 1.0
+            if horizon.upper() == "SWING":
+                vol_scale = 4.0 # ATR and Volatility in 1H/4H are significantly higher than 1M/5M
 
             # Indicadores principales
             current_adx = df["adx"].iloc[-1] if "adx" in df.columns else 20
@@ -446,19 +451,19 @@ class MarketRegimeDetector:
             # ✅ TRENDING: ADX alto + tendencia fuerte + volatilidad controlada
             if current_adx > Config.Strategies.ML_THRESHOLDS['regime_adx_trend']:
                 regime_scores["TRENDING"] += 0.4
-            if trend_strength > Config.Strategies.ML_THRESHOLDS['regime_trend_strength']:
+            if trend_strength > Config.Strategies.ML_THRESHOLDS['regime_trend_strength'] * (vol_scale * 0.5):
                 regime_scores["TRENDING"] += 0.3
-            if current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_trend_max']:
+            if current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_trend_max'] * vol_scale:
                 regime_scores["TRENDING"] += 0.2
-            if volume_volatility < Config.Strategies.ML_THRESHOLDS['regime_vol_volatility_max']:
+            if volume_volatility < Config.Strategies.ML_THRESHOLDS['regime_vol_volatility_max'] * vol_scale:
                 regime_scores["TRENDING"] += 0.1
 
             # ✅ VOLATILE: ATR alto + RSI volátil + alta volatilidad precio
-            if current_atr_pct > Config.Strategies.ML_THRESHOLDS['regime_atr_volatile_min']:
+            if current_atr_pct > Config.Strategies.ML_THRESHOLDS['regime_atr_volatile_min'] * vol_scale:
                 regime_scores["VOLATILE"] += 0.5
             if rsi_std > Config.Strategies.ML_THRESHOLDS['regime_rsi_std_volatile']:
                 regime_scores["VOLATILE"] += 0.3
-            if price_volatility > Config.Strategies.ML_THRESHOLDS['regime_price_vol_volatile']:
+            if price_volatility > Config.Strategies.ML_THRESHOLDS['regime_price_vol_volatile'] * vol_scale:
                 regime_scores["VOLATILE"] += 0.2
 
             # ✅ RANGING: ADX bajo + RSI estable + baja volatilidad
@@ -466,7 +471,7 @@ class MarketRegimeDetector:
                 regime_scores["RANGING"] += 0.3
             if rsi_std < Config.Strategies.ML_THRESHOLDS['regime_rsi_std_range_max']:
                 regime_scores["RANGING"] += 0.3
-            if current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_range_max']:
+            if current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_range_max'] * vol_scale:
                 regime_scores["RANGING"] += 0.2
 
             # ✅ STAGNANT (ZOMBIE): Volatilidad nula o insignificante
@@ -474,12 +479,12 @@ class MarketRegimeDetector:
             identical_bars = (df["high"] == df["low"]).sum() / len(df)
 
             if (
-                current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_zombie_1']
-                or price_spread < Config.Strategies.ML_THRESHOLDS['regime_spread_zombie']
+                current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_zombie_1'] * vol_scale
+                or price_spread < Config.Strategies.ML_THRESHOLDS['regime_spread_zombie'] * vol_scale
                 or identical_bars > Config.Strategies.ML_THRESHOLDS['regime_ident_bars_zombie']
             ):
                 regime_scores["STAGNANT"] += 0.8
-            elif current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_zombie_2']:
+            elif current_atr_pct < Config.Strategies.ML_THRESHOLDS['regime_atr_zombie_2'] * vol_scale:
                 regime_scores["STAGNANT"] += 0.5
                 regime_scores["RANGING"] += 0.1
 

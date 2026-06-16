@@ -26,9 +26,11 @@ class Event:
     """
     Base class for all events.
     Events are immutable after creation to prevent race conditions.
-    __slots__ optimization reduces memory footprint by ~40%.
     """
     timestamp_ns: int = field(default_factory=time.time_ns)
+    # 🏎️ FORENSIC FIX: Quantum Telemetry
+    # t0_ns uses perf_counter_ns for monotonic, highest-resolution E2E latency tracking
+    t0_ns: int = field(default_factory=time.perf_counter_ns)
 
     def to_json(self) -> str:
         """Fast serialization for IPC/Logging"""
@@ -60,7 +62,7 @@ class MarketEvent(Event):
     order_flow: Optional[Dict[str, Any]] = None # Added for Phalanx-Omega
     health_metrics: Optional[Dict[str, Any]] = None # Added for Data Integrity Hardening
     is_closed: bool = True # FORENSIC-V47: Fix Data Leakage (Repainting)
-    
+    timeframe: str = "1m"  # FASE HORIZONS: Evita que Swing se dispare por ticks de 1m
     
     # 🏎️ [EXCELSIOR-TITAN] Phase III: CPU Cache Alignment
     # Force object size closer to 64-byte cache line to reduce false sharing

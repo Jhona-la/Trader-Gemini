@@ -80,15 +80,22 @@ class QuantumVectorTrainer:
         X_train = X[:-lookahead]
         y_train = y[:-lookahead]
         
-        classes, counts = np.unique(y_train, return_counts=True)
+        # 🚀 QUANTUM JIT FIX: Binary Classification Only!
+        # The Fused Strategy Kernel crashes with 3-class outputs.
+        # We must filter out HOLD (1) and map LONG (2) -> 1, SHORT (0) -> 0.
+        valid_idx = (y_train != 1)
+        X_train_bin = X_train[valid_idx]
+        y_train_bin = np.where(y_train[valid_idx] == 2, 1, 0)
+        
+        classes, counts = np.unique(y_train_bin, return_counts=True)
         class_dist = dict(zip(classes, counts))
-        logger.info(f"    📊 Distribución de Clases para {horizon}: {class_dist} (0=Short, 1=Hold, 2=Long)")
+        logger.info(f"    📊 Distribución de Clases para {horizon}: {class_dist} (0=Short, 1=Long)")
         
         if len(classes) < 2:
             logger.warning(f"    ⚠️ No hay suficientes clases para entrenar {symbol} {horizon}. Saltando.")
             return
             
-        logger.info(f"    🧠 Entrenando XGBoost Inplace (N={len(X_train)})...")
+        logger.info(f"    🧠 Entrenando XGBoost Inplace (N={len(X_train_bin)})...")
         # Optimizando para CPU rápida (hist)
         model = XGBClassifier(
             n_estimators=100,
@@ -96,10 +103,9 @@ class QuantumVectorTrainer:
             learning_rate=0.05,
             tree_method='hist',
             n_jobs=-1,
-            objective='multi:softprob',
-            num_class=3
+            objective='binary:logistic'
         )
-        model.fit(X_train, y_train)
+        model.fit(X_train_bin, y_train_bin)
         
         # Guardar en el formato estricto que exige ml_batch_infer.py -> UniversalEnsembleStrategy
         suffix = f"_{horizon}"

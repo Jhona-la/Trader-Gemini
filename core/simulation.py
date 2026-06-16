@@ -33,11 +33,12 @@ class SimulationEngine:
     def __init__(self, data_provider: SimDataProvider):
         self.data = data_provider
         
-    def run(self, genotype: Genotype, symbol: str, start_idx: int = 0, end_idx: int = None) -> List[TradeResult]:
+    def run(self, genotype: Genotype, symbol: str, start_idx: int = 0, end_idx: int = None, max_candles: int = None) -> List[TradeResult]:
         """
         Ejecuta el genotipo sobre los datos del símbolo.
         Retorna lista de TradeResults.
         Supports Start/End Index for Walk-Forward Analysis (Phase 3).
+        Supports max_candles para Multi-Fidelidad F1-F4.
         """
         if symbol not in self.data.arrays:
             return []
@@ -78,123 +79,66 @@ class SimulationEngine:
         actual_end = total_bars if end_idx is None else min(end_idx, total_bars)
         actual_start = max(50, start_idx) # Force warmup override
         
+        if max_candles is not None:
+            actual_end = min(actual_end, actual_start + max_candles)
+        
         if actual_start >= actual_end:
             return []
         
-        # Sim Loop
-        for i in range(actual_start, actual_end):
-            current_close = closes[i]
+        if not use_brain:
+            # --- BARE METAL NUMBA EXECUTION ---
+            from core.simulation_numba import technical_simulation_loop_njit
             
-            # --- NEURAL EXECUTION ---
-            if use_brain:
-                from core.neural_bridge import neural_bridge
-                # 1. Get State
-                # Slice raw market data for window
-                window_data = self.data.get_window(symbol, i+1, neural_bridge.window)
+            window = int(genes.get('rsi_window', 14))
+            fast_window = int(genes.get('macd_fast', 8))
+            trend_conf = float(genes.get('trend_confirmation_threshold', 0.001))
+            
+            closes_arr = np.ascontiguousarray(closes, dtype=np.float64)
+            
+            trades_arr = technical_simulation_loop_njit(
+                closes_arr,
+                float(tp_pct),
+                float(sl_pct),
+                window,
+                fast_window,
+                trend_conf,
+                actual_start,
+                actual_end
+            )
+            
+            for i in range(trades_arr.shape[0]):
+                trades.append(TradeResult(trades_arr[i, 0], trades_arr[i, 1], bool(trades_arr[i, 2])))
                 
-                # Mock Portfolio State
-                port_state = {
-                    'quantity': 1 if position else 0,
-                    'pnl_pct': (current_close - entry_price)/entry_price if position == 'LONG' else (entry_price - current_close)/entry_price if position == 'SHORT' else 0.0,
-                    'duration': i - entry_idx if position else 0
-                }
-                
-                tensor = neural_bridge.get_state_tensor(window_data, port_state, genotype)
-                
-                # 2. Feed Forward (Simple Linear Layer for now)
-                # Logits = Input @ Weights
-                logits = np.dot(tensor, weights_matrix)
-                
-                # 3. Activation (Softmax)
-                exp_logits = np.exp(logits - np.max(logits)) # Stable softmax
-                probs = exp_logits / np.sum(exp_logits)
-                
-                # 4. Decode
-                signal_type, conf = neural_bridge.decode_action(probs)
-                
-                # 5. Execute
-                if position is None:
-                    # ENTRY LOGIC
-                    if signal_type and conf > 0.5: # Hard threshold for now
-                        if isinstance(signal_type, str):
-                            continue # Ignore string signals like "CLOSE" when flat
-                            
-                        if signal_type.name == 'LONG':
-                            position = 'LONG'
-                            entry_price = current_close
-                            entry_idx = i
-                        elif signal_type.name == 'SHORT':
-                            position = 'SHORT'
-                            entry_price = current_close
-                            entry_idx = i
-                
-                else:
-                    # EXIT LOGIC
-                    # Check SL/TP first (Hard Risk Management)
-                    pnl = (current_close - entry_price)/entry_price if position == 'LONG' else (entry_price - current_close)/entry_price
-                    
-                    if pnl <= -sl_pct or pnl >= tp_pct:
-                        # Close Trade
-                        trades.append(TradeResult(pnl, (i - entry_idx)*60, pnl > 0)) # Approx seconds
-                        position = None
-                        entry_idx = 0
-                        continue # Trade done
-                        
-                    # Neural Exit
-                    is_exit = False
-                    if signal_type == "CLOSE":
-                        is_exit = True
-                    elif signal_type and position == 'LONG' and signal_type.name == 'SHORT':
-                        is_exit = True
-                    elif signal_type and position == 'SHORT' and signal_type.name == 'LONG':
-                        is_exit = True
+            return trades
 
-                    if is_exit:
-                         trades.append(TradeResult(pnl, (i - entry_idx)*60, pnl > 0))
-                         position = None
-                         entry_idx = 0
-            
-            else:
-                # Fast Technical Execution (Fallback / Hybrid)
-                window = int(genes.get('rsi_window', 14))
-                fast_window = int(genes.get('macd_fast', 8))
-                
-                if i > window:
-                    # Very fast SMA calculation
-                    fast_sma = np.mean(closes[i-fast_window:i])
-                    slow_sma = np.mean(closes[i-window:i])
-                    
-                    if position is None:
-                        # ENTRY LOGIC
-                        if fast_sma > slow_sma * (1 + genes.get('trend_confirmation_threshold', 0.001)/1000): # Slight threshold
-                            position = 'LONG'
-                            entry_price = current_close
-                            entry_idx = i
-                        elif fast_sma < slow_sma * (1 - genes.get('trend_confirmation_threshold', 0.001)/1000):
-                            position = 'SHORT'
-                            entry_price = current_close
-                            entry_idx = i
-                    else:
-                        # EXIT LOGIC
-                        pnl = (current_close - entry_price)/entry_price if position == 'LONG' else (entry_price - current_close)/entry_price
-                        
-                        # Check Stops
-                        if pnl <= -sl_pct or pnl >= tp_pct:
-                            trades.append(TradeResult(pnl, (i - entry_idx)*60, pnl > 0))
-                            position = None
-                            entry_idx = 0
-                            continue
-                            
-                        # Technical Reversal Exit
-                        if position == 'LONG' and fast_sma < slow_sma:
-                            trades.append(TradeResult(pnl, (i - entry_idx)*60, pnl > 0))
-                            position = None
-                            entry_idx = 0
-                        elif position == 'SHORT' and fast_sma > slow_sma:
-                            trades.append(TradeResult(pnl, (i - entry_idx)*60, pnl > 0))
-                            position = None
-                            entry_idx = 0
+        # --- NEURAL EXECUTION LOOP (VECTORIZADO CON NUMBA) ---
+        from core.simulation_numba import extract_features_njit, neural_feedforward_njit, execution_loop_njit
         
+        closes_arr = np.ascontiguousarray(closes, dtype=np.float64)
+        
+        # 1. Extraer características para todas las velas (vectorizado 25D)
+        from core.neural_bridge import neural_bridge
+        window = neural_bridge.window
+        features = extract_features_njit(closes_arr, window)
+        
+        # 2. Feed Forward Matricial (Vectorizado)
+        # Weights matrix shape [25, 4] -> output [N, 4]
+        probs = neural_feedforward_njit(features, weights_matrix)
+        
+        # 3. Hot-Loop de Ejecución en C/LLVM (Cero objetos Python)
+        trades_arr = execution_loop_njit(
+            probs,
+            closes_arr,
+            float(sl_pct),
+            float(tp_pct),
+            actual_start,
+            actual_end
+        )
+        
+        # Reconstruir TradeResults para la capa de análisis (Ocurre 1 vez al final)
+        for i in range(trades_arr.shape[0]):
+            trades.append(TradeResult(trades_arr[i, 0], trades_arr[i, 1], bool(trades_arr[i, 2])))
+            
         return trades
 
     # --- HELPER: Fast RSI (Numpy) ---

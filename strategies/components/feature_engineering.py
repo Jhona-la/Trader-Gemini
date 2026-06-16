@@ -11,7 +11,8 @@ from sklearn.preprocessing import StandardScaler
 from utils.math_kernel import (
     calculate_zscore_jit, calculate_quantum_features_batch_jit,
     calculate_rsi_jit, calculate_atr_jit, calculate_adx_jit,
-    calculate_macd_jit, calculate_bollinger_jit, calculate_ema_jit
+    calculate_macd_jit, calculate_bollinger_jit, calculate_ema_jit,
+    kalman_filter_1d_jit, fractional_differencing_jit
 )
 from core.swarm_correlator import swarm_correlator
 from data.macro_intelligence import macro_intelligence
@@ -45,7 +46,18 @@ class FeatureEngineering:
     🏗️ COMPONENT: Feature Engineering (POLARS/ARROW EDITION)
     Migrated to Polars for Zero-Copy IPC and Rust-based multithreading.
     """
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(FeatureEngineering, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+        
     def __init__(self):
+        if getattr(self, '_initialized', False):
+            return
+        self._initialized = True
         self._kmeans_cache = {}
         self._scaler_cache = {}
         self._kmeans_last_fit = {}
@@ -63,7 +75,7 @@ class FeatureEngineering:
         self._result_cache = {}  # {symbol: (cache_key, result_df)}
 
     @trace_execution
-    def prepare_features(self, bars, market_regime="UNKNOWN", sentiment_loader=None, data_provider=None, symbol=None, feature_store=None, horizon="SCALPING", return_polars=False):
+    def prepare_features(self, bars, market_regime="UNKNOWN", sentiment_loader=None, data_provider=None, symbol=None, feature_store=None, horizon="SCALPING", return_polars=False, is_live=False):
         if bars is None or len(bars) == 0:
             return pd.DataFrame()
             
@@ -83,6 +95,14 @@ class FeatureEngineering:
             
         if len(df) < 20:
             return pd.DataFrame()
+
+        # ═══════════════════════════════════════════════════════════════
+        # [QUANTUM ISOLATION] THE UNCLOSED CANDLE PARADOX FIX
+        # Si estamos en LIVE (producción), la última vela es la viva (unclosed).
+        # Para evitar repainting en los features técnicos, la removemos.
+        # ═══════════════════════════════════════════════════════════════
+        if is_live and len(df) > 50:
+            df = df.head(len(df) - 1)
 
         # ═══════════════════════════════════════════════════════════════
         # [QUANTUM CACHE] CHECK RESULT CACHE BEFORE COMPUTATION
@@ -128,11 +148,15 @@ class FeatureEngineering:
             df = df.with_columns(cast_exprs)
 
         # Arrays NumPy zero-copy para TA-Lib y JIT
-        close = df['close'].to_numpy()
+        raw_close = df['close'].to_numpy()
         high = df['high'].to_numpy()
         low = df['low'].to_numpy()
         open_ = df['open'].to_numpy()
         volume = df['volume'].to_numpy()
+        
+        # 🧮 FASE 5: Kalman Filter (Zero-Lag Smoothing)
+        # Purifica el micro-ruido de alta frecuencia HFT para estabilizar a la Inteligencia Artificial
+        close = kalman_filter_1d_jit(raw_close, R=1e-4, Q=1e-5)
         
         n_len = len(close)
         new_features = {}
@@ -180,6 +204,11 @@ class FeatureEngineering:
         new_features['hurst_memory'] = hurst_arr
         new_features['volatility_ransac'] = ransac_arr
         new_features['bayesian_prior'] = bayes_arr
+
+        # 🧮 FASE 5: Fractional Differencing
+        # Sobreescribe los retornos simples ruidosos con diferenciación fraccional
+        # Conserva estacionariedad sin borrar el Hurst Exponent original del activo
+        new_features['returns_1'] = fractional_differencing_jit(close, d=0.45)
 
         # ==================== CROSS-SECTIONAL ====================
         # [FORENSIC PRUNE] cross_spread_vs_btc & cross_relative_strength removed (dead features)
@@ -245,9 +274,23 @@ class FeatureEngineering:
         new_features['sentiment_change'] = new_features['news_sentiment_shock']
         new_features['sentiment_momentum'] = new_features['news_sentiment_magnitude']
 
-        # ==================== OMEGA MIND / DERIVATIVES ====================
+        # ==================== OMEGA MIND / DERIVATIVES & MICROSTRUCTURE ====================
         dp_derivs = data_provider.get_derivatives_metrics(symbol) if symbol and hasattr(data_provider, 'get_derivatives_metrics') else {}
-        new_features['vbi'] = np.zeros(n_len)
+        
+        # Microstructure Injection: Ticks & Orderbook
+        current_vbi = 0.0
+        current_cvd = 0.0
+        current_tick_dir = 0.0
+        if data_provider and hasattr(data_provider, 'lob_imbalance') and symbol in data_provider.lob_imbalance:
+             current_vbi = data_provider.lob_imbalance[symbol].get('imbalance', 0.0)
+             # CVD y Tick Direction si el loader los provee:
+             current_cvd = data_provider.lob_imbalance[symbol].get('cvd', 0.0)
+             current_tick_dir = data_provider.lob_imbalance[symbol].get('tick_direction', 0.0)
+             
+        new_features['vbi'] = np.full(n_len, current_vbi)
+        new_features['cvd'] = np.full(n_len, current_cvd)
+        new_features['tick_direction'] = np.full(n_len, current_tick_dir)
+        
         new_features['liq_intensity'] = np.full(n_len, dp_derivs.get('liquidations', 0.0))
         new_features['funding_rate'] = np.full(n_len, dp_derivs.get('funding_rate', 0.0))
         new_features['oi'] = np.full(n_len, dp_derivs.get('oi', 0.0))
@@ -255,7 +298,7 @@ class FeatureEngineering:
         new_features['cross_relative_strength'] = np.zeros(n_len)
         
         # Legacy missing features
-        new_features['vbi_avg'] = np.zeros(n_len)
+        new_features['vbi_avg'] = np.full(n_len, current_vbi)
         new_features['oi_delta'] = np.full(n_len, dp_derivs.get('oi_delta', 0.0))
         new_features['funding_distortion'] = np.zeros(n_len)
         new_features['micro_velocity_3'] = np.zeros(n_len)
@@ -286,8 +329,17 @@ class FeatureEngineering:
                 self._kmeans_fit_counter = fit_count
                 
                 if last_fit_time is None or current_count % 50 == 0:
+                    # ═══════════════════════════════════════════════════════════════
+                    # FORENSIC FIX: KMEANS LOOKAHEAD BIAS
+                    # QUÉ: Limitar el fit del KMeans y Scaler a las primeras velas.
+                    # POR QUÉ: Si hacemos fit sobre los 5000 rows del backtest, el
+                    #   clustering de la vela 0 está sesgado por la volatilidad de
+                    #   la vela 5000 (Data Leakage del futuro).
+                    # PARA QUÉ: Preservar la causalidad temporal estricta.
+                    # ═══════════════════════════════════════════════════════════════
+                    fit_size = min(len(features_array), 500)
                     scaler = StandardScaler()
-                    scaled_fit = scaler.fit_transform(features_array)
+                    scaled_fit = scaler.fit_transform(features_array[:fit_size])
                     kmeans = KMeans(n_clusters=4, random_state=42, n_init=2, max_iter=50)
                     kmeans.fit(scaled_fit)
                     
@@ -331,9 +383,9 @@ class FeatureEngineering:
             new_features['l2_microprice_dist'] = df['l2_microprice_dist'].to_numpy()
         elif data_provider and hasattr(data_provider, 'get_order_flow_metrics'):
             of_metrics = data_provider.get_order_flow_metrics(symbol) if symbol else {}
-            new_features['l2_ofi'] = np.full(n_len, of_metrics.get('l2_ofi', 0.0))
-            new_features['l2_spread'] = np.full(n_len, of_metrics.get('l2_spread', 0.0))
-            new_features['l2_microprice_dist'] = np.full(n_len, of_metrics.get('l2_microprice_dist', 0.0))
+            new_features['l2_ofi'] = np.full(n_len, of_metrics.get('ofi', of_metrics.get('l2_ofi', 0.0)))
+            new_features['l2_spread'] = np.full(n_len, of_metrics.get('spread', of_metrics.get('l2_spread', 0.0)))
+            new_features['l2_microprice_dist'] = np.full(n_len, of_metrics.get('micro_price', of_metrics.get('l2_microprice_dist', 0.0)))
         else:
             new_features['l2_ofi'] = np.zeros(n_len)
             new_features['l2_spread'] = np.zeros(n_len)
@@ -428,9 +480,11 @@ class FeatureEngineering:
         # On-Chain (Proxy Institucional vía Binance AggTrades > $100k)
         if 'whale_flow' in df.columns:
             new_features['onchain_whale_flow'] = df['whale_flow'].to_numpy()
-        elif data_provider and hasattr(data_provider, 'get_derivatives_metrics'):
-            dp_derivs = data_provider.get_derivatives_metrics(symbol) if symbol else {}
-            new_features['onchain_whale_flow'] = np.full(n_len, dp_derivs.get('whale_flow', 0.0))
+        elif data_provider and hasattr(data_provider, 'get_order_flow_metrics'):
+            of_metrics = data_provider.get_order_flow_metrics(symbol) if symbol else {}
+            # Fallback to derivatives just in case
+            dp_derivs = data_provider.get_derivatives_metrics(symbol) if symbol and hasattr(data_provider, 'get_derivatives_metrics') else {}
+            new_features['onchain_whale_flow'] = np.full(n_len, of_metrics.get('whale_flow', dp_derivs.get('whale_flow', 0.0)))
         else:
             new_features['onchain_whale_flow'] = np.zeros(n_len)
 

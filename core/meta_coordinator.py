@@ -406,7 +406,15 @@ class MetaCoordinator:
                     await asyncio.sleep(0.01)  # 10ms sleep
                     continue
                     
-                approved, _ = self.resolve_intents(intents_to_process)
+                approved, rejected = self.resolve_intents(intents_to_process)
+                
+                # FASE 1 FORENSIC FIX: Log rejected signals explicitly instead of throwing them away.
+                for rejection in rejected:
+                    intent = rejection.get("intent")
+                    reason = rejection.get("reason", "UNKNOWN_REASON")
+                    symbol = getattr(intent, "symbol", "UNKNOWN")
+                    strategy = getattr(intent, "strategy_id", "UNKNOWN")
+                    logger.warning(f"❌ [META-COORD] VETO {symbol} ({strategy}): {reason}")
                 
                 for intent in approved:
                     await self.approved_queue.put(intent)

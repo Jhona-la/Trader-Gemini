@@ -6,7 +6,7 @@ logger = logging.getLogger("OrderBook")
 
 # 1. Try importing Cython implementation
 try:
-    from core.c_orderbook import OrderBook as CythonOrderBook
+    from core.nano_core import OrderBook as CythonOrderBook
     CYTHON_AVAILABLE = True
     logger.info("🚀 Cython OrderBook loaded successfully.")
 except ImportError as e:

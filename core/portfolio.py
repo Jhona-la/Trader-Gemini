@@ -29,6 +29,13 @@ from config import Config
 from utils.debug_tracer import trace_execution
 from decimal import Decimal, getcontext
 
+try:
+    from core.nano_core import calculate_kelly_fraction, calculate_unrealized_pnl_fast
+except ImportError:
+    calculate_kelly_fraction = None
+    calculate_unrealized_pnl_fast = None
+
+
 class Portfolio:
     def __init__(self, initial_capital: float = 13.0, 
                  csv_path: str = "dashboard/data/trades.csv", 
@@ -57,6 +64,20 @@ class Portfolio:
         self.zmq_client = ZmqKVClient(port=5557)
         
         self.positions = ZmqDictProxy(self.zmq_client, "positions") # Symbol -> {'quantity': 0, 'avg_price': 0, 'current_price': 0}
+        
+        # FASE 30: MULTIPROCESSING SHARED MEMORY (Heat & NetExposure)
+        # QUÉ: Mover estados críticos a memoria compartida a nivel de OS (C-level array).
+        # POR QUÉ: Acceso en nanosegundos desde múltiples procesos (Ej. RiskManager, HFT Executor)
+        # PARA QUÉ: Evitar overhead de locks/ZMQ en comprobaciones de calor de cuenta ultra-rápidas.
+        from multiprocessing import shared_memory
+        try:
+            self._shm = shared_memory.SharedMemory(name="portfolio_critical_state", create=True, size=16) # 2 floats * 8 bytes (float64)
+        except FileExistsError:
+            self._shm = shared_memory.SharedMemory(name="portfolio_critical_state", create=False)
+        # [0] = Heat (0.0 to 1.0)
+        # [1] = NetExposure (Total USDT exposed)
+        self.critical_state_shm = np.ndarray((2,), dtype=np.float64, buffer=self._shm.buf)
+        self.critical_state_shm[:] = [0.0, 0.0]
         
         # OMNIBUS VIRTUAL LEDGER
         # Tracks true Avg Entry Price separately per Horizon (e.g. BTC/USDT_SCALP).
@@ -178,6 +199,17 @@ class Portfolio:
         # AEGIS-V16: Clock Sync
         self.data_provider = None
 
+    def close(self):
+        try:
+            self.save_status()
+            self.zmq_client.close()
+            # FASE 30: Limpiar memoria compartida
+            if hasattr(self, '_shm'):
+                self._shm.close()
+                self._shm.unlink()
+        except Exception as e:
+            logger.error(f"Error saving final status: {e}")
+
     def _get_current_time(self):
         """Devuelve el tiempo simulado (backtest) o el tiempo real (producción)."""
         if hasattr(self, 'data_provider') and self.data_provider and hasattr(self.data_provider, 'current_time_ms'):
@@ -229,7 +261,7 @@ class Portfolio:
         finally:
             self.guard.release()
 
-    def get_horizon_position(self, symbol: str, horizon: str) -> Optional[Dict[str, Any]]:
+    def get_horizon_position(self, symbol: str, horizon: str, direction: str = None) -> Optional[Dict[str, Any]]:
         """
         Returns the isolated position for a specific trading horizon from the Virtual Ledger.
         Returns None if no active position exists for that horizon.
@@ -237,6 +269,15 @@ class Portfolio:
         """
         self.guard.acquire()
         try:
+            if direction:
+                direction_val = direction.name if hasattr(direction, 'name') else str(direction)
+                dir_upper = direction_val.upper()
+                exact_pos = self.virtual_ledger.get(f"{symbol}_{horizon}_{dir_upper}")
+                if exact_pos and abs(exact_pos.get('quantity', 0)) > 1e-8:
+                    return exact_pos.copy()
+                return None
+
+            # Fallback legacy si no se provee dirección (no recomendado en Hedge Mode)
             long_pos = self.virtual_ledger.get(f"{symbol}_{horizon}_LONG")
             short_pos = self.virtual_ledger.get(f"{symbol}_{horizon}_SHORT")
             legacy_pos = self.virtual_ledger.get(f"{symbol}_{horizon}")
@@ -252,7 +293,7 @@ class Portfolio:
             if not valid_positions:
                 return None
                 
-            # If multiple exist (rare), return the largest exposure to manage risk conservatively
+            # If multiple exist sin dirección, devuelve la más grande (Peligro de Colisión)
             best_pos = max(valid_positions, key=lambda p: abs(p.get('quantity', 0)))
             return best_pos.copy()
         finally:
@@ -544,13 +585,14 @@ class Portfolio:
         has_virtual = any(v['quantity'] != 0 for v in self.virtual_ledger.values()) if self.virtual_ledger else False
         
         if not has_physical and not has_virtual:
-            if self.used_margin > 0.01 or self.pending_cash > 0.01:
-                logger.debug(
+            if self.used_margin > 0.01 or self.pending_cash > 0.01 or len(self._pending_reservations) > 0:
+                logger.warning(
                     f"🔧 [RECONCILE] No positions open but used_margin=${self.used_margin:.4f}, "
-                    f"pending_cash=${self.pending_cash:.4f} → RESETTING to 0 (leak fix)"
+                    f"pending_cash=${self.pending_cash:.4f}, pending_reservations={len(self._pending_reservations)} → RESETTING to 0 (leak fix)"
                 )
                 self.used_margin = 0.0
                 self.pending_cash = 0.0
+                self._pending_reservations.clear()
         
         if Config.BINANCE_USE_FUTURES:
             total_avail = self.current_cash - self.used_margin - self.pending_cash
@@ -627,12 +669,15 @@ class Portfolio:
         for v_key, pos in self.virtual_ledger.items():
             qty = pos.get('quantity', 0)
             if qty != 0:
-                avg_p = pos.get('avg_price', 0)
-                curr_p = pos.get('current_price', avg_p)
-                # PnL calc works for both Longs and Shorts (qty is negative for shorts)
-                trade_pnl = (curr_p - avg_p) * qty
-                if trade_pnl > 0:
-                    omni_float_pnl += trade_pnl
+                avg = pos.get('avg_price', 0)
+                curr = pos.get('current_price', avg)
+                if calculate_unrealized_pnl_fast:
+                    direction = "LONG" if qty > 0 else "SHORT"
+                    pnl = calculate_unrealized_pnl_fast(float(curr), float(avg), float(abs(qty)), direction)
+                else:
+                    pnl = (curr - avg) * qty
+                if pnl > 0:
+                    omni_float_pnl += pnl
         
         if omni_float_pnl > 0.05:
             horizon_avail += omni_float_pnl
@@ -644,8 +689,8 @@ class Portfolio:
         # Un trade Swing no debe tocar nunca el dinero del Scalping y viceversa.
         
         # FORENSIC TRACE: Why is cash 0?
-        if min(total_avail, horizon_avail) <= 0.1:
-            logger.debug(f"🔍 [CASH-TRACE] Horizon {horizon} | TotalAvail: ${total_avail:.2f} | AllocTotal: ${allocated_total:.2f} | HorizonUsed: ${horizon_used:.2f} | HorizonPending: ${horizon_pending:.2f} | Result: ${min(total_avail, horizon_avail):.2f}")
+        if min(total_avail, horizon_avail) <= 2.0:
+            logger.warning(f"🔍 [CASH-TRACE] Horizon {horizon} | TotalAvail: ${total_avail:.2f} | AllocTotal: ${allocated_total:.2f} | HorizonUsed: ${horizon_used:.2f} | HorizonPending: ${horizon_pending:.2f} | Result: ${min(total_avail, horizon_avail):.2f}")
             
         return max(0.0, float(min(total_avail, horizon_avail)))
 
@@ -671,7 +716,11 @@ class Portfolio:
                 if qty != 0:
                     avg_price = pos['avg_price']
                     current_price = pos.get('current_price', avg_price)
-                    pnl += (current_price - avg_price) * qty
+                    if calculate_unrealized_pnl_fast:
+                        direction = "LONG" if qty > 0 else "SHORT"
+                        pnl += calculate_unrealized_pnl_fast(float(current_price), float(avg_price), float(abs(qty)), direction)
+                    else:
+                        pnl += (current_price - avg_price) * qty
             return pnl
         finally:
             self.guard.release()
@@ -693,34 +742,65 @@ class Portfolio:
         try:
             equity = self.current_cash
             
-            # Exposure metrics tracking
             total_long_beta = 0.0
             total_short_beta = 0.0
             net_delta = 0.0
+            beta_scalp = 0.0
+            beta_swing = 0.0
             
-            # Iterate through isolated horizon positions
+            n = len(self.virtual_ledger)
             for v_key, pos in self.virtual_ledger.items():
-                qty = pos['quantity']
+                qty = pos.get('quantity', 0)
                 if qty != 0:
-                    avg_price = pos['avg_price']
-                    current_price = pos.get('current_price', avg_price)
+                    avg = pos.get('avg_price', 0)
+                    curr = pos.get('current_price', avg)
                     
-                    notional = qty * current_price
+                    pos_beta = avg * abs(qty)
+                    
                     if qty > 0:
-                        total_long_beta += notional
-                        net_delta += notional
+                        total_long_beta += pos_beta
+                        net_delta += pos_beta
                     else:
-                        total_short_beta += abs(notional)
-                        net_delta += notional # qty is negative, so this subtracts
+                        total_short_beta += pos_beta
+                        net_delta -= pos_beta
                         
-                    equity += (current_price - avg_price) * qty
-            
+                    strat_id = str(pos.get('strategy_id', '')).upper()
+                    horizon = pos.get('horizon', '1m')
+                    if "SWING" in strat_id or horizon not in ["1m", "5m"]:
+                        beta_swing += pos_beta
+                    else:
+                        beta_scalp += pos_beta
+                        
+                    if calculate_unrealized_pnl_fast:
+                        direction = "LONG" if qty > 0 else "SHORT"
+                        pnl = calculate_unrealized_pnl_fast(float(curr), float(avg), float(abs(qty)), direction)
+                    else:
+                        pnl = (curr - avg) * qty
+                    equity += pnl
+
             self._equity_cache = equity
-            
-            # Cache exposure metrics for Meta-Arbitrator
             self.math_stats['total_long_beta'] = total_long_beta
             self.math_stats['total_short_beta'] = total_short_beta
             self.math_stats['net_delta'] = net_delta
+            
+            if equity > 0:
+                self.math_stats['heat_scalp'] = beta_scalp / equity
+                self.math_stats['heat_swing'] = beta_swing / equity
+            else:
+                self.math_stats['heat_scalp'] = 0.0
+                self.math_stats['heat_swing'] = 0.0
+            
+            # FASE 30: Actualizar estados críticos en Shared Memory
+            # Heat: Qué % del portfolio está expuesto
+            try:
+                if equity > 0:
+                    heat = (total_long_beta + total_short_beta) / equity
+                else:
+                    heat = 0.0
+                self.critical_state_shm[0] = float(heat)
+                self.critical_state_shm[1] = float(net_delta)
+            except Exception as e:
+                pass
             
             return equity
         finally:
@@ -731,8 +811,18 @@ class Portfolio:
         return {
             'TOTAL_LONG_BETA': self.math_stats.get('total_long_beta', 0.0),
             'TOTAL_SHORT_BETA': self.math_stats.get('total_short_beta', 0.0),
-            'NET_DELTA': self.math_stats.get('net_delta', 0.0)
+            'NET_DELTA': self.math_stats.get('net_delta', 0.0),
+            'HEAT_SCALP': self.math_stats.get('heat_scalp', 0.0),
+            'HEAT_SWING': self.math_stats.get('heat_swing', 0.0)
         }
+
+    def get_shm_state(self) -> np.ndarray:
+        """
+        [FASE 31] Exporta el buffer subyacente para el Backtester Vectorizado o Cython.
+        """
+        if hasattr(self, 'critical_state_shm'):
+            return self.critical_state_shm
+        return np.zeros(2, dtype=np.float64)
 
     @property
     def scalp_positions(self) -> Dict[str, Any]:
@@ -777,6 +867,7 @@ class Portfolio:
                 # [CASH-TRACE] Log reservation
                 logger.debug(f"📜 [CASH-TRACE] RESERVE | Order: {order_id} | Amt: ${amount_val:.2f} | New Pending: ${self.pending_cash:.2f} | Horizon: {horizon}")
                 return True
+            logger.warning(f"⚠️ [RESERVE-FAIL] {horizon} requested ${amount:.2f} but only ${avail:.2f} available. Pending: {self.pending_cash}, Used: {self.used_margin}, Equity: {self.current_cash}")
             return False
         finally:
             self.guard.release()
@@ -793,10 +884,23 @@ class Portfolio:
         try:
             amount_val = 0.0
             
+            # 🚀 AEGIS-V16: Handle Swarm Grid IDs (e.g., TG_SCL_LONG_168812345_BTCUSDT_0)
+            base_id = order_id
+            if order_id and '_' in order_id and order_id.split('_')[-1].isdigit():
+                possible_base = order_id.rsplit('_', 1)[0]
+                if possible_base in self._pending_reservations:
+                    base_id = possible_base
+            
             # Prioridad 1: Segumiento por ID de Orden
-            if order_id and order_id in self._pending_reservations:
-                amount_val = self._pending_reservations.pop(order_id)
-                logger.debug(f"🎯 [CASH-TRACE] RELEASE BY ID | Order: {order_id} | Amt: ${amount_val:.2f}")
+            if base_id and base_id in self._pending_reservations:
+                # Si viene un amount explícito y es un partial fill o grid, restamos
+                if amount is not None and float(amount) > 0 and float(amount) < self._pending_reservations[base_id]:
+                    amount_val = float(amount)
+                    self._pending_reservations[base_id] -= amount_val
+                    logger.debug(f"🎯 [CASH-TRACE] PARTIAL RELEASE BY ID | Base: {base_id} | Amt: ${amount_val:.2f} | Remaining: ${self._pending_reservations[base_id]:.2f}")
+                else:
+                    amount_val = self._pending_reservations.pop(base_id)
+                    logger.debug(f"🎯 [CASH-TRACE] FULL RELEASE BY ID | Base: {base_id} | Amt: ${amount_val:.2f}")
             
             # Prioridad 2: Monto explícito (Fallback)
             elif amount is not None:
@@ -1191,11 +1295,11 @@ class Portfolio:
         if is_exit_fill:
             opener_strat = pos.get('opener_strategy_id', 'Unknown')
             evt_strat = getattr(event, 'strategy_id', 'Unknown')
-            system_exits = {'99', 'EXIT', 'EMERGENCY_EXIT', 'KILL_SWITCH', 'risk_manager', 'RiskManager', 'Unknown', 'HARD_SL', 'TIME_STOP_ZOMBIE', 'HARD_SCALP_TIMEOUT', 'ZOMBIE_FLAT_MARKET', 'ZOMBIE', 'BACKTEST_CLOSE', 'DIAG_CLOSE', 'LIFECYCLE_EXIT'}
+            system_exits = {'99', 'EXIT', 'EMERGENCY_EXIT', 'KILL_SWITCH', 'risk_manager', 'RiskManager', 'Unknown', 'HARD_SL', 'TIME_STOP_ZOMBIE', 'HARD_SCALP_TIMEOUT', 'ZOMBIE_FLAT_MARKET', 'ZOMBIE', 'BACKTEST_CLOSE', 'DIAG_CLOSE', 'LIFECYCLE_EXIT', 'TURBO_BE', 'DRAWDOWN_LIMIT', 'ZOMBIE_CHASER_EXIT', 'ML_PREDICTED_TP', 'PLACE_TP_LIMIT', 'AUTO_HEALING_HEDGE', 'MOMENT_MGR', 'FORCE_CLOSE'}
             
             is_sys_exit = (
                 evt_strat in system_exits or
-                any(evt_strat.startswith(p) for p in ("HARD_", "SPAP_", "TRAIL_", "WEAK_", "V7_", "CLOSE_", "TIME_", "MOMENT_", "LONG_", "SHORT_"))
+                any(evt_strat.startswith(p) for p in ("HARD_", "SPAP_", "TRAIL_", "WEAK_", "V7_", "CLOSE_", "TIME_", "MOMENT_", "LONG_", "SHORT_", "T1_", "T2_", "T3_", "MACRO_"))
             )
 
             
@@ -1351,7 +1455,8 @@ class Portfolio:
         # Did the position close or flip?
         if (existing_qty != 0.0 and new_qty == 0.0) or (existing_qty * new_qty < 0):
             from core.senior_auditor import SeniorAuditor
-            SeniorAuditor().log_trade_lifecycle(
+            self.io_executor.submit(
+                SeniorAuditor().log_trade_lifecycle,
                 trade_id=pos.get('trade_id') or getattr(event, 'trade_id', None),
                 action="EXIT",
                 details={
@@ -1383,7 +1488,8 @@ class Portfolio:
             }
             pos['strategy_dna'] = dna_snapshot
             
-            SeniorAuditor().log_trade_lifecycle(
+            self.io_executor.submit(
+                SeniorAuditor().log_trade_lifecycle,
                 trade_id=pos.get('trade_id') or getattr(event, 'trade_id', None),
                 action="ENTRY",
                 details={
@@ -1677,7 +1783,8 @@ class Portfolio:
             # FORENSIC FIX: Include position sizing data for capital-at-risk traceability
             _open_size_usd = closed_qty * entry_price
             _close_size_usd = closed_qty * exit_price
-            self.db.log_prediction_audit(
+            self.io_executor.submit(
+                self.db.log_prediction_audit,
                 trade_id=trade_data['trade_id'],
                 thought_id=_pos_meta.get('thought_id'),
                 strategy_id=opener_strat,
@@ -1703,7 +1810,8 @@ class Portfolio:
             )
             
             # FORENSIC FIX: Update Strategy Report Card for governance
-            self.db.update_strategy_report_card(
+            self.io_executor.submit(
+                self.db.update_strategy_report_card,
                 strategy_id=opener_strat,
                 pnl=net_pnl,
                 is_win=was_correct
@@ -2108,7 +2216,7 @@ class Portfolio:
                 'strategy_id': getattr(event, 'strategy_id', 'Unknown')
             }
             
-            self.db.log_fill_event_atomic(trade_payload, position_payload)
+            self.io_executor.submit(self.db.log_fill_event_atomic, trade_payload, position_payload)
             
             if self.auto_save:
                 self.save_status()
@@ -2485,27 +2593,20 @@ class Portfolio:
         
         if b <= 0: return 0.10 if is_micro_account else 0.01
         
-        # Kelly Formula: f = p - q/b
-        kelly_f = win_rate - (loss_rate / b)
-        
         # 🚀 FASE 13: QUANTUM STREAK SIZING (Anti-Martingale)
         streak = perf.get('current_streak', 0)
         losing_streak = perf.get('losing_streak', 0)
-        streak_multiplier = 1.0
         
-        if streak >= 3:
-            streak_multiplier = 2.0  # Maximize exposure on winning streaks (Exponential Growth)
-        elif streak == 2:
-            streak_multiplier = 1.5
-        elif streak == 1:
-            streak_multiplier = 1.2
+        volatility_mod = 1.0
+        if streak > 0:
+            volatility_mod = 1.0 + (streak * 0.1)
+        elif losing_streak > 0:
+            volatility_mod = max(0.1, 1.0 - (losing_streak * 0.25))
             
-        if losing_streak >= 2:
-            streak_multiplier = 0.5  # Defensive mode
-        elif losing_streak >= 1:
-            streak_multiplier = 0.8
-            
-        kelly_f = kelly_f * streak_multiplier
+        if calculate_kelly_fraction:
+            kelly_f, _ = calculate_kelly_fraction(float(win_rate), float(b), float(volatility_mod))
+        else:
+            kelly_f = max(0.0, (win_rate - (loss_rate / b)) * volatility_mod)
         
         if is_micro_account:
             # 🚀 FASE 12: ASYMMETRIC KELLY ALLOCATION
@@ -2990,7 +3091,7 @@ class Portfolio:
             }
             
             try:
-                self.db.log_fill_event_atomic(trade_dict, position_dict)
+                self.io_executor.submit(self.db.log_fill_event_atomic, trade_dict, position_dict)
                 
                 # ═══════════════════════════════════════════════════════════════
                 # FORENSIC FIX #3: PERSIST EXIT DECISION NUCLEUS
@@ -2998,7 +3099,8 @@ class Portfolio:
                 # ═══════════════════════════════════════════════════════════════
                 if is_close and _exit_ballot:
                     for v in _exit_ballot.get('exit_votes', []):
-                        self.db.log_exit_decision(
+                        self.io_executor.submit(
+                            self.db.log_exit_decision,
                             trade_id=notif_trade_id,
                             symbol=event.symbol,
                             exit_reason=v.get('reason'),

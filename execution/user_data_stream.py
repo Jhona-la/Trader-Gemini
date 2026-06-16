@@ -156,7 +156,13 @@ class UserDataStream:
     async def _handle_message(self, msg_raw):
         """Route event types"""
         try:
+            import orjson
+            msg = orjson.loads(msg_raw)
+        except ImportError:
+            import json
             msg = json.loads(msg_raw)
+            
+        try:
             event_type = msg.get('e')
             
             if event_type == 'ORDER_TRADE_UPDATE':

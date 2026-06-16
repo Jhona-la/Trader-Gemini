@@ -271,32 +271,12 @@ class CompoundingEngine:
             swing_pct /= total
 
         # 5. MICRO-ACCOUNT SAFETY OVERRIDE (Ensure minimum viability)
-        # Minimum notional is ~$5.10. At 10x leverage, we need ~$0.51 margin per position.
-        # To allow at least 1-2 positions per horizon, each needs at least $1.50 margin.
-        min_abs_alloc = 1.50
+        # For $13 accounts, we need aggressive compounding.
+        # Dedicate 70% to Scalping (fast turns) and 30% to Swing. Microscalping disabled at this tier.
         if equity < 25.0 and equity > 0:
-            # Check absolute values
-            micro_abs = micro_pct * equity
-            scalp_abs = scalp_pct * equity
-            swing_abs = swing_pct * equity
-            
-            needs_renorm = False
-            if micro_abs < min_abs_alloc:
-                micro_pct = min_abs_alloc / equity
-                needs_renorm = True
-            if scalp_abs < min_abs_alloc:
-                scalp_pct = min_abs_alloc / equity
-                needs_renorm = True
-            if swing_abs < min_abs_alloc:
-                swing_pct = min_abs_alloc / equity
-                needs_renorm = True
-                
-            if needs_renorm:
-                total = micro_pct + scalp_pct + swing_pct
-                if total > 0:
-                    micro_pct /= total
-                    scalp_pct /= total
-                    swing_pct /= total
+            micro_pct = 0.0
+            scalp_pct = 0.70
+            swing_pct = 0.30
 
         # [PHASE 8 QUANTUM EVOLUTION] Multi-Horizon Synergy & Phase-State Transition
         # If market regime is extremely volatile, SWING is dangerous (requires wide stops that can't be afforded).

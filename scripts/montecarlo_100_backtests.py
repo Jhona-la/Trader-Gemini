@@ -1,12 +1,18 @@
-import time
-import json
-import sys
 import os
+import sys
+import json
+import time
 import random
-import numpy as np
+import subprocess
+import concurrent.futures
+from pathlib import Path
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.quantum_engine import QuantumEngine
+# Fix path to root
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
+# Constraint: 16GB RAM -> Max 3 concurrent backtests
+MAX_CONCURRENT = 3
 
 def mutate_dna(base_dna):
     """Mutación genética ligera para simular 100 escenarios distintos."""
@@ -19,12 +25,64 @@ def mutate_dna(base_dna):
     mutated['leverage'] = round(max(1.0, min(50.0, mutated.get('leverage', 10.0) + random.randint(-3, 3))), 1)
     return mutated
 
+def run_single_backtest(iteration, dna):
+    """
+    Runs a single paramaterized God Mode Backtest.
+    """
+    env_id = f"mc_{iteration}"
+    out_dir = os.path.join(project_root, "archive", "mc_results")
+    os.makedirs(out_dir, exist_ok=True)
+    out_file = os.path.join(out_dir, f"mc_{iteration}.json")
+    
+    # We skip permutations where sl_pct * leverage >= 100% (Instant Liquidation)
+    if dna['sl_pct'] * dna['leverage'] >= 0.99:
+        dna['leverage'] = 0.98 / dna['sl_pct']
+        
+    dna_str = json.dumps(dna)
+    
+    cmd = [
+        sys.executable,
+        os.path.join(project_root, "scripts", "run_god_mode_backtest.py"),
+        "--env-id", env_id,
+        "--days", "30",
+        "--override", dna_str,
+        "--output", out_file,
+        "--quiet"
+    ]
+    
+    # Run synchronously inside the worker thread
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    # After it finishes, read the output
+    if os.path.exists(out_file):
+        try:
+            with open(out_file, "r") as f:
+                res = json.load(f)
+                
+            metrics = res.get("Metrics", {})
+            return {
+                'iteration': iteration,
+                'pnl': metrics.get("Total PnL", 0.0),
+                'win_rate': metrics.get("Win Rate (%)", 0.0),
+                'trades': metrics.get("Total Trades", 0),
+                'sharpe': metrics.get("Sharpe Ratio", 0.0),
+                'max_drawdown': metrics.get("Max Drawdown (%)", 0.0),
+                'leverage': dna['leverage'],
+                'tp_pct': dna['tp_pct'],
+                'sl_pct': dna['sl_pct']
+            }
+        except Exception as e:
+            return {'iteration': iteration, 'error': str(e)}
+    else:
+        return {'iteration': iteration, 'error': 'No output file generated'}
+
 def run_100_backtests():
-    print("⏳ Iniciando MONTE CARLO GENÉTICO: 100 Backtests a 30 Días...")
+    print(f"⏳ Iniciando MONTE CARLO GENÉTICO: 100 Backtests a 30 Días...")
+    print(f"🚀 Concurrencia limitada a {MAX_CONCURRENT} workers para proteger 16GB RAM.")
     
     # Load Base DNA
     try:
-        with open('.models/quantum_dna.json', 'r') as f:
+        with open(os.path.join(project_root, '.models', 'quantum_dna.json'), 'r') as f:
             base_dna = json.load(f)
             base_dna.setdefault('leverage', 14.0)
             base_dna.setdefault('tp_pct', 0.0020)
@@ -36,47 +94,36 @@ def run_100_backtests():
             'ema_fast': 23, 'ema_slow': 86, 'strength_threshold': 0.50
         }
         
-    engine = QuantumEngine(capital=13.0)
-    print(f"📊 Descargando datos para 30 días...")
-    engine.load_data(days=30)
-    
     results = []
-    
-    print("🚀 Ejecutando 100 simulaciones vectorizadas...")
     t0 = time.time()
     
-    # Run 100 iterations
+    # Prepare all 100 tasks
+    tasks = []
     for i in range(100):
-        # Iteration 0 is the exact base DNA
         dna = base_dna if i == 0 else mutate_dna(base_dna)
+        tasks.append((i + 1, dna))
         
-        # We skip permutations where sl_pct * leverage >= 100% (Instant Liquidation)
-        if dna['sl_pct'] * dna['leverage'] >= 0.99:
-            dna['leverage'] = 0.98 / dna['sl_pct']
+    completed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT) as executor:
+        futures = {executor.submit(run_single_backtest, t[0], t[1]): t for t in tasks}
+        
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if 'error' not in res:
+                results.append(res)
             
-        res = engine.run_vectorized_backtest(dna=dna)
-        
-        results.append({
-            'iteration': i + 1,
-            'pnl': res['pnl'],
-            'win_rate': res['win_rate'],
-            'trades': res['trades'],
-            'leverage': dna['leverage'],
-            'tp_pct': dna['tp_pct'],
-            'sl_pct': dna['sl_pct']
-        })
-        
-        if (i + 1) % 10 == 0:
-            print(f"   [+] Completados {i + 1}/100 backtests...")
+            completed += 1
+            if completed % 5 == 0:
+                print(f"   [+] Completados {completed}/100 backtests paramétricos...")
             
     t1 = time.time()
     
     # Sort results by PnL
-    results.sort(key=lambda x: x['pnl'], reverse=True)
+    results.sort(key=lambda x: x.get('pnl', -9999), reverse=True)
     
     # Save to JSON for report generation
-    out_path = 'archive/logs_historicos/100_backtests_results.json'
-    os.makedirs('archive/logs_historicos', exist_ok=True)
+    out_path = os.path.join(project_root, 'archive', 'logs_historicos', '100_backtests_results.json')
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, 'w') as f:
         json.dump({'time_ms': (t1-t0)*1000, 'results': results}, f, indent=4)
         

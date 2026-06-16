@@ -8,11 +8,33 @@ except ImportError:
 import numpy as np
 
 extensions = [
+    # Extension removed since core/c_orderbook.pyx doesn't exist
     Extension(
-        "core.c_orderbook",
-        ["core/c_orderbook.pyx"],
+        "strategies.math_core",
+        ["strategies/math_core.pyx"],
+        language="c",
+        include_dirs=[np.get_include()],
+        extra_compile_args=["-O3"]
+    ),
+    Extension(
+        "core.dark_alpha_queue",
+        ["core/dark_alpha_queue.pyx"],
         language="c++",
-        include_dirs=[np.get_include()]
+        include_dirs=[np.get_include()],
+    ),
+    Extension(
+        "core.nano_core",
+        ["core/nano_core.pyx"],
+        language="c",
+        include_dirs=[np.get_include()],
+        extra_compile_args=["-O3"]
+    ),
+    Extension(
+        "core.mev_rbf_engine",
+        ["core/mev_rbf_engine.pyx"],
+        language="c++",
+        include_dirs=[np.get_include()],
+        extra_compile_args=["-O3"]
     )
 ]
 

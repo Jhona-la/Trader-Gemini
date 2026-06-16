@@ -63,7 +63,13 @@ class PositionLifecycleManager:
         # En lugar de matar al minuto 60 a ciegas, matamos si y solo si:
         # PnL no justifica estar dentro (< 0.10%) Y han pasado > 45 minutos Y el mercado está muerto (TickVol < 0.0005)
         is_losing_or_flat = pnl_pct <= 0.10
-        is_stagnant_market = tick_volatility < 0.0005 and abs(obi_velocity) < 0.1
+        
+        # FIX PARA BACKTESTING: Si no hay order_flow reales, evitamos falsos positivos de mercado muerto
+        has_order_flow = 'tick_volatility' in market_data
+        if not has_order_flow:
+            is_stagnant_market = False  # Asumimos que no está muerto si no tenemos los datos
+        else:
+            is_stagnant_market = tick_volatility < 0.0005 and abs(obi_velocity) < 0.1
         
         if duration_mins > 45.0 and is_losing_or_flat and is_stagnant_market:
             logger.warning(f"🧟 [LIFECYCLE] {pos_id} marcado como TRUE ZOMBIE (Dur:{duration_mins:.1f}m, PnL:{pnl_pct:.2f}%, Vol:{tick_volatility:.6f}). Ejecutando.")

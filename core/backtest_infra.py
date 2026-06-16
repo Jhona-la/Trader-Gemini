@@ -69,10 +69,8 @@ from utils.logger import logger
 # CÓMO: COMMISSION_PCT = Maker fee por defecto. COMMISSION_TAKER para exits
 #   de emergencia y SL market fallbacks.
 # ═══════════════════════════════════════════════════════════════════════════════
-COMMISSION_TAKER = (
-    Config.BINANCE_TAKER_FEE_BNB
-)  # 0.0005 (0.05% per side) — MARKET orders
-COMMISSION_MAKER = 0.0000  # [PHASE 13 QUANTUM PHYSICS] LIMIT BBO orders have zero fee (or rebates)
+COMMISSION_TAKER = 0.0004
+COMMISSION_MAKER = 0.0002
 # Default: MAKER fee (BBO Architecture makes ~90%+ of orders LIMIT)
 COMMISSION_PCT = COMMISSION_MAKER
 INITIAL_CAPITAL = Config.INITIAL_CAPITAL  # 13.0
@@ -787,7 +785,8 @@ def fetch_binance_data(
 ) -> pd.DataFrame:
     """
     Descarga datos históricos 1m de Binance mainnet (solo lectura).
-    [PHASE 17] Zero-Latency Boot: Caches to Parquet via Polars.
+    [PHASE 17.5] Zero-Latency Incremental Cache: Guarda un maestro Parquet
+    por moneda y descarga únicamente las velas nuevas (delta).
     """
 
     if end_time is None:
@@ -795,30 +794,53 @@ def fetch_binance_data(
 
     start_time = end_time - timedelta(days=days)
     
-    # ── PHASE 17 CACHE SYSTEM ──
+    # ── PHASE 17.5 MASTER CACHE SYSTEM ──
     cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cache_parquet")
     os.makedirs(cache_dir, exist_ok=True)
     
     safe_symbol = symbol.replace("/", "")
-    # Format dates up to the hour to allow caching without breaking per-minute changes
-    start_str = start_time.strftime('%Y%m%d_%H')
-    end_str = end_time.strftime('%Y%m%d_%H')
-    cache_file = os.path.join(cache_dir, f"{safe_symbol}_{start_str}_{end_str}.parquet")
+    cache_file = os.path.join(cache_dir, f"{safe_symbol}_master.parquet")
     
+    df_cached = None
+    fetch_start_time = start_time
+    
+    # 1. Leer caché existente si lo hay
     if os.path.exists(cache_file):
-        print(f"⚡ [Z-LATENCY] Mapped from Parquet Cache: {cache_file}")
-        # Memory map via Polars (Instant)
-        df_pl = pl.read_parquet(cache_file)
-        # We must return Pandas because the engine still expects pd.DataFrame internally
-        return df_pl.to_pandas().set_index("timestamp")
+        try:
+            df_pl = pl.read_parquet(cache_file)
+            df_cached = df_pl.to_pandas()
+            if not df_cached.empty and "timestamp" in df_cached.columns:
+                df_cached.set_index("timestamp", inplace=True)
+                
+                # Encontrar el último timestamp guardado
+                last_ts = df_cached.index.max()
+                
+                # Si el caché ya tiene datos suficientes hasta o más allá del start_time,
+                # solo necesitamos descargar desde el último registro hasta el end_time
+                if last_ts >= start_time:
+                    fetch_start_time = last_ts
+                    
+                # Si end_time es menor que last_ts, simplemente cortamos y no descargamos nada
+                if end_time <= last_ts and start_time >= df_cached.index.min():
+                    mask = (df_cached.index >= start_time) & (df_cached.index <= end_time)
+                    return df_cached.loc[mask]
+        except Exception as e:
+            print(f"⚠️ Caché corrupto para {symbol}, reconstruyendo: {e}")
+            df_cached = None
 
-    print(f"📡 Descargando desde {start_time.strftime('%Y-%m-%d %H:%M')} hasta {end_time.strftime('%Y-%m-%d %H:%M')} para {symbol}...")
+    # 2. Descargar Delta (o historial completo si no hay caché)
+    delta_days = (end_time - fetch_start_time).total_seconds() / 86400
+    if delta_days <= 0.01:
+        # Menos de 15 minutos de diferencia, usar caché directo (evita micro-descargas inútiles)
+        if df_cached is not None:
+            mask = (df_cached.index >= start_time) & (df_cached.index <= end_time)
+            return df_cached.loc[mask]
 
-    # SIEMPRE usar mainnet para datos históricos (read-only, safe)
+    print(f"📡 {symbol} | Descargando Delta: {fetch_start_time.strftime('%Y-%m-%d %H:%M')} a {end_time.strftime('%Y-%m-%d %H:%M')} ({delta_days:.1f}d)...")
+
     client = Client()
-
     all_klines = []
-    current_start = start_time
+    current_start = fetch_start_time
 
     while current_start < end_time:
         klines = client.get_historical_klines(
@@ -839,47 +861,51 @@ def fetch_binance_data(
 
         all_klines.extend(klines)
         current_start += timedelta(hours=16)
-        time.sleep(0.2)  # Rate limit protection
+        time.sleep(0.1)  # Rate limit protection leve
 
-    df = pd.DataFrame(
+    if not all_klines and df_cached is not None:
+        mask = (df_cached.index >= start_time) & (df_cached.index <= end_time)
+        return df_cached.loc[mask]
+
+    # Convertir a DataFrame
+    df_new = pd.DataFrame(
         all_klines,
         columns=[
-            "timestamp",
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "close_time",
-            "quote_volume",
-            "trades",
-            "taker_buy_base",
-            "taker_buy_quote",
-            "ignore",
+            "timestamp", "open", "high", "low", "close", "volume",
+            "close_time", "quote_volume", "trades", "taker_buy_base",
+            "taker_buy_quote", "ignore",
         ],
     )
 
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-    df.set_index("timestamp", inplace=True)
+    df_new["timestamp"] = pd.to_datetime(df_new["timestamp"], unit="ms")
+    df_new.set_index("timestamp", inplace=True)
+    
     for col in ["open", "high", "low", "close", "volume"]:
-        df[col] = df[col].astype(float)
+        df_new[col] = df_new[col].astype(float)
         
-    # Guardar en caché Parquet
-    df_pl_save = pl.from_pandas(df.reset_index())
-    df_pl_save.write_parquet(cache_file, compression="lz4")
+    df_new = df_new[["open", "high", "low", "close", "volume"]]
 
-    return df
+    # 3. Concatenar y guardar el maestro
+    if df_cached is not None:
+        df_final = pd.concat([df_cached, df_new])
+        # Eliminar duplicados si los bordes se solaparon
+        df_final = df_final[~df_final.index.duplicated(keep='last')].sort_index()
+    else:
+        df_final = df_new
 
-    df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-    df.set_index("datetime", inplace=True)
+    # Escribir a Parquet
+    try:
+        df_pl_save = pl.from_pandas(df_final.reset_index())
+        df_pl_save.write_parquet(cache_file, compression="lz4")
+    except Exception as e:
+        print(f"⚠️ Fallo al guardar caché Parquet para {symbol}: {e}")
 
-    for col in ["open", "high", "low", "close", "volume"]:
-        df[col] = df[col].astype(float)
-
-    df = df[["open", "high", "low", "close", "volume"]]
-
-    print(f"✅ Descargados {len(df)} velas ({len(df) / 60 / 24:.1f} días)")
-    return df
+    # 4. Devolver el segmento exacto solicitado
+    mask = (df_final.index >= start_time) & (df_final.index <= end_time)
+    df_return = df_final.loc[mask]
+    
+    print(f"✅ {symbol} | Caché actualizado. {len(df_return)} velas retornadas.")
+    return df_return
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

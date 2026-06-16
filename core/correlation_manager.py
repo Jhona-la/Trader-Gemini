@@ -1,5 +1,5 @@
-
 import numpy as np
+import time
 import pandas as pd
 from utils.logger import setup_logger
 from utils.math_kernel import calculate_correlation_matrix_jit
@@ -41,13 +41,13 @@ class CorrelationManager:
             # Collect 5m closes
             for symbol in self.data_provider.symbol_list:
                 df = self.data_provider.get_latest_bars(symbol, n=100, timeframe='5m')
-                if not df.empty:
+                if df is not None and len(df) > 0:
                     # We assume roughly synced if real-time. 
                     # For exact sync, we'd need merge_asof, but that's slow.
                     # Fast approx: Take common length suffix.
                     if target_len is None: target_len = len(df)
                     target_len = min(target_len, len(df))
-                    df_dict[symbol] = df['close'].values # Numpy array
+                    df_dict[symbol] = df['close'] # Numpy array already
             
             if not df_dict or target_len < 30:
                 return # Not enough data
@@ -65,7 +65,7 @@ class CorrelationManager:
                 
             # JIT Calculation
             self.correlation_matrix = calculate_correlation_matrix_jit(price_matrix)
-            self.last_update = 0 # Updates handled externally usually, or via timestamp check
+            self.last_update = time.time() # Updates handled externally usually, or via timestamp check
             
             logger.info(f"🧩 Correlation Matrix Updated ({m_assets}x{m_assets})")
             

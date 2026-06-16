@@ -77,7 +77,7 @@ class AdaptiveMLParameterEngine:
             self.is_scalping = (horizon_days <= 1) # <=1 = Scalping, 2+ = Swing
         else:
             horizon_str_upper = horizon_str.upper()
-            self.is_scalping = (horizon_str_upper == 'SCALPING' or horizon_str_upper == '1D')
+            self.is_scalping = (horizon_str_upper in ('SCALPING', 'MICROSCALPING', '1D'))
         
         self.profile = 'scalping' if self.is_scalping else 'swing'
         # Defensive copy to avoid mutating class-level RANGES

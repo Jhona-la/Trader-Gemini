@@ -117,6 +117,45 @@ class ConsensusFilter:
         except Exception as profile_err:
             logger.error(f"❌ Error in symbol profile check: {profile_err}")
             
+        # =====================================================================
+        # BANDA 2: VETOS ESTRUCTURALES Y DEL SISTEMA (Backtest & Prod Parity)
+        # =====================================================================
+        
+        # ─── FASE 1: FUNDING EVASION ───
+        if hasattr(signal_event, 'timestamp'):
+            try:
+                from datetime import datetime
+                evt_dt = datetime.fromtimestamp(signal_event.timestamp)
+                if evt_dt.minute >= 45:
+                    return self._fail("FUNDING_EVASION")
+            except Exception:
+                pass
+
+        # ─── FASE 9: CORRELATION SHIELD ───
+        if symbol in ("ETH/USDT", "SOL/USDT") and horizon in ('SCALPING', 'MICROSCALPING'):
+            if portfolio:
+                btc_pos = portfolio.get_horizon_position("BTC/USDT", horizon)
+                if btc_pos and btc_pos.get("quantity", 0) != 0:
+                    btc_dir = "LONG" if btc_pos["quantity"] > 0 else "SHORT"
+                    _direction = "LONG" if signal_event.signal_type == SignalType.LONG else "SHORT"
+                    if btc_dir == _direction:
+                        return self._fail("CORRELATION_SHIELD")
+                        
+        # ─── FASE 22: REGIME LOCKS ───
+        if portfolio and hasattr(portfolio, 'market_regime') and portfolio.market_regime:
+            locks = portfolio.market_regime.get_regime_locks(symbol)
+            _direction = "LONG" if signal_event.signal_type == SignalType.LONG else "SHORT"
+            is_locked = False
+            if horizon == 'SWING' and locks.get('LOCK_SWING'):
+                is_locked = True
+            elif horizon in ('SCALPING', 'MICROSCALPING'):
+                if _direction == "LONG" and locks.get('LOCK_SCALP_LONG'):
+                    is_locked = True
+                elif _direction == "SHORT" and locks.get('LOCK_SCALP_SHORT'):
+                    is_locked = True
+            if is_locked:
+                return self._fail("REGIME_LOCK")
+
         # =========================================================================
         # 🚀 FASE 0: OMNISCORE FUSION (The Perfect Binomial)
         # QUÉ: Integra señales de ML y Technical de forma asíncrona usando el SSOT.
@@ -124,8 +163,11 @@ class ConsensusFilter:
         #   al backtest, la decisión debe basarse en el estado combinado de TODAS.
         # =========================================================================
         try:
+            caller_id = getattr(signal_event, 'strategy_id', 'UNKNOWN').lower()
+            
             # Config already imported at module level (line 23)
-            if getattr(Config, 'OmniScore', None) and getattr(Config.OmniScore, 'master_threshold', 0.0) > 0.0:
+            # FASE 32: If signal comes from OmniStrategy, it already has the fused score. Skip redundant calculation.
+            if getattr(Config, 'OmniScore', None) and getattr(Config.OmniScore, 'master_threshold', 0.0) > 0.0 and "omni" not in caller_id:
                 from core.global_state import global_state
                 sv = global_state.get_symbol_vector(symbol)
                 
@@ -266,9 +308,13 @@ class ConsensusFilter:
                 
                 logger.info(f"🧠 [OmniScore] {symbol} {direction} APPROVED | Final Score: {final_score:.2f} (Init: {omniscore:.2f}, Pen: {penalty:.2f})")
                 
+        except RuntimeError as e:
+            if "BACKTEST_BYPASS" in str(e):
+                pass # Silently ignore backtest bypass
+            else:
+                logger.error(f"❌ Error in OmniScore Fusion Gate: {e}")
         except Exception as e:
             logger.error(f"❌ Error in OmniScore Fusion Gate: {e}")
-            pass
             
         # Gate 1: Kill Switch (HARD BLOCK)
         if risk_manager:

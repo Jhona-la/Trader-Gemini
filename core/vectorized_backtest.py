@@ -1,174 +1,93 @@
 import numpy as np
-from numba import njit
-import logging
+from numba import njit, prange
 
-logger = logging.getLogger("VectorizedEngine")
-
-@njit(nogil=True, cache=True)
-def run_vectorized_simulation(
-    open_prices, high_prices, low_prices, close_prices,
-    rsi_arr, atr_arr,
-    # Parameters to optimize
-    sl_pct, tp_pct, rsi_oversold, rsi_overbought,
-    ml_kelly_fraction, compounding_growth_factor,
-    initial_capital=13.0
-):
+@njit(parallel=True, fastmath=True)
+def vectorized_backtest_core(close_prices, rsi_period, rsi_lower, rsi_upper, stop_loss_pct, take_profit_pct):
     """
-    [PHASE 16] C-Level Mathematical Replica of Trader Gemini Engine
-    Executes in nanoseconds using LLVM machine code.
-    Returns: (final_equity, total_trades, win_rate, max_drawdown)
+    Motor hiper-rápido de backtest escrito en C/LLVM via Numba JIT.
+    Capaz de evaluar millones de velas en milisegundos.
     """
     n = len(close_prices)
+    returns = np.zeros(n)
     
-    # State tracking
-    equity = initial_capital
-    max_equity = initial_capital
-    max_dd = 0.0
+    # Pre-calcular RSI de forma vectorizada (aproximación rápida para JIT)
+    rsi = np.zeros(n)
+    gains = np.zeros(n)
+    losses = np.zeros(n)
     
-    in_position = False
+    for i in prange(1, n):
+        change = close_prices[i] - close_prices[i-1]
+        if change > 0:
+            gains[i] = change
+        else:
+            losses[i] = -change
+            
+    # Calcular SMA de las ganancias y pérdidas
+    for i in prange(rsi_period, n):
+        avg_gain = np.mean(gains[i-rsi_period:i])
+        avg_loss = np.mean(losses[i-rsi_period:i])
+        if avg_loss == 0:
+            rsi[i] = 100
+        else:
+            rs = avg_gain / avg_loss
+            rsi[i] = 100 - (100 / (1 + rs))
+
+    # Simulación de Trading
+    position = 0 # 0=flat, 1=long
     entry_price = 0.0
-    position_qty = 0.0
-    direction = 0  # 1 for LONG, -1 for SHORT
     
-    # Kelly & Compounding state
-    current_leverage = 20.0
-    base_risk = 0.02
-    
-    # Stats
-    wins = 0
-    losses = 0
-    total_trades = 0
-    
-    for i in range(1, n):
-        # 1. Update existing position (Take Profit / Stop Loss)
-        if in_position:
-            current_price = close_prices[i]
-            high = high_prices[i]
-            low = low_prices[i]
+    for i in range(rsi_period, n-1):
+        # Lógica de Salida (Stop Loss / Take Profit)
+        if position == 1:
+            pnl_pct = (close_prices[i] - entry_price) / entry_price
+            if pnl_pct <= -stop_loss_pct or pnl_pct >= take_profit_pct:
+                position = 0
+                returns[i] = pnl_pct
+                
+        # Lógica de Entrada
+        if position == 0 and rsi[i] < rsi_lower:
+            position = 1
+            entry_price = close_prices[i]
             
-            # Simple TP/SL evaluation
-            exit_trade = False
-            exit_price = 0.0
-            
-            if direction == 1:
-                # Check SL
-                if low <= entry_price * (1.0 - sl_pct):
-                    exit_trade = True
-                    exit_price = entry_price * (1.0 - sl_pct)
-                # Check TP
-                elif high >= entry_price * (1.0 + tp_pct):
-                    exit_trade = True
-                    exit_price = entry_price * (1.0 + tp_pct)
-            else:
-                # Check SL
-                if high >= entry_price * (1.0 + sl_pct):
-                    exit_trade = True
-                    exit_price = entry_price * (1.0 + sl_pct)
-                # Check TP
-                elif low <= entry_price * (1.0 - tp_pct):
-                    exit_trade = True
-                    exit_price = entry_price * (1.0 - tp_pct)
-                    
-            if exit_trade:
-                # Calculate PnL
-                pnl_pct = (exit_price - entry_price) / entry_price * direction
-                trade_pnl = (position_qty * entry_price) * pnl_pct
-                
-                # Apply simulated fees (Taker)
-                fee = (position_qty * exit_price) * 0.000375
-                net_pnl = trade_pnl - fee
-                
-                equity += net_pnl
-                
-                if net_pnl > 0:
-                    wins += 1
-                else:
-                    losses += 1
-                    
-                total_trades += 1
-                in_position = False
-                
-                if equity > max_equity:
-                    max_equity = equity
-                else:
-                    dd = (max_equity - equity) / max_equity
-                    if dd > max_dd:
-                        max_dd = dd
-                        
-                # Check bankruptcy
-                if equity < 5.0:
-                    return equity, total_trades, (wins / max(1, total_trades)) * 100, max_dd
+    return returns
 
-        # 2. Look for entries if not in position
-        if not in_position:
-            # Replicating a basic Scalping RSI strategy for vectorization test
-            # If RSI crosses below Oversold -> LONG
-            # If RSI crosses above Overbought -> SHORT
-            signal = 0
-            if rsi_arr[i] < rsi_oversold and rsi_arr[i-1] >= rsi_oversold:
-                signal = 1
-            elif rsi_arr[i] > rsi_overbought and rsi_arr[i-1] <= rsi_overbought:
-                signal = -1
-                
-            if signal != 0:
-                # Meritocratic Sizing Math (Replica of risk_manager.py)
-                house_money = max(0.0, equity - initial_capital)
-                hm_ratio = house_money / equity if equity > 0 else 0
-                asymmetric_mult = 1.0 + (hm_ratio * compounding_growth_factor)
-                
-                # Apply Kelly Fraction
-                eff_leverage = current_leverage * ml_kelly_fraction
-                
-                target_notional = equity * base_risk * eff_leverage * asymmetric_mult
-                
-                # Binance Micro limit cap
-                if target_notional < 5.05:
-                    target_notional = 5.05
-                    
-                # Margin check
-                required_margin = target_notional / eff_leverage
-                if required_margin > equity * 0.95:
-                    target_notional = (equity * 0.95) * eff_leverage
-                
-                if target_notional >= 5.05:
-                    entry_price = close_prices[i]
-                    position_qty = target_notional / entry_price
-                    direction = signal
-                    in_position = True
-                    
-                    # Apply Maker fee for entry
-                    fee = target_notional * 0.0002
-                    equity -= fee
-
-    # Close any open positions at the end of the simulation
-    if in_position:
-        exit_price = close_prices[n-1]
-        pnl_pct = (exit_price - entry_price) / entry_price * direction
-        trade_pnl = (position_qty * entry_price) * pnl_pct
-        fee = (position_qty * exit_price) * 0.000375
-        equity += (trade_pnl - fee)
-
-    win_rate = (wins / total_trades * 100.0) if total_trades > 0 else 0.0
-    return equity, total_trades, win_rate, max_dd
-
-def create_feature_matrices(df):
+def run_backtest_fidelity(fidelity_level, params):
     """
-    Precomputes vectors efficiently using pandas/numpy.
+    Wrapper multi-fidelidad.
+    F1: 100 velas (microsegundos)
+    F2: 1000 velas
+    F3: 5000 velas
+    F4: 10000 velas (Validación final)
     """
-    import talib
+    fidelity_map = {
+        'F1': 100,
+        'F2': 1000,
+        'F3': 5000,
+        'F4': 10000
+    }
     
-    # 1. Price arrays
-    close_arr = df['close'].values.astype(np.float64)
-    high_arr = df['high'].values.astype(np.float64)
-    low_arr = df['low'].values.astype(np.float64)
-    open_arr = df['open'].values.astype(np.float64)
+    n_candles = fidelity_map.get(fidelity_level, 1000)
     
-    # 2. Technical arrays
-    rsi_arr = talib.RSI(close_arr, timeperiod=14)
-    atr_arr = talib.ATR(high_arr, low_arr, close_arr, timeperiod=14)
+    # Generar datos sintéticos (Random Walk simulando mercado)
+    np.random.seed(42) # Fijo para reproducibilidad entre iteraciones
+    returns = np.random.normal(0.0001, 0.002, n_candles)
+    close_prices = 100.0 * np.exp(np.cumsum(returns))
     
-    # Fill NaNs
-    rsi_arr = np.nan_to_num(rsi_arr, nan=50.0)
-    atr_arr = np.nan_to_num(atr_arr, nan=0.0)
+    # Extraer parámetros
+    rsi_p = params.get('rsi_period', 14)
+    rsi_l = params.get('rsi_lower', 30.0)
+    rsi_u = params.get('rsi_upper', 70.0)
+    sl = params.get('stop_loss', 0.02)
+    tp = params.get('take_profit', 0.04)
     
-    return open_arr, high_arr, low_arr, close_arr, rsi_arr, atr_arr
+    # Ejecutar JIT
+    trade_returns = vectorized_backtest_core(close_prices, rsi_p, rsi_l, rsi_u, sl, tp)
+    
+    # Calcular Geometric Mean Return (Evitar NaN)
+    valid_returns = trade_returns[trade_returns != 0.0]
+    if len(valid_returns) == 0:
+        return -1.0 # Penalizar inactividad
+        
+    geo_mean = np.prod(1 + valid_returns) ** (1/max(1, len(valid_returns))) - 1
+    
+    return float(geo_mean)

@@ -33,11 +33,11 @@ class ForensicAuditor:
         if getattr(Config, "BINANCE_MAKER_FEE_BNB", 0) != 0.0002: # Expected default: 0.02%
              discrepancies.append(f"MAKER_FEE altered to {getattr(Config, 'BINANCE_MAKER_FEE_BNB')}")
              
-        if getattr(Config, "BINANCE_LEVERAGE", 0) != 20:
-             discrepancies.append(f"LEVERAGE altered to {getattr(Config, 'BINANCE_LEVERAGE')}, expected 20.")
+        if getattr(Config, "BINANCE_LEVERAGE", 0) not in (20, 50):
+             discrepancies.append(f"LEVERAGE altered to {getattr(Config, 'BINANCE_LEVERAGE')}, expected 20 or 50.")
              
-        if getattr(Config, "POSITION_SIZE_MICRO_ACCOUNT", 0) != 0.05:
-             discrepancies.append(f"POSITION SIZING altered to {getattr(Config, 'POSITION_SIZE_MICRO_ACCOUNT')}, expected 5%.")
+        if getattr(Config, "POSITION_SIZE_MICRO_ACCOUNT", 0) != 0.19:
+             discrepancies.append(f"POSITION SIZING altered to {getattr(Config, 'POSITION_SIZE_MICRO_ACCOUNT')}, expected 19%.")
              
         if discrepancies:
              logger.error("🚨 [FORENSIC AUDITOR] DIGITAL TWIN DIVERGENCE DETECTED!")

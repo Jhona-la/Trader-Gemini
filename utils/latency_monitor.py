@@ -59,6 +59,15 @@ class LatencyMonitor:
         if duration_ms > 300:
             logger.warning(f"⚠️ [LATENCY] Metric '{metric_name}' spike: {duration_ms:.2f}ms")
 
+    def track_hotpath(self, duration_ns: int):
+        """
+        FORENSIC FIX: Quantum Telemetry (E2E Latency)
+        QUÉ: Recibe latencia en nanosegundos y la registra en ms con alta precisión.
+        POR QUÉ: Permite rastrear la fase 3 (Trazado End-to-End).
+        """
+        duration_ms = duration_ns / 1_000_000.0
+        self.track('hotpath_e2e', duration_ms)
+
     @staticmethod
     def _percentile(sorted_data, pct):
         """Calculate percentile from sorted list. O(1) after sort."""

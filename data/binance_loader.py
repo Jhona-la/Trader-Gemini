@@ -350,7 +350,7 @@ class BinanceData(DataProvider):
         
         if not self.client:
             self.client = await AsyncClient.create(api_key, api_secret, testnet=testnet)
-            self.bsm = BinanceSocketManager(self.client)
+            self.bsm = BinanceSocketManager(self.client, max_queue_size=50000)
             
         import collections
         self.seen_events = collections.OrderedDict()
@@ -425,6 +425,63 @@ class BinanceData(DataProvider):
             await _run_multiplex(streams, self._process_trade_msg, 'trades')
                 
         asyncio.create_task(trades_listener())
+
+        async def kline_listener():
+            streams = [f"{sym.replace('/', '').lower()}@kline_1m" for sym in self.symbol_list]
+            await _run_multiplex(streams, self._process_kline_msg, 'kline')
+                
+        asyncio.create_task(kline_listener())
+
+    def _process_kline_msg(self, msg):
+        """
+        [Capa HFT] Integra Klines en tiempo real desde WebSocket.
+        Emite MarketEvents al Engine garantizando latencias < 10ms.
+        """
+        try:
+            if 'data' not in msg or 'k' not in msg['data']:
+                return
+                
+            data = msg['data']
+            k = data['k']
+            symbol_raw = data.get('s', '')
+            symbol = f"{symbol_raw[:-4]}/{symbol_raw[-4:]}" if symbol_raw.endswith('USDT') else symbol_raw
+            
+            o = float(k.get('o', 0))
+            h = float(k.get('h', 0))
+            l = float(k.get('l', 0))
+            c = float(k.get('c', 0))
+            v = float(k.get('v', 0))
+            is_closed = k.get('x', False)
+            ts = int(k.get('t', 0))
+            
+            # Throttling MarketEvents for non-closed candles to max 1 per 500ms
+            now = time.time()
+            if not hasattr(self, '_last_kline_event'):
+                self._last_kline_event = {}
+            last_time = self._last_kline_event.get(symbol, 0)
+            
+            if is_closed or (now - last_time) >= 0.5:
+                # Update the 1m buffer with this latest candle
+                with self._data_lock:
+                    buf = self.buffers_1m.get(symbol)
+                    if buf:
+                        last_t_arr = buf.get_last(1)
+                        if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
+                            buf.rewind_one()
+                        buf.push(ts, np.float32(o), np.float32(h), np.float32(l), np.float32(c), np.float32(v))
+                        
+                # Emit the event
+                self._push_event(MarketEvent(
+                    symbol=symbol, 
+                    close_price=c,
+                    high_price=h,
+                    low_price=l,
+                    is_closed=is_closed
+                ))
+                self._last_kline_event[symbol] = now
+                
+        except Exception as e:
+            pass
 
     def _process_depth_msg(self, msg):
         """
@@ -1724,10 +1781,13 @@ class BinanceData(DataProvider):
             close_price = np.float32(kline['c'])
             volume = np.float32(kline['v'])
 
+            # FASE HORIZONS: Clave compuesta para separar memorias por timeframe
+            tf_key = f"{tf}_{internal_symbol}"
+
             # DATA QUALITY FILTER (Módulo OMEGA - Dimensión 1)
             prev_close = None
-            if self.latest_data[internal_symbol]:
-                prev_close = float(self.latest_data[internal_symbol][-1]['close'])
+            if self.latest_data[tf_key]:
+                prev_close = float(self.latest_data[tf_key][-1]['close'])
                 
             is_valid = OHLCVValidator.validate_kline(
                 open_price, high_price, low_price, close_price, volume, is_closed, previous_close=prev_close
@@ -1740,16 +1800,21 @@ class BinanceData(DataProvider):
             health_score = 100.0
             gap_detected = False
             
+            # Helper to parse tf to seconds
+            tf_sec_map = {'1m': 60.0, '5m': 300.0, '15m': 900.0, '1h': 3600.0, '4h': 14400.0, '1d': 86400.0, '1w': 604800.0}
+            expected_diff_s = tf_sec_map.get(tf, 60.0)
+            
             # Lockless window append (sliding window is thread safe for single producer)
-            if self.latest_data[internal_symbol]:
-                last_bar = self.latest_data[internal_symbol][-1]
+            if self.latest_data[tf_key]:
+                last_bar = self.latest_data[tf_key][-1]
                 last_ts_ms = int(last_bar['datetime'].timestamp() * 1000)
                 time_diff_s = (timestamp_ms - last_ts_ms) / 1000.0
                 
-                if time_diff_s > 65 and is_closed:
+                # FASE HORIZONS: Evita que Swing o 1h arroje falsos positivos de gap si supera 65s
+                if time_diff_s > (expected_diff_s + 5.0) and is_closed:
                     gap_detected = True
-                    health_score = max(0.0, 100.0 - (time_diff_s / 60.0) * 10)
-                    logger.warning(f"🚨 GAP DETECTED in {internal_symbol}: {time_diff_s}s interval. Dispatching Backfill...")
+                    health_score = max(0.0, 100.0 - (time_diff_s / expected_diff_s) * 10)
+                    logger.warning(f"🚨 GAP DETECTED in {tf_key}: {time_diff_s}s interval (Expected: {expected_diff_s}s). Dispatching Backfill...")
                     
                     # Dispatch Backfill (Async task to not block WebSocket thread)
                     if hasattr(self, 'loop') and self.loop:
@@ -1763,7 +1828,7 @@ class BinanceData(DataProvider):
                 'datetime': datetime.fromtimestamp(timestamp_ms/1000.0, tz=timezone.utc),
                 'close': close_price
             }
-            self.latest_data[internal_symbol].append(bar_dict)
+            self.latest_data[tf_key].append(bar_dict)
 
             health_metrics = {
                 "score": health_score,
@@ -1813,15 +1878,15 @@ class BinanceData(DataProvider):
                 except Exception:
                     pass
 
-            # Time-based throttle: at most once every 0.1s per symbol
+            # Time-based throttle: at most once every 0.1s per symbol/timeframe
             if not should_trigger:
-                last_t = self.last_event_time.get(internal_symbol, 0)
+                last_t = self.last_event_time.get(tf_key, 0)
                 if now_ts - last_t > 0.1:
                     should_trigger = True
             
             # ─── FIRE MARKET EVENT ───
             if should_trigger:
-                self.last_event_time[internal_symbol] = now_ts
+                self.last_event_time[tf_key] = now_ts
                 
                 # Build event with Order Flow Metrics (Phase 13)
                 metrics = self.order_flow_metrics.get(internal_symbol)
@@ -1839,7 +1904,8 @@ class BinanceData(DataProvider):
                         timestamp=datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc),
                         order_flow=of_metrics,
                         health_metrics=health_metrics,
-                        is_closed=is_closed
+                        is_closed=is_closed,
+                        timeframe=tf # FASE HORIZONS: Inyectar timeframe explícito para evitar Phantom Triggers
                     ))
                     
                     # Reset delta atomically (<1ms target)

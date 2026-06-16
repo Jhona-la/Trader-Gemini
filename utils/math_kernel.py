@@ -1103,3 +1103,79 @@ def compute_micro_regime_hmm_jit(tick_returns):
         
     return 0 # NORMAL
 
+# ==============================================================================
+# 🧮 FASE 5: PERFECCIONAMIENTO MATEMÁTICO (Fractional Differencing & Kalman)
+# ==============================================================================
+
+@njit(fastmath=True, cache=True)
+def get_fractional_weights(d, size, threshold):
+    """
+    [NANO-SPEED] Calcula los pesos de la Serie de Taylor para Diferenciación Fraccional.
+    """
+    weights = np.zeros(size, dtype=np.float64)
+    weights[0] = 1.0
+    k = 1
+    while k < size:
+        w = -weights[k-1] / k * (d - k + 1)
+        if abs(w) < threshold:
+            break
+        weights[k] = w
+        k += 1
+    return weights[:k]
+
+@njit(fastmath=True, cache=True)
+def fractional_differencing_jit(series, d=0.45, threshold=1e-4):
+    """
+    [PHASE 5] Diferenciación Fraccional Vectorizada.
+    Hace la serie estacionaria (para XGBoost/Neural Net) sin borrar el Hurst Exponent.
+    Reemplaza a los retornos simples (close[t]/close[t-1] - 1).
+    """
+    n = len(series)
+    weights = get_fractional_weights(d, n, threshold)
+    w_len = len(weights)
+    
+    diff_series = np.zeros(n, dtype=np.float64)
+    
+    for i in range(w_len - 1, n):
+        val = 0.0
+        for k in range(w_len):
+            val += weights[k] * series[i - k]
+        diff_series[i] = val
+        
+    # Fill initials with NaN equivalent or 0
+    for i in range(w_len - 1):
+        diff_series[i] = 0.0
+        
+    return diff_series
+
+@njit(fastmath=True, cache=True)
+def kalman_filter_1d_jit(prices, R=1e-4, Q=1e-5):
+    """
+    [PHASE 5] Filtro de Kalman 1D (Zero-Lag Smoothing).
+    Reemplaza la SMA/EMA para cálculos ultrarrápidos (Bollinger, RSI).
+    R: Ruido de Observación (Sensibilidad a picos)
+    Q: Ruido de Proceso (Sensibilidad a saltos de tendencia)
+    """
+    n = len(prices)
+    smoothed = np.zeros(n, dtype=np.float64)
+    if n == 0: return smoothed
+    
+    x_est = prices[0]
+    P_est = 1.0
+    
+    for i in range(n):
+        z = prices[i]
+        
+        # Predicción (Time Update)
+        x_pred = x_est
+        P_pred = P_est + Q
+        
+        # Corrección (Measurement Update)
+        K = P_pred / (P_pred + R)
+        x_est = x_pred + K * (z - x_pred)
+        P_est = (1.0 - K) * P_pred
+        
+        smoothed[i] = x_est
+        
+    return smoothed
+

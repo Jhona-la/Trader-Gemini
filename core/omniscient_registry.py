@@ -12,6 +12,7 @@ Núcleo de integridad absoluta (Mandato Supremo):
 
 import time
 import logging
+from config import Config
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger("OmniscientRegistry")
@@ -30,13 +31,15 @@ class OmniscientRegistry:
         # 1. Valores fijos (Inmutables)
         # Modificar estos valores arroja una excepción.
         self._fixed_values: Dict[str, Any] = {
-            "GLOBAL_MAX_RISK_PER_TRADE": 0.05,        # Maximum risk % per trade
-            "PORTFOLIO_MAX_HEAT": 0.20,               # Max combined risk across portfolio
-            "SYSTEM_CAPITAL_BASE": 13.0,              # Initial start capital
-            "HARD_SL_REQUIRED": True,                 # No trade without Stop Loss
-            "PROHIBIT_AVERAGING_DOWN": True,          # Never average down losing trades
-            "LIQUIDATION_BUFFER_PCT": 2.0,            # Virtual liquidation buffer %
-            "EMERGENCY_DRAWDOWN_LIMIT_PCT": -15.0     # Global emergency shutdown threshold
+            "GLOBAL_MAX_RISK_PER_TRADE": Config.MAX_RISK_PER_TRADE,
+            "MICRO_MAX_HEAT": Config.MICROSCALPING_MARGIN_CAP,
+            "SCALP_MAX_HEAT": Config.SCALPING_MARGIN_CAP,
+            "SWING_MAX_HEAT": Config.SWING_MARGIN_CAP,
+            "SYSTEM_CAPITAL_BASE": 13.0,
+            "HARD_SL_REQUIRED": True,
+            "PROHIBIT_AVERAGING_DOWN": True,
+            "LIQUIDATION_BUFFER_PCT": 2.0,
+            "EMERGENCY_DRAWDOWN_LIMIT_PCT": Config.Risk.MAX_DRAWDOWN * -1
         }
 
         # 2. Valores Adaptativos (Mutables dentro de rangos)
@@ -136,9 +139,10 @@ class OmniscientRegistry:
         self._conflict_log.append(entry)
         logger.warning(f"⚔️ CONFLICTO EVITADO [{conflict_type}]: {description} -> {resolution}")
 
-    def check_trade_validity(self, trade_risk_pct: float, current_portfolio_heat: float, has_sl: bool) -> bool:
+    def check_trade_validity(self, trade_risk_pct: float, current_portfolio_heat: float, has_sl: bool, horizon: str = "1m") -> bool:
         """
         Pre-Flight Checklist final: Verifica que la operación cumpla con todos los Axiomas Fijos.
+        Ahora con validación vectorial por Horizonte.
         """
         # AXIOMA: Riesgo máximo por operación
         if trade_risk_pct > self.get_fixed("GLOBAL_MAX_RISK_PER_TRADE"):
@@ -149,11 +153,21 @@ class OmniscientRegistry:
             )
             return False
 
-        # AXIOMA: Portfolio heat
-        if current_portfolio_heat + trade_risk_pct > self.get_fixed("PORTFOLIO_MAX_HEAT"):
+        # AXIOMA: Portfolio heat Vectorizado
+        if horizon == "SWING":
+            max_heat_key = "SWING_MAX_HEAT"
+        elif horizon == "MICROSCALPING":
+            max_heat_key = "MICRO_MAX_HEAT"
+        else:
+            max_heat_key = "SCALP_MAX_HEAT"
+            
+        max_heat_limit = self.get_fixed(max_heat_key)
+        
+        # Adding a small epsilon 1e-6 to avoid floating point strictness blocks
+        if current_portfolio_heat + trade_risk_pct > max_heat_limit + 1e-6:
             self.log_conflict(
                 "HEAT_VIOLATION",
-                f"Añadir trade excedería el Portfolio Heat máximo ({self.get_fixed('PORTFOLIO_MAX_HEAT')*100:.2f}%)",
+                f"Añadir trade excedería el Heat máximo para {horizon} ({(max_heat_limit)*100:.2f}%)",
                 "Trade Bloqueado"
             )
             return False
