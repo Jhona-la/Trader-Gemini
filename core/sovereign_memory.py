@@ -149,27 +149,31 @@ class ZmqKVClient:
     def get(self, key: str) -> Any:
         try:
             return self._send_recv({"op": "get", "key": key})
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Swallowed exception ghost bug: {e}")
             return self._fallback_store.get(key)
         
     def set(self, key: str, value: Any):
         try:
             self._send_recv({"op": "set", "key": key, "value": value})
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Swallowed exception ghost bug: {e}")
             pass
         self._fallback_store[key] = value
         
     def hget(self, key: str, hkey: str) -> Any:
         try:
             return self._send_recv({"op": "hget", "key": key, "hkey": hkey})
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Swallowed exception ghost bug: {e}")
             hash_dict = self._fallback_store.get(key, {})
             return hash_dict.get(hkey) if isinstance(hash_dict, dict) else None
         
     def hset(self, key: str, hkey: str, value: Any):
         try:
             self._send_recv({"op": "hset", "key": key, "hkey": hkey, "value": value})
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Swallowed exception ghost bug: {e}")
             pass
         if key not in self._fallback_store or not isinstance(self._fallback_store[key], dict):
             self._fallback_store[key] = {}
@@ -179,14 +183,16 @@ class ZmqKVClient:
         try:
             val = self._send_recv({"op": "hgetall", "key": key})
             return val if val is not None else {}
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Swallowed exception ghost bug: {e}")
             val = self._fallback_store.get(key, {})
             return val if isinstance(val, dict) else {}
 
     def hdel(self, key: str, hkey: str) -> Any:
         try:
             self._send_recv({"op": "hdel", "key": key, "hkey": hkey})
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Swallowed exception ghost bug: {e}")
             pass
         if key in self._fallback_store and isinstance(self._fallback_store[key], dict):
             return self._fallback_store[key].pop(hkey, None)
@@ -300,7 +306,8 @@ class ZmqDictProxy:
             if val is not None:
                 self.client.hdel(self.namespace, key)
                 return val
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Swallowed exception ghost bug: {e}")
             pass
         val = self.client.hdel(self.namespace, key)
         return val if val is not None else default

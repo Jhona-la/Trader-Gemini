@@ -206,10 +206,10 @@ class TrailingEngine:
         
         if best_stop is not None:
             if pos_side == 'LONG':
-                if current_trail == 0.0 or best_stop > current_trail:
+                if current_trail <= 1e-9 or best_stop > current_trail:
                     pos['trail_stop_price'] = best_stop
             else:
-                if current_trail == 0.0 or best_stop < current_trail:
+                if current_trail <= 1e-9 or best_stop < current_trail:
                     pos['trail_stop_price'] = best_stop
                     
         # Force Close Check (Drawdown desde MFE_ATR supera tolerancia)

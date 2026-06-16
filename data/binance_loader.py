@@ -481,7 +481,8 @@ class BinanceData(DataProvider):
                 self._last_kline_event[symbol] = now
                 
         except Exception as e:
-            pass
+            import logging
+            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
     def _process_depth_msg(self, msg):
         """
@@ -652,7 +653,8 @@ class BinanceData(DataProvider):
                 metrics['cvd'] += qty
                 
         except Exception as e:
-            pass
+            import logging
+            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
     def get_order_flow_metrics(self, symbol: str) -> dict:
         """
@@ -778,7 +780,7 @@ class BinanceData(DataProvider):
                             # (Strategy has already consumed the peak value in the previous tick)
                             # self.derivatives_metrics[s]['liquidations'] = 0.0 # Reset later if needed
                         except Exception as e:
-                            logger.debug(f"Futures derivatives fetch skipped/failed for {s}: {e}")
+                            logger.error(f"Futures derivatives fetch skipped/failed for {s}: {e}", exc_info=True)
                 except Exception as e:
                     logger.error(f"Derivatives monitor error loop: {e}")
                 
@@ -1875,8 +1877,9 @@ class BinanceData(DataProvider):
                         pct_change = abs((current_price - last_price) / last_price)
                         if pct_change >= 0.0005:
                             should_trigger = True
-                except Exception:
-                    pass
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
             # Time-based throttle: at most once every 0.1s per symbol/timeframe
             if not should_trigger:
@@ -2254,7 +2257,7 @@ class BinanceData(DataProvider):
                     'timestamp': now
                 }
             except Exception as e:
-                logger.debug(f"Anti-spoof tracking error: {e}")
+                logger.error(f"Anti-spoof tracking error: {e}", exc_info=True)
             
             # [PHASE 11 / NANO-SPEED] SHM Write (Zero-Copy Export sin allocaciones de listas)
             if internal_sym in self.shm_managers:
@@ -2282,7 +2285,7 @@ class BinanceData(DataProvider):
                     idx += 2
             
         except Exception as e:
-            logger.debug(f"Error in depth5 processing: {e}")
+            logger.error(f"Error in depth5 processing: {e}", exc_info=True)
 
     def _process_agg_trade(self, data):
         """
@@ -2369,7 +2372,8 @@ class BinanceData(DataProvider):
                     if internal_sym in ssot.symbol_states:
                         ssot.symbol_states[internal_sym].vpin_toxicity = current_vpin
                 except Exception as e:
-                    pass
+                    import logging
+                    logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 
                 # Generamos evento de mercado asíncrono puro de volumen.
                 of_metrics = self.order_flow_metrics[internal_sym].copy()
@@ -2397,7 +2401,7 @@ class BinanceData(DataProvider):
                 self.order_flow_metrics[internal_sym]['delta'] = 0.0
                 
         except Exception as e:
-            logger.debug(f"Error in aggTrade processing: {e}")
+            logger.error(f"Error in aggTrade processing: {e}", exc_info=True)
 
     async def update_symbol_list(self, new_symbols: List[str]):
         """
@@ -2533,7 +2537,7 @@ class BinanceData(DataProvider):
                     self._push_event(sig)
 
         except Exception as e:
-            logger.debug(f"Error in VBI calc: {e}")
+            logger.error(f"Error in VBI calc: {e}", exc_info=True)
 
     def _process_liquidation(self, msg):
         """
@@ -2595,7 +2599,7 @@ class BinanceData(DataProvider):
                     results['liq_intensity'] = float(np.sum(liq_data))
                     
         except Exception as e:
-            logger.debug(f"Error getting HFT indicators: {e}")
+            logger.error(f"Error getting HFT indicators: {e}", exc_info=True)
             
         return results
 
@@ -2799,7 +2803,8 @@ class BinanceData(DataProvider):
             self.order_flow_metrics[internal_sym]['l2_microprice_dist'] = dist
             
         except Exception as e:
-            pass
+            import logging
+            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
     def _process_trade_update(self, data):
         """
@@ -2835,7 +2840,8 @@ class BinanceData(DataProvider):
             # Passthrough to agg trade logic for delta and VPIN
             self._process_agg_trade(data)
         except Exception as e:
-            pass 
+            import logging
+            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True) 
 
     # ------------------------------------------------------------------
     # PHASE 99: BUFFER RESET (Manual Close Protocol)
@@ -2902,7 +2908,8 @@ class BinanceData(DataProvider):
                     vision_df = pl.concat(dfs).unique("timestamp_ms")
                     pldf = pldf.join(vision_df, left_on="timestamp", right_on="timestamp_ms", how="left").fill_null(0.0)
         except Exception as e:
-            pass
+            import logging
+            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
             
         return pldf
 

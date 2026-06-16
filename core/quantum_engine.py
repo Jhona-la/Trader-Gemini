@@ -196,7 +196,8 @@ class QuantumEngine:
         try:
             atr = calculate_atr_jit(high, low, close, 14)
             arrs['phalanx_sig'] = np.where((high - low) > (atr * 2), 1.0, 0.0)
-        except:
+        except Exception as e:
+            logger.exception(f"Bare except ghost bug: {e}")
             pass
             
         # Proxy StatArb: Z-Score of Close (Mean Reversion)
@@ -206,7 +207,8 @@ class QuantumEngine:
             std = np.std(close) if np.std(close) > 0 else 1
             z_score = (close - sma) / std
             arrs['statarb_sig'] = np.where(z_score > 2, -1.0, np.where(z_score < -2, 1.0, 0.0))
-        except:
+        except Exception as e:
+            logger.exception(f"Bare except ghost bug: {e}")
             pass
 
         # 2. MACHINE LEARNING 200-FEATURE COMPILATION
@@ -414,8 +416,8 @@ class QuantumEngine:
             phalanx = arrs.get('phalanx_sig', np.zeros(n))
             statarb = arrs.get('statarb_sig', np.zeros(n))
             
-            score_long = (tech_long * w_tech) + (ml_long_sig * w_ml) + (phalanx * w_phalanx) + ((statarb == 1.0) * w_statarb)
-            score_short = (tech_short * w_tech) + (ml_short_sig * w_ml) + ((statarb == -1.0) * w_statarb)
+            score_long = (tech_long * w_tech) + (ml_long_sig * w_ml) + (phalanx * w_phalanx) + (np.isclose(statarb, 1.0) * w_statarb)
+            score_short = (tech_short * w_tech) + (ml_short_sig * w_ml) + (np.isclose(statarb, -1.0) * w_statarb)
             
             long_cond = (score_long >= omni_threshold) & valid_volatility
             short_cond = (score_short >= omni_threshold) & valid_volatility
@@ -427,8 +429,8 @@ class QuantumEngine:
                 # Chop regime: Hurst < 0.45 OR (Hurst < 0.55 and ADX < 20)
                 is_chop = (hurst_arr < 0.45) | ((hurst_arr < 0.55) & (adx < 20.0))
                 # En chop, vetamos las señales direccionales (ML/Tech) a menos que sean mean reversion puras (statarb)
-                long_cond = long_cond & (~is_chop | (statarb == 1.0))
-                short_cond = short_cond & (~is_chop | (statarb == -1.0))
+                long_cond = long_cond & (~is_chop | np.isclose(statarb, 1.0))
+                short_cond = short_cond & (~is_chop | np.isclose(statarb, -1.0))
             
             long_idx = np.where(long_cond)[0]
             short_idx = np.where(short_cond)[0]

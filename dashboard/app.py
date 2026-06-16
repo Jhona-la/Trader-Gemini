@@ -155,7 +155,8 @@ def load_live_status(data_dir: str) -> dict:
             try:
                 with open(path, 'r') as f:
                     return json.load(f)
-            except:
+            except Exception as e:
+                logger.exception(f"Bare except ghost bug: {e}")
                 pass
     return None
 
@@ -173,7 +174,8 @@ def load_historical_status(data_dir: str, tail: int = 500) -> pd.DataFrame:
         if 'total_equity' not in df.columns or 'timestamp' not in df.columns:
             return pd.DataFrame()
         return df.tail(tail)
-    except:
+    except Exception as e:
+        logger.exception(f"Bare except ghost bug: {e}")
         return pd.DataFrame()
 
 def load_trades(data_dir: str) -> pd.DataFrame:
@@ -192,7 +194,8 @@ def load_trades(data_dir: str) -> pd.DataFrame:
             df['datetime'] = pd.to_datetime(df['datetime'])
             
         return df
-    except:
+    except Exception as e:
+        logger.exception(f"Bare except ghost bug: {e}")
         return pd.DataFrame()
 
 def load_recent_logs(limit: int = 50) -> list:
@@ -208,10 +211,12 @@ def load_recent_logs(limit: int = 50) -> list:
         for line in lines:
             try:
                 logs.append(json.loads(line.strip()))
-            except:
+            except Exception as e:
+                logger.exception(f"Bare except ghost bug: {e}")
                 pass
         return logs
-    except:
+    except Exception as e:
+        logger.exception(f"Bare except ghost bug: {e}")
         return []
 
 def load_health_logs(limit: int = 20) -> list:
@@ -226,10 +231,12 @@ def load_health_logs(limit: int = 20) -> list:
         for line in lines:
             try:
                 logs.append(json.loads(line.strip()))
-            except:
+            except Exception as e:
+                logger.exception(f"Bare except ghost bug: {e}")
                 pass
         return logs
-    except:
+    except Exception as e:
+        logger.exception(f"Bare except ghost bug: {e}")
         return []
 
 def load_system_metrics(data_dir: str) -> dict:
@@ -244,7 +251,8 @@ def load_system_metrics(data_dir: str) -> dict:
         try:
             with open(final_path, 'r') as f:
                 return json.load(f)
-        except:
+        except Exception as e:
+            logger.exception(f"Bare except ghost bug: {e}")
             pass
     return {}
 
@@ -255,7 +263,8 @@ def load_fabric_telemetry() -> dict:
         try:
             with open(path, 'r') as f:
                 return json.load(f)
-        except:
+        except Exception as e:
+            logger.exception(f"Bare except ghost bug: {e}")
             pass
     return {}
 
@@ -288,7 +297,8 @@ def list_sessions(data_dir: str, limit: int = 10) -> list:
                                 "path": run_path,
                                 "timestamp": mtime
                             })
-                        except:
+                        except Exception as e:
+                            logger.exception(f"Bare except ghost bug: {e}")
                             pass
                             
     # Sort found sessions by timestamp descending (newest first)
@@ -404,9 +414,9 @@ with st.spinner("Loading data..."):
         
         # Priority: Real Live API > Local File > Cached Live
         if live_data and live_data.get('total_equity', 0) > 0:
-             st.session_state.equity_live = live_data.get('total_equity', 0)
+            st.session_state.equity_live = live_data.get('total_equity', 0)
         elif status and status.get('total_equity', 0) > 0:
-             st.session_state.equity_live = status.get('total_equity', 0)
+            st.session_state.equity_live = status.get('total_equity', 0)
              
     except Exception as e:
         # Fallback to cache if API strictly fails
@@ -463,8 +473,9 @@ with header_col2:
                 st.warning(f"🟡 LAG: {int(latency)}s")
             else:
                 st.error(f"🔴 DEAD: {int(latency)}s")
-        except:
-             st.error("🔴 PULSE: ERROR")
+        except Exception as e:
+            logger.exception(f"Bare except ghost bug: {e}")
+            st.error("🔴 PULSE: ERROR")
     else:
         st.info("⚪ STARTING...")
 with header_col3:
@@ -491,7 +502,7 @@ if active_data_dir:
         with open(integrity_path, 'w') as f:
             json.dump(integrity_data, f)
     except Exception as e:
-        pass
+        logger.exception(f"Ghost bug passed: {e}")
 
 st.markdown("---")
 # MARGIN & RISK METRICS
@@ -694,7 +705,8 @@ with tab1:
         
         # 1. Hurst Exponent
         hurst = math_stats.get('hurst', 0.5)
-        h_color = "red" if hurst == 0.5 else "green" 
+        import math
+        h_color = "red" if math.isclose(hurst, 0.5) else "green" 
         h_label = "🎲 RANDOM"
         if hurst < 0.45: h_label = "📉 MEAN REV"
         if hurst > 0.55: h_label = "🚀 TRENDING"
@@ -803,7 +815,7 @@ with tab1:
             except Exception as e:
                 st.error(f"Brain Error: {e}")
         else:
-             st.info("🧠 Waiting for AI signal telemetry...")
+            st.info("🧠 Waiting for AI signal telemetry...")
              
         st.markdown("---")
         st.subheader("💹 Equity Curve & Drawdown")
@@ -1037,7 +1049,8 @@ with tab2:
                                 cost = t['entry_price'] * t['quantity']
                                 ret = t['net_pnl'] / cost
                                 pnl_returns.append(ret)
-                        except:
+                        except Exception as e:
+                            logger.exception(f"Bare except ghost bug: {e}")
                             pass
                             
                     if len(pnl_returns) > 10:

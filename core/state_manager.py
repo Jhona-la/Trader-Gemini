@@ -259,7 +259,8 @@ class AtomicStateManager:
                 cls._db_conn.close()
                 cls._db_conn = None
                 logger.info("🛡️ [StateManager] DB connection closed.")
-            except Exception:
+            except Exception as e:
+                logger.exception(f"Swallowed exception ghost bug: {e}")
                 pass
 
     # ═══════════════════════════════════════════════════════════════

@@ -29,7 +29,7 @@ try:
 
     warnings.filterwarnings("ignore", category=PerformanceWarning)
 except Exception as e:
-    logger.debug(f"Silent exception caught: {e}")
+    logger.error(f"Silent exception caught: {e}", exc_info=True)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", message=".*sklearn.utils.parallel.delayed.*")
 
@@ -120,11 +120,14 @@ from ml.replay_buffer import PrioritizedReplayBuffer
 # Global Process Pool for Training (Singleton)
 # Limit to cpu_count - 2 to leave room for Engine and Data Loader
 _TRAINING_POOL = None
+import threading
+_POOL_LOCK = threading.Lock()
 
 
 def get_training_pool():
     global _TRAINING_POOL
-    if _TRAINING_POOL is None:
+    with _POOL_LOCK:
+        if _TRAINING_POOL is None:
         # CONSERVATIVE SCALING (Ryzen 5700U 1.8GHz Base)
         # Instead of cpu_count - 2, we use simpler logic to prevent thermal throttling:
         # Use 6 workers. Leaves 2 cores for OS/Engine + headroom for heat dissipation.
@@ -1435,7 +1438,7 @@ class MLStrategyHybridUltimate(Strategy):
                             f"🔄 [{self.symbol}] Feature mismatch for incremental learning. Resetting XGB."
                         )
                 except Exception as e:
-                    logger.debug(f"Silent exception caught: {e}")
+                    logger.error(f"Silent exception caught: {e}", exc_info=True)
 
             # Intentar fit con warm-start; si falla (base_score incompatibility),
             # hacer fresh fit sin modelo previo
@@ -2387,7 +2390,7 @@ class MLStrategyHybridUltimate(Strategy):
                         confluence = 1.0 # Force max confluence to bypass further checks
                         
                 except Exception as e:
-                    logger.debug(f"Dark Alpha / Mempool check failed: {e}")
+                    logger.error(f"Dark Alpha / Mempool check failed: {e}", exc_info=True)
 
             # 🔮 FASE 20: PDC (Price Discovery Coefficient) Veto for Scalping
             if self.horizon_str == 'SCALPING':
@@ -2693,7 +2696,7 @@ class MLStrategyHybridUltimate(Strategy):
                     decision=signal_type.name,
                 )
             except Exception as e:
-                logger.debug(f"monitor_log error: {e}")
+                logger.error(f"monitor_log error: {e}", exc_info=True)
 
             # Log a consola
             logger.info(
@@ -3073,7 +3076,8 @@ class MLStrategyHybridUltimate(Strategy):
                     "ml_bear_score": 1.0 - confidence
                 })
             except Exception as e:
-                pass
+                import logging
+                logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
             # 🔮 FASE 5: MULTI-COIN ORACLE (LEAD-LAG ARBITRAGE) + CROSS-EXCHANGE PDC
             # Leemos el Price Discovery Coefficient (PDC) de Coinbase/Bybit para Latencia Negativa
@@ -3102,7 +3106,8 @@ class MLStrategyHybridUltimate(Strategy):
                         confidence = max(0.01, confidence + (pdc * 0.2)) # Max -0.2 bias
                         
             except Exception as e:
-                pass
+                import logging
+                logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
             # Determine preliminary signal type
             threshold = self.adaptive_confidence_threshold
@@ -3203,7 +3208,7 @@ class MLStrategyHybridUltimate(Strategy):
                     )
 
             except Exception as e:
-                logger.debug(f"Timeframe check error: {e}")
+                logger.error(f"Timeframe check error: {e}", exc_info=True)
 
             # 2. ENSEMBLE CONSENSUS (RL + GA + OL)
             # FIX: Ensure RL vote diverges from OL vote by incorporating PPO action history
@@ -3693,7 +3698,7 @@ class MLStrategyHybridUltimate(Strategy):
                                         details={"score": score, "min_acc": min_acc}
                                     )
                                 except Exception as e:
-                                    logger.debug(f"Silent exception caught: {e}")
+                                    logger.error(f"Silent exception caught: {e}", exc_info=True)
 
                                 # NO actualizamos, pero limpiamos flag de entrenamiento
                                 with self._state_lock:
@@ -3747,7 +3752,7 @@ class MLStrategyHybridUltimate(Strategy):
                                 details={"score": score, "duration": duration, "features": len(feature_cols)}
                             )
                         except Exception as e:
-                            logger.debug(f"Silent exception caught: {e}")
+                            logger.error(f"Silent exception caught: {e}", exc_info=True)
                     else:
                         # ⚠️ Training failed or score below threshold.
                         # Do NOT mark as trained yet to allow retries,
@@ -3792,7 +3797,8 @@ class MLStrategyHybridUltimate(Strategy):
                                 details={"error": f"Score {score:.3f} < MIN {self.MIN_MODEL_ACCURACY}"}
                             )
                         except Exception as e:
-                            pass
+                            import logging
+                            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 except Exception as e:
                     logger.error(f"ML Training error {self.symbol}: {e}", exc_info=True)
                     # TELEGRAM NOTIFICATION
@@ -3804,7 +3810,7 @@ class MLStrategyHybridUltimate(Strategy):
                             details={"error": str(e)}
                         )
                     except Exception as ignore:
-                        logger.debug(f"Silent exception caught: {e}")
+                        logger.error(f"Silent exception caught: {e}", exc_info=True)
                 finally:
                     # MODO PROFESOR: Liberar RAM agresivamente
                     gc.collect()
@@ -3829,7 +3835,7 @@ class MLStrategyHybridUltimate(Strategy):
         try:
             self.executor.shutdown(wait=False)
         except Exception as e:
-            logger.debug(f"Error shutting down executor: {e}")
+            logger.error(f"Error shutting down executor: {e}", exc_info=True)
 
         # We don't force-join the training thread here to avoid hanging the main shutdown,
         # but the running flag inside the training thread will handle the early exit.
@@ -3948,7 +3954,8 @@ class MLStrategyHybridUltimate(Strategy):
                 dp_path = os.path.join(xgb_dir, f"{safe_sym}_deep.pth")
                 deep_predictor.save(dp_path)
             except Exception as e:
-                pass
+                import logging
+                logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
             # === SECONDARY: RF/GB with minimal compression (B1 FIX) ===
             # compress=1 instead of compress=5 → 3x faster, ~10% larger
@@ -4152,7 +4159,8 @@ class MLStrategyHybridUltimate(Strategy):
                 if os.path.exists(dp_path):
                     deep_predictor.load(dp_path)
             except Exception as e:
-                pass
+                import logging
+                logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
             if supreme_loaded:
                 return
@@ -4627,8 +4635,9 @@ class MLStrategyHybridUltimate(Strategy):
                 self.executor.shutdown(wait=False)
 
             logger.info(f"🧹 ML Hybrid Ultimate Strategy for {self.symbol} cleaned up")
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
 
 # ============================================================
@@ -4753,8 +4762,9 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                             # Bypass throttle: reset timestamp para forzar update
                             self.last_regime_update = self._now() - pd.Timedelta(minutes=10)
                             self._update_market_regime(_df_regime)
-                except Exception:
-                    pass  # Non-fatal: si falla, el régimen queda como estaba
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)  # Non-fatal: si falla, el régimen queda como estaba
 
             # 1. Data Preparation
             bars = self.data_provider.get_latest_bars(self.symbol, n=250, timeframe=self.primary_tf)
@@ -5183,7 +5193,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                                 "data": _macro_bars,
                             }
                     except Exception as e:
-                        logger.debug(f"Silent exception caught: {e}")
+                        logger.error(f"Silent exception caught: {e}", exc_info=True)
 
                 if _oracle_tf_data:
                     _oracle_verdict = MultiHorizonOracle.evaluate_clash_vector(
@@ -5215,7 +5225,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                                 f"Clash: {clash:.1%} | Macro: {_oracle_verdict['macro_context']}"
                             )
             except Exception as e:
-                logger.debug(f"Oracle Ensemble Integration Error on {self.symbol}: {e}")
+                logger.error(f"Oracle Ensemble Integration Error on {self.symbol}: {e}", exc_info=True)
 
             # ============================================================
             # ✅ FIX-FORENSIC-V41: PREDICTIVE DECAY EXIT (PARITY WITH BASE)
@@ -5382,7 +5392,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                             logger.info(f"🧠 [CONSENSUS] {self.symbol} ML Sophia penalty x{sophia_penalty:.2f} (WP={sophia_report.win_probability*100:.1f}% < {veto_threshold*100:.0f}%, Regime: {self.market_regime})")
                     sophia_report_dict = sophia_report.to_dict()
                 except Exception as e:
-                    logger.debug(f"Sophia Ensemble Integration Error on {self.symbol}: {e}")
+                    logger.error(f"Sophia Ensemble Integration Error on {self.symbol}: {e}", exc_info=True)
 
             # PHASE 9: PPO Metadata Injection
             # We capture model outputs as the "State" for the Ensemble Weight Optimization policy
@@ -5478,7 +5488,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                         predicted_duration_bars = max(3, int(ttp_fraction * self.LOOKAHEAD_BARS))
                         
                 except Exception as e:
-                    logger.debug(f"Dual Regressor error on {self.symbol}: {e}")
+                    logger.error(f"Dual Regressor error on {self.symbol}: {e}", exc_info=True)
                     
             # --- 🌌 CTOS OMNISCIENCE: Seq2Seq 1000-candle Trajectory ---
             omni_route = None
@@ -5540,7 +5550,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                         # omniscient_engine.save_trajectory_to_file(omni_route, self.symbol)
                         
                 except Exception as e:
-                    logger.debug(f"Omniscient Engine inference error: {e}")
+                    logger.error(f"Omniscient Engine inference error: {e}", exc_info=True)
             
             # --- FALLBACK: ADAPTIVE TP TARGET ---
             if not is_ai_regressor or predicted_magnitude_real <= 0:

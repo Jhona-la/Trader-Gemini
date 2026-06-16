@@ -779,8 +779,9 @@ class Engine:
                     p.cpu_affinity(target)
                     logger.info(f"🍃 [SNIPER] Low Load ({cpu_pct}%). Eco Mode Active (4 Cores).")
                     
-        except Exception:
-            pass # Fail silently on permission/OS errors
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True) # Fail silently on permission/OS errors
 
     async def process_event(self, event: Union[MarketEvent, SignalEvent, OrderEvent, FillEvent]) -> None:
         """Route event asynchronously"""
@@ -853,7 +854,8 @@ class Engine:
                     if meta_arbitrator.graph_layer:
                         meta_arbitrator.graph_layer.update_symbol_state(event.symbol, features)
             except Exception as e:
-                pass
+                import logging
+                logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
         
         if event.symbol and event.close_price and self.portfolio:
              self.portfolio.update_market_price(event.symbol, event.close_price)
@@ -866,8 +868,9 @@ class Engine:
                          current_price=event.close_price,
                          timestamp=getattr(event, 'datetime', None)
                      )
-                 except Exception:
-                     pass
+                 except Exception as e:
+                     import logging
+                     logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
              has_position = event.symbol in self.portfolio.positions or \
                             any(k.startswith(event.symbol) for k in self.portfolio.virtual_ledger)
@@ -882,7 +885,8 @@ class Engine:
                              duration_s = (datetime.datetime.now(datetime.timezone.utc) - pos['datetime']).total_seconds()
                              self.rl_agent.apply_tick_penalty(event.symbol, pos.get('horizon', 'SCALPING'), unrealized_pnl, duration_s)
                      except Exception as e:
-                         pass
+                         import logging
+                         logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
                  if getattr(self, '_risk_check_stops', None) and self.data_handlers:
                      try:
@@ -1495,7 +1499,7 @@ class Engine:
                              details=f"RiskManager rejected signal for {event.symbol}"
                          )
                  except Exception as e:
-                     logger.debug(f"Interaction monitor logging failed: {e}")
+                     logger.error(f"Interaction monitor logging failed: {e}", exc_info=True)
 
     @omniscient_trace(layer="CORTEX")
     async def _process_order_event(self, event):
@@ -1568,7 +1572,7 @@ class Engine:
                         out_str = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "FLAT")
                         self.shadow_bridge.update_outcome(event.symbol, out_str, pnl)
                     except Exception as e:
-                        logger.debug(f"Shadow bridge outcome update failed: {e}")
+                        logger.error(f"Shadow bridge outcome update failed: {e}", exc_info=True)
 
                 for strategy in self.strategies:
                     # Filtramos por símbolo para asegurar que actualizamos la instancia correcta
@@ -1815,8 +1819,9 @@ class Engine:
                 price = state.get('close', 0.0)
                 if price and price > 0:
                     return float(price)
-        except Exception:
-            pass  # Fall through to slow path
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)  # Fall through to slow path
         
         # 🐢 SLOW PATH: Full data handler validation (original logic)
         if not self.data_handlers:

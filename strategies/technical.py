@@ -283,7 +283,7 @@ class HybridScalpingStrategy(Strategy):
                         self.genotypes[symbol] = loaded
                         found_genes = loaded.genes
             except Exception as e:
-                logger.debug(f"Silent exception caught: {e}")
+                logger.error(f"Silent exception caught: {e}", exc_info=True)
         
         # 2. Case: Not found -> Auto-Spawn
         if not found_genes:
@@ -492,7 +492,7 @@ class HybridScalpingStrategy(Strategy):
                     if inds:
                         timeframe_data[tf] = {'data': data, 'inds': inds}
             except Exception as e:
-                logger.debug(f"Silent exception caught: {e}")
+                logger.error(f"Silent exception caught: {e}", exc_info=True)
         
         return timeframe_data
 
@@ -1471,8 +1471,9 @@ class HybridScalpingStrategy(Strategy):
                             "tech_long_active": 0,
                             "tech_short_active": 0
                         })
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                     continue
                 else:
                     try:
@@ -1481,8 +1482,9 @@ class HybridScalpingStrategy(Strategy):
                             "tech_long_active": 1 if signal_type == SignalType.LONG else 0,
                             "tech_short_active": 1 if signal_type == SignalType.SHORT else 0
                         })
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 
                 # 🔮 FASE 5: MULTI-COIN ORACLE (LEAD-LAG ARBITRAGE) + CROSS-EXCHANGE
                 # 1. Macro BTC Bias
@@ -1495,7 +1497,8 @@ class HybridScalpingStrategy(Strategy):
                         elif btc_vel < -0.005 and signal_type == SignalType.SHORT:
                             logger.critical(f"📉 [MULTI-COIN ORACLE] BTC Velocity NEGATIVA ({btc_vel:.4f}). Technical SHORT acelerado en {symbol}!")
                     except Exception as e:
-                        pass
+                        import logging
+                        logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                         
                 # 2. Micro Cross-Exchange PDC Bias (Coinbase/Deribit/Bybit)
                 cross_exchange_bypass = False
@@ -1513,7 +1516,8 @@ class HybridScalpingStrategy(Strategy):
                             cross_exchange_bypass = True
                             if 'strength' in locals(): strength = min(1.0, strength + 0.2)
                 except Exception as e:
-                    pass
+                    import logging
+                    logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 
                 # ═══════════════════════════════════════════════════
                 # Mutación 39: BAYESIAN MIRAGE (SPOOFING VETO)
@@ -1588,7 +1592,8 @@ class HybridScalpingStrategy(Strategy):
                                     btc_vel_bypass = True
                                     logger.critical(f"📉 [MULTI-COIN ORACLE] Ignorando Veto Macro para {symbol} SHORT debido a BTC Velocity ({btc_vel:.4f}).")
                             except Exception as e:
-                                pass
+                                import logging
+                                logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                                 
                         if btc_vel_bypass or cross_exchange_bypass:
                             pass # We ignore the veto completely
@@ -2245,7 +2250,7 @@ class HybridScalpingStrategy(Strategy):
                     logger.debug(f"🧠 [Q-LEARNING] Adjusted TP/SL -> Action {action_idx} ({tp_q_mult}x, {sl_q_mult}x)")
                     _metadata['q_action'] = action_idx
                 except Exception as e:
-                    logger.debug(f"Q-Learning hook failed: {e}")
+                    logger.error(f"Q-Learning hook failed: {e}", exc_info=True)
 
                 
                 # ════════════════════════════════════════════════════════════════

@@ -625,7 +625,8 @@ class BinanceExecutor:
                 async with self.http_session.post(url, headers=headers) as resp:
                     pass # Execution confirmation handled by WebSocket User Data stream
             except Exception as e:
-                pass
+                import logging
+                logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 
         import asyncio
         asyncio.create_task(_fire_and_forget())
@@ -697,8 +698,9 @@ class BinanceExecutor:
                     elif side_str == 'SHORT' and pdc > 0.6:
                         logger.critical(f"🛑 [LATE-VETO] Ejecución SHORT abortada en {event.symbol} por pump repentino en Coinbase/Deribit (PDC: {pdc:.2f})")
                         return
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
         
         # 🧬 [Phase 19] SHADOW MODE INTERCEPTION
         # If this is a Shadow Order, we DO NOT send it to Binance.
@@ -920,7 +922,8 @@ class BinanceExecutor:
                                     price = current_price * 0.9995 # Bid side
                                     # Modified local order_type instead of frozen event
                 except Exception as e:
-                    pass # Non-critical
+                    import logging
+                    logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True) # Non-critical
                 
                 # --- PHASE 14: SMART-ORDER ROUTING (SOR) ---
                 # Decide order type based on urgency and rebate priority
@@ -1922,8 +1925,9 @@ class BinanceExecutor:
                         primary_balance = float(asset['balance'])
                         logger.info(f"  (Fallback) Balance: ${primary_balance:,.2f}")
                         break
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
         
         # ===================================================================
         # 2. COIN-M Futures - ACCOUNT INFORMATION

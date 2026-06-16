@@ -1,215 +1,230 @@
+#!/usr/bin/env python3
+"""
+===============================================================================
+ GOD MODE SURROGATE: EVOLUTIVO, ADAPTATIVO E INTEGRAL (NEURAL EDITION)
+===============================================================================
+QUÉ: El oráculo supremo de optimización (Surrogate + Numba + Optuna).
+     Ahora es 100% consciente de los horizontes de inversión (SCALPING vs SWING).
+     Simula EL SISTEMA COMPLETO optimizando los 100 Pesos del Neural Bridge.
+     Diseñado específicamente para portátiles de bajos recursos (vectorización total).
+"""
+
 import os
 import sys
 import time
+import logging
+import warnings
 import numpy as np
 import optuna
-import lightgbm as lgb
-import pandas as pd
+import argparse
 import json
+import gc
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+warnings.filterwarnings("ignore", category=UserWarning)
+# Optimización para portátil sin GPU y pocos recursos:
+os.environ["OMP_NUM_THREADS"] = "4"
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.genotype import Genotype
-from core.simulation import SimDataProvider, SimulationEngine
+from core.surrogate_engine import ParetoSurrogateEnsemble
+from core.simulation_multifidelity import run_neural_fidelity
+from core.backtest_infra import fetch_multi_symbol_data
 
-class ParetoSurrogateEnsemble:
-    def __init__(self):
-        self.lgb_performance = None
-        self.lgb_risk = None
-        self.lgb_robustness = None
-        
-        self.max_score = 0
-        
-    def train(self, X, y_perf, y_risk, y_rob):
-        params = {'objective': 'regression', 'metric': 'rmse', 'verbose': -1, 'n_jobs': -1}
-        self.lgb_performance = lgb.train(params, lgb.Dataset(X, label=y_perf), num_boost_round=100)
-        self.lgb_risk = lgb.train(params, lgb.Dataset(X, label=y_risk), num_boost_round=100)
-        self.lgb_robustness = lgb.train(params, lgb.Dataset(X, label=y_rob), num_boost_round=100)
-        self.max_score = max(y_perf)
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+logger = logging.getLogger("GodModeIntegral")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - [%(levelname)s] - %(message)s')
 
-    def predict(self, X):
-        return (
-            self.lgb_performance.predict(X),
-            self.lgb_risk.predict(X),
-            self.lgb_robustness.predict(X)
-        )
+class HorizonConfig:
+    """Configuraciones separadas para asegurar que Scalping y Swing no se pisen."""
+    SCALPING = {
+        'tp_pct': (0.001, 0.015),    # Micro ganancias rápidas
+        'sl_pct': (0.001, 0.010),    # Riesgo ultrabajo (cuenta de 13 USD)
+        'w_range': (-100.0, 100.0)   # Aumentado para romper softmax flatness
+    }
+    SWING = {
+        'tp_pct': (0.020, 0.150),    # Movimientos macro
+        'sl_pct': (0.015, 0.050),    # Holgura para volatilidad estructural
+        'w_range': (-100.0, 100.0)   # Aumentado para romper softmax flatness
+    }
+
+def generate_random_params(num_samples: int, horizon: str) -> np.ndarray:
+    """
+    Genera 102 variables: [tp_pct, sl_pct, w_0, w_1, ..., w_99]
+    """
+    conf = HorizonConfig.SCALPING if horizon == 'scalping' else HorizonConfig.SWING
+    tp = np.random.uniform(*conf['tp_pct'], num_samples)
+    sl = np.random.uniform(*conf['sl_pct'], num_samples)
+    
+    # 100 Neural Weights (25 inputs x 4 outputs)
+    weights = np.random.uniform(*conf['w_range'], (num_samples, 100))
+    
+    # Concatenar a forma (num_samples, 102)
+    return np.column_stack((tp, sl, weights))
 
 class GodModeSurrogate:
-    def __init__(self):
-        self.surrogate = ParetoSurrogateEnsemble()
-        self.base_genes = Genotype(symbol='MOCK').genes
+    def __init__(self, symbol: str, closes_arr: np.ndarray, horizon: str):
+        self.symbol = symbol
+        self.closes_arr = closes_arr
+        self.horizon = horizon
+        self.surrogate = ParetoSurrogateEnsemble(n_estimators=100) # Reducido para ahorrar RAM
         
-    def generate_dummy_data(self):
-        # 10,000 velas = F4 (Full)
-        n_candles = 10000
-        returns = np.random.normal(0.0001, 0.002, n_candles)
-        closes = 100.0 * np.exp(np.cumsum(returns))
-        df = pd.DataFrame({
-            'timestamp': pd.date_range(start='2026-01-01', periods=n_candles, freq='1min'),
-            'open': closes,
-            'high': closes * 1.001,
-            'low': closes * 0.999,
-            'close': closes,
-            'volume': np.random.uniform(10, 1000, n_candles)
-        })
-        return SimDataProvider({'BTCUSDT': df})
+    def _evaluate_param(self, p: np.ndarray, fidelity: str) -> dict:
+        tp_pct = p[0]
+        sl_pct = p[1]
+        # Reformatear pesos a matriz (25, 4)
+        weights_matrix = p[2:].reshape(25, 4)
+        return run_neural_fidelity(self.closes_arr, tp_pct, sl_pct, weights_matrix, fidelity)
 
-    def dict_to_vector(self, params):
-        # Flatten all scalar params to a vector for LGBM
-        vec = []
-        for k in sorted(self.base_genes.keys()):
-            val = params.get(k, self.base_genes[k])
-            if isinstance(val, (int, float)):
-                vec.append(val)
-        return vec
-
-    def run_bare_metal(self, engine, params, max_candles=None):
-        geno = Genotype(symbol='BTCUSDT', genes=params)
-        trades = engine.run(geno, 'BTCUSDT', max_candles=max_candles)
+    def phase_explore(self):
+        logger.info(f"[{self.horizon.upper()}] FASE 0: Recolectando 500 simulaciones NEURALES (F2) para entrenar el Cerebro Surrogate...")
+        warmup_params = generate_random_params(500, self.horizon)
         
-        if not trades:
-            return 0.0, -1.0, 0.0 # Score, Risk, Rob
+        y_pnl, y_dd, y_wr = [], [], []
+        valid_warmup = 0
+        for p in warmup_params:
+            res = self._evaluate_param(p, 'F2')
+            y_pnl.append(res['pnl'] if res['trades'] > 0 else 0.0)
+            y_dd.append(res['max_dd'] if res['trades'] > 0 else 1.0)
+            y_wr.append(res['win_rate'] if res['trades'] > 0 else 0.0)
+            if res['trades'] > 0:
+                valid_warmup += 1
+                
+        logger.info(f"[{self.horizon.upper()}] Simulaciones F2 con trades válidos: {valid_warmup}/500")
+        self.surrogate.train(warmup_params, np.array(y_pnl), np.array(y_dd), np.array(y_wr))
+
+    def phase_exploit(self):
+        # 1 millón para pesos neuronales es muy manejable. (102 dims * 1M * 8 bytes = ~800 MB)
+        VIRTUAL_SAMPLES = 1_000_000 
+        logger.info(f"[{self.horizon.upper()}] FASE 1: Generando {VIRTUAL_SAMPLES:,} configs virtuales 102D (Neural Matrix)...")
+        virtual_params = generate_random_params(VIRTUAL_SAMPLES, self.horizon)
+        
+        # Filtra las mejores usando Machine Learning instantáneo
+        top_10k_params, _ = self.surrogate.filter_promising_configs(virtual_params, top_k=10000)
+        logger.info(f"[{self.horizon.upper()}] ✅ Top 10,000 extraídas de la matriz virtual.")
+        
+        # Limpiamos para salvar RAM
+        del virtual_params
+        gc.collect()
+        
+        logger.info(f"[{self.horizon.upper()}] FASE 2: Filtrado F1 (Micro-Backtests NEURALES) de las Top 10,000...")
+        f1_results = []
+        t0 = time.time()
+        for p in top_10k_params:
+            res = self._evaluate_param(p, 'F1')
+            f1_results.append(res['pnl'] if res['trades'] > 0 else -100.0)
+        logger.info(f"[{self.horizon.upper()}] ✅ F1 completado en {time.time()-t0:.2f}s.")
+        
+        top_1k_indices = np.argsort(f1_results)[::-1][:1000]
+        return top_10k_params[top_1k_indices]
+
+    def phase_validate(self, top_1k_params):
+        logger.info(f"[{self.horizon.upper()}] FASE 3: Validación F4 final usando Optuna TPE sobre pesos neuronales.")
+        db_path = f'sqlite:///data/god_mode_{self.horizon}.db'
+        study_name = f'GM_NEURAL_{self.horizon}_{self.symbol.replace("/", "")}'
+        
+        study = optuna.create_study(
+            direction='maximize',
+            study_name=study_name,
+            sampler=optuna.samplers.TPESampler(),
+            storage=optuna.storages.RDBStorage(url=db_path, engine_kwargs={"connect_args": {"timeout": 60}}),
+            load_if_exists=True
+        )
+        
+        # Inyectar el Top 50 del filtro cuántico
+        conf = HorizonConfig.SCALPING if self.horizon == 'scalping' else HorizonConfig.SWING
+        for p in top_1k_params[:50]:
+            trial_dict = {'tp_pct': float(p[0]), 'sl_pct': float(p[1])}
+            for i in range(100):
+                trial_dict[f'w_{i}'] = float(p[2+i])
+            study.enqueue_trial(trial_dict)
             
-        pnl = [t.pnl_pct for t in trades]
-        total_pnl = sum(pnl)
-        win_rate = sum(1 for t in trades if t.is_win) / len(trades)
-        
-        # Drawdown max (simplified)
-        cum_pnl = np.cumsum(pnl)
-        peak = np.maximum.accumulate(cum_pnl)
-        drawdown = peak - cum_pnl
-        max_dd = np.max(drawdown) if len(drawdown) > 0 else 0
-        
-        score = total_pnl * win_rate
-        return float(score), float(-max_dd), float(win_rate) # Risk is inverse DD (higher is better)
-
-    def phase_explore(self, engine, n_trials=50):
-        print(f"\n[FASE F4 Exploratoria] Muestreo Bare Metal {n_trials} trials...")
-        X, y_perf, y_risk, y_rob = [], [], [], []
-        
-        for _ in range(n_trials):
-            params = self.base_genes.copy()
-            # Mutate slightly
-            params['tp_pct'] = np.random.uniform(0.01, 0.05)
-            params['sl_pct'] = np.random.uniform(0.01, 0.05)
-            # Fill brain weights properly for execution
-            params['brain_weights'] = np.random.uniform(-1, 1, 100).tolist()
-            
-            score, risk, rob = self.run_bare_metal(engine, params, max_candles=10000)
-            X.append(self.dict_to_vector(params))
-            y_perf.append(score)
-            y_risk.append(risk)
-            y_rob.append(rob)
-            
-        return np.array(X), np.array(y_perf), np.array(y_risk), np.array(y_rob)
-
-    def phase_exploit(self, engine, n_virtual_trials=100000):
-        print(f"\n[FASE F0-F3 Multi-Fidelidad] Optuna TPE Hyperband con {n_virtual_trials} trials...")
-        start_t = time.time()
-        
-        # The fidelity steps: 1: F1 (100 candles), 2: F2 (1000 candles), 3: F3 (5000 candles)
-        steps_candles = {1: 100, 2: 1000, 3: 5000}
-        
         def objective(trial):
-            params = self.base_genes.copy()
-            for k, val in self.base_genes.items():
-                if isinstance(val, int):
-                    params[k] = trial.suggest_int(k, max(1, val//2), int(val*1.5) + 1)
-                elif isinstance(val, float):
-                    if val < 1.0:
-                        params[k] = trial.suggest_float(k, 0.001, 0.1)
-                    else:
-                        params[k] = trial.suggest_float(k, val/2.0, val*1.5)
-                        
-            # Set dummy brain weights for trial run
-            params['brain_weights'] = np.random.uniform(-1, 1, 100).tolist()
+            tp_pct = trial.suggest_float('tp_pct', *conf['tp_pct'])
+            sl_pct = trial.suggest_float('sl_pct', *conf['sl_pct'])
             
-            vec = self.dict_to_vector(params)
-            
-            # FASE F0 (Surrogate Pareto Filter)
-            p_score, p_risk, p_rob = self.surrogate.predict([vec])
-            p_score, p_risk, p_rob = p_score[0], p_risk[0], p_rob[0]
-            
-            # Anti-Hallucination + Risk Check
-            # We relax conditions if the base performance is zero
-            if self.surrogate.max_score > 0.001:
-                if p_score < self.surrogate.max_score * 0.1 or p_risk < -0.20 or p_rob < 0.30:
-                    raise optuna.TrialPruned() # Cortado instantáneo en F0 (0 ms de coste CPU real)
-            
-            # Si sobrevive F0, entramos a la escalera de fidelidad
-            last_score = p_score
-            for step in range(1, 4):
-                mc = steps_candles[step]
-                score, risk, rob = self.run_bare_metal(engine, params, max_candles=mc)
+            # Neural Weights
+            weights = np.zeros(100, dtype=np.float64)
+            for i in range(100):
+                weights[i] = trial.suggest_float(f'w_{i}', *conf['w_range'])
                 
-                trial.report(score, step)
-                if trial.should_prune():
-                    raise optuna.TrialPruned()
-                    
-                last_score = score
-                
-            return last_score
-
-        pruner = optuna.pruners.HyperbandPruner(min_resource=1, max_resource=3, reduction_factor=3)
-        study = optuna.create_study(direction='maximize', pruner=pruner)
-        optuna.logging.set_verbosity(optuna.logging.WARNING)
-        
-        study.optimize(objective, n_trials=n_virtual_trials, n_jobs=1)
-        
-        print(f"✅ Optuna completó la búsqueda Multi-Fidelidad en {time.time()-start_t:.2f}s.")
-        
-        trials = sorted([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE], key=lambda x: x.value, reverse=True)
-        return trials[:10]
-
-    def phase_validate(self, engine, top_trials):
-        print("\n[FASE F4] Validando el Top 10 en Dataset Completo (10,000 Velas)...")
-        best_score = -999
-        best_params = None
-        
-        for idx, t in enumerate(top_trials):
-            params = self.base_genes.copy()
-            for k, v in t.params.items():
-                params[k] = v
-            params['brain_weights'] = np.random.uniform(-1, 1, 100).tolist()
+            weights_matrix = weights.reshape(25, 4)
+            res = run_neural_fidelity(self.closes_arr, tp_pct, sl_pct, weights_matrix, 'F4')
             
-            score, risk, rob = self.run_bare_metal(engine, params, max_candles=None)
-            print(f"  Validando Trial #{t.number} -> F4 Score: {score:.4f} (Risk: {risk:.4f}, Rob: {rob:.4f})")
+            score = res['pnl']
             
-            if score > best_score:
-                best_score = score
-                best_params = params
+            # Penalizaciones Inteligentes y Suaves
+            min_trades = 20 if self.horizon == 'scalping' else 5
+            if res['trades'] < min_trades:
+                score -= (min_trades - res['trades']) * 50.0  # Fuerte castigo por inactividad
                 
-        print(f"\n👑 SANTO GRIAL ENCONTRADO. Score Final: {best_score:.4f}")
-        
-        if best_params:
-            out_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config', 'genotypes'))
-            os.makedirs(out_dir, exist_ok=True)
-            with open(os.path.join(out_dir, 'god_mode_best.json'), 'w') as f:
-                json.dump(best_params, f, indent=4)
-            print(f"✅ Guardado en {out_dir}/god_mode_best.json")
+            # Rigidez Extrema en el Drawdown por tener capital limitado (13 USD)
+            max_allowed_dd = 0.02 if self.horizon == 'scalping' else 0.08
+            if res['max_dd'] > max_allowed_dd:
+                score -= (res['max_dd'] - max_allowed_dd) * 200.0
+                
+            # Exigencia CUÁNTICA de Win Rate para scalping
+            if self.horizon == 'scalping':
+                if res['win_rate'] < 98.0:
+                    score -= (100.0 - res['win_rate']) * 100.0  # Penalización destructiva
+                
+            return score
 
+        t_opt = time.time()
+        study.optimize(objective, n_trials=100, n_jobs=1)
+        
+        logger.info(f"[{self.horizon.upper()}] 🏆 F4 Finalizado en {time.time()-t_opt:.2f}s!")
+        logger.info(f"[{self.horizon.upper()}] 👑 MEJOR SCORE PnL: {study.best_value:.4f}")
+        
+        # Extraer parámetros para JSON
+        best = study.best_trial.params
+        final_genotype = {
+            'symbol': self.symbol,
+            'horizon': self.horizon,
+            'genes': {
+                'tp_pct': best['tp_pct'],
+                'sl_pct': best['sl_pct'],
+                'brain_weights': [best[f'w_{i}'] for i in range(100)]
+            }
+        }
+        
+        out_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config', 'genotypes'))
+        os.makedirs(out_dir, exist_ok=True)
+        file_path = os.path.join(out_dir, f'god_mode_{self.horizon}_{self.symbol.replace("/", "")}.json')
+        with open(file_path, 'w') as f:
+            json.dump(final_genotype, f, indent=4)
+        logger.info(f"[{self.horizon.upper()}] 💾 Genotipo Integral NEURAL Guardado en: {file_path}")
+        
+        # Limpieza activa de RAM
+        del study
+        gc.collect()
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--days', type=int, default=30, help="Días de historial real de Binance")
+    args = parser.parse_args()
+    
     print("==================================================")
-    print("⚛️ GOD MODE SURROGATE: MULTI-FIDELITY SUPREME")
+    print("🧠 GOD MODE SURROGATE: NEURAL INTEGRAL EDITION")
     print("==================================================")
     
-    god = GodModeSurrogate()
-    engine = SimulationEngine(god.generate_dummy_data())
+    TARGET_COINS = ["BTC/USDT", "ETH/USDT"]
+    logger.info(f"📡 Descargando datos masivos reales de Binance (últimos {args.days} días)...")
+    all_data = fetch_multi_symbol_data(TARGET_COINS, args.days, max_workers=2)
     
-    # FASE 0: Recolectar datos y Entrenar Pareto Ensemble
-    X, y_perf, y_risk, y_rob = god.phase_explore(engine, n_trials=50)
-    print("\n[FASE Entrenamiento] Entrenando Pareto Ensemble Multiobjetivo...")
-    god.surrogate.train(X, y_perf, y_risk, y_rob)
-    
-    # FASE MULTI-FIDELITY
-    top_trials = god.phase_exploit(engine, n_virtual_trials=2000) # 2k trials para test
-    
-    # FASE VALIDACION
-    if top_trials:
-        god.phase_validate(engine, top_trials)
-    else:
-        print("❌ Ningún genoma sobrevivió la poda Hyperband.")
+    for symbol in TARGET_COINS:
+        if symbol in all_data and not all_data[symbol].empty:
+            closes = np.ascontiguousarray(all_data[symbol]['close'].values, dtype=np.float64)
+            
+            # Ejecutar de forma Integral y Separada: Scalping y Swing NO se pisan
+            for horizon in ['scalping', 'swing']:
+                print(f"\n" + "="*50)
+                print(f"🚀 INICIANDO EVOLUCIÓN NEURAL PARA: {symbol} | MODO: {horizon.upper()}")
+                print("="*50)
+                god = GodModeSurrogate(symbol, closes, horizon)
+                god.phase_explore()
+                top_1k = god.phase_exploit()
+                god.phase_validate(top_1k)
+                
+    print("\n✅ OPTIMIZACIÓN INTEGRAL NEURAL COMPLETADA PARA TODOS LOS ACTIVOS Y HORIZONTES.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -462,7 +462,8 @@ class RiskManager:
                     atr_pct = (atr / c[-1]) * 100
                     atr_pcts[sym] = atr_pct
             except Exception as e:
-                pass
+                import logging
+                logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 
         if not atr_pcts:
             return clusters
@@ -1446,7 +1447,7 @@ class RiskManager:
                 q_agent.update_q_value(state_key, action_idx, reward, state_key)
                 del q_agent.pending_trades[symbol]
         except Exception as e:
-            logger.debug(f"Q-Learning hook failed: {e}")
+            logger.error(f"Q-Learning hook failed: {e}", exc_info=True)
 
         # Optional: Limit cache growth to last 1000 trades for performance
         if len(self._trade_cache) > 1000:
@@ -1481,7 +1482,7 @@ class RiskManager:
                     symbol=symbol, is_win=is_win, pnl_pct=pnl_pct
                 )
             except Exception as _pt_err:
-                logger.debug(f"PredictionTracker outcome error: {_pt_err}")
+                logger.error(f"PredictionTracker outcome error: {_pt_err}", exc_info=True)
 
         # ⚡ PHASE OMNI: TICK-LEVEL KELLY RECALCULATION
         # Uses a rolling window of last 50 trades for responsive sizing
@@ -1606,7 +1607,7 @@ class RiskManager:
 
             self.last_stress_check = now
         except Exception as e:
-            logger.debug(f"Silent exception caught: {e}")
+            logger.error(f"Silent exception caught: {e}", exc_info=True)
 
     def _calculate_dynamic_stop_loss(
         self, atr_pct: float, horizon: str = "SCALPING"
@@ -2327,8 +2328,9 @@ class RiskManager:
                     message=f"Risk Veto: {reason}",
                     regime=self.current_regime
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
         return None
 
     # ═══════════════════════════════════════════════════════════════
@@ -2679,7 +2681,8 @@ class RiskManager:
                         logger.debug(f"🛡️ [HYPERGRAPH] Rejecting {signal_event.symbol} due to high systemic load ({systemic_load:.2f})")
                         return self._reject_trade(signal_event, RejectionReason.SYSTEMIC_LOAD)
         except Exception as e:
-            pass
+            import logging
+            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
             
                     
         # 2. Market Sentiment Veto
@@ -4051,7 +4054,7 @@ class RiskManager:
                     else:
                         hold_votes.append({"vote": "HOLD", "reason": "LIFECYCLE: HEALTHY"})
                 except Exception as e:
-                    logger.debug(f"[LIFECYCLE] Error evaluating {symbol}: {e}")
+                    logger.error(f"[LIFECYCLE] Error evaluating {symbol}: {e}", exc_info=True)
 
             # LONG POSITION
             if qty > 0:
@@ -4303,8 +4306,9 @@ class RiskManager:
                             atr_vals = calculate_atr_jit(highs, lows, closes, period=14)
                             if len(atr_vals) > 0 and not np.isnan(atr_vals[-1]) and closes[-1] > 0:
                                 atr_pct = (atr_vals[-1] / closes[-1]) * 100
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            import logging
+                            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 # 📈 TRAILING ENGINE V7 INTEGRATION
                 pos['pos_side'] = 'LONG'
                 trail_res = self.trailing_engine.evaluate_trailing_mechanisms(
@@ -4561,8 +4565,9 @@ class RiskManager:
                             atr_vals = calculate_atr_jit(highs, lows, closes, period=14)
                             if len(atr_vals) > 0 and not np.isnan(atr_vals[-1]) and closes[-1] > 0:
                                 atr_pct = (atr_vals[-1] / closes[-1]) * 100
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            import logging
+                            logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 
                 # 📈 TRAILING ENGINE V7 INTEGRATION
                 pos['pos_side'] = 'SHORT'

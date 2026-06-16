@@ -87,7 +87,8 @@ class SignalScorer:
                     wr = metrics['win_rate']
                     # WR 0.5 = 7.5p, WR 0.7 = 10.5p, WR 1.0 = 15p
                     wr_score = wr * 15.0
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Swallowed exception ghost bug: {e}")
             pass
         breakdown['history'] = wr_score
         total_score += wr_score
@@ -103,7 +104,8 @@ class SignalScorer:
                 derivs = dh.get_derivatives_metrics(event.symbol)
                 funding_rate = derivs.get('funding_rate', 0.0)
                 breakdown['funding_rate'] = funding_rate
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Swallowed exception ghost bug: {e}")
             pass
 
         if now_utc.hour in (23, 7, 15) and now_utc.minute >= 40:
@@ -130,7 +132,8 @@ class SignalScorer:
                     liq_score = 8.0
                 elif spread_pct > 0.002: # > 0.2% = Malo
                     liq_score = 0.0
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Swallowed exception ghost bug: {e}")
             pass
         breakdown['liquidity'] = liq_score
         total_score += liq_score
@@ -147,7 +150,8 @@ class SignalScorer:
                     of_score = 10.0
                 elif (_dir == 'LONG' and oi_delta < 0) or (_dir == 'SHORT' and oi_delta > 0):
                     of_score = 2.0
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Swallowed exception ghost bug: {e}")
             pass
         breakdown['orderflow'] = of_score
         total_score += of_score
@@ -216,7 +220,7 @@ class SignalScorer:
         elif getattr(event, 'metadata', None) and 'tp_pct' in event.metadata:
             expected_gain_pct = event.metadata['tp_pct']
             
-        if expected_gain_pct == 0.0:
+        if expected_gain_pct <= 1e-9:
             # Si la señal no proyecta nada, veto absoluto en modo antifrágil
             return False, f"Sin proyeccion TP/Magnitud. Required > {required_pct*100:.3f}%"
             

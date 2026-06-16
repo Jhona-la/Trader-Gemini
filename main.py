@@ -61,6 +61,7 @@ except ImportError as e:
     
 import argparse
 import logging
+from utils.logger import logger
 from datetime import datetime, timezone
 from typing import List, Dict
 from dataclasses import dataclass

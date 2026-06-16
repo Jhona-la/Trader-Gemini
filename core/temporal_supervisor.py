@@ -190,6 +190,8 @@ class TemporalSupervisor:
                             "amount": injection_amount,
                             "ratio": ratio
                         })
+                        if len(self.state.injections) > 100:
+                            self.state.injections.pop(0)
                         
                         try:
                             from core.omniscient_registry import registry
