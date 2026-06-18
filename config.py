@@ -60,13 +60,13 @@ class OmniscientRegistry:
     Enforces priority of FIXED values over ADAPTIVE adjustments.
     """
     FIXED_VALUES = {
-        'MAX_DRAWDOWN': 35.0,               # Max Drawdown before emergency stop (increased for micro accounts)
-        'MAX_RISK_PER_TRADE': 0.05,         # 5% max risk per trade
+        'MAX_DRAWDOWN': 35.0,               # Techo térmico de supervivencia (35%)
+        'MAX_RISK_PER_TRADE': 0.25,         # F-Kelly Hard Cap Termodinámico (25%) - Permite crecimiento exponencial
         'MIN_NOTIONAL_USD': 5.05,           # Binance minimum order notional
         'MAX_LEVERAGE': 20,                 # Maximum allowed leverage
-        'MAX_CONCURRENT_POSITIONS': 10,     # Top 10 All-in distribution
+        'MAX_CONCURRENT_POSITIONS': 3,      # Sniper Mode: Top 3 Conviction Trades All-in
         'MAX_SL_PCT_LIMIT': 0.05,           # Hard limit for Stop Loss (5%)
-        'MIN_PROFIT_AFTER_FEES': 0.0015,    # Minimum viability net threshold ( lowered to 0.15% for Scalping )
+        'MIN_PROFIT_AFTER_FEES': 0.0015,    # Floor viability
     }
 
     def __init__(self, config_ref):
@@ -136,26 +136,26 @@ class Config(metaclass=EncryptedConfigMeta):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DEBUG_TRACE_ENABLED = False
     
+    # [FASE III: MODO SOMBRA (Shadow Deployment)]
+    # QUÉ: Flag que indica si el sistema interceptará las órdenes en BinanceExecutor.
+    # POR QUÉ: Permite ingestar data real, WebSockets reales y calcular
+    #   todas las comisiones (0.05% Taker) guardando el PnL Fantasma en el
+    #   Flight Recorder sin arriesgar capital real.
+    SHADOW_MODE = os.getenv('TG_SHADOW_MODE', '0') == '1'
+    
     # [PHASE 15: CONCURRENCY ISOLATION]
     # ENV_ID prefix isolates execution paths for parallel DBs, logs, and locks.
     # By default it is empty (production mode).
     ENV_ID = os.getenv('TG_ENV_ID', '')
 
     # ════════════════════════════════════════════════════════════════
-    # 🎯 INTEGRAL MODE — CONSENSUS-BASED OPERATION
-    # QUÉ: Flag que mantiene protecciones de micro-cuenta ($13) activas
-    #   mientras permite que TODAS las estrategias operen en consenso.
-    # POR QUÉ: LEAN_MODE v1 amputó estrategias (0 ML). Ahora usamos
-    #   Consenso Ponderado v1.0: ninguna estrategia tiene veto absoluto.
-    #   Sophia/Oracle PENALIZAN strength pero no BLOQUEAN.
-    # PARA QUÉ: Sistema integral — scalping + swing + ML + técnica
-    #   trabajando juntas. Position Rotation libera margin automáticamente.
-    # CÓMO: LEAN_MODE=True preserva: wider kill switch (35% DD),
-    #   margin cap 95%, wider headroom floors. ML re-habilitado.
+    # 🎯 SINGULARITY MODE — ZERO CONSENSUS, PURE EDGE
+    # QUÉ: Extirpación del modo "Lean" conservador. Las estrategias no
+    #   necesitan consensuar. Un trade de 86% de WR se ejecuta sin veto.
     # ════════════════════════════════════════════════════════════════
-    LEAN_MODE = False  # Set to False to run ALL strategies (Full Mode)
-    ACTIVE_TRADING_LIMIT = 10  # Solo opera los Top 10, mide los siguientes 16
-    LEAN_ML_ENABLED = True  # ML Strategy: Re-enabled to restore predictive power
+    # LEAN_MODE REMOVED - The concept of blocking 86% WR trades via consensus is eradicated.
+    ACTIVE_TRADING_LIMIT = 3  # Sniper Mode: Concentramos el poder en el Top 3
+    LEAN_ML_ENABLED = True  # ML Strategy: The core of the Quantum Guardian
     LEAN_TRADING_PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "ADA/USDT", "AVAX/USDT", "LINK/USDT", "LTC/USDT"]  # Focus on Top 10 liquidity
 
 
@@ -484,13 +484,14 @@ class Config(metaclass=EncryptedConfigMeta):
     # === RISK CAPITOL HIERARCHY (USER RULE PRESERVATION) ===
     class Risk:
         MAX_DRAWDOWN = 35.0           # 35.0% max drawdown (SOVEREIGN LIMIT) - Increased from 15% for $13 micro-accounts
+        MIN_NOTIONAL_USD = 5.0  # Limite físico Binance para futuros
         DEFAULT_BOOTSTRAP_WR = 0.52 
         BOOTSTRAP_TRADES = 20
         MAX_RISK_PER_TRADE = 0.19  
         STOP_LOSS_PCT = 0.02       
         MAX_SLIPPAGE_PCT = 0.001
         USE_PREDICTIVE_TP = False     # CIRUGÍA-V100: DISABLED — net PnL -4.65 after fees (769 trades, 47% WR). Trailing stops are superior.
-        TOXIC_ASSETS = ["DOT/USDT", "ATOM/USDT", "XRP/USDT"]  # XRP blacklisted due to -1.30 PnL drag.
+        TOXIC_ASSETS = []  # Previously ["DOT/USDT", "ATOM/USDT", "XRP/USDT"]
         
         # ════════════════════════════════════════════════════════════════
         # 📈 DYNAMIC KELLY COMPOUNDING (Evolución Cuántica)
@@ -498,7 +499,7 @@ class Config(metaclass=EncryptedConfigMeta):
         # POR QUÉ: Permite multiplicar la cuenta arriesgando las ganancias.
         # ════════════════════════════════════════════════════════════════
         COMPOUNDING_ENABLED = True
-        COMPOUNDING_GROWTH_FACTOR = 1.0  # [QUANTUM EVOLUTION] Aumenta agresivamente el risk multiplier 1.0 por cada 5% de profit retenido para lograr 100% ROI en 3 días.
+        COMPOUNDING_GROWTH_FACTOR = 4.0  # [QUANTUM EVOLUTION] Aumenta agresivamente el risk multiplier 4.0 por cada 5% de profit retenido para lograr 100% ROI en 3 días.
         COMPOUNDING_PROFIT_STEP = 0.05    # Cada 5% de ganancia dispara un nuevo escalón de riesgo
         
         # ════════════════════════════════════════════════════════════════
@@ -548,6 +549,7 @@ class Config(metaclass=EncryptedConfigMeta):
 
     # === DATA CAPTURE AND MULTI-TIMEFRAME (PHASE 28) ===
     class Data:
+        RESOLUTION = "1m" # Required by technical.py and ml_strategy.py
         # Map backtest horizon (days) to optimal resolution
         # QUÉ: Mapeo de tiempo. POR QUÉ: Extraer ruido. PARA QUÉ: Rentabilidad Swing.
         HORIZON_RESOLUTION_MAP = {

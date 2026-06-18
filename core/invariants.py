@@ -38,7 +38,9 @@ class SystemInvariants:
         pos = global_state.get_open_position(intent.symbol, horizon=intent_horizon)
         if pos and pos.quantity != 0:
             if pos.direction != intent.direction and intent.direction != 'EXIT':
-                return False, f"Self-Hedging Blocked ({intent_horizon}): Existing {pos.direction}, Intent {intent.direction}"
+                # FORENSIC FIX: Allow reversal signals instead of blocking them as "Self-Hedging".
+                # The ExecutionEngine and Binance One-Way Mode will handle the reversal atomically.
+                return True, "Reversal intent allowed."
         return True, ""
 
     @staticmethod

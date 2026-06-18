@@ -103,7 +103,7 @@ class SniperStrategy(Strategy):
         """Forensic Time Fix: Return event timestamp if available, else system time"""
         return self._current_event_time if self._current_event_time else datetime.now(tz=timezone.utc)
         
-        logger.info(f"🎯 SNIPER [{horizon}] INITIALIZED | TP={self.TP_PCT*100:.2f}% SL={self.SL_PCT*100:.2f}% | RSI={self.RSI_PERIOD} | ATR_SL={self.ATR_SL_MULT}x ATR_TP={self.ATR_TP_MULT}x")
+        # logger.info(f"🎯 SNIPER INITIALIZED | TP={self.TP_PCT*100:.2f}% SL={self.SL_PCT*100:.2f}% | RSI={self.RSI_PERIOD} | ATR_SL={self.ATR_SL_MULT}x ATR_TP={self.ATR_TP_MULT}x")
     
     @validate_market_data
     @performance_timer
@@ -213,7 +213,7 @@ class SniperStrategy(Strategy):
         
         # D2 FIX: Use pre-fetched bars to avoid redundant API call
         bars = prefetched_bars if prefetched_bars is not None else self.data_provider.get_latest_bars(symbol, n=200, timeframe=self.primary_tf)
-        if len(bars) < 100:
+        if bars is None or len(bars) < 100:
             return None
         
         # Extract OHLCV — F6: Cast float32→float64 for talib compatibility
@@ -340,6 +340,17 @@ class SniperStrategy(Strategy):
         # =====================================================================
         volume_result = self._analyze_volume(volumes)
         volume_bonus = 1.2 if volume_result['is_strong'] else 1.0
+
+        # ── PEPITA #3: VPIN SCORE MULTIPLIER (Cython Zero-Latency) ──
+        try:
+            from core.metal.technical_fast import vpin_score_multiplier
+            vpin_value = order_flow.get('imbalance', 0.5) if order_flow else 0.5
+            sig_dir = 1 if layer_a_direction == 'LONG' else -1
+            flow_dir = 1 if (order_flow and order_flow.get('delta', 0) > 0) else -1
+            vpin_mult = vpin_score_multiplier(vpin_value, sig_dir, flow_dir)
+            volume_bonus *= vpin_mult
+        except ImportError:
+            pass
         
         # =====================================================================
         # LAYER C: Fee & Risk Validation
@@ -432,7 +443,7 @@ class SniperStrategy(Strategy):
             sophia_report_dict = sophia_report.to_dict()
         
         # FIXED: Pass ALL metadata in constructor (frozen dataclass)
-        signal_timestamp = getattr(event, 'timestamp', self._now()) if hasattr(self, 'event') else self._now() # fallback
+        signal_timestamp = self._now()
         # Wait, we don't have event in _analyze_symbol directly, let's just use datetime.now or pass it down.
         # Actually, let's just use datetime.now here. It's only for the SignalEvent creation time. 
         signal = SignalEvent(
@@ -454,8 +465,22 @@ class SniperStrategy(Strategy):
                 'delta': order_flow.get('delta', 0.0) if order_flow else 0.0,
                 'bayes_prob': float(bayes_prob),
                 'hurst': float(hurst),
-                'sophia': sophia_report_dict
+                'sophia': sophia_report_dict,
+                # ── PEPITA #4: KELLY ADAPTIVE SIZING ──────────────────────
+                # QUÉ: Propaga ml_confidence y strength al metadata del signal.
+                # POR QUÉ: RiskManager.size_position busca signal_metadata.get('ml_confidence')
+                #   para alimentar CompoundingEngine.get_quantum_kelly_fraction().
+                #   Sin esto, ml_conf=0.0 → Kelly negativo → probe mínimo 1% SIEMPRE.
+                # PARA QUÉ: Que el Kelly reciba la probabilidad real de victoria (Sophia o Bayes)
+                #   y calcule el sizing óptimo para crecimiento compuesto exponencial.
+                # CÓMO: Usar sophia.win_probability si existe, fallback a bayes_prob.
+                # CUÁNDO: En cada señal generada por SniperStrategy.
+                # DÓNDE: strategies/sniper_strategy.py → _analyze_symbol()
+                # QUIÉN: SniperStrategy → RiskManager → CompoundingEngine
+                'ml_confidence': sophia_report_dict.get('win_probability', float(bayes_prob)),
+                'strength': float(strength),
             }
+
         )
         
         return signal

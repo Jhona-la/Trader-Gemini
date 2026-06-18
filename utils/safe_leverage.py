@@ -8,6 +8,7 @@ import numpy as np
 from typing import Dict, Tuple, Optional
 from dataclasses import dataclass
 import logging
+from utils.statistics_pro import StatisticsPro
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,8 @@ class SafeLeverageCalculator:
         return self.PHASES[phase]['max_trades']
     
     def calculate_safe_leverage(self, atr: float, price: float, 
-                                win_rate: Optional[float] = None) -> Dict:
+                                win_rate: Optional[float] = None,
+                                shannon_entropy: float = 0.0) -> Dict:
         """
         Calcular leverage seguro basado en múltiples factores.
         
@@ -126,6 +128,7 @@ class SafeLeverageCalculator:
             atr: Average True Range del asset
             price: Precio actual
             win_rate: Win rate histórico (0-1), None para usar calculado
+            shannon_entropy: Entropía de Shannon de los retornos (0.0 = Predictable, >4.0 = High Noise)
         
         Returns:
             Dict con leverage recomendado y metadata
@@ -144,10 +147,10 @@ class SafeLeverageCalculator:
             
         atr_pct = (atr / price) * 100 if price and price > 0 else 999
         
-        # 3. Calcular win rate si no se proporciona
+        # 3. Calcular win rate si no se proporciona (Bayesian Kernel)
         if win_rate is None:
-            total = self.win_count + self.loss_count
-            win_rate = self.win_count / total if total > 0 else 0.5
+            # Use Bayesian Win Rate from StatisticsPro to prevent 100% win rate bias on small sample
+            win_rate = StatisticsPro.bayesian_win_rate(self.win_count, self.loss_count, prior_alpha=5, prior_beta=5)
         
         # 4. Base leverage por volatilidad (CONSERVATIVE UPDATE Feb 2026)
         if atr_pct > 2.0:
@@ -180,6 +183,15 @@ class SafeLeverageCalculator:
             # Buena performance - bonus conservador
             leverage = min(config['max_leverage'], int(leverage * 1.2))
             reason += " | Good performance bonus"
+            
+        # 5.5. [DARK ALPHA] Ajuste Cuántico de Shannon Entropy
+        if shannon_entropy > 0.0:
+            if shannon_entropy > 3.5:
+                leverage = max(config['min_leverage'], int(leverage * 0.7))
+                reason += f" | High Noise Penalty (H={shannon_entropy:.2f})"
+            elif shannon_entropy < 1.5:
+                leverage = min(config['max_leverage'], int(leverage * 1.2))
+                reason += f" | Low Noise Bonus (H={shannon_entropy:.2f})"
         
         # 6. Ajustar por drawdown
         drawdown = (self.peak_capital - capital) / self.peak_capital if self.peak_capital > 0 else 0

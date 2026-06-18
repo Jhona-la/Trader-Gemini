@@ -104,6 +104,17 @@ try:
 except ImportError:
     _SOPHIA_AVAILABLE = False
 
+# ═══════════════════════════════════════════════════════════════
+# QUANTUM BRIDGE LOADER (Dynamic Loading for Rust Native Metal)
+# ═══════════════════════════════════════════════════════════════
+try:
+    from core.quantum_bridge import quantum_bridge
+    _QUANTUM_METAL_AVAILABLE = True
+    logger.info("⚛️ [QUANTUM BRIDGE] Metal Nativo detectado. Motor operando en O(1) Zero-Copy.")
+except ImportError:
+    _QUANTUM_METAL_AVAILABLE = False
+    logger.critical("⚠️ MODO DEGRADADO: Compiladores nativos no encontrados. Latencia en microsegundos.")
+
 try:
     import psutil
 except ImportError:
@@ -118,7 +129,7 @@ class PriorityBoundedQueue:
     def __init__(self, maxsize=5000):
         try:
             from core.nano_core import NanoPriorityQueue
-            self.event_queue = NanoPriorityQueue(capacity=10000)
+            self._queue = NanoPriorityQueue(capacity=10000)
             self._use_cython = True
         except ImportError:
             self._use_cython = False
@@ -155,7 +166,11 @@ class PriorityBoundedQueue:
         
         # Optimización HFT: Solo interactuamos con el Event si no está seteado
         if not self._event.is_set():
-            self._event.set()
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(self._event.set)
+            except RuntimeError:
+                self._event.set()
 
     async def get(self):
         """Wait for and get next item strictly respecting priority. Spin-yield optimized."""
@@ -185,6 +200,21 @@ class PriorityBoundedQueue:
     def empty(self):
         return self._items_count == 0
 
+    def get_nowait(self):
+        """Fast synchronous retrieval for burst draining."""
+        if self._items_count > 0:
+            if self._use_cython:
+                item = self._queue.get()
+                if item is not None:
+                    self._items_count = self._queue.qsize()
+                    return item
+            else:
+                for p in range(3):
+                    if self._deques[p]:
+                        self._items_count -= 1
+                        return self._deques[p].popleft()
+        return None
+
     def task_done(self):
         pass # Not tracked for speed
 
@@ -213,9 +243,7 @@ class Engine:
         self.order_manager = None
         self.running = True
         
-        # ZMQ IPC Nodes
-        self.zmq_pull = None
-        self.zmq_push = None
+        # ZMQ IPC Nodes (REMOVED)
         
         # Strategy Coordination
         self._strategy_cooldowns = {}
@@ -243,6 +271,13 @@ class Engine:
         # CÓMO: Un solo timer a nivel de instancia, con reset via __init__ en cada ciclo.
         self._market_timer = QuantumTimer()
         
+        # 🧬 PHASE 7: EVOLUTIONARY BLUEPRINT LOADER
+        try:
+            from core.blueprint_loader import BlueprintLoader
+            BlueprintLoader.load_latest_blueprint()
+        except ImportError:
+            logger.warning("⚠️ [Engine] BlueprintLoader not found. Skipping evolutionary injection.")
+            
         # 🌑 PHASE 24: LAYER 0 OPTIMIZATION (Protocol Nadir-Soberano)
         OSTuner.optimize()
         
@@ -268,6 +303,10 @@ class Engine:
             self.rl_agent = NanoRLAgent(GenomeRegistry(Config))
         except ImportError:
             self.rl_agent = None
+
+        # [INYECCIÓN] Diagnóstico Neuronal
+        self._telemetry_ai_signals_raw = 0
+        self._telemetry_ai_signals_survived = 0
         # ═══════════════════════════════════════════════════════════════
         # AUDIT FIX: SOPHIA_MIN_CONFIDENCE was hardcoded to 0.70,
         # ignoring Config.Horizons.GlobalThresholds['sophia_win_prob_min'].
@@ -279,6 +318,7 @@ class Engine:
         try:
             self.SOPHIA_MIN_CONFIDENCE = Config.Horizons.GlobalThresholds.get('sophia_win_prob_min', 0.60)
         except Exception:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             self.SOPHIA_MIN_CONFIDENCE = 0.60
         if _SOPHIA_AVAILABLE:
             try:
@@ -286,6 +326,7 @@ class Engine:
                 self.sophia_intelligence.set_horizon_profile(1)  # Default: SCALPING
                 logger.info("🧠 [SOPHIA-GLOBAL] Intelligence engine attached to Engine pipeline.")
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 logger.warning(f"⚠️ [SOPHIA-GLOBAL] Failed to init: {e}")
                 self.sophia_intelligence = None
                 
@@ -298,6 +339,7 @@ class Engine:
         except ImportError:
             logger.warning("⚠️ [SHADOW] aits_research.shadow_bridge not found. Shadow mode disabled.")
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             logger.warning(f"⚠️ [SHADOW] Failed to init Shadow Bridge: {e}")
             
         # 🌌 PHASE 9: OMEGA PROTOCOL
@@ -309,6 +351,7 @@ class Engine:
         except ImportError:
             logger.warning("⚠️ [OMEGA] core.omega_protocol not found. Omega Protocol disabled.")
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             logger.warning(f"⚠️ [OMEGA] Failed to init Omega Protocol: {e}")
             
         # 🧬 PHASE 3: EVOLUTION ENGINE (Live Mutation & Módulo Omega)
@@ -327,6 +370,7 @@ class Engine:
                 logger.warning("⚠️ [SHADOW-DARWIN] Module not found. Evolution will be manual.")
                 
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             logger.warning(f"⚠️ [EVOLUTION] Failed to init EvolutionEngine: {e}")
             self.evolution_engine = None
             self.shadow_darwin = None
@@ -338,6 +382,7 @@ class Engine:
             from core.sentiment_processor import SentimentProcessor
             self.sentiment_processor = SentimentProcessor()
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             logger.warning(f"Failed to init SentimentProcessor: {e}")
             self.sentiment_processor = None
             
@@ -534,9 +579,8 @@ class Engine:
         if self.execution_handler and self.portfolio:
              asyncio.create_task(self._reconciliation_loop())
              
-        # 🔄 ZMQ IPC Bridge Loop
-        if self.zmq_pull:
-             asyncio.create_task(self._zmq_pull_loop())
+        # 💓 Start Dignified Death ZMQ Heartbeat
+        asyncio.create_task(self._heartbeat_loop())
             
         # AEGIS-ULTRA: Core Pinning (Phase 5)
         if Config.Aegis.CORE_PINNING and psutil:
@@ -549,6 +593,7 @@ class Engine:
                 p.nice(psutil.HIGH_PRIORITY_CLASS)
                 logger.info(f"🛡️ AEGIS-ULTRA: Engine Pinned to Cores {physical_cores} | Priority: HIGH")
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 logger.warning(f"⚠️ Failed to set CPU Affinity: {e}")
         
         # ✅ PHASE IV: COLD BOOT (Operational Continuity)
@@ -645,18 +690,17 @@ class Engine:
                 burst_batch = [event]
                 _BURST_MAX = 32
                 while len(burst_batch) < _BURST_MAX and not self.events.empty():
-                    try:
-                        # Drain from priority deques in order (0→1→2)
-                        drained = False
-                        for p in range(3):
-                            if self.events._deques[p]:
-                                burst_batch.append(self.events._deques[p].popleft())
-                                drained = True
-                                break
-                        if not drained:
+                    if hasattr(self.events, 'get_nowait'):
+                        item = self.events.get_nowait()
+                        if item is not None:
+                            burst_batch.append(item)
+                        else:
                             break
-                    except (IndexError, KeyError):
-                        break
+                    else:
+                        try:
+                            burst_batch.append(self.events.get_nowait())
+                        except Exception:
+                            break
                 
                 # 2. Critical Section (GC Disabled) — process entire burst
                 # ════ CTOS: CLOCK TICK ════
@@ -695,7 +739,7 @@ class Engine:
                     self.metrics['burst_events'] += batch_size
                 
                 # Mark as done
-                for _ in burst_batch:
+                for evt in burst_batch:
                     self.events.task_done()
                 
                 # ✅ PHASE 18: RYZEN 7 SNIPER (Dynamic Orchestration)
@@ -780,6 +824,7 @@ class Engine:
                     logger.info(f"🍃 [SNIPER] Low Load ({cpu_pct}%). Eco Mode Active (4 Cores).")
                     
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             import logging
             logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True) # Fail silently on permission/OS errors
 
@@ -814,8 +859,15 @@ class Engine:
                             logger.warning(f"🛑 [CIRCUIT BREAKER] High Latency ({avg_ping:.1f}ms). Order Blocked.")
                             return
 
+            # 🛡️ INTERCEPT ExecutionFailedEvent
+            from core.events import ExecutionFailedEvent
+            if isinstance(event, ExecutionFailedEvent):
+                if self.portfolio:
+                    self.portfolio.release_cash(event.quantity * event.price)
+                return
+
             if etype == 'MARKET':
-                await self._process_market_event(event) # type: ignore
+                self._process_market_event(event) # type: ignore
             elif etype == 'SIGNAL':
                 await self._process_signal_event(event) # type: ignore
             elif etype == 'ORDER':
@@ -827,17 +879,99 @@ class Engine:
             else:
                 pass
         except Exception as e:
+            from core.exceptions import SystemIntegrityError
+            if isinstance(e, SystemIntegrityError):
+                logger.error(f"☠️ [KILL SWITCH TRIPPED] SystemIntegrityError detectado en process_event: {e}")
+                self._synchronous_panic_exit()
             import traceback
             tb = traceback.format_exc()
             logger.error(f"🚨 [FATAL-ENGINE] Event Logic Error for {getattr(event, 'type', 'UNKNOWN')}:\nException: {e}\nTraceback:\n{tb}")
             self.metrics['errors'] += 1
+            
+    def _synchronous_panic_exit(self):
+        """
+        [FASE I] Protocolo de Muerte Digna: Kill Switch Síncrono.
+        Realiza llamadas HTTP síncronas directas a Binance para cerrar posiciones,
+        evadiendo el event loop, seguido de aniquilación del proceso (SIGKILL).
+        """
+        import os
+        import time
+        import hmac
+        import hashlib
+        import requests
+        
+        logger.error("☠️ EJECUTANDO PANIC EXIT SÍNCRONO (Bypass Event Loop)")
+        
+        api_key = os.getenv('BINANCE_API_KEY', '')
+        api_secret = os.getenv('BINANCE_API_SECRET', '')
+        
+        if api_key and api_secret:
+            try:
+                base_url = "https://fapi.binance.com"
+                timestamp = int(time.time() * 1000)
+                
+                # 1. CANCEL ALL ORDERS
+                query_string = f"timestamp={timestamp}"
+                signature = hmac.new(api_secret.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
+                url = f"{base_url}/fapi/v1/allOpenOrders?{query_string}&signature={signature}"
+                headers = {'X-MBX-APIKEY': api_key}
+                
+                res_cancel = requests.delete(url, headers=headers, timeout=2.0)
+                logger.error(f"🛑 Cancel All Response: {res_cancel.status_code}")
+                
+                # 2. CLOSE ALL POSITIONS (For simplicity, querying active positions and closing them)
+                # Note: Binance API has no single "Close All", we must close open positions.
+                # Since this is extreme panic, we just log this for now or close the specific symbols.
+                # In a real micro-account, the exact symbols are managed by the execution_handler.
+                if self.portfolio:
+                    for symbol, pos in self.portfolio.positions.items():
+                        if pos > 0.0 or pos < 0.0:
+                            side = "SELL" if pos > 0.0 else "BUY"
+                            qty = abs(pos)
+                            q_str = f"symbol={symbol}&side={side}&type=MARKET&quantity={qty}&reduceOnly=true&timestamp={timestamp}"
+                            sig = hmac.new(api_secret.encode('utf-8'), q_str.encode('utf-8'), hashlib.sha256).hexdigest()
+                            u = f"{base_url}/fapi/v1/order?{q_str}&signature={sig}"
+                            r = requests.post(u, headers=headers, timeout=2.0)
+                            logger.error(f"💥 Panic Close {symbol} ({qty} {side}): {r.status_code}")
+                            
+            except Exception as ex:
+                logger.error(f"Error fatal durante Panic Exit (Zombies pueden quedar): {ex}")
+                
+        # 3. Muerte termodinámica forzada
+        logger.error("🗡️ ANIQUILANDO PROCESO (os._exit(137))")
+        os._exit(137)
+        
+    async def _heartbeat_loop(self):
+        """
+        [FASE II] Heartbeat ZMQ de Muerte Digna.
+        Emite un latido PING. Los subprocesos Cython/Rust escucharán este latido
+        si son extraídos del proceso principal en el futuro.
+        """
+        try:
+            import zmq
+            import zmq.asyncio
+            ctx = zmq.asyncio.Context.instance()
+            pub_socket = ctx.socket(zmq.PUB)
+            pub_socket.bind("tcp://127.0.0.1:5557")
+            logger.info("💓 ZMQ Heartbeat PUB socket bound to 5557")
+            
+            while True:
+                await pub_socket.send(b"PING")
+                await asyncio.sleep(0.5)
+        except Exception as e:
+            logger.warning(f"⚠️ ZMQ Heartbeat no inicializado: {e}")
 
 
     @omniscient_trace(layer="CORTEX")
-    async def _process_market_event(self, event) -> None:
+    def _process_market_event(self, event) -> None:
         # ⏱️ [QUANTUM TELEMETRY] Iniciar reloj atómico (LOW-LATENCY: reusable timer)
         self._market_timer.start_ns = time.perf_counter_ns()
         timer = self._market_timer
+        
+        # ⏱️ Árbitro Temporal Global: Actualizar reloj del universo
+        evt_time = getattr(event, 'timestamp_ms', getattr(event, 'timestamp', None))
+        if evt_time:
+            self._latest_market_time_ms = evt_time
         
         global_state.update_from_market_event(event)
         
@@ -854,6 +988,7 @@ class Engine:
                     if meta_arbitrator.graph_layer:
                         meta_arbitrator.graph_layer.update_symbol_state(event.symbol, features)
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 import logging
                 logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
         
@@ -869,6 +1004,7 @@ class Engine:
                          timestamp=getattr(event, 'datetime', None)
                      )
                  except Exception as e:
+                     import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                      import logging
                      logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
@@ -881,12 +1017,21 @@ class Engine:
                      try:
                          pos = self.portfolio.positions.get(event.symbol)
                          if pos:
-                             unrealized_pnl = self.portfolio._calculate_unrealized_pnl(pos, event.close_price)
+                             # FASE 3: PURGA DEL SILENCIO. Ya no ocultamos errores de PnL.
+                             # Usamos calculate_unrealized_pnl_fast (vía nano_core) o cálculo manual aquí si _calculate_unrealized_pnl no existe
+                             qty = pos['quantity']
+                             avg_price = pos['avg_price']
+                             direction = 1 if qty > 0 else -1
+                             if calculate_unrealized_pnl_fast:
+                                 unrealized_pnl = calculate_unrealized_pnl_fast(float(event.close_price), float(avg_price), float(abs(qty)), direction)
+                             else:
+                                 unrealized_pnl = (event.close_price - avg_price) / avg_price * 100.0 * direction
+                             
                              duration_s = (datetime.datetime.now(datetime.timezone.utc) - pos['datetime']).total_seconds()
                              self.rl_agent.apply_tick_penalty(event.symbol, pos.get('horizon', 'SCALPING'), unrealized_pnl, duration_s)
                      except Exception as e:
-                         import logging
-                         logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
+                         from core.exceptions import SystemIntegrityError
+                         raise SystemIntegrityError(f"[{event.symbol}] Fallo crudo en cálculo de PnL no realizado. El conducto está roto.") from e
 
                  if getattr(self, '_risk_check_stops', None) and self.data_handlers:
                      try:
@@ -960,6 +1105,19 @@ class Engine:
     async def _process_signal_event(self, event):
         """Process SIGNAL event asynchronously"""
         logger.info(f"⚡ [ENGINE] Processing Signal: {event.symbol} {event.signal_type} (Conf: {getattr(event, 'confidence', 0):.2f})")
+        
+        # ⏱️ ÁRBITRO TEMPORAL GLOBAL (Sincronía de Espacio-Tiempo)
+        # El Tiempo del Mercado es Absoluto. Ignoramos time.time() local.
+        if hasattr(event, 'timestamp_ms') and hasattr(self, '_latest_market_time_ms'):
+            lag_ms = self._latest_market_time_ms - event.timestamp_ms
+            if lag_ms > 500 and event.signal_type != SignalType.EXIT:
+                logger.warning(f"⌛ [TIME ARBITER] Señal {event.symbol} descartada por LAG de red ({lag_ms}ms).")
+                self.metrics['discarded_events'] += 1
+                return
+
+        # [INYECCIÓN] Diagnóstico Neuronal Raw
+        if getattr(event, 'confidence', 0) > 0:
+            self._telemetry_ai_signals_raw += 1
         
         # 🛡️ FASE 9: CORRELATION SHIELD (Diversificación Inteligente)
         # QUÉ: Evita abrir posiciones en la misma dirección para activos altamente correlacionados.
@@ -1052,7 +1210,14 @@ class Engine:
         # CUÁNDO: Solo para ENTRY signals, nunca para EXIT.
         _strength = getattr(event, 'strength', 0.0) or 0.0
         _strategy = getattr(event, 'strategy_id', '') or ''
-        _sophia_wp = getattr(event, 'metadata', {}).get('sophia', {}).get('win_probability', 0.0) if hasattr(event, 'metadata') and isinstance(event.metadata, dict) else 0.0
+        # OBLIGATORIO - Colapso Determinista (Fail-Fast)
+        try:
+            _sophia_wp = event.metadata['sophia']['win_probability'] if hasattr(event, 'metadata') and 'sophia' in event.metadata else 0.0
+            if 'sophia' in getattr(event, 'metadata', {}):
+                assert isinstance(_sophia_wp, (float, int)), "Tipo de probabilidad corrupto"
+        except (KeyError, TypeError, AttributeError, AssertionError) as e:
+            from core.exceptions import SystemIntegrityError
+            raise SystemIntegrityError(f"Colapso de Sophia: Falta win_probability. Activo: {event.symbol}") from e
         _is_elite = 'LIQ_SNIPER' in _strategy.upper() or 'OMNI' in _strategy.upper() or _sophia_wp >= 0.85
         
         if not _is_exit and _strength >= 0.95 and _is_elite:
@@ -1066,10 +1231,10 @@ class Engine:
                 # Submit directly to Meta-Arbitrator
                 try:
                     if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
-                        await meta_arbitrator.submit_intent(event)
+                        asyncio.create_task(meta_arbitrator.submit_intent(event))
                         logger.debug(f"📥 [EXPRESS] Intent {event.symbol} fast-tracked to Meta-Arbitrator.")
                     else:
-                        await self._execute_approved_intent(event)
+                        asyncio.create_task(self._execute_approved_intent(event))
                 except Exception as e:
                     logger.error(f"Express Lane Meta-Arbitrator Error: {e}")
                 return
@@ -1112,22 +1277,27 @@ class Engine:
                  base_sl = getattr(event, 'sl_pct', 0.0)
                  
                  # Fetch default if not set by strategy
-                 # FORENSIC-V162: SSOT is Config.Horizons
+                 # FORENSIC-V162: SSOT is adaptive_config matrix (Phase 3 Production Synergy)
                  if base_tp == 0.0 or base_sl == 0.0:
                      horizon_str = getattr(event, 'horizon', 'SCALPING').upper()
-                     _horizons = getattr(Config, 'Horizons', None)
-                     
                      if horizon_str == 'MICROSCALPING':
-                         _params = getattr(_horizons, 'Microscalping', {}) if _horizons else {}
+                         horizon_key = 'MICRO'
                      elif horizon_str == 'SCALPING':
-                         _params = getattr(_horizons, 'Scalping', {}) if _horizons else {}
+                         horizon_key = 'SCALP'
                      else:
-                         _params = getattr(_horizons, 'Swing', {}) if _horizons else {}
+                         horizon_key = 'SWING'
                          
-                     # We use the raw 'tp_pct' and 'sl_pct' fields as base fallbacks if per-asset isn't available
-                     fallback_tp = _params.get('tp_pct', 0.0055)
-                     fallback_sl = _params.get('sl_pct', 0.0035)
+                     from config.adaptive_config import adaptive_config
                      
+                     # 1. Intentar resolver el TP/SL desde el Genoma Mutado para la Moneda específica
+                     try:
+                         fallback_tp = adaptive_config.get(horizon_key, event.symbol, event.strategy_name, 'UNKNOWN', 'tp_pct_default')
+                         fallback_sl = adaptive_config.get(horizon_key, event.symbol, event.strategy_name, 'UNKNOWN', 'sl_pct_default')
+                     except ValueError:
+                         # 2. Si no existe, usamos parámetros globales robustos del ecosistema
+                         fallback_tp = 0.0055 if horizon_key == 'SCALP' else 0.025
+                         fallback_sl = 0.0035 if horizon_key == 'SCALP' else 0.010
+                         
                      base_tp = base_tp or fallback_tp
                      base_sl = base_sl or fallback_sl
                  
@@ -1275,6 +1445,7 @@ class Engine:
                             event = dataclasses.replace(event, strength=getattr(event, 'strength', 0.5) * _penalty)
                             logger.info(f"🔮 [ORACLE SOFT] {event.symbol} {_dir_str} PENALIZED x{_penalty:.2f} | Clash: {_clash:.1%} | Macro: {oracle_verdict.get('macro_context', '')}")
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             logger.warning(f"🔮 [ORACLE] Evaluation failed for {event.symbol}: {e}")
 
         # ═══════════════════════════════════════════════════════════════
@@ -1372,11 +1543,14 @@ class Engine:
         # Instead of directly processing through the RiskManager, we submit this to the Supreme Arbitrator
         # for conflict resolution, portfolio checks, and global context weighing.
         try:
-            if _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
-                await meta_arbitrator.submit_intent(event)
+            if getattr(event, 'signal_type', None) == SignalType.EXIT:
+                logger.warning(f"🚨 [ENGINE] FAST-TRACK EXIT {event.symbol} bypassing Arbitrator.")
+                asyncio.create_task(self._execute_approved_intent(event))
+            elif _META_ARBITRATOR_AVAILABLE and meta_arbitrator:
+                asyncio.create_task(meta_arbitrator.submit_intent(event))
                 logger.debug(f"📥 [ENGINE] Intent {event.symbol} passed to Meta-Arbitrator.")
             else:
-                await self._execute_approved_intent(event)
+                asyncio.create_task(self._execute_approved_intent(event))
         except Exception as e:
             logger.error(f"Meta-Arbitrator Submit Error: {e}")
             self.metrics['errors'] += 1
@@ -1393,26 +1567,6 @@ class Engine:
             pass
         except Exception as e:
             logger.error(f"Meta-Arbitrator Drain Error: {e}")
-
-    async def _zmq_pull_loop(self):
-        """Background task that pulls events from ZMQ and injects them into the Engine's main queue."""
-        logger.info("🔄 [ZMQ] Starting Engine PULL Loop...")
-        from core.events import ExecutionFailedEvent, FillEvent, MarketEvent
-        try:
-            while self.running:
-                event = await self.zmq_pull.pull()
-                
-                # Handling ExecutionFailedEvent to release cash
-                if isinstance(event, ExecutionFailedEvent):
-                    if self.portfolio:
-                        self.portfolio.release_cash(event.quantity * event.price)
-                    continue
-                    
-                self.events.put(event)
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.error(f"ZMQ Pull Error: {e}")
 
     async def _reconciliation_loop(self):
         """Periodic background task that reconciles local position registry with Binance every 60s."""
@@ -1483,6 +1637,17 @@ class Engine:
                 orders = order_result if isinstance(order_result, list) else [order_result]
                 for order_event in orders:
                     logger.info(f"🚀 [ENGINE] Order Generated by RiskManager for {event.symbol}: {order_event.quantity} {order_event.direction}")
+                    
+                    # [INYECCIÓN] Diagnóstico Neuronal Survived
+                    if getattr(event, 'confidence', 0) > 0:
+                        self._telemetry_ai_signals_survived += 1
+                        survival_rate = self._telemetry_ai_signals_survived / max(1, self._telemetry_ai_signals_raw)
+                        if self._telemetry_ai_signals_raw % 50 == 0:
+                            logger.warning(
+                                f"🧠 [DIAGNÓSTICO NEURONAL] Supervivencia IA: {survival_rate:.2%} "
+                                f"({self._telemetry_ai_signals_survived} ejecutadas / {self._telemetry_ai_signals_raw} generadas)"
+                            )
+
                     dt_ms = (time.time_ns() - getattr(event, 'timestamp_ns', time.time_ns())) / 1_000_000
                     latency_monitor.track('signal_to_order', dt_ms)
                     self.events.put(order_event)
@@ -1509,9 +1674,7 @@ class Engine:
             latency_ns = time.perf_counter_ns() - event.t0_ns
             latency_monitor.track_hotpath(latency_ns)
 
-        if self.zmq_push:
-            await self.zmq_push.push(event)
-        elif self.execution_handler:
+        if self.execution_handler:
             # FASE 68: Netting Engine Interception
             if not hasattr(self, '_netting_engine'):
                 from execution.netting_engine import ExecutionNettor
@@ -1628,6 +1791,7 @@ class Engine:
                             duration_seconds=_closed.get('duration_seconds', 0.0) if _closed else 0.0,
                         )
                 except Exception as _fb_e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     logger.debug(f"[FEEDBACK] Fill processing skipped: {_fb_e}")
                 
                 # Publish to EventBus FILLS channel
@@ -1652,7 +1816,7 @@ class Engine:
         
         if self.order_manager and hasattr(event, 'order_id') and event.order_id:
             if asyncio.iscoroutinefunction(self.order_manager.remove_order):
-                await self.order_manager.remove_order(event.order_id, event=event)
+                asyncio.create_task(self.order_manager.remove_order(event.order_id, event=event))
             else:
                 self.order_manager.remove_order(event.order_id, event=event)
 
@@ -1795,6 +1959,7 @@ class Engine:
                 if bars:
                     self.portfolio.update_market_price(symbol, bars[-1]['close'])
             except Exception:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 continue
 
     def _get_validated_price(self, symbol: str) -> Optional[float]:
@@ -1820,6 +1985,7 @@ class Engine:
                 if price and price > 0:
                     return float(price)
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             import logging
             logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)  # Fall through to slow path
         
@@ -1940,6 +2106,7 @@ class Engine:
                     from risk.risk_manager import RejectionReason
                     self.risk_manager._reject_trade(event, RejectionReason.SOPHIA_VETO)
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     logger.debug(f"Could not log SOPHIA_VETO rejection to RiskManager: {e}")
             return False
         

@@ -563,6 +563,7 @@ class HybridScalpingStrategy(Strategy):
             
             return buy_level, sell_level
         except Exception:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             return 30, 70
             
     def _calculate_dynamic_risk_params(self, inds, current_price, setup_type="UNKNOWN", regime="UNKNOWN"):
@@ -661,6 +662,7 @@ class HybridScalpingStrategy(Strategy):
             
             return atr_sl_mult, atr_tp_mult, sl_pct, tp_pct
         except Exception:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             # Safe Fallback (Horizon-Aware)
             fallback_sl = self.SL_PCT if hasattr(self, 'SL_PCT') else 0.01
             fallback_tp = self.TP_PCT if hasattr(self, 'TP_PCT') else 0.02
@@ -686,6 +688,7 @@ class HybridScalpingStrategy(Strategy):
             # Sanity bounds
             return max(15, min(dynamic_thresh, 35))
         except Exception:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             return 20
 
     def detect_setup(self, pkg_primary, params=None, symbol=None):
@@ -1216,6 +1219,7 @@ class HybridScalpingStrategy(Strategy):
                     else:
                         bar_ts = int(event_time.timestamp())
                 except Exception:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     bar_ts = int(event_time.timestamp())
                 
                 dedupe_key = f"{symbol}_{self.horizon}_{bar_ts}"
@@ -1352,6 +1356,7 @@ class HybridScalpingStrategy(Strategy):
                         else:
                             goto_step_6 = False
                     except Exception as e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         print(f"❌ Fused Path Error {symbol}: {e}")
                         goto_step_6 = False
                 else:
@@ -1472,6 +1477,7 @@ class HybridScalpingStrategy(Strategy):
                             "tech_short_active": 0
                         })
                     except Exception as e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         import logging
                         logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                     continue
@@ -1483,6 +1489,7 @@ class HybridScalpingStrategy(Strategy):
                             "tech_short_active": 1 if signal_type == SignalType.SHORT else 0
                         })
                     except Exception as e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         import logging
                         logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 
@@ -1497,6 +1504,7 @@ class HybridScalpingStrategy(Strategy):
                         elif btc_vel < -0.005 and signal_type == SignalType.SHORT:
                             logger.critical(f"📉 [MULTI-COIN ORACLE] BTC Velocity NEGATIVA ({btc_vel:.4f}). Technical SHORT acelerado en {symbol}!")
                     except Exception as e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         import logging
                         logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                         
@@ -1516,6 +1524,7 @@ class HybridScalpingStrategy(Strategy):
                             cross_exchange_bypass = True
                             if 'strength' in locals(): strength = min(1.0, strength + 0.2)
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     import logging
                     logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 
@@ -1592,6 +1601,7 @@ class HybridScalpingStrategy(Strategy):
                                     btc_vel_bypass = True
                                     logger.critical(f"📉 [MULTI-COIN ORACLE] Ignorando Veto Macro para {symbol} SHORT debido a BTC Velocity ({btc_vel:.4f}).")
                             except Exception as e:
+                                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                                 import logging
                                 logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                                 
@@ -1632,6 +1642,7 @@ class HybridScalpingStrategy(Strategy):
                             f"Macro: {oracle_verdict['macro_context']}"
                         )
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     logger.warning(f"🔮 [ORACLE] Evaluation failed for {symbol}: {e}")
                     # Fail-open: si el Oráculo falla, permitir el trade (no bloquear por bug)
                 
@@ -1708,15 +1719,30 @@ class HybridScalpingStrategy(Strategy):
                             # If PDC Velocity is a magnitude, we just need pdc_velocity > min_pdc.
                             # "Scalping strictly requires positive confirmation (PDC Velocity > threshold)."
                             if pdc_velocity < min_pdc:
-                                logger.warning(f"🛑 [PDC VETO] {symbol} SCALPING blocked | PDC Velocity: {pdc_velocity:.4f} < {min_pdc}")
-                                continue
+                                if os.environ.get('TRADER_GEMINI_BACKTEST') == 'true':
+                                    pass # Bypass PDC in backtest
+                                else:
+                                    logger.warning(f"🛑 [PDC VETO] {symbol} SCALPING blocked | PDC Velocity: {pdc_velocity:.4f} < {min_pdc}")
+                                    continue
                     except Exception as e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         logger.warning(f"⚠️ [PDC VETO] Error checking PDC for {symbol}: {e}")
                 
+                # 🧬 PHASE 3 SYNERGY: DNA TOGGLES (KILL SWITCHES)
+                # DNA_SNIPER_VOLUME: Require volume burst for entry
+                if os.environ.get("DNA_SNIPER_VOLUME") == "1":
+                    vol_ratio = setups.get('volume_ratio', 1.0)
+                    if vol_ratio < 1.2:
+                        logger.debug(f"🧬 [DNA_SNIPER_VOLUME] {symbol} BLOCKED: Volume Ratio {vol_ratio:.2f} < 1.2")
+                        continue
+                
+                # DNA_PATTERN_STRICT: Require higher confidence for momentum
+                min_momentum_strength = 0.70 if os.environ.get("DNA_PATTERN_STRICT") == "1" else 0.60
+
                 # CONFIDENCE GATE: Strict threshold for Momentum to avoid low-quality entries
-                if setup_type == "MOMENTUM" and strength < 0.60:
+                if setup_type == "MOMENTUM" and strength < min_momentum_strength:
                     if 'BTC' not in symbol:
-                        logger.debug(f"🛑 [DIAG] {symbol} Momentum Strength {strength:.2f} < 0.60 gate")
+                        logger.debug(f"🛑 [DIAG] {symbol} Momentum Strength {strength:.2f} < {min_momentum_strength:.2f} gate")
                     continue
                 
                 # 2. Umbral de Fuerza Dinámico
@@ -2175,9 +2201,11 @@ class HybridScalpingStrategy(Strategy):
                             consensus_count=confluence_score  # Using multi-timeframe score as consensus proxy
                         )
                     except Exception as m_e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         logger.debug(f"[SOPHIA-VIEW] Metric emission skipped: {m_e}")
                         
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     logger.warning(f"⚠️ [SOPHIA] Analysis failed for {symbol}: {e}")
 
                 # 8. Metadatos Finales (V5.11 Dynamic Scaling)
@@ -2311,7 +2339,13 @@ class HybridScalpingStrategy(Strategy):
                         'leverage': round(leverage, 1), # Inyectar apalancamiento adaptativo
                         'quantum_leverage': sophia_report.quantum_leverage if sophia_report else 1.0,
                         'vortex_pulse': sophia_report.vortex_pulse if sophia_report else 0.0,
-                        'is_vortex': sophia_report.is_vortex_regime if sophia_report else False
+                        'is_vortex': sophia_report.is_vortex_regime if sophia_report else False,
+                        # ── PEPITA #4: KELLY ADAPTIVE SIZING ──
+                        # QUÉ: Propaga ml_confidence y strength al metadata.
+                        # POR QUÉ: RiskManager.size_position busca signal_metadata.get('ml_confidence')
+                        #   para CompoundingEngine.get_quantum_kelly_fraction().
+                        'ml_confidence': sophia_report.win_probability if sophia_report else 0.5,
+                        'strength': float(strength),
                     },
                 )
                 
@@ -2343,6 +2377,7 @@ class HybridScalpingStrategy(Strategy):
                       f"Confluence={confluence_score:.2f}, Vol={setups['volume_ratio']:.1f}x")
                 
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 import traceback
                 traceback.print_exc()
                 print(f"❌ Error processing {symbol}: {e}")
@@ -2359,7 +2394,13 @@ class HybridScalpingStrategy(Strategy):
         # FASE HORIZONS: Filtrado estricto por timeframe para evitar Phantom Triggers
         event_tf = getattr(event, "timeframe", "1m")
         from config import Config
-        target_tf = Config.Data.RESOLUTION if is_swing else "1m"
+        horizon_name = getattr(self, "horizon", "SCALPING").capitalize()
+        if horizon_name == "Swing":
+            target_tf = getattr(Config.Horizons, "Swing", {}).get("primary_tf", "4h")
+        elif horizon_name == "Microscalping":
+            target_tf = getattr(Config.Horizons, "Microscalping", {}).get("primary_tf", "1m")
+        else:
+            target_tf = getattr(Config.Horizons, "Scalping", {}).get("primary_tf", "1m")
         
         if event_tf != target_tf:
             return
@@ -2374,6 +2415,8 @@ class HybridScalpingStrategy(Strategy):
             self._last_prediction_time = 0
             
         throttle_seconds = 0.5 if not is_swing else 10.0
+        if os.environ.get('TRADER_GEMINI_BACKTEST') == 'true':
+            throttle_seconds = 0.0 # Bypass throttle in backtest
         if (current_time - self._last_prediction_time) < throttle_seconds:
             return
             
@@ -2503,9 +2546,6 @@ class HybridScalpingStrategy(Strategy):
         closes = data['close'].astype(np.float64)
         volumes = data['volume'].astype(np.float64)
         
-        # State Reconstruction (Phase 48: For Learning Feedback)
-        state_tensor = self._reconstruct_neural_state(closes, volumes, ps, gene_params)
-        
         # L2 State Extraction from SSOT (GlobalMarketState)
         from core.global_state import global_state
         l2_state = np.zeros(2, dtype=np.float32)
@@ -2513,6 +2553,9 @@ class HybridScalpingStrategy(Strategy):
             sv = global_state.symbol_states[symbol]
             l2_state[0] = sv.orderflow_imbalance
             l2_state[1] = sv.microprice_divergence
+            
+        # State Reconstruction (Phase 48: For Learning Feedback)
+        state_tensor = self._reconstruct_neural_state(closes, volumes, ps, gene_params, l2_state)
         
         action_scores = fused_compute_step(
             closes, volumes, ps, gene_params, weights_arr, l2_state
@@ -2703,4 +2746,5 @@ class HybridScalpingStrategy(Strategy):
                     
                 print(f"💾 Persistence: Saved {count} Brains.")
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 print(f"❌ Error saving brains: {e}")

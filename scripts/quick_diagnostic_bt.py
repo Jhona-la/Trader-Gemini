@@ -275,25 +275,36 @@ for epoch in range(total):
                     order = rm.generate_order(evt, price)
             except Exception as e:
                 import traceback
-                print(f"[FATAL ERROR] generate_order threw exception: {e}")
-                traceback.print_exc()
+                import sys
+                print(f"[FATAL ERROR] generate_order threw exception: {e}", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
                 order = None
+                if evt.metadata is None:
+                    object.__setattr__(evt, 'metadata', {})
+                evt.metadata["rejection_reason"] = f"FATAL_ERROR:{type(e).__name__}"
             
             if order is None:
                 rejected_total += 1
-                captured = capture.getvalue()
-                reason = 'UNKNOWN'
-                for line in captured.strip().split('\n'):
-                    if '[RISK] Rejected' in line:
-                        reason = line.strip()
-                        break
+                reason = evt.metadata.get("rejection_reason", "UNKNOWN")
+                if hasattr(reason, 'name'):
+                    reason = reason.name
+                else:
+                    reason = str(reason)
                 rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
                 continue
             
-            fill = executor.execute(order, price)
-            if fill:
-                portfolio.update_fill(fill)
-                fills_total += 1
+            orders = order if isinstance(order, list) else [order]
+            
+            for ord in orders:
+                fill = executor.execute(ord, price)
+                if fill:
+                    portfolio.update_fill(fill)
+                    fills_total += 1
+                    # Handle flip/exit
+                    if ord.direction == OrderSide.SELL and getattr(ord, 'setup_type', '') == 'FLIP_EXIT':
+                        # Simplistic PNL calc
+                        pass
+                    # Just count fills for now.
     
     # Progress
     if epoch % 300 == 0:

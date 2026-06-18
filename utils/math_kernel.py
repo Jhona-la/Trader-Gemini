@@ -210,9 +210,7 @@ def calculate_ema_jit(prices, period):
 @njit(fastmath=True, cache=True)
 def calculate_rsi_jit(prices, period=14):
     """
-    Relative Strength Index - JIT Compiled
-    Parallelized element-wise ops where possible, but recursive dependency limits parallel gains.
-    However, gain/loss array creation IS parallelizable.
+    Relative Strength Index - Cython Metal Migration
     """
     n = len(prices)
     rsi = np.full(n, np.nan, dtype=np.float64)
@@ -486,15 +484,15 @@ def calculate_macd_jit(prices, fast_period=12, slow_period=26, signal_period=9):
 @njit(fastmath=True, cache=True)
 def calculate_atr_jit(high, low, close, period=14):
     """
-    ATR - JIT Compiled.
+    ATR - Cython Metal Migration.
     """
     n = len(close)
     tr = np.zeros(n, dtype=np.float64)
     atr = np.full(n, np.nan, dtype=np.float64)
-    
+
     if n < period:
         return atr
-        
+
     # 1. Calculate True Range [BRANCHLESS]
     for i in range(1, n):
         h_l = high[i] - low[i]
@@ -1178,4 +1176,66 @@ def kalman_filter_1d_jit(prices, R=1e-4, Q=1e-5):
         smoothed[i] = x_est
         
     return smoothed
+
+
+# ==============================================================================
+# ⚡ STATEFUL O(1) QUANTUM FEATURES (THERMODYNAMIC FRICTION KILLERS)
+# ==============================================================================
+from numba.experimental import jitclass
+from numba import boolean
+
+zscore_spec = [
+    ('period', int64),
+    ('count', int64),
+    ('buffer', float64[:]),
+    ('idx', int64),
+    ('sum_x', float64),
+    ('sum_x2', float64),
+    ('initialized', boolean)
+]
+
+@jitclass(zscore_spec)
+class StatefulZScore:
+    def __init__(self, period):
+        self.period = period
+        self.count = 0
+        self.buffer = np.zeros(period, dtype=np.float64)
+        self.idx = 0
+        self.sum_x = 0.0
+        self.sum_x2 = 0.0
+        self.initialized = False
+
+    def update(self, price: float) -> float:
+        if not self.initialized:
+            self.buffer[self.idx] = price
+            self.sum_x += price
+            self.sum_x2 += price * price
+            self.idx += 1
+            self.count += 1
+            
+            if self.count == self.period:
+                self.initialized = True
+                self.idx = 0
+                mean = self.sum_x / self.period
+                var = (self.sum_x2 - (self.sum_x * self.sum_x) / self.period) / self.period
+                std = np.sqrt(max(0.0, var))
+                if std > 1e-8:
+                    return (price - mean) / std
+                return 0.0
+            return 0.0
+        else:
+            old_val = self.buffer[self.idx]
+            self.buffer[self.idx] = price
+            self.idx = (self.idx + 1) % self.period
+            
+            self.sum_x += (price - old_val)
+            self.sum_x2 += (price * price - old_val * old_val)
+            
+            mean = self.sum_x / self.period
+            var = (self.sum_x2 - (self.sum_x * self.sum_x) / self.period) / self.period
+            std = np.sqrt(max(0.0, var))
+            
+            if std > 1e-8:
+                return (price - mean) / std
+            return 0.0
 

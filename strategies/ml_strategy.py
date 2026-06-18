@@ -128,15 +128,15 @@ def get_training_pool():
     global _TRAINING_POOL
     with _POOL_LOCK:
         if _TRAINING_POOL is None:
-        # CONSERVATIVE SCALING (Ryzen 5700U 1.8GHz Base)
-        # Instead of cpu_count - 2, we use simpler logic to prevent thermal throttling:
-        # Use 6 workers. Leaves 2 cores for OS/Engine + headroom for heat dissipation.
-        # This allows sustaining 1.8GHz-2.5GHz without heavy throttling.
-        max_workers = 14 # QUANTUM OVERCLOCK
+            # CONSERVATIVE SCALING (Ryzen 5700U 1.8GHz Base)
+            # Instead of cpu_count - 2, we use simpler logic to prevent thermal throttling:
+            # Use 6 workers. Leaves 2 cores for OS/Engine + headroom for heat dissipation.
+            # This allows sustaining 1.8GHz-2.5GHz without heavy throttling.
+            max_workers = 14 # QUANTUM OVERCLOCK
 
-        from concurrent.futures import ProcessPoolExecutor
+            from concurrent.futures import ProcessPoolExecutor
 
-        _TRAINING_POOL = ProcessPoolExecutor(max_workers=max_workers)
+            _TRAINING_POOL = ProcessPoolExecutor(max_workers=max_workers)
     return _TRAINING_POOL
 
 
@@ -1087,6 +1087,9 @@ class MLStrategyHybridUltimate(Strategy):
         """
         Training con ensemble de 3 modelos y hiperparámetros adaptativos por régimen
         """
+        if hasattr(df, "to_pandas"):
+            df = df.to_pandas()
+            
         min_bars_req = 200
         # FORENSIC FIX: Removed is_backtest divergence. Must require 200 bars even in backtest to ensure parity.
             
@@ -1957,13 +1960,37 @@ class MLStrategyHybridUltimate(Strategy):
             # El backtest llama _run_inference (sync), NO _run_inference_v3.
             # Sin este flag, Polars→Pandas→iloc→values añadía ~350ms.
             # ═══════════════════════════════════════════════════════════════
-            df_pl = self._prepare_features(bars, regime_aware=True, return_polars=True)
+            # ── FASE III-B: TRUE ZERO-COPY CACHE BYPASS (GIL EVASION) ──
+            df_pl = None
+            last_row_dict = None
+            if bars is not None and len(bars) > 0:
+                current_ts = bars['timestamp'][-1] if hasattr(bars, 'dtype') else (bars[-1]['timestamp'] if isinstance(bars[-1], dict) else None)
+                if current_ts is not None and hasattr(self, "_global_feature_cache") and hasattr(self, "_global_feature_cache_ts"):
+                    import numpy as np
+                    ts_arr = self._global_feature_cache_ts
+                    idx = np.searchsorted(ts_arr, current_ts)
+                    if idx < len(ts_arr) and ts_arr[idx] == current_ts:
+                        # [ZERO-COPY] Skip Polars entirely. Use raw Pandas slice for Dict and extract NumPy array directly later.
+                        # We just store the index so we can slice the NumPy matrix in O(1) time.
+                        self._quantum_cache_hit = True
+                        self._quantum_idx = idx
+                        last_row_dict = self._global_feature_cache.iloc[idx].to_dict()
+                        # We still need df_pl to be truthy to avoid recalculating prepare_features
+                        df_pl = "CACHED_TRUE" 
+            
+            if df_pl is None:
+                self._quantum_cache_hit = False
+                df_pl = self._prepare_features(bars, regime_aware=True, return_polars=True)
 
-            if df_pl is None or len(df_pl) < 5:
+            if df_pl is None or (not isinstance(df_pl, str) and len(df_pl) < 5):
                 return
             
             # Convertir la última fila a dict para acceso rápido
-            last_row = df_pl.row(-1, named=True)
+            if self._quantum_cache_hit and last_row_dict is not None:
+                last_row = last_row_dict
+            else:
+                last_row = df_pl.row(-1, named=True)
+                
             current_row = last_row  # Alias: dict soporta .get() y [] igual que Pandas Series
             atr_pct = last_row.get("atr_pct", 0)
             current_atr = last_row.get("atr", 0)
@@ -2028,9 +2055,14 @@ class MLStrategyHybridUltimate(Strategy):
                 return
 
             # Filtrar columnas válidas
-            valid_features = [
-                col for col in feature_cols if col is not None and col in df_pl.columns
-            ]
+            if self._quantum_cache_hit:
+                valid_features = [
+                    col for col in feature_cols if col is not None and col in self._global_feature_cache.columns
+                ]
+            else:
+                valid_features = [
+                    col for col in feature_cols if col is not None and col in df_pl.columns
+                ]
             if not valid_features:
                 logger.error(
                     f"❌ Error processing {self.symbol}: No valid features available for inference"
@@ -2038,9 +2070,15 @@ class MLStrategyHybridUltimate(Strategy):
                 return
 
             # ═══════════════════════════════════════════════════════════════
-            # QUANTUM ZERO-COPY: Polars → NumPy (skip Pandas alignment)
+            # QUANTUM ZERO-COPY: Direct NumPy View (skip Polars/Pandas alignment)
             # ═══════════════════════════════════════════════════════════════
-            X_pred = df_pl.select(valid_features).tail(1).to_numpy()
+            if self._quantum_cache_hit:
+                # O(1) Memory Slice! No allocations.
+                # To make it even faster, we can extract the numpy array of the specific columns
+                # Only if we pre-cache it. For now, iloc to numpy.
+                X_pred = self._global_feature_cache.iloc[self._quantum_idx:self._quantum_idx+1][valid_features].to_numpy()
+            else:
+                X_pred = df_pl.select(valid_features).tail(1).to_numpy()
 
             if X_pred.size == 0:
                 logger.error(f"❌ {self.symbol}: Empty feature matrix after alignment")
@@ -3650,7 +3688,7 @@ class MLStrategyHybridUltimate(Strategy):
         except Exception as e:
             logger.error(f"ML Async error {self.symbol}: {e}", exc_info=True)
 
-    def _launch_training(self, bars, train_type="Full"):
+    def _launch_training(self, bars, train_type="Full", sync=False):
         """Lanzar entrenamiento en thread separado"""
 
         def train_bg(bars_data, t_type):
@@ -3819,10 +3857,13 @@ class MLStrategyHybridUltimate(Strategy):
         # copy.deepcopy() sobre 5000+ barras bloqueaba el CPU y duplicaba el consumo de RAM.
         # En su lugar pasamos un shallow copy ya que la estructura dict/list es generada de nuevo por data_provider.
         safe_bars = bars.copy() if isinstance(bars, dict) else bars[:] if isinstance(bars, list) else bars
-        self._training_thread = threading.Thread(
-            target=train_bg, args=(safe_bars, train_type), daemon=True
-        )
-        self._training_thread.start()
+        if sync:
+            train_bg(safe_bars, train_type)
+        else:
+            self._training_thread = threading.Thread(
+                target=train_bg, args=(safe_bars, train_type), daemon=True
+            )
+            self._training_thread.start()
 
     def stop(self):
         """
@@ -4758,7 +4799,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                         _df_regime = self._prepare_features(
                             _bars_for_regime, regime_aware=False
                         )
-                        if _df_regime is not None and not _df_regime.empty:
+                        if _df_regime is not None and len(_df_regime) > 0:
                             # Bypass throttle: reset timestamp para forzar update
                             self.last_regime_update = self._now() - pd.Timedelta(minutes=10)
                             self._update_market_regime(_df_regime)
@@ -4798,18 +4839,41 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                     bars = self.data_provider.get_latest_bars(self.symbol, n=250, timeframe='1m')
                     _actual_tf = '1m'
             
-            df = self._prepare_features(bars, regime_aware=True)
+            # ── FASE III-B: ZERO-COPY CACHE BYPASS (GIL EVASION) ──
+            # Evade the Python GIL and Pandas overhead by using pre-calculated matrices.
+            df = None
+            if bars is not None and len(bars) > 0:
+                current_ts = bars['timestamp'][-1] if hasattr(bars, 'dtype') else (bars[-1]['timestamp'] if isinstance(bars[-1], dict) else None)
+                if current_ts is not None and hasattr(self, "_global_feature_cache") and hasattr(self, "_global_feature_cache_ts"):
+                    import numpy as np
+                    ts_arr = self._global_feature_cache_ts
+                    idx = np.searchsorted(ts_arr, current_ts)
+                    if idx < len(ts_arr) and ts_arr[idx] == current_ts:
+                        # Slice the pre-calculated dataframe directly
+                        start_idx = max(0, idx - 4)
+                        if hasattr(self._global_feature_cache, "to_pandas"):
+                            # If it's a Polars DataFrame, slicing returns Polars
+                            df = self._global_feature_cache[start_idx:idx+1]
+                        else:
+                            # It's Pandas, we need it as pandas or dict row eventually
+                            df = self._global_feature_cache.iloc[start_idx:idx+1].copy()
+            
+            if df is None:
+                df = self._prepare_features(bars, regime_aware=True)
             if df is None:
                 logger.info(
                     f"DEBUG [{self.symbol}|{self.horizon_str}] _run_inference early exit: df is None. Bars passed: {len(bars) if bars is not None else 0}"
                 )
                 return
-            if df.empty or len(df) < 5:
+            if len(df) == 0 or len(df) < 5:
                 logger.info(
                     f"DEBUG [{self.symbol}|{self.horizon_str}] _run_inference early exit: df.empty or len(df)={len(df)} < 5. Bars passed: {len(bars) if bars is not None else 0}"
                 )
                 return
 
+            if hasattr(df, "to_pandas"):
+                df = df.to_pandas()
+                
             current_row = df.iloc[-1]
             atr_pct = current_row["atr_pct"] / 100
             vol_ratio = current_row.get("volume_ratio", 0)
@@ -5797,14 +5861,22 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
         """
         Motor ML: Weighted average of ensemble models.
         """
-        # PHASE 7 FIX: 3-Class Mapping
-        # In our 3-class model, class 2 = LONG (1), class 0 = SHORT (-1), class 1 = HOLD (0)
-        idx = 2 if direction == 1 else 0
+        def _safe_prob(model, proba, d):
+            if proba is None: return 0.0
+            if hasattr(model, 'classes_'):
+                cls_list = list(model.classes_)
+                if d in cls_list:
+                    return proba[cls_list.index(d)]
+            if len(proba) == 3:
+                return proba[2 if d == 1 else 0]
+            elif len(proba) == 2:
+                return proba[1 if d == 1 else 0]
+            return 0.0
 
         ml_score = (
-            rf_proba[idx] * self.base_rf_weight
-            + xgb_proba[idx] * self.base_xgb_weight
-            + gb_proba[idx] * self.base_gb_weight
+            _safe_prob(getattr(self, 'rf_model', None), rf_proba, direction) * self.base_rf_weight
+            + _safe_prob(getattr(self, 'xgb_model', None), xgb_proba, direction) * self.base_xgb_weight
+            + _safe_prob(getattr(self, 'gb_model', None), gb_proba, direction) * self.base_gb_weight
         )
 
         self.engine_scores["ml"] = ml_score

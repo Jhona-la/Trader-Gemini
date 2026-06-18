@@ -1,7 +1,7 @@
 import time
 import polars as pl
-import pandas as pd
 import numpy as np
+import datetime
 import talib
 from utils.logger import logger
 from utils.debug_tracer import trace_execution
@@ -73,11 +73,60 @@ class FeatureEngineering:
         #   Si la key no cambió, devolvemos el resultado anterior.
         # ═══════════════════════════════════════════════════════════════
         self._result_cache = {}  # {symbol: (cache_key, result_df)}
+        
+        # 🌌 QUANTUM BRIDGE (METAL INJECTION)
+        self._metal_active = False
+        self.nano_core = None
+        self.metal_engines = {}  # {symbol: StatefulEngine}
+        try:
+            import sys
+            import os
+            rust_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../core/rust_core'))
+            if rust_path not in sys.path:
+                sys.path.insert(0, rust_path)
+            import nano_core
+            self.nano_core = nano_core
+            self._metal_active = True
+            logger.info("🌌 QUANTUM BRIDGE: Rust nano_core cargado exitosamente. Listo para simulación en caliente.")
+        except Exception as e:
+            logger.warning(f"⚠️ QUANTUM BRIDGE INACTIVO: Cayendo a Pandas (O(N)). Razón: {e}")
+
+    def update_and_inject_metal(self, symbol: str, price: float, arena, idx: int, feature_vec: np.ndarray) -> bool:
+        """
+        Intenta actualizar el estado usando Rust y lo inyecta directo al Arena.
+        Retorna True si el metal lo procesó con éxito (o dropeó por Lap), False si debe caer a Pandas.
+        """
+        if not self._metal_active:
+            return False
+            
+        try:
+            if symbol not in self.metal_engines:
+                # Inicialización on-the-fly (requiere que engine.seed_history() se llame después 
+                # en el ciclo de vida o que se use el histórico de pandas para sembrarlo).
+                self.metal_engines[symbol] = self.nano_core.StatefulEngine(20, 14, arena.capacity)
+                
+            engine = self.metal_engines[symbol]
+            engine.update_and_inject(
+                price, 
+                arena._version,      # np.ndarray de uint64 o int64 (len 8)
+                arena._reader_head,  # np.ndarray de int64 (len 1)
+                arena.features,      # np.ndarray de float32
+                feature_vec          # np.ndarray de float32
+            )
+            return True
+        except Exception as e:
+            if "LAP DETECTED" in str(e).upper():
+                logger.warning(f"Lap Detected en metal para {symbol}. Tick intencionalmente dropeado (Termodinámica).")
+                # Es un comportamiento esperado bajo estrés, el metal sigue vivo.
+                return True
+            logger.critical(f"Fallo catastrófico del metal en {symbol}: {e}. Cortando puente y degradando a Pandas.")
+            self._metal_active = False
+            return False
 
     @trace_execution
     def prepare_features(self, bars, market_regime="UNKNOWN", sentiment_loader=None, data_provider=None, symbol=None, feature_store=None, horizon="SCALPING", return_polars=False, is_live=False):
         if bars is None or len(bars) == 0:
-            return pd.DataFrame()
+            return pl.DataFrame()
             
         # ═══════════════════════════════════════════════════════════════
         # [QUANTUM ZERO-COPY] NATIVE POLARS INGESTION
@@ -94,7 +143,7 @@ class FeatureEngineering:
             df = pl.DataFrame(bars)
             
         if len(df) < 20:
-            return pd.DataFrame()
+            return pl.DataFrame()
 
         # ═══════════════════════════════════════════════════════════════
         # [QUANTUM ISOLATION] THE UNCLOSED CANDLE PARADOX FIX
@@ -119,10 +168,7 @@ class FeatureEngineering:
                 _prev_key, _prev_result = self._result_cache[_cache_symbol]
                 if _prev_key == _cache_key and _prev_result is not None:
                     # Cache HIT: same bars, return previous result
-                    if return_polars and hasattr(_prev_result, 'columns'):
                         return _prev_result
-                    elif not return_polars and hasattr(_prev_result, 'columns'):
-                        return _prev_result.to_pandas() if hasattr(_prev_result, 'to_pandas') else _prev_result
         except Exception:
             pass  # Cache miss, compute normally
 
@@ -134,11 +180,10 @@ class FeatureEngineering:
                     start_ts = df[ts_col].min()
                     end_ts = df[ts_col].max()
                     cached_df = feature_store.get_features(symbol, start_ts, end_ts)
-                    if not cached_df.empty and len(cached_df) >= len(df) * 0.9:
-                        df_pd = df.to_pandas()
-                        idx_col = ts_col
-                        full_df = pd.concat([df_pd.set_index(idx_col), cached_df], axis=1)
-                        return full_df.reset_index()
+                    if len(cached_df) > 0 and len(cached_df) >= len(df) * 0.9:
+                        # [PANDAS ERADICATION] FeatureStore merging is disabled in hot-path
+                        # We return the calculated dataframe directly.
+                        pass
             except Exception as e:
                 logger.warning(f"FeatureStore retrieval skipped: {e}")
 
@@ -291,6 +336,10 @@ class FeatureEngineering:
         new_features['cvd'] = np.full(n_len, current_cvd)
         new_features['tick_direction'] = np.full(n_len, current_tick_dir)
         
+        # [DARK ALPHA] Inyección de net_pressure (Liquidation Cascade Density)
+        current_net_pressure = data_provider.get_order_flow_metrics(symbol).get('net_pressure', 0.0) if symbol and hasattr(data_provider, 'get_order_flow_metrics') else 0.0
+        new_features['net_pressure'] = np.full(n_len, current_net_pressure)
+        
         new_features['liq_intensity'] = np.full(n_len, dp_derivs.get('liquidations', 0.0))
         new_features['funding_rate'] = np.full(n_len, dp_derivs.get('funding_rate', 0.0))
         new_features['oi'] = np.full(n_len, dp_derivs.get('oi', 0.0))
@@ -303,7 +352,7 @@ class FeatureEngineering:
         new_features['funding_distortion'] = np.zeros(n_len)
         new_features['micro_velocity_3'] = np.zeros(n_len)
         new_features['is_swing_horizon'] = np.zeros(n_len)
-        new_features['scalp_velocity_1'] = np.zeros(n_len)
+        # new_features['scalp_velocity_1'] = np.zeros(n_len)
         new_features['swing_momentum_ratio'] = np.zeros(n_len)
         new_features['swing_ema50_slope'] = np.zeros(n_len)
 
@@ -313,14 +362,14 @@ class FeatureEngineering:
             cluster_cols = ['rsi_14', 'atr_pct', 'volume_ratio', 'adx']
             if all(c in new_features for c in cluster_cols) and n_len >= 50:
                 feat_data = {c: new_features[c] for c in cluster_cols}
-                features_array = pd.DataFrame(feat_data).ffill().fillna(0).values
+                features_array = pl.DataFrame(feat_data).select(cluster_cols).fill_null(strategy="forward").fill_null(0.0).to_numpy()
                 # We need current_time properly
                 if 'datetime' in df.columns:
                     current_time = df['datetime'][-1]
                 elif 'timestamp' in df.columns:
                     current_time = df['timestamp'][-1]
                 else:
-                    current_time = pd.Timestamp.utcnow()
+                    current_time = datetime.datetime.now(datetime.timezone.utc)
                 
                 last_fit_time = self._kmeans_last_fit.get(symbol_key)
                 fit_count = getattr(self, '_kmeans_fit_counter', {})
@@ -434,8 +483,8 @@ class FeatureEngineering:
         # ==================== PHASE 3 (AITS): HYPERGRAPH CENTRALITY ====================
         from core.swarm_correlator import swarm_correlator
         graph_feats = swarm_correlator.get_hypergraph_features(symbol) if symbol else {}
-        new_features['graph_centrality'] = np.full(n_len, graph_feats.get('graph_centrality', 0.0))
-        new_features['graph_pagerank'] = np.full(n_len, graph_feats.get('graph_pagerank', 0.0))
+        # new_features['graph_centrality'] = np.full(n_len, graph_feats.get('graph_centrality', 0.0))
+        # new_features['graph_pagerank'] = np.full(n_len, graph_feats.get('graph_pagerank', 0.0))
         new_features['graph_connectivity'] = np.full(n_len, graph_feats.get('graph_connectivity', 0.0))
 
         # ==================== PHASE 2 (AITS): MACRO & ON-CHAIN NERVOUS SYSTEM ====================
@@ -485,8 +534,12 @@ class FeatureEngineering:
             # Fallback to derivatives just in case
             dp_derivs = data_provider.get_derivatives_metrics(symbol) if symbol and hasattr(data_provider, 'get_derivatives_metrics') else {}
             new_features['onchain_whale_flow'] = np.full(n_len, of_metrics.get('whale_flow', dp_derivs.get('whale_flow', 0.0)))
+            
+            # [DARK ALPHA] Extract Dark Alpha parameters if available
+            new_features['dark_alpha_pressure'] = np.full(n_len, of_metrics.get('net_pressure', 0.0))
         else:
             new_features['onchain_whale_flow'] = np.zeros(n_len)
+            new_features['dark_alpha_pressure'] = np.zeros(n_len)
 
         # Merge dict back into Polars df efficiently
         # Remove duplicates to avoid DuplicateError in horizontal concat
@@ -545,26 +598,31 @@ class FeatureEngineering:
             pass
 
         # Immediate memory release for intermediate GC if not returning Polars
-        if return_polars:
-            return df
-            
-        # Convert to Pandas for downstream components if required
-        df_out = df.to_pandas()
+        # [PANDAS ERADICATION] We ALWAYS return Polars now.
         
         # [PHASE 12] SAVE TO STORE
-        if feature_store and len(df_out) > 1:
+        if feature_store and len(df) > 1:
             try:
-                feature_store.store_features(symbol, df_out)
+                feature_store.store_features(symbol, df)
             except Exception as e:
                 logger.debug(f"FeatureStore storage skipped: {e}")
 
-        return df_out
+        return df
 
     def validate_features(self, df):
-        """Limpieza robusta de features sin bleeding de O.Os"""
+        """Limpieza robusta de features sin bleeding de O.Os (Polars Edition)"""
         if len(df) == 0: return df
-        df.replace([np.inf, -np.inf], np.nan, inplace=True)
-        df.ffill(inplace=True)
-        df.bfill(inplace=True) 
-        df.fillna(0.0, inplace=True)
+        
+        float_cols = [col for col, dtype in zip(df.columns, df.dtypes) if dtype in [pl.Float64, pl.Float32]]
+        sanitize_exprs = [
+            pl.when(pl.col(c).is_infinite() | pl.col(c).is_nan())
+            .then(None)
+            .otherwise(pl.col(c))
+            .alias(c)
+            for c in float_cols
+        ]
+        if sanitize_exprs:
+            df = df.with_columns(sanitize_exprs)
+            
+        df = df.fill_null(strategy="forward").fill_null(strategy="backward").fill_null(0.0)
         return df

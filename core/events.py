@@ -11,7 +11,16 @@ from core.enums import EventType, SignalType, OrderSide, OrderType, SignalState
 
 
 import time
-import uuid
+
+# Contador atómico simple para la generación de IDs sin allocations costosas (cero overhead de UUID/urandom)
+_ATOMIC_ID_COUNTER = 0
+
+def _get_next_nano_id() -> str:
+    global _ATOMIC_ID_COUNTER
+    _ATOMIC_ID_COUNTER += 1
+    # Hex format is fast and compact
+    return f"{_ATOMIC_ID_COUNTER:06X}"
+
 try:
     import orjson
     def json_dumps(obj): return orjson.dumps(obj).decode('utf-8')
@@ -151,14 +160,14 @@ class SignalEvent(Event):
             # Prefix based on horizon to prevent cross-contamination
             hz = getattr(self, "horizon", "SCALPING")
             prefix = "MSC" if hz == "MICROSCALPING" else ("SCL" if hz == "SCALPING" else "SWG")
-            short_id = f"[{prefix}]-TRD-{str(uuid.uuid4())[:6].upper()}"
+            short_id = f"[{prefix}]-TRD-{_get_next_nano_id()}"
             object.__setattr__(self, 'trade_id', short_id)
             
         if not self.thought_id:
-            object.__setattr__(self, 'thought_id', f"THOUGHT-{str(uuid.uuid4())[:6].upper()}")
+            object.__setattr__(self, 'thought_id', f"THOUGHT-{_get_next_nano_id()}")
 
         if not self.prediction_id:
-            object.__setattr__(self, 'prediction_id', f"PRED-{str(uuid.uuid4())[:8].upper()}")
+            object.__setattr__(self, 'prediction_id', f"PRED-{_get_next_nano_id()}")
 
         # Compute expiration_timestamp if not provided and ttl is set
         if not self.expiration_timestamp:
@@ -175,10 +184,9 @@ class SignalEvent(Event):
 
         # Generate namespace if missing
         if not self.namespace:
-            import hashlib
             ts_str = str(int(self.datetime.timestamp()))
             raw_str = f"{self.strategy_id}:{self.symbol}:{self.signal_type.name if hasattr(self.signal_type, 'name') else str(self.signal_type)}:{ts_str}"
-            h = hashlib.md5(raw_str.encode('utf-8')).hexdigest()[:8].upper()
+            h = f"{hash(raw_str) & 0xFFFFFFFF:08X}" # Fast integer hash instead of hashlib.md5
             sig_dir = self.signal_type.name if hasattr(self.signal_type, 'name') else str(self.signal_type)
             object.__setattr__(self, 'namespace', f"SIGNAL::{self.strategy_id}::{self.symbol}::{sig_dir}::{ts_str}::{h}")
 
@@ -246,8 +254,7 @@ class OrderEvent(Event):
         if not self.trade_id:
             hz = getattr(self, "horizon", "SCALPING")
             prefix = "MSC" if hz == "MICROSCALPING" else ("SCL" if hz == "SCALPING" else "SWG")
-            import uuid
-            short_id = f"[{prefix}]-ORD-{str(uuid.uuid4())[:6].upper()}"
+            short_id = f"[{prefix}]-ORD-{_get_next_nano_id()}"
             object.__setattr__(self, 'trade_id', short_id)
 
     def print_order(self):
@@ -327,6 +334,8 @@ class ExecutionFailedEvent(Event):
     reason: str
     strategy_id: Optional[str] = None
     trade_id: Optional[str] = None
+    timeindex: datetime
+    horizon: str = "SCALPING" # "SCALPING" or "SWING"
     type: EventType = field(default=EventType.ORDER, init=False) # Maps to execution loop
     
     def __post_init__(self):
@@ -336,12 +345,12 @@ class ExecutionFailedEvent(Event):
         try:
             ensure_utc_aware(self.timeindex)
         except ValueError as e:
-            raise ValueError(f"FillEvent validation failed: {e}")  # ✅ FIXED typo
+            raise ValueError(f"ExecutionFailedEvent validation failed: {e}")
     
     def __str__(self):
         return (
-            f"FillEvent({self.direction.name} {self.quantity:.6f} {self.symbol} "
-            f"@ ${self.fill_cost:.2f})"
+            f"ExecutionFailedEvent({self.direction.name} {self.quantity:.6f} {self.symbol} "
+            f"@ ${self.price:.2f} - {self.reason})"
         )
 
 

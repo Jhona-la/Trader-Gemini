@@ -1,34 +1,14 @@
-
 import numpy as np
 
-def aligned_empty(shape, dtype=np.float64, align=64):
+def aligned_zeros(shape, dtype=np.float32, alignment=64):
     """
-    🔬 PHASE 30: L2 CACHE ALIGNMENT
-    Allocates a numpy array with memory aligned to 'align' bytes (default 64).
-    Crucial for SIMD (AVX2/AVX512) and minimizing cache line splits.
+    Allocates an array aligned to the specified byte boundary.
+    Required for CPU cacheline alignment (avoiding false sharing)
+    and future AVX-512 SIMD operations.
     """
-    dtype = np.dtype(dtype)
-    n_bytes = dtype.itemsize * np.prod(shape)
-    
-    # Allocate extra bytes to ensure we can shift to alignment
-    # + align to provide room for offset
-    # + itemsize to be safe
-    # We use uint8 for byte-level manipulation
-    buffer = np.empty(n_bytes + align, dtype=np.uint8)
-    
-    # Find the aligned offset
-    start_index = buffer.ctypes.data % align
-    offset = 0
-    if start_index != 0:
-        offset = align - start_index
-        
-    # Create a view into the aligned region
-    aligned_view = buffer[offset : offset + n_bytes].view(dtype)
-    aligned_view = aligned_view.reshape(shape)
-    
-    return aligned_view
-
-def aligned_zeros(shape, dtype=np.float64, align=64):
-    arr = aligned_empty(shape, dtype, align)
-    arr.fill(0)
-    return arr
+    size = np.prod(shape) * np.dtype(dtype).itemsize
+    buffer = np.empty(size + alignment, dtype=np.uint8)
+    offset = (alignment - (buffer.ctypes.data % alignment)) % alignment
+    aligned_buffer = buffer[offset:offset+size].view(dtype).reshape(shape)
+    aligned_buffer.fill(0)
+    return aligned_buffer

@@ -144,7 +144,8 @@ def evaluate_sl_tp_trailing_jit(
     tp_pct: float, 
     atr_pct: float, 
     is_zombie_chaser: bool,
-    elastic_tp_expansion: bool
+    elastic_tp_expansion: bool,
+    trailing_atr_mult: float
 ) -> int:
     """
     [NANO-SPEED] Core SL/TP and Trailing Stop evaluation.
@@ -177,25 +178,25 @@ def evaluate_sl_tp_trailing_jit(
         trailing_dist = (atr_pct * 0.5)
         if is_long:
             trail_stop = hwm * (1.0 - trailing_dist)
-            if current_price < trail_stop and pnl_pct > 0.0005:
+            if current_price < trail_stop and pnl_pct > 0.0008:
                 return 5
         else:
             trail_stop = lwm * (1.0 + trailing_dist)
-            if current_price > trail_stop and pnl_pct > 0.0005:
+            if current_price > trail_stop and pnl_pct > 0.0008:
                 return 5
                 
     # 4. STANDARD TRAILING STOP & TURBO BREAKEVEN
     # We trigger Turbo-Breakeven if we cross 1x ATR profit
     if pnl_pct > atr_pct:
-        # Standard Trailing distance is roughly 1.5x ATR
-        trail_dist = atr_pct * 1.5
+        # Distance dynamically adjusted by horizon (via trailing_atr_mult)
+        trail_dist = atr_pct * trailing_atr_mult
         if is_long:
             trail_stop = hwm * (1.0 - trail_dist)
-            if current_price < trail_stop and pnl_pct > 0.0005:
+            if current_price < trail_stop and pnl_pct > (atr_pct * 0.4): # Buffer for Maker fees
                 return 3
         else:
             trail_stop = lwm * (1.0 + trail_dist)
-            if current_price > trail_stop and pnl_pct > 0.0005:
+            if current_price > trail_stop and pnl_pct > (atr_pct * 0.4):
                 return 3
                 
     return 0

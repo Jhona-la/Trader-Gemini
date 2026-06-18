@@ -3,14 +3,19 @@ from abc import ABC, abstractmethod
 class Strategy(ABC):
     """
     Abstract base class for all strategies.
+    Supports Dual-Horizon categorization: 'scalping' or 'swing'.
     """
-    def __init__(self):
+    def __init__(self, horizon_type: str = "scalping"):
+        if horizon_type not in ["scalping", "swing"]:
+            raise ValueError(f"Invalid horizon_type: {horizon_type}")
+        self.horizon_type = horizon_type
         self.sophia = None
 
     @abstractmethod
     def calculate_signals(self, event):
         """
         Calculate signals based on market data.
+        Returns a list of SignalEvents or a single SignalEvent.
         """
         raise NotImplementedError("Should implement calculate_signals()")
 

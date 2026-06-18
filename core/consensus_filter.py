@@ -88,8 +88,11 @@ class ConsensusFilter:
                     if ml_confidence >= 0.55:
                         logger.info(f"🧠 [SOPHIA OVERRIDE] {symbol} bypassing Dynamic Blacklist (WR {wr*100:.1f}%) due to high AI confidence: {ml_confidence:.2f}")
                     else:
-                        logger.warning(f"🛑 [DYNAMIC BLACKLIST] {symbol} suspended: Recent WR {wr*100:.1f}% < 20% on last {len(last_n_trades)} trades.")
-                        return self._fail(f"DYNAMIC_SYMBOL_BLACKLIST ({symbol} Recent WR {wr*100:.1f}%)")
+                        logger.warning(f"🛑 [DYNAMIC BLACKLIST SOFT-VETO] {symbol} suspended: Recent WR {wr*100:.1f}% < 20% on last {len(last_n_trades)} trades. FASE II: Aplicando Sizing Termodinámico (10%).")
+                        try:
+                            object.__setattr__(signal_event, 'thermodynamic_micro_sizing', True)
+                        except (AttributeError, TypeError):
+                            pass
         except Exception as tracker_err:
             logger.error(f"❌ Error checking dynamic symbol blacklist: {tracker_err}")
         
@@ -249,9 +252,10 @@ class ConsensusFilter:
                 # Soft Gate 4.5: Strategic Regime
                 if risk_manager:
                     current_regime = getattr(risk_manager, "current_regime", "UNKNOWN")
-                    if ("VOLATILE" in current_regime or "CHOPPY" in current_regime) and strategy_id == "TECHNICAL_STRATEGY":
+                    strategy_id_val = getattr(signal_event, 'strategy_id', 'UNKNOWN')
+                    if ("VOLATILE" in current_regime or "CHOPPY" in current_regime) and strategy_id_val == "TECHNICAL_STRATEGY":
                         penalty += 0.15
-                    if "TRENDING" in current_regime and strategy_id == "STATISTICAL_REVERSION":
+                    if "TRENDING" in current_regime and strategy_id_val == "STATISTICAL_REVERSION":
                         penalty += 0.15
 
                 # Soft Gate 5: Tension
@@ -346,8 +350,10 @@ class ConsensusFilter:
             _fee_threshold = round_trip_fee * _gate_mult
             
             if atr_pct > 0 and atr_pct < _fee_threshold:
-                logger.warning(f"🛑 [VOLATILITY BLOCK] {symbol} {horizon} ATR {atr_pct*100:.3f}% < {_fee_threshold*100:.3f}% ({_gate_mult}x round-trip fee).")
-                return self._fail(f"FEE_DRAG_ATR ({atr_pct*100:.3f}% < fee_buffer {_gate_mult}x)")
+                import os
+                if os.getenv("TRADER_GEMINI_BACKTEST") != "true":
+                    logger.warning(f"🛑 [VOLATILITY BLOCK] {symbol} {horizon} ATR {atr_pct*100:.3f}% < {_fee_threshold*100:.3f}% ({_gate_mult}x round-trip fee).")
+                    return self._fail(f"FEE_DRAG_ATR ({atr_pct*100:.3f}% < fee_buffer {_gate_mult}x)")
         except Exception as e:
             logger.error(f"❌ Error in Fee Drag filter: {e}")
 

@@ -34,9 +34,9 @@ if PROJECT_ROOT not in sys.path:
 from utils.analytics import AnalyticsEngine
 from utils.session_manager import SessionManager
 from core.api_manager import get_api_manager, APIManager
-from core.api_manager import get_api_manager, APIManager
 from config import Config
 from utils.statistics_pro import StatisticsPro
+from utils.logger import logger
 
 # ==============================================================================
 # PAGE CONFIG - EXPERT MODE
@@ -413,11 +413,11 @@ with st.spinner("Loading data..."):
         live_data = api_mgr.get_account_balance(is_prod=is_prod)
         
         # Priority: Real Live API > Local File > Cached Live
+        status = load_live_status(data_dir)
         if live_data and live_data.get('total_equity', 0) > 0:
             st.session_state.equity_live = live_data.get('total_equity', 0)
         elif status and status.get('total_equity', 0) > 0:
             st.session_state.equity_live = status.get('total_equity', 0)
-             
     except Exception as e:
         # Fallback to cache if API strictly fails
         live_data = api_mgr.load_cached_status()
@@ -675,7 +675,7 @@ with kpi_cols[10]:
 # ==============================================================================
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "📊 Monitor en Vivo",
     "📈 Análisis de Desempeño", 
     "🔄 Control Reversiones",
@@ -683,7 +683,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "🧬 Neuro-Evolution", # Phase 46
     "📝 Logs del Sistema",
     "💰 Crecimiento Exponencial",
-    "🎯 Predictive Analytics"
+    "🎯 Predictive Analytics",
+    "👻 Shadow Recorder"
 ])
 
 # ------------------------------------------------------------------------------
@@ -1682,7 +1683,93 @@ with tab8:
         st.info("El archivo `prediction_metrics.json` aún no existe. Ejecute el backtest para generar el baseline.")
 
 # ==============================================================================
-# AUTO REFRESH
+# TAB 9: SHADOW FLIGHT RECORDER (FASE III)
+# ==============================================================================
+with tab9:
+    st.markdown("## 👻 Holograma Operativo (Modo Sombra)")
+    st.markdown("Métricas en vivo del Espejo Cuántico: Ejecuciones simuladas en tiempo real sin arriesgar capital base.")
+    
+    shadow_file = os.path.join(PROJECT_ROOT, "results", "shadow_flight_recorder.jsonl")
+    if os.path.exists(shadow_file):
+        try:
+            with open(shadow_file, 'r') as f:
+                lines = f.readlines()
+            
+            shadow_data = []
+            for line in lines:
+                if line.strip():
+                    try:
+                        shadow_data.append(json.loads(line))
+                    except:
+                        pass
+                        
+            if shadow_data:
+                df_shadow = pd.DataFrame(shadow_data)
+                df_shadow['timestamp'] = pd.to_datetime(df_shadow['timestamp'])
+                
+                # KPIs del Holograma
+                s_col1, s_col2, s_col3, s_col4 = st.columns(4)
+                
+                total_trades_shadow = len(df_shadow)
+                
+                # Asumimos que los trades impares son aperturas y los pares cierres para el cálculo de PnL
+                # Como el flight recorder registra Fills, agrupamos por symbol o sumamos fees.
+                # Una versión más robusta sería calcular el Capital Base + Ganancias
+                
+                total_fees = df_shadow['fee'].sum()
+                total_notional = df_shadow['notional'].sum()
+                
+                # Si hay trades de salida (exit_reason), podemos calcular PnL Bruto. 
+                # Por ahora, mostraremos el Capital Protegido (Fees descontados)
+                
+                # Simulamos Capital Fantasma
+                # Para PnL exacto necesitaríamos parear Entradas y Salidas.
+                # Asumiremos un Alpha proxy si hay cierres.
+                
+                with s_col1:
+                    st.metric("Ghost Trades Ejecutados", total_trades_shadow)
+                with s_col2:
+                    st.metric("Taker Fees Pagados (0.05%)", f"${total_fees:.4f}", delta="Costo Simulado", delta_color="inverse")
+                with s_col3:
+                    st.metric("Volumen Fantasma", f"${total_notional:.2f}")
+                
+                # Cálculo de Tiempo de Duplicación (Si hay suficiente data en horas)
+                time_span_hours = (df_shadow['timestamp'].max() - df_shadow['timestamp'].min()).total_seconds() / 3600.0
+                if time_span_hours > 0.5 and total_fees > 0:
+                    with s_col4:
+                        st.metric("Tiempo Vuelo Simulado", f"{time_span_hours:.1f} hrs")
+                
+                st.markdown("### 📝 Bitácora de Vuelo (Últimos 50 eventos)")
+                df_display = df_shadow.tail(50).sort_values('timestamp', ascending=False)
+                st.dataframe(
+                    df_display[['timestamp', 'symbol', 'direction', 'quantity', 'price', 'notional', 'fee', 'strategy']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # Gráfico de Volumen Fantasma Acumulado
+                st.markdown("### 📈 Presión de Volumen Fantasma")
+                df_shadow['cum_vol'] = df_shadow['notional'].cumsum()
+                
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=df_shadow['timestamp'], y=df_shadow['cum_vol'], mode='lines',
+                    name="Volumen Acumulado", line=dict(color="#8a2be2", width=3)
+                ))
+                fig.update_layout(
+                    height=250, margin=dict(l=20, r=20, t=20, b=20),
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                    yaxis_title="$ USD"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+            else:
+                st.info("El archivo JSONL está vacío.")
+        except Exception as e:
+            st.error(f"Error procesando el Flight Recorder: {str(e)}")
+    else:
+        st.info(f"El Flight Recorder no existe en: {shadow_file}. Active el Modo Sombra y espere la primera ejecución simulada.")
+
 # ==============================================================================
 
 if st.session_state.auto_refresh:

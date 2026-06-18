@@ -30,11 +30,16 @@ from utils.debug_tracer import trace_execution
 from decimal import Decimal, getcontext
 
 try:
-    from core.nano_core import calculate_kelly_fraction, calculate_unrealized_pnl_fast
+    from core.nano_core import calculate_kelly_fraction, calculate_unrealized_pnl_fast, update_hwm_lwm
 except ImportError:
     calculate_kelly_fraction = None
     calculate_unrealized_pnl_fast = None
+    update_hwm_lwm = None
 
+try:
+    from core.nano_portfolio import NanoVirtualLedger
+except ImportError:
+    NanoVirtualLedger = None
 
 class Portfolio:
     def __init__(self, initial_capital: float = 13.0, 
@@ -59,11 +64,8 @@ class Portfolio:
         self.precision_drift_accumulated = Decimal('0.0')
         getcontext().prec = 28 # Satoshi-level precision for drift auditing
         
-        # 🛡️ SOVEREIGN CONTEXT MEMORY (Virtual Ledger 2.0)
-        from core.sovereign_memory import ZmqKVClient, ZmqDictProxy
-        self.zmq_client = ZmqKVClient(port=5557)
-        
-        self.positions = ZmqDictProxy(self.zmq_client, "positions") # Symbol -> {'quantity': 0, 'avg_price': 0, 'current_price': 0}
+        # 🛡️ SOVEREIGN CONTEXT MEMORY (Removed ZMQ - Native dictionaries for speed)
+        self.positions = {} # Symbol -> {'quantity': 0, 'avg_price': 0, 'current_price': 0}
         
         # FASE 30: MULTIPROCESSING SHARED MEMORY (Heat & NetExposure)
         # QUÉ: Mover estados críticos a memoria compartida a nivel de OS (C-level array).
@@ -82,12 +84,18 @@ class Portfolio:
         # OMNIBUS VIRTUAL LEDGER
         # Tracks true Avg Entry Price separately per Horizon (e.g. BTC/USDT_SCALP).
         # Prevents high-frequency strategies from being overwritten by Swing entries.
-        self.virtual_ledger = ZmqDictProxy(self.zmq_client, "virtual_ledger") # f"{symbol}_{horizon}" -> position_dict
+        self.virtual_ledger = {} # f"{symbol}_{horizon}" -> position_dict
+        
+        # [FASE 4: NANO OPTIMIZATION]
+        if NanoVirtualLedger is not None:
+            self._nano_ledger = NanoVirtualLedger(self.virtual_ledger, self.positions)
+        else:
+            self._nano_ledger = None
         
         # SUPREMO-V4: CANNIBALIZATION GUARD (VIRTUAL LEDGER SYNC)
         # Tracks net intended position per symbol across all horizons to avoid
         # paying double fees/margin when horizons have opposite directions.
-        self._net_intended_positions = ZmqDictProxy(self.zmq_client, "net_intended_positions") # {symbol: net_qty}
+        self._net_intended_positions = {} # {symbol: net_qty}
         
         # 📂 FORENSIC AUDITING: Isolated Ledgers
         self.scalping_ledger = []
@@ -166,8 +174,8 @@ class Portfolio:
         
         # Initialize CSVs
         if not os.path.exists(self.csv_path):
-            df = pd.DataFrame(columns=['datetime', 'symbol', 'type', 'direction', 'quantity', 'price', 'fill_cost', 'strategy_id', 'setup_type', 'strategy_version', 'details'])
-            df.to_csv(self.csv_path, index=False)
+            with open(self.csv_path, 'w') as f:
+                f.write('datetime,symbol,type,direction,quantity,price,fill_cost,strategy_id,setup_type,strategy_version,details\n')
             
         # Create initial status file
         self.save_status()
@@ -202,7 +210,6 @@ class Portfolio:
     def close(self):
         try:
             self.save_status()
-            self.zmq_client.close()
             # FASE 30: Limpiar memoria compartida
             if hasattr(self, '_shm'):
                 self._shm.close()
@@ -214,7 +221,8 @@ class Portfolio:
         """Devuelve el tiempo simulado (backtest) o el tiempo real (producción)."""
         if hasattr(self, 'data_provider') and self.data_provider and hasattr(self.data_provider, 'current_time_ms'):
             try:
-                return pd.to_datetime(self.data_provider.current_time_ms, unit="ms", utc=True)
+                ms = self.data_provider.current_time_ms
+                return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
             except Exception as e:
                 logger.debug(f"Silent exception caught: {e}")
         return datetime.now(timezone.utc)
@@ -351,6 +359,8 @@ class Portfolio:
                         'opener_strategy_id': pos.get('strategy_id', 'UNKNOWN'),
                         'entry_time': self._get_current_time() # Fallback
                     }
+                    if getattr(self, '_nano_ledger', None) is not None:
+                        self._nano_ledger.register_vkey(sym, v_key)
                     
                     sl_print = f"{float(pos.get('sl_pct'))*100:.2f}%" if pos.get('sl_pct') else "None"
                     logger.info(f"   ↳ 🧬 Virtual Ledger Reconstructed: {v_key} (SL: {sl_print})")
@@ -393,6 +403,10 @@ class Portfolio:
                 if loaded_vl:
                     self.virtual_ledger = loaded_vl
                     print(f"🔄 RESTORED {len(self.virtual_ledger)} virtual ledger entries natively.")
+                    if getattr(self, '_nano_ledger', None) is not None:
+                        for k in self.virtual_ledger.keys():
+                            _sym = k.split('_')[0]
+                            self._nano_ledger.register_vkey(_sym, k)
                 else:
                     for sym, pos in self.positions.items():
                         print(f"   - {sym}: {pos['quantity']} @ ${pos['avg_price']:.4f}")
@@ -414,6 +428,8 @@ class Portfolio:
                             'opener_strategy_id': pos.get('strategy_id', 'UNKNOWN'),
                             'entry_time': self._get_current_time() # Fallback
                         }
+                        if getattr(self, '_nano_ledger', None) is not None:
+                            self._nano_ledger.register_vkey(sym, v_key)
                         sl_print = f"{float(pos.get('sl_pct'))*100:.2f}%" if pos.get('sl_pct') else "None"
                         print(f"   ↳ 🧬 Virtual Ledger Reconstructed: {v_key} (SL: {sl_print})")
             else:
@@ -459,11 +475,9 @@ class Portfolio:
             
             # Slice to same length
             data = {s: r[-min_len:] for s, r in returns_map.items()}
-            df = pd.DataFrame(data)
-            
-            corr_matrix = df.corr()
-            # Mean of off-diagonal elements ideally, but full mean is okay proxy
-            avg_corr = corr_matrix.mean().mean()
+            matrix = np.array(list(data.values())) # shape (N_symbols, min_len)
+            corr_matrix = np.corrcoef(matrix)
+            avg_corr = np.mean(corr_matrix)
             
             # Store in Stats
             self.math_stats['fleet_corr'] = avg_corr
@@ -672,7 +686,7 @@ class Portfolio:
                 avg = pos.get('avg_price', 0)
                 curr = pos.get('current_price', avg)
                 if calculate_unrealized_pnl_fast:
-                    direction = "LONG" if qty > 0 else "SHORT"
+                    direction = 1 if qty > 0 else -1
                     pnl = calculate_unrealized_pnl_fast(float(curr), float(avg), float(abs(qty)), direction)
                 else:
                     pnl = (curr - avg) * qty
@@ -717,7 +731,7 @@ class Portfolio:
                     avg_price = pos['avg_price']
                     current_price = pos.get('current_price', avg_price)
                     if calculate_unrealized_pnl_fast:
-                        direction = "LONG" if qty > 0 else "SHORT"
+                        direction = 1 if qty > 0 else -1
                         pnl += calculate_unrealized_pnl_fast(float(current_price), float(avg_price), float(abs(qty)), direction)
                     else:
                         pnl += (current_price - avg_price) * qty
@@ -772,7 +786,7 @@ class Portfolio:
                         beta_scalp += pos_beta
                         
                     if calculate_unrealized_pnl_fast:
-                        direction = "LONG" if qty > 0 else "SHORT"
+                        direction = 1 if qty > 0 else -1
                         pnl = calculate_unrealized_pnl_fast(float(curr), float(avg), float(abs(qty)), direction)
                     else:
                         pnl = (curr - avg) * qty
@@ -1006,25 +1020,39 @@ class Portfolio:
                     
             # --- 🛡️ PHASE 15: HEDGE MODE SYNC ---
             # 🛡️ VIRTUAL LEDGER SYNC: Propagate real-time price to all horizon sub-positions
-            active_v_keys = []
-            for v_key, vpos in self.virtual_ledger.items():
-                if v_key.startswith(f"{symbol}_"):
-                    vpos['current_price'] = price
-                    if 'high_water_mark' not in vpos: vpos['high_water_mark'] = price
-                    if 'low_water_mark' not in vpos: vpos['low_water_mark'] = price
-                    
-                    if not _is_ghost_tick:
-                        if price > vpos['high_water_mark']:
-                            vpos['high_water_mark'] = price
-                        if vpos['low_water_mark'] == 0 or price < vpos['low_water_mark']:
-                            vpos['low_water_mark'] = price
-                            
-                    # Mirror changes to self.positions
-                    if v_key in self.positions:
-                        self.positions[v_key]['current_price'] = vpos['current_price']
-                        self.positions[v_key]['high_water_mark'] = vpos['high_water_mark']
-                        self.positions[v_key]['low_water_mark'] = vpos['low_water_mark']
-                    active_v_keys.append(v_key)
+            
+            # [FASE 4: NANO OPTIMIZATION] - Zero-Copy C++ fast loop
+            if self._nano_ledger is not None:
+                active_v_keys = self._nano_ledger.update_market_price(symbol, float(price), bool(_is_ghost_tick))
+            else:
+                active_v_keys = []
+                for v_key, vpos in self.virtual_ledger.items():
+                    if v_key.startswith(f"{symbol}_"):
+                        vpos['current_price'] = price
+                        if 'high_water_mark' not in vpos: vpos['high_water_mark'] = price
+                        if 'low_water_mark' not in vpos: vpos['low_water_mark'] = price
+                        
+                        if not _is_ghost_tick:
+                            if update_hwm_lwm is not None:
+                                new_hwm, new_lwm = update_hwm_lwm(
+                                    float(price), 
+                                    float(vpos['high_water_mark']), 
+                                    float(vpos['low_water_mark'])
+                                )
+                                vpos['high_water_mark'] = new_hwm
+                                vpos['low_water_mark'] = new_lwm
+                            else:
+                                if price > vpos['high_water_mark']:
+                                    vpos['high_water_mark'] = price
+                                if vpos['low_water_mark'] == 0 or price < vpos['low_water_mark']:
+                                    vpos['low_water_mark'] = price
+                                
+                        # Mirror changes to self.positions
+                        if v_key in self.positions:
+                            self.positions[v_key]['current_price'] = vpos['current_price']
+                            self.positions[v_key]['high_water_mark'] = vpos['high_water_mark']
+                            self.positions[v_key]['low_water_mark'] = vpos['low_water_mark']
+                        active_v_keys.append(v_key)
             
             # DB Snapshot prep (Copy inside lock)
             snapshot_positions = []
@@ -1281,6 +1309,8 @@ class Portfolio:
                 'trail_stop_price': 0.0,
                 'strategy_family': 'DEFAULT'
             }
+            if getattr(self, '_nano_ledger', None) is not None:
+                self._nano_ledger.register_vkey(event.symbol, v_key)
             
         pos = self.virtual_ledger[v_key]
         
@@ -1335,6 +1365,7 @@ class Portfolio:
         
         fill_cost = event.quantity * price
         isolated_pnl = 0.0
+        closed = 0.0 # FASE 2: Track closed quantity explicitly
         
         # Calculate new average price isolating strategies
         if event.direction == OrderSide.BUY:
@@ -1506,7 +1537,9 @@ class Portfolio:
             )
             
         logger.info(f"📓 [LEDGER] {v_key} | State: {pos['state']} | Qty: {pos['quantity']:.4f} | Avg: ${pos['avg_price']:.2f} | Unrealized PnL: ${isolated_pnl:.4f} | Target SL: {pos.get('sl_pct')}")
-        return isolated_pnl
+        
+        # FORENSIC FIX FASE 2: Evitar Phantom Losses en RL (Solo retorna PnL si cerramos algo)
+        return isolated_pnl if closed > 0 else None
 
     def _record_closed_trade(self, event, pos, closed_qty, entry_price, exit_price, gross_pnl):
         """Generates the Forensic Dictionary for closed operations and routes it."""
@@ -1626,7 +1659,7 @@ class Portfolio:
             # FORENSIC FIX #2: EXIT BALLOT PROPAGATION
             # QUÉ: Captura los votos de las estrategias de cierre al momento
             #   del cierre del trade y los almacena en trade_data.
-            # POR QUÉ: check_exits() almacena votos en vpos['_exit_votes']
+            # POR QUÉ: RiskManager.check_stops() almacena votos en vpos['_exit_votes']
             #   y vpos['_hold_votes'], pero estos se perdían al cerrar.
             # PARA QUÉ: El Telegram muestra qué estrategias votaron EXIT vs HOLD.
             # ═══════════════════════════════════════════════════════════════
@@ -1909,7 +1942,9 @@ class Portfolio:
             # Subsystem Hook: Update the independent Virtual Ledger for this specific Horizon
             isolated_pnl = 0.0
             try:
-                isolated_pnl = self._update_virtual_ledger(event)
+                ledger_pnl = self._update_virtual_ledger(event)
+                if ledger_pnl is not None:
+                    isolated_pnl = ledger_pnl
             except Exception as e:
                 import traceback
                 traceback.print_exc()
@@ -1981,7 +2016,7 @@ class Portfolio:
                 # confiamos en _update_virtual_ledger (aislado por horizonte) que ya se ejecutó.
                 
                 # 1. Update Cash & Realized PnL
-                if isolated_pnl != 0.0:
+                if isolated_pnl is not None and isolated_pnl != 0.0:
                     self.realized_pnl += isolated_pnl
                     if Config.BINANCE_USE_FUTURES:
                         self.current_cash += isolated_pnl
@@ -2505,13 +2540,71 @@ class Portfolio:
                 # Don't fail the save if analytics fail
                 logger.debug(f"Async Analytics Calc Skipped: {e}")
 
+            def _calculate_kelly_fraction(self) -> float:
+                """
+                [FASE 8: GESTIÓN DE RIESGO AVANZADA]
+                Calcula la fracción de Kelly usando un C-optimized Nano Core si está disponible.
+                """
+                # Minimum trades required for statistically significant Kelly calculation
+                if len(self.kelly_trades_history) < 5:
+                    return 0.01  # Use base minimal risk
+                    
+                wins = sum(1 for t in self.kelly_trades_history if t['is_win'])
+                total = len(self.kelly_trades_history)
+                
+                self.kelly_winrate = wins / total
+                
+                # Calculate Payoff Ratio (Avg Win / Avg Loss)
+                gross_profits = sum(t['pnl'] for t in self.kelly_trades_history if t['is_win'])
+                gross_losses = abs(sum(t['pnl'] for t in self.kelly_trades_history if not t['is_win']))
+                
+                avg_win = gross_profits / wins if wins > 0 else 0
+                avg_loss = gross_losses / (total - wins) if (total - wins) > 0 else 0
+                
+                self.kelly_payoff_ratio = avg_win / avg_loss if avg_loss > 0 else 1.0
+                
+                if calculate_kelly_fraction is not None:
+                    try:
+                        return calculate_kelly_fraction(
+                            self._win_streak,
+                            self._loss_streak,
+                            float(self.kelly_winrate),
+                            float(self.kelly_payoff_ratio),
+                            0.5, # max_kelly
+                            float(getattr(self, 'current_brier_score', 100.0)), # using brier score as stress approx
+                            True
+                        )
+                    except Exception as e:
+                        from core.exceptions import SystemIntegrityError
+                        raise SystemIntegrityError(f"Cálculo de Kelly fallido de forma silenciosa para {self._win_streak}/{self._loss_streak} con winrate {self.kelly_winrate}") from e
+                if self.kelly_winrate <= 0.0 or self.kelly_payoff_ratio <= 0.0:
+                    return 0.01
+                    
+                kelly_pct = self.kelly_winrate - ((1.0 - self.kelly_winrate) / self.kelly_payoff_ratio)
+                
+                # Anti-Martingale / Streak Logic Fallback
+                if self._win_streak > 0:
+                    multiplier = 1.0 + (min(self._win_streak, 5) * 0.1)  # Up to 50% boost on win streaks
+                    kelly_pct *= multiplier
+                elif self._loss_streak > 0:
+                    divisor = 1.0 + (min(self._loss_streak, 5) * 0.2)    # Cut risk significantly on losing streaks
+                    kelly_pct /= divisor
+                    
+                if kelly_pct <= 0.0:
+                    return 0.01  # Minimum risk floor
+                    
+                # ═══════════════════════════════════════════════════════════════
+                # TECHO TERMODINÁMICO DURO: 25% MAXIMUM (ANTI-RUINA)
+                # ═══════════════════════════════════════════════════════════════
+                return min(kelly_pct, 0.25)
+
             json_data = {
                 'timestamp': self._get_current_time().isoformat(),
                 'session_id': session_id,
-                'total_equity': equity,
+                'total_equity': cash + realized, # nano_core.calculate_total_equity does not exist
                 'cash': cash,
                 'realized_pnl': realized,
-                'unrealized_pnl': unrealized,
+                'unrealized_pnl': 0.0, # Will be handled by the real portfolio update
                 'positions': positions,
                 'virtual_ledger': vl_snapshot,
                 'performance_metrics': metrics, # Now populated!
@@ -2549,6 +2642,21 @@ class Portfolio:
 
 
     @trace_execution
+    def validate_notional_physics(self, margin: float, leverage: int, min_notional: float = 5.05) -> bool:
+        """
+        [FASE 4 SUPREMACÍA NATIVA] Restricción dura de capital físico.
+        Si el notional (margin * leverage) es menor al límite físico de Binance ($5.05),
+        la operación es rechazada estructuralmente a nivel de portfolio.
+        """
+        notional = margin * leverage
+        if notional < min_notional:
+            logger.warning(
+                f"🛡️ [PHYSICS-FILTER] Rechazo estructural. Notional ${notional:.2f} "
+                f"(Margen ${margin:.2f} x Lev {leverage}) < Mínimo ${min_notional:.2f}"
+            )
+            return False
+        return True
+
     def get_smart_kelly_sizing(self, symbol: str, strategy_id: str, is_micro_account: bool = False, horizon: str = "SCALPING") -> float:
         """
         [PHASE 3.2] Kelly Criterion Dinámico para Micro-Cuentas
@@ -2569,16 +2677,16 @@ class Portfolio:
                 kelly_f = win_rate - (loss_rate / b)
                 if is_micro_account:
                     multiplier = 1.0 if horizon == "MICROSCALPING" else 0.8
-                    return max(0.02, min(0.50, kelly_f * multiplier)) # FASE 6: 50% max allocation para 13 USD
+                    return max(0.02, min(0.25, kelly_f * multiplier)) # 🛑 LEY DE LA RUINA: Techo termodinámico 25%
                 else:
                     return max(0.01, min(0.25, kelly_f * 0.5)) # Fallback a 0.01 mínimo
-            return 0.10 if is_micro_account else 0.05
+            return 0.25 if is_micro_account else 0.05
             
         wins = perf['wins']
         losses = perf['losses']
         
-        if wins == 0: return 0.20 if is_micro_account else 0.01  # FASE 6: 20% inicial
-        if losses == 0: return 0.50 if is_micro_account else 0.10 # Perfect streak
+        if wins == 0: return 0.25 if is_micro_account else 0.01  # LEY DE LA RUINA: 25% inicial en $13
+        if losses == 0: return 0.25 if is_micro_account else 0.10 # Perfect streak, capped at 25%
         
         win_rate = wins / total_trades
         loss_rate = 1.0 - win_rate
@@ -2615,13 +2723,13 @@ class Portfolio:
             #   Swing debe ser defensivo y operar con menor porción del suyo.
             if horizon in ("MICROSCALPING", "MICRO"):
                 multiplier = 1.2
-                cap = 1.00 # 100% of the Microscalping horizon margin (which is 40% of total)
+                cap = 0.25 # Techo termodinámico estricto
             elif horizon == "SCALPING":
                 multiplier = 1.0
-                cap = 0.50 # 50% of Scalping margin
+                cap = 0.25 
             else: # SWING
                 multiplier = 0.8
-                cap = 0.30 # 30% of Swing margin
+                cap = 0.20 
                 
             base_size = max(0.02, min(cap, kelly_f * multiplier))
             
@@ -2633,7 +2741,7 @@ class Portfolio:
             elif getattr(self, '_loss_streak', 0) >= 2:
                 streak_mult = max(0.5, 1.0 - (self._loss_streak - 1) * 0.20)
             
-            final_size = max(0.02, min(cap, base_size * streak_mult))
+            final_size = max(0.02, min(0.25, base_size * streak_mult))
         else:
             # Half-Kelly for Standard accounts
             final_size = max(0.01, min(0.25, kelly_f * 0.5))

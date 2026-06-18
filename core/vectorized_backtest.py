@@ -68,10 +68,39 @@ def run_backtest_fidelity(fidelity_level, params):
     
     n_candles = fidelity_map.get(fidelity_level, 1000)
     
-    # Generar datos sintéticos (Random Walk simulando mercado)
-    np.random.seed(42) # Fijo para reproducibilidad entre iteraciones
-    returns = np.random.normal(0.0001, 0.002, n_candles)
-    close_prices = 100.0 * np.exp(np.cumsum(returns))
+    n_candles = fidelity_map.get(fidelity_level, 1000)
+    
+    # FETCH REAL DATA INSTEAD OF RANDOM WALK
+    import asyncio
+    from data.binance_loader import BinanceLoader
+    import datetime
+
+    # Pre-fetch REAL binance historical data if not cached
+    loader = BinanceLoader()
+    
+    # We use a synchronous bridge just for the backtest orchestrator (if not already in event loop)
+    # Ideally, this should be preloaded before evolutionary loops.
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+    if loop.is_running():
+        # In a running loop, we can't easily wait. This implies the caller should have provided the data.
+        # Fallback to loading via a separate thread or just failing to avoid dummy data.
+        raise RuntimeError("run_backtest_fidelity must be called with pre-loaded real data or outside event loop.")
+    else:
+        # Load 30 days of 1m kliness to get enough data
+        end_str = datetime.datetime.now().strftime("%d %b, %Y")
+        klines = loop.run_until_complete(loader.get_historical_klines("BTCUSDT", "1m", "30 days ago UTC", end_str))
+        
+    if not klines or len(klines) < n_candles:
+        return -1.0 # Not enough real data
+        
+    # Extract close prices from binance data: [open_time, open, high, low, close, volume, ...]
+    import numpy as np
+    close_prices = np.array([float(k[4]) for k in klines[-n_candles:]], dtype=np.float64)
     
     # Extraer parámetros
     rsi_p = params.get('rsi_period', 14)

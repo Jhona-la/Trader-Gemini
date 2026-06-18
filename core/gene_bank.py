@@ -12,6 +12,7 @@ import json
 from typing import Dict, Optional, List
 from utils.logger import logger
 from core.genotype import Genotype
+from datetime import datetime
 
 class GeneBank:
     """

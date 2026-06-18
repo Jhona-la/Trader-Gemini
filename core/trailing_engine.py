@@ -130,13 +130,35 @@ class TrailingEngine:
             else:
                 t1_stop = current_price + (dist_atr * current_atr)
             
-            # Breakeven guard: Si MFE > 1.0 ATR, el stop no puede ser peor que Entry Price
+            # 🛡️ ESCUDO CUÁNTICO: Breakeven Inmediato a +1.0% de PnL Absoluto
             entry = pos.get('avg_price', 0.0)
-            if mfe_atr >= 1.0:
+            fee_rate = getattr(self.config, 'BINANCE_TAKER_FEE_BNB', 0.000375) * 2
+            
+            pnl_pct = 0.0
+            if entry > 0:
+                pnl_pct = (current_price - entry) / entry if pos_side == 'LONG' else (entry - current_price) / entry
+
+            # Guardamos el Max PnL Pct (Absoluto)
+            max_pnl_pct = pos.get('max_pnl_pct', 0.0)
+            if pnl_pct > max_pnl_pct:
+                pos['max_pnl_pct'] = pnl_pct
+                max_pnl_pct = pnl_pct
+
+            # Si alguna vez tocamos +1.0% de ganancia, el stop NUNCA puede ser peor que Break-Even + Comisión
+            if max_pnl_pct >= 0.01:
                 if pos_side == 'LONG':
-                    t1_stop = max(t1_stop, entry)
+                    breakeven_price = entry * (1 + fee_rate)
+                    t1_stop = max(t1_stop, breakeven_price)
+                    # Si superamos el 1.5%, bloqueamos al menos un 0.5% de profit puro
+                    if max_pnl_pct >= 0.015:
+                        profit_lock = entry * (1 + 0.005)
+                        t1_stop = max(t1_stop, profit_lock)
                 else:
-                    t1_stop = min(t1_stop, entry) if t1_stop > 0 else entry
+                    breakeven_price = entry * (1 - fee_rate)
+                    t1_stop = min(t1_stop, breakeven_price) if t1_stop > 0 else breakeven_price
+                    if max_pnl_pct >= 0.015:
+                        profit_lock = entry * (1 - 0.005)
+                        t1_stop = min(t1_stop, profit_lock) if t1_stop > 0 else profit_lock
             
             proposals.append({'name': 'T1_ATR', 'price': t1_stop})
             

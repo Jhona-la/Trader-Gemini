@@ -313,7 +313,7 @@ session_manager: Optional[SessionManager] = None
 
 def get_session_manager() -> Optional[SessionManager]:
     """Retorna la instancia global del SessionManager."""
-    global session_manager
+    # Removed global session_manager
     return session_manager
 
 

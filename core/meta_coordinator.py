@@ -386,7 +386,47 @@ class MetaCoordinator:
                 # No conflicts — approve all directional
                 approved_intents.extend(longs)
                 approved_intents.extend(shorts)
+                
+        # ════════════════════════════════════════════════════════════════
+        # CTOS PHASE 4: TOP-K CONVICTION FILTER
+        # ════════════════════════════════════════════════════════════════
+        directional_intents = [i for i in approved_intents if getattr(i, 'signal_type', None) != SignalType.EXIT]
+        exit_intents = [i for i in approved_intents if getattr(i, 'signal_type', None) == SignalType.EXIT]
         
+        from config import Config
+        top_k = getattr(Config, "TOP_K_SIGNALS_PER_TICK", getattr(getattr(Config, "Risk", object()), "TOP_K_SIGNALS_PER_TICK", 3))
+        
+        if len(directional_intents) > top_k:
+            # Sort by confidence descending
+            directional_intents.sort(key=lambda x: getattr(x, 'confidence', getattr(x, 'strength', 0.0)), reverse=True)
+            
+            top_directional = directional_intents[:top_k]
+            vetoed_directional = directional_intents[top_k:]
+            
+            for intent in vetoed_directional:
+                rejected_intents.append({"intent": intent, "reason": "TOP_K_VETO"})
+                
+            approved_intents = exit_intents + top_directional
+        
+        # ════════════════════════════════════════════════════════════════
+        # CTOS PHASE 5: QUANTIFY VETOES IN PREDICTION TRACKER
+        # Feedback loop para Machine Learning. Reporta todos los rechazos.
+        # ════════════════════════════════════════════════════════════════
+        pt = getattr(getattr(self, 'risk_manager', None), 'prediction_tracker', None)
+        if pt and hasattr(pt, 'record_signal_veto') and rejected_intents:
+            for rej in rejected_intents:
+                intent = rej["intent"]
+                reason = rej["reason"]
+                try:
+                    pt.record_signal_veto(
+                        strategy_id=getattr(intent, 'strategy_id', 'UNKNOWN'),
+                        symbol=intent.symbol,
+                        reason=reason,
+                        trade_id=getattr(intent, 'trade_id', None)
+                    )
+                except Exception as e:
+                    logger.error(f"Error logging veto to PredictionTracker: {e}")
+
         self._metrics['intents_approved'] += len(approved_intents)
         return approved_intents, rejected_intents
 

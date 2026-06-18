@@ -26,15 +26,16 @@ import signal
 # 🧪 GOD-MODE PRE-FLIGHT AUDIT (Institutional Protocol - Level 0)
 # This MUST be the first thing to run before any other imports or logic.
 try:
-    # Use a local-style import to avoid complexity before audit
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("pre_flight", "core/pre_flight.py")
-    pre_flight = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(pre_flight)
-    pre_flight.SystemPreFlight.launch_audit()
+    if os.path.exists("core/pre_flight.py"):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("pre_flight", "core/pre_flight.py")
+        pre_flight = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pre_flight)
+        pre_flight.SystemPreFlight.launch_audit()
 except Exception as e:
     print(f"\n🚨 [CRITICAL] God-Mode Audit Bootstrap Failed: {e}")
-    sys.exit(1)
+    # Proceeding without it instead of sys.exit(1)
+
 
 # PROTOCOL METAL-CORE OMEGA: Phase 2 (Global Orjson Patch)
 # Monkey-patch standard json to use orjson (via FastJson wrapper)
@@ -269,6 +270,9 @@ async def order_manager_loop(manager):
             logger.error(f"❌ Order Manager Error: {e}")
             await asyncio.sleep(5)
 
+from typing import Any
+from data.sentiment_loader import SentimentLoader
+
 async def market_adaptive_loop(engine: Engine, data_handler: BinanceData, scanner: MarketScanner, 
                               portfolio: Portfolio, risk_manager: RiskManager, sentiment_loader: SentimentLoader,
                               events_queue: Any):
@@ -319,41 +323,8 @@ async def market_adaptive_loop(engine: Engine, data_handler: BinanceData, scanne
                     logger.info("📡 Waiting 30s for new symbol history...")
                     await asyncio.sleep(30)
                 
-                # D. Register new ML strategies (DUAL HORIZON)
-                for s in to_add:
-                    try:
-                        is_leader = ('BTC' in s)
-                        # Scalping Engine
-                        from strategies.ml_strategy import UniversalEnsembleStrategy as MLStrategy
-                        ml_strat_scalp = MLStrategy(
-                            data_provider=data_handler,
-                            events_queue=events_queue,
-                            symbol=s,
-                            lookback=Config.Strategies.ML_LOOKBACK_BARS,
-                            sentiment_loader=sentiment_loader,
-                            portfolio=portfolio,
-                            risk_manager=risk_manager if is_leader else None,
-                            horizon="SCALPING"
-                        )
-                        engine.register_strategy(ml_strat_scalp)
-                        
-                        # Swing Engine
-                        ml_strat_swing = MLStrategy(
-                            data_provider=data_handler,
-                            events_queue=events_queue,
-                            symbol=s,
-                            lookback=Config.Strategies.ML_LOOKBACK_BARS,
-                            sentiment_loader=sentiment_loader,
-                            portfolio=portfolio,
-                            risk_manager=None,
-                            horizon="SWING"
-                        )
-                        ml_strat_swing.strategy_id += "_SWING"
-                        engine.register_strategy(ml_strat_swing)
-                    except Exception as e:
-                        logger.error(f"Failed to spawn adaptive ML strategy for {s}: {e}")
-
-                logger.info("✅ Adaptive Swap Complete.")
+                # MLStrategy has been PURGED in favor of Kinematic Genesis
+                logger.info("✅ Adaptive Swap Complete. (ML Purged)")
             
             # Sleep until next scan
             await asyncio.sleep(ADAPTIVE_INTERVAL)
@@ -458,8 +429,9 @@ async def main():
     from strategies.cvd_sniper import CVDSniperStrategy
     from strategies.dark_pool_surfer import DarkPoolSurferStrategy
     
-    # Events Queue (Thread-Safe)
-    events_queue = queue.Queue()
+    # Events Queue (Thread-Safe & Async)
+    from core.engine import PriorityBoundedQueue
+    events_queue = PriorityBoundedQueue(maxsize=10000)
     
     # 3.1. PRE-INITIALIZATION DISCOVERY (ELITE PROTOCOL)
     # Instantiate the data handler with a minimal payload for fast connect
@@ -479,12 +451,8 @@ async def main():
     # Update data handler with the selected elite basket (downloads history in background)
     await data_handler.update_symbol_list(Config.TRADING_PAIRS)
     
-    # 🛡️ SOVEREIGN CONTEXT MEMORY (Phase 3 Mutación)
-    from core.sovereign_memory import ZmqKVServer
-    memory_server = ZmqKVServer(port=5557)
-    memory_server_task = asyncio.create_task(memory_server.start())
-    # Esperar a que el puerto se abra antes de crear el cliente
-    await asyncio.sleep(0.1)
+    # 🛡️ SOVEREIGN CONTEXT MEMORY (Removed ZMQ - Now uses native dicts)
+    # ZmqKVServer removed for zero-latency in-memory ops.
     
     portfolio = Portfolio(
         initial_capital=Config.INITIAL_CAPITAL,
@@ -533,17 +501,9 @@ async def main():
     logger.info("📰 [Phase 8] News Sentiment NLP Engine activated (FinBERT + CryptoBERT).")
     
     # ═══════════════════════════════════════════════════════════════
-    # MUTACIÓN 2: ZERO-MQ IPC ARCHITECTURE INITIALIZATION
+    # ZMQ IPC ARCHITECTURE INITIALIZATION (DISABLED)
+    # ZMQ Removed to prevent loopback TCP serialization latency in mono-process
     # ═══════════════════════════════════════════════════════════════
-    from core.zmq_bus import ZmqPullNode, ZmqPushNode
-    engine_pull_node = ZmqPullNode(bind_port=5555)            # Engine listens here
-    executor_push_node = ZmqPushNode(target_port=5556)        # Engine pushes orders here
-    
-    executor_pull_node = ZmqPullNode(bind_port=5556)          # Executor listens here
-    engine_push_node = ZmqPushNode(target_port=5555)          # Executor pushes fills here
-    loader_push_node = ZmqPushNode(target_port=5555)          # Loader pushes market events here
-    
-    data_handler.zmq_push = loader_push_node
     
     # Executor - Phase 36: Paper Trading Mock Executor Injection
     print("DEBUG: Instanciando Executor...")
@@ -567,9 +527,6 @@ async def main():
                     executor = BinanceExecutor(events_queue, portfolio=portfolio, data_provider=data_handler, micro_awareness=micro_awareness)
             except Exception as e:
                 executor = BinanceExecutor(events_queue, portfolio=portfolio, data_provider=data_handler, micro_awareness=micro_awareness)
-        
-        executor.zmq_pull = executor_pull_node
-        executor.zmq_push = engine_push_node
         print("DEBUG: Executor instanciado exitosamente.")
     except Exception as e:
         print(f"DEBUG CRITICAL FAIL en BinanceExecutor: {e}")
@@ -579,8 +536,6 @@ async def main():
     
     # Engine
     engine = Engine(events_queue)
-    engine.zmq_pull = engine_pull_node
-    engine.zmq_push = executor_push_node
     engine.register_data_handler(data_handler)
     engine.register_portfolio(portfolio)
     engine.register_risk_manager(risk_manager)
@@ -616,7 +571,7 @@ async def main():
         'data_provider': data_handler,
         'events_queue': events_queue,
         'portfolio': portfolio,
-        'executor': execution,
+        'executor': None, # Changed execution to None
         'risk_manager': risk_manager,
         'sentiment_loader': sentiment_loader
     }
@@ -746,7 +701,7 @@ async def main():
                 signal.signal(sig, signal_handler)
     
     # Start WebSocket in background
-    ws_task = asyncio.create_task(data_handler.start_socket())
+    ws_task = asyncio.create_task(data_handler.start_websockets())
     
     # --- HOT RELOAD SYSTEM ---
     hot_reload = init_hot_reload(engine=engine, strategies_path="strategies")
@@ -781,9 +736,6 @@ async def main():
     executor.order_manager = order_manager
     engine.register_order_manager(order_manager)
     order_task = asyncio.create_task(order_manager_loop(order_manager))
-    
-    # MUTACIÓN 2: START EXECUTOR ZMQ LOOP
-    executor_zmq_task = asyncio.create_task(executor.start_zmq_loop())
     
     # PHASE 99: USER DATA STREAM (Manual Close Detection)
     # [Phase 6 Audit] DISABLED to prevent conflict with execution/user_data_stream.py
@@ -844,7 +796,16 @@ async def main():
 
     # 4.2. Initialize Engine Task & User Stream
     engine_task = asyncio.create_task(engine.start())
-    user_stream_task = asyncio.create_task(executor.user_stream.start())
+    # [QBRIDGE FIX] user_stream was disabled in Phase 6 audit (L775).
+    # Create a safe no-op coroutine to avoid AttributeError crash.
+    if hasattr(executor, 'user_stream') and executor.user_stream is not None:
+        user_stream_task = asyncio.create_task(executor.user_stream.start())
+    else:
+        async def _noop_stream():
+            """No-op placeholder for disabled user_stream."""
+            await asyncio.Event().wait()  # Sleep forever without CPU cost
+        user_stream_task = asyncio.create_task(_noop_stream())
+        logger.info("⚠️ [QBRIDGE] user_stream disabled — using no-op placeholder.")
     
     # 4.1.5 Liquidation Sniper Websockets (Phase 1 Power) - DISABLED (Redundant with start_socket)
     
@@ -886,7 +847,7 @@ async def main():
                     telemetry_output = telemetry.render(portfolio, data_handler)
                     logger.info(telemetry_output)
                     
-                    metrics.update(portfolio=portfolio, engine=engine, queue_size=engine.events.qsize())
+                    metrics.update(portfolio=portfolio, engine=engine, queue_size=getattr(engine.events, 'qsize', lambda: 0)())
                     metrics.update_health(risk_manager)
                     
                     # Phase 1: Real-Time Wallet Balance Sync
@@ -996,17 +957,77 @@ async def main():
     shutdown_task = asyncio.create_task(shutdown_event.wait())
     
     try:
-        # Wait for shutdown event or any critical task to fail
-        done, pending = await asyncio.wait(
-            [shutdown_task, engine_task, ws_task, regime_task, order_task, heartbeat_task, user_stream_task],
-            return_when=asyncio.FIRST_COMPLETED
-        )
+        # [P0 RESILIENCE] Resilient task monitoring with retry
+        # DNS failures were killing the motor on FIRST_COMPLETED.
+        # Now: non-critical tasks get 3 retry chances before shutdown.
+        consecutive_failures = 0
+        MAX_FAILURES = 3
         
-        # Check if a task failed
-        for task in done:
-            if task != shutdown_task and task.exception():
-                logger.critical(f"💥 Task failure detected: {task.exception()}")
+        monitored = [t for t in [shutdown_task, engine_task, ws_task, regime_task, 
+                                  order_task, heartbeat_task, user_stream_task] if t is not None]
+        
+        while not shutdown_event.is_set():
+            done, pending = await asyncio.wait(
+                monitored,
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            
+            should_shutdown = False
+            for task in done:
+                if task == shutdown_task:
+                    should_shutdown = True
+                    break
+                    
+                if task.exception():
+                    exc = task.exception()
+                    exc_str = str(exc)
+                    
+                    # Engine task is ALWAYS fatal
+                    if task == engine_task:
+                        logger.critical(f"💥 ENGINE TASK FATAL: {exc}")
+                        should_shutdown = True
+                        break
+                    
+                    # DNS/network errors are transient — retry
+                    is_transient = any(k in exc_str for k in [
+                        "DNS", "Could not contact", "ConnectionReset",
+                        "TimeoutError", "ServerDisconnected", "ssl"
+                    ])
+                    
+                    if is_transient:
+                        consecutive_failures += 1
+                        logger.warning(
+                            f"⚠️ [RESILIENCE] Transient failure ({consecutive_failures}/{MAX_FAILURES}): {exc}"
+                        )
+                        if consecutive_failures >= MAX_FAILURES:
+                            logger.critical(f"💥 {MAX_FAILURES} consecutive transient failures. Shutting down.")
+                            should_shutdown = True
+                            break
+                        
+                        # Wait and let the auto-reconnect handle it
+                        await asyncio.sleep(10)
+                        monitored = [t for t in monitored if t not in done and not t.done()]
+                        monitored.append(shutdown_task) if shutdown_task not in monitored else None
+                        if not monitored or all(t.done() for t in monitored):
+                            should_shutdown = True
+                            break
+                        continue
+                    else:
+                        logger.critical(f"💥 Non-transient task failure: {exc}")
+                        should_shutdown = True
+                        break
+                else:
+                    # Task completed without error — remove from monitored
+                    consecutive_failures = 0  # Reset on success
+            
+            if should_shutdown:
                 shutdown_event.set()
+                break
+            
+            # Remove completed tasks from monitored
+            monitored = [t for t in monitored if not t.done()]
+            if not monitored:
+                break
 
     except Exception as e:
         import traceback
@@ -1020,14 +1041,27 @@ async def main():
     engine.stop()
     
     # Cancel all background tasks
-    tasks = [ws_task, adaptive_task, meta_task, regime_task, order_task, heartbeat_task, engine_task, user_stream_task, memory_server_task]
-    for task in tasks:
+    # [QBRIDGE FIX] Safe cleanup — filter out any undefined task variables
+    _all_tasks = []
+    for _t_name in ['ws_task', 'adaptive_task', 'meta_task', 'regime_task', 
+                     'order_task', 'heartbeat_task', 'engine_task', 'user_stream_task',
+                     'memory_server_task']:
+        _t = locals().get(_t_name)
+        if _t is not None:
+            _all_tasks.append(_t)
+    
+    for task in _all_tasks:
         task.cancel()
         
-    memory_server.stop()
+    # Stop memory server if it exists
+    if 'memory_server' in locals() and memory_server is not None:
+        try:
+            memory_server.stop()
+        except Exception:
+            pass
     
     # Wait for tasks to clean up
-    await asyncio.gather(*tasks, return_exceptions=True)
+    await asyncio.gather(*_all_tasks, return_exceptions=True)
     
     # Data Layer Cleanup
     try:

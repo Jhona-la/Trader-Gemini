@@ -107,7 +107,13 @@ class OmniStrategy(Strategy):
             atr_pct = atr_arr[-1] / current_price
             
             fee_threshold = (Config.BINANCE_MAKER_FEE_BNB + Config.BINANCE_TAKER_FEE_BNB) * self.fee_mult
-            valid_volatility = (atr_pct >= fee_threshold)
+            
+            # SCALPING uses 1m bars where ATR is usually ~0.03%. We cannot demand 0.1% ATR per 1m bar.
+            if self.horizon == "SCALPING":
+                min_vol = getattr(Config.Horizons, 'Scalping', {}).get('min_atr_required', 0.0003)
+                valid_volatility = (atr_pct >= min_vol)
+            else:
+                valid_volatility = (atr_pct >= fee_threshold)
             
             if not valid_volatility:
                 return # Veto absoluto por volatilidad

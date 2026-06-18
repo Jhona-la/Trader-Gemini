@@ -26,7 +26,7 @@ class UniversalStrategyAdapter:
             
             init_kwargs = {}
             for name, param in params.items():
-                if name == 'self':
+                if name == 'self' or param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
                     continue
                 if name in self.dependencies:
                     init_kwargs[name] = self.dependencies[name]
@@ -76,7 +76,7 @@ class UniversalStrategyRegistry:
             return
 
         for filename in os.listdir(strategies_dir):
-            if filename.endswith(".py") and not filename.startswith("__"):
+            if filename.endswith(".py") and filename not in ["__init__.py", "strategy.py", "horizon_base.py"]:
                 module_name = f"strategies.{filename[:-3]}"
                 try:
                     module = importlib.import_module(module_name)

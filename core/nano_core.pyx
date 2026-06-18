@@ -10,32 +10,67 @@ cdef float _max(float a, float b):
 cdef float _min(float a, float b):
     return a if a < b else b
 
-cpdef float calculate_unrealized_pnl_fast(float current_price, float avg_price, float quantity, str direction):
+cpdef float calculate_unrealized_pnl_fast(float current_price, float entry_price, float quantity, int direction):
     """
     QUANTUM-NANO: O(1) C-level PnL calculation.
     """
     cdef float pnl = 0.0
-    if direction == "LONG" or direction == "TradeDirection.LONG":
-        pnl = (current_price - avg_price) * quantity
+    cdef float price_diff = 0.0
+    
+    if quantity <= 0.0:
+        return 0.0
+        
+    if direction == 1:
+        price_diff = current_price - entry_price
     else:
-        pnl = (avg_price - current_price) * quantity
+        price_diff = entry_price - current_price
+        
+    pnl = (price_diff / entry_price) * quantity * entry_price
     return pnl
 
-cpdef tuple calculate_kelly_fraction(float win_rate, float payoff_ratio, float volatility_modifier):
+cpdef float calculate_kelly_fraction(int win_streak, int loss_streak, float winrate, float payoff_ratio, float max_kelly, float stress_score, bint apply_mult):
     """
-    QUANTUM-NANO: C-level Kelly Criterion with Dynamic Volatility Modifiers
+    QUANTUM-NANO: C-level Kelly Criterion with Stress and Streak Modifiers
     """
-    cdef float f_star = 0.0
+    cdef float q = 1.0 - winrate
+    cdef float kelly_pct = 0.0
+    cdef float multiplier = 1.0
+    cdef float divisor = 1.0
     
-    if payoff_ratio <= 0:
-        return (0.0, 0.0)
+    if payoff_ratio <= 0.0:
+        return 0.01
         
-    f_star = win_rate - ((1.0 - win_rate) / payoff_ratio)
+    kelly_pct = (winrate * payoff_ratio - q) / payoff_ratio
     
-    # VOLATILITY MODIFIER
-    cdef float final_fraction = _max(0.0, _min(1.0, f_star * volatility_modifier))
+    if not apply_mult:
+        if kelly_pct < 0.0: return 0.01
+        return _min(kelly_pct, max_kelly)
+        
+    if stress_score < 90.0:
+        kelly_pct *= 0.125
+        
+    if win_streak > 0:
+        multiplier = 1.0 + (_min(win_streak, 5) * 0.1)
+        kelly_pct *= multiplier
+    elif loss_streak > 0:
+        divisor = 1.0 + (_min(loss_streak, 5) * 0.2)
+        kelly_pct /= divisor
+        
+    if kelly_pct <= 0.0:
+        return 0.01
+        
+    return _min(kelly_pct, max_kelly)
+
+cpdef tuple update_hwm_lwm(float price, float hwm, float lwm):
+    cdef float new_hwm = hwm
+    cdef float new_lwm = lwm
     
-    return (final_fraction, f_star)
+    if price > hwm:
+        new_hwm = price
+    if lwm == 0.0 or price < lwm:
+        new_lwm = price
+        
+    return (new_hwm, new_lwm)
 
 
 # --- NANO PRIORITY QUEUE ---

@@ -290,7 +290,13 @@ class PhalanxStrategy(Strategy):
                     current_price=current_price,
                     horizon=self.horizon,
                     priority=self.priority,
-                    metadata={'sophia': sophia_report_dict, 'reason': absorption['reason']}
+                    metadata={
+                        'sophia': sophia_report_dict,
+                        'reason': absorption['reason'],
+                        # ── PEPITA #4: KELLY ADAPTIVE SIZING ──
+                        'ml_confidence': sophia_report_dict.get('win_probability', 0.85) if sophia_report_dict else 0.85,
+                        'strength': 0.85,
+                    }
                 )
                 self.events_queue.put(signal)
     

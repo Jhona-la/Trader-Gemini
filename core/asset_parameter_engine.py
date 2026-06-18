@@ -552,11 +552,16 @@ class AssetParameterEngine:
                 if 'close' not in df.columns or 'high' not in df.columns or 'low' not in df.columns:
                     continue
                 
-                closes = df['close'].values.astype(np.float64)
-                highs = df['high'].values.astype(np.float64)
-                lows = df['low'].values.astype(np.float64)
+                # LEY DEL FLOAT32 INQUEBRANTABLE (Cero-Copy)
+                closes = df['close'].values.astype(np.float32, copy=False)
+                highs = df['high'].values.astype(np.float32, copy=False)
+                lows = df['low'].values.astype(np.float32, copy=False)
                 
-                # Filter out zeros/NaN
+                # Filter out zeros/NaN usando np.nan_to_num in-place para purificación
+                np.nan_to_num(closes, copy=False, nan=0.0)
+                np.nan_to_num(highs, copy=False, nan=0.0)
+                np.nan_to_num(lows, copy=False, nan=0.0)
+                
                 valid = (closes > 0) & (highs > 0) & (lows > 0)
                 closes = closes[valid]
                 highs = highs[valid]

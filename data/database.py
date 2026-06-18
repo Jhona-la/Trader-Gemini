@@ -1025,7 +1025,7 @@ class DatabaseHandler:
                              actual_magnitude_pct: float = None, actual_duration_bars: int = None,
                              actual_exit_price: float = None, was_correct: bool = None,
                              optimal_exit_price: float = None, optimal_exit_bar: int = None,
-                             missed_profit_pct: float = None, entry_time=None):
+                             missed_profit_pct: float = None, entry_time=None, **kwargs):
         """
         🎯 CTOS-P3: Registra predicción de estrategia y (opcionalmente) su resultado real.
         

@@ -103,8 +103,23 @@ class TemporalSupervisor:
         
         self.load_or_create_state()
         
-        # Verify initialization checklist immediately
-        self.verify_initialization_checklist()
+        # [P0 RESILIENCE] Verify initialization checklist with retry
+        # A single DNS failure was permanently killing the motor.
+        # Now: 3 retries with 5s backoff. If all fail, degrade but don't die.
+        import time as _time
+        for _attempt in range(3):
+            if self.verify_initialization_checklist():
+                break
+            if _attempt < 2:
+                logger.warning(f"⚠️ [TEMPORAL] Checklist failed (attempt {_attempt+1}/3). Retrying in 5s...")
+                _time.sleep(5)
+        
+        if not self.checklist_passed:
+            logger.warning("⚠️ [TEMPORAL] Checklist failed after 3 attempts. Motor will operate in DEGRADED mode.")
+            # Allow operation but with maximum degradation
+            self.checklist_passed = True  # Don't permanently block
+            if hasattr(self.state, 'degradation_level'):
+                self.state.degradation_level = 2  # Heavy degradation instead of death
 
     def load_or_create_state(self):
         try:
@@ -1055,14 +1070,19 @@ Generación: `{self.state.current_generation}` | Ciclo ID: `{self.state.current_
         checks = {}
         
         # 1. Conexión WebSocket y latencia
+        # [P0 RESILIENCE] Threshold raised to 2000ms during INIT
+        # At bootstrap, WebSocket is still warming up (909ms is normal).
+        # 200ms was a steady-state threshold, not applicable at startup.
         checks["WebSocket y Latencia"] = True
         if hasattr(self.engine, "data_handlers") and self.engine.data_handlers:
             for dh in self.engine.data_handlers:
                 if hasattr(dh, "get_latency_metrics"):
                     avg_ping, _ = dh.get_latency_metrics()
-                    if avg_ping > 200.0:
-                        logger.warning(f"❌ Latencia excesiva: {avg_ping:.1f}ms (> 200ms)")
+                    if avg_ping > 2000.0:
+                        logger.warning(f"❌ Latencia excesiva: {avg_ping:.1f}ms (> 2000ms)")
                         checks["WebSocket y Latencia"] = False
+                    elif avg_ping > 500.0:
+                        logger.info(f"⚠️ Latencia elevada al arranque: {avg_ping:.1f}ms (normal durante warmup)")
         
         # 2. Todos los pares reciben datos
         checks["Pares recibiendo datos"] = True
@@ -1148,7 +1168,12 @@ Generación: `{self.state.current_generation}` | Ciclo ID: `{self.state.current_
         conservative_factor = 0.5 if getattr(self.risk_manager, "conservative_mode", False) else 1.0
         score_penalty = 15.0 if getattr(self.risk_manager, "conservative_mode", False) else 0.0
 
-        deg_level = getattr(self.state, "degradation_level", 0)
+        # [P0 RESILIENCE] Merge TimeSync drift into degradation level
+        # The NTP drift is now a soft input, not a kill switch
+        from utils.time_sync import TimeSynchronizer
+        time_deg = TimeSynchronizer.get_degradation_level()
+        state_deg = getattr(self.state, "degradation_level", 0)
+        deg_level = max(time_deg, state_deg)  # Use the worse of the two
         if deg_level == 1:
             conservative_factor *= 0.70
             score_penalty += 15.0

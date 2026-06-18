@@ -24,9 +24,6 @@ class MockExecutor:
         self.mock_positions = {}
         self.order_id_counter = 1000
         self.latency_sim_ms = 5  # Simulate 5ms local execution latency
-        
-        self.zmq_pull = None
-        self.zmq_push = None
         self.events_queue = None
         self.portfolio = None
         
@@ -123,8 +120,8 @@ class MockExecutor:
         logger.info(f"🟢 [MOCK EXECUTION] {side.value} {quantity} {symbol} @ {executed_price:.4f} (Margin: ${required_margin:.2f})")
         
         # Emit FillEvent
-        if self.zmq_push:
-            await self.zmq_push.push(fill_event)
+        if getattr(self, 'events_queue', None):
+            self.events_queue.put(fill_event)
         elif self.events_queue:
             await self.events_queue.put(fill_event)
             

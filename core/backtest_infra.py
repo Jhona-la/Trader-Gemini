@@ -115,7 +115,7 @@ class BacktestDataProvider(DataProvider):
         ("volume", "f4"),
     ]
 
-    def __init__(self, events_queue, symbol_list, historical_data):
+    def __init__(self, events_queue, symbol_list, historical_data, backtest_days: float = None):
         """
         Args:
             events_queue: Queue para eventos de mercado.
@@ -164,6 +164,19 @@ class BacktestDataProvider(DataProvider):
         self._epoch_idx_cache = {}  # (symbol, timeframe) -> idx
         self._epoch_bars_cache = {} # (symbol, timeframe, n) -> result numpy array view
         self._epoch_df_cache = {}   # (symbol, limit) -> pandas DataFrame
+
+        # 🛑 FORENSIC FIX: Pre-load Structural Edge Data (Derivatives)
+        self.derivatives_data = {}
+        macro_dir = os.path.join(_project_root, "data", "history", "macro")
+        for s in symbol_list:
+            self.derivatives_data[s] = {"funding": None, "metrics": None}
+            funding_path = os.path.join(macro_dir, f"{s}_funding.parquet")
+            metrics_path = os.path.join(macro_dir, f"{s}_metrics.parquet")
+            if os.path.exists(funding_path):
+                self.derivatives_data[s]["funding"] = pl.read_parquet(funding_path).to_pandas()
+            if os.path.exists(metrics_path):
+                self.derivatives_data[s]["metrics"] = pl.read_parquet(metrics_path).to_pandas()
+
 
         # Check if historical_data is already pre-resampled structured data
         is_pre_resampled = False
@@ -232,6 +245,14 @@ class BacktestDataProvider(DataProvider):
         for s in symbol_list:
             all_timestamps.update(self.struct_data[s]["1m"]["timestamp"].tolist())
         self.global_timeline = np.sort(np.array(list(all_timestamps), dtype="i8"))
+        
+        # ⏱️ Filter timeline to exactly the requested backtest days,
+        # leaving the older 70-day lookback purely for `get_latest_bars()`.
+        if backtest_days is not None and len(self.global_timeline) > 0:
+            max_ts = self.global_timeline[-1]
+            start_ms = max_ts - int(backtest_days * 86400 * 1000)
+            self.global_timeline = self.global_timeline[self.global_timeline >= start_ms]
+            
         self.current_epoch_idx = 0
         self.total_epochs = len(self.global_timeline)
 
@@ -350,7 +371,36 @@ class BacktestDataProvider(DataProvider):
         return {"quantity": 3, "price": 2}
 
     def get_derivatives_metrics(self, symbol):
-        return {"funding_rate": 0.0, "open_interest_change": 0.0, "ls_ratio": 1.0}
+        """
+        Retorna métricas de derivados (Open Interest, Funding Rate) para la Caza de Liquidaciones.
+        Utiliza el timestamp actual (self.current_time_ms) para alinear asíncronamente con zero-copy searchsorted.
+        """
+        funding_rate = 0.0
+        open_interest = 0.0
+        ls_ratio = 1.0
+        
+        data = getattr(self, "derivatives_data", {}).get(symbol, {})
+        current_time = self.current_time_ms
+        
+        if "funding" in data and data["funding"] is not None:
+            df_f = data["funding"]
+            idx = np.searchsorted(df_f["timestamp"].values, current_time, side="right") - 1
+            if idx >= 0:
+                funding_rate = float(df_f["funding_rate"].values[idx])
+                
+        if "metrics" in data and data["metrics"] is not None:
+            df_m = data["metrics"]
+            idx = np.searchsorted(df_m["timestamp"].values, current_time, side="right") - 1
+            if idx >= 0:
+                open_interest = float(df_m["sum_open_interest"].values[idx])
+                ls_ratio = float(df_m["sum_toptrader_long_short_ratio"].values[idx])
+        
+        return {
+            "funding_rate": funding_rate, 
+            "open_interest": open_interest,
+            "open_interest_norm": open_interest, # Raw value for backwards compatibility
+            "ls_ratio": ls_ratio
+        }
 
     def get_order_flow_metrics(self, symbol):
         bars = self.get_latest_bars(symbol, 1)
@@ -386,6 +436,31 @@ class BacktestDataProvider(DataProvider):
         PARA QUÉ: Evitar TypeError al instanciar BacktestDataProvider.
         """
         return None
+
+    def get_latest_metrics(self, symbol: str) -> dict:
+        """
+        Mock for backtest parity with LiveDataProvider.
+        QUÉ: Retorna el último snapshot de métricas conocido para un símbolo.
+        POR QUÉ: RiskManager requiere get_latest_metrics para evitar AttributeErrors.
+        PARA QUÉ: Mantener paridad con producción y evitar parches (getattr) en RiskManager.
+        """
+        # Se puede calcular métricas básicas a partir de las últimas velas si es necesario,
+        # o retornar un struct vacío como baseline.
+        bars = self.get_latest_bars(symbol, n=1, timeframe="1m")
+        vpin = 0.0
+        if bars is not None and len(bars) > 0:
+            last_bar = bars[0]
+            vol = float(last_bar['volume'])
+            # Mock VPIN heurístico si hay alto volumen
+            if vol > 1000:
+                vpin = 0.5
+        
+        return {
+            "vpin": vpin,
+            "volatility": 0.0,
+            "trend_strength": 0.0,
+            "liquidity": 1.0
+        }
 
     def update_bars(self):
         """
@@ -785,127 +860,22 @@ def fetch_binance_data(
 ) -> pd.DataFrame:
     """
     Descarga datos históricos 1m de Binance mainnet (solo lectura).
-    [PHASE 17.5] Zero-Latency Incremental Cache: Guarda un maestro Parquet
-    por moneda y descarga únicamente las velas nuevas (delta).
+    [PHASE 19] Quantum Memory Bridge Integration
+    Delega la lógica a core.quantum.mmap_storage.QuantumDataLake:
+    - Almacenamiento MMAP binario contiguo (cero parsing).
+    - Evicción O(1) por aritmética de punteros.
+    - Inyección masiva vectorizada.
+    - Fallback a RobustDataLake si MMAP falla.
     """
-
-    if end_time is None:
-        end_time = datetime.utcnow()
-
-    start_time = end_time - timedelta(days=days)
-    
-    # ── PHASE 17.5 MASTER CACHE SYSTEM ──
-    cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cache_parquet")
-    os.makedirs(cache_dir, exist_ok=True)
-    
-    safe_symbol = symbol.replace("/", "")
-    cache_file = os.path.join(cache_dir, f"{safe_symbol}_master.parquet")
-    
-    df_cached = None
-    fetch_start_time = start_time
-    
-    # 1. Leer caché existente si lo hay
-    if os.path.exists(cache_file):
-        try:
-            df_pl = pl.read_parquet(cache_file)
-            df_cached = df_pl.to_pandas()
-            if not df_cached.empty and "timestamp" in df_cached.columns:
-                df_cached.set_index("timestamp", inplace=True)
-                
-                # Encontrar el último timestamp guardado
-                last_ts = df_cached.index.max()
-                
-                # Si el caché ya tiene datos suficientes hasta o más allá del start_time,
-                # solo necesitamos descargar desde el último registro hasta el end_time
-                if last_ts >= start_time:
-                    fetch_start_time = last_ts
-                    
-                # Si end_time es menor que last_ts, simplemente cortamos y no descargamos nada
-                if end_time <= last_ts and start_time >= df_cached.index.min():
-                    mask = (df_cached.index >= start_time) & (df_cached.index <= end_time)
-                    return df_cached.loc[mask]
-        except Exception as e:
-            print(f"⚠️ Caché corrupto para {symbol}, reconstruyendo: {e}")
-            df_cached = None
-
-    # 2. Descargar Delta (o historial completo si no hay caché)
-    delta_days = (end_time - fetch_start_time).total_seconds() / 86400
-    if delta_days <= 0.01:
-        # Menos de 15 minutos de diferencia, usar caché directo (evita micro-descargas inútiles)
-        if df_cached is not None:
-            mask = (df_cached.index >= start_time) & (df_cached.index <= end_time)
-            return df_cached.loc[mask]
-
-    print(f"📡 {symbol} | Descargando Delta: {fetch_start_time.strftime('%Y-%m-%d %H:%M')} a {end_time.strftime('%Y-%m-%d %H:%M')} ({delta_days:.1f}d)...")
-
-    client = Client()
-    all_klines = []
-    current_start = fetch_start_time
-
-    while current_start < end_time:
-        klines = client.get_historical_klines(
-            safe_symbol,
-            Client.KLINE_INTERVAL_1MINUTE,
-            str(int(current_start.timestamp() * 1000)),
-            str(
-                int(
-                    min(current_start + timedelta(hours=16), end_time).timestamp()
-                    * 1000
-                )
-            ),
-            limit=1000,
-        )
-
-        if not klines:
-            break
-
-        all_klines.extend(klines)
-        current_start += timedelta(hours=16)
-        time.sleep(0.1)  # Rate limit protection leve
-
-    if not all_klines and df_cached is not None:
-        mask = (df_cached.index >= start_time) & (df_cached.index <= end_time)
-        return df_cached.loc[mask]
-
-    # Convertir a DataFrame
-    df_new = pd.DataFrame(
-        all_klines,
-        columns=[
-            "timestamp", "open", "high", "low", "close", "volume",
-            "close_time", "quote_volume", "trades", "taker_buy_base",
-            "taker_buy_quote", "ignore",
-        ],
-    )
-
-    df_new["timestamp"] = pd.to_datetime(df_new["timestamp"], unit="ms")
-    df_new.set_index("timestamp", inplace=True)
-    
-    for col in ["open", "high", "low", "close", "volume"]:
-        df_new[col] = df_new[col].astype(float)
-        
-    df_new = df_new[["open", "high", "low", "close", "volume"]]
-
-    # 3. Concatenar y guardar el maestro
-    if df_cached is not None:
-        df_final = pd.concat([df_cached, df_new])
-        # Eliminar duplicados si los bordes se solaparon
-        df_final = df_final[~df_final.index.duplicated(keep='last')].sort_index()
-    else:
-        df_final = df_new
-
-    # Escribir a Parquet
     try:
-        df_pl_save = pl.from_pandas(df_final.reset_index())
-        df_pl_save.write_parquet(cache_file, compression="lz4")
+        from core.quantum.mmap_storage import get_quantum_lake
+        lake = get_quantum_lake()
+        return lake.fetch_symbol(symbol, days, end_time)
     except Exception as e:
-        print(f"⚠️ Fallo al guardar caché Parquet para {symbol}: {e}")
-
-    # 4. Devolver el segmento exacto solicitado
-    mask = (df_final.index >= start_time) & (df_final.index <= end_time)
-    df_return = df_final.loc[mask]
-    
-    print(f"✅ {symbol} | Caché actualizado. {len(df_return)} velas retornadas.")
-    return df_return
+        logger.warning(f"⚠️ [QBridge] Fallback a RobustDataLake para {symbol}: {e}")
+        from data.robust_data_lake import get_data_lake
+        lake = get_data_lake()
+        return lake.fetch_symbol(symbol, days, end_time)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -156,8 +156,12 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
         process_suffix = "_dashboard"
     elif "check_oracle" in sys.argv[0]:
         process_suffix = "_oracle"
-    elif "walk_forward" in sys.argv[0]:
+    elif "walk_forward" in sys.argv[0] or "run_global_backtest" in sys.argv[0]:
         process_suffix = "_tester"
+    elif "run_td_optimizer" in sys.argv[0]:
+        process_suffix = "_optuna"
+    elif "god_mode_backtest" in sys.argv[0] or "system_validator" in sys.argv[0]:
+        process_suffix = "_godmode"
     
     if suffix:
         main_log_name = f'bot_{suffix}{process_suffix}_{date_str}.json'
@@ -171,10 +175,15 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
 
     # B. Main File Handler (JSON, DEBUG+)
     # PHASE 47.3: Adaptive backtest logging for Windows (Avoid Error 32)
-    is_backtest = any(x in sys.argv[0].lower() for x in ["backtest", "audit", "forensic", "diag", "bt", "test", "god_mode", "walk_forward", "hyper", "optimization", "omega", "evolver"])
+    # PHASE I (Termodinamica): Zero I/O for Optimizer
+    is_optuna = any(x in sys.argv[0].lower() for x in ["optuna", "optimizer", "run_td_"])
+    is_backtest = any(x in sys.argv[0].lower() for x in ["backtest", "audit", "forensic", "diag", "bt", "test", "god_mode", "walk_forward", "hyper", "optimization", "omega", "evolver"]) or is_optuna
     is_windows = os.name == 'nt'
     
-    if is_windows and is_backtest:
+    if is_optuna:
+        # FASE I: Cero I/O a disco. Todo a RAM o Null
+        file_handler = logging.NullHandler()
+    elif is_windows and is_backtest:
         # Avoid RotatingFileHandler on Windows during backtests to prevent PermissionError
         file_handler = logging.FileHandler(
             main_log_path,
@@ -192,7 +201,9 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     file_handler.setFormatter(JSONFormatter(datefmt='%Y-%m-%d %H:%M:%S'))
     
     # C. Error File Handler (JSON, ERROR+)
-    if is_windows and is_backtest:
+    if is_optuna:
+        error_handler = logging.NullHandler()
+    elif is_windows and is_backtest:
         error_handler = logging.FileHandler(
             error_log_path,
             mode='a',

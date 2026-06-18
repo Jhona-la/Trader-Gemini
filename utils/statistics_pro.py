@@ -11,6 +11,7 @@ Methods:
 - ADF Test (Simplified): Stationarity check.
 - Monte Carlo: Stochastic equity projection.
 - RANSAC Regression: Robust outlier-resistant regression.
+- Shannon Entropy: Quantify market noise vs structure.
 """
 
 import numpy as np
@@ -386,3 +387,37 @@ class StatisticsPro:
                 "avg_drawdown": 100.0,
                 "max_drawdown_95": 100.0
             }
+
+    @staticmethod
+    def shannon_entropy(probabilities: np.ndarray) -> float:
+        """
+        Calculate Shannon Entropy for a probability distribution.
+        Useful for measuring market uncertainty.
+        H = - sum(p_i * log2(p_i))
+        """
+        try:
+            p = np.array(probabilities)
+            p = p[(p > 0) & (~np.isnan(p))]
+            if len(p) == 0:
+                return 0.0
+            p = p / np.sum(p) # Normalize
+            return float(-np.sum(p * np.log2(p)))
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def volatility_shannon_entropy(returns: np.ndarray, bins: int = 10) -> float:
+        """
+        Calculates the Shannon Entropy of the return distribution.
+        High entropy = High uncertainty / noise.
+        Low entropy = High predictability / structure.
+        """
+        try:
+            returns = np.array(returns)
+            returns = returns[~np.isnan(returns)]
+            if len(returns) < 10:
+                return 0.0
+            hist, _ = np.histogram(returns, bins=bins, density=True)
+            return StatisticsPro.shannon_entropy(hist)
+        except Exception:
+            return 0.0

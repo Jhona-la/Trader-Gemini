@@ -48,6 +48,7 @@ class OmniscientGraphLogger:
         # Configuración del Logger Nativo de Python (Async + Memory Buffer)
         self.logger = logging.getLogger("OmniscientTracer")
         self.logger.setLevel(logging.INFO)
+        self.logger.propagate = False  # FORENSIC FIX: Evitar inundar stdout
         
         # Evitar duplicados
         if self.logger.hasHandlers():

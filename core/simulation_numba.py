@@ -64,7 +64,8 @@ def technical_simulation_loop_njit(
                 entry_idx = i
         else:
             # EXIT LOGIC
-            pnl = (current_close - entry_price) / entry_price if position == 1 else (entry_price - current_close) / entry_price
+            safe_entry = entry_price if entry_price != 0 else 1.0
+            pnl = (current_close - safe_entry) / safe_entry if position == 1 else (safe_entry - current_close) / safe_entry
             
             # 1. Hard Stops (SL/TP)
             if pnl <= -sl_pct or pnl >= tp_pct:
@@ -123,7 +124,8 @@ def extract_features_njit(closes: np.ndarray, window: int) -> np.ndarray:
         for idx, p in enumerate(periods):
             if i - p >= 0:
                 sma = np.mean(closes[i-p:i])
-                features[i, 10 + idx] = (closes[i] - sma) / sma
+                safe_sma = sma if sma != 0 else 1.0
+                features[i, 10 + idx] = (closes[i] - safe_sma) / safe_sma
                 
         # 5 Volatility (Std Dev)
         for idx, p in enumerate(periods):
@@ -200,7 +202,8 @@ def execution_loop_njit(probs: np.ndarray, closes: np.ndarray, sl_pct: float, tp
                     entry_idx = i
         else:
             # EXIT LOGIC
-            pnl = (current_close - entry_price)/entry_price if position == 1 else (entry_price - current_close)/entry_price
+            safe_entry = entry_price if entry_price != 0 else 1.0
+            pnl = (current_close - safe_entry)/safe_entry if position == 1 else (safe_entry - current_close)/safe_entry
             
             # Hard Risk
             if pnl <= -sl_pct or pnl >= tp_pct:
@@ -232,3 +235,19 @@ def execution_loop_njit(probs: np.ndarray, closes: np.ndarray, sl_pct: float, tp
                 entry_idx = 0
                 
     return trades[:trade_count]
+
+@njit(cache=True, fastmath=True)
+def calculate_volume_slippage(order_size_usdt: float, candle_volume_usdt: float, base_slippage: float = 0.0004, max_slippage: float = 0.05) -> float:
+    """
+    Penaliza el precio de ejecución si la orden consume una fracción significativa
+    del volumen real de la vela (simulando agotar el L2 Order Book).
+    """
+    if candle_volume_usdt <= 0:
+        return max_slippage
+        
+    volume_ratio = order_size_usdt / candle_volume_usdt
+    
+    # Impacto no lineal (raíz cuadrada para impacto de mercado estándar)
+    market_impact = base_slippage + (np.sqrt(volume_ratio) * 0.01)
+    
+    return min(market_impact, max_slippage)

@@ -26,6 +26,8 @@ from utils.fast_strings import intern_string # Phase 21: String Interning Optimi
 from utils.shm_utils import SharedMemoryManager # Phase 11: SHM Bridge
 from strategies.components.microstructure import MicrostructureAnalyzer # Phase 25: Nadir-Soberano
 from utils.math_kernel import compute_microprice_jit # Phase 11: Micro-Price JIT
+from core.dark_alpha_queue import DarkAlphaQueue # Phase Omega: Dark Alpha
+from data.fast_lob import FastOrderBook # Phase Omega: Fast LOB
 
 # [MÓDULO OMEGA] - Dimensión 1: Validación de Datos
 from data.validators.ohlcv_validator import OHLCVValidator
@@ -40,7 +42,6 @@ class BinanceData(DataProvider):
         self._running = True
         
         # ZMQ IPC Node
-        self.zmq_push = None
         
         # 1. Thread Pool for Parallel Fetching (I/O Bound) - Phase 24: Nanosecond Boot
         self.executor = ThreadPoolExecutor(max_workers=30, thread_name_prefix="BinanceFetch")
@@ -70,6 +71,9 @@ class BinanceData(DataProvider):
         # PHASE 29: Derivatives Metrics (OI, Funding)
         self.derivatives_metrics = {}
         
+        # PHASE II: Dynamic Drift Correction
+        self.system_drift_ms = 0.0
+        
         # PHASE 14: Lead-Lag Intelligence
         self.lead_lag_results = {} # {symbol: lag_in_seconds}
         self.reference_symbol = "BTC/USDT"
@@ -79,9 +83,9 @@ class BinanceData(DataProvider):
         for s in self.symbol_list:
             self.microstructure[s] = MicrostructureAnalyzer(s)
 
-        # 🌊 PHASE 10: High-Frequency Limit Order Book (Cythonized)
-        from core.orderbook import OrderBook
-        self.orderbooks = {s: OrderBook(max_depth=10) for s in self.symbol_list}
+        # 🌊 PHASE 10/OMEGA: High-Frequency Limit Order Book (Cythonized)
+        self.orderbooks = {s: FastOrderBook(max_levels=100) for s in self.symbol_list}
+        self.dark_alpha_queues = {s: DarkAlphaQueue(halflife=15.0) for s in self.symbol_list}
         self.last_depth_update = {s: 0.0 for s in self.symbol_list}
 
         # 🔍 PHASE 3 (Data Integrity): Sliding window for gap detection
@@ -188,6 +192,7 @@ class BinanceData(DataProvider):
                         
                     self.shm_managers[s] = {'shm': shm, 'arr': np.ndarray(20, dtype=np.float32, buffer=shm.buf)}
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     logger.warning(f"SHM Init Failed for {s}: {e}")
                     
             logger.info(f"🧠 [SHM] Initialized Shared Memory for {len(self.shm_managers)} symbols")
@@ -196,14 +201,19 @@ class BinanceData(DataProvider):
 
     def _push_event(self, event):
         """Helper to push events to either ZMQ or local Queue depending on architecture."""
-        if self.zmq_push:
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self.zmq_push.push(event))
-            except RuntimeError:
-                self.zmq_push.push_sync(event)
-        else:
+        if getattr(self, 'events_queue', None):
             self.events_queue.put(event)
+            
+    async def update_symbol_list(self, new_symbols):
+        """Updates the tracked symbols list and reinitializes structures"""
+        self.symbol_list = new_symbols
+        for s in self.symbol_list:
+            if s not in self.microstructure:
+                self.microstructure[s] = MicrostructureAnalyzer(s)
+                self.orderbooks[s] = FastOrderBook(max_levels=100)
+                self.dark_alpha_queues[s] = DarkAlphaQueue(halflife=15.0)
+                self.last_depth_update[s] = 0.0
+                self._init_symbol_buffer(s)
 
     async def _watchdog_loop(self):
         """
@@ -218,13 +228,17 @@ class BinanceData(DataProvider):
             
             # Check Silence
             silence = time.time() - self.last_packet_time
-            if silence > 5.0 and len(self.active_sockets) > 0:
+            if silence > 5.0:
                 logger.warning(f"🐕 [Watchdog] SILENCE DETECTED ({silence:.1f}s). Restarting Sockets...")
                 self.last_packet_time = time.time() + 10 # Grace period
                 self._force_restart_socket()
             
-            # Phase 12: Drift Check (Simulated for now)
-            # if drift_detected(): self.trigger_circuit_breaker()
+            # Phase 12: Drift Check (Dynamic NTP Correction)
+            try:
+                from utils.time_sync import TimeSynchronizer
+                self.system_drift_ms = TimeSynchronizer.sync()
+            except Exception as e:
+                logger.warning(f"Drift sync failed: {e}")
 
         
     def _init_sync_client(self):
@@ -348,6 +362,10 @@ class BinanceData(DataProvider):
         api_secret = Config.BINANCE_SECRET_KEY
         testnet = getattr(Config, 'BINANCE_USE_TESTNET', False)
         
+        import websockets
+        import orjson
+        from core.metal.ingester_bridge import retina_bridge
+
         if not self.client:
             self.client = await AsyncClient.create(api_key, api_secret, testnet=testnet)
             self.bsm = BinanceSocketManager(self.client, max_queue_size=50000)
@@ -364,13 +382,23 @@ class BinanceData(DataProvider):
             return False
 
         async def _run_multiplex(streams, process_func, stream_type):
+            base_url = "wss://stream.binance.com:9443/stream?streams=" if not testnet else "wss://testnet.binance.vision/stream?streams="
+            stream_url = base_url + "/".join(streams)
+            
             async def _worker(worker_id):
                 try:
-                    multiplex_socket = self.bsm.multiplex_socket(streams)
-                    async with multiplex_socket as ts:
+                    async with websockets.connect(stream_url) as ws:
                         while self._running:
                             try:
-                                msg = await ts.recv()
+                                raw_msg = await ws.recv()
+                                
+                                # FASE II: PARSING
+                                if stream_type == 'depth':
+                                    raw_bytes = raw_msg.encode('utf-8') if isinstance(raw_msg, str) else raw_msg
+                                    msg = orjson.loads(raw_bytes)
+                                else:
+                                    msg = orjson.loads(raw_msg)
+                                
                                 # Extracción de Unique ID para deduplicación O(1)
                                 uid = None
                                 if stream_type == 'depth':
@@ -387,7 +415,7 @@ class BinanceData(DataProvider):
                                 # Mutación 36: Quantum Ping-Drift (Latency tracking)
                                 event_time = msg.get('data', {}).get('E', 0)
                                 if event_time > 0:
-                                    local_time = int(time.time() * 1000)
+                                    local_time = int((time.time() + self.system_drift_ms / 1000.0) * 1000)
                                     latency = local_time - event_time
                                     # Evitar relojes desincronizados absurdos
                                     if 0 <= latency < 5000:
@@ -403,10 +431,9 @@ class BinanceData(DataProvider):
                 except Exception as e:
                     logger.error(f"{stream_type} worker {worker_id} fatal: {e}")
             
-            # Spawn 3 workers idénticos compitiendo (Multiplexación HFT)
-            logger.info(f"🌐 [WebSockets] Lanzando enjambre redundante (x3) para {stream_type} en {len(streams)} streams...")
-            workers = [_worker(i) for i in range(1, 4)]
-            await asyncio.gather(*workers)
+            # Spawn SINGLE worker
+            logger.info(f"🌐 [WebSockets] Lanzando worker para {stream_type} en {len(streams)} streams...")
+            await _worker(1)
 
         async def liquidation_listener():
             streams = [f"{sym.replace('/', '').lower()}@forceOrder" for sym in self.symbol_list]
@@ -470,17 +497,19 @@ class BinanceData(DataProvider):
                             buf.rewind_one()
                         buf.push(ts, np.float32(o), np.float32(h), np.float32(l), np.float32(c), np.float32(v))
                         
-                # Emit the event
-                self._push_event(MarketEvent(
-                    symbol=symbol, 
-                    close_price=c,
-                    high_price=h,
-                    low_price=l,
-                    is_closed=is_closed
-                ))
+                # [Fase II] Corrección del Drift Dinámico
+                event_ts = time.time() + (self.system_drift_ms / 1000.0)
+                event_timestamp = datetime.fromtimestamp(event_ts, timezone.utc)
+
+                # Emit the event [FASE 2 & 3: ZERO-COPY OBJECT POOLING]
+                from core.events import MarketEventPool
+                evt = MarketEventPool.acquire()
+                evt.update_in_place(symbol, event_timestamp, c, h, l, is_closed)
+                self._push_event(evt)
                 self._last_kline_event[symbol] = now
                 
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             import logging
             logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
@@ -516,28 +545,21 @@ class BinanceData(DataProvider):
             total_bid_vol = 0.0
             total_ask_vol = 0.0
             
-            # Update Bids
-            for bid in data.get('bids', []):
-                price = float(bid[0])
-                qty = float(bid[1])
-                ob.update_bid(price, qty)
-                usd_val = price * qty
-                total_bid_vol += usd_val
-                if usd_val > 100000: # 100k USD wall
-                    whale_bid_vol += usd_val
-                
-            # Update Asks
-            for ask in data.get('asks', []):
-                price = float(ask[0])
-                qty = float(ask[1])
-                ob.update_ask(price, qty)
-                usd_val = price * qty
-                total_ask_vol += usd_val
-                if usd_val > 100000:
-                    whale_ask_vol += usd_val
-                
-            # Calcular Order Flow Imbalance (OFI) simplificado
-            imbalance = (total_bid_vol - total_ask_vol) / (total_bid_vol + total_ask_vol) if (total_bid_vol + total_ask_vol) > 0 else 0
+            # Fast LOB Cython Update
+            bids_list = data.get('bids', [])
+            asks_list = data.get('asks', [])
+            ob.update(bids_list, "bids")
+            ob.update(asks_list, "asks")
+            
+            # Extract volumes and imbalance in ~50ns
+            imbalance, total_bid_vol, total_ask_vol = ob.calculate_obi(levels=10)
+            
+            for bid in bids_list:
+                usd_val = float(bid[0]) * float(bid[1])
+                if usd_val > 100000: whale_bid_vol += usd_val
+            for ask in asks_list:
+                usd_val = float(ask[0]) * float(ask[1])
+                if usd_val > 100000: whale_ask_vol += usd_val
             
             # [PHASE 11] Micro-Price Cython Optimization
             best_bid_price, best_bid_vol = 0.0, 0.0
@@ -585,6 +607,7 @@ class BinanceData(DataProvider):
             # The metrics (OFI, Spread, Microprice) are now instantly available in Cython and local metrics dict
             
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             # Silently drop malformed depth updates to prevent log spam
             pass
 
@@ -653,6 +676,7 @@ class BinanceData(DataProvider):
                 metrics['cvd'] += qty
                 
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             import logging
             logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
@@ -703,6 +727,14 @@ class BinanceData(DataProvider):
                 'usd_value': usd_value
             })
             
+            # Dark Alpha Cascade Pipeline
+            if symbol in getattr(self, 'dark_alpha_queues', {}):
+                queue_side = 1 if side == 'SELL' else -1 # SELL = Long Liq = Sell Pressure
+                self.dark_alpha_queues[symbol].push_liquidation(queue_side, usd_value)
+                net_pressure = self.dark_alpha_queues[symbol].get_net_pressure()
+            else:
+                net_pressure = 0.0
+
             # ═══════════════════════════════════════════════════════════════
             # AUDIT FIX #1: Use order_flow (existing MarketEvent field) instead
             # of 'data' (which doesn't exist on the frozen dataclass).
@@ -717,7 +749,8 @@ class BinanceData(DataProvider):
                     'liquidation': True, 
                     'side': side, 
                     'usd_value': usd_value, 
-                    'price': price
+                    'price': price,
+                    'net_pressure': net_pressure  # [OMEGA] Inject pressure scalar
                 }
             ))
             
@@ -737,6 +770,7 @@ class BinanceData(DataProvider):
                     latency_ms = (t1 - t0) * 1000
                     self.latency_history.append(latency_ms)
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     logger.warning(f"Ping failed (Latency Monitor): {e}")
                     self.latency_history.append(9999.0) # Penalty for timeout
                 
@@ -777,10 +811,9 @@ class BinanceData(DataProvider):
                                 'liquidations': current_liq 
                             }
                             # Reset liquidation counter for next minute window
-                            # (Strategy has already consumed the peak value in the previous tick)
                             # self.derivatives_metrics[s]['liquidations'] = 0.0 # Reset later if needed
                         except Exception as e:
-                            logger.error(f"Futures derivatives fetch skipped/failed for {s}: {e}", exc_info=True)
+                            logger.warning(f"Futures derivatives skipped for {s}: {e}")
                 except Exception as e:
                     logger.error(f"Derivatives monitor error loop: {e}")
                 
@@ -1442,6 +1475,7 @@ class BinanceData(DataProvider):
             }
             
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             # logger.debug silent to avoid spam
             pass
 
@@ -1878,6 +1912,7 @@ class BinanceData(DataProvider):
                         if pct_change >= 0.0005:
                             should_trigger = True
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     import logging
                     logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
@@ -2372,6 +2407,7 @@ class BinanceData(DataProvider):
                     if internal_sym in ssot.symbol_states:
                         ssot.symbol_states[internal_sym].vpin_toxicity = current_vpin
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     import logging
                     logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 
@@ -2382,10 +2418,15 @@ class BinanceData(DataProvider):
                 if internal_sym in self.microstructure:
                     of_metrics.update(self.microstructure[internal_sym].get_metrics())
                     
+                # [Fase II] Corrección del Drift Dinámico
+                event_ts = time.time() + (self.system_drift_ms / 1000.0)
+                from datetime import datetime, timezone
+                event_timestamp = datetime.fromtimestamp(event_ts, timezone.utc)
+                
                 self._push_event(MarketEvent(
                     symbol=internal_sym,
                     close_price=qbar['close'],
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=event_timestamp,
                     order_flow=of_metrics,
                     is_closed=True,
                     health_metrics={"score": 100.0, "gap_s": 0, "tf": "quantum", "stale": False}
@@ -2682,6 +2723,7 @@ class BinanceData(DataProvider):
                             
                         loaded_symbols.add(symbol)
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     logger.warning(f"⚠️ Failed to load parquet for {symbol}: {e}")
                     
         logger.info(f"📂 [Persistence] Loaded {len(loaded_symbols)} symbols from disk.")
@@ -2803,6 +2845,7 @@ class BinanceData(DataProvider):
             self.order_flow_metrics[internal_sym]['l2_microprice_dist'] = dist
             
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             import logging
             logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
@@ -2840,6 +2883,7 @@ class BinanceData(DataProvider):
             # Passthrough to agg trade logic for delta and VPIN
             self._process_agg_trade(data)
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             import logging
             logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True) 
 
@@ -2908,6 +2952,7 @@ class BinanceData(DataProvider):
                     vision_df = pl.concat(dfs).unique("timestamp_ms")
                     pldf = pldf.join(vision_df, left_on="timestamp", right_on="timestamp_ms", how="left").fill_null(0.0)
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             import logging
             logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
             

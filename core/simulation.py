@@ -3,7 +3,11 @@ import pandas as pd
 from typing import List, Dict, Any, Tuple
 from core.genotype import Genotype
 from core.evolution import TradeResult
-
+from core.events import SignalEvent
+from core.portfolio import Portfolio
+from risk.risk_manager import RiskManager
+from config import Config
+from core.simulation_numba import calculate_volume_slippage
 class SimDataProvider:
     """
     Proveedor de datos optimizado para simulación (Zero-Copy).
@@ -32,6 +36,8 @@ class SimulationEngine:
     """
     def __init__(self, data_provider: SimDataProvider):
         self.data = data_provider
+        self.portfolio = Portfolio(initial_capital=13.0)
+        self.risk_manager = RiskManager(Config)
         
     def run(self, genotype: Genotype, symbol: str, start_idx: int = 0, end_idx: int = None, max_candles: int = None) -> List[TradeResult]:
         """
@@ -125,19 +131,58 @@ class SimulationEngine:
         # Weights matrix shape [25, 4] -> output [N, 4]
         probs = neural_feedforward_njit(features, weights_matrix)
         
-        # 3. Hot-Loop de Ejecución en C/LLVM (Cero objetos Python)
-        trades_arr = execution_loop_njit(
-            probs,
-            closes_arr,
-            float(sl_pct),
-            float(tp_pct),
-            actual_start,
-            actual_end
-        )
+        volumes_arr = np.ascontiguousarray(market_data['volume'], dtype=np.float64)
+
+        # 3. Sustitución de Hot-Loop ciego por RiskManager Gateway
+        # Esto garantiza que el Backtest sufre Portfolio Heat y Circuit Breakers.
+        position = 0
+        entry_price = 0.0
+        entry_idx = 0
         
-        # Reconstruir TradeResults para la capa de análisis (Ocurre 1 vez al final)
-        for i in range(trades_arr.shape[0]):
-            trades.append(TradeResult(trades_arr[i, 0], trades_arr[i, 1], bool(trades_arr[i, 2])))
+        for i in range(actual_start, actual_end):
+            action_idx = np.argmax(probs[i])
+            conf = probs[i, action_idx]
+            current_close = closes_arr[i]
+            
+            if position == 0:
+                if conf > 0.5 and (action_idx == 1 or action_idx == 2):
+                    direction = "LONG" if action_idx == 1 else "SHORT"
+                    signal = SignalEvent(symbol, direction, tp_pct=tp_pct, sl_pct=sl_pct, confidence=conf)
+                    
+                    # REGLA Y: ÚNICA FUENTE DE VERDAD
+                    order = self.risk_manager.generate_order(signal, current_close)
+                    if order:
+                        # Slippage Realista
+                        slip = calculate_volume_slippage(order.quantity * current_close, volumes_arr[i])
+                        exec_price = current_close * (1 + slip) if direction == "LONG" else current_close * (1 - slip)
+                        
+                        position = 1 if direction == "LONG" else -1
+                        entry_price = exec_price
+                        entry_idx = i
+                        
+            else:
+                safe_entry = entry_price if entry_price != 0 else 1.0
+                pnl = (current_close - safe_entry) / safe_entry if position == 1 else (safe_entry - current_close) / safe_entry
+                
+                is_exit = False
+                if pnl <= -sl_pct or pnl >= tp_pct:
+                    is_exit = True
+                elif action_idx == 3:
+                    is_exit = True
+                elif position == 1 and action_idx == 2:
+                    is_exit = True
+                elif position == -1 and action_idx == 1:
+                    is_exit = True
+                    
+                if is_exit:
+                    # Aplicar slippage de salida
+                    slip = calculate_volume_slippage(13.0, volumes_arr[i]) # Approx 13 USD risk assumption
+                    exec_price = current_close * (1 - slip) if position == 1 else current_close * (1 + slip)
+                    real_pnl = (exec_price - safe_entry) / safe_entry if position == 1 else (safe_entry - exec_price) / safe_entry
+                    
+                    trades.append(TradeResult(real_pnl, float((i - entry_idx) * 60), real_pnl > 0))
+                    position = 0
+                    entry_idx = 0
             
         return trades
 

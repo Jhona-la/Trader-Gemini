@@ -75,6 +75,7 @@ class PredictionSignal:
         # CTOS Phase 3: Extended prediction fields
         'predicted_magnitude', 'predicted_target_price', 'predicted_duration_bars',
         'trade_id', 'thought_id',  # Forensic traceability IDs
+        'is_vetoed', 'veto_reason',  # Meta-Arbitrator Diagnostics
     ]
 
     def __init__(self, strategy_id: str, symbol: str, direction: str,
@@ -113,6 +114,10 @@ class PredictionSignal:
         self.predicted_duration_bars = predicted_duration_bars  # Expected bars to target
         self.trade_id = trade_id  # Link to portfolio trade_id
         self.thought_id = thought_id  # Link to thought_id in DB
+        
+        # Meta-Arbitrator Veto Diagnostics
+        self.is_vetoed = False
+        self.veto_reason = ""
 
 
 class PredictionTracker:
@@ -405,6 +410,33 @@ class PredictionTracker:
         
         return audit_data
 
+    def record_signal_veto(self, strategy_id: str, symbol: str, reason: str, trade_id: str = None) -> None:
+        """
+        🛑 CTOS Meta-Arbitrator Diagnostic Hook
+        Marks an active signal as VETOED (rejected by the Meta-Arbitrator).
+        This allows the system to quantify signals generated vs executed and
+        calibrate the ML to avoid proposing trades in contexts that always fail.
+        """
+        if symbol not in self._active_by_symbol:
+            return
+            
+        strategy_id = self._resolve_strategy_id(strategy_id, symbol)
+        
+        # Search from most recent
+        for sig in reversed(self._active_by_symbol[symbol]):
+            if not sig.is_resolved:
+                if strategy_id and sig.strategy_id != strategy_id:
+                    continue
+                if trade_id and sig.trade_id and sig.trade_id != trade_id:
+                    continue
+                
+                sig.is_resolved = True
+                sig.is_vetoed = True
+                sig.veto_reason = reason
+                sig.trade_outcome = 'vetoed'
+                self._cache_dirty = True
+                break
+
     # ═══════════════════════════════════════════════════════════════════════════
     # METRICS AGGREGATION
     # ═══════════════════════════════════════════════════════════════════════════
@@ -436,9 +468,12 @@ class PredictionTracker:
             # Overall direction accuracy using actual trade outcomes
             # FORENSIC-V92: Previous logic used 15-bar window which ignored
             # trades that hit TP/SL or were closed before 15 bars.
-            resolved = [s for s in signals if s.is_resolved and s.trade_outcome]
+            resolved = [s for s in signals if s.is_resolved and s.trade_outcome in ('win', 'loss')]
+            vetoed = [s for s in signals if getattr(s, 'is_vetoed', False)]
+            
             wins = sum(1 for s in resolved if s.trade_outcome == 'win')
             losses = sum(1 for s in resolved if s.trade_outcome == 'loss')
+            vetoes = len(vetoed)
             trade_win_rate = wins / (wins + losses) if (wins + losses) > 0 else 0.5
 
             direction_accuracy = trade_win_rate
@@ -495,6 +530,8 @@ class PredictionTracker:
                 'trades_resolved': wins + losses,
                 'trades_won': wins,
                 'trades_lost': losses,
+                'trades_vetoed': vetoes,
+                'veto_rate': round(vetoes / max(1, n), 4),
                 'current_win_streak': current_win_streak,
                 'current_loss_streak': current_loss_streak,
             }

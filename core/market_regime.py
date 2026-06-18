@@ -1,8 +1,9 @@
 import talib
 import numpy as np
+import pandas as pd
+from typing import Dict, Any
 from utils.math_kernel import calculate_ema_jit, calculate_adx_jit, calculate_atr_jit
 from utils.logger import logger
-from typing import Dict
 from core.market_regime_hmm import HiddenMarkovModelDetector
 
 class MarketRegimeDetector:
@@ -148,11 +149,11 @@ class MarketRegimeDetector:
             
             # --- PHASE 14: HMM REINFORCEMENT ---
             if len(bars_1m) >= 100:
-                # Check if it's a DataFrame, list of dicts, or recarray
-                if hasattr(bars_1m, 'iloc'):
+                if hasattr(bars_1m, 'to_numpy') and not hasattr(bars_1m, 'get_column'):
                     close_prices = np.array(bars_1m['close'], dtype=np.float64)
-                elif hasattr(bars_1m, 'to_pandas'):
-                    close_prices = np.array(bars_1m.to_pandas()['close'], dtype=np.float64)
+                elif hasattr(bars_1m, 'get_column'):
+                    # Polars Native Extraction
+                    close_prices = bars_1m.get_column('close').to_numpy().astype(np.float64)
                 elif isinstance(bars_1m, list) and len(bars_1m) > 0 and isinstance(bars_1m[0], dict):
                     close_prices = np.array([b['close'] for b in bars_1m], dtype=np.float64)
                 else:
@@ -237,11 +238,11 @@ class MarketRegimeDetector:
                 c = np.array(bars['close'], dtype=np.float64)
                 h = np.array(bars['high'], dtype=np.float64)
                 l = np.array(bars['low'], dtype=np.float64)
-            elif hasattr(bars, 'iloc'):
-                # Live Mode (Pandas)
-                c = bars['close'].values.astype(np.float64)
-                h = bars['high'].values.astype(np.float64)
-                l = bars['low'].values.astype(np.float64)
+            elif hasattr(bars, 'get_column'):
+                # Live Mode (Polars - Pandas Eradicated)
+                c = bars.get_column('close').to_numpy().astype(np.float64)
+                h = bars.get_column('high').to_numpy().astype(np.float64)
+                l = bars.get_column('low').to_numpy().astype(np.float64)
             elif isinstance(bars, list) and len(bars) > 0 and isinstance(bars[0], dict):
                 c = np.array([b.get('close', 0.0) for b in bars], dtype=np.float64)
                 h = np.array([b.get('high', 0.0) for b in bars], dtype=np.float64)
@@ -266,8 +267,8 @@ class MarketRegimeDetector:
             ema_trend = calculate_ema_jit(c, ema_period)[-1]
             is_bullish = c[-1] > ema_trend
             
-            # Hurst para persistencia
-            hurst = calculate_hurst_exponent(c[-100:].copy(), max_lags=min(30, len(c)//4)) if len(c) >= 20 else 0.5
+            # Hurst para persistencia (Zero-copy contiguous view)
+            hurst = calculate_hurst_exponent(np.ascontiguousarray(c[-100:]), max_lags=min(30, len(c)//4)) if len(c) >= 20 else 0.5
             
             # --- [NANO-SPEED] Precompiled Fuzzy Logic ---
             best_idx, best_score = compute_fuzzy_regime_scores_jit(
@@ -389,18 +390,17 @@ class MarketRegimeDetector:
         """
         from config import Config
         from collections import Counter
+        from sklearn.metrics import silhouette_score
+        from typing import Any
         
         if len(df) < 50:
             return "UNKNOWN", 0.0, {}
 
         try:
             # ═══════════════════════════════════════════════════════════════
-            # FORENSIC-V50 FIX: CAST ALL COLUMNS TO FLOAT64
+            # FORENSIC-V50 FIX: REMOVED EXPENSIVE df.copy()
+            # We now cast numpy views directly down below on access.
             # ═══════════════════════════════════════════════════════════════
-            float32_cols = df.select_dtypes(include=['float32']).columns
-            if len(float32_cols) > 0:
-                df = df.copy()
-                df[float32_cols] = df[float32_cols].astype(np.float64)
 
             # Volatility scaling for Swing (1h/4h) vs Scalping (1m/5m)
             vol_scale = 1.0
@@ -408,27 +408,27 @@ class MarketRegimeDetector:
                 vol_scale = 4.0 # ATR and Volatility in 1H/4H are significantly higher than 1M/5M
 
             # Indicadores principales
-            current_adx = df["adx"].iloc[-1] if "adx" in df.columns else 20
+            current_adx = df["adx"].to_numpy()[-1] if "adx" in df.columns else 20
             current_atr_pct = (
-                (df["atr_pct"].iloc[-1] / 100) if "atr_pct" in df.columns else 0.01
+                (df["atr_pct"].to_numpy()[-1] / 100) if "atr_pct" in df.columns else 0.01
             )
             rsi_std = df["rsi_14"].tail(20).std() if "rsi_14" in df.columns else 15
 
             # Volatilidad y tendencia (Vectorizado numpy para latencia < 5ms)
-            close_vals = df["close"].values[-21:]
+            close_vals = df["close"].to_numpy() if hasattr(df["close"], "to_numpy") else df["close"].values[-21:]
             if len(close_vals) > 1:
                 price_volatility = float(np.std(np.diff(close_vals) / close_vals[:-1]))
             else:
                 price_volatility = 0.0
                 
-            vol_vals = df["volume"].values[-21:]
+            vol_vals = df["volume"].to_numpy() if hasattr(df["volume"], "to_numpy") else df["volume"].values[-21:]
             if len(vol_vals) > 1:
                 volume_volatility = float(np.std(np.diff(vol_vals) / (vol_vals[:-1] + 1e-9)))
             else:
                 volume_volatility = 0.0
 
             # Tendencia EMAs
-            closes = df["close"].values.astype(np.float64)
+            closes = df["close"].to_numpy() if hasattr(df["close"], "to_numpy") else df["close"].values.astype(np.float64)
             try:
                 ema20 = float(calculate_ema_jit(closes, period=20)[-1])
             except Exception:

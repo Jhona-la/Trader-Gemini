@@ -8,7 +8,6 @@ from utils.error_handler import retry_on_api_error, handle_balance_error, handle
 from utils.debug_tracer import trace_execution
 from .liquidity_guardian import LiquidityGuardian
 from utils.latency_monitor import latency_monitor
-from .user_data_stream import UserDataStream  # [Dept 3 Fix]
 import time
 import asyncio
 import aiohttp
@@ -44,10 +43,6 @@ class BinanceExecutor:
         self.micro_awareness = micro_awareness # Conciencia de cuenta micro
         self.order_manager = None   # Set during engine initialization
         
-        # ZMQ IPC Nodes
-        self.zmq_push = None
-        self.zmq_pull = None
-        
         # Configure Exchange
         options = {
             'adjustForTimeDifference': True,
@@ -55,6 +50,7 @@ class BinanceExecutor:
             'fetchMyTrades': False,  # Disable auto trade fetch
             'fetchCurrencies': False,  # CRITICAL: Disable currency fetch to avoid sapi endpoints in Testnet
             'recvWindow': 60000, # CRITICAL: Tolerate up to 60s clock drift
+            'margin': False, # PREVENT: AuthenticationError on sapi endpoints
         }
         
         if Config.BINANCE_USE_FUTURES:
@@ -132,6 +128,7 @@ class BinanceExecutor:
                 'options': {
                     'defaultType': 'spot',
                     'adjustForTimeDifference': True,
+                    'margin': False,
                 }
             })
             if is_demo_futures and hasattr(self.spot_exchange, 'enable_demo_trading'):
@@ -189,6 +186,7 @@ class BinanceExecutor:
             connector = aiohttp.TCPConnector(limit=100, keepalive_timeout=60, ttl_dns_cache=300)
             session = aiohttp.ClientSession(connector=connector)
         except Exception:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             session = None
 
         async_options = {
@@ -223,6 +221,7 @@ class BinanceExecutor:
                  self.exchange.fapiPrivatePostPositionSideDual({'dualSidePosition': 'true'})
                  logger.info("🛡️ [HEDGE MODE] Enforced Dual Side Position (True)")
              except Exception as e:
+                 import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                  logger.warning(f"⚠️ [HEDGE MODE] Could not enforce Hedge Mode (Already set or API error): {e}")
 
         # CRITICAL: Monkey patch 'request' method to intercept ALL sapi calls AND track Rate Limit
@@ -337,20 +336,16 @@ class BinanceExecutor:
             if hasattr(self, 'spot_exchange') and self.spot_exchange:
                 tune_ccxt_exchange(self.spot_exchange)
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             logger.warning(f"Could not tune CCXT keep-alive: {e}")
 
         self._initialize_futures_settings()
-        
-        # [Dept 3 Fix] Start User Data Stream (Moved to main.py loop)
-        self.user_stream = UserDataStream(self.events_queue, self.exchange)
-        logger.info("✅ [Executor] User Data Stream Ready (Will start in async loop)")
+        logger.info("✅ [Executor] Executor Ready (User Data Stream managed externally)")
 
     def set_order_manager(self, order_manager):
         """Injects OrderManager into the Executor and its components"""
         self.order_manager = order_manager
-        if hasattr(self, 'user_stream') and self.user_stream:
-            self.user_stream.order_manager = order_manager
-            logger.info("🔗 [Executor] OrderManager successfully injected into UserDataStream.")
+        logger.info("🔗 [Executor] OrderManager successfully injected into Executor.")
 
     def _initialize_futures_settings(self):
         """
@@ -380,6 +375,7 @@ class BinanceExecutor:
             try:
                 self.exchange.load_markets()
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 logger.debug(f"  Could not load markets implicitly: {e}")
                 
             for symbol in Config.TRADING_PAIRS:
@@ -391,6 +387,7 @@ class BinanceExecutor:
                         'marginType': Config.BINANCE_MARGIN_TYPE.upper()
                     })
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     if "No need to change" not in str(e) and "-4046" not in str(e):
                          logger.debug(f"  Could not set Margin Type for {symbol}: {e}")
 
@@ -403,6 +400,7 @@ class BinanceExecutor:
                 else:
                     logger.info("  ✅ API Trading permissions verified")
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 err_str = str(e)
                 if "testnet/sandbox mode is not supported for futures anymore" in err_str:
                     logger.warning(f"  ⚠️ Ignorando Permission Check (Binance Vision Limits en Demo Trading)")
@@ -423,6 +421,7 @@ class BinanceExecutor:
                 from risk.risk_manager import FeeCalculator
                 FeeCalculator.update_dynamic_fees(maker_fee, taker_fee)
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 err_str = str(e)
                 if "testnet/sandbox mode is not supported for futures anymore" in err_str:
                     logger.warning(f"  ⚠️ Fetch de comisiones dinámicas omitido por Binance Demo API Limits. Usando Config defaults.")
@@ -459,6 +458,7 @@ class BinanceExecutor:
             elif hasattr(metrics, 'inc'):
                 metrics.inc("leverage_adjustments")
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             err_msg = str(e)
             if "No need to change" in err_msg:
                 self._leverage_cache[symbol_id] = target_leverage
@@ -480,6 +480,7 @@ class BinanceExecutor:
             })
             self._margin_cache[symbol_id] = True
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             err_msg = str(e)
             if "No need to change" in err_msg:
                 self._margin_cache[symbol_id] = True
@@ -558,6 +559,7 @@ class BinanceExecutor:
                 })
                 
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 err_str = str(e)
                 if 'Margin is insufficient' in err_str:
                     logger.warning(f"👻⚠️ [GHOST-MAKER] Insufficient margin. Aborting Ghost-Maker.")
@@ -599,6 +601,7 @@ class BinanceExecutor:
                 logging.getLogger('execution').info(f"⚡ [C++ EXEC] Order sent natively: {res}")
                 return True
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 import logging
                 logging.getLogger('execution').warning(f"⚠️ [C++ EXEC] Fast C++ order failed: {e}. Falling back...")
 
@@ -625,6 +628,7 @@ class BinanceExecutor:
                 async with self.http_session.post(url, headers=headers) as resp:
                     pass # Execution confirmation handled by WebSocket User Data stream
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 import logging
                 logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 
@@ -645,6 +649,81 @@ class BinanceExecutor:
         if metadata.get('bypass_executed', False):
             logger.debug(f"⚡ [BYPASS GUARD] Order {event.symbol} already fired via Zero-Latency Bypass. Skipping async execution.")
             return
+
+        # 👻 [FASE III] MODO SOMBRA CUÁNTICO (SHADOW DEPLOYMENT)
+        # QUÉ: Intercepta la orden justo antes de ir a Binance, simulando el fill
+        #   y enviando el evento al Portfolio, pero guardando en un Flight Recorder local.
+        if getattr(Config, 'SHADOW_MODE', False) or getattr(event, 'is_shadow', False):
+            logger.info(f"👻 [SHADOW MODE] VIRTUAL EXECUTION: {event.direction.value} {event.quantity} {event.symbol} @ {event.price or 'MKT'}")
+            
+            # 🌌 [FASE III] INYECCIÓN DE PROFUNDIDAD DE MERCADO
+            # Asumimos volumen base estático en primer nivel (1000 USDT para alts, 15000 USDT para majors)
+            is_major = event.symbol in ['BTC/USDT', 'ETH/USDT', 'BTCUSDT', 'ETHUSDT']
+            liquidity_threshold = 15000.0 if is_major else 1000.0
+            
+            fill_cost_base = event.price * event.quantity
+            
+            # Dinamic Slippage Proporcional
+            base_slip_pct = 0.00015
+            liquidity_impact = min(fill_cost_base / liquidity_threshold, 1.5) # Cap at 150%
+            slip_pct = base_slip_pct + (0.0005 * liquidity_impact)
+            
+            # Rechazo por Liquidez si el slippage supera el 0.3%
+            if slip_pct > 0.003:
+                logger.error(f"📉 [SHADOW REJECT] Liquidity Vacuum. Orden de ${fill_cost_base:.2f} generaría slippage de {slip_pct*100:.2f}% (Máx 0.3%). Descartada.")
+                return
+                
+            executed_price = event.price * (1 + slip_pct) if event.direction.value == 'BUY' else event.price * (1 - slip_pct)
+            fill_cost = executed_price * event.quantity
+            commission = fill_cost * 0.0005 # 0.05% Taker Fee
+            
+            from core.events import FillEvent
+            from datetime import datetime, timezone
+            fill_event = FillEvent(
+                timeindex=datetime.now(timezone.utc),
+                symbol=event.symbol,
+                exchange="SHADOW_BINANCE",
+                quantity=event.quantity,
+                direction=event.direction,
+                fill_cost=fill_cost,
+                commission=commission,
+                strategy_id=getattr(event, 'strategy_id', 'UNKNOWN'),
+                fill_price=executed_price,
+                order_id=f"SHADOW_{int(time.time()*1000)}",
+                sl_pct=event.sl_pct,
+                tp_pct=event.tp_pct,
+                horizon=getattr(event, 'horizon', 'SCALPING'),
+                leverage=getattr(event, 'leverage', 10),
+                metadata=metadata,
+                trade_id=getattr(event, 'trade_id', None),
+                setup_type=getattr(event, 'setup_type', None),
+                exit_reason=getattr(event, 'exit_reason', None)
+            )
+            
+            # Log to Flight Recorder
+            try:
+                import json
+                import os
+                os.makedirs("results", exist_ok=True)
+                with open("results/shadow_flight_recorder.jsonl", "a") as f:
+                    rec = {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "symbol": event.symbol,
+                        "direction": event.direction.value,
+                        "quantity": event.quantity,
+                        "price": executed_price,
+                        "notional": fill_cost,
+                        "fee": commission,
+                        "strategy": getattr(event, 'strategy_id', 'UNKNOWN')
+                    }
+                    f.write(json.dumps(rec) + "\n")
+            except Exception as e:
+                logger.error(f"Failed to write Shadow Recorder: {e}")
+                
+            if hasattr(self, 'events_queue') and self.events_queue:
+                self.events_queue.put(fill_event)
+            return
+
         
         # 🔫 [FASE 20] GRID BURST GENERATOR (Ametralladora L2)
         # QUÉ: Si la orden es marcada como "Grid Burst", la dividimos en 3 micro-órdenes.
@@ -699,6 +778,7 @@ class BinanceExecutor:
                         logger.critical(f"🛑 [LATE-VETO] Ejecución SHORT abortada en {event.symbol} por pump repentino en Coinbase/Deribit (PDC: {pdc:.2f})")
                         return
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 import logging
                 logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
         
@@ -771,6 +851,7 @@ class BinanceExecutor:
                             # Post at Best Bid/Ask
                             price = bid if side == 'sell' else ask
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     logger.warning(f"⚠️ Liquidity Check Failed: {e}. Proceeding carefully.")
             
             # ✅ PHASE II: ATOMIC BALANCE VALIDATION
@@ -827,7 +908,7 @@ class BinanceExecutor:
                     
                     if available < required_margin:
                          logger.error(f"🚫 [ATOMIC] INSUFFICIENT FUNDS! Need Margin: {required_margin:.2f} {quote_currency} (Notional: {cost_est:.2f}), Avail: {available:.2f}")
-                         if self.zmq_push:
+                         if self.events_queue:
                              from core.events import ExecutionFailedEvent
                              asyncio.create_task(self.zmq_push.push(ExecutionFailedEvent(
                                  symbol=symbol, quantity=event.quantity, price=cost_est, direction=event.direction,
@@ -839,6 +920,7 @@ class BinanceExecutor:
                          return
                          
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     logger.warning(f"⚠️ Balance Check Skipped: {e}")
 
             # ⚡ ZERO-LATENCY WEBSOCKET CONNECTION MANAGER
@@ -870,7 +952,7 @@ class BinanceExecutor:
                         # Veto si hay Spoofing en nuestra contra, o toxicidad extrema
                         if micro.get('is_toxic', False) or micro.get('is_spoofing', False) or micro.get('gamma_expansion_risk', False):
                             logger.warning(f"🛑 [MICRO-VETO] Entry blocked for {symbol_ccxt} due to Toxic Order Flow / Spoofing / Gamma Risk.")
-                            if self.zmq_push:
+                            if self.events_queue:
                                 from core.events import ExecutionFailedEvent
                                 asyncio.create_task(self.zmq_push.push(ExecutionFailedEvent(
                                     symbol=symbol, quantity=event.quantity, price=price or 0.0, direction=event.direction,
@@ -885,7 +967,7 @@ class BinanceExecutor:
                 liquidity = await self.guardian.analyze_liquidity(symbol, event.quantity, event.direction.name, should_bypass)
                 if not liquidity['is_safe']:
                     logger.warning(f"🛡️ [GUARDIAN] Order Blocked: {liquidity['reason']}")
-                    if self.zmq_push:
+                    if self.events_queue:
                         from core.events import ExecutionFailedEvent
                         asyncio.create_task(self.zmq_push.push(ExecutionFailedEvent(
                             symbol=symbol, quantity=event.quantity, price=price or 0.0, direction=event.direction,
@@ -922,6 +1004,7 @@ class BinanceExecutor:
                                     price = current_price * 0.9995 # Bid side
                                     # Modified local order_type instead of frozen event
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     import logging
                     logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True) # Non-critical
                 
@@ -979,6 +1062,7 @@ class BinanceExecutor:
                         bid, ask = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
                         smart_price = ask if side.lower() == 'sell' else bid
                     except Exception as e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         logger.warning(f"⚠️ [BBO-EXIT] Fallback to price: {e}")
                         smart_price = price
                 elif is_active_exit and not is_resting_tp:
@@ -993,6 +1077,7 @@ class BinanceExecutor:
                         # To exit SHORT (BUY), we want to be at the BID (to be a maker)
                         smart_price = ask if side.lower() == 'sell' else bid
                     except Exception as e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         logger.warning(f"⚠️ [BBO-EXIT] Could not fetch orderbook: {e}. Fallback to trigger price.")
                         smart_price = price
                 else:
@@ -1032,6 +1117,7 @@ class BinanceExecutor:
                         else:
                             smart_price = max(smart_price, ask) if smart_price is not None else ask
                     except Exception as e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         logger.warning(f"⚠️ Could not fetch orderbook for Maker pricing: {e}")
 
                 if smart_price is None:
@@ -1039,6 +1125,7 @@ class BinanceExecutor:
                         bid, ask = await asyncio.to_thread(self.guardian.get_fast_bid_ask, symbol_ccxt)
                         smart_price = bid if side == 'buy' else ask
                     except Exception as e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         logger.warning(f"⚠️ Fallback pricing failed: {e}")
                         return
 
@@ -1081,6 +1168,7 @@ class BinanceExecutor:
                     ticker = await self.async_exchange.fetch_ticker(symbol_ccxt)
                     reference_price = float(ticker.get('last', 0))
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 logger.warning(f"⚠️ [FAT FINGER] Could not get reference price for {symbol}: {e}")
                 reference_price = None
 
@@ -1093,7 +1181,7 @@ class BinanceExecutor:
                         f"(deviation={deviation:.2%} > {FAT_FINGER_THRESHOLD:.0%})"
                     )
                     if side == 'buy':
-                        if self.zmq_push:
+                        if self.events_queue:
                             from core.events import ExecutionFailedEvent
                             asyncio.create_task(self.zmq_push.push(ExecutionFailedEvent(
                                 symbol=symbol, quantity=event.quantity, price=event.price or 0.0, direction=event.direction,
@@ -1120,6 +1208,7 @@ class BinanceExecutor:
                     await asyncio.wait_for(self.async_exchange.cancel_all_orders(symbol_ccxt), timeout=4.0)
                     logger.info(f"✅ [PREDICTIVE LIMIT] Pending TP orders cancelled for {symbol_ccxt}.")
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     logger.warning(f"⚠️ Could not cancel previous TP Limit: {e}")
 
             # 4. SEND ORDER
@@ -1134,7 +1223,7 @@ class BinanceExecutor:
                     if order_raw and 'orderId' in order_raw:
                         logger.info(f"👻🏁 [GHOST-MAKER] Successful execution for {symbol}. OrderID: {order_raw['orderId']}")
                         # Publicar evento de orden exitosa (simulando flow)
-                        if self.zmq_push:
+                        if self.events_queue:
                             from core.events import OrderEvent
                             asyncio.create_task(self.zmq_push.push(OrderEvent(
                                 symbol=symbol, order_type='LIMIT', quantity=final_qty, direction=event.direction,
@@ -1246,6 +1335,7 @@ class BinanceExecutor:
                             order_raw = await self.ws_executor.place_order(params)
                             break
                         except Exception as e:
+                            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                             err_msg = str(e)
                             if "immediately match" in err_msg.lower() and params.get('timeInForce') == 'GTX':
                                 bbo_attempts += 1
@@ -1543,8 +1633,8 @@ class BinanceExecutor:
                 metadata=_order_metadata,
             )
             
-            if self.zmq_push:
-                asyncio.create_task(self.zmq_push.push(fill_event))
+            if self.events_queue:
+                self.events_queue.put(fill_event)
             else:
                 await self.events_queue.put(fill_event)
             
@@ -1584,6 +1674,7 @@ class BinanceExecutor:
                     pos_side = 'LONG' if side.upper() == 'BUY' else 'SHORT'
                     await self._place_protective_orders(symbol_id, side.upper(), filled_qty, fill_price, sl_pct, tp_pct, pos_side)
                 except Exception as ex:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     logger.warning(f"⚠️ Protective orders failed: {ex}")
 
         except Exception as e:
@@ -1640,6 +1731,7 @@ class BinanceExecutor:
         except Exception as e:
             logger.error(f"⚠️ Error colocando Catastrophe Stop: {e}")
             
+        stop_price = 0.0; target_price = 0.0  # Linter fix
         return # Salimos para NO enviar el Take Profit ni el Stop Loss reales
         
         # ═══════════════════════════════════════════════════════════════
@@ -1926,6 +2018,7 @@ class BinanceExecutor:
                         logger.info(f"  (Fallback) Balance: ${primary_balance:,.2f}")
                         break
             except Exception as e:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 import logging
                 logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
         
@@ -2003,6 +2096,7 @@ class BinanceExecutor:
                 logger.info(f"  No balances")
                     
         except Exception as e:
+            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             # Log the specific error for debugging
             error_msg = str(e)
             if 'testnet.binancefuture.com' in error_msg or '404' in error_msg:
@@ -2239,6 +2333,7 @@ class BinanceExecutor:
                                     if current_price is None:
                                         current_price = 0.0
                                 except Exception:
+                                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                                     current_price = 0.0  # If we can't get price, set to 0
                                 
                                 # Add to portfolio as a "position" (quantity of asset held)
@@ -2334,6 +2429,7 @@ class BinanceExecutor:
                                 ticker = spot_exchange.fetch_ticker(f"{asset}/USDT")
                                 price = ticker['last']
                             except Exception:
+                                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                                 price = 0
                             value = amount * price
                         
@@ -2343,6 +2439,7 @@ class BinanceExecutor:
                         else:
                             logger.info(f"  {asset:8s}: {amount:>15,.4f}  (Price Unavailable)")
                     except Exception:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         logger.info(f"  {asset:8s}: {amount:>15,.4f}  (Error valuing)")
             else:
                 logger.info("  No assets found")
@@ -2457,11 +2554,13 @@ class BinanceExecutor:
                             
                             total_value_usd += value
                         except Exception:
+                            import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                             logger.info(f"  {asset:8s}: {total:>15,.6f}  (price unavailable)")
                 else:
                     logger.info("  No assets found")
                     
             except Exception as delivery_error:
+                import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                 logger.warning(f"  ⚠️  Could not fetch COIN-M wallet: {delivery_error}")
                 if Config.BINANCE_USE_TESTNET:
                     logger.info("  ℹ️  This is expected in Testnet mode (limited COIN-M support)")
@@ -2515,6 +2614,7 @@ class BinanceExecutor:
                             logger.info(f"☑️ [CHASE] Order {current_order_id} concluded with status: {status_txt}")
                             return
                     except Exception as e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         logger.warning(f"⚠️ [CHASE] Error fetching futures status {current_order_id}: {e}")
                         pass
                 else:
@@ -2524,6 +2624,7 @@ class BinanceExecutor:
                             logger.info(f"☑️ [CHASE] Order {current_order_id} concluded with status: {status_ccxt['status']}")
                             return
                     except Exception as e:
+                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         logger.warning(f"⚠️ [CHASE] Error fetching spot status {current_order_id}: {e}")
                         pass
                 
@@ -2691,21 +2792,21 @@ class BinanceExecutor:
                         await self.async_exchange.cancel_order(order_id, symbol_ccxt)
                         
                     # Emitir evento de fallo de ejecución para limpiar el Portfolio margin
-                    if self.zmq_push:
+                    if self.events_queue:
                         from core.events import ExecutionFailedEvent
                         asyncio.create_task(self.zmq_push.push(ExecutionFailedEvent(
                             symbol=event.symbol, quantity=event.quantity, price=original_price, direction=event.direction,
                             reason=f"ADVERSE_SELECTION_{toxic_reason}", strategy_id=getattr(event, 'strategy_id', None), trade_id=getattr(event, 'trade_id', None)
                         )))
                 except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                     if 'Unknown order' not in str(e):
                         logger.warning(f"⚠️ [ADVERSE SELECTION] No se pudo cancelar orden {order_id}: {e}")
                 return # Detener monitoreo
 
     async def stop(self):
         """Graceful shutdown"""
-        if hasattr(self, 'user_stream'):
-            await self.user_stream.stop()
+        pass
         if hasattr(self, 'stream_task'):
             self.stream_task.cancel()
         if hasattr(self, 'async_exchange'):

@@ -120,7 +120,7 @@ class AssetIntelligence:
             liquidity=LiquidityLevel.LEVEL_1,
             volatility=VolatilityProfile.PROFILE_A,
             base_beta=1.0,
-            min_signal_threshold=0.58,  # OMEGA: bajado de 0.72 (7+ capas de protección)
+            min_signal_threshold=0.55,  # FORENSIC FIX: Lowered from 0.58 to match ML outputs and GlobalThresholds
             factor_sizing=1.00,
             stop_atr_mult=1.5,
             kelly_fraction=0.50, # 1/2 Kelly
@@ -135,7 +135,7 @@ class AssetIntelligence:
             liquidity=LiquidityLevel.LEVEL_1,
             volatility=VolatilityProfile.PROFILE_B,
             base_beta=1.2,
-            min_signal_threshold=0.55,  # OMEGA: bajado de 0.68
+            min_signal_threshold=0.55,  # FORENSIC FIX: Lowered from 0.55
             factor_sizing=0.95,
             stop_atr_mult=1.7,
             kelly_fraction=0.50,
@@ -150,7 +150,7 @@ class AssetIntelligence:
             liquidity=LiquidityLevel.LEVEL_2,
             volatility=VolatilityProfile.PROFILE_C,
             base_beta=1.5,
-            min_signal_threshold=0.52,  # OMEGA: bajado de 0.65
+            min_signal_threshold=0.55,  # FORENSIC FIX: Lowered to 0.55
             factor_sizing=0.85,
             stop_atr_mult=2.0,
             kelly_fraction=0.50,
@@ -165,7 +165,7 @@ class AssetIntelligence:
             liquidity=LiquidityLevel.LEVEL_2,
             volatility=VolatilityProfile.PROFILE_C,
             base_beta=2.0,
-            min_signal_threshold=0.52,  # OMEGA: bajado de 0.65
+            min_signal_threshold=0.55,  # FORENSIC FIX: Lowered to 0.55
             factor_sizing=0.80,
             stop_atr_mult=2.0,
             kelly_fraction=0.50,
@@ -180,7 +180,7 @@ class AssetIntelligence:
             liquidity=LiquidityLevel.LEVEL_2,
             volatility=VolatilityProfile.PROFILE_B,
             base_beta=1.8,
-            min_signal_threshold=0.55,  # OMEGA: bajado de 0.70
+            min_signal_threshold=0.55,  # FORENSIC FIX: Keep at 0.55
             factor_sizing=0.75,
             stop_atr_mult=2.0,
             kelly_fraction=0.50,
@@ -195,7 +195,7 @@ class AssetIntelligence:
             liquidity=LiquidityLevel.LEVEL_3,
             volatility=VolatilityProfile.PROFILE_D,
             base_beta=3.0,
-            min_signal_threshold=0.60,  # OMEGA: bajado de 0.78
+            min_signal_threshold=0.55,  # FORENSIC FIX: Lowered to 0.55
             factor_sizing=0.50,
             stop_atr_mult=2.5,
             kelly_fraction=0.25, # 1/4 Kelly
