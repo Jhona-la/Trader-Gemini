@@ -85,4 +85,5 @@ if __name__ == "__main__":
     try:
         asyncio.run(live_smoke_test())
     except KeyboardInterrupt:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')

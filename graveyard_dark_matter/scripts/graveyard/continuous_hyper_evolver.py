@@ -27,7 +27,8 @@ class ContinuousEvolver:
                 with open(DNA_PATH, 'r') as f:
                     return json.load(f)
             except:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         # Default ADN de escalping
         return {
             'rsi_buy': 33,
@@ -77,28 +78,28 @@ class ContinuousEvolver:
             mutated['ema_slow'] = max(40, min(100, mutated['ema_slow'] + random.randint(-5, 5)))
         if random.random() < mutation_rate:
             # Apalancamiento y Riesgo
-            current_lev = mutated.get('leverage', 1.0)
+            current_lev = mutated['leverage']
             mutated['leverage'] = round(max(1.0, min(50.0, current_lev + random.randint(-5, 5))), 1)
         if random.random() < mutation_rate:
-            mutated['kelly_fraction'] = round(max(0.05, min(0.95, mutated.get('kelly_fraction', 0.30) + random.uniform(-0.1, 0.1))), 2)
+            mutated['kelly_fraction'] = round(max(0.05, min(0.95, mutated['kelly_fraction'] + random.uniform(-0.1, 0.1))), 2)
         if random.random() < mutation_rate:
-            mutated['max_concurrent'] = max(1, min(10, mutated.get('max_concurrent', 5) + random.randint(-2, 2)))
+            mutated['max_concurrent'] = max(1, min(10, mutated['max_concurrent'] + random.randint(-2, 2)))
             
         # OmniScore & ML Thresh (Scalping)
         if random.random() < mutation_rate:
-            mutated['scalp_w_ml'] = round(max(0.1, min(3.0, mutated.get('scalp_w_ml', 1.0) + random.uniform(-0.3, 0.3))), 2)
+            mutated['scalp_w_ml'] = round(max(0.1, min(3.0, mutated['scalp_w_ml'] + random.uniform(-0.3, 0.3))), 2)
         if random.random() < mutation_rate:
-            mutated['scalp_w_technical'] = round(max(0.1, min(3.0, mutated.get('scalp_w_technical', 1.0) + random.uniform(-0.3, 0.3))), 2)
+            mutated['scalp_w_technical'] = round(max(0.1, min(3.0, mutated['scalp_w_technical'] + random.uniform(-0.3, 0.3))), 2)
         if random.random() < mutation_rate:
-            mutated['scalp_master_threshold'] = round(max(0.5, min(3.0, mutated.get('scalp_master_threshold', 1.0) + random.uniform(-0.2, 0.2))), 2)
+            mutated['scalp_master_threshold'] = round(max(0.5, min(3.0, mutated['scalp_master_threshold'] + random.uniform(-0.2, 0.2))), 2)
             
         # OmniScore & ML Thresh (Swing)
         if random.random() < mutation_rate:
-            mutated['swing_w_ml'] = round(max(0.1, min(3.0, mutated.get('swing_w_ml', 1.0) + random.uniform(-0.3, 0.3))), 2)
+            mutated['swing_w_ml'] = round(max(0.1, min(3.0, mutated['swing_w_ml'] + random.uniform(-0.3, 0.3))), 2)
         if random.random() < mutation_rate:
-            mutated['swing_w_technical'] = round(max(0.1, min(3.0, mutated.get('swing_w_technical', 1.0) + random.uniform(-0.3, 0.3))), 2)
+            mutated['swing_w_technical'] = round(max(0.1, min(3.0, mutated['swing_w_technical'] + random.uniform(-0.3, 0.3))), 2)
         if random.random() < mutation_rate:
-            mutated['swing_master_threshold'] = round(max(0.5, min(3.0, mutated.get('swing_master_threshold', 1.0) + random.uniform(-0.2, 0.2))), 2)
+            mutated['swing_master_threshold'] = round(max(0.5, min(3.0, mutated['swing_master_threshold'] + random.uniform(-0.2, 0.2))), 2)
             
         return mutated
         
@@ -129,7 +130,7 @@ class ContinuousEvolver:
         # Evaluar ADN base
         res = self.engine.run_vectorized_backtest(dna=self.best_dna)
         self.best_fitness = self.calculate_fitness(res)
-        logger.info(f"📊 Base Fitness: {self.best_fitness:.2f} | PnL: ${res['pnl']:.2f} | WR: {res['win_rate']:.2f}% | Leverage: {self.best_dna.get('leverage', 1.0)}x")
+        logger.info(f"📊 Base Fitness: {self.best_fitness:.2f} | PnL: ${res['pnl']:.2f} | WR: {res['win_rate']:.2f}% | Leverage: {self.best_dna['leverage']}x")
         
         cycle = 1
         while True:
@@ -143,7 +144,7 @@ class ContinuousEvolver:
             
             for dna in population:
                 # Si el SL con apalancamiento supera 100%, es liquidación segura, descartar
-                if dna['sl_pct'] * dna.get('leverage', 1.0) >= 0.99:
+                if dna['sl_pct'] * dna['leverage'] >= 0.99:
                     continue
                     
                 res = self.engine.run_vectorized_backtest(dna=dna)

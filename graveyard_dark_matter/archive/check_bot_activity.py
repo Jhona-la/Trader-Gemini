@@ -25,10 +25,10 @@ def check_futures_activity():
         if len(df) > 0:
             latest = df.iloc[-1]
             print(f"\n📊 Latest Status:")
-            print(f"   Timestamp: {latest.get('timestamp', 'N/A')}")
-            print(f"   Equity: ${latest.get('equity', 0):.2f}")
-            print(f"   Cash: ${latest.get('cash', 0):.2f}")
-            print(f"   Open Positions: {latest.get('positions', 0)}")
+            print(f"   Timestamp: {latest['timestamp']}")
+            print(f"   Equity: ${latest['equity']:.2f}")
+            print(f"   Cash: ${latest['cash']:.2f}")
+            print(f"   Open Positions: {latest['positions']}")
             print(f"\n   Total rows: {len(df)}")
         else:
             print("⚠️  Status file is empty")
@@ -67,10 +67,10 @@ def check_spot_activity():
         if len(df) > 0:
             latest = df.iloc[-1]
             print(f"\n📊 Latest Status:")
-            print(f"   Timestamp: {latest.get('timestamp', 'N/A')}")
-            print(f"   Equity: ${latest.get('equity', 0):.2f}")
-            print(f"   Cash: ${latest.get('cash', 0):.2f}")
-            print(f"   Open Positions: {latest.get('positions', 0)}")
+            print(f"   Timestamp: {latest['timestamp']}")
+            print(f"   Equity: ${latest['equity']:.2f}")
+            print(f"   Cash: ${latest['cash']:.2f}")
+            print(f"   Open Positions: {latest['positions']}")
             print(f"\n   Total rows: {len(df)}")
         else:
             print("⚠️  Status file is empty")

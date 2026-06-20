@@ -21,18 +21,18 @@ def validate_market_data(func):
         if event is not None:
             health = getattr(event, 'health_metrics', None)
             if health:
-                score = health.get('score', 100)
+                score = health['score']
                 symbol = getattr(event, 'symbol', getattr(self, 'symbol', 'UNKNOWN'))
                 if score < 50:
                     logger.warning(
                         f"⚠️ [DATA-HEALTH] Skipping {symbol} due to CRITICAL poor integrity: "
-                        f"{score:.1f}% (Gap: {health.get('gap_s', 0)}s)"
+                        f"{score:.1f}% (Gap: {health['gap_s']}s)"
                     )
                     return None
                 elif score < 80:
                     logger.warning(
                         f"⚠️ [DATA-HEALTH] Low integrity warning for {symbol}: "
-                        f"{score:.1f}% (Gap: {health.get('gap_s', 0)}s)"
+                        f"{score:.1f}% (Gap: {health['gap_s']}s)"
                     )
         return func(self, event, *args, **kwargs)
     return wrapper
@@ -61,7 +61,8 @@ def performance_timer(func):
             try:
                 metrics.record_tick_latency(symbol, duration_ns / 1000.0)
             except Exception:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
         return result
     return wrapper
@@ -145,9 +146,9 @@ def format_position_for_display(position_dict):
     if not position_dict:
         return "No position"
     
-    qty = position_dict.get('quantity', 0)
-    avg_price = position_dict.get('avg_price', 0)
-    current_price = position_dict.get('current_price', avg_price)
+    qty = position_dict['quantity']
+    avg_price = position_dict['avg_price']
+    current_price = position_dict['current_price']
     
     # Calculate PnL
     if qty > 0:  # LONG position

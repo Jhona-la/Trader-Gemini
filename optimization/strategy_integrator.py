@@ -26,7 +26,7 @@ class StrategyIntegrator:
             
         # We can map more parameters based on what the strategy specifically exposes
         if hasattr(strategy_instance, 'TP_PCT'):
-            strategy_instance.TP_PCT = config.get("tp_pct", strategy_instance.TP_PCT)
+            strategy_instance.TP_PCT = config["tp_pct"]
             
         return strategy_instance
 
@@ -54,7 +54,7 @@ class StrategyIntegrator:
         base_s = 1   # Survives by default
         
         # Fake landscape to make Bayesian Optimization find a "peak"
-        st = config.get("trend_confirmation_threshold", 0.5)
+        st = config["trend_confirmation_threshold"]
         # Say the peak is around 0.75 for Scalping, 0.85 for Swing, 0.65 for Micro
         if self.strategy_type == "SCALPING":
             peak = 0.75

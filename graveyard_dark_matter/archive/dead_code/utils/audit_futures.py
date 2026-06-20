@@ -31,7 +31,7 @@ def audit_positions():
     try:
         live_positions = executor.exchange.fetch_positions()
         # Filter non-zero
-        active_live = [p for p in live_positions if float(p['info'].get('positionAmt', 0)) != 0]
+        active_live = [p for p in live_positions if float(p['info']['positionAmt']) != 0]
     except Exception as e:
         print(f"❌ Error fetching positions: {e}")
         active_live = []
@@ -58,11 +58,11 @@ def audit_positions():
             
             # Bot State
             bot_pos = bot_positions.get(sym, {})
-            bot_qty = bot_pos.get('quantity', 0)
+            bot_qty = bot_pos['quantity']
             
             # Live State
             live_entry = next((p for p in active_live if p['symbol'] == exchange_sym), None)
-            live_qty = float(live_entry['info'].get('positionAmt', 0)) if live_entry else 0
+            live_qty = float(live_entry['info']['positionAmt']) if live_entry else 0
             
             # Status check
             if abs(bot_qty - live_qty) < 0.000001:

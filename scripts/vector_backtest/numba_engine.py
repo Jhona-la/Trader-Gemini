@@ -236,15 +236,15 @@ class NumbaEngine:
             ml_s, ts_s,
             ml_sw, ts_sw,
             atr_pct, macro_mult,
-            initial_capital=config.get('initial_capital', 13.0),
-            kelly_fraction=config.get('kelly_fraction', 0.19),
-            maker_fee=config.get('maker_fee', 0.0002),
-            taker_fee=config.get('taker_fee', 0.00075),
-            leverage_scalp=config.get('leverage_scalp', 50.0),
-            base_tp_scalp=config.get('base_tp_scalp', 0.0076),
-            base_sl_scalp=config.get('base_sl_scalp', 0.0162),
-            leverage_swing=config.get('leverage_swing', 30.0),
-            base_tp_swing=config.get('base_tp_swing', 0.1732),
-            base_sl_swing=config.get('base_sl_swing', 0.0313)
+            initial_capital=config['initial_capital'],
+            kelly_fraction=config['kelly_fraction'],
+            maker_fee=config['maker_fee'],
+            taker_fee=config['taker_fee'],
+            leverage_scalp=config['leverage_scalp'],
+            base_tp_scalp=config['base_tp_scalp'],
+            base_sl_scalp=config['base_sl_scalp'],
+            leverage_swing=config['leverage_swing'],
+            base_tp_swing=config['base_tp_swing'],
+            base_sl_swing=config['base_sl_swing']
         )
         return capital_curve, trades_scalp, trades_swing

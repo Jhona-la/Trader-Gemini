@@ -33,7 +33,7 @@ class OracleRemediator:
 
         failures = []
         for entry in audit_data:
-            if entry.get('metrics', {}).get('total_return', 0) < 0:
+            if entry['metrics'].get('total_return', 0) < 0:
                 failures.append(entry['symbol'])
         
         failures = list(set(failures)) # Unique symbols

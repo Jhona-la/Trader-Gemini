@@ -6,8 +6,6 @@ import talib
 from utils.logger import logger
 from utils.debug_tracer import trace_execution
 from utils.math_helpers import safe_div
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
 from utils.math_kernel import (
     calculate_zscore_jit, calculate_quantum_features_batch_jit,
     calculate_rsi_jit, calculate_atr_jit, calculate_adx_jit,
@@ -40,6 +38,42 @@ def fast_shift(arr, period):
     if n > period:
         res[period:] = arr[:-period]
     return res
+
+class FeatureArena:
+    """
+    Zero-Copy Bridge between Rust StatefulEngine and ML models.
+    Pre-allocates a Numpy C-contiguous array for fast inplace inference.
+    """
+    def __init__(self, capacity=1):
+        # El array que XGBoost consume por referencia (zero copy)
+        self.features = None
+        self.indices = None
+        self.capacity = capacity
+        self.columns = None
+        
+    def initialize(self, df_columns: list):
+        self.columns = df_columns
+        self.features = np.zeros((self.capacity, len(df_columns)), dtype=np.float32, order='C')
+        
+        # Mapear los 12 outputs de Rust a los índices correctos en el Arena
+        # Rust outputs: [ema20, ema50, ema200, rsi14, zscore20, zscore50, bb_width, atr_pct, volume_ratio, return1, bb_mean, bb_std]
+        rust_names = [
+            'ema_20', 'ema_50', 'ema_200', 'rsi_14', 'zscore_20', 'zscore_50', 
+            'bb_width', 'atr_pct', 'volume_ratio', 'returns_1', 'bb_middle', 'bb_std'
+        ]
+        
+        indices = []
+        for name in rust_names:
+            if name in df_columns:
+                indices.append(df_columns.index(name))
+            else:
+                indices.append(-1)
+        self.indices = np.array(indices, dtype=np.int32)
+        
+    def inject_base_features(self, df_row):
+        """Copia todos los features de la última vela cerrada al Arena."""
+        if self.features is not None and df_row.shape[1] == self.features.shape[1]:
+            np.copyto(self.features, df_row.astype(np.float32))
 
 class FeatureEngineering:
     """
@@ -78,6 +112,7 @@ class FeatureEngineering:
         self._metal_active = False
         self.nano_core = None
         self.metal_engines = {}  # {symbol: StatefulEngine}
+        self.feature_arenas = {} # {symbol: FeatureArena}
         try:
             import sys
             import os
@@ -91,37 +126,36 @@ class FeatureEngineering:
         except Exception as e:
             logger.warning(f"⚠️ QUANTUM BRIDGE INACTIVO: Cayendo a Pandas (O(N)). Razón: {e}")
 
-    def update_and_inject_metal(self, symbol: str, price: float, arena, idx: int, feature_vec: np.ndarray) -> bool:
+    def update_and_inject_metal(self, symbol: str, price: float, high: float, low: float, volume: float) -> bool:
         """
-        Intenta actualizar el estado usando Rust y lo inyecta directo al Arena.
-        Retorna True si el metal lo procesó con éxito (o dropeó por Lap), False si debe caer a Pandas.
+        Intenta actualizar el estado O(1) usando Rust y lo inyecta directo al Arena.
+        Retorna el array Numpy del Arena (C-contiguous) si fue exitoso, o None si falla.
         """
-        if not self._metal_active:
-            return False
+        if not self._metal_active or symbol not in self.metal_engines or symbol not in self.feature_arenas:
+            return None
             
         try:
-            if symbol not in self.metal_engines:
-                # Inicialización on-the-fly (requiere que engine.seed_history() se llame después 
-                # en el ciclo de vida o que se use el histórico de pandas para sembrarlo).
-                self.metal_engines[symbol] = self.nano_core.StatefulEngine(20, 14, arena.capacity)
-                
             engine = self.metal_engines[symbol]
-            engine.update_and_inject(
-                price, 
-                arena._version,      # np.ndarray de uint64 o int64 (len 8)
-                arena._reader_head,  # np.ndarray de int64 (len 1)
-                arena.features,      # np.ndarray de float32
-                feature_vec          # np.ndarray de float32
-            )
-            return True
+            arena = self.feature_arenas[symbol]
+            
+            if arena.features is None or arena.indices is None:
+                return None
+
+            # O(1) tick features from Rust (12 elements)
+            feats = engine.tick(price, high, low, volume)
+            
+            # Zero-Copy Numpy inplace slice assignment (nanoseconds)
+            valid_mask = arena.indices >= 0
+            valid_indices = arena.indices[valid_mask]
+            
+            # Update only valid indices in the Arena
+            arena.features[0, valid_indices] = np.array(feats, dtype=np.float32)[valid_mask]
+            
+            return arena.features
         except Exception as e:
-            if "LAP DETECTED" in str(e).upper():
-                logger.warning(f"Lap Detected en metal para {symbol}. Tick intencionalmente dropeado (Termodinámica).")
-                # Es un comportamiento esperado bajo estrés, el metal sigue vivo.
-                return True
-            logger.critical(f"Fallo catastrófico del metal en {symbol}: {e}. Cortando puente y degradando a Pandas.")
+            logger.error(f"Fallo catastrófico del metal en {symbol}: {e}. Cortando puente.")
             self._metal_active = False
-            return False
+            return None
 
     @trace_execution
     def prepare_features(self, bars, market_regime="UNKNOWN", sentiment_loader=None, data_provider=None, symbol=None, feature_store=None, horizon="SCALPING", return_polars=False, is_live=False):
@@ -387,6 +421,8 @@ class FeatureEngineering:
                     # PARA QUÉ: Preservar la causalidad temporal estricta.
                     # ═══════════════════════════════════════════════════════════════
                     fit_size = min(len(features_array), 500)
+                    from sklearn.preprocessing import StandardScaler
+                    from sklearn.cluster import KMeans
                     scaler = StandardScaler()
                     scaled_fit = scaler.fit_transform(features_array[:fit_size])
                     kmeans = KMeans(n_clusters=4, random_state=42, n_init=2, max_iter=50)
@@ -529,6 +565,9 @@ class FeatureEngineering:
         # On-Chain (Proxy Institucional vía Binance AggTrades > $100k)
         if 'whale_flow' in df.columns:
             new_features['onchain_whale_flow'] = df['whale_flow'].to_numpy()
+            new_features['dark_alpha_pressure'] = df.get('net_pressure', pl.Series(np.zeros(n_len))).to_numpy()
+            new_features['liquidation_cascade'] = df.get('liquidation_cascade', pl.Series(np.zeros(n_len))).to_numpy()
+            new_features['dex_whisper'] = df.get('dex_whisper', pl.Series(np.zeros(n_len))).to_numpy()
         elif data_provider and hasattr(data_provider, 'get_order_flow_metrics'):
             of_metrics = data_provider.get_order_flow_metrics(symbol) if symbol else {}
             # Fallback to derivatives just in case
@@ -537,9 +576,17 @@ class FeatureEngineering:
             
             # [DARK ALPHA] Extract Dark Alpha parameters if available
             new_features['dark_alpha_pressure'] = np.full(n_len, of_metrics.get('net_pressure', 0.0))
+            
+            # PHASE V: Advanced Topological Dark Alpha
+            # Liquidation Cascades proxy: High OI combined with large extreme spikes
+            new_features['liquidation_cascade'] = np.full(n_len, of_metrics.get('liquidation_cascade', 0.0))
+            # DEX Whispering: Synthesized proxy from order flow imbalance metrics vs CEX footprint
+            new_features['dex_whisper'] = np.full(n_len, of_metrics.get('dex_whisper', 0.0))
         else:
             new_features['onchain_whale_flow'] = np.zeros(n_len)
             new_features['dark_alpha_pressure'] = np.zeros(n_len)
+            new_features['liquidation_cascade'] = np.zeros(n_len)
+            new_features['dex_whisper'] = np.zeros(n_len)
 
         # Merge dict back into Polars df efficiently
         # Remove duplicates to avoid DuplicateError in horizontal concat
@@ -597,6 +644,32 @@ class FeatureEngineering:
         except Exception:
             pass
 
+        # ═══════════════════════════════════════════════════════════════
+        # [QUANTUM ZERO-COPY] WARMUP METAL & ARENA
+        # ═══════════════════════════════════════════════════════════════
+        if self._metal_active and symbol:
+            if symbol not in self.metal_engines:
+                self.metal_engines[symbol] = self.nano_core.StatefulEngine(20, 14, 1000)
+                try:
+                    # Seed engine with history
+                    c_np = df['close'].to_numpy()
+                    h_np = df['high'].to_numpy()
+                    l_np = df['low'].to_numpy()
+                    v_np = df['volume'].to_numpy()
+                    self.metal_engines[symbol].seed_history(c_np, h_np, l_np, v_np)
+                except Exception as e:
+                    logger.warning(f"Metal engine seed failed for {symbol}: {e}")
+            
+            if symbol not in self.feature_arenas:
+                arena = FeatureArena(capacity=1)
+                arena.initialize(df.columns)
+                self.feature_arenas[symbol] = arena
+            
+            # Update base features in the Arena
+            # Copy the last row exactly to the arena
+            last_row_np = df.tail(1).to_numpy()
+            self.feature_arenas[symbol].inject_base_features(last_row_np)
+            
         # Immediate memory release for intermediate GC if not returning Polars
         # [PANDAS ERADICATION] We ALWAYS return Polars now.
         

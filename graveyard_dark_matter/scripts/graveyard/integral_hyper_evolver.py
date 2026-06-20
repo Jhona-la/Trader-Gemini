@@ -31,7 +31,8 @@ class IntegralContinuousEvolver:
                 with open(INTEGRAL_DNA_PATH, 'r') as f:
                     return json.load(f)
             except:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         
         # DNA SEMILLA FULL-STACK
         return {

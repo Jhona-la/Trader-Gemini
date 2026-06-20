@@ -126,58 +126,75 @@ class StatisticalIndicators:
 
         return features
 
+from numba import njit
+
+@njit
+def _rolling_autocorr_core(returns, lag, window):
+    n = len(returns)
+    result = np.zeros(n)
+    if n < window + lag:
+        return result
+        
+    for i in range(window + lag, n):
+        x = returns[i - window:i - lag]
+        y = returns[i - window + lag:i]
+        
+        if len(x) == 0:
+            continue
+            
+        x_mean = np.mean(x)
+        y_mean = np.mean(y)
+        x_std = np.std(x)
+        y_std = np.std(y)
+        
+        if x_std > 0 and y_std > 0:
+            result[i] = np.mean((x - x_mean) * (y - y_mean)) / (x_std * y_std)
+            
+    return result
+
+@njit
+def _rolling_skewness_core(data, window):
+    n = len(data)
+    result = np.zeros(n)
+    for i in range(window, n):
+        segment = data[i - window:i]
+        mean = np.mean(segment)
+        std = np.std(segment)
+        if std > 0:
+            # Numba requires explicit element-wise or explicit loop for power sometimes, but this should work:
+            val = 0.0
+            for j in range(len(segment)):
+                val += ((segment[j] - mean) / std) ** 3
+            result[i] = val / len(segment)
+    return result
+
+@njit
+def _rolling_kurtosis_core(data, window):
+    n = len(data)
+    result = np.full(n, 3.0)
+    for i in range(window, n):
+        segment = data[i - window:i]
+        mean = np.mean(segment)
+        std = np.std(segment)
+        if std > 0:
+            val = 0.0
+            for j in range(len(segment)):
+                val += ((segment[j] - mean) / std) ** 4
+            result[i] = val / len(segment)
+    return result
+
     @staticmethod
     def _rolling_autocorrelation(returns, lag=1, window=50):
         """Autocorrelación rolling de retornos con lag específico."""
-        n = len(returns)
-        result = np.zeros(n)
-
-        if n < window + lag:
-            return result
-
-        for i in range(window + lag, n):
-            x = returns[i - window:i - lag]
-            y = returns[i - window + lag:i]
-
-            if len(x) != len(y) or len(x) == 0:
-                continue
-
-            x_mean = np.mean(x)
-            y_mean = np.mean(y)
-            x_std = np.std(x)
-            y_std = np.std(y)
-
-            if x_std > 0 and y_std > 0:
-                result[i] = np.mean((x - x_mean) * (y - y_mean)) / (x_std * y_std)
-
-        return np.clip(result, -1.0, 1.0)
+        res = _rolling_autocorr_core(returns, lag, window)
+        return np.clip(res, -1.0, 1.0)
 
     @staticmethod
     def _rolling_skewness(data, window):
         """Skewness rolling — asimetría de la distribución."""
-        n = len(data)
-        result = np.zeros(n)
-
-        for i in range(window, n):
-            segment = data[i - window:i]
-            mean = np.mean(segment)
-            std = np.std(segment)
-            if std > 0:
-                result[i] = np.mean(((segment - mean) / std) ** 3)
-
-        return result
+        return _rolling_skewness_core(data, window)
 
     @staticmethod
     def _rolling_kurtosis(data, window):
         """Kurtosis rolling — colas gordas de la distribución. >3 = leptokurtic."""
-        n = len(data)
-        result = np.full(n, 3.0)  # Default: distribución normal
-
-        for i in range(window, n):
-            segment = data[i - window:i]
-            mean = np.mean(segment)
-            std = np.std(segment)
-            if std > 0:
-                result[i] = np.mean(((segment - mean) / std) ** 4)
-
-        return result
+        return _rolling_kurtosis_core(data, window)

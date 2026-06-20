@@ -56,13 +56,13 @@ class DarkAlphaWorker:
                         
                         if "data" in data and isinstance(data["data"], list):
                             for trade in data["data"]:
-                                sz = float(trade.get("sz", 0))
-                                px = float(trade.get("px", 0))
+                                sz = float(trade["sz"])
+                                px = float(trade["px"])
                                 notional = sz * px
                                 
                                 # High frequency whales or liquidation sweeps > $250k
                                 if notional > 250_000:
-                                    side_str = trade.get("side", "")
+                                    side_str = trade["side"]
                                     # "B" implies Short getting liquidated (Buy pressure)
                                     # "A" implies Long getting liquidated (Sell pressure)
                                     side_int = -1 if side_str == "B" else 1

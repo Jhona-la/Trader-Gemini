@@ -287,7 +287,7 @@ class ForensicAccuracyAuditor:
         
         # === COMPILAR RESULTADO ===
         result = {
-            'timestamp': str(rows.iloc[signal_idx].get('datetime', signal_idx)),
+            'timestamp': str(rows.iloc[signal_idx]['datetime']),
             'strategy': strategy_name,
             'direction': direction,
             'entry_price': close_at_entry,
@@ -327,7 +327,7 @@ class ForensicAccuracyAuditor:
             'missed_profit_pct': optimal_exit_pnl * 100 if loss_cause != 'TP_ALCANZADO' else 0,
             
             # What-If Matrix (resumen)
-            'what_if_best': max(what_if_results.items(), key=lambda x: x[1].get('pnl_pct', -999)) if what_if_results else None,
+            'what_if_best': max(what_if_results.items(), key=lambda x: x[1]['pnl_pct']) if what_if_results else None,
         }
         
         self.signals.append(result)
@@ -404,7 +404,7 @@ class ForensicAccuracyAuditor:
                 acc = data['correct'] / data['total'] * 100
                 # Average net return
                 returns = [s['direction_accuracy'].get(w, {}).get('net_return_pct', 0) 
-                          for s in self.signals if w in s.get('direction_accuracy', {})]
+                          for s in self.signals if w in s['direction_accuracy']]
                 avg_ret = np.mean(returns) if returns else 0
                 emoji = "✅" if acc > 55 else "⚠️" if acc > 50 else "❌"
                 print(f"│ {w:>5} bar │ {data['correct']:>6}   │ {data['total']:>6}   │ {acc:>5.1f}% {emoji}│ {avg_ret:>+10.4f}%    │")
@@ -534,7 +534,7 @@ class ForensicAccuracyAuditor:
         for s in self.signals:
             if s.get('what_if_best') and s['what_if_best'][1]:
                 key = s['what_if_best'][0]
-                pnl = s['what_if_best'][1].get('pnl_pct', 0)
+                pnl = s['what_if_best'][1]['pnl_pct']
                 if key not in what_if_agg:
                     what_if_agg[key] = []
                 what_if_agg[key].append(pnl)
@@ -616,7 +616,7 @@ def main():
         df = df.dropna()
         
         # Calibrate SL/TP (same as production)
-        cal_lookahead = profile.get('ml_lookahead', 60)
+        cal_lookahead = profile['ml_lookahead']
         calibrated_sl, calibrated_tp = calibrate_sl_tp(
             df['close'].values, cal_lookahead,
             sl_cap=profile['sl_cap'], tp_cap=profile['tp_cap']

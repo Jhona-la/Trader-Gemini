@@ -36,9 +36,9 @@ class MonteCarloSimulator:
                     return self.generate_synthetic_trades(data)
                 else:
                     # Standard backtest trades list
-                    self.pnls = [t.get('pnl_pct', 0) for t in data]
+                    self.pnls = [t['pnl_pct'] for t in data]
             elif isinstance(data, dict) and 'trades' in data:
-                self.pnls = [t.get('pnl_pct', 0) for t in data['trades']]
+                self.pnls = [t['pnl_pct'] for t in data['trades']]
             
         return len(self.pnls) > 0
 

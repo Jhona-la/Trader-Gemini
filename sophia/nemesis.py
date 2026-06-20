@@ -248,7 +248,7 @@ class FalsePositiveAnalyzer:
         is_loss = actual_pnl <= 0
         
         # FORENSIC-4: Horizon Aware Confidence scaling
-        horizon = sophia_report.get('horizon_profile', 'SCALPING') # Matches profile from Sophia
+        horizon = sophia_report['horizon_profile'] # Matches profile from Sophia
         # If it's a longer term horizon, max statistical confidence ceiling compresses due to multi-day entropy.
         threshold = 0.75 if str(horizon).upper() == 'SWING' else self.HIGH_CONFIDENCE_THRESHOLD
         
@@ -275,19 +275,19 @@ class FalsePositiveAnalyzer:
     def _classify_reason(self, sophia: Dict, duration_secs: float) -> str:
         """Classify the root cause of a high-confidence failure."""
         # Check for tail event
-        excess_kurt = sophia.get('excess_kurtosis', 0.0)
+        excess_kurt = sophia['excess_kurtosis']
         if excess_kurt > 3.0:
             return "TAIL_EVENT"
 
         # Check for signal decay
-        alpha_threshold_mins = sophia.get('alpha_decay_threshold_mins', 999)
+        alpha_threshold_mins = sophia['alpha_decay_threshold_mins']
         actual_mins = duration_secs / 60.0
         if actual_mins > 2.0 * alpha_threshold_mins and alpha_threshold_mins > 0:
             return "SIGNAL_DECAY"
 
         # Check GARCH volatility inconsistency (if pre-trade vol was low but
         # the trade moved violently, that's a volatility spike)
-        tail_warning = sophia.get('tail_risk_warning', False)
+        tail_warning = sophia['tail_risk_warning']
         if tail_warning:
             return "VOLATILITY_SPIKE"
 
@@ -583,8 +583,8 @@ class PostTradeSHAPComparator:
         trade_succeeded = actual_pnl > 0
 
         for feat in top_features:
-            name = feat.get('feature', '')
-            contribution = feat.get('contribution', 0.0)
+            name = feat['feature']
+            contribution = feat['contribution']
 
             # A feature "hit" if:
             # - Its contribution was positive AND the trade won, OR
@@ -1028,7 +1028,7 @@ class NemesisEngine:
         self.brier_buckets.record(predicted_prob, brier_score)
 
         # ── §I.2: Overconfidence ──
-        horizon = sophia_report.get('horizon_profile', 'SHORT_TERM') # OMEGA FORENSIC 
+        horizon = sophia_report['horizon_profile'] # OMEGA FORENSIC 
         self.overconfidence.record_brier(brier_score, horizon_profile=horizon)
         oc_active = self.overconfidence.is_active()
         oc_factor = self.overconfidence.get_penalty_factor()

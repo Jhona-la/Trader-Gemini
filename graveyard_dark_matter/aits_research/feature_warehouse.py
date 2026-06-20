@@ -72,7 +72,7 @@ class FeatureWarehouse:
     def compute_liquidation_density(self, current_time) -> float:
         """Calculates the total dollar volume of liquidations in the rolling window."""
         self.clean_liquidation_window(current_time)
-        density = sum(liq.get("quantity", 0) * liq.get("price", 0) for liq in self.liquidation_window)
+        density = sum(liq["quantity"] * liq["price"] for liq in self.liquidation_window)
         return density
 
     async def process_batch(self, batch):

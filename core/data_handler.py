@@ -20,7 +20,7 @@ import shutil
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Any, List, Union
 from datetime import datetime
-import pandas as pd
+import polars as pl
 
 from utils.logger import logger
 from utils.data_sync import atomic_write_json, touch_timestamp
@@ -235,29 +235,29 @@ class DataHandler:
                 os.remove(tmp_path)
             logger.error(f"❌ Error appending status log to {filepath}: {e}")
 
-    def load_trades_df(self, filepath: str) -> pd.DataFrame:
+    def load_trades_df(self, filepath: str) -> 'pl.DataFrame':
         """
-        Lee trades.csv eficientemente y retorna DataFrame con tipos correctos.
-        Usa cache de lectura si es necesario (future opt).
+        Lee trades.csv eficientemente y retorna DataFrame (Polars) con tipos correctos.
         """
+        import polars as pl
         if not os.path.exists(filepath):
-            return pd.DataFrame()
+            return pl.DataFrame()
             
         try:
-            df = pd.read_csv(filepath, on_bad_lines='warn', engine='python')
+            df = pl.read_csv(filepath, ignore_errors=True)
             # Enforce types
             numeric_cols = ['entry_price', 'exit_price', 'quantity', 'pnl', 'fee', 'net_pnl']
             for col in numeric_cols:
                 if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+                    df = df.with_columns(pl.col(col).cast(pl.Float64, strict=False).fill_null(0.0))
             
             if 'is_reverse' in df.columns:
-                df['is_reverse'] = df['is_reverse'].astype(bool)
+                df = df.with_columns(pl.col('is_reverse').cast(pl.Boolean, strict=False))
                 
             return df
         except Exception as e:
             logger.error(f"❌ Error loading trades DF from {filepath}: {e}")
-            return pd.DataFrame()
+            return pl.DataFrame()
 
 # Global instance getter
 def get_data_handler():

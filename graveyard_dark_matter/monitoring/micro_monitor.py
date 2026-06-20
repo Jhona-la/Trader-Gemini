@@ -19,16 +19,16 @@ class MicroPerformanceMonitor:
         """Actualiza métricas con datos del trade"""
         self.metrics['total_trades'] += 1
         
-        if trade_data.get('micro_optimized', False):
+        if trade_data['micro_optimized']:
             self.metrics['viable_trades'] += 1
         else:
             self.metrics['non_viable_trades'] += 1
             
-        if trade_data.get('size_adjusted', False):
+        if trade_data['size_adjusted']:
             self.metrics['adjusted_trades'] += 1
             
-        self.metrics['total_fees'] += trade_data.get('fees', 0)
-        self.metrics['total_slippage'] += trade_data.get('slippage', 0)
+        self.metrics['total_fees'] += trade_data['fees']
+        self.metrics['total_slippage'] += trade_data['slippage']
     
     def get_micro_report(self) -> str:
         """Genera reporte de performance micro"""

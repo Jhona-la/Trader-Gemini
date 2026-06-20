@@ -105,26 +105,26 @@ if results:
     print("📊 PHASE 8 AITS — BACKTEST RESULTS (LOCAL DATA)")
     print("=" * 70)
     
-    metrics = results.get("metrics", {})
-    trades = results.get("trades", [])
+    metrics = results["metrics"]
+    trades = results["trades"]
     
-    initial_cap = results.get('config', {}).get('initial_capital', 13.0)
-    final_cap = metrics.get('final_capital', initial_cap)
+    initial_cap = results['config'].get('initial_capital', 13.0)
+    final_cap = metrics['final_capital']
     net_pnl = final_cap - initial_cap
-    total_trades = metrics.get('total_trades', 0)
+    total_trades = metrics['total_trades']
     avg_trade_pnl = net_pnl / total_trades if total_trades > 0 else 0.0
     
     # Calculate Profit Factor from trades
-    all_trades = results.get('trade_history', {}).get('scalping', []) + results.get('trade_history', {}).get('swing', [])
-    wins_pnl = sum([t.get('net_pnl', 0) for t in all_trades if t.get('net_pnl', 0) > 0])
-    losses_pnl = abs(sum([t.get('net_pnl', 0) for t in all_trades if t.get('net_pnl', 0) < 0]))
+    all_trades = results['trade_history'].get('scalping', []) + results['trade_history'].get('swing', [])
+    wins_pnl = sum([t['net_pnl'] for t in all_trades if t['net_pnl'] > 0])
+    losses_pnl = abs(sum([t['net_pnl'] for t in all_trades if t['net_pnl'] < 0]))
     profit_factor = wins_pnl / losses_pnl if losses_pnl > 0 else (99.9 if wins_pnl > 0 else 0.0)
     
     print(f"  💰 Final Capital:    ${final_cap:.2f}")
-    print(f"  📈 Total Return:     {metrics.get('total_return_pct', 0):.2f}%")
-    print(f"  🏆 Win Rate:         {metrics.get('win_rate', 0):.1f}%")
-    print(f"  📊 Sharpe Ratio:     {metrics.get('sharpe_ratio', 0):.3f}")
-    print(f"  📉 Max Drawdown:     {metrics.get('max_drawdown_pct', 0):.2f}%")
+    print(f"  📈 Total Return:     {metrics['total_return_pct']:.2f}%")
+    print(f"  🏆 Win Rate:         {metrics['win_rate']:.1f}%")
+    print(f"  📊 Sharpe Ratio:     {metrics['sharpe_ratio']:.3f}")
+    print(f"  📉 Max Drawdown:     {metrics['max_drawdown_pct']:.2f}%")
     print(f"  🔄 Total Trades:     {total_trades}")
     print(f"  💵 Avg Trade PnL:    ${avg_trade_pnl:.4f}")
     print(f"  🏭 Profit Factor:    {profit_factor:.2f}")
@@ -136,8 +136,8 @@ if results:
         ce_metrics = ce.get_metrics()
         print(f"\n  🏦 CompoundingEngine (HORIZON-AWARE):")
         print(f"     Phase:       {ce_metrics['growth_phase']}")
-        print(f"     Regime:      {ce_metrics.get('regime', 'N/A')}")
-        print(f"     MICRO Alloc: {ce_metrics.get('micro_allocation', 0)*100:.1f}%")
+        print(f"     Regime:      {ce_metrics['regime']}")
+        print(f"     MICRO Alloc: {ce_metrics['micro_allocation']*100:.1f}%")
         print(f"     SCL Alloc:   {ce_metrics['scalping_allocation']*100:.1f}%")
         print(f"     SWG Alloc:   {ce_metrics['swing_allocation']*100:.1f}%")
         print(f"     Peak Equity: ${ce_metrics['peak_equity']:.2f}")

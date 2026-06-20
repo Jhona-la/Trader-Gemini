@@ -86,9 +86,9 @@ class FitnessCalculator:
         """Helper para convertir dicts a TradeResult y calcular"""
         trade_objects = [
             TradeResult(
-                pnl_pct=t.get('pnl_pct', 0.0),
-                duration_seconds=t.get('duration', 0),
-                is_win=t.get('pnl', 0) > 0
+                pnl_pct=t['pnl_pct'],
+                duration_seconds=t['duration'],
+                is_win=t['pnl'] > 0
             ) for t in trades
         ]
         return FitnessCalculator.calculate_fitness(trade_objects)
@@ -261,7 +261,7 @@ class EvolutionEngine:
         
         # Neural weights: matrix[n_ind, n_weights]
         # Assume all have same brain size
-        sample_brain = population[0].genes.get('brain_weights', [])
+        sample_brain = population[0].genes['brain_weights']
         n_brain = len(sample_brain)
         has_brain = n_brain > 0
         

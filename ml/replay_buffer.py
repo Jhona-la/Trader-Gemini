@@ -115,11 +115,11 @@ class PrioritizedReplayBuffer:
         try:
             import joblib
             data = joblib.load(filepath)
-            self.buffer = data.get('buffer', [])
-            self.pos = data.get('pos', 0)
-            self.priorities = data.get('priorities', self.priorities)
-            self.alpha = data.get('alpha', self.alpha)
-            self.capacity = data.get('capacity', self.capacity)
+            self.buffer = data['buffer']
+            self.pos = data['pos']
+            self.priorities = data['priorities']
+            self.alpha = data['alpha']
+            self.capacity = data['capacity']
             from utils.logger import logger
             logger.info(f"ReplayBuffer loaded {len(self.buffer)} experiences from {filepath}.")
         except Exception as e:

@@ -69,7 +69,7 @@ for i in range(warmup, total):
                 capital += pnl_usd
                 trades.append({'pnl': pnl_usd, 'exit': 'TP', 'bars': bars_held, 'pnl_pct': pnl_pct*100})
                 position = None
-            elif bars_held >= profile.get('max_hold_bars', 200):
+            elif bars_held >= profile['max_hold_bars']:
                 pnl_pct = (close - entry) / entry
                 pnl_usd = size_usd * pnl_pct - commission
                 capital += pnl_usd
@@ -88,7 +88,7 @@ for i in range(warmup, total):
                 capital += pnl_usd
                 trades.append({'pnl': pnl_usd, 'exit': 'TP', 'bars': bars_held, 'pnl_pct': pnl_pct*100})
                 position = None
-            elif bars_held >= profile.get('max_hold_bars', 200):
+            elif bars_held >= profile['max_hold_bars']:
                 pnl_pct = (entry - close) / entry
                 pnl_usd = size_usd * pnl_pct - commission
                 capital += pnl_usd

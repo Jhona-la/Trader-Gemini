@@ -113,7 +113,8 @@ def main():
             with open(matrix_path, "r") as f:
                 output_matrix = json.load(f)
         except:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     horizons = ["SCALPING", "SWING"]
     

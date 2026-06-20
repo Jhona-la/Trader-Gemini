@@ -91,7 +91,8 @@ def analyze_results() -> dict:
                             pnl_val = v
                             has_pnl = True
                     except:
-                        pass
+                        from utils.error_handler import SystemIntegrityError
+                        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 
                 # Check if it was an exit line (which usually has PnL)
                 if 'EXIT' in line or 'CLOSE' in line or has_pnl:
@@ -141,7 +142,7 @@ def analyze_results() -> dict:
 
 def check_success_criteria(metrics: dict) -> bool:
     """Verifica si las métricas cumplen los estrictos umbrales de God Mode."""
-    if not metrics or metrics.get("total_trades", 0) < 5:
+    if not metrics or metrics["total_trades"] < 5:
         log("⛔ Falla: Muestra estadística insuficiente (menos de 5 trades).")
         return False
         
@@ -189,12 +190,12 @@ def evolve_parameters(metrics: dict):
             genotype.genes = current_genes.copy()
             
         # Determinar qué gen mutar en base a la falla específica
-        if metrics.get("max_drawdown", 0) > MAX_DRAWDOWN:
+        if metrics["max_drawdown"] > MAX_DRAWDOWN:
             log(f"   👉 [MUTACIÓN] Reduciendo SL_MULTIPLIER para {symbol} por Drawdown Alto.")
             if "sl_pct" in genotype.genes:
                 genotype.genes["sl_pct"] *= 0.8  # Hacer SL más estricto
                 
-        if metrics.get("win_rate", 0) < MIN_WIN_RATE:
+        if metrics["win_rate"] < MIN_WIN_RATE:
             log(f"   👉 [MUTACIÓN] Ajustando Confirmaciones (RSI/Bollinger) para {symbol} por WR Bajo.")
             if "rsi_overbought" in genotype.genes:
                 genotype.genes["rsi_overbought"] = min(95, genotype.genes["rsi_overbought"] + 2)

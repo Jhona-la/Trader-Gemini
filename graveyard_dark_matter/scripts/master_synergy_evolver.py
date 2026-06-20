@@ -189,16 +189,16 @@ def objective(trial, all_data, symbols, days, original_matrix):
         logger.error(f"Fallo en simulación Trial {trial.number}: {e}")
         return -9999.0
         
-    metrics = results.get('metrics', {})
-    trades = results.get('trades', [])
+    metrics = results['metrics']
+    trades = results['trades']
     
     if not trades or len(trades) == 0:
         return -9999.0
         
     pnls = np.array([t['pnl_pct'] / 100.0 for t in trades])
-    win_rate = metrics.get('win_rate', 0.0)
-    max_dd = metrics.get('max_drawdown', 1.0)
-    total_trades = metrics.get('total_trades', 0)
+    win_rate = metrics['win_rate']
+    max_dd = metrics['max_drawdown']
+    total_trades = metrics['total_trades']
     
     # Colección de basura agresiva
     gc.collect()
@@ -250,7 +250,7 @@ def main():
     overrides = generate_overrides(optuna.trial.FixedTrial(best_trial.params))
     
     # Restaurar y aplicar LOGICAL_DNA para el blueprint general
-    dna = overrides.get('LOGICAL_DNA', {})
+    dna = overrides['LOGICAL_DNA']
     
     # Guardar blueprint
     output_path = os.path.join(_project_root, "data", f"blueprint_master_{study_name}.json")

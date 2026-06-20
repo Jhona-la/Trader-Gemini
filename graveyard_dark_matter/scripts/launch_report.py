@@ -26,7 +26,7 @@ def prepare_launch_report():
     if os.path.exists(status_path):
         with open(status_path, 'r') as f:
             data = json.load(f)
-            equity = data.get('total_equity', 0)
+            equity = data['total_equity']
             print(f"🔹 Last Reported Equity: ${equity:.2f}")
     
     print("\n✅ SYSTEM IS READY FOR LIVE EXECUTION.")

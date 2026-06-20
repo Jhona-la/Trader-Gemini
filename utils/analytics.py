@@ -1,4 +1,3 @@
-import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
 from config import Config
@@ -18,14 +17,13 @@ class AnalyticsEngine:
     @staticmethod
     def calculate_metrics(history_df):
         """Calcula un set completo de métricas pro a partir del historial."""
-        if history_df.empty or len(history_df) < 5:
-            return {
-                'sharpe': 0.0, 'sortino': 0.0, 'max_drawdown': 0.0,
-                'win_rate': 0.0, 'profit_factor': 0.0, 'volatility': 0.0
-            }
-        
-        # Validar que la columna requerida existe
-        if 'total_equity' not in history_df.columns:
+        import polars as pl
+        if hasattr(history_df, 'empty'):
+            is_empty = history_df.empty
+        else:
+            is_empty = history_df.is_empty() if hasattr(history_df, 'is_empty') else len(history_df) == 0
+
+        if is_empty or len(history_df) < 5:
             return {
                 'sharpe': 0.0, 'sortino': 0.0, 'max_drawdown': 0.0,
                 'win_rate': 0.0, 'profit_factor': 0.0, 'volatility': 0.0
@@ -33,7 +31,27 @@ class AnalyticsEngine:
         
         try:
             # 1. Preparar Retornos
-            equity = pd.to_numeric(history_df['total_equity'], errors='coerce').dropna().values
+            if isinstance(history_df, dict):
+                history_df = pl.DataFrame(history_df)
+            
+            cols = history_df.columns if hasattr(history_df, 'columns') else []
+            if 'total_equity' not in cols:
+                return {
+                    'sharpe': 0.0, 'sortino': 0.0, 'max_drawdown': 0.0,
+                    'win_rate': 0.0, 'profit_factor': 0.0, 'volatility': 0.0
+                }
+
+            if hasattr(history_df, 'select'):
+                # Polars
+                equity_col = history_df.select('total_equity').to_series()
+                equity = equity_col.cast(pl.Float64, strict=False).drop_nulls().to_numpy()
+            else:
+                # pandas fallback
+                equity = history_df['total_equity']
+                if hasattr(equity, 'dropna'):
+                    equity = equity.dropna()
+                equity = np.array(equity, dtype=float)
+
             if len(equity) < 5:
                 # Retornamos valores seguros si no hay suficientes datos
                 return {'sharpe': 0.0, 'sortino': 0.0, 'max_drawdown': 0.0}
@@ -87,33 +105,63 @@ class AnalyticsEngine:
     @staticmethod
     def calculate_winrate_details(trades_df):
         """Análisis detallado de Win Rate por símbolo y estrategia."""
-        if trades_df.empty:
+        is_empty = False
+        if hasattr(trades_df, 'empty'): is_empty = trades_df.empty
+        elif hasattr(trades_df, 'is_empty'): is_empty = trades_df.is_empty()
+        else: is_empty = len(trades_df) == 0
+
+        if is_empty:
             return {}
             
         try:
-            if 'pnl' not in trades_df.columns:
+            import polars as pl
+            if hasattr(trades_df, 'columns') and 'pnl' not in trades_df.columns:
                 return {}
                 
-            closed_trades = trades_df[trades_df['pnl'] != 0].copy()
-            if closed_trades.empty:
+            if hasattr(trades_df, 'filter'):
+                closed_trades = trades_df.filter(pl.col('pnl') != 0)
+                is_closed_empty = closed_trades.is_empty()
+            else:
+                closed_trades = trades_df[trades_df['pnl'] != 0].copy()
+                is_closed_empty = closed_trades.empty
+
+            if is_closed_empty:
                 return {'global_winrate': 0.0}
                 
             # Win Rate Global
-            wins = len(closed_trades[closed_trades['pnl'] > 0])
-            total = len(closed_trades)
-            global_wr = (wins / total) * 100
-            
-            # Por Símbolo
-            symbol_wr = {}
-            if 'symbol' in closed_trades.columns:
-                for sym in closed_trades['symbol'].unique():
-                    sym_df = closed_trades[closed_trades['symbol'] == sym]
-                    sym_wins = len(sym_df[sym_df['pnl'] > 0])
-                    symbol_wr[sym] = round((sym_wins / len(sym_df)) * 100, 1)
+            if hasattr(closed_trades, 'filter'):
+                wins = len(closed_trades.filter(pl.col('pnl') > 0))
+                total = len(closed_trades)
+                global_wr = (wins / total) * 100
                 
-            # Profit Factor
-            gross_profit = closed_trades[closed_trades['pnl'] > 0]['pnl'].sum()
-            gross_loss = abs(closed_trades[closed_trades['pnl'] < 0]['pnl'].sum())
+                symbol_wr = {}
+                if 'symbol' in closed_trades.columns:
+                    unique_syms = closed_trades.select('symbol').unique().to_series().to_list()
+                    for sym in unique_syms:
+                        sym_df = closed_trades.filter(pl.col('symbol') == sym)
+                        sym_wins = len(sym_df.filter(pl.col('pnl') > 0))
+                        symbol_wr[sym] = round((sym_wins / len(sym_df)) * 100, 1)
+                
+                gross_profit = closed_trades.filter(pl.col('pnl') > 0).select('pnl').sum().item()
+                gross_loss = abs(closed_trades.filter(pl.col('pnl') < 0).select('pnl').sum().item())
+                
+            else:
+                wins = len(closed_trades[closed_trades['pnl'] > 0])
+                total = len(closed_trades)
+                global_wr = (wins / total) * 100
+                
+                # Por Símbolo
+                symbol_wr = {}
+                if 'symbol' in closed_trades.columns:
+                    for sym in closed_trades['symbol'].unique():
+                        sym_df = closed_trades[closed_trades['symbol'] == sym]
+                        sym_wins = len(sym_df[sym_df['pnl'] > 0])
+                        symbol_wr[sym] = round((sym_wins / len(sym_df)) * 100, 1)
+                    
+                # Profit Factor
+                gross_profit = closed_trades[closed_trades['pnl'] > 0]['pnl'].sum()
+                gross_loss = abs(closed_trades[closed_trades['pnl'] < 0]['pnl'].sum())
+                
             profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else float('inf')
                 
             return {
@@ -139,52 +187,40 @@ class AnalyticsEngine:
         Returns:
             dict: Métricas de esperanza y eficiencia.
         """
-        if trades_df.empty or 'pnl' not in trades_df.columns:
-            return {}
-            
+    @staticmethod
+    def _to_records(df):
+        if hasattr(df, 'iter_rows'): return list(df.iter_rows(named=True))
+        if hasattr(df, 'to_dict'): return df.to_dict('records')
+        if isinstance(df, list): return df
+        return []
+
+    @staticmethod
+    def calculate_expectancy(trades_df, filter_reverse=False):
+        """
+        Calcula la Esperanza Matemática ($E$) por operación.
+        E = (Pw * AvgW) - (Pl * AvgL)
+        """
+        trades = AnalyticsEngine._to_records(trades_df)
+        if not trades: return {}
         try:
-            # Filtro por tipo de operación (si existe columna type/signal)
-            # Asumimos que si no existe columna, son todos standard
-            df = trades_df.copy()
-            
-            # Limpieza básica de outliers (PnL == 0 exacto)
-            df = df[df['pnl'] != 0]
-            
-            if len(df) < 10:
-                return {'status': 'INSUFFICIENT_DATA'}
-            
-            wins = df[df['pnl'] > 0]
-            losses = df[df['pnl'] < 0]
-            
-            num_trades = len(df)
+            valid_trades = [t for t in trades if t['pnl'] != 0]
+            if len(valid_trades) < 10: return {'status': 'INSUFFICIENT_DATA'}
+            wins = [t for t in valid_trades if t['pnl'] > 0]
+            losses = [t for t in valid_trades if t['pnl'] < 0]
+            num_trades = len(valid_trades)
             p_win = len(wins) / num_trades
             p_loss = len(losses) / num_trades
-            
-            avg_win = wins['pnl'].mean() if not wins.empty else 0.0
-            avg_loss = abs(losses['pnl'].mean()) if not losses.empty else 0.0
-            
-            # Esperanza Matemática
+            avg_win = sum(t['pnl'] for t in wins) / len(wins) if wins else 0.0
+            avg_loss = abs(sum(t['pnl'] for t in losses) / len(losses)) if losses else 0.0
             expectancy = (p_win * avg_win) - (p_loss * avg_loss)
-            
-            # Ratio Riesgo/Beneficio Real
             reward_risk_ratio = avg_win / avg_loss if avg_loss > 0 else 0.0
-            
-            # Kelly Criterion Suggestion
-            # K = W - (1-W)/R
-            kelly = 0.0
-            if reward_risk_ratio > 0:
-                kelly = p_win - ((1 - p_win) / reward_risk_ratio)
-            
+            kelly = p_win - ((1 - p_win) / reward_risk_ratio) if reward_risk_ratio > 0 else 0.0
             return {
-                'expectancy': round(expectancy, 4),
-                'kelly_percent': round(kelly * 100, 2),
-                'avg_win': round(avg_win, 4),
-                'avg_loss': round(avg_loss, 4),
-                'win_rate': round(p_win * 100, 1),
-                'reward_risk': round(reward_risk_ratio, 2),
+                'expectancy': round(expectancy, 4), 'kelly_percent': round(kelly * 100, 2),
+                'avg_win': round(avg_win, 4), 'avg_loss': round(avg_loss, 4),
+                'win_rate': round(p_win * 100, 1), 'reward_risk': round(reward_risk_ratio, 2),
                 'status': 'OK'
             }
-            
         except Exception as e:
             logger.error(f"❌ Error calculando Esperanza: {e}")
             return {}
@@ -195,33 +231,17 @@ class AnalyticsEngine:
         Calcula la Fricción Operativa (Impacto de Fees en Beneficio Bruto).
         Formula: Friction = (Fees / Gross Profit) * 100
         """
-        if trades_df.empty or 'fee' not in trades_df.columns or 'pnl' not in trades_df.columns:
-            return {}
-            
+        trades = AnalyticsEngine._to_records(trades_df)
+        if not trades: return {}
         try:
-            total_fees = trades_df['fee'].sum()
-            net_pnl = trades_df['pnl'].sum()
-            # Gross PnL ~ Net PnL + Fees (assuming fees were subtracted)
-            # Actually, usually PnL in bots is Net. Let's assume 'pnl' is Net. 
-            # So Gross = Net + Fees. 
-            # If 'pnl' is Gross, then Gross = pnl. 
-            # Standard Gemini/Binance behavior: 'realizedPnl' is usually Net of funding but NOT commissions sometimes?
-            # Let's rely on our standard: 'pnl' column usually is Net PnL.
-            gross_pnl = net_pnl + total_fees 
-            
-            friction_pct = 0.0
-            if gross_pnl > 0:
-                friction_pct = (total_fees / gross_pnl) * 100
-            
-            # Detect False Edge
-            # Win Rate > 55% BUT Expectancy < 0
-            stats = AnalyticsEngine.calculate_expectancy(trades_df)
-            wr = stats.get('win_rate', 0)
-            exp = stats.get('expectancy', 0)
-            
-            false_edge = False
-            if wr > 55 and exp < 0:
-                false_edge = True
+            total_fees = sum(t['fee'] for t in trades)
+            net_pnl = sum(t['pnl'] for t in trades)
+            gross_pnl = net_pnl + total_fees
+            friction_pct = (total_fees / gross_pnl) * 100 if gross_pnl > 0 else 0.0
+            stats = AnalyticsEngine.calculate_expectancy(trades)
+            wr = stats['win_rate']
+            exp = stats['expectancy']
+            false_edge = True if (wr > 55 and exp < 0) else False
                 
             return {
                 'friction_pct': round(friction_pct, 2),
@@ -241,22 +261,30 @@ class AnalyticsEngine:
         DD_t = (Equity_t - Peak_t) / Peak_t
         
         Returns:
-            pd.Series: Serie de drawdowns (valores negativos o cero).
+            pl.Series: Serie de drawdowns (valores negativos o cero).
         """
+        import polars as pl
         if isinstance(equity_series, list):
-            equity_series = pd.Series(equity_series)
+            equity_series = pl.Series(equity_series)
             
-        if equity_series.empty:
-            return pd.Series(dtype=float)
+        if hasattr(equity_series, 'is_empty'):
+            if equity_series.is_empty():
+                return pl.Series(dtype=pl.Float64)
+        elif equity_series.empty:
+            return pl.Series(dtype=pl.Float64)
             
         try:
-            peak = equity_series.cummax()
-            # Avoid division by zero
-            drawdown = (equity_series - peak) / peak.replace(0, 1) 
-            return drawdown
+            if hasattr(equity_series, 'cum_max'):
+                peak = equity_series.cum_max()
+                drawdown = (equity_series - peak) / peak.fill_null(1.0).map_elements(lambda x: x if x != 0 else 1.0, return_dtype=pl.Float64)
+                return drawdown
+            else:
+                peak = equity_series.cummax()
+                drawdown = (equity_series - peak) / peak.replace(0, 1) 
+                return drawdown
         except Exception as e:
             logger.error(f"❌ Error calculating Drawdown Series: {e}")
-            return pd.Series(dtype=float)
+            return pl.Series(dtype=pl.Float64)
 
     @staticmethod
     def check_rolling_expectancy(trades_df, window=20) -> dict:
@@ -271,16 +299,24 @@ class AnalyticsEngine:
                 'reason': str
             }
         """
-        if trades_df.empty or len(trades_df) < 5:
+        is_empty = False
+        if hasattr(trades_df, 'empty'): is_empty = trades_df.empty
+        elif hasattr(trades_df, 'is_empty'): is_empty = trades_df.is_empty()
+        else: is_empty = len(trades_df) == 0
+
+        if is_empty or len(trades_df) < 5:
             # Not enough data to judge -> Allow (Learning Phase)
             return {'allowed': True, 'expectancy': 0.0, 'reason': 'LEARNING_PHASE'}
             
         try:
             # Take last N trades
-            recent_trades = trades_df.tail(window)
+            if hasattr(trades_df, 'tail'):
+                recent_trades = trades_df.tail(window)
+            else:
+                recent_trades = trades_df[-window:]
             
             stats = AnalyticsEngine.calculate_expectancy(recent_trades)
-            e_val = stats.get('expectancy', 0.0)
+            e_val = stats['expectancy']
             
             if e_val > 0:
                 return {'allowed': True, 'expectancy': e_val, 'reason': 'POSITIVE_EDGE'}

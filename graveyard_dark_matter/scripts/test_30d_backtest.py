@@ -45,7 +45,7 @@ def run_30_day_simulation():
     print(f"💰 Balance Final: ${res['pnl']:.2f} USD (Capital Inicial: $13.00)")
     print(f"🎯 Win Rate: {res['win_rate']:.2f}%")
     print(f"⚡ Operaciones (Trades): {res['trades']}")
-    print(f"🧬 ADN Usado: Leverage {dna.get('leverage', 1.0)}x | TP: {dna.get('tp_pct', 0)*100:.2f}% | SL: {dna.get('sl_pct', 0)*100:.2f}%")
+    print(f"🧬 ADN Usado: Leverage {dna['leverage']}x | TP: {dna['tp_pct']*100:.2f}% | SL: {dna['sl_pct']*100:.2f}%")
     print("═"*50)
 
 if __name__ == '__main__':

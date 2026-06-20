@@ -223,9 +223,9 @@ class CompoundingEngine:
 
         # 1. Get base allocation from regime
         regime_alloc = self._regime_alloc.get(self._current_regime, self._default_alloc)
-        base_micro = regime_alloc.get('MICRO', self._default_alloc['MICRO'])
-        base_scalp = regime_alloc.get('SCALP', self._default_alloc['SCALP'])
-        base_swing = regime_alloc.get('SWING', self._default_alloc['SWING'])
+        base_micro = regime_alloc['MICRO']
+        base_scalp = regime_alloc['SCALP']
+        base_swing = regime_alloc['SWING']
 
         # 2. Apply sigmoid maturity adjustment
         # As equity grows, shift from MICRO → SWING (safer at higher equity)

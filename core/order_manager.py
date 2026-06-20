@@ -34,12 +34,12 @@ class OrderManager:
         # Phase 32: Persist Chase Count via Metadata
         chase_count = 0
         if metadata and 'chase_count' in metadata:
-            chase_count = metadata.get('chase_count', 0)
+            chase_count = metadata['chase_count']
         
         # BBO: Extract exit order flag for chase/fallback behavior
         is_exit_order = False
         if metadata and 'is_exit_order' in metadata:
-            is_exit_order = metadata.get('is_exit_order', False)
+            is_exit_order = metadata['is_exit_order']
             
         self.open_orders[order_id] = {
             'timestamp': datetime.now(timezone.utc),
@@ -65,15 +65,15 @@ class OrderManager:
         to_process = []
 
         for oid, info in self.open_orders.items():
-            ttl = info.get('ttl', self.default_ttl)
+            ttl = info['ttl']
             if now - info['timestamp'] > timedelta(seconds=ttl):
                 to_process.append((oid, info))
 
         for oid, info in to_process:
             symbol = info['symbol']
             side = info['side']
-            chase_count = info.get('chase_count', 0)
-            is_exit_order = info.get('is_exit_order', False)
+            chase_count = info['chase_count']
+            is_exit_order = info['is_exit_order']
             
             # 1. CANCEL THE STALE ORDER
             logger.warning(f"🛡️ [OrderMgr] Order {oid} ({symbol}) is STALE (>{info['ttl']}s). {'EXIT' if is_exit_order else 'ENTRY'} order. Cancelling...")
@@ -115,7 +115,7 @@ class OrderManager:
                 current_price = self.data_provider.get_last_price(symbol)
             
             if current_price <= 0:
-                is_exit = old_info.get('is_exit_order', False)
+                is_exit = old_info['is_exit_order']
                 if is_exit:
                     logger.warning(f"⚠️ [OrderMgr] Cannot chase EXIT {symbol}: price unknown. MARKET fallback!")
                     await self._market_fallback_exit(symbol, side, old_info)
@@ -125,20 +125,20 @@ class OrderManager:
 
             # RE-PRICE: Ensure we are at BBO
             new_price = current_price
-            qty = old_info.get('quantity', 0)
+            qty = old_info['quantity']
             if qty <= 0:
                 logger.warning(f"⚠️ [OrderMgr] Cannot chase {symbol}: quantity missing.")
                 return
 
             new_chase_count = chase_count + 1
-            is_exit = old_info.get('is_exit_order', False)
+            is_exit = old_info['is_exit_order']
             logger.info(f"🏹 [OrderMgr] CHASING {'EXIT' if is_exit else 'ENTRY'} {symbol}: Re-placing {side} at ${new_price:.2f} (Chase #{new_chase_count})")
             
             from core.events import OrderEvent
             from core.enums import OrderType, OrderSide
             
             # Preserve exit metadata for the chase
-            chase_metadata = dict(old_info.get('metadata', {}))
+            chase_metadata = dict(old_info['metadata'])
             chase_metadata['chase_count'] = new_chase_count
             
             new_event = OrderEvent(
@@ -147,8 +147,8 @@ class OrderManager:
                 quantity=qty,
                 direction=OrderSide.BUY if side == 'BUY' else OrderSide.SELL,
                 price=new_price,
-                strategy_id=old_info.get('strategy_id', 'ORDER_CHASER'),
-                horizon=old_info.get('metadata', {}).get('horizon', 'SCALPING'),
+                strategy_id=old_info['strategy_id'],
+                horizon=old_info['metadata'].get('horizon', 'SCALPING'),
                 is_exit=is_exit,
                 is_close=is_exit,
                 metadata=chase_metadata
@@ -171,7 +171,7 @@ class OrderManager:
             from core.events import OrderEvent
             from core.enums import OrderType, OrderSide
             
-            qty = info.get('quantity', 0)
+            qty = info['quantity']
             if qty <= 0:
                 logger.error(f"❌ [BBO-FALLBACK] Cannot do MARKET fallback for {symbol}: no quantity")
                 return
@@ -188,7 +188,7 @@ class OrderManager:
                 direction=OrderSide.BUY if side == 'BUY' else OrderSide.SELL,
                 price=current_price if current_price > 0 else None,
                 strategy_id='BBO_MARKET_FALLBACK',
-                horizon=info.get('metadata', {}).get('horizon', 'SCALPING'),
+                horizon=info['metadata'].get('horizon', 'SCALPING'),
                 is_exit=True,
                 is_close=True,
                 metadata={'exit_mode': 'TAKER_PANIC', 'chase_exhausted': True}

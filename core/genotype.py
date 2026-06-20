@@ -54,7 +54,8 @@ class Genotype:
                 if key not in self.genes:
                     self.genes[key] = val
         except Exception as e:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def init_brain(self, input_size: int, output_size: int):
         """Initialize random neural weights if empty"""

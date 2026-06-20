@@ -76,7 +76,7 @@ class MetaOptimizer:
         
         # --- PHASE 47: SOVEREIGN ORACLE (Reasoning) ---
         reasoning = sovereign_oracle.reason_about_outcome(result)
-        conviction_mod = reasoning.get("conviction_score", 1.0)
+        conviction_mod = reasoning["conviction_score"]
         
         if genotype is None:
             filename = f"data/genotypes/{symbol.replace('/','')}_gene.json"

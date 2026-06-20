@@ -213,7 +213,8 @@ def mock_portfolio(mock_config, temp_data_dir):
             portfolio.io_executor.shutdown(wait=False)
         portfolio.close()
     except Exception:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
 
 @pytest.fixture
@@ -404,14 +405,16 @@ def pytest_unconfigure(config):
         from utils.notifier import Notifier
         Notifier.shutdown(wait=False)
     except Exception:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     try:
         from core.shared_pools import SharedPools
         if SharedPools._instance is not None:
             SharedPools.get_instance().shutdown(wait=False)
             SharedPools._instance = None
     except Exception:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     TestSecurityGuard.unlock()
     print("\n🔓 TestSecurityGuard: UNLOCKED")
 

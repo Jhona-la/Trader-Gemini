@@ -71,13 +71,13 @@ class ForensicExporter:
         for strat_id, metrics in strategy_attribution.items():
             rows.append({
                 "strategy_id": strat_id,
-                "trades": metrics.get("trades", 0),
-                "wins": metrics.get("wins", 0),
-                "losses": metrics.get("losses", 0),
-                "win_rate": (metrics["wins"] / metrics["trades"] * 100) if metrics.get("trades", 0) > 0 else 0,
-                "gross_pnl": metrics.get("gross_pnl", 0.0),
-                "net_pnl": metrics.get("net_pnl", 0.0),
-                "sharpe_contribution": metrics.get("net_pnl", 0.0),  # Simplified
+                "trades": metrics["trades"],
+                "wins": metrics["wins"],
+                "losses": metrics["losses"],
+                "win_rate": (metrics["wins"] / metrics["trades"] * 100) if metrics["trades"] > 0 else 0,
+                "gross_pnl": metrics["gross_pnl"],
+                "net_pnl": metrics["net_pnl"],
+                "sharpe_contribution": metrics["net_pnl"],  # Simplified
             })
 
         df = pd.DataFrame(rows)
@@ -104,13 +104,13 @@ class ForensicExporter:
         for sym, metrics in symbol_attribution.items():
             rows.append({
                 "symbol": sym,
-                "trades": metrics.get("trades", 0),
-                "wins": metrics.get("wins", 0),
-                "losses": metrics.get("losses", 0),
-                "win_rate": (metrics["wins"] / metrics["trades"] * 100) if metrics.get("trades", 0) > 0 else 0,
-                "gross_pnl": metrics.get("gross_pnl", 0.0),
-                "net_pnl": metrics.get("net_pnl", 0.0),
-                "fees": metrics.get("fees", 0.0),
+                "trades": metrics["trades"],
+                "wins": metrics["wins"],
+                "losses": metrics["losses"],
+                "win_rate": (metrics["wins"] / metrics["trades"] * 100) if metrics["trades"] > 0 else 0,
+                "gross_pnl": metrics["gross_pnl"],
+                "net_pnl": metrics["net_pnl"],
+                "fees": metrics["fees"],
             })
 
         df = pd.DataFrame(rows)

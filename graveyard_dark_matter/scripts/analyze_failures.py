@@ -18,19 +18,19 @@ def analyze_audit(file_path):
         row = {
             'symbol': symbol,
             'timeframe': tf,
-            'pnl_usd': metrics.get('total_return', 0),
-            'win_rate': metrics.get('win_rate', 0),
-            'total_trades': metrics.get('total_trades', 0),
+            'pnl_usd': metrics['total_return'],
+            'win_rate': metrics['win_rate'],
+            'total_trades': metrics['total_trades'],
             'error': entry.get('error')
         }
         summary.append(row)
         
-        for dec in entry.get('decisions', []):
-            if dec.get('pnl_usd', 0) < 0:
-                reasoning = dec.get('reasoning', {})
+        for dec in entry['decisions']:
+            if dec['pnl_usd'] < 0:
+                reasoning = dec['reasoning']
                 all_decisions.append({
                     'symbol': symbol,
-                    'attribution': reasoning.get('attribution', 'UNKNOWN'),
+                    'attribution': reasoning['attribution'],
                     'pnl_usd': dec.get('pnl_usd')
                 })
     

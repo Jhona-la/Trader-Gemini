@@ -178,7 +178,8 @@ class SignalEvent(Event):
                     from config import Config
                     max_age = Config.MAX_SIGNAL_AGE
                 except Exception:
-                    pass
+                    from utils.error_handler import SystemIntegrityError
+                    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 ttl_val = max_age
             object.__setattr__(self, 'expiration_timestamp', self.datetime + timedelta(seconds=ttl_val))
 

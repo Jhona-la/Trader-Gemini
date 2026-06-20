@@ -15,10 +15,10 @@ def diagnose(input_file):
             for horizon, ledger in data['trade_history'].items():
                 print(f"\n👉 HORIZON: {horizon.upper()}")
                 for trade in ledger:
-                    pnl = trade.get('net_pnl', 0)
+                    pnl = trade['net_pnl']
                     wr = 100 if pnl > 0 else 0
-                    strat = trade.get('metadata', {}).get('strategy', 'Unknown')
-                    sym = trade.get('symbol', 'Unknown')
+                    strat = trade['metadata'].get('strategy', 'Unknown')
+                    sym = trade['symbol']
                     
                     status_icon = "❌" if pnl < 0 else "✅"
                     print(f"  🔹 {sym:10} [{strat:12}] {status_icon} Net PNL: ${pnl:8.4f}")
@@ -36,10 +36,10 @@ def diagnose(input_file):
                 for strat_name, stats in strategies.items():
                     if not isinstance(stats, dict): continue
                     
-                    pnl = stats.get('pnl_usd', 0)
-                    wr = stats.get('win_rate', 0)
-                    trades = stats.get('trades', 0)
-                    dd = stats.get('max_drawdown', 0)
+                    pnl = stats['pnl_usd']
+                    wr = stats['win_rate']
+                    trades = stats['trades']
+                    dd = stats['max_drawdown']
                     
                     status_icon = "❌" if pnl < 0 else "✅"
                     print(f"     [{strat_name:12}] {status_icon} PNL: ${pnl:8.4f} | WR: {wr:5.1f}% | Trades: {trades:3} | DD: {dd:5.2f}%")

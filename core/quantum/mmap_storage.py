@@ -327,7 +327,9 @@ class QuantumDataLake:
             self._pools[safe] = QuantumMMAP(safe, self.capacity_days, self.cache_dir)
         return self._pools[safe]
 
-    def fetch_symbol(self, symbol: str, days: int = 30, end_time: datetime = None):
+    def fetch_symbol(
+        self, symbol: str, days: int = 30, end_time: datetime = None, offline_mode: bool = False
+    ) -> pd.DataFrame:
         """
         API compatible con RobustDataLake.fetch_symbol().
         Retorna pd.DataFrame con index=timestamp y cols=[open,high,low,close,volume].
@@ -362,7 +364,7 @@ class QuantumDataLake:
 
         # ── 2. Descargar Delta desde Binance ─────────────────────────────
         delta_hours = (end_time - fetch_start).total_seconds() / 3600
-        if delta_hours < 0.01:
+        if delta_hours < 0.01 or offline_mode:
             df = pool.to_dataframe()
             if len(df) == 0:
                 return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])

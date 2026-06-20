@@ -9,7 +9,7 @@ def replacer(match):
     strat_val = match.group(1)
     if 'position.get' in strat_val or 'pos.get' in strat_val or 'self.strategy_id' in strat_val:
         return full
-    return full.replace(strat_val, 'position.get("opener_strategy_id", position.get("strategy_id", "Unknown"))')
+    return full.replace(strat_val, 'position["opener_strategy_id"])')
 
 # Nos enfocamos en check_exit que va desde la def check_exit hasta el final.
 idx = content.find('def check_exit')

@@ -91,11 +91,11 @@ class OptunaOracle:
             return -999.0
             
         # 4. Extract Metrics
-        win_rate = result.get('win_rate', 0.0)
-        sharpe = result.get('sharpe', 0.0)
-        trades = result.get('trades', 0)
-        pnl = result.get('pnl_pct', 0.0)
-        max_dd = result.get('max_drawdown', 100.0)
+        win_rate = result['win_rate']
+        sharpe = result['sharpe']
+        trades = result['trades']
+        pnl = result['pnl_pct']
+        max_dd = result['max_drawdown']
 
         # 5. Fitness Calculation 
         if trades < 5:

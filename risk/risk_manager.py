@@ -239,6 +239,10 @@ class RiskManager:
         # Kill Switch
         self.kill_switch = KillSwitch(portfolio=self.portfolio)
 
+        # [PHASE VI] HFT Circuit Breaker & Flash Crash Guard
+        from risk.circuit_breaker import CircuitBreaker
+        self.circuit_breaker = CircuitBreaker()
+
         # Exit Oracle (Autoconciencia del Sistema)
         self.exit_oracle = ExitOracle(
             db_handler=getattr(self.portfolio, 'db', None) if self.portfolio else None
@@ -247,8 +251,8 @@ class RiskManager:
         # ═══════════════════════════════════════════════════════════════
         # TRAILING ENGINE (Dynamic ATR-based Trailing Stops)
         # ═══════════════════════════════════════════════════════════════
-        from core.trailing_engine import TrailingEngine
-        self.trailing_engine = TrailingEngine(Config)
+        from core.cython_bridge.nano_ffi import NanoFFIBridge
+        self.nano_ffi = NanoFFIBridge()
         
         # 👻 [FASE I] BUFFER DE MICRO-INTENCIONES (Sizing Acumulativo)
         # QUÉ: Acumula las fracciones de Kelly menores a $5.05 hasta alcanzar el umbral.
@@ -647,8 +651,8 @@ class RiskManager:
             csv_path = "dashboard/data/futures/trades.csv"
             if os.path.exists(csv_path):
                 trades = dh.load_trades_df(csv_path)
-                if not trades.empty:
-                    for _, t in trades.iterrows():
+                if not trades.is_empty():
+                    for t in trades.iter_rows(named=True):
                         is_win = t.get("net_pnl", 0) > 0
                         pnl = (
                             t.get("net_pnl", 0)
@@ -1850,9 +1854,8 @@ class RiskManager:
                 
                 # Para cuentas micro ($13 USD) buscando crecimiento exponencial, la certeza debe ser casi absoluta.
                 if horizon in ('MICROSCALPING', 'SCALPING'):
-                    import os
-                    is_backtest = os.getenv("TRADER_GEMINI_BACKTEST") == "true"
-                    _req_conf = 0.55 if is_backtest else 0.85
+                    # PARIDAD ABSOLUTA: Mismo umbral en backtest y producción (Fase V Audit Fix #1)
+                    _req_conf = 0.85
                     
                     if ml_conf < _req_conf or vpin_toxicity > 0.4 or entropy > 0.80:
                         logger.warning(
@@ -2580,6 +2583,17 @@ class RiskManager:
             if _fh_order is None:
                 return self._reject_trade(signal_event, RejectionReason.FEE_HARVEST_REJECTED)
             return _fh_order
+
+        # ═══════════════════════════════════════════════════════════════
+        # [PHASE VI] CIRCUIT BREAKER & FLASH CRASH GUARD
+        # ═══════════════════════════════════════════════════════════════
+        if hasattr(self, 'circuit_breaker'):
+            if self.circuit_breaker.is_active():
+                return self._reject_trade(signal_event, "CIRCUIT_BREAKER_ACTIVE")
+                
+            if self.circuit_breaker.check_flash_crash(signal_event.symbol, current_price):
+                return self._reject_trade(signal_event, "FLASH_CRASH_DETECTED")
+
         # ═══════════════════════════════════════════════════════════════
         # SOVEREIGN RISK SHIELD (Last Line of Defense)
         # ═══════════════════════════════════════════════════════════════
@@ -2799,9 +2813,8 @@ class RiskManager:
             if getattr(Config.Execution, "USE_LIMIT_BBO_ENTRIES", True) and getattr(Config.Execution, "USE_LIMIT_BBO_EXITS", True):
                 round_trip_fee = getattr(Config, "BINANCE_MAKER_FEE_BNB", 0.0002) * 2  # Best case
             if atr_pct < (round_trip_fee * 1.5):
-                import os
-                if not os.getenv("TRADER_GEMINI_BACKTEST") == "true":
-                    return self._reject_trade(signal_event, RejectionReason.FEE_DRAG)
+                # PARIDAD ABSOLUTA: Fee Drag aplica en backtest y producción (Fase V Audit Fix #2)
+                return self._reject_trade(signal_event, RejectionReason.FEE_DRAG)
                 
         if not self._validate_frequency_limits(
             signal_event.symbol, signal_event.signal_type
@@ -3330,15 +3343,18 @@ class RiskManager:
             #   Priority 0 → ALWAYS MARKET (emergency/kill_switch)
             #   Extreme Momentum (>0.90) or High ATR (>1.0%) → MARKET (price escaping)
             #   Normal conditions → LIMIT (save fees, earn Maker rebate)
+            # 🏎️ [EVOLUCIÓN ASIMÉTRICA] Phase III: Forzar SCALPING a MAKER puro
+            is_scalping = horizon in ("SCALPING", "MICROSCALPING")
+
             if priority == 0:
                 order_type = OrderType.MARKET
                 entry_mode = "TAKER_PANIC"
-            elif "IMBALANCE" in setup_type.upper() or "SNIPER" in setup_type.upper():
+            elif is_scalping or "IMBALANCE" in setup_type.upper() or "SNIPER" in setup_type.upper():
                 order_type = OrderType.LIMIT
                 entry_mode = "MAKER_SNIPER"
-                logger.debug(f"🎯 [ROUTER] {symbol} → POST_ONLY SNIPER (Setup={setup_type})")
+                logger.debug(f"🎯 [ROUTER] {symbol} → POST_ONLY SNIPER (Horizon={horizon}, Setup={setup_type})")
             elif momentum_score > 0.90 or atr_pct > 0.01:
-                # Market is exploding directionally — fill is more important than fee
+                # Swing might still use TAKER in extreme momentum
                 order_type = OrderType.MARKET
                 entry_mode = "TAKER_MOMENTUM"
                 logger.debug(
@@ -3390,9 +3406,11 @@ class RiskManager:
             # QUÉ: Si entramos por rechazo de mecha (Flash Crash/Pump), el precio se devuelve rápido.
             # PARA QUÉ: Si no se cierra rápido, nos comemos la tendencia principal en contra.
             base_ttl = optimal_ttl_bars * 60 if optimal_ttl_bars else (getattr(exec_config, "ENTRY_TTL_SECONDS", 30) if order_type == OrderType.LIMIT else 30)
-            if "LIQUIDITY" in setup_type.upper() or "VOID" in setup_type.upper() or "IMBALANCE" in setup_type.upper() or "SNIPER" in setup_type.upper():
-                base_ttl = 15  # Max 15 seconds for Order Book Imbalance & Voids (Hyper-fast in and out)
-                logger.debug(f"⚡ [HYPER-SNIPE] Enforcing ultra-fast TTL={base_ttl}s for {symbol} ({setup_type})")
+            is_void_setup = any(x in setup_type.upper() for x in ("LIQUIDITY", "VOID", "IMBALANCE", "SNIPER"))
+            
+            if is_void_setup or is_scalping:
+                base_ttl = 10  # Max 10 seconds for Scalping Limit entries to prevent stale fills
+                logger.debug(f"⚡ [HYPER-SNIPE] Enforcing ultra-fast TTL={base_ttl}s for {symbol} ({setup_type} | {horizon})")
 
             base_order = OrderEvent(
                 symbol=symbol,
@@ -4521,13 +4539,34 @@ class RiskManager:
                             logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
                 # 📈 TRAILING ENGINE V7 INTEGRATION
                 pos['pos_side'] = 'LONG'
-                trail_res = self.trailing_engine.evaluate_trailing_mechanisms(
-                    pos, current_price, current_atr=atr_pct/100, data_pkg=None
+                profile = getattr(Config, 'Trailing', None)
+                p = profile.get_asset_profile(symbol) if profile else {"pullback_tol": 0.40, "trail_f1": 2.0, "trail_f2": 1.5, "trail_f3": 1.2, "trail_runner": 1.0}
+                
+                c_atr = float(atr_pct/100) if (atr_pct/100) > 0.0 else float(current_price * p.get('default_atr_pct', 0.0050))
+                trail_res = self.nano_ffi.evaluate_trailing(
+                    1,
+                    float(pos.get('avg_price', 0.0)),
+                    float(current_price),
+                    c_atr,
+                    int(pos.get('fase_actual_int', 0)),
+                    float(pos.get('mfe_atr', 0.0)),
+                    float(pos.get('max_pnl_pct', 0.0)),
+                    float(pos.get('trail_stop_price', 0.0)),
+                    float(p.get('pullback_tol', 0.40)),
+                    float(p.get('trail_f1', 2.0)),
+                    float(p.get('trail_f2', 1.5)),
+                    float(p.get('trail_f3', 1.2)),
+                    float(p.get('trail_runner', 1.0))
                 )
                 
-                trail_price = trail_res.get('stop_price')
-                trail_name = trail_res.get('active_mechanism')
-                force_close = trail_res.get('force_close')
+                pos['fase_actual_int'] = trail_res['new_phase']
+                pos['max_pnl_pct'] = trail_res['max_pnl_pct']
+                pos['mfe_atr'] = trail_res['mfe_atr']
+                pos['trail_stop_price'] = trail_res['stop_price']
+                
+                trail_price = trail_res['stop_price']
+                trail_name = f"FASE_{trail_res['new_phase']}_QUANTUM_TRAIL"
+                force_close = trail_res['force_close']
                 
                 if force_close or (trail_price and current_price < trail_price):
                     exit_reason_str = trail_res.get('reason') if force_close else f"TRAILING_STOP: {trail_name}"
@@ -4789,13 +4828,34 @@ class RiskManager:
                 
                 # 📈 TRAILING ENGINE V7 INTEGRATION
                 pos['pos_side'] = 'SHORT'
-                trail_res = self.trailing_engine.evaluate_trailing_mechanisms(
-                    pos, current_price, current_atr=atr_pct/100, data_pkg=None
+                profile = getattr(self.config, 'Trailing', None)
+                p = profile.get_asset_profile(symbol) if profile else {"pullback_tol": 0.40, "trail_f1": 2.0, "trail_f2": 1.5, "trail_f3": 1.2, "trail_runner": 1.0}
+                
+                c_atr = float(atr_pct/100) if (atr_pct/100) > 0.0 else float(current_price * p.get('default_atr_pct', 0.0050))
+                trail_res = self.nano_ffi.evaluate_trailing(
+                    -1,
+                    float(pos.get('avg_price', 0.0)),
+                    float(current_price),
+                    c_atr,
+                    int(pos.get('fase_actual_int', 0)),
+                    float(pos.get('mfe_atr', 0.0)),
+                    float(pos.get('max_pnl_pct', 0.0)),
+                    float(pos.get('trail_stop_price', 0.0)),
+                    float(p.get('pullback_tol', 0.40)),
+                    float(p.get('trail_f1', 2.0)),
+                    float(p.get('trail_f2', 1.5)),
+                    float(p.get('trail_f3', 1.2)),
+                    float(p.get('trail_runner', 1.0))
                 )
                 
-                trail_price = trail_res.get('stop_price')
-                trail_name = trail_res.get('active_mechanism')
-                force_close = trail_res.get('force_close')
+                pos['fase_actual_int'] = trail_res['new_phase']
+                pos['max_pnl_pct'] = trail_res['max_pnl_pct']
+                pos['mfe_atr'] = trail_res['mfe_atr']
+                pos['trail_stop_price'] = trail_res['stop_price']
+                
+                trail_price = trail_res['stop_price']
+                trail_name = f"FASE_{trail_res['new_phase']}_QUANTUM_TRAIL"
+                force_close = trail_res['force_close']
                 
                 if force_close or (trail_price and current_price > trail_price):
                     exit_reason_str = trail_res.get('reason') if force_close else f"TRAILING_STOP: {trail_name}"

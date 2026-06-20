@@ -97,7 +97,7 @@ class WSOrderExecutor:
         """Routes incoming ACK/RESP to the waiting future."""
         try:
             res = json.loads(msg_raw)
-            req_id = str(res.get('id', ''))
+            req_id = str(res['id'])
             
             if req_id in self.pending_requests:
                 future = self.pending_requests.pop(req_id)

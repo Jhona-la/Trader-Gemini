@@ -44,11 +44,11 @@ class AdaptiveConfigIntegral:
         self.matrix = {{
             'MICRO': {{
                 'global_horizon': {{
-                    'max_hold_seconds': {best_params.get('micro_max_hold_sec', 600)},
+                    'max_hold_seconds': {best_params['micro_max_hold_sec']},
                     'signal_expiry_seconds': 60,
                     'evaluation_frequency_seconds': 30,
-                    'max_concurrent_positions': {best_params.get('micro_max_conc', 3)},
-                    'capital_allocation_base_pct': {best_params.get('micro_alloc_base', 0.25)},
+                    'max_concurrent_positions': {best_params['micro_max_conc']},
+                    'capital_allocation_base_pct': {best_params['micro_alloc_base']},
                     'capital_allocation_min_pct': 0.10,
                     'capital_allocation_max_pct': 0.40,
                     'order_type_default': 'MARKET',
@@ -57,13 +57,13 @@ class AdaptiveConfigIntegral:
                 }},
                 'por_activo': {{
                     'BTC': {{
-                        'tp_pct_default': {best_params.get('micro_btc_tp', 0.14)},
-                        'sl_pct_default': {best_params.get('micro_btc_sl', 0.09)},
+                        'tp_pct_default': {best_params['micro_btc_tp']},
+                        'sl_pct_default': {best_params['micro_btc_sl']},
                         'tp_sl_ratio_min': 1.5,
-                        'leverage': {best_params.get('micro_btc_lev', 20)},
-                        'signal_score_min': {best_params.get('micro_btc_score', 72)},
-                        'trailing_atr_mult': {best_params.get('micro_btc_trail_atr', 0.6)},
-                        'zombie_n_velas_inactividad': {best_params.get('micro_btc_zombie', 15)}
+                        'leverage': {best_params['micro_btc_lev']},
+                        'signal_score_min': {best_params['micro_btc_score']},
+                        'trailing_atr_mult': {best_params['micro_btc_trail_atr']},
+                        'zombie_n_velas_inactividad': {best_params['micro_btc_zombie']}
                     }},
                     'SOL': {{
                         'tp_pct_default': 0.27,
@@ -90,21 +90,21 @@ class AdaptiveConfigIntegral:
             }},
             'SCALP': {{
                 'global_horizon': {{
-                    'max_hold_seconds': {best_params.get('scalp_max_hold_sec', 28800)},
+                    'max_hold_seconds': {best_params['scalp_max_hold_sec']},
                     'signal_expiry_seconds': 480,
                     'evaluation_frequency_seconds': 180,
-                    'max_concurrent_positions': {best_params.get('scalp_max_conc', 5)},
-                    'capital_allocation_base_pct': {best_params.get('scalp_alloc_base', 0.45)},
+                    'max_concurrent_positions': {best_params['scalp_max_conc']},
+                    'capital_allocation_base_pct': {best_params['scalp_alloc_base']},
                     'order_type_default': 'LIMIT'
                 }},
                 'por_activo': {{
                     'BTC': {{
-                        'tp_pct_default': {best_params.get('scalp_btc_tp', 0.55)},
-                        'sl_pct_default': {best_params.get('scalp_btc_sl', 0.32)},
-                        'leverage': {best_params.get('scalp_btc_lev', 10)},
-                        'signal_score_min': {best_params.get('scalp_btc_score', 65)},
-                        'trailing_atr_mult': {best_params.get('scalp_btc_trail_atr', 1.2)},
-                        'zombie_n_velas_inactividad': {best_params.get('scalp_btc_zombie', 20)}
+                        'tp_pct_default': {best_params['scalp_btc_tp']},
+                        'sl_pct_default': {best_params['scalp_btc_sl']},
+                        'leverage': {best_params['scalp_btc_lev']},
+                        'signal_score_min': {best_params['scalp_btc_score']},
+                        'trailing_atr_mult': {best_params['scalp_btc_trail_atr']},
+                        'zombie_n_velas_inactividad': {best_params['scalp_btc_zombie']}
                     }},
                     'ALL': {{'tp_pct_default': 0.60, 'sl_pct_default': 0.35, 'leverage': 5, 'signal_score_min': 65}}
                 }},

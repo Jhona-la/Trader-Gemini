@@ -77,7 +77,8 @@ class OrderBookCollector:
                 try:
                     await conn.execute("SELECT create_hypertable('l2_orderbook_snapshots', 'time', if_not_exists => TRUE);")
                 except asyncpg.exceptions.UniqueViolationError:
-                    pass
+                    from utils.error_handler import SystemIntegrityError
+                    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 except Exception as e:
                     if "already a hypertable" not in str(e):
                         logging.warning(f"Hypertable creation msg: {e}")
@@ -123,8 +124,8 @@ class OrderBookCollector:
                 # CCXT automatically handles WebSocket connection and reconnection
                 orderbook = await exchange.watch_order_book(SYMBOL)
                 
-                bids = orderbook.get('bids', [])
-                asks = orderbook.get('asks', [])
+                bids = orderbook['bids']
+                asks = orderbook['asks']
                 
                 if not bids or not asks:
                     continue
@@ -169,7 +170,8 @@ class OrderBookCollector:
                 record = await asyncio.wait_for(self.queue.get(), timeout=0.1)
                 batch.append(record)
             except asyncio.TimeoutError:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 
             now = time.time()
             if len(batch) >= BATCH_SIZE or (batch and now - last_flush > FLUSH_INTERVAL):

@@ -34,7 +34,7 @@ class MockExecutor:
         logger.info(f"  [MOCK] Leverage set to {leverage}x for {symbol}")
 
     def get_account_balance(self) -> float:
-        return self.mock_balances.get("USDT", 0.0)
+        return self.mock_balances["USDT"]
 
     async def start_zmq_loop(self):
         """Phase OMNI: Decoupled OS-Level Event Ingestion via ZMQ or local Queue."""
@@ -53,7 +53,8 @@ class MockExecutor:
                 if isinstance(event, OrderEvent):
                     await self.execute_order(event)
         except asyncio.CancelledError:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         except Exception as e:
             logger.error(f"MockExecutor Pull Error: {e}")
 

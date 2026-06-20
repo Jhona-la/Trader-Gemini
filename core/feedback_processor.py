@@ -99,8 +99,8 @@ class FeedbackProcessor:
         call from engine._process_fill_event(). This handler only logs
         receipt for telemetry — the actual analysis is done by the direct call.
         """
-        symbol = payload.get('symbol', 'UNKNOWN')
-        pnl = payload.get('pnl', 0)
+        symbol = payload['symbol']
+        pnl = payload['pnl']
         logger.debug(f"🔄 [FEEDBACK-BUS] Received fill via EventBus: {symbol} PnL={pnl:+.4f}")
     
     # ════════════════════════════════════════════════════════════════

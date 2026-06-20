@@ -99,10 +99,10 @@ def objective(trial):
         return -10000.0
         
     metrics = results["metrics"]
-    final_capital = metrics.get("Final Equity", 13.0)
-    max_dd_pct = metrics.get("Max Drawdown %", 0.0) / 100.0
-    total_trades = metrics.get("Total Trades", 0)
-    sharpe = metrics.get("Sharpe Ratio", 0.0)
+    final_capital = metrics["Final Equity"]
+    max_dd_pct = metrics["Max Drawdown %"] / 100.0
+    total_trades = metrics["Total Trades"]
+    sharpe = metrics["Sharpe Ratio"]
     pnl_bruto = final_capital - 13.0
 
     if total_trades < 5:

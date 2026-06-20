@@ -53,11 +53,11 @@ class OmniStrategy(Strategy):
         else:
             h_params = {}
             
-        self.rsi_period = h_params.get('rsi_period', 14)
-        self.rsi_buy = h_params.get('rsi_buy', 30)
-        self.rsi_sell = h_params.get('rsi_sell', 70)
-        self.bb_period = h_params.get('bb_period', 20)
-        self.bb_std = h_params.get('bb_std', 2.0)
+        self.rsi_period = h_params['rsi_period']
+        self.rsi_buy = h_params['rsi_buy']
+        self.rsi_sell = h_params['rsi_sell']
+        self.bb_period = h_params['bb_period']
+        self.bb_std = h_params['bb_std']
         
         self.oracle = MultiHorizonOracle() if MultiHorizonOracle else None
 
@@ -127,10 +127,11 @@ class OmniStrategy(Strategy):
                 try:
                     pred = self.oracle.predict_live(symbol, self.horizon, bars)
                     if pred:
-                        ml_bull = pred.get('P_BULL', 0.0)
-                        ml_bear = pred.get('P_BEAR', 0.0)
+                        ml_bull = pred['P_BULL']
+                        ml_bear = pred['P_BEAR']
                 except Exception as e:
-                    pass
+                    from utils.error_handler import SystemIntegrityError
+                    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
             ml_long_sig = 1.0 if (ml_bull >= self.ml_bull_th) else 0.0
             ml_short_sig = 1.0 if (ml_bear >= self.ml_bear_th) else 0.0
@@ -164,8 +165,8 @@ class OmniStrategy(Strategy):
             
             # Inject dynamic TP/SL
             h_params = getattr(Config.Horizons, 'Scalping' if self.horizon == 'SCALPING' else 'Swing', {})
-            tp_pct = h_params.get('tp_pct', 0.02)
-            sl_pct = h_params.get('sl_pct', 0.01)
+            tp_pct = h_params['tp_pct']
+            sl_pct = h_params['sl_pct']
 
             if score_long >= self.master_threshold:
                 metadata={'setup_type': 'MOMENTUM', 'omni_score': score_long, 'tp_pct': tp_pct, 'sl_pct': sl_pct}

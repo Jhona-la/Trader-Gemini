@@ -20,6 +20,14 @@ from utils.logger import logger
 from utils.common import validate_market_data, performance_timer
 from utils.math_kernel import calculate_bollinger_jit, calculate_atr_jit
 
+HAS_NANO = False
+try:
+    import core.nano_core as nano_core
+    HAS_NANO = True
+except ImportError:
+    from utils.error_handler import SystemIntegrityError
+    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
+
 class LiquidationHunterStrategy(Strategy):
     """
     Hunts for liquidations and funding rate anomalies.
@@ -39,8 +47,9 @@ class LiquidationHunterStrategy(Strategy):
         # Funding rate threshold: 0.1% per 8h is extremely high (usually it's 0.01%)
         self.FUNDING_EXTREME_THRESHOLD = 0.0005  # 0.05%
         
-        # Open Interest flash-drop threshold (e.g. 5% drop in 15 mins)
-        self.OI_DROP_THRESHOLD = 0.02  # 2% drop is significant
+        # Open Interest flash-drop structural anomaly
+        # Z-Score < -3.0 indicates a statistically significant, massive liquidation cascade
+        self.OI_ZSCORE_THRESHOLD = -3.0 
 
         # We look back 15-30 mins to calculate OI drop
         self.PRIMARY_TF = '15m'
@@ -76,26 +85,42 @@ class LiquidationHunterStrategy(Strategy):
 
                 # 1. Fetch Structural Data (Zero-Copy)
                 metrics = self.data_provider.get_derivatives_metrics(symbol)
-                funding_rate = metrics.get('funding_rate', 0.0)
-                current_oi = metrics.get('open_interest', 0.0)
+                funding_rate = metrics['funding_rate']
+                current_oi = metrics['open_interest']
                 
                 if current_oi == 0.0:
                     continue # No data available yet
                 
-                # Maintain OI history for calculating drops
+                # Maintain OI history for calculating Z-Scores
                 if symbol not in self.oi_history:
                     self.oi_history[symbol] = []
                     
                 self.oi_history[symbol].append(current_oi)
                 
-                # Keep only last 10 ticks for performance
-                if len(self.oi_history[symbol]) > 10:
+                # Keep last 50 ticks for structural Z-Score calculation
+                if len(self.oi_history[symbol]) > 50:
                     self.oi_history[symbol].pop(0)
                     
-                if len(self.oi_history[symbol]) < 5:
-                    continue # Need some history
+                if len(self.oi_history[symbol]) < 20:
+                    continue # Need history for Z-Score
                     
-                # Calculate OI drop from max recent peak
+                # Calculate Structural Z-Score of Open Interest
+                if HAS_NANO:
+                    try:
+                        # Welford algorithm calculates streaming mean/std O(1)
+                        z_scores = nano_core.welford_zscore_batch(self.oi_history[symbol], 20)
+                        z_score_oi = z_scores[-1]
+                    except Exception:
+                        HAS_NANO = False
+                        z_score_oi = 0.0
+                
+                if not HAS_NANO:
+                    # Numpy fallback (O(N) computation over tiny array)
+                    oi_slice = np.array(self.oi_history[symbol][-20:])
+                    std_oi = np.std(oi_slice)
+                    z_score_oi = (current_oi - np.mean(oi_slice)) / std_oi if std_oi > 0 else 0.0
+                
+                # Calculate simple drop for sizing multiplier later
                 peak_oi = max(self.oi_history[symbol])
                 oi_drop_pct = (peak_oi - current_oi) / peak_oi if peak_oi > 0 else 0.0
                 
@@ -104,14 +129,15 @@ class LiquidationHunterStrategy(Strategy):
                 # If FR is highly positive, Longs are paying Shorts. The market is over-leveraged LONG.
                 # A liquidation cascade will crash the price down (SHORT opportunity).
                 
-                # Condition B: Ignition (Flash drop in OI)
-                # When OI drops abruptly, the cascade is happening NOW.
+                # Condition B: Ignition (Z-Score drop in OI)
+                # When OI drops abruptly by multiple sigmas, the cascade is happening NOW.
                 
                 signal_type = None
                 strength = 0.0
                 
                 is_extreme_funding = abs(funding_rate) >= self.FUNDING_EXTREME_THRESHOLD
-                is_liquidation_cascade = oi_drop_pct >= self.OI_DROP_THRESHOLD
+                is_liquidation_cascade = z_score_oi <= self.OI_ZSCORE_THRESHOLD
+
                 
                 if is_extreme_funding and is_liquidation_cascade:
                     if funding_rate > 0:
@@ -161,7 +187,7 @@ class LiquidationHunterStrategy(Strategy):
                 self.events_queue.put(signal)
                 self.last_signal_time[symbol] = now
                 self.signal_count += 1
-                logger.info(f"🌋 [LIQUIDATION HUNTER] #{self.signal_count}: {signal_type.name} {symbol} | FR: {funding_rate:.4%} | OI Drop: {oi_drop_pct:.2%}")
+                logger.info(f"🌋 [LIQUIDATION HUNTER] #{self.signal_count}: {signal_type.name} {symbol} | FR: {funding_rate:.4%} | OI Z-Score: {z_score_oi:.2f} (Drop: {oi_drop_pct:.2%})")
                 
             except Exception as e:
                 logger.error(f"LiquidationHunter error for {symbol}: {e}")

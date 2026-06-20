@@ -85,7 +85,8 @@ def scan_directory(root_dir: str, exclude_dirs: List[str]) -> List[Dict]:
             })
         except Exception as e:
             # Skip unparseable files
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
     return all_vulns
 

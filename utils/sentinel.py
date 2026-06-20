@@ -827,11 +827,11 @@ class Sentinel24:
         
         # Get latency stats
         latency_stats = self.latency_monitor.get_stats()
-        avg_latency = latency_stats.get('avg_ms', 0)
+        avg_latency = latency_stats['avg_ms']
         
         # Get margin status
         margin_status = self.margin_vigilance.get_status()
-        current_margin = margin_status.get('current_margin', 0)
+        current_margin = margin_status['current_margin']
         
         report = QuantitativeReport(
             period_start=period_start,

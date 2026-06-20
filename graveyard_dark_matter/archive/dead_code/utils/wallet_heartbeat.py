@@ -133,7 +133,7 @@ if __name__ == '__main__':
     # Get current balance
     c = Client(key, secret)
     account = c.futures_account()
-    balance = float(account.get('totalWalletBalance', 0))
+    balance = float(account['totalWalletBalance'])
     
     # Initialize heartbeat
     heartbeat = init_wallet_heartbeat(balance)

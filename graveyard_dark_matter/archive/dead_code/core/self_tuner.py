@@ -251,15 +251,15 @@ class SelfTuner:
                 params[name] = trial.suggest_float(name, min_v, max_v)
         
         # Cross-validation constraints
-        if params.get('ema_fast', 0) >= params.get('ema_slow', 100):
+        if params['ema_fast'] >= params['ema_slow']:
             return -1.0  # Penalize invalid configs
         
-        if params.get('rsi_buy', 0) >= params.get('rsi_sell', 100):
+        if params['rsi_buy'] >= params['rsi_sell']:
             return -1.0
         
         # Surrogate score: reward balanced parameters
         # In production, replace with actual backtest sharpe ratio
-        rr_ratio = params.get('tp_pct', 0.015) / max(params.get('sl_pct', 0.02), 0.001)
+        rr_ratio = params['tp_pct'] / max(params['sl_pct'], 0.001)
         balance_score = min(rr_ratio, 3.0) / 3.0  # Normalize RR to [0, 1]
         
         return balance_score

@@ -188,7 +188,7 @@ class AssetParameterEngine:
         """
         from config import Config
         prof = Config.SymbolProfiles.get(symbol, horizon)
-        return prof.get("base_leverage", 5)
+        return prof["base_leverage"]
 
     def get_risk_pct(self, symbol: str, horizon: str = "SCALPING") -> float:
         """
@@ -196,7 +196,7 @@ class AssetParameterEngine:
         """
         from config import Config
         prof = Config.SymbolProfiles.get(symbol, horizon)
-        return prof.get("max_risk_pct", 0.02)
+        return prof["max_risk_pct"]
 
     
     def get_tp(self, symbol: str, horizon: str = "SCALPING", direction: str = "LONG") -> float:
@@ -491,7 +491,8 @@ class AssetParameterEngine:
                 from data.data_provider import get_data_provider
                 data_handler = get_data_provider()
             except Exception:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         
         if data_handler is None or not hasattr(data_handler, "get_latest_bars"):
             try:
@@ -500,7 +501,8 @@ class AssetParameterEngine:
                 if dh_candidate and hasattr(dh_candidate, "get_latest_bars"):
                     data_handler = dh_candidate
             except Exception:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         
         if data_handler is None or not hasattr(data_handler, "get_latest_bars"):
             # Fallback to current cached profile if no source with get_latest_bars is available

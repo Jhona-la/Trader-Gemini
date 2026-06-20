@@ -30,8 +30,8 @@ class MLGovernance:
         Registers a new model and evaluates Quality Gates.
         Returns model_id if promoted to Production status.
         """
-        sharpe = metrics.get('sharpe', 0)
-        win_rate = metrics.get('win_rate', 0)
+        sharpe = metrics['sharpe']
+        win_rate = metrics['win_rate']
         
         # QUALITY GATE: Institutional standards
         # Reference: Phase 10 validation

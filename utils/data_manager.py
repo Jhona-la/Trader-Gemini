@@ -422,9 +422,9 @@ class DatabaseHandler:
                     trade_payload['quantity'],
                     trade_payload['price'],
                     str(trade_payload.get('timestamp')) if trade_payload.get('timestamp') is not None else None,
-                    trade_payload.get('strategy_id', 'Unknown'),
-                    trade_payload.get('pnl', 0),
-                    trade_payload.get('commission', 0)
+                    trade_payload['strategy_id'],
+                    trade_payload['pnl'],
+                    trade_payload['commission']
                 ))
                 
                 # 2. Upsert Position
@@ -510,7 +510,8 @@ class DatabaseHandler:
                 self.conn.commit()
             except Exception as e:
                 # Non-blocking: chronicle failures must never crash the engine
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def log_exit_strategy_decision(self, trade_id, symbol, bar_number,
                                     strategy_id, action, reason,
@@ -535,7 +536,8 @@ class DatabaseHandler:
                 ))
                 self.conn.commit()
             except Exception:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def log_exit_decision(self, trade_id, symbol, exit_reason,
                           proposing_strategy, oracle_verdict, pnl_at_decision=0.0):
@@ -556,7 +558,8 @@ class DatabaseHandler:
                 ))
                 self.conn.commit()
             except Exception:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def log_prediction_audit(self, **kwargs):
         """
@@ -600,14 +603,15 @@ class DatabaseHandler:
                     kwargs.get('optimal_exit_bar'),
                     kwargs.get('missed_profit_pct'),
                     str(kwargs.get('entry_time')) if kwargs.get('entry_time') else None,
-                    kwargs.get('open_size_usd', 0.0),
-                    kwargs.get('close_size_usd', 0.0),
-                    kwargs.get('size_delta_usd', 0.0),
+                    kwargs['open_size_usd'],
+                    kwargs['close_size_usd'],
+                    kwargs['size_delta_usd'],
                     kwargs.get('open_price_at_prediction'),
                 ))
                 self.conn.commit()
             except Exception:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def update_strategy_report_card(self, strategy_id: str, pnl: float, is_win: bool):
         """
@@ -654,7 +658,8 @@ class DatabaseHandler:
                 
                 self.conn.commit()
             except Exception:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def log_session(self, session_id: str, start_equity: float, end_equity: float,
                     total_trades: int, wins: int, losses: int, gross_pnl: float,
@@ -688,7 +693,8 @@ class DatabaseHandler:
                 ))
                 self.conn.commit()
             except Exception:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         
     def close(self):
         self.conn.close()

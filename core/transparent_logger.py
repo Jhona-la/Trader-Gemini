@@ -85,31 +85,31 @@ class TransparentLogger:
         print(f"──────────────────────────────────────────")
         
         # Tendencia
-        trend = analysis.get('trend', {})
+        trend = analysis['trend']
         print(f"{Style.BRIGHT}📈 TENDENCIA:{Style.RESET_ALL}")
-        print(f"   ├─ Timeframe actual:  {trend.get('current', 'N/A')}")
-        print(f"   ├─ Timeframe superior: {trend.get('higher', 'N/A')}")
-        print(f"   └─ ADX Strength:      {trend.get('adx', 0):.1f}")
+        print(f"   ├─ Timeframe actual:  {trend['current']}")
+        print(f"   ├─ Timeframe superior: {trend['higher']}")
+        print(f"   └─ ADX Strength:      {trend['adx']:.1f}")
         
         # Indicadores
         print(f"\n{Style.BRIGHT}📊 INDICADORES CORE:{Style.RESET_ALL}")
-        rsi = indicators.get('rsi', {})
-        print(f"   ├─ RSI (14):          {rsi.get('value', 0):.1f} → {rsi.get('status', 'Neutral')}")
+        rsi = indicators['rsi']
+        print(f"   ├─ RSI (14):          {rsi['value']:.1f} → {rsi['status']}")
         
-        macd = indicators.get('macd', {})
-        print(f"   ├─ MACD:              Hist: {macd.get('hist', 0):.4f} | Signal: {macd.get('signal', 'N/A')}")
+        macd = indicators['macd']
+        print(f"   ├─ MACD:              Hist: {macd['hist']:.4f} | Signal: {macd['signal']}")
         
-        bb = indicators.get('bb', {})
-        print(f"   ├─ Bollinger Bands:   %B: {bb.get('pct_b', 0):.2f}")
+        bb = indicators['bb']
+        print(f"   ├─ Bollinger Bands:   %B: {bb['pct_b']:.2f}")
         
         # Confluencia
         print(f"\n{Style.BRIGHT}🔗 CONFLUENCIA:{Style.RESET_ALL}")
-        print(f"   ├─ Indicadores alineados: {confluence.get('aligned_count', 0)}/{confluence.get('total_count', 5)}")
-        print(f"   ├─ Score de confluencia:  {confluence.get('score', 0):.2f}")
-        print(f"   └─ Nivel de confianza:    {confluence.get('confidence', 'MEDIUM')}")
+        print(f"   ├─ Indicadores alineados: {confluence['aligned_count']}/{confluence['total_count']}")
+        print(f"   ├─ Score de confluencia:  {confluence['score']:.2f}")
+        print(f"   └─ Nivel de confianza:    {confluence['confidence']}")
         
         print(f"\n{Style.BRIGHT}🎯 DECISIÓN FINAL: {color}{signal}{Style.RESET_ALL}")
-        reason = analysis.get('reason', 'N/A')
+        reason = analysis['reason']
         print(f"   └─ Razón: {reason}")
         print("──────────────────────────────────────────\n")
 
@@ -161,27 +161,27 @@ class TransparentLogger:
         print(f"═══════════════════════════════════════════════════════════{Style.RESET_ALL}")
         
         # Layer A
-        la = layers.get('A', {})
+        la = layers['A']
         print(f"\n{Fore.YELLOW}🎯 LAYER A - TECHNICAL CONFLUENCE:{Style.RESET_ALL}")
-        print(f"   └─ Score: {la.get('score', 0)}/3 ({la.get('status', 'FAIL')})")
+        print(f"   └─ Score: {la['score']}/3 ({la['status']})")
         
         # Layer B
-        lb = layers.get('B', {})
+        lb = layers['B']
         print(f"\n{Fore.YELLOW}🔍 LAYER B - ORDER BOOK ANALYSIS:{Style.RESET_ALL}")
-        print(f"   ├─ Imbalance: {lb.get('imbalance', 0):+.2f}")
-        print(f"   └─ Status:    {lb.get('signal', 'NEUTRAL')}")
+        print(f"   ├─ Imbalance: {lb['imbalance']:+.2f}")
+        print(f"   └─ Status:    {lb['signal']}")
         
         # Layer C
-        lc = layers.get('C', {})
+        lc = layers['C']
         print(f"\n{Fore.YELLOW}🐳 LAYER C - WHALE DETECTION:{Style.RESET_ALL}")
-        print(f"   ├─ Anomalía Vol: {lc.get('z_score', 0):.1f}σ")
+        print(f"   ├─ Anomalía Vol: {lc['z_score']:.1f}σ")
         print(f"   └─ Status:       {'WHALE' if lc.get('is_anomaly') else 'NORMAL'}")
         
         # Total
         print(f"\n{Style.BRIGHT}🎯 CONFLUENCE TOTAL:{Style.RESET_ALL}")
         print(f"──────────────────────────────────────────")
-        trigger = layers.get('trigger', {})
-        sig = trigger.get('signal', 'HOLD')
+        trigger = layers['trigger']
+        sig = trigger['signal']
         col = Fore.GREEN if sig == "LONG" else (Fore.RED if sig == "SHORT" else Fore.WHITE)
         
         print(f"   🔥 TRIGGER DECISION: {col}{sig}{Style.RESET_ALL}")

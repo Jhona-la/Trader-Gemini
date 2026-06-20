@@ -4,6 +4,29 @@ pub const RING_CAPACITY: usize = 1024;
 pub const FEATURE_SIZE: usize = 576 / 4; // 144 floats (576 bytes)
 
 #[repr(C, align(64))]
+pub struct QuantumStateArena {
+    pub prices: *const f32,
+    pub volumes: *const f32,
+    pub tensor_len: usize,
+    pub mempool_panic_score: f32,
+    pub net_liq_pressure: f32,
+    pub timestamp_ns: i64,
+}
+
+#[repr(C)]
+pub struct TradeDecision {
+    pub action: i32,
+    pub position_size: f32,
+    pub stop_loss: f32,
+    pub take_profit: f32,
+    pub confidence: f32,
+    pub error_code: i32,
+    pub mempool_panic: f32,
+    pub net_liq_pressure: f32,
+    pub liquidation_cascade: f32,
+}
+
+#[repr(C, align(64))]
 pub struct QuantumRingBuffer {
     pub seqlock: AtomicU64,
     pub data: [[f32; FEATURE_SIZE]; RING_CAPACITY],

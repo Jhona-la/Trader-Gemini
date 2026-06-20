@@ -36,7 +36,8 @@ def safe_json_load(s):
     try:
         return json.loads(s)
     except (json.JSONDecodeError, ValueError):
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     # Attempt 2: Legacy pipe-delimited string → dict
     # Format: "Key1: Value1 | Key2: Value2 | ..."
     try:
@@ -83,14 +84,14 @@ def main():
     df['parsed_details'] = df['details'].apply(safe_json_load)
     
     # Extract columns from parsed_details
-    df['is_close'] = df['parsed_details'].apply(lambda x: x.get('is_close', False))
-    df['pnl'] = df['parsed_details'].apply(lambda x: x.get('pnl', 0.0))
-    df['fees'] = df['parsed_details'].apply(lambda x: x.get('fees', 0.0))
-    df['mfe_pct'] = df['parsed_details'].apply(lambda x: x.get('mfe_pct', 0.0))
-    df['mae_pct'] = df['parsed_details'].apply(lambda x: x.get('mae_pct', 0.0))
-    df['duration_s'] = df['parsed_details'].apply(lambda x: x.get('duration_s', 0))
-    df['exit_reason'] = df['parsed_details'].apply(lambda x: x.get('exit_reason', 'UNKNOWN'))
-    df['ml_confidence'] = df['parsed_details'].apply(lambda x: x.get('ml_confidence', 0.0))
+    df['is_close'] = df['parsed_details'].apply(lambda x: x['is_close'])
+    df['pnl'] = df['parsed_details'].apply(lambda x: x['pnl'])
+    df['fees'] = df['parsed_details'].apply(lambda x: x['fees'])
+    df['mfe_pct'] = df['parsed_details'].apply(lambda x: x['mfe_pct'])
+    df['mae_pct'] = df['parsed_details'].apply(lambda x: x['mae_pct'])
+    df['duration_s'] = df['parsed_details'].apply(lambda x: x['duration_s'])
+    df['exit_reason'] = df['parsed_details'].apply(lambda x: x['exit_reason'])
+    df['ml_confidence'] = df['parsed_details'].apply(lambda x: x['ml_confidence'])
     
     # Separate opens and closes
     opens = df[df['type'] == 'FILL_OPEN'].copy()
@@ -163,7 +164,7 @@ def main():
             'duration_s': close_row['duration_s'],
             'mfe_pct': close_row['mfe_pct'],
             'mae_pct': close_row['mae_pct'],
-            'ml_confidence': close_row['ml_confidence'] if matching_open is None else matching_open.get('ml_confidence', close_row['ml_confidence'])
+            'ml_confidence': close_row['ml_confidence'] if matching_open is None else matching_open['ml_confidence']
         })
         if matching_open:
             paired_count += 1
@@ -209,14 +210,14 @@ def main():
         if entry:
             print(f"  📥 ENTRY:")
             print(f"     Time:       {entry['datetime']}")
-            print(f"     Strategy:   {entry.get('strategy_id', 'UNKNOWN')}")
-            print(f"     Side:       {entry.get('direction', 'N/A')}")
-            print(f"     Price:      ${entry.get('price', 0)}")
+            print(f"     Strategy:   {entry['strategy_id']}")
+            print(f"     Side:       {entry['direction']}")
+            print(f"     Price:      ${entry['price']}")
             print(f"     ML Conf:    {loser['ml_confidence']}")
         
-        mfe_pct = loser.get('mfe_pct', 0)
-        mae_pct = loser.get('mae_pct', 0)
-        dur = loser.get('duration_s', 0)
+        mfe_pct = loser['mfe_pct']
+        mae_pct = loser['mae_pct']
+        dur = loser['duration_s']
         
         print(f"\n  ⏳ DURING THE TRADE:")
         if dur:
@@ -230,9 +231,9 @@ def main():
         print(f"\n  📤 EXIT:")
         print(f"     Time:       {exit_t['datetime']}")
         print(f"     Reason:     {loser['exit_strategy']}")
-        print(f"     Price:      ${exit_t.get('price', 0)}")
+        print(f"     Price:      ${exit_t['price']}")
         print(f"     PnL:        ${loser['pnl']:.6f}")
-        print(f"     Commission: ${exit_t.get('fees', 0):.6f}")
+        print(f"     Commission: ${exit_t['fees']:.6f}")
 
     # PHASE 5: MFE WASTE ANALYSIS
     print("\n" + "=" * 80)
@@ -242,7 +243,7 @@ def main():
     wasted_profit = 0
     trades_with_wasted_mfe = 0
     for tp in trade_pairs:
-        mfe = tp.get('mfe_pct', 0)
+        mfe = tp['mfe_pct']
         pnl = tp['pnl']
         if mfe > 0.001 and pnl < 0:
             trades_with_wasted_mfe += 1

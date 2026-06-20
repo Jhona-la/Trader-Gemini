@@ -112,8 +112,8 @@ def optimize_coin(symbol, df, n_trials, horizon):
     
     def callback(study, trial):
         attrs = trial.user_attrs
-        duration = attrs.get('duration_ms', 0)
-        msg = f"\r  🧬 [{symbol}][{horizon}] Trial {trial.number:5d} | Score: {trial.value or -9999:8.1f} | TR: {attrs.get('trades',0):3d} | WR: {attrs.get('win_rate',0):5.1f}% | PnL: ${attrs.get('pnl_usd',0):+.2f} | ⚡ {duration:.3f} ms/trial      "
+        duration = attrs['duration_ms']
+        msg = f"\r  🧬 [{symbol}][{horizon}] Trial {trial.number:5d} | Score: {trial.value or -9999:8.1f} | TR: {attrs['trades']:3d} | WR: {attrs['win_rate']:5.1f}% | PnL: ${attrs['pnl_usd']:+.2f} | ⚡ {duration:.3f} ms/trial      "
         sys.stdout.write(msg)
         sys.stdout.flush()
 

@@ -56,7 +56,7 @@ print("✅ Funciones JIT the RANSAC/Hurst Pre-Compiladas en Cache thel Ryzen 7."
 print("⏰ Auditando Sincronia NTP con api.binance.com...")
 try:
     local_before = time.time()
-    res = requests.get('https://api.binance.com/api/v3/time', timeout=2)
+    res = requests['https://api.binance.com/api/v3/time']
     local_after = time.time()
     server_time = res.json()['serverTime'] / 1000.0
     local_time = (local_before + local_after) / 2

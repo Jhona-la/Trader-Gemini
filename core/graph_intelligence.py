@@ -78,7 +78,7 @@ class GraphIntelligenceLayer:
         total_weight = 0.0
         
         for pred in predecessors:
-            weight = abs(self.graph[pred][symbol].get('weight', 0.0))
+            weight = abs(self.graph[pred][symbol]['weight'])
             pred_state = self.state_matrix.get(pred)
             
             if pred_state:

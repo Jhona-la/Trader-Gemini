@@ -104,10 +104,8 @@ class MomentumIndicators:
             shift = 20 // 2 + 1
             sma_20 = talib.SMA(close, 20)
             dpo = np.zeros(n_len)
-            for i in range(shift, n_len):
-                if not np.isnan(sma_20[i]):
-                    dpo[i] = close[i - shift] - sma_20[i]
-            features['dpo'] = dpo
+            dpo[shift:] = close[:-shift] - sma_20[shift:]
+            features['dpo'] = np.where(np.isnan(sma_20), 0.0, dpo)
 
         # ═══════════════════════════════════════════════════════════
         # RSI Divergence Detection (precio vs RSI-14)
@@ -129,26 +127,28 @@ class MomentumIndicators:
     def _fisher_transform(high, low, period=10):
         """Fisher Transform: convierte precios a distribución Gaussiana."""
         n = len(high)
-        result = np.zeros(n)
+        if n < period + 1:
+            return np.zeros(n)
+            
         midpoints = (high + low) / 2
-
-        if n < period:
-            return result
-
-        for i in range(period, n):
-            seg = midpoints[i - period:i + 1]
-            max_val = np.max(seg)
-            min_val = np.min(seg)
-            rng = max_val - min_val
-
-            if rng == 0:
-                x = 0.0
-            else:
-                x = 2 * ((midpoints[i] - min_val) / rng) - 1
-                x = np.clip(x, -0.999, 0.999)  # Avoid log(0) or infinity
-
-            result[i] = 0.5 * np.log((1 + x) / (1 - x))
-
+        
+        # Use talib for O(1) rolling max/min
+        max_val = talib.MAX(midpoints, timeperiod=period + 1)
+        min_val = talib.MIN(midpoints, timeperiod=period + 1)
+        
+        rng = max_val - min_val
+        # Avoid division by zero
+        rng = np.where(rng == 0, 1e-10, rng)
+        
+        x = 2 * ((midpoints - min_val) / rng) - 1
+        x = np.clip(x, -0.999, 0.999)
+        
+        result = 0.5 * np.log((1 + x) / (1 - x))
+        
+        # Fill the first `period` elements with 0.0
+        result[:period] = 0.0
+        result = np.nan_to_num(result, nan=0.0)
+        
         return result
 
     @staticmethod

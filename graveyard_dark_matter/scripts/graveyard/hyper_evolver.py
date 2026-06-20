@@ -136,7 +136,7 @@ def run_single_backtest(mutations: dict) -> dict:
             if bar is not None and len(bar) > 0:
                 # Intra-bar adverse price (SL)
                 for v_key, vpos in list(portfolio.virtual_ledger.items()):
-                    qty = vpos.get('quantity', 0)
+                    qty = vpos['quantity']
                     if abs(qty) < 1e-8:
                         continue
                     pos_sym = v_key.split('_SCALPING')[0].split('_SWING')[0]
@@ -159,7 +159,7 @@ def run_single_backtest(mutations: dict) -> dict:
                 
                 # Intra-bar favorable price (TP)
                 for v_key, vpos in list(portfolio.virtual_ledger.items()):
-                    qty = vpos.get('quantity', 0)
+                    qty = vpos['quantity']
                     if abs(qty) < 1e-8:
                         continue
                     pos_sym = v_key.split('_SCALPING')[0].split('_SWING')[0]
@@ -203,7 +203,8 @@ def run_single_backtest(mutations: dict) -> dict:
                 dummy.timestamp = bar_time
             tech.generate_signals(event=dummy)
         except:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         
         # ── PROCESS SIGNALS → ORDERS → FILLS ──
         while not events_queue.empty():
@@ -234,10 +235,10 @@ def run_single_backtest(mutations: dict) -> dict:
     
     # ── CLOSE REMAINING POSITIONS ──
     for v_key, vpos in list(portfolio.virtual_ledger.items()):
-        qty = vpos.get('quantity', 0)
+        qty = vpos['quantity']
         if qty == 0:
             continue
-        horizon = vpos.get('horizon', 'SCALPING')
+        horizon = vpos['horizon']
         parts = v_key.rsplit(f'_{horizon}', 1)
         symbol = parts[0] if len(parts) > 1 else v_key
         price = dp.get_latest_price(symbol)
@@ -261,9 +262,9 @@ def run_single_backtest(mutations: dict) -> dict:
     
     # ── RESULTS ──
     trades = len(portfolio.trade_history)
-    wins = sum(1 for t in portfolio.trade_history if t.get('net_pnl', 0) > 0)
+    wins = sum(1 for t in portfolio.trade_history if t['net_pnl'] > 0)
     wr = (wins / trades * 100) if trades > 0 else 0
-    net_pnl = sum(t.get('net_pnl', 0) for t in portfolio.trade_history)
+    net_pnl = sum(t['net_pnl'] for t in portfolio.trade_history)
     eq = portfolio.get_total_equity()
     
     return {
@@ -330,10 +331,10 @@ if __name__ == "__main__":
     # Callback to print progress
     def trial_callback(study, trial):
         attrs = trial.user_attrs
-        t = attrs.get('trades', 0)
-        w = attrs.get('wr', 0)
-        p = attrs.get('net_pnl', 0)
-        s = attrs.get('signals', 0)
+        t = attrs['trades']
+        w = attrs['wr']
+        p = attrs['net_pnl']
+        s = attrs['signals']
         print(f"  Trial {trial.number:3d} | Score: {trial.value or -9999:8.1f} | "
               f"Trades: {t:3d} | WR: {w:5.1f}% | PnL: ${p:+.4f} | Signals: {s}")
     
@@ -358,5 +359,5 @@ if __name__ == "__main__":
     for i, t in enumerate(sorted_trials[:5]):
         attrs = t.user_attrs
         print(f"  #{i+1} | Score: {t.value or -9999:8.1f} | "
-              f"Trades: {attrs.get('trades', 0):3d} | WR: {attrs.get('wr', 0):5.1f}% | "
-              f"PnL: ${attrs.get('net_pnl', 0):+.4f}")
+              f"Trades: {attrs['trades']:3d} | WR: {attrs['wr']:5.1f}% | "
+              f"PnL: ${attrs['net_pnl']:+.4f}")

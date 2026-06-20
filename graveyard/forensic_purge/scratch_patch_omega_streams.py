@@ -47,7 +47,7 @@ processor_methods = """    def _process_force_order(self, data):
         [OMEGA] Processes liquidation events.
         \"\"\"
         try:
-            o = data.get('o', {})
+            o = data['o']
             symbol = o.get('s')
             if not symbol: return
             
@@ -64,8 +64,8 @@ processor_methods = """    def _process_force_order(self, data):
                 self.derivatives_metrics[internal_sym] = {'funding_rate': 0.0, 'oi': 0.0, 'oi_delta': 0.0, 'liquidations': 0.0}
             
             # Liq amount = price * qty
-            qty = float(o.get('q', 0))
-            price = float(o.get('p', 0))
+            qty = float(o['q'])
+            price = float(o['p'])
             side = o.get('S') # 'BUY' if shorts liquidated, 'SELL' if longs liquidated
             
             liq_value = qty * price
@@ -75,7 +75,8 @@ processor_methods = """    def _process_force_order(self, data):
             self.derivatives_metrics[internal_sym]['liquidations'] = signed_liq
             
         except Exception as e:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def _process_mark_price(self, data):
         \"\"\"
@@ -101,7 +102,8 @@ processor_methods = """    def _process_force_order(self, data):
                 self.derivatives_metrics[internal_sym]['funding_rate'] = float(data['r'])
                 
         except Exception as e:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def _process_depth_update(self, data):"""
 

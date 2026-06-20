@@ -330,20 +330,20 @@ class AssetIntelligence:
         
         if strategy_mapped == "TFTF":
             # Confirmación de volumen en el pullback
-            pullback_vol_ratio = metadata.get("pullback_volume_ratio", 0.5)
+            pullback_vol_ratio = metadata["pullback_volume_ratio"]
             if pullback_vol_ratio > 0.60:
                 # Si el pullback tiene demasiado volumen, es posible reversión, no pullback
                 return False, f"FAIL_A4: Pullback volume ratio {pullback_vol_ratio:.2f} too high (max 0.60)"
                 
         elif strategy_mapped == "OB_RETEST":
             # El Order Block debe tener fuerza > 1.5x ATR
-            ob_strength = metadata.get("ob_strength_atr", 1.6)
+            ob_strength = metadata["ob_strength_atr"]
             if ob_strength < 1.5:
                 return False, f"FAIL_A4: Order Block strength {ob_strength:.2f} is below 1.5x ATR requirement"
                 
         elif strategy_mapped == "CASCADE":
             # Requiere clúster a menos de X% del precio
-            dist_to_cluster = metadata.get("distance_to_cluster", 0.01)
+            dist_to_cluster = metadata["distance_to_cluster"]
             max_dist = 0.015 if symbol in ["BTC/USDT", "ETH/USDT"] else 0.03
             if dist_to_cluster > max_dist:
                 return False, f"FAIL_A4: Distance to liquidations cluster {dist_to_cluster:.3f} exceeds max {max_dist}"
@@ -353,7 +353,7 @@ class AssetIntelligence:
         # ---------------------------------------------------------------------
         if portfolio:
             # 1. Portfolio Heat: Máximo de 3 posiciones abiertas concurrentes
-            open_count = len([p for p in portfolio.virtual_ledger.values() if abs(p.get("quantity", 0.0)) > 1e-8])
+            open_count = len([p for p in portfolio.virtual_ledger.values() if abs(p["quantity"]) > 1e-8])
             if open_count >= 3:
                 return False, "FAIL_A5: Max concurrent positions (3) reached"
                 
@@ -410,14 +410,14 @@ class AssetIntelligence:
         """
         symbol = symbol or position.get("symbol") or "BTC/USDT"
         profile = self.get_profile(symbol)
-        pos_horizon = position.get("horizon", "SCALPING")
-        qty = position.get("quantity", 0.0)
-        entry_price = position.get("avg_price", 0.0)
+        pos_horizon = position["horizon"]
+        qty = position["quantity"]
+        entry_price = position["avg_price"]
         
         if abs(qty) < 1e-8 or entry_price <= 0.0:
             return False, ""
             
-        strategy_mapped = self._map_strategy_name(position.get("opener_strategy_id", "TFTF"))
+        strategy_mapped = self._map_strategy_name(position["opener_strategy_id"])
         
         # ---------------------------------------------------------------------
         # Paso C7 — CIERRE DE EMERGENCIA (PRIORIDAD MÁXIMA)
@@ -443,7 +443,7 @@ class AssetIntelligence:
         unrealized_pnl_pct = (current_price - entry_price) / entry_price if qty > 0 else (entry_price - current_price) / entry_price
         
         # Virtual Liquidation Buffer (Axioma de Supervivencia 5.2)
-        leverage = position.get("leverage", 10)
+        leverage = position["leverage"]
         virtual_buffer_pct = 0.02
         max_allowed_drop_pct = (1.0 - virtual_buffer_pct) / leverage
         if unrealized_pnl_pct <= -max_allowed_drop_pct:
@@ -460,18 +460,18 @@ class AssetIntelligence:
         # ---------------------------------------------------------------------
         if strategy_mapped == "TFTF":
             # Si el ADX cae de 20 en la temporalidad operativa, la tendencia murió
-            adx_val = position.get("last_adx_value", 25) # Mock or real field from tracking
+            adx_val = position["last_adx_value"] # Mock or real field from tracking
             if adx_val < 20:
                 return True, "INVALIDATION: ADX trend strength fell below 20"
                 
             # Reversión sostenida de CVD
-            cvd_trend = position.get("cvd_divergence_streak", 0)
+            cvd_trend = position["cvd_divergence_streak"]
             if cvd_trend >= 3:
                 return True, "INVALIDATION: Sustained CVD divergence (3+ bars against position)"
                 
         elif strategy_mapped == "OB_RETEST":
             # Si el precio perfora y cierra fuera del OB en la dirección contraria
-            ob_violation = position.get("ob_extremum_violated", False)
+            ob_violation = position["ob_extremum_violated"]
             if ob_violation:
                 return True, "INVALIDATION: Order Block extreme price level violated"
 
@@ -497,7 +497,7 @@ class AssetIntelligence:
         # ---------------------------------------------------------------------
         # Paso C6 — CIERRE POR REVERSIÓN DE SEÑAL
         # ---------------------------------------------------------------------
-        signal_reverted = position.get("signal_reverted", False)
+        signal_reverted = position["signal_reverted"]
         if signal_reverted:
             return True, "SIGNAL_REVERSAL"
 

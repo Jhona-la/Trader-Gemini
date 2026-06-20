@@ -184,7 +184,7 @@ for epoch in range(total):
             if bar is not None and len(bar) > 0:
                 # Pass 1: Adverse price (SL)
                 for v_key, vpos in list(portfolio.virtual_ledger.items()):
-                    qty = vpos.get('quantity', 0)
+                    qty = vpos['quantity']
                     if abs(qty) < 1e-8:
                         continue
                     pos_sym = v_key.split('_SCALPING')[0].split('_SWING')[0]
@@ -200,7 +200,7 @@ for epoch in range(total):
                 
                 # Pass 2: Favorable price (TP)
                 for v_key, vpos in list(portfolio.virtual_ledger.items()):
-                    qty = vpos.get('quantity', 0)
+                    qty = vpos['quantity']
                     if abs(qty) < 1e-8:
                         continue
                     pos_sym = v_key.split('_SCALPING')[0].split('_SWING')[0]
@@ -227,7 +227,8 @@ for epoch in range(total):
                     if price:
                         _process_exit_signals_immediately([sig], price)
     except Exception as e:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     # Run strategy
     try:
@@ -238,7 +239,8 @@ for epoch in range(total):
             dummy.timestamp = bar_time
         tech.generate_signals(event=dummy)
     except:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     # Process signals
     while not events_queue.empty():
@@ -277,15 +279,15 @@ for epoch in range(total):
     if epoch % 500 == 0:
         elapsed = time.time() - t_start
         eq = portfolio.get_total_equity()
-        open_pos = sum(1 for v in portfolio.virtual_ledger.values() if v.get('quantity', 0) != 0)
+        open_pos = sum(1 for v in portfolio.virtual_ledger.values() if v['quantity'] != 0)
         print(f"  [{epoch}/{total}] Equity: ${eq:.2f} | Sig: {signals_total} | Fill: {fills_total} | Rej: {rejected_total} | Open: {open_pos} | {elapsed:.1f}s")
 
 # ═══ FORCE CLOSE ═══
 for v_key, vpos in list(portfolio.virtual_ledger.items()):
-    qty = vpos.get('quantity', 0)
+    qty = vpos['quantity']
     if qty == 0:
         continue
-    horizon = vpos.get('horizon', 'SCALPING')
+    horizon = vpos['horizon']
     parts = v_key.rsplit(f'_{horizon}', 1)
     symbol = parts[0] if len(parts) > 1 else v_key
     price = dp.get_latest_price(symbol)
@@ -347,7 +349,7 @@ if portfolio.trade_history:
     from collections import defaultdict
     sym_stats = defaultdict(lambda: {'trades': 0, 'wins': 0, 'pnl': 0.0})
     for t in portfolio.trade_history:
-        s = t.get('symbol', '?')
+        s = t['symbol']
         sym_stats[s]['trades'] += 1
         if t['net_pnl'] > 0:
             sym_stats[s]['wins'] += 1
@@ -364,7 +366,7 @@ if portfolio.trade_history:
     # Exit reasons
     exit_counts = {}
     for t in portfolio.trade_history:
-        reason = t.get('exit_reason', 'UNKNOWN')
+        reason = t['exit_reason']
         exit_counts[reason] = exit_counts.get(reason, 0) + 1
     print(f"\n  EXIT REASONS:")
     for reason, count in sorted(exit_counts.items(), key=lambda x: x[1], reverse=True):

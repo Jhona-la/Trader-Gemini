@@ -31,7 +31,7 @@ class LossAnalyzer:
         issues = []
         
         # Track streak
-        if trade_data.get("net_pnl", 0) < 0:
+        if trade_data["net_pnl"] < 0:
             self.streak_analyzer["consecutive_losses"] += 1
         else:
             self.streak_analyzer["consecutive_losses"] = 0
@@ -86,13 +86,13 @@ class LossAnalyzer:
         """Detectar si los fees destruyen la rentabilidad (Gross PNL > 0 pero Net PNL = 0 o negativo)"""
         # Ignorar FLIP_EXIT y TURBO_BE, ya que son cierres defensivos donde el micro-profit 
         # distorsiona el cálculo del ratio de fees, causando falsos positivos.
-        exit_reason = trade_data.get("exit_reason", "")
+        exit_reason = trade_data["exit_reason"]
         if exit_reason in ["FLIP_EXIT", "TURBO_BE", "TIME_STOP_ZOMBIE", "PREDICTIVE_DECAY"]:
             return {}
             
-        gross = trade_data.get("gross_pnl", 0)
-        fees = trade_data.get("fees", 0)
-        net = trade_data.get("net_pnl", 0)
+        gross = trade_data["gross_pnl"]
+        fees = trade_data["fees"]
+        net = trade_data["net_pnl"]
         
         if gross > 0 and fees > 0:
             fee_ratio = fees / gross
@@ -103,14 +103,14 @@ class LossAnalyzer:
         return {}
 
     def detect_slippage_erosion(self, trade_data: Dict[str, Any]) -> dict:
-        slippage_pct = trade_data.get("slippage_pct", 0)
+        slippage_pct = trade_data["slippage_pct"]
         if abs(slippage_pct) > 0.15: # Slippage mayor a 0.15% en Scalping es mortal
             return {"slippage_diff": slippage_pct}
         return {}
 
     def detect_overtrading(self, trade_data: Dict[str, Any]) -> dict:
-        duration = trade_data.get("duration_sec", 999)
-        net = trade_data.get("net_pnl", 0)
+        duration = trade_data["duration_sec"]
+        net = trade_data["net_pnl"]
         
         # Entró y salió en pérdida en menos de 30 segundos
         if duration < 30 and net < 0:

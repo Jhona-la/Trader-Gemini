@@ -32,8 +32,8 @@ class DarkPoolSurferStrategy:
         if not metrics:
             return None
             
-        is_dark_pool = metrics.get('is_dark_pool_print', False)
-        dark_side = metrics.get('dark_pool_side', None)
+        is_dark_pool = metrics['is_dark_pool_print']
+        dark_side = metrics['dark_pool_side']
         
         if not is_dark_pool or not dark_side:
             return None

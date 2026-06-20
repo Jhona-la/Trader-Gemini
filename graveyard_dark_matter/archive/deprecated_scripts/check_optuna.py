@@ -10,8 +10,8 @@ try:
     print("=== BTC EVOLUTION STATUS ===")
     print(f"Trials Completed: {len(completed)}")
     if best:
-        print(f"Best PnL: ${best.user_attrs.get('pnl_usd', 0):.2f}")
-        print(f"Best Win Rate: {best.user_attrs.get('win_rate', 0):.1f}%")
+        print(f"Best PnL: ${best.user_attrs['pnl_usd']:.2f}")
+        print(f"Best Win Rate: {best.user_attrs['win_rate']:.1f}%")
         print(f"Best Score: {best.value:.2f}")
 except Exception as e:
     print(f"Could not load BTC study: {e}")
@@ -23,4 +23,5 @@ try:
     print("\n=== ETH EVOLUTION STATUS ===")
     print(f"Trials Completed: {len(completed_eth)}")
 except Exception as e:
-    pass
+    from utils.error_handler import SystemIntegrityError
+    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')

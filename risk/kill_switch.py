@@ -190,7 +190,7 @@ class KillSwitch:
                     drawdown_pct = ((self.peak_equity - balance) / self.peak_equity) * 100
                 open_positions = len([
                     s for s, p in self.portfolio.positions.items() 
-                    if p.get('quantity', 0) != 0
+                    if p['quantity'] != 0
                 ])
             
             Notifier.send_risk_alert({

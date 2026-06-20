@@ -165,7 +165,7 @@ for epoch in range(total):
             
             # Pre-check: does position exist?
             pre_pos = portfolio.get_horizon_position(sym, hor)
-            pre_qty = pre_pos.get('quantity', 0) if pre_pos else 0
+            pre_qty = pre_pos['quantity'] if pre_pos else 0
             
             order = rm.generate_order(sig, price)
             if order:
@@ -175,10 +175,10 @@ for epoch in range(total):
                     
                     # Post-check: did position close?
                     post_pos = portfolio.get_horizon_position(sym, hor)
-                    post_qty = post_pos.get('quantity', 0) if post_pos else 0
+                    post_qty = post_pos['quantity'] if post_pos else 0
                     
                     if strategy_id == 'TIME_STOP_ZOMBIE':
-                        print(f"  [DEBUG-ZOMBIE] {sym} {hor} pre={pre_qty:.8f} post={post_qty:.8f} close?={fill.metadata.get('is_close', False) if hasattr(fill, 'metadata') and fill.metadata else getattr(fill, 'is_close', False)}")
+                        print(f"  [DEBUG-ZOMBIE] {sym} {hor} pre={pre_qty:.8f} post={post_qty:.8f} close?={fill.metadata['is_close'] if hasattr(fill, 'metadata') and fill.metadata else getattr(fill, 'is_close', False)}")
                     
                     if strategy_id == 'TIME_STOP_ZOMBIE' and abs(post_qty) > 1e-8:
                         print(f"  ⚠️ ZOMBIE EXIT FAILED: {sym} {hor} | pre_qty={pre_qty:.8f} -> post_qty={post_qty:.8f} | order.dir={order.direction} order.qty={order.quantity:.8f}")
@@ -192,7 +192,7 @@ for epoch in range(total):
             if bar is not None and len(bar) > 0:
                 # --- INTRA-BAR ADVERSE PRICE (SL check) ---
                 for v_key, vpos in list(portfolio.virtual_ledger.items()):
-                    qty = vpos.get('quantity', 0)
+                    qty = vpos['quantity']
                     if abs(qty) < 1e-8:
                         continue
                     pos_sym = v_key.split('_SCALPING')[0].split('_SWING')[0]
@@ -208,7 +208,7 @@ for epoch in range(total):
                 
                 # --- INTRA-BAR FAVORABLE PRICE (TP check) ---
                 for v_key, vpos in list(portfolio.virtual_ledger.items()):
-                    qty = vpos.get('quantity', 0)
+                    qty = vpos['quantity']
                     if abs(qty) < 1e-8:
                         continue
                     pos_sym = v_key.split('_SCALPING')[0].split('_SWING')[0]
@@ -256,7 +256,8 @@ for epoch in range(total):
             dummy.timestamp = bar_time
         tech.generate_signals(event=dummy)
     except:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     
     # Drain and process signals
     while not events_queue.empty():
@@ -285,7 +286,7 @@ for epoch in range(total):
             
             if order is None:
                 rejected_total += 1
-                reason = evt.metadata.get("rejection_reason", "UNKNOWN")
+                reason = evt.metadata["rejection_reason"]
                 if hasattr(reason, 'name'):
                     reason = reason.name
                 else:
@@ -310,15 +311,15 @@ for epoch in range(total):
     if epoch % 300 == 0:
         elapsed = time.time() - t_start
         eq = portfolio.get_total_equity()
-        open_pos = sum(1 for v in portfolio.virtual_ledger.values() if v.get('quantity', 0) != 0)
+        open_pos = sum(1 for v in portfolio.virtual_ledger.values() if v['quantity'] != 0)
         print(f"  [{epoch}/{total}] Equity: ${eq:.2f} | Sig: {signals_total} | Fill: {fills_total} | Rej: {rejected_total} | Open: {open_pos} | {elapsed:.1f}s")
 
 # Close remaining
 for v_key, vpos in list(portfolio.virtual_ledger.items()):
-    qty = vpos.get('quantity', 0)
+    qty = vpos['quantity']
     if qty == 0:
         continue
-    horizon = vpos.get('horizon', 'SCALPING')
+    horizon = vpos['horizon']
     parts = v_key.rsplit(f'_{horizon}', 1)
     symbol = parts[0] if len(parts) > 1 else v_key
     price = dp.get_latest_price(symbol)
@@ -377,7 +378,7 @@ if portfolio.trade_history:
     # Aggregate exit reasons
     exit_counts = {}
     for t in portfolio.trade_history:
-        reason = t.get('exit_reason', 'UNKNOWN')
+        reason = t['exit_reason']
         exit_counts[reason] = exit_counts.get(reason, 0) + 1
         
     print(f"    EXIT REASONS:")

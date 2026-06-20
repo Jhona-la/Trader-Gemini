@@ -165,7 +165,7 @@ class AITSGraphBuilder:
             best_edge = None
             for u, v, data in self.nx_graph.edges(data=True):
                 if data.get('type') == 'ATTRACTS':
-                    if data.get('gravity_score', 0) > max_gravity:
+                    if data['gravity_score'] > max_gravity:
                         max_gravity = data.get('gravity_score')
                         best_edge = (u, v)
             
@@ -203,9 +203,9 @@ class AITSGraphBuilder:
                     # Check edge weight in either direction
                     weight = 0.0
                     if self.nx_graph.has_edge(source_symbol, target):
-                        weight = self.nx_graph[source_symbol][target].get('weight', 0.0)
+                        weight = self.nx_graph[source_symbol][target]['weight']
                     elif self.nx_graph.has_edge(target, source_symbol):
-                        weight = self.nx_graph[target][source_symbol].get('weight', 0.0)
+                        weight = self.nx_graph[target][source_symbol]['weight']
                     
                     impacts[target] = shock_magnitude * weight
                     

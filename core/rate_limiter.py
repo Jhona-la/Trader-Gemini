@@ -61,4 +61,5 @@ class PredictiveRateLimiter:
                 # (Requires exposing state getter from bucket, skipping for latency)
         except Exception as e:
             # Don't crash on header parsing
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')

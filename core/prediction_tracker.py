@@ -560,14 +560,14 @@ class PredictionTracker:
         if not metrics:
             return None
 
-        if metrics.get('total_signals', 0) < MIN_SIGNALS_FOR_METRICS:
+        if metrics['total_signals'] < MIN_SIGNALS_FOR_METRICS:
             return None
 
         if horizon and metrics.get('horizon') != horizon:
             # Try to find strategy with matching horizon
             for sid, m in self._metrics_cache.items():
                 if sid.startswith(strategy_id) and m.get('horizon') == horizon:
-                    return m if m.get('total_signals', 0) >= MIN_SIGNALS_FOR_METRICS else None
+                    return m if m['total_signals'] >= MIN_SIGNALS_FOR_METRICS else None
 
         return metrics
 
@@ -597,7 +597,7 @@ class PredictionTracker:
             }
 
         c_factor = metrics['confidence_factor']
-        accuracy = metrics.get('direction_accuracy', 0.5)
+        accuracy = metrics['direction_accuracy']
 
         # 🎯 OPTIMIZACIÓN DE EJECUCIÓN LIMIT BASADA EN DATA
         # Si precisión > 75% → Órdenes LIMIT agresivas (push spread, offset negativo)
@@ -643,7 +643,7 @@ class PredictionTracker:
 
         acc = metrics['direction_accuracy']
         n = metrics['total_signals']
-        resolved = metrics.get('trades_resolved', 0)
+        resolved = metrics['trades_resolved']
 
         # [FORENSIC-AUDIT-V1] Require 10 RESOLVED trades before activating gate
         # This prevents cold-start deadlock where accuracy is ~50% from 
@@ -662,7 +662,7 @@ class PredictionTracker:
         if n >= MIN_SIGNALS_FOR_METRICS and acc < 0.55:
             return True, (
                 f"accuracy {acc:.1%} < 55% threshold "
-                f"(n={n}, resolved={resolved}, horizon={metrics.get('horizon', '?')})"
+                f"(n={n}, resolved={resolved}, horizon={metrics['horizon']})"
             )
 
         return False, ""
@@ -735,8 +735,8 @@ class PredictionTracker:
         ttl_bars = 25.0
         
         if metrics:
-            initial_accuracy = metrics.get('direction_accuracy', 0.5)
-            ttl_bars = float(metrics.get('optimal_ttl_bars', 25.0))
+            initial_accuracy = metrics['direction_accuracy']
+            ttl_bars = float(metrics['optimal_ttl_bars'])
             
             # Si el TTL histórico es muy corto o absurdo, ponerle límites (min 5, max 120)
             ttl_bars = max(5.0, min(120.0, ttl_bars))

@@ -148,7 +148,7 @@ class AITSBridge:
             if verdict != ShieldVerdict.PASS:
                 envelope.enrichment["shield_verdict"] = verdict.value
                 logging.warning(
-                    f"🛡️ AITS Shield VETOED {signal.get('symbol', '?')}: {verdict.value}"
+                    f"🛡️ AITS Shield VETOED {signal['symbol']}: {verdict.value}"
                 )
                 return envelope  # Early exit — order destroyed
 
@@ -179,39 +179,39 @@ class AITSBridge:
 
     def _run_shield(self, signal: dict, state: dict) -> ShieldVerdict:
         order = OrderIntent(
-            symbol=signal.get("symbol", "UNKNOWN"),
-            side=signal.get("side", "BUY"),
-            quantity=signal.get("quantity", 0.0),
-            price=signal.get("price", 0.0),
-            horizon=signal.get("horizon", "SCALPING"),
-            model_confidence=signal.get("confidence", 0.5),
+            symbol=signal["symbol"],
+            side=signal["side"],
+            quantity=signal["quantity"],
+            price=signal["price"],
+            horizon=signal["horizon"],
+            model_confidence=signal["confidence"],
         )
 
         account = AccountState(
-            total_capital=state.get("total_capital", self.config.TOTAL_CAPITAL_USD),
-            current_equity=state.get("equity", self.config.TOTAL_CAPITAL_USD),
-            session_peak_equity=state.get("peak_equity", self.config.TOTAL_CAPITAL_USD),
-            open_positions=state.get("open_positions", 0),
-            trades_today=state.get("trades_today", 0),
-            volatility_burst_active=state.get("volatility_burst", False),
-            btc_correlation=state.get("btc_correlation", 0.85),
+            total_capital=state["total_capital"],
+            current_equity=state["equity"],
+            session_peak_equity=state["peak_equity"],
+            open_positions=state["open_positions"],
+            trades_today=state["trades_today"],
+            volatility_burst_active=state["volatility_burst"],
+            btc_correlation=state["btc_correlation"],
         )
 
         return self.shield.evaluate(order, account)
 
     def _run_router(self, signal: dict) -> list:
         ctx = MarketContext(
-            symbol=signal.get("symbol", "UNKNOWN"),
-            best_bid=signal.get("price", 0.0) * 0.9999,
-            best_ask=signal.get("price", 0.0) * 1.0001,
-            spread=signal.get("price", 0.0) * 0.0002,
-            bid_volume_top5=signal.get("bid_volume", 10.0),
-            ask_volume_top5=signal.get("ask_volume", 10.0),
-            volatility_burst=signal.get("volatility_burst", False),
-            prediction_confidence=signal.get("confidence", 0.5),
+            symbol=signal["symbol"],
+            best_bid=signal["price"] * 0.9999,
+            best_ask=signal["price"] * 1.0001,
+            spread=signal["price"] * 0.0002,
+            bid_volume_top5=signal["bid_volume"],
+            ask_volume_top5=signal["ask_volume"],
+            volatility_burst=signal["volatility_burst"],
+            prediction_confidence=signal["confidence"],
             predicted_direction="UP" if signal.get("side") == "BUY" else "DOWN",
         )
-        return self.router.route(ctx, signal.get("quantity", 0.001))
+        return self.router.route(ctx, signal["quantity"])
 
     # ── Statistics ──────────────────────────────────────────────────
 

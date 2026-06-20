@@ -342,7 +342,7 @@ class AtomicStateManager:
                 )
                 return None
 
-            checkpoint_age = time.time() - wrapper.get('_timestamp', row[1])
+            checkpoint_age = time.time() - wrapper['_timestamp']
             logger.info(
                 f"🛡️ [Recovery] State restored with VERIFIED integrity "
                 f"(checksum={stored_checksum}, age={checkpoint_age:.0f}s)"

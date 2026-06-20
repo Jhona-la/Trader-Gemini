@@ -16,7 +16,8 @@ def analyze():
                 if 'message' in data:
                     closed_messages.append(data['message'])
             except:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     net_pnls = []
     for m in closed_messages:
@@ -29,7 +30,8 @@ def analyze():
                     try:
                         net_pnls.append(float(val_str))
                     except:
-                        pass
+                        from utils.error_handler import SystemIntegrityError
+                        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 break
 
     wins = sum(1 for p in net_pnls if p > 0)

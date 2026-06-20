@@ -35,16 +35,16 @@ class ScalpDCAEngine:
         if not symbol:
             return None
             
-        pos_horizon = pos.get('horizon', 'SCALPING')
+        pos_horizon = pos['horizon']
         if pos_horizon not in ("SCALPING", "MICROSCALPING"):
             return None
             
-        qty = pos.get('quantity', 0.0)
+        qty = pos['quantity']
         if qty == 0:
             return None
             
-        entry_price = pos.get('entry_price', 0.0)
-        sl_pct = pos.get('sl_pct', 0.0035)  # Default 0.35% si no hay
+        entry_price = pos['entry_price']
+        sl_pct = pos['sl_pct']  # Default 0.35% si no hay
         
         unrealized_pnl_pct = (
             ((current_price - entry_price) / entry_price) * 100
@@ -60,7 +60,7 @@ class ScalpDCAEngine:
             return None  # No en draw down suficiente
             
         # Check layers
-        trade_id = pos.get('trade_id', f"{symbol}_{pos_horizon}")
+        trade_id = pos['trade_id']
         state = self._dca_state.get(trade_id, {'layers': 0, 'last_dca_ts': 0.0})
         
         if state['layers'] >= self.max_layers:

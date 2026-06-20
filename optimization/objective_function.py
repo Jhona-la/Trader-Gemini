@@ -37,7 +37,7 @@ class ObjectiveFunction:
 
     def calculate_cycle_returns(self, trades: List[Any]) -> float:
         """Suma de retornos de los trades en un ciclo/fold"""
-        return sum([t.pnl_pct if hasattr(t, 'pnl_pct') else t.get('pnl_pct', 0.0) for t in trades])
+        return sum([t.pnl_pct if hasattr(t, 'pnl_pct') else t['pnl_pct'] for t in trades])
 
     def survival_filter(self, cycle_returns: List[float]) -> bool:
         """
@@ -111,7 +111,7 @@ class ObjectiveFunction:
         if not fold_results:
             return -999.0, {"error": "No results"}
             
-        cycle_returns = [self.calculate_cycle_returns(f.get('trades', [])) for f in fold_results]
+        cycle_returns = [self.calculate_cycle_returns(f['trades']) for f in fold_results]
         
         if not self.survival_filter(cycle_returns):
             return -999.0, {"error": "Survival Filter Failed"}
@@ -120,7 +120,7 @@ class ObjectiveFunction:
         
         regime_returns = {}
         for f, ret in zip(fold_results, cycle_returns):
-            reg = f.get('regime', 'UNKNOWN')
+            reg = f['regime']
             if reg not in regime_returns:
                 regime_returns[reg] = []
             regime_returns[reg].append(ret)

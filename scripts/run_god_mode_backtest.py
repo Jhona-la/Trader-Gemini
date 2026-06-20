@@ -58,14 +58,7 @@ os.environ["OPENBLAS_NUM_THREADS"] = "16"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "16"
 os.environ["NUMEXPR_NUM_THREADS"] = "16"
 
-try:
-    import torch
-    torch.set_num_threads(16)
-    torch.set_grad_enabled(False)  # Disable gradients (backtest is inference only, saves 50% RAM/CPU)
-except ImportError:
-    pass
-
-import sys
+# Torch initialization is deferred to run_global_backtest to avoid 20s import latency on startup
 import io
 import contextlib
 import time
@@ -78,7 +71,6 @@ import logging
 from datetime import datetime, timezone, timedelta
 from queue import Queue
 import numpy as np
-import pandas as pd
 import gc  # FIX-FORENSIC-V82: Moved from hot loop (L946) to top-level
 
 # ─── Project Root ───
@@ -145,7 +137,10 @@ from core.meta_arbitrator import meta_arbitrator
 real_capital = Config.INITIAL_CAPITAL
 print(f"💰 BACKTEST CAPITAL (DETERMINISTIC): ${real_capital:.2f}")
 
-# ─── PRODUCTION PORTFOLIO (THE REAL ONE) ───
+# ─── PRODUCTION PORTFOLIO ───
+Config.IS_BACKTESTING = True
+
+from core.engine import Engine as TradingEngine
 from core.portfolio import Portfolio
 
 # ─── PRODUCTION RISK MANAGER (THE REAL ONE) ───
@@ -425,6 +420,14 @@ def run_global_backtest(
     run_id = str(uuid.uuid4())[:8]
     random.seed(seed)
     np.random.seed(seed)
+    
+    # ── LAZY INIT FOR HEAVY LIBRARIES ──
+    try:
+        import torch
+        torch.set_num_threads(16)
+        torch.set_grad_enabled(False)
+    except ImportError:
+        pass
 
     capital = initial_capital if initial_capital else real_capital
     leverage = Config.BINANCE_LEVERAGE
@@ -882,6 +885,12 @@ def run_global_backtest(
                         db_path=backtest_db_path,
                     )
     
+                    # FORCE LOAD MODELS FOR BACKTEST (Especially important if skip-training is used)
+                    if hasattr(ml_scalp, "_load_models"):
+                        ml_scalp._load_models()
+                    if hasattr(ml_swing, "_load_models"):
+                        ml_swing._load_models()
+
                     strategies_map[symbol] = [ml_scalp, ml_swing]
                     
                     # Append flyweight shared strategies
@@ -1290,6 +1299,9 @@ def run_global_backtest(
             # CUÁNDO: Exactamente en el epoch == warmup_epochs + 1 (una sola vez, ya que la primera iteración suma 1).
             # ══════════════════════════════════════════════════════════════════
             if epoch_count == warmup_epochs + 1:
+                # ── FORENSIC: DISABLE LOGGING FOR NANO PROFILING ──
+                logging.disable(logging.CRITICAL)
+
                 # ── QUANTUM PRE-CALCULATION FOR BACKTEST (Vectorization) ──
                 # MODO PROFESOR:
                 # QUÉ: Calcula TODOS los indicadores técnicos (RSI, MACD, etc) para TODO el dataset de una sola vez.
@@ -1326,7 +1338,7 @@ def run_global_backtest(
                     for strat in strats:
                         try:
                             if not getattr(strat, "is_trained", False):
-                                if hasattr(strat, "retrain"):
+                                if hasattr(strat, "retrain") and not args.skip_training:
                                     strat.retrain(force=True)
                                 elif hasattr(strat, "_launch_training"):
                                     bars = data_provider.get_latest_bars(
@@ -1791,8 +1803,7 @@ def run_global_backtest(
                 for event in pre_computed_events:
                     events_queue.put(event)
                     
-            # Strategies put SignalEvents directly into events_queue via
-            # events_queue.put(signal). Now we drain and process them.
+            # Signal draining and event loops... (unchanged logic here, just disabling logging outside this loop)
             # This mirrors Engine._process_signal_event() in production.
             _max_signal_iterations = 50  # Prevent infinite loops
             _iter = 0
@@ -2357,6 +2368,9 @@ def run_global_backtest(
                 traceback.print_exc()
                 logger.warning(f"Failed to close {v_key}: {e}")
     
+        # ── FORENSIC: RE-ENABLE LOGGING ──
+        logging.disable(logging.NOTSET)
+
         # ─────────────────────────────────────────────────────────────────────────
         # STEP 5: CALCULATE METRICS & REPORT
         # ─────────────────────────────────────────────────────────────────────────
@@ -2657,6 +2671,10 @@ def run_global_backtest(
                 [s for s in untrained_strategies if "SWING" not in s.upper()]
             ),
         }
+        
+        return results
+        parser.add_argument("--skip-training", action="store_true", help="Bypass model retraining to measure pure execution latency.")
+        args = parser.parse_args()
 
         # ═══════════════════════════════════════════════════════════════════
         # FORENSIC AUDIT: ALPHA LEAK TABLE
@@ -2941,6 +2959,7 @@ def main():
                         help="Strategy ID to isolate (for Scenario E)")
     parser.add_argument("--override", type=str, default=None,
                         help="JSON string of Config overrides for Monte Carlo / Parametric executions.")
+    parser.add_argument("--skip-training", action="store_true", default=True, help="DEFAULT: Bypass ML retraining. Use --no-skip-training to force retrain.")
 
     args = parser.parse_args()
     
@@ -3045,7 +3064,7 @@ def main():
     # DÓNDE: En `scripts/run_god_mode_backtest.py` L2470.
     # QUIÊN: Modificado por el Quant Developer y el SRE/DevOps.
     all_data = fetch_multi_symbol_data(
-        symbols, days=args.days + 70, max_workers=4, end_time=end_time
+        symbols, days=args.days + 70, max_workers=4, end_time=end_time, offline_mode=True
     )
 
     if not all_data:

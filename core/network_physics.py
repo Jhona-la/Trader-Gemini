@@ -26,7 +26,8 @@ class PhysicalDataHandlerWrapper:
                 release_time = time.time() + (self.base_latency_ms / 1000.0)
                 await self.queue.put((release_time, raw_tick))
         except asyncio.CancelledError:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     async def get_next_tick(self) -> TickEvent:
         """

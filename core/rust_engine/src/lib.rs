@@ -1,8 +1,12 @@
-mod quantum_arena;
-mod stateful_engine;
+pub mod math_kernels;
+pub mod quantum_arena;
+pub mod stateful_engine;
+pub mod dark_alpha_router;
+pub mod trailing;
 
-pub use quantum_arena::{QuantumRingBuffer, FEATURE_SIZE};
+pub use quantum_arena::{QuantumRingBuffer, FEATURE_SIZE, QuantumStateArena};
 pub use stateful_engine::StatefulEngine;
+pub use trailing::{evaluate_quantum_trailing, TrailingResult};
 
 #[no_mangle]
 pub extern "C" fn quantum_ring_new() -> *mut QuantumRingBuffer {
@@ -91,6 +95,136 @@ pub extern "C" fn quantum_ring_read_tick(
         success
     }
 }
+
+use quantum_arena::TradeDecision;
+
+#[no_mangle]
+pub extern "C" fn execute_oracle_kernel(arena: *const QuantumStateArena) -> TradeDecision {
+    if arena.is_null() {
+        return TradeDecision {
+            action: 0,
+            position_size: 0.0,
+            stop_loss: 0.0,
+            take_profit: 0.0,
+            confidence: 0.0,
+            error_code: 1,
+            mempool_panic: 0.0,
+            net_liq_pressure: 0.0,
+            liquidation_cascade: 0.0,
+        };
+    }
+
+    let a = unsafe { &*arena };
+
+    // Very basic placeholder Oracle decision
+    // Will be augmented with XGBoost trees in Phase III
+    let conf = 0.85 - (a.mempool_panic_score * 0.1);
+
+    let action = if a.net_liq_pressure > 0.0 {
+        1 // Long
+    } else if a.net_liq_pressure < 0.0 {
+        -1 // Short
+    } else {
+        0 // Hold
+    };
+
+    TradeDecision {
+        action,
+        position_size: 1.0,
+        stop_loss: 0.01,
+        take_profit: 0.02,
+        confidence: conf,
+        error_code: 0,
+        mempool_panic: a.mempool_panic_score,
+        net_liq_pressure: a.net_liq_pressure,
+        liquidation_cascade: 0.0, // To be populated properly with the DarkAlphaRouter
+    }
+}
+
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct BinanceWSKline {
+    t: i64,      // Kline start time
+    c: String,   // Close price
+    v: String,   // Base asset volume
+    x: bool,     // Is this kline closed?
+}
+
+#[derive(Deserialize)]
+struct BinanceWSData {
+    e: String,             // Event type
+    E: i64,                // Event time
+    k: Option<BinanceWSKline>, // Kline struct
+}
+
+#[derive(Deserialize)]
+struct BinanceWSMessage {
+    stream: Option<String>,
+    data: Option<BinanceWSData>,
+}
+
+#[no_mangle]
+pub extern "C" fn ingest_raw_ws_frame(
+    arena_ptr: *mut QuantumStateArena,
+    raw_bytes_ptr: *const u8,
+    length: usize,
+    index: usize,
+) -> i32 {
+    if arena_ptr.is_null() || raw_bytes_ptr.is_null() {
+        return -1; // Null pointer error
+    }
+
+    let raw_slice = unsafe { std::slice::from_raw_parts(raw_bytes_ptr, length) };
+
+    // Deserialize directly from the byte slice (Zero-Copy where possible)
+    let msg: Result<serde_json::Value, _> = serde_json::from_slice(raw_slice);
+
+    match msg {
+        Ok(parsed_msg) => {
+            if let Some(data) = parsed_msg.get("data") {
+                if let Some(e) = data.get("e") {
+                    if e == "kline" {
+                        if let Some(kline) = data.get("k") {
+                            unsafe {
+                                let arena = &mut *arena_ptr;
+                                if index < arena.tensor_len {
+                                    let prices = std::slice::from_raw_parts_mut(arena.prices as *mut f32, arena.tensor_len);
+                                    let volumes = std::slice::from_raw_parts_mut(arena.volumes as *mut f32, arena.tensor_len);
+                                    
+                                    if let (Some(c), Some(v)) = (kline.get("c"), kline.get("v")) {
+                                        if let (Ok(p), Ok(vol)) = (c.as_str().unwrap_or("").parse::<f32>(), v.as_str().unwrap_or("").parse::<f32>()) {
+                                            prices[index] = p;
+                                            volumes[index] = vol;
+                                            
+                                            let t_val = kline.get("t").and_then(|t| t.as_i64()).unwrap_or(0);
+                                            arena.timestamp_ns = t_val * 1_000_000;
+                                            
+                                            let is_closed = kline.get("x").and_then(|x| x.as_bool()).unwrap_or(false);
+                                            return if is_closed { 1 } else { 0 };
+                                        }
+                                        return -8; // Parse f32 failed
+                                    }
+                                    return -7; // c or v missing
+                                }
+                                return -6; // index out of bounds
+                            }
+                        }
+                        return -5; // k missing
+                    }
+                    return -4; // e != kline
+                }
+                return -3; // e missing
+            }
+            -10 // successfully parsed JSON, but no 'data' key (e.g. not multiplexed)
+        }
+        Err(e) => {
+            eprintln!("Rust JSON parse error: {:?}", e);
+            -2
+        }
+    }
+}
+
 
 #[no_mangle]
 pub extern "C" fn run_sandbox_trial(

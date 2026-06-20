@@ -130,7 +130,7 @@ class LatencyMonitor:
         for name, values in self.metrics.items():
             if values and not name.endswith('_jitter'):
                 stats = self.get_percentiles(name)
-                jitter_avg = stats.get('jitter_avg', 0.0)
+                jitter_avg = stats['jitter_avg']
                 logger.info(
                     f"  {name:25}: "
                     f"p50={stats['p50']:>7.2f}ms | "

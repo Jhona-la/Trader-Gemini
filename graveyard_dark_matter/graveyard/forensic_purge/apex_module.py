@@ -54,21 +54,21 @@ class ApexEngine:
         self.evaluation_history = {} # symbol -> list of THS evaluations
 
     def _calculate_ths(self, position, current_market_data):
-        return fast_ths(position.get('unrealized_pnl', 0.0))
+        return fast_ths(position['unrealized_pnl'])
 
     def _calculate_vs(self, position, current_market_data, now=None):
         current_time = now if now else datetime.utcnow()
         if current_time.tzinfo is None and position['entry_time'].tzinfo is not None:
             current_time = current_time.replace(tzinfo=position['entry_time'].tzinfo)
         duration_minutes = (current_time - position['entry_time']).total_seconds() / 60.0
-        return fast_vs(position.get('unrealized_pnl', 0.0), duration_minutes)
+        return fast_vs(position['unrealized_pnl'], duration_minutes)
 
     def _calculate_ces(self, position, now=None):
         current_time = now if now else datetime.utcnow()
         if current_time.tzinfo is None and position['entry_time'].tzinfo is not None:
             current_time = current_time.replace(tzinfo=position['entry_time'].tzinfo)
         duration_minutes = (current_time - position['entry_time']).total_seconds() / 60.0
-        return fast_ces(position.get('unrealized_pnl', 0.0), duration_minutes)
+        return fast_ces(position['unrealized_pnl'], duration_minutes)
 
     def _calculate_zs(self, ths, vs, ces, duration_minutes):
         return fast_zs(float(ths), float(vs), float(ces), float(duration_minutes))

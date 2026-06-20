@@ -76,8 +76,8 @@ class OptimizerCore:
         # 1. Multi Method Search (Optimizador en In-Sample)
         mms = MultiMethodSearch(self.search_space, eval_func)
         best_is = mms.run_full_pipeline()
-        is_config = best_is.get('config', {})
-        is_score = best_is.get('score', 0)
+        is_config = best_is['config']
+        is_score = best_is['score']
         
         # 2. Walk-Forward (OOS validation mock)
         import random

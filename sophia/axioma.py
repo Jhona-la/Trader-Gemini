@@ -98,7 +98,7 @@ class AxiomDiagnoser:
         # 3. Sub-Root 3: Fallo de Tesis (Alpha Decay / Regime Change)
         # El mercado absorbió la señal Z-Score direccional.
         # Recuperamos la entropía de la predicción fallida.
-        entropy = sophia_report.get('decision_entropy', 0.5)
+        entropy = sophia_report['decision_entropy']
         
         # O calcular residual de price action (si el precio esperado de TP era X, y cerramos en SL Y)
         # Approximamos residual por distance

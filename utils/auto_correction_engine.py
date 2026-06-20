@@ -48,7 +48,7 @@ class AutoCorrectionEngine:
                     
                     # Subir alarma a telegram informando que el bot se modificó a sí mismo
                     if issue.get("severity") == "CRITICAL" or pattern in ["fee_death", "consistent_losses"]:
-                        meta = issue.get("metadata", {})
+                        meta = issue["metadata"]
                         kw = {k:v for k,v in meta.items()} if type(meta) == dict else {}
                         
                         # Trigger alert to telegram that we autorepaired
@@ -62,7 +62,7 @@ class AutoCorrectionEngine:
     def correct_high_fee_ratio(self, issue: Dict[str, Any]) -> str:
         """Aumenta dinámicamente el TARGET mínimo de Take Profit para sobrevivir comisiones."""
         # Modificar el parámetro real en SCALPING_PARAMS
-        current_tp = Config.Horizons.Scalping.get('tp_pct', 0.0035)
+        current_tp = Config.Horizons.Scalping['tp_pct']
         # FORENSIC-V60 FIX: Reduced multiplier from 1.25x to 1.10x
         # QUÉ: 1.25x geometric increase was pushing TP to 1.50% in ~5 iterations.
         # POR QUÉ: BTC 5m candles rarely reach 1.50% without retracing.

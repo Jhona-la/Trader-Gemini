@@ -160,11 +160,11 @@ def objective(trial, all_data, symbol, days, horizon):
         Config.Risk.GLOBAL_STOP_LOSS_PCT = _orig_global_sl
 
     # ── EVALUAR FITNESS COMPUESTO (QUANTUM EXPONENTIAL TARGET) ──
-    metrics = result.get('metrics', {})
-    trades = metrics.get('total_trades', 0)
-    pnl_usd = metrics.get('final_capital', 13.0) - 13.0
-    max_dd = metrics.get('max_drawdown_pct', 0) / 100.0
-    win_rate = metrics.get('win_rate', 0)
+    metrics = result['metrics']
+    trades = metrics['total_trades']
+    pnl_usd = metrics['final_capital'] - 13.0
+    max_dd = metrics['max_drawdown_pct'] / 100.0
+    win_rate = metrics['win_rate']
     
     # Penalizaciones (Survival Filters)
     if trades < 3:
@@ -242,10 +242,10 @@ def optimize_coin(symbol, all_data, days, n_trials, horizon):
     
     def callback(study, trial):
         attrs = trial.user_attrs
-        duration = attrs.get('duration_ms', 0)
+        duration = attrs['duration_ms']
         ram_mb = get_ram_usage()
         # Usamos \r para sobreescribir la misma línea en la terminal sin hacer scroll infinito
-        msg = f"\r  🧬 [{symbol}][{horizon}] Trial {trial.number:5d} | Score: {trial.value or -9999:8.1f} | TR: {attrs.get('trades',0):3d} | WR: {attrs.get('win_rate',0):5.1f}% | PnL: ${attrs.get('pnl_usd',0):+.2f} | ⚡ {duration:.1f} ms/trial | RAM: {ram_mb:.1f} MB      "
+        msg = f"\r  🧬 [{symbol}][{horizon}] Trial {trial.number:5d} | Score: {trial.value or -9999:8.1f} | TR: {attrs['trades']:3d} | WR: {attrs['win_rate']:5.1f}% | PnL: ${attrs['pnl_usd']:+.2f} | ⚡ {duration:.1f} ms/trial | RAM: {ram_mb:.1f} MB      "
         sys.stdout.write(msg)
         sys.stdout.flush()
         

@@ -451,8 +451,8 @@ def run_supermasive_optimizer():
         sm = rs['metrics'] if rs else {}
         wm = rw['metrics'] if rw else {}
         print(f"  🔬 {sym:12} | "
-              f"SCL: WR={sm.get('win_rate',0):5.1f}% ${sm.get('capital',13):7.2f} T={sm.get('trades',0):3d} | "
-              f"SWG: WR={wm.get('win_rate',0):5.1f}% ${wm.get('capital',13):7.2f} T={wm.get('trades',0):3d} | "
+              f"SCL: WR={sm['win_rate']:5.1f}% ${sm['capital']:7.2f} T={sm['trades']:3d} | "
+              f"SWG: WR={wm['win_rate']:5.1f}% ${wm['capital']:7.2f} T={wm['trades']:3d} | "
               f"⏱️ {ms:.0f}ms")
 
     t_end = time.perf_counter()

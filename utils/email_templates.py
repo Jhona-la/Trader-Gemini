@@ -88,10 +88,10 @@ def _metric_row(label: str, value: str, css_class: str = "") -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 def render_trade_open_email(data: Dict[str, Any]) -> str:
     """Renders HTML email for trade open notification."""
-    direction = str(data.get('direction', 'BUY')).upper()
-    symbol = data.get('symbol', 'UNKNOWN')
-    strategy = data.get('strategy', 'Unknown')
-    horizon = data.get('horizon', 'SCALPING')
+    direction = str(data['direction']).upper()
+    symbol = data['symbol']
+    strategy = data['strategy']
+    horizon = data['horizon']
 
     header_class = "header-neutral"
     dir_str = "🟢 LONG" if direction in ("BUY", "LONG") else "🔴 SHORT"
@@ -101,17 +101,17 @@ def render_trade_open_email(data: Dict[str, Any]) -> str:
     body += _metric_row("Estrategia", f"{strategy} ({horizon})")
     body += _metric_row("Par", symbol)
     body += _metric_row("Dirección", dir_str)
-    body += _metric_row("Entrada", f"${data.get('fill_price', 0):,.4f}")
-    body += _metric_row("Tamaño", f"{data.get('quantity', 0)} (${data.get('size_usd', 0):,.2f} USD)")
+    body += _metric_row("Entrada", f"${data['fill_price']:,.4f}")
+    body += _metric_row("Tamaño", f"{data['quantity']} (${data['size_usd']:,.2f} USD)")
 
-    sl_pct = data.get('sl_pct', 0)
-    tp_pct = data.get('tp_pct', 0)
+    sl_pct = data['sl_pct']
+    tp_pct = data['tp_pct']
     if sl_pct:
         body += _metric_row("Stop Loss", f"{sl_pct*100:.2f}%", "negative")
     if tp_pct:
         body += _metric_row("Take Profit", f"{tp_pct*100:.2f}%", "positive")
 
-    rr = data.get('rr_ratio', 0)
+    rr = data['rr_ratio']
     if rr:
         body += _metric_row("Risk/Reward", f"1:{rr:.2f}")
     body += '</div>'
@@ -120,9 +120,9 @@ def render_trade_open_email(data: Dict[str, Any]) -> str:
     body += '<div class="section">'
     body += '<div class="section-title">📊 Análisis de Viabilidad</div>'
     body += f'<div class="highlight-box">'
-    body += _metric_row("Fees estimados", f"${data.get('commission', 0):,.4f}")
-    body += _metric_row("Breakeven", f"{data.get('breakeven_pct', 0):,.3f}%")
-    body += _metric_row("Neto mínimo viable", f"${data.get('min_viable_net', 0):,.4f}")
+    body += _metric_row("Fees estimados", f"${data['commission']:,.4f}")
+    body += _metric_row("Breakeven", f"{data['breakeven_pct']:,.3f}%")
+    body += _metric_row("Neto mínimo viable", f"${data['min_viable_net']:,.4f}")
     body += '</div></div>'
 
     return _wrap_html(
@@ -138,8 +138,8 @@ def render_trade_open_email(data: Dict[str, Any]) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 def render_trade_close_email(data: Dict[str, Any]) -> str:
     """Renders HTML email for trade close notification."""
-    net_pnl = data.get('net_pnl', 0)
-    symbol = data.get('symbol', 'UNKNOWN')
+    net_pnl = data['net_pnl']
+    symbol = data['symbol']
     is_profit = net_pnl > 0
 
     header_class = "header-profit" if is_profit else "header-loss"
@@ -148,10 +148,10 @@ def render_trade_close_email(data: Dict[str, Any]) -> str:
 
     body = '<div class="section">'
     body += '<div class="section-title">📋 Resumen</div>'
-    body += _metric_row("Estrategia", f"{data.get('strategy', 'Unknown')} ({data.get('horizon', 'SCALPING')})")
+    body += _metric_row("Estrategia", f"{data['strategy']} ({data['horizon']})")
     body += _metric_row("Par", symbol)
-    body += _metric_row("Duración", str(data.get('duration', 'N/A')))
-    body += _metric_row("Razón cierre", str(data.get('exit_reason', 'Unknown')))
+    body += _metric_row("Duración", str(data['duration']))
+    body += _metric_row("Razón cierre", str(data['exit_reason']))
     body += '</div>'
 
     # Results
@@ -159,28 +159,28 @@ def render_trade_close_email(data: Dict[str, Any]) -> str:
     body += '<div class="section-title">💰 Resultados</div>'
     hl_class = "highlight-profit" if is_profit else "highlight-loss"
     body += f'<div class="highlight-box {hl_class}">'
-    body += _metric_row("PnL Bruto", f"${data.get('pnl', 0):,.4f}")
-    body += _metric_row("Fees", f"-${data.get('commission', 0):,.4f}")
+    body += _metric_row("PnL Bruto", f"${data['pnl']:,.4f}")
+    body += _metric_row("Fees", f"-${data['commission']:,.4f}")
     sign = "+" if net_pnl >= 0 else ""
-    body += _metric_row("PnL Neto", f"{sign}${net_pnl:,.4f} ({data.get('net_pnl_pct', 0):+.2f}%)", pnl_class)
+    body += _metric_row("PnL Neto", f"{sign}${net_pnl:,.4f} ({data['net_pnl_pct']:+.2f}%)", pnl_class)
     body += '</div></div>'
 
     # Prices
     body += '<div class="section">'
     body += '<div class="section-title">📈 Precios</div>'
-    body += _metric_row("Entrada", f"${data.get('entry_price', 0):,.4f}")
-    body += _metric_row("Salida", f"${data.get('exit_price', 0):,.4f}")
+    body += _metric_row("Entrada", f"${data['entry_price']:,.4f}")
+    body += _metric_row("Salida", f"${data['exit_price']:,.4f}")
     body += '</div>'
 
     # Balance
-    bal_before = data.get('balance_before', 0)
-    bal_after = data.get('balance_after', 0)
+    bal_before = data['balance_before']
+    bal_after = data['balance_after']
     if bal_before > 0:
         body += '<div class="section">'
         body += '<div class="section-title">💵 Balance</div>'
         body += _metric_row("Antes", f"${bal_before:,.2f}")
         body += _metric_row("Después", f"${bal_after:,.2f}", pnl_class)
-        body += _metric_row("Cambio", f"{data.get('balance_change_pct', 0):+.2f}%", pnl_class)
+        body += _metric_row("Cambio", f"{data['balance_change_pct']:+.2f}%", pnl_class)
         body += '</div>'
 
     return _wrap_html(
@@ -196,52 +196,52 @@ def render_trade_close_email(data: Dict[str, Any]) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 def render_daily_report_email(data: Dict[str, Any]) -> str:
     """Renders HTML email for daily report."""
-    daily_pnl = data.get('daily_pnl', 0)
+    daily_pnl = data['daily_pnl']
     is_positive = daily_pnl >= 0
     header_class = "header-profit" if is_positive else "header-loss"
     pnl_class = "positive" if is_positive else "negative"
 
     body = '<div class="section">'
     body += '<div class="section-title">📊 Resumen del Día</div>'
-    body += _metric_row("Fecha", str(data.get('date', 'N/A')))
-    body += _metric_row("Balance Inicial", f"${data.get('start_balance', 0):,.2f}")
-    body += _metric_row("Balance Final", f"${data.get('end_balance', 0):,.2f}")
+    body += _metric_row("Fecha", str(data['date']))
+    body += _metric_row("Balance Inicial", f"${data['start_balance']:,.2f}")
+    body += _metric_row("Balance Final", f"${data['end_balance']:,.2f}")
     sign = "+" if daily_pnl >= 0 else ""
-    body += _metric_row("PnL Diario", f"{sign}${daily_pnl:,.2f} ({data.get('daily_pnl_pct', 0):+.2f}%)", pnl_class)
+    body += _metric_row("PnL Diario", f"{sign}${daily_pnl:,.2f} ({data['daily_pnl_pct']:+.2f}%)", pnl_class)
     body += '</div>'
 
     # Trading metrics
     body += '<div class="section">'
     body += '<div class="section-title">📈 Métricas de Trading</div>'
-    body += _metric_row("Total Trades", str(data.get('total_trades', 0)))
-    body += _metric_row("Ganadores", f"{data.get('winning_trades', 0)} ({data.get('win_rate', 0):.1f}%)")
-    body += _metric_row("Perdedores", str(data.get('losing_trades', 0)))
+    body += _metric_row("Total Trades", str(data['total_trades']))
+    body += _metric_row("Ganadores", f"{data['winning_trades']} ({data['win_rate']:.1f}%)")
+    body += _metric_row("Perdedores", str(data['losing_trades']))
     body += '</div>'
 
     # Strategy table
-    strategies = data.get('strategies', [])
+    strategies = data['strategies']
     if strategies:
         body += '<div class="section">'
         body += '<div class="section-title">🧠 Análisis por Estrategia</div>'
         body += '<table>'
         body += '<tr><th>Estrategia</th><th>Trades</th><th>Win Rate</th><th>PnL</th></tr>'
         for s in strategies:
-            s_pnl = s.get('pnl', 0)
+            s_pnl = s['pnl']
             s_class = 'positive' if s_pnl >= 0 else 'negative'
             s_sign = "+" if s_pnl >= 0 else ""
-            body += f'<tr><td>{s.get("name", "?")}</td><td>{s.get("trades", 0)}</td>'
-            body += f'<td>{s.get("win_rate", 0):.1f}%</td>'
+            body += f'<tr><td>{s["name"]}</td><td>{s["trades"]}</td>'
+            body += f'<td>{s["win_rate"]:.1f}%</td>'
             body += f'<td class="{s_class}">{s_sign}${s_pnl:,.2f}</td></tr>'
         body += '</table></div>'
 
     # Risk
     body += '<div class="section">'
     body += '<div class="section-title">🔒 Gestión de Riesgo</div>'
-    body += _metric_row("Max Drawdown", f"{data.get('max_drawdown', 0):.2f}%")
-    sharpe = data.get('sharpe_ratio', 0)
+    body += _metric_row("Max Drawdown", f"{data['max_drawdown']:.2f}%")
+    sharpe = data['sharpe_ratio']
     if sharpe:
         body += _metric_row("Sharpe Ratio", f"{sharpe:.2f}")
-    sortino = data.get('sortino_ratio', 0)
+    sortino = data['sortino_ratio']
     if sortino:
         body += _metric_row("Sortino Ratio", f"{sortino:.2f}")
     body += '</div>'

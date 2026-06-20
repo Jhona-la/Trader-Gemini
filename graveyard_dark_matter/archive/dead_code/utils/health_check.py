@@ -17,7 +17,7 @@ class OmegaHealthCheck:
 
     def check_network(self):
         try:
-            requests.get("https://www.google.com", timeout=3)
+            requests["https://www.google.com"]
             print("✅ [NETWORK] Internet Connectivity: OK")
         except:
             print("❌ [NETWORK] Internet Connectivity: FAILED")
@@ -25,7 +25,7 @@ class OmegaHealthCheck:
 
     def check_binance(self):
         try:
-            r = requests.get("https://api.binance.com/api/v3/ping", timeout=3)
+            r = requests["https://api.binance.com/api/v3/ping"]
             if r.status_code == 200:
                 print("✅ [API] Binance Public Endpoint: OK")
             else:

@@ -422,7 +422,8 @@ class OnlineLearner:
              wandb_tracker.log_metric("ml/ppo_ratio_mean", float(np.mean(ratio)))
              wandb_tracker.log_metric("ml/ppo_clip_fraction", float(1.0 - np.mean(grad_mask)))
         except: 
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
         new_weights = weights + update
             

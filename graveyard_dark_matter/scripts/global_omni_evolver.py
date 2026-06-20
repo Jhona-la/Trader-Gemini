@@ -167,7 +167,7 @@ def objective(trial, all_data, symbols, days, original_matrix):
     adaptive_config.matrix = deepcopy(original_matrix)
     
     # Inyectar mutaciones - Solo en la matriz pasamos MATRIX_OVERRIDES
-    update_config_dict(adaptive_config.matrix, overrides.get('MATRIX_OVERRIDES', {}))
+    update_config_dict(adaptive_config.matrix, overrides['MATRIX_OVERRIDES'])
     
     # Las mutaciones BLUEPRINT_* (OmniScore, etc) se inyectan en tiempo real dentro del motor a través del BlueprintLoader o en el backtest
     # Para backtest global_omni_evolver:
@@ -180,8 +180,8 @@ def objective(trial, all_data, symbols, days, original_matrix):
             Config.OmniScore = type('OmniScore', (), {})
         Config.OmniScore.w_ml = omni['w_ml']
         Config.OmniScore.w_technical = omni['w_technical']
-        Config.OmniScore.w_phalanx = omni.get('w_phalanx', 0.5)
-        Config.OmniScore.w_statarb = omni.get('w_statarb', 0.5)
+        Config.OmniScore.w_phalanx = omni['w_phalanx']
+        Config.OmniScore.w_statarb = omni['w_statarb']
         Config.OmniScore.master_threshold = omni['master_threshold']
 
     # Inyectar RISK
@@ -191,7 +191,7 @@ def objective(trial, all_data, symbols, days, original_matrix):
         Config.Risk.MAX_SECTOR_MICRO = r.get('max_sector_exposure_micro')
         Config.Risk.MAX_SECTOR_SCALP = r.get('max_sector_exposure_scalp')
         Config.Risk.MAX_SECTOR_SWING = r.get('max_sector_exposure_swing')
-        Config.Risk.MAX_DRAWDOWN = r.get('daily_drawdown_limit', 0.10) * 100.0
+        Config.Risk.MAX_DRAWDOWN = r['daily_drawdown_limit'] * 100.0
 
     # Inyectar SNIPER
     if 'BLUEPRINT_SNIPER' in overrides:
@@ -214,19 +214,19 @@ def objective(trial, all_data, symbols, days, original_matrix):
         pat = overrides['BLUEPRINT_PATTERN']
         Config.Horizons.Mutations['pat_wick_strict'] = pat.get('wick_filter_strictness')
         Config.Horizons.Mutations['pat_cons_min'] = pat.get('consolidation_candles_min')
-        os.environ['DNA_PAT_BREAK_VOL'] = str(pat.get('breakout_volume_confirm', False))
+        os.environ['DNA_PAT_BREAK_VOL'] = str(pat['breakout_volume_confirm'])
     
     # 2. Extraer parámetros para el Nano Backtester
-    tech_rsi_os = overrides.get('BLUEPRINT_TECHNICAL', {}).get('rsi_oversold', 30)
-    tech_rsi_ob = overrides.get('BLUEPRINT_TECHNICAL', {}).get('rsi_overbought', 70)
-    tech_macd_f = overrides.get('BLUEPRINT_TECHNICAL', {}).get('macd_fast', 12)
-    tech_macd_s = overrides.get('BLUEPRINT_TECHNICAL', {}).get('macd_slow', 26)
+    tech_rsi_os = overrides['BLUEPRINT_TECHNICAL'].get('rsi_oversold', 30)
+    tech_rsi_ob = overrides['BLUEPRINT_TECHNICAL'].get('rsi_overbought', 70)
+    tech_macd_f = overrides['BLUEPRINT_TECHNICAL'].get('macd_fast', 12)
+    tech_macd_s = overrides['BLUEPRINT_TECHNICAL'].get('macd_slow', 26)
     
     # Asumimos que optimizamos la estrategia SCALP para el fitness core
-    sl_pct = overrides.get('MATRIX_OVERRIDES', {}).get('SCALP', {}).get('por_activo', {}).get('ALL', {}).get('sl_pct_default', 0.20)
-    tp_pct = overrides.get('MATRIX_OVERRIDES', {}).get('SCALP', {}).get('por_activo', {}).get('ALL', {}).get('tp_pct_default', 0.60)
-    leverage = overrides.get('MATRIX_OVERRIDES', {}).get('SCALP', {}).get('por_activo', {}).get('ALL', {}).get('leverage', 10)
-    max_hold = overrides.get('MATRIX_OVERRIDES', {}).get('SCALP', {}).get('global_horizon', {}).get('max_hold_seconds', 14400) // 60
+    sl_pct = overrides['MATRIX_OVERRIDES'].get('SCALP', {}).get('por_activo', {}).get('ALL', {}).get('sl_pct_default', 0.20)
+    tp_pct = overrides['MATRIX_OVERRIDES'].get('SCALP', {}).get('por_activo', {}).get('ALL', {}).get('tp_pct_default', 0.60)
+    leverage = overrides['MATRIX_OVERRIDES'].get('SCALP', {}).get('por_activo', {}).get('ALL', {}).get('leverage', 10)
+    max_hold = overrides['MATRIX_OVERRIDES'].get('SCALP', {}).get('global_horizon', {}).get('max_hold_seconds', 14400) // 60
     fee_rate = 0.0004
     
     all_pnls = []

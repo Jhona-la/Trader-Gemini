@@ -51,7 +51,8 @@ def atomic_write_json(data: Dict[str, Any], filepath: str):
             try:
                 os.remove(temp_path)
             except:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         return False
 
 def touch_timestamp(filepath: str):
@@ -60,4 +61,5 @@ def touch_timestamp(filepath: str):
         with open(filepath, 'a'):
             os.utime(filepath, None)
     except:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')

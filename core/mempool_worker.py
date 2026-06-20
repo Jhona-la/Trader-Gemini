@@ -97,16 +97,17 @@ class MempoolWorker:
             data = json.loads(msg)
             if "result" in data and data["result"]:
                 tx = data["result"]
-                from_addr = tx.get("from", "")
-                nonce = int(tx.get("nonce", "0x0"), 16)
-                gas_price = int(tx.get("gasPrice", "0x0"), 16) / 1e9 # Convert to Gwei
+                from_addr = tx["from"]
+                nonce = int(tx["nonce"], 16)
+                gas_price = int(tx["gasPrice"], 16) / 1e9 # Convert to Gwei
                 
                 # Push to Cython map
                 urgency = self.engine.process_transaction(from_addr, nonce, gas_price)
                 if urgency > 50.0:
                     logger.warning(f"🚨 [RBF PANIC] Detected urgency replacement on {from_addr}. Delta: {urgency:.2f} Gwei")
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     async def _emulate_mempool_stream(self):
         """Emulates Mempool traffic for the Demo without hitting rate limits."""

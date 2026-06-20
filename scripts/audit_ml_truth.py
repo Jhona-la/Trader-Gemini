@@ -50,7 +50,7 @@ def audit_ml_truth(symbol="BTCUSDT", horizon="SCALPING"):
     ubj_path = ubj_paths[0]
     
     model_data = joblib.load(meta_path)
-    feature_cols = model_data.get('feature_cols', [])
+    feature_cols = model_data['feature_cols']
     if not feature_cols:
         print(f"❌ No feature_cols found in meta.joblib for {symbol}")
         return

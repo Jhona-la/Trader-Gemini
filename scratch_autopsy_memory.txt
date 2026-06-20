@@ -1,0 +1,21 @@
+[ Top 20 memory allocations ]
+<frozen importlib._bootstrap_external>:511: size=101 MiB, count=685615, average=154 B
+<frozen importlib._bootstrap>:491: size=13.6 MiB, count=120338, average=119 B
+C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\cProfile.py:90: size=4804 KiB, count=42569, average=116 B
+C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\json\decoder.py:361: size=3351 KiB, count=62741, average=55 B
+<frozen abc>:106: size=3189 KiB, count=10524, average=310 B
+C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\linecache.py:192: size=2917 KiB, count=31278, average=96 B
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\scipy\_lib\_array_api.py:847: size=2916 KiB, count=387, average=7716 B
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\torch\__init__.py:2167: size=2170 KiB, count=15099, average=147 B
+C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\cProfile.py:58: size=1990 KiB, count=84267, average=24 B
+C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\cProfile.py:70: size=1686 KiB, count=12919, average=134 B
+C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\dataclasses.py:506: size=1609 KiB, count=13743, average=120 B
+C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\cProfile.py:129: size=1497 KiB, count=25100, average=61 B
+C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\logging\__init__.py:1248: size=1033 KiB, count=91, average=11.4 KiB
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\networkx\utils\decorators.py:793: size=978 KiB, count=2520, average=397 B
+<frozen importlib._bootstrap_external>:128: size=868 KiB, count=5852, average=152 B
+C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\cProfile.py:68: size=807 KiB, count=12918, average=64 B
+<frozen importlib._bootstrap_external>:1437: size=678 KiB, count=6029, average=115 B
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\.venv\Lib\site-packages\torch\_ops.py:1228: size=667 KiB, count=14793, average=46 B
+C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\textwrap.py:444: size=588 KiB, count=325, average=1852 B
+C:\Users\jhona\AppData\Local\Python\pythoncore-3.14-64\Lib\functools.py:58: size=524 KiB, count=7442, average=72 B

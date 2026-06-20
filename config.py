@@ -154,10 +154,18 @@ class Config(metaclass=EncryptedConfigMeta):
     #   necesitan consensuar. Un trade de 86% de WR se ejecuta sin veto.
     # ════════════════════════════════════════════════════════════════
     # LEAN_MODE REMOVED - The concept of blocking 86% WR trades via consensus is eradicated.
-    ACTIVE_TRADING_LIMIT = 3  # Sniper Mode: Concentramos el poder en el Top 3
+    ACTIVE_TRADING_LIMIT = 26  # Aceleración Cuántica: 26 activos para máximo interés compuesto
     LEAN_ML_ENABLED = True  # ML Strategy: The core of the Quantum Guardian
-    LEAN_TRADING_PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "ADA/USDT", "AVAX/USDT", "LINK/USDT", "LTC/USDT"]  # Focus on Top 10 liquidity
-
+    
+    # 26 Assets: Core + Prospects
+    LEAN_TRADING_PAIRS = [
+        "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
+        "DOGE/USDT", "ADA/USDT", "AVAX/USDT", "LINK/USDT", "LTC/USDT",
+        "DOT/USDT", "UNI/USDT", "ATOM/USDT", "ETC/USDT", "NEAR/USDT",
+        "FTM/USDT", "FIL/USDT", "LDO/USDT", "OP/USDT", "ARB/USDT",
+        "APT/USDT", "SUI/USDT", "PEPE/USDT", "AAVE/USDT", "COMP/USDT",
+        "WIF/USDT"
+    ]
 
     # ========================================================================
     # BINANCE API CREDENTIALS (Loaded from .env file)
@@ -441,7 +449,7 @@ class Config(metaclass=EncryptedConfigMeta):
 
     
     # Risk settings for Multi-Symbol Coordination
-    MAX_CONCURRENT_POSITIONS = 9   # [SANTO GRIAL] Óptimo vectorizado: 9 monedas simultáneas
+    MAX_CONCURRENT_POSITIONS = 2  # FASE VI: Hard-Cap Termodinámico (1 Scalp, 1 Swing para $13)
     COOLDOWN_PERIOD_SECONDS = 300  # FORENSIC-V17: 300s — prevent immediate toxic re-entries
     MAX_POSITIONS_PER_SYMBOL = 1   # Still 1 per symbol to prevent double-spending on same asset
     

@@ -1,6 +1,6 @@
 import talib
 import numpy as np
-import pandas as pd
+
 from typing import Dict, Any
 from utils.math_kernel import calculate_ema_jit, calculate_adx_jit, calculate_atr_jit
 from utils.logger import logger
@@ -244,9 +244,9 @@ class MarketRegimeDetector:
                 h = bars.get_column('high').to_numpy().astype(np.float64)
                 l = bars.get_column('low').to_numpy().astype(np.float64)
             elif isinstance(bars, list) and len(bars) > 0 and isinstance(bars[0], dict):
-                c = np.array([b.get('close', 0.0) for b in bars], dtype=np.float64)
-                h = np.array([b.get('high', 0.0) for b in bars], dtype=np.float64)
-                l = np.array([b.get('low', 0.0) for b in bars], dtype=np.float64)
+                c = np.array([b['close'] for b in bars], dtype=np.float64)
+                h = np.array([b['high'] for b in bars], dtype=np.float64)
+                l = np.array([b['low'] for b in bars], dtype=np.float64)
             else:
                 c = np.array(bars['close'], dtype=np.float64)
                 h = np.array(bars['high'], dtype=np.float64)
@@ -301,15 +301,15 @@ class MarketRegimeDetector:
         for symbol, data in active_symbols_data.items():
             r = self.detect_regime(
                 symbol, 
-                data.get('1m', []), 
-                data.get('5m', []), 
-                data.get('15m', []), 
-                data.get('1h', [])
+                data['1m'], 
+                data['5m'], 
+                data['15m'], 
+                data['1h']
             )
             regimes[symbol] = r
             
             # Calcular volumen en USD para ponderación de voto
-            bars_1m = data.get('1m', [])
+            bars_1m = data['1m']
             if len(bars_1m) > 0:
                 try:
                     if hasattr(bars_1m, 'iloc'):
@@ -322,8 +322,8 @@ class MarketRegimeDetector:
                         close = float(bars_1m['close'][-1]) if 'close' in bars_1m.dtype.names else 1.0
                         quote_vol = vol * close
                     elif isinstance(bars_1m, dict):
-                        vol = bars_1m.get('volume', [1.0])[-1]
-                        close = bars_1m.get('close', [1.0])[-1]
+                        vol = bars_1m['volume'][-1]
+                        close = bars_1m['close'][-1]
                         quote_vol = float(vol) * float(close)
                     else:
                         quote_vol = 1.0
@@ -532,9 +532,9 @@ class MarketRegimeDetector:
                 params = regime_map.get(regime, regime_map.get('RANGING'))
                 
                 advice.update({
-                    'leverage': params.get('leverage', 1),
-                    'threshold_mod': params.get('threshold_mod', 0.0),
-                    'scale': params.get('scale', 0.0),
+                    'leverage': params['leverage'],
+                    'threshold_mod': params['threshold_mod'],
+                    'scale': params['scale'],
                     'action': 'LONG' if regime in ['TRENDING_BULL', 'RANGING'] else 'NEUTRAL'
                 })
                 
@@ -716,10 +716,10 @@ class MarketRegimeDetector:
                 l = df['low'].values.astype(np.float64)
                 v = df['volume'].values.astype(np.float64)
             elif isinstance(df, list) and len(df) > 0 and isinstance(df[0], dict):
-                c = np.array([b.get('close', 0.0) for b in df], dtype=np.float64)
-                h = np.array([b.get('high', 0.0) for b in df], dtype=np.float64)
-                l = np.array([b.get('low', 0.0) for b in df], dtype=np.float64)
-                v = np.array([b.get('volume', 0.0) for b in df], dtype=np.float64)
+                c = np.array([b['close'] for b in df], dtype=np.float64)
+                h = np.array([b['high'] for b in df], dtype=np.float64)
+                l = np.array([b['low'] for b in df], dtype=np.float64)
+                v = np.array([b['volume'] for b in df], dtype=np.float64)
             else:
                 c = np.array(df['close'], dtype=np.float64)
                 h = np.array(df['high'], dtype=np.float64)

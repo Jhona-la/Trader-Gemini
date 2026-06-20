@@ -345,7 +345,7 @@ def objective(trial, all_data, symbols, days, original_matrix):
         logger.error(f"Error in trial: {e}")
         return -9999.0
         
-    trades = results.get('trades', [])
+    trades = results['trades']
     if len(trades) < 5:
         return -9999.0
         

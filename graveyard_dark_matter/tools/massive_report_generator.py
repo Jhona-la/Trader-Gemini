@@ -63,7 +63,7 @@ def generate_report(input_file='massive_audit_raw.json', output_file='massive_au
             report.append(f"- **Win Rate**: {float(m['win_rate']):.1f}% | **Sharpe**: {float(m['sharpe_ratio']):.2f}")
             
             # Decisions & Reasoning
-            decisions = u.get('decisions', [])
+            decisions = u['decisions']
             if decisions:
                 report.append("\n**🧠 Decisiones Críticas & Razonamiento:**")
                 # Sample last 3 decisions

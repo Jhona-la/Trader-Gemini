@@ -87,7 +87,7 @@ class ProductionHandshake:
                 return False
             
             # Check if using testnet keys
-            testnet = os.environ.get('BINANCE_USE_TESTNET', 'False').lower() == 'true'
+            testnet = os.environ['BINANCE_USE_TESTNET'].lower() == 'true'
             
             if testnet:
                 print("⚠️  WARNING: BINANCE_USE_TESTNET=True - Using testnet!")
@@ -128,7 +128,7 @@ class ProductionHandshake:
                 else:
                     # Check current mode
                     mode = self.client.futures_get_position_mode()
-                    if mode.get('dualSidePosition', False):
+                    if mode['dualSidePosition']:
                         print("   ✅ Position Mode confirmed HEDGE")
                     else:
                         print(f"   ⚠️  Could not set HEDGE mode: {e}")
@@ -162,9 +162,9 @@ class ProductionHandshake:
         try:
             account = self.client.futures_account()
             
-            total_balance = float(account.get('totalWalletBalance', 0))
-            available = float(account.get('availableBalance', 0))
-            unrealized_pnl = float(account.get('totalUnrealizedProfit', 0))
+            total_balance = float(account['totalWalletBalance'])
+            available = float(account['availableBalance'])
+            unrealized_pnl = float(account['totalUnrealizedProfit'])
             
             print(f"   💵 Total Wallet Balance: ${total_balance:.2f}")
             print(f"   💵 Available Balance:    ${available:.2f}")

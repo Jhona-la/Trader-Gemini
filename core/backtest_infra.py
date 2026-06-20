@@ -153,7 +153,8 @@ class BacktestDataProvider(DataProvider):
             time.time = virtual_time
             time.time_ns = virtual_time_ns
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
         # FORENSIC FIX: Do NOT store the raw DataFrame dictionary to prevent RAM leaks (OOM)
         # We only need the NumPy structured arrays which are highly memory efficient.
@@ -186,7 +187,8 @@ class BacktestDataProvider(DataProvider):
                 if isinstance(first_val, dict) and "1m" in first_val:
                     is_pre_resampled = True
             except Exception:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 
         if is_pre_resampled:
             self.struct_data = historical_data
@@ -418,10 +420,34 @@ class BacktestDataProvider(DataProvider):
         taker_buy = float(v * (0.65 if is_green else 0.35))
         taker_sell = float(v * (0.35 if is_green else 0.65))
         
+        # [DARK ALPHA SYNTHESIS] 
+        # Approximating Order Flow Imbalance (OFI), Net Pressure (Liquidations) and Whale Flow
+        hl_range = float(last_bar['high'] - last_bar['low'])
+        if hl_range > 0:
+            close_pos = float((c - last_bar['low']) / hl_range)
+        else:
+            close_pos = 0.5
+            
+        ofi = float(v * (close_pos * 2 - 1)) # Range: [-V, +V]
+        net_pressure = ofi * (hl_range / (c + 1e-8)) * 10000 # Liquidation cascade density proxy
+        whale_flow = float(v * 0.8) if v > 1000 else 0.0 # Heuristic for large block trades
+        
+        # Phase V: Advanced Topological Dark Alpha
+        liquidation_cascade = abs(net_pressure) * (1.5 if hl_range / (c + 1e-8) > 0.01 else 0.5)
+        dex_whisper = ofi * (1.2 if whale_flow > 0 else 0.8)
+        
         return {
             "buy_sell_ratio": taker_buy / (taker_sell + 1e-8),
             "taker_buy_volume": taker_buy,
             "taker_sell_volume": taker_sell,
+            "ofi": ofi,
+            "l2_ofi": ofi,
+            "net_pressure": net_pressure,
+            "whale_flow": whale_flow,
+            "spread": hl_range / (c + 1e-8),
+            "micro_price": c + (hl_range * 0.1 * (1 if is_green else -1)),
+            "liquidation_cascade": liquidation_cascade,
+            "dex_whisper": dex_whisper
         }
 
     def get_hft_indicators(self, symbol):
@@ -595,10 +621,10 @@ class BacktestPortfolio:
         equity = self.current_capital # En backtest current_capital es el balance liquidado
         
         for v_key, pos in self.virtual_ledger.items():
-            qty = pos.get('quantity', 0)
+            qty = pos['quantity']
             if qty != 0:
-                avg_price = pos.get('avg_price', 0)
-                current_price = pos.get('current_price', avg_price)
+                avg_price = pos['avg_price']
+                current_price = pos['current_price']
                 # PnL no realizado: (current - avg) * qty
                 equity += (current_price - avg_price) * qty
         
@@ -678,7 +704,7 @@ class BacktestPortfolio:
         """
         # Total available (minus capital locked in open positions)
         locked_capital = sum(
-            pos.get("margin_used", pos["size_usd"] / self.leverage)
+            pos["margin_used"]
             for pos in self.positions.values()
         )
         total_available = max(0, self.current_capital - locked_capital)
@@ -695,9 +721,9 @@ class BacktestPortfolio:
 
         # Capital already locked in this horizon
         horizon_locked = sum(
-            pos.get("margin_used", pos["size_usd"] / self.leverage)
+            pos["margin_used"]
             for pos in self.positions.values()
-            if pos.get("metadata", {}).get("horizon") == horizon
+            if pos["metadata"].get("horizon") == horizon
         )
         horizon_available = max(0, horizon_budget - horizon_locked)
 
@@ -709,7 +735,7 @@ class BacktestPortfolio:
         """
         # Actualizar used_margin dinámicamente antes de retornar
         self.used_margin = sum(
-            pos.get("margin_used", pos["size_usd"] / self.leverage)
+            pos["margin_used"]
             for pos in self.positions.values()
         )
         self.current_cash = self.current_capital
@@ -822,8 +848,8 @@ class BacktestPortfolio:
                 if isinstance(timestamp, datetime)
                 else 0
             ),
-            "metadata": pos.get("metadata", {}),
-            "exit_reason": pos.get("exit_reason", "UNKNOWN"),
+            "metadata": pos["metadata"],
+            "exit_reason": pos["exit_reason"],
         }
         self.trades.append(trade)
 
@@ -856,7 +882,7 @@ class BacktestPortfolio:
 
 
 def fetch_binance_data(
-    symbol: str, days: int = 30, end_time: datetime = None
+    symbol: str, days: int = 30, end_time: datetime = None, offline_mode: bool = False
 ) -> pd.DataFrame:
     """
     Descarga datos históricos 1m de Binance mainnet (solo lectura).
@@ -870,7 +896,7 @@ def fetch_binance_data(
     try:
         from core.quantum.mmap_storage import get_quantum_lake
         lake = get_quantum_lake()
-        return lake.fetch_symbol(symbol, days, end_time)
+        return lake.fetch_symbol(symbol, days, end_time, offline_mode=offline_mode)
     except Exception as e:
         logger.warning(f"⚠️ [QBridge] Fallback a RobustDataLake para {symbol}: {e}")
         from data.robust_data_lake import get_data_lake
@@ -884,7 +910,7 @@ def fetch_binance_data(
 
 
 def fetch_multi_symbol_data(
-    symbols: list, days: int = 30, max_workers: int = 4, end_time: datetime = None
+    symbols: list, days: int = 30, max_workers: int = 4, end_time: datetime = None, offline_mode: bool = False
 ) -> dict:
     """
     Descarga datos de MÚLTIPLES símbolos en paralelo de forma determinística si end_time se especifica.
@@ -903,7 +929,7 @@ def fetch_multi_symbol_data(
 
     def _download_one(sym):
         try:
-            df = fetch_binance_data(sym, days=days, end_time=end_time)
+            df = fetch_binance_data(sym, days=days, end_time=end_time, offline_mode=offline_mode)
             if df is not None and len(df) >= 500:
                 return sym, df
             else:
@@ -1097,21 +1123,24 @@ def handle_trade_exit(portfolio, strategy, trade, current_time):
                 duration_seconds=duration_sec
             )
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
     if pm_result:
         try:
             from core.meta_optimizer import meta_optimizer
             meta_optimizer.process_trade_result(pm_result, strategy.genotypes.get(symbol))
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     
     reasoning = None
     if hasattr(strategy, 'process_reward'):
         try:
             reasoning = strategy.process_reward(trade)
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
     if reasoning and hasattr(portfolio, 'decision_logs') and isinstance(portfolio.decision_logs, list):
         try:
@@ -1122,7 +1151,8 @@ def handle_trade_exit(portfolio, strategy, trade, current_time):
                 'reasoning': reasoning
             })
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     
     return reasoning
 
@@ -1151,7 +1181,7 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
     portfolio = BacktestPortfolio(INITIAL_CAPITAL, LEVERAGE)
     
     # Determinar si usamos ML o la estrategia Técnica
-    use_ml = os.environ.get("USE_ML_STRATEGY", "False").upper() == "TRUE"
+    use_ml = os.environ["USE_ML_STRATEGY"].upper() == "TRUE"
     
     if use_ml:
         try:
@@ -1229,7 +1259,7 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
                     if trade:
                         trades_executed += 1
                         handle_trade_exit(portfolio, strategy, trade, current_time)
-                        if trade.get('pnl_usd', 0) < 0:
+                        if trade['pnl_usd'] < 0:
                             last_loss_time[symbol] = current_time
                 elif high >= stored_tp:
                     pos['exit_reason'] = 'TAKE_PROFIT'
@@ -1252,7 +1282,7 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
                     if trade:
                         trades_executed += 1
                         handle_trade_exit(portfolio, strategy, trade, current_time)
-                        if trade.get('pnl_usd', 0) < 0:
+                        if trade['pnl_usd'] < 0:
                             last_loss_time[symbol] = current_time
                 elif low <= stored_tp:
                     pos['exit_reason'] = 'TAKE_PROFIT'
@@ -1298,7 +1328,7 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
                 if symbol in last_loss_time:
                     elapsed = (current_time - last_loss_time[symbol]).total_seconds() / 60.0
                     meta = getattr(event, 'metadata', {}) or {}
-                    strength_val = getattr(event, 'strength', meta.get('strength', 0.0))
+                    strength_val = getattr(event, 'strength', meta['strength'])
                     if elapsed < COOLDOWN_MINUTES and strength_val < 0.85:
                         continue
                         

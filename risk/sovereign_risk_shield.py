@@ -92,7 +92,7 @@ class SurvivalRules:
     MAX_LOSS_PER_TRADE_PCT = 0.03      # 19% risk per trade per user mandate
 
     # Rule 3: Max simultaneous open positions
-    MAX_OPEN_POSITIONS = 9             # User mandate says "MÁXIMO 9 POSICIÓN(ES)"
+    MAX_OPEN_POSITIONS = 26             # FASE IV: Aceleración Cuántica (26 posiciones permitidas)
 
     # Rule 4: Max trades per day (anti-overtrading) - REMOVED BY USER MANDATE
     MAX_TRADES_PER_DAY_SCALPING = 999999

@@ -142,7 +142,7 @@ class SessionManager:
         
         logger.info(f"🏁 Session ended: {self.current_session_id}")
         logger.info(f"   Duration: {self.session_info['summary']['duration_minutes']:.1f} min")
-        logger.info(f"   PnL: ${self.session_info['summary'].get('pnl', 0):.2f}")
+        logger.info(f"   PnL: ${self.session_info['summary']['pnl']:.2f}")
         
         # Enviar resumen por Telegram
         self._send_session_summary()
@@ -212,7 +212,8 @@ class SessionManager:
                         with open(info_file, 'r') as f:
                             sessions.append(json.load(f))
                     except:
-                        pass
+                        from utils.error_handler import SystemIntegrityError
+                        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 
                 if len(sessions) >= limit:
                     return sessions
@@ -269,12 +270,12 @@ class SessionManager:
                 return
             
             s = self.session_info["summary"]
-            duration = s.get("duration_minutes", 0)
-            pnl = s.get('pnl', 0)
-            total_trades = s.get('total_trades', 0)
-            win_rate = s.get('win_rate', 0)
-            winning = s.get('winning_trades', 0)
-            losing = s.get('losing_trades', 0)
+            duration = s["duration_minutes"]
+            pnl = s['pnl']
+            total_trades = s['total_trades']
+            win_rate = s['win_rate']
+            winning = s['winning_trades']
+            losing = s['losing_trades']
             
             # Session result emoji
             result_emoji = "📈" if pnl >= 0 else "📉"
@@ -295,8 +296,8 @@ class SessionManager:
             msg += f"📈 Trades: `{total_trades}` ({winning}W / {losing}L)\n"
             msg += f"🏆 Win Rate: `{win_rate:.1f}%`\n"
             
-            sharpe = s.get('sharpe', 0)
-            max_dd = s.get('max_drawdown', 0)
+            sharpe = s['sharpe']
+            max_dd = s['max_drawdown']
             if sharpe:
                 msg += f"📐 Sharpe: `{sharpe:.2f}`\n"
             if max_dd:

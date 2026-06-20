@@ -49,9 +49,9 @@ def worker_backtest(params):
         
         end_t = time.perf_counter()
         
-        net_pnl = results.get("metrics", {}).get("net_pnl_usd", 0.0)
+        net_pnl = results["metrics"].get("net_pnl_usd", 0.0)
         roi_pct = (net_pnl / 13.0) * 100
-        win_rate = results.get("metrics", {}).get("win_rate_pct", 0.0)
+        win_rate = results["metrics"].get("win_rate_pct", 0.0)
         
         return {
             "worker_id": worker_id,

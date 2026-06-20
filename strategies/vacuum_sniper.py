@@ -34,8 +34,8 @@ class VacuumSniperStrategy:
         if not metrics:
             return None
             
-        obi_velocity = metrics.get('obi_velocity', 0.0)
-        tick_vol = metrics.get('tick_volatility', 0.001)
+        obi_velocity = metrics['obi_velocity']
+        tick_vol = metrics['tick_volatility']
         
         # Un vacío real ocurre cuando el OBI acelera masivamente pero el precio AÚN no ha saltado
         if tick_vol < 0.0005:

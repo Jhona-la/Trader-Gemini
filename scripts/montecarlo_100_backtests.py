@@ -22,7 +22,7 @@ def mutate_dna(base_dna):
     mutated['bb_std'] = round(max(1.0, min(4.0, mutated['bb_std'] + random.uniform(-0.2, 0.2))), 3)
     mutated['tp_pct'] = round(max(0.0005, min(0.05, mutated['tp_pct'] * random.uniform(0.9, 1.1))), 4)
     mutated['sl_pct'] = round(max(0.005, min(0.1, mutated['sl_pct'] * random.uniform(0.9, 1.1))), 4)
-    mutated['leverage'] = round(max(1.0, min(50.0, mutated.get('leverage', 10.0) + random.randint(-3, 3))), 1)
+    mutated['leverage'] = round(max(1.0, min(50.0, mutated['leverage'] + random.randint(-3, 3))), 1)
     return mutated
 
 def run_single_backtest(iteration, dna):
@@ -59,14 +59,14 @@ def run_single_backtest(iteration, dna):
             with open(out_file, "r") as f:
                 res = json.load(f)
                 
-            metrics = res.get("Metrics", {})
+            metrics = res["Metrics"]
             return {
                 'iteration': iteration,
-                'pnl': metrics.get("Total PnL", 0.0),
-                'win_rate': metrics.get("Win Rate (%)", 0.0),
-                'trades': metrics.get("Total Trades", 0),
-                'sharpe': metrics.get("Sharpe Ratio", 0.0),
-                'max_drawdown': metrics.get("Max Drawdown (%)", 0.0),
+                'pnl': metrics["Total PnL"],
+                'win_rate': metrics["Win Rate (%)"],
+                'trades': metrics["Total Trades"],
+                'sharpe': metrics["Sharpe Ratio"],
+                'max_drawdown': metrics["Max Drawdown (%)"],
                 'leverage': dna['leverage'],
                 'tp_pct': dna['tp_pct'],
                 'sl_pct': dna['sl_pct']
@@ -119,7 +119,7 @@ def run_100_backtests():
     t1 = time.time()
     
     # Sort results by PnL
-    results.sort(key=lambda x: x.get('pnl', -9999), reverse=True)
+    results.sort(key=lambda x: x['pnl'], reverse=True)
     
     # Save to JSON for report generation
     out_path = os.path.join(project_root, 'archive', 'logs_historicos', '100_backtests_results.json')

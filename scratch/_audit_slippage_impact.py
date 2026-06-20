@@ -70,13 +70,14 @@ def patched_execute_order(self, order_event, current_price=None):
 
     from core.events import FillEvent
     return FillEvent(
-        timestamp=order_event.timestamp,
+        timeindex=getattr(order_event, "datetime", datetime.utcnow()),
         symbol=order_event.symbol,
         exchange="BINANCE_MOCK",
         order_id=b_order_id,
         direction=order_event.direction,
         fill_price=fill_price,
-        fill_quantity=qty,
+        fill_cost=fill_cost,
+        quantity=qty,
         commission=commission,
         trade_id=f"T_{self.fills_count}",
         metadata=order_event.metadata
@@ -93,7 +94,6 @@ if __name__ == "__main__":
     logger.info("Slippage Inyectado: 0.5% - 1.5% (Taker Market Orders)")
     logger.info("=" * 80)
     
-    # Override CLI args para correr un test corto
-    sys.argv = ["run.py", "--symbols", "SOLUSDT,DOGEUSDT", "--days", "30"]
-    
+    import sys
+    sys.argv = ["scripts/run_god_mode_backtest.py", "--days", "1", "--symbols", "ALL"]
     gb.main()

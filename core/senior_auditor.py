@@ -540,8 +540,8 @@ class SeniorAuditor:
         if profile.tier.value >= 2 and symbol != "BTC/USDT":
             # Obtener dirección de BTC
             btc_pos = portfolio.get_horizon_position("BTC/USDT", horizon) if portfolio else None
-            if btc_pos and abs(btc_pos.get("quantity", 0.0)) > 1e-8:
-                btc_dir = "LONG" if btc_pos.get("quantity", 0.0) > 0 else "SHORT"
+            if btc_pos and abs(btc_pos["quantity"]) > 1e-8:
+                btc_dir = "LONG" if btc_pos["quantity"] > 0 else "SHORT"
                 intent_dir = "LONG" if intent.signal_type == SignalType.LONG else "SHORT"
                 if btc_dir != intent_dir:
                     return False, f"FAIL_AEA: Altcoin entry direction {intent_dir} contradicts active BTC trend {btc_dir}"
@@ -550,23 +550,23 @@ class SeniorAuditor:
         meta = getattr(intent, 'metadata', None) or {}
         if strat_key == "TFTF":
             # Pullback volume check
-            vol_ratio = meta.get("pullback_volume_ratio", 0.5)
+            vol_ratio = meta["pullback_volume_ratio"]
             if vol_ratio > 0.60:
                 return False, f"FAIL_ACS: Pullback volume ratio {vol_ratio:.2f} exceeds 0.60 limit (reversion danger)"
         elif strat_key == "OB_RETEST":
             # OB strength check
-            ob_strength = meta.get("ob_strength_atr", 1.6)
+            ob_strength = meta["ob_strength_atr"]
             if ob_strength < 1.5:
                 return False, f"FAIL_ACS: OB strength {ob_strength:.2f} is below 1.5x ATR"
         elif strat_key == "LCA":
             # Distance to cluster check
-            dist = meta.get("distance_to_cluster", 0.01)
+            dist = meta["distance_to_cluster"]
             max_dist = 0.015 if symbol in ["BTC/USDT", "ETH/USDT"] else 0.03
             if dist > max_dist:
                 return False, f"FAIL_ACS: Distance to cluster {dist:.3f} exceeds max {max_dist}"
         elif strat_key == "MRBB":
             # ADX must be < 25
-            adx = meta.get("adx", 20)
+            adx = meta["adx"]
             if adx >= 25:
                 return False, f"FAIL_ACS: Mean reversion blocked because ADX {adx} >= 25 (trending market)"
                 
@@ -582,21 +582,22 @@ class SeniorAuditor:
         Retorna: (degradation_level, alert_reason)
         """
         symbol = position.get("symbol") or "BTC/USDT"
-        horizon = position.get("horizon", "SCALPING")
-        strat_key = self._map_strategy_name(position.get("opener_strategy_id", "TFTF"))
+        horizon = position["horizon"]
+        strat_key = self._map_strategy_name(position["opener_strategy_id"])
         
         # 1. Chequear ceguera de datos (Staleness check)
         stale_limit = self.stale_limits.get(horizon, 45)
-        last_feed_time = position.get("last_feed_time", 0.0)
+        last_feed_time = position["last_feed_time"]
         
         if last_feed_time == 0.0 and data_provider:
             # Fallback a kline de data provider
             try:
                 bars = data_provider.get_latest_bars(symbol, n=1)
                 if bars is not None and len(bars) > 0:
-                    last_feed_time = bars[-1].get("timestamp", 0.0)
+                    last_feed_time = bars[-1]["timestamp"]
             except:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 
         now_ts = now.timestamp()
         lag = now_ts - last_feed_time if last_feed_time > 0 else 0
@@ -629,7 +630,7 @@ class SeniorAuditor:
                 exp_ts_val = exp_ts.timestamp()
                 
             time_left = exp_ts_val - now_ts
-            initial_validity = position.get("predicted_duration", 60)
+            initial_validity = position["predicted_duration"]
             
             if time_left < 0:
                 # La predicción expiró totalmente y no hay nueva
@@ -672,9 +673,9 @@ class SeniorAuditor:
         Evalúa si la tesis de apertura se ha invalidado según las reglas de su ADN.
         """
         symbol = position.get("symbol") or "BTC/USDT"
-        strat_key = self._map_strategy_name(position.get("opener_strategy_id", "TFTF"))
-        qty = position.get("quantity", 0.0)
-        entry_price = position.get("avg_price", 0.0)
+        strat_key = self._map_strategy_name(position["opener_strategy_id"])
+        qty = position["quantity"]
+        entry_price = position["avg_price"]
         
         if strat_key not in STRATEGY_DNA:
             return False, ""
@@ -685,29 +686,29 @@ class SeniorAuditor:
         # ACS — Cierre por Invalidación Estructural de Tesis
         if strat_key == "TFTF":
             # 1. ADX cae de 20
-            adx_val = position.get("last_adx_value", 25)
+            adx_val = position["last_adx_value"]
             if adx_val < 20:
                 return True, "INVALIDATION_TFTF_ADX_DROPPED_BELOW_20"
             # 2. Reversión de CVD sostenido
-            cvd_streak = position.get("cvd_divergence_streak", 0)
+            cvd_streak = position["cvd_divergence_streak"]
             if cvd_streak >= 3:
                 return True, "INVALIDATION_TFTF_SUSTAINED_CVD_REVERSAL"
                 
         elif strat_key == "OB_RETEST":
             # 1. Cierre de vela fuera del OB
-            ob_broken = position.get("ob_extremum_violated", False)
+            ob_broken = position["ob_extremum_violated"]
             if ob_broken:
                 return True, "INVALIDATION_OB_RETEST_OB_EXTREME_VIOLATED"
                 
         elif strat_key == "MRBB":
             # 1. ADX sube de 25 (reversión invalidada por tendencia fuerte)
-            adx_val = position.get("last_adx_value", 20)
+            adx_val = position["last_adx_value"]
             if adx_val >= 25:
                 return True, "INVALIDATION_MRBB_MARKET_TRENDED_ADX_ABOVE_25"
                 
         elif strat_key == "LCA":
             # 1. Spike decay: LCA espera un movimiento ultra rápido. Si el precio no avanza rápido (exhaustion), sale
-            entry_time = position.get("entry_time", 0.0)
+            entry_time = position["entry_time"]
             if entry_time:
                 if hasattr(entry_time, "timestamp"):
                     entry_time = entry_time.timestamp()

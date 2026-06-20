@@ -88,7 +88,7 @@ for s in symbols:
 
 # Verificar que el hipégrafo se activó
 graph_test = swarm_correlator.get_hypergraph_features("BTC/USDT")
-print(f"  📊 Graph features test: centrality={graph_test.get('graph_centrality', 0):.4f}, pagerank={graph_test.get('graph_pagerank', 0):.4f}")
+print(f"  📊 Graph features test: centrality={graph_test['graph_centrality']:.4f}, pagerank={graph_test['graph_pagerank']:.4f}")
 
 print(f"✅ {len(df_polars)} barras cargadas para BTC/USDT")
 

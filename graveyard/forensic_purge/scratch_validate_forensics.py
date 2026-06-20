@@ -50,7 +50,7 @@ def validate_forensic_db():
                     except Exception as je:
                         print(f"Failed to parse line: {repr(line)}: {je}")
                         continue
-                    msg = data.get("message", "")
+                    msg = data["message"]
                     if "TRADE CERRADO" in msg:
                         print(msg)
                         break

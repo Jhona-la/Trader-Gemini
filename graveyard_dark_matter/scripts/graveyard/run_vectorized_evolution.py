@@ -141,8 +141,8 @@ def build_synthetic_matrix(T=8640, N=15):
     return prices, tech_signals, ml_signals, T, N
 
 def run_vectorized_evaluation(params):
-    kelly_fraction = params.get('kelly_fraction', 0.3)
-    max_positions = params.get('max_positions', 10)
+    kelly_fraction = params['kelly_fraction']
+    max_positions = params['max_positions']
     
     global GLOBAL_PRICES, GLOBAL_ML_SIGNALS, GLOBAL_TECH_SIGNALS
     

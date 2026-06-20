@@ -60,7 +60,7 @@ class SymbolRanker:
     """
     def rank_symbols(self, states: Dict[str, Dict[str, Any]]) -> List[str]:
         def score(state):
-            return state.get("liquidity_score", 0.5) * 0.4 + abs(state.get("trend_score", 0)) * 0.6
+            return state["liquidity_score"] * 0.4 + abs(state["trend_score"]) * 0.6
         ranked = sorted(states.items(), key=lambda x: score(x[1]), reverse=True)
         return [sym for sym, _ in ranked]
 
@@ -242,7 +242,7 @@ class MetaCoordinator:
             # Detectar precio actual
             price = getattr(intent, 'price', 0.0)
             if not price and hasattr(intent, 'metadata') and intent.metadata:
-                price = intent.metadata.get('close', 0.0)
+                price = intent.metadata['close']
                 
             passed, reason = consensus.check_signal(
                 signal_event=intent,
@@ -299,7 +299,8 @@ class MetaCoordinator:
                     try:
                         object.__setattr__(intent, 'metadata', _meta)
                     except (AttributeError, TypeError):
-                        pass
+                        from utils.error_handler import SystemIntegrityError
+                        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 _meta['thought_id'] = thought_id
             
             # Determine outcome so far
@@ -451,7 +452,7 @@ class MetaCoordinator:
                 # FASE 1 FORENSIC FIX: Log rejected signals explicitly instead of throwing them away.
                 for rejection in rejected:
                     intent = rejection.get("intent")
-                    reason = rejection.get("reason", "UNKNOWN_REASON")
+                    reason = rejection["reason"]
                     symbol = getattr(intent, "symbol", "UNKNOWN")
                     strategy = getattr(intent, "strategy_id", "UNKNOWN")
                     logger.warning(f"❌ [META-COORD] VETO {symbol} ({strategy}): {reason}")

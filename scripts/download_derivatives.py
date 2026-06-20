@@ -176,7 +176,8 @@ def download_macro_data(symbol="UNIUSDT", start_date="2024-01-01", days=90):
                 try:
                     df = df.with_columns(pl.col("timestamp").str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S").dt.timestamp("ms"))
                 except:
-                    pass
+                    from utils.error_handler import SystemIntegrityError
+                    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                     
             df = df.with_columns([
                 pl.col("timestamp").cast(pl.Int64),

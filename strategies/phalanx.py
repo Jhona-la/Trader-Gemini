@@ -66,8 +66,8 @@ class OrderFlowAnalyzer:
         if not metrics:
             return {'signal': 0, 'strength': 0.0, 'reason': 'No Data', 'sniper': False}
             
-        imb = metrics.get('imbalance', 1.0)
-        delta = metrics.get('delta', 0.0)
+        imb = metrics['imbalance']
+        delta = metrics['delta']
         
         # SNIPER ENTRY: Imbalance > 3.0 (300%) AND Positive Delta (Market Aggression)
         is_sniper_long = (imb >= self.imbalance_threshold_long) and (delta > 0)
@@ -140,7 +140,7 @@ class OrderFlowAnalyzer:
             body_pct = body / rng
             
             # 3. Delta Confirmation (Institutional Signature)
-            delta = metrics.get('delta', 0.0) if metrics else 0.0
+            delta = metrics['delta'] if metrics else 0.0
             
             # 4. Detection Logic: High Effort (Vol) vs Low Result (Body)
             # If Delta is massive in one direction but price doesn't MOVE -> ABSORPTION
@@ -245,11 +245,11 @@ class PhalanxStrategy(Strategy):
                 # POR QUÉ: 1% SL con 10x leverage = -10% loss, demasiado para $13.
                 # PARA QUÉ: Consistencia con las SL/TP de las estrategias principales.
                 if self.horizon == 'SCALPING':
-                    tp_pct = Config.Horizons.Scalping.get('tp_pct', 0.006)
-                    sl_pct = Config.Horizons.Scalping.get('sl_pct', 0.0075)
+                    tp_pct = Config.Horizons.Scalping['tp_pct']
+                    sl_pct = Config.Horizons.Scalping['sl_pct']
                 else:
-                    tp_pct = Config.Horizons.Swing.get('tp_pct', 0.045)
-                    sl_pct = Config.Horizons.Swing.get('sl_pct', 0.025)
+                    tp_pct = Config.Horizons.Swing['tp_pct']
+                    sl_pct = Config.Horizons.Swing['sl_pct']
                 
                 # SOPHIA INTEGRATION
                 sophia_report_dict = {}
@@ -294,7 +294,7 @@ class PhalanxStrategy(Strategy):
                         'sophia': sophia_report_dict,
                         'reason': absorption['reason'],
                         # ── PEPITA #4: KELLY ADAPTIVE SIZING ──
-                        'ml_confidence': sophia_report_dict.get('win_probability', 0.85) if sophia_report_dict else 0.85,
+                        'ml_confidence': sophia_report_dict['win_probability'] if sophia_report_dict else 0.85,
                         'strength': 0.85,
                     }
                 )

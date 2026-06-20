@@ -70,14 +70,14 @@ class MultiStreamCollector:
                             if msg.type == aiohttp.WSMsgType.TEXT:
                                 data = json.loads(msg.data)
                                 # Extract liquidation payload
-                                o = data.get('o', {})
+                                o = data['o']
                                 payload = {
                                     "symbol": o.get("s"),
                                     "side": o.get("S"),
                                     "order_type": o.get("o"),
-                                    "quantity": float(o.get("q", 0)),
-                                    "price": float(o.get("p", 0)),
-                                    "avg_price": float(o.get("ap", 0)),
+                                    "quantity": float(o["q"]),
+                                    "price": float(o["p"]),
+                                    "avg_price": float(o["ap"]),
                                     "status": o.get("X"),
                                     "liquidation_time": o.get("T")
                                 }

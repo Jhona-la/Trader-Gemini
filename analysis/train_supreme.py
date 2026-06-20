@@ -313,14 +313,14 @@ def train_supreme():
             print(f"\n  [{hz}] No models trained.")
             continue
             
-        avg_clf = np.mean([m.get('clf_precision', 0) for m in metrics_list])
-        avg_rl_mae = np.mean([m.get('reg_long_mae', 0) for m in metrics_list]) * 100
-        avg_rl_r2 = np.mean([m.get('reg_long_r2', 0) for m in metrics_list])
-        avg_rs_mae = np.mean([m.get('reg_short_mae', 0) for m in metrics_list]) * 100
-        avg_rs_r2 = np.mean([m.get('reg_short_r2', 0) for m in metrics_list])
-        avg_nh_mae = np.mean([m.get('next_high_mae', 0) for m in metrics_list]) * 100
-        avg_nl_mae = np.mean([m.get('next_low_mae', 0) for m in metrics_list]) * 100
-        avg_ttp_mae = np.mean([m.get('ttp_mae', 0) for m in metrics_list])
+        avg_clf = np.mean([m['clf_precision'] for m in metrics_list])
+        avg_rl_mae = np.mean([m['reg_long_mae'] for m in metrics_list]) * 100
+        avg_rl_r2 = np.mean([m['reg_long_r2'] for m in metrics_list])
+        avg_rs_mae = np.mean([m['reg_short_mae'] for m in metrics_list]) * 100
+        avg_rs_r2 = np.mean([m['reg_short_r2'] for m in metrics_list])
+        avg_nh_mae = np.mean([m['next_high_mae'] for m in metrics_list]) * 100
+        avg_nl_mae = np.mean([m['next_low_mae'] for m in metrics_list]) * 100
+        avg_ttp_mae = np.mean([m['ttp_mae'] for m in metrics_list])
         
         print(f"\n  [{hz}] ({len(metrics_list)} assets)")
         print(f"    CLF Precision:     {avg_clf:.3f}")

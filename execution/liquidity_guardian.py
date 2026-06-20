@@ -36,8 +36,8 @@ class LiquidityGuardian:
         
         # 1. Use pure cache if available (0 latency)
         if symbol in self.order_book_cache and (current_time - self.order_book_cache[symbol]['timestamp'] < self.cache_ttl):
-            bids = self.order_book_cache[symbol]['data'].get('bids', [])
-            asks = self.order_book_cache[symbol]['data'].get('asks', [])
+            bids = self.order_book_cache[symbol]['data']['bids']
+            asks = self.order_book_cache[symbol]['data']['asks']
             if bids and asks:
                 return bids[0][0], asks[0][0]
                 
@@ -77,10 +77,10 @@ class LiquidityGuardian:
                 ticker = await self.async_exchange.fetch_ticker(symbol)
             else:
                 ticker = self.exchange.fetch_ticker(symbol)
-            bid = ticker.get('bid', 0.0)
-            ask = ticker.get('ask', 0.0)
+            bid = ticker['bid']
+            ask = ticker['ask']
             if not bid or not ask:
-                last = ticker.get('last', 0.0)
+                last = ticker['last']
                 return last, last
             return float(bid), float(ask)
         except Exception as e:

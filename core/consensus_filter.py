@@ -92,7 +92,8 @@ class ConsensusFilter:
                         try:
                             object.__setattr__(signal_event, 'thermodynamic_micro_sizing', True)
                         except (AttributeError, TypeError):
-                            pass
+                            from utils.error_handler import SystemIntegrityError
+                            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         except Exception as tracker_err:
             logger.error(f"❌ Error checking dynamic symbol blacklist: {tracker_err}")
         
@@ -108,9 +109,9 @@ class ConsensusFilter:
             _ml_conf = getattr(signal_event, "ml_confidence", None)
             _sig_confidence = max(v for v in [_strength, _ml_conf] if v is not None) if _ml_conf is not None else _strength
             _direction = "LONG" if signal_event.signal_type == SignalType.LONG else "SHORT"
-            _dir_bias = _sym_profile.get("long_bias", 0) if _direction == "LONG" else _sym_profile.get("short_bias", 0)
+            _dir_bias = _sym_profile["long_bias"] if _direction == "LONG" else _sym_profile["short_bias"]
             _adjusted_conf = _sig_confidence + _dir_bias
-            _min_conf = _sym_profile.get("min_confidence", 0.50)
+            _min_conf = _sym_profile["min_confidence"]
             
             if _adjusted_conf < _min_conf:
                 return self._fail(
@@ -132,13 +133,14 @@ class ConsensusFilter:
                 if evt_dt.minute >= 45:
                     return self._fail("FUNDING_EVASION")
             except Exception:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
         # ─── FASE 9: CORRELATION SHIELD ───
         if symbol in ("ETH/USDT", "SOL/USDT") and horizon in ('SCALPING', 'MICROSCALPING'):
             if portfolio:
                 btc_pos = portfolio.get_horizon_position("BTC/USDT", horizon)
-                if btc_pos and btc_pos.get("quantity", 0) != 0:
+                if btc_pos and btc_pos["quantity"] != 0:
                     btc_dir = "LONG" if btc_pos["quantity"] > 0 else "SHORT"
                     _direction = "LONG" if signal_event.signal_type == SignalType.LONG else "SHORT"
                     if btc_dir == _direction:
@@ -267,7 +269,7 @@ class ConsensusFilter:
                 if risk_manager and hasattr(risk_manager, "correlation_manager") and risk_manager.correlation_manager:
                     active_symbols = list(set(
                         v_key.split('_')[0] for v_key, pos in portfolio.virtual_ledger.items()
-                        if abs(pos.get("quantity", 0)) > 1e-8
+                        if abs(pos["quantity"]) > 1e-8
                     ))
                     if active_symbols:
                         safe, reason = risk_manager.correlation_manager.check_correlation_risk(symbol, active_symbols)
@@ -346,14 +348,13 @@ class ConsensusFilter:
                 _gate_mult = dna_mult
             
             _sig_meta = getattr(signal_event, "metadata", {}) or {}
-            atr_pct = _sig_meta.get("atr_pct", 0.0)
+            atr_pct = _sig_meta["atr_pct"]
             _fee_threshold = round_trip_fee * _gate_mult
             
             if atr_pct > 0 and atr_pct < _fee_threshold:
-                import os
-                if os.getenv("TRADER_GEMINI_BACKTEST") != "true":
-                    logger.warning(f"🛑 [VOLATILITY BLOCK] {symbol} {horizon} ATR {atr_pct*100:.3f}% < {_fee_threshold*100:.3f}% ({_gate_mult}x round-trip fee).")
-                    return self._fail(f"FEE_DRAG_ATR ({atr_pct*100:.3f}% < fee_buffer {_gate_mult}x)")
+                # PARIDAD ABSOLUTA: Fee Drag aplica en backtest y producción (Fase V Audit Fix #5)
+                logger.warning(f"🛑 [VOLATILITY BLOCK] {symbol} {horizon} ATR {atr_pct*100:.3f}% < {_fee_threshold*100:.3f}% ({_gate_mult}x round-trip fee).")
+                return self._fail(f"FEE_DRAG_ATR ({atr_pct*100:.3f}% < fee_buffer {_gate_mult}x)")
         except Exception as e:
             logger.error(f"❌ Error in Fee Drag filter: {e}")
 

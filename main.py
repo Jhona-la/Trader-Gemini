@@ -16,7 +16,8 @@ try:
     torch.set_num_threads(16)
     torch.set_grad_enabled(False)  # Producción tampoco entrena, solo infiere.
 except ImportError:
-    pass
+    from utils.error_handler import SystemIntegrityError
+    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
 import sys
 import time
@@ -207,7 +208,7 @@ async def global_regime_loop(detector: MarketRegimeDetector, data_handler: Binan
                     valid_symbols = []
                     
                     for s, d in context_data.items():
-                        c = d.get('1m', [])
+                        c = d['1m']
                         if len(c) >= 50:
                             closes = c['close'].astype(np.float64)[-50:]
                             rets = np.diff(closes) / closes[:-1]
@@ -773,8 +774,8 @@ async def main():
             'testnet': Config.BINANCE_USE_TESTNET,
             'demo': Config.BINANCE_USE_DEMO,
             'max_drawdown': Config.Risk.MAX_DRAWDOWN,
-            'tp_scalp': Config.Horizons.Scalping.get('tp_pct', 0.006),
-            'sl_scalp': Config.Horizons.Scalping.get('sl_pct', 0.0075),
+            'tp_scalp': Config.Horizons.Scalping['tp_pct'],
+            'sl_scalp': Config.Horizons.Scalping['sl_pct'],
             'symbols_list': Config.TRADING_PAIRS,
         })
     except Exception as e:
@@ -871,7 +872,7 @@ async def main():
                     try:
                         from utils.notifier import Notifier
                         _equity = portfolio.get_total_equity()
-                        _open_pos = [(s, p) for s, p in portfolio.positions.items() if p.get('quantity', 0) != 0]
+                        _open_pos = [(s, p) for s, p in portfolio.positions.items() if p['quantity'] != 0]
                         _open_symbols = [s for s, _ in _open_pos]
                         
                         # Get BTC price
@@ -879,9 +880,10 @@ async def main():
                         try:
                             _btc_bars = data_handler.get_latest_bars('BTC/USDT', n=1)
                             if _btc_bars and len(_btc_bars) > 0:
-                                _btc_price = _btc_bars[-1].get('close', 0)
+                                _btc_price = _btc_bars[-1]['close']
                         except Exception:
-                            pass
+                            from utils.error_handler import SystemIntegrityError
+                            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                         
                         # Get market regime
                         _regime = 'UNKNOWN'
@@ -908,16 +910,16 @@ async def main():
                             'initial_capital': Config.INITIAL_CAPITAL,
                             'open_positions': len(_open_pos),
                             'open_symbols': _open_symbols,
-                            'events_processed': engine.metrics.get('processed_events', 0),
-                            'signals_generated': engine.metrics.get('strategy_executions', 0),
-                            'signals_rejected': engine.metrics.get('discarded_events', 0),
-                            'avg_latency_ms': engine.metrics.get('avg_latency_ms', 0),
+                            'events_processed': engine.metrics['processed_events'],
+                            'signals_generated': engine.metrics['strategy_executions'],
+                            'signals_rejected': engine.metrics['discarded_events'],
+                            'avg_latency_ms': engine.metrics['avg_latency_ms'],
                             'market_regime': _regime,
                             'btc_price': _btc_price,
                             'strategies_status': _strat_status,
-                            'session_trades': _stats.get('total_trades', 0),
-                            'session_wins': _stats.get('winning_trades', 0),
-                            'session_losses': _stats.get('losing_trades', 0),
+                            'session_trades': _stats['total_trades'],
+                            'session_wins': _stats['winning_trades'],
+                            'session_losses': _stats['losing_trades'],
                             'minutes_since_last_trade': (now - last_summary_time) / 60,
                         })
                     except Exception as e:
@@ -938,8 +940,8 @@ async def main():
                 # Performance Summary (30m) — via Portfolio SSOT
                 if now - last_summary_time > 1800:
                     stats = portfolio.get_statistics()
-                    if stats and stats.get('total_trades', 0) > 0:
-                        logger.info(f"📊 [30m] Trades: {stats['total_trades']} | WR: {stats.get('win_rate', 0)*100:.1f}% | Equity: ${portfolio.get_total_equity():.2f}")
+                    if stats and stats['total_trades'] > 0:
+                        logger.info(f"📊 [30m] Trades: {stats['total_trades']} | WR: {stats['win_rate']*100:.1f}% | Equity: ${portfolio.get_total_equity():.2f}")
                     last_summary_time = now
                     
                 await asyncio.sleep(1)
@@ -1058,7 +1060,8 @@ async def main():
         try:
             memory_server.stop()
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     
     # Wait for tasks to clean up
     await asyncio.gather(*_all_tasks, return_exceptions=True)
@@ -1073,7 +1076,7 @@ async def main():
     portfolio.close()
     final_stats = portfolio.get_statistics()
     if final_stats:
-        logger.info(f"📊 [FINAL] Trades: {final_stats.get('total_trades', 0)} | WR: {final_stats.get('win_rate', 0)*100:.1f}% | Equity: ${portfolio.get_total_equity():.2f}")
+        logger.info(f"📊 [FINAL] Trades: {final_stats['total_trades']} | WR: {final_stats['win_rate']*100:.1f}% | Equity: ${portfolio.get_total_equity():.2f}")
     else:
         logger.info("📭 No trades executed during this session.")
     
@@ -1087,7 +1090,7 @@ async def main():
     session_mgr = get_session_manager()
     if session_mgr:
         session_mgr.end_session({
-            'total_trades': final_stats.get('total_trades', 0) if final_stats else 0,
+            'total_trades': final_stats['total_trades'] if final_stats else 0,
             'pnl': portfolio.get_total_equity() - Config.INITIAL_CAPITAL
         })
     

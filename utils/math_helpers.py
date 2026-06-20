@@ -1,10 +1,10 @@
 import numpy as np
-import pandas as pd
+import math
 
 def safe_div(a, b, fill_value=0.0):
     """
     Safely divide a by b, replacing division by zero or NaN results with fill_value.
-    Supports both scalar and array-like inputs (lists, numpy arrays, pandas Series).
+    Supports both scalar and array-like inputs (lists, numpy arrays).
     
     Args:
         a: Numerator
@@ -16,7 +16,7 @@ def safe_div(a, b, fill_value=0.0):
     """
     # Handle scalar case specifically to avoid overhead/types issues if simple floats
     if np.isscalar(a) and np.isscalar(b):
-        if b == 0 or pd.isna(b) or pd.isna(a):
+        if b == 0 or math.isnan(b) or math.isnan(a):
             return fill_value
         return a / b
 

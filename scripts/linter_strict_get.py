@@ -21,7 +21,8 @@ def check_strict_gets(directory):
                                 if len(node.args) == 2 or (isinstance(node.func.value, ast.Call) and getattr(node.func.value.func, 'attr', '') == 'get'):
                                     violations.append(f"{path}: L{node.lineno} -> Uso de .get() laxo o encadenado.")
                 except SyntaxError:
-                    pass
+                    from utils.error_handler import SystemIntegrityError
+                    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     return violations
 
 if __name__ == "__main__":

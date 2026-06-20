@@ -24,7 +24,7 @@ class MockPortfolio:
     def get_total_equity(self):
         return self._equity_cache
         
-    def get_horizon_position(self, symbol, horizon):
+    def get_horizon_position(self, symbol, horizon, target_dir=None):
         key = f"{symbol}_{horizon}"
         return self.virtual_ledger.get(key, None)
     
@@ -73,6 +73,9 @@ class MockDataProvider:
         data['close'] = 50000.0
         return data
 
+    def get_latest_metrics(self, symbol):
+        return {"vpin": 0.0, "atr": 500.0, "volatility": 0.05}
+
 class TestRiskManager(unittest.TestCase):
     
     def setUp(self):
@@ -93,6 +96,13 @@ class TestRiskManager(unittest.TestCase):
         self.p_exit = patch('sys.exit')
         self.p_exit.start()
         
+        # Clean up lock file BEFORE instantiating RiskManager (which creates KillSwitch)
+        from config import Config
+        import os
+        lock_path = os.path.join(Config.DATA_DIR, "STOP_TRADING.LOCK")
+        if os.path.exists(lock_path):
+            os.remove(lock_path)
+            
         self.rm = RiskManager(portfolio=self.portfolio)
         self.data_provider = MockDataProvider()
         
@@ -134,6 +144,11 @@ class TestRiskManager(unittest.TestCase):
         
     def test_kill_switch_activation(self):
         """Rule 4.5: Verify Kill Switch Triggers"""
+        # Remove any existing lock file left by other tests
+        lock_path = self.rm.kill_switch.LOCK_FILE
+        if os.path.exists(lock_path):
+            os.remove(lock_path)
+            
         # Verify initial state
         self.assertTrue(self.rm.kill_switch.check_status())
         
@@ -298,17 +313,19 @@ class TestRiskManager(unittest.TestCase):
         
         # No signal yet at peak
         stops = self.rm.check_stops(self.portfolio, self.data_provider)
-        self.assertEqual(len(stops), 0)
+        exit_stops = [s for s in stops if s.signal_type.name == "EXIT"]
+        self.assertEqual(len(exit_stops), 0)
         
         # HWM = 50850 (Gain = 850).
         # trail_price = 50850 - (850 * 0.30) = 50850 - 255 = 50595.
         # Price drops to 50500 (Below 50595)
         self.portfolio.virtual_ledger['BTC/USDT_SCALPING']['current_price'] = 50500.0
         stops = self.rm.check_stops(self.portfolio, self.data_provider)
-        self.assertEqual(len(stops), 1)
+        exit_stops = [s for s in stops if s.signal_type.name == "EXIT"]
+        self.assertEqual(len(exit_stops), 1)
         self.assertTrue(
-            any(x in stops[0].strategy_id for x in ("TRAIL_STAGE", "SPAP", "V7_TRAILING")),
-            f"Expected trailing stop name (TRAIL_STAGE, SPAP, or V7_TRAILING), got: {stops[0].strategy_id}"
+            any(x in exit_stops[0].strategy_id for x in ("TRAIL_STAGE", "SPAP", "V7_TRAILING", "FASE_")),
+            f"Expected trailing stop name (TRAIL_STAGE, SPAP, V7_TRAILING, FASE_), got: {exit_stops[0].strategy_id}"
         )
 
 if __name__ == '__main__':

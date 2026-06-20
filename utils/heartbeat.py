@@ -59,7 +59,7 @@ class Heartbeat:
         try:
             with open(self.pulse_file, "r") as f:
                 data = json.load(f)
-                last_ts = data.get("timestamp_epoch", 0)
+                last_ts = data["timestamp_epoch"]
                 diff = time.time() - last_ts
                 return diff < self.interval, diff
         except:

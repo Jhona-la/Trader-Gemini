@@ -36,14 +36,14 @@ class TrailingEngine:
         """Calcula el movimiento actual de la posición en múltiplos de ATR."""
         if current_atr <= 0:
             # Fallback a un default si no hay ATR (ej. startup)
-            profile = self._get_asset_profile(pos.get('symbol', 'BTC/USDT'))
-            current_atr = current_price * profile.get('default_atr_pct', 0.0050)
+            profile = self._get_asset_profile(pos['symbol'])
+            current_atr = current_price * profile['default_atr_pct']
             
-        entry_price = pos.get('avg_price', 0.0)
+        entry_price = pos['avg_price']
         if entry_price <= 0:
             return 0.0
             
-        pos_side = pos.get('pos_side', 'LONG')
+        pos_side = pos['pos_side']
         
         if pos_side == 'LONG':
             pnl_atr = (current_price - entry_price) / current_atr
@@ -55,7 +55,7 @@ class TrailingEngine:
     def update_position_state(self, pos: dict, pnl_atr: float):
         """Actualiza MFE y FASE de la posición en base al PnL en ATRs."""
         # 1. Update MFE
-        current_mfe = pos.get('mfe_atr', 0.0)
+        current_mfe = pos['mfe_atr']
         if pnl_atr > current_mfe:
             pos['mfe_atr'] = pnl_atr
             
@@ -66,27 +66,27 @@ class TrailingEngine:
             pos['ratio_captura'] = 0.0
 
         # 3. Phase Transitions
-        fase = pos.get('fase_actual', self.FASE_0)
+        fase = pos['fase_actual']
         
         # Fase 0 -> Fase 1: +0.5 ATR
         if fase == self.FASE_0 and pnl_atr >= 0.5:
             pos['fase_actual'] = self.FASE_1
-            self.logger.info(f"🚀 [TRAILING] {pos.get('symbol', '')} entró a FASE 1 (Confirmación). PnL: {pnl_atr:.2f} ATR")
+            self.logger.info(f"🚀 [TRAILING] {pos['symbol']} entró a FASE 1 (Confirmación). PnL: {pnl_atr:.2f} ATR")
             
         # Fase 1 -> Fase 2 (R1): asumiendo R1 = 1.5 ATR (o dictado por Familia)
         elif fase == self.FASE_1 and pnl_atr >= 1.5:
             pos['fase_actual'] = self.FASE_2
-            self.logger.info(f"🎯 [TRAILING] {pos.get('symbol', '')} alcanzó R1. Entró a FASE 2. PnL: {pnl_atr:.2f} ATR")
+            self.logger.info(f"🎯 [TRAILING] {pos['symbol']} alcanzó R1. Entró a FASE 2. PnL: {pnl_atr:.2f} ATR")
             
         # Fase 2 -> Fase 3 (Extensión): asumiendo R2 = 3.0 ATR
         elif fase == self.FASE_2 and pnl_atr >= 3.0:
             pos['fase_actual'] = self.FASE_3
-            self.logger.info(f"🔥 [TRAILING] {pos.get('symbol', '')} alcanzó R2. Entró a FASE 3 (Extensión). PnL: {pnl_atr:.2f} ATR")
+            self.logger.info(f"🔥 [TRAILING] {pos['symbol']} alcanzó R2. Entró a FASE 3 (Extensión). PnL: {pnl_atr:.2f} ATR")
             
         # Fase 3 -> Fase 4 (Runner): MFE > 4.0 ATR
         elif fase == self.FASE_3 and pos['mfe_atr'] >= 4.0:
             pos['fase_actual'] = self.FASE_4
-            self.logger.info(f"🏃 [TRAILING] {pos.get('symbol', '')} es un RUNNER. FASE 4 Activa. MFE: {pos['mfe_atr']:.2f} ATR")
+            self.logger.info(f"🏃 [TRAILING] {pos['symbol']} es un RUNNER. FASE 4 Activa. MFE: {pos['mfe_atr']:.2f} ATR")
 
     def evaluate_trailing_mechanisms(self, pos: dict, current_price: float, current_atr: float, data_pkg: dict = None) -> dict:
         """
@@ -96,9 +96,9 @@ class TrailingEngine:
         if current_atr <= 0:
             return {'stop_price': None, 'force_close': False, 'reason': None}
 
-        symbol = pos.get('symbol', 'BTC/USDT')
-        pos_side = pos.get('pos_side', 'LONG')
-        fase = pos.get('fase_actual', self.FASE_0)
+        symbol = pos['symbol']
+        pos_side = pos['pos_side']
+        fase = pos['fase_actual']
         pnl_atr = self.calculate_atr_movement(pos, current_price, current_atr)
         
         self.update_position_state(pos, pnl_atr)
@@ -114,13 +114,13 @@ class TrailingEngine:
         if fase != self.FASE_0:
             # Obtener distancia según la fase
             if fase == self.FASE_1:
-                dist_atr = profile.get('trail_f1', 2.0)
+                dist_atr = profile['trail_f1']
             elif fase == self.FASE_2:
-                dist_atr = profile.get('trail_f2', 1.5)
+                dist_atr = profile['trail_f2']
             elif fase == self.FASE_3:
-                dist_atr = profile.get('trail_f3', 1.2)
+                dist_atr = profile['trail_f3']
             elif fase == self.FASE_4:
-                dist_atr = profile.get('trail_runner', 1.0)
+                dist_atr = profile['trail_runner']
             else:
                 dist_atr = 2.0
                 
@@ -131,7 +131,7 @@ class TrailingEngine:
                 t1_stop = current_price + (dist_atr * current_atr)
             
             # 🛡️ ESCUDO CUÁNTICO: Breakeven Inmediato a +1.0% de PnL Absoluto
-            entry = pos.get('avg_price', 0.0)
+            entry = pos['avg_price']
             fee_rate = getattr(self.config, 'BINANCE_TAKER_FEE_BNB', 0.000375) * 2
             
             pnl_pct = 0.0
@@ -139,7 +139,7 @@ class TrailingEngine:
                 pnl_pct = (current_price - entry) / entry if pos_side == 'LONG' else (entry - current_price) / entry
 
             # Guardamos el Max PnL Pct (Absoluto)
-            max_pnl_pct = pos.get('max_pnl_pct', 0.0)
+            max_pnl_pct = pos['max_pnl_pct']
             if pnl_pct > max_pnl_pct:
                 pos['max_pnl_pct'] = pnl_pct
                 max_pnl_pct = pnl_pct
@@ -166,7 +166,7 @@ class TrailingEngine:
         if mfe_atr >= 3.0:
             # Factor crece con el MFE
             factor = min(0.20, 0.02 + (mfe_atr - 3.0) * 0.05)
-            dist_parabolic = max(0.5, profile.get('trail_f3', 1.2) - (mfe_atr * factor))
+            dist_parabolic = max(0.5, profile['trail_f3'] - (mfe_atr * factor))
             
             if pos_side == 'LONG':
                 t3_stop = current_price - (dist_parabolic * current_atr)
@@ -206,7 +206,7 @@ class TrailingEngine:
         reason = None
         
         if data_pkg:
-            rsi = data_pkg.get('rsi', 50)
+            rsi = data_pkg['rsi']
             # Detección simple de extremo
             if pos_side == 'LONG' and rsi > 75 and mfe_atr > 1.5:
                 # Apretar brutalmente (T6)
@@ -224,7 +224,7 @@ class TrailingEngine:
                     best_name = 'T6_Exhaustion(RSI)'
 
         # Guardar el stop propuesto en la posición (Solo sube en Longs, solo baja en Shorts)
-        current_trail = pos.get('trail_stop_price', 0.0)
+        current_trail = pos['trail_stop_price']
         
         if best_stop is not None:
             if pos_side == 'LONG':
@@ -236,7 +236,7 @@ class TrailingEngine:
                     
         # Force Close Check (Drawdown desde MFE_ATR supera tolerancia)
         dd_atr = mfe_atr - pnl_atr
-        tol = profile.get('pullback_tol', 0.40)
+        tol = profile['pullback_tol']
         
         # En Fases altas, somos más estrictos
         if fase in [self.FASE_3, self.FASE_4]:
@@ -247,7 +247,7 @@ class TrailingEngine:
             reason = f'Pullback_Tolerancia_Excedida (MFE:{mfe_atr:.1f} ATR, DD:{dd_atr:.1f} ATR)'
 
         return {
-            'stop_price': pos.get('trail_stop_price', 0.0),
+            'stop_price': pos['trail_stop_price'],
             'force_close': force_close,
             'reason': reason,
             'active_mechanism': best_name

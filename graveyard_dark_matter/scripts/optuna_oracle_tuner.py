@@ -71,11 +71,11 @@ def objective(trial, all_data, symbols, horizon_days, strategy_name='Technical')
         Config.Strategies.ML_MIN_CONFIDENCE = _orig_min_conf
         
     # ── EVALUAR RESULTADO A PARTIR DE GOD MODE MÉTRICAS ──────────────────────
-    metrics = result.get('metrics', {})
-    trades = metrics.get('total_trades', 0)
-    pnl_usd = metrics.get('final_capital', 13.0) - 13.0
-    max_dd = metrics.get('max_drawdown_pct', 0) / 100.0 
-    win_rate = metrics.get('win_rate', 0)
+    metrics = result['metrics']
+    trades = metrics['total_trades']
+    pnl_usd = metrics['final_capital'] - 13.0
+    max_dd = metrics['max_drawdown_pct'] / 100.0 
+    win_rate = metrics['win_rate']
     
     # Restricciones Severas
     if trades < 5:
@@ -151,11 +151,11 @@ def run_optimization(horizon_days=1, strategy='ML_XGBoost', n_trials=10, symbols
     print(f"{'=' * 70}")
     
     profile = {
-        'sl_pct': best.params.get('sl_pct', 0.0015),
-        'tp_sl_ratio': best.params.get('tp_sl_ratio', 2.0),
-        'strength_threshold': best.params.get('strength_threshold', 0.55),
-        'ml_confidence': best.params.get('ml_confidence', 0.52),
-        'cooldown_seconds': best.params.get('cooldown_seconds', 15),
+        'sl_pct': best.params['sl_pct'],
+        'tp_sl_ratio': best.params['tp_sl_ratio'],
+        'strength_threshold': best.params['strength_threshold'],
+        'ml_confidence': best.params['ml_confidence'],
+        'cooldown_seconds': best.params['cooldown_seconds'],
         'score': best.value,
         'timestamp': datetime.now().isoformat(),
         'n_trials': n_trials,

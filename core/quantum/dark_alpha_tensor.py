@@ -70,10 +70,10 @@ class DarkAlphaMembrane:
             net_pressure += val * weight
             
         vec[0] = net_pressure
-        vec[1] = raw_signals.get('dex_whisper', 0.0)
-        vec[2] = raw_signals.get('mev_sniff', 0.0)
-        vec[3] = raw_signals.get('rbf_urgency', 0.0)
-        vec[4] = raw_signals.get('hl_cascade', 0.0)
+        vec[1] = raw_signals['dex_whisper']
+        vec[2] = raw_signals['mev_sniff']
+        vec[3] = raw_signals['rbf_urgency']
+        vec[4] = raw_signals['hl_cascade']
         
         # El resto del vector (5-9) queda reservado para futuras dimensiones topológicas
         return vec

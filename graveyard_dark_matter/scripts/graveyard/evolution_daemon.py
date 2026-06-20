@@ -58,7 +58,7 @@ def run_evolution_daemon(cycle_delay_minutes=60, trials_per_epoch=20):
                 # Run Optuna Bayesian TPE Optimizer
                 results = darwin.run_epoch_optuna(symbol, n_trials=trials_per_epoch)
                 
-                best_fitness = results.get('best_fitness', 0.0)
+                best_fitness = results['best_fitness']
                 logger.info(f"🏆 [EVOLUTION DAEMON] {symbol} Epoch Complete! Best Expected Fitness: {best_fitness:.4f}")
                 
             logger.info(f"💤 [EVOLUTION DAEMON] Epoch finished. Sleeping for {cycle_delay_minutes} minutes...")

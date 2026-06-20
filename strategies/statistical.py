@@ -1,5 +1,5 @@
 import numpy as np
-import pandas as pd
+import polars as pl
 from utils.math_kernel import calculate_adx_jit, calculate_atr_jit, calculate_ema_jit
 from utils.math_helpers import safe_div
 from .strategy import Strategy
@@ -56,19 +56,18 @@ class StatisticalStrategy(Strategy):
             # Assuming standard trades path - could be configurable
             csv_path = "dashboard/data/trades.csv" 
             trades = dh.load_trades_df(csv_path)
-            
-            if trades.empty:
+            if trades.is_empty():
                 return True # No history -> permissive
                 
             # Filter for this strategy/symbol if possible. 
             # For now, simplistic approach: check symbol specific stats.
-            sym_trades = trades[trades['symbol'] == symbol]
+            sym_trades = trades.filter(pl.col('symbol') == symbol)
             if len(sym_trades) < 10:
                 print(f"📊 [Expectancy] {symbol}: Insufficient history ({len(sym_trades)}). Learning mode.")
                 return True
                 
             stats = AnalyticsEngine.calculate_expectancy(sym_trades)
-            e_proj = stats.get('expectancy', 0.0)
+            e_proj = stats['expectancy']
             friction = AnalyticsEngine.calculate_friction(sym_trades).get('friction_pct', 0.0)
             
             # Penalize E with current Friction if not already accounted
@@ -146,7 +145,7 @@ class StatisticalStrategy(Strategy):
                 market_regime = "UNKNOWN"
                 if self.portfolio and hasattr(self.portfolio, 'global_regime_data'):
                     regime_meta = self.portfolio.global_regime_data
-                    market_regime = regime_meta.get('symbol_regimes', {}).get(y_sym, regime_meta.get('sentiment', 'UNKNOWN'))
+                    market_regime = regime_meta['symbol_regimes'].get(y_sym, regime_meta['sentiment'])
                 if market_regime == "TRENDING" and h_val > 0.60:
                     logger.info(f"🛑 [STAT REGIME BLOCK] {y_sym}: Mean reversion blocked in TRENDING regime (H={h_val:.2f}).")
                     continue
@@ -392,13 +391,13 @@ class StatisticalStrategy(Strategy):
 
                 # Ensure the positions actually belong to the Statistical Strategy
                 strat_id = getattr(self, 'strategy_id', 'STAT_ARB')
-                if pos_y.get('quantity', 0) != 0 and pos_y.get('strategy_id') != strat_id:
+                if pos_y['quantity'] != 0 and pos_y.get('strategy_id') != strat_id:
                     pos_y = {}
-                if pos_x.get('quantity', 0) != 0 and pos_x.get('strategy_id') != strat_id:
+                if pos_x['quantity'] != 0 and pos_x.get('strategy_id') != strat_id:
                     pos_x = {}
                     
-                qty_y = pos_y.get('quantity', 0)
-                qty_x = pos_x.get('quantity', 0)
+                qty_y = pos_y['quantity']
+                qty_x = pos_x['quantity']
                 
                 # Determine current state based on portfolio
                 current_state = 0
@@ -591,6 +590,7 @@ class StatisticalStrategy(Strategy):
                     ema_200 = calculate_ema_jit(closes_1h, period=200)[-1]
                     return 'UP' if ema_50 > ema_200 else 'DOWN'
         except:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         return 'NEUTRAL'
 

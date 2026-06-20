@@ -36,11 +36,11 @@ class LiquidationSniper(Strategy):
         # HORIZON AWARE
         if horizon.upper() == 'SCALPING':
             h_params = getattr(Config.Horizons, 'Scalping', {})
-            self.primary_tf = h_params.get('primary_tf', '1m') if h_params else '1m'
+            self.primary_tf = h_params['primary_tf'] if h_params else '1m'
             self.COOLDOWN_SECONDS = 5  # Very fast cooldown for liquidations
         elif horizon.upper() == 'SWING':
             h_params = getattr(Config.Horizons, 'Swing', {})
-            self.primary_tf = h_params.get('primary_tf', '1h') if h_params else '1h'
+            self.primary_tf = h_params['primary_tf'] if h_params else '1h'
             self.COOLDOWN_SECONDS = 300
         else:
             self.primary_tf = '5m'
@@ -72,8 +72,8 @@ class LiquidationSniper(Strategy):
 
         symbol = event.symbol
         liq_side = order_flow.get('side')
-        liq_usd = order_flow.get('usd_value', 0.0)
-        liq_price = order_flow.get('price', 0.0)
+        liq_usd = order_flow['usd_value']
+        liq_price = order_flow['price']
         
         if liq_usd < self.MIN_LIQ_USD:
             return
@@ -90,7 +90,7 @@ class LiquidationSniper(Strategy):
         
         # Micro-Price Validation (Phase 11 check)
         metrics = self.data_provider.get_order_flow_metrics(symbol)
-        micro_price = metrics.get('micro_price', liq_price)
+        micro_price = metrics['micro_price']
         
         # Calculate dynamic edge vs MicroPrice
         edge_pct = abs(micro_price - liq_price) / liq_price if liq_price > 0 else 0

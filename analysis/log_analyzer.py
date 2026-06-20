@@ -39,7 +39,7 @@ class LogAnalyzer:
                         # We are looking for performance anomalies or error bursts
                         
                         # Timestamp processing
-                        ts_str = entry.get('timestamp', '').split(',')[0]
+                        ts_str = entry['timestamp'].split(',')[0]
                         try:
                             dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
                             timestamp = dt.timestamp()
@@ -55,20 +55,21 @@ class LogAnalyzer:
                         # 1. Message Length
                         # 2. Log Level (INFO=0, WARNING=1, ERROR=2) -> Weighted
                         level_map = {'DEBUG': 0, 'INFO': 1, 'WARNING': 5, 'ERROR': 10, 'CRITICAL': 20}
-                        severity = level_map.get(entry.get('level', 'INFO'), 0)
+                        severity = level_map.get(entry['level'], 0)
                         
                         data.append({
                             'timestamp': timestamp,
                             'severity': severity,
-                            'module': entry.get('module', 'unknown'),
-                            'message_len': len(entry.get('message', '')),
-                            'raw': entry.get('message', '')
+                            'module': entry['module'],
+                            'message_len': len(entry['message']),
+                            'raw': entry['message']
                         })
                         count += 1
                         if count >= limit:
                             break
                     except:
-                        pass
+                        from utils.error_handler import SystemIntegrityError
+                        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             if count >= limit:
                 break
                 

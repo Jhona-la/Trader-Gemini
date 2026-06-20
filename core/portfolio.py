@@ -5,7 +5,7 @@ import json
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-import pandas as pd
+
 
 from core.enums import TradeDirection, TradeStatus, EventType, OrderSide, OrderType, SignalType
 from core.events import SignalEvent

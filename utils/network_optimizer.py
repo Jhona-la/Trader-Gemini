@@ -26,7 +26,8 @@ def patch_sockets():
                 except Exception as e:
                     # Some platforms/sockets might not support it (e.g. Unix sockets on Windows?)
                     # Just ignore if it fails, don't crash the app
-                    pass
+                    from utils.error_handler import SystemIntegrityError
+                    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     # Apply Monkey Patch
     socket.socket = FastSocket

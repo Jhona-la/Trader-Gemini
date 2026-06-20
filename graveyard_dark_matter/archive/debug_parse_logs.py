@@ -10,7 +10,7 @@ with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
     for line in f:
         try:
             entry = json.loads(line)
-            msg = entry.get('message', '')
+            msg = entry['message']
             if '[ML ORACLE]' in msg or '[UNIFIED ORACLE]' in msg:
                 match = re.search(r'(?:ML|UNIFIED) ORACLE\]\s+([A-Z0-9/]+)', msg)
                 if match:

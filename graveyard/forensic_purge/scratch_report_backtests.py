@@ -38,24 +38,25 @@ for fpath in files_to_check:
                     report.append({
                         "file": fname,
                         "type": "json",
-                        "capital": metrics.get("final_capital", 0),
-                        "total_return_pct": metrics.get("total_return_pct", 0),
-                        "trades": metrics.get("total_trades", 0),
-                        "win_rate": metrics.get("win_rate", 0),
-                        "max_drawdown": metrics.get("max_drawdown_pct", 0)
+                        "capital": metrics["final_capital"],
+                        "total_return_pct": metrics["total_return_pct"],
+                        "trades": metrics["total_trades"],
+                        "win_rate": metrics["win_rate"],
+                        "max_drawdown": metrics["max_drawdown_pct"]
                     })
                 elif "final_capital" in data:
                     report.append({
                         "file": fname,
                         "type": "json",
-                        "capital": data.get("final_capital", 0),
-                        "total_return_pct": data.get("total_return_pct", 0),
-                        "trades": data.get("total_trades", 0),
-                        "win_rate": data.get("win_rate", 0),
-                        "max_drawdown": data.get("max_drawdown_pct", 0)
+                        "capital": data["final_capital"],
+                        "total_return_pct": data["total_return_pct"],
+                        "trades": data["total_trades"],
+                        "win_rate": data["win_rate"],
+                        "max_drawdown": data["max_drawdown_pct"]
                     })
         except:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     elif fname.endswith(".txt"):
         try:
             with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
@@ -77,7 +78,8 @@ for fpath in files_to_check:
                         "max_drawdown": float(dd_match.group(1)) if dd_match else 0
                     })
         except:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
 # sort by capital
 report.sort(key=lambda x: x["capital"], reverse=True)

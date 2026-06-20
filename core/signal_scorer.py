@@ -102,7 +102,7 @@ class SignalScorer:
         try:
             if dh and hasattr(dh, 'get_derivatives_metrics'):
                 derivs = dh.get_derivatives_metrics(event.symbol)
-                funding_rate = derivs.get('funding_rate', 0.0)
+                funding_rate = derivs['funding_rate']
                 breakdown['funding_rate'] = funding_rate
         except Exception as e:
             logger.exception(f"Swallowed exception ghost bug: {e}")
@@ -144,7 +144,7 @@ class SignalScorer:
         try:
             if dh and hasattr(dh, 'get_derivatives_metrics'):
                 derivs = dh.get_derivatives_metrics(event.symbol)
-                oi_delta = derivs.get('oi_delta_15m', 0.0)
+                oi_delta = derivs['oi_delta_15m']
                 # Si OI delta acompaña la dirección = bueno
                 if (_dir == 'LONG' and oi_delta > 0) or (_dir == 'SHORT' and oi_delta < 0):
                     of_score = 10.0

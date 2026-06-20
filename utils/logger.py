@@ -85,7 +85,7 @@ def log_supreme_event(logger_instance, level: int, event_id: str,
     if contexto_adicional:
         omni_data["contexto_adicional"] = contexto_adicional
         
-    msg_summary = f"[{que_ocurrio.get('tipo_evento', 'EVENT')}] {que_ocurrio.get('descripcion', '')} -> {que_ocurrio.get('resultado', '')}"
+    msg_summary = f"[{que_ocurrio['tipo_evento']}] {que_ocurrio['descripcion']} -> {que_ocurrio['resultado']}"
     logger_instance.log(level, msg_summary, extra={"omni_event": omni_data})
 
 
@@ -176,8 +176,8 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     # B. Main File Handler (JSON, DEBUG+)
     # PHASE 47.3: Adaptive backtest logging for Windows (Avoid Error 32)
     # PHASE I (Termodinamica): Zero I/O for Optimizer
-    is_optuna = any(x in sys.argv[0].lower() for x in ["optuna", "optimizer", "run_td_"])
-    is_backtest = any(x in sys.argv[0].lower() for x in ["backtest", "audit", "forensic", "diag", "bt", "test", "god_mode", "walk_forward", "hyper", "optimization", "omega", "evolver"]) or is_optuna
+    is_optuna = any(x in sys.argv[0].lower() for x in ["optuna", "optimizer", "run_td_", "validate_td"])
+    is_backtest = any(x in sys.argv[0].lower() for x in ["backtest", "audit", "forensic", "diag", "bt", "test", "god_mode", "walk_forward", "hyper", "optimization", "omega", "evolver", "validate"]) or is_optuna
     is_windows = os.name == 'nt'
     
     if is_optuna:
@@ -295,7 +295,8 @@ def stop_logger():
         tracer.stop()
         print("✅ Omniscient Tracer stopped gracefully.")
     except ImportError:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     except Exception as e:
         print(f"⚠️ Error stopping Omniscient Tracer: {e}")
 

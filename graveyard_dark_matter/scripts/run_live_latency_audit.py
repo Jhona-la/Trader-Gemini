@@ -209,8 +209,8 @@ async def live_latency_audit(duration_sec: int = 120):
             if not sym:
                 return
                 
-            bid = float(data.get('b', 0))
-            ask = float(data.get('a', 0))
+            bid = float(data['b'])
+            ask = float(data['a'])
             if bid == 0 or ask == 0:
                 return
             
@@ -235,7 +235,8 @@ async def live_latency_audit(duration_sec: int = 120):
                 try:
                     engine.events.put(event)
                 except Exception as e:
-                    pass
+                    from utils.error_handler import SystemIntegrityError
+                    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
             # INJECT ORDER EVENT 1% OF THE TIME FOR LATENCY AUDIT
             if random.random() < 0.01:
@@ -252,10 +253,12 @@ async def live_latency_audit(duration_sec: int = 120):
                 try:
                     engine.events.put(order)
                 except Exception as e:
-                    pass
+                    from utils.error_handler import SystemIntegrityError
+                    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 
         except Exception as e:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     async def ws_loop():
         async with websockets.connect(ws_url) as ws:

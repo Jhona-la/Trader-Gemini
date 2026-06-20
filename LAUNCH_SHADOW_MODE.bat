@@ -63,7 +63,6 @@ python -O -u main.py --mode futures
 echo.
 echo ===============================================================================
 echo ?? [OMEGA ALARMA] SHADOW ENGINE DETENIDO.
-echo ?? Ejecutando Recuperacion Catastrofica. Auto-Reiniciando en 3 Segundos.
+echo 🛑 Bucle infinito desactivado para prevenir cuelgues (Flickering).
 echo ===============================================================================
-timeout /t 3
-goto LOOP
+pause

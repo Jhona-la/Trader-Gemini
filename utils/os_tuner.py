@@ -53,7 +53,8 @@ class OSTuner:
                         if family in (socket.AF_INET, socket.AF_INET6) and type == socket.SOCK_STREAM:
                             self.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     except Exception:
-                        pass
+                        from utils.error_handler import SystemIntegrityError
+                        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                         
             socket.socket = TunedSocket
             logger.info("⚡ [Layer 0] TCP_NODELAY enforced globally (Nagle Disabled)")

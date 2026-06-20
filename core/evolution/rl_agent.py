@@ -46,7 +46,8 @@ class NanoRLAgent:
             with open(self.memory_path, 'w') as f:
                 json.dump(self.rl_state, f)
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def apply_tick_penalty(self, symbol: str, horizon: str, unrealized_pnl: float, duration_seconds: int):
         """
@@ -77,7 +78,7 @@ class NanoRLAgent:
         reward = net_pnl
         
         # Modificadores cognitivos
-        exit_reason = trade_metadata.get('exit_reason', '')
+        exit_reason = trade_metadata['exit_reason']
         if exit_reason == "STOP_LOSS":
             reward -= abs(reward) * 0.5 # Castigo extra por golpear el SL duro
         elif exit_reason == "TAKE_PROFIT":

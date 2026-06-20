@@ -1,7 +1,6 @@
 # import ccxt  <-- REMOVED (Rule 3.1 Separation of Concerns)
 from binance.client import Client # Synchronous Client for REST calls
 from binance.enums import *
-import pandas as pd
 import time
 from datetime import datetime, timezone
 from .data_provider import DataProvider
@@ -157,6 +156,13 @@ class BinanceData(DataProvider):
         # [PHASE 11] SHM Bridge
         self.shm_managers = {} 
         self._init_shm()
+        
+        # [PHASE VII] Quantum Ingester Cython FFI
+        from core.cython_bridge.nano_ffi import NanoFFIBridge
+        self.nano_ffi = NanoFFIBridge()
+        self.arena_prices = np.zeros(len(self.symbol_list), dtype=np.float32)
+        self.arena_volumes = np.zeros(len(self.symbol_list), dtype=np.float32)
+        self.symbol_to_index = {s: i for i, s in enumerate(self.symbol_list)}
 
     def _init_shm(self):
         """
@@ -393,11 +399,13 @@ class BinanceData(DataProvider):
                                 raw_msg = await ws.recv()
                                 
                                 # FASE II: PARSING
-                                if stream_type == 'depth':
-                                    raw_bytes = raw_msg.encode('utf-8') if isinstance(raw_msg, str) else raw_msg
-                                    msg = orjson.loads(raw_bytes)
-                                else:
-                                    msg = orjson.loads(raw_msg)
+                                raw_bytes = raw_msg.encode('utf-8') if isinstance(raw_msg, str) else raw_msg
+                                
+                                # Use Cython FFI directly for Klines later, but parse headers here
+                                msg = orjson.loads(raw_bytes)
+                                
+                                if stream_type == 'kline':
+                                    msg['_raw_bytes'] = raw_bytes
                                 
                                 # Extracción de Unique ID para deduplicación O(1)
                                 uid = None
@@ -473,13 +481,44 @@ class BinanceData(DataProvider):
             symbol_raw = data.get('s', '')
             symbol = f"{symbol_raw[:-4]}/{symbol_raw[-4:]}" if symbol_raw.endswith('USDT') else symbol_raw
             
-            o = float(k.get('o', 0))
-            h = float(k.get('h', 0))
-            l = float(k.get('l', 0))
-            c = float(k.get('c', 0))
-            v = float(k.get('v', 0))
-            is_closed = k.get('x', False)
-            ts = int(k.get('t', 0))
+            # [Phase VII] PURE METAL: Parse via Rust FFI (Zero-Copy)
+            idx = self.symbol_to_index.get(symbol, -1)
+            raw_bytes = msg.get('_raw_bytes')
+            is_closed = False
+            
+            o, h, l, c, v, ts = 0.0, 0.0, 0.0, 0.0, 0.0, 0
+            
+            if idx >= 0 and raw_bytes is not None:
+                # FFI Call handles the JSON payload and populates arena directly
+                res = self.nano_ffi.ingest_ws_frame(
+                    raw_bytes,
+                    self.arena_prices,
+                    self.arena_volumes,
+                    len(self.symbol_list),
+                    idx
+                )
+                
+                if res >= 0:
+                    c = float(self.arena_prices[idx])
+                    v = float(self.arena_volumes[idx])
+                    is_closed = (res == 1)
+                    
+                    # Backfill OHL from python dict for now
+                    o = float(k.get('o', 0))
+                    h = float(k.get('h', 0))
+                    l = float(k.get('l', 0))
+                    ts = int(k.get('t', 0))
+                else:
+                    return # Parse error
+            else:
+                # Fallback to python parsing
+                o = float(k.get('o', 0))
+                h = float(k.get('h', 0))
+                l = float(k.get('l', 0))
+                c = float(k.get('c', 0))
+                v = float(k.get('v', 0))
+                is_closed = k.get('x', False)
+                ts = int(k.get('t', 0))
             
             # Throttling MarketEvents for non-closed candles to max 1 per 500ms
             now = time.time()
@@ -980,9 +1019,12 @@ class BinanceData(DataProvider):
                     res['low'] = l
                     res['close'] = c
                     res['volume'] = v
-                    # Return a COPY of the slice to prevent caller mutation
-                    # (cost: ~5-15μs for small arrays, but safe)
-                    return res.copy()
+                    
+                    # [PHASE VII] ZERO-COPY MEMORYVIEW (OOM Prevention for 16GB RAM)
+                    # Expose as a read-only memoryview to avoid heap allocation and GC pressure
+                    view = res.view()
+                    view.flags.writeable = False
+                    return view
                 else:
                     # Fallback: new allocation for unknown symbols or oversized requests
                     res = np.empty(actual_len, dtype=self._BAR_STRUCT_DTYPE)
@@ -992,7 +1034,9 @@ class BinanceData(DataProvider):
                     res['low'] = l
                     res['close'] = c
                     res['volume'] = v
-                    return res
+                    view = res.view()
+                    view.flags.writeable = False
+                    return view
 
         except Exception as e:
             logger.error(f"Error getting structured {timeframe} bars for {symbol}: {e}")
@@ -1004,6 +1048,7 @@ class BinanceData(DataProvider):
         con Phalanx, Arbitrage y StatArb.
         """
         bars = self.get_latest_bars(symbol, n=limit, timeframe="1m")
+        import pandas as pd
         if bars is None or len(bars) == 0:
             return pd.DataFrame()
         # Convert structured array to DataFrame
@@ -2670,12 +2715,20 @@ class BinanceData(DataProvider):
                 data = self.get_latest_bars(symbol, n=5000)
                 if data is not None:
                     # Convert Structured Array to DataFrame for convenience in Parquet saving
+                    import polars as pl
                     # COPY DEEP to prevent PyArrow Segfaults on live-updating ring buffers
-                    df = pd.DataFrame(np.copy(data))
-                    df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms') # Keep for compatibility
+                    np_data = np.copy(data)
+                    df = pl.DataFrame({
+                        'timestamp': np_data['timestamp'],
+                        'open': np_data['open'],
+                        'high': np_data['high'],
+                        'low': np_data['low'],
+                        'close': np_data['close'],
+                        'volume': np_data['volume']
+                    })
                     
                     path = f"{cache_dir}/{safe_sym}_1m.parquet"
-                    df.to_parquet(path, compression='zstd')
+                    df.write_parquet(path, compression='zstd')
                     count += 1
             
             logger.info(f"💾 [Persistence] Saved {count} symbols to Parquet.")
@@ -2705,18 +2758,19 @@ class BinanceData(DataProvider):
                     if (time.time() - mtime) > 3600 * 4: # 4 hours old max
                         continue
                         
-                    df = pd.read_parquet(path)
-                    if not df.empty:
+                    import polars as pl
+                    df = pl.read_parquet(path)
+                    if not df.is_empty():
                         self._init_symbol_buffer(symbol) 
                         buf = self.buffers_1m[symbol]
                         
                         # Fastest way: Vectorized NumPy injection instead of iterrows
-                        timestamps = df['timestamp'].to_numpy(dtype=np.int64)
-                        opens = df['open'].to_numpy(dtype=np.float32)
-                        highs = df['high'].to_numpy(dtype=np.float32)
-                        lows = df['low'].to_numpy(dtype=np.float32)
-                        closes = df['close'].to_numpy(dtype=np.float32)
-                        vols = df['volume'].to_numpy(dtype=np.float32)
+                        timestamps = df['timestamp'].to_numpy()
+                        opens = df['open'].to_numpy()
+                        highs = df['high'].to_numpy()
+                        lows = df['low'].to_numpy()
+                        closes = df['close'].to_numpy()
+                        vols = df['volume'].to_numpy()
                         
                         for i in range(len(timestamps)):
                             buf.push(timestamps[i], opens[i], highs[i], lows[i], closes[i], vols[i])

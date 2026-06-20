@@ -22,8 +22,8 @@ except Exception as e:
 
 try:
     a = c.futures_account()
-    balance = float(a.get('totalWalletBalance', 0))
-    available = float(a.get('availableBalance', 0))
+    balance = float(a['totalWalletBalance'])
+    available = float(a['availableBalance'])
     print(f'2. Total Balance: ${balance:.2f} USDT')
     print(f'3. Available: ${available:.2f} USDT')
     
@@ -39,7 +39,7 @@ except Exception as e:
 
 try:
     mode = c.futures_get_position_mode()
-    hedge = mode.get('dualSidePosition', False)
+    hedge = mode['dualSidePosition']
     status = 'ACTIVE' if hedge else 'OFF'
     print(f'5. HEDGE Mode: {status}')
 except Exception as e:

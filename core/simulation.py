@@ -53,11 +53,11 @@ class SimulationEngine:
         genes = genotype.genes
         
         # Unpack Genes
-        tp_pct = genes.get('tp_pct', 0.015)
-        sl_pct = genes.get('sl_pct', 0.02)
+        tp_pct = genes['tp_pct']
+        sl_pct = genes['sl_pct']
         
         # Check for Brain
-        brain_weights = genes.get('brain_weights', [])
+        brain_weights = genes['brain_weights']
         use_brain = len(brain_weights) > 0
         weights_matrix = None
         
@@ -95,9 +95,9 @@ class SimulationEngine:
             # --- BARE METAL NUMBA EXECUTION ---
             from core.simulation_numba import technical_simulation_loop_njit
             
-            window = int(genes.get('rsi_window', 14))
-            fast_window = int(genes.get('macd_fast', 8))
-            trend_conf = float(genes.get('trend_confirmation_threshold', 0.001))
+            window = int(genes['rsi_window'])
+            fast_window = int(genes['macd_fast'])
+            trend_conf = float(genes['trend_confirmation_threshold'])
             
             closes_arr = np.ascontiguousarray(closes, dtype=np.float64)
             

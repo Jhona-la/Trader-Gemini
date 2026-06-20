@@ -1,5 +1,3 @@
-import shap
-import pandas as pd
 import numpy as np
 from utils.logger import logger
 import os
@@ -17,11 +15,33 @@ class XAIEngine:
         os.makedirs(self.model_dir, exist_ok=True)
         self.explainers = {}
 
-    def explain_local_prediction(self, model, X_row: pd.DataFrame, model_name: str) -> str:
+    def explain_global_model(self, model, X_background, model_name: str, symbol: str):
+        """
+        Generates global SHAP values and saves a summary plot. (Batch/Offline).
+        """
+        import shap
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        
+        try:
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X_background)
+            
+            plt.figure()
+            shap.summary_plot(shap_values, X_background, show=False)
+            plt.savefig(os.path.join(self.model_dir, f"global_shap_{symbol.replace('/','_')}_{model_name}.png"))
+            plt.close()
+        except Exception as e:
+            logger.error(f"Global XAI Error: {e}")
+
+    def explain_local_prediction(self, model, X_row, model_name: str) -> str:
         """
         Explains a SINGLE prediction (Real-time).
         Returns a string summary of the top 3 features driving this specific decision.
         """
+        import shap
+        import pandas as pd
+        
         try:
             if model_name not in self.explainers:
                 # Inicializar explainer (TreeExplainer es óptimo para XGB/RF)

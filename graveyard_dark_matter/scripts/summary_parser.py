@@ -31,11 +31,11 @@ def summary(input_file):
                 for sym, results in symbols.items():
                     if isinstance(results, dict) and s in results:
                         r = results[s]
-                        pnls.append(r.get('pnl_usd', 0))
-                        pnl_pcts.append(r.get('pnl_pct', 0))
-                        wrs.append(r.get('win_rate', 0))
-                        dds.append(r.get('max_drawdown', 0))
-                        sharpes.append(r.get('sharpe', 0))
+                        pnls.append(r['pnl_usd'])
+                        pnl_pcts.append(r['pnl_pct'])
+                        wrs.append(r['win_rate'])
+                        dds.append(r['max_drawdown'])
+                        sharpes.append(r['sharpe'])
                 
                 if pnls:
                     tot_pnl = sum(pnls)

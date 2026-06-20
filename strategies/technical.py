@@ -1719,11 +1719,9 @@ class HybridScalpingStrategy(Strategy):
                             # If PDC Velocity is a magnitude, we just need pdc_velocity > min_pdc.
                             # "Scalping strictly requires positive confirmation (PDC Velocity > threshold)."
                             if pdc_velocity < min_pdc:
-                                if os.environ.get('TRADER_GEMINI_BACKTEST') == 'true':
-                                    pass # Bypass PDC in backtest
-                                else:
-                                    logger.warning(f"🛑 [PDC VETO] {symbol} SCALPING blocked | PDC Velocity: {pdc_velocity:.4f} < {min_pdc}")
-                                    continue
+                                # PARIDAD ABSOLUTA: PDC Veto aplica en backtest y producción (Fase V Audit Fix #3)
+                                logger.warning(f"🛑 [PDC VETO] {symbol} SCALPING blocked | PDC Velocity: {pdc_velocity:.4f} < {min_pdc}")
+                                continue
                     except Exception as e:
                         import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         logger.warning(f"⚠️ [PDC VETO] Error checking PDC for {symbol}: {e}")

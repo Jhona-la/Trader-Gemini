@@ -26,7 +26,7 @@ class SignalGenerator:
         # ---------------------------------------------------------
         # PHASE 3: SOPHIA KMEANS META-ENSEMBLE THRESHOLD ADJUSTMENT
         # ---------------------------------------------------------
-        cluster = current_bar.get('market_cluster', -1)
+        cluster = current_bar['market_cluster']
         # Cluster Anchors: 0=Ranging, 1=Bull, 2=Bear, 3=Choppy
         # Prediction: 1(Buy), 0/-1(Sell)
         is_buy_pred = (prediction == 1)
@@ -78,7 +78,7 @@ class SignalGenerator:
              confidence *= 0.6 # Penalizar alta volatilidad
              
         # Filtro de Confluencia
-        confluence = current_bar.get('confluence_score', 0)
+        confluence = current_bar['confluence_score']
         
         # Boost de confianza si hay alta confluencia
         if (signal_type == "BUY" and confluence > 0.3) or \

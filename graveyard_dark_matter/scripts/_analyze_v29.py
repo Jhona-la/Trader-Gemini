@@ -22,7 +22,7 @@ for k,v in d['strategy_attribution'].items():
     print(f"  {k}: {v['trades']}T | WR={wr:.0f}% | PnL=${v['pnl']:.4f}")
 print()
 print('EQUITY CURVE SAMPLE:')
-ec = d.get('equity_curve_sample', [])
+ec = d['equity_curve_sample']
 for i, e in enumerate(ec):
     print(f"  [{i}] ${e:.4f}")
 
@@ -31,7 +31,7 @@ print()
 print('='*60)
 print('FORENSIC VALIDATION — FLIP_EXIT FIX')
 print('='*60)
-flip = d['strategy_attribution'].get('FLIP_EXIT', {})
+flip = d['strategy_attribution']['FLIP_EXIT']
 if flip:
     print(f"  FLIP_EXIT trades: {flip['trades']}")
     print(f"  FLIP_EXIT WR: {flip['win_rate']*100:.0f}%")
@@ -40,16 +40,16 @@ if flip:
 else:
     print("  No FLIP_EXIT trades found (no flips triggered)")
 
-turbo = d['strategy_attribution'].get('TURBO_BE', {})
+turbo = d['strategy_attribution']['TURBO_BE']
 print()
 print('FORENSIC VALIDATION — TURBO-BE FIX')
-print(f"  TURBO_BE trades: {turbo.get('trades', 0)}")
-print(f"  TURBO_BE PnL: ${turbo.get('pnl', 0):.4f}")
+print(f"  TURBO_BE trades: {turbo['trades']}")
+print(f"  TURBO_BE PnL: ${turbo['pnl']:.4f}")
 
-zombie = d['strategy_attribution'].get('TIME_STOP_ZOMBIE', {})
+zombie = d['strategy_attribution']['TIME_STOP_ZOMBIE']
 print()
 print('CRITICAL FINDING — ZOMBIE STOP')
-print(f"  ZOMBIE trades: {zombie.get('trades', 0)}")
-print(f"  ZOMBIE WR: {zombie.get('win_rate', 0)*100:.0f}%")
-print(f"  ZOMBIE PnL: ${zombie.get('pnl', 0):.4f}")
+print(f"  ZOMBIE trades: {zombie['trades']}")
+print(f"  ZOMBIE WR: {zombie['win_rate']*100:.0f}%")
+print(f"  ZOMBIE PnL: ${zombie['pnl']:.4f}")
 print(f"  IMPACT: This is the PRIMARY loss source")

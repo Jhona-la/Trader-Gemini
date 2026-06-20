@@ -20,7 +20,8 @@ class SystemInvariants:
         checks = [
             SystemInvariants._check_self_hedging,
             SystemInvariants._check_liquidity_threshold,
-            SystemInvariants._check_max_exposure
+            SystemInvariants._check_max_exposure,
+            SystemInvariants._check_hard_cap_termodinamico
         ]
         
         for check in checks:
@@ -56,6 +57,39 @@ class SystemInvariants:
         if global_state.risk.global_hazard_rate > 0.85:
             if intent.direction != 'EXIT':
                 return False, "Global Hazard Rate too high (>0.85). Entry blocked."
+        return True, ""
+
+    @staticmethod
+    def _check_hard_cap_termodinamico(intent: TradeIntent) -> Tuple[bool, str]:
+        """FASE VI Hard-Cap: Limita estrictamente la cantidad de posiciones (ej. $13 = max 2)."""
+        if intent.direction == 'EXIT':
+            return True, ""
+            
+        from config import Config
+        max_concurrent = getattr(getattr(Config, "Risk", object()), "MAX_CONCURRENT_POSITIONS", 
+                                getattr(Config, "MAX_CONCURRENT_POSITIONS", 2))
+        max_per_horizon = getattr(getattr(Config, "Risk", object()), "MAX_POSITIONS_PER_HORIZON", 
+                                getattr(Config, "MAX_POSITIONS_PER_HORIZON", 1))
+                                
+        all_states = global_state.get_all_states()
+        
+        open_count = 0
+        horizon_count = 0
+        intent_horizon = getattr(intent, 'horizon', 'SCALPING')
+        
+        for sym, horizons in all_states.items():
+            for horiz, state in horizons.items():
+                if state.quantity != 0:
+                    open_count += 1
+                    if horiz == intent_horizon:
+                        horizon_count += 1
+                        
+        if open_count >= max_concurrent:
+            return False, f"HARD-CAP THERMO: Max global positions reached ({open_count}/{max_concurrent})"
+            
+        if horizon_count >= max_per_horizon:
+            return False, f"HARD-CAP THERMO: Max {intent_horizon} positions reached ({horizon_count}/{max_per_horizon})"
+            
         return True, ""
 
 # Singleton para chequeos

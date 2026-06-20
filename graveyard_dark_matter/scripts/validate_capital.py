@@ -21,10 +21,10 @@ c = Client(key, secret)
 a = c.futures_account()
 
 # Extract balances
-total_margin = float(a.get('totalMarginBalance', 0))
-total_wallet = float(a.get('totalWalletBalance', 0))
-available = float(a.get('availableBalance', 0))
-unrealized_pnl = float(a.get('totalUnrealizedProfit', 0))
+total_margin = float(a['totalMarginBalance'])
+total_wallet = float(a['totalWalletBalance'])
+available = float(a['availableBalance'])
+unrealized_pnl = float(a['totalUnrealizedProfit'])
 
 print(f'\n📊 BALANCE REPORT:')
 print(f'   Total Margin Balance:  ${total_margin:.2f} USDT')

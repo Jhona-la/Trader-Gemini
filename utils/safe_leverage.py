@@ -96,7 +96,8 @@ class SafeLeverageCalculator:
             try:
                 return self.portfolio.get_total_equity()
             except:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         return self.current_capital
     
     def get_phase(self, capital: Optional[float] = None) -> str:

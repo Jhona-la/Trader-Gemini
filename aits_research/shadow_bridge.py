@@ -75,9 +75,9 @@ class ShadowBridge:
         """
         obs = ShadowObservation(
             timestamp=time.time(),
-            symbol=signal.get("symbol", "?"),
-            signal_side=signal.get("side", "?"),
-            signal_confidence=signal.get("confidence", 0.0),
+            symbol=signal["symbol"],
+            signal_side=signal["side"],
+            signal_confidence=signal["confidence"],
             aits_verdict="N/A",
             aits_router_algo="N/A",
             actual_outcome=actual_outcome,
@@ -87,7 +87,7 @@ class ShadowBridge:
         if self.bridge:
             envelope = self.bridge.evaluate(signal, account_state)
             obs.aits_verdict = envelope.verdict
-            obs.aits_router_algo = envelope.enrichment.get("router_algo", "N/A")
+            obs.aits_router_algo = envelope.enrichment["router_algo"]
 
         self.observations.append(obs)
         return obs

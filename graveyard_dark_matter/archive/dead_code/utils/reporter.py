@@ -46,14 +46,14 @@ Modo: {data_dir.split('/')[-1].upper()}
 RESULTADOS FINANCIEROS:
 - Equity Final:  ${history['total_equity'].iloc[-1]:,.2f}
 - PnL Sesión:   ${history['realized_pnl'].iloc[-1]:,.2f}
-- Max Drawdown:  {metrics.get('max_drawdown', 0)}%
-- Sharpe Ratio:  {metrics.get('sharpe', 0)}
-- Sortino:       {metrics.get('sortino', 0)}
+- Max Drawdown:  {metrics['max_drawdown']}%
+- Sharpe Ratio:  {metrics['sharpe']}
+- Sortino:       {metrics['sortino']}
 
 ESTADÍSTICAS DE TRADING:
-- Total Trades:  {win_stats.get('total_trades', 0)}
-- Win Rate:      {win_stats.get('global_winrate', 0)}%
-- Profit Factor: {win_stats.get('profit_factor', 0)}
+- Total Trades:  {win_stats['total_trades']}
+- Win Rate:      {win_stats['global_winrate']}%
+- Profit Factor: {win_stats['profit_factor']}
 ------------------------------------------------------------
 """
             # Guardar reporte en archivo de texto

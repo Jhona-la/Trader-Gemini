@@ -233,7 +233,7 @@ class SophiaReport:
     
     def to_log_line(self) -> str:
         """Compact one-line format for logging."""
-        top3 = ", ".join(f"{f['feature']}={f.get('value', 0.0):.1f}(δ{f['contribution']:+.3f})" for f in self.top_features[:3])
+        top3 = ", ".join(f"{f['feature']}={f['value']:.1f}(δ{f['contribution']:+.3f})" for f in self.top_features[:3])
         return (
             f"[SOPHIA] P(Win)={self.win_probability:.1%} | "
             f"E[T]={self.expected_exit_mins:.0f}min | "
@@ -558,14 +558,14 @@ class FeatureAttributor:
             trend_strength = trend_aligned + ADX normalization
             volatility_z = ATR z-score approximation
         """
-        rsi = features.get('rsi', 50.0)
-        bb = features.get('bb_position', 0.5)
-        adx = features.get('adx', 20.0)
-        vol_ratio = features.get('volume_ratio', 1.0)
-        confluence = features.get('confluence', 0.5)
-        macd = features.get('macd_hist', 0.0)
-        trend = features.get('trend_aligned', 0.0)
-        atr_pct = features.get('atr_pct', 0.01)
+        rsi = features['rsi']
+        bb = features['bb_position']
+        adx = features['adx']
+        vol_ratio = features['volume_ratio']
+        confluence = features['confluence']
+        macd = features['macd_hist']
+        trend = features['trend_aligned']
+        atr_pct = features['atr_pct']
         
         # Signal strength: how strong is the entry signal?
         # MEJORA 7: Dynamic RSI Percentile para Sophia
@@ -1219,14 +1219,14 @@ class SophiaIntelligence:
 
         # ── BLOCK 1: Bayesian Calibration ──
         features = {
-            'rsi': setups.get('rsi', 50.0),
-            'bb_position': setups.get('bb_position', 0.5),
-            'adx': setups.get('adx', 20.0),
-            'volume_ratio': setups.get('volume_ratio', 1.0),
+            'rsi': setups['rsi'],
+            'bb_position': setups['bb_position'],
+            'adx': setups['adx'],
+            'volume_ratio': setups['volume_ratio'],
             'confluence': confluence_score,
-            'macd_hist': setups.get('macd_hist', 0.0),
+            'macd_hist': setups['macd_hist'],
             'trend_aligned': 1.0 if setups.get('in_uptrend') else (-1.0 if setups.get('in_downtrend') else 0.0),
-            'atr_pct': (setups.get('atr', 0.0) / setups.get('close', 1.0)) if setups.get('close', 0) > 0 else 0.01,
+            'atr_pct': (setups['atr'] / setups['close']) if setups['close'] > 0 else 0.01,
         }
         
         # Compute trend strength for Bayesian input
@@ -1245,7 +1245,7 @@ class SophiaIntelligence:
         
         # ── BLOCK 2: Temporal Horizon ──
         survival = self.survival.estimate(
-            current_price=setups.get('close', 0.0),
+            current_price=setups['close'],
             tp_pct=tp_pct,
             sl_pct=sl_pct,
             returns=returns,
@@ -1505,7 +1505,7 @@ class SophiaIntelligence:
         else:
             round_trip_fee = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375) * 2
         min_required_headroom = max(0.00015, round_trip_fee * 1.1)  # [PHOENIX V3] Was 1.5x. Scalping captures intra-candle volatility.
-        atr_pct = features.get('atr_pct', 0.01)
+        atr_pct = features['atr_pct']
         
         if atr_pct >= min_required_headroom:
             fee_vote = 1.0
@@ -1520,7 +1520,7 @@ class SophiaIntelligence:
         
         # 6. Microstructure Vote (L2 Order Flow) (Weight: 15%)
         # Phase 10: Tape Reading
-        ofi = features.get('l2_ofi', 0.0)
+        ofi = features['l2_ofi']
         micro_vote = 0.5
         if direction == "LONG":
             if ofi > 0: micro_vote = min(1.0, 0.5 + (ofi / 10000.0))
@@ -1798,10 +1798,10 @@ class SophiaIntelligence:
         Score 0.0 = Chaotic noise.
         """
         # Heuristic based on volume, RSI acceleration and ATR expansion
-        vol_boost = min(1.0, setups.get('volume_ratio', 1.0) / 3.0)
+        vol_boost = min(1.0, setups['volume_ratio'] / 3.0)
         
         # RSI alignment with direction
-        rsi = setups.get('rsi', 50)
+        rsi = setups['rsi']
         rsi_align = 0.0
         if direction == 'LONG':
             rsi_align = (rsi - 40) / 40 # 0 if 40, 1 if 80
@@ -1947,7 +1947,8 @@ class SophiaIntelligence:
             
             return float(np.clip(index * 2.5, 0.0, 1.0)) # Scaled to highlight resonance
         except:
-            return 0.0
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Return 0.0 fallback blocked by Holographic Audit')
 
     def _simulate_superposition_paths(self, base_omni: float, psi_l: float, psi_s: float, h_shield: float, g_boost: float, kappa: float, fabric_t: float) -> Tuple[float, str]:
         """
@@ -2042,9 +2043,9 @@ class SophiaIntelligence:
         Returns: (tension, harmony_stability)
         """
         try:
-            rsi = setups.get('rsi', 50.0)
-            adx = setups.get('adx', 20.0)
-            atr_pct = setups.get('atr_pct', 0.001)
+            rsi = setups['rsi']
+            adx = setups['adx']
+            atr_pct = setups['atr_pct']
             
             # Autotuning: Sensitivity (S) increases with lower volatility (search for micro-tension)
             # and decreases with high volatility (avoiding over-triggering)
@@ -2201,7 +2202,8 @@ class SophiaIntelligence:
             corr = np.corrcoef(w1, w2)[0, 1]
             return float(np.clip(abs(corr), 0.0, 1.0))
         except:
-            return 0.0
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Return 0.0 fallback blocked by Holographic Audit')
 
     def _calculate_quantum_amplitude(self, returns: np.ndarray) -> float:
         """
@@ -2267,7 +2269,7 @@ class SophiaIntelligence:
         V5.18: Detects Liquidity Vortexes.
         Measures volume deviation from standard activity.
         """
-        v_ratio = setups.get('volume_ratio', 1.0)
+        v_ratio = setups['volume_ratio']
         
         # High-Energy: Volume > 2.5 is rare and indicates explosive momentum
         is_regime = v_ratio > 2.5
@@ -2279,7 +2281,7 @@ class SophiaIntelligence:
         Compares current volume ratio vs a broader window.
         """
         # We assume 'volume_ratio_4h' is passed in setups from strategy
-        return float(setups.get('volume_ratio_4h', 1.0))
+        return float(setups['volume_ratio_4h'])
 
     def _detect_breakout(self, setups: Dict[str, float], direction: str) -> bool:
         """
@@ -2287,9 +2289,9 @@ class SophiaIntelligence:
         """
         # We assume 'is_50_bar_high' / 'is_50_bar_low' passed in setups
         if direction == "LONG":
-            return bool(setups.get('is_50_bar_high', False))
+            return bool(setups['is_50_bar_high'])
         else:
-            return bool(setups.get('is_50_bar_low', False))
+            return bool(setups['is_50_bar_low'])
 
     def _calculate_noise_density(self, returns: np.ndarray) -> Tuple[float, float]:
         """

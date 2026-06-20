@@ -15,7 +15,6 @@ Methods:
 """
 
 import numpy as np
-import pandas as pd
 from typing import Tuple, Optional, Dict
 
 try:
@@ -183,7 +182,8 @@ class StatisticsPro:
             return float(hl)
             
         except Exception:
-            return 0.0
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Return 0.0 fallback blocked by Holographic Audit')
 
     @staticmethod
     def kelly_criterion_continuous(win_rate: float, win_loss_ratio: float) -> float:
@@ -298,20 +298,30 @@ class StatisticsPro:
             return 1.0, 0.0
 
     @staticmethod
-    def johansen_test_simplified(df_prices: pd.DataFrame) -> bool:
+    def johansen_test_simplified(price_matrix: np.ndarray) -> bool:
         """
         Phase 6: Simplified Multivariate Cointegration Test (Johansen Concept).
-        Checks if a basket of assets moves together.
+        Checks if a basket of assets moves together. Expects a 2D array (time x assets).
         """
         try:
-            # 1. Calculate Correlation Matrix
-            corr_matrix = df_prices.pct_change().dropna().corr()
+            # 1. Calculate Returns (pct_change) and Correlation Matrix
+            diffs = np.diff(price_matrix, axis=0)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                returns = diffs / price_matrix[:-1]
+            
+            mask = ~np.isnan(returns).any(axis=1)
+            returns_clean = returns[mask]
+            
+            if len(returns_clean) < 2:
+                return False
+                
+            corr_matrix = np.corrcoef(returns_clean, rowvar=False)
             
             # 2. Eigenvalues
             eigvals = np.linalg.eigvals(corr_matrix)
             sorted_eigs = sorted(eigvals, reverse=True)
             
-            n_assets = len(df_prices.columns)
+            n_assets = price_matrix.shape[1] if len(price_matrix.shape) > 1 else 1
             if len(sorted_eigs) > 0 and sorted_eigs[0] > (n_assets * 0.6): # 60% variance explained by 1 factor
                 return True
             
@@ -403,7 +413,8 @@ class StatisticsPro:
             p = p / np.sum(p) # Normalize
             return float(-np.sum(p * np.log2(p)))
         except Exception:
-            return 0.0
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Return 0.0 fallback blocked by Holographic Audit')
 
     @staticmethod
     def volatility_shannon_entropy(returns: np.ndarray, bins: int = 10) -> float:
@@ -420,4 +431,5 @@ class StatisticsPro:
             hist, _ = np.histogram(returns, bins=bins, density=True)
             return StatisticsPro.shannon_entropy(hist)
         except Exception:
-            return 0.0
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Return 0.0 fallback blocked by Holographic Audit')

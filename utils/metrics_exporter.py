@@ -181,7 +181,7 @@ class MetricsExporter:
                 self.g_equity.set(portfolio.get_total_equity())
                 active_count = len([
                     s for s, p in portfolio.positions.items() 
-                    if p.get('quantity', 0) != 0
+                    if p['quantity'] != 0
                 ])
                 self.g_positions.set(active_count)
                 
@@ -201,7 +201,8 @@ class MetricsExporter:
                 try:
                     self.g_precision_drift.set(float(drift_value))
                 except Exception:
-                    pass
+                    from utils.error_handler import SystemIntegrityError
+                    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 
                 # ─── Per-Symbol Metrics ───
                 self._update_per_symbol(portfolio)
@@ -223,20 +224,21 @@ class MetricsExporter:
                 self.g_api_error_rate.set(getattr(ks, 'api_errors', 0))
                 self.g_daily_losses.set(getattr(ks, 'daily_losses', 0))
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def _update_per_symbol(self, portfolio):
         """Updates PnL% and Gap TP% gauges for each active position."""
         try:
             for symbol, pos in portfolio.positions.items():
-                qty = pos.get('quantity', 0)
+                qty = pos['quantity']
                 if qty == 0:
                     # Clear stale labels when position is closed
                     continue
                     
-                entry = pos.get('avg_price', 0)
-                current = pos.get('current_price', entry)
-                tp_price = pos.get('tp_price', 0)
+                entry = pos['avg_price']
+                current = pos['current_price']
+                tp_price = pos['tp_price']
                 side = "LONG" if qty > 0 else "SHORT"
                 
                 # Clean symbol for Prometheus label
@@ -269,7 +271,8 @@ class MetricsExporter:
                         self.g_tick_latency.labels(symbol=clean_sym).set(lat)
                         
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def record_tick_latency(self, symbol: str, latency_us: float):
         """Records tick processing latency for a symbol (called from Engine)."""
@@ -292,11 +295,12 @@ class MetricsExporter:
             # Update top 3 features
             for feat in top_features[:3]:
                 name = feat.get('feature')
-                contrib = feat.get('contribution', 0.0)
+                contrib = feat['contribution']
                 if name:
                     self.g_sophia_feature_imp.labels(symbol=symbol, feature=name).set(contrib)
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def record_nemesis_autopsy(
         self, 
@@ -354,7 +358,8 @@ class MetricsExporter:
             self.g_quarantine_status.labels(genotype_id=genotype_id).set(flag_val)
             
         except Exception:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
 
 # Global Singleton Access

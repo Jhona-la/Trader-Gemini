@@ -103,11 +103,11 @@ def run_backtest_fidelity(fidelity_level, params):
     close_prices = np.array([float(k[4]) for k in klines[-n_candles:]], dtype=np.float64)
     
     # Extraer parámetros
-    rsi_p = params.get('rsi_period', 14)
-    rsi_l = params.get('rsi_lower', 30.0)
-    rsi_u = params.get('rsi_upper', 70.0)
-    sl = params.get('stop_loss', 0.02)
-    tp = params.get('take_profit', 0.04)
+    rsi_p = params['rsi_period']
+    rsi_l = params['rsi_lower']
+    rsi_u = params['rsi_upper']
+    sl = params['stop_loss']
+    tp = params['take_profit']
     
     # Ejecutar JIT
     trade_returns = vectorized_backtest_core(close_prices, rsi_p, rsi_l, rsi_u, sl, tp)

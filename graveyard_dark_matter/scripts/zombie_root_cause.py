@@ -64,8 +64,8 @@ def simulate_zombie_scenario():
     risk_manager._trade_cache = []
     
     # ── Golden Baseline Parameters ──
-    scalping_tp = Config.Horizons.Scalping.get('tp_pct', 0.006)
-    scalping_sl = Config.Horizons.Scalping.get('sl_pct', 0.0075)
+    scalping_tp = Config.Horizons.Scalping['tp_pct']
+    scalping_sl = Config.Horizons.Scalping['sl_pct']
     
     print(f"\n📊 GOLDEN BASELINE:")
     print(f"   TP: {scalping_tp*100:.2f}% | SL: {scalping_sl*100:.2f}%")

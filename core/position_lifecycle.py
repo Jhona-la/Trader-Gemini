@@ -29,11 +29,11 @@ class PositionLifecycleManager:
             return "HOLD", None
 
         # Datos base de la posición
-        entry_price = pos.get('avg_price', 0.0)
+        entry_price = pos['avg_price']
         if entry_price <= 0:
             return "HOLD", None
 
-        qty = pos.get('quantity', 0.0)
+        qty = pos['quantity']
         direction = 1 if qty > 0 else -1
         
         # PnL bruto porcentual
@@ -46,12 +46,12 @@ class PositionLifecycleManager:
             current_mfe = pnl_pct
 
         # Extraer métricas de mercado
-        tick_volatility = market_data.get('tick_volatility', 0.0)
-        vpin = market_data.get('toxicity_index', 0.5)
-        obi_velocity = market_data.get('obi_velocity', 0.0)
+        tick_volatility = market_data['tick_volatility']
+        vpin = market_data['toxicity_index']
+        obi_velocity = market_data['obi_velocity']
         
         # Calcular tiempo abierto
-        entry_time = pos.get('entry_time', now)
+        entry_time = pos['entry_time']
         try:
             duration_mins = (now - entry_time).total_seconds() / 60.0
         except TypeError:
@@ -88,7 +88,7 @@ class PositionLifecycleManager:
         # 2. DYNAMIC HORIZON SHIFT (Expansión Elástica de Ganancias)
         # =========================================================================
         # Si un trade de MICROSCALPING agarra tendencia, no lo estrangulamos con un TP de 0.5%.
-        horizon = pos.get('horizon', 'SCALPING')
+        horizon = pos['horizon']
         if horizon == "MICROSCALPING" and current_mfe > 0.40:
             # Momentum violento a favor
             if direction == 1 and obi_velocity > 0.5: # Compras fuertes

@@ -21,12 +21,12 @@ def generate_report():
             backtest_data = json.load(f)
             
     # Extraer variables the forma thegura
-    live_pnl = live_data.get('realized_pnl', 0.0)
-    live_sharpe = live_data.get('performance_metrics', {}).get('sharpe_ratio', 1.80)
-    live_wr = live_data.get('performance_metrics', {}).get('win_rate', 0.55)
+    live_pnl = live_data['realized_pnl']
+    live_sharpe = live_data['performance_metrics'].get('sharpe_ratio', 1.80)
+    live_wr = live_data['performance_metrics'].get('win_rate', 0.55)
     
-    bk_sharpe = backtest_data.get('performance_metrics', {}).get('sharpe_ratio', 2.10)
-    bk_wr = backtest_data.get('performance_metrics', {}).get('win_rate', 0.60)
+    bk_sharpe = backtest_data['performance_metrics'].get('sharpe_ratio', 2.10)
+    bk_wr = backtest_data['performance_metrics'].get('win_rate', 0.60)
     
     # Calculo the thegradacion (Slippage e Impacto the Mercado)
     sharpe_degrad = ((bk_sharpe - live_sharpe) / bk_sharpe) * 100 if bk_sharpe > 0 else 0

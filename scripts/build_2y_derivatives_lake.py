@@ -27,7 +27,8 @@ def download_zip(url, target_dir):
             os.remove(zip_path)
             return csv_path
     except Exception as e:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     
     if os.path.exists(zip_path):
         os.remove(zip_path)
@@ -102,7 +103,8 @@ def download_symbol_derivatives(symbol, start_date="2022-06-01", days=730, max_w
                 ]).select(["timestamp", "sum_open_interest", "sum_toptrader_long_short_ratio"])
                 m_dfs.append(df)
         except Exception as e:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         finally:
             if os.path.exists(csv): os.remove(csv)
             
@@ -121,7 +123,8 @@ def download_symbol_derivatives(symbol, start_date="2022-06-01", days=730, max_w
                 ]).select(["timestamp", "funding_rate"])
                 f_dfs.append(df)
         except Exception as e:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         finally:
             if os.path.exists(csv): os.remove(csv)
             
@@ -145,7 +148,8 @@ def download_symbol_derivatives(symbol, start_date="2022-06-01", days=730, max_w
                 ]).select(["timestamp", "open", "high", "low", "close", "volume"])
                 k_dfs.append(df)
         except Exception as e:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         finally:
             if os.path.exists(csv): os.remove(csv)
             

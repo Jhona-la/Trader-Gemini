@@ -45,16 +45,16 @@ def train_model_process(symbol, X_shm_info, y_shm_info, params, prev_xgb_model=N
         feature_cols = X_shm_info['columns']
         
         # Unpack params
-        n_estimators = params.get('n_estimators', 100)
-        max_depth_rf = params.get('max_depth_rf', 6)
-        max_depth_xgb = params.get('max_depth_xgb', 5)
-        max_depth_gb = params.get('max_depth_gb', 5)
-        learning_rate = params.get('learning_rate', 0.1)
-        subsample = params.get('subsample', 0.8)
-        training_iteration = params.get('training_iteration', 0)
-        base_rf_weight = params.get('rf_weight', 0.45)
-        base_xgb_weight = params.get('xgb_weight', 0.35)
-        base_gb_weight = params.get('gb_weight', 0.20)
+        n_estimators = params['n_estimators']
+        max_depth_rf = params['max_depth_rf']
+        max_depth_xgb = params['max_depth_xgb']
+        max_depth_gb = params['max_depth_gb']
+        learning_rate = params['learning_rate']
+        subsample = params['subsample']
+        training_iteration = params['training_iteration']
+        base_rf_weight = params['rf_weight']
+        base_xgb_weight = params['xgb_weight']
+        base_gb_weight = params['gb_weight']
         
         # Cross Validation Setup
         n_samples = len(X_df)
@@ -170,7 +170,8 @@ def train_model_process(symbol, X_shm_info, y_shm_info, params, prev_xgb_model=N
             X_shm.close()
             y_shm.close()
         except:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
         return best_models, best_scaler, feature_cols, ensemble_score, metrics
         

@@ -49,15 +49,15 @@ def analyze_viability(results, fee_rate, slippage, expected_tp):
     if not scl_ledger:
         return {'total': 0, 'wr': 0, 'gross': 0, 'fees': 0, 'slp': 0, 'net': 0, 'viability': 0}
         
-    gross = sum(t.get('gross_pnl', 0) for t in scl_ledger)
-    fees_paid = sum(t.get('fees_paid', 0) for t in scl_ledger)
+    gross = sum(t['gross_pnl'] for t in scl_ledger)
+    fees_paid = sum(t['fees_paid'] for t in scl_ledger)
     
     # Simulate additional rigid slippage on exit & entry price size margin
     # slippage applies on sizing volume
-    slp_cost = sum( (t.get('size_usd', 0) * slippage * 2) for t in scl_ledger) 
+    slp_cost = sum( (t['size_usd'] * slippage * 2) for t in scl_ledger) 
     
     net = gross - fees_paid - slp_cost
-    wins = sum(1 for t in scl_ledger if (t.get('gross_pnl', 0) - t.get('fees_paid', 0) - (t.get('size_usd', 0)*slippage*2)) > 0)
+    wins = sum(1 for t in scl_ledger if (t['gross_pnl'] - t['fees_paid'] - (t['size_usd']*slippage*2)) > 0)
     total = len(scl_ledger)
     
     wr = (wins / total) * 100 if total > 0 else 0

@@ -105,7 +105,7 @@ class SovereignOracle:
         # Use the latest conviction score from the knowledge base for mutation mod
         history = self.knowledge_base.get(symbol, [])
         if history:
-            return history[-1].get("conviction_score", 1.0)
+            return history[-1]["conviction_score"]
         return 1.0
 
 sovereign_oracle = SovereignOracle()

@@ -36,7 +36,7 @@ class CVDSniperStrategy:
         if not metrics:
             return None
             
-        cvd = metrics.get('rolling_delta_60s', 0.0)
+        cvd = metrics['rolling_delta_60s']
         price = event.close_price
         if not price or price <= 0: return None
         
@@ -62,7 +62,7 @@ class CVDSniperStrategy:
         cvds = list(self.cvd_history[sym])
         
         # ⚡ FLASH LIQUIDITY SNIPING (OBI Burst) ⚡
-        obi = metrics.get('obi', 0.0) # Order Book Imbalance (-1.0 to 1.0)
+        obi = metrics['obi'] # Order Book Imbalance (-1.0 to 1.0)
         cvd_delta_15s = cvds[-1] - cvds[-15] if len(cvds) >= 15 else 0
         
         signals = []
@@ -123,7 +123,7 @@ class CVDSniperStrategy:
         # Price hace Higher High, pero CVD hace Lower High
         if max_p_recent > max_p_past and max_c_recent < max_c_past:
             # Confirmamos con VPIN tóxico o Spoofing
-            if metrics.get('vpin', 0.5) > 0.65 or metrics.get('is_spoofing', False):
+            if metrics['vpin'] > 0.65 or metrics['is_spoofing']:
                 logger.info(f"🟣 [CVD DIVERGENCE] BEARISH Exhaustion en {sym}. Price: HH, CVD: LH.")
                 signals.append(SignalEvent(
                     strategy_id=self.strategy_id,
@@ -144,7 +144,7 @@ class CVDSniperStrategy:
         # Price hace Lower Low, pero CVD hace Higher Low
         if min_p_recent < min_p_past and min_c_recent > min_c_past:
             # Confirmamos que la gravedad magnética empuja hacia arriba
-            if metrics.get('magnetic_pull_up', 0.0) > metrics.get('magnetic_pull_down', 0.0) * 1.5:
+            if metrics['magnetic_pull_up'] > metrics['magnetic_pull_down'] * 1.5:
                 logger.info(f"🟣 [CVD DIVERGENCE] BULLISH Absorption en {sym}. Price: LL, CVD: HL.")
                 signals.append(SignalEvent(
                     strategy_id=self.strategy_id,

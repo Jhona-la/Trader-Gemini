@@ -105,15 +105,15 @@ class StrategySelector:
         wr = perf['wins'] / trades
         
         # Profit factor (métrica más robusta que WR en scalping)
-        gross_profit = perf.get('gross_profit', 0.0)
-        gross_loss   = abs(perf.get('gross_loss', 1.0))
+        gross_profit = perf['gross_profit']
+        gross_loss   = abs(perf['gross_loss'])
         profit_factor = gross_profit / gross_loss if gross_loss > 0 else wr
         
         # Score base: blend de WR y PF normalizado
         base_score = (wr * 0.5) + (min(profit_factor / 2.0, 1.0) * 0.5)
         
         # Penalización por drawdown actual de la estrategia
-        current_dd = perf.get('current_drawdown_pct', 0.0)  # 0-1 float
+        current_dd = perf['current_drawdown_pct']  # 0-1 float
         dd_penalty = max(0.1, 1.0 - (3.0 * current_dd))     # λ=3.0, min 10%
         
         return float(np.clip(base_score * dd_penalty, 0.05, 1.0))

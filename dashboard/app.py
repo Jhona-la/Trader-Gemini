@@ -292,8 +292,8 @@ def list_sessions(data_dir: str, limit: int = 10) -> list:
                             
                             icon = "🟢" if info.get("status") == "RUNNING" else "⚪"
                             found_sessions.append({
-                                "id": info.get("session_id", run_dir),
-                                "label": f"{icon} {info.get('session_id', run_dir)[:16]}...",
+                                "id": info["session_id"],
+                                "label": f"{icon} {info['session_id'][:16]}...",
                                 "path": run_path,
                                 "timestamp": mtime
                             })
@@ -414,18 +414,18 @@ with st.spinner("Loading data..."):
         
         # Priority: Real Live API > Local File > Cached Live
         status = load_live_status(data_dir)
-        if live_data and live_data.get('total_equity', 0) > 0:
-            st.session_state.equity_live = live_data.get('total_equity', 0)
-        elif status and status.get('total_equity', 0) > 0:
-            st.session_state.equity_live = status.get('total_equity', 0)
+        if live_data and live_data['total_equity'] > 0:
+            st.session_state.equity_live = live_data['total_equity']
+        elif status and status['total_equity'] > 0:
+            st.session_state.equity_live = status['total_equity']
     except Exception as e:
         # Fallback to cache if API strictly fails
         live_data = api_mgr.load_cached_status()
     
     # Local file data
     status = load_live_status(data_dir) or live_data
-    equity = status.get('total_equity', 0) if status else 0
-    positions = status.get('positions', {}) if status else {}
+    equity = status['total_equity'] if status else 0
+    positions = status['positions'] if status else {}
     
     history = load_historical_status(active_data_dir)
     trades = load_trades(active_data_dir)
@@ -479,7 +479,7 @@ with header_col2:
     else:
         st.info("⚪ STARTING...")
 with header_col3:
-    latency = api_status.get('last_latency_ms', 0)
+    latency = api_status['last_latency_ms']
     st.metric("Latency", f"{latency}ms")
 with header_col4:
     env_color = "#238636" if st.session_state.environment == "PROD" else "#1f6feb"
@@ -506,9 +506,9 @@ if active_data_dir:
 
 st.markdown("---")
 # MARGIN & RISK METRICS
-maint_margin = status.get('maint_margin', 0)
-margin_balance = status.get('margin_balance', 0)
-unrealized_pnl = status.get('unrealized_pnl', 0)
+maint_margin = status['maint_margin']
+margin_balance = status['margin_balance']
+unrealized_pnl = status['unrealized_pnl']
 
 if margin_balance > 0:
     margin_ratio = (maint_margin / margin_balance) * 100
@@ -518,7 +518,7 @@ else:
 # Effective Leverage
 if equity > 0:
     # Sum absolute position values (notional)
-    total_notional = sum([abs(p['quantity']) * p.get('current_price', 0) for p in positions.values()])
+    total_notional = sum([abs(p['quantity']) * p['current_price'] for p in positions.values()])
     effective_leverage = total_notional / equity
 else:
     effective_leverage = 0.0
@@ -544,7 +544,7 @@ st.markdown("---")
 kpi_cols = st.columns(11)  # Increased from 9 to 11 for Brier Score & PPO Entropy
 
 # 1. Total Equity
-equity = status.get('total_equity', 0) if status else 0
+equity = status['total_equity'] if status else 0
 with kpi_cols[0]:
     st.markdown(f"""
     <div class="kpi-card">
@@ -554,7 +554,7 @@ with kpi_cols[0]:
     """, unsafe_allow_html=True)
 
 # 2. Daily PnL
-daily_pnl = status.get('realized_pnl', 0) if status else 0
+daily_pnl = status['realized_pnl'] if status else 0
 pnl_class = "kpi-positive" if daily_pnl > 0 else "kpi-negative" if daily_pnl < 0 else ""
 with kpi_cols[1]:
     st.markdown(f"""
@@ -565,7 +565,7 @@ with kpi_cols[1]:
     """, unsafe_allow_html=True)
 
 # 3. Sharpe Ratio
-sharpe = analytics.get('sharpe', 0)
+sharpe = analytics['sharpe']
 sharpe_class = "kpi-positive" if sharpe > 1.5 else "kpi-warning" if sharpe > 0.5 else "kpi-negative"
 with kpi_cols[2]:
     st.markdown(f"""
@@ -576,7 +576,7 @@ with kpi_cols[2]:
     """, unsafe_allow_html=True)
 
 # 4. Win Rate
-win_rate = win_stats.get('global_winrate', 0)
+win_rate = win_stats['global_winrate']
 wr_class = "kpi-positive" if win_rate > 55 else "kpi-warning" if win_rate > 45 else "kpi-negative"
 with kpi_cols[3]:
     st.markdown(f"""
@@ -587,7 +587,7 @@ with kpi_cols[3]:
     """, unsafe_allow_html=True)
 
 # 5. Max Drawdown
-max_dd = analytics.get('max_drawdown', 0)
+max_dd = analytics['max_drawdown']
 dd_class = "kpi-positive" if max_dd < 2 else "kpi-warning" if max_dd < 5 else "kpi-negative"
 with kpi_cols[4]:
     st.markdown(f"""
@@ -598,7 +598,7 @@ with kpi_cols[4]:
     """, unsafe_allow_html=True)
 
 # 6. Profit Factor
-pf = win_stats.get('profit_factor', 0)
+pf = win_stats['profit_factor']
 pf_class = "kpi-positive" if pf > 1.5 else "kpi-warning" if pf > 1 else "kpi-negative"
 with kpi_cols[5]:
     st.markdown(f"""
@@ -610,7 +610,7 @@ with kpi_cols[5]:
 
 # 7. Total Trades
 # 7. Total Trades
-total_trades = win_stats.get('total_trades', 0)
+total_trades = win_stats['total_trades']
 with kpi_cols[6]:
     st.markdown(f"""
     <div class="kpi-card">
@@ -620,7 +620,7 @@ with kpi_cols[6]:
     """, unsafe_allow_html=True)
 
 # 8. Expectancy (New Phase 5 KPI)
-exp_val = expectancy_stats.get('expectancy', 0)
+exp_val = expectancy_stats['expectancy']
 exp_class = "kpi-positive" if exp_val > 0 else "kpi-negative" if exp_val < 0 else "kpi-warning"
 exp_display = f"${exp_val:.2f}" if expectancy_stats.get('status') != 'INSUFFICIENT_DATA' else "Calc..."
 
@@ -633,7 +633,7 @@ with kpi_cols[7]:
     """, unsafe_allow_html=True)
 
 # 9. Precision Drift (Phase 11: Axioma Protocol)
-drift_val = status.get('precision_drift', 0.0) if status else 0.0
+drift_val = status['precision_drift'] if status else 0.0
 drift_class = "kpi-positive" if drift_val < 1e-8 else "kpi-warning" if drift_val < 1e-5 else "kpi-negative"
 # Scientific notation for extremely small numbers
 drift_display = f"{drift_val:.2e}" if drift_val > 0 else "0.00e+00"
@@ -647,7 +647,7 @@ with kpi_cols[8]:
     """, unsafe_allow_html=True)
 
 # 10. Brier Score [PHASE 9: ML Metacognition]
-brier_score = status.get('brier_score_active', 0.0) if status else 0.0
+brier_score = status['brier_score_active'] if status else 0.0
 # Brier Score = 0 is perfect. Brier > 0.33 means random guessing
 brier_class = "kpi-positive" if brier_score < 0.20 else "kpi-warning" if brier_score < 0.28 else "kpi-negative"
 with kpi_cols[9]:
@@ -659,7 +659,7 @@ with kpi_cols[9]:
     """, unsafe_allow_html=True)
 
 # 11. PPO Reward Entropy [PHASE 9: Non-Linear Reward]
-ppo_entropy = status.get('ppo_entropy_active', 0.0) if status else 0.0
+ppo_entropy = status['ppo_entropy_active'] if status else 0.0
 ppo_class = "kpi-positive" if ppo_entropy > 0.50 else "kpi-warning" if ppo_entropy > 0 else "kpi-negative"
 with kpi_cols[10]:
     st.markdown(f"""
@@ -702,10 +702,10 @@ with tab1:
         
         # Retrieve latest Math stats from status (if available)
         # We expect 'math_stats' or similar in status.json from the bot
-        math_stats = status.get('math_stats', {})
+        math_stats = status['math_stats']
         
         # 1. Hurst Exponent
-        hurst = math_stats.get('hurst', 0.5)
+        hurst = math_stats['hurst']
         import math
         h_color = "red" if math.isclose(hurst, 0.5) else "green" 
         h_label = "🎲 RANDOM"
@@ -715,22 +715,22 @@ with tab1:
         st.metric("Hurst Exp", f"{hurst:.2f}", h_label)
         
         # 2. RANSAC Beta (Hedge Ratio)
-        beta = math_stats.get('beta', 1.0)
+        beta = math_stats['beta']
         st.metric("Hedge Beta", f"{beta:.3f}")
         
         # 3. Half-Life
-        hl = math_stats.get('half_life', 0)
+        hl = math_stats['half_life']
         st.metric("Half-Life", f"{int(hl)} bars")
         
         # 4. Regime
-        regime = status.get('market_regime', 'UNKNOWN')
+        regime = status['market_regime']
         st.info(f"Regime: {regime}")
         
         # 5. Sovereign Market Context (Breadth) - Phase 8.1
-        breadth = status.get('global_regime_data', {})
-        sentiment = breadth.get('sentiment', 'UNKNOWN')
-        bull_pct = breadth.get('bull_pct', 0.0)
-        bear_pct = breadth.get('bear_pct', 0.0)
+        breadth = status['global_regime_data']
+        sentiment = breadth['sentiment']
+        bull_pct = breadth['bull_pct']
+        bear_pct = breadth['bear_pct']
         
         g_color = "#3fb950" if sentiment == "TRENDING_BULL" else ("#f85149" if sentiment == "TRENDING_BEAR" else "#d29922")
         
@@ -749,11 +749,11 @@ with tab1:
         st.subheader("🔮 Strategy Oracle")
         
         # Meta-Brain Rankings (Phase 7)
-        rankings = status.get('strategy_rankings', {})
+        rankings = status['strategy_rankings']
         if rankings:
             for strat, data in rankings.items():
-                rank = data.get('rank', '-')
-                score = data.get('score', 0)
+                rank = data['rank']
+                score = data['score']
                 
                 # Visuals
                 color = "#3fb950" if score > 0.6 else ("#d29922" if score > 0.4 else "#f85149")
@@ -786,11 +786,11 @@ with tab1:
                 b_col1, b_col2 = st.columns([1, 2])
                 
                 with b_col1:
-                    score = brain.get('consensus_score', 0)
+                    score = brain['consensus_score']
                     delta_t = (datetime.now(timezone.utc) - datetime.fromisoformat(brain['timestamp'])).total_seconds()
                     
                     # Entropy Warning
-                    entropy_status = brain.get('entropy', 'LOW')
+                    entropy_status = brain['entropy']
                     if entropy_status == 'HIGH':
                         st.warning(f"😵 HIGH ENTROPY (HOLD)")
                     elif score > 0.8:
@@ -804,8 +804,8 @@ with tab1:
                 
                 with b_col2:
                     # Vote Breakdown
-                    votes = brain.get('votes', {})
-                    weights = brain.get('weights', {})
+                    votes = brain['votes']
+                    weights = brain['weights']
                     
                     # Create a stacked bar or simple progress bars
                     for model, vote in votes.items():
@@ -903,9 +903,9 @@ with tab1:
         if status and status.get('positions'):
             positions = status['positions']
             for sym, pos in positions.items():
-                qty = pos.get('quantity', 0)
-                avg_price = pos.get('avg_price', 0)
-                current_price = pos.get('current_price', avg_price)
+                qty = pos['quantity']
+                avg_price = pos['avg_price']
+                current_price = pos['current_price']
                 
                 if qty != 0:
                     # Calculate unrealized PnL
@@ -918,8 +918,8 @@ with tab1:
                     
                     pnl_color = "#3fb950" if upnl > 0 else "#f85149"
                     
-                    exec_pol = pos.get('exec_policy', 'MAKER_ONLY')
-                    trail_pol = pos.get('trail_policy', 'STRUCTURED')
+                    exec_pol = pos['exec_policy']
+                    trail_pol = pos['trail_policy']
                     pol_color = "#d29922" if exec_pol == 'TAKER_TOLERANT' else "#3fb950"
                     
                     st.markdown(f"""
@@ -984,39 +984,39 @@ with tab2:
     # Check for False Edge Alert
     if friction_stats.get('false_edge'):
         st.error("⚠️ CRITICAL ALERT: FALSE EDGE DETECTED! Your strategy wins often (>55%) but loses money on Friction (Expectancy < 0). Reduce Fees or increase Avg Win.")
-    elif friction_stats.get('friction_pct', 0) > 20:
+    elif friction_stats['friction_pct'] > 20:
         st.warning(f"⚠️ High Friction Alert: {friction_stats.get('friction_pct')}% of your Gross Profit is eaten by Fees/Slippage.")
 
     perf_cols = st.columns(4)
     
     with perf_cols[0]:
-        st.metric("Sharpe Ratio", f"{analytics.get('sharpe', 0):.2f}")
-        st.metric("Sortino Ratio", f"{analytics.get('sortino', 0):.2f}")
+        st.metric("Sharpe Ratio", f"{analytics['sharpe']:.2f}")
+        st.metric("Sortino Ratio", f"{analytics['sortino']:.2f}")
     
     with perf_cols[1]:
-        st.metric("Win Rate", f"{win_stats.get('global_winrate', 0):.1f}%")
-        st.metric("Profit Factor", f"{win_stats.get('profit_factor', 0):.2f}")
+        st.metric("Win Rate", f"{win_stats['global_winrate']:.1f}%")
+        st.metric("Profit Factor", f"{win_stats['profit_factor']:.2f}")
     
     with perf_cols[2]:
-        st.metric("Max Drawdown", f"{analytics.get('max_drawdown', 0):.2f}%")
-        st.metric("Volatility", f"{analytics.get('volatility', 0):.2f}%")
+        st.metric("Max Drawdown", f"{analytics['max_drawdown']:.2f}%")
+        st.metric("Volatility", f"{analytics['volatility']:.2f}%")
     
     with perf_cols[3]:
-        friction_val = friction_stats.get('friction_pct', 0)
+        friction_val = friction_stats['friction_pct']
         fr_class = "kpi-positive" if friction_val < 10 else "kpi-warning" if friction_val < 30 else "kpi-negative"
         
         st.markdown(f"""
         <div class="kpi-card">
             <div class="kpi-value {fr_class}">{friction_val:.1f}%</div>
             <div class="kpi-label">Friction Impact</div>
-            <div style="font-size: 10px; color: #8b949e;">Fees: ${friction_stats.get('total_fees', 0):.2f}</div>
+            <div style="font-size: 10px; color: #8b949e;">Fees: ${friction_stats['total_fees']:.2f}</div>
         </div>
         """, unsafe_allow_html=True)
         st.markdown(f"""
         <div class="kpi-card">
             <div class="kpi-value {fr_class}">{friction_val:.1f}%</div>
             <div class="kpi-label">Friction Impact</div>
-            <div style="font-size: 10px; color: #8b949e;">Fees: ${friction_stats.get('total_fees', 0):.2f}</div>
+            <div style="font-size: 10px; color: #8b949e;">Fees: ${friction_stats['total_fees']:.2f}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1065,12 +1065,12 @@ with tab2:
                     "Strategy": strat_id,
                     "Net PnL": strat_trades['net_pnl'].sum(),
                     "Trades": len(strat_trades),
-                    "Win Rate": f"{s_wr.get('global_winrate', 0):.1f}%",
-                    "Profit Factor": f"{s_wr.get('profit_factor', 0):.2f}",
-                    "Expectancy": f"${s_exp.get('expectancy', 0):.4f}",
-                    "Kelly %": f"{s_exp.get('kelly_percent', 0):.1f}%",
-                    "Stress Score": f"{stress.get('stress_score', 0):.0f}" if stress else "N/A",
-                    "PoR": f"{stress.get('por', 0):.1f}%" if stress else "N/A"
+                    "Win Rate": f"{s_wr['global_winrate']:.1f}%",
+                    "Profit Factor": f"{s_wr['profit_factor']:.2f}",
+                    "Expectancy": f"${s_exp['expectancy']:.4f}",
+                    "Kelly %": f"{s_exp['kelly_percent']:.1f}%",
+                    "Stress Score": f"{stress['stress_score']:.0f}" if stress else "N/A",
+                    "PoR": f"{stress['por']:.1f}%" if stress else "N/A"
                 })
             except Exception as e:
                 continue
@@ -1179,7 +1179,7 @@ with tab2:
         exp_cols = st.columns(4)
         
         # Expectancy Metric
-        exp_val = expectancy_stats.get('expectancy', 0)
+        exp_val = expectancy_stats['expectancy']
         exp_color = "kpi-positive" if exp_val > 0 else "kpi-negative"
         with exp_cols[0]:
             st.markdown(f"""
@@ -1190,7 +1190,7 @@ with tab2:
             """, unsafe_allow_html=True)
             
         # Kelly Criterion
-        kelly = expectancy_stats.get('kelly_percent', 0)
+        kelly = expectancy_stats['kelly_percent']
         kelly_color = "kpi-positive" if kelly > 0 else "kpi-warning"
         with exp_cols[1]:
             st.markdown(f"""
@@ -1201,7 +1201,7 @@ with tab2:
             """, unsafe_allow_html=True)
             
         # R/R Ratio
-        rr = expectancy_stats.get('reward_risk', 0)
+        rr = expectancy_stats['reward_risk']
         with exp_cols[2]:
             st.markdown(f"""
             <div class="kpi-card">
@@ -1211,8 +1211,8 @@ with tab2:
             """, unsafe_allow_html=True)
             
         # Avg Win/Loss
-        avg_w = expectancy_stats.get('avg_win', 0)
-        avg_l = expectancy_stats.get('avg_loss', 0)
+        avg_w = expectancy_stats['avg_win']
+        avg_l = expectancy_stats['avg_loss']
         with exp_cols[3]:
              st.markdown(f"""
             <div class="kpi-card" style="font-size: 10px;">
@@ -1258,13 +1258,13 @@ with tab3:
     # Reverse signals from logs
     st.subheader("📊 Recent REVERSE Signals")
     
-    reverse_logs = [log for log in recent_logs if 'REVERSE' in log.get('message', '').upper()]
+    reverse_logs = [log for log in recent_logs if 'REVERSE' in log['message'].upper()]
     if reverse_logs:
         for log in reverse_logs[-5:]:
             st.markdown(f"""
             <div style="background: #161b22; border-left: 3px solid #d29922; padding: 8px 12px; margin-bottom: 4px; font-size: 12px;">
-                <span style="color: #8b949e;">{log.get('timestamp', '')}</span>
-                <span style="color: #e0e0e0;">{log.get('message', '')}</span>
+                <span style="color: #8b949e;">{log['timestamp']}</span>
+                <span style="color: #e0e0e0;">{log['message']}</span>
             </div>
             """, unsafe_allow_html=True)
     else:
@@ -1284,7 +1284,7 @@ with tab4:
         res_cols = st.columns(4)
         
         # CPU
-        cpu = sys_metrics.get('cpu_pct', 0)
+        cpu = sys_metrics['cpu_pct']
         c_color = "kpi-negative" if cpu > 80 else ("kpi-warning" if cpu > 50 else "kpi-positive")
         with res_cols[0]:
             st.markdown(f"""
@@ -1295,8 +1295,8 @@ with tab4:
             """, unsafe_allow_html=True)
             
         # RAM
-        ram = sys_metrics.get('ram_pct', 0)
-        ram_gb = sys_metrics.get('ram_used_gb', 0)
+        ram = sys_metrics['ram_pct']
+        ram_gb = sys_metrics['ram_used_gb']
         r_color = "kpi-negative" if ram > 85 else ("kpi-warning" if ram > 70 else "kpi-positive")
         with res_cols[1]:
             st.markdown(f"""
@@ -1307,7 +1307,7 @@ with tab4:
             """, unsafe_allow_html=True)
             
         # Disk
-        disk = sys_metrics.get('disk_free_gb', 0)
+        disk = sys_metrics['disk_free_gb']
         d_color = "kpi-negative" if disk < 2 else "kpi-positive"
         with res_cols[2]:
             st.markdown(f"""
@@ -1318,7 +1318,7 @@ with tab4:
             """, unsafe_allow_html=True)
             
         # Process RAM
-        proc_ram = sys_metrics.get('process_ram_mb', 0)
+        proc_ram = sys_metrics['process_ram_mb']
         with res_cols[3]:
             st.markdown(f"""
             <div class="kpi-card">
@@ -1335,7 +1335,7 @@ with tab4:
         with h_col1:
             # Latency Chart
             timestamps = [h['timestamp'][11:19] for h in health_logs]
-            latencies = [h.get('ui_latency_sec', 0) for h in health_logs]
+            latencies = [h['ui_latency_sec'] for h in health_logs]
             
             fig_h = go.Figure()
             fig_h.add_trace(go.Bar(
@@ -1450,7 +1450,7 @@ with tab6:
     
     if recent_logs:
         for log in reversed(recent_logs[-30:]):
-            level = log.get('level', 'INFO')
+            level = log['level']
             
             # Filter by level
             if log_level_filter != "ALL" and level != log_level_filter:
@@ -1466,8 +1466,8 @@ with tab6:
             }
             color = level_colors.get(level, '#e0e0e0')
             
-            timestamp = log.get('timestamp', '')[:19]
-            message = log.get('message', '')[:100]
+            timestamp = log['timestamp'][:19]
+            message = log['message'][:100]
             
             st.markdown(f"""
             <div style="font-family: monospace; font-size: 11px; margin-bottom: 2px;">
@@ -1620,7 +1620,7 @@ with tab8:
                 p_col1, p_col2, p_col3 = st.columns(3)
                 
                 total_tracked = len(pred_metrics)
-                approved_count = sum(1 for m in pred_metrics.values() if m.get("direction_accuracy", 0) >= 0.6)
+                approved_count = sum(1 for m in pred_metrics.values() if m["direction_accuracy"] >= 0.6)
                 rejected_count = total_tracked - approved_count
                 
                 with p_col1:
@@ -1634,12 +1634,12 @@ with tab8:
                 st.markdown("### Rendimiento Histórico por Modelo")
                 
                 for model_name, m in pred_metrics.items():
-                    accuracy = m.get("direction_accuracy", 0)
-                    horizon = m.get("horizon", "N/A")
-                    signals = m.get("total_signals", 0)
-                    mfe = m.get("avg_mfe_pct", 0)
-                    mae = m.get("avg_mae_pct", 0)
-                    ttl = m.get("optimal_ttl_bars", 0)
+                    accuracy = m["direction_accuracy"]
+                    horizon = m["horizon"]
+                    signals = m["total_signals"]
+                    mfe = m["avg_mfe_pct"]
+                    mae = m["avg_mae_pct"]
+                    ttl = m["optimal_ttl_bars"]
                     
                     status_color = "#3fb950" if accuracy >= 0.6 else "#f85149"
                     status_text = "PASA (Ejecutando)" if accuracy >= 0.6 else "RECHAZADO (Requiere Optuna)"
@@ -1660,7 +1660,7 @@ with tab8:
                     ''', unsafe_allow_html=True)
                     
                     # Exactitud por Ventana
-                    acc_window = m.get("accuracy_by_window", {})
+                    acc_window = m["accuracy_by_window"]
                     if acc_window:
                         x_vals = [f"{k} bar" for k in acc_window.keys()]
                         y_vals = [v * 100 for v in acc_window.values()]
@@ -1701,7 +1701,8 @@ with tab9:
                     try:
                         shadow_data.append(json.loads(line))
                     except:
-                        pass
+                        from utils.error_handler import SystemIntegrityError
+                        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                         
             if shadow_data:
                 df_shadow = pd.DataFrame(shadow_data)

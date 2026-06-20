@@ -187,9 +187,9 @@ class ArbitrageStrategy(Strategy):
         else:
             h_params = {}
         
-        self.TP_PCT = h_params.get('tp_pct', 0.010)
-        self.SL_PCT = h_params.get('sl_pct', 0.010)
-        self.COOLDOWN_SECONDS = h_params.get('cooldown_seconds', 120 if horizon == 'SCALPING' else 3600)
+        self.TP_PCT = h_params['tp_pct']
+        self.SL_PCT = h_params['sl_pct']
+        self.COOLDOWN_SECONDS = h_params['cooldown_seconds']
         self.SOPHIA_TTL = 300.0 if horizon == 'SCALPING' else 3600.0
         
         logger.info(f"💱 ARBITRAGE [{horizon}] INITIALIZED | TP={self.TP_PCT*100:.2f}% SL={self.SL_PCT*100:.2f}% | Cooldown={self.COOLDOWN_SECONDS}s")
@@ -245,9 +245,9 @@ class ArbitrageStrategy(Strategy):
         if now is None:
             now = pd.Timestamp.now(tz='UTC')
             
-        qty = position.get("quantity", 0.0)
+        qty = position["quantity"]
         symbol = position.get("symbol")
-        pos_horizon = position.get("horizon", self.horizon)
+        pos_horizon = position["horizon"]
         
         # 🧠 [INTELLIGENT EXIT]: Sophia AI Real-time validation
         if hasattr(self, 'sophia') and self.sophia:

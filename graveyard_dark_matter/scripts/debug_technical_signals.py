@@ -91,7 +91,7 @@ print()
 
 # Test signal strength
 print('--- Signal Strength ---')
-volatility = setups.get('atr', 100) / setups.get('close', 80000)
+volatility = setups['atr'] / setups['close']
 strength = tech.calculate_signal_strength(setups, confluence, volatility, symbol='BTC/USDT')
 print(f'  strength: {strength:.4f}')
 print(f'  threshold: {tech.STRENGTH_THRESHOLD}')
@@ -126,8 +126,8 @@ else:
     print('DIAGNOSTIC OUTPUT:')
     print(f'  long_mean_rev={setups.get("long_mean_rev")}')
     print(f'  short_mean_rev={setups.get("short_mean_rev")}')
-    print(f'  rsi={setups.get("rsi", 0):.2f}')
-    print(f'  volume_ratio={setups.get("volume_ratio", 0):.2f}')
+    print(f'  rsi={setups["rsi"]:.2f}')
+    print(f'  volume_ratio={setups["volume_ratio"]:.2f}')
     print(f'  strength={strength:.4f}')
     print(f'  threshold={tech.STRENGTH_THRESHOLD}')
     print()

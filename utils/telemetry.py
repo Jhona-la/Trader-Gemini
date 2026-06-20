@@ -40,14 +40,14 @@ class TelemetryDisplay:
         try:
             # Get atomic snapshot to avoid race conditions
             snapshot = portfolio.get_atomic_snapshot()
-            positions = snapshot.get('positions', {})
-            equity = snapshot.get('total_equity', 0)
-            cash = snapshot.get('cash', 0)
+            positions = snapshot['positions']
+            equity = snapshot['total_equity']
+            cash = snapshot['cash']
             
             # Filter active positions only
             active = {}
             for symbol, pos in positions.items():
-                qty = pos.get('quantity', 0)
+                qty = pos['quantity']
                 if qty != 0:
                     active[symbol] = pos
             
@@ -93,9 +93,9 @@ class TelemetryDisplay:
     
     def _format_position_row(self, symbol: str, pos: Dict[str, Any]) -> str:
         """Formats a single position row."""
-        qty = pos.get('quantity', 0)
-        entry = pos.get('avg_price', 0)
-        current = pos.get('current_price', entry)
+        qty = pos['quantity']
+        entry = pos['avg_price']
+        current = pos['current_price']
         side = "LONG" if qty > 0 else "SHORT"
         
         # PnL%
@@ -108,7 +108,7 @@ class TelemetryDisplay:
             pnl_pct = 0.0
         
         # Gap to TP
-        tp_price = pos.get('tp_price', 0)
+        tp_price = pos['tp_price']
         if tp_price > 0 and current > 0:
             if side == "LONG":
                 gap_pct = ((tp_price - current) / current) * 100

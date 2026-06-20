@@ -68,7 +68,7 @@ class GenomeRegistry:
         Actualiza el genoma de un activo/horizonte si el nuevo fitness es mejor.
         """
         key = f"{symbol}_{horizon}"
-        if key not in self.genomes or fitness > self.genomes[key].get('fitness', -999):
+        if key not in self.genomes or fitness > self.genomes[key]['fitness']:
             self.genomes[key] = {
                 'genes': genes,
                 'fitness': fitness,

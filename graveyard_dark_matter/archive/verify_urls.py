@@ -16,7 +16,7 @@ def verify():
     
     # Check URLs
     urls = exchange.urls
-    api_urls = urls.get('api', {})
+    api_urls = urls['api']
     
     print("\n[Active Endpoints]")
     if isinstance(api_urls, dict):

@@ -30,7 +30,7 @@ class AsymmetricMMStrategy:
 
         # Solo operar si el Risk Manager ha decretado "Entropía Máxima" (Mercado aburrido/ruidoso)
         global_state = getattr(event, 'global_state', {})
-        if not global_state.get('entropy_veto', False):
+        if not global_state['entropy_veto']:
             # El mercado tiene dirección, no queremos hacer Market Making aquí
             return None
             

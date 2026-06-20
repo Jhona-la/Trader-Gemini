@@ -67,9 +67,9 @@ class CrossExchangeIntelligenceEngine:
             try:
                 for sym in self.symbol_list:
                     metrics = global_state.cross_exchange_metrics.get(sym, {})
-                    cb_vel = metrics.get('cb_velocity', 0.0)
-                    bybit_oi = metrics.get('bybit_oi', 0.0)
-                    funding = metrics.get('bybit_funding', 0.0)
+                    cb_vel = metrics['cb_velocity']
+                    bybit_oi = metrics['bybit_oi']
+                    funding = metrics['bybit_funding']
                     
                     # 1. Coinbase Lead-Lag (Velocity in % per sec)
                     # pdc_signal > 0 means strong upward lead from Coinbase
@@ -94,7 +94,8 @@ class CrossExchangeIntelligenceEngine:
                     metrics['pdc_signal'] = max(-1.0, min(1.0, pdc))
                     
             except Exception as e:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
             await asyncio.sleep(0.05) # Calculate every 50ms (Ultra-Low Latency)
             

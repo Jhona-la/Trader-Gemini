@@ -187,8 +187,8 @@ class MarketScanner:
             
             for i, d in enumerate(ranked_data[active_limit:active_limit + 16]):
                 rank = active_limit + i + 1
-                vol_m = d.get('volume', 0) / 1_000_000
-                vol_pct = d.get('volatility', 0) * 100
+                vol_m = d['volume'] / 1_000_000
+                vol_pct = d['volatility'] * 100
                 lines.append(f"  #{rank} `{d['symbol']}` — Score: {d['score']:.0f} | Vol: ${vol_m:.1f}M | Δ: {vol_pct:.2f}%")
             
             if promotions:

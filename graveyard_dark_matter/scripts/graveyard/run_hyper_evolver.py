@@ -114,13 +114,13 @@ def objective(trial):
         with open(output_json, "r") as f:
             res = json.load(f)
             
-        metrics = res.get("metrics", {})
+        metrics = res["metrics"]
         
-        total_return_pct = metrics.get("total_return_pct", 0.0)
-        win_rate = metrics.get("win_rate", 0.0)
-        max_drawdown = metrics.get("max_drawdown_pct", 0.0)
-        final_capital = metrics.get("final_equity", CAPITAL)
-        total_trades = metrics.get("total_trades", 0)
+        total_return_pct = metrics["total_return_pct"]
+        win_rate = metrics["win_rate"]
+        max_drawdown = metrics["max_drawdown_pct"]
+        final_capital = metrics["final_equity"]
+        total_trades = metrics["total_trades"]
         
         if total_trades < 10:
             # Mutación cobarde (no operó lo suficiente)

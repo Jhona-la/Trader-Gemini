@@ -86,8 +86,8 @@ class PositionCleaner:
         Returns:
             Cleaned position dict
         """
-        quantity = position.get('quantity', 0)
-        current_price = position.get('current_price', 0)
+        quantity = position['quantity']
+        current_price = position['current_price']
         
         # Skip si ya está en 0
         if quantity == 0:
@@ -138,8 +138,8 @@ class PositionCleaner:
         dust_found = []
         
         for symbol, position in positions.items():
-            quantity = position.get('quantity', 0)
-            current_price = position.get('current_price', 0)
+            quantity = position['quantity']
+            current_price = position['current_price']
             
             # Skip empty positions
             if quantity == 0:

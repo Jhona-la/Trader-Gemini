@@ -97,7 +97,8 @@ class APIManager:
                     f"Rate limit: {self.rate_limit_used}/{self.rate_limit_max}"
                 )
         except:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
     def should_throttle(self) -> bool:
         """Check if we should throttle requests to avoid ban."""
@@ -241,20 +242,20 @@ class APIManager:
                 self.last_latency_ms = int((time.time() - start_time) * 1000)
 
                 result = {
-                    "total_equity": float(account.get("totalWalletBalance", 0))
-                    + float(account.get("totalUnrealizedProfit", 0)),
-                    "wallet_balance": float(account.get("totalWalletBalance", 0)),
-                    "available_balance": float(account.get("availableBalance", 0)),
-                    "used_margin": float(account.get("totalPositionInitialMargin", 0)),
+                    "total_equity": float(account["totalWalletBalance"])
+                    + float(account["totalUnrealizedProfit"]),
+                    "wallet_balance": float(account["totalWalletBalance"]),
+                    "available_balance": float(account["availableBalance"]),
+                    "used_margin": float(account["totalPositionInitialMargin"]),
                     "maint_margin": float(
-                        account.get("totalMaintMargin", 0)
+                        account["totalMaintMargin"]
                     ),  # Risk Metric
                     "margin_balance": float(
-                        account.get("totalMarginBalance", 0)
+                        account["totalMarginBalance"]
                     ),  # Risk Metric
-                    "unrealized_pnl": float(account.get("totalUnrealizedProfit", 0)),
+                    "unrealized_pnl": float(account["totalUnrealizedProfit"]),
                     "positions": self._parse_futures_positions(
-                        account.get("positions", [])
+                        account["positions"]
                     ),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "source": "LIVE_API",
@@ -268,13 +269,13 @@ class APIManager:
                 # Calculate total in USDT equivalent
                 balances = {
                     b["asset"]: float(b["free"]) + float(b["locked"])
-                    for b in account.get("balances", [])
+                    for b in account["balances"]
                     if float(b["free"]) + float(b["locked"]) > 0
                 }
 
                 result = {
-                    "total_equity": balances.get("USDT", 0),
-                    "available_balance": balances.get("USDT", 0),
+                    "total_equity": balances["USDT"],
+                    "available_balance": balances["USDT"],
                     "balances": balances,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "source": "LIVE_API",
@@ -290,7 +291,7 @@ class APIManager:
             if (
                 result
                 and result.get("source") == "LIVE_API"
-                and result.get("total_equity", 0) > 0
+                and result["total_equity"] > 0
             ):
                 self.save_status_atomic(result)
 
@@ -307,7 +308,7 @@ class APIManager:
             self.is_using_cache = True
             # Use cached status, or fallback to INITIAL_CAPITAL ($13)
             cached = self.load_cached_status()
-            if cached and cached.get("total_equity", 0) >= 100:
+            if cached and cached["total_equity"] >= 100:
                 return cached
             return self._get_fallback_balance()
 
@@ -315,15 +316,15 @@ class APIManager:
         """Parse futures positions into simpler format."""
         result = {}
         for pos in positions:
-            amt = float(pos.get("positionAmt", 0))
+            amt = float(pos["positionAmt"])
             if amt != 0:
-                symbol = pos.get("symbol", "")
+                symbol = pos["symbol"]
                 result[symbol] = {
                     "quantity": amt,
-                    "avg_price": float(pos.get("entryPrice", 0)),
-                    "current_price": float(pos.get("markPrice", 0)),
-                    "unrealized_pnl": float(pos.get("unrealizedProfit", 0)),
-                    "leverage": int(pos.get("leverage", 1)),
+                    "avg_price": float(pos["entryPrice"]),
+                    "current_price": float(pos["markPrice"]),
+                    "unrealized_pnl": float(pos["unrealizedProfit"]),
+                    "leverage": int(pos["leverage"]),
                 }
         return result
 
@@ -351,7 +352,7 @@ class APIManager:
         try:
             result = self.get_account_balance(is_prod=True)
             # If API failed or returned testnet/demo value (too high), use config fallback
-            equity = result.get("total_equity", 0) if result else 0
+            equity = result["total_equity"] if result else 0
             if (
                 equity < 100 or equity > 1000
             ):  # < 100 is too low, > 1000 is testnet demo account

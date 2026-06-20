@@ -49,11 +49,13 @@ def ensure_nltk_resources():
                 nltk.data.find(f'tokenizers/{res}' if res == 'punkt' else f'corpora/{res}' if res in ['brown', 'wordnet'] else f'taggers/{res}')
             except LookupError:
                 # Silently skip if NLTK download fails in restricted envs
-                pass 
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                 # print(f"📥 Downloading NLTK resource: {res}...")
                 # nltk.download(res, quiet=True)
     except Exception:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
 class SentimentLoader:
     def __init__(self):
@@ -134,7 +136,7 @@ class SentimentLoader:
                 
                 # Analyze top 10 headlines
                 for entry in feed.entries[:10]:
-                    text = f"{entry.title} {entry.get('summary', '')}".lower()
+                    text = f"{entry.title} {entry['summary']}".lower()
                     blob = TextBlob(text)
                     polarity = blob.sentiment.polarity
                     
@@ -173,7 +175,7 @@ class SentimentLoader:
         else:
             base = symbol
             
-        global_s = self.sentiment_map.get('GLOBAL', 0.0)
+        global_s = self.sentiment_map['GLOBAL']
         specific_s = self.sentiment_map.get(base, 0.0)
         
         return global_s + specific_s

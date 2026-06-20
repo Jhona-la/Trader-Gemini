@@ -25,7 +25,8 @@ class RealContinuousEvolver:
                 with open(REAL_DNA_PATH, 'r') as f:
                     return json.load(f)
             except:
-                pass
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         
         return {
             'scalp_rsi_buy': 33,
@@ -77,13 +78,13 @@ class RealContinuousEvolver:
         if random.random() < mutation_rate: mutated['scalp_tp_pct'] = round(max(0.002, min(0.1, mutated['scalp_tp_pct'] * random.uniform(0.8, 1.2))), 4)
         if random.random() < mutation_rate: mutated['scalp_sl_pct'] = round(max(0.01, min(0.1, mutated['scalp_sl_pct'] * random.uniform(0.8, 1.2))), 4)
         if random.random() < mutation_rate: mutated['scalp_leverage'] = round(max(1.0, min(50.0, mutated['scalp_leverage'] + random.randint(-5, 5))), 1)
-        if random.random() < mutation_rate: mutated['scalp_ml_th_long'] = round(max(0.50, min(0.85, mutated.get('scalp_ml_th_long', 0.65) + random.uniform(-0.05, 0.05))), 3)
-        if random.random() < mutation_rate: mutated['scalp_ml_th_short'] = round(max(0.15, min(0.50, mutated.get('scalp_ml_th_short', 0.35) + random.uniform(-0.05, 0.05))), 3)
-        if random.random() < mutation_rate: mutated['scalp_master_threshold'] = round(max(0.1, min(3.0, mutated.get('scalp_master_threshold', 1.0) + random.uniform(-0.2, 0.2))), 3)
-        if random.random() < mutation_rate: mutated['scalp_w_ml'] = round(max(0.0, min(2.0, mutated.get('scalp_w_ml', 1.0) + random.uniform(-0.2, 0.2))), 3)
-        if random.random() < mutation_rate: mutated['scalp_w_technical'] = round(max(0.0, min(2.0, mutated.get('scalp_w_technical', 1.0) + random.uniform(-0.2, 0.2))), 3)
-        if random.random() < mutation_rate: mutated['scalp_w_phalanx'] = round(max(0.0, min(2.0, mutated.get('scalp_w_phalanx', 0.5) + random.uniform(-0.2, 0.2))), 3)
-        if random.random() < mutation_rate: mutated['scalp_w_statarb'] = round(max(0.0, min(2.0, mutated.get('scalp_w_statarb', 0.5) + random.uniform(-0.2, 0.2))), 3)
+        if random.random() < mutation_rate: mutated['scalp_ml_th_long'] = round(max(0.50, min(0.85, mutated['scalp_ml_th_long'] + random.uniform(-0.05, 0.05))), 3)
+        if random.random() < mutation_rate: mutated['scalp_ml_th_short'] = round(max(0.15, min(0.50, mutated['scalp_ml_th_short'] + random.uniform(-0.05, 0.05))), 3)
+        if random.random() < mutation_rate: mutated['scalp_master_threshold'] = round(max(0.1, min(3.0, mutated['scalp_master_threshold'] + random.uniform(-0.2, 0.2))), 3)
+        if random.random() < mutation_rate: mutated['scalp_w_ml'] = round(max(0.0, min(2.0, mutated['scalp_w_ml'] + random.uniform(-0.2, 0.2))), 3)
+        if random.random() < mutation_rate: mutated['scalp_w_technical'] = round(max(0.0, min(2.0, mutated['scalp_w_technical'] + random.uniform(-0.2, 0.2))), 3)
+        if random.random() < mutation_rate: mutated['scalp_w_phalanx'] = round(max(0.0, min(2.0, mutated['scalp_w_phalanx'] + random.uniform(-0.2, 0.2))), 3)
+        if random.random() < mutation_rate: mutated['scalp_w_statarb'] = round(max(0.0, min(2.0, mutated['scalp_w_statarb'] + random.uniform(-0.2, 0.2))), 3)
 
         
         # Swing Mutations
@@ -93,13 +94,13 @@ class RealContinuousEvolver:
         if random.random() < mutation_rate: mutated['swing_tp_pct'] = round(max(0.01, min(0.2, mutated['swing_tp_pct'] * random.uniform(0.8, 1.2))), 4)
         if random.random() < mutation_rate: mutated['swing_sl_pct'] = round(max(0.02, min(0.15, mutated['swing_sl_pct'] * random.uniform(0.8, 1.2))), 4)
         if random.random() < mutation_rate: mutated['swing_leverage'] = round(max(1.0, min(30.0, mutated['swing_leverage'] + random.randint(-5, 5))), 1)
-        if random.random() < mutation_rate: mutated['swing_ml_th_long'] = round(max(0.50, min(0.85, mutated.get('swing_ml_th_long', 0.60) + random.uniform(-0.05, 0.05))), 3)
-        if random.random() < mutation_rate: mutated['swing_ml_th_short'] = round(max(0.15, min(0.50, mutated.get('swing_ml_th_short', 0.40) + random.uniform(-0.05, 0.05))), 3)
-        if random.random() < mutation_rate: mutated['swing_master_threshold'] = round(max(0.1, min(3.0, mutated.get('swing_master_threshold', 1.0) + random.uniform(-0.2, 0.2))), 3)
-        if random.random() < mutation_rate: mutated['swing_w_ml'] = round(max(0.0, min(2.0, mutated.get('swing_w_ml', 1.0) + random.uniform(-0.2, 0.2))), 3)
-        if random.random() < mutation_rate: mutated['swing_w_technical'] = round(max(0.0, min(2.0, mutated.get('swing_w_technical', 1.0) + random.uniform(-0.2, 0.2))), 3)
-        if random.random() < mutation_rate: mutated['swing_w_phalanx'] = round(max(0.0, min(2.0, mutated.get('swing_w_phalanx', 0.5) + random.uniform(-0.2, 0.2))), 3)
-        if random.random() < mutation_rate: mutated['swing_w_statarb'] = round(max(0.0, min(2.0, mutated.get('swing_w_statarb', 0.5) + random.uniform(-0.2, 0.2))), 3)
+        if random.random() < mutation_rate: mutated['swing_ml_th_long'] = round(max(0.50, min(0.85, mutated['swing_ml_th_long'] + random.uniform(-0.05, 0.05))), 3)
+        if random.random() < mutation_rate: mutated['swing_ml_th_short'] = round(max(0.15, min(0.50, mutated['swing_ml_th_short'] + random.uniform(-0.05, 0.05))), 3)
+        if random.random() < mutation_rate: mutated['swing_master_threshold'] = round(max(0.1, min(3.0, mutated['swing_master_threshold'] + random.uniform(-0.2, 0.2))), 3)
+        if random.random() < mutation_rate: mutated['swing_w_ml'] = round(max(0.0, min(2.0, mutated['swing_w_ml'] + random.uniform(-0.2, 0.2))), 3)
+        if random.random() < mutation_rate: mutated['swing_w_technical'] = round(max(0.0, min(2.0, mutated['swing_w_technical'] + random.uniform(-0.2, 0.2))), 3)
+        if random.random() < mutation_rate: mutated['swing_w_phalanx'] = round(max(0.0, min(2.0, mutated['swing_w_phalanx'] + random.uniform(-0.2, 0.2))), 3)
+        if random.random() < mutation_rate: mutated['swing_w_statarb'] = round(max(0.0, min(2.0, mutated['swing_w_statarb'] + random.uniform(-0.2, 0.2))), 3)
 
             
         return mutated
@@ -108,7 +109,7 @@ class RealContinuousEvolver:
         pnl = results['pnl']
         wr = results['win_rate']
         trades = results['trades']
-        max_dd = results.get('max_drawdown', 0.0)
+        max_dd = results['max_drawdown']
         
         if trades < 15 or pnl <= 0:
             return -999999.0

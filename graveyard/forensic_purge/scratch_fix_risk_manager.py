@@ -5,10 +5,10 @@ with open(path, "r", encoding="utf-8") as f:
     content = f.read()
 
 # Buscamos todas las llamadas a SignalEvent dentro de check_stops que usan strategy_id="ALGO"
-# y las reemplazamos por strategy_id=pos.get("opener_strategy_id", "Unknown")
+# y las reemplazamos por strategy_id=pos["opener_strategy_id"]
 # Además guardamos el string original en "exit_reason" de metadata si no está.
 
-# Ejemplo: strategy_id="TIME_STOP_ZOMBIE" -> strategy_id=pos.get('opener_strategy_id', 'Unknown')
+# Ejemplo: strategy_id="TIME_STOP_ZOMBIE" -> strategy_id=pos['opener_strategy_id']
 # pero dejemos que re lo arregle todo donde sea literal string.
 
 def replacer(match):
@@ -17,7 +17,7 @@ def replacer(match):
     if 'pos.get' in strat_val or 'original_strategy' in strat_val or 'opener_id' in strat_val:
         return full
     # Si es literal
-    return full.replace(strat_val, 'pos.get("opener_strategy_id", "Unknown")')
+    return full.replace(strat_val, 'pos["opener_strategy_id"]')
 
 # Cuidado con hacer un regex demasiado amplio.
 content_new = re.sub(r'strategy_id=("[^"]+"|trail_name|oracle_decision|original_strategy)', replacer, content)

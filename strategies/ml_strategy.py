@@ -35,12 +35,10 @@ warnings.filterwarnings("ignore", message=".*sklearn.utils.parallel.delayed.*")
 
 import threading
 from collections import Counter, deque
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import numpy as np
-import pandas as pd
 import talib
-from sklearn.preprocessing import StandardScaler
 from config import Config
 from utils.notifier import Notifier
 from core.enums import EventType, SignalType
@@ -58,6 +56,16 @@ from ml.tree_compiler import (  # Model to Matrix parser
     compile_rf_to_numpy_batch,
 )
 from sophia.intelligence import MultiHorizonOracle, SophiaIntelligence  # Phase 4: Oracle Veto + Singleton XAI
+import xgboost as xgb
+
+try:
+    from core import hyper_kernel
+    HYPER_KERNEL_AVAILABLE = True
+except ImportError:
+    HYPER_KERNEL_AVAILABLE = False
+    logger.warning("HyperKernel not found. Will fallback to Python math if needed.")
+
+from strategies.strategy import Strategy as BaseStrategy
 from strategies.components.adaptive_engine import (
     AdaptiveMLParameterEngine,  # Phase 3: Adaptive Engine
 )
@@ -109,13 +117,13 @@ import threading
 import time
 import traceback
 
-import joblib
-
 from core.ml_governance import MLGovernance
 from core.online_learning import OnlineLearner
 from core.reward_system import RewardSystem, TradeOutcome
 from data.feature_store import FeatureStore
 from ml.replay_buffer import PrioritizedReplayBuffer
+import joblib
+from sklearn.preprocessing import StandardScaler
 
 # Global Process Pool for Training (Singleton)
 # Limit to cpu_count - 2 to leave room for Engine and Data Loader
@@ -560,7 +568,7 @@ class MLStrategyHybridUltimate(Strategy):
             "MIXED": [],
             "UNKNOWN": [],
         }
-        self.last_regime_update = self._now() - pd.Timedelta(
+        self.last_regime_update = self._now() - timedelta(
             minutes=5
         )  # Allow immediate update
         self.regime_confidence = 0.0
@@ -1144,10 +1152,7 @@ class MLStrategyHybridUltimate(Strategy):
         # PARA QUÉ: Evitar crashes y restaurar operaciones LONG que estaban
         #   siendo mapeadas a HOLD.
         # ═══════════════════════════════════════════════════════════════
-        df_long = df[df["label"] == 1]
-        df_short = df[df["label"] == -1]
-        
-        df_signals = pd.concat([df_long, df_short]).sort_index()
+        df_signals = df[df["label"].isin([1, -1])].copy()
 
         # ═══════════════════════════════════════════════════════════════
         # FORENSIC-V50 FIX: MINIMUM TRAINING SAMPLES (ANTI-OVERFITTING)
@@ -1229,8 +1234,7 @@ class MLStrategyHybridUltimate(Strategy):
         # XGBoost dynamically expects [0, 1] for binary classification
         # FIX: Hardcode mapping so classes don't shift across batches
         # -1 -> 0, 1 -> 1
-        y_encoded = y.map({-1: 0, 1: 1})
-        y = pd.Series(y_encoded, index=y.index)
+        y = y.map({-1: 0, 1: 1})
 
         # DEBUG: Verificar si las features son válidas
         std_zero_cols = X.columns[X.std() == 0].tolist()
@@ -1361,25 +1365,23 @@ class MLStrategyHybridUltimate(Strategy):
             y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
             # Anti-Crash for Extreme Imbalance (Ensure both classes exist)
-            # import pandas as pd
-
             if len(np.unique(y_train)) < 2:
-                logger.warning(
-                    f"⚠️ [{self.symbol}] Fold {fold} has only 1 class. Injecting synthetic samples to prevent XGB crash."
-                )
-                fake_y = pd.Series([-1, 1], index=[-1, -2])
-                fake_X = pd.DataFrame(
-                    [X_train.iloc[0].values, X_train.iloc[0].values],
-                    index=[-1, -2],
-                    columns=X_train.columns,
-                )
-                X_train = pd.concat([X_train, fake_X])
-                y_train = pd.concat([y_train, fake_y])
+                # Usar numpy concatenate en vez de pd.concat
+                fake_y = np.array([0, 1])
+                fake_X = np.array([X_train.iloc[0].values, X_train.iloc[0].values])
+                
+                X_train_arr = np.concatenate([X_train.values, fake_X], axis=0)
+                y_train_arr = np.concatenate([y_train.values, fake_y], axis=0)
+            else:
+                X_train_arr = X_train.values
+                y_train_arr = y_train.values
 
             # Scaling & Memory Optimization (Rule 3.6)
             scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train).astype("float32")
+            X_train_scaled = scaler.fit_transform(X_train_arr).astype("float32")
             X_test_scaled = scaler.transform(X_test).astype("float32")
+            
+            y_train = y_train_arr
 
             # 1. MLP Classifier (Neural Network - Online Learning)
             rf = getattr(self, "rf_model", None)
@@ -1941,6 +1943,88 @@ class MLStrategyHybridUltimate(Strategy):
         logger.info("🟢 CIRCUIT BREAKER DEACTIVATED")
 
     # ============================================================
+    # ✅ QUANTUM BATCH VECTORIZATION (PHASE 3)
+    # ============================================================
+    
+    def batch_predict_vectorized(self, full_df):
+        """
+        [PHASE 3] Vectorized Inference for Backtesting
+        Computes all XGBoost/RF/GB predictions for the entire DataFrame in one O(1) FFI call.
+        Saves predictions to self._global_predictions_cache.
+        """
+        import numpy as np
+        
+        if not getattr(self, "is_trained", False) or full_df is None or len(full_df) == 0:
+            return False
+            
+        with self._state_lock:
+            models_ready = all([self.rf_model, self.xgb_model, self.gb_model])
+            if not models_ready:
+                return False
+            feature_cols = self._feature_cols
+            
+        valid_features = [col for col in feature_cols if col in full_df.columns]
+        if not valid_features:
+            return False
+            
+        # Get matrix directly
+        if hasattr(full_df, "to_pandas"):
+            df_pd = full_df.to_pandas()
+        else:
+            df_pd = full_df
+            
+        X_matrix = df_pd[valid_features].to_numpy(dtype=np.float32, copy=False)
+        np.nan_to_num(X_matrix, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        if hasattr(self, 'scaler') and self.scaler is not None:
+            try:
+                X_scaled = self.scaler.transform(X_matrix)
+            except Exception:
+                X_scaled = X_matrix
+        else:
+            X_scaled = X_matrix
+            
+        # 1. XGBoost Batch FFI Predict
+        try:
+            booster = self.xgb_model.get_booster() if hasattr(self.xgb_model, 'get_booster') else self.xgb_model
+            _xgb_p = booster.inplace_predict(X_scaled) # returns shape (N,)
+            xgb_proba = np.vstack((1.0 - _xgb_p, _xgb_p)).T # shape (N, 2)
+        except Exception as e:
+            try:
+                xgb_proba = self.xgb_model.predict_proba(X_scaled)
+            except Exception:
+                xgb_proba = np.zeros((len(X_scaled), 2))
+                xgb_proba[:, 1] = 0.5
+                xgb_proba[:, 0] = 0.5
+
+        # 2. Random Forest Batch Predict
+        try:
+            rf_proba = self.rf_model.predict_proba(X_scaled)
+        except Exception:
+            rf_proba = np.zeros((len(X_scaled), 2))
+            rf_proba[:, 1] = 0.5
+            rf_proba[:, 0] = 0.5
+            
+        # 3. Gradient Boosting Batch Predict
+        try:
+            gb_proba = self.gb_model.predict_proba(X_scaled)
+        except Exception:
+            gb_proba = np.zeros((len(X_scaled), 2))
+            gb_proba[:, 1] = 0.5
+            gb_proba[:, 0] = 0.5
+            
+        # Combine ensemble
+        ensemble_proba = (
+            rf_proba * self.base_rf_weight
+            + xgb_proba * self.base_xgb_weight
+            + gb_proba * self.base_gb_weight
+        )
+        
+        # Save to cache!
+        self._global_predictions_cache = ensemble_proba
+        return True
+
+    # ============================================================
     # ✅ INFERENCE ULTIMATE - ENSEMBLE COMPLETO
     # ============================================================
 
@@ -1960,23 +2044,58 @@ class MLStrategyHybridUltimate(Strategy):
             # El backtest llama _run_inference (sync), NO _run_inference_v3.
             # Sin este flag, Polars→Pandas→iloc→values añadía ~350ms.
             # ═══════════════════════════════════════════════════════════════
-            # ── FASE III-B: TRUE ZERO-COPY CACHE BYPASS (GIL EVASION) ──
+            # ═══════════════════════════════════════════════════════════════
+            # ── FASE III-B: ZERO-COPY METAL FAST PATH (O(1) GIL EVASION) ──
+            # ═══════════════════════════════════════════════════════════════
             df_pl = None
             last_row_dict = None
-            if bars is not None and len(bars) > 0:
+            X_pred = None
+            is_live_tick = self.is_live and bars is not None and len(bars) > 0
+            
+            valid_features = [col for col in self._feature_cols if col is not None] if self._feature_cols else []
+            
+            if is_live_tick and hasattr(self.feature_engineering, 'update_and_inject_metal') and valid_features:
+                last_bar = bars[-1] if isinstance(bars[-1], dict) else {name: bars[-1][name] for name in bars.dtype.names}
+                price = float(last_bar['close'])
+                high = float(last_bar['high'])
+                low = float(last_bar['low'])
+                vol = float(last_bar['volume'])
+                
+                arena_np = self.feature_engineering.update_and_inject_metal(self.symbol, price, high, low, vol)
+                
+                if arena_np is not None:
+                    arena_obj = self.feature_engineering.feature_arenas.get(self.symbol)
+                    if arena_obj and arena_obj.columns:
+                        if not hasattr(self, '_arena_to_valid_idx'):
+                            self._arena_to_valid_idx = [arena_obj.columns.index(col) for col in valid_features if col in arena_obj.columns]
+                            self._arena_valid_features = [col for col in valid_features if col in arena_obj.columns]
+                            
+                        if len(self._arena_to_valid_idx) == len(valid_features):
+                            # [ZERO-COPY] Array slice directly into memory mapped by Rust
+                            X_pred = arena_np[:, self._arena_to_valid_idx]
+                            valid_features = self._arena_valid_features
+                            self._quantum_cache_hit = True
+                            df_pl = "ARENA_FAST_PATH"
+                            
+                            # Build quick alias row for oracle logging
+                            last_row_dict = {
+                                col: arena_np[0, arena_obj.columns.index(col)]
+                                for col in ['atr_pct', 'atr', 'rsi_14', 'volume_ratio', 'confluence_score', 'volume_zscore', 'adx', 'trend_power']
+                                if col in arena_obj.columns
+                            }
+
+            if df_pl is None and bars is not None and len(bars) > 0:
                 current_ts = bars['timestamp'][-1] if hasattr(bars, 'dtype') else (bars[-1]['timestamp'] if isinstance(bars[-1], dict) else None)
                 if current_ts is not None and hasattr(self, "_global_feature_cache") and hasattr(self, "_global_feature_cache_ts"):
                     import numpy as np
                     ts_arr = self._global_feature_cache_ts
                     idx = np.searchsorted(ts_arr, current_ts)
                     if idx < len(ts_arr) and ts_arr[idx] == current_ts:
-                        # [ZERO-COPY] Skip Polars entirely. Use raw Pandas slice for Dict and extract NumPy array directly later.
-                        # We just store the index so we can slice the NumPy matrix in O(1) time.
+                        # [PANDAS CACHE] Backup if Metal is inactive
                         self._quantum_cache_hit = True
                         self._quantum_idx = idx
                         last_row_dict = self._global_feature_cache.iloc[idx].to_dict()
-                        # We still need df_pl to be truthy to avoid recalculating prepare_features
-                        df_pl = "CACHED_TRUE" 
+                        df_pl = "CACHED_TRUE"
             
             if df_pl is None:
                 self._quantum_cache_hit = False
@@ -2054,15 +2173,17 @@ class MLStrategyHybridUltimate(Strategy):
                 )
                 return
 
-            # Filtrar columnas válidas
-            if self._quantum_cache_hit:
-                valid_features = [
-                    col for col in feature_cols if col is not None and col in self._global_feature_cache.columns
-                ]
-            else:
-                valid_features = [
-                    col for col in feature_cols if col is not None and col in df_pl.columns
-                ]
+            # Filtrar columnas válidas (solo si no pasamos por el Fast Path)
+            if df_pl != "ARENA_FAST_PATH":
+                if self._quantum_cache_hit and df_pl == "CACHED_TRUE":
+                    valid_features = [
+                        col for col in feature_cols if col is not None and col in self._global_feature_cache.columns
+                    ]
+                else:
+                    valid_features = [
+                        col for col in feature_cols if col is not None and col in df_pl.columns
+                    ]
+            
             if not valid_features:
                 logger.error(
                     f"❌ Error processing {self.symbol}: No valid features available for inference"
@@ -2072,13 +2193,12 @@ class MLStrategyHybridUltimate(Strategy):
             # ═══════════════════════════════════════════════════════════════
             # QUANTUM ZERO-COPY: Direct NumPy View (skip Polars/Pandas alignment)
             # ═══════════════════════════════════════════════════════════════
-            if self._quantum_cache_hit:
-                # O(1) Memory Slice! No allocations.
-                # To make it even faster, we can extract the numpy array of the specific columns
-                # Only if we pre-cache it. For now, iloc to numpy.
-                X_pred = self._global_feature_cache.iloc[self._quantum_idx:self._quantum_idx+1][valid_features].to_numpy()
-            else:
-                X_pred = df_pl.select(valid_features).tail(1).to_numpy()
+            if X_pred is None:
+                if self._quantum_cache_hit and df_pl == "CACHED_TRUE":
+                    # O(1) Memory Slice! No allocations.
+                    X_pred = self._global_feature_cache.iloc[self._quantum_idx:self._quantum_idx+1][valid_features].to_numpy()
+                else:
+                    X_pred = df_pl.select(valid_features).tail(1).to_numpy()
 
             if X_pred.size == 0:
                 logger.error(f"❌ {self.symbol}: Empty feature matrix after alignment")
@@ -2096,57 +2216,65 @@ class MLStrategyHybridUltimate(Strategy):
             else:
                 X_scaled = X_pred
 
-            # Determine whether to use fast matrices or slow models
-            rf = getattr(self, "rf_arrays", self.rf_model)
-            gb = getattr(self, "gb_arrays", self.gb_model)
-            X_flat = (
-                X_scaled[0]
-                if isinstance(X_scaled, np.ndarray) and X_scaled.ndim > 1
-                else X_scaled
-            )
-
-            if isinstance(rf, dict) and "tree_offsets" in rf:
-                rf_proba_1 = predict_rf_jit(
-                    X_flat,
-                    rf["children_left"],
-                    rf["children_right"],
-                    rf["feature"],
-                    rf["threshold"],
-                    rf["value"],
-                    rf["tree_offsets"],
-                )
-                rf_proba = np.array([1.0 - rf_proba_1, rf_proba_1])
+            # ═══════════════════════════════════════════════════════════════
+            # PHASE 3: BATCH VECTORIZED PREDICTIONS (O(1) CACHE READ)
+            # ═══════════════════════════════════════════════════════════════
+            if self._quantum_cache_hit and hasattr(self, "_global_predictions_cache") and self._global_predictions_cache is not None:
+                ensemble_proba = self._global_predictions_cache[self._quantum_idx]
             else:
-                rf_proba = self.rf_model.predict_proba(X_scaled)[0]
-
-            try:
-                booster = self.xgb_model.get_booster() if hasattr(self.xgb_model, 'get_booster') else self.xgb_model
-                _xgb_p = float(booster.inplace_predict(X_scaled)[0])
-                xgb_proba = np.array([1.0 - _xgb_p, _xgb_p])
-            except Exception:
-                xgb_proba = self.xgb_model.predict_proba(X_scaled)[0]
-
-            if isinstance(gb, dict) and "init_score" in gb:
-                gb_proba_1 = predict_gb_jit(
-                    X_flat,
-                    gb["children_left"],
-                    gb["children_right"],
-                    gb["feature"],
-                    gb["threshold"],
-                    gb["value"],
-                    gb["tree_offsets"],
-                    gb["init_score"],
-                    gb["learning_rate"],
+                # O(N) Inference (Live Tick Mode or Cache Miss)
+                rf = getattr(self, "rf_arrays", self.rf_model)
+                gb = getattr(self, "gb_arrays", self.gb_model)
+                X_flat = (
+                    X_scaled[0]
+                    if isinstance(X_scaled, np.ndarray) and X_scaled.ndim > 1
+                    else X_scaled
                 )
-                gb_proba = np.array([1.0 - gb_proba_1, gb_proba_1])
-            else:
-                gb_proba = self.gb_model.predict_proba(X_scaled)[0]
+    
+                if isinstance(rf, dict) and "tree_offsets" in rf:
+                    rf_proba_1 = predict_rf_jit(
+                        X_flat,
+                        rf["children_left"],
+                        rf["children_right"],
+                        rf["feature"],
+                        rf["threshold"],
+                        rf["value"],
+                        rf["tree_offsets"],
+                    )
+                    rf_proba = np.array([1.0 - rf_proba_1, rf_proba_1])
+                else:
+                    rf_proba = self.rf_model.predict_proba(X_scaled)[0]
+    
+                try:
+                    booster = self.xgb_model.get_booster() if hasattr(self.xgb_model, 'get_booster') else self.xgb_model
+                    _xgb_p = float(booster.inplace_predict(X_scaled)[0])
+                    xgb_proba = np.array([1.0 - _xgb_p, _xgb_p])
+                except Exception:
+                    xgb_proba = self.xgb_model.predict_proba(X_scaled)[0]
+    
+                if isinstance(gb, dict) and "init_score" in gb:
+                    gb_proba_1 = predict_gb_jit(
+                        X_flat,
+                        gb["children_left"],
+                        gb["children_right"],
+                        gb["feature"],
+                        gb["threshold"],
+                        gb["value"],
+                        gb["tree_offsets"],
+                        gb["init_score"],
+                        gb["learning_rate"],
+                    )
+                    gb_proba = np.array([1.0 - gb_proba_1, gb_proba_1])
+                else:
+                    gb_proba = self.gb_model.predict_proba(X_scaled)[0]
+    
+                ensemble_proba = (
+                    rf_proba * self.base_rf_weight
+                    + xgb_proba * self.base_xgb_weight
+                    + gb_proba * self.base_gb_weight
+                )
 
-            ensemble_proba = (
-                rf_proba * self.base_rf_weight
-                + xgb_proba * self.base_xgb_weight
-                + gb_proba * self.base_gb_weight
-            )
+
 
             # =========================================================
             # PHASE 4 (AITS): DEEP LEARNING LSTM-ATTENTION INJECTION
@@ -2827,7 +2955,11 @@ class MLStrategyHybridUltimate(Strategy):
             ):
                 return
 
-        # Execute async task dynamically checking if an event loop is already running
+        # Execute task (Synchronous if backtesting, async if live)
+        if getattr(self, "is_sandbox", False) or getattr(Config, "IS_BACKTESTING", False):
+            self._sync_process_v3(event)
+            return
+
         try:
             try:
                 loop = asyncio.get_running_loop()
@@ -2838,6 +2970,82 @@ class MLStrategyHybridUltimate(Strategy):
                 asyncio.run(self._async_process_v3(event))
         except Exception as e:
             logger.error(f"Error in async ML processing: {e}")
+
+    def _sync_process_v3(self, event):
+        """Procesamiento síncrono ultra-rápido para backtesting (SUPREMO-V3)"""
+        if not self.running:
+            return
+
+        try:
+            if not getattr(self, "_models_loaded", False):
+                self._load_models()
+                self._models_loaded = True
+
+            self.loop_count += 1
+
+            if not self._sophia_feedback_linked and self.portfolio:
+                if hasattr(self.portfolio, "link_nemesis_to_sophia"):
+                    self.portfolio.link_nemesis_to_sophia(self.sophia)
+                    self._sophia_feedback_linked = True
+
+            if self.__class__.__name__ == "UniversalEnsembleStrategy":
+                self._run_inference()
+            else:
+                bars = self.data_provider.get_latest_bars(self.symbol, n=self.lookback, timeframe=self.primary_tf)
+                if bars is not None and len(bars) >= self.min_bars_to_train:
+                    if self._feature_cols is None or not self._feature_cols:
+                        temp_df = self._prepare_features(bars[:1000] if len(bars) > 1000 else bars)
+                        if temp_df is not None and not temp_df.empty:
+                            self._init_feature_cols(temp_df)
+                    
+                    # Direct inference (blocking)
+                    # Use NumPy slicing for Phase 4 Structured Arrays
+                    data_slice = bars[-100:] if len(bars) > 100 else bars
+                    df = self._prepare_features(data_slice, regime_aware=True, return_polars=True)
+                    if df is not None and len(df) > 0 and self._feature_cols:
+                        valid_cols = [c for c in self._feature_cols if c in df.columns]
+                        if valid_cols:
+                            X = df.select(valid_cols).tail(1).to_numpy()
+                            # Run JIT directly
+                            rf = getattr(self, "rf_arrays", self.rf_model)
+                            xgb = self.xgb_model
+                            gb = getattr(self, "gb_arrays", self.gb_model)
+
+                            if isinstance(rf, dict) and "tree_offsets" in rf:
+                                rf_p = predict_rf_jit(X.flatten(), rf["children_left"], rf["children_right"], rf["feature"], rf["threshold"], rf["value"], rf["tree_offsets"])
+                            else:
+                                rf_p = rf.predict_proba(X)[0][1] if hasattr(rf, "predict_proba") else 0.5
+
+                            xgb_p = xgb.predict_proba(X)[0][1] if xgb else 0.5
+
+                            if isinstance(gb, dict) and "tree_offsets" in gb:
+                                gb_p = predict_gb_jit(X.flatten(), gb["children_left"], gb["children_right"], gb["feature"], gb["threshold"], gb["value"], gb["tree_offsets"], gb["init_score"], gb["learning_rate"])
+                            else:
+                                gb_p = gb.predict_proba(X)[0][1] if hasattr(gb, "predict_proba") else 0.5
+
+                            w_rf, w_xgb, w_gb = self.base_rf_weight, self.base_xgb_weight, self.base_gb_weight
+                            conf = float(rf_p * w_rf + xgb_p * w_xgb + gb_p * w_gb)
+
+                            results = {
+                                "symbol": self.symbol,
+                                "rf": float(rf_p),
+                                "xgb": float(xgb_p),
+                                "gb": float(gb_p),
+                                "confidence": conf,
+                                "ts": time.time(),
+                                "weights": (w_rf, w_xgb, w_gb),
+                                "price": float(bars[-1][4]) if isinstance(bars, (list, tuple, np.ndarray)) and len(bars) > 0 else 0.0,
+                            }
+                            # Sync call to process results (wait, asyncio.run needed? No, _process_ml_results is async?)
+                            # Check if _process_ml_results is async!
+                            import asyncio
+                            try:
+                                loop = asyncio.get_running_loop()
+                                loop.create_task(self._process_ml_results(results))
+                            except RuntimeError:
+                                asyncio.run(self._process_ml_results(results))
+        except Exception as e:
+            logger.error(f"Sync ML Error {self.symbol}: {e}")
 
     async def _async_process_v3(self, event):
         """Procesamiento asíncrono sin bloqueo de hilos (SUPREMO-V3)"""
@@ -4774,7 +4982,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
         try:
             self.analysis_stats["total"] += 1
             if not self._check_circuit_breaker():
-                logger.info(
+                print(
                     f"DEBUG [{self.symbol}] _run_inference early exit: circuit breaker failed"
                 )
                 return
@@ -4801,7 +5009,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                         )
                         if _df_regime is not None and len(_df_regime) > 0:
                             # Bypass throttle: reset timestamp para forzar update
-                            self.last_regime_update = self._now() - pd.Timedelta(minutes=10)
+                            self.last_regime_update = self._now() - timedelta(minutes=10)
                             self._update_market_regime(_df_regime)
                 except Exception as e:
                     import logging
@@ -4861,22 +5069,28 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             if df is None:
                 df = self._prepare_features(bars, regime_aware=True)
             if df is None:
-                logger.info(
+                print(
                     f"DEBUG [{self.symbol}|{self.horizon_str}] _run_inference early exit: df is None. Bars passed: {len(bars) if bars is not None else 0}"
                 )
                 return
             if len(df) == 0 or len(df) < 5:
-                logger.info(
+                print(
                     f"DEBUG [{self.symbol}|{self.horizon_str}] _run_inference early exit: df.empty or len(df)={len(df)} < 5. Bars passed: {len(bars) if bars is not None else 0}"
                 )
                 return
 
-            if hasattr(df, "to_pandas"):
-                df = df.to_pandas()
+            # [NANO INFERENCE] ZERO-COPY DICTIONARY EXTRACTION
+            if hasattr(df, "to_dicts"):
+                # Polars (nanosecond slicing)
+                current_row = df[-1:].to_dicts()[0]
+            elif hasattr(df, "iloc"):
+                # Pandas fallback
+                current_row = df.iloc[-1].to_dict()
+            else:
+                current_row = {}
                 
-            current_row = df.iloc[-1]
-            atr_pct = current_row["atr_pct"] / 100
-            vol_ratio = current_row.get("volume_ratio", 0)
+            atr_pct = current_row.get("atr_pct", 0.0) / 100 if current_row.get("atr_pct") else 0.0
+            vol_ratio = current_row.get("volume_ratio", 0.0)
 
             # 2. Model Availability
             with self._state_lock:
@@ -4910,41 +5124,34 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                         models_ready = False
 
             if not models_ready:
-                logger.info(
+                print(
                     f"DEBUG [{self.symbol}] _run_inference early exit: models_ready is False. is_trained={self.is_trained}"
                 )
                 return
 
             # 3. Aligned Feature Matrix
             if supreme_mode:
-                # --- SUPREME FEATURE ADAPTER ---
-                # train_supreme.py used: rsi_14, zscore_20, log_returns
-                # We must reconstruct these exactly.
-                # df has 'close' as float (from _prepare_features)
+                # --- SUPREME FEATURE ADAPTER (HYPER_KERNEL C-FFI) ---
                 closes = df["close"].values.astype(np.float64)
-
-                # RSI 14
-                rsi = talib.RSI(closes, timeperiod=14)
-
-                # Z-Score 20 (Manual calculation to match math_kernel) - O(1) Optimized
-                eff_window = min(20, len(closes))
-                if eff_window > 0:
-                    slice_closes = closes[-eff_window:]
-                    mean_last = np.mean(slice_closes)
-                    std_last = np.std(slice_closes, ddof=0)
-                    curr_z = (closes[-1] - mean_last) / std_last if std_last > 0 else 0.0
+                
+                if getattr(self, "hyper_kernel", None) is not None:
+                    # NANO ZERO-COPY execution through Cython/C
+                    curr_rsi, curr_z, curr_ret = self.hyper_kernel.batch_update_and_calculate(closes)
                 else:
-                    curr_z = 0.0
-
-                # Log Return
-                # np.log(price / prev_price)
-                returns = np.diff(np.log(closes), prepend=np.log(closes[0]))
-
-                # Stack for last row
-                # Features: [rsi, zscore, returns]
-                # We take the last element
-                curr_rsi = rsi[-1]
-                curr_ret = returns[-1]
+                    # Fallback to python slow path
+                    import talib
+                    rsi = talib.RSI(closes, timeperiod=14)
+                    eff_window = min(20, len(closes))
+                    if eff_window > 0:
+                        slice_closes = closes[-eff_window:]
+                        mean_last = np.mean(slice_closes)
+                        std_last = np.std(slice_closes, ddof=0)
+                        curr_z = (closes[-1] - mean_last) / std_last if std_last > 0 else 0.0
+                    else:
+                        curr_z = 0.0
+                    returns = np.diff(np.log(closes), prepend=np.log(closes[0]))
+                    curr_rsi = rsi[-1]
+                    curr_ret = returns[-1]
 
                 X_pred = np.array([[curr_rsi, curr_z, curr_ret]], dtype=np.float32)
 
@@ -4965,7 +5172,9 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                 direction = 1 if raw_cls == 1 else -1
 
                 # Log Oracle
-                if final_confidence > 0.55:  # Min threshold
+                # SOPHIA CERTAINTY FLOOR: Elevate to 0.85 for 100% WR Scalping mandate
+                SOPHIA_CERTAINTY_FLOOR = 0.85 if getattr(self, "horizon", "SCALPING") == 'SCALPING' else 0.65
+                if final_confidence >= SOPHIA_CERTAINTY_FLOOR:
                     logger.info(
                         f"🔮 [SUPREME ORACLE] {self.symbol} Signal: {direction} (Conf: {final_confidence:.2f})"
                     )
@@ -4990,30 +5199,25 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                     )
                 return
 
-            if (
-                hasattr(self, "scaler")
-                and self.scaler is not None
-                and hasattr(self.scaler, "feature_names_in_")
-            ):
+            # ── FORENSIC: NANO-SECOND INFERENCE PATH ──
+            if hasattr(self, "scaler") and self.scaler is not None and hasattr(self.scaler, "feature_names_in_"):
                 final_features = self.scaler.feature_names_in_
-                # AEGIS-V21 OPTIMIZATION: Vectorized selection is 50x faster than iteration
-                existing = [c for c in final_features if c in df.columns]
-                missing = [c for c in final_features if c not in df.columns]
-                
-                X_pred = df[existing].iloc[[-1]].copy()
-                for c in missing:
-                    X_pred[c] = 0.0
-                
-                X_pred = X_pred[final_features] # Ensure correct order for scaler
             else:
-                # Fallback for old models
-                missing_cols = [c for c in feature_cols if c not in df.columns]
-                if missing_cols:
-                    logger.warning(f"[{self.symbol}] Padding {len(missing_cols)} missing features (e.g. {missing_cols[:3]})")
-                    for c in missing_cols:
-                        df[c] = 0.0
-                X_pred = df[feature_cols].iloc[[-1]].copy()
-
+                final_features = feature_cols
+                
+            if not hasattr(self, "_nano_feature_idx"):
+                # Cache the integer column indices for O(1) NumPy extraction
+                self._nano_feature_idx = []
+                cols = list(df.columns)
+                for i, c in enumerate(final_features):
+                    if c in cols:
+                        self._nano_feature_idx.append((i, cols.index(c)))
+                        
+            # Extract last row as NumPy array directly avoiding Pandas overhead
+            X_raw = np.zeros((1, len(final_features)), dtype=np.float32)
+            last_row_vals = df.values[-1]
+            for target_idx, source_idx in self._nano_feature_idx:
+                X_raw[0, target_idx] = last_row_vals[source_idx]
 
             if (
                 hasattr(self, "scaler")
@@ -5021,14 +5225,12 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
                 and hasattr(self.scaler, "transform")
             ):
                 try:
-                    from sklearn.utils.validation import check_is_fitted
-
-                    check_is_fitted(self.scaler)
-                    X_scaled = self.scaler.transform(X_pred)
+                    # Bypass check_is_fitted which adds ms overhead
+                    X_scaled = self.scaler.transform(X_raw)
                 except Exception:
-                    X_scaled = X_pred.values
+                    X_scaled = X_raw
             else:
-                X_scaled = X_pred.values
+                X_scaled = X_raw
 
             # [FORENSIC-FIX] AEGIS-V22: Multi-Horizon Feature Parity
             # QUÉ: Trunca el vector de entrada a la capacidad que el modelo espera.
@@ -5164,7 +5366,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             # ============================================================
             final_confidence, engines_passing, is_valid, multi_horizon = (
                 self.compute_organic_confluence(
-                    df, direction, rf_proba, xgb_proba, gb_proba
+                    current_row, direction, rf_proba, xgb_proba, gb_proba
                 )
             )
 
@@ -5882,16 +6084,14 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
         self.engine_scores["ml"] = ml_score
         return ml_score
 
-    def _compute_sentiment_engine_score(self, df) -> float:
+    def _compute_sentiment_engine_score(self, row_dict) -> float:
         """
         Motor Sentiment: VADER/Social momentum analysis.
         """
         try:
-            current_row = df.iloc[-1]
-
             # Get sentiment components (Phase 8 NLP names)
-            sentiment = current_row.get("news_sentiment", current_row.get("sentiment", 0.0))
-            sentiment_momentum = current_row.get("news_sentiment_shock", current_row.get("sentiment_momentum", 0.0))
+            sentiment = row_dict.get("news_sentiment", row_dict.get("sentiment", 0.0))
+            sentiment_momentum = row_dict.get("news_sentiment_shock", row_dict.get("sentiment_momentum", 0.0))
 
             # Normalize to 0-1 range
             # Sentiment is typically -1 to 1, so we map to 0.5 as neutral
@@ -5917,21 +6117,20 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             self.engine_scores["sentiment"] = 0.5  # Neutral if unavailable
             return 0.5
 
-    def _compute_technical_engine_score(self, df, direction: int) -> float:
+    def _compute_technical_engine_score(self, row_dict, direction: int) -> float:
         """
         Motor Técnico: RSI + EMA Cross + Bollinger Bands confluence.
         ROBUSTO: Usa múltiples fallbacks para features faltantes.
         """
         try:
-            current_row = df.iloc[-1]
             score = 0.0
             factors = 0
 
             # RSI Component (weight: 40%) — usar rsi_14, rsi, o calcular
             rsi = None
             for col in ["rsi_14", "rsi", "RSI"]:
-                if col in current_row.index:
-                    v = current_row.get(col, None)
+                if col in row_dict:
+                    v = row_dict.get(col, None)
                     if v is not None and not (isinstance(v, float) and v != v):
                         rsi = float(v)
                         break
@@ -5961,16 +6160,16 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             # EMA Cross Component (weight: 30%) — varios nombres posibles
             ema_cross = None
             for col in ["ema_20_50_cross", "ema_cross", "ema_signal"]:
-                if col in current_row.index:
-                    v = current_row.get(col, None)
+                if col in row_dict:
+                    v = row_dict.get(col, None)
                     if v is not None:
                         ema_cross = float(v)
                         break
 
             # Fallback: usar dist_ema_20 y dist_ema_50 (normalizados)
             if ema_cross is None:
-                d20 = current_row.get("dist_ema_20", None)
-                d50 = current_row.get("dist_ema_50", None)
+                d20 = row_dict.get("dist_ema_20", None)
+                d50 = row_dict.get("dist_ema_50", None)
                 if d20 is not None and d50 is not None:
                     # dist_ema_X = (close - ema_X) / ema_X → positivo = precio sobre EMA
                     # Si dist_ema_20 > dist_ema_50, la EMA rápida está sobre la lenta → trend up
@@ -5989,8 +6188,8 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             # Bollinger Bands Component (weight: 30%) — varios nombres
             bb_pct = None
             for col in ["bb_pctb", "bb_pct_b", "bb_pct", "bollinger_pct"]:
-                if col in current_row.index:
-                    v = current_row.get(col, None)
+                if col in row_dict:
+                    v = row_dict.get(col, None)
                     if v is not None:
                         bb_pct = float(v)
                         break
@@ -6036,7 +6235,7 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
             return 0.40
 
     def compute_organic_confluence(
-        self, df, direction: int, rf_proba, xgb_proba, gb_proba
+        self, row_dict, direction: int, rf_proba, xgb_proba, gb_proba
     ) -> tuple:
         """
         🎯 ORGANIC CONFLUENCE CALCULATOR
@@ -6046,8 +6245,8 @@ class UniversalEnsembleStrategy(MLStrategyHybridUltimate):
         ml_score = self._compute_ml_engine_score(
             rf_proba, xgb_proba, gb_proba, direction
         )
-        sentiment_score = self._compute_sentiment_engine_score(df)
-        technical_score = self._compute_technical_engine_score(df, direction)
+        sentiment_score = self._compute_sentiment_engine_score(row_dict)
+        technical_score = self._compute_technical_engine_score(row_dict, direction)
 
         # 2. Dynamic Threshold Logic (World Awareness)
         # PROFESSOR METHOD: adaptamos el rigor según la liquidez global.

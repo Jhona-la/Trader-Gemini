@@ -24,7 +24,7 @@ class CompiledRiskManager(RiskManager):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # ADN INYECTADO
-        self._USE_DYNAMIC_STOPS = {dna_params.get("dna_risk_dynamic_stops", True)}
+        self._USE_DYNAMIC_STOPS = {dna_params["dna_risk_dynamic_stops"]}
         
     def _calculate_dynamic_stop_loss(self, symbol, side, current_price, atr):
         if not self._USE_DYNAMIC_STOPS:
@@ -55,7 +55,7 @@ class CompiledSniperStrategy(SniperStrategy):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._REQUIRE_VOLUME = {dna_params.get("dna_sniper_volume", True)}
+        self._REQUIRE_VOLUME = {dna_params["dna_sniper_volume"]}
         
     def _check_volume_confluence(self, symbol):
         if not self._REQUIRE_VOLUME:
@@ -80,7 +80,7 @@ class CompiledPatternStrategy(StatisticalStrategy):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._STRICT_WICK_FILTER = {dna_params.get("dna_pattern_strict", True)}
+        self._STRICT_WICK_FILTER = {dna_params["dna_pattern_strict"]}
         
     def validate_wick_structure(self, candle):
         if not self._STRICT_WICK_FILTER:

@@ -99,7 +99,7 @@ def analyze_predictive_decay():
         symbol = row['symbol']
         direction = row['direction']
         entry_price = float(row['price'])
-        strategy = row.get('strategy_id', 'UNKNOWN')
+        strategy = row['strategy_id']
         
         # Convert timestamp to ms
         ts_ms = int(row['datetime'].timestamp() * 1000)

@@ -80,9 +80,10 @@ class HealthSupervisor(threading.Thread):
                 acct = self.api.get_account_balance(is_prod=False)
             
             if acct:
-                api_balance = float(acct.get('total_equity', 0))
+                api_balance = float(acct['total_equity'])
         except:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
         # 2. State B: File (Persisted)
         file_balance = 0.0
@@ -91,10 +92,11 @@ class HealthSupervisor(threading.Thread):
             if os.path.exists(self.status_file):
                 with open(self.status_file, 'r') as f:
                     data = json.load(f)
-                    file_balance = float(data.get('total_equity', 0))
+                    file_balance = float(data['total_equity'])
                     file_ts = os.path.getmtime(self.status_file)
         except:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
         # 3. State C: UI (Dashboard Report)
         ui_balance = 0.0
@@ -103,10 +105,11 @@ class HealthSupervisor(threading.Thread):
             if os.path.exists(self.integrity_file):
                 with open(self.integrity_file, 'r') as f:
                     data = json.load(f)
-                    ui_balance = float(data.get('displayed_equity', 0))
-                    ui_ts = data.get('timestamp_epoch', 0)
+                    ui_balance = float(data['displayed_equity'])
+                    ui_ts = data['timestamp_epoch']
         except:
-            pass
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
             
         # --- ANALYSIS ---
         sync_status = "OK"
@@ -168,7 +171,7 @@ class HealthSupervisor(threading.Thread):
         for check_name, check_func in self.checks.items():
             try:
                 result = check_func()
-                if not result.get("healthy", True):
+                if not result["healthy"]:
                     failures.append({"component": check_name, **result})
             except Exception as e:
                 logger.error(f"Error en check {check_name}: {e}")
@@ -176,7 +179,7 @@ class HealthSupervisor(threading.Thread):
         # Acciones para las fallas (Alertas Inteligentes)
         for fail in failures:
             if fail["component"] == "process_activation":
-                self.alert_sys.raise_alert("process_not_activated", process_name=fail.get('issue', 'Desconocido'))
+                self.alert_sys.raise_alert("process_not_activated", process_name=fail['issue'])
 
     def check_process_activation(self):
         """Verifica que el event loop y conexiones WS estén vivos."""

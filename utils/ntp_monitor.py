@@ -31,7 +31,7 @@ class NTPSync:
         try:
             # We use a raw request to avoid huge dependency chains just for time
             t0 = time.time()
-            response = requests.get("https://api.binance.com/api/v3/time", timeout=2)
+            response = requests["https://api.binance.com/api/v3/time"]
             t1 = time.time()
             
             if response.status_code == 200:

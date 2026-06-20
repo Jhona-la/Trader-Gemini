@@ -1,0 +1,7 @@
+.venv
+venv
+logs
+data
+dashboard/data
+archive
+scratch

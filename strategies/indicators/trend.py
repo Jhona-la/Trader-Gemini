@@ -3,21 +3,20 @@ import talib
 from utils.math_kernel import calculate_ema_jit
 from utils.math_helpers import safe_div
 
-def _get_supertrend(high, low, close, period=10, multiplier=3.0):
-    """Calcula SuperTrend (Numpy vectorizado aproximado)"""
+from numba import njit
+
+@njit
+def _supertrend_core(close, basic_ub, basic_lb):
     n = len(close)
-    atr = talib.ATR(high, low, close, timeperiod=period)
-    hl2 = (high + low) / 2
-    basic_ub = hl2 + (multiplier * atr)
-    basic_lb = hl2 - (multiplier * atr)
-    
     final_ub = np.zeros(n)
     final_lb = np.zeros(n)
     supertrend = np.zeros(n)
     
+    # Initialize first valid index
     for i in range(1, n):
         if np.isnan(basic_ub[i]):
             continue
+            
         final_ub[i] = basic_ub[i] if basic_ub[i] < final_ub[i-1] or close[i-1] > final_ub[i-1] else final_ub[i-1]
         final_lb[i] = basic_lb[i] if basic_lb[i] > final_lb[i-1] or close[i-1] < final_lb[i-1] else final_lb[i-1]
         
@@ -31,6 +30,16 @@ def _get_supertrend(high, low, close, period=10, multiplier=3.0):
             supertrend[i] = final_ub[i]
             
     return supertrend
+
+def _get_supertrend(high, low, close, period=10, multiplier=3.0):
+    """Calcula SuperTrend (Numpy vectorizado aproximado)"""
+    n = len(close)
+    atr = talib.ATR(high, low, close, timeperiod=period)
+    hl2 = (high + low) / 2
+    basic_ub = hl2 + (multiplier * atr)
+    basic_lb = hl2 - (multiplier * atr)
+    
+    return _supertrend_core(close, basic_ub, basic_lb)
 
 class TrendIndicators:
     @staticmethod
@@ -178,8 +187,9 @@ class TrendIndicators:
         weights = np.exp(-((np.arange(period) - m) ** 2) / (2 * s * s))
         weights /= np.sum(weights)
 
-        for i in range(period - 1, n):
-            result[i] = np.dot(close[i - period + 1:i + 1], weights)
+        # Vectorized convolution instead of python loop
+        conv = np.convolve(close, weights[::-1], mode='valid')
+        result[period - 1:] = conv
 
         # Fill NaN with close
         result = np.where(np.isnan(result), close, result)

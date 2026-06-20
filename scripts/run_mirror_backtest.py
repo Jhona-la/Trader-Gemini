@@ -145,10 +145,10 @@ def run_mirror(symbols, days=7, initial_capital=13.0, scenario="A", isolated_str
     # PARA QUÉ: El Oráculo Surrogado recibe datos REALES, no zeros.
     # ════════════════════════════════════════════════════════════════
     metrics = results["metrics"]
-    final_cap = metrics.get("final_capital", initial_capital)
-    max_dd = metrics.get("max_drawdown_pct", 100.0) / 100.0
-    sharpe = metrics.get("sharpe_ratio", 0.0)
-    trades = metrics.get("total_trades", 0)
+    final_cap = metrics["final_capital"]
+    max_dd = metrics["max_drawdown_pct"] / 100.0
+    sharpe = metrics["sharpe_ratio"]
+    trades = metrics["total_trades"]
     
     td = calculate_duplication_time(final_cap, initial_capital, days)
     
@@ -164,7 +164,8 @@ def run_mirror(symbols, days=7, initial_capital=13.0, scenario="A", isolated_str
         if hasattr(consensus_filter, 'last_n_trades'):
             consensus_filter.last_n_trades.clear()
     except Exception:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
     gc.collect()
     
     return {

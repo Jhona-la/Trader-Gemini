@@ -71,7 +71,8 @@ async def main():
     try:
         await asyncio.wait_for(task, timeout=2.0)
     except asyncio.TimeoutError:
-        pass
+        from utils.error_handler import SystemIntegrityError
+        raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
 if __name__ == '__main__':
     asyncio.run(main())

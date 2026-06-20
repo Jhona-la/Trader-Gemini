@@ -55,17 +55,17 @@ class TemporalState:
     @classmethod
     def from_dict(cls, data: dict) -> 'TemporalState':
         state = cls()
-        state.genesis_timestamp = data.get("genesis_timestamp", 0.0)
-        state.total_cycles_completed = data.get("total_cycles_completed", 0)
-        state.current_generation = data.get("current_generation", SystemGeneration.G1)
-        state.current_cycle_id = data.get("current_cycle_id", 1)
-        state.current_cycle_start = data.get("current_cycle_start", 0.0)
-        state.cycle_base_capital = data.get("cycle_base_capital", 0.0)
-        state.last_session_audit = data.get("last_session_audit", 0.0)
-        state.injections = data.get("injections", [])
-        state.cycle_history = data.get("cycle_history", [])
-        state.degradation_level = data.get("degradation_level", 0)
-        state.shadow_predictions = data.get("shadow_predictions", [])
+        state.genesis_timestamp = data["genesis_timestamp"]
+        state.total_cycles_completed = data["total_cycles_completed"]
+        state.current_generation = data["current_generation"]
+        state.current_cycle_id = data["current_cycle_id"]
+        state.current_cycle_start = data["current_cycle_start"]
+        state.cycle_base_capital = data["cycle_base_capital"]
+        state.last_session_audit = data["last_session_audit"]
+        state.injections = data["injections"]
+        state.cycle_history = data["cycle_history"]
+        state.degradation_level = data["degradation_level"]
+        state.shadow_predictions = data["shadow_predictions"]
         return state
 
 class TemporalSupervisor:
@@ -295,7 +295,8 @@ class TemporalSupervisor:
                             with open(file_path, "rb") as f:
                                 hasher.update(f.read())
                         except Exception:
-                            pass
+                            from utils.error_handler import SystemIntegrityError
+                            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         return hasher.hexdigest()[:16]
 
     def _decide_observation_duration(self) -> int:
@@ -708,12 +709,12 @@ Se mantiene el modelo actual para la generación `{new_gen}` y se programa un nu
             from core.data_handler import get_data_handler
             dh = get_data_handler()
             df = dh.load_trades_df(csv_path)
-            if df.empty:
+            if df.is_empty():
                 return []
                 
             trades_in_window = []
-            for _, row in df.iterrows():
-                row_dt_str = str(row.get('datetime', ''))
+            for row in df.iter_rows(named=True):
+                row_dt_str = str(row['datetime'])
                 if not row_dt_str:
                     continue
                     
@@ -733,31 +734,32 @@ Se mantiene el modelo actual para la generación `{new_gen}` y se programa un nu
                 trade_ts = trade_dt.replace(tzinfo=timezone.utc).timestamp()
                 if start_timestamp <= trade_ts <= end_timestamp:
                     details = {}
-                    details_str = row.get('details', '')
+                    details_str = row['details']
                     if details_str:
                         try:
                             details = json.loads(details_str)
                         except Exception:
-                            pass
+                            from utils.error_handler import SystemIntegrityError
+                            raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                     
                     trade_info = {
                         "timestamp": trade_ts,
                         "datetime": row_dt_str,
-                        "symbol": row.get("symbol", ""),
-                        "type": row.get("type", ""),
-                        "direction": row.get("direction", ""),
-                        "quantity": float(row.get("quantity", 0.0)),
-                        "price": float(row.get("price", 0.0)),
-                        "fill_cost": float(row.get("fill_cost", 0.0)),
-                        "strategy_id": row.get("strategy_id", ""),
-                        "setup_type": row.get("setup_type", ""),
-                        "net_pnl": float(details.get("net_pnl", 0.0)),
-                        "fees": float(details.get("fees", 0.0)),
-                        "mfe_pct": float(details.get("mfe_pct", 0.0)),
-                        "mae_pct": float(details.get("mae_pct", 0.0)),
-                        "duration_s": float(details.get("duration_s", 0.0)),
-                        "exit_reason": details.get("exit_reason", ""),
-                        "ml_confidence": float(details.get("ml_confidence", 0.5))
+                        "symbol": row["symbol"],
+                        "type": row["type"],
+                        "direction": row["direction"],
+                        "quantity": float(row["quantity"]),
+                        "price": float(row["price"]),
+                        "fill_cost": float(row["fill_cost"]),
+                        "strategy_id": row["strategy_id"],
+                        "setup_type": row["setup_type"],
+                        "net_pnl": float(details["net_pnl"]),
+                        "fees": float(details["fees"]),
+                        "mfe_pct": float(details["mfe_pct"]),
+                        "mae_pct": float(details["mae_pct"]),
+                        "duration_s": float(details["duration_s"]),
+                        "exit_reason": details["exit_reason"],
+                        "ml_confidence": float(details["ml_confidence"])
                     }
                     trades_in_window.append(trade_info)
             return trades_in_window
@@ -938,11 +940,11 @@ Generación: `{self.state.current_generation}` | Ciclo ID: `{self.state.current_
         snapshot = {}
         for strat_id, stats in getattr(self.portfolio, "strategy_performance", {}).items():
             snapshot[strat_id] = {
-                'trades': stats.get('trades', 0),
-                'wins': stats.get('wins', 0),
-                'pnl': stats.get('pnl', 0.0),
-                'total_win_pnl': stats.get('total_win_pnl', 0.0),
-                'total_loss_pnl': stats.get('total_loss_pnl', 0.0)
+                'trades': stats['trades'],
+                'wins': stats['wins'],
+                'pnl': stats['pnl'],
+                'total_win_pnl': stats['total_win_pnl'],
+                'total_loss_pnl': stats['total_loss_pnl']
             }
         self.cycle_start_performance = snapshot
 
@@ -966,10 +968,10 @@ Generación: `{self.state.current_generation}` | Ciclo ID: `{self.state.current_
                 'trades': 0, 'wins': 0, 'pnl': 0.0, 'total_win_pnl': 0.0, 'total_loss_pnl': 0.0
             })
             
-            cycle_trades += stats.get('trades', 0) - start_stats['trades']
-            cycle_wins += stats.get('wins', 0) - start_stats['wins']
-            cycle_win_pnl += stats.get('total_win_pnl', 0.0) - start_stats['total_win_pnl']
-            cycle_loss_pnl += abs(stats.get('total_loss_pnl', 0.0)) - abs(start_stats['total_loss_pnl'])
+            cycle_trades += stats['trades'] - start_stats['trades']
+            cycle_wins += stats['wins'] - start_stats['wins']
+            cycle_win_pnl += stats['total_win_pnl'] - start_stats['total_win_pnl']
+            cycle_loss_pnl += abs(stats['total_loss_pnl']) - abs(start_stats['total_loss_pnl'])
             
         winrate = (cycle_wins / cycle_trades) if cycle_trades > 0 else 0.0
         profit_factor = (cycle_win_pnl / cycle_loss_pnl) if cycle_loss_pnl > 0 else (2.0 if cycle_win_pnl > 0 else 1.0)
