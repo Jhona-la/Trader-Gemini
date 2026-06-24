@@ -33,10 +33,10 @@ class NeuralBridge:
         if market_data is not None:
             # We expect market_data to be a dict or structured array
             # If it's a dict, we extract fields
-            closes = market_data.get('close', np.zeros(self.window + 1))
-            volumes = market_data.get('volume', np.zeros(self.window))
-            vbi = market_data.get('vbi', np.zeros(self.window))
-            liq = market_data.get('liq', np.zeros(self.window))
+            closes = market_data['close']
+            volumes = market_data['volume']
+            vbi = market_data['vbi']
+            liq = market_data['liq']
             
             # A. Log Returns
             if len(closes) > 1:
@@ -50,8 +50,8 @@ class NeuralBridge:
             feat_vol = (volumes / mean_vol)[-self.window:]
             
             # C. RSI & MACD (Placeholders or passed in)
-            feat_rsi = market_data.get('rsi', np.full(self.window, 0.5))[-self.window:]
-            feat_macd = market_data.get('macd', np.full(self.window, 0.0))[-self.window:]
+            feat_rsi = market_data['rsi'][-self.window:]
+            feat_macd = market_data['macd'][-self.window:]
             
             # D. OMEGA MIND: VBI & Liq
             feat_vbi = vbi[-self.window:]
@@ -65,10 +65,10 @@ class NeuralBridge:
         
         # 2. PORTFOLIO STATE
         # [HasPosition (0/1), UnrealizedPnL (clamped -1 to 1), TimeInTrade (normalized)]
-        has_pos = 1.0 if portfolio_state.get('quantity', 0) != 0 else 0.0
-        pnl_pct = portfolio_state.get('pnl_pct', 0.0)
+        has_pos = 1.0 if portfolio_state['quantity'] != 0 else 0.0
+        pnl_pct = portfolio_state['pnl_pct']
         pnl_norm = np.clip(pnl_pct * 10, -1.0, 1.0) # Scale roughly 10% move = 1.0
-        duration = portfolio_state.get('duration', 0)
+        duration = portfolio_state['duration']
         dur_norm = min(duration / 100.0, 1.0) # 100 bars max
         
         portfolio_tensor = np.array([has_pos, pnl_norm, dur_norm])
@@ -76,8 +76,8 @@ class NeuralBridge:
         # 3. GENOTYPE CONTEXT (Personality)
         # [RiskAversion (SL), Aggression (TP)] - Normalized
         # TP 1% -> 0.1, TP 10% -> 1.0
-        sl_norm = min(genotype.genes.get('sl_pct', 0.02) * 10, 1.0)
-        tp_norm = min(genotype.genes.get('tp_pct', 0.02) * 10, 1.0)
+        sl_norm = min(genotype.genes['sl_pct'] * 10, 1.0)
+        tp_norm = min(genotype.genes['tp_pct'] * 10, 1.0)
         
         gene_tensor = np.array([sl_norm, tp_norm])
         

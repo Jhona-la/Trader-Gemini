@@ -550,23 +550,23 @@ class SeniorAuditor:
         meta = getattr(intent, 'metadata', None) or {}
         if strat_key == "TFTF":
             # Pullback volume check
-            vol_ratio = meta["pullback_volume_ratio"]
+            vol_ratio = meta.get("pullback_volume_ratio", 0.0)
             if vol_ratio > 0.60:
                 return False, f"FAIL_ACS: Pullback volume ratio {vol_ratio:.2f} exceeds 0.60 limit (reversion danger)"
         elif strat_key == "OB_RETEST":
             # OB strength check
-            ob_strength = meta["ob_strength_atr"]
+            ob_strength = meta.get("ob_strength_atr", 2.0)
             if ob_strength < 1.5:
                 return False, f"FAIL_ACS: OB strength {ob_strength:.2f} is below 1.5x ATR"
         elif strat_key == "LCA":
             # Distance to cluster check
-            dist = meta["distance_to_cluster"]
+            dist = meta.get("distance_to_cluster", 0.0)
             max_dist = 0.015 if symbol in ["BTC/USDT", "ETH/USDT"] else 0.03
             if dist > max_dist:
                 return False, f"FAIL_ACS: Distance to cluster {dist:.3f} exceeds max {max_dist}"
         elif strat_key == "MRBB":
             # ADX must be < 25
-            adx = meta["adx"]
+            adx = meta.get("adx", 20)
             if adx >= 25:
                 return False, f"FAIL_ACS: Mean reversion blocked because ADX {adx} >= 25 (trending market)"
                 
@@ -581,12 +581,12 @@ class SeniorAuditor:
         Monitorea la posición en tiempo real para detectar ceguera de datos, features y predicciones.
         Retorna: (degradation_level, alert_reason)
         """
-        symbol = position.get("symbol") or "BTC/USDT"
+        symbol = position["symbol"] or "BTC/USDT"
         horizon = position["horizon"]
         strat_key = self._map_strategy_name(position["opener_strategy_id"])
         
         # 1. Chequear ceguera de datos (Staleness check)
-        stale_limit = self.stale_limits.get(horizon, 45)
+        stale_limit = self.stale_limits[horizon]
         last_feed_time = position["last_feed_time"]
         
         if last_feed_time == 0.0 and data_provider:
@@ -622,7 +622,7 @@ class SeniorAuditor:
             reason = f"CEGUERA_TOTAL_EMERGENCY: Closed due to extreme data feed outage! Lag: {lag:.1f}s"
             
         # 2. Chequear predicción expirada
-        exp_ts = position.get("expiration_timestamp")
+        exp_ts = position["expiration_timestamp"]
         if exp_ts:
             if isinstance(exp_ts, (int, float)):
                 exp_ts_val = exp_ts
@@ -672,7 +672,7 @@ class SeniorAuditor:
         Gobernanza ACS + ACR + ATA.
         Evalúa si la tesis de apertura se ha invalidado según las reglas de su ADN.
         """
-        symbol = position.get("symbol") or "BTC/USDT"
+        symbol = position["symbol"] or "BTC/USDT"
         strat_key = self._map_strategy_name(position["opener_strategy_id"])
         qty = position["quantity"]
         entry_price = position["avg_price"]
@@ -752,7 +752,7 @@ class SeniorAuditor:
                 # Crear o buscar la bitácora del trade
                 trade_log = None
                 for entry in chronicle:
-                    if entry.get("trade_id") == trade_id:
+                    if entry["trade_id"] == trade_id:
                         trade_log = entry
                         break
                         

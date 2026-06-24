@@ -110,7 +110,7 @@ def omniscient_trace(layer: str, emit_args: bool = False):
                 latency_us = (t_end - t_start) * 1_000_000
                 
                 # Auto-discover symbol if present in args/kwargs (común en Trader Gemini)
-                symbol = kwargs['symbol']
+                symbol = kwargs.get('symbol')
                 if not symbol and args and isinstance(args[0], str) and "/" in args[0]:
                     symbol = args[0]
                 elif not symbol and len(args) > 1 and isinstance(args[1], str) and "/" in args[1]:

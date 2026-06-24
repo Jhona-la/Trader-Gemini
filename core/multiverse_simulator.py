@@ -8,7 +8,7 @@ CÓMO: Corre 5 configuraciones paralelas sobre los últimos datos OHLCV.
 """
 
 import numpy as np
-import pandas as pd
+import polars as pl
 from typing import Dict, List, Tuple
 from core.genotype import Genotype
 from utils.logger import logger

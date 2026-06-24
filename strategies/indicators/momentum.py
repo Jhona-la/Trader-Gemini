@@ -6,167 +6,119 @@ class MomentumIndicators:
     @staticmethod
     def calculate_all(df, close, high, low, volume, n_len):
         """Calcula todos los indicadores de Momentum M01-M18 y los retorna en un diccionario."""
+        import polars as pl
         features = {}
         
-        # M01, M02, M03: RSIs
-        features['rsi_3'] = calculate_rsi_jit(close, 3)
-        features['rsi_5'] = calculate_rsi_jit(close, 5)
-        features['rsi_7'] = calculate_rsi_jit(close, 7)
-        features['rsi_14'] = calculate_rsi_jit(close, 14)
-        features['rsi_21'] = calculate_rsi_jit(close, 21)
+        # M01, M02, M03: RSIs (Wrap JIT in Series for exact TA-Lib match)
+        features['rsi_3'] = pl.Series('rsi_3', calculate_rsi_jit(close, 3))
+        features['rsi_5'] = pl.Series('rsi_5', calculate_rsi_jit(close, 5))
+        features['rsi_7'] = pl.Series('rsi_7', calculate_rsi_jit(close, 7))
+        features['rsi_14'] = pl.Series('rsi_14', calculate_rsi_jit(close, 14))
+        features['rsi_21'] = pl.Series('rsi_21', calculate_rsi_jit(close, 21))
         
-        # M03: StochRSI
-        if n_len > 14:
-            rsi_arr = features['rsi_14']
-            rsi_min = talib.MIN(rsi_arr, 14)
-            rsi_max = talib.MAX(rsi_arr, 14)
-            features['stoch_rsi'] = np.where(rsi_max != rsi_min, (rsi_arr - rsi_min) / (rsi_max - rsi_min), 0.0)
+        # M03: StochRSI (Pure Polars Expressions)
+        rsi_14 = pl.col('rsi_14')
+        rsi_min = rsi_14.rolling_min(window_size=14)
+        rsi_max = rsi_14.rolling_max(window_size=14)
+        features['stoch_rsi'] = pl.when(rsi_max != rsi_min).then((rsi_14 - rsi_min) / (rsi_max - rsi_min)).otherwise(0.0)
         
-        # M05, M06: MACD & PPO & APO
-        macd, macd_signal, macd_hist = calculate_macd_jit(close, 12, 26, 9)
+        # M05, M06: MACD & PPO & APO (Pure Polars Expressions)
+        ema_12 = pl.col('close').ewm_mean(span=12, adjust=False)
+        ema_26 = pl.col('close').ewm_mean(span=26, adjust=False)
+        macd = ema_12 - ema_26
+        macd_signal = macd.ewm_mean(span=9, adjust=False)
+        macd_hist = macd - macd_signal
+        
         features['macd'] = macd
         features['macd_signal'] = macd_signal
         features['macd_hist'] = macd_hist
+        
         if n_len > 26:
-            features['ppo'] = talib.PPO(close, 12, 26, 0)
-            features['apo'] = talib.APO(close, 12, 26, 0)
+            features['ppo'] = pl.Series('ppo', talib.PPO(close, 12, 26, 0))
+            features['apo'] = pl.Series('apo', talib.APO(close, 12, 26, 0))
         
-        # M04: Stochastic
+        # M04: Stochastic (TA-Lib)
         slowk, slowd = talib.STOCH(high, low, close, 14, 3, 3)
-        features['stoch_k'] = slowk
-        features['stoch_d'] = slowd
-        features['stoch_cross'] = np.where(slowk > slowd, 1, -1)
+        features['stoch_k'] = pl.Series('stoch_k', slowk)
+        features['stoch_d'] = pl.Series('stoch_d', slowd)
+        features['stoch_cross'] = pl.when(pl.col('stoch_k') > pl.col('stoch_d')).then(1.0).otherwise(-1.0)
         
-        # M10: MFI
-        features['mfi'] = talib.MFI(high, low, close, volume, 14)
+        # M10: MFI (TA-Lib)
+        features['mfi'] = pl.Series('mfi', talib.MFI(high, low, close, volume, 14))
         
-        # M08: CCI
-        features['cci'] = talib.CCI(high, low, close, 20)
+        # M08: CCI (TA-Lib)
+        features['cci'] = pl.Series('cci', talib.CCI(high, low, close, 20))
         
-        # M09: ROC
-        features['roc_1'] = talib.ROC(close, 1)
-        features['roc_5'] = talib.ROC(close, 5)
-        features['roc_14'] = talib.ROC(close, 14)
+        # M09: ROC (Pure Polars)
+        features['roc_1'] = pl.col('close').pct_change(1) * 100
+        features['roc_5'] = pl.col('close').pct_change(5) * 100
+        features['roc_14'] = pl.col('close').pct_change(14) * 100
         
-        # M14: MOM
-        features['mom_10'] = talib.MOM(close, 10)
+        # M14: MOM (Pure Polars)
+        features['mom_10'] = pl.col('close') - pl.col('close').shift(10)
         
-        # M16: CMO
+        # M16: CMO (TA-Lib)
         if n_len > 14:
-            features['cmo_14'] = talib.CMO(close, 14)
+            features['cmo_14'] = pl.Series('cmo_14', talib.CMO(close, 14))
             
-        # M17: Williams %R
+        # M17: Williams %R (TA-Lib)
         if n_len > 14:
-            features['willr_14'] = talib.WILLR(high, low, close, 14)
+            features['willr_14'] = pl.Series('willr_14', talib.WILLR(high, low, close, 14))
             
-        # M12: Ultimate Oscillator
+        # M12: Ultimate Oscillator (TA-Lib)
         if n_len > 28:
-            features['ultosc'] = talib.ULTOSC(high, low, close, 7, 14, 28)
+            features['ultosc'] = pl.Series('ultosc', talib.ULTOSC(high, low, close, 7, 14, 28))
 
-        # ═══════════════════════════════════════════════════════════
-        # M15: Fisher Transform (período 10)
-        # Convierte precios a distribución Gaussiana para identificar
-        # extremos estadísticos. Reversiones desde extremos son potentes.
-        # ═══════════════════════════════════════════════════════════
-        if n_len > 10:
-            fisher = MomentumIndicators._fisher_transform(high, low, period=10)
-            features['fisher_transform'] = fisher
-            features['fisher_signal'] = np.where(fisher > 1.5, -1.0,
-                                        np.where(fisher < -1.5, 1.0, 0.0))
+        # M15: Fisher Transform (Pure Polars Expression)
+        midpoints = (pl.col('high') + pl.col('low')) / 2
+        fisher_max = midpoints.rolling_max(window_size=11)
+        fisher_min = midpoints.rolling_min(window_size=11)
+        fisher_rng = fisher_max - fisher_min
+        fisher_rng = pl.when(fisher_rng == 0).then(1e-10).otherwise(fisher_rng)
+        
+        fisher_x = 2 * ((midpoints - fisher_min) / fisher_rng) - 1
+        fisher_x = pl.when(fisher_x > 0.999).then(0.999).when(fisher_x < -0.999).then(-0.999).otherwise(fisher_x)
+        fisher = 0.5 * ((1 + fisher_x) / (1 - fisher_x)).log()
+        
+        features['fisher_transform'] = fisher.fill_null(0.0)
+        features['fisher_signal'] = pl.when(features['fisher_transform'] > 1.5).then(-1.0).when(features['fisher_transform'] < -1.5).then(1.0).otherwise(0.0)
 
-        # ═══════════════════════════════════════════════════════════
-        # M11: TSI (True Strength Index, largo=25, corto=13, señal=7)
-        # Momentum doblemente suavizado. Menos whipsaws que MACD.
-        # ═══════════════════════════════════════════════════════════
-        if n_len > 25:
-            tsi = MomentumIndicators._true_strength_index(close, long=25, short=13)
-            features['tsi'] = tsi
-            if n_len > 32:
-                from utils.math_kernel import calculate_ema_jit
-                features['tsi_signal'] = calculate_ema_jit(tsi, 7)
+        # M11: TSI (Pure Polars Expression)
+        tsi_mom = pl.col('close').diff()
+        tsi_abs_mom = tsi_mom.abs()
+        
+        tsi_ema1 = tsi_mom.ewm_mean(span=25, adjust=False)
+        tsi_num = tsi_ema1.ewm_mean(span=13, adjust=False)
+        
+        tsi_ema1_abs = tsi_abs_mom.ewm_mean(span=25, adjust=False)
+        tsi_den = tsi_ema1_abs.ewm_mean(span=13, adjust=False)
+        
+        tsi_expr = pl.when(tsi_den != 0).then(100 * tsi_num / tsi_den).otherwise(0.0)
+        features['tsi'] = tsi_expr
+        
+        features['tsi_signal'] = tsi_expr.ewm_mean(span=7, adjust=False)
 
-        # ═══════════════════════════════════════════════════════════
-        # M13: Awesome Oscillator (AO)
-        # SMA(5) - SMA(34) de los midpoints. Twin peaks y saucers.
-        # ═══════════════════════════════════════════════════════════
-        if n_len > 34:
-            midpoints = (high + low) / 2
-            ao = talib.SMA(midpoints, 5) - talib.SMA(midpoints, 34)
-            features['awesome_osc'] = ao
-            # AO histogram change (acceleration)
-            features['ao_acceleration'] = np.diff(ao, prepend=ao[0])
+        # M13: Awesome Oscillator (Pure Polars)
+        midpoints = (pl.col('high') + pl.col('low')) / 2
+        ao = midpoints.rolling_mean(window_size=5) - midpoints.rolling_mean(window_size=34)
+        features['awesome_osc'] = ao
+        features['ao_acceleration'] = ao - ao.shift(1).fill_null(ao)
 
-        # ═══════════════════════════════════════════════════════════
-        # M18: DPO (Detrended Price Oscillator, período 20)
-        # Elimina la tendencia para ver ciclos. Identifica duración.
-        # ═══════════════════════════════════════════════════════════
+        # M18: DPO (Pure Polars)
+        shift = 20 // 2 + 1
+        sma_20_shifted = pl.col('close').rolling_mean(window_size=20).shift(-shift)
+        features['dpo'] = pl.col('close') - sma_20_shifted
+
+        # RSI Divergence Detection
         if n_len > 20:
-            shift = 20 // 2 + 1
-            sma_20 = talib.SMA(close, 20)
-            dpo = np.zeros(n_len)
-            dpo[shift:] = close[:-shift] - sma_20[shift:]
-            features['dpo'] = np.where(np.isnan(sma_20), 0.0, dpo)
-
-        # ═══════════════════════════════════════════════════════════
-        # RSI Divergence Detection (precio vs RSI-14)
-        # Divergencia bearish: precio HH + RSI LH
-        # Divergencia bullish: precio LL + RSI HL
-        # ═══════════════════════════════════════════════════════════
-        if n_len > 20:
-            rsi_arr = features.get('rsi_14', np.full(n_len, 50.0))
-            rsi_slope = talib.LINEARREG_SLOPE(rsi_arr, 10)
+            # Requires talib.LINEARREG_SLOPE so keep as Series
+            rsi_slope = talib.LINEARREG_SLOPE(calculate_rsi_jit(close, 14), 10)
             price_slope = talib.LINEARREG_SLOPE(close, 10)
-            features['rsi_divergence'] = np.where(
-                (price_slope > 0) & (rsi_slope < 0), -1.0,  # Bearish divergence
-                np.where((price_slope < 0) & (rsi_slope > 0), 1.0, 0.0)  # Bullish divergence
-            )
+            features['rsi_divergence'] = pl.Series('rsi_divergence', np.where(
+                (price_slope > 0) & (rsi_slope < 0), -1.0,
+                np.where((price_slope < 0) & (rsi_slope > 0), 1.0, 0.0)
+            ))
 
         return features
 
-    @staticmethod
-    def _fisher_transform(high, low, period=10):
-        """Fisher Transform: convierte precios a distribución Gaussiana."""
-        n = len(high)
-        if n < period + 1:
-            return np.zeros(n)
-            
-        midpoints = (high + low) / 2
-        
-        # Use talib for O(1) rolling max/min
-        max_val = talib.MAX(midpoints, timeperiod=period + 1)
-        min_val = talib.MIN(midpoints, timeperiod=period + 1)
-        
-        rng = max_val - min_val
-        # Avoid division by zero
-        rng = np.where(rng == 0, 1e-10, rng)
-        
-        x = 2 * ((midpoints - min_val) / rng) - 1
-        x = np.clip(x, -0.999, 0.999)
-        
-        result = 0.5 * np.log((1 + x) / (1 - x))
-        
-        # Fill the first `period` elements with 0.0
-        result[:period] = 0.0
-        result = np.nan_to_num(result, nan=0.0)
-        
-        return result
 
-    @staticmethod
-    def _true_strength_index(close, long=25, short=13):
-        """True Strength Index: momentum doblemente suavizado."""
-        from utils.math_kernel import calculate_ema_jit
-        n = len(close)
-        mom = np.diff(close, prepend=close[0])
-
-        # Double smoothing of momentum
-        ema1 = calculate_ema_jit(mom, long)
-        tsi_num = calculate_ema_jit(ema1, short)
-
-        # Double smoothing of |momentum|
-        abs_mom = np.abs(mom)
-        ema1_abs = calculate_ema_jit(abs_mom, long)
-        tsi_den = calculate_ema_jit(ema1_abs, short)
-
-        # TSI = 100 * smoothed_mom / smoothed_abs_mom
-        tsi = np.where(tsi_den != 0, 100 * tsi_num / tsi_den, 0.0)
-        return tsi

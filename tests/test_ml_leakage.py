@@ -41,7 +41,9 @@ class TestMLLeakage(unittest.TestCase):
             
         # 2. Generate Features
         df = self.strategy._prepare_features(bars)
-        
+        if hasattr(df, 'to_pandas'):
+            df = df.to_pandas()
+            
         # 3. Validation: No feature should correlate 1.0 with FUTURE returns
         future_returns = df['close'].pct_change().shift(-1)
         

@@ -85,6 +85,7 @@ class MetaCoordinator:
         
         self.is_running = False
         self._task = None
+        self._heartbeat_task = None
         self.db = DatabaseHandler()
         
         # 🌐 GRAPH INTELLIGENCE LAYER (Institutional Core)
@@ -113,12 +114,15 @@ class MetaCoordinator:
     def start(self):
         self.is_running = True
         self._task = asyncio.create_task(self._arbitration_loop())
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         logger.info("🧠 [META-COORD] Unified Brain STARTED.")
         
     def stop(self):
         self.is_running = False
         if self._task:
             self._task.cancel()
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
 
     # ════════════════════════════════════════════════════════════════
     # PUBLIC API (Drop-in replacement for MetaArbitrator)
@@ -190,7 +194,7 @@ class MetaCoordinator:
             return True  # Fallback if graph not available
             
         direction = "LONG" if intent.signal_type == SignalType.LONG else "SHORT"
-        state = self.graph_layer.state_matrix.get(intent.symbol)
+        state = self.graph_layer.state_matrix[intent.symbol]
         
         if not state:
             return True  # Fallback if state is missing
@@ -236,13 +240,16 @@ class MetaCoordinator:
         
         # Filtro de Consenso Omnisciente
         passed_intents = []
-        veto_reasons = {}
+        veto_reasons = []
         
         for intent in intents_to_process:
             # Detectar precio actual
-            price = getattr(intent, 'price', 0.0)
+            price = getattr(intent, 'current_price', 0.0)
+            if not price:
+                price = getattr(intent, 'price', 0.0)
             if not price and hasattr(intent, 'metadata') and intent.metadata:
-                price = intent.metadata['close']
+                if 'close' in intent.metadata:
+                    price = intent.metadata['close']
                 
             passed, reason = consensus.check_signal(
                 signal_event=intent,
@@ -273,9 +280,10 @@ class MetaCoordinator:
             
             if passed:
                 passed_intents.append(intent)
+                veto_reasons.append("")
             else:
                 passed_intents.append(None) # Para alineación con el registro de pensamientos
-                veto_reasons[id(intent)] = reason
+                veto_reasons.append(reason)
                 rejected_intents.append({"intent": intent, "reason": reason})
 
         # ════════════════════════════════════════════════════════════════
@@ -309,7 +317,7 @@ class MetaCoordinator:
             
             if passed_intents[i] is None:
                 status = "VETOED"
-                reason = veto_reasons.get(id(intent), "UNKNOWN_VETO")
+                reason = veto_reasons[i]
                 
             direction = "EXIT" if intent.signal_type == SignalType.EXIT else ("LONG" if intent.signal_type == SignalType.LONG else "SHORT")
             
@@ -451,7 +459,7 @@ class MetaCoordinator:
                 
                 # FASE 1 FORENSIC FIX: Log rejected signals explicitly instead of throwing them away.
                 for rejection in rejected:
-                    intent = rejection.get("intent")
+                    intent = rejection["intent"]
                     reason = rejection["reason"]
                     symbol = getattr(intent, "symbol", "UNKNOWN")
                     strategy = getattr(intent, "strategy_id", "UNKNOWN")
@@ -464,6 +472,26 @@ class MetaCoordinator:
                 break
             except Exception as e:
                 logger.error(f"🚨 [META-COORD] Loop error: {e}")
+                await asyncio.sleep(1)
+
+    async def _heartbeat_loop(self):
+        """
+        [HEARTBEAT LOOP] Envía un PING cada 500ms al estado global.
+        Si Python crashea, Rust detecta el timestamp estancado y libera memoria.
+        """
+        import time
+        from core.global_state import global_state
+        while self.is_running:
+            try:
+                # Escribimos el timestamp en el estado global para que Rust o cualquier vigilante sepa que el loop está vivo.
+                if "SYSTEM" not in global_state._legacy_matrix:
+                    global_state._legacy_matrix["SYSTEM"] = {}
+                global_state._legacy_matrix["SYSTEM"]["last_heartbeat"] = time.time()
+                await asyncio.sleep(0.5)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"🚨 [META-COORD] Heartbeat error: {e}")
                 await asyncio.sleep(1)
 
     def get_metrics(self) -> Dict[str, int]:

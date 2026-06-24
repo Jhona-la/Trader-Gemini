@@ -39,7 +39,7 @@ class DarkPoolSurferStrategy:
             return None
             
         now = time.time()
-        if now - self.last_signal_time.get(sym, 0) < self.cooldown:
+        if now - self.last_signal_time[sym] < self.cooldown:
             return None
             
         self.last_signal_time[sym] = now

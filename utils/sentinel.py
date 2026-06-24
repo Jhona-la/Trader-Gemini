@@ -144,7 +144,7 @@ class GhostSignalAuditor:
         
         by_symbol = {}
         for gs in self.ghost_signals:
-            by_symbol[gs.symbol] = by_symbol.get(gs.symbol, 0) + 1
+            by_symbol[gs.symbol] = by_symbol[gs.symbol] + 1
         
         avg_conf = sum(gs.confidence for gs in self.ghost_signals) / len(self.ghost_signals)
         
@@ -192,14 +192,14 @@ class ZombieSymbolAuditor:
     
     def audit_symbol(self, symbol: str, df_or_price_data: any):
         """Audit a symbol for zombie behavior."""
-        import pandas as pd
-        if isinstance(df_or_price_data, pd.DataFrame):
+        import polars as pl
+        if hasattr(df_or_price_data, "row"):
             if len(df_or_price_data) < 2: return
             
             # Check price spread (volatility)
-            high_max = df_or_price_data['high'].max()
-            low_min = df_or_price_data['low'].min()
-            avg_price = df_or_price_data['close'].mean()
+            high_max = df_or_price_data.select(pl.col('high').max()).item()
+            low_min = df_or_price_data.select(pl.col('low').min()).item()
+            avg_price = df_or_price_data.select(pl.col('close').mean()).item()
             
             spread = (high_max - low_min) / avg_price if avg_price > 0 else 0
             
@@ -275,12 +275,12 @@ class ResourceVigilance:
         for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'memory_info', 'cpu_percent', 'cwd']):
             try:
                 info = proc.info
-                cmd = info.get('cmdline')
+                cmd = info['cmdline']
                 if not cmd: continue
                 
                 cmd_str = " ".join(cmd).lower()
                 # Verificar que pertenezca al directorio del proyecto
-                proc_cwd = (info.get('cwd') or '').lower()
+                proc_cwd = (info['cwd'] or '').lower()
                 if self.current_dir not in proc_cwd and self.current_dir not in cmd_str:
                     continue
 
@@ -358,9 +358,9 @@ class ProcessMonitor:
         for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'cwd']):
             try:
                 info = proc.info
-                cmd = info.get('cmdline')
+                cmd = info['cmdline']
                 # Safety for None cwd (Fixing detection bug)
-                proc_cwd = (info.get('cwd') or '').lower()
+                proc_cwd = (info['cwd'] or '').lower()
                 
                 if cmd:
                     # Specific check: script name in args AND (cwd matches OR path in args matches)

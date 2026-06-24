@@ -63,6 +63,47 @@ class CPUManager:
             logger.error(f"Failed to set CPU affinity: {e}")
 
     @staticmethod
+    def pin_current_thread(horizon: str = "SCALPING"):
+        """
+        Pins the CURRENT THREAD to specific cores based on Horizon.
+        Even Cores for SCALPING, Odd Cores for SWING.
+        """
+        import threading
+        try:
+            available_cores = psutil.cpu_count(logical=True)
+            if horizon == "SCALPING":
+                core_ids = [i for i in range(available_cores) if i % 2 == 0]
+            else:
+                core_ids = [i for i in range(available_cores) if i % 2 != 0]
+
+            if not core_ids:
+                return
+
+            if os.name == 'nt':
+                import ctypes
+                # Windows uses a bitmask
+                mask = 0
+                for c in core_ids:
+                    mask |= (1 << c)
+                
+                # Get current thread handle
+                handle = ctypes.windll.kernel32.GetCurrentThread()
+                res = ctypes.windll.kernel32.SetThreadAffinityMask(handle, ctypes.c_ulonglong(mask))
+                if res == 0:
+                    logger.warning(f"Failed to set thread affinity mask for {horizon}")
+                else:
+                    logger.debug(f"🧵 Thread {threading.get_ident()} pinned to {horizon} cores (mask: {mask})")
+            else:
+                # Linux (requires Python 3.3+)
+                try:
+                    os.sched_setaffinity(0, core_ids)
+                    logger.debug(f"🧵 Thread {threading.get_ident()} pinned to {horizon} cores: {core_ids}")
+                except Exception as ex:
+                    logger.warning(f"Linux thread affinity failed: {ex}")
+        except Exception as e:
+            logger.warning(f"Failed to pin thread for {horizon}: {e}")
+
+    @staticmethod
     def set_priority(level: str = "HIGH"):
         """
         Sets process priority.

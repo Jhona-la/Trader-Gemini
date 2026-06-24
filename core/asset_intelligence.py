@@ -330,20 +330,20 @@ class AssetIntelligence:
         
         if strategy_mapped == "TFTF":
             # Confirmación de volumen en el pullback
-            pullback_vol_ratio = metadata["pullback_volume_ratio"]
+            pullback_vol_ratio = metadata.get("pullback_volume_ratio", 0.0)
             if pullback_vol_ratio > 0.60:
                 # Si el pullback tiene demasiado volumen, es posible reversión, no pullback
                 return False, f"FAIL_A4: Pullback volume ratio {pullback_vol_ratio:.2f} too high (max 0.60)"
                 
         elif strategy_mapped == "OB_RETEST":
             # El Order Block debe tener fuerza > 1.5x ATR
-            ob_strength = metadata["ob_strength_atr"]
+            ob_strength = metadata.get("ob_strength_atr", 1.5)
             if ob_strength < 1.5:
                 return False, f"FAIL_A4: Order Block strength {ob_strength:.2f} is below 1.5x ATR requirement"
                 
         elif strategy_mapped == "CASCADE":
             # Requiere clúster a menos de X% del precio
-            dist_to_cluster = metadata["distance_to_cluster"]
+            dist_to_cluster = metadata.get("distance_to_cluster", 0.0)
             max_dist = 0.015 if symbol in ["BTC/USDT", "ETH/USDT"] else 0.03
             if dist_to_cluster > max_dist:
                 return False, f"FAIL_A4: Distance to liquidations cluster {dist_to_cluster:.3f} exceeds max {max_dist}"
@@ -408,7 +408,7 @@ class AssetIntelligence:
         Ejecuta el pipeline de cierre de 7 pasos (C1-C7) sobre una posición activa.
         Retorna (True, "EXIT_REASON") si se debe cerrar, o (False, "") si se debe mantener.
         """
-        symbol = symbol or position.get("symbol") or "BTC/USDT"
+        symbol = symbol or position["symbol"] or "BTC/USDT"
         profile = self.get_profile(symbol)
         pos_horizon = position["horizon"]
         qty = position["quantity"]
@@ -478,7 +478,7 @@ class AssetIntelligence:
         # ---------------------------------------------------------------------
         # Paso C5 — CIERRE POR TIEMPO LÍMITE (EXHAUSTION)
         # ---------------------------------------------------------------------
-        entry_time_val = position.get("entry_time")
+        entry_time_val = position["entry_time"]
         if entry_time_val:
             if hasattr(entry_time_val, "timestamp"):
                 entry_time_val = entry_time_val.timestamp()

@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import numpy as np
-import pandas as pd
+import polars as pl
 import xgboost as xgb
 from typing import Dict, Any
 
@@ -25,18 +25,18 @@ class GeometryPredictor:
         self.features = []
         self.is_trained = False
         
-    def train(self, df: pd.DataFrame, feature_cols: list):
+    def train(self, df: pl.DataFrame, feature_cols: list):
         """Train the multi-task heads on the labeled PETIM dataset."""
         logger.info(f"Training PETIM Multi-Task Engine for {self.symbol} on {len(df)} samples...")
         self.features = feature_cols
         
-        X = df[feature_cols].values
+        X = df.select(feature_cols).to_numpy()
         
         # Labels
-        y_dir = df['label_continuation'].values
-        y_mfe = df['label_mfe'].values
-        y_mae = df['label_mae'].values
-        y_surv = df['label_survival_time'].values
+        y_dir = df['label_continuation'].to_numpy()
+        y_mfe = df['label_mfe'].to_numpy()
+        y_mae = df['label_mae'].to_numpy()
+        y_surv = df['label_survival_time'].to_numpy()
         
         # Train Direction Head (Classifier)
         logger.info("Training Direction Head...")

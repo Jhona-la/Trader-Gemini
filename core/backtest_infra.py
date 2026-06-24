@@ -37,13 +37,12 @@ import os
 import sys
 import time
 import random
-import numpy as np
-import pandas as pd
+import polars as pl
 from datetime import datetime, timedelta, timezone
 from queue import Queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter
-import polars as pl
+import numpy as np
 from binance.client import Client
 
 # Ensure project root is in path
@@ -164,7 +163,7 @@ class BacktestDataProvider(DataProvider):
         # O(1) Cache systems at epoch level to eradicate redundant searchsorted & DataFrame allocations
         self._epoch_idx_cache = {}  # (symbol, timeframe) -> idx
         self._epoch_bars_cache = {} # (symbol, timeframe, n) -> result numpy array view
-        self._epoch_df_cache = {}   # (symbol, limit) -> pandas DataFrame
+        self._epoch_df_cache = {}   # (symbol, limit) -> polars DataFrame
 
         # 🛑 FORENSIC FIX: Pre-load Structural Edge Data (Derivatives)
         self.derivatives_data = {}
@@ -174,9 +173,9 @@ class BacktestDataProvider(DataProvider):
             funding_path = os.path.join(macro_dir, f"{s}_funding.parquet")
             metrics_path = os.path.join(macro_dir, f"{s}_metrics.parquet")
             if os.path.exists(funding_path):
-                self.derivatives_data[s]["funding"] = pl.read_parquet(funding_path).to_pandas()
+                self.derivatives_data[s]["funding"] = pl.read_parquet(funding_path)
             if os.path.exists(metrics_path):
-                self.derivatives_data[s]["metrics"] = pl.read_parquet(metrics_path).to_pandas()
+                self.derivatives_data[s]["metrics"] = pl.read_parquet(metrics_path)
 
 
         # Check if historical_data is already pre-resampled structured data
@@ -203,26 +202,21 @@ class BacktestDataProvider(DataProvider):
                 self.struct_data[s]["1m"] = self._df_to_struct(df_1m)
 
                 # Resampled timeframes for multi-TF strategies
-                # FORENSIC-V2 FIX #2: Added "4h" for SWING strategies
-                # QUÉ: SWING usa timeframes=['1h','4h','1d'] pero '4h' no se resampleaba.
-                # POR QUÉ: get_latest_bars(symbol, n, timeframe='4h') retornaba None.
-                # PARA QUÉ: SWING puede calcular confluencia multi-TF completa.
-                for tf in ["3min", "5min", "15min", "1h", "4h", "1D", "1W"]:
+                for tf_pd, tf_pl in [("3min", "3m"), ("5min", "5m"), ("15min", "15m"), ("1h", "1h"), ("4h", "4h"), ("1D", "1d"), ("1W", "1w")]:
                     df_res = (
-                        df_1m.resample(tf)
-                        .agg(
-                            {
-                                "open": "first",
-                                "high": "max",
-                                "low": "min",
-                                "close": "last",
-                                "volume": "sum",
-                            }
-                        )
-                        .dropna()
+                        df_1m.group_by_dynamic("timestamp", every=tf_pl)
+                        .agg([
+                            pl.col("open").first(),
+                            pl.col("high").max(),
+                            pl.col("low").min(),
+                            pl.col("close").last(),
+                            pl.col("volume").sum()
+                        ])
+                        .drop_nulls()
                     )
+                    
                     key = (
-                        tf.lower()
+                        tf_pd.lower()
                         .replace("min", "m")
                         .replace("h", "h")
                         .replace("d", "d")
@@ -270,14 +264,32 @@ class BacktestDataProvider(DataProvider):
         )
 
     def _df_to_struct(self, df):
-        """Converts DataFrame to NumPy Structured Array efficiently."""
-        res = np.empty(len(df), dtype=self._STRUCT_DTYPE)
-        res["timestamp"] = df.index.values.astype("datetime64[ms]").astype("int64")
-        res["open"] = df["open"].values
-        res["high"] = df["high"].values
-        res["low"] = df["low"].values
-        res["close"] = df["close"].values
-        res["volume"] = df["volume"].values
+        """Converts Polars DataFrame to NumPy Structured Array efficiently."""
+        import polars as pl
+        import os
+        import uuid
+        
+        mmap_dir = os.path.join("data", "quantum_lake")
+        if not os.path.exists(mmap_dir):
+            os.makedirs(mmap_dir, exist_ok=True)
+            
+        mmap_file = os.path.join(mmap_dir, f"backtest_struct_{uuid.uuid4().hex}.dat")
+        # OUT-OF-CORE MMAP: The data sits on M.2 NVMe and is paged by the OS.
+        res = np.memmap(mmap_file, dtype=self._STRUCT_DTYPE, mode='w+', shape=(len(df),))
+        
+        if df['timestamp'].dtype == pl.Datetime:
+            res["timestamp"] = df["timestamp"].dt.epoch(time_unit="ms").to_numpy()
+        else:
+            res["timestamp"] = df["timestamp"].to_numpy()
+        res["open"] = df["open"].to_numpy()
+        res["high"] = df["high"].to_numpy()
+        res["low"] = df["low"].to_numpy()
+        res["close"] = df["close"].to_numpy()
+        res["volume"] = df["volume"].to_numpy()
+        
+        # Flush to disk and switch to read-only mode to ensure integrity and max caching speed
+        res.flush()
+        res = np.memmap(mmap_file, dtype=self._STRUCT_DTYPE, mode='r', shape=(len(df),))
         return res
 
     def get_latest_bars(self, symbol, n=1, timeframe="1m", limit=None):
@@ -345,8 +357,8 @@ class BacktestDataProvider(DataProvider):
 
     def get_data(self, symbol, limit=500):
         """
-        Retorna los últimos `limit` bars como un DataFrame de Pandas para compatibilidad
-        con Phalanx, Arbitrage y StatArb, utilizando caché a nivel de epoch.
+        Retorna los últimos `limit` bars como un NumPy Structured Array (Zero-Copy)
+        para compatibilidad extrema con Phalanx, Arbitrage y StatArb.
         """
         cache_key = (symbol, limit)
         if cache_key in self._epoch_df_cache:
@@ -354,19 +366,11 @@ class BacktestDataProvider(DataProvider):
 
         bars = self.get_latest_bars(symbol, n=limit, timeframe="1m")
         if bars is None or len(bars) == 0:
-            df = pd.DataFrame()
-            self._epoch_df_cache[cache_key] = df
-            return df
-        # Convert structured array to DataFrame
-        df = pd.DataFrame(bars)
-        # Convert timestamp (ms) to DatetimeIndex
-        df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df.set_index('datetime', inplace=True)
-        
-        # Return a copy to prevent strategies from modifying the cached DataFrame index/columns in place
-        df_copy = df.copy()
-        self._epoch_df_cache[cache_key] = df_copy
-        return df_copy
+            self._epoch_df_cache[cache_key] = np.array([], dtype=self._STRUCT_DTYPE)
+            return self._epoch_df_cache[cache_key]
+            
+        self._epoch_df_cache[cache_key] = bars
+        return bars
 
     def get_symbol_precision(self, symbol):
         """Mock for strategy compatibility."""
@@ -381,21 +385,21 @@ class BacktestDataProvider(DataProvider):
         open_interest = 0.0
         ls_ratio = 1.0
         
-        data = getattr(self, "derivatives_data", {}).get(symbol, {})
+        data = getattr(self, "derivatives_data", {})[symbol]
         current_time = self.current_time_ms
         
         if "funding" in data and data["funding"] is not None:
             df_f = data["funding"]
-            idx = np.searchsorted(df_f["timestamp"].values, current_time, side="right") - 1
+            idx = np.searchsorted(df_f["timestamp"].to_numpy(), current_time, side="right") - 1
             if idx >= 0:
-                funding_rate = float(df_f["funding_rate"].values[idx])
+                funding_rate = float(df_f["funding_rate"].to_numpy()[idx])
                 
         if "metrics" in data and data["metrics"] is not None:
             df_m = data["metrics"]
-            idx = np.searchsorted(df_m["timestamp"].values, current_time, side="right") - 1
+            idx = np.searchsorted(df_m["timestamp"].to_numpy(), current_time, side="right") - 1
             if idx >= 0:
-                open_interest = float(df_m["sum_open_interest"].values[idx])
-                ls_ratio = float(df_m["sum_toptrader_long_short_ratio"].values[idx])
+                open_interest = float(df_m["sum_open_interest"].to_numpy()[idx])
+                ls_ratio = float(df_m["sum_toptrader_long_short_ratio"].to_numpy()[idx])
         
         return {
             "funding_rate": funding_rate, 
@@ -723,7 +727,7 @@ class BacktestPortfolio:
         horizon_locked = sum(
             pos["margin_used"]
             for pos in self.positions.values()
-            if pos["metadata"].get("horizon") == horizon
+            if pos["metadata"]["horizon"] == horizon
         )
         horizon_available = max(0, horizon_budget - horizon_locked)
 
@@ -864,7 +868,7 @@ class BacktestPortfolio:
         if current_dd > self.max_drawdown:
             self.max_drawdown = current_dd
 
-        self.asset_pnl[symbol] = self.asset_pnl.get(symbol, 0.0) + pnl_usd
+        self.asset_pnl[symbol] = self.asset_pnl[symbol] + pnl_usd
 
         del self.positions[symbol]
         return trade
@@ -883,7 +887,7 @@ class BacktestPortfolio:
 
 def fetch_binance_data(
     symbol: str, days: int = 30, end_time: datetime = None, offline_mode: bool = False
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """
     Descarga datos históricos 1m de Binance mainnet (solo lectura).
     [PHASE 19] Quantum Memory Bridge Integration
@@ -1129,7 +1133,7 @@ def handle_trade_exit(portfolio, strategy, trade, current_time):
     if pm_result:
         try:
             from core.meta_optimizer import meta_optimizer
-            meta_optimizer.process_trade_result(pm_result, strategy.genotypes.get(symbol))
+            meta_optimizer.process_trade_result(pm_result, strategy.genotypes[symbol])
         except Exception:
             from utils.error_handler import SystemIntegrityError
             raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
@@ -1157,7 +1161,7 @@ def handle_trade_exit(portfolio, strategy, trade, current_time):
     return reasoning
 
 
-def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
+def run_backtest(data: pl.DataFrame, symbol: str = 'BTC/USDT') -> dict:
     """
     Ejecuta el backtest de un solo símbolo bar-a-bar con la estrategia configurada.
     
@@ -1167,7 +1171,7 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
     CÓMO: Instancia un BacktestDataProvider, BacktestPortfolio, y procesa la timeline.
     """
     from queue import Queue
-    import pandas as pd
+    import polars as pl
     from core.events import MarketEvent, SignalEvent
     from core.enums import SignalType
     from strategies.technical import HybridScalpingStrategy
@@ -1222,7 +1226,7 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
             
         current_bar = bars[-1]
         current_price = float(current_bar['close'])
-        current_time = pd.to_datetime(current_bar['timestamp'], unit='ms', utc=True)
+        current_time = datetime.fromtimestamp(current_bar['timestamp'] / 1000.0, tz=timezone.utc)
         high = float(current_bar['high'])
         low = float(current_bar['low'])
         
@@ -1233,8 +1237,8 @@ def run_backtest(data: pd.DataFrame, symbol: str = 'BTC/USDT') -> dict:
             pos = portfolio.positions[symbol]
             entry = pos['entry']
             side = pos['side']
-            stored_sl = pos.get('sl_price')
-            stored_tp = pos.get('tp_price')
+            stored_sl = pos['sl_price']
+            stored_tp = pos['tp_price']
             
             # Valores por defecto de seguridad
             if stored_sl is None:

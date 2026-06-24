@@ -30,7 +30,7 @@ class RealisticExecutionSimulator:
         }
         
     def _simulate_latency(self, horizon: str) -> float:
-        mu, sigma = self.latency_profiles.get(horizon, (50.0, 20.0))
+        mu, sigma = self.latency_profiles[horizon]
         return max(1.0, np.random.normal(mu, sigma))
         
     def _get_price_after_latency(self, current_price: float, latency_ms: float, direction: str, volatility: float = 0.0001) -> float:

@@ -82,7 +82,7 @@ class OmniscientRegistry:
             logger.error(f"❌ Intento no autorizado de sobrescribir Valor Fijo: {key}")
             raise PermissionError(f"Prohibición Absoluta: No se puede alterar el valor fijo '{key}' sin override humano.")
         
-        logger.warning(f"⚠️ INTERVENCIÓN HUMANA: Valor Fijo '{key}' modificado de {self._fixed_values.get(key)} a {value}")
+        logger.warning(f"⚠️ INTERVENCIÓN HUMANA: Valor Fijo '{key}' modificado de {self._fixed_values[key]} a {value}")
         self._fixed_values[key] = value
 
     # --- VALORES ADAPTATIVOS ---

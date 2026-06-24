@@ -119,13 +119,13 @@ def _watchdog_loop():
         # Esperar primer PING infinito para no explotar durante el boot
         sub.recv()
         
-        # Imponer regla estricta de 1500ms
-        sub.RCVTIMEO = 1500
+        # Imponer regla estricta de 10000ms (evitar falsos positivos por GC)
+        sub.RCVTIMEO = 10000
         while True:
             try:
                 sub.recv()
             except zmq.error.Again:
-                print("☠️ [WATCHDOG INGESTER] Latido de Engine perdido por >1500ms. Aniquilación C/Rust.", file=sys.stderr)
+                print("☠️ [WATCHDOG INGESTER] Latido de Engine perdido por >10000ms. Aniquilación C/Rust.", file=sys.stderr)
                 os._exit(1)
     except ImportError:
         pass # Ignorar si ZMQ no está disponible en este env

@@ -1,11 +1,11 @@
-import pandas as pd
+import polars as pl
 import numpy as np
 from .data_provider import DataProvider
 from core.events import MarketEvent
 
 class HistoricalCSVData(DataProvider):
     """
-    Simulates a real-time feed by reading from CSV files line by line.
+    Simulates a real-time feed by reading from CSV files line by line using Polars.
     """
     def __init__(self, events_queue, csv_dir="data/historical", symbol_list=['BTC/USDT', 'ETH/USDT']):
         self.events_queue = events_queue
@@ -24,28 +24,22 @@ class HistoricalCSVData(DataProvider):
             safe_symbol = s.replace('/', '_')
             path = f"{self.csv_dir}/{safe_symbol}_1m.csv"
             try:
-                df = pd.read_csv(path)
-                df['datetime'] = pd.to_datetime(df['datetime'])
-                df.set_index('datetime', inplace=True)
+                # Use Polars to read csv
+                df = pl.read_csv(path, try_parse_dates=True)
+                # Sort by datetime to ensure order
+                if 'datetime' in df.columns:
+                    df = df.sort('datetime')
                 dfs[s] = df
-            except FileNotFoundError:
+            except Exception:
                 print(f"Warning: No data for {s}")
-                dfs[s] = pd.DataFrame()
+                dfs[s] = pl.DataFrame()
         
-        # Create a common index
-        common_idx = pd.Index([])
-        for s in dfs:
-            if not dfs[s].empty:
-                common_idx = common_idx.union(dfs[s].index)
-        
-        self.timeline = common_idx.sort_values()
-        
-        # Reindex and create iterators
+        # In Polars, simulating a streaming backtest row-by-row is inefficient,
+        # but to keep the old interface, we convert to list of dicts or iterators.
         self.data_generators = {}
         for s in dfs:
-            if not dfs[s].empty:
-                aligned = dfs[s].reindex(self.timeline, method='ffill')
-                self.data_generators[s] = aligned.itertuples()
+            if not dfs[s].is_empty():
+                self.data_generators[s] = iter(dfs[s].iter_rows(named=True))
             else:
                 self.data_generators[s] = iter([])
 
@@ -59,26 +53,19 @@ class HistoricalCSVData(DataProvider):
 
     def update_bars(self):
         try:
-            # We assume all generators are aligned by _load_data
-            # So we just step them all forward
-            
             any_data = False
             for s in self.symbol_list:
                 try:
                     row = next(self.data_generators[s])
                     
-                    # Check for NaN (if ffill failed at start)
-                    if pd.isna(row.close):
-                        continue
-                        
                     bar_data = {
                         'symbol': s,
-                        'datetime': row.Index,
-                        'open': row.open,
-                        'high': row.high,
-                        'low': row.low,
-                        'close': row.close,
-                        'volume': row.volume
+                        'datetime': row.get('datetime', None),
+                        'open': row.get('open', 0.0),
+                        'high': row.get('high', 0.0),
+                        'low': row.get('low', 0.0),
+                        'close': row.get('close', 0.0),
+                        'volume': row.get('volume', 0.0)
                     }
                     
                     self.latest_data[s].append(bar_data)

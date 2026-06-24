@@ -27,30 +27,31 @@ class VolumeIndicators:
     @staticmethod
     def calculate_all(df, close, high, low, volume, n_len):
         """Calcula todos los indicadores de Volumen F01-F14."""
+        import polars as pl
         features = {}
 
-        v_sma_20 = talib.SMA(volume, 20)
+        v_sma_20 = pl.col('volume').rolling_mean(window_size=20)
         features['volume_sma_20'] = v_sma_20
-        features['volume_ratio'] = np.where(v_sma_20 != 0, volume / v_sma_20, 0.0)
+        features['volume_ratio'] = pl.when(v_sma_20 != 0).then(pl.col('volume') / v_sma_20).otherwise(0.0)
 
         # ═══════════════════════════════════════════════════════════
         # F01: OBV (On-Balance Volume)
         # Acumulación/distribución. OBV subiendo con precio lateral = acumulación
         # ═══════════════════════════════════════════════════════════
         obv = talib.OBV(close, volume)
-        obv_sma = talib.SMA(obv, 20)
-        features['obv'] = obv
+        features['obv'] = pl.Series('obv', obv)
+        obv_sma = pl.col('obv').rolling_mean(window_size=20)
         features['obv_sma'] = obv_sma
-        features['obv_ratio'] = np.where(obv_sma != 0, obv / obv_sma, 1.0)
+        features['obv_ratio'] = pl.when(obv_sma != 0).then(pl.col('obv') / obv_sma).otherwise(1.0)
 
         # OBV divergence: precio sube + OBV baja = distribución
         if n_len > 10:
             price_trend = talib.LINEARREG_SLOPE(close, 10)
             obv_trend = talib.LINEARREG_SLOPE(obv.astype(np.float64), 10)
-            features['obv_divergence'] = np.where(
+            features['obv_divergence'] = pl.Series('obv_divergence', np.where(
                 (price_trend > 0) & (obv_trend < 0), -1.0,
                 np.where((price_trend < 0) & (obv_trend > 0), 1.0, 0.0)
-            )
+            ))
 
         # ═══════════════════════════════════════════════════════════
         # F02: CVD (Cumulative Volume Delta) — CALCULADO
@@ -59,114 +60,123 @@ class VolumeIndicators:
         # aproximamos con el método tick-rule (close vs prev close).
         # ═══════════════════════════════════════════════════════════
         if 'cvd' in df.columns:
-            features['cvd'] = df['cvd'].to_numpy()
+            features['cvd'] = pl.col('cvd')
         else:
             # Aproximación tick-rule: si close > prev_close, el volumen
             # se atribuye a compradores agresores, y viceversa.
-            price_change = np.diff(close, prepend=close[0])
-            buy_volume = np.where(price_change > 0, volume,
-                         np.where(price_change < 0, 0, volume * 0.5))
-            sell_volume = np.where(price_change < 0, volume,
-                          np.where(price_change > 0, 0, volume * 0.5))
+            price_change = pl.col('close') - pl.col('close').shift(1)
+            buy_volume = pl.when(price_change > 0).then(pl.col('volume')).when(price_change < 0).then(0.0).otherwise(pl.col('volume') * 0.5)
+            sell_volume = pl.when(price_change < 0).then(pl.col('volume')).when(price_change > 0).then(0.0).otherwise(pl.col('volume') * 0.5)
             delta = buy_volume - sell_volume
-            features['cvd'] = np.cumsum(delta)
+            features['cvd'] = delta.cum_sum().fill_null(0.0)
 
         # F03: CVD Rate of Change — velocidad del cambio del CVD
-        if n_len > 5:
-            cvd_arr = features['cvd'].astype(np.float64)
-            features['cvd_roc_5'] = talib.ROC(cvd_arr, 5)
         if n_len > 14:
-            features['cvd_roc_14'] = talib.ROC(cvd_arr, 14)
+            features['cvd_roc_1'] = features['cvd'].pct_change(1) * 100
+            features['cvd_roc_5'] = features['cvd'].pct_change(5) * 100
+            features['cvd_roc_14'] = features['cvd'].pct_change(14) * 100
 
         # CVD divergence with price
+
         if n_len > 10:
-            cvd_trend = talib.LINEARREG_SLOPE(features['cvd'].astype(np.float64), 10)
-            features['cvd_divergence'] = np.where(
+            if 'cvd' in df.columns:
+                cvd_arr = df['cvd'].to_numpy()
+            else:
+                price_change_np = np.diff(close, prepend=close[0])
+                buy_np = np.where(price_change_np > 0, volume, np.where(price_change_np < 0, 0, volume * 0.5))
+                sell_np = np.where(price_change_np < 0, volume, np.where(price_change_np > 0, 0, volume * 0.5))
+                cvd_arr = np.cumsum(buy_np - sell_np)
+                
+            cvd_trend = talib.LINEARREG_SLOPE(cvd_arr.astype(np.float64), 10)
+            features['cvd_divergence'] = pl.Series('cvd_divergence', np.where(
                 (price_trend > 0) & (cvd_trend < 0), -1.0,  # Price up, CVD down = bearish
                 np.where((price_trend < 0) & (cvd_trend > 0), 1.0, 0.0)  # Price down, CVD up = bullish
-            )
+            ))
 
         # ═══════════════════════════════════════════════════════════
         # F02b: Chaikin A/D Line & Oscillator
         # ═══════════════════════════════════════════════════════════
         ad = talib.AD(high, low, close, volume)
-        features['ad_line'] = ad
+        features['ad_line'] = pl.Series('ad_line', ad)
         if n_len > 10:
-            features['adosc'] = talib.ADOSC(high, low, close, volume, 3, 10)
+            features['adosc'] = pl.Series('adosc', talib.ADOSC(high, low, close, volume, 3, 10))
 
         # ═══════════════════════════════════════════════════════════
         # F04/F05: VWAP (Rolling 20 y 50)
         # ═══════════════════════════════════════════════════════════
-        typ_price = (high + low + close) / 3
-        vp = typ_price * volume
+        typ_price = (pl.col('high') + pl.col('low') + pl.col('close')) / 3
+        vp = typ_price * pl.col('volume')
         if n_len > 20:
-            features['vwap_20'] = safe_div(talib.SUM(vp, 20), talib.SUM(volume, 20), typ_price)
-            features['vwap_dist'] = safe_div(close - features['vwap_20'], features['vwap_20'])
+            vwap_20 = vp.rolling_sum(window_size=20) / pl.col('volume').rolling_sum(window_size=20)
+            features['vwap_20'] = vwap_20
+            features['vwap_dist'] = pl.when(vwap_20 != 0).then((pl.col('close') - vwap_20) / vwap_20).otherwise(0.0)
         if n_len > 50:
-            features['vwap_50'] = safe_div(talib.SUM(vp, 50), talib.SUM(volume, 50), typ_price)
-            features['vwap_50_dist'] = safe_div(close - features['vwap_50'], features['vwap_50'])
+            vwap_50 = vp.rolling_sum(window_size=50) / pl.col('volume').rolling_sum(window_size=50)
+            features['vwap_50'] = vwap_50
+            features['vwap_50_dist'] = pl.when(vwap_50 != 0).then((pl.col('close') - vwap_50) / vwap_50).otherwise(0.0)
 
         # ═══════════════════════════════════════════════════════════
         # F07: Ease of Movement (EMV)
         # ═══════════════════════════════════════════════════════════
         if n_len > 14:
-            hl2 = (high + low) / 2
-            hl2_prev = np.roll(hl2, 1)
-            hl2_prev[0] = hl2[0]
-            box_ratio = safe_div(volume, (high - low), 1.0)
-            emv_raw = safe_div(hl2 - hl2_prev, box_ratio, 0.0)
-            features['emv_14'] = talib.SMA(emv_raw, 14)
+            hl2 = (pl.col('high') + pl.col('low')) / 2
+            hl2_prev = hl2.shift(1).fill_null(hl2)
+            box_ratio = pl.when((pl.col('high') - pl.col('low')) != 0).then(pl.col('volume') / (pl.col('high') - pl.col('low'))).otherwise(1.0)
+            emv_raw = pl.when(box_ratio != 0).then((hl2 - hl2_prev) / box_ratio).otherwise(0.0)
+            features['emv_14'] = emv_raw.rolling_mean(window_size=14)
 
         # ═══════════════════════════════════════════════════════════
         # F08: Chaikin Money Flow (CMF, período 21)
         # CMF > 0: acumulación neta. CMF < 0: distribución neta.
         # ═══════════════════════════════════════════════════════════
         if n_len > 21:
-            mfm = safe_div((close - low) - (high - close), high - low, 0.0)  # Money Flow Multiplier
-            mfv = mfm * volume  # Money Flow Volume
-            features['cmf_21'] = safe_div(talib.SUM(mfv, 21), talib.SUM(volume, 21), 0.0)
+            mfm = pl.when((pl.col('high') - pl.col('low')) != 0).then(
+                ((pl.col('close') - pl.col('low')) - (pl.col('high') - pl.col('close'))) / (pl.col('high') - pl.col('low'))
+            ).otherwise(0.0)
+            mfv = mfm * pl.col('volume')
+            cmf = mfv.rolling_sum(window_size=21) / pl.col('volume').rolling_sum(window_size=21)
+            features['cmf_21'] = cmf.fill_null(0.0)
 
         # ═══════════════════════════════════════════════════════════
         # F10: Force Index (período 2 y 13)
         # Fuerza = cambio_precio × volumen. Spike = agresión institucional.
         # ═══════════════════════════════════════════════════════════
-        price_change_arr = np.diff(close, prepend=close[0])
-        force_raw = price_change_arr * volume
+        price_change_expr = pl.col('close') - pl.col('close').shift(1).fill_null(pl.col('close'))
+        force_raw = price_change_expr * pl.col('volume')
         if n_len > 2:
-            from utils.math_kernel import calculate_ema_jit
-            features['force_index_2'] = calculate_ema_jit(force_raw.astype(np.float64), 2)
+            features['force_index_2'] = force_raw.ewm_mean(span=2, adjust=False)
         if n_len > 13:
-            features['force_index_13'] = calculate_ema_jit(force_raw.astype(np.float64), 13)
+            features['force_index_13'] = force_raw.ewm_mean(span=13, adjust=False)
 
         # ═══════════════════════════════════════════════════════════
         # F11: Volume Oscillator (ratio de medias de volumen)
         # ═══════════════════════════════════════════════════════════
         if n_len > 10:
-            vol_sma_5 = talib.SMA(volume, 5)
-            vol_sma_10 = talib.SMA(volume, 10)
-            features['vol_oscillator'] = safe_div(vol_sma_5 - vol_sma_10, vol_sma_10)
+            vol_sma_5 = pl.col('volume').rolling_mean(window_size=5)
+            vol_sma_10 = pl.col('volume').rolling_mean(window_size=10)
+            features['vol_oscillator'] = pl.when(vol_sma_10 != 0).then((vol_sma_5 - vol_sma_10) / vol_sma_10).otherwise(0.0)
 
         # ═══════════════════════════════════════════════════════════
         # F12: Micro Imbalance (si viene del footprint)
         # ═══════════════════════════════════════════════════════════
         if 'micro_imbalance' in df.columns:
-            features['micro_imbalance'] = df['micro_imbalance'].to_numpy()
+            features['micro_imbalance'] = pl.col('micro_imbalance')
 
         # ═══════════════════════════════════════════════════════════
         # F14: Large Trade Detection (Whale Prints)
         # Trades con volumen > 2σ del promedio = actividad institucional
         # ═══════════════════════════════════════════════════════════
         if n_len > 20:
-            vol_mean = talib.SMA(volume, 20)
-            vol_std = talib.STDDEV(volume, 20, 1)
+            vol_mean = pl.col('volume').rolling_mean(window_size=20)
+            vol_std = pl.col('volume').rolling_std(window_size=20)
             whale_threshold = vol_mean + 2 * vol_std
-            features['whale_print'] = np.where(volume > whale_threshold, 1.0, 0.0)
+            features['whale_print'] = pl.when(pl.col('volume') > whale_threshold).then(1.0).otherwise(0.0)
             # Direction of whale: if close > open, buyer whale
             if 'open' in df.columns:
-                open_arr = df['open'].to_numpy().astype(np.float64)
-                features['whale_direction'] = np.where(
-                    (volume > whale_threshold) & (close > open_arr), 1.0,
-                    np.where((volume > whale_threshold) & (close < open_arr), -1.0, 0.0)
-                )
+                features['whale_direction'] = pl.when(
+                    (pl.col('volume') > whale_threshold) & (pl.col('close') > pl.col('open'))
+                ).then(1.0).when(
+                    (pl.col('volume') > whale_threshold) & (pl.col('close') < pl.col('open'))
+                ).then(-1.0).otherwise(0.0)
 
         return features

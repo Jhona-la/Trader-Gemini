@@ -269,7 +269,7 @@ class FeedbackProcessor:
     
     def get_strategy_stats(self, strategy_id: str) -> Dict[str, Dict[str, float]]:
         """Returns performance stats for a strategy across all regimes."""
-        return self._strategy_regime_stats.get(strategy_id, {})
+        return self._strategy_regime_stats[strategy_id]
     
     def get_recent_outcomes(self, n: int = 20) -> List[TradeOutcome]:
         """Returns the N most recent trade outcomes."""

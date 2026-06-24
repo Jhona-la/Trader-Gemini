@@ -166,12 +166,12 @@ class QuantumEngine:
         # Determine base parameters
         if self.horizon == 'SCALPING':
             self.h_params = getattr(Config.Horizons, 'Scalping', {})
-            self.tp_pct = self.h_params.get('tp_pct', 0.0050)
-            self.sl_pct = self.h_params.get('sl_pct', 0.0050)
+            self.tp_pct = self.h_params['tp_pct']
+            self.sl_pct = self.h_params['sl_pct']
         else:
             self.h_params = getattr(Config.Horizons, 'Swing', {})
-            self.tp_pct = self.h_params.get('tp_pct', 0.02)
-            self.sl_pct = self.h_params.get('sl_pct', 0.02)
+            self.tp_pct = self.h_params['tp_pct']
+            self.sl_pct = self.h_params['sl_pct']
 
         if _HAS_FE:
             self.fe = FeatureEngineering()
@@ -187,9 +187,9 @@ class QuantumEngine:
         """
         arrs = {}
         # 1. TECHNICAL PROXIES (Phalanx & StatArb)
-        close = df_pd['close'].values
-        high = df_pd['high'].values
-        low = df_pd['low'].values
+        close = df_pd['close'].to_numpy()
+        high = df_pd['high'].to_numpy()
+        low = df_pd['low'].to_numpy()
         
         # Proxy Phalanx: Volatility Breakout (High - Low > ATR*2)
         arrs['phalanx_sig'] = np.zeros(len(df_pd))
@@ -238,7 +238,7 @@ class QuantumEngine:
                 return arrs
                 
             model_data = joblib.load(meta_path)
-            feature_cols = model_data.get('feature_cols')
+            feature_cols = model_data['feature_cols']
             
             if not feature_cols:
                 return arrs
@@ -311,8 +311,7 @@ class QuantumEngine:
                                 target_ms_sym = max_ts - (days * 24 * 60 * 60 * 1000)
                                 df = df.filter(pl.col('timestamp') >= target_ms_sym)
                         
-                        df_pd = df.to_pandas()
-                        omni_arrs = self._precalculate_omni_features(df_pd, symbol, "SCALPING")
+                        omni_arrs = self._precalculate_omni_features(df, symbol, "SCALPING")
                         for k, v in omni_arrs.items():
                             df = df.with_columns(pl.Series(k, v))
                         
@@ -344,8 +343,7 @@ class QuantumEngine:
                                 target_ms_sym = max_ts - (days * 24 * 60 * 60 * 1000)
                                 df = df.filter(pl.col('timestamp') >= target_ms_sym)
                         
-                        df_pd = df.to_pandas()
-                        omni_arrs = self._precalculate_omni_features(df_pd, symbol, "SWING")
+                        omni_arrs = self._precalculate_omni_features(df, symbol, "SWING")
                         for k, v in omni_arrs.items():
                             df = df.with_columns(pl.Series(k, v))
                         
@@ -365,30 +363,30 @@ class QuantumEngine:
                         logger.warning(f"QuantumEngine: Failed to load 1h {symbol}: {e}")
                         
     def _simulate_horizon(self, data_dict, dna, prefix, gate_mult, global_trades, horizon_type):
-        rsi_buy = dna.get(f'{prefix}rsi_buy', 45)
-        rsi_sell = dna.get(f'{prefix}rsi_sell', 55)
-        bb_std = dna.get(f'{prefix}bb_std', 2.0)
-        tp_pct = dna.get(f'{prefix}tp_pct', self.tp_pct)
-        sl_pct = dna.get(f'{prefix}sl_pct', self.sl_pct)
-        ema_f_period = dna.get(f'{prefix}ema_fast', 20)
-        ema_s_period = dna.get(f'{prefix}ema_slow', 50)
-        leverage = dna.get(f'{prefix}leverage', 1.0)
+        rsi_buy = dna[f'{prefix}rsi_buy']
+        rsi_sell = dna[f'{prefix}rsi_sell']
+        bb_std = dna[f'{prefix}bb_std']
+        tp_pct = dna[f'{prefix}tp_pct']
+        sl_pct = dna[f'{prefix}sl_pct']
+        ema_f_period = dna[f'{prefix}ema_fast']
+        ema_s_period = dna[f'{prefix}ema_slow']
+        leverage = dna[f'{prefix}leverage']
         
-        consensus_fee_mult = dna.get('consensus_fee_mult', gate_mult)
+        consensus_fee_mult = dna['consensus_fee_mult']
         
         round_trip_fee = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.000375) * 2
         fee_threshold = round_trip_fee * consensus_fee_mult
         
         # FASE 31: PESOS OMNI-COMPILADOS (Genetic DNA)
-        w_ml = float(dna.get(f'{prefix}w_ml', 1.0))
-        w_tech = float(dna.get(f'{prefix}w_technical', 1.0))
-        w_phalanx = float(dna.get(f'{prefix}w_phalanx', 0.5))
-        w_statarb = float(dna.get(f'{prefix}w_statarb', 0.5))
-        ml_thresh_bull = float(dna.get(f'{prefix}ml_th_long', 0.55))
-        ml_thresh_bear = float(dna.get(f'{prefix}ml_th_short', 0.55))
-        omni_threshold = float(dna.get(f'{prefix}master_threshold', 1.0))
-        slippage_pct = float(dna.get('slippage_pct', 0.0002)) # 2 BPS slippage default
-        use_regime = float(dna.get('use_regime', 1.0)) > 0.5 # Default to true
+        w_ml = float(dna[f'{prefix}w_ml'])
+        w_tech = float(dna[f'{prefix}w_technical'])
+        w_phalanx = float(dna[f'{prefix}w_phalanx'])
+        w_statarb = float(dna[f'{prefix}w_statarb'])
+        ml_thresh_bull = float(dna[f'{prefix}ml_th_long'])
+        ml_thresh_bear = float(dna[f'{prefix}ml_th_short'])
+        omni_threshold = float(dna[f'{prefix}master_threshold'])
+        slippage_pct = float(dna['slippage_pct']) # 2 BPS slippage default
+        use_regime = float(dna['use_regime']) > 0.5 # Default to true
         
         for symbol, arrs in data_dict.items():
             timestamps = arrs['timestamp']
@@ -405,16 +403,16 @@ class QuantumEngine:
             valid_volatility = (atr_pct >= fee_threshold)
             
             # FASE 31: OMNI-SCORE VECTORIZATION
-            ml_bull_val = arrs.get('ml_bull', np.zeros(n))
-            ml_bear_val = arrs.get('ml_bear', np.zeros(n))
+            ml_bull_val = arrs['ml_bull']
+            ml_bear_val = arrs['ml_bear']
             ml_long_sig = (ml_bull_val >= ml_thresh_bull)
             ml_short_sig = (ml_bear_val >= ml_thresh_bear)
             
             tech_long = (rsi < rsi_buy) & (close <= bbl)
             tech_short = (rsi > rsi_sell) & (close >= bbu)
             
-            phalanx = arrs.get('phalanx_sig', np.zeros(n))
-            statarb = arrs.get('statarb_sig', np.zeros(n))
+            phalanx = arrs['phalanx_sig']
+            statarb = arrs['statarb_sig']
             
             score_long = (tech_long * w_tech) + (ml_long_sig * w_ml) + (phalanx * w_phalanx) + (np.isclose(statarb, 1.0) * w_statarb)
             score_short = (tech_short * w_tech) + (ml_short_sig * w_ml) + (np.isclose(statarb, -1.0) * w_statarb)
@@ -448,7 +446,7 @@ class QuantumEngine:
                 
                 for k in range(len(out_ts)):
                     # Empaquetamos para el Nano Risk Engine
-                    sym_id = self.symbol_to_id.get(symbol, 99)
+                    sym_id = self.symbol_to_id[symbol]
                     global_trades.append({
                         'entry_ts': out_entry_ts[k],
                         'exit_ts': out_ts[k],
@@ -503,7 +501,7 @@ class QuantumEngine:
             symbols[idx] = t['symbol_id']
 
         # Extraer Kelly parameters del DNA si existen, si no, Default 0.30 (30% capital alocado por trade)
-        leverage = float(dna.get('leverage', 10.0))
+        leverage = float(dna['leverage'])
         # Para el Nano Engine, el Leverage que se aplica al margen debe ser conocido
         # Nota: si pasamos 10x, el notional_size = target_margin * leverage.
         
@@ -519,8 +517,8 @@ class QuantumEngine:
             symbols=symbols,
             initial_capital=self.capital,
             min_notional=5.50,          # Binance minimum limits
-            kelly_fraction=float(dna.get('kelly_fraction', 0.30)),
-            max_concurrent=int(dna.get('max_concurrent', 5)),
+            kelly_fraction=float(dna['kelly_fraction']),
+            max_concurrent=int(dna['max_concurrent']),
             leverage=leverage,
             round_trip_fee=0.00075
         )

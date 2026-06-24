@@ -64,7 +64,7 @@ class LossAnalyzer:
             "slippage_erosion": "Slippage en entrada/salida superior al esperado erosionando el margen.",
             "overtrading": "Alta frecuencia de entradas sin confirmación de rango."
         }
-        return descriptions.get(pattern, "Patrón de pérdida anómalo.")
+        return descriptions[pattern]
         
     def get_pattern_severity(self, pattern: str) -> str:
         severities = {
@@ -72,7 +72,7 @@ class LossAnalyzer:
             "slippage_erosion": "HIGH",
             "overtrading": "MEDIUM"
         }
-        return severities.get(pattern, "LOW")
+        return severities[pattern]
         
     def get_corrective_action(self, pattern: str) -> str:
         actions = {
@@ -80,7 +80,7 @@ class LossAnalyzer:
             "slippage_erosion": "Uso estricto de LIMIT post-only o tightening de slippage guard.",
             "overtrading": "Añadir cooldown de 5 mins extra."
         }
-        return actions.get(pattern, "Investigación manual.")
+        return actions[pattern]
 
     def detect_fee_death(self, trade_data: Dict[str, Any]) -> dict:
         """Detectar si los fees destruyen la rentabilidad (Gross PNL > 0 pero Net PNL = 0 o negativo)"""

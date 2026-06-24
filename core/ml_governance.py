@@ -5,7 +5,7 @@ import re
 import shutil
 from datetime import datetime
 import logging
-import pandas as pd
+import polars as pl
 
 logger = logging.getLogger("MLGovernance")
 
@@ -116,7 +116,8 @@ class MLGovernance:
     def get_performance_history(self, symbol):
         """Returns a history of all trained models for auditing."""
         conn = sqlite3.connect(self.db_path)
-        df = pd.read_sql_query("SELECT * FROM model_registry WHERE symbol = ? ORDER BY version DESC", conn, params=(symbol,))
+        # Use polars to read SQL
+        df = pl.read_database("SELECT * FROM model_registry WHERE symbol = ? ORDER BY version DESC", conn, execute_options={"parameters": (symbol,)})
         conn.close()
         return df
 

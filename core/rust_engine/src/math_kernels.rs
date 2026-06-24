@@ -313,3 +313,352 @@ impl RecursiveHurst {
         }
     }
 }
+
+
+// FFI Kelly Fraction & Stats Calculation
+
+#[inline(always)]
+pub fn compute_kelly_fraction(p: f64, b: f64, apply_mult: bool, kelly_mult: f64, stress_score: f64, max_exposure: f64) -> f64 {
+    if b <= 0.0 {
+        return 0.0;
+    }
+    let q = 1.0 - p;
+    let kelly = (p * b - q) / b;
+    if !apply_mult {
+        return kelly;
+    }
+    let mut mult = kelly_mult;
+    if stress_score < 90.0 {
+        mult = 0.125;
+    }
+    let mut fractional_kelly = kelly * mult;
+    if fractional_kelly < 0.0 {
+        fractional_kelly = 0.0;
+    }
+    if fractional_kelly > max_exposure {
+        fractional_kelly = max_exposure;
+    }
+    fractional_kelly
+}
+
+#[inline(always)]
+pub fn extract_kelly_stats(pnl_array: &[f64], is_win_array: &[bool]) -> (f64, f64) {
+    let n = pnl_array.len() as f64;
+    if n == 0.0 {
+        return (0.5, 1.0);
+    }
+    let mut wins = 0.0;
+    let mut losses = 0.0;
+    let mut sum_wins = 0.0;
+    let mut sum_losses = 0.0;
+    for i in 0..pnl_array.len() {
+        if is_win_array[i] {
+            wins += 1.0;
+            sum_wins += pnl_array[i];
+        } else {
+            losses += 1.0;
+            sum_losses += pnl_array[i].abs();
+        }
+    }
+    let p = if wins > 0.0 { wins / n } else { 0.5 };
+    let avg_win = if wins > 0.0 { sum_wins / wins } else { 0.01 };
+    let avg_loss = if losses > 0.0 { sum_losses / losses } else { 0.01 };
+    let b = if avg_loss > 0.0 { avg_win / avg_loss } else { 1.0 };
+    (p, b)
+}
+
+#[inline(always)]
+pub fn compute_cvar(loss_history: &[f64], confidence_level: f64) -> f64 {
+    if loss_history.is_empty() {
+        return 0.0;
+    }
+    let mut sorted_losses = loss_history.to_vec();
+    // Sort in descending order (largest losses first)
+    sorted_losses.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    
+    let n = sorted_losses.len();
+    let cutoff_idx = ((1.0 - confidence_level) * n as f64).floor() as usize;
+    let cutoff_idx = cutoff_idx.max(1);
+    
+    let mut sum = 0.0;
+    for i in 0..cutoff_idx {
+        sum += sorted_losses[i];
+    }
+    sum / (cutoff_idx as f64)
+}
+
+// =========================================================
+// VECTORIZED TECHNICAL INDICATORS
+// =========================================================
+
+#[inline(always)]
+pub fn compute_ema_vectorized(data: &[f64], period: usize, out: &mut [f64]) {
+    let n = data.len();
+    if n == 0 || period == 0 || out.len() != n {
+        return;
+    }
+    let k = 2.0 / (period as f64 + 1.0);
+    out[0] = data[0];
+    for i in 1..n {
+        out[i] = data[i] * k + out[i - 1] * (1.0 - k);
+    }
+}
+
+#[inline(always)]
+pub fn compute_rsi_vectorized(data: &[f64], period: usize, out: &mut [f64]) {
+    let n = data.len();
+    if n < period || period == 0 || out.len() != n {
+        for i in 0..n { out[i] = 50.0; } // Default safe value
+        return;
+    }
+    
+    let mut gain = 0.0;
+    let mut loss = 0.0;
+    
+    // Seed first window
+    for i in 1..period {
+        let diff = data[i] - data[i - 1];
+        if diff > 0.0 {
+            gain += diff;
+        } else {
+            loss -= diff;
+        }
+    }
+    
+    gain /= period as f64;
+    loss /= period as f64;
+    
+    // Fill until period with 50.0 to prevent artifacting
+    for i in 0..period {
+        out[i] = 50.0;
+    }
+    
+    if loss == 0.0 {
+        out[period - 1] = 100.0;
+    } else {
+        let rs = gain / loss;
+        out[period - 1] = 100.0 - (100.0 / (1.0 + rs));
+    }
+    
+    // Smoothed Wilders moving average
+    for i in period..n {
+        let diff = data[i] - data[i - 1];
+        if diff > 0.0 {
+            gain = (gain * (period as f64 - 1.0) + diff) / period as f64;
+            loss = (loss * (period as f64 - 1.0)) / period as f64;
+        } else {
+            gain = (gain * (period as f64 - 1.0)) / period as f64;
+            loss = (loss * (period as f64 - 1.0) - diff) / period as f64;
+        }
+        if loss == 0.0 {
+            out[i] = 100.0;
+        } else {
+            let rs = gain / loss;
+            out[i] = 100.0 - (100.0 / (1.0 + rs));
+        }
+    }
+}
+
+#[inline(always)]
+pub fn compute_bollinger_bands(data: &[f64], period: usize, std_dev_mult: f64, out_up: &mut [f64], out_mid: &mut [f64], out_low: &mut [f64]) {
+    let n = data.len();
+    if n < period || period == 0 {
+        for i in 0..n {
+            out_mid[i] = data[i];
+            out_up[i] = data[i];
+            out_low[i] = data[i];
+        }
+        return;
+    }
+    
+    for i in 0..period-1 {
+        out_mid[i] = data[i];
+        out_up[i] = data[i];
+        out_low[i] = data[i];
+    }
+    
+    let window = period as f64;
+    for i in (period - 1)..n {
+        let mut sum = 0.0;
+        for j in 0..period {
+            sum += data[i - j];
+        }
+        let mean = sum / window;
+        
+        let mut variance = 0.0;
+        for j in 0..period {
+            let diff = data[i - j] - mean;
+            variance += diff * diff;
+        }
+        let std_dev = (variance / window).sqrt();
+        
+        out_mid[i] = mean;
+        out_up[i] = mean + std_dev_mult * std_dev;
+        out_low[i] = mean - std_dev_mult * std_dev;
+    }
+}
+
+#[inline(always)]
+pub fn compute_macd(data: &[f64], fast_period: usize, slow_period: usize, signal_period: usize, out_macd: &mut [f64], out_signal: &mut [f64], out_hist: &mut [f64]) {
+    let n = data.len();
+    if n == 0 { return; }
+    
+    let mut fast_ema = vec![0.0; n];
+    let mut slow_ema = vec![0.0; n];
+    
+    compute_ema_vectorized(data, fast_period, &mut fast_ema);
+    compute_ema_vectorized(data, slow_period, &mut slow_ema);
+    
+    for i in 0..n {
+        out_macd[i] = fast_ema[i] - slow_ema[i];
+    }
+    
+    compute_ema_vectorized(&out_macd, signal_period, out_signal);
+    
+    for i in 0..n {
+        out_hist[i] = out_macd[i] - out_signal[i];
+    }
+}
+
+// =====================================================================
+// MACHINE LEARNING INFERENCE KERNELS (Nano-Latency)
+// =====================================================================
+
+pub fn predict_rf(
+    x: &[f64],
+    children_left: &[i64],
+    children_right: &[i64],
+    feature: &[i64],
+    threshold: &[f64],
+    value: &[f64],
+    tree_offsets: &[i64],
+) -> f64 {
+    let n_trees = tree_offsets.len().saturating_sub(1);
+    if n_trees == 0 { return 0.0; }
+    let mut total_prob = 0.0;
+
+    for i in 0..n_trees {
+        let mut node = tree_offsets[i] as usize;
+        while children_left[node] != -1 {
+            let f_idx = feature[node] as usize;
+            if x[f_idx] <= threshold[node] {
+                node = children_left[node] as usize;
+            } else {
+                node = children_right[node] as usize;
+            }
+        }
+        total_prob += value[node];
+    }
+    total_prob / (n_trees as f64)
+}
+
+pub fn predict_gb(
+    x: &[f64],
+    children_left: &[i64],
+    children_right: &[i64],
+    feature: &[i64],
+    threshold: &[f64],
+    value: &[f64],
+    tree_offsets: &[i64],
+    init_score: f64,
+    learning_rate: f64,
+) -> f64 {
+    let n_trees = tree_offsets.len().saturating_sub(1);
+    let mut score = init_score;
+
+    for i in 0..n_trees {
+        let mut node = tree_offsets[i] as usize;
+        while children_left[node] != -1 {
+            let f_idx = feature[node] as usize;
+            if x[f_idx] <= threshold[node] {
+                node = children_left[node] as usize;
+            } else {
+                node = children_right[node] as usize;
+            }
+        }
+        score += learning_rate * value[node];
+    }
+
+    // Sigmoid
+    if score >= 0.0 {
+        1.0 / (1.0 + (-score).exp())
+    } else {
+        let exp_s = score.exp();
+        exp_s / (1.0 + exp_s)
+    }
+}
+
+pub fn fused_compute_step(
+    closes: &[f64],
+    volumes: &[f64],
+    portfolio_state: &[f64; 3], // [has_pos, pnl_norm, dur_norm]
+    gene_params: &[f64; 2],     // [sl_norm, tp_norm]
+    brain_weights: &[f64; 100], // 25 * 4 = 100 flattened
+    l2_state: &[f64; 2],        // [ofi, microprice_divergence]
+    window: usize,
+    out_scores: &mut [f64; 4]
+) {
+    let n = closes.len();
+    if n < 30 {
+        out_scores.fill(0.0);
+        return;
+    }
+
+    let mut state_tensor = [0.0f64; 25];
+
+    // 1A. Market Data (20 Features)
+    // Returns (5)
+    for i in 0..window {
+        let idx = n - window + i;
+        let val = (closes[idx] - closes[idx - 1]) / closes[idx - 1];
+        state_tensor[i] = val;
+    }
+
+    // Volatility (5)
+    let mut vol_sum = 0.0;
+    for i in (n - 20)..n {
+        vol_sum += volumes[i];
+    }
+    let mut mean_vol = vol_sum / 20.0;
+    if mean_vol < 1e-8 {
+        mean_vol = 1.0;
+    }
+
+    for i in 0..window {
+        let idx = n - window + i;
+        state_tensor[5 + i] = volumes[idx] / mean_vol;
+    }
+
+    // Momentum / Custom (5)
+    for i in 0..window {
+        let idx = n - window + i;
+        let mom = if idx >= 2 {
+            (closes[idx] / closes[idx - 2]) - 1.0
+        } else {
+            0.0
+        };
+        state_tensor[10 + i] = mom;
+        state_tensor[15 + i] = 0.0;
+    }
+
+    // Inject L2 Data
+    state_tensor[18] = l2_state[0];
+    state_tensor[19] = l2_state[1];
+
+    // 2. Add Portfolio & Gene (5 Features)
+    state_tensor[20] = portfolio_state[0];
+    state_tensor[21] = portfolio_state[1];
+    state_tensor[22] = portfolio_state[2];
+    state_tensor[23] = gene_params[0];
+    state_tensor[24] = gene_params[1];
+
+    // 3. Neural Inference Dot Product
+    for act in 0..4 {
+        let mut score = 0.0;
+        let base_idx = act * 25;
+        for j in 0..25 {
+            score += state_tensor[j] * brain_weights[base_idx + j];
+        }
+        out_scores[act] = score;
+    }
+}

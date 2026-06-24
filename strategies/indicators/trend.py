@@ -45,134 +45,103 @@ class TrendIndicators:
     @staticmethod
     def calculate_all(df, close, high, low, n_len):
         """Calcula todos los indicadores de Tendencia T01-T20."""
+        import polars as pl
         features = {}
         
-        # T01-T04: EMAs y SMAs
+        # T01-T04: EMAs y SMAs (Pure Polars Expressions)
         for p in [5, 10, 20, 50, 100, 200]:
-            if n_len >= p:
-                ema = calculate_ema_jit(close, p)
-                features[f'ema_{p}'] = ema
-                features[f'dist_ema_{p}'] = safe_div(close - ema, ema)
-            else:
-                features[f'ema_{p}'] = np.copy(close)
-                features[f'dist_ema_{p}'] = np.zeros(n_len)
+            ema_expr = pl.col('close').ewm_mean(span=p, adjust=False)
+            features[f'ema_{p}'] = ema_expr
+            # (close - ema) / ema
+            features[f'dist_ema_{p}'] = pl.when(ema_expr != 0).then((pl.col('close') - ema_expr) / ema_expr).otherwise(0.0)
         
-        features['sma_20'] = talib.SMA(close, 20) if n_len >= 20 else np.zeros(n_len)
-        features['sma_50'] = talib.SMA(close, 50) if n_len >= 50 else np.zeros(n_len)
+        features['sma_20'] = pl.col('close').rolling_mean(window_size=20)
+        features['sma_50'] = pl.col('close').rolling_mean(window_size=50)
         
-        # T03, T04: DEMA, TEMA, WMA
+        # T03, T04: DEMA, TEMA, WMA, KAMA (TA-Lib C-Level)
         if n_len >= 20:
-            features['dema_20'] = talib.DEMA(close, 20)
-            features['tema_20'] = talib.TEMA(close, 20)
-            features['wma_20'] = talib.WMA(close, 20)
-            features['kama_20'] = talib.KAMA(close, 20)
+            features['dema_20'] = pl.Series('dema_20', talib.DEMA(close, 20))
+            features['tema_20'] = pl.Series('tema_20', talib.TEMA(close, 20))
+            features['wma_20'] = pl.Series('wma_20', talib.WMA(close, 20))
+            features['kama_20'] = pl.Series('kama_20', talib.KAMA(close, 20))
         
-        # T11: Supertrend
+        # T11: Supertrend (Custom Numba JIT)
         if n_len > 10:
             st = _get_supertrend(high, low, close, 10, 3.0)
-            features['supertrend'] = st
-            features['supertrend_dist'] = safe_div(close - st, st)
-            features['supertrend_dir'] = np.where(close > st, 1, -1)
+            features['supertrend'] = pl.Series('supertrend', st)
+            features['supertrend_dist'] = pl.when(pl.col('supertrend') != 0).then((pl.col('close') - pl.col('supertrend')) / pl.col('supertrend')).otherwise(0.0)
+            features['supertrend_dir'] = pl.when(pl.col('close') > pl.col('supertrend')).then(1.0).otherwise(-1.0)
             
-        # T13: Parabolic SAR
+        # T13: Parabolic SAR (TA-Lib C-Level)
         if n_len > 2:
             sar = talib.SAR(high, low, acceleration=0.02, maximum=0.2)
-            features['sar'] = sar
-            features['sar_dist'] = safe_div(close - sar, sar)
+            features['sar'] = pl.Series('sar', sar)
+            features['sar_dist'] = pl.when(pl.col('sar') != 0).then((pl.col('close') - pl.col('sar')) / pl.col('sar')).otherwise(0.0)
             
-        # T14, T15: ADX & DI
+        # T14, T15: ADX & DI (JIT & TA-Lib)
         from utils.math_kernel import calculate_adx_jit
-        features['adx'] = calculate_adx_jit(high, low, close, 14)
-        features['plus_di'] = talib.PLUS_DI(high, low, close, 14)
-        features['minus_di'] = talib.MINUS_DI(high, low, close, 14)
+        features['adx'] = pl.Series('adx', calculate_adx_jit(high, low, close, 14))
+        features['plus_di'] = pl.Series('plus_di', talib.PLUS_DI(high, low, close, 14))
+        features['minus_di'] = pl.Series('minus_di', talib.MINUS_DI(high, low, close, 14))
         
         # T16: Aroon
         if n_len > 14:
             aroon_down, aroon_up = talib.AROON(high, low, timeperiod=14)
-            features['aroon_up'] = aroon_up
-            features['aroon_down'] = aroon_down
-            features['aroon_osc'] = talib.AROONOSC(high, low, timeperiod=14)
+            features['aroon_up'] = pl.Series('aroon_up', aroon_up)
+            features['aroon_down'] = pl.Series('aroon_down', aroon_down)
+            features['aroon_osc'] = pl.Series('aroon_osc', talib.AROONOSC(high, low, timeperiod=14))
             
         # T20: TRIX
         if n_len > 15:
-            features['trix'] = talib.TRIX(close, timeperiod=15)
+            features['trix'] = pl.Series('trix', talib.TRIX(close, timeperiod=15))
             
-        # Ichimoku Cloud (simplificado Tenkan/Kijun)
-        if n_len > 26:
-            high_9 = talib.MAX(high, 9)
-            low_9 = talib.MIN(low, 9)
-            features['ichimoku_tenkan'] = (high_9 + low_9) / 2
-            
-            high_26 = talib.MAX(high, 26)
-            low_26 = talib.MIN(low, 26)
-            features['ichimoku_kijun'] = (high_26 + low_26) / 2
-            
-            features['ichimoku_cross'] = np.where(features['ichimoku_tenkan'] > features['ichimoku_kijun'], 1, -1)
+        # Ichimoku Cloud (Pure Polars Expressions)
+        tenkan = (pl.col('high').rolling_max(window_size=9) + pl.col('low').rolling_min(window_size=9)) / 2
+        kijun = (pl.col('high').rolling_max(window_size=26) + pl.col('low').rolling_min(window_size=26)) / 2
+        
+        features['ichimoku_tenkan'] = tenkan
+        features['ichimoku_kijun'] = kijun
+        features['ichimoku_cross'] = pl.when(tenkan > kijun).then(1.0).otherwise(-1.0)
+        
+        senkou_a = (tenkan + kijun) / 2
+        features['ichimoku_senkou_a'] = senkou_a
 
-            # Senkou Span A (cloud leading edge)
-            features['ichimoku_senkou_a'] = (features['ichimoku_tenkan'] + features['ichimoku_kijun']) / 2
+        senkou_b = (pl.col('high').rolling_max(window_size=52) + pl.col('low').rolling_min(window_size=52)) / 2
+        features['ichimoku_senkou_b'] = senkou_b
+        
+        features['ichimoku_cloud_width'] = pl.when(pl.col('close') != 0).then((senkou_a - senkou_b) / pl.col('close')).otherwise(0.0)
+        
+        cloud_top = pl.max_horizontal(senkou_a, senkou_b)
+        cloud_bot = pl.min_horizontal(senkou_a, senkou_b)
+        
+        features['ichimoku_price_vs_cloud'] = pl.when(pl.col('close') > cloud_top).then(1.0).when(pl.col('close') < cloud_bot).then(-1.0).otherwise(0.0)
 
-            # Senkou Span B (cloud lagging edge)
-            if n_len > 52:
-                high_52 = talib.MAX(high, 52)
-                low_52 = talib.MIN(low, 52)
-                features['ichimoku_senkou_b'] = (high_52 + low_52) / 2
-                
-                # Cloud thickness (positive = bullish, negative = bearish)
-                features['ichimoku_cloud_width'] = safe_div(
-                    features['ichimoku_senkou_a'] - features['ichimoku_senkou_b'],
-                    close
-                )
-                
-                # Price relative to cloud
-                cloud_top = np.maximum(features['ichimoku_senkou_a'], features['ichimoku_senkou_b'])
-                cloud_bot = np.minimum(features['ichimoku_senkou_a'], features['ichimoku_senkou_b'])
-                features['ichimoku_price_vs_cloud'] = np.where(
-                    close > cloud_top, 1.0,
-                    np.where(close < cloud_bot, -1.0, 0.0)
-                )
-
-        # ═══════════════════════════════════════════════════════════
-        # T07: ALMA (Arnaud Legoux MA, período 21, offset 0.85, sigma 6)
-        # Suaviza sin el lag de la EMA. Ideal para cruces de señal.
-        # ═══════════════════════════════════════════════════════════
+        # T07: ALMA (Custom Vectorized Python -> Keep as pl.Series)
         if n_len > 21:
             alma = TrendIndicators._alma(close, period=21, offset=0.85, sigma=6.0)
-            features['alma_21'] = alma
-            features['alma_dist'] = safe_div(close - alma, alma)
+            features['alma_21'] = pl.Series('alma_21', alma)
+            features['alma_dist'] = pl.when(pl.col('alma_21') != 0).then((pl.col('close') - pl.col('alma_21')) / pl.col('alma_21')).otherwise(0.0)
 
-        # ═══════════════════════════════════════════════════════════
-        # T08: Hull MA (período 16)
-        # Moving average con el menor lag manteniendo suavidad.
-        # HMA = WMA(2*WMA(n/2) - WMA(n), sqrt(n))
-        # ═══════════════════════════════════════════════════════════
+        # T08: Hull MA
         if n_len > 16:
             hma = TrendIndicators._hull_ma(close, period=16)
-            features['hull_ma_16'] = hma
-            features['hull_dist'] = safe_div(close - hma, hma)
-            features['hull_direction'] = np.where(
-                np.diff(hma, prepend=hma[0]) > 0, 1.0, -1.0
-            )
+            features['hull_ma_16'] = pl.Series('hull_ma_16', hma)
+            features['hull_dist'] = pl.when(pl.col('hull_ma_16') != 0).then((pl.col('close') - pl.col('hull_ma_16')) / pl.col('hull_ma_16')).otherwise(0.0)
+            
+            # hull_direction needs a shift (diff > 0)
+            features['hull_direction'] = pl.when((pl.col('hull_ma_16') - pl.col('hull_ma_16').shift(1)) > 0).then(1.0).otherwise(-1.0)
 
-        # ═══════════════════════════════════════════════════════════
-        # T10: VWMA (Volume Weighted MA, período 20)
-        # Media ponderada por volumen. Más "honesta" que SMA.
-        # ═══════════════════════════════════════════════════════════
-        if n_len > 20 and 'volume' in df.columns:
-            volume = df['volume'].to_numpy().astype(np.float64)
-            vp = close * volume
-            vwma = safe_div(talib.SMA(vp, 20), talib.SMA(volume, 20), close)
+        # T10: VWMA (Pure Polars Expressions)
+        if 'volume' in df.columns:
+            vp = pl.col('close') * pl.col('volume')
+            vwma = vp.rolling_mean(window_size=20) / pl.col('volume').rolling_mean(window_size=20)
             features['vwma_20'] = vwma
-            features['vwma_dist'] = safe_div(close - vwma, vwma)
+            features['vwma_dist'] = pl.when(vwma != 0).then((pl.col('close') - vwma) / vwma).otherwise(0.0)
 
-        # ═══════════════════════════════════════════════════════════
         # T19: Elder Ray (Bull Power / Bear Power)
-        # Bull Power = High - EMA-13 | Bear Power = Low - EMA-13
-        # ═══════════════════════════════════════════════════════════
-        if n_len > 13:
-            ema13 = calculate_ema_jit(close, 13)
-            features['elder_bull_power'] = high - ema13
-            features['elder_bear_power'] = low - ema13
+        ema13 = pl.col('close').ewm_mean(span=13, adjust=False)
+        features['elder_bull_power'] = pl.col('high') - ema13
+        features['elder_bear_power'] = pl.col('low') - ema13
 
         return features
 

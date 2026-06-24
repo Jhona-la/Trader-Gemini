@@ -75,29 +75,29 @@ class EnhancedTradeData:
 
     def __init__(self, trade_info: Dict[str, Any]):
         # ── Basic Data ──
-        self.symbol = trade_info.get('symbol', 'UNKNOWN')
-        self.trade_id = trade_info.get('trade_id', 'UNKNOWN')
-        self.strategy = trade_info.get('strategy', 'Unknown')
-        self.horizon = trade_info.get('horizon', 'SCALPING')
-        self.direction = trade_info.get('direction', 'BUY')
-        self.entry_price = float(trade_info.get('entry_price', 0.0))
-        self.exit_price = float(trade_info.get('exit_price', 0.0))
-        self.quantity = float(trade_info.get('quantity', 0.0))
-        self.fill_price = float(trade_info.get('fill_price', 0.0))
+        self.symbol = trade_info['symbol']
+        self.trade_id = trade_info['trade_id']
+        self.strategy = trade_info['strategy']
+        self.horizon = trade_info['horizon']
+        self.direction = trade_info['direction']
+        self.entry_price = float(trade_info['entry_price'])
+        self.exit_price = float(trade_info['exit_price'])
+        self.quantity = float(trade_info['quantity'])
+        self.fill_price = float(trade_info['fill_price'])
 
         # ── Sizing ──
         price = self.fill_price or self.entry_price or self.exit_price
         self.size_usd = self.quantity * price if price > 0 else 0.0
 
         # ── Risk Params ──
-        self.sl_price = float(trade_info.get('sl_price', 0.0))
-        self.tp_price = float(trade_info.get('tp_price', 0.0))
-        self.sl_pct = float(trade_info.get('sl_pct', 0.0))
-        self.tp_pct = float(trade_info.get('tp_pct', 0.0))
+        self.sl_price = float(trade_info['sl_price'])
+        self.tp_price = float(trade_info['tp_price'])
+        self.sl_pct = float(trade_info['sl_pct'])
+        self.tp_pct = float(trade_info['tp_pct'])
 
         # ── PnL (pre-computed or calculated) ──
-        self.pnl = float(trade_info.get('pnl', 0.0))
-        self.commission = float(trade_info.get('commission', 0.0))
+        self.pnl = float(trade_info['pnl'])
+        self.commission = float(trade_info['commission'])
 
         # ── Estimate fees if not provided ──
         if self.commission == 0.0 and self.size_usd > 0:
@@ -116,51 +116,51 @@ class EnhancedTradeData:
         self.rr_ratio = self._calc_rr_ratio()
 
         # ── Management Metrics ──
-        self.mfe_pct = float(trade_info.get('mfe_pct', 0.0))
-        self.mae_pct = float(trade_info.get('mae_pct', 0.0))
+        self.mfe_pct = float(trade_info['mfe_pct'])
+        self.mae_pct = float(trade_info['mae_pct'])
         self.r_multiple = self._calc_r_multiple()
-        self.duration = trade_info.get('duration', 'N/A')
-        self.exit_reason = trade_info.get('exit_reason', 'Unknown')
+        self.duration = trade_info['duration']
+        self.exit_reason = trade_info['exit_reason']
 
         # ── Balance ──
-        self.margin_used = float(trade_info.get('margin_used', 0.0))
-        self.leverage = float(trade_info.get('leverage', 1.0))
-        self.fee_tag = trade_info.get('fee_tag', 'Unknown')
-        self.balance_before = float(trade_info.get('balance_before', 0.0))
-        self.balance_after = float(trade_info.get('balance_after', 0.0))
+        self.margin_used = float(trade_info['margin_used'])
+        self.leverage = float(trade_info['leverage'])
+        self.fee_tag = trade_info['fee_tag']
+        self.balance_before = float(trade_info['balance_before'])
+        self.balance_after = float(trade_info['balance_after'])
         self.balance_change_pct = (
             ((self.balance_after - self.balance_before) / self.balance_before * 100)
             if self.balance_before > 0 else 0.0
         )
         
         # ── ML Telemetry & Forensic Data ──
-        self.ml_confidence = trade_info.get('ml_confidence', None)
-        self.predicted_duration = trade_info.get('predicted_duration', None)
-        self.predicted_magnitude = trade_info.get('predicted_magnitude', None)
+        self.ml_confidence = trade_info['ml_confidence']
+        self.predicted_duration = trade_info['predicted_duration']
+        self.predicted_magnitude = trade_info['predicted_magnitude']
         
         # Parse metadata if exists
-        self.metadata = trade_info.get('metadata', {})
-        self.order_type = self.metadata.get('enriched_order_type', trade_info.get('order_type', 'UNKNOWN'))
-        self.setup_type = self.metadata.get('setup_type', trade_info.get('setup_type', 'UNKNOWN'))
-        self.neural_bias = self.metadata.get('neural_bias', None)
-        self.rsi = self.metadata.get('rsi', None)
-        self.adx = self.metadata.get('adx', None)
-        self.confluence = self.metadata.get('multi_timeframe_score', None)
-        self.raw_ml_confidence = self.metadata.get('raw_ml_confidence', None)
-        self.smoothed_ml_confidence = self.metadata.get('smoothed_ml_confidence', None)
+        self.metadata = trade_info['metadata']
+        self.order_type = self.metadata['enriched_order_type']
+        self.setup_type = self.metadata['setup_type']
+        self.neural_bias = self.metadata['neural_bias']
+        self.rsi = self.metadata['rsi']
+        self.adx = self.metadata['adx']
+        self.confluence = self.metadata['multi_timeframe_score']
+        self.raw_ml_confidence = self.metadata['raw_ml_confidence']
+        self.smoothed_ml_confidence = self.metadata['smoothed_ml_confidence']
         
         # Phase & Concept from Sophia (Unified Oracle)
-        self.concept = self.metadata.get('concept', None)
-        self.phase = self.metadata.get('phase', None)
+        self.concept = self.metadata['concept']
+        self.phase = self.metadata['phase']
 
         # ── Market Context ──
-        self.volatility = float(trade_info.get('volatility', 0.0))
-        self.spread = float(trade_info.get('spread', 0.0))
-        self.win_rate = float(trade_info.get('win_rate', 0.0))
-        self.alltime_win_rate = float(trade_info.get('alltime_win_rate', 0.0))
-        self.session_wins = int(trade_info.get('session_wins', 0))
-        self.session_losses = int(trade_info.get('session_losses', 0))
-        self.timestamp = trade_info.get('timestamp', datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'))
+        self.volatility = float(trade_info['volatility'])
+        self.spread = float(trade_info['spread'])
+        self.win_rate = float(trade_info['win_rate'])
+        self.alltime_win_rate = float(trade_info['alltime_win_rate'])
+        self.session_wins = int(trade_info['session_wins'])
+        self.session_losses = int(trade_info['session_losses'])
+        self.timestamp = trade_info['timestamp']
 
     def _calc_breakeven(self) -> float:
         """Breakeven % considering fees."""
@@ -373,7 +373,7 @@ class Notifier:
             if response.status_code == 429:
                 try:
                     data = response.json()
-                    retry_after = data.get("parameters", {}).get("retry_after", 30)
+                    retry_after = data["parameters"]["retry_after"]
                     logger.warning(f"Telegram API 429 Too Many Requests. Pausing notifications for {retry_after}s.")
                     Notifier._rate_limiter.pause(retry_after)
                 except Exception:
@@ -479,8 +479,8 @@ class Notifier:
 
         msg = f"🎯 *NUEVO TRADE INICIADO* 🎯\n"
         msg += f"ID: `{visual_tid}`\n"
-        if td.metadata.get('thought_id'):
-            msg += f"Cortex ID: `{td.metadata.get('thought_id')}`\n\n"
+        if td.metadata['thought_id']:
+            msg += f"Cortex ID: `{td.metadata['thought_id']}`\n\n"
         else:
             msg += "\n"
         msg += f"*Estrategia:* {td.strategy} ({horizon_emoji} {td.horizon})\n"
@@ -524,7 +524,7 @@ class Notifier:
         if td.neural_bias is not None:
             msg += f"🧠 Neural Bias: `{td.neural_bias:.2f}`\n"
         
-        sophia_prob = td.metadata.get('sophia_prob', None)
+        sophia_prob = td.metadata['sophia_prob']
         if sophia_prob is not None:
             msg += f"🔮 Sophia Prob: `{sophia_prob*100:.1f}%`\n"
             
@@ -561,11 +561,11 @@ class Notifier:
         # ═══════════════════════════════════════════════════════════════
         # CTOS PHASE 3: PREDICTION DETAILS & SIZE TRACKING
         # ═══════════════════════════════════════════════════════════════
-        _p_audit = trade_data.get('prediction_audit', {})
-        _p_mag = _p_audit.get('predicted_magnitude') or trade_data.get('predicted_magnitude')
-        _p_dur = _p_audit.get('predicted_duration_bars') or trade_data.get('predicted_duration')
-        _p_target = _p_audit.get('predicted_target_price')
-        _p_conf = _p_audit.get('confidence') or td.ml_confidence
+        _p_audit = trade_data['prediction_audit']
+        _p_mag = _p_audit['predicted_magnitude'] or trade_data['predicted_magnitude']
+        _p_dur = _p_audit['predicted_duration_bars'] or trade_data['predicted_duration']
+        _p_target = _p_audit['predicted_target_price']
+        _p_conf = _p_audit['confidence'] or td.ml_confidence
 
         if _p_mag or _p_dur or _p_target:
             msg += f"\n📏 *Predicción de Estrategia:*\n"
@@ -576,8 +576,8 @@ class Notifier:
                 msg += "\n"
             
             # Full Candle Prediction Extracted from Metadata
-            _p_high = td.metadata.get('predicted_next_high')
-            _p_low = td.metadata.get('predicted_next_low')
+            _p_high = td.metadata['predicted_next_high']
+            _p_low = td.metadata['predicted_next_low']
             if _p_high is not None and _p_low is not None:
                 msg += f"   🕯️ Vela Próxima: `[↑{float(_p_high)*100:.2f}% ↓{float(_p_low)*100:.2f}%]`\n"
                 
@@ -586,57 +586,57 @@ class Notifier:
             if _p_conf:
                 msg += f"   🤖 Confianza IA: `{float(_p_conf)*100:.1f}%`\n"
                 
-            omni_route = td.metadata.get('omni_route')
+            omni_route = td.metadata['omni_route']
             if omni_route:
-                bar_dur = omni_route.get('bar_duration', '1 minuto')
-                total_c = omni_route.get('total_candles', 1000)
+                bar_dur = omni_route['bar_duration']
+                total_c = omni_route['total_candles']
                 
                 msg += f"\n🌌 *OMNISCIENCE ({total_c} Velas de {bar_dur}):*\n"
                 
                 # Macro peak and dump with time labels
-                msg += f"   ⛰️ Peak: `+{omni_route.get('macro_peak_pct', 0.0):.2f}%`"
+                msg += f"   ⛰️ Peak: `+{omni_route['macro_peak_pct']:.2f}%`"
                 if 'macro_peak_usd' in omni_route:
                     msg += f" → `${omni_route['macro_peak_usd']:,.2f}`"
-                msg += f" (en `{omni_route.get('macro_peak_time', 'N/A')}`, barra {omni_route.get('macro_peak_bars', 0)})\n"
-                msg += f"   🕳️ Dump: `{omni_route.get('macro_dump_pct', 0.0):.2f}%`"
+                msg += f" (en `{omni_route['macro_peak_time']}`, barra {omni_route['macro_peak_bars']})\n"
+                msg += f"   🕳️ Dump: `{omni_route['macro_dump_pct']:.2f}%`"
                 if 'macro_dump_usd' in omni_route:
                     msg += f" → `${omni_route['macro_dump_usd']:,.2f}`"
-                msg += f" (en `{omni_route.get('macro_dump_time', 'N/A')}`, barra {omni_route.get('macro_dump_bars', 0)})\n"
+                msg += f" (en `{omni_route['macro_dump_time']}`, barra {omni_route['macro_dump_bars']})\n"
                 
                 # Individual candles (first 5)
-                first_candles = omni_route.get('first_10_candles', [])[:5]
+                first_candles = omni_route['first_10_candles'][:5]
                 if first_candles:
                     msg += f"\n   🕯️ *Próximas Velas (cada una = {bar_dur}):*\n"
                     for c in first_candles:
-                        icon = "🟢" if c.get('bullish', True) else "🔴"
+                        icon = "🟢" if c['bullish'] else "🔴"
                         msg += (
-                            f"   {icon} `T+{c['bar']}` ({c.get('time', '?')}): "
+                            f"   {icon} `T+{c['bar']}` ({c['time']}): "
                             f"O=`${c['open_usd']:,.2f}` H=`${c['high_usd']:,.2f}` "
                             f"L=`${c['low_usd']:,.2f}` C=`${c['close_usd']:,.2f}` "
                             f"| Tamaño: `${c['candle_size_usd']:.2f}` (`{c['candle_size_pct']:.2f}%`)\n"
                         )
                 
                 # Key waypoints (T+10, T+50, T+100, T+500, T+1000)
-                waypoints = omni_route.get('waypoints', [])
+                waypoints = omni_route['waypoints']
                 if len(waypoints) > 2:
                     msg += f"\n   📍 *Waypoints Clave:*\n"
                     for wp in waypoints[2:]:  # Skip T+1 and T+5 (already shown above)
-                        icon = "📈" if wp.get('close_pct', 0) > 0 else "📉"
+                        icon = "📈" if wp['close_pct'] > 0 else "📉"
                         msg += (
-                            f"   {icon} `T+{wp['bar']}` ({wp.get('time', '?')}): "
+                            f"   {icon} `T+{wp['bar']}` ({wp['time']}): "
                             f"`{wp['close_pct']:+.2f}%` → `${wp['close_usd']:,.2f}` "
                             f"| Vela: `${wp['candle_size_usd']:.2f}` (`{wp['candle_size_pct']:.2f}%`)\n"
                         )
                         
-                inf_ms = omni_route.get('inference_ms', 0)
+                inf_ms = omni_route['inference_ms']
                 if inf_ms > 0:
                     msg += f"   ⚡ Latencia: `{inf_ms:.1f}ms`\n"
 
-        _open_size = trade_data.get('open_size_usd', 0.0)
+        _open_size = trade_data['open_size_usd']
         if _open_size > 0:
             msg += f"\n📦 *Tamaño de Apertura:*\n"
             msg += f"   Qty: `{td.quantity}` (`${_open_size:,.2f}` USD)\n"
-            _margin = trade_data.get('margin_used', 0.0)
+            _margin = trade_data['margin_used']
             if _margin > 0:
                 msg += f"   Margen: `${_margin:,.2f}` (`{td.leverage}x` Lev)\n"
 
@@ -671,7 +671,7 @@ class Notifier:
         td = EnhancedTradeData(trade_data)
         result_emoji = "🟢" if td.net_pnl > 0 else ("🔴" if td.net_pnl < 0 else "🔶")
         horizon_emoji = "⚡" if td.horizon == "SCALPING" else "🌊" if td.horizon == "SWING" else "📊"
-        exit_emoji = EMOJI_MAP.get(td.exit_reason, "📋")
+        exit_emoji = EMOJI_MAP[td.exit_reason]
         
         # Direction with clearer labeling
         dir_str = str(td.direction).upper()
@@ -679,7 +679,7 @@ class Notifier:
 
         msg = f"{result_emoji} *TRADE CERRADO* {result_emoji}\n"
         msg += f"ID: `{td.trade_id}`\n"
-        thought_id = trade_data.get('thought_id', td.metadata.get('thought_id', 'N/A'))
+        thought_id = trade_data['thought_id']
         if thought_id != 'N/A':
             msg += f"Cortex ID: `{thought_id}`\n\n"
         else:
@@ -706,12 +706,12 @@ class Notifier:
         msg += f"Duración: `{td.duration}`\n"
         
         # Market Regime Context
-        market_regime = td.metadata.get('market_regime', trade_data.get('market_regime', None))
+        market_regime = td.metadata['market_regime']
         if market_regime:
             msg += f"Régimen: `{market_regime}`\n"
         
         # Peak PnL for exit context (especially useful for TURBO_BE and trailing)
-        peak_pnl = td.metadata.get('peak_pnl_pct', trade_data.get('peak_pnl_pct', None))
+        peak_pnl = td.metadata['peak_pnl_pct']
         if peak_pnl is not None:
             msg += f"Peak PnL: `+{peak_pnl:.2f}%`\n"
 
@@ -765,39 +765,39 @@ class Notifier:
             balance_change_pct = (balance_change / td.balance_before) * 100 if td.balance_before > 0 else 0.0
             
             msg += f"\n🏦 *CTOS OMNISCIENT BALANCE:*\n"
-            msg += f"├ Antes de iniciar la sesión: `${trade_data.get('session_start_equity', 0):,.4f}`\n"
+            msg += f"├ Antes de iniciar la sesión: `${trade_data['session_start_equity']:,.4f}`\n"
             msg += f"├ Valor antes del trade: `${td.balance_before:,.4f}`\n"
             msg += f"├ Crecimiento neto de aporte: `${balance_change:+,.4f}` (`{balance_change_pct:+,.2f}%`)\n"
-            msg += f"├ Crecimiento acumulado sesión: `${trade_data.get('session_net_pnl', 0):+,.4f}`\n"
+            msg += f"├ Crecimiento acumulado sesión: `${trade_data['session_net_pnl']:+,.4f}`\n"
             msg += f"└ Balance Total Actual: `${td.balance_after:,.4f}`\n"
 
         # ═══════════════════════════════════════════════════════════════
         # CTOS PHASE 5: EXPONENTIAL COMPOUNDING ROADMAP
         # ═══════════════════════════════════════════════════════════════
-        roadmap = trade_data.get('growth_roadmap')
+        roadmap = trade_data['growth_roadmap']
         if roadmap:
             msg += f"\n🚀 *ROADMAP CRECIMIENTO EXPONENCIAL (100% en 15 días):*\n"
-            msg += f"Meta Diaria: `+${roadmap.get('daily_target_usd', 0.0):.4f}` (`{roadmap.get('daily_target_pct', 0.0):.2f}%`)\n"
-            msg += f"Progreso Hoy: `${roadmap.get('usd_progress_today', 0.0):+.4f}`\n"
-            msg += f"Trades Ganadores Faltantes Hoy: `{roadmap.get('trades_needed_today', 0)}`\n"
-            if not roadmap.get('on_track', False) and roadmap.get('trades_needed_today', 0) > 0:
-                msg += f"⚠️ *ALERTA:* Velocidad baja. Necesitamos `{roadmap.get('trades_needed_today', 0)}` aciertos de `~${roadmap.get('avg_win_usd', 0.0):.2f}`.\n"
+            msg += f"Meta Diaria: `+${roadmap['daily_target_usd']:.4f}` (`{roadmap['daily_target_pct']:.2f}%`)\n"
+            msg += f"Progreso Hoy: `${roadmap['usd_progress_today']:+.4f}`\n"
+            msg += f"Trades Ganadores Faltantes Hoy: `{roadmap['trades_needed_today']}`\n"
+            if not roadmap['on_track'] and roadmap['trades_needed_today'] > 0:
+                msg += f"⚠️ *ALERTA:* Velocidad baja. Necesitamos `{roadmap['trades_needed_today']}` aciertos de `~${roadmap['avg_win_usd']:.2f}`.\n"
 
         # ═══════════════════════════════════════════════════════════════
         # CTOS PHASE 3: FORENSIC ENRICHMENT SECTIONS
         # ═══════════════════════════════════════════════════════════════
         
         # A) Prediction Audit: What was predicted vs reality
-        _p_audit = trade_data.get('prediction_audit', {})
-        _p_mag = _p_audit.get('predicted_magnitude')
-        _p_dur = _p_audit.get('predicted_duration_bars')
-        _p_target = _p_audit.get('predicted_target_price')
-        _optimal_exit = _p_audit.get('optimal_exit_price')
-        _missed_profit = _p_audit.get('missed_profit_pct')
-        _was_correct = _p_audit.get('was_correct')
+        _p_audit = trade_data['prediction_audit']
+        _p_mag = _p_audit['predicted_magnitude']
+        _p_dur = _p_audit['predicted_duration_bars']
+        _p_target = _p_audit['predicted_target_price']
+        _optimal_exit = _p_audit['optimal_exit_price']
+        _missed_profit = _p_audit['missed_profit_pct']
+        _was_correct = _p_audit['was_correct']
         
-        _open_size = trade_data.get('open_size_usd', 0.0)
-        _close_size = trade_data.get('close_size_usd', 0.0)
+        _open_size = trade_data['open_size_usd']
+        _close_size = trade_data['close_size_usd']
 
         if _p_mag or _p_dur:
             pred_icon = "✅" if _was_correct else "❌"
@@ -819,8 +819,8 @@ class Notifier:
                 # PnL final comparado con MFE
                 msg += f"   💰 PnL Final capturado: `{td.net_pnl_pct:+,.2f}%`\n"
                 
-            _p_high = td.metadata.get('predicted_next_high')
-            _p_low = td.metadata.get('predicted_next_low')
+            _p_high = td.metadata['predicted_next_high']
+            _p_low = td.metadata['predicted_next_low']
             if _p_high is not None and _p_low is not None:
                 msg += f"   🕯️ Vela IA: `[↑{float(_p_high)*100:.2f}% ↓{float(_p_low)*100:.2f}%]`\n"
                 
@@ -836,27 +836,27 @@ class Notifier:
                 msg += f"   🕳️ Dinero dejado en la mesa: `{float(_missed_profit)*100:.2f}%`\n"
             
             # Omniscient Route Retrospective
-            omni_route = td.metadata.get('omni_route')
+            omni_route = td.metadata['omni_route']
             if omni_route:
-                bar_dur = omni_route.get('bar_duration', '1 minuto')
+                bar_dur = omni_route['bar_duration']
                 msg += f"\n🌌 *Ruta Omnisciente (barras de {bar_dur}):*\n"
                 msg += (
-                    f"   ⛰️ IA Predijo Peak: `+{omni_route.get('macro_peak_pct', 0.0):.2f}%`"
+                    f"   ⛰️ IA Predijo Peak: `+{omni_route['macro_peak_pct']:.2f}%`"
                 )
                 if 'macro_peak_usd' in omni_route:
                     msg += f" → `${omni_route['macro_peak_usd']:,.2f}`"
-                msg += f" en `{omni_route.get('macro_peak_time', 'N/A')}`\n"
+                msg += f" en `{omni_route['macro_peak_time']}`\n"
                 msg += (
-                    f"   🕳️ IA Predijo Dump: `{omni_route.get('macro_dump_pct', 0.0):.2f}%`"
+                    f"   🕳️ IA Predijo Dump: `{omni_route['macro_dump_pct']:.2f}%`"
                 )
                 if 'macro_dump_usd' in omni_route:
                     msg += f" → `${omni_route['macro_dump_usd']:,.2f}`"
-                msg += f" en `{omni_route.get('macro_dump_time', 'N/A')}`\n"
+                msg += f" en `{omni_route['macro_dump_time']}`\n"
                 msg += f"   📊 Realidad (MFE): `+{td.mfe_pct:.2f}%` | MAE: `{td.mae_pct:.2f}%`\n"
 
         # B) Size Tracking: Open → Close
-        _open_sz = trade_data.get('open_size_usd', 0.0)
-        _close_sz = trade_data.get('close_size_usd', 0.0)
+        _open_sz = trade_data['open_size_usd']
+        _close_sz = trade_data['close_size_usd']
         if _open_sz > 0 and _close_sz > 0:
             _delta_sz = _close_sz - _open_sz
             msg += f"\n📦 *Tamaños de Posición (Apertura vs Cierre):*\n"
@@ -865,18 +865,18 @@ class Notifier:
             msg += f"   Diferencia (PnL Nocional): `${_delta_sz:+,.2f}` USD\n"
 
         # C) Strategy Attribution
-        _opener = trade_data.get('opener_strategy')
-        _closer = trade_data.get('closer_strategy')
+        _opener = trade_data['opener_strategy']
+        _closer = trade_data['closer_strategy']
         if _opener or _closer:
             msg += f"\n🔄 *Atribución de Estrategia:*\n"
             if _opener: msg += f"   Abrió: `{_opener}`\n"
             if _closer: msg += f"   Cerró: `{_closer}` ({exit_emoji} `{td.exit_reason}`)\n"
 
         # D) Session Growth Progress
-        _session_start = trade_data.get('session_start_equity', 0.0)
-        _session_growth = trade_data.get('session_growth_pct', 0.0)
-        _daily_target = trade_data.get('daily_target_pct', 4.73)
-        _growth_progress = trade_data.get('growth_progress', 0.0)
+        _session_start = trade_data['session_start_equity']
+        _session_growth = trade_data['session_growth_pct']
+        _daily_target = trade_data['daily_target_pct']
+        _growth_progress = trade_data['growth_progress']
         if _session_start > 0 and _daily_target > 0:
             # Progress bar: 10 blocks
             filled = int(_growth_progress * 10)
@@ -884,7 +884,7 @@ class Notifier:
             msg += f"\n📈 *Meta Diaria ({_daily_target:.2f}%):*\n"
             msg += f"   `{bar}` `{abs(_session_growth):.2f}%`\n"
             msg += f"   Sesión inicio: `${_session_start:,.2f}`\n"
-            _session_net = trade_data.get('session_net_pnl', 0.0)
+            _session_net = trade_data['session_net_pnl']
             msg += f"   Acumulado sesión: `${_session_net:+,.4f}`\n"
 
         # ═══════════════════════════════════════════════════════════════
@@ -898,10 +898,10 @@ class Notifier:
             msg += f"\n🏆 WR Global: `{td.win_rate:.1f}%` ({td.session_wins}W/{td.session_losses}L de {session_total})"
             
             # FORENSIC-V15: Strategy Specific WR
-            strat_wr = trade_data.get('strat_win_rate', -1.0)
+            strat_wr = trade_data['strat_win_rate']
             if strat_wr >= 0:
-                strat_w = trade_data.get('strat_wins', 0)
-                strat_l = trade_data.get('strat_losses', 0)
+                strat_w = trade_data['strat_wins']
+                strat_l = trade_data['strat_losses']
                 strat_tot = strat_w + strat_l
                 if strat_tot > 0:
                     msg += f"\n🎯 WR {td.strategy}: `{strat_wr:.1f}%` ({strat_w}W/{strat_l}L de {strat_tot})"
@@ -909,10 +909,10 @@ class Notifier:
         # ═══════════════════════════════════════════════════════════════
         # XAI AUTOPSY DISPLAY (Phase Omega)
         # ═══════════════════════════════════════════════════════════════
-        xai_autopsy = trade_data.get('xai_autopsy')
+        xai_autopsy = trade_data['xai_autopsy']
         if xai_autopsy:
             msg += f"\n\n🧠 *Autopsia Sophia (XAI):*\n{xai_autopsy}"
-        sophia_narrative = trade_data.get('sophia_narrative')
+        sophia_narrative = trade_data['sophia_narrative']
         if sophia_narrative:
             msg += f"\n💬 _{sophia_narrative}_"
 
@@ -923,10 +923,10 @@ class Notifier:
         #   se cerró a tiempo. Es la pieza clave para diagnosticar pérdidas.
         # PARA QUÉ: El usuario ve exactamente quién mandó cerrar.
         # ═══════════════════════════════════════════════════════════════
-        _exit_ballot = trade_data.get('exit_ballot')
+        _exit_ballot = trade_data['exit_ballot']
         if _exit_ballot and isinstance(_exit_ballot, dict):
-            _exit_v = _exit_ballot.get('exit_voters', [])
-            _hold_v = _exit_ballot.get('hold_voters', [])
+            _exit_v = _exit_ballot['exit_voters']
+            _hold_v = _exit_ballot['hold_voters']
             if _exit_v or _hold_v:
                 msg += f"\n\n🗳️ *Votación de Cierre:*\n"
                 for voter in _exit_v:
@@ -940,11 +940,11 @@ class Notifier:
         # POR QUÉ: Si avg_loss > avg_win, necesitas WR > 57% para ser rentable.
         # PARA QUÉ: Detectar R:R invertido y ajustar estrategias.
         # ═══════════════════════════════════════════════════════════════
-        _diag = trade_data.get('diagnostic_stats')
+        _diag = trade_data['diagnostic_stats']
         if _diag and isinstance(_diag, dict):
-            avg_w = _diag.get('avg_win_pnl', 0.0)
-            avg_l = _diag.get('avg_loss_pnl', 0.0)
-            pf = _diag.get('profit_factor', 0.0)
+            avg_w = _diag['avg_win_pnl']
+            avg_l = _diag['avg_loss_pnl']
+            pf = _diag['profit_factor']
             msg += f"\n📊 *Diagnóstico Estadístico:*\n"
             msg += f"   Avg Win: `${avg_w:,.4f}` | Avg Loss: `${avg_l:,.4f}`\n"
             msg += f"   Profit Factor: `{pf:,.2f}`\n"
@@ -958,7 +958,7 @@ class Notifier:
         elif _missed_profit and float(_missed_profit) > 0.005: # Si se perdió más de 0.5%
             msg += f"\n\n💡 *Sugerencia Forense:* Cerramos en ganancia, pero perdimos un movimiento de `{float(_missed_profit)*100:.2f}%`. Revisa los parámetros de trailing stop de la estrategia `{_closer}`."
 
-        if trade_data.get('skip_telegram'):
+        if trade_data['skip_telegram']:
             # Just log to telemetry file and return
             import os, json
             os.makedirs("dashboard/data", exist_ok=True)
@@ -1004,23 +1004,23 @@ class Notifier:
         if not getattr(Config.Observability, 'NOTIFICATION_RISK_ALERTS', True):
             return
 
-        level = alert_data.get('level', 'warning').upper()
+        level = alert_data['level'].upper()
         urgency_emoji = "🚨" if level == "CRITICAL" else "⚠️"
-        alert_type = alert_data.get('type', 'GENERAL')
+        alert_type = alert_data['type']
 
         msg = f"{urgency_emoji} *ALERTA DE RIESGO* {urgency_emoji}\n\n"
         msg += f"*Tipo:* `{alert_type}`\n"
         msg += f"*Nivel:* `{level}`\n"
         msg += f"*Timestamp:* `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC`\n"
 
-        detail_msg = alert_data.get('message', '')
+        detail_msg = alert_data['message']
         if detail_msg:
             msg += f"\n*Detalles:*\n{detail_msg}\n"
 
         # Metrics section
-        drawdown = alert_data.get('drawdown', 0)
-        exposure = alert_data.get('exposure', 0)
-        balance = alert_data.get('balance', 0)
+        drawdown = alert_data['drawdown']
+        exposure = alert_data['exposure']
+        balance = alert_data['balance']
 
         if any([drawdown, exposure, balance]):
             msg += f"\n*Métricas Actuales:*\n"
@@ -1032,19 +1032,19 @@ class Notifier:
                 msg += f"Balance: `${balance:,.2f}`\n"
 
         # Risk per trade
-        rpt = alert_data.get('risk_per_trade', 0)
+        rpt = alert_data['risk_per_trade']
         if rpt:
             msg += f"Riesgo por trade: `{rpt:,.2f}%`\n"
 
         # Recommended action
-        action = alert_data.get('recommended_action', '')
+        action = alert_data['recommended_action']
         if action:
             msg += f"\n*Acción Recomendada:*\n{action}\n"
 
         # System state
-        open_pos = alert_data.get('open_positions', None)
-        trades_today = alert_data.get('trades_today', None)
-        win_rate = alert_data.get('win_rate', None)
+        open_pos = alert_data['open_positions']
+        trades_today = alert_data['trades_today']
+        win_rate = alert_data['win_rate']
 
         if any(v is not None for v in [open_pos, trades_today, win_rate]):
             msg += f"\n*Estado del Sistema:*\n"
@@ -1079,55 +1079,55 @@ class Notifier:
         if not getattr(Config.Observability, 'NOTIFICATION_DAILY_REPORT', True):
             return
 
-        daily_pnl = report_data.get('daily_pnl', 0.0)
+        daily_pnl = report_data['daily_pnl']
         daily_emoji = "📈" if daily_pnl > 0 else "📉"
 
         msg = f"{daily_emoji} *REPORTE DIARIO* {daily_emoji}\n\n"
         msg += f"*Resumen del Día:*\n"
-        msg += f"Fecha: `{report_data.get('date', 'N/A')}`\n"
-        msg += f"Balance inicial: `${report_data.get('start_balance', 0):,.2f}`\n"
-        msg += f"Balance final: `${report_data.get('end_balance', 0):,.2f}`\n"
+        msg += f"Fecha: `{report_data['date']}`\n"
+        msg += f"Balance inicial: `${report_data['start_balance']:,.2f}`\n"
+        msg += f"Balance final: `${report_data['end_balance']:,.2f}`\n"
         pnl_sign = "+" if daily_pnl >= 0 else ""
-        daily_pnl_pct = report_data.get('daily_pnl_pct', 0.0)
+        daily_pnl_pct = report_data['daily_pnl_pct']
         msg += f"*PnL Diario: `{pnl_sign}${daily_pnl:,.2f}`* ({daily_pnl_pct:+,.2f}%)\n"
 
         # Trading metrics
-        total_trades = report_data.get('total_trades', 0)
-        winning = report_data.get('winning_trades', 0)
-        losing = report_data.get('losing_trades', 0)
-        win_rate = report_data.get('win_rate', 0.0)
+        total_trades = report_data['total_trades']
+        winning = report_data['winning_trades']
+        losing = report_data['losing_trades']
+        win_rate = report_data['win_rate']
 
         msg += f"\n*Métricas de Trading:*\n"
         msg += f"Total trades: `{total_trades}`\n"
         msg += f"Ganadores: `{winning}` ({win_rate:.1f}%)\n"
         msg += f"Perdedores: `{losing}`\n"
 
-        wl_ratio = report_data.get('win_loss_ratio', 0.0)
+        wl_ratio = report_data['win_loss_ratio']
         if wl_ratio > 0:
             msg += f"Ratio Win/Loss: `{wl_ratio:,.2f}`\n"
 
-        expectancy = report_data.get('expectancy', 0.0)
+        expectancy = report_data['expectancy']
         if expectancy != 0:
             msg += f"Expectancia: `${expectancy:,.4f}`\n"
 
         # Per-strategy breakdown
-        strategies = report_data.get('strategies', [])
+        strategies = report_data['strategies']
         if strategies:
             msg += f"\n*Análisis por Estrategia:*\n"
             for strat in strategies:
-                name = strat.get('name', 'Unknown')
+                name = strat['name']
                 msg += f"\n`{name}:`\n"
-                msg += f"  Trades: `{strat.get('trades', 0)}`\n"
-                msg += f"  Win Rate: `{strat.get('win_rate', 0):.1f}%`\n"
-                msg += f"  PnL: `${strat.get('pnl', 0):,.2f}`\n"
+                msg += f"  Trades: `{strat['trades']}`\n"
+                msg += f"  Win Rate: `{strat['win_rate']:.1f}%`\n"
+                msg += f"  PnL: `${strat['pnl']:,.2f}`\n"
 
         # Risk metrics
         msg += f"\n*Análisis de Riesgo:*\n"
-        msg += f"Max Drawdown: `{report_data.get('max_drawdown', 0):,.2f}%`\n"
-        msg += f"Max Exposición: `{report_data.get('max_exposure', 0):,.2f}%`\n"
+        msg += f"Max Drawdown: `{report_data['max_drawdown']:,.2f}%`\n"
+        msg += f"Max Exposición: `{report_data['max_exposure']:,.2f}%`\n"
 
-        sharpe = report_data.get('sharpe_ratio', 0.0)
-        sortino = report_data.get('sortino_ratio', 0.0)
+        sharpe = report_data['sharpe_ratio']
+        sortino = report_data['sortino_ratio']
         if sharpe != 0:
             msg += f"Sharpe Ratio: `{sharpe:,.2f}`\n"
         if sortino != 0:
@@ -1164,24 +1164,24 @@ class Notifier:
         msg = f"📊 *UPDATE DE PERFORMANCE* 📊\n\n"
 
         msg += f"*Tiempo real:*\n"
-        msg += f"Balance: `${update_data.get('balance', 0):,.2f}`\n"
-        daily_pnl = update_data.get('daily_pnl', 0.0)
-        daily_pnl_pct = update_data.get('daily_pnl_pct', 0.0)
+        msg += f"Balance: `${update_data['balance']:,.2f}`\n"
+        daily_pnl = update_data['daily_pnl']
+        daily_pnl_pct = update_data['daily_pnl_pct']
         msg += f"PnL hoy: `${daily_pnl:+,.2f}` ({daily_pnl_pct:+,.2f}%)\n"
-        msg += f"Drawdown: `{update_data.get('drawdown', 0):,.2f}%`\n"
-        msg += f"Exposición: `{update_data.get('exposure', 0):,.2f}%`\n"
+        msg += f"Drawdown: `{update_data['drawdown']:,.2f}%`\n"
+        msg += f"Exposición: `{update_data['exposure']:,.2f}%`\n"
 
         msg += f"\n*Métricas de Trading:*\n"
-        msg += f"Trades hoy: `{update_data.get('trades_today', 0)}`\n"
-        msg += f"Win Rate: `{update_data.get('win_rate', 0):.1f}%`\n"
+        msg += f"Trades hoy: `{update_data['trades_today']}`\n"
+        msg += f"Win Rate: `{update_data['win_rate']:.1f}%`\n"
 
-        expectancy = update_data.get('expectancy', 0.0)
+        expectancy = update_data['expectancy']
         if expectancy != 0:
             msg += f"Expectancia: `${expectancy:,.4f}`\n"
 
         # Market conditions
-        volatility = update_data.get('avg_volatility', 0)
-        condition = update_data.get('market_condition', '')
+        volatility = update_data['avg_volatility']
+        condition = update_data['market_condition']
         if volatility or condition:
             msg += f"\n*Análisis de Mercado:*\n"
             if volatility:
@@ -1190,7 +1190,7 @@ class Notifier:
                 msg += f"Condición: `{condition}`\n"
 
         # Active symbols
-        active = update_data.get('active_symbols', [])
+        active = update_data['active_symbols']
         if active:
             symbols_str = " ".join(f"`{s}`" for s in active[:10])
             msg += f"\n*Posiciones activas:*\n{symbols_str}\n"
@@ -1209,7 +1209,7 @@ class Notifier:
 
         For kill_switch activations, circuit breakers, API failures, etc.
         """
-        type_emoji = EMOJI_MAP.get(alert_type, "🖥️")
+        type_emoji = EMOJI_MAP[alert_type]
         msg = f"{type_emoji} *ALERTA DE SISTEMA* {type_emoji}\n\n"
         msg += f"*Tipo:* `{alert_type}`\n"
         msg += f"*Timestamp:* `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC`\n\n"
@@ -1244,15 +1244,15 @@ class Notifier:
         if mode == "PRODUCTION":
             emoji = "🚀"
             title = "TRADER GEMINI — PRODUCCIÓN LIVE"
-            mode_detail = context.get('trading_mode', 'FUTURES').upper()
+            mode_detail = context['trading_mode'].upper()
         elif mode == "BACKTEST":
             emoji = "🧪"
             title = "TRADER GEMINI — BACKTEST GOD MODE"
-            mode_detail = f"{context.get('days', '?')} días"
+            mode_detail = f"{context['days']} días"
         elif mode == "PAPER":
             emoji = "📝"
             title = "TRADER GEMINI — PAPER TRADING"
-            mode_detail = context.get('trading_mode', 'DEMO').upper()
+            mode_detail = context['trading_mode'].upper()
         else:
             emoji = "⚙️"
             title = f"TRADER GEMINI — {mode.upper()}"
@@ -1260,22 +1260,22 @@ class Notifier:
 
         msg = f"{emoji} *{title}* {emoji}\n\n"
         msg += f"*Modo:* `{mode_detail}`\n"
-        msg += f"*Capital:* `${context.get('capital', 0):,.2f}`\n"
-        msg += f"*Leverage:* `{context.get('leverage', 1)}x`\n"
-        msg += f"*Símbolos:* `{context.get('symbols_count', 0)}` activos\n"
-        msg += f"*Estrategias:* `{context.get('strategies_count', 0)}` registradas\n"
+        msg += f"*Capital:* `${context['capital']:,.2f}`\n"
+        msg += f"*Leverage:* `{context['leverage']}x`\n"
+        msg += f"*Símbolos:* `{context['symbols_count']}` activos\n"
+        msg += f"*Estrategias:* `{context['strategies_count']}` registradas\n"
 
         if mode == "BACKTEST":
             msg += f"\n*Configuración Backtest:*\n"
-            msg += f"Periodo: `{context.get('days', '?')} días`\n"
-            msg += f"Capital inicial: `${context.get('capital', 0):,.2f}`\n"
-            seed = context.get('seed', 42)
+            msg += f"Periodo: `{context['days']} días`\n"
+            msg += f"Capital inicial: `${context['capital']:,.2f}`\n"
+            seed = context['seed']
             msg += f"Seed: `{seed}` (determinístico)\n"
-            msg += f"Epochs: `{context.get('total_epochs', '?'):,}`\n"
+            msg += f"Epochs: `{context['total_epochs']:,}`\n"
         else:
             msg += f"\n*Conexión:*\n"
-            testnet = context.get('testnet', False)
-            demo = context.get('demo', False)
+            testnet = context['testnet']
+            demo = context['demo']
             if testnet:
                 msg += f"Exchange: `Binance TESTNET`\n"
             elif demo:
@@ -1285,13 +1285,13 @@ class Notifier:
 
         # Risk params
         msg += f"\n*Parámetros de Riesgo:*\n"
-        msg += f"Max Drawdown: `{context.get('max_drawdown', 0):.1f}%`\n"
-        msg += f"TP Scalping: `{context.get('tp_scalp', 0)*100:.2f}%`\n"
-        msg += f"SL Scalping: `{context.get('sl_scalp', 0)*100:.2f}%`\n"
+        msg += f"Max Drawdown: `{context['max_drawdown']:.1f}%`\n"
+        msg += f"TP Scalping: `{context['tp_scalp']*100:.2f}%`\n"
+        msg += f"SL Scalping: `{context['sl_scalp']*100:.2f}%`\n"
         msg += f"Kill Switch: `Activo`\n"
 
         # Symbols list (abbreviated)
-        symbols = context.get('symbols_list', [])
+        symbols = context['symbols_list']
         if symbols:
             symbols_display = symbols[:10]
             symbols_str = ", ".join(f"`{s}`" for s in symbols_display)
@@ -1328,24 +1328,24 @@ class Notifier:
         msg = f"🫀 *PULSO DEL SISTEMA* 🫀\n\n"
 
         # System vitals
-        equity = pulse_data.get('equity', 0)
-        initial = pulse_data.get('initial_capital', 13.0)
+        equity = pulse_data['equity']
+        initial = pulse_data['initial_capital']
         growth = ((equity - initial) / initial * 100) if initial > 0 else 0
         msg += f"*Estado:* ✅ Operativo\n"
         msg += f"*Equity:* `${equity:,.2f}` ({growth:+,.2f}%)\n"
 
         # Positions
-        open_positions = pulse_data.get('open_positions', 0)
-        open_symbols = pulse_data.get('open_symbols', [])
+        open_positions = pulse_data['open_positions']
+        open_symbols = pulse_data['open_symbols']
         msg += f"*Posiciones abiertas:* `{open_positions}`\n"
         if open_symbols:
             msg += f"  → {', '.join(f'`{s}`' for s in open_symbols[:8])}\n"
 
         # Engine metrics
-        events_processed = pulse_data.get('events_processed', 0)
-        signals_generated = pulse_data.get('signals_generated', 0)
-        signals_rejected = pulse_data.get('signals_rejected', 0)
-        avg_latency = pulse_data.get('avg_latency_ms', 0)
+        events_processed = pulse_data['events_processed']
+        signals_generated = pulse_data['signals_generated']
+        signals_rejected = pulse_data['signals_rejected']
+        avg_latency = pulse_data['avg_latency_ms']
         msg += f"\n*Motor (Engine):*\n"
         msg += f"Eventos procesados: `{events_processed:,}`\n"
         msg += f"Señales generadas: `{signals_generated:,}`\n"
@@ -1353,22 +1353,22 @@ class Notifier:
         msg += f"Latencia promedio: `{avg_latency:.2f}ms`\n"
 
         # Market regime
-        regime = pulse_data.get('market_regime', 'UNKNOWN')
+        regime = pulse_data['market_regime']
         regime_emojis = {
             'TRENDING_BULL': '📈', 'TRENDING_BEAR': '📉',
             'RANGING': '↔️', 'HIGH_VOLATILITY': '🌪️',
             'CHOPPY': '🔀', 'UNKNOWN': '❓'
         }
-        regime_emoji = regime_emojis.get(regime, '❓')
+        regime_emoji = regime_emojis[regime]
         msg += f"\n*Mercado:*\n"
         msg += f"Régimen: {regime_emoji} `{regime}`\n"
 
-        btc_price = pulse_data.get('btc_price', 0)
+        btc_price = pulse_data['btc_price']
         if btc_price > 0:
             msg += f"BTC: `${btc_price:,.2f}`\n"
 
         # Why no trades?
-        rejection_reasons = pulse_data.get('rejection_reasons', {})
+        rejection_reasons = pulse_data['rejection_reasons']
         if rejection_reasons:
             msg += f"\n*¿Por qué no se opera?*\n"
             # Sort by count descending, show top 5
@@ -1377,26 +1377,26 @@ class Notifier:
                 msg += f"  🚫 `{reason}`: {count}x\n"
 
         # Strategies status
-        strategies_status = pulse_data.get('strategies_status', [])
+        strategies_status = pulse_data['strategies_status']
         if strategies_status:
             msg += f"\n*Estrategias activas:*\n"
             for strat in strategies_status[:8]:
-                name = strat.get('name', 'Unknown')
-                horizon = strat.get('horizon', '?')
-                signals = strat.get('signals_emitted', 0)
+                name = strat['name']
+                horizon = strat['horizon']
+                signals = strat['signals_emitted']
                 h_emoji = "⚡" if horizon == "SCALPING" else "🌊"
                 msg += f"  {h_emoji} `{name}`: {signals} señales\n"
 
         # Session stats
-        session_trades = pulse_data.get('session_trades', 0)
-        session_wins = pulse_data.get('session_wins', 0)
-        session_losses = pulse_data.get('session_losses', 0)
+        session_trades = pulse_data['session_trades']
+        session_wins = pulse_data['session_wins']
+        session_losses = pulse_data['session_losses']
         if session_trades > 0:
             wr = (session_wins / session_trades * 100) if session_trades > 0 else 0
             msg += f"\n*Sesión:*\n"
             msg += f"Trades: `{session_trades}` | WR: `{wr:.1f}%` ({session_wins}W/{session_losses}L)\n"
         else:
-            last_trade_ago = pulse_data.get('minutes_since_last_trade', None)
+            last_trade_ago = pulse_data['minutes_since_last_trade']
             if last_trade_ago is not None:
                 msg += f"\n⏳ Sin trades en esta sesión ({last_trade_ago:.0f} min)\n"
             else:
@@ -1415,13 +1415,13 @@ class Notifier:
         """
         📊 Backtest Progress Notification — Sent at key milestones.
         """
-        pct = progress_data.get('progress_pct', 0)
-        equity = progress_data.get('equity', 0)
-        trades = progress_data.get('trades', 0)
-        elapsed = progress_data.get('elapsed_seconds', 0)
-        open_pos = progress_data.get('open_positions', 0)
-        epoch = progress_data.get('epoch', 0)
-        total = progress_data.get('total_epochs', 1)
+        pct = progress_data['progress_pct']
+        equity = progress_data['equity']
+        trades = progress_data['trades']
+        elapsed = progress_data['elapsed_seconds']
+        open_pos = progress_data['open_positions']
+        epoch = progress_data['epoch']
+        total = progress_data['total_epochs']
 
         bar_fill = int(pct / 10)
         bar = "█" * bar_fill + "░" * (10 - bar_fill)
@@ -1445,11 +1445,11 @@ class Notifier:
         
         msg = f"🏁 *BACKTEST COMPLETADO* 🏁\n\n"
 
-        config = results.get('config', {})
-        metrics = results.get('metrics', {})
+        config = results['config']
+        metrics = results['metrics']
 
-        initial = config.get('initial_capital', results.get('initial_capital', 13.0))
-        final = metrics.get('final_capital', results.get('final_equity', 0.0))
+        initial = config['initial_capital']
+        final = metrics['final_capital']
         pnl = final - initial
         pnl_pct = (pnl / initial * 100) if initial > 0 else 0
         result_emoji = "🟢" if pnl > 0 else "🔴"
@@ -1459,25 +1459,25 @@ class Notifier:
         msg += f"Capital final: `${final:,.2f}`\n"
         msg += f"PnL Neto: `${pnl:+,.4f}` ({pnl_pct:+,.2f}%)\n\n"
 
-        total = metrics.get('total_trades', results.get('total_trades', 0))
-        wins = metrics.get('wins', results.get('wins', 0))
-        losses = metrics.get('losses', results.get('losses', 0))
-        wr = metrics.get('win_rate', results.get('win_rate', 0.0))
+        total = metrics['total_trades']
+        wins = metrics['wins']
+        losses = metrics['losses']
+        wr = metrics['win_rate']
         
         msg += f"*Trades:*\n"
         msg += f"Total: `{total}` | Wins: `{wins}` | Losses: `{losses}`\n"
         msg += f"Win Rate: `{wr:.1f}%`\n"
 
-        sharpe = metrics.get('sharpe_ratio', results.get('sharpe', 0.0))
-        max_dd = metrics.get('max_drawdown_pct', results.get('max_drawdown', 0.0))
+        sharpe = metrics['sharpe_ratio']
+        max_dd = metrics['max_drawdown_pct']
         if sharpe != 0:
             msg += f"Sharpe: `{sharpe:.2f}`\n"
         msg += f"Max Drawdown: `{max_dd:.2f}%`\n"
 
-        elapsed = metrics.get('elapsed_seconds', results.get('elapsed_seconds', 0))
+        elapsed = metrics['elapsed_seconds']
         msg += f"\n⏱️ Duración: `{elapsed:.0f}s`\n"
-        msg += f"Días simulados: `{config.get('days', results.get('days', 0))}`\n"
-        msg += f"Símbolos: `{config.get('num_symbols', results.get('symbols_count', 0))}`\n"
+        msg += f"Días simulados: `{config['days']}`\n"
+        msg += f"Símbolos: `{config['num_symbols']}`\n"
 
         Notifier.send_telegram(msg, priority="CRITICAL")
 
@@ -1502,28 +1502,28 @@ class Notifier:
             "REJECTED": ("🛡️", "Modelo Rechazado (Quality Guard)", "WARNING")
         }
         
-        emoji, status_desc, priority = status_map.get(status, ("❓", f"Estado: {status}", "INFO"))
+        emoji, status_desc, priority = status_map[status]
         
         msg = f"{emoji} *ML TRAINING: {symbol}* {emoji}\n\n"
         msg += f"*Horizonte:* `{horizon}`\n"
         msg += f"*Estado:* `{status_desc}`\n"
 
         if status == "SUCCESS":
-            score = details.get("score", 0)
-            features = details.get("features", 0)
-            duration = details.get("duration", 0)
+            score = details["score"]
+            features = details["features"]
+            duration = details["duration"]
             msg += f"\n*Métricas de Éxito:*\n"
             msg += f"Puntuación (Score): `{score:.3f}`\n"
             msg += f"Features Activos: `{features}`\n"
             msg += f"Tiempo: `{duration:.1f}s`\n"
         elif status == "REJECTED":
-            score = details.get("score", 0)
-            min_acc = details.get("min_acc", 0)
+            score = details["score"]
+            min_acc = details["min_acc"]
             msg += f"\n*Motivo de Rechazo:*\n"
             msg += f"Puntuación (`{score:.3f}`) < Mínimo Requerido (`{min_acc:.3f}`)\n"
             msg += f"_El modelo es peor que una predicción aleatoria._\n"
         elif status == "FAILED":
-            error = details.get("error", "Unknown")
+            error = details["error"]
             msg += f"\n*Error Reportado:*\n`{error}`\n"
             
         Notifier.send_telegram(msg, priority=priority)
@@ -1539,14 +1539,14 @@ class Notifier:
         # Filtrar solo estrategias con al menos 1 trade
         active_strats = [
             (sid, perf) for sid, perf in strategy_performance.items() 
-            if (perf.get("wins", 0) + perf.get("losses", 0)) > 0
+            if (perf["wins"] + perf["losses"]) > 0
         ]
         
         if not active_strats:
             return
 
         # Ordenar por PnL descendente
-        sorted_strats = sorted(active_strats, key=lambda x: x[1].get("pnl", 0), reverse=True)
+        sorted_strats = sorted(active_strats, key=lambda x: x[1]["pnl"], reverse=True)
         
         top_5 = sorted_strats[:5]
         bottom_5 = sorted_strats[-5:] if len(sorted_strats) > 5 else []
@@ -1557,9 +1557,9 @@ class Notifier:
 
         msg += f"🌟 *TOP 5 GANADORAS:*\n"
         for i, (sid, perf) in enumerate(top_5, 1):
-            pnl = perf.get('pnl', 0)
-            wins = perf.get('wins', 0)
-            losses = perf.get('losses', 0)
+            pnl = perf['pnl']
+            wins = perf['wins']
+            losses = perf['losses']
             total = wins + losses
             wr = (wins / total * 100) if total > 0 else 0
             msg += f"{i}. `{sid}`\n   💰 `${pnl:+.4f}` | WR: `{wr:.0f}%` ({wins}W/{losses}L)\n"
@@ -1568,9 +1568,9 @@ class Notifier:
             msg += f"\n📉 *TOP 5 PERDEDORAS:*\n"
             # Invertimos para mostrar la peor al final
             for i, (sid, perf) in enumerate(reversed(bottom_5), 1):
-                pnl = perf.get('pnl', 0)
-                wins = perf.get('wins', 0)
-                losses = perf.get('losses', 0)
+                pnl = perf['pnl']
+                wins = perf['wins']
+                losses = perf['losses']
                 total = wins + losses
                 wr = (wins / total * 100) if total > 0 else 0
                 msg += f"{i}. `{sid}`\n   🩸 `${pnl:+.4f}` | WR: `{wr:.0f}%` ({wins}W/{losses}L)\n"

@@ -95,7 +95,7 @@ except ImportError:
 from core.neural_bridge import neural_bridge
 from utils.telemetry import telemetry  # Phase 99: Fleet Telemetry
 from utils.efficacy_tracker import efficacy_tracker  # Phase 99: RL Feedback
-from data.user_stream import UserDataStreamListener  # Phase 99: Manual Close Detection
+# from data.user_stream import UserDataStreamListener  # Phase 99: Manual Close Detection
 from core.world_awareness import world_awareness
 from utils.session_manager import init_session_manager, get_session_manager
 from utils.health_supervisor import start_health_supervisor, _supervisor as health_sup # CI-HMA (Phase 6)
@@ -417,7 +417,7 @@ async def main():
     
     # 2.2. METRICS EXPORTER (Phase 53)
     from utils.metrics_exporter import metrics
-    metrics.start_server(port=8000)
+    metrics.start_server(port=9091)
     
     # 3. CORE INITIALIZATION
     import queue
@@ -434,8 +434,9 @@ async def main():
     from core.engine import PriorityBoundedQueue
     events_queue = PriorityBoundedQueue(maxsize=10000)
     
-    # 3.1. PRE-INITIALIZATION DISCOVERY (ELITE PROTOCOL)
-    # Instantiate the data handler with a minimal payload for fast connect
+    # 3.1. PRE-INITIALIZATION DISCOVERY
+    from data.binance_loader import BinanceData
+    logger.info("⚡ Inicializando BinanceLoader")
     data_handler = BinanceData(events_queue, ["BTC/USDT"])
     scanner = MarketScanner(data_handler)
     
@@ -471,19 +472,29 @@ async def main():
 
     # 3.3. DATA WARMING BARRIER
     # Wait for parallel workers to fetch enough history for ML
-    logger.info("📡 [Elite Protocol] Warming up data for universal training...")
     warming = True
     start_warm = time.time()
-    while warming and (time.time() - start_warm < 120): # Max 2 min wait
+    logger.info("🧱 [Boot] Esperando Data Warming (buffers llenos)...")
+    while warming:
         ready_count = 0
+        ready_symbols = []
         with data_handler._data_lock:
             for s in Config.TRADING_PAIRS:
                 b1m = data_handler.buffers_1m.get(s)
                 if b1m is not None and b1m.size >= 500:
                     ready_count += 1
+                    ready_symbols.append(s)
         
         if ready_count >= len(Config.TRADING_PAIRS):
             logger.info("✅ All elite symbols warmed up.")
+            warming = False
+        elif (time.time() - start_warm) > 60:
+            logger.warning(f"⏳ Data Warming Timeout (60s). Only {ready_count}/{len(Config.TRADING_PAIRS)} ready.")
+            # Drop failed symbols
+            failed_symbols = set(Config.TRADING_PAIRS) - set(ready_symbols)
+            if failed_symbols:
+                logger.warning(f"❌ Dropping failed symbols: {failed_symbols}")
+                Config.TRADING_PAIRS = ready_symbols
             warming = False
         elif (time.time() - start_warm) > 5:
             logger.info(f"⏳ Warming progress: {ready_count}/{len(Config.TRADING_PAIRS)} symbols ready...")

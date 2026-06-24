@@ -72,7 +72,7 @@ class QuantumRouter:
 
         for sig in entries:
             strat_id = getattr(sig, 'strategy_id', 'UNKNOWN')
-            weight = weights.get(strat_id, 1.0)
+            weight = weights[strat_id]
             conf = getattr(sig, 'confidence', 0.5)
             
             # Penalización suave de confidence baseada en weights (el líer opina más fuerte)

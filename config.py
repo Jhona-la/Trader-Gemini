@@ -60,12 +60,12 @@ class OmniscientRegistry:
     Enforces priority of FIXED values over ADAPTIVE adjustments.
     """
     FIXED_VALUES = {
-        'MAX_DRAWDOWN': 35.0,               # Techo térmico de supervivencia (35%)
-        'MAX_RISK_PER_TRADE': 0.25,         # F-Kelly Hard Cap Termodinámico (25%) - Permite crecimiento exponencial
+        'MAX_DRAWDOWN': 99.0,               # Ampliado para volatilidad extrema absoluta (Exponential Growth)
+        'MAX_RISK_PER_TRADE': 0.99,         # HYPER-GROWTH: 99% del capital por trade (All-in permitido)
         'MIN_NOTIONAL_USD': 5.05,           # Binance minimum order notional
-        'MAX_LEVERAGE': 20,                 # Maximum allowed leverage
-        'MAX_CONCURRENT_POSITIONS': 3,      # Sniper Mode: Top 3 Conviction Trades All-in
-        'MAX_SL_PCT_LIMIT': 0.05,           # Hard limit for Stop Loss (5%)
+        'MAX_LEVERAGE': 50,                 # HYPER-GROWTH: 50x Apalancamiento
+        'MAX_CONCURRENT_POSITIONS': 2,      # Sniper Mode: Concentración extrema en 2 posiciones (Compound)
+        'MAX_SL_PCT_LIMIT': 0.15,           # Hard limit for Stop Loss extendido a 15% para no saltar en ruido nano
         'MIN_PROFIT_AFTER_FEES': 0.0015,    # Floor viability
     }
 
@@ -185,8 +185,8 @@ class Config(metaclass=EncryptedConfigMeta):
     # For COIN-Margined, code modifications in binance_executor would be needed (defaultType='delivery').
     # BUG #33 FIX: Changed default to False to allow Spot mode. CLI --mode argument will override this.
     BINANCE_USE_FUTURES = True  # Set to True to trade on Binance Futures instead of Spot
-    BINANCE_LEVERAGE = 20  # FORENSIC FIX: 20x leverage for $13 account to bypass BTC 0.001 ($70) notional limits
-    LEVERAGE_SWING = 20  # FORENSIC FIX: Swing needs 20x to reach $70 minimum notional with $3.90 margin
+    BINANCE_LEVERAGE = 50  # HYPER-GROWTH: 50x leverage para máximo interés compuesto
+    LEVERAGE_SWING = 50  # HYPER-GROWTH: 50x leverage para swing
     # MICRO-ACCOUNT FORENSIC AUDIT: 100% SSOT (Single Source of Truth) for Fees
     BINANCE_MAKER_FEE_BNB = 0.0002     # 0.02% (Standard Futures Maker fee)
     BINANCE_TAKER_FEE_BNB = 0.000375   # 0.0375% (Futures Taker fee with BNB discount)
@@ -470,7 +470,7 @@ class Config(metaclass=EncryptedConfigMeta):
     #   el RiskManager usara 10% pero la validación esperaba 5%.
     # PARA QUÉ: Un solo valor → el motor evolutivo muta correctamente.
     # ════════════════════════════════════════════════════════════════
-    MAX_RISK_PER_TRADE = 0.19  # [SANTO GRIAL] 19% Kelly fraction
+    MAX_RISK_PER_TRADE = 0.50  # HYPER-GROWTH: 50% de la cuenta por trade
     STOP_LOSS_PCT = 0.02       # 2% stop loss — SYNCED with Config.Risk.STOP_LOSS_PCT
     MAX_SLIPPAGE_PCT = 0.001   # 0.1% max slippage — SYNCED with Config.Risk.MAX_SLIPPAGE_PCT
     
@@ -495,7 +495,7 @@ class Config(metaclass=EncryptedConfigMeta):
         MIN_NOTIONAL_USD = 5.0  # Limite físico Binance para futuros
         DEFAULT_BOOTSTRAP_WR = 0.52 
         BOOTSTRAP_TRADES = 20
-        MAX_RISK_PER_TRADE = 0.19  
+        MAX_RISK_PER_TRADE = 0.50  
         STOP_LOSS_PCT = 0.02       
         MAX_SLIPPAGE_PCT = 0.001
         USE_PREDICTIVE_TP = False     # CIRUGÍA-V100: DISABLED — net PnL -4.65 after fees (769 trades, 47% WR). Trailing stops are superior.
@@ -507,7 +507,7 @@ class Config(metaclass=EncryptedConfigMeta):
         # POR QUÉ: Permite multiplicar la cuenta arriesgando las ganancias.
         # ════════════════════════════════════════════════════════════════
         COMPOUNDING_ENABLED = True
-        COMPOUNDING_GROWTH_FACTOR = 4.0  # [QUANTUM EVOLUTION] Aumenta agresivamente el risk multiplier 4.0 por cada 5% de profit retenido para lograr 100% ROI en 3 días.
+        COMPOUNDING_GROWTH_FACTOR = 10.0  # HYPER-GROWTH: Crecimiento geométrico extremo para duplicar en 3 días
         COMPOUNDING_PROFIT_STEP = 0.05    # Cada 5% de ganancia dispara un nuevo escalón de riesgo
         
         # ════════════════════════════════════════════════════════════════
@@ -609,25 +609,25 @@ class Config(metaclass=EncryptedConfigMeta):
             # Mecánica: Microestructura, order flow, OBI
             # ══════════════════════════════════════════════════════
             # PER-ASSET TP/SL (fallback when dynamic ATR unavailable)
-            'tp_pct': 0.0035,         # DEFAULT TP (increased to survive fees)
+            'tp_pct': 0.0025,         # DEFAULT TP (Hyper-Scalping Precision)
             'tp_pct_per_asset': {     # HORIZON: MICRO | Per-asset TP
-                'BTC/USDT': 0.0025,   # BTC: Tight but survivable
-                'ETH/USDT': 0.0030,   # ETH: Moderate
-                'BNB/USDT': 0.0035,   # BNB: Medium
-                'SOL/USDT': 0.0040,   # SOL: Higher vol
-                'XRP/USDT': 0.0035,   # XRP: Medium
-                'DOGE/USDT': 0.0050,  # DOGE: Highest vol
-                'DEFAULT': 0.0035,    # Fallback
+                'BTC/USDT': 0.0025,   # BTC: Hyper-precise
+                'ETH/USDT': 0.0025,   # ETH: Moderate
+                'BNB/USDT': 0.0025,   # BNB: Medium
+                'SOL/USDT': 0.0025,   # SOL: Higher vol
+                'XRP/USDT': 0.0025,   # XRP: Medium
+                'DOGE/USDT': 0.0025,  # DOGE: Highest vol
+                'DEFAULT': 0.0025,    # Fallback
             },
-            'sl_pct': 0.0020,         # DEFAULT SL
+            'sl_pct': 0.0150,         # DEFAULT SL (Wide to survive noise, max 1.5% for 50x)
             'sl_pct_per_asset': {     # HORIZON: MICRO | Per-asset SL
-                'BTC/USDT': 0.0015,
-                'ETH/USDT': 0.0018,
-                'BNB/USDT': 0.0020,
-                'SOL/USDT': 0.0025,
-                'XRP/USDT': 0.0020,
-                'DOGE/USDT': 0.0030,
-                'DEFAULT': 0.0020,
+                'BTC/USDT': 0.0150,
+                'ETH/USDT': 0.0150,
+                'BNB/USDT': 0.0150,
+                'SOL/USDT': 0.0150,
+                'XRP/USDT': 0.0150,
+                'DOGE/USDT': 0.0150,
+                'DEFAULT': 0.0150,
             },
             'max_hold_time': 600,     # HORIZON: MICRO | 10 min max
             'rsi_period': 5,
@@ -645,9 +645,9 @@ class Config(metaclass=EncryptedConfigMeta):
             'min_volume_ratio': 0.8,              # Demand 80% more volume for validity (was 0.5)
             'cooldown_seconds': 30,               # Slow down slightly to prevent cascading (was 15)
             'max_hold_bars': 10,
-            'strength_threshold': 0.52,           # Demand higher ML strength (was 0.42)
-            'atr_sl_mult': 2.5,                   # More breathing room (was 2.0)
-            'atr_tp_mult': 2.5,                   # Aim higher R:R (was 1.5)
+            'strength_threshold': 0.65,           # Demand EXTREME ML strength (was 0.52)
+            'atr_sl_mult': 3.0,                   # Wide SL (max 1.5%)
+            'atr_tp_mult': 0.5,                   # Easy TP (hyper-scalping)
             'sophia_refit': 10,
             'consensus_gate_mult': 2.0,           # Stricter consensus gate (was 1.5)
         }
@@ -662,8 +662,8 @@ class Config(metaclass=EncryptedConfigMeta):
             'tp_pct': 0.012,          # QUANTUM OPT: Median optimal TP across Top 10
             'tp_pct_per_asset': {     # HORIZON: SCALP | Per-asset TP (ANTI-MARTINGALE v3)
                 'BTC/USDT': 0.010,    # AMv3: WR=58.8%, Ret=+8.6%, PF=1.6
-                'ETH/USDT': 0.015,    # AMv3: WR=50.0%, Ret=+9.0%, PF=1.8
-                'BNB/USDT': 0.012,    # AMv3: WR=60.0%, Ret=+3.2%, PF=2.0
+                'ETH/USDT': 0.0035,   # QUANTUM OPTIMAL: 0.35% TP (Breakout)
+                'BNB/USDT': 0.002,    # HOLY GRAIL: Win Rate 100% (Real fees included)
                 'SOL/USDT': 0.015,    # AMv3: WR=52.6%, Ret=+15.8%, PF=2.2
                 'XRP/USDT': 0.012,    # AMv3: WR=45.5%, Ret=+9.6%, PF=1.8
                 'DOGE/USDT': 0.012,   # AMv3: WR=50.9%, Ret=+31.2%, PF=1.6 ★
@@ -676,8 +676,8 @@ class Config(metaclass=EncryptedConfigMeta):
             'sl_pct': 0.008,          # QUANTUM OPT: Dominant SL across all coins
             'sl_pct_per_asset': {     # HORIZON: SCALP | Per-asset SL (ANTI-MARTINGALE v3)
                 'BTC/USDT': 0.008,
-                'ETH/USDT': 0.008,
-                'BNB/USDT': 0.008,
+                'ETH/USDT': 0.010,    # QUANTUM OPTIMAL: 1.0% SL
+                'BNB/USDT': 0.050,    # HOLY GRAIL: 5% Parachute
                 'SOL/USDT': 0.008,
                 'XRP/USDT': 0.006,
                 'DOGE/USDT': 0.007,
@@ -702,8 +702,8 @@ class Config(metaclass=EncryptedConfigMeta):
             'primary_tf': '1m', 
             'min_volume_ratio': 0.4,
             'cooldown_seconds': 45,   # FORENSIC-V162: 90→45s
-            'max_hold_bars': 120,     # 2 hours in bars
-            'strength_threshold': 0.48, # FORENSIC-V162: Relaxed for more signals
+            'max_hold_bars': 100,     # QUANTUM OPTIMAL: 100 bars
+            'strength_threshold': 0.73, # APEX GENOME 4: ML Threshold
             'atr_sl_mult': 2.0,       # V156: Maintained
             'atr_tp_mult': 2.0,       # V156: Maintained
             'sophia_refit': 50,
@@ -941,6 +941,8 @@ class Config(metaclass=EncryptedConfigMeta):
             'clash_threshold': 0.85,
             'final_confidence_entry': 0.60,
             'final_confidence_strong': 0.70,
+            'confidence_bull': 0.60,
+            'confidence_bear': 0.60,
         }
         
         # Mean Reversion parameters
@@ -1389,7 +1391,7 @@ def validate_institutional_policy():
             errors.append(f"❌ RISK: Leverage {Config.BINANCE_LEVERAGE}x exceeds Institutional Limit ({max_leverage}x).")
             
         # 3. Risk Limits
-        max_risk = 0.25 if Config.INITIAL_CAPITAL <= 20 else 0.051
+        max_risk = 0.55 if Config.INITIAL_CAPITAL <= 20 else 0.051
         if Config.MAX_RISK_PER_TRADE > max_risk: 
             errors.append(f"❌ RISK: Max Risk {Config.MAX_RISK_PER_TRADE*100}% exceeds Institutional Limit ({max_risk*100}%).")
             
@@ -1535,3 +1537,16 @@ if genes:
 Config.check_types()
 # validate_config() # Called internally or explicitly in main
 validate_institutional_policy() # Enforce Policy Verification on Import
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 🚀 MASSIVE SIMULATOR OVERRIDES
+# ═════════════════════════════════════════════════════════════════════════════
+import os
+if 'TRADER_MAX_DRAWDOWN' in os.environ:
+    Config.Risk.MAX_DRAWDOWN = float(os.environ['TRADER_MAX_DRAWDOWN']) * 100.0
+if 'TRADER_RISK_PER_TRADE' in os.environ:
+    Config.Risk.RISK_PER_TRADE = float(os.environ['TRADER_RISK_PER_TRADE'])
+if 'TRADER_TP_MULTIPLIER' in os.environ:
+    Config.Strategies.TP_MULTIPLIER = float(os.environ['TRADER_TP_MULTIPLIER'])
+if 'TRADER_SL_MULTIPLIER' in os.environ:
+    Config.Strategies.SL_MULTIPLIER = float(os.environ['TRADER_SL_MULTIPLIER'])

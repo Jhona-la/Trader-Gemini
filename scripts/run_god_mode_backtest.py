@@ -52,11 +52,11 @@ if env_id:
 # QUÉ: Fuerza a C++ y Python a usar los 16 hilos del CPU
 # POR QUÉ: Multiplica la velocidad del backtest x10.
 # ═══════════════════════════════════════════════════════════════
-os.environ["OMP_NUM_THREADS"] = "16"
-os.environ["MKL_NUM_THREADS"] = "16"
-os.environ["OPENBLAS_NUM_THREADS"] = "16"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "16"
-os.environ["NUMEXPR_NUM_THREADS"] = "16"
+os.environ["OMP_NUM_THREADS"] = os.environ.get("OMP_NUM_THREADS", "16")
+os.environ["MKL_NUM_THREADS"] = os.environ.get("MKL_NUM_THREADS", "16")
+os.environ["OPENBLAS_NUM_THREADS"] = os.environ.get("OPENBLAS_NUM_THREADS", "16")
+os.environ["VECLIB_MAXIMUM_THREADS"] = os.environ.get("VECLIB_MAXIMUM_THREADS", "16")
+os.environ["NUMEXPR_NUM_THREADS"] = os.environ.get("NUMEXPR_NUM_THREADS", "16")
 
 # Torch initialization is deferred to run_global_backtest to avoid 20s import latency on startup
 import io
@@ -424,7 +424,9 @@ def run_global_backtest(
     # ── LAZY INIT FOR HEAVY LIBRARIES ──
     try:
         import torch
-        torch.set_num_threads(16)
+        # Respect environment variable for torch threads too
+        torch_threads = int(os.environ.get("OMP_NUM_THREADS", 16))
+        torch.set_num_threads(torch_threads)
         torch.set_grad_enabled(False)
     except ImportError:
         pass
@@ -1300,7 +1302,7 @@ def run_global_backtest(
             # ══════════════════════════════════════════════════════════════════
             if epoch_count == warmup_epochs + 1:
                 # ── FORENSIC: DISABLE LOGGING FOR NANO PROFILING ──
-                logging.disable(logging.CRITICAL)
+                # logging.disable(logging.CRITICAL)
 
                 # ── QUANTUM PRE-CALCULATION FOR BACKTEST (Vectorization) ──
                 # MODO PROFESOR:
@@ -1327,9 +1329,28 @@ def run_global_backtest(
                                             is_live=False
                                         )
                                         if full_df is not None and len(full_df) > 0:
+                                            # QUANTUM M.2 DISK PAGING: Eradicate RAM leak
+                                            cache_dir = os.path.join(Config.DATA_DIR, "mmap_cache")
+                                            os.makedirs(cache_dir, exist_ok=True)
+                                            safe_strat_id = str(strat.strategy_id).replace("[", "").replace("]", "").replace("/", "_")
+                                            mmap_file = os.path.join(cache_dir, f"{sym.replace('/', '_')}_{safe_strat_id}_{primary_tf}.npy")
+                                            
+                                            # Save metadata and arrays
                                             strat._global_feature_cache_ts = full_df["timestamp"].to_numpy() if hasattr(full_df["timestamp"], "to_numpy") else full_df["timestamp"].values
-                                            strat._global_feature_cache = full_df
-                                            logger.info(f"     ✅ {sym}/{strat.strategy_id} {primary_tf} Cache built ({len(full_df)} rows) in {time.time()-t_pre:.2f}s")
+                                            strat._global_feature_columns = full_df.columns.tolist()
+                                            
+                                            # Convert to float32 numpy array to save space and write directly to SSD
+                                            features_np = full_df.to_numpy(dtype=np.float32)
+                                            np.save(mmap_file, features_np)
+                                            strat._global_feature_mmap_path = mmap_file
+                                            
+                                            logger.info(f"     ✅ {sym}/{strat.strategy_id} {primary_tf} M.2 Cache Paged ({len(full_df)} rows) in {time.time()-t_pre:.2f}s")
+                                            
+                                            # Force GC to free RAM immediately
+                                            del full_df
+                                            del features_np
+                                            import gc
+                                            gc.collect()
                             except Exception as e:
                                 logger.error(f"     ❌ [QUANTUM CACHE] Error pre-calculating for {sym}/{strat.strategy_id}: {e}")
 

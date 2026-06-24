@@ -116,8 +116,8 @@ class StatisticalIndicators:
         # la probabilidad de reversión vs continuación.
         # ═══════════════════════════════════════════════════════════
         if n_len > 50:
-            zscore_50 = features.get('zscore_50', np.zeros(n_len))
-            autocorr_1 = features.get('autocorr_lag1', np.zeros(n_len))
+            zscore_50 = features['zscore_50']
+            autocorr_1 = features['autocorr_lag1']
             # High z-score + negative autocorrelation = high reversion probability
             features['mean_reversion_prob'] = np.clip(
                 (np.abs(zscore_50) / 3.0) * np.where(autocorr_1 < 0, 1.5, 0.5),

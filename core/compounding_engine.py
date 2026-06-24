@@ -222,7 +222,7 @@ class CompoundingEngine:
         self._last_recalc = now
 
         # 1. Get base allocation from regime
-        regime_alloc = self._regime_alloc.get(self._current_regime, self._default_alloc)
+        regime_alloc = self._regime_alloc[self._current_regime]
         base_micro = regime_alloc['MICRO']
         base_scalp = regime_alloc['SCALP']
         base_swing = regime_alloc['SWING']
@@ -272,11 +272,11 @@ class CompoundingEngine:
 
         # 5. MICRO-ACCOUNT SAFETY OVERRIDE (Ensure minimum viability)
         # For $13 accounts, we need aggressive compounding.
-        # Dedicate 70% to Scalping (fast turns) and 30% to Swing. Microscalping disabled at this tier.
         if equity < 25.0 and equity > 0:
-            micro_pct = 0.0
-            scalp_pct = 0.70
-            swing_pct = 0.30
+            # We enable microscalping because we are explicitly testing/running it
+            micro_pct = 0.50
+            scalp_pct = 0.30
+            swing_pct = 0.20
 
         # [PHASE 8 QUANTUM EVOLUTION] Multi-Horizon Synergy & Phase-State Transition
         # If market regime is extremely volatile, SWING is dangerous (requires wide stops that can't be afforded).

@@ -34,19 +34,19 @@ class PyramidEngine:
         if not self.enabled:
             return None
             
-        symbol = pos.get('symbol')
+        symbol = pos['symbol']
         if not symbol:
             return None
             
-        pos_horizon = pos.get('horizon', 'SCALPING')
+        pos_horizon = pos['horizon']
         if pos_horizon not in ("SCALPING", "MICROSCALPING"):
             return None
             
-        qty = pos.get('quantity', 0.0)
+        qty = pos['quantity']
         if qty == 0:
             return None
             
-        entry_price = pos.get('avg_price', pos.get('entry_price', 0.0))
+        entry_price = pos['avg_price']
         if entry_price == 0:
             return None
             
@@ -61,11 +61,11 @@ class PyramidEngine:
             return None
             
         # Check layers
-        trade_id = pos.get('trade_id', f"{symbol}_{pos_horizon}")
+        trade_id = pos['trade_id']
         
         # Hibridamos estado interno con estado de la posición (si hubo cierre parcial se reinicia)
-        state = self._pyramid_state.get(trade_id, {'layers': 0, 'last_pyramid_ts': 0.0})
-        actual_layers = max(state['layers'], pos.get('scale_count', 0))
+        state = self._pyramid_state[trade_id]
+        actual_layers = max(state['layers'], pos['scale_count'])
         
         if actual_layers >= self.max_layers:
             return None

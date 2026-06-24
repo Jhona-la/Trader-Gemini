@@ -66,6 +66,7 @@ class ExponentialSizing:
         
         # Si la ventaja es negativa (expectancy < 0), el tamaño de la apuesta debe ser cero
         if kelly_f <= 0.0:
+            print(f"🛡️ [EXP-SIZING DIAG] Negative Expectancy: logit={confidence_logit:.4f}, p={p:.4f}, q={q:.4f}, b={b:.4f}, kelly_f={kelly_f:.4f}")
             return {
                 "probability": float(p),
                 "kelly_f": 0.0,

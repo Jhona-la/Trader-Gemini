@@ -111,7 +111,7 @@ class AdaptiveMLParameterEngine:
         self.recalibration_interval = 50
 
     def get(self, param_name):
-        val = self.params.get(param_name)
+        val = self.params[param_name]
         if param_name in ['lookahead', 'retrain_interval', 'cooldown']:
             return int(round(val))
         return val

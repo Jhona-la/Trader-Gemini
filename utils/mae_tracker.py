@@ -6,7 +6,7 @@ PARA QUÉ: Dynamic Stop Loss Optimization.
 """
 
 import numpy as np
-import pandas as pd
+import polars as pl
 from utils.fast_json import FastJson as json
 import os
 from datetime import datetime

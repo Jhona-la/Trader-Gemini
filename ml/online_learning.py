@@ -50,4 +50,4 @@ class HotAdapterRL:
         Returns the real-time bias multiplier for the base XGBoost model.
         """
         key = f"{symbol}_{direction}"
-        return self.bias_vector.get(key, 1.0)
+        return self.bias_vector[key]

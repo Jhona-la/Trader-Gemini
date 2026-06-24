@@ -1,5 +1,5 @@
 import numpy as np
-import pandas as pd
+import polars as pl
 from typing import List, Dict, Any, Tuple
 from core.genotype import Genotype
 from core.evolution import TradeResult
@@ -13,7 +13,7 @@ class SimDataProvider:
     Proveedor de datos optimizado para simulación (Zero-Copy).
     Carga datos en arrays de NumPy y provee vistas rápidas.
     """
-    def __init__(self, data: Dict[str, pd.DataFrame]):
+    def __init__(self, data: Dict[str, pl.DataFrame]):
         # Pre-process data into structured arrays for max speed
         self.arrays = {}
         for symbol, df in data.items():

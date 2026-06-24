@@ -705,18 +705,18 @@ class DatabaseHandler:
                     INSERT INTO trades (symbol, side, quantity, price, timestamp, order_type, strategy_id, pnl, commission, trade_id, thought_id, horizon)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                    trade_dict.get('symbol'),
-                    trade_dict.get('side'),
-                    trade_dict.get('quantity'),
-                    trade_dict.get('price'),
-                    trade_dict.get('timestamp', datetime.now(timezone.utc)),
-                    trade_dict.get('order_type', 'MARKET'),
-                    trade_dict.get('strategy_id', 'UNKNOWN'),
-                    trade_dict.get('pnl', 0.0),
-                    trade_dict.get('commission', 0.0),
-                    trade_dict.get('trade_id', None),
-                    trade_dict.get('thought_id', None),
-                    trade_dict.get('horizon', 'SCALPING')
+                    trade_dict['symbol'],
+                    trade_dict['side'],
+                    trade_dict['quantity'],
+                    trade_dict['price'],
+                    trade_dict['timestamp'],
+                    trade_dict['order_type'],
+                    trade_dict['strategy_id'],
+                    trade_dict['pnl'],
+                    trade_dict['commission'],
+                    trade_dict['trade_id'],
+                    trade_dict['thought_id'],
+                    trade_dict['horizon']
                 ))
                 conn.commit()
         except sqlite3.Error as e:
@@ -747,7 +747,7 @@ class DatabaseHandler:
                     signal_event.timestamp if hasattr(signal_event, 'timestamp') else signal_event.datetime,
                     getattr(signal_event, 'strategy_id', 'UNKNOWN'),
                     getattr(signal_event, 'trade_id', None),
-                    getattr(signal_event, 'metadata', {}).get('thought_id', None) if hasattr(signal_event, 'metadata') and signal_event.metadata else None
+                    getattr(signal_event, 'metadata', {})['thought_id'] if hasattr(signal_event, 'metadata') and signal_event.metadata else None
                 ))
                 conn.commit()
         except sqlite3.Error as e:
@@ -766,7 +766,7 @@ class DatabaseHandler:
             with self.lock:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    INSERT INTO thoughts (thought_id, trade_id, symbol, strategy_id, horizon, direction, market_state, metrics, timestamp)
+                    INSERT OR IGNORE INTO thoughts (thought_id, trade_id, symbol, strategy_id, horizon, direction, market_state, metrics, timestamp)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     thought_id, trade_id, symbol, strategy_id, horizon, direction,
@@ -1276,7 +1276,7 @@ class DatabaseHandler:
             with self.lock:
                 cursor = conn.cursor()
                 
-                _ts = trade_dict.get('timestamp')
+                _ts = trade_dict['timestamp']
                 if _ts is not None:
                     if hasattr(_ts, 'isoformat'):
                         _ts = _ts.isoformat()
@@ -1290,17 +1290,17 @@ class DatabaseHandler:
                     INSERT INTO trades (symbol, side, quantity, price, timestamp, order_type, strategy_id, pnl, commission, trade_id, thought_id)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                    trade_dict.get('symbol'),
-                    trade_dict.get('side'),
-                    trade_dict.get('quantity'),
-                    trade_dict.get('price'),
+                    trade_dict['symbol'],
+                    trade_dict['side'],
+                    trade_dict['quantity'],
+                    trade_dict['price'],
                     _ts,
-                    trade_dict.get('order_type', 'MARKET'),
-                    trade_dict.get('strategy_id', 'UNKNOWN'),
-                    trade_dict.get('pnl', 0.0),
-                    trade_dict.get('commission', 0.0),
-                    trade_dict.get('trade_id'),
-                    trade_dict.get('thought_id')
+                    trade_dict['order_type'],
+                    trade_dict['strategy_id'],
+                    trade_dict['pnl'],
+                    trade_dict['commission'],
+                    trade_dict['trade_id'],
+                    trade_dict['thought_id']
                 ))
                 
                 # 2. Update Position
@@ -1327,12 +1327,12 @@ class DatabaseHandler:
                             strategy_id=excluded.strategy_id
                     ''', (
                         symbol, quantity, position_dict['entry_price'], 
-                        position_dict['current_price'], position_dict.get('pnl', 0.0), 
+                        position_dict['current_price'], position_dict['pnl'], 
                         datetime.now(timezone.utc).isoformat(),
-                        position_dict.get('sl_pct'),
-                        position_dict.get('tp_pct'),
-                        position_dict.get('horizon', 'SCALPING'),
-                        position_dict.get('strategy_id', 'UNKNOWN')
+                        position_dict['sl_pct'],
+                        position_dict['tp_pct'],
+                        position_dict['horizon'],
+                        position_dict['strategy_id']
                     ))
                 
                 conn.commit()

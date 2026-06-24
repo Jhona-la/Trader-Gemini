@@ -387,8 +387,8 @@ class AssetParameterEngine:
             if horizon_key in self.calibrated_profiles:
                 for k, v in self.calibrated_profiles[horizon_key].items():
                     if k.replace("/", "").upper() == clean:
-                        cal_sl_mult = v.get('sl_atr_mult')
-                        cal_tp_rr = v.get('tp_rr_ratio')
+                        cal_sl_mult = v['sl_atr_mult']
+                        cal_tp_rr = v['tp_rr_ratio']
                         break
             
             if cal_sl_mult is not None:
@@ -430,8 +430,8 @@ class AssetParameterEngine:
             if horizon_key in self.calibrated_profiles:
                 for k, v in self.calibrated_profiles[horizon_key].items():
                     if k.replace("/", "").upper() == clean:
-                        cal_sl_mult = v.get('sl_atr_mult')
-                        cal_tp_rr = v.get('tp_rr_ratio')
+                        cal_sl_mult = v['sl_atr_mult']
+                        cal_tp_rr = v['tp_rr_ratio']
                         break
             
             if cal_sl_mult is not None:
@@ -531,7 +531,7 @@ class AssetParameterEngine:
         QUÉ: Calibra TODOS los activos desde el cache parquet.
         POR QUÉ: Útil para inicialización bulk (backtest y startup).
         """
-        import pandas as pd
+        import polars as pl
         
         if cache_dir is None:
             from config import Config
@@ -547,7 +547,7 @@ class AssetParameterEngine:
                 continue
             try:
                 fpath = os.path.join(cache_dir, fname)
-                df = pd.read_parquet(fpath)
+                df = pl.read_parquet(fpath)
                 
                 sym = fname.replace('features_', '').replace('.parquet', '').replace('_', '')
                 
@@ -555,9 +555,9 @@ class AssetParameterEngine:
                     continue
                 
                 # LEY DEL FLOAT32 INQUEBRANTABLE (Cero-Copy)
-                closes = df['close'].values.astype(np.float32, copy=False)
-                highs = df['high'].values.astype(np.float32, copy=False)
-                lows = df['low'].values.astype(np.float32, copy=False)
+                closes = df.select('close').to_numpy().flatten().astype(np.float32, copy=False)
+                highs = df.select('high').to_numpy().flatten().astype(np.float32, copy=False)
+                lows = df.select('low').to_numpy().flatten().astype(np.float32, copy=False)
                 
                 # Filter out zeros/NaN usando np.nan_to_num in-place para purificación
                 np.nan_to_num(closes, copy=False, nan=0.0)

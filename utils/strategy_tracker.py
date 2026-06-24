@@ -346,7 +346,7 @@ class StrategyTracker:
             
             strategies = []
             for strat_id, score in rankings.items():
-                m = self.all_time.get(strat_id)
+                m = self.all_time[strat_id]
                 if not m:
                     continue
                     
@@ -404,7 +404,7 @@ class StrategyTracker:
         print("-" * 80)
         
         for rank, (strat_id, score) in enumerate(rankings.items(), 1):
-            m = self.all_time.get(strat_id)
+            m = self.all_time[strat_id]
             if not m:
                 continue
             pf_str = f"{m.profit_factor:.2f}" if m.profit_factor < 999 else "∞"

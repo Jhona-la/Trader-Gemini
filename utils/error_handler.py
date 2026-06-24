@@ -38,6 +38,10 @@ BINANCE_ERROR_CODES = {
 }
 
 
+class SystemIntegrityError(Exception):
+    """Critical exception indicating a core structural violation in the system"""
+    pass
+
 class BinanceAPIError(Exception):
     """Custom exception for Binance API errors"""
     def __init__(self, code, message):
@@ -61,7 +65,7 @@ def parse_binance_error(error):
             match = re.search(r'"code":(-?\d+)', error_str)
             if match:
                 code = int(match.group(1))
-                msg = BINANCE_ERROR_CODES.get(code, f"Unknown error: {error_str}")
+                msg = BINANCE_ERROR_CODES[code]
                 return code, msg
         
         # If no code found, return generic error

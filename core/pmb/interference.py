@@ -32,7 +32,7 @@ class InterferenceDetector:
             
     def detect_it3(self, signals: list):
         """Mock detection of contradictory signals"""
-        directions = set(s.get('direction') for s in signals)
+        directions = set(s['direction'] for s in signals)
         if 'LONG' in directions and 'SHORT' in directions:
             self.interferences['IT-3'] += 1
             # Assuming Nexus resolves it

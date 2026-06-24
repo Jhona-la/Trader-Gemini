@@ -40,9 +40,9 @@ class StatisticalStrategy(Strategy):
             print(f"🧪 LAB MODE: {self.pair} using Permissive Z-Entry={self.z_entry:.2f}")
             
         if self.horizon == 'SCALPING':
-            self.primary_tf = getattr(Config.Horizons, 'Scalping', {}).get('primary_tf', '1m')
+            self.primary_tf = getattr(Config.Horizons, 'Scalping', {})['primary_tf']
         elif self.horizon == 'SWING':
-            self.primary_tf = getattr(Config.Horizons, 'Swing', {}).get('primary_tf', '1h')
+            self.primary_tf = getattr(Config.Horizons, 'Swing', {})['primary_tf']
         else:
             self.primary_tf = '5m'
 
@@ -68,7 +68,7 @@ class StatisticalStrategy(Strategy):
                 
             stats = AnalyticsEngine.calculate_expectancy(sym_trades)
             e_proj = stats['expectancy']
-            friction = AnalyticsEngine.calculate_friction(sym_trades).get('friction_pct', 0.0)
+            friction = AnalyticsEngine.calculate_friction(sym_trades)['friction_pct']
             
             # Penalize E with current Friction if not already accounted
             # Note: calculate_expectancy usually uses Net PnL, so friction is included.
@@ -145,7 +145,7 @@ class StatisticalStrategy(Strategy):
                 market_regime = "UNKNOWN"
                 if self.portfolio and hasattr(self.portfolio, 'global_regime_data'):
                     regime_meta = self.portfolio.global_regime_data
-                    market_regime = regime_meta['symbol_regimes'].get(y_sym, regime_meta['sentiment'])
+                    market_regime = regime_meta['symbol_regimes'][y_sym]
                 if market_regime == "TRENDING" and h_val > 0.60:
                     logger.info(f"🛑 [STAT REGIME BLOCK] {y_sym}: Mean reversion blocked in TRENDING regime (H={h_val:.2f}).")
                     continue
@@ -386,18 +386,19 @@ class StatisticalStrategy(Strategy):
                     pos_y = self.portfolio.get_horizon_position(y_sym, self.horizon) or {}
                     pos_x = self.portfolio.get_horizon_position(x_sym, self.horizon) or {}
                 else:
-                    pos_y = self.portfolio.positions.get(y_sym, {})
-                    pos_x = self.portfolio.positions.get(x_sym, {})
+                    pos_y = self.portfolio.positions[y_sym]
+                    pos_x = self.portfolio.positions[x_sym]
 
                 # Ensure the positions actually belong to the Statistical Strategy
                 strat_id = getattr(self, 'strategy_id', 'STAT_ARB')
-                if pos_y['quantity'] != 0 and pos_y.get('strategy_id') != strat_id:
-                    pos_y = {}
-                if pos_x['quantity'] != 0 and pos_x.get('strategy_id') != strat_id:
-                    pos_x = {}
+                
+                qty_y = pos_y['quantity'] if 'quantity' in pos_y else 0.0
+                if qty_y != 0 and pos_y['strategy_id'] != strat_id:
+                    qty_y = 0.0
                     
-                qty_y = pos_y['quantity']
-                qty_x = pos_x['quantity']
+                qty_x = pos_x['quantity'] if 'quantity' in pos_x else 0.0
+                if qty_x != 0 and pos_x['strategy_id'] != strat_id:
+                    qty_x = 0.0
                 
                 # Determine current state based on portfolio
                 current_state = 0
@@ -448,7 +449,7 @@ class StatisticalStrategy(Strategy):
                         self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
                     continue # Stop processing for this symbol
 
-                if self.invested.get(y_sym, 0) == 0:
+                if self.invested[y_sym] == 0:
                     if z_score < -effective_z_entry:
                         # Check Trend for Y (ETH)
                         trend_y = self._get_1h_trend(y_sym)
@@ -553,7 +554,7 @@ class StatisticalStrategy(Strategy):
                             self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
                             # self.invested = -1 # Wait for fill
 
-                elif self.invested.get(y_sym, 0) == 1:
+                elif self.invested[y_sym] == 1:
                     # Exit Long Spread when Z-score returns to mean
                     if z_score >= -self.z_exit:
                         print(f"EXIT LONG SPREAD (Z={z_score:.2f})")
@@ -564,7 +565,7 @@ class StatisticalStrategy(Strategy):
                         self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
                         self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
 
-                elif self.invested.get(y_sym, 0) == -1:
+                elif self.invested[y_sym] == -1:
                     # Exit Short Spread when Z-score returns to mean
                     if z_score <= self.z_exit:
                         print(f"EXIT SHORT SPREAD (Z={z_score:.2f})")
@@ -590,7 +591,7 @@ class StatisticalStrategy(Strategy):
                     ema_200 = calculate_ema_jit(closes_1h, period=200)[-1]
                     return 'UP' if ema_50 > ema_200 else 'DOWN'
         except:
-            from utils.error_handler import SystemIntegrityError
+            from core.exceptions import SystemIntegrityError
             raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
         return 'NEUTRAL'
 

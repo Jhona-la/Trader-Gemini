@@ -23,7 +23,7 @@ class Genotype:
         "rsi_overbought": 70,
         "rsi_oversold": 30,
         "adx_threshold": 25,
-        "strength_threshold": 0.6,
+        "strength_threshold": 0.50,
         
         # Risk Management (Institutional Optimization)
         "tp_pct": 0.015,
@@ -59,7 +59,7 @@ class Genotype:
 
     def init_brain(self, input_size: int, output_size: int):
         """Initialize random neural weights if empty"""
-        if not self.genes.get('brain_weights'):
+        if not self.genes['brain_weights']:
             import numpy as np
             # Xavier Initialization-like range
             limit = np.sqrt(6 / (input_size + output_size))
@@ -68,11 +68,11 @@ class Genotype:
 
 
     def get(self, key: str, default: Any = None) -> Any:
-        val = self.genes.get(key)
+        val = self.genes[key]
         if val is None:
-            val = self.genes.get(key.upper())
+            val = self.genes[key.upper()]
         if val is None:
-            val = self.genes.get(key.lower())
+            val = self.genes[key.lower()]
         return default if val is None else val
 
     def to_dict(self) -> Dict[str, Any]:

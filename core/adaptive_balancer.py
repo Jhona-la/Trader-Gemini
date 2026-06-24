@@ -93,7 +93,7 @@ class AdaptiveBalancer:
                 self.update_volatility(sym, vol)
         
         # Sort by smoothed volatility (descending)
-        valid_syms = [(s, self._vol_ema.get(s, 0.0)) for s in self.symbols]
+        valid_syms = [(s, self._vol_ema[s]) for s in self.symbols]
         sorted_syms = sorted(valid_syms, key=lambda x: x[1], reverse=True)
         
         n = len(sorted_syms)
@@ -123,20 +123,20 @@ class AdaptiveBalancer:
         """
         return sorted(
             self.priority_map.keys(), 
-            key=lambda s: self.priority_map.get(s, 0.5), 
+            key=lambda s: self.priority_map[s], 
             reverse=True
         )
     
     def get_priority(self, symbol: str) -> float:
         """Returns the priority weight for a single symbol."""
-        return self.priority_map.get(symbol, 0.5)
+        return self.priority_map[symbol]
     
     def should_skip(self, symbol: str, threshold: float = 0.15) -> bool:
         """
         Returns True if a symbol's priority is below threshold.
         Used for aggressive CPU savings in ZOMBIE/CHOPPY regimes.
         """
-        return self.priority_map.get(symbol, 1.0) < threshold
+        return self.priority_map[symbol] < threshold
     
     def add_symbol(self, symbol: str):
         """Hot-add a new symbol to the balancer."""

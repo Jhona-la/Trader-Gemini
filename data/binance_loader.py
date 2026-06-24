@@ -398,30 +398,79 @@ class BinanceData(DataProvider):
                             try:
                                 raw_msg = await ws.recv()
                                 
-                                # FASE II: PARSING
+                                # [TELEMETRÍA NANOSEGUNDOS] Ingestión de red a CPU
+                                t0_ingestion = time.perf_counter_ns()
+                                
+                                # FASE II: PARSING ZERO-COPY RUST FFI
                                 raw_bytes = raw_msg.encode('utf-8') if isinstance(raw_msg, str) else raw_msg
                                 
-                                # Use Cython FFI directly for Klines later, but parse headers here
+                                # ⚡ RUST QUANTUM ENGINE BYPASS
+                                if stream_type == 'depth':
+                                    res = ffi_fast_parse_depth(raw_bytes)
+                                    if res is not None:
+                                        uid = int(res[1])
+                                        if is_duplicate(f"depth_{uid}"):
+                                            continue
+                                            
+                                        event_time = int(res[0])
+                                        if event_time > 0:
+                                            local_time = int((time.time() + self.system_drift_ms / 1000.0) * 1000)
+                                            latency = local_time - event_time
+                                            if 0 <= latency < 5000:
+                                                self.ws_latency_history.append(latency)
+                                                
+                                        # Convert res to dict to maintain compatibility with downstream _process_depth_update
+                                        # Stream name is needed to infer symbol
+                                        stream_name = getattr(ws, 'path', streams[0] if len(streams)==1 else "")
+                                        process_func(res, stream_name) 
+                                        
+                                        t1_ingestion = time.perf_counter_ns()
+                                        from utils.latency_monitor import LatencyMonitor
+                                        LatencyMonitor().track_ws_ingestion(t1_ingestion - t0_ingestion)
+                                        continue
+                                        
+                                elif stream_type == 'trades':
+                                    res = ffi_fast_parse_trade(raw_bytes)
+                                    if res is not None:
+                                        uid = int(res[1])
+                                        if is_duplicate(f"trades_{uid}"):
+                                            continue
+                                        
+                                        event_time = int(res[0])
+                                        if event_time > 0:
+                                            local_time = int((time.time() + self.system_drift_ms / 1000.0) * 1000)
+                                            latency = local_time - event_time
+                                            if 0 <= latency < 5000:
+                                                self.ws_latency_history.append(latency)
+                                                
+                                        stream_name = getattr(ws, 'path', streams[0] if len(streams)==1 else "")
+                                        process_func(res, stream_name)
+                                        
+                                        t1_ingestion = time.perf_counter_ns()
+                                        from utils.latency_monitor import LatencyMonitor
+                                        LatencyMonitor().track_ws_ingestion(t1_ingestion - t0_ingestion)
+                                        continue
+
+                                # Fallback para Kline/Liquidations
                                 msg = orjson.loads(raw_bytes)
-                                
                                 if stream_type == 'kline':
                                     msg['_raw_bytes'] = raw_bytes
                                 
                                 # Extracción de Unique ID para deduplicación O(1)
                                 uid = None
                                 if stream_type == 'depth':
-                                    uid = msg.get('data', {}).get('lastUpdateId')
+                                    uid = msg['data']['lastUpdateId']
                                 elif stream_type == 'trades':
-                                    uid = msg.get('data', {}).get('a') # Aggregate trade ID
+                                    uid = msg['data']['a'] # Aggregate trade ID
                                 elif stream_type == 'liquidations':
-                                    data = msg.get('data', {}).get('o', {})
-                                    uid = f"{data.get('s')}_{data.get('S')}_{data.get('p')}_{data.get('q')}_{data.get('T')}"
+                                    data = msg['data']['o']
+                                    uid = f"{data['s']}_{data['S']}_{data['p']}_{data['q']}_{data['T']}"
                                 
                                 if uid and is_duplicate(f"{stream_type}_{uid}"):
                                     continue
                                     
                                 # Mutación 36: Quantum Ping-Drift (Latency tracking)
-                                event_time = msg.get('data', {}).get('E', 0)
+                                event_time = msg['data']['E']
                                 if event_time > 0:
                                     local_time = int((time.time() + self.system_drift_ms / 1000.0) * 1000)
                                     latency = local_time - event_time
@@ -431,6 +480,10 @@ class BinanceData(DataProvider):
                                         self.current_ws_latency = sum(self.ws_latency_history) / len(self.ws_latency_history)
                                         
                                 process_func(msg)
+                                
+                                t1_ingestion = time.perf_counter_ns()
+                                from utils.latency_monitor import LatencyMonitor
+                                LatencyMonitor().track_ws_ingestion(t1_ingestion - t0_ingestion)
                             except asyncio.TimeoutError:
                                 continue
                             except Exception as e:
@@ -478,12 +531,12 @@ class BinanceData(DataProvider):
                 
             data = msg['data']
             k = data['k']
-            symbol_raw = data.get('s', '')
+            symbol_raw = data['s']
             symbol = f"{symbol_raw[:-4]}/{symbol_raw[-4:]}" if symbol_raw.endswith('USDT') else symbol_raw
             
             # [Phase VII] PURE METAL: Parse via Rust FFI (Zero-Copy)
-            idx = self.symbol_to_index.get(symbol, -1)
-            raw_bytes = msg.get('_raw_bytes')
+            idx = self.symbol_to_index[symbol]
+            raw_bytes = msg['_raw_bytes']
             is_closed = False
             
             o, h, l, c, v, ts = 0.0, 0.0, 0.0, 0.0, 0.0, 0
@@ -504,32 +557,32 @@ class BinanceData(DataProvider):
                     is_closed = (res == 1)
                     
                     # Backfill OHL from python dict for now
-                    o = float(k.get('o', 0))
-                    h = float(k.get('h', 0))
-                    l = float(k.get('l', 0))
-                    ts = int(k.get('t', 0))
+                    o = float(k['o'])
+                    h = float(k['h'])
+                    l = float(k['l'])
+                    ts = int(k['t'])
                 else:
                     return # Parse error
             else:
                 # Fallback to python parsing
-                o = float(k.get('o', 0))
-                h = float(k.get('h', 0))
-                l = float(k.get('l', 0))
-                c = float(k.get('c', 0))
-                v = float(k.get('v', 0))
-                is_closed = k.get('x', False)
-                ts = int(k.get('t', 0))
+                o = float(k['o'])
+                h = float(k['h'])
+                l = float(k['l'])
+                c = float(k['c'])
+                v = float(k['v'])
+                is_closed = k['x']
+                ts = int(k['t'])
             
             # Throttling MarketEvents for non-closed candles to max 1 per 500ms
             now = time.time()
             if not hasattr(self, '_last_kline_event'):
                 self._last_kline_event = {}
-            last_time = self._last_kline_event.get(symbol, 0)
+            last_time = self._last_kline_event[symbol]
             
             if is_closed or (now - last_time) >= 0.5:
                 # Update the 1m buffer with this latest candle
                 with self._data_lock:
-                    buf = self.buffers_1m.get(symbol)
+                    buf = self.buffers_1m[symbol]
                     if buf:
                         last_t_arr = buf.get_last(1)
                         if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
@@ -540,10 +593,16 @@ class BinanceData(DataProvider):
                 event_ts = time.time() + (self.system_drift_ms / 1000.0)
                 event_timestamp = datetime.fromtimestamp(event_ts, timezone.utc)
 
-                # Emit the event [FASE 2 & 3: ZERO-COPY OBJECT POOLING]
-                from core.events import MarketEventPool
-                evt = MarketEventPool.acquire()
-                evt.update_in_place(symbol, event_timestamp, c, h, l, is_closed)
+                # Emit the event
+                from core.events import MarketEvent
+                evt = MarketEvent(
+                    symbol=symbol,
+                    timestamp=event_timestamp,
+                    close_price=c,
+                    high_price=h,
+                    low_price=l,
+                    is_closed=is_closed
+                )
                 self._push_event(evt)
                 self._last_kline_event[symbol] = now
                 
@@ -561,7 +620,7 @@ class BinanceData(DataProvider):
                 return
                 
             data = msg['data']
-            stream_name = msg.get('stream', '')
+            stream_name = msg['stream']
             symbol_raw = stream_name.split('@')[0].upper()
             
             # Format back to BTC/USDT
@@ -572,7 +631,7 @@ class BinanceData(DataProvider):
                 
             # Throttle processing to 500ms to save CPU
             now = time.time()
-            if (now - self.last_depth_update.get(symbol, 0)) < 0.5:
+            if (now - self.last_depth_update[symbol]) < 0.5:
                 return
             self.last_depth_update[symbol] = now
             
@@ -585,8 +644,8 @@ class BinanceData(DataProvider):
             total_ask_vol = 0.0
             
             # Fast LOB Cython Update
-            bids_list = data.get('bids', [])
-            asks_list = data.get('asks', [])
+            bids_list = data['bids']
+            asks_list = data['asks']
             ob.update(bids_list, "bids")
             ob.update(asks_list, "asks")
             
@@ -603,9 +662,9 @@ class BinanceData(DataProvider):
             # [PHASE 11] Micro-Price Cython Optimization
             best_bid_price, best_bid_vol = 0.0, 0.0
             best_ask_price, best_ask_vol = 0.0, 0.0
-            if data.get('bids'):
+            if data['bids']:
                 best_bid_price, best_bid_vol = float(data['bids'][0][0]), float(data['bids'][0][1])
-            if data.get('asks'):
+            if data['asks']:
                 best_ask_price, best_ask_vol = float(data['asks'][0][0]), float(data['asks'][0][1])
                 
             micro_price = compute_microprice_jit(best_bid_price, best_bid_vol, best_ask_price, best_ask_vol)
@@ -632,7 +691,7 @@ class BinanceData(DataProvider):
             
             # Iceberg proxy: Divergencia severa entre OFI (Limit Orders) y CVD (Market Orders)
             # Ejemplo: OFI muy alcista (+0.8) pero CVD muy negativo = Órdenes limitadas ocultas absorbiendo ventas (Iceberg Buy)
-            cvd = self.order_flow_metrics[symbol].get('cvd', 0.0)
+            cvd = self.order_flow_metrics[symbol]['cvd']
             iceberg_score = 0.0
             if imbalance > 0.6 and cvd < -50000:
                 iceberg_score = 0.9 # Hidden Buy Iceberg
@@ -660,16 +719,16 @@ class BinanceData(DataProvider):
                 return
                 
             data = msg['data']
-            symbol_raw = data.get('s', '')
+            symbol_raw = data['s']
             symbol = f"{symbol_raw[:-4]}/{symbol_raw[-4:]}" if symbol_raw.endswith('USDT') else symbol_raw
             
             # 🔮 [PHASE 5] MULTI-COIN ORACLE (LEAD-LAG ARBITRAGE)
             # QUÉ: Rastrea la velocidad de BTC/USDT para inyectar factor de aceleración a Altcoins.
             if symbol == 'BTC/USDT':
                 if not hasattr(self, '_btc_oracle_data'):
-                    self._btc_oracle_data = {'last_price': float(data.get('p', 0)), 'last_time': time.time(), 'velocity': 0.0}
+                    self._btc_oracle_data = {'last_price': float(data['p']), 'last_time': time.time(), 'velocity': 0.0}
                 else:
-                    curr_price = float(data.get('p', 0))
+                    curr_price = float(data['p'])
                     curr_time = time.time()
                     dt = curr_time - self._btc_oracle_data['last_time']
                     if dt >= 0.1: # Calculate velocity every 100ms max to avoid noise
@@ -703,8 +762,8 @@ class BinanceData(DataProvider):
                 metrics['cvd'] = 0.0
                 metrics['last_reset'] = now
                 
-            qty = float(data.get('q', 0))
-            is_buyer_maker = data.get('m', False)
+            qty = float(data['q'])
+            is_buyer_maker = data['m']
             
             # In Binance, if buyer is maker, the trade was initiated by the seller (sell market order)
             if is_buyer_maker:
@@ -737,14 +796,14 @@ class BinanceData(DataProvider):
                 return
             
             data = msg['data']['o']
-            symbol_raw = data.get('s', '')
+            symbol_raw = data['s']
             
             # Format back to BTC/USDT
             symbol = f"{symbol_raw[:-4]}/{symbol_raw[-4:]}" if symbol_raw.endswith('USDT') else symbol_raw
             
-            side = data.get('S', '') # SELL = Long liquidation, BUY = Short liquidation
-            price = float(data.get('ap', data.get('p', 0))) # Average price
-            qty = float(data.get('q', 0))
+            side = data['S'] # SELL = Long liquidation, BUY = Short liquidation
+            price = float(data['ap']) # Average price
+            qty = float(data['q'])
             usd_value = price * qty
             
             if usd_value < 5000: # Filter noise
@@ -837,11 +896,11 @@ class BinanceData(DataProvider):
                             oi = float(oi_resp['openInterest']) if 'openInterest' in oi_resp else 0.0
                             
                             # Calculate OI Delta if exists
-                            old_oi = self.derivatives_metrics.get(s, {}).get('oi', oi)
+                            old_oi = self.derivatives_metrics[s]['oi']
                             oi_delta = ((oi - old_oi) / old_oi) if old_oi > 0 else 0.0
                             
                             # Phase 29: Preserve WS-accumulated liquidations and reset per-minute
-                            current_liq = self.derivatives_metrics.get(s, {}).get('liquidations', 0.0)
+                            current_liq = self.derivatives_metrics[s]['liquidations']
                             
                             self.derivatives_metrics[s] = {
                                 'funding_rate': funding_rate,
@@ -993,7 +1052,7 @@ class BinanceData(DataProvider):
                     '4h': self.buffers_4h, '1d': self.buffers_1d,
                     '1w': self.buffers_1w,
                 }
-            target_map = self._timeframe_map.get(timeframe, self.buffers_1m)
+            target_map = self._timeframe_map[timeframe]
 
             with self._data_lock:
                 if symbol not in target_map:
@@ -1010,7 +1069,7 @@ class BinanceData(DataProvider):
                     return None
                 
                 # ZERO-ALLOC: Reuse pre-allocated buffer
-                cache = self._bar_output_cache.get(symbol)
+                cache = self._bar_output_cache[symbol]
                 if cache is not None and actual_len <= self._BAR_OUTPUT_MAX:
                     res = cache[:actual_len]
                     res['timestamp'] = t
@@ -1044,18 +1103,17 @@ class BinanceData(DataProvider):
 
     def get_data(self, symbol, limit=500):
         """
-        Retorna los últimos `limit` bars como un DataFrame de Pandas para compatibilidad
-        con Phalanx, Arbitrage y StatArb.
+        Retorna los últimos `limit` bars como un DataFrame de Polars para compatibilidad
+        con Phalanx, Arbitrage y StatArb y alto rendimiento Zero-Copy.
         """
         bars = self.get_latest_bars(symbol, n=limit, timeframe="1m")
-        import pandas as pd
+        import polars as pl
         if bars is None or len(bars) == 0:
-            return pd.DataFrame()
-        # Convert structured array to DataFrame
-        df = pd.DataFrame(bars)
-        # Convert timestamp (ms) to DatetimeIndex
-        df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df.set_index('datetime', inplace=True)
+            return pl.DataFrame()
+            
+        # Zero-copy structured array to Polars
+        pl_dict = {name: bars[name].astype('float64') if bars[name].dtype.kind == 'f' else bars[name] for name in bars.dtype.names}
+        df = pl.DataFrame(pl_dict)
         return df
 
 
@@ -1673,7 +1731,7 @@ class BinanceData(DataProvider):
                     self.last_ws_msg_time = time.time()
                     
                     # Routing based on stream name or content
-                    stream_name = msg.get('stream', '')
+                    stream_name = msg['stream']
                     data = msg['data']
 
                     if 'kline' in stream_name:
@@ -1702,14 +1760,14 @@ class BinanceData(DataProvider):
         -1.0 means extreme SELL pressure (Empty Bid side)
         """
         try:
-            symbol = data.get('s')
+            symbol = data['s']
             if not symbol:
                 return
                 
-            bid_qty = float(data.get('B', 0.0))
-            ask_qty = float(data.get('A', 0.0))
-            bid_price = float(data.get('b', 0.0))
-            ask_price = float(data.get('a', 0.0))
+            bid_qty = float(data['B'])
+            ask_qty = float(data['A'])
+            bid_price = float(data['b'])
+            ask_price = float(data['a'])
             
             if bid_qty + ask_qty > 0:
                 imbalance = (bid_qty - ask_qty) / (bid_qty + ask_qty)
@@ -1883,7 +1941,7 @@ class BinanceData(DataProvider):
             
             # Helper to parse tf to seconds
             tf_sec_map = {'1m': 60.0, '5m': 300.0, '15m': 900.0, '1h': 3600.0, '4h': 14400.0, '1d': 86400.0, '1w': 604800.0}
-            expected_diff_s = tf_sec_map.get(tf, 60.0)
+            expected_diff_s = tf_sec_map[tf]
             
             # Lockless window append (sliding window is thread safe for single producer)
             if self.latest_data[tf_key]:
@@ -1963,7 +2021,7 @@ class BinanceData(DataProvider):
 
             # Time-based throttle: at most once every 0.1s per symbol/timeframe
             if not should_trigger:
-                last_t = self.last_event_time.get(tf_key, 0)
+                last_t = self.last_event_time[tf_key]
                 if now_ts - last_t > 0.1:
                     should_trigger = True
             
@@ -1972,7 +2030,7 @@ class BinanceData(DataProvider):
                 self.last_event_time[tf_key] = now_ts
                 
                 # Build event with Order Flow Metrics (Phase 13)
-                metrics = self.order_flow_metrics.get(internal_symbol)
+                metrics = self.order_flow_metrics[internal_symbol]
                 if metrics:
                     of_metrics = metrics.copy()
                     
@@ -2035,7 +2093,7 @@ class BinanceData(DataProvider):
                 '1d': Client.KLINE_INTERVAL_1DAY,
                 '1w': Client.KLINE_INTERVAL_1WEEK
             }
-            interval = interval_map.get(timeframe, Client.KLINE_INTERVAL_1MINUTE)
+            interval = interval_map[timeframe]
             
             # Fetch from REST
             loop = asyncio.get_running_loop()
@@ -2238,11 +2296,11 @@ class BinanceData(DataProvider):
                 ask_is_wall = max_ask_vol > avg_ask_other * self._WALL_MULTIPLIER and avg_ask_other > 0
                 
                 # Compare with previous snapshot
-                prev = self._wall_tracker.get(internal_sym)
+                prev = self._wall_tracker[internal_sym]
                 
                 if prev and (now - prev['timestamp']) < 0.5:  # <500ms between snapshots
                     # Check BID wall cancellation (whale removed buy wall → SHORT signal)
-                    if prev.get('bid_is_wall', False) and prev['bid_wall'] > 0:
+                    if prev['bid_is_wall'] and prev['bid_wall'] > 0:
                         # Was there a wall at this price level before?
                         current_vol_at_price = 0.0
                         for i in range(min(5, len(bids))):
@@ -2254,7 +2312,7 @@ class BinanceData(DataProvider):
                         
                         if cancel_ratio >= self._SPOOF_CANCEL_RATIO:
                             # SPOOF CONFIRMED! Bid wall was fake → Price will DROP
-                            last_spoof = self._spoof_cooldown.get(internal_sym, 0.0)
+                            last_spoof = self._spoof_cooldown[internal_sym]
                             if (now - last_spoof) > self._SPOOF_COOLDOWN_S:
                                 self._spoof_cooldown[internal_sym] = now
                                 mid_price = (max_bid_price + max_ask_price) / 2 if max_ask_price > 0 else max_bid_price
@@ -2285,7 +2343,7 @@ class BinanceData(DataProvider):
                                 self._push_event(spoof_signal)
                     
                     # Check ASK wall cancellation (whale removed sell wall → LONG signal)
-                    if prev.get('ask_is_wall', False) and prev['ask_wall'] > 0:
+                    if prev['ask_is_wall'] and prev['ask_wall'] > 0:
                         current_vol_at_price = 0.0
                         for i in range(min(5, len(asks))):
                             if abs(float(asks[i][0]) - prev['ask_wall_price']) < 0.01:
@@ -2296,7 +2354,7 @@ class BinanceData(DataProvider):
                         
                         if cancel_ratio >= self._SPOOF_CANCEL_RATIO:
                             # SPOOF CONFIRMED! Ask wall was fake → Price will PUMP
-                            last_spoof = self._spoof_cooldown.get(internal_sym, 0.0)
+                            last_spoof = self._spoof_cooldown[internal_sym]
                             if (now - last_spoof) > self._SPOOF_COOLDOWN_S:
                                 self._spoof_cooldown[internal_sym] = now
                                 mid_price = (max_bid_price + max_ask_price) / 2 if max_ask_price > 0 else max_bid_price
@@ -2594,9 +2652,9 @@ class BinanceData(DataProvider):
                     self.last_vbi = {}
                     self.last_vbi_vel = {}
                 
-                last_v = self.last_vbi.get(internal_sym, vbi)
+                last_v = self.last_vbi[internal_sym]
                 vel = vbi - last_v
-                last_vel = self.last_vbi_vel.get(internal_sym, 0.0)
+                last_vel = self.last_vbi_vel[internal_sym]
                 accel = vel - last_vel
                 
                 self.last_vbi[internal_sym] = vbi
@@ -2694,7 +2752,7 @@ class BinanceData(DataProvider):
         Returns latest liquidity check for a symbol.
         """
         clean_sym = symbol.replace('/', '')
-        return self.liquidity_cache.get(clean_sym, None)
+        return self.liquidity_cache[clean_sym]
 
     # ==========================================================
     # ✅ PHASE 5: DATA PERSISTENCE (PARQUET)
@@ -2853,12 +2911,42 @@ class BinanceData(DataProvider):
         except Exception as e:
             logger.error(f"Msg Handler Error: {e}")
 
-    def _process_depth_update(self, data):
+    def _process_depth_update(self, data, stream_name=None):
         """
         Updates the internal L2 OrderBook and calculates OFI.
         """
         try:
-            symbol = data.get('s')
+            import numpy as np
+            if isinstance(data, np.ndarray):
+                # data = [E, u, bp, bq, ap, aq]
+                if not stream_name: return
+                symbol = stream_name.split('@')[0].upper()
+                internal_sym = symbol
+                
+                if internal_sym not in getattr(self, 'orderbooks', {}):
+                    return
+                ob = self.orderbooks[internal_sym]
+                
+                # Direct C-level Float update
+                ob.update_bid(float(data[2]), float(data[3]))
+                ob.update_ask(float(data[4]), float(data[5]))
+                
+                # Update metrics
+                if internal_sym not in self.order_flow_metrics:
+                    self.order_flow_metrics[internal_sym] = {}
+                    
+                self.order_flow_metrics[internal_sym]['l2_ofi'] = ob.calculate_ofi()
+                self.order_flow_metrics[internal_sym]['l2_spread'] = ob.calculate_spread()
+                
+                micro = ob.calculate_microprice()
+                best_bid = float(data[2])
+                best_ask = float(data[4])
+                mid = (best_bid + best_ask) / 2.0
+                dist = (micro - mid) / (mid + 1e-9) if mid > 0 else 0.0
+                self.order_flow_metrics[internal_sym]['l2_microprice_dist'] = dist
+                return
+
+            symbol = data.get('s', '')
             if not symbol: return
             
             internal_sym = symbol
@@ -2873,8 +2961,8 @@ class BinanceData(DataProvider):
                 
             ob = self.orderbooks[internal_sym]
             
-            bids = data.get('b', [])
-            asks = data.get('a', [])
+            bids = data['b']
+            asks = data['a']
             
             for b in bids:
                 ob.update_bid(float(b[0]), float(b[1]))
@@ -2903,12 +2991,39 @@ class BinanceData(DataProvider):
             import logging
             logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
 
-    def _process_trade_update(self, data):
+    def _process_trade_update(self, data, stream_name=None):
         """
         Processes standard trades and calculates Whale Flow Proxy.
         """
         try:
-            symbol = data.get('s')
+            import numpy as np
+            if isinstance(data, np.ndarray):
+                # data = [E, t, p, q, m]
+                if not stream_name: return
+                symbol = stream_name.split('@')[0].upper()
+                internal_sym = symbol
+                
+                qty = float(data[3])
+                price = float(data[2])
+                is_buyer_mm = bool(data[4])
+                trade_usd = qty * price
+                
+                if trade_usd > 100000:
+                    if not hasattr(self, 'derivatives_metrics'):
+                        self.derivatives_metrics = {}
+                    if internal_sym not in self.derivatives_metrics:
+                        self.derivatives_metrics[internal_sym] = {'funding_rate': 0.0, 'oi': 0.0, 'oi_delta': 0.0, 'liquidations': 0.0, 'whale_flow': 0.0}
+                    
+                    flow = trade_usd if not is_buyer_mm else -trade_usd
+                    self.derivatives_metrics[internal_sym]['whale_flow'] = self.derivatives_metrics[internal_sym]['whale_flow'] + flow
+                    
+                # Passthrough for agg trade is handled manually since we don't have the full dict
+                # We can construct a mock dict or bypass
+                mock_data = {'s': symbol, 'p': str(price), 'q': str(qty), 'T': int(data[1]), 'm': is_buyer_mm}
+                self._process_agg_trade(mock_data)
+                return
+
+            symbol = data.get('s', '')
             if not symbol: return
             
             internal_sym = symbol
@@ -2918,9 +3033,9 @@ class BinanceData(DataProvider):
                         internal_sym = s
                         break
                         
-            qty = float(data.get('q', 0))
-            price = float(data.get('p', 0))
-            is_buyer_mm = data.get('m', False)
+            qty = float(data['q'])
+            price = float(data['p'])
+            is_buyer_mm = data['m']
             trade_usd = qty * price
             
             # 🐋 Whale Flow Proxy: Trades > $100k USD
@@ -2932,7 +3047,7 @@ class BinanceData(DataProvider):
                 
                 # Positive if market buy (buyer maker = False), Negative if market sell (buyer maker = True)
                 flow = trade_usd if not is_buyer_mm else -trade_usd
-                self.derivatives_metrics[internal_sym]['whale_flow'] = self.derivatives_metrics[internal_sym].get('whale_flow', 0.0) + flow
+                self.derivatives_metrics[internal_sym]['whale_flow'] = self.derivatives_metrics[internal_sym]['whale_flow'] + flow
                 
             # Passthrough to agg trade logic for delta and VPIN
             self._process_agg_trade(data)
@@ -3024,7 +3139,7 @@ class BinanceData(DataProvider):
                     internal_sym = s
                     break
                     
-        metrics = self.order_flow_metrics.get(internal_sym, {})
+        metrics = self.order_flow_metrics[internal_sym]
         of_metrics = metrics.copy()
         
         # Merge True Microstructure
@@ -3032,7 +3147,7 @@ class BinanceData(DataProvider):
             micro_metrics = self.microstructure[internal_sym].get_metrics()
             of_metrics.update(micro_metrics)
             # Mutación 13: Expose explicit toxicity_index
-            of_metrics['toxicity_index'] = micro_metrics.get('vpin', 0.0)
+            of_metrics['toxicity_index'] = micro_metrics['vpin']
             
         return of_metrics
 
@@ -3040,16 +3155,10 @@ class BinanceData(DataProvider):
         """
         Returns futures derivatives metrics (Funding, Open Interest, Liquidations).
         """
-        return getattr(self, 'derivatives_metrics', {}).get(symbol, {
-            'funding_rate': 0.0,
-            'oi': 0.0,
-            'oi_delta': 0.0,
-            'liquidations': 0.0,
-            'whale_flow': 0.0
-        })
+        return getattr(self, 'derivatives_metrics', {})[symbol]
 
     def get_orderbook(self, symbol: str):
         """
         Returns the OrderBook instance for a symbol to access L2 metrics.
         """
-        return getattr(self, 'orderbooks', {}).get(symbol, None)
+        return getattr(self, 'orderbooks', {})[symbol]

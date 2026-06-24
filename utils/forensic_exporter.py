@@ -22,10 +22,10 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 try:
-    import pandas as pd
-    HAS_PANDAS = True
+    import polars as pl
+    HAS_POLARS = True
 except ImportError:
-    HAS_PANDAS = False
+    HAS_POLARS = False
 
 from utils.logger import logger
 
@@ -64,7 +64,7 @@ class ForensicExporter:
         scenario: str = "A"
     ) -> Optional[str]:
         """Export per-strategy performance attribution to Parquet."""
-        if not HAS_PANDAS or not strategy_attribution:
+        if not HAS_POLARS or not strategy_attribution:
             return None
 
         rows = []
@@ -80,13 +80,13 @@ class ForensicExporter:
                 "sharpe_contribution": metrics["net_pnl"],  # Simplified
             })
 
-        df = pd.DataFrame(rows)
+        df = pl.DataFrame(rows)
         path = os.path.join(self.output_dir, f"strategy_attribution_{scenario}_{run_id}.parquet")
         try:
-            df.to_parquet(path, index=False)
+            df.write_parquet(path)
         except Exception:
             path = path.replace(".parquet", ".csv")
-            df.to_csv(path, index=False)
+            df.write_csv(path)
         logger.info(f"📊 [FORENSIC] Strategy Attribution exported to {path}")
         return path
 
@@ -97,7 +97,7 @@ class ForensicExporter:
         scenario: str = "A"
     ) -> Optional[str]:
         """Export per-symbol performance attribution to Parquet."""
-        if not HAS_PANDAS or not symbol_attribution:
+        if not HAS_POLARS or not symbol_attribution:
             return None
 
         rows = []
@@ -113,13 +113,13 @@ class ForensicExporter:
                 "fees": metrics["fees"],
             })
 
-        df = pd.DataFrame(rows)
+        df = pl.DataFrame(rows)
         path = os.path.join(self.output_dir, f"symbol_attribution_{scenario}_{run_id}.parquet")
         try:
-            df.to_parquet(path, index=False)
+            df.write_parquet(path)
         except Exception:
             path = path.replace(".parquet", ".csv")
-            df.to_csv(path, index=False)
+            df.write_csv(path)
         logger.info(f"📊 [FORENSIC] Symbol Attribution exported to {path}")
         return path
 
@@ -130,16 +130,16 @@ class ForensicExporter:
         scenario: str = "A"
     ) -> Optional[str]:
         """Export conflict log to Parquet."""
-        if not HAS_PANDAS or not conflict_log:
+        if not HAS_POLARS or not conflict_log:
             return None
 
-        df = pd.DataFrame(conflict_log)
+        df = pl.DataFrame(conflict_log)
         path = os.path.join(self.output_dir, f"conflict_log_{scenario}_{run_id}.parquet")
         try:
-            df.to_parquet(path, index=False)
+            df.write_parquet(path)
         except Exception:
             path = path.replace(".parquet", ".csv")
-            df.to_csv(path, index=False)
+            df.write_csv(path)
         logger.info(f"📊 [FORENSIC] Conflict Log exported to {path} ({len(conflict_log)} entries)")
         return path
 
@@ -153,30 +153,26 @@ class ForensicExporter:
         """
         Export the top N best and worst trades for trade replay analysis.
         """
-        if not HAS_PANDAS or not trades:
+        if not HAS_POLARS or not trades:
             return None
 
-        df = pd.DataFrame(trades)
+        df = pl.DataFrame(trades)
         if "net_pnl" not in df.columns:
             return None
 
-        df_sorted = df.sort_values("net_pnl", ascending=False)
+        df_sorted = df.sort("net_pnl", descending=True)
         top_trades = df_sorted.head(top_n)
         bottom_trades = df_sorted.tail(top_n)
 
-        combined = pd.concat([top_trades, bottom_trades])
+        combined = pl.concat([top_trades, bottom_trades])
         if "trade_id" in combined.columns:
-            combined = combined.drop_duplicates(subset=["trade_id"])
-        else:
-            # Fallback if trade_id is missing, drop dict columns before dropping duplicates
-            cols_to_use = [c for c in combined.columns if not isinstance(combined[c].iloc[0], (dict, list))] if not combined.empty else combined.columns
-            combined = combined.drop_duplicates(subset=cols_to_use)
+            combined = combined.unique(subset=["trade_id"])
         path = os.path.join(self.output_dir, f"trade_replay_{scenario}_{run_id}.parquet")
         try:
-            combined.to_parquet(path, index=False)
+            combined.write_parquet(path)
         except Exception:
             path = path.replace(".parquet", ".csv")
-            combined.to_csv(path, index=False)
+            combined.write_csv(path)
         logger.info(f"📊 [FORENSIC] Trade Replay exported to {path} ({len(combined)} trades)")
         return path
 

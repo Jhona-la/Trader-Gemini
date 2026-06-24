@@ -217,7 +217,9 @@ class PhalanxStrategy(Strategy):
                     metrics = None
             
             # FORENSIC-DCA FIX #9: Robust multi-type conversion for price action data
-            if hasattr(data, 'iloc'):
+            if hasattr(data, 'to_dicts'): # Polars
+                price_action = data.tail(20).to_dicts()
+            elif hasattr(data, 'iloc'):
                 price_action = data.iloc[-20:].to_dict('records')
             elif isinstance(data, list):
                 price_action = data[-20:]

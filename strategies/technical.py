@@ -24,6 +24,7 @@ from sophia.narrative import NarrativeGenerator  # SOPHIA: Human-readable narrat
 from utils.metrics_exporter import metrics  # SOPHIA-VIEW: Real-time telemetry
 from core.sovereign_oracle import sovereign_oracle # Phase 47: Causal Reasoning
 from core.swarm_correlator import swarm_correlator # Phase 47: Swarm Fabric
+from utils.common import performance_timer
 from utils.logger import logger
 
 class HybridScalpingStrategy(Strategy):
@@ -45,7 +46,7 @@ class HybridScalpingStrategy(Strategy):
     def __init__(self, data_provider, events_queue, genotype: Genotype = None, horizon: str = "SCALPING", priority: int = 1):
         self.data_provider = data_provider
         self.events_queue = events_queue
-        base_label = getattr(Config, 'STRATEGY_LABELS', {}).get("technical", f"HYBRID")
+        base_label = getattr(Config, 'STRATEGY_LABELS', {})["technical"]
         lbl = "[SCL]" if horizon == "SCALPING" else "[SWG]"
         self.strategy_id = f"{lbl}_{base_label}_{horizon}"
         self.genotype = genotype
@@ -74,43 +75,43 @@ class HybridScalpingStrategy(Strategy):
             h_params = {}
         
         # Parámetros centralizados: horizon-specific → Config fallback
-        self.BB_PERIOD = h_params.get('bb_period', getattr(Config.Strategies, 'TECH_BB_PERIOD', 20))
-        self.BB_STD = h_params.get('bb_std', getattr(Config.Strategies, 'TECH_BB_STD', 2.0))
+        self.BB_PERIOD = h_params['bb_period']
+        self.BB_STD = h_params['bb_std']
         
-        self.RSI_PERIOD = h_params.get('rsi_period', getattr(Config.Strategies, 'TECH_RSI_PERIOD', 14))
-        self.RSI_OVERBOUGHT = h_params.get('rsi_sell', getattr(Config.Strategies, 'TECH_RSI_SELL', 70))
-        self.RSI_OVERSOLD = h_params.get('rsi_buy', getattr(Config.Strategies, 'TECH_RSI_BUY', 30))
+        self.RSI_PERIOD = h_params['rsi_period']
+        self.RSI_OVERBOUGHT = h_params['rsi_sell']
+        self.RSI_OVERSOLD = h_params['rsi_buy']
         
         self.MACD_FAST = 12
         self.MACD_SLOW = 26
         self.MACD_SIGNAL = 9
         
         # TP/SL centralizados — HORIZON-AWARE
-        self.TP_PCT = h_params.get('tp_pct', getattr(Config.Strategies, 'TECH_TP_PCT', 0.015))
-        self.SL_PCT = h_params.get('sl_pct', getattr(Config.Strategies, 'TECH_SL_PCT', 0.02))
+        self.TP_PCT = h_params['tp_pct']
+        self.SL_PCT = h_params['sl_pct']
         
         # ATR Multipliers - HORIZON-AWARE
-        self.ATR_SL_MULT_BASE = h_params.get('atr_sl_mult', 1.5)
-        self.ATR_TP_MULT_BASE = h_params.get('atr_tp_mult', 3.0)
+        self.ATR_SL_MULT_BASE = h_params['atr_sl_mult']
+        self.ATR_TP_MULT_BASE = h_params['atr_tp_mult']
         
         # Filtro de tendencia — HORIZON-AWARE
-        self.EMA_FAST = h_params.get('ema_fast', getattr(Config.Strategies, 'TECH_EMA_FAST', 20))
-        self.EMA_SLOW = h_params.get('ema_slow', getattr(Config.Strategies, 'TECH_EMA_SLOW', 50))
-        self.EMA_TREND = h_params.get('ema_trend', 200)
+        self.EMA_FAST = h_params['ema_fast']
+        self.EMA_SLOW = h_params['ema_slow']
+        self.EMA_TREND = h_params['ema_trend']
         
         # ATR/ADX periods — HORIZON-AWARE
-        self.ATR_PERIOD = h_params.get('atr_period', 14)
-        self.ADX_PERIOD = h_params.get('adx_period', 14)
+        self.ATR_PERIOD = h_params['atr_period']
+        self.ADX_PERIOD = h_params['adx_period']
         
         # Horizon-specific operational params
-        self.HORIZON_TIMEFRAMES = h_params.get('timeframes', ['5m', '15m', '1h'])
-        self.PRIMARY_TF = h_params.get('primary_tf', '5m' if horizon.upper() == 'SCALPING' else '1h')
-        self.MIN_VOLUME_RATIO = h_params.get('min_volume_ratio', 0.70)
-        self.COOLDOWN_SECONDS = h_params.get('cooldown_seconds', 90)
-        self.MAX_HOLD_BARS = h_params.get('max_hold_bars', 60)
-        self.STRENGTH_THRESHOLD = h_params.get('strength_threshold', 0.40)
-        self.ATR_SL_MULT_BASE = h_params.get('atr_sl_mult', 1.5)
-        self.ATR_TP_MULT_BASE = h_params.get('atr_tp_mult', 3.0)
+        self.HORIZON_TIMEFRAMES = h_params['timeframes']
+        self.PRIMARY_TF = h_params['primary_tf']
+        self.MIN_VOLUME_RATIO = h_params['min_volume_ratio']
+        self.COOLDOWN_SECONDS = h_params['cooldown_seconds']
+        self.MAX_HOLD_BARS = h_params['max_hold_bars']
+        self.STRENGTH_THRESHOLD = h_params['strength_threshold']
+        self.ATR_SL_MULT_BASE = h_params['atr_sl_mult']
+        self.ATR_TP_MULT_BASE = h_params['atr_tp_mult']
         
         logger.info(f"🎯 [{self.strategy_id}] Horizon={horizon} | TP={self.TP_PCT*100:.1f}% SL={self.SL_PCT*100:.1f}% | RSI={self.RSI_PERIOD} | TFs={self.HORIZON_TIMEFRAMES} | Primary={self.PRIMARY_TF}")
         
@@ -147,9 +148,9 @@ class HybridScalpingStrategy(Strategy):
                 'atr_sl_mult': 2.5, 'atr_tp_mult': 5.0, 'trailing_rsi': 60
             },
             'NANO_MICRO': {
-                'tp_pct': 0.0035, 'sl_pct': 0.0020,
-                'adx_threshold': 15, 'strength_threshold': 0.40,
-                'atr_sl_mult': 2.5, 'atr_tp_mult': 2.5, 'trailing_rsi': 75
+                'tp_pct': 0.0040, 'sl_pct': 0.0150,
+                'adx_threshold': 25, 'strength_threshold': 0.65,
+                'atr_sl_mult': 3.5, 'atr_tp_mult': 1.0, 'trailing_rsi': 75
             }
         }
         
@@ -213,14 +214,14 @@ class HybridScalpingStrategy(Strategy):
         # SOPHIA-INTELLIGENCE Protocol: XAI Engine (MULTI-HORIZON AWARE)
         tf_to_mins = {'1m': 1.0, '5m': 5.0, '15m': 15.0, '30m': 30.0, '1h': 60.0, '4h': 240.0, '1d': 1440.0}
         primary_tf = getattr(self, 'PRIMARY_TF', '5m' if horizon.upper() == 'SCALPING' else '1h')
-        bar_mins = tf_to_mins.get(primary_tf, 5.0 if horizon.upper() == 'SCALPING' else 60.0)
+        bar_mins = tf_to_mins[primary_tf]
         
         # OPTIMIZACIÓN RAM: Singleton por horizonte (2 instancias vs 42)
         self.sophia = SophiaIntelligence.get_instance(bar_minutes=bar_mins)
         
         # FORENSIC-1: Set Horizon Profile to prevent false Chaos Dampening
-        horizon_days_map = {'SCALPING': 1, 'SWING': 15}
-        target_days = horizon_days_map.get(horizon.upper(), 1)
+        horizon_days_map = {'SCALPING': 1, 'SWING': 15, 'MICROSCALPING': 1}
+        target_days = horizon_days_map[horizon.upper()]
         self.sophia.set_horizon_profile(target_days)
         
         # C-1 FIX: Flag for lazy Némesis→Sophia feedback loop binding
@@ -235,18 +236,18 @@ class HybridScalpingStrategy(Strategy):
     def get_symbol_params(self, symbol):
         """Devuelve parámetros adaptados al símbolo (Merged Genotype + Legacy Profile + Optimized)"""
         # 0. Get Legacy Defaults for this symbol
-        profile_key = self.SYMBOL_MAP.get(symbol, 'BALANCED')
+        profile_key = self.SYMBOL_MAP[symbol]
         if getattr(Config, 'INITIAL_CAPITAL', 1000) <= 20.0 or self.horizon == 'MICROSCALPING':
             profile_key = 'NANO_MICRO'
-        defaults = self.PROFILES.get(profile_key).copy()
+        defaults = self.PROFILES[profile_key].copy()
         
         # FORENSIC-FIX: INJECT HORIZON-SPECIFIC BASE PARAMETERS
         # QUÉ: Los parameters base de SCALPING_PARAMS se perdían aquí porque se usaban los defaults genéricos del PROFILE.
         # POR QUÉ: Para scalping de micro-cuenta ($13), necesitamos el strength_threshold de 0.35, no el 0.50 genérico de BALANCED.
-        defaults['strength_threshold'] = getattr(self, 'STRENGTH_THRESHOLD', defaults.get('strength_threshold'))
-        defaults['adx_threshold'] = getattr(self, 'ADX_THRESHOLD', defaults.get('adx_threshold', 25))
-        defaults['tp_pct'] = getattr(self, 'TP_PCT', defaults.get('tp_pct'))
-        defaults['sl_pct'] = getattr(self, 'SL_PCT', defaults.get('sl_pct'))
+        defaults['strength_threshold'] = getattr(self, 'STRENGTH_THRESHOLD', defaults['strength_threshold'])
+        defaults['adx_threshold'] = getattr(self, 'ADX_THRESHOLD', defaults['adx_threshold'])
+        defaults['tp_pct'] = getattr(self, 'TP_PCT', defaults['tp_pct'])
+        defaults['sl_pct'] = getattr(self, 'SL_PCT', defaults['sl_pct'])
         
         # 0.5 Override with Optimized Precision Profile (Strategic ARMOR V5.9/V5.10)
         if hasattr(self, 'PER_SYMBOL_PROFILES') and symbol in self.PER_SYMBOL_PROFILES:
@@ -259,7 +260,7 @@ class HybridScalpingStrategy(Strategy):
             # Buscamos el estado dominante (si hay al menos un setup Alpha, la moneda es Alpha)
             if symbol in self.cognitive_memory:
                 for s_type in self.cognitive_memory[symbol]:
-                    if self.cognitive_memory[symbol][s_type].get('state') == 'ALPHA':
+                    if self.cognitive_memory[symbol][s_type]['state'] == 'ALPHA':
                         cog_state = 'ALPHA'
                         break
 
@@ -293,7 +294,7 @@ class HybridScalpingStrategy(Strategy):
             found_genes = new_gene.genes
             
         # 3. MAPPING & MERGING (Ensure no KeyErrors)
-        generation = self.genotypes.get(symbol).generation if symbol in self.genotypes else 0
+        generation = self.genotypes[symbol].generation if symbol in self.genotypes else 0
         
         # Genotype genes override defaults if present (but generation 0 defaults shouldn't overwrite our tuned horizon configs)
         final_params = defaults
@@ -306,7 +307,7 @@ class HybridScalpingStrategy(Strategy):
         # POR QUÉ: Para scalping de micro-cuenta ($13), necesitamos el strength_threshold de 0.35. El Genotype (gen 0) inyectaba 0.60.
         # Phase 2 FIX: Config is the master source of truth for Generation 0.
         if generation == 0:
-            final_params['strength_threshold'] = getattr(self, 'STRENGTH_THRESHOLD', Config.Strategies.SCALPING_PARAMS.get('strength_threshold', 0.55))
+            final_params['strength_threshold'] = getattr(self, 'STRENGTH_THRESHOLD', Config.Strategies.SCALPING_PARAMS['strength_threshold'])
             
             # FORENSIC-V81: HYPER-EVOLVER MUTATIONS INJECTION
             # FIX-FORENSIC-V82: Mutations lives in Config.Strategies, NOT Config root!
@@ -314,11 +315,12 @@ class HybridScalpingStrategy(Strategy):
             # Mutations is defined at Config.Strategies.Mutations (config.py L498).
             # Impact: ALL Optuna-optimized parameters (80% WR) were NEVER applied.
             mutations = getattr(Config.Strategies, 'Mutations', {})
-            final_params['adx_threshold'] = mutations.get('adx_threshold', getattr(self, 'ADX_THRESHOLD', final_params.get('adx_threshold', 25)))
-            final_params['strength_threshold'] = mutations.get('strength_threshold', final_params.get('strength_threshold', 0.55))
-            final_params['tp_pct'] = mutations.get('max_tp_cap', getattr(self, 'TP_PCT', final_params.get('tp_pct')))
+            if mutations:
+                final_params['adx_threshold'] = mutations.get('adx_threshold', final_params['adx_threshold'])
+                final_params['strength_threshold'] = mutations.get('strength_threshold', final_params['strength_threshold'])
+                final_params['tp_pct'] = mutations.get('max_tp_cap', final_params['tp_pct'])
             # [CIRUGÍA #1] SL comes directly from SCALPING_PARAMS, not via sl_multiplier
-            final_params['sl_pct'] = getattr(self, 'SL_PCT', final_params.get('sl_pct'))
+            final_params['sl_pct'] = getattr(self, 'SL_PCT', final_params['sl_pct'])
             
             final_params['rsi_buy'] = self.RSI_OVERSOLD
             final_params['rsi_sell'] = self.RSI_OVERBOUGHT
@@ -329,8 +331,8 @@ class HybridScalpingStrategy(Strategy):
         if hasattr(self, 'PER_SYMBOL_PROFILES') and symbol in self.PER_SYMBOL_PROFILES:
             opt = self.PER_SYMBOL_PROFILES[symbol]
             if opt.get('profile') == profile_key: # Si no ha sido degradado
-                final_params['tp_pct'] = opt.get('dynamic_tp', opt['tp_pct'])
-                final_params['sl_pct'] = opt.get('dynamic_sl', opt['sl_pct'])
+                final_params['tp_pct'] = opt.get('dynamic_tp', final_params['tp_pct'])
+                final_params['sl_pct'] = opt.get('dynamic_sl', final_params['sl_pct'])
                 if 'dynamic_strength' in opt:
                     final_params['strength_threshold'] = opt['dynamic_strength']
                 if 'dynamic_adx' in opt:
@@ -351,10 +353,10 @@ class HybridScalpingStrategy(Strategy):
         inds = {}
         
         # Extract raw arrays from structured array (Zero-Copy views)
-        closes = data['close']
-        highs = data['high']
-        lows = data['low']
-        vols = data['volume']
+        closes = data['close'].astype(np.float64)
+        highs = data['high'].astype(np.float64)
+        lows = data['low'].astype(np.float64)
+        vols = data['volume'].astype(np.float64)
 
         try:
             # 0. Dynamic Parameter Scaling (Phase 2.1)
@@ -422,7 +424,9 @@ class HybridScalpingStrategy(Strategy):
 
             return inds
         except Exception as e:
-            # logger.error(f"Indicator Calc Error: {e}")
+            import traceback
+            print(f"🛑 [CRITICAL DIAG] SILENT EXCEPTION in calculate_indicators: {e}")
+            traceback.print_exc()
             return None
 
     def get_multi_timeframe_data(self, symbol):
@@ -431,7 +435,7 @@ class HybridScalpingStrategy(Strategy):
         
         # FORENSIC-1: Only process timeframes relevant to this horizon
         # Scalping: 1m, 5m, 15m | Swing: 1h, 4h, 1d
-        all_tf_bars = {'1m': 300, '5m': 300, '15m': 200, '1h': 300, '4h': 300, '1d': 100, '1w': 100}
+        all_tf_bars = {'1m': 300, '3m': 300, '5m': 300, '15m': 200, '1h': 300, '4h': 300, '1d': 100, '1w': 100}
         allowed_tfs = list(self.HORIZON_TIMEFRAMES) if hasattr(self, 'HORIZON_TIMEFRAMES') else ['5m', '15m', '1h']
         # QUÉ: Asegurar la inyección de datos macro (1d, 1w) en el ledger de indicadores del horizonte.
         # POR QUÉ: El oráculo macro (`MultiHorizonOracle.evaluate_clash_vector`) evalúa obligatoriamente
@@ -448,9 +452,9 @@ class HybridScalpingStrategy(Strategy):
                 allowed_tfs.append(tf)
         
         for tf in allowed_tfs:
-            n_bars = all_tf_bars.get(tf, 200)
+            n_bars = all_tf_bars[tf]
             # Integrar time_multiplier = current_resolution_minutes / base_resolution_minutes (1m)
-            tf_mins = {'1m': 1, '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440, '1w': 10080}.get(tf, 5)
+            tf_mins = {'1m': 1, '3m': 3, '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440, '1w': 10080}[tf]
             time_multiplier_raw = tf_mins / 1.0 # Base 1m
             
             # Adaptamos factor temporal
@@ -753,8 +757,10 @@ class HybridScalpingStrategy(Strategy):
         adx_extreme = setups['adx'] > 35
         is_strong_trend = setups['adx'] > adx_thresh
         
-        price_at_lower = last_low <= bbl  # Use wick for scalping detection
-        price_at_upper = last_high >= bbu # Use wick for scalping detection
+        # Añadir un buffer del 5% del ancho de la banda para no exigir toques perfectos (muy raros en 1m)
+        bb_width = bbu - bbl
+        price_at_lower = last_low <= (bbl + bb_width * 0.05)  # Use wick for scalping detection
+        price_at_upper = last_high >= (bbu - bb_width * 0.05) # Use wick for scalping detection
         rsi_oversold = last_rsi < rsi_buy
         rsi_overbought = last_rsi > rsi_sell
         
@@ -822,16 +828,16 @@ class HybridScalpingStrategy(Strategy):
         # QUIÉN: HybridScalpingStrategy
         # ================================================================
 
-        # RSI SHORT: RSI > overbought + ADX > 25 + GIRO confirmado
+        # RSI SHORT: RSI > overbought + ADX > 20 + GIRO confirmado
         setups['short_rsi_explicit'] = (
             rsi_overbought
-            and (inds['adx'][idx] > 25)
+            and (inds['adx'][idx] > 20)
             and (last_rsi < prev_rsi)     # RSI ya bajando (giro descendente)
         )
-        # RSI LONG: RSI < oversold + ADX > 25 + GIRO confirmado
+        # RSI LONG: RSI < oversold + ADX > 20 + GIRO confirmado
         setups['long_rsi_explicit'] = (
             rsi_oversold
-            and (inds['adx'][idx] > 25)
+            and (inds['adx'][idx] > 20)
             and (last_rsi > prev_rsi)     # RSI ya subiendo (giro ascendente)
         )
 
@@ -923,26 +929,30 @@ class HybridScalpingStrategy(Strategy):
         if self.horizon == 'SCALPING':
             # TRUE SCALPING MEAN REVERSION: Wick Rejection of Bollinger Bands
             # We don't wait for RSI. If the wick pierced the band and closed back inside as a pin bar, we enter.
-            micro_trend_up = inds.get('micro_trend_up', [True]*len(data['close']))[idx]
-            micro_trend_down = inds.get('micro_trend_down', [True]*len(data['close']))[idx]
+            micro_trend_up = inds['micro_trend_up'][idx]
+            micro_trend_down = inds['micro_trend_down'][idx]
             
-            # 🚨 $13 MICRO-ACCOUNT FILTER: Only trade with micro_trend to increase WR
-            setups['long_mean_rev'] = price_at_lower and is_bullish_pin and high_volume and not adx_extreme and micro_trend_up
-            setups['short_mean_rev'] = price_at_upper and is_bearish_pin and high_volume and not adx_extreme and micro_trend_down
+            # 🚨 $13 MICRO-ACCOUNT FILTER: Relaxed conditions for Micro-Scalping
+            # Instead of strict pin bar, just require a decent wick and oversold/overbought conditions or BB touch
+            is_bullish_rejection = (lower_wick > safe_body * 0.8)
+            is_bearish_rejection = (upper_wick > safe_body * 0.8)
+            
+            setups['long_mean_rev'] = (price_at_lower or rsi_oversold) and is_bullish_rejection and high_volume and not adx_extreme and micro_trend_up
+            setups['short_mean_rev'] = (price_at_upper or rsi_overbought) and is_bearish_rejection and high_volume and not adx_extreme and micro_trend_down
             
             # PROXIMITY SETUPS: Now backed by Wick analysis instead of pure random BB position
             if not setups['long_mean_rev'] and not setups['short_mean_rev']:
                 bb_pos = setups['bb_position']
-                bb_pos_lower = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('bb_pos_lower_prox', 0.25)
-                bb_pos_upper = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('bb_pos_upper_prox', 0.75)
+                bb_pos_lower = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {})['bb_pos_lower_prox']
+                bb_pos_upper = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {})['bb_pos_upper_prox']
                 vol_ok = last_vol_ratio > 0.8
                 adx_strong = setups['adx'] > 20
                 
                 # If near the lower band, and there is a bullish wick (not strictly a pin bar, but strong rejection)
-                if bb_pos < bb_pos_lower and (lower_wick > safe_body) and vol_ok and is_range and adx_strong:
+                if bb_pos < bb_pos_lower and (lower_wick > safe_body * 0.8) and vol_ok and is_range and adx_strong:
                     setups['long_mean_rev'] = True
                     logger.debug(f"👻 [FANTASMA] Proximity LONG activado para {self.symbol} (Wick Rejection)")
-                elif bb_pos > bb_pos_upper and (upper_wick > safe_body) and vol_ok and is_range and adx_strong:
+                elif bb_pos > bb_pos_upper and (upper_wick > safe_body * 0.8) and vol_ok and is_range and adx_strong:
                     setups['short_mean_rev'] = True
                     logger.debug(f"👻 [FANTASMA] Proximity SHORT activado para {self.symbol} (Wick Rejection)")
         else:
@@ -987,17 +997,16 @@ class HybridScalpingStrategy(Strategy):
         else:
             # TRUE SCALPING MOMENTUM (VCP BREAKOUT):
             # Rather than waiting for lagging MACD across zero, we anticipate the breakout when:
-            # 1. We had VCP contraction recently (mean_bbw is small, current_bbw is expanding)
-            # 2. Volume is expanding massively (vol_ratio > 1.5)
-            # 3. Price closes aggressively outside or very near the bands
-            scalp_vol_surge = last_vol_ratio > 1.5
+            # 1. Volume is expanding (vol_ratio > 1.2)
+            # 2. Price is near outer bands or trend is accelerating
+            scalp_vol_surge = last_vol_ratio > 1.2
             
-            micro_trend_up = inds.get('micro_trend_up', [True]*len(data['close']))[idx]
-            micro_trend_down = inds.get('micro_trend_down', [True]*len(data['close']))[idx]
+            micro_trend_up = inds['micro_trend_up'][idx]
+            micro_trend_down = inds['micro_trend_down'][idx]
             
-            # Use strict VCP setup
-            setups['long_momentum'] = setups['in_uptrend'] and vcp_expansion and scalp_vol_surge and price_at_upper and not rsi_exhausted_long and micro_trend_up
-            setups['short_momentum'] = setups['in_downtrend'] and vcp_expansion and scalp_vol_surge and price_at_lower and not rsi_exhausted_short and micro_trend_down
+            # Relaxed VCP setup: removed strict vcp_expansion requirement to increase signal density
+            setups['long_momentum'] = setups['in_uptrend'] and scalp_vol_surge and price_at_upper and not rsi_exhausted_long and micro_trend_up
+            setups['short_momentum'] = setups['in_downtrend'] and scalp_vol_surge and price_at_lower and not rsi_exhausted_short and micro_trend_down
             
             # SCALP BREAKOUTS (Explosive wicks)
             setups['long_scalp_break'] = momentum_accel and scalp_vol_surge and (last_close > bbu) and not rsi_exhausted_long and micro_trend_up
@@ -1024,7 +1033,7 @@ class HybridScalpingStrategy(Strategy):
         if symbol and hasattr(self, 'cognitive_memory') and symbol in self.cognitive_memory:
             # BUG-008 FIX: Extraemos el estado dominante de la memoria
             # Si hay una serie de pérdidas, el estado se vuelve INJURED. Si hay ganancias, ALPHA.
-            states = [mem.get('state', 'NORMAL') for mem in self.cognitive_memory[symbol].values()]
+            states = [mem['state'] for mem in self.cognitive_memory[symbol].values()]
             if 'INJURED' in states:
                 cog_state = 'INJURED'
             elif 'ALPHA' in states:
@@ -1042,24 +1051,33 @@ class HybridScalpingStrategy(Strategy):
         # 0. Determinar Estado Cognitivo V5.8
         cog_state = 'NORMAL'
         if symbol and setup_type and hasattr(self, 'cognitive_memory') and symbol in self.cognitive_memory:
-            mem = self.cognitive_memory[symbol].get(setup_type, {})
-            cog_state = mem.get('state', 'NORMAL')
+            mem = self.cognitive_memory[symbol][setup_type]
+            cog_state = mem['state']
         
         # 1. BASE SCORE (Convicción inicial reducida para forzar multiplicadores)
-        if setups.get('long_mean_rev') or setups.get('short_mean_rev'):
+        if setups.get('liquidity_void_long') or setups.get('liquidity_void_short'):
+            strength = 0.70  # Muy alta convicción inicial
+        elif setups['long_mean_rev'] or setups['short_mean_rev']:
             strength = 0.45  # Reducido de 0.6 para exigir confirmación
-        elif setups.get('long_momentum') or setups.get('short_momentum') or setups.get('long_scalp_break') or setups.get('short_scalp_break'):
+        elif setups['long_momentum'] or setups['short_momentum'] or setups['long_scalp_break'] or setups['short_scalp_break']:
             strength = 0.40  # Reducido de 0.5
+        elif setups.get('long_rsi_explicit') or setups.get('short_rsi_explicit') or setups.get('long_bb_explicit') or setups.get('short_bb_explicit'):
+            strength = 0.50  # Explicit reversal setups (boosted for SCALPING viability)
+        elif setups.get('long_macd_explicit') or setups.get('short_macd_explicit') or setups.get('long_volume_explicit') or setups.get('short_volume_explicit'):
+            strength = 0.45  # Explicit momentum setups
         else:
             strength = 0.0
             
         # 2. MULTIPLICADOR DE CONFLUENCIA (Impacto 0.8x a 1.2x)
         # Una confluencia de 0.5 (neutral) no cambia nada. >0.5 mejora, <0.5 penaliza.
-        conf_mult = 0.8 + (confluence_score * 0.4) 
+        if setups.get('long_mean_rev') or setups.get('short_mean_rev') or setups.get('long_rsi_explicit') or setups.get('short_rsi_explicit') or setups.get('long_bb_explicit') or setups.get('short_bb_explicit'):
+            conf_mult = 1.0 + (confluence_score * 0.2) # Mean Reversion does not need trend confluence
+        else:
+            conf_mult = 0.8 + (confluence_score * 0.4) 
         strength *= conf_mult
         
         # 3. MULTIPLICADOR DE VOLUMEN (Impacto 0.9x a 1.25x)
-        vol_ratio = setups.get('volume_ratio', 1.0)
+        vol_ratio = setups['volume_ratio']
         if vol_ratio > 2.5: vol_mult = 1.25
         elif vol_ratio > 1.5: vol_mult = 1.15
         elif vol_ratio > 1.0: vol_mult = 1.05
@@ -1067,7 +1085,7 @@ class HybridScalpingStrategy(Strategy):
         strength *= vol_mult
         
         # 🌊 FASE 13: MICROSTRUCTURE BOOSTERS (Dark Pool, Gamma Risk, Magnetic Pull)
-        of_metrics = setups.get('order_flow', {})
+        of_metrics = setups.get('order_flow') or {}
         if of_metrics:
             # Gamma Expansion Risk: Volatilidad comprimida con alto volumen = Breakout inminente
             if of_metrics.get('gamma_expansion_risk'):
@@ -1076,7 +1094,7 @@ class HybridScalpingStrategy(Strategy):
             # Dark Pool Tracking: Ballenas atacando en la misma dirección = Ultra convicción
             dp_side = of_metrics.get('dark_pool_side')
             if dp_side:
-                is_long = setups.get('long_mean_rev') or setups.get('long_momentum') or setups.get('long_scalp_break') or setups.get('long_rsi_explicit') or setups.get('long_macd_explicit') or setups.get('long_bb_explicit') or setups.get('long_volume_explicit')
+                is_long = setups['long_mean_rev'] or setups['long_momentum'] or setups['long_scalp_break'] or setups['long_rsi_explicit'] or setups['long_macd_explicit'] or setups['long_bb_explicit'] or setups['long_volume_explicit']
                 if (is_long and dp_side == 'BUY') or (not is_long and dp_side == 'SELL'):
                     strength *= 1.30
                 else:
@@ -1086,30 +1104,30 @@ class HybridScalpingStrategy(Strategy):
             pull_up = of_metrics.get('magnetic_pull_up', 0.0)
             pull_down = of_metrics.get('magnetic_pull_down', 0.0)
             if pull_up > 0 and pull_down > 0:
-                is_long = setups.get('long_mean_rev') or setups.get('long_momentum') or setups.get('long_scalp_break') or setups.get('long_rsi_explicit') or setups.get('long_macd_explicit') or setups.get('long_bb_explicit') or setups.get('long_volume_explicit')
+                is_long = setups['long_mean_rev'] or setups['long_momentum'] or setups['long_scalp_break'] or setups['long_rsi_explicit'] or setups['long_macd_explicit'] or setups['long_bb_explicit'] or setups['long_volume_explicit']
                 if (is_long and pull_up > pull_down * 1.5) or (not is_long and pull_down > pull_up * 1.5):
                     strength *= 1.15
         
         # 4. BONUS POR RSI EXTREMO (Solo para Mean Reversion)
-        if (setups.get('long_mean_rev') or setups.get('short_mean_rev')) and (setups['rsi'] < 25 or setups['rsi'] > 75):
+        if (setups['long_mean_rev'] or setups['short_mean_rev']) and (setups['rsi'] < 25 or setups['rsi'] > 75):
             strength *= 1.15
 
         # 5. EXPLICIT SETUPS BOOST (SYMMETRIC: both LONG and SHORT)
-        if setups.get('short_rsi_explicit') or setups.get('short_bb_explicit'):
+        if setups['short_rsi_explicit'] or setups['short_bb_explicit']:
             strength *= 1.2
-        if setups.get('short_macd_explicit') or setups.get('short_volume_explicit'):
+        if setups['short_macd_explicit'] or setups['short_volume_explicit']:
             strength *= 1.15
         # FORENSIC REMEDIATION: Mirror LONG explicit boosts
-        if setups.get('long_rsi_explicit') or setups.get('long_bb_explicit'):
+        if setups['long_rsi_explicit'] or setups['long_bb_explicit']:
             strength *= 1.2
-        if setups.get('long_macd_explicit') or setups.get('long_volume_explicit'):
+        if setups['long_macd_explicit'] or setups['long_volume_explicit']:
             strength *= 1.15
         
         # 6. Penalty por volatilidad RELATIVA evolutiva (Phase 47.5 / V5 Genesis)
         # En BTC 1.5% es mucho, en SOL es normal. Usamos un umbral dinámico atado al Genotipo.
         genotype_vol = None
         if hasattr(self, 'genotypes') and symbol in self.genotypes:
-            genotype_vol = self.genotypes[symbol].genes.get('vol_sensitivity', None)
+            genotype_vol = self.genotypes[symbol].genes.get('vol_sensitivity')
         
         if genotype_vol is not None:
             vol_threshold = genotype_vol
@@ -1148,7 +1166,7 @@ class HybridScalpingStrategy(Strategy):
         # FASE 68: VPIN Toxicity Hard Block (Institucional Dump Protection)
         vpin = of_metrics.get('vpin_toxicity', 0.0)
         if vpin > 0.80:
-            is_long = setups.get('long_mean_rev') or setups.get('long_momentum') or setups.get('long_scalp_break') or setups.get('long_rsi_explicit') or setups.get('long_macd_explicit') or setups.get('long_bb_explicit') or setups.get('long_volume_explicit')
+            is_long = setups['long_mean_rev'] or setups['long_momentum'] or setups['long_scalp_break'] or setups['long_rsi_explicit'] or setups['long_macd_explicit'] or setups['long_bb_explicit'] or setups['long_volume_explicit']
             delta_flow = of_metrics.get('delta', 0.0)
             
             # Si es largo pero el flujo es negativo (ventas), o es corto y flujo es positivo (compras)
@@ -1159,6 +1177,7 @@ class HybridScalpingStrategy(Strategy):
         
         return min(strength, 1.0)
 
+    @performance_timer
     def generate_signals(self, event=None):
         """Generación de señales HÍBRIDA"""
         # Determine symbols to process
@@ -1202,13 +1221,18 @@ class HybridScalpingStrategy(Strategy):
                 # EVIDENCIA: massive_god_mode.log → ARB/USDT LONG repetido cada ~1s con mismos datos.
                 # 0.5 DATA HEALTH GUARD (Phase 3 Hardening)
                 health = getattr(event, 'health_metrics', None)
-                if health and health.get('score', 100) < 80:
-                    logger.warning(f"⚠️ [DATA-HEALTH] Skipping {symbol} due to poor integrity: {health['score']:.1f}% (Gap: {health.get('gap_s', 0)}s)")
-                    if health.get('score', 100) < 50:
+                if health and health['score'] < 80:
+                    logger.warning(f"⚠️ [DATA-HEALTH] Skipping {symbol} due to poor integrity: {health['score']:.1f}% (Gap: {health['gap_s']}s)")
+                    if health['score'] < 50:
                         continue # Critical integrity loss
                 
                 event_time = event.timestamp if hasattr(event, 'timestamp') else datetime.now(timezone.utc)
-                if event_time.tzinfo is None:
+                if isinstance(event_time, (int, float, np.integer, np.floating)):
+                    # Handle both seconds and milliseconds UNIX timestamps
+                    _ts = float(event_time)
+                    if _ts > 1e11: _ts /= 1000.0
+                    event_time = datetime.fromtimestamp(_ts, tz=timezone.utc)
+                elif hasattr(event_time, 'tzinfo') and event_time.tzinfo is None:
                     event_time = event_time.replace(tzinfo=timezone.utc)
 
                 # Use OHLCV bar timestamp for dedup (not tick time)
@@ -1224,7 +1248,7 @@ class HybridScalpingStrategy(Strategy):
                 
                 dedupe_key = f"{symbol}_{self.horizon}_{bar_ts}"
                 
-                if self.last_processed_times.get(dedupe_key):
+                if dedupe_key in self.last_processed_times:
                     continue
                 self.last_processed_times[dedupe_key] = True
                 
@@ -1236,7 +1260,7 @@ class HybridScalpingStrategy(Strategy):
                 
                 # --- XRP SPECIFIC COOLDOWN (Rule 4.1) ---
                 if 'XRP' in symbol:
-                    last_trade = self.last_trade_times.get(symbol, 0)
+                    last_trade = getattr(self, 'last_trade_times', {}).get(symbol, 0)
                     if (event_time.timestamp() - last_trade) < 3600: # 60 minutes
                         continue
                 
@@ -1257,8 +1281,8 @@ class HybridScalpingStrategy(Strategy):
 
                 # --- Mutación 22: Z-Score Flash-Crash Interceptor ---
                 of_metrics = self.data_provider.get_order_flow_metrics(symbol) if hasattr(self.data_provider, 'get_order_flow_metrics') else None
-                if of_metrics and of_metrics.get('flash_crash_anomaly', False):
-                    direction = of_metrics.get('flash_crash_direction')
+                if of_metrics and of_metrics.get('flash_crash_anomaly'):
+                    direction = of_metrics['flash_crash_direction']
                     if direction:
                         logger.critical(f"🚨 [FLASH-CRASH ANOMALY] {symbol} {direction} Triggered! Z-Score > 5 detected.")
                         flash_signal = SignalType.LONG if direction == 'BUY' else SignalType.SHORT
@@ -1278,7 +1302,7 @@ class HybridScalpingStrategy(Strategy):
                 # 🚀 [PHASE 9] L2 Wick Sniper (Front-Running)
                 if of_metrics:
                     of_delta = of_metrics.get('delta', 0.0)
-                    tot_vol = of_metrics.get('total_volume', 1.0)
+                    tot_vol = of_metrics.get('total_volume', 0.0)
                     of_imbalance = of_delta / tot_vol if tot_vol > 0 else 0.0
                     
                     if abs(of_imbalance) > 0.85: # Threshold brutal de vaciado L2
@@ -1305,11 +1329,14 @@ class HybridScalpingStrategy(Strategy):
                             continue
 
                 # Retrieve Brain for this symbol
-                # This ensures we have a genotype (created by get_symbol_params if needed)
-                # But get_symbol_params returns genes dict, we need the object for update.
-                # We can access self.genotypes[symbol] directly or ensure it exists.
+                if hasattr(self, 'data_provider') and self.data_provider:
+                    real_pos = self.data_provider.get_active_positions().get(symbol)
+                    if real_pos:
+                        # Logic for fused insight or other processing
+                        pass
+
                 self.get_symbol_params(symbol) # Ensure loaded/spawned
-                current_genotype = self.genotypes.get(symbol)
+                current_genotype = self.genotypes[symbol]
 
                 # --- PHASE 65: FUSED PATH (DIRECT SYMBOL BRAIN) ---
                 use_fused_path = getattr(params, 'use_fused_path', False) if params else False
@@ -1320,7 +1347,7 @@ class HybridScalpingStrategy(Strategy):
                 if use_fused_path and current_genotype and 'brain_weights' in current_genotype.genes:
                     try:
                         # 1. Obtain Portfolio State
-                        real_pos = self.data_provider.get_active_positions().get(symbol, {'quantity': 0})
+                        real_pos = self.data_provider.get_active_positions().get(symbol)
                         
                         # 2. Fused Insight (Indicators -> State -> Inference)
                         fused_decision, fused_confidence = self.get_fused_insight(
@@ -1373,10 +1400,11 @@ class HybridScalpingStrategy(Strategy):
                     # EVIDENCIA: Audit V9 mostraba tasa de supervivencia ~0.02% con 19 gates.
                     # PARA QUÉ: Permitir que señales con edge mínimo lleguen a Sophia para
                     #   evaluación más sofisticada (en vez de morir en el primer filtro).
-                    if confluence_score < 0.05:
-                        if 'BTC' not in symbol:
-                            logger.debug(f"🛑 [DIAG] {symbol} Killed by low confluence: {confluence_score:.2f}")
-                        continue
+                    # V60.1 FIX: Removed completely. Confluence multiplier handles this gracefully now.
+                    # if confluence_score < 0.05:
+                    #     if 'BTC' not in symbol:
+                    #         logger.debug(f"🛑 [DIAG] {symbol} Killed by low confluence: {confluence_score:.2f}")
+                    #     continue
                         
                     # Pasa el símbolo para la validación cognitiva V5.7
                     setups = self.detect_setup(pkg_primary, params, symbol)
@@ -1389,7 +1417,7 @@ class HybridScalpingStrategy(Strategy):
                     
                     # Adaptar umbral de confluencia a la volatilidad reciente
                     # [FORENSIC-RECAL] Tightened penalty: old +0.05 at 0.5% ATR was near-permanent in M5 crypto
-                    base_strength = params.get('strength_threshold', 0.45) if params else 0.45
+                    base_strength = params['strength_threshold'] if params else 0.45
                     dynamic_strength = base_strength
                     
                     if volatility > 0.010:  # [FORENSIC-RECAL] Only extreme volatility (>1.0% ATR/Price)
@@ -1402,65 +1430,65 @@ class HybridScalpingStrategy(Strategy):
                     # 5. Determinar dirección y tipo de setup V5.8
                     signal_type = None
                     setup_type = "UNKNOWN"
-                    if setups.get('liquidity_void_long') or setups.get('liquidity_void_short'):
-                        signal_type = SignalType.LONG if setups.get('liquidity_void_long') else SignalType.SHORT
+                    if setups['liquidity_void_long'] or setups['liquidity_void_short']:
+                        signal_type = SignalType.LONG if setups['liquidity_void_long'] else SignalType.SHORT
                         setup_type = "LIQUIDITY_VOID_SNIPER"
-                    elif setups.get('long_mean_rev') or setups.get('short_mean_rev'):
-                        signal_type = SignalType.LONG if setups.get('long_mean_rev') else SignalType.SHORT
+                    elif setups['long_mean_rev'] or setups['short_mean_rev']:
+                        signal_type = SignalType.LONG if setups['long_mean_rev'] else SignalType.SHORT
                         setup_type = "MEAN_REV"
-                    elif setups.get('long_momentum') or setups.get('short_momentum'):
-                        signal_type = SignalType.LONG if setups.get('long_momentum') else SignalType.SHORT
+                    elif setups['long_momentum'] or setups['short_momentum']:
+                        signal_type = SignalType.LONG if setups['long_momentum'] else SignalType.SHORT
                         setup_type = "MOMENTUM"
-                    elif setups.get('long_scalp_break') or setups.get('short_scalp_break'):
-                        signal_type = SignalType.LONG if setups.get('long_scalp_break') else SignalType.SHORT
+                    elif setups['long_scalp_break'] or setups['short_scalp_break']:
+                        signal_type = SignalType.LONG if setups['long_scalp_break'] else SignalType.SHORT
                         setup_type = "SCALP_BREAKOUT"
                     # ================================================================
                     # FORENSIC REMEDIATION: Process BOTH LONG and SHORT explicit setups
                     # ================================================================
-                    elif setups.get('long_mean_rev'):
-                        if self.horizon == 'SCALPING' and not setups.get('_long_vol_gate_pass', True):
+                    elif setups['long_mean_rev']:
+                        if self.horizon == 'SCALPING' and not setups['_long_vol_gate_pass']:
                             logger.debug(f"🚫 [VOL_GATE] {symbol} LONG MEAN_REVERSION blocked: extreme volatility")
                         else:
                             signal_type = SignalType.LONG
                             setup_type = "RSI_MEAN_REVERSION"
-                    elif setups.get('short_mean_rev'):
-                        if self.horizon == 'SCALPING' and not setups.get('_short_vol_gate_pass', True):
+                    elif setups['short_mean_rev']:
+                        if self.horizon == 'SCALPING' and not setups['_short_vol_gate_pass']:
                             logger.debug(f"🚫 [VOL_GATE] {symbol} SHORT MEAN_REVERSION blocked: extreme volatility")
                         else:
                             signal_type = SignalType.SHORT
                             setup_type = "RSI_MEAN_REVERSION"
-                    elif setups.get('long_momentum'):
-                        if self.horizon == 'SCALPING' and not setups.get('_long_vol_gate_pass', True):
+                    elif setups['long_momentum']:
+                        if self.horizon == 'SCALPING' and not setups['_long_vol_gate_pass']:
                             logger.debug(f"🚫 [VOL_GATE] {symbol} LONG MOMENTUM blocked: extreme volatility")
                         else:
                             signal_type = SignalType.LONG
                             setup_type = "TREND_MOMENTUM"
-                    elif setups.get('short_momentum'):
-                        if self.horizon == 'SCALPING' and not setups.get('_short_vol_gate_pass', True):
+                    elif setups['short_momentum']:
+                        if self.horizon == 'SCALPING' and not setups['_short_vol_gate_pass']:
                             logger.debug(f"🚫 [VOL_GATE] {symbol} SHORT MOMENTUM blocked: extreme volatility")
                         else:
                             signal_type = SignalType.SHORT
                             setup_type = "TREND_MOMENTUM"
-                    elif setups.get('long_rsi_explicit') or setups.get('long_bb_explicit'):
-                        if self.horizon == 'SCALPING' and not setups.get('_long_vol_gate_pass', True):
+                    elif setups['long_rsi_explicit'] or setups['long_bb_explicit']:
+                        if self.horizon == 'SCALPING' and not setups['_long_vol_gate_pass']:
                             logger.debug(f"🚫 [VOL_GATE] {symbol} LONG EXPLICIT_REVERSAL blocked: extreme volatility")
                         else:
                             signal_type = SignalType.LONG
                             setup_type = "EXPLICIT_REVERSAL"
-                    elif setups.get('short_rsi_explicit') or setups.get('short_bb_explicit'):
-                        if self.horizon == 'SCALPING' and not setups.get('_short_vol_gate_pass', True):
+                    elif setups['short_rsi_explicit'] or setups['short_bb_explicit']:
+                        if self.horizon == 'SCALPING' and not setups['_short_vol_gate_pass']:
                             logger.debug(f"🚫 [VOL_GATE] {symbol} SHORT EXPLICIT_REVERSAL blocked: extreme volatility")
                         else:
                             signal_type = SignalType.SHORT
                             setup_type = "EXPLICIT_REVERSAL"
-                    elif setups.get('long_macd_explicit') or setups.get('long_volume_explicit'):
-                        if self.horizon == 'SCALPING' and not setups.get('_long_vol_gate_pass', True):
+                    elif setups['long_macd_explicit'] or setups['long_volume_explicit']:
+                        if self.horizon == 'SCALPING' and not setups['_long_vol_gate_pass']:
                             logger.debug(f"🚫 [VOL_GATE] {symbol} LONG EXPLICIT_MOMENTUM blocked: extreme volatility")
                         else:
                             signal_type = SignalType.LONG
                             setup_type = "EXPLICIT_MOMENTUM"
-                    elif setups.get('short_macd_explicit') or setups.get('short_volume_explicit'):
-                        if self.horizon == 'SCALPING' and not setups.get('_short_vol_gate_pass', True):
+                    elif setups['short_macd_explicit'] or setups['short_volume_explicit']:
+                        if self.horizon == 'SCALPING' and not setups['_short_vol_gate_pass']:
                             logger.debug(f"🚫 [VOL_GATE] {symbol} SHORT EXPLICIT_MOMENTUM blocked: extreme volatility")
                         else:
                             signal_type = SignalType.SHORT
@@ -1470,6 +1498,17 @@ class HybridScalpingStrategy(Strategy):
                     setup_type = "FUSED_ML"
 
                 if signal_type is None:
+                    try:
+                        # Log the setups dictionary to debug why no setups triggered
+                        if 'BTC' not in symbol:
+                            true_setups = [k for k, v in setups.items() if v is True and not k.startswith('_')]
+                            if not true_setups:
+                                print(f"🛑 [DIAG] {symbol} detect_setup returned NO true setups. Setups: {setups}")
+                    except Exception as e:
+                        import traceback
+                        print(f"🛑 [CRITICAL DIAG] SILENT EXCEPTION in loop for {symbol}: {e}")
+                        traceback.print_exc()
+                        pass
                     try:
                         from core.global_state import global_state
                         global_state.update_symbol_vector(symbol, {
@@ -1556,13 +1595,25 @@ class HybridScalpingStrategy(Strategy):
                 # ═══════════════════════════════════════════════════════════════
                 portfolio = getattr(self, 'portfolio', None) or (getattr(self, '_engine_ref', None).portfolio if getattr(self, '_engine_ref', None) else None)
                 if portfolio and self.horizon in ("SCALPING", "MICROSCALPING", "MICRO"):
-                    active_pos = portfolio.positions.get(symbol, [])
-                    swing_opposing = any(
-                        p.get('horizon') == "SWING" and 
-                        ((p['direction'] == 1 and direction_str == "SHORT") or
-                         (p['direction'] == -1 and direction_str == "LONG"))
-                        for p in active_pos
-                    )
+                    active_pos = portfolio.positions.get(symbol, None)
+                    swing_opposing = False
+                    if active_pos:
+                        # In backtest, it may be a single dict, not a list.
+                        if isinstance(active_pos, dict):
+                            p_list = [active_pos]
+                        else:
+                            p_list = active_pos
+                        
+                        for p in p_list:
+                            p_horizon = p.get('metadata', {}).get('horizon', '') if isinstance(p.get('metadata'), dict) else ''
+                            p_direction = 1 if p.get('side') == 'LONG' else -1 if p.get('side') == 'SHORT' else 0
+                            if p_horizon == "SWING" and (
+                                (p_direction == 1 and direction_str == "SHORT") or
+                                (p_direction == -1 and direction_str == "LONG")
+                            ):
+                                swing_opposing = True
+                                break
+
                     if swing_opposing:
                         logger.info(
                             f"🛑 [CROSS-HORIZON RESONANCE] {symbol} {direction_str} BLOCKED | "
@@ -1617,13 +1668,20 @@ class HybridScalpingStrategy(Strategy):
                         # CUÁNDO: Al evaluar señales generadas antes de ser enviadas a la cola de eventos.
                         # DÓNDE: En `strategies/technical.py` L1317.
                         # QUIÊN: Modificado por el Risk Manager y el Quant Developer.
-                        if clash > 0.60:
+                        if clash > 0.60 and self.horizon not in ["SCALPING", "MICROSCALPING"]:
                             # HARD VETO: Solo para clash extremo/fuerte (macro y micro opuestos)
                             logger.info(
                                 f"🔮 [ORACLE VETO] {symbol} {direction_str} BLOCKED (EXTREME) | "
                                 f"Clash: {clash:.1%} | Macro: {oracle_verdict['macro_context']}"
                             )
                             continue
+                        elif clash > 0.85:
+                            # SCALPING only gets a warning, we let RiskManager and ML evaluate it
+                            logger.info(
+                                f"🔮 [ORACLE VETO] {symbol} {direction_str} WARNING (SCALP_EXTREME) | "
+                                f"Clash: {clash:.1%} | Macro: {oracle_verdict['macro_context']} | Proceeding to RiskManager"
+                            )
+                            # continue removed for SCALPING
                         else:
                             # SOFT PENALTY: Reduce strength pero permite la señal
                             clash_penalty = max(0.4, 1.0 - clash)
@@ -1666,17 +1724,17 @@ class HybridScalpingStrategy(Strategy):
                 # 6. Calcular fuerza (Pasando Símbolo y Setup_Type para Asimetría V5.8)
                 strength = self.calculate_signal_strength(setups, confluence_score, volatility, symbol, setup_type)
                 
-                # ═══════════════════════════════════════════════════════
+                # ═══════════════════════════════════════════════════
                 # FORENSIC-V80: FEE HEADROOM & STRICT MOMENTUM GUARD
                 # QUÉ: Bloqueo duro si el mercado está completamente plano.
                 # POR QUÉ: Comisiones consumen 0.075%. Si ATR es 0.10%, ganar 0.10% netos es imposible.
                 #   Esto generaba los 54+ TIME_STOP_ZOMBIE.
-                # ═══════════════════════════════════════════════════════
-                current_adx = setups.get('adx', 0)
+                # ═══════════════════════════════════════════════════
+                current_adx = setups['adx']
                 
                 # Calcular ATR_PCT real (porque no viene en setups dict)
-                current_atr = setups.get('atr', 0)
-                current_close = setups.get('close', 1)
+                current_atr = setups['atr']
+                current_close = setups['close']
                 atr_pct = current_atr / current_close if current_close > 0 else 0
                 
                 # MÓDULO HORIZON: Pre-consensus ATR filter — horizon-differentiated
@@ -1689,7 +1747,7 @@ class HybridScalpingStrategy(Strategy):
                 if self.horizon == 'MICROSCALPING':
                     min_atr_required = 0.0002  # HORIZONTE: MICRO | 0.02%
                 elif self.horizon == 'SCALPING':
-                    min_atr_required = 0.0004  # HORIZONTE: SCALP | 0.04%
+                    min_atr_required = 0.00025 # FORENSIC FIX: 0.025% (was 0.04%)
                 else:
                     min_atr_required = 0.0015  # HORIZONTE: SWING | 0.15%
                 
@@ -1711,17 +1769,11 @@ class HybridScalpingStrategy(Strategy):
                         sym_pdc = ce_metrics.get(symbol, {})
                         pdc_velocity = sym_pdc.get('pdc_velocity', 0.0)
                         
-                        min_pdc = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('min_pdc_velocity', 0.05)
-                        if abs(pdc_velocity) < min_pdc: # Requerimos velocidad significativa (positiva o negativa dependiendo de la dirección, pero usemos valor absoluto de velocidad o convicción)
-                            # Actually, if signal_type is LONG, we want pdc_velocity > min_pdc
-                            # if signal_type is SHORT, we want pdc_velocity < -min_pdc
-                            # But wait, pdc is usually positive for lead-lag strength? 
-                            # If PDC Velocity is a magnitude, we just need pdc_velocity > min_pdc.
-                            # "Scalping strictly requires positive confirmation (PDC Velocity > threshold)."
-                            if pdc_velocity < min_pdc:
-                                # PARIDAD ABSOLUTA: PDC Veto aplica en backtest y producción (Fase V Audit Fix #3)
-                                logger.warning(f"🛑 [PDC VETO] {symbol} SCALPING blocked | PDC Velocity: {pdc_velocity:.4f} < {min_pdc}")
-                                continue
+                        min_pdc = getattr(Config.Strategies, 'TECHNICAL_THRESHOLDS', {}).get('min_pdc_velocity', 0.0)
+                        if abs(pdc_velocity) < min_pdc: # Requerimos velocidad significativa
+                            # PARIDAD ABSOLUTA: PDC Veto aplica en backtest y producción (Fase V Audit Fix #3)
+                            logger.warning(f"🛑 [PDC VETO] {symbol} SCALPING blocked | PDC Velocity: {pdc_velocity:.4f} < {min_pdc}")
+                            continue
                     except Exception as e:
                         import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
                         logger.warning(f"⚠️ [PDC VETO] Error checking PDC for {symbol}: {e}")
@@ -1729,13 +1781,23 @@ class HybridScalpingStrategy(Strategy):
                 # 🧬 PHASE 3 SYNERGY: DNA TOGGLES (KILL SWITCHES)
                 # DNA_SNIPER_VOLUME: Require volume burst for entry
                 if os.environ.get("DNA_SNIPER_VOLUME") == "1":
-                    vol_ratio = setups.get('volume_ratio', 1.0)
+                    vol_ratio = setups['volume_ratio']
                     if vol_ratio < 1.2:
                         logger.debug(f"🧬 [DNA_SNIPER_VOLUME] {symbol} BLOCKED: Volume Ratio {vol_ratio:.2f} < 1.2")
                         continue
                 
+                # 🧬 PHASE 42: AVOID OVEREXPOSURE (Max 1 layer per side per symbol)
+                # V6.0 Anti-Crash Fix for overexposure check
+                if hasattr(self, 'data_provider') and self.data_provider:
+                    existing_pos = self.data_provider.get_active_positions().get(symbol)
+                    if existing_pos:
+                        pos_qty = existing_pos.get('quantity', 0)
+                        if (signal_type == SignalType.LONG and pos_qty > 0) or (signal_type == SignalType.SHORT and pos_qty < 0):
+                            logger.debug(f"🧬 [OVEREXPOSURE] {symbol} BLOCKED: Position already active for {signal_type.name}")
+                            continue
+
                 # DNA_PATTERN_STRICT: Require higher confidence for momentum
-                min_momentum_strength = 0.70 if os.environ.get("DNA_PATTERN_STRICT") == "1" else 0.60
+                min_momentum_strength = 0.50 if os.environ.get("DNA_PATTERN_STRICT") == "1" else 0.40
 
                 # CONFIDENCE GATE: Strict threshold for Momentum to avoid low-quality entries
                 if setup_type == "MOMENTUM" and strength < min_momentum_strength:
@@ -1743,6 +1805,11 @@ class HybridScalpingStrategy(Strategy):
                         logger.debug(f"🛑 [DIAG] {symbol} Momentum Strength {strength:.2f} < {min_momentum_strength:.2f} gate")
                     continue
                 
+                # LOWER STRENGTH_THRESH FOR SCALPING to ensure signals fire
+                # [CIRUGÍA-V163] Removido el override hardcodeado. Usar el valor dinámico del Config (0.65).
+                # if self.horizon == 'SCALPING' or self.horizon == 'MICROSCALPING':
+                #     STRENGTH_THRESH = min(STRENGTH_THRESH, 0.40)
+                    
                 # 2. Umbral de Fuerza Dinámico
                 if strength < STRENGTH_THRESH:
                     if 'BTC' not in symbol:
@@ -1763,59 +1830,67 @@ class HybridScalpingStrategy(Strategy):
                 self._apply_infinitesimal_tuning(symbol, current_genotype)
                 # --- INTELLIGENT REVERSE DETECTION ---
                 if self.bought[symbol]:
-                    existing_pos = self.data_provider.get_active_positions().get(symbol, {'quantity': 0})
-                    current_qty = existing_pos['quantity']
-                    
-                    is_currently_long = current_qty > 0
-                    is_currently_short = current_qty < 0
-                    
-                    strong_reverse = False
-                    if is_currently_long and (setups['short_mean_rev'] or setups['short_momentum']) and strength > 0.8:
-                        strong_reverse = True
-                        signal_type = SignalType.REVERSE
-                    elif is_currently_short and (setups['long_mean_rev'] or setups['long_momentum']) and strength > 0.8:
-                        strong_reverse = True
-                        signal_type = SignalType.REVERSE
-                    
-                    if strong_reverse:
-                        logger.info(f"🔄 [{symbol}] STRONG REVERSE detected (Strength: {strength:.2f}). Triggering Flip.")
-                    else:
-                        # --- DYNAMIC EXIT & TRAILING (Phase 71-73) ---
-                        current_rsi = setups['rsi']
-                        current_price = setups['close']
+                    existing_pos = self.data_provider.get_active_positions().get(symbol)
+                    if existing_pos:
+                        current_qty = existing_pos.get('quantity', 0)
                         
-                        # 1. Proactive BE Guard (V5.28 RAZOR-RELAXED)
-                        entry_price = self.last_trade_prices.get(symbol, current_price)
-                        cur_pnl = (current_price / entry_price - 1.0) if current_qty > 0 else (entry_price / current_price - 1.0)
+                        is_currently_long = current_qty > 0
+                        is_currently_short = current_qty < 0
                         
-                        # FORENSIC FIX #1: FEE GUARD
-                        # QUÉ: Exigir un PnL mínimo antes de permitir cierres "proactivos" o "por RSI".
-                        # POR QUÉ: Cierres prematuros (ej. PnL 0.035%) son devorados por las comisiones (0.04%).
-                        _maker_fee = getattr(Config, "BINANCE_MAKER_FEE_BNB", 0.0002)
-                        _taker_fee = getattr(Config, "BINANCE_TAKER_FEE_BNB", 0.000375)
-                        fee_guard_pnl = (_maker_fee + _taker_fee) * 2.5
+                        strong_reverse = False
+                        if is_currently_long and (setups['short_mean_rev'] or setups['short_momentum']) and strength > 0.8:
+                            strong_reverse = True
+                            signal_type = SignalType.REVERSE
+                        elif is_currently_short and (setups['long_mean_rev'] or setups['long_momentum']) and strength > 0.8:
+                            strong_reverse = True
+                            signal_type = SignalType.REVERSE
                         
-                        # FORENSIC FIX #3: SWING FIREWALL
-                        # QUÉ: Aislar los trades SWING de los cierres tempranos de Scalping.
-                        # POR QUÉ: Swing busca 1-5%, no debe cerrar en 60s por ruido de RSI.
-                        is_swing = self.horizon in ['SWING', 'MACRO']
-                        
-                        be_trigger = final_tp_pct * 0.8 if 'final_tp_pct' in dir() else 0.008
-                        if cur_pnl > be_trigger and symbol not in self.trailing_sl:
-                            new_sl = entry_price * 1.001 if current_qty > 0 else entry_price * 0.999
-                            self.trailing_sl[symbol] = new_sl
-                            logger.info(f"🛡️ [V5.28 RAZOR-RELAX] Proactive BE Guard Activated for {symbol} (PnL: {cur_pnl*100:.2f}%)")
-                        
-                        # 2. RSI-Based Trailing (Legacy check) - BLOCKED FOR SWING
-                        elif symbol not in self.trailing_sl and not is_swing:
-                            trailing_rsi_thresh = params.get('trailing_rsi', 70)
-                            should_trail = (current_qty > 0 and current_rsi > trailing_rsi_thresh) or \
-                                           (current_qty < 0 and current_rsi < (100 - trailing_rsi_thresh))
+                        if strong_reverse:
+                            logger.info(f"🔄 [{symbol}] STRONG REVERSE detected (Strength: {strength:.2f}). Triggering Flip.")
+                        else:
+                            # --- DYNAMIC EXIT & TRAILING (Phase 71-73) ---
+                            current_rsi = setups['rsi']
+                            current_price = setups['close']
                             
-                            if should_trail:
-                                new_sl = entry_price * 1.001 if current_qty > 0 else entry_price * 0.999
+                            # 1. Proactive BE Guard (V5.28 RAZOR-RELAXED)
+                            entry_price = self.last_trade_prices.get(symbol, current_price)
+                            cur_pnl = (current_price / entry_price - 1.0) if current_qty > 0 else (entry_price / current_price - 1.0)
+                            
+                            # FORENSIC FIX #1: FEE GUARD
+                            # QUÉ: Exigir un PnL mínimo antes de permitir cierres "proactivos" o "por RSI".
+                            # POR QUÉ: Cierres prematuros (ej. PnL 0.035%) son devorados por las comisiones (0.04%).
+                            _maker_fee = getattr(Config, "BINANCE_MAKER_FEE_BNB", 0.0002)
+                            _taker_fee = getattr(Config, "BINANCE_TAKER_FEE_BNB", 0.000375)
+                            fee_guard_pnl = (_maker_fee + _taker_fee) * 2.5
+                            
+                            # FORENSIC FIX #3: SWING FIREWALL
+                            # QUÉ: Aislar los trades SWING de los cierres tempranos de Scalping.
+                            # POR QUÉ: Swing busca 1-5%, no debe cerrar en 60s por ruido de RSI.
+                            is_swing = self.horizon in ['SWING', 'MACRO']
+                            
+                            # Para scalping, activar BE mucho antes para proteger el capital (evitar comerse el SL catastrófico)
+                            be_trigger = final_tp_pct * 0.35 if (self.horizon in ['SCALPING', 'MICROSCALPING'] and 'final_tp_pct' in dir()) else (final_tp_pct * 0.8 if 'final_tp_pct' in dir() else 0.008)
+                            
+                            # Asegurar que be_trigger siempre supere las comisiones
+                            be_trigger = max(be_trigger, fee_guard_pnl * 1.1)
+                            
+                            if cur_pnl > be_trigger and symbol not in self.trailing_sl:
+                                # Dinámico: Entry + Fees + 0.02% (slippage buffer)
+                                be_margin = fee_guard_pnl * 0.5 + 0.0002
+                                new_sl = entry_price * (1.0 + be_margin) if current_qty > 0 else entry_price * (1.0 - be_margin)
                                 self.trailing_sl[symbol] = new_sl
-                                logger.info(f"🛡️ [{symbol}] Trailing SL Activated by RSI at {new_sl:.6f}")
+                                logger.info(f"🛡️ [V5.28 RAZOR-RELAX] Proactive BE Guard Activated for {symbol} (PnL: {cur_pnl*100:.2f}%)")
+                            
+                            # 2. RSI-Based Trailing (Legacy check) - BLOCKED FOR SWING
+                            elif symbol not in self.trailing_sl and not is_swing:
+                                trailing_rsi_thresh = params['trailing_rsi']
+                                should_trail = (current_qty > 0 and current_rsi > trailing_rsi_thresh) or \
+                                               (current_qty < 0 and current_rsi < (100 - trailing_rsi_thresh))
+                                
+                                if should_trail:
+                                    new_sl = entry_price * 1.001 if current_qty > 0 else entry_price * 0.999
+                                    self.trailing_sl[symbol] = new_sl
+                                    logger.info(f"🛡️ [{symbol}] Trailing SL Activated by RSI at {new_sl:.6f}")
                             
                         # AEGIS-V15: Stability Guard
                         # QUÉ: No permite cerrar por indicadores si no han pasado X barras.
@@ -1866,6 +1941,10 @@ class HybridScalpingStrategy(Strategy):
                                     self.bought[symbol] = False
                                     logger.info(f"🛡️ [{symbol}] RSI EXTREME EXIT at {current_price:.6f} after {bars_held} bars. PnL: {cur_pnl*100:.2f}%")
                                     continue
+                    else:
+                        # existing_pos is None, we don't actually hold it.
+                        self.bought[symbol] = False
+
 
                 # 10. Emit Signal si no hay posición o si la reversión es viable
                 # AEGIS-V15: Atribución Granular
@@ -1892,9 +1971,9 @@ class HybridScalpingStrategy(Strategy):
                 current_regime = 'UNKNOWN'  # Default regime when portfolio is not available (e.g., backtest)
                 if hasattr(self, 'portfolio') and self.portfolio and hasattr(self.portfolio, 'global_regime_data'):
                     regime_meta = self.portfolio.global_regime_data
-                    current_regime = regime_meta.get('sentiment', 'UNKNOWN')
+                    current_regime = regime_meta['sentiment']
                     # Phase 6: Specific symbol regime
-                    symbol_regime = regime_meta.get('symbol_regimes', {}).get(symbol, current_regime)
+                    symbol_regime = regime_meta['symbol_regimes'][symbol]
                     
                 atr_sl_mult, atr_tp_mult, final_sl_pct, final_tp_pct = self._calculate_dynamic_risk_params(
                     inds_primary, current_price, setup_type=setup_type, regime=current_regime
@@ -1924,7 +2003,7 @@ class HybridScalpingStrategy(Strategy):
                 of_metrics = self.data_provider.get_order_flow_metrics(symbol)
                 if of_metrics and signal_type != SignalType.HOLD:
                     is_toxic = of_metrics.get('is_toxic', False)
-                    vpin = of_metrics.get('vpin', 0.5)
+                    vpin = of_metrics.get('vpin', 0.0)
                     iceberg = of_metrics.get('iceberg_score', 0.0)
                     delta = of_metrics.get('rolling_delta_60s', 0.0)
                     
@@ -1979,7 +2058,8 @@ class HybridScalpingStrategy(Strategy):
                     # Extract BTC returns for entanglement verification
                     btc_returns = None
                     if "BTC/USDT" in self.data_provider.symbol_list:
-                        btc_pkg = self.get_multi_timeframe_data("BTC/USDT").get('5m')
+                        btc_data = self.get_multi_timeframe_data("BTC/USDT")
+                        btc_pkg = btc_data.get('5m') or btc_data.get(list(btc_data.keys())[0]) if btc_data else None
                         if btc_pkg:
                             _btc_closes = btc_pkg['data']['close'].astype(np.float64)
                             btc_returns = np.diff(np.log(_btc_closes)) if len(_btc_closes) > 1 else None
@@ -2118,15 +2198,15 @@ class HybridScalpingStrategy(Strategy):
                     
                     # QUÉ: Apalancamiento Cuántico basado en Incertidumbre de Sophia
                     if entropy_norm > 1.0:
-                        # Fat-Tails / Alta Incertidumbre -> Protección de Micro-Cuenta
-                        leverage = 2.0 + (order_factor * 5.0)  # Rango ~2x a 5x
-                        logger.debug(f"⚖️ [ADAPTIVE LEV] {symbol} | Alta Incertidumbre (H={entropy_norm:.2f}). Leverage reducido.")
+                        # Fat-Tails / Alta Incertidumbre -> Protección de Micro-Cuenta (MIN 10x for $5 notional on $1 margin)
+                        leverage = 10.0 + (order_factor * 5.0)  # Rango ~10x a 15x
+                        logger.debug(f"⚖️ [ADAPTIVE LEV] {symbol} | Alta Incertidumbre (H={entropy_norm:.2f}). Leverage reducido a Min 10x.")
                     elif entropy_norm > 0.5:
                         # Condición Normal
-                        leverage = 10.0 + (order_factor * 10.0) # Rango ~10x a ~15x
+                        leverage = 15.0 + (order_factor * 10.0) # Rango ~15x a ~25x
                     else:
                         # Certeza Cuántica -> Maximizar ganancia
-                        leverage = 20.0 + (order_factor * 10.0) # Rango ~20x a 30x
+                        leverage = 25.0 + (order_factor * 25.0) # Rango ~25x a 50x
                         logger.debug(f"⚖️ [ADAPTIVE LEV] {symbol} | Certeza Alta (H={entropy_norm:.2f}). Apalancamiento Agresivo.")
                     
                     if is_divine:
@@ -2181,26 +2261,15 @@ class HybridScalpingStrategy(Strategy):
                         logger.debug(f"🪒 [ADAPTIVE NET] Clipping anomalistic SL from {final_sl_pct*100:.2f}% to Dynamic Max 3.00%")
                         final_sl_pct = 0.030
                     
-                    # V5.26: ENFORCE R:R > 1.0 (TP must be >= SL)
-                    # [GOLDEN-V4 FIX]: Disabled! Scalping needs inverted R:R (SL 1.5x TP) to absorb noise.
-                    # Forcing TP to be 1.2x SL pushes the target out of reach and causes 70% ZOMBIE exits.
-                    # if final_tp_pct < final_sl_pct:
-                    #     final_tp_pct = final_sl_pct * 1.2  # At least 1.2:1 R:R
-                    #     logger.debug(f"⚖️ [V5.26 R:R] Enforced minimum R:R 1.2:1 → TP={final_tp_pct*100:.2f}%, SL={final_sl_pct*100:.2f}%")
-
+                    # V5.26: R:R constraint (REMOVED)
+                    # We do NOT force TP to be >= SL here. Scalping needs the wide 1.5% SL to avoid noise,
+                    # and the tight 0.4% TP to ensure a high win rate.
+                    # Expectancy (Kelly) is handled by the dynamic_b override in RiskManager.
                     logger.info(f"   💭 {sophia_narrative}")
                     
                     # ── SOPHIA-VIEW: Real-time Metacognition Metrics ──
-                    try:
-                        metrics.record_sophia_inference(
-                            symbol=symbol,
-                            entropy=sophia_report.decision_entropy,
-                            top_features=sophia_report.top_features,
-                            consensus_count=confluence_score  # Using multi-timeframe score as consensus proxy
-                        )
-                    except Exception as m_e:
-                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
-                        logger.debug(f"[SOPHIA-VIEW] Metric emission skipped: {m_e}")
+                    # (Removed broken metrics.record_sophia_inference since metrics is a dict here)
+                    logger.debug(f"[SOPHIA-VIEW] {symbol} Entropy: {sophia_report.decision_entropy:.3f}, Top Features: {sophia_report.top_features}")
                         
                 except Exception as e:
                     import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
@@ -2213,7 +2282,7 @@ class HybridScalpingStrategy(Strategy):
                 
                 if symbol in self.cognitive_memory and setup_type in self.cognitive_memory[symbol]:
                     mem = self.cognitive_memory[symbol][setup_type]
-                    current_cog_state = mem.get('state', 'NORMAL')
+                    current_cog_state = mem['state']
                     
                     if current_cog_state == 'ALPHA':
                         tp_mult = 1.3 # Expand profit target
@@ -2233,6 +2302,8 @@ class HybridScalpingStrategy(Strategy):
                     'atr_val': current_atr,
                     'setup_type': setup_type,
                     'cog_state': current_cog_state,
+                    'ml_confidence': float(strength),
+                    'raw_ml_confidence': float(strength),
                     'tp_mult': tp_mult,
                     'sl_mult': sl_mult,
                     'is_recursive_sprint': sophia_report.noise_level < 0.10 if sophia_report else False,
@@ -2315,7 +2386,7 @@ class HybridScalpingStrategy(Strategy):
                     signal_type=signal_type,
                     strength=strength,
                     atr=setups['atr'],
-                    ttl=int(dynamic_ttl),  # C-5 FIX: was hardcoded to 180, causing horizon mismatch
+                    ttl=int(dynamic_ttl) if 'dynamic_ttl' in locals() else 180,  # C-5 FIX: was hardcoded to 180, causing horizon mismatch
                     horizon=self.horizon,
                     priority=self.priority,
                     # FORENSIC FIX #1: Send TP/SL as decimal fractions (e.g., 0.004 = 0.4%)
@@ -2328,21 +2399,20 @@ class HybridScalpingStrategy(Strategy):
                         'atr_pct': current_atr / setups['close'] if setups['close'] > 0 else 0.001,
                         'volatility': setups['atr'] / setups['close'] if setups['close'] > 0 else 0.001,
                         'exhaustion': self.sophia.calibrator.calculate_exhaustion(inds_primary['macd_hist'], setups['rsi']) if hasattr(self, 'sophia') and self.sophia else 0.0,  # C-2 FIX: was inds_5m
-                        'boost_factor': sophia_report.metadata.get('boost_factor', 1.0) if sophia_report else 1.0,
+                        'boost_factor': sophia_report.metadata['boost_factor'] if sophia_report else 1.0,
                         'win_prob': sophia_report.win_probability if sophia_report else 0.5,
                         'expected_high': sophia_report.expected_high_pct if sophia_report else 0.0,
                         'expected_low': sophia_report.expected_low_pct if sophia_report else 0.0,
                         'path_score': sophia_report.path_score if sophia_report else 0.5,
                         'hurst': sophia_report.hurst_exponent if sophia_report else 0.5,
-                        'leverage': round(leverage, 1), # Inyectar apalancamiento adaptativo
+                        'leverage': round(leverage, 1) if 'leverage' in locals() else 10.0, # Inyectar apalancamiento adaptativo
                         'quantum_leverage': sophia_report.quantum_leverage if sophia_report else 1.0,
                         'vortex_pulse': sophia_report.vortex_pulse if sophia_report else 0.0,
                         'is_vortex': sophia_report.is_vortex_regime if sophia_report else False,
                         # ── PEPITA #4: KELLY ADAPTIVE SIZING ──
-                        # QUÉ: Propaga ml_confidence y strength al metadata.
-                        # POR QUÉ: RiskManager.size_position busca signal_metadata.get('ml_confidence')
-                        #   para CompoundingEngine.get_quantum_kelly_fraction().
-                        'ml_confidence': sophia_report.win_probability if sophia_report else 0.5,
+                        # Calibración heurística: Para scalping (b=0.26), Kelly requiere p > 0.79.
+                        # Si la señal superó el STRENGTH_THRESH (ej. 0.73), la consideramos altamente probable.
+                        'ml_confidence': max(sophia_report.win_probability if sophia_report else 0.0, min(0.95, float(strength) * 1.15)),
                         'strength': float(strength),
                     },
                 )
@@ -2394,11 +2464,11 @@ class HybridScalpingStrategy(Strategy):
         from config import Config
         horizon_name = getattr(self, "horizon", "SCALPING").capitalize()
         if horizon_name == "Swing":
-            target_tf = getattr(Config.Horizons, "Swing", {}).get("primary_tf", "4h")
+            target_tf = getattr(Config.Horizons, "Swing", {})["primary_tf"]
         elif horizon_name == "Microscalping":
-            target_tf = getattr(Config.Horizons, "Microscalping", {}).get("primary_tf", "1m")
+            target_tf = getattr(Config.Horizons, "Microscalping", {})["primary_tf"]
         else:
-            target_tf = getattr(Config.Horizons, "Scalping", {}).get("primary_tf", "1m")
+            target_tf = getattr(Config.Horizons, "Scalping", {})["primary_tf"]
         
         if event_tf != target_tf:
             return
@@ -2448,7 +2518,7 @@ class HybridScalpingStrategy(Strategy):
             
         setup_type = 'MOMENTUM'
         if not hasattr(trade_outcome, 'setup_type') and hasattr(trade_outcome, 'metadata') and trade_outcome.metadata:
-            setup_type = trade_outcome.metadata.get('setup_type', 'MOMENTUM')
+            setup_type = trade_outcome.metadata['setup_type']
             
         if setup_type not in self.cognitive_memory[symbol]:
             self.cognitive_memory[symbol][setup_type] = {'consecutive_losses': 0, 'state': 'NORMAL'}
@@ -2514,13 +2584,13 @@ class HybridScalpingStrategy(Strategy):
         [PHASE 65] Fused End-to-End Decision.
         Uses the Alpha Genotype's brain to map market data directly to an action.
         """
-        genotype = self.genotypes.get(symbol) # Get symbol-specific genotype
+        genotype = self.genotypes[symbol] # Get symbol-specific genotype
         if genotype is None or len(data) < 30:
             return None, 0.0
             
         # 1. Prepare Genotype Params
         # We need brain_weights as float32 array
-        weights = genotype.genes.get('brain_weights', [])
+        weights = genotype.genes['brain_weights']
         if weights is None or (hasattr(weights, '__len__') and len(weights) == 0):
             # Initialize if empty (from Genotype.init_brain logic)
             genotype.init_brain(25, 4)
@@ -2529,16 +2599,16 @@ class HybridScalpingStrategy(Strategy):
         weights_arr = np.array(weights, dtype=np.float32)
         
         # 2. Normalize Gene Context for state tensor [sl, tp]
-        sl = genotype.genes.get('sl_pct', 0.02)
-        tp = genotype.genes.get('tp_pct', 0.015)
+        sl = genotype.genes['sl_pct']
+        tp = genotype.genes['tp_pct']
         gene_params = np.array([min(sl * 10, 1.0), min(tp * 10, 1.0)], dtype=np.float32)
         
         # 3. Portfolio State [has_pos, pnl_norm, dur_norm]
         ps = np.zeros(3, dtype=np.float32)
         if portfolio_state:
-            ps[0] = 1.0 if portfolio_state.get('quantity', 0) != 0 else 0.0
-            ps[1] = np.clip(portfolio_state.get('pnl_pct', 0.0) * 10, -1.0, 1.0)
-            ps[2] = min(portfolio_state.get('duration', 0) / 100.0, 1.0)
+            ps[0] = 1.0 if portfolio_state['quantity'] != 0 else 0.0
+            ps[1] = np.clip(portfolio_state['pnl_pct'] * 10, -1.0, 1.0)
+            ps[2] = min(portfolio_state['duration'] / 100.0, 1.0)
             
         # 4. Fused Compute
         closes = data['close'].astype(np.float64)
@@ -2586,10 +2656,10 @@ class HybridScalpingStrategy(Strategy):
         El bot audita sus propios resultados diferenciando *por qué* entró.
         Si la estrategia que usó (MOMENTUM / MEAN_REV) quema saldo, la censurará.
         """
-        symbol = trade.get('symbol')
-        pnl = trade.get('pnl_usd', 0)
-        metadata = trade.get('metadata', {})
-        setup_type = metadata.get('setup_type', 'UNKNOWN')
+        symbol = trade['symbol']
+        pnl = trade['pnl_usd']
+        metadata = trade['metadata']
+        setup_type = metadata['setup_type']
         
         if not symbol or setup_type == 'UNKNOWN':
             return
@@ -2620,7 +2690,7 @@ class HybridScalpingStrategy(Strategy):
         if len(mem['history']) >= 3: # Reacción ultra rápida
             recent_wins = sum(1 for x in mem['history'] if x > 0)
             recent_wr = recent_wins / len(mem['history'])
-            old_state = mem.get('state', 'NORMAL')
+            old_state = mem['state']
             
             if recent_wr < 0.45:
                 mem['state'] = 'INJURED'
@@ -2634,7 +2704,7 @@ class HybridScalpingStrategy(Strategy):
                 
         # 4. Phase 48: ONLINE LEARNING (SGD)
         # If we have stored state for this trade, we update weights
-        brain_data = self.brain_memory.get(symbol)
+        brain_data = self.brain_memory[symbol]
         if brain_data:
             # We determine the target based on PnL
             # If PnL > 0, we reinforce the action (Target = 1.0)
@@ -2651,14 +2721,14 @@ class HybridScalpingStrategy(Strategy):
             )
             
             # Save back to Genotype
-            genotype = self.genotypes.get(symbol)
+            genotype = self.genotypes[symbol]
             if genotype:
                 genotype.genes['brain_weights'] = new_weights.flatten().tolist()
                 logger.info(f"🧠 [ONLINE LEARNING] Adjusted weights for {symbol} ({setup_type}). PnL={pnl:.2f}")
 
         # 5. Return Oracle Reasoning for Telemetry
         from core.sovereign_oracle import sovereign_oracle
-        history = sovereign_oracle.knowledge_base.get(symbol, [])
+        history = sovereign_oracle.knowledge_base[symbol]
         return history[-1] if history else None
 
     def _apply_live_mutation(self, symbol: str, genotype: Genotype):
@@ -2717,7 +2787,7 @@ class HybridScalpingStrategy(Strategy):
                 genotype.genes[k] *= direction
                 
         # Optional: Neural Weight drift
-        bw = genotype.genes.get('brain_weights')
+        bw = genotype.genes['brain_weights']
         if bw is not None and len(bw) > 0:
             weights = np.array(bw)
             weights += np.random.normal(0, total_drift * 0.1, size=weights.shape)

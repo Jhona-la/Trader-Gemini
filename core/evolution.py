@@ -1,5 +1,5 @@
 import numpy as np
-import pandas as pd
+import polars as pl
 import random
 import secrets # Phase 26: Stochastic Purity
 from typing import List, Dict, Any
@@ -68,13 +68,21 @@ class FitnessCalculator:
         else:
             significance_penalty = 1.0
             
-        # 🧬 [PHASE 3] DARWINIAN DEATH PENALTY 
-        # Culling the weak. If win rate is below 55%, the genome's survival chance is crushed.
-        # This forces the Evolution Engine to breed only High-Probability Scalping models.
-        if win_rate < 0.55:
-            significance_penalty *= 0.1
+        # 🧬 [PHASE 3] DARWINIAN TARGET: EXPONENTIAL COMPOUNDING
+        # The core focus is 100% compound interest every 3 days. WR is irrelevant if PnL is exponential.
+        
+        # Calculate true compounding
+        capital = 1.0
+        for r in returns:
+            capital *= (1.0 + r)
+        compound_growth = capital - 1.0
+        
+        # Culling models that lose capital
+        if compound_growth < 0:
+            significance_penalty *= 0.001
             
-        score = (sortino * 2.0) + (profit_factor * 1.0) - (max_drawdown * 10.0)
+        # Score emphasizes Exponential Growth massively while punishing Drawdowns
+        score = (compound_growth * 1000.0) + (sortino * 2.0) - (max_drawdown * 100.0)
         
         # Normalize
         score = max(0.0, score) * significance_penalty
@@ -131,9 +139,9 @@ class EvolutionEngine:
         for gene_key in child_genes.keys():
             # Heredar de A o B aleatoriamente
             if random.random() < 0.5:
-                child_genes[gene_key] = genes_a.get(gene_key, child_genes[gene_key])
+                child_genes[gene_key] = genes_a[gene_key]
             else:
-                child_genes[gene_key] = genes_b.get(gene_key, child_genes[gene_key])
+                child_genes[gene_key] = genes_b[gene_key]
                 
         child_genotype.parent_id = f"{parent_a.generation}+{parent_b.generation}"
         return child_genotype
@@ -272,7 +280,7 @@ class EvolutionEngine:
         for i, ind in enumerate(population):
             fitness_scores[i] = ind.fitness_score
             for k_idx, k in enumerate(scalar_keys):
-                scalars_matrix[i, k_idx] = float(ind.genes.get(k, 0))
+                scalars_matrix[i, k_idx] = float(ind.genes[k])
             if has_brain:
                 brains_matrix[i] = np.array(ind.genes['brain_weights'], dtype=np.float32)
 

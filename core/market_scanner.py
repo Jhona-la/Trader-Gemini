@@ -89,7 +89,7 @@ class MarketScanner:
                 raw_score = (volume * self.VOL_WEIGHT) + (volatility * 1000000 * self.VOLATILITY_WEIGHT)
                 
                 # Apply Loyalty Bonus
-                loyalty_count = self.loyalty_data.get(internal_symbol, 0)
+                loyalty_count = self.loyalty_data[internal_symbol]
                 final_score = raw_score * (1 + (loyalty_count * self.LOYALTY_BONUS))
                 
                 ranked_data.append({
@@ -109,7 +109,7 @@ class MarketScanner:
             
             # Update Loyalty for top candidates
             for sym in candidates[:active_limit]:
-                self.loyalty_data[sym] = self.loyalty_data.get(sym, 0) + 1
+                self.loyalty_data[sym] = self.loyalty_data[sym] + 1
             
             # Retention Check
             final_selection = []
@@ -128,7 +128,7 @@ class MarketScanner:
                         final_selection.append(sym)
                 else:
                     logger.info(f"📉 Scanner: Dropping {sym} (Rank {rank} is too low).")
-                    self.loyalty_data[sym] = max(0, self.loyalty_data.get(sym, 0) - 2)
+                    self.loyalty_data[sym] = max(0, self.loyalty_data[sym] - 2)
 
             # Fill remaining slots with new candidates
             for sym in candidates:

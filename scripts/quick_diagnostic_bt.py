@@ -20,6 +20,8 @@ import random
 Config.TELEGRAM_ENABLED = False
 Config.EMAIL_ENABLED = False
 Config.DISCORD_ENABLED = False
+import logging
+logging.getLogger("trader_gemini").setLevel(logging.DEBUG)
 
 # Silence Observability layer notifications (the real gate for Notifier)
 if hasattr(Config, 'Observability'):

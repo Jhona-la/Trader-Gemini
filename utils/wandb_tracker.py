@@ -281,8 +281,8 @@ class WandBTracker:
         
         return {
             "total_entries": len(self._local_log),
-            "first_timestamp": self._local_log[0].get("_timestamp"),
-            "last_timestamp": self._local_log[-1].get("_timestamp"),
+            "first_timestamp": self._local_log[0]["_timestamp"],
+            "last_timestamp": self._local_log[-1]["_timestamp"],
         }
 
 

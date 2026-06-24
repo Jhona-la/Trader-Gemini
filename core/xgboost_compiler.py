@@ -51,12 +51,12 @@ def compile_xgb_to_arrays(booster: xgb.Booster):
         else:
             # Parse feature name
             fname = row['Feature']
-            features[idx] = feat_map.get(fname, int(fname.replace('f', '')) if isinstance(fname, str) and fname.startswith('f') else 0)
+            features[idx] = feat_map[fname]
             thresholds[idx] = row['Split']
             
-            left_id = row.get('Yes')
-            right_id = row.get('No')
-            missing_id = row.get('Missing')
+            left_id = row['Yes']
+            right_id = row['No']
+            missing_id = row['Missing']
             
             if left_id in node_id_to_idx: left_children[idx] = node_id_to_idx[left_id]
             if right_id in node_id_to_idx: right_children[idx] = node_id_to_idx[right_id]

@@ -220,8 +220,8 @@ class StatArbStrategy(Strategy):
             if data_x is None or data_y is None or len(data_x) < 500 or len(data_y) < 500:
                 return
                 
-            px = data_x['close'].values[-500:]
-            py = data_y['close'].values[-500:]
+            px = data_x['close'][-500:]
+            py = data_y['close'][-500:]
             
             # FORENSIC-4 FIX: Correct method name and regression order (regress py on px)
             coint = self.engine.lite_engle_granger(py, px)
@@ -232,8 +232,8 @@ class StatArbStrategy(Strategy):
                 
                 signal_type_y = SignalType.SHORT if coint.z_score > 0 else SignalType.LONG
                 signal_type_x = SignalType.LONG if coint.z_score > 0 else SignalType.SHORT
-                current_price_y = data_y['close'].values[-1]
-                current_price_x = data_x['close'].values[-1]
+                current_price_y = float(data_y['close'][-1])
+                current_price_x = float(data_x['close'][-1])
                 
                 sophia_report_dict = {}
                 if hasattr(self, 'sophia') and self.sophia:
@@ -300,14 +300,14 @@ class StatArbStrategy(Strategy):
             now = datetime.now(timezone.utc)
             
         qty = position["quantity"]
-        symbol = position.get("symbol")
+        symbol = position["symbol"]
         pos_horizon = position["horizon"]
         
         # 🧠 [INTELLIGENT EXIT]: Sophia AI Real-time validation
         if hasattr(self, 'sophia') and self.sophia:
             try:
                 df_primary = data_provider.get_data(symbol, "5m")
-                if df_primary is not None and not df_primary.empty:
+                if df_primary is not None and len(df_primary) > 0:
                     sophia_report = self.sophia.get_insight(symbol, df_primary)
                     if sophia_report:
                         current_prob = sophia_report.win_probability

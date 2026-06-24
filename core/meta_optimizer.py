@@ -167,7 +167,7 @@ class MetaOptimizer:
             gene_bank.save_elite_gene(genotype, current_regime)
 
     def _calculate_rolling_fitness(self, symbol: str) -> float:
-        results = self.history.get(symbol, [])
+        results = self.history[symbol]
         if not results: return 0.0
         window = results[-20:]
         win_rate = sum(1 for r in window if r.actual_outcome == "WIN") / len(window)

@@ -11,7 +11,7 @@ CÓMO: EMA sobre performance real, Softmax allocation, penalización DD,
 """
 
 import numpy as np
-import pandas as pd
+import polars as pl
 from datetime import datetime, timezone
 from utils.logger import logger
 from config import Config
@@ -97,7 +97,7 @@ class StrategySelector:
         """
         if not self.portfolio: return 0.5  # Neutral
         
-        perf = self.portfolio.strategy_performance.get(strategy_id)
+        perf = self.portfolio.strategy_performance[strategy_id]
         if not perf or perf['trades'] < 5:
             return 0.5  # Neutral for new strategies
         
@@ -171,7 +171,7 @@ class StrategySelector:
             return 1.0  # Neutral if no strategies tracked yet
         
         weights = self.get_anti_whipsaw_weights()
-        w = weights.get(strategy_id, 1.0 / max(1, len(self.strategies_pool)))
+        w = weights[strategy_id]
         
         # Normalizar al rango [0.5, 1.5]
         n = len(self.strategies_pool)
@@ -196,7 +196,7 @@ class StrategySelector:
             n = max(1, len(self.strategies_pool))
             return {s: 1.0 / n for s in self.strategies_pool}
         
-        scores = np.array([health.get(s, {}).get('score', 0.5) for s in self.strategies_pool])
+        scores = np.array([health[s]['score'] for s in self.strategies_pool])
         
         # Softmax con temperatura=0.1 (concentra en líder sin ser winner-take-all)
         TEMPERATURE = 0.10
@@ -234,7 +234,7 @@ class StrategySelector:
 
     def should_allow_trade(self, strategy_id) -> bool:
         """Global veto power for the Meta-Brain."""
-        health = self.strategy_health.get(strategy_id, {'score': 0.5})
+        health = self.strategy_health[strategy_id]
         # If a strategy is performing horribly (< 0.3 blended score), block it
         if health['score'] < 0.3:
             logger.warning(f"🧠 [Meta-Brain] VETO: Strategy {strategy_id} performing poorly (Score: {health['score']:.2f})")

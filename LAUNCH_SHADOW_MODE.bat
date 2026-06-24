@@ -58,7 +58,7 @@ set TG_SHADOW_MODE=1
 :: Filtrar ?nicamente monedas de alta liquidez para prevenir ruido en el Tensor 10D
 set TG_SYMBOLS=BTC/USDT,ETH/USDT,SOL/USDT
 
-python -O -u main.py --mode futures
+python -O -u main.py --mode futures --symbols "%TG_SYMBOLS%"
 
 echo.
 echo ===============================================================================

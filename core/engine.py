@@ -128,16 +128,22 @@ class PriorityBoundedQueue:
     """
     def __init__(self, maxsize=5000):
         try:
-            from core.nano_core import NanoPriorityQueue
-            self._queue = NanoPriorityQueue(capacity=10000)
-            self._use_cython = True
+            from quantum_bridge import QuantumQueue
+            self._queue = QuantumQueue(10000)
+            self._use_native = True
+            logger.info("⚛️ [QUANTUM BRIDGE] Using Rust Lock-Free QuantumQueue.")
         except ImportError:
-            self._use_cython = False
-            self._deques = {
-                0: collections.deque(maxlen=maxsize), 
-                1: collections.deque(maxlen=maxsize), 
-                2: collections.deque(maxlen=maxsize)
-            }
+            try:
+                from core.nano_core import NanoPriorityQueue
+                self._queue = NanoPriorityQueue(capacity=10000)
+                self._use_native = True
+            except ImportError:
+                self._use_native = False
+                self._deques = {
+                    0: collections.deque(maxlen=maxsize), 
+                    1: collections.deque(maxlen=maxsize), 
+                    2: collections.deque(maxlen=maxsize)
+                }
         
         self._event = asyncio.Event()
         self._items_count = 0
@@ -157,7 +163,7 @@ class PriorityBoundedQueue:
                 
         priority = max(0, min(2, priority))
         
-        if self._use_cython:
+        if self._use_native:
             self._queue.put(item, priority)
             self._items_count = self._queue.qsize()
         else:
@@ -177,7 +183,7 @@ class PriorityBoundedQueue:
         while True:
             # Fast path
             if self._items_count > 0:
-                if self._use_cython:
+                if self._use_native:
                     item = self._queue.get()
                     if item is not None:
                         self._items_count = self._queue.qsize()
@@ -203,7 +209,7 @@ class PriorityBoundedQueue:
     def get_nowait(self):
         """Fast synchronous retrieval for burst draining."""
         if self._items_count > 0:
-            if self._use_cython:
+            if self._use_native:
                 item = self._queue.get()
                 if item is not None:
                     self._items_count = self._queue.qsize()
@@ -774,7 +780,7 @@ class Engine:
         
         logger.critical(f"🪐 [BTC GRAVITY] Recibida Señal Front-Running: {direction} (Z: {z_score:.2f})")
         
-        from core.events import SignalEvent, SignalType
+        from core.events import SignalEvent
         import datetime
         
         for symbol in self._strategies_by_symbol.keys():
@@ -1022,10 +1028,7 @@ class Engine:
                              qty = pos['quantity']
                              avg_price = pos['avg_price']
                              direction = 1 if qty > 0 else -1
-                             if calculate_unrealized_pnl_fast:
-                                 unrealized_pnl = calculate_unrealized_pnl_fast(float(event.close_price), float(avg_price), float(abs(qty)), direction)
-                             else:
-                                 unrealized_pnl = (event.close_price - avg_price) / avg_price * 100.0 * direction
+                             unrealized_pnl = (event.close_price - avg_price) / avg_price * 100.0 * direction
                              
                              duration_s = (datetime.datetime.now(datetime.timezone.utc) - pos['datetime']).total_seconds()
                              self.rl_agent.apply_tick_penalty(event.symbol, pos.get('horizon', 'SCALPING'), unrealized_pnl, duration_s)
@@ -1124,7 +1127,6 @@ class Engine:
         # POR QUÉ: Si BTC, ETH y SOL caen juntos, tener 3 LONGs activos multiplica el drawdown x3.
         # CÓMO: Si hay señal ENTRY para ETH/SOL, revisa si ya existe un trade abierto
         #   en BTC en la MISMA dirección y mismo horizonte. Si sí, la bloquea.
-        from core.events import SignalType
         _is_exit = event.signal_type == SignalType.EXIT
         
         if not _is_exit and event.symbol in ("ETH/USDT", "SOL/USDT") and self.portfolio:
@@ -1174,7 +1176,6 @@ class Engine:
         # Mutación 35: Genetic Pruning (Cross-Fertilization Matrix)
         try:
             from core.synaptic_pruner import SynapticPruner
-            from core.events import SignalType
             trust_multiplier, tp_mod, sl_mod = SynapticPruner.get_instance().get_genetic_modifiers(getattr(event, 'strategy_id', 'UNKNOWN'))
             effective_conf = getattr(event, 'confidence', 0.0) * trust_multiplier
             is_exit_signal = getattr(event, 'signal_type', None) == SignalType.EXIT or str(getattr(event, 'signal_type', None)) == 'SignalType.EXIT'

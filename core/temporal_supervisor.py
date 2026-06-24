@@ -878,7 +878,7 @@ Se mantiene el modelo actual para la generación `{new_gen}` y se programa un nu
         md_path = os.path.join(audits_dir, f"{filename_base}.md")
         try:
             status_colors = {0: "🟢 VERDE (Operación Normal)", 1: "🟡 AMARILLA (Conservador 70%)", 2: "🟠 NARANJA (Conservador 50%)", 3: "🔴 ROJA (Kill Switch Activo)"}
-            status_label = status_colors.get(self.state.degradation_level, "🟢 VERDE")
+            status_label = status_colors[self.state.degradation_level]
             
             md_content = f"""# Reporte de Auditoría Temporal: {audit_type.upper()} ({time_window_label})
 
@@ -964,9 +964,7 @@ Generación: `{self.state.current_generation}` | Ciclo ID: `{self.state.current_
         start_perf = getattr(self, 'cycle_start_performance', {})
         
         for strat_id, stats in getattr(self.portfolio, "strategy_performance", {}).items():
-            start_stats = start_perf.get(strat_id, {
-                'trades': 0, 'wins': 0, 'pnl': 0.0, 'total_win_pnl': 0.0, 'total_loss_pnl': 0.0
-            })
+            start_stats = start_perf[strat_id]
             
             cycle_trades += stats['trades'] - start_stats['trades']
             cycle_wins += stats['wins'] - start_stats['wins']

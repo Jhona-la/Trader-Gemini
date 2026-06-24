@@ -1,6 +1,7 @@
 import numpy as np
 from utils.logger import logger
 import os
+import datetime
 
 class XAIEngine:
     """
@@ -20,7 +21,6 @@ class XAIEngine:
         Generates global SHAP values and saves a summary plot. (Batch/Offline).
         """
         import shap
-        import pandas as pd
         import matplotlib.pyplot as plt
         
         try:
@@ -40,7 +40,6 @@ class XAIEngine:
         Returns a string summary of the top 3 features driving this specific decision.
         """
         import shap
-        import pandas as pd
         
         try:
             if model_name not in self.explainers:
@@ -93,7 +92,7 @@ class XAIEngine:
             log_path = os.path.join(self.model_dir, f"xai_audit_{symbol.replace('/','_')}.log")
             
             with open(log_path, "a", encoding='utf-8') as f:
-                f.write(f"[{pd.Timestamp.now()}] Signal: {signal_type} | Drivers: {explanation}\n")
+                f.write(f"[{datetime.datetime.now()}] Signal: {signal_type} | Drivers: {explanation}\n")
                 
         except Exception as e:
             logger.error(f"XAI Log Error: {e}")
@@ -110,12 +109,12 @@ class XAIEngine:
             # Formatear el cambio de pesos para fácil lectura
             weight_diffs = []
             for k in old_weights.keys():
-                diff = new_weights.get(k, 0) - old_weights.get(k, 0)
+                diff = new_weights[k] - old_weights[k]
                 direction = "📈" if diff > 0 else "📉" if diff < 0 else "➖"
                 weight_diffs.append(f"{k}: {old_weights[k]:.2f} -> {new_weights[k]:.2f} ({direction} {diff:+.2f})")
                 
             explanation = (
-                f"[{pd.Timestamp.now()}] PPO UPDATE | "
+                f"[{datetime.datetime.now()}] PPO UPDATE | "
                 f"Reward: {reward:+.4f} | "
                 f"Trigger: {reason} | "
                 f"Weights: {' | '.join(weight_diffs)}\n"

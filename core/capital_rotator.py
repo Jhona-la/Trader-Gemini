@@ -39,20 +39,20 @@ class CapitalRotator:
         now_ts = time.time()
         
         for v_key, pos in portfolio.virtual_ledger.items():
-            qty = pos.get('quantity', 0.0)
+            qty = pos['quantity']
             if qty == 0:
                 continue
                 
-            pos_horizon = pos.get('horizon', 'SCALPING')
+            pos_horizon = pos['horizon']
             if pos_horizon != horizon:
                 continue
                 
             # If the signal is for the same symbol, don't kill it (might be a scale-in)
-            symbol = pos.get('symbol', v_key.split('_')[0])
+            symbol = pos['symbol']
             if symbol == incoming_signal.symbol:
                 continue
                 
-            entry_ts = pos.get('entry_time')
+            entry_ts = pos['entry_time']
             if not entry_ts:
                 continue
                 
@@ -63,8 +63,8 @@ class CapitalRotator:
             if age_s < self.min_trade_age_s:
                 continue
                 
-            entry_price = pos.get('avg_price', pos.get('entry_price', 1.0))
-            current_price = pos.get('current_price', entry_price)
+            entry_price = pos['avg_price']
+            current_price = pos['current_price']
             
             pnl_pct = (current_price - entry_price) / entry_price if qty > 0 else (entry_price - current_price) / entry_price
             

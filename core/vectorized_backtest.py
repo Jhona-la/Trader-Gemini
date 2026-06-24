@@ -2,121 +2,160 @@ import numpy as np
 from numba import njit, prange
 
 @njit(parallel=True, fastmath=True)
-def vectorized_backtest_core(close_prices, rsi_period, rsi_lower, rsi_upper, stop_loss_pct, take_profit_pct):
+def quantum_grid_search_core(
+    close_prices, 
+    high_prices, 
+    low_prices, 
+    ml_scores, 
+    tech_scores, 
+    vol_ratios,
+    params_grid  # Matrix of shape (N_combinations, M_params)
+):
     """
-    Motor hiper-rápido de backtest escrito en C/LLVM via Numba JIT.
-    Capaz de evaluar millones de velas en milisegundos.
+    Motor NANO-SPEED escrito en C (vía Numba LLVM) para evaluar 
+    millones de combinaciones de hiperparámetros en milisegundos.
+    
+    params_grid layout:
+    0: ml_threshold
+    1: tech_threshold
+    2: vol_ratio_threshold
+    3: stop_loss_pct
+    4: take_profit_pct
+    5: trailing_activation_pct
+    6: trailing_distance_pct
+    7: max_hold_bars
+    8: strat_type (0: Mean Reversion, 1: Breakout)
     """
-    n = len(close_prices)
-    returns = np.zeros(n)
+    n_candles = len(close_prices)
+    n_combos = params_grid.shape[0]
     
-    # Pre-calcular RSI de forma vectorizada (aproximación rápida para JIT)
-    rsi = np.zeros(n)
-    gains = np.zeros(n)
-    losses = np.zeros(n)
+    # Resultados: [Net PnL, WinRate, Total Trades, Max Drawdown] por combinación
+    results = np.zeros((n_combos, 4), dtype=np.float64)
     
-    for i in prange(1, n):
-        change = close_prices[i] - close_prices[i-1]
-        if change > 0:
-            gains[i] = change
-        else:
-            losses[i] = -change
-            
-    # Calcular SMA de las ganancias y pérdidas
-    for i in prange(rsi_period, n):
-        avg_gain = np.mean(gains[i-rsi_period:i])
-        avg_loss = np.mean(losses[i-rsi_period:i])
-        if avg_loss == 0:
-            rsi[i] = 100
-        else:
-            rs = avg_gain / avg_loss
-            rsi[i] = 100 - (100 / (1 + rs))
-
-    # Simulación de Trading
-    position = 0 # 0=flat, 1=long
-    entry_price = 0.0
+    # Comisiones Binance Taker + Slippage
+    fee_rate = 0.000375 * 2.0  # Entry + Exit
+    slippage = 0.0001
     
-    for i in range(rsi_period, n-1):
-        # Lógica de Salida (Stop Loss / Take Profit)
-        if position == 1:
-            pnl_pct = (close_prices[i] - entry_price) / entry_price
-            if pnl_pct <= -stop_loss_pct or pnl_pct >= take_profit_pct:
-                position = 0
-                returns[i] = pnl_pct
+    for c in prange(n_combos):
+        ml_thresh = params_grid[c, 0]
+        tech_thresh = params_grid[c, 1]
+        vol_thresh = params_grid[c, 2]
+        sl_pct = params_grid[c, 3]
+        tp_pct = params_grid[c, 4]
+        trail_act = params_grid[c, 5]
+        trail_dist = params_grid[c, 6]
+        max_hold = int(params_grid[c, 7])
+        strat_type = int(params_grid[c, 8])
+        
+        position = 0 # 0=flat, 1=long, -1=short
+        entry_price = 0.0
+        bars_held = 0
+        highest_pnl = 0.0
+        
+        wins = 0
+        losses = 0
+        pnl = 0.0
+        peak_pnl = 1.0 # Starting capital unit
+        max_dd = 0.0
+        
+        capital = 1.0
+        risk_fraction = 0.50
+        leverage = 50.0
+        for i in range(1, n_candles - 1):
+            if position != 0:
+                bars_held += 1
                 
-        # Lógica de Entrada
-        if position == 0 and rsi[i] < rsi_lower:
-            position = 1
-            entry_price = close_prices[i]
+                # Check Exits (Stop Loss / Take Profit / Trailing / Timeout)
+                current_pnl = 0.0
+                if position == 1:
+                    current_pnl = (close_prices[i] - entry_price) / entry_price
+                else:
+                    current_pnl = (entry_price - close_prices[i]) / entry_price
+                
+                # Update Trailing logic
+                if current_pnl > highest_pnl:
+                    highest_pnl = current_pnl
+                    
+                exit_triggered = False
+                
+                # 1. Hard Take Profit
+                if current_pnl >= tp_pct:
+                    exit_triggered = True
+                # 2. Hard Stop Loss
+                elif current_pnl <= -sl_pct:
+                    exit_triggered = True
+                # 3. Trailing Stop Loss
+                elif highest_pnl >= trail_act and current_pnl <= (highest_pnl - trail_dist):
+                    exit_triggered = True
+                # 4. Timeout Timeout
+                elif bars_held >= max_hold:
+                    exit_triggered = True
+                    
+                if exit_triggered:
+                    net_trade = current_pnl - fee_rate - slippage
+                    
+                    if capital > 0.0:
+                        trade_roi = net_trade * leverage
+                        capital_at_risk = capital * risk_fraction
+                        capital += (capital_at_risk * trade_roi)
+                    
+                    pnl += net_trade
+                    
+                    if capital > peak_pnl:
+                        peak_pnl = capital
+                    else:
+                        dd = (peak_pnl - capital) / peak_pnl
+                        if dd > max_dd:
+                            max_dd = dd
+                            
+                    if net_trade > 0:
+                        wins += 1
+                    else:
+                        losses += 1
+                        
+                    position = 0
+                    bars_held = 0
+                    highest_pnl = 0.0
             
-    return returns
-
-def run_backtest_fidelity(fidelity_level, params):
-    """
-    Wrapper multi-fidelidad.
-    F1: 100 velas (microsegundos)
-    F2: 1000 velas
-    F3: 5000 velas
-    F4: 10000 velas (Validación final)
-    """
-    fidelity_map = {
-        'F1': 100,
-        'F2': 1000,
-        'F3': 5000,
-        'F4': 10000
-    }
-    
-    n_candles = fidelity_map.get(fidelity_level, 1000)
-    
-    n_candles = fidelity_map.get(fidelity_level, 1000)
-    
-    # FETCH REAL DATA INSTEAD OF RANDOM WALK
-    import asyncio
-    from data.binance_loader import BinanceLoader
-    import datetime
-
-    # Pre-fetch REAL binance historical data if not cached
-    loader = BinanceLoader()
-    
-    # We use a synchronous bridge just for the backtest orchestrator (if not already in event loop)
-    # Ideally, this should be preloaded before evolutionary loops.
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+            if position == 0:
+                if strat_type == 0:
+                    # MEAN REVERSION
+                    if ml_scores[i] < (1.0 - ml_thresh) and tech_scores[i] < (1.0 - tech_thresh):
+                        position = 1
+                        entry_price = close_prices[i]
+                        bars_held = 0
+                        highest_pnl = 0.0
+                    elif ml_scores[i] > ml_thresh and tech_scores[i] > tech_thresh:
+                        position = -1
+                        entry_price = close_prices[i]
+                        bars_held = 0
+                        highest_pnl = 0.0
+                else:
+                    # BREAKOUT
+                    if ml_scores[i] > ml_thresh and tech_scores[i] > tech_thresh:
+                        position = 1
+                        entry_price = close_prices[i]
+                        bars_held = 0
+                        highest_pnl = 0.0
+                    elif ml_scores[i] < (1.0 - ml_thresh) and tech_scores[i] < (1.0 - tech_thresh):
+                        position = -1
+                        entry_price = close_prices[i]
+                        bars_held = 0
+                        highest_pnl = 0.0
+                        
+        total_trades = wins + losses
+        win_rate = (wins / total_trades) if total_trades > 0 else 0.0
         
-    if loop.is_running():
-        # In a running loop, we can't easily wait. This implies the caller should have provided the data.
-        # Fallback to loading via a separate thread or just failing to avoid dummy data.
-        raise RuntimeError("run_backtest_fidelity must be called with pre-loaded real data or outside event loop.")
-    else:
-        # Load 30 days of 1m kliness to get enough data
-        end_str = datetime.datetime.now().strftime("%d %b, %Y")
-        klines = loop.run_until_complete(loader.get_historical_klines("BTCUSDT", "1m", "30 days ago UTC", end_str))
+        # PENALIZACIÓN DE CERTEZA ABSOLUTA (WIN RATE 100%)
+        # Si la estrategia registra UNA SOLA PÉRDIDA o capital cae a cero, el score es -999.0
+        if losses > 0 or total_trades < 5 or capital <= 0.0:
+            compound_pnl = -999.0
+        else:
+            compound_pnl = capital - 1.0
+            
+        results[c, 0] = compound_pnl # Guardar Compound PnL para ranking
+        results[c, 1] = win_rate
+        results[c, 2] = float(total_trades)
+        results[c, 3] = max_dd
         
-    if not klines or len(klines) < n_candles:
-        return -1.0 # Not enough real data
-        
-    # Extract close prices from binance data: [open_time, open, high, low, close, volume, ...]
-    import numpy as np
-    close_prices = np.array([float(k[4]) for k in klines[-n_candles:]], dtype=np.float64)
-    
-    # Extraer parámetros
-    rsi_p = params['rsi_period']
-    rsi_l = params['rsi_lower']
-    rsi_u = params['rsi_upper']
-    sl = params['stop_loss']
-    tp = params['take_profit']
-    
-    # Ejecutar JIT
-    trade_returns = vectorized_backtest_core(close_prices, rsi_p, rsi_l, rsi_u, sl, tp)
-    
-    # Calcular Geometric Mean Return (Evitar NaN)
-    valid_returns = trade_returns[trade_returns != 0.0]
-    if len(valid_returns) == 0:
-        return -1.0 # Penalizar inactividad
-        
-    geo_mean = np.prod(1 + valid_returns) ** (1/max(1, len(valid_returns))) - 1
-    
-    return float(geo_mean)
+    return results

@@ -66,7 +66,7 @@ class DarkAlphaMembrane:
         # Colapso Lineal Simple (Fase 1)
         net_pressure = 0.0
         for key, val in raw_signals.items():
-            weight = self.impact_weights.get(key, 0.0)
+            weight = self.impact_weights[key]
             net_pressure += val * weight
             
         vec[0] = net_pressure

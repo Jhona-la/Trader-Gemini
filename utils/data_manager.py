@@ -152,13 +152,13 @@ def safe_read_csv(file_path: str):
     Thread-safe CSV read.
     Returns DataFrame or None if failed.
     """
-    import pandas as pd
+    import polars as pl
     with _file_lock:
         if not os.path.exists(file_path):
             return None
         try:
             # on_bad_lines='skip' prevents ParserError when schema changes
-            return pd.read_csv(file_path, on_bad_lines='skip')
+            return pl.read_csv(file_path, ignore_errors=True)
         except Exception as e:
             print(f"safe_read_csv failed: {e}")
             return None
@@ -421,7 +421,7 @@ class DatabaseHandler:
                     trade_payload['side'],
                     trade_payload['quantity'],
                     trade_payload['price'],
-                    str(trade_payload.get('timestamp')) if trade_payload.get('timestamp') is not None else None,
+                    str(trade_payload['timestamp']) if trade_payload['timestamp'] is not None else None,
                     trade_payload['strategy_id'],
                     trade_payload['pnl'],
                     trade_payload['commission']
@@ -490,22 +490,22 @@ class DatabaseHandler:
                         oracle_prediction_time_bars, direction, entry_size_usd
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    kwargs.get('trade_id'),
-                    kwargs.get('symbol'),
-                    kwargs.get('horizon'),
-                    kwargs.get('tick_number'),
-                    kwargs.get('current_price'),
-                    kwargs.get('entry_price'),
-                    kwargs.get('unrealized_pnl_pct'),
-                    kwargs.get('distance_to_tp_pct'),
-                    kwargs.get('distance_to_sl_pct'),
-                    kwargs.get('mfe_so_far'),
-                    kwargs.get('mae_so_far'),
-                    kwargs.get('oracle_prediction_magnitude'),
-                    kwargs.get('oracle_prediction_target_price'),
-                    kwargs.get('oracle_prediction_time_bars'),
-                    kwargs.get('direction'),
-                    kwargs.get('entry_size_usd'),
+                    kwargs['trade_id'],
+                    kwargs['symbol'],
+                    kwargs['horizon'],
+                    kwargs['tick_number'],
+                    kwargs['current_price'],
+                    kwargs['entry_price'],
+                    kwargs['unrealized_pnl_pct'],
+                    kwargs['distance_to_tp_pct'],
+                    kwargs['distance_to_sl_pct'],
+                    kwargs['mfe_so_far'],
+                    kwargs['mae_so_far'],
+                    kwargs['oracle_prediction_magnitude'],
+                    kwargs['oracle_prediction_target_price'],
+                    kwargs['oracle_prediction_time_bars'],
+                    kwargs['direction'],
+                    kwargs['entry_size_usd'],
                 ))
                 self.conn.commit()
             except Exception as e:
@@ -585,28 +585,28 @@ class DatabaseHandler:
                         open_price_at_prediction
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    kwargs.get('trade_id'),
-                    kwargs.get('thought_id'),
-                    kwargs.get('strategy_id'),
-                    kwargs.get('symbol'),
-                    kwargs.get('horizon'),
-                    kwargs.get('direction'),
-                    kwargs.get('predicted_magnitude_pct'),
-                    kwargs.get('predicted_duration_bars'),
-                    kwargs.get('predicted_target_price'),
-                    kwargs.get('confidence'),
-                    kwargs.get('actual_magnitude_pct'),
-                    kwargs.get('actual_duration_bars'),
-                    kwargs.get('actual_exit_price'),
-                    1 if kwargs.get('was_correct') else 0,
-                    kwargs.get('optimal_exit_price'),
-                    kwargs.get('optimal_exit_bar'),
-                    kwargs.get('missed_profit_pct'),
-                    str(kwargs.get('entry_time')) if kwargs.get('entry_time') else None,
+                    kwargs['trade_id'],
+                    kwargs['thought_id'],
+                    kwargs['strategy_id'],
+                    kwargs['symbol'],
+                    kwargs['horizon'],
+                    kwargs['direction'],
+                    kwargs['predicted_magnitude_pct'],
+                    kwargs['predicted_duration_bars'],
+                    kwargs['predicted_target_price'],
+                    kwargs['confidence'],
+                    kwargs['actual_magnitude_pct'],
+                    kwargs['actual_duration_bars'],
+                    kwargs['actual_exit_price'],
+                    1 if kwargs['was_correct'] else 0,
+                    kwargs['optimal_exit_price'],
+                    kwargs['optimal_exit_bar'],
+                    kwargs['missed_profit_pct'],
+                    str(kwargs['entry_time']) if kwargs['entry_time'] else None,
                     kwargs['open_size_usd'],
                     kwargs['close_size_usd'],
                     kwargs['size_delta_usd'],
-                    kwargs.get('open_price_at_prediction'),
+                    kwargs['open_price_at_prediction'],
                 ))
                 self.conn.commit()
             except Exception:

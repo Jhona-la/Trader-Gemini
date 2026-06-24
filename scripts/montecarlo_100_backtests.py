@@ -11,8 +11,17 @@ from pathlib import Path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-# Constraint: 16GB RAM -> Max 3 concurrent backtests
-MAX_CONCURRENT = 3
+import psutil
+
+# Set the parent orchestrator to below normal priority so it yields to the OS
+try:
+    p = psutil.Process(os.getpid())
+    p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+except:
+    pass
+
+# Optimize concurrency for 16GB RAM: Max 4 workers to prevent OOM
+MAX_CONCURRENT = 4
 
 def mutate_dna(base_dna):
     """Mutación genética ligera para simular 100 escenarios distintos."""
@@ -40,6 +49,14 @@ def run_single_backtest(iteration, dna):
         
     dna_str = json.dumps(dna)
     
+    # We explicitly force 1 thread per backtest to prevent catastrophic OpenMP contention
+    env = os.environ.copy()
+    env["OMP_NUM_THREADS"] = "1"
+    env["MKL_NUM_THREADS"] = "1"
+    env["OPENBLAS_NUM_THREADS"] = "1"
+    env["VECLIB_MAXIMUM_THREADS"] = "1"
+    env["NUMEXPR_NUM_THREADS"] = "1"
+
     cmd = [
         sys.executable,
         os.path.join(project_root, "scripts", "run_god_mode_backtest.py"),
@@ -51,7 +68,9 @@ def run_single_backtest(iteration, dna):
     ]
     
     # Run synchronously inside the worker thread
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Use Windows creation flags to run child processes in BACKGROUND priority
+    creation_flags = 0x00004000  # BELOW_NORMAL_PRIORITY_CLASS in Windows
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, creationflags=creation_flags)
     
     # After it finishes, read the output
     if os.path.exists(out_file):
@@ -78,7 +97,7 @@ def run_single_backtest(iteration, dna):
 
 def run_100_backtests():
     print(f"⏳ Iniciando MONTE CARLO GENÉTICO: 100 Backtests a 30 Días...")
-    print(f"🚀 Concurrencia limitada a {MAX_CONCURRENT} workers para proteger 16GB RAM.")
+    print(f"🚀 Concurrencia optimizada a {MAX_CONCURRENT} workers (1 hilo c/u) para máxima eficiencia CPU/RAM.")
     
     # Load Base DNA
     try:
@@ -104,8 +123,14 @@ def run_100_backtests():
         tasks.append((i + 1, dna))
         
     completed = 0
+    # Algorithmic Resource Management: Dynamically yield to OS if RAM > 85%
+    def safe_run_single_backtest(iteration, dna):
+        while psutil.virtual_memory().percent > 85:
+            time.sleep(2)  # Backpressure: Wait for RAM to free up
+        return run_single_backtest(iteration, dna)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT) as executor:
-        futures = {executor.submit(run_single_backtest, t[0], t[1]): t for t in tasks}
+        futures = {executor.submit(safe_run_single_backtest, t[0], t[1]): t for t in tasks}
         
         for future in concurrent.futures.as_completed(futures):
             res = future.result()

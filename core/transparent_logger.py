@@ -175,7 +175,7 @@ class TransparentLogger:
         lc = layers['C']
         print(f"\n{Fore.YELLOW}🐳 LAYER C - WHALE DETECTION:{Style.RESET_ALL}")
         print(f"   ├─ Anomalía Vol: {lc['z_score']:.1f}σ")
-        print(f"   └─ Status:       {'WHALE' if lc.get('is_anomaly') else 'NORMAL'}")
+        print(f"   └─ Status:       {'WHALE' if lc['is_anomaly'] else 'NORMAL'}")
         
         # Total
         print(f"\n{Style.BRIGHT}🎯 CONFLUENCE TOTAL:{Style.RESET_ALL}")

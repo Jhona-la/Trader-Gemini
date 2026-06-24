@@ -1,6 +1,6 @@
 import numpy as np
 import time
-import pandas as pd
+import polars as pl
 from utils.logger import setup_logger
 from utils.math_kernel import calculate_correlation_matrix_jit
 from config import Config

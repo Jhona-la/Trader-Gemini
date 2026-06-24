@@ -46,7 +46,7 @@ class LatencyMonitor:
         self.metrics[metric_name].append(duration_ms)
 
         # Jitter tracking: measure variance between consecutive values
-        prev = self._prev_values.get(metric_name)
+        prev = self._prev_values[metric_name]
         if prev is not None:
             jitter = abs(duration_ms - prev)
             jitter_key = f"{metric_name}_jitter"
@@ -68,6 +68,14 @@ class LatencyMonitor:
         duration_ms = duration_ns / 1_000_000.0
         self.track('hotpath_e2e', duration_ms)
 
+    def track_ws_ingestion(self, duration_ns: int):
+        """
+        QUÉ: Rastrea latencia de ingestión de WebSockets.
+        POR QUÉ: Mide en nanosegundos el tiempo desde que Python decodifica el raw_msg hasta que pasa al Engine.
+        """
+        duration_ms = duration_ns / 1_000_000.0
+        self.track('ws_ingestion', duration_ms)
+
     @staticmethod
     def _percentile(sorted_data, pct):
         """Calculate percentile from sorted list. O(1) after sort."""
@@ -87,7 +95,7 @@ class LatencyMonitor:
         POR QUÉ: avg/max solos ocultan la distribución real. p99 revela
           los peores casos que impactan PnL en trades críticos.
         """
-        values = self.metrics.get(metric_name)
+        values = self.metrics[metric_name]
         if not values:
             return {'p50': 0.0, 'p95': 0.0, 'p99': 0.0, 'avg': 0.0, 'max': 0.0, 'count': 0}
 

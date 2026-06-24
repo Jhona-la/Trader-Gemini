@@ -51,6 +51,7 @@ class PositionState:
     quantity: float
     entry_price: float
     current_price: float
+    horizon: str = "UNKNOWN"
     
     pnl: float = 0.0
     pnl_pct: float = 0.0

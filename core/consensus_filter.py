@@ -17,11 +17,18 @@ import time
 import logging
 from typing import Tuple, Dict, Any, List
 
-from utils.logger import logger
-from core.events import SignalEvent, SignalType
-from core.enums import OrderSide
 from config import Config
+from core.events import SignalEvent, SignalType
+from utils.logger import logger
 from utils.strategy_tracker import strategy_tracker
+from core.enums import OrderSide
+
+try:
+    from core.nano_consensus import NanoConsensusFilter
+    _NANO_AVAILABLE = True
+except ImportError as e:
+    _NANO_AVAILABLE = False
+    logger.warning(f"⚠️ [ConsensusFilter] Cython version not found. Using pure Python fallback. Error: {e}")
 
 class ConsensusFilter:
     """
@@ -38,7 +45,13 @@ class ConsensusFilter:
             "failed": 0,
             "veto_reasons": {}
         }
-        logger.info("🧠 [ConsensusFilter] Omnisciente Consensus Filter Inicializado Exitosamente.")
+        
+        if _NANO_AVAILABLE:
+            self._nano_filter = NanoConsensusFilter()
+            logger.info("⚡ [ConsensusFilter] Delegating all checks to Cython NanoConsensusFilter.")
+        else:
+            self._nano_filter = None
+            logger.info("🧠 [ConsensusFilter] Omnisciente Consensus Filter Inicializado Exitosamente.")
     
     def check_signal(
         self, 
@@ -46,12 +59,20 @@ class ConsensusFilter:
         portfolio: Any, 
         current_price: float, 
         risk_manager: Any = None, 
-        meta_coordinator: Any = None
+        meta_coordinator: Any = None,
+        strategy_tracker: Any = None
     ) -> Tuple[bool, str]:
         """
         Evalúa secuencialmente todos los gates de consenso unificados.
         Retorna (True, 'APPROVED') o (False, 'MOTIVO_RECHAZO').
         """
+        if self._nano_filter is not None:
+            # Route to optimized Cython logic
+            return self._nano_filter.check_signal_jit(
+                signal_event, portfolio, current_price, risk_manager, 
+                meta_coordinator, Config, strategy_tracker
+            )
+
         self._metrics["total_evaluations"] += 1
         symbol = signal_event.symbol
         sig_type_str = getattr(signal_event.signal_type, "name", str(signal_event.signal_type))
@@ -103,7 +124,7 @@ class ConsensusFilter:
         #   Cada moneda tiene patrones direccionales distintos.
         # CÓMO: Ajusta la confianza de la señal con el bias del perfil del símbolo.
         try:
-            _sym_profile = Config.SymbolProfiles.get(symbol)
+            _sym_profile = Config.SymbolProfiles[symbol]
             # OMEGA FIX: Use strength (all strategies set this) + ml_confidence as boost
             _strength = getattr(signal_event, "strength", 0.5)
             _ml_conf = getattr(signal_event, "ml_confidence", None)
@@ -151,12 +172,12 @@ class ConsensusFilter:
             locks = portfolio.market_regime.get_regime_locks(symbol)
             _direction = "LONG" if signal_event.signal_type == SignalType.LONG else "SHORT"
             is_locked = False
-            if horizon == 'SWING' and locks.get('LOCK_SWING'):
+            if horizon == 'SWING' and locks['LOCK_SWING']:
                 is_locked = True
             elif horizon in ('SCALPING', 'MICROSCALPING'):
-                if _direction == "LONG" and locks.get('LOCK_SCALP_LONG'):
+                if _direction == "LONG" and locks['LOCK_SCALP_LONG']:
                     is_locked = True
-                elif _direction == "SHORT" and locks.get('LOCK_SCALP_SHORT'):
+                elif _direction == "SHORT" and locks['LOCK_SCALP_SHORT']:
                     is_locked = True
             if is_locked:
                 return self._fail("REGIME_LOCK")
@@ -293,7 +314,7 @@ class ConsensusFilter:
 
                 # Soft Gate 10: Contagion & Topology
                 if meta_coordinator and hasattr(meta_coordinator, "graph_layer") and meta_coordinator.graph_layer:
-                    state = meta_coordinator.graph_layer.state_matrix.get(symbol)
+                    state = meta_coordinator.graph_layer.state_matrix[symbol]
                     if direction == "LONG":
                         contagion_risk = meta_coordinator.graph_layer.get_contagion_risk(symbol)
                         if contagion_risk > 0.50:
@@ -341,7 +362,7 @@ class ConsensusFilter:
                 'SCALPING': 2.0,
                 'SWING': 2.8,
             }
-            _gate_mult = _HORIZON_GATE_MULT.get(horizon, 2.0)
+            _gate_mult = _HORIZON_GATE_MULT[horizon]
             
             dna_mult = getattr(Config.Risk, 'CONSENSUS_FEE_MULT', None)
             if dna_mult is not None:
@@ -367,7 +388,7 @@ class ConsensusFilter:
         strategy_id = getattr(signal_event, "strategy_id", "Unknown")
         from utils.cooldown_manager import cooldown_manager
         
-        _volatility = getattr(signal_event, "metadata", {}).get("atr_ratio", 1.0) if isinstance(getattr(signal_event, "metadata", {}), dict) else 1.0
+        _volatility = getattr(signal_event, "metadata", {})["atr_ratio"] if isinstance(getattr(signal_event, "metadata", {}), dict) else 1.0
         _streak = 0
         if risk_manager and risk_manager.portfolio:
             _streak = getattr(risk_manager.portfolio, "_win_streak", 0)
@@ -414,7 +435,7 @@ class ConsensusFilter:
     def _fail(self, reason: str) -> Tuple[bool, str]:
         """Registra el fallo en las métricas y retorna la causa."""
         self._metrics["failed"] += 1
-        self._metrics["veto_reasons"][reason] = self._metrics["veto_reasons"].get(reason, 0) + 1
+        self._metrics["veto_reasons"][reason] = self._metrics["veto_reasons"][reason] + 1
         return False, reason
 
     def get_metrics(self) -> Dict[str, Any]:

@@ -46,7 +46,7 @@ class BlueprintLoader:
     @staticmethod
     def _inject_mutations(blueprint: dict):
         import os
-        from config.adaptive_config import adaptive_config
+        from config_dir.adaptive_config import adaptive_config
         
         # 1. RISK MUTATIONS
         if "BLUEPRINT_RISK" in blueprint:
@@ -68,40 +68,40 @@ class BlueprintLoader:
             
         if "BLUEPRINT_SNIPER" in blueprint:
             sn = blueprint["BLUEPRINT_SNIPER"]
-            Config.Strategies.Mutations['sniper_vol_mult'] = sn.get('volume_spike_multiplier', 1.5)
-            Config.Strategies.Mutations['sniper_abs_pct'] = sn.get('absorption_threshold_pct', 0.5)
+            Config.Strategies.Mutations['sniper_vol_mult'] = sn['volume_spike_multiplier']
+            Config.Strategies.Mutations['sniper_abs_pct'] = sn['absorption_threshold_pct']
             
         if "BLUEPRINT_TECHNICAL" in blueprint:
             tech = blueprint["BLUEPRINT_TECHNICAL"]
-            Config.Strategies.Mutations['rsi_buy'] = tech.get('rsi_oversold', 30)
-            Config.Strategies.Mutations['rsi_sell'] = tech.get('rsi_overbought', 70)
-            Config.Strategies.Mutations['ema_fast'] = tech.get('macd_fast', 12)
-            Config.Strategies.Mutations['ema_slow'] = tech.get('macd_slow', 26)
-            Config.Strategies.Mutations['ema_trend'] = tech.get('ema_trend_window', 200)
+            Config.Strategies.Mutations['rsi_buy'] = tech['rsi_oversold']
+            Config.Strategies.Mutations['rsi_sell'] = tech['rsi_overbought']
+            Config.Strategies.Mutations['ema_fast'] = tech['macd_fast']
+            Config.Strategies.Mutations['ema_slow'] = tech['macd_slow']
+            Config.Strategies.Mutations['ema_trend'] = tech['ema_trend_window']
 
         if "BLUEPRINT_PATTERN" in blueprint:
             pat = blueprint["BLUEPRINT_PATTERN"]
-            Config.Strategies.Mutations['pat_wick_strict'] = pat.get('wick_filter_strictness', 2.0)
-            Config.Strategies.Mutations['pat_cons_min'] = pat.get('consolidation_candles_min', 12)
+            Config.Strategies.Mutations['pat_wick_strict'] = pat['wick_filter_strictness']
+            Config.Strategies.Mutations['pat_cons_min'] = pat['consolidation_candles_min']
             
         # 3. LOGICAL DNA TOGGLES (Exported to ENV vars so strategies and engine can read them globally)
         if "LOGICAL_DNA" in blueprint:
             dna = blueprint["LOGICAL_DNA"]
-            os.environ['DNA_RISK_DYNAMIC'] = str(dna.get('risk_dynamic_stops', True))
-            os.environ['DNA_SNIPER_VOLUME'] = str(dna.get('sniper_volume_confirmation', True))
-            os.environ['DNA_PATTERN_STRICT'] = str(dna.get('pattern_strict_wick_filter', False))
-            os.environ['DNA_TECH_GARCH'] = str(dna.get('tech_use_garch', False))
+            os.environ['DNA_RISK_DYNAMIC'] = str(dna['risk_dynamic_stops'])
+            os.environ['DNA_SNIPER_VOLUME'] = str(dna['sniper_volume_confirmation'])
+            os.environ['DNA_PATTERN_STRICT'] = str(dna['pattern_strict_wick_filter'])
+            os.environ['DNA_TECH_GARCH'] = str(dna['tech_use_garch'])
             
         # 4. OMNISCORE SYNERGY
         if "BLUEPRINT_OMNISCORE" in blueprint:
             if not hasattr(Config, 'OmniScore'):
                 Config.OmniScore = type('OmniScore', (), {})
             omni = blueprint["BLUEPRINT_OMNISCORE"]
-            Config.OmniScore.w_ml = omni.get('w_ml', getattr(Config.OmniScore, 'w_ml', 1.0))
-            Config.OmniScore.w_technical = omni.get('w_technical', getattr(Config.OmniScore, 'w_technical', 1.0))
-            Config.OmniScore.w_phalanx = omni.get('w_phalanx', getattr(Config.OmniScore, 'w_phalanx', 0.5))
-            Config.OmniScore.w_statarb = omni.get('w_statarb', getattr(Config.OmniScore, 'w_statarb', 0.5))
-            Config.OmniScore.master_threshold = omni.get('master_threshold', getattr(Config.OmniScore, 'master_threshold', 1.5))
+            Config.OmniScore.w_ml = omni['w_ml']
+            Config.OmniScore.w_technical = omni['w_technical']
+            Config.OmniScore.w_phalanx = omni['w_phalanx']
+            Config.OmniScore.w_statarb = omni['w_statarb']
+            Config.OmniScore.master_threshold = omni['master_threshold']
             logger.info(f"⚖️ [Blueprint Loader] OmniScore Synergy loaded -> ML:{Config.OmniScore.w_ml:.1f} | TECH:{Config.OmniScore.w_technical:.1f} | THRESH:{Config.OmniScore.master_threshold:.1f}")
 
         # 5. MATRIX OVERRIDES (Injected into adaptive_config.py 5D Matrix)
@@ -122,9 +122,9 @@ class BlueprintLoader:
                             adaptive_config.matrix[horizon]["por_activo"][asset].update(asset_params)
 
             # Sincronizar los legacy caps para compatibilidad con el resto del sistema
-            micro_cap = adaptive_config.matrix["MICRO"]["global_horizon"].get("capital_allocation_base_pct", 0.25)
-            scalp_cap = adaptive_config.matrix["SCALP"]["global_horizon"].get("capital_allocation_base_pct", 0.45)
-            swing_cap = adaptive_config.matrix["SWING"]["global_horizon"].get("capital_allocation_base_pct", 0.30)
+            micro_cap = adaptive_config.matrix["MICRO"]["global_horizon"]["capital_allocation_base_pct"]
+            scalp_cap = adaptive_config.matrix["SCALP"]["global_horizon"]["capital_allocation_base_pct"]
+            swing_cap = adaptive_config.matrix["SWING"]["global_horizon"]["capital_allocation_base_pct"]
             
             Config.MICROSCALPING_MARGIN_CAP = micro_cap
             Config.SCALPING_MARGIN_CAP = scalp_cap

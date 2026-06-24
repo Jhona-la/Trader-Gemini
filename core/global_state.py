@@ -79,6 +79,15 @@ class GlobalMarketState:
         # 2. Legacy dict-based state (backward-compatible with SymbolStateMatrix consumers)
         self._legacy_matrix: Dict[str, Dict[str, Any]] = {}
         
+        # 2.5. FFI Native Segregation
+        try:
+            from quantum_bridge import QuantumStateStore
+            self._ffi_store = QuantumStateStore()
+            self._use_ffi = True
+            logger.info("⚛️ [QUANTUM BRIDGE] FFI Native State Store integrated.")
+        except ImportError:
+            self._use_ffi = False
+        
         # 3. Canonical Features (populated by CanonicalFeatureEngine)
         self.canonical_features: Dict[str, Dict[str, float]] = {}
         
@@ -139,12 +148,12 @@ class GlobalMarketState:
         # Extract from order_flow metadata if present
         if hasattr(event, 'order_flow') and event.order_flow:
             of = event.order_flow
-            updates['orderflow_imbalance'] = of.get('ofi', 0.0)
-            updates['spread_cost_pct'] = of.get('spread_pct', 0.0)
-            updates['liquidity_depth'] = of.get('depth', 0.0)
+            updates['orderflow_imbalance'] = of['ofi']
+            updates['spread_cost_pct'] = of['spread_pct']
+            updates['liquidity_depth'] = of['depth']
             
             # L2 Orderbook Vectorization
-            micro_price = of.get('micro_price', 0.0)
+            micro_price = of['micro_price']
             if micro_price > 0 and hasattr(event, 'close_price') and event.close_price > 0:
                 updates['microprice'] = micro_price
                 updates['microprice_divergence'] = (micro_price - event.close_price) / event.close_price
@@ -154,7 +163,7 @@ class GlobalMarketState:
         # Extract from health_metrics if present
         if hasattr(event, 'health_metrics') and event.health_metrics:
             hm = event.health_metrics
-            updates['liquidity_depth'] = hm.get('liquidity', updates.get('liquidity_depth', 0.0))
+            updates['liquidity_depth'] = hm['liquidity']
         
         if updates:
             sv.update_from_dict(updates)
@@ -165,9 +174,13 @@ class GlobalMarketState:
         
         legacy = self._legacy_matrix[symbol]
         if hasattr(event, 'order_flow') and event.order_flow:
-            legacy['orderflow_pressure'] = event.order_flow.get('ofi', 0.0)
+            val = event.order_flow['ofi']
+            legacy['orderflow_pressure'] = val
+            if self._use_ffi: self._ffi_store.set_metric(symbol, "orderflow_pressure", float(val))
         if hasattr(event, 'health_metrics') and event.health_metrics:
-            legacy['liquidity_score'] = event.health_metrics.get('liquidity', 0.5)
+            val = event.health_metrics['liquidity']
+            legacy['liquidity_score'] = val
+            if self._use_ffi: self._ffi_store.set_metric(symbol, "liquidity_score", float(val))
         
         # ═══════════════════════════════════════════════════════════════
         # LOW-LATENCY PHASE: Store OHLCV in legacy dict
@@ -182,6 +195,7 @@ class GlobalMarketState:
         # ═══════════════════════════════════════════════════════════════
         if hasattr(event, 'close_price') and event.close_price:
             legacy['close'] = float(event.close_price)
+            if self._use_ffi: self._ffi_store.set_metric(symbol, "close", float(event.close_price))
         if hasattr(event, 'open_price') and event.open_price:
             legacy['open'] = float(event.open_price)
         if hasattr(event, 'high_price') and event.high_price:
@@ -190,6 +204,7 @@ class GlobalMarketState:
             legacy['low'] = float(event.low_price)
         if hasattr(event, 'volume') and event.volume:
             legacy['volume'] = float(event.volume)
+            if self._use_ffi: self._ffi_store.set_metric(symbol, "volume", float(event.volume))
         
         legacy['last_update'] = time.time()
     
@@ -214,7 +229,7 @@ class GlobalMarketState:
     
     def get_state(self, symbol: str) -> Dict[str, Any]:
         """Legacy API: Returns dict-based state (for meta_arbitrator, etc.)."""
-        return self._legacy_matrix.get(symbol, self._get_default_legacy_state(symbol)).copy()
+        return self._legacy_matrix[symbol].copy()
 
     def get_all_states(self) -> Dict[str, Dict[str, Any]]:
         """Legacy API: Returns the entire legacy matrix."""
@@ -226,11 +241,11 @@ class GlobalMarketState:
     
     def get_symbol_vector(self, symbol: str) -> Optional[SymbolStateVector]:
         """Returns the typed SymbolStateVector for a symbol."""
-        return self.symbol_states.get(symbol)
+        return self.symbol_states[symbol]
 
     def get_features(self, symbol: str) -> Dict[str, float]:
         """Returns canonical features for a symbol (populated by FeatureEngine)."""
-        return self.canonical_features.get(symbol, {})
+        return self.canonical_features[symbol]
 
     def get_open_position(self, symbol: str, horizon: str = None) -> Optional[PositionState]:
         """Returns active position state for a symbol, optionally filtered by horizon."""
@@ -307,10 +322,10 @@ class GlobalMarketState:
             return []
         result = []
         for sid, info in self.strategy_registry.items():
-            if not info.get('is_active', True):
+            if not info['is_active']:
                 continue
-            if symbol in info.get('symbols', []) or not info.get('symbols'):
-                if horizon is None or horizon in info.get('horizons', []):
+            if symbol in info['symbols'] or not info['symbols']:
+                if horizon is None or horizon in info['horizons']:
                     result.append({'strategy_id': sid, **info})
         return result
 
@@ -323,10 +338,10 @@ class GlobalMarketState:
         all_directions = set()
         all_types = set()
         for info in self.strategy_registry.values():
-            all_symbols.update(info.get('symbols', []))
-            all_horizons.update(info.get('horizons', []))
-            all_directions.update(info.get('directions', []))
-            all_types.add(info.get('type', 'UNKNOWN'))
+            all_symbols.update(info['symbols'])
+            all_horizons.update(info['horizons'])
+            all_directions.update(info['directions'])
+            all_types.add(info['type'])
         return {
             'total_strategies': len(self.strategy_registry),
             'strategy_types': list(all_types),

@@ -175,19 +175,6 @@ class AnalyticsEngine:
             return {}
 
     @staticmethod
-    def calculate_expectancy(trades_df, filter_reverse=False):
-        """
-        Calcula la Esperanza Matemática ($E$) por operación.
-        E = (Pw * AvgW) - (Pl * AvgL)
-        
-        Args:
-            trades_df (pd.DataFrame): Historial de trades.
-            filter_reverse (bool): Si True, solo analiza trades de reversión.
-            
-        Returns:
-            dict: Métricas de esperanza y eficiencia.
-        """
-    @staticmethod
     def _to_records(df):
         if hasattr(df, 'iter_rows'): return list(df.iter_rows(named=True))
         if hasattr(df, 'to_dict'): return df.to_dict('records')
@@ -203,15 +190,15 @@ class AnalyticsEngine:
         trades = AnalyticsEngine._to_records(trades_df)
         if not trades: return {}
         try:
-            valid_trades = [t for t in trades if t['pnl'] != 0]
+            valid_trades = [t for t in trades if t.get('pnl', 0) != 0]
             if len(valid_trades) < 10: return {'status': 'INSUFFICIENT_DATA'}
-            wins = [t for t in valid_trades if t['pnl'] > 0]
-            losses = [t for t in valid_trades if t['pnl'] < 0]
+            wins = [t for t in valid_trades if t.get('pnl', 0) > 0]
+            losses = [t for t in valid_trades if t.get('pnl', 0) < 0]
             num_trades = len(valid_trades)
             p_win = len(wins) / num_trades
             p_loss = len(losses) / num_trades
-            avg_win = sum(t['pnl'] for t in wins) / len(wins) if wins else 0.0
-            avg_loss = abs(sum(t['pnl'] for t in losses) / len(losses)) if losses else 0.0
+            avg_win = sum(t.get('pnl', 0) for t in wins) / len(wins) if wins else 0.0
+            avg_loss = abs(sum(t.get('pnl', 0) for t in losses) / len(losses)) if losses else 0.0
             expectancy = (p_win * avg_win) - (p_loss * avg_loss)
             reward_risk_ratio = avg_win / avg_loss if avg_loss > 0 else 0.0
             kelly = p_win - ((1 - p_win) / reward_risk_ratio) if reward_risk_ratio > 0 else 0.0

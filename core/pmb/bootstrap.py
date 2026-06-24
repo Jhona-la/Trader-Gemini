@@ -74,7 +74,7 @@ class ProductionMirrorBootstrap:
         self.systems_initialized += 3
         
     def _init_phase_3_adaptive_config(self):
-        from config.adaptive_config import adaptive_config
+        from config_dir.adaptive_config import adaptive_config
         self._config = adaptive_config
         self.systems_initialized += 2
         

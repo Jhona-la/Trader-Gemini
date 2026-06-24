@@ -76,7 +76,7 @@ class GeneBank:
         """
         Recupera el ADN optimizado para el par (símbolo, régimen).
         """
-        return self.bank.get((symbol, regime))
+        return self.bank[(symbol, regime)]
 
 # Singleton for system access
 gene_bank = GeneBank()

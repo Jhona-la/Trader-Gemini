@@ -98,10 +98,11 @@ def compile_gb_to_numpy_batch(gb_model):
         children_right_list.append(c_right)
         feature_list.append(tree.feature)
         threshold_list.append(tree.threshold)
-        
-        # GB tree leaves contain the raw log-odds updates
-        raw_vals = tree.value[:, 0, 0].astype(np.float32)
-        value_list.append(raw_vals)
+
+        # Scikit-learn GradientBoostingRegressor trees store the value directly in tree.value[:, 0, 0]
+        # and we multiply by the learning rate.
+        val = tree.value[:, 0, 0] * learning_rate
+        value_list.append(val.astype(np.float32))
 
         tree_offsets[i] = current_offset
         current_offset += tree.node_count
@@ -115,6 +116,28 @@ def compile_gb_to_numpy_batch(gb_model):
         'threshold': np.concatenate(threshold_list).astype(np.float32),
         'value': np.concatenate(value_list).astype(np.float32),
         'tree_offsets': tree_offsets,
-        'init_score': np.float32(init_score),
-        'learning_rate': np.float32(learning_rate)
+        'init_score': np.float32(init_score)
     }
+
+def export_forest_to_json(numpy_batch, filepath):
+    """
+    Exports the compiled numpy arrays into a JSON file for the Rust ML Inference Engine.
+    """
+    import json
+    import os
+    
+    data = {
+        'children_left': numpy_batch['children_left'].tolist(),
+        'children_right': numpy_batch['children_right'].tolist(),
+        'feature': numpy_batch['feature'].tolist(),
+        'threshold': numpy_batch['threshold'].tolist(),
+        'value': numpy_batch['value'].tolist(),
+        'tree_offsets': numpy_batch['tree_offsets'].tolist(),
+        'init_score': float(numpy_batch.get('init_score', 0.0))
+    }
+    
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, 'w') as f:
+        json.dump(data, f)
+    
+    print(f"[AOT Compiler] Exported {len(numpy_batch['tree_offsets']) - 1} trees to {filepath}")

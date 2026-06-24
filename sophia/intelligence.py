@@ -308,17 +308,22 @@ class MultiHorizonOracle:
         clash_score = 0.0
         details = []
         
-        # 1. Extraer Macro y Estructural
-        tf_1d = timeframe_data.get('1d')
-        tf_1w = timeframe_data.get('1w')
-        
+        # 1. Extraer Macro y Estructural dependiente del Horizonte
+        if horizon.upper() in ('SCALPING', 'MICROSCALPING', 'MSC'):
+            # Scalping ignora tendencias semanales/diarias. Solo importa 1h y 15m.
+            tf_macro_1 = timeframe_data.get('1h')
+            tf_macro_2 = timeframe_data.get('15m')
+            macro_names = ('1h', '15m')
+        else:
+            tf_macro_1 = timeframe_data.get('1w')
+            tf_macro_2 = timeframe_data.get('1d')
+            macro_names = ('1w', '1d')
+            
         up_votes = 0
         down_votes = 0
         total_votes = 0
         
-        # Ponderación severa para Macro:
-        # Si 1W y 1D apuntan a la baja fuertemente, vetar compras.
-        for tf, data_pkg in [('1d', tf_1d), ('1w', tf_1w)]:
+        for tf, data_pkg in [(macro_names[0], tf_macro_1), (macro_names[1], tf_macro_2)]:
             if not data_pkg: continue
             inds = data_pkg['inds']
             if len(inds['rsi']) == 0: continue
@@ -328,8 +333,8 @@ class MultiHorizonOracle:
             is_down = inds['in_downtrend'][-1]
             last_rsi = inds['rsi'][-1]
             
-            # Peso mayor para 1w
-            weight = 2 if tf == '1w' else 1
+            # Peso mayor para la temporalidad más alta (1h en scalping, 1w en swing)
+            weight = 2 if tf == macro_names[0] else 1
             total_votes += weight
             
             if is_up and last_rsi > 40:
@@ -897,8 +902,9 @@ class EntropyAnalyzer:
             counts = np.bincount(buckets, minlength=3)
             probs = counts / len(buckets)
             return EntropyAnalyzer.compute_entropy(probs.tolist())
-        except:
-            return 1.585
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
 
 # ============================================================
@@ -1520,7 +1526,7 @@ class SophiaIntelligence:
         
         # 6. Microstructure Vote (L2 Order Flow) (Weight: 15%)
         # Phase 10: Tape Reading
-        ofi = features['l2_ofi']
+        ofi = features.get('l2_ofi', 0.0)
         micro_vote = 0.5
         if direction == "LONG":
             if ofi > 0: micro_vote = min(1.0, 0.5 + (ofi / 10000.0))
@@ -1828,8 +1834,9 @@ class SophiaIntelligence:
             tau = [np.sqrt(np.std(np.subtract(returns[lag:], returns[:-lag]))) for lag in lags]
             poly = np.polyfit(np.log(lags), np.log(tau), 1)
             return float(np.clip(poly[0] * 2.0, 0.2, 0.8))
-        except:
-            return 0.5
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
     def _classify_noise_color(self, returns: np.ndarray) -> Tuple[str, float]:
         """
@@ -1864,8 +1871,9 @@ class SophiaIntelligence:
                 # Brown Noise: High persistence
                 flow = 0.8 + (alpha - 1.3) * 0.2
                 return "BROWN", float(np.clip(flow, 0.8, 1.0))
-        except:
-            return "WHITE", 0.0
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
     def _calculate_chaos_compactness(self, returns: np.ndarray) -> float:
         """
@@ -1894,8 +1902,9 @@ class SophiaIntelligence:
             # Compactness metric: High if orbit is tight/predictable
             compactness = 1.0 / (1.0 + (orbit_stability / mean_energy))
             return float(np.clip(compactness, 0.0, 1.0))
-        except:
-            return 0.5
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
     def _calculate_butterfly_sensitivity(self, returns: np.ndarray) -> float:
         """
@@ -1920,8 +1929,9 @@ class SophiaIntelligence:
             chi = abs_sum / (total_abs_move + 1e-6)
             # Normalize to 0-1 range (heuristic)
             return float(np.clip(chi / 4.0, 0.0, 1.0))
-        except:
-            return 0.5
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
     def _calculate_resonance_state(self, returns: np.ndarray) -> float:
         """
@@ -1985,8 +1995,9 @@ class SophiaIntelligence:
                 path = "DYNAMIC"
                 
             return coherence, path
-        except:
-            return 0.5, "DYNAMIC"
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
     def _generate_meta_reasoning(self, symbol: str, win_prob: float, entropy: float, fabric_t: float, coherence: float) -> Dict[str, Any]:
         """
@@ -2033,8 +2044,9 @@ class SophiaIntelligence:
                 g_boost = 1.0 + (rs * 1.5) # Massive boost for inevitable breakouts
                 
             return rs, float(g_boost)
-        except:
-            return 0.0, 1.0
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
     def _calculate_fabric_tension(self, setups: Dict[str, float], psi_l: float, psi_s: float, direction: str) -> Tuple[float, float]:
         """
@@ -2043,9 +2055,9 @@ class SophiaIntelligence:
         Returns: (tension, harmony_stability)
         """
         try:
-            rsi = setups['rsi']
-            adx = setups['adx']
-            atr_pct = setups['atr_pct']
+            rsi = setups.get('rsi', 50.0)
+            adx = setups.get('adx', 20.0)
+            atr_pct = setups.get('atr_pct', 0.0)
             
             # Autotuning: Sensitivity (S) increases with lower volatility (search for micro-tension)
             # and decreases with high volatility (avoiding over-triggering)
@@ -2068,8 +2080,9 @@ class SophiaIntelligence:
             stability = 1.0 - (atr_pct * 10.0)
             
             return float(np.clip(tension, 0.0, 1.0)), float(np.clip(stability, 0.0, 1.0))
-        except:
-            return 0.5, 0.5
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
     def _liquid_neural_modulation(self, kappa: float, tension: float, stability: float) -> float:
         """
@@ -2147,8 +2160,9 @@ class SophiaIntelligence:
             psi_s = np.abs(e_s) / potential if potential > 0 else 0.5
             
             return float(np.clip(psi_l, 0.0, 1.0)), float(np.clip(psi_s, 0.0, 1.0))
-        except:
-            return 0.5, 0.5
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
     def _calculate_interference_pattern(self, psi_l: float, psi_s: float) -> float:
         """
@@ -2185,8 +2199,9 @@ class SophiaIntelligence:
             
             excitation = recent_std / baseline_std
             return float(np.clip(excitation, 0.0, 1.0))
-        except:
-            return 0.5
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
     def _calculate_temporal_tunneling(self, returns: np.ndarray) -> float:
         """
@@ -2228,8 +2243,9 @@ class SophiaIntelligence:
                 psi = 0.5
                 
             return float(np.clip(psi, 0.0, 1.0))
-        except:
-            return 0.5
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
     def _calculate_entanglement_factor(self, symbol: str, returns: np.ndarray, btc_returns: np.ndarray) -> float:
         """
@@ -2249,8 +2265,9 @@ class SophiaIntelligence:
             corr = np.corrcoef(returns[-min_len:], btc_returns[-min_len:])[0, 1]
             # We care about the coherence (absolute correlation)
             return float(np.clip(abs(corr), 0.0, 1.0))
-        except:
-            return 1.0
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f"Holographic Audit: Sophia module failure blocked. Details: {e}")
 
     def _calculate_shannon_leverage(self, entropy: float, win_prob: float) -> float:
         """
@@ -2280,8 +2297,14 @@ class SophiaIntelligence:
         V5.19: Detects institutional activity (Whales).
         Compares current volume ratio vs a broader window.
         """
-        # We assume 'volume_ratio_4h' is passed in setups from strategy
-        return float(setups['volume_ratio_4h'])
+        try:
+            # We assume 'volume_ratio_4h' is passed in setups from strategy
+            return float(setups.get('volume_ratio_4h', setups.get('volume_ratio', 1.0)))
+        except (KeyError, AttributeError, TypeError):
+            try:
+                return float(setups['volume_ratio'])
+            except Exception:
+                return 1.0
 
     def _detect_breakout(self, setups: Dict[str, float], direction: str) -> bool:
         """
@@ -2289,9 +2312,9 @@ class SophiaIntelligence:
         """
         # We assume 'is_50_bar_high' / 'is_50_bar_low' passed in setups
         if direction == "LONG":
-            return bool(setups['is_50_bar_high'])
+            return bool(setups.get('is_50_bar_high', False))
         else:
-            return bool(setups['is_50_bar_low'])
+            return bool(setups.get('is_50_bar_low', False))
 
     def _calculate_noise_density(self, returns: np.ndarray) -> Tuple[float, float]:
         """

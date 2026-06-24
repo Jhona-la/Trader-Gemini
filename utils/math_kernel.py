@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from numba import njit, prange, float64, int64
 
 # ==============================================================================
@@ -32,7 +33,7 @@ def compute_time_decay_jit(time_held_sec: float, ttl_sec: float) -> float:
     # Smooth decay using an inverse sigmoid shape
     # At t=0 -> 1.0. At t=ttl -> 0.0. 
     ratio = time_held_sec / ttl_sec
-    decay_factor = 1.0 - (ratio ** 1.5)
+    decay_factor = 1.0 - math.pow(ratio, 1.5)
     return max(0.0, min(1.0, decay_factor))
 
 
@@ -177,7 +178,7 @@ def calculate_ransac_volatility(prices, threshold_ratio=3.0, min_samples=0.5, it
 # ==============================================================================
 
 @njit(fastmath=True, cache=True)
-def calculate_ema_jit(prices, period):
+def _calculate_ema_numba(prices, period):
     """
     Exponential Moving Average - JIT Compiled (O(N))
     """
@@ -207,8 +208,10 @@ def calculate_ema_jit(prices, period):
         
     return ema
 
+calculate_ema_jit = _calculate_ema_numba
+
 @njit(fastmath=True, cache=True)
-def calculate_rsi_jit(prices, period=14):
+def _calculate_rsi_numba(prices, period=14):
     """
     Relative Strength Index - Cython Metal Migration
     """
@@ -260,8 +263,10 @@ def calculate_rsi_jit(prices, period=14):
             
     return rsi
 
+calculate_rsi_jit = _calculate_rsi_numba
+
 @njit(fastmath=True, cache=True)
-def calculate_bollinger_jit(prices, period=20, std_dev=2.0):
+def _calculate_bollinger_numba(prices, period=20, std_dev=2.0):
     """
     Bollinger Bands - JIT Compiled
     Highly Parallelizable (SMA and STD over windows can be parallelized via prange? No, sliding window dependency on index).
@@ -310,6 +315,8 @@ def calculate_bollinger_jit(prices, period=20, std_dev=2.0):
         lower[i] = mean - (std * std_dev)
         
     return upper, middle, lower
+
+calculate_bollinger_jit = _calculate_bollinger_numba
 
 @njit(cache=True)
 def calculate_bollinger_robust_jit(prices, period=20, std_dev=2.0, threshold_ratio=3.0, iterations=30):
@@ -459,30 +466,41 @@ def calculate_correlation_matrix_jit(price_matrix):
     
     return corr_matrix
 @njit(fastmath=True, cache=True)
+def _calculate_ema_numba(prices, period):
+    n = len(prices)
+    ema = np.full(n, np.nan, dtype=np.float64)
+    if n < period:
+        return ema
+    alpha = 2.0 / (period + 1.0)
+    sma = np.mean(prices[:period])
+    ema[period-1] = sma
+    for i in range(period, n):
+        ema[i] = (prices[i] - ema[i-1]) * alpha + ema[i-1]
+    return ema
+
+@njit(fastmath=True, cache=True)
 def calculate_macd_jit(prices, fast_period=12, slow_period=26, signal_period=9):
     """
     MACD - JIT Compiled.
     Returns: macd, signal, hist
     """
-    ema_fast = calculate_ema_jit(prices, fast_period)
-    ema_slow = calculate_ema_jit(prices, slow_period)
+    ema_fast = _calculate_ema_numba(prices, fast_period)
+    ema_slow = _calculate_ema_numba(prices, slow_period)
     
     macd = ema_fast - ema_slow
     
-    # Signal is EMA of MACD
-    # Need to handle NaNs from EMA slow
     signal = np.full(len(macd), np.nan, dtype=np.float64)
     valid_start = slow_period - 1
     if len(macd) > valid_start + signal_period:
         macd_valid = macd[valid_start:]
-        sig_ema = calculate_ema_jit(macd_valid, signal_period)
+        sig_ema = _calculate_ema_numba(macd_valid, signal_period)
         signal[valid_start:] = sig_ema
         
     hist = macd - signal
     return macd, signal, hist
 
 @njit(fastmath=True, cache=True)
-def calculate_atr_jit(high, low, close, period=14):
+def _calculate_atr_numba(high, low, close, period=14):
     """
     ATR - Cython Metal Migration.
     """
@@ -512,6 +530,8 @@ def calculate_atr_jit(high, low, close, period=14):
         
     return atr
 
+calculate_atr_jit = _calculate_atr_numba
+
 @njit(fastmath=True, cache=True)
 def calculate_adx_jit(high, low, close, period=14):
     """
@@ -539,7 +559,7 @@ def calculate_adx_jit(high, low, close, period=14):
             
     # Smoothing techniques similar to ATR (Wilder's)
     # We need ATR too
-    atr = calculate_atr_jit(high, low, close, period)
+    atr = _calculate_atr_numba(high, low, close, period)
     
     smooth_dm_pos = np.zeros(n, dtype=np.float64)
     smooth_dm_neg = np.zeros(n, dtype=np.float64)
@@ -855,51 +875,70 @@ def calculate_quantum_features_batch_jit(close, z_scores, returns_5, period=20):
 # 🧠 FASE 11: NANO-LATENCY JIT KERNELS FOR RISK & SOPHIA
 # ==============================================================================
 
-@njit(fastmath=True, cache=True)
+import ctypes
+import os
+
+_rust_lib_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core', 'rust_engine', 'target', 'release', 'quantum_engine.dll')
+_rust_lib = None
+if os.path.exists(_rust_lib_path):
+    try:
+        _rust_lib = ctypes.CDLL(_rust_lib_path)
+        _rust_lib.ffi_compute_kelly_fraction.argtypes = [ctypes.c_double, ctypes.c_double, ctypes.c_bool, ctypes.c_double, ctypes.c_double, ctypes.c_double]
+        _rust_lib.ffi_compute_kelly_fraction.restype = ctypes.c_double
+        
+        _rust_lib.ffi_extract_kelly_stats.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.c_size_t, ctypes.POINTER(ctypes.c_bool), ctypes.c_size_t, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double)]
+        
+        _rust_lib.ffi_compute_cvar.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.c_size_t, ctypes.c_double]
+        _rust_lib.ffi_compute_cvar.restype = ctypes.c_double
+    except Exception as e:
+        print(f"[FFI] Failed to load quantum_engine.dll: {e}")
+
+if _rust_lib:
+    try:
+        _rust_lib.ffi_compute_ema.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.c_size_t, ctypes.c_size_t, ctypes.POINTER(ctypes.c_double)]
+        _rust_lib.ffi_compute_rsi.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.c_size_t, ctypes.c_size_t, ctypes.POINTER(ctypes.c_double)]
+        _rust_lib.ffi_compute_bbands.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.c_size_t, ctypes.c_size_t, ctypes.c_double, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double)]
+        _rust_lib.ffi_compute_macd.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double)]
+    except Exception as e:
+        print(f"[FFI] Failed to setup indicator exports: {e}")
+
 def compute_kelly_fraction_jit(p, b, apply_mult=True, kelly_mult=0.25, stress_score=100.0, max_exposure=0.40):
     """
-    [NANO-SPEED] Reemplazo de `Decimal` de Python para el Criterio de Kelly.
-    Velocidad de ejecución en nanosegundos (vs milisegundos de Decimal Python).
-    Fórmula: (p * b - q) / b donde q = 1 - p
+    [NANO-SPEED] Rust FFI Reemplazo de Kelly.
     """
-    if b <= 0.0:
-        return 0.0
-        
+    if _rust_lib:
+        return _rust_lib.ffi_compute_kelly_fraction(float(p), float(b), bool(apply_mult), float(kelly_mult), float(stress_score), float(max_exposure))
+    
+    # Python Fallback
+    if b <= 0.0: return 0.0
     q = 1.0 - p
     kelly = (p * b - q) / b
-    
-    if not apply_mult:
-        return kelly
-        
-    # Defensive Scaling
+    if not apply_mult: return kelly
     mult = kelly_mult
-    if stress_score < 90.0:
-        mult = 0.125  # Eighth-Kelly under extreme stress
-        
-    fractional_kelly = kelly * mult
-    if fractional_kelly < 0.0:
-        fractional_kelly = 0.0
-        
-    clamped = fractional_kelly
-    if clamped > max_exposure:
-        clamped = max_exposure
-        
-    return clamped
+    if stress_score < 90.0: mult = 0.125
+    fractional_kelly = max(0.0, kelly * mult)
+    return min(fractional_kelly, max_exposure)
 
-@njit(fastmath=True, cache=True)
 def extract_kelly_stats_jit(pnl_array, is_win_array):
     """
-    Deduce win rate (p) and payoff ratio (b) from a set of trade returns.
+    [NANO-SPEED] Rust FFI Reemplazo de Kelly Stats.
     """
+    if _rust_lib:
+        import numpy as np
+        pnl = np.array(pnl_array, dtype=np.float64)
+        is_win = np.array(is_win_array, dtype=np.bool_)
+        p_out = ctypes.c_double(0.0)
+        b_out = ctypes.c_double(0.0)
+        _rust_lib.ffi_extract_kelly_stats(
+            pnl.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), len(pnl),
+            is_win.ctypes.data_as(ctypes.POINTER(ctypes.c_bool)), len(is_win),
+            ctypes.byref(p_out), ctypes.byref(b_out)
+        )
+        return p_out.value, b_out.value
+
     n = len(pnl_array)
-    if n == 0:
-        return 0.5, 1.0
-        
-    wins = 0.0
-    losses = 0.0
-    sum_wins = 0.0
-    sum_losses = 0.0
-    
+    if n == 0: return 0.5, 1.0
+    wins, losses, sum_wins, sum_losses = 0.0, 0.0, 0.0, 0.0
     for i in range(n):
         if is_win_array[i]:
             wins += 1.0
@@ -912,7 +951,6 @@ def extract_kelly_stats_jit(pnl_array, is_win_array):
     avg_win = sum_wins / wins if wins > 0 else 0.01
     avg_loss = sum_losses / losses if losses > 0 else 0.01
     b = avg_win / avg_loss if avg_loss > 0 else 1.0
-    
     return p, b
 
 @njit(fastmath=True, cache=True)
@@ -1239,3 +1277,41 @@ class StatefulZScore:
                 return (price - mean) / std
             return 0.0
 
+# ==============================================================================
+# 🚀 FASE 1 NATIVE ROUTING: CYTHON METAL OVERRIDE
+# Sustituye las implementaciones Numba por C puro si la extensión está compilada
+# ==============================================================================
+try:
+    from utils.c_math_kernel import (
+        calculate_ema_cython,
+        calculate_rsi_cython,
+        calculate_bollinger_cython,
+        calculate_atr_cython
+    )
+    
+    def _ema_wrap(prices, period):
+        prices = np.require(prices, dtype=np.float64, requirements=['C', 'W'])
+        return calculate_ema_cython(prices, period)
+        
+    def _rsi_wrap(prices, period=14):
+        prices = np.require(prices, dtype=np.float64, requirements=['C', 'W'])
+        return calculate_rsi_cython(prices, period)
+        
+    def _atr_wrap(high, low, close, period=14):
+        high = np.require(high, dtype=np.float64, requirements=['C', 'W'])
+        low = np.require(low, dtype=np.float64, requirements=['C', 'W'])
+        close = np.require(close, dtype=np.float64, requirements=['C', 'W'])
+        if high.dtype != np.float64: high = high.astype(np.float64)
+        if low.dtype != np.float64: low = low.astype(np.float64)
+        if close.dtype != np.float64: close = close.astype(np.float64)
+        return calculate_atr_cython(high, low, close, period)
+        
+    # Overwrite the Numba JIT functions with the C implementations
+    calculate_ema_jit = _ema_wrap
+    calculate_rsi_jit = _rsi_wrap
+    calculate_atr_jit = _atr_wrap
+    
+    import logging
+    logging.getLogger(__name__).info("🚀 [QUANTUM MATH] C-Native Cython kernel loaded successfully. Numba bypassed.")
+except ImportError:
+    pass

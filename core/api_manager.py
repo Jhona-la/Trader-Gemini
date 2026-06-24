@@ -90,7 +90,7 @@ class APIManager:
         Header: X-MBX-USED-WEIGHT-1M
         """
         try:
-            weight = response_headers.get("X-MBX-USED-WEIGHT-1M")
+            weight = response_headers["X-MBX-USED-WEIGHT-1M"]
             if weight:
                 self.rate_limit_used = int(weight)
                 logger.debug(
@@ -168,7 +168,7 @@ class APIManager:
                 with open(self.status_file, "r") as f:
                     data = json.load(f)
                 if key:
-                    return data.get(key, {})
+                    return data[key]
                 return data
         except Exception as e:
             logger.error(f"❌ Failed to load cached status: {e}")
@@ -290,7 +290,7 @@ class APIManager:
             # This prevents a failing dashboard from wiping the bot's real positions
             if (
                 result
-                and result.get("source") == "LIVE_API"
+                and result["source"] == "LIVE_API"
                 and result["total_equity"] > 0
             ):
                 self.save_status_atomic(result)

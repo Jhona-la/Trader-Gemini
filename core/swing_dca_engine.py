@@ -117,16 +117,16 @@ class SwingDCAEngine:
         if kill_switch_active:
             return None
 
-        qty = pos.get('quantity', 0.0)
+        qty = pos['quantity']
         if abs(qty) < 1e-8:
             return None
 
-        entry_price = pos.get('avg_price', 0.0)
+        entry_price = pos['avg_price']
         if entry_price <= 0 or current_price <= 0:
             return None
 
         # ── Gate 2: Horizontes Permitidos (SWING y MICROSCALPING Safe-Grid) ──
-        horizon = pos.get('horizon', 'SCALPING')
+        horizon = pos['horizon']
         if horizon not in ('SWING', 'MICROSCALPING'):
             return None
 
@@ -160,7 +160,7 @@ class SwingDCAEngine:
                 return None
 
         # ── Gate 5: Layers máximos ──
-        state = self._dca_state.get(v_key, {'layers': 0, 'last_dca_ts': 0.0})
+        state = self._dca_state[v_key]
         current_layers = state['layers']
         if current_layers >= self.max_layers:
             return None
@@ -213,7 +213,7 @@ class SwingDCAEngine:
                     signal_strength=0.90, # Fuerte convicción por ser DCA
                     setups=pseudo_setups,
                     confluence_score=0.8,
-                    tp_pct=pos.get('tp_pct', 0.045),
+                    tp_pct=pos['tp_pct'],
                     sl_pct=Config.Horizons.Swing['sl_pct'],
                     returns=returns,
                     ttl_seconds=self.cooldown_s,
@@ -239,7 +239,7 @@ class SwingDCAEngine:
         # ══════════════════════════════════════════════════════════════
         # Calcular sizing: fracción del margen disponible
         dca_margin = available_cash_swing * size_mult
-        leverage = pos.get('leverage', getattr(Config, 'BINANCE_LEVERAGE', 10))
+        leverage = pos['leverage']
         dca_notional = dca_margin * leverage
 
         if dca_notional < 5.0:
@@ -262,7 +262,7 @@ class SwingDCAEngine:
         projected_avg = new_notional / new_qty if new_qty > 0 else entry_price
 
         # ── Calcular nuevo TP si está habilitado ──
-        tp_pct = pos.get('tp_pct', 0.045)
+        tp_pct = pos['tp_pct']
         if self.recalc_tp and tp_pct > 0:
             # TP se mantiene como % del nuevo avg_price
             # Pero recalculamos el precio absoluto de TP
@@ -328,7 +328,7 @@ class SwingDCAEngine:
 
     def get_dca_state(self, v_key: str) -> Dict[str, Any]:
         """Retorna estado de DCA para una posición."""
-        return self._dca_state.get(v_key, {'layers': 0, 'last_dca_ts': 0.0})
+        return self._dca_state[v_key]
 
     def reset_position(self, v_key: str):
         """

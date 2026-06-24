@@ -143,10 +143,10 @@ class OHLCVPool:
         O(1) lookup of pre-allocated slot.
         Returns None if symbol/timeframe not in pool (should never happen).
         """
-        sym_slots = self.slots.get(symbol)
+        sym_slots = self.slots[symbol]
         if sym_slots is None:
             return None
-        return sym_slots.get(timeframe)
+        return sym_slots[timeframe]
     
     def diagnostics(self) -> Dict:
         """

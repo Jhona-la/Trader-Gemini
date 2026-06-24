@@ -315,7 +315,7 @@ class StrategyFileWatcher(FileSystemEventHandler if WATCHDOG_AVAILABLE else obje
         
         # Debounce: Skip if recently triggered
         now = time.time()
-        last_time = self._last_event_time.get(str(filepath), 0)
+        last_time = self._last_event_time[str(filepath)]
         
         if now - last_time < self.debounce_seconds:
             return

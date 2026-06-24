@@ -177,7 +177,7 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
     # PHASE 47.3: Adaptive backtest logging for Windows (Avoid Error 32)
     # PHASE I (Termodinamica): Zero I/O for Optimizer
     is_optuna = any(x in sys.argv[0].lower() for x in ["optuna", "optimizer", "run_td_", "validate_td"])
-    is_backtest = any(x in sys.argv[0].lower() for x in ["backtest", "audit", "forensic", "diag", "bt", "test", "god_mode", "walk_forward", "hyper", "optimization", "omega", "evolver", "validate"]) or is_optuna
+    is_backtest = any(x in sys.argv[0].lower() for x in ["backtest", "audit", "forensic", "diag", "bt", "test", "god_mode", "walk_forward", "hyper", "optimization", "omega", "evolver", "validate", "simulate", "multiverse"]) or is_optuna
     is_windows = os.name == 'nt'
     
     if is_optuna:
@@ -191,10 +191,9 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
             encoding='utf-8'
         )
     else:
-        file_handler = RotatingFileHandler(
+        file_handler = logging.FileHandler(
             main_log_path,
-            maxBytes=10*1024*1024,  # 10 MB
-            backupCount=5,
+            mode='a',
             encoding='utf-8'
         )
     file_handler.setLevel(logging.DEBUG)
@@ -210,10 +209,9 @@ def setup_logger(name='trader_gemini', log_dir='logs'):
             encoding='utf-8'
         )
     else:
-        error_handler = RotatingFileHandler(
+        error_handler = logging.FileHandler(
             error_log_path,
-            maxBytes=10*1024*1024,  # 10 MB
-            backupCount=5,
+            mode='a',
             encoding='utf-8'
         )
     error_handler.setLevel(logging.ERROR) # Only ERROR and CRITICAL

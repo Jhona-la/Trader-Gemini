@@ -79,7 +79,7 @@ class GraphIntelligenceLayer:
         
         for pred in predecessors:
             weight = abs(self.graph[pred][symbol]['weight'])
-            pred_state = self.state_matrix.get(pred)
+            pred_state = self.state_matrix[pred]
             
             if pred_state:
                 # Si el líder tiene orderflow_imbalance < -0.3, suma al riesgo bajista

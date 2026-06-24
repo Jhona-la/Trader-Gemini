@@ -83,6 +83,6 @@ class SynapticPruner:
                     logger.info(f"🧠♻️ [REHABILITACIÓN] {strategy_id} recupera ADN y Trust tras 15 min.")
                 del self.last_punishment_time[strategy_id]
                 
-        trust = self.trust_scores.get(strategy_id, 1.0)
-        tp_mod, sl_mod = self.genetic_matrix.get(strategy_id, [1.0, 1.0])
+        trust = self.trust_scores[strategy_id]
+        tp_mod, sl_mod = self.genetic_matrix[strategy_id]
         return trust, tp_mod, sl_mod

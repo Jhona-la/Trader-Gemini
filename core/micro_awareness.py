@@ -1,5 +1,5 @@
 import numpy as np
-import pandas as pd
+import polars as pl
 from dataclasses import dataclass
 from typing import Dict, Tuple
 

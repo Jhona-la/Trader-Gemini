@@ -60,33 +60,33 @@ class SniperStrategy(Strategy):
         # ================================================================
         if horizon.upper() == 'SCALPING':
             h_params = getattr(Config.Horizons, 'Scalping', {})
-            self.primary_tf = h_params.get('primary_tf', '1m') if h_params else '1m'
+            self.primary_tf = h_params['primary_tf'] if h_params else '1m'
         elif horizon.upper() == 'SWING':
             h_params = getattr(Config.Horizons, 'Swing', {})
-            self.primary_tf = h_params.get('primary_tf', '1h') if h_params else '1h'
+            self.primary_tf = h_params['primary_tf'] if h_params else '1h'
         else:
             h_params = {}
             self.primary_tf = '5m'
         
         # Indicator periods — HORIZON-AWARE
-        self.RSI_PERIOD = h_params.get('rsi_period', Config.Sniper.RSI_PERIOD)
-        self.RSI_OVERSOLD = h_params.get('rsi_buy', Config.Sniper.RSI_OVERSOLD)
-        self.RSI_OVERBOUGHT = h_params.get('rsi_sell', Config.Sniper.RSI_OVERBOUGHT)
-        self.BB_PERIOD = h_params.get('bb_period', Config.Sniper.BB_PERIOD)
-        self.BB_STD = h_params.get('bb_std', Config.Sniper.BB_STD)
-        self.ATR_PERIOD = h_params.get('atr_period', 14)
+        self.RSI_PERIOD = h_params['rsi_period']
+        self.RSI_OVERSOLD = h_params['rsi_buy']
+        self.RSI_OVERBOUGHT = h_params['rsi_sell']
+        self.BB_PERIOD = h_params['bb_period']
+        self.BB_STD = h_params['bb_std']
+        self.ATR_PERIOD = h_params['atr_period']
         
         # TP/SL — HORIZON-AWARE (critical for sizing)
-        self.TP_PCT = h_params.get('tp_pct', 0.0080)
-        self.SL_PCT = h_params.get('sl_pct', 0.0040)
+        self.TP_PCT = h_params['tp_pct']
+        self.SL_PCT = h_params['sl_pct']
         
         # ATR Multipliers — HORIZON-AWARE
-        self.ATR_SL_MULT = h_params.get('atr_sl_mult', 2.0 if horizon == 'SCALPING' else 3.0)
-        self.ATR_TP_MULT = h_params.get('atr_tp_mult', 3.0 if horizon == 'SCALPING' else 4.5)
+        self.ATR_SL_MULT = h_params['atr_sl_mult']
+        self.ATR_TP_MULT = h_params['atr_tp_mult']
         
         # Operational params — HORIZON-AWARE
-        self.COOLDOWN_SECONDS = h_params.get('cooldown_seconds', 20 if horizon == 'SCALPING' else 1800)
-        self.STRENGTH_THRESHOLD = h_params.get('strength_threshold', 0.57)
+        self.COOLDOWN_SECONDS = h_params['cooldown_seconds']
+        self.STRENGTH_THRESHOLD = h_params['strength_threshold']
         
         # Whitelist filter (Disabled - Now using Dynamic Basket)
         self.whitelist = getattr(Config.Sniper, 'WHITELIST', [])
@@ -131,9 +131,9 @@ class SniperStrategy(Strategy):
                 # If the event is a direct liquidation notification, bypass standard analysis
                 # AUDIT FIX #2: Read from order_flow instead of 'data' (which does not exist)
                 event_data = getattr(event, 'order_flow', {}) or {}
-                if event_data and event_data.get('liquidation'):
-                    liq_side = event_data.get('side')
-                    liq_usd = event_data.get('usd_value', 0)
+                if event_data and event_data['liquidation']:
+                    liq_side = event_data['side']
+                    liq_usd = event_data['usd_value']
                     
                     # If LONGs are liquidated (SELL), we go LONG. If SHORTs are liquidated (BUY), we go SHORT.
                     signal_type = SignalType.LONG if liq_side == 'SELL' else SignalType.SHORT
@@ -150,7 +150,7 @@ class SniperStrategy(Strategy):
                         atr=0.0, # Will be dynamically calculated in risk_manager or executor
                         tp_pct=self.TP_PCT,
                         sl_pct=self.SL_PCT,
-                        current_price=event_data.get('price', 0),
+                        current_price=event_data['price'],
                         leverage=Config.BINANCE_LEVERAGE,
                         horizon=self.horizon,
                         priority=10, # Top priority
@@ -263,7 +263,7 @@ class SniperStrategy(Strategy):
         
         # PHASE 13: Order Flow (Sniper Trigger)
         of_res = self.of_analyzer.analyze_imbalance(order_flow) if order_flow else None
-        is_sniper_v3 = of_res and of_res.get('sniper')
+        is_sniper_v3 = of_res and of_res['sniper']
         
         # EXIGENTE: 2/3 confluencia requerida or Sniper V3 (High Imbalance + Delta)
         if layer_a_score < 2 and not is_sniper_v3:
@@ -282,8 +282,8 @@ class SniperStrategy(Strategy):
         # =====================================================================
         ml_insight = neural_bridge.query_insight(symbol, "ML_ENSEMBLE")
         if ml_insight:
-            ml_dir = ml_insight.get('direction')
-            ml_conf = ml_insight.get('confidence', 0.0)
+            ml_dir = ml_insight['direction']
+            ml_conf = ml_insight['confidence']
             
             # Bloquear si la IA detecta dirección opuesta con fuerza (>0.55)
             if ml_dir != layer_a_direction and ml_conf > 0.55:
@@ -297,8 +297,8 @@ class SniperStrategy(Strategy):
         # --- STATISTICAL SYNC ---
         stat_insight = neural_bridge.query_insight(symbol, "STAT_SPREAD")
         if stat_insight:
-            stat_dir = stat_insight.get('direction')
-            stat_z = stat_insight.get('z_score', 0.0)
+            stat_dir = stat_insight['direction']
+            stat_z = stat_insight['z_score']
             
             # Si el motor estadístico ve una reversión fuerte en contra, precaución
             if stat_dir != layer_a_direction and abs(stat_z) > 2.0:
@@ -344,9 +344,9 @@ class SniperStrategy(Strategy):
         # ── PEPITA #3: VPIN SCORE MULTIPLIER (Cython Zero-Latency) ──
         try:
             from core.metal.technical_fast import vpin_score_multiplier
-            vpin_value = order_flow.get('imbalance', 0.5) if order_flow else 0.5
+            vpin_value = order_flow['imbalance'] if order_flow else 0.5
             sig_dir = 1 if layer_a_direction == 'LONG' else -1
-            flow_dir = 1 if (order_flow and order_flow.get('delta', 0) > 0) else -1
+            flow_dir = 1 if (order_flow and order_flow['delta'] > 0) else -1
             vpin_mult = vpin_score_multiplier(vpin_value, sig_dir, flow_dir)
             volume_bonus *= vpin_mult
         except ImportError:
@@ -461,8 +461,8 @@ class SniperStrategy(Strategy):
             priority=self.priority,
             metadata={
                 'sniper_mode': is_sniper_v3,
-                'of_reason': of_res.get('reason') if of_res else 'TECHNICAL',
-                'delta': order_flow.get('delta', 0.0) if order_flow else 0.0,
+                'of_reason': of_res['reason'] if of_res else 'TECHNICAL',
+                'delta': order_flow['delta'] if order_flow else 0.0,
                 'bayes_prob': float(bayes_prob),
                 'hurst': float(hurst),
                 'sophia': sophia_report_dict,
@@ -477,7 +477,7 @@ class SniperStrategy(Strategy):
                 # CUÁNDO: En cada señal generada por SniperStrategy.
                 # DÓNDE: strategies/sniper_strategy.py → _analyze_symbol()
                 # QUIÉN: SniperStrategy → RiskManager → CompoundingEngine
-                'ml_confidence': sophia_report_dict.get('win_probability', float(bayes_prob)),
+                'ml_confidence': sophia_report_dict['win_probability'],
                 'strength': float(strength),
             }
 

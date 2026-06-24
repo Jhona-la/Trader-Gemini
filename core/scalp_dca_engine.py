@@ -31,7 +31,7 @@ class ScalpDCAEngine:
         if not self.enabled:
             return None
             
-        symbol = pos.get('symbol')
+        symbol = pos['symbol']
         if not symbol:
             return None
             
@@ -61,7 +61,7 @@ class ScalpDCAEngine:
             
         # Check layers
         trade_id = pos['trade_id']
-        state = self._dca_state.get(trade_id, {'layers': 0, 'last_dca_ts': 0.0})
+        state = self._dca_state[trade_id]
         
         if state['layers'] >= self.max_layers:
             return None

@@ -155,7 +155,7 @@ class MetricsExporter:
         self.initialized = True
         print("📊 Metrics Exporter Initialized (Phase 99: Per-Symbol + Health).")
 
-    def start_server(self, port=8000):
+    def start_server(self, port=8001):
         """Start the Prometheus HTTP Server background thread."""
         try:
             start_http_server(port)
@@ -266,7 +266,7 @@ class MetricsExporter:
                 
                 # Tick Latency (from internal buffer)
                 with self._lock:
-                    lat = self._tick_latencies.get(symbol, 0)
+                    lat = self._tick_latencies[symbol]
                     if lat > 0:
                         self.g_tick_latency.labels(symbol=clean_sym).set(lat)
                         
@@ -294,7 +294,7 @@ class MetricsExporter:
             self.g_phalanx_consensus.labels(symbol=symbol).set(consensus_count)
             # Update top 3 features
             for feat in top_features[:3]:
-                name = feat.get('feature')
+                name = feat['feature']
                 contrib = feat['contribution']
                 if name:
                     self.g_sophia_feature_imp.labels(symbol=symbol, feature=name).set(contrib)

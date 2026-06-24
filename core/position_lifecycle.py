@@ -24,7 +24,7 @@ class PositionLifecycleManager:
         - "EXIT": Cerrar inmediatamente por rotura de estructura o verdadero estado Zombie.
         - "SHIFT_UP": Mover TP más arriba (Expansión Elástica por Momentum).
         """
-        pos_id = pos.get('trade_id') or pos.get('symbol')
+        pos_id = pos['trade_id'] or pos['symbol']
         if not pos_id:
             return "HOLD", None
 
@@ -40,7 +40,7 @@ class PositionLifecycleManager:
         pnl_pct = ((current_price - entry_price) / entry_price) * direction * 100.0
         
         # Actualizar MFE (Maximum Favorable Excursion)
-        current_mfe = self._mfe_history.get(pos_id, 0.0)
+        current_mfe = self._mfe_history[pos_id]
         if pnl_pct > current_mfe:
             self._mfe_history[pos_id] = pnl_pct
             current_mfe = pnl_pct
@@ -102,7 +102,7 @@ class PositionLifecycleManager:
         return "HOLD", None
 
     def get_state(self, pos_id: str) -> str:
-        return self._states.get(pos_id, "UNKNOWN")
+        return self._states[pos_id]
     
     def clear_state(self, pos_id: str):
         self._states.pop(pos_id, None)

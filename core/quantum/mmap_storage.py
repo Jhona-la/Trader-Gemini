@@ -249,23 +249,25 @@ class QuantumMMAP:
 
     def to_dataframe(self, lookback: int = 0):
         """
-        Compatibilidad con el sistema legacy (Pandas DataFrame).
-        SOLO usar en el boundary de inicialización, NUNCA en el hot-path.
+        Compatibilidad nativa con Polars DataFrames desde el Ring Buffer.
+        Conversión Zero-Copy de los arrays subyacentes.
         """
-        import pandas as pd
+        import polars as pl
         view = self.get_view(lookback)
         if len(view) == 0:
-            return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+            return pl.DataFrame(schema={'timestamp': pl.Datetime(time_unit="ms"), 'open': pl.Float32, 'high': pl.Float32, 'low': pl.Float32, 'close': pl.Float32, 'volume': pl.Float32})
 
-        df = pd.DataFrame({
-            'open': view['open'].astype(np.float64),
-            'high': view['high'].astype(np.float64),
-            'low': view['low'].astype(np.float64),
-            'close': view['close'].astype(np.float64),
-            'volume': view['volume'].astype(np.float64),
+        # Construir dataframe polars directamente desde el numpy struct
+        df = pl.DataFrame({
+            'timestamp': view['timestamp'],
+            'open': view['open'],
+            'high': view['high'],
+            'low': view['low'],
+            'close': view['close'],
+            'volume': view['volume']
         })
-        df.index = pd.to_datetime(view['timestamp'], unit='ms')
-        df.index.name = 'timestamp'
+        # Convertir timestamp (ms) a Datetime nativo de Polars
+        df = df.with_columns(pl.from_epoch(pl.col('timestamp'), time_unit='ms').alias('timestamp'))
         return df
 
     def flush(self):
@@ -329,18 +331,18 @@ class QuantumDataLake:
 
     def fetch_symbol(
         self, symbol: str, days: int = 30, end_time: datetime = None, offline_mode: bool = False
-    ) -> pd.DataFrame:
+    ):
         """
-        API compatible con RobustDataLake.fetch_symbol().
-        Retorna pd.DataFrame con index=timestamp y cols=[open,high,low,close,volume].
+        API native Polars Compatible.
+        Retorna pl.DataFrame con columna de timestamp nativo.
         
         Internamente:
         1. Comprueba el MMAP existente (O(1) — leer head timestamp)
         2. Descarga solo el delta faltante desde Binance
         3. Inyecta el delta binariamente (inject_bulk)
-        4. Retorna un DataFrame (boundary conversion, no hot-path)
+        4. Retorna un DataFrame pl.DataFrame
         """
-        import pandas as pd
+        import polars as pl
 
         if end_time is None:
             end_time = datetime.utcnow()
@@ -357,8 +359,8 @@ class QuantumDataLake:
             # Si ya cubrimos todo el periodo, retornar view directa
             if fetch_start >= end_time:
                 df = pool.to_dataframe()
-                mask = (df.index >= start_time) & (df.index <= end_time)
-                return df.loc[mask]
+                mask = (df['timestamp'] >= start_time) & (df['timestamp'] <= end_time)
+                return df.filter(mask)
         else:
             fetch_start = start_time
 
@@ -367,9 +369,9 @@ class QuantumDataLake:
         if delta_hours < 0.01 or offline_mode:
             df = pool.to_dataframe()
             if len(df) == 0:
-                return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
-            mask = (df.index >= start_time) & (df.index <= end_time)
-            return df.loc[mask]
+                return df
+            mask = (df['timestamp'] >= start_time) & (df['timestamp'] <= end_time)
+            return df.filter(mask)
 
         safe_sym = symbol.replace("/", "").replace("-", "")
         print(
@@ -432,11 +434,11 @@ class QuantumDataLake:
         # ── 4. Retornar DataFrame filtrado ───────────────────────────────
         df = pool.to_dataframe()
         if len(df) == 0:
-            return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+            return df
 
-        mask = (df.index >= start_time) & (df.index <= end_time)
-        result = df.loc[mask]
-        print(f"✅ [QBridge] {symbol} | Entregadas: {len(result):,} velas (MMAP Zero-Copy)")
+        mask = (df['timestamp'] >= start_time) & (df['timestamp'] <= end_time)
+        result = df.filter(mask)
+        print(f"✅ [QBridge] {symbol} | Entregadas: {len(result):,} velas (MMAP Zero-Copy Polars)")
         return result
 
 

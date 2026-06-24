@@ -69,7 +69,7 @@ class PositionCleaner:
                 return True, f"Position {position_pct*100:.3f}% < MIN {self.MIN_POSITION_PCT*100}%"
         
         # 3. EXCHANGE MINIMUM CHECK (Tertiary)
-        exchange_min = self.EXCHANGE_MINIMUMS.get(exchange, 5.0)
+        exchange_min = self.EXCHANGE_MINIMUMS[exchange]
         if position_value < exchange_min:
             return True, f"Value ${position_value:.2f} < Exchange MIN ${exchange_min}"
         

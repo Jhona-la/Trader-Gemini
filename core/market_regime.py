@@ -6,6 +6,11 @@ from utils.math_kernel import calculate_ema_jit, calculate_adx_jit, calculate_at
 from utils.logger import logger
 from core.market_regime_hmm import HiddenMarkovModelDetector
 
+try:
+    from core.nano_regime import NanoRegimeDetector
+except ImportError:
+    NanoRegimeDetector = None
+
 class MarketRegimeDetector:
     """
     Detects market regime to help strategies adapt their behavior.
@@ -31,6 +36,11 @@ class MarketRegimeDetector:
         self.regime_confidence = {}  # Per-symbol: float 0-1
         self.horizon_profile = 'DEFAULT'
         self.events_queue = events_queue # Phase 6.2: Emergency Exits
+        
+        if NanoRegimeDetector is not None:
+            self._nano_regime = NanoRegimeDetector(hysteresis_window=self.hysteresis_window)
+        else:
+            self._nano_regime = None
     
     def set_horizon_profile(self, horizon_days: int):
         """
@@ -60,6 +70,9 @@ class MarketRegimeDetector:
         else:
             self.hysteresis_window = 2
             self.horizon_profile = 'MACRO'
+            
+        if self._nano_regime is not None:
+            self._nano_regime.set_hysteresis(self.hysteresis_window)
         
         logger.info(
             f"🔧 [REGIME] Horizon Profile set: {self.horizon_profile} "
@@ -76,7 +89,7 @@ class MarketRegimeDetector:
         """
         try:
             if len(bars_1m) < 50:
-                return self.last_regime.get(symbol, 'RANGING')
+                return self.last_regime[symbol]
 
             # 1. Definir Escalas Disponibles
             scales = {
@@ -92,50 +105,26 @@ class MarketRegimeDetector:
                     scale_results[tf] = self._detect_single_scale_regime(bars)
             
             # 2. Consenso de Votación Ponderada
-            # Pesos: 1m(0.1), 5m(0.2), 15m(0.3), 1h(0.4) para darle más peso a la estructura macro
-            weights = {'1m': 0.1, '5m': 0.2, '15m': 0.3, '1h': 0.4}
-            votes = {'TRENDING_BULL': 0.0, 'TRENDING_BEAR': 0.0, 'RANGING': 0.0, 'CHOPPY': 0.0, 'MEAN_REVERTING': 0.0}
-            
-            for tf, regime in scale_results.items():
-                votes[regime] += weights.get(tf, 0.1)
-            
-            # El ganador por puntos
-            raw_regime = max(votes, key=votes.get)
-            
-            # 3. Cálculo de Confianza del Consenso
-            total_voted_weight = sum(weights[tf] for tf in scale_results.keys())
-            consensus_score = votes[raw_regime] / total_voted_weight if total_voted_weight > 0 else 0.0
-            
-            # Si hay mucha divergencia (consenso < 40%), forzar CHOPPY
-            if consensus_score < 0.40 and raw_regime in ['TRENDING_BULL', 'TRENDING_BEAR']:
-                raw_regime = 'CHOPPY'
-
-            # 4. Histéresis Adaptativa (Misma lógica anterior para suavizado)
-            hw = self.hysteresis_window
-            if symbol not in self.regime_history: self.regime_history[symbol] = []
-            self.regime_history[symbol].append(raw_regime)
-            while len(self.regime_history[symbol]) > hw:
-                self.regime_history[symbol].pop(0)
-            
-            self.regime_confidence[symbol] = consensus_score
-            
-            if len(self.regime_history[symbol]) >= hw and all(x == raw_regime for x in self.regime_history[symbol]):
-                final_regime = raw_regime
-            else:
-                final_regime = self.last_regime.get(symbol, raw_regime)
-            
-            previous_regime = self.last_regime.get(symbol, 'UNKNOWN')
-            self.last_regime[symbol] = final_regime
-            
-            # --- PHASE 6.2: SOPHIA EMERGENCY EXITS ---
-            # Si pasamos de CHOPPY a BEAR brusco, lanzar EXIT para abortar long positions y proteger PnL
-            if previous_regime == 'CHOPPY' and final_regime == 'TRENDING_BEAR':
-                if self.events_queue is not None:
+            if self._nano_regime is not None:
+                r_1m = scale_results.get('1m')
+                r_5m = scale_results.get('5m')
+                r_15m = scale_results.get('15m')
+                r_1h = scale_results.get('1h')
+                
+                final_regime, consensus_score, emergency_exit = self._nano_regime.process_consensus(
+                    symbol, r_1m, r_5m, r_15m, r_1h
+                )
+                
+                self.regime_confidence[symbol] = consensus_score
+                self.last_regime[symbol] = final_regime
+                
+                # --- PHASE 6.2: SOPHIA EMERGENCY EXITS ---
+                if emergency_exit and self.events_queue is not None:
                     try:
                         from core.events import SignalEvent
                         from core.enums import SignalType
                         from datetime import datetime, timezone
-                        logger.warning(f"🚨 [SOPHIA EMERGENCY] Regime Shift {previous_regime} -> {final_regime} for {symbol}. Emitting EXIT!")
+                        logger.warning(f"🚨 [SOPHIA EMERGENCY] Regime Shift CHOPPY -> TRENDING_BEAR for {symbol}. Emitting EXIT!")
                         self.events_queue.put(SignalEvent(
                             symbol=symbol,
                             datetime=datetime.now(timezone.utc),
@@ -146,6 +135,60 @@ class MarketRegimeDetector:
                         ))
                     except Exception as ev_err:
                         logger.error(f"Failed to emit emergency exit for {symbol}: {ev_err}")
+            else:
+                # Pesos: 1m(0.1), 5m(0.2), 15m(0.3), 1h(0.4) para darle más peso a la estructura macro
+                weights = {'1m': 0.1, '5m': 0.2, '15m': 0.3, '1h': 0.4}
+                votes = {'TRENDING_BULL': 0.0, 'TRENDING_BEAR': 0.0, 'RANGING': 0.0, 'CHOPPY': 0.0, 'MEAN_REVERTING': 0.0}
+                
+                for tf, regime in scale_results.items():
+                    votes[regime] += weights[tf]
+                
+                # El ganador por puntos
+                raw_regime = max(votes, key=votes.get)
+                
+                # 3. Cálculo de Confianza del Consenso
+                total_voted_weight = sum(weights[tf] for tf in scale_results.keys())
+                consensus_score = votes[raw_regime] / total_voted_weight if total_voted_weight > 0 else 0.0
+                
+                # Si hay mucha divergencia (consenso < 40%), forzar CHOPPY
+                if consensus_score < 0.40 and raw_regime in ['TRENDING_BULL', 'TRENDING_BEAR']:
+                    raw_regime = 'CHOPPY'
+    
+                # 4. Histéresis Adaptativa (Misma lógica anterior para suavizado)
+                hw = self.hysteresis_window
+                if symbol not in self.regime_history: self.regime_history[symbol] = []
+                self.regime_history[symbol].append(raw_regime)
+                while len(self.regime_history[symbol]) > hw:
+                    self.regime_history[symbol].pop(0)
+                
+                self.regime_confidence[symbol] = consensus_score
+                
+                if len(self.regime_history[symbol]) >= hw and all(x == raw_regime for x in self.regime_history[symbol]):
+                    final_regime = raw_regime
+                else:
+                    final_regime = self.last_regime.get(symbol, 'UNKNOWN')
+                
+                previous_regime = self.last_regime.get(symbol, 'UNKNOWN')
+                self.last_regime[symbol] = final_regime
+                
+                # --- PHASE 6.2: SOPHIA EMERGENCY EXITS ---
+                if previous_regime == 'CHOPPY' and final_regime == 'TRENDING_BEAR':
+                    if self.events_queue is not None:
+                        try:
+                            from core.events import SignalEvent
+                            from core.enums import SignalType
+                            from datetime import datetime, timezone
+                            logger.warning(f"🚨 [SOPHIA EMERGENCY] Regime Shift {previous_regime} -> {final_regime} for {symbol}. Emitting EXIT!")
+                            self.events_queue.put(SignalEvent(
+                                symbol=symbol,
+                                datetime=datetime.now(timezone.utc),
+                                strategy_id="SOPHIA_EMERGENCY_EXIT",
+                                signal_type=SignalType.EXIT,
+                                strength=1.0,
+                                horizon="SCALPING"
+                            ))
+                        except Exception as ev_err:
+                            logger.error(f"Failed to emit emergency exit for {symbol}: {ev_err}")
             
             # --- PHASE 14: HMM REINFORCEMENT ---
             if len(bars_1m) >= 100:
@@ -185,7 +228,7 @@ class MarketRegimeDetector:
             
         except Exception as e:
             logger.error(f"Regime Error {symbol}: {e}")
-            return self.last_regime.get(symbol, 'RANGING')
+            return self.last_regime[symbol]
 
     def get_current_regime(self, symbol=None) -> str:
         """
@@ -529,7 +572,7 @@ class MarketRegimeDetector:
             if getattr(Config.Sniper, 'DYNAMIC_ADAPTATION', False):
                 # ✅ EVOLUTIONARY ADAPTATION
                 regime_map = getattr(Config.Sniper, 'REGIME_MAP', {})
-                params = regime_map.get(regime, regime_map.get('RANGING'))
+                params = regime_map[regime]
                 
                 advice.update({
                     'leverage': params['leverage'],
@@ -617,7 +660,7 @@ class MarketRegimeDetector:
             'ZOMBIE': 0.0,
             'MEAN_REVERTING': 0.5
         }
-        return factors.get(regime, 0.0)
+        return factors[regime]
 
     def is_volatility_shock(self, bars: Dict, atr_period: int = 14, threshold: float = 2.5, oi_delta: float = 0.0) -> bool:
         """
@@ -819,7 +862,7 @@ class MarketRegimeDetector:
             hmm = self.hmm_detectors[symbol]
             # Determinar el estado más probable y su probabilidad
             state_idx = int(np.argmax(hmm.state_probabilities))
-            hmm_regime = hmm.REGIMES.get(state_idx, 'UNKNOWN')
+            hmm_regime = hmm.REGIMES[state_idx]
             prob = hmm.state_probabilities[state_idx]
             
             direction = direction.upper()

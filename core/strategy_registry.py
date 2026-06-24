@@ -24,6 +24,8 @@ class UniversalStrategyAdapter:
             sig = inspect.signature(self.strategy_class.__init__)
             params = sig.parameters
             
+            has_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+            
             init_kwargs = {}
             for name, param in params.items():
                 if name == 'self' or param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
@@ -38,6 +40,11 @@ class UniversalStrategyAdapter:
                     # We pass None and hope for the best, or log a warning.
                     logger.warning(f"Missing required dependency '{name}' for {self.strategy_class.__name__}")
                     init_kwargs[name] = None
+            
+            if has_kwargs:
+                for k, v in self.dependencies.items():
+                    if k not in init_kwargs:
+                        init_kwargs[k] = v
                     
             self.instance = self.strategy_class(**init_kwargs)
             return self.instance

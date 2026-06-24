@@ -1,6 +1,7 @@
 
 import numpy as np
-import pandas as pd
+import polars as pl
+from datetime import datetime, timezone
 from typing import List, Dict, Tuple
 from core.events import SignalEvent, SignalType
 from config import Config
@@ -143,7 +144,7 @@ class StatisticalArbitrage:
                     symbol=a,
                     signal_type=direction,
                     strength=abs(z_score),
-                    datetime=pd.Timestamp.now(tz='UTC'),
+                    datetime=datetime.now(timezone.utc),
                     strategy_id='STAT_ARB_V1',
                     horizon='SCALPING',
                     priority=self.priority,
@@ -206,8 +207,8 @@ class ArbitrageStrategy(Strategy):
         pairs = Config.TRADING_PAIRS
         for symbol in pairs:
             data = self.data_provider.get_data(symbol)
-            if data is not None and not data.empty:
-                self.engine.update_price(symbol, data['close'].values[-1])
+            if data is not None and len(data) > 0:
+                self.engine.update_price(symbol, float(data['close'][-1]))
                 
         # FORENSIC-DCA FIX #1: Corrected method → scan_opportunities()
         signals = self.engine.scan_opportunities()
@@ -243,17 +244,17 @@ class ArbitrageStrategy(Strategy):
 
     def check_exit(self, position, current_price, data_provider, now=None):
         if now is None:
-            now = pd.Timestamp.now(tz='UTC')
+            now = datetime.now(timezone.utc)
             
         qty = position["quantity"]
-        symbol = position.get("symbol")
+        symbol = position["symbol"]
         pos_horizon = position["horizon"]
         
         # 🧠 [INTELLIGENT EXIT]: Sophia AI Real-time validation
         if hasattr(self, 'sophia') and self.sophia:
             try:
                 df_primary = data_provider.get_data(symbol, "5m")
-                if df_primary is not None and not df_primary.empty:
+                if df_primary is not None and len(df_primary) > 0:
                     sophia_report = self.sophia.get_insight(symbol, df_primary)
                     if sophia_report:
                         current_prob = sophia_report.win_probability

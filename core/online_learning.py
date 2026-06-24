@@ -138,8 +138,9 @@ class OnlineLearner:
             if grad_norm > 10.0: # Threshold for warning
                 logger.warning(f"⚠️ [EXPLODING GRADIENT] Norm={grad_norm:.2f}. Clipping applied.")
                 wandb_tracker.log_metric("ml/gradient_exploded", 1.0)
-        except Exception:
-            pass # Non-critical path
+        except Exception as e:
+            from utils.error_handler import SystemIntegrityError
+            raise SystemIntegrityError(f'Telemetry failure in SGD blocked: {str(e)}')
 
         # Gradient Clipping (Safety)
         delta = np.clip(delta, -self.clip_value, self.clip_value)
@@ -368,7 +369,8 @@ class OnlineLearner:
                 if max_drift > 1e-12:
                     logger.warning(f"⚠️ [AXIOMA-LOG] Precision Drift Detected in PPO Tensor Audit! Max Deviation: {max_drift:.4e}")
             except Exception as e:
-                pass # Fail silently if high precision is not supported
+                from utils.error_handler import SystemIntegrityError
+                raise SystemIntegrityError(f'Precision check failed: {str(e)}')
             # -----------------------------------------------------------------
             
         else:

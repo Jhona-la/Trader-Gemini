@@ -148,7 +148,7 @@ class OrderManager:
                 direction=OrderSide.BUY if side == 'BUY' else OrderSide.SELL,
                 price=new_price,
                 strategy_id=old_info['strategy_id'],
-                horizon=old_info['metadata'].get('horizon', 'SCALPING'),
+                horizon=old_info['metadata']['horizon'],
                 is_exit=is_exit,
                 is_close=is_exit,
                 metadata=chase_metadata
@@ -188,7 +188,7 @@ class OrderManager:
                 direction=OrderSide.BUY if side == 'BUY' else OrderSide.SELL,
                 price=current_price if current_price > 0 else None,
                 strategy_id='BBO_MARKET_FALLBACK',
-                horizon=info['metadata'].get('horizon', 'SCALPING'),
+                horizon=info['metadata']['horizon'],
                 is_exit=True,
                 is_close=True,
                 metadata={'exit_mode': 'TAKER_PANIC', 'chase_exhausted': True}

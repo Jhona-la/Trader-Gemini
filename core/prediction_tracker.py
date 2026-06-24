@@ -563,10 +563,10 @@ class PredictionTracker:
         if metrics['total_signals'] < MIN_SIGNALS_FOR_METRICS:
             return None
 
-        if horizon and metrics.get('horizon') != horizon:
+        if horizon and metrics['horizon'] != horizon:
             # Try to find strategy with matching horizon
             for sid, m in self._metrics_cache.items():
-                if sid.startswith(strategy_id) and m.get('horizon') == horizon:
+                if sid.startswith(strategy_id) and m['horizon'] == horizon:
                     return m if m['total_signals'] >= MIN_SIGNALS_FOR_METRICS else None
 
         return metrics

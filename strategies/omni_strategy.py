@@ -71,7 +71,7 @@ class OmniStrategy(Strategy):
             # 1. Obtener Data
             # Map horizon to timeframe for data retrieval
             _tf_map = {"SCALPING": "1m", "SWING": "5m"}
-            tf = _tf_map.get(self.horizon, "1m")
+            tf = _tf_map[self.horizon]
             bars = self.data_provider.get_latest_bars(symbol, n=100, timeframe=tf)
             if bars is None or len(bars) < 50:
                 return
@@ -110,7 +110,8 @@ class OmniStrategy(Strategy):
             
             # SCALPING uses 1m bars where ATR is usually ~0.03%. We cannot demand 0.1% ATR per 1m bar.
             if self.horizon == "SCALPING":
-                min_vol = getattr(Config.Horizons, 'Scalping', {}).get('min_atr_required', 0.0003)
+                mutations = getattr(Config.Horizons, 'Mutations', {})
+                min_vol = mutations.get('min_atr_required', 0.0004) if isinstance(mutations, dict) else 0.0004
                 valid_volatility = (atr_pct >= min_vol)
             else:
                 valid_volatility = (atr_pct >= fee_threshold)
@@ -123,15 +124,24 @@ class OmniStrategy(Strategy):
             
             # 3. INTELIGENCIA ARTIFICIAL (ML)
             ml_bull, ml_bear = 0.0, 0.0
-            if self.oracle:
+            if hasattr(self, 'ml_engine') and self.ml_engine:
+                try:
+                    # In case OmniStrategy is given an ml_engine
+                    pred = self.ml_engine.predict(symbol, bars)
+                    if pred:
+                        ml_bull = pred.get('P_BULL', 0.0)
+                        ml_bear = pred.get('P_BEAR', 0.0)
+                except Exception as e:
+                    logger.warning(f"ML Engine prediction failed: {e}")
+            elif self.oracle and hasattr(self.oracle, 'predict_live'):
                 try:
                     pred = self.oracle.predict_live(symbol, self.horizon, bars)
                     if pred:
                         ml_bull = pred['P_BULL']
                         ml_bear = pred['P_BEAR']
                 except Exception as e:
-                    from utils.error_handler import SystemIntegrityError
-                    raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
+                    from core.exceptions import SystemIntegrityError
+                    raise SystemIntegrityError(f'Oracle predict_live failed: {e}')
             
             ml_long_sig = 1.0 if (ml_bull >= self.ml_bull_th) else 0.0
             ml_short_sig = 1.0 if (ml_bear >= self.ml_bear_th) else 0.0

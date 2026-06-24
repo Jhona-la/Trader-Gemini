@@ -25,7 +25,7 @@ try:
     import core.nano_core as nano_core
     HAS_NANO = True
 except ImportError:
-    from utils.error_handler import SystemIntegrityError
+    from core.exceptions import SystemIntegrityError
     raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
 
 class LiquidationHunterStrategy(Strategy):

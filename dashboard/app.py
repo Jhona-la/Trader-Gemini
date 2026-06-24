@@ -13,7 +13,7 @@ PROFESSOR METHOD:
 """
 
 import streamlit as st
-import pandas as pd
+import polars as pl
 import json
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -164,39 +164,39 @@ def load_historical_status(data_dir: str, tail: int = 500) -> pd.DataFrame:
     """Load historical status for charts."""
     path = os.path.join(data_dir, "status.csv")
     if not os.path.exists(path):
-        return pd.DataFrame()
+        return pl.DataFrame()
     try:
-        df = pd.read_csv(path)
+        df = pl.read_csv(path)
         # Normalization: Lowercase headers to avoid mismatch
         df.columns = [c.lower().strip() for c in df.columns]
         
         # Validate required columns
         if 'total_equity' not in df.columns or 'timestamp' not in df.columns:
-            return pd.DataFrame()
+            return pl.DataFrame()
         return df.tail(tail)
     except Exception as e:
         logger.exception(f"Bare except ghost bug: {e}")
-        return pd.DataFrame()
+        return pl.DataFrame()
 
 def load_trades(data_dir: str) -> pd.DataFrame:
     """Load trade history."""
     path = os.path.join(data_dir, "trades.csv")
     if not os.path.exists(path):
-        return pd.DataFrame()
+        return pl.DataFrame()
     try:
-        df = pd.read_csv(path)
+        df = pl.read_csv(path)
         # Standardize column names
         if 'timestamp' in df.columns and 'datetime' not in df.columns:
             df.rename(columns={'timestamp': 'datetime'}, inplace=True)
             
         # Ensure datetime is actually datetime object
         if 'datetime' in df.columns:
-            df['datetime'] = pd.to_datetime(df['datetime'])
+            df = df.with_columns(pl.col('datetime').cast(pl.Datetime, strict=False))
             
         return df
     except Exception as e:
         logger.exception(f"Bare except ghost bug: {e}")
-        return pd.DataFrame()
+        return pl.DataFrame()
 
 def load_recent_logs(limit: int = 50) -> list:
     """Load recent log entries from JSON log file."""
@@ -958,10 +958,10 @@ with tab2:
                 st.caption(f"Showing {len(analysis_trades)} reversal trades")
             else:
                 st.info("ℹ️ No Phase 5 operations recorded yet.")
-                analysis_trades = pd.DataFrame() # Clear data to show 0s
+                analysis_trades = pl.DataFrame() # Clear data to show 0s
         else:
             st.warning("⚠️ No reversal column found (Old Data)")
-            analysis_trades = pd.DataFrame()
+            analysis_trades = pl.DataFrame()
             
     # Re-calculate metrics for display if filtered
     if show_reversals:
@@ -1076,7 +1076,7 @@ with tab2:
                 continue
                 
         if leaderboard_data:
-            lb_df = pd.DataFrame(leaderboard_data).sort_values("Net PnL", ascending=False)
+            lb_df = pl.DataFrame(leaderboard_data).sort_values("Net PnL", ascending=False)
             
             # Format visual
             st.dataframe(
@@ -1369,7 +1369,7 @@ with tab4:
         st.markdown("### 📋 Health Check Log")
         
         # Table
-        h_df = pd.DataFrame(health_logs)
+        h_df = pl.DataFrame(health_logs)
         st.dataframe(
             h_df[['timestamp', 'status', 'api_balance', 'file_balance', 'ui_balance', 'notes']].sort_values('timestamp', ascending=False),
             hide_index=True,
@@ -1394,8 +1394,8 @@ with tab5:
         
         if selected_target:
             target_data = telemetry[selected_target]
-            df_target = pd.DataFrame(target_data)
-            df_target['timestamp'] = pd.to_datetime(df_target['timestamp'])
+            df_target = pl.DataFrame(target_data)
+            df_target = df_target.with_columns(pl.col('timestamp').cast(pl.Datetime, strict=False))
             
             # Extract parameters into separate columns
             for param in ['tp_pct', 'sl_pct', 'strength_threshold', 'adx_threshold']:
@@ -1497,7 +1497,7 @@ with tab7:
     if not history.empty and 'total_equity' in history.columns and 'timestamp' in history.columns:
         # Calcular días transcurridos reales desde el primer registro
         hist_df = history.copy()
-        hist_df['time'] = pd.to_datetime(hist_df['timestamp'])
+        hist_df['time'] = pl.Series(hist_df['timestamp']).cast(pl.Datetime, strict=False)
         start_time = hist_df['time'].iloc[0]
         hist_df['days_elapsed'] = (hist_df['time'] - start_time).dt.total_seconds() / 86400.0
         
@@ -1705,8 +1705,8 @@ with tab9:
                         raise SystemIntegrityError('Silent fallback blocked by Holographic Audit')
                         
             if shadow_data:
-                df_shadow = pd.DataFrame(shadow_data)
-                df_shadow['timestamp'] = pd.to_datetime(df_shadow['timestamp'])
+                df_shadow = pl.DataFrame(shadow_data)
+                df_shadow = df_shadow.with_columns(pl.col('timestamp').cast(pl.Datetime, strict=False))
                 
                 # KPIs del Holograma
                 s_col1, s_col2, s_col3, s_col4 = st.columns(4)

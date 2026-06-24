@@ -1,12 +1,48 @@
+pub mod execution;
+pub mod parsers;
+pub mod portfolio;
+pub mod risk;
 pub mod math_kernels;
 pub mod quantum_arena;
 pub mod stateful_engine;
 pub mod dark_alpha_router;
 pub mod trailing;
+pub mod networking;
+pub mod executor;
+pub mod orderbook;
+pub mod ffi_networking;
+
+pub mod ml_inference;
 
 pub use quantum_arena::{QuantumRingBuffer, FEATURE_SIZE, QuantumStateArena};
 pub use stateful_engine::StatefulEngine;
 pub use trailing::{evaluate_quantum_trailing, TrailingResult};
+use std::os::raw::c_char;
+
+#[no_mangle]
+pub extern "C" fn ffi_update_portfolio(usdt_balance: f64) {
+    portfolio::Portfolio::update_balance(usdt_balance);
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_set_position(horizon: i32, side: i32, entry_price: f64, qty: f64) {
+    portfolio::Portfolio::set_position(horizon, side, entry_price, qty);
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_clear_position(horizon: i32) {
+    portfolio::Portfolio::clear_position(horizon);
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_can_open_position(horizon: i32, requested_qty: f64, current_price: f64) -> bool {
+    risk::RiskManager::can_open_position(horizon, requested_qty, current_price)
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_check_drawdown(current_price: f64) -> bool {
+    risk::RiskManager::check_drawdown(current_price)
+}
 
 #[no_mangle]
 pub extern "C" fn quantum_ring_new() -> *mut QuantumRingBuffer {
@@ -354,4 +390,272 @@ pub extern "C" fn run_sandbox_trial(
     stats_out[2] = 0.0; // SUCCESS
     
     trade_count
+}
+
+// =========================================================
+// MATH KERNELS EXPORTS (FFI)
+// =========================================================
+
+#[no_mangle]
+pub extern "C" fn ffi_compute_kelly_fraction(
+    p: f64, b: f64, apply_mult: bool, kelly_mult: f64, stress_score: f64, max_exposure: f64
+) -> f64 {
+    math_kernels::compute_kelly_fraction(p, b, apply_mult, kelly_mult, stress_score, max_exposure)
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_extract_kelly_stats(
+    pnl_ptr: *const f64, pnl_len: usize, 
+    is_win_ptr: *const bool, is_win_len: usize,
+    out_p: *mut f64, out_b: *mut f64
+) {
+    if pnl_ptr.is_null() || is_win_ptr.is_null() || out_p.is_null() || out_b.is_null() || pnl_len != is_win_len {
+        return;
+    }
+    let pnl_slice = unsafe { std::slice::from_raw_parts(pnl_ptr, pnl_len) };
+    let is_win_slice = unsafe { std::slice::from_raw_parts(is_win_ptr, is_win_len) };
+    
+    let (p, b) = math_kernels::extract_kelly_stats(pnl_slice, is_win_slice);
+    unsafe {
+        *out_p = p;
+        *out_b = b;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_compute_cvar(
+    loss_ptr: *const f64, loss_len: usize, confidence_level: f64
+) -> f64 {
+    if loss_ptr.is_null() || loss_len == 0 {
+        return 0.0;
+    }
+    let loss_slice = unsafe { std::slice::from_raw_parts(loss_ptr, loss_len) };
+    math_kernels::compute_cvar(loss_slice, confidence_level)
+}
+
+// =========================================================
+// INDICATORS EXPORTS (FFI)
+// =========================================================
+
+#[no_mangle]
+pub extern "C" fn ffi_compute_ema(
+    data_ptr: *const f64, data_len: usize,
+    period: usize,
+    out_ptr: *mut f64
+) {
+    if data_ptr.is_null() || out_ptr.is_null() || data_len == 0 { return; }
+    let data_slice = unsafe { std::slice::from_raw_parts(data_ptr, data_len) };
+    let out_slice = unsafe { std::slice::from_raw_parts_mut(out_ptr, data_len) };
+    math_kernels::compute_ema_vectorized(data_slice, period, out_slice);
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_compute_rsi(
+    data_ptr: *const f64, data_len: usize,
+    period: usize,
+    out_ptr: *mut f64
+) {
+    if data_ptr.is_null() || out_ptr.is_null() || data_len == 0 { return; }
+    let data_slice = unsafe { std::slice::from_raw_parts(data_ptr, data_len) };
+    let out_slice = unsafe { std::slice::from_raw_parts_mut(out_ptr, data_len) };
+    math_kernels::compute_rsi_vectorized(data_slice, period, out_slice);
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_compute_bbands(
+    data_ptr: *const f64, data_len: usize,
+    period: usize, std_dev: f64,
+    out_up: *mut f64, out_mid: *mut f64, out_low: *mut f64
+) {
+    if data_ptr.is_null() || out_up.is_null() || out_mid.is_null() || out_low.is_null() || data_len == 0 { return; }
+    let data_slice = unsafe { std::slice::from_raw_parts(data_ptr, data_len) };
+    let up_slice = unsafe { std::slice::from_raw_parts_mut(out_up, data_len) };
+    let mid_slice = unsafe { std::slice::from_raw_parts_mut(out_mid, data_len) };
+    let low_slice = unsafe { std::slice::from_raw_parts_mut(out_low, data_len) };
+    math_kernels::compute_bollinger_bands(data_slice, period, std_dev, up_slice, mid_slice, low_slice);
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_compute_macd(
+    data_ptr: *const f64, data_len: usize,
+    fast_period: usize, slow_period: usize, signal_period: usize,
+    out_macd: *mut f64, out_signal: *mut f64, out_hist: *mut f64
+) {
+    if data_ptr.is_null() || out_macd.is_null() || out_signal.is_null() || out_hist.is_null() || data_len == 0 { return; }
+    let data_slice = unsafe { std::slice::from_raw_parts(data_ptr, data_len) };
+    let macd_slice = unsafe { std::slice::from_raw_parts_mut(out_macd, data_len) };
+    let signal_slice = unsafe { std::slice::from_raw_parts_mut(out_signal, data_len) };
+    let hist_slice = unsafe { std::slice::from_raw_parts_mut(out_hist, data_len) };
+    math_kernels::compute_macd(data_slice, fast_period, slow_period, signal_period, macd_slice, signal_slice, hist_slice);
+}
+
+// =====================================================================
+// FFI C-ABI EXPORTS: MACHINE LEARNING INFERENCE
+// =====================================================================
+
+#[no_mangle]
+pub unsafe extern "C" fn ffi_predict_rf(
+    x_ptr: *const f64,
+    x_len: usize,
+    cl_ptr: *const i64,
+    cr_ptr: *const i64,
+    feat_ptr: *const i64,
+    thresh_ptr: *const f64,
+    val_ptr: *const f64,
+    nodes_len: usize,
+    to_ptr: *const i64,
+    to_len: usize,
+) -> f64 {
+    let x = std::slice::from_raw_parts(x_ptr, x_len);
+    let cl = std::slice::from_raw_parts(cl_ptr, nodes_len);
+    let cr = std::slice::from_raw_parts(cr_ptr, nodes_len);
+    let feat = std::slice::from_raw_parts(feat_ptr, nodes_len);
+    let thresh = std::slice::from_raw_parts(thresh_ptr, nodes_len);
+    let val = std::slice::from_raw_parts(val_ptr, nodes_len);
+    let to = std::slice::from_raw_parts(to_ptr, to_len);
+
+    math_kernels::predict_rf(x, cl, cr, feat, thresh, val, to)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ffi_predict_gb(
+    x_ptr: *const f64,
+    x_len: usize,
+    cl_ptr: *const i64,
+    cr_ptr: *const i64,
+    feat_ptr: *const i64,
+    thresh_ptr: *const f64,
+    val_ptr: *const f64,
+    nodes_len: usize,
+    to_ptr: *const i64,
+    to_len: usize,
+    init_score: f64,
+    learning_rate: f64,
+) -> f64 {
+    let x = std::slice::from_raw_parts(x_ptr, x_len);
+    let cl = std::slice::from_raw_parts(cl_ptr, nodes_len);
+    let cr = std::slice::from_raw_parts(cr_ptr, nodes_len);
+    let feat = std::slice::from_raw_parts(feat_ptr, nodes_len);
+    let thresh = std::slice::from_raw_parts(thresh_ptr, nodes_len);
+    let val = std::slice::from_raw_parts(val_ptr, nodes_len);
+    let to = std::slice::from_raw_parts(to_ptr, to_len);
+
+    math_kernels::predict_gb(x, cl, cr, feat, thresh, val, to, init_score, learning_rate)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ffi_fused_compute_step(
+    closes_ptr: *const f64,
+    closes_len: usize,
+    volumes_ptr: *const f64,
+    portfolio_ptr: *const f64, // len 3
+    gene_ptr: *const f64,      // len 2
+    brain_ptr: *const f64,     // len 100
+    l2_ptr: *const f64,        // len 2
+    window: usize,
+    out_ptr: *mut f64          // len 4
+) {
+    let closes = std::slice::from_raw_parts(closes_ptr, closes_len);
+    let volumes = std::slice::from_raw_parts(volumes_ptr, closes_len);
+    let port = &*(portfolio_ptr as *const [f64; 3]);
+    let gene = &*(gene_ptr as *const [f64; 2]);
+    let brain = &*(brain_ptr as *const [f64; 100]);
+    let l2 = &*(l2_ptr as *const [f64; 2]);
+    let out = &mut *(out_ptr as *mut [f64; 4]);
+
+    math_kernels::fused_compute_step(closes, volumes, port, gene, brain, l2, window, out);
+}
+
+// =====================================================================
+// FFI C-ABI EXPORTS: WEBSOCKET JSON PARSERS
+// =====================================================================
+
+use std::ffi::CStr;
+
+
+#[no_mangle]
+pub unsafe extern "C" fn ffi_parse_binance_depth(
+    json_ptr: *const c_char,
+    out_ptr: *mut f64
+) -> bool {
+    if json_ptr.is_null() || out_ptr.is_null() { return false; }
+    
+    let c_str = CStr::from_ptr(json_ptr);
+    if let Ok(json_str) = c_str.to_str() {
+        if let Some((e, u, bp, bq, ap, aq)) = parsers::parse_binance_depth(json_str) {
+            let out = std::slice::from_raw_parts_mut(out_ptr, 6);
+            out[0] = e as f64;
+            out[1] = u as f64;
+            out[2] = bp;
+            out[3] = bq;
+            out[4] = ap;
+            out[5] = aq;
+            
+            return true;
+        }
+    }
+    false
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ffi_parse_binance_trade(
+    json_ptr: *const c_char,
+    out_ptr: *mut f64
+) -> bool {
+    if json_ptr.is_null() || out_ptr.is_null() { return false; }
+    
+    let c_str = CStr::from_ptr(json_ptr);
+    if let Ok(json_str) = c_str.to_str() {
+        if let Some((e, t, p, q, m)) = parsers::parse_binance_trade(json_str) {
+            let out = std::slice::from_raw_parts_mut(out_ptr, 5);
+            out[0] = e as f64;
+            out[1] = t as f64;
+            out[2] = p;
+            out[3] = q;
+            out[4] = if m { 1.0 } else { 0.0 };
+            
+            return true;
+        }
+    }
+    false
+}
+
+
+#[no_mangle]
+pub unsafe extern "C" fn ffi_sign_binance_payload(
+    secret_ptr: *const c_char,
+    payload_ptr: *const c_char,
+    out_ptr: *mut c_char,
+    max_len: usize
+) -> bool {
+    if secret_ptr.is_null() || payload_ptr.is_null() || out_ptr.is_null() { return false; }
+    
+    let secret = CStr::from_ptr(secret_ptr).to_str().unwrap_or("");
+    let payload = CStr::from_ptr(payload_ptr).to_str().unwrap_or("");
+    
+    let sig = execution::sign_binance_payload(secret, payload);
+    let sig_bytes = sig.as_bytes();
+    
+    if sig_bytes.len() >= max_len { return false; }
+    
+    std::ptr::copy_nonoverlapping(sig_bytes.as_ptr(), out_ptr as *mut u8, sig_bytes.len());
+    *out_ptr.add(sig_bytes.len()) = 0; // Null terminator
+    
+    true
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ffi_load_nano_forest(path_ptr: *const c_char) -> bool {
+    if path_ptr.is_null() { return false; }
+    if let Ok(path_str) = std::ffi::CStr::from_ptr(path_ptr).to_str() {
+        return crate::ml_inference::NanoForest::load_global(path_str).is_ok();
+    }
+    false
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ffi_predict_nano_forest(features_ptr: *const f32, len: usize) -> f32 {
+    if features_ptr.is_null() || len == 0 { return 0.5; }
+    let features_slice = std::slice::from_raw_parts(features_ptr, len);
+    crate::ml_inference::NanoForest::predict_global(features_slice)
 }

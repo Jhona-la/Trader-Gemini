@@ -66,7 +66,7 @@ class CrossExchangeIntelligenceEngine:
         while True:
             try:
                 for sym in self.symbol_list:
-                    metrics = global_state.cross_exchange_metrics.get(sym, {})
+                    metrics = global_state.cross_exchange_metrics[sym]
                     cb_vel = metrics['cb_velocity']
                     bybit_oi = metrics['bybit_oi']
                     funding = metrics['bybit_funding']

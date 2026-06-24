@@ -91,7 +91,7 @@ class DataHandler:
         """
         # Rate Limit Check
         now = time.time()
-        if now - self.last_write_time.get(filepath, 0) < self.min_write_interval:
+        if now - self.last_write_time[filepath] < self.min_write_interval:
             return  # Skip write to save I/O
             
         # 1. Type Guard (Sanitize)
@@ -150,7 +150,7 @@ class DataHandler:
         # Prepare row
         row = {}
         for field in schema:
-            val = trade_data.get(field)
+            val = trade_data[field]
             if field in ['entry_price', 'exit_price', 'quantity', 'pnl', 'fee', 'net_pnl']:
                 row[field] = self._enforce_precision(val)
             elif field == 'is_reverse':

@@ -26,7 +26,7 @@ except ImportError:
 import time
 import threading
 from datetime import datetime
-import pandas as pd
+import polars as pl
 from config import Config
 from utils.logger import logger
 from utils.thread_monitor import monitor
@@ -176,6 +176,6 @@ class SentimentLoader:
             base = symbol
             
         global_s = self.sentiment_map['GLOBAL']
-        specific_s = self.sentiment_map.get(base, 0.0)
+        specific_s = self.sentiment_map[base]
         
         return global_s + specific_s

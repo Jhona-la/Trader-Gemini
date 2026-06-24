@@ -1,5 +1,17 @@
 import numpy as np
-from numba import njit
+try:
+    import cython
+    IS_CYTHON = cython.compiled
+except ImportError:
+    IS_CYTHON = False
+
+if IS_CYTHON:
+    def njit(*args, **kwargs):
+        def decorator(func): return func
+        if len(args) == 1 and callable(args[0]) and not kwargs: return args[0]
+        return decorator
+else:
+    from numba import njit
 
 @njit(fastmath=True, nogil=True)
 def calculate_kelly_fraction(

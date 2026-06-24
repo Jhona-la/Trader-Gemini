@@ -32,7 +32,7 @@ class AutoCorrectionEngine:
         successful_corrections = []
         
         for issue in issues:
-            pattern = issue.get("pattern")
+            pattern = issue["pattern"]
             if pattern in self.correction_rules:
                 correction_msg = self.correction_rules[pattern](issue)
                 if correction_msg:
@@ -47,7 +47,7 @@ class AutoCorrectionEngine:
                     logger.warning(f"🛠️ [AUTO-HEAL] Corrección Aplicada: {correction_msg}")
                     
                     # Subir alarma a telegram informando que el bot se modificó a sí mismo
-                    if issue.get("severity") == "CRITICAL" or pattern in ["fee_death", "consistent_losses"]:
+                    if issue["severity"] == "CRITICAL" or pattern in ["fee_death", "consistent_losses"]:
                         meta = issue["metadata"]
                         kw = {k:v for k,v in meta.items()} if type(meta) == dict else {}
                         
