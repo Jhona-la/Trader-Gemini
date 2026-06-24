@@ -38,7 +38,9 @@ def test_hedge_mode_horizon_isolation():
         fill_cost=0.1 * 50000,
         fill_price=50000,
         order_id="123",
-        horizon="SCALPING"
+        horizon="SCALPING",
+        leverage=10,
+        metadata={"is_close": False, "is_exit": False, "actual_order_type": "MAKER", "client_order_id": "123", "binance_position_side": "LONG", "dollar_size": 5000, "ml_confidence": 0.85, "trajectory_prediction": "MOMENTUM"}
     ))
     
     # Simular ejecución Binance de un SHORT en Swing para el MISMO SÍMBOLO
@@ -58,7 +60,9 @@ def test_hedge_mode_horizon_isolation():
         fill_cost=0.05 * 50100,
         fill_price=50100,
         order_id="456",
-        horizon="SWING"
+        horizon="SWING",
+        leverage=10,
+        metadata={"is_close": False, "is_exit": False, "actual_order_type": "MAKER", "client_order_id": "456", "binance_position_side": "SHORT", "dollar_size": 2505, "ml_confidence": 0.85, "trajectory_prediction": "MOMENTUM"}
     ))
     
     # Verificamos virtual ledger (que es la fuente de verdad del bot)
