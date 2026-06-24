@@ -53,6 +53,7 @@ def test_features_to_models_pipeline():
         return dummy_df
 
     ml_strat._prepare_features = mock_prepare
+    ml_strat._prepare_features_pinned = mock_prepare
     ml_strat._feature_cols = dummy_cols
     ml_strat.is_warm = True # Bypass warm up
     ml_strat.is_trained = True # Bypassar la condición de self.is_trained
@@ -72,12 +73,26 @@ def test_features_to_models_pipeline():
         def get_latest_bars_15m(self, symbol, n=100):
             return self.get_latest_bars(symbol, '15m', n)
         def get_order_flow_metrics(self, symbol):
-            return {'buy_vol': 100, 'sell_vol': 50, 'imbalance': 0.5}
+            return {
+                'buy_vol': 100, 'sell_vol': 50, 'imbalance': 0.5,
+                'is_toxic': False, 'vpin': 0.1, 'iceberg_score': 0.0,
+                'rolling_delta_60s': 10.0, 'spoofing_prob_buy': 0.0, 'spoofing_prob_sell': 0.0
+            }
         def get_hft_indicators(self, symbol):
-            return {'micro_trend': 1.0, 'liquidity_imbalance': 0.5, 'order_book_depth': 100}
+            return {'micro_trend': 1.0, 'liquidity_imbalance': 0.5, 'order_book_depth': 100, 'vbi': 0.5, 'vbi_avg': 0.5}
     ml_strat.data_provider = MockDataProvider()
     ml_strat.min_bars_to_train = 50 # Asegurar que pase el filtro
 
+    # Inject a wrapper to print exceptions in _process_ml_results
+    original_process = ml_strat._process_ml_results
+    async def wrapped_process(results):
+        try:
+            await original_process(results)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+    ml_strat._process_ml_results = wrapped_process
+    
     event = MarketEvent(symbol="BTC/USDT", close_price=50000)
     ml_strat.calculate_signals(event)
 

@@ -778,7 +778,7 @@ class Portfolio:
                         total_short_beta += pos_beta
                         net_delta -= pos_beta
                         
-                    strat_id = str(pos['strategy_id']).upper()
+                    strat_id = str(pos.get('opener_strategy_id', 'Unknown')).upper()
                     horizon = pos['horizon']
                     if "SWING" in strat_id or horizon not in ["1m", "5m"]:
                         beta_swing += pos_beta
@@ -1294,7 +1294,7 @@ class Portfolio:
                 'cognitive_anchor': None,
                 'setup_type': getattr(event, 'setup_type', 'UNKNOWN'),
                 'strategy_version': getattr(event, 'strategy_version', '1.0.0'),
-                'ml_confidence': (getattr(event, 'metadata', {}) or {})['ml_confidence'],
+                'ml_confidence': (getattr(event, 'metadata', {}) or {}).get('ml_confidence', 0.0),
                 'tp_limit_placed': False,
                 'tp_order_id': None,
                 'trade_id': getattr(event, 'trade_id', None),
@@ -1308,7 +1308,9 @@ class Portfolio:
                 'fase_actual': 'FASE_0_RIESGO_INICIAL',
                 'ratio_captura': 0.0,
                 'trail_stop_price': 0.0,
-                'strategy_family': 'DEFAULT'
+                'strategy_family': 'DEFAULT',
+                'leverage': getattr(event, 'leverage', getattr(Config, 'BINANCE_LEVERAGE', 1)),
+                'trajectory_prediction': (getattr(event, 'metadata', {}) or {}).get('trajectory_prediction', 'UNKNOWN')
             }
             if getattr(self, '_nano_ledger', None) is not None:
                 self._nano_ledger.register_vkey(event.symbol, v_key)
@@ -1401,8 +1403,8 @@ class Portfolio:
                 if pos['quantity'] == event.quantity: # New entry
                     pos['entry_time'] = self._get_current_time()
                     pos['opener_strategy_id'] = getattr(event, 'strategy_id', None) or 'Unknown'
-                    pos['ml_confidence'] = (getattr(event, 'metadata', {}) or {})['ml_confidence']
-                    pos['trajectory_prediction'] = (getattr(event, 'metadata', {}) or {})['trajectory_prediction']
+                    pos['ml_confidence'] = (getattr(event, 'metadata', {}) or {}).get('ml_confidence', 0.0)
+                    pos['trajectory_prediction'] = (getattr(event, 'metadata', {}) or {}).get('trajectory_prediction', 'UNKNOWN')
                     pos['tp_limit_placed'] = False
                     pos['tp_order_id'] = None
                     # FORENSIC FIX: Reset watermarks on new trade to prevent instant TURBO_BE
@@ -2053,7 +2055,7 @@ class Portfolio:
                     if 'low_water_mark' not in self.positions[v_key] or self.positions[v_key]['low_water_mark'] == 0:
                         self.positions[v_key]['low_water_mark'] = fill_price
                         
-                    _seg = (getattr(event, 'metadata', {}) or {})['segment_policy']
+                    _seg = (getattr(event, 'metadata', {}) or {}).get('segment_policy', None)
                     self.positions[v_key]['exec_policy'] = getattr(_seg, 'execution_type', 'MAKER_ONLY') if _seg else 'MAKER_ONLY'
                     self.positions[v_key]['trail_policy'] = getattr(_seg, 'trailing_aggression', 'STRUCTURED') if _seg else 'STRUCTURED'
 

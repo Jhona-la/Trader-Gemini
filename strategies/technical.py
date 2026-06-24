@@ -56,9 +56,7 @@ class HybridScalpingStrategy(Strategy):
         self.horizon = kwargs.get('horizon', 'SCALPING')
         self.priority = kwargs.get('priority', 1)
         
-        base_label = getattr(Config, 'STRATEGY_LABELS', {})["technical"]
-        self.horizon = horizon
-        self.priority = priority
+        base_label = getattr(Config, 'STRATEGY_LABELS', {}).get("technical", "Technical")
         
         # ================================================================
         # PHASE FORENSIC-1: HORIZON-AWARE PARAMETER LOADING
