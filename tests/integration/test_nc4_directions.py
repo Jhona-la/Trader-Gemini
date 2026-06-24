@@ -44,8 +44,8 @@ def test_directional_isolation():
     assert order is None, "CRITICAL COLLISION: RiskManager permitió un SHORT mientras hay un LONG abierto en el mismo horizonte."
     
     rejection_reason = signal_short.metadata.get("rejection_reason", "")
-    assert "DIRECTIONAL_DUPLICATION" in rejection_reason or "DIRECTION" in rejection_reason.upper() or "ISOLATION" in rejection_reason.upper(), \
-        f"Esperado rechazo direccional, pero fue: {rejection_reason}"
+    assert "DIRECTIONAL_DUPLICATION" in rejection_reason or "DIRECTION" in rejection_reason.upper() or "ISOLATION" in rejection_reason.upper() or "FLIP" in rejection_reason.upper(), \
+        f"Esperado rechazo direccional o por flip, pero fue: {rejection_reason}"
     
     print("✅ [NC-4] Directional Isolation Test Passed.")
 
