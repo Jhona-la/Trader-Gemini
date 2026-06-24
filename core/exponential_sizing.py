@@ -66,26 +66,52 @@ class ExponentialSizing:
         
         # Si la ventaja es negativa (expectancy < 0), el tamaño de la apuesta debe ser cero
         if kelly_f <= 0.0:
-            print(f"🛡️ [EXP-SIZING DIAG] Negative Expectancy: logit={confidence_logit:.4f}, p={p:.4f}, q={q:.4f}, b={b:.4f}, kelly_f={kelly_f:.4f}")
+            import logging
+            logging.getLogger(__name__).warning(f"🛡️ [EXP-SIZING] Rejected NEGATIVE_EXPECTANCY: logit={confidence_logit:.4f}, abs_logit={abs_logit:.4f}, p={p:.4f}, q={q:.4f}, b={b:.4f}, kelly_f={kelly_f:.4f}")
             return {
                 "probability": float(p),
                 "kelly_f": 0.0,
                 "applied_f": 0.0,
                 "risk_amount_usd": 0.0,
                 "action": "SKIP",
-                "reason": "NEGATIVE_EXPECTANCY"
+                "reason": "NEGATIVE_EXPECTANCY",
+                "diag_b": float(b),
+                "diag_p": float(p),
+                "diag_q": float(q),
+                "diag_logit": float(confidence_logit)
             }
             
         # 3. Aplicar Fraccionalidad (Quarter-Kelly)
-        applied_f = kelly_f * np.float64(self.kelly_fraction)
+        if current_capital < 100.0:
+            # 🚀 FULL KELLY FOR MICRO-ACCOUNTS
+            applied_f = kelly_f * np.float64(1.0)
+        else:
+            applied_f = kelly_f * np.float64(self.kelly_fraction)
         
         # 4. Limitar por Risk Management del Microcapital
-        applied_f = np.maximum(np.float64(self.min_risk_pct), np.minimum(applied_f, np.float64(self.max_risk_pct)))
+        # Quitar el techo máximo en micro-cuentas para permitir agresividad total
+        if current_capital < 100.0:
+            applied_f = np.maximum(np.float64(self.min_risk_pct), applied_f)
+            # Cap at 90% purely to avoid total liquidation math errors
+            applied_f = np.minimum(applied_f, np.float64(0.90))
+        else:
+            applied_f = np.maximum(np.float64(self.min_risk_pct), np.minimum(applied_f, np.float64(self.max_risk_pct)))
         
         risk_amount_usd = current_capital * applied_f
         
         # 5. Protección del Capital Mínimo (Mínimo Notional de Binance)
         notional_size = risk_amount_usd * np.float64(leverage)
+        
+        # 🚀 MICRO-ACCOUNT BINANCE FLOOR EVASION
+        if notional_size < min_notional and current_capital < 100.0:
+            if current_capital * np.float64(leverage) >= min_notional * 1.2:
+                # Forzar el tamaño al floor seguro para pasar la validación
+                target_notional = np.float64(min_notional * 1.2)  # $6.00 if min is 5
+                notional_size = target_notional
+                risk_amount_usd = target_notional / np.float64(leverage)
+                applied_f = risk_amount_usd / current_capital
+                print(f"⚠️ [EXP-SIZING] Floor Evasion Triggered: Forced notional to ${target_notional:.2f} to bypass Binance limits.")
+        
         if notional_size < min_notional:
             return {
                 "probability": float(p),

@@ -107,7 +107,7 @@ class SniperStrategy(Strategy):
     
     @validate_market_data
     @performance_timer
-    def calculate_signals(self, event):
+    def calculate_signals(self, event, *args, **kwargs):
         """Main signal generation loop."""
         if not Config.Sniper.ENABLED:
             return
@@ -125,6 +125,7 @@ class SniperStrategy(Strategy):
         
         order_flow = getattr(event, 'order_flow', None)
         
+        generated_signals = []
         for symbol in target_symbols:
             try:
                 # ── PHASE 1: LIQUIDATION SQUEEZE TRIGGER ──
@@ -159,7 +160,7 @@ class SniperStrategy(Strategy):
                             'liq_value': liq_usd
                         }
                     )
-                    self.events_queue.put(signal)
+                    generated_signals.append(signal)
                     self.last_signal_time[symbol] = getattr(event, 'timestamp', self._now())
                     continue # Skip standard analysis
                     
@@ -190,12 +191,14 @@ class SniperStrategy(Strategy):
                 # D2 FIX: Pass pre-fetched bars to avoid redundant API call
                 signal = self._analyze_symbol(symbol, order_flow=order_flow, prefetched_bars=bars)
                 if signal:
-                    self.events_queue.put(signal)
+                    generated_signals.append(signal)
                     self.last_signal_time[symbol] = now
                     self.signal_count += 1
                     logger.info(f"🎯 SNIPER #{self.signal_count}: {signal.signal_type.name} {symbol} (Strength: {signal.strength:.2f})")
             except Exception as e:
                 logger.error(f"Sniper error for {symbol}: {e}")
+                
+        return generated_signals
     
     def _is_active_session(self) -> bool:
         """Check if current time is within London or NY session."""

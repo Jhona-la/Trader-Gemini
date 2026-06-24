@@ -1953,46 +1953,36 @@ class RiskManager:
             target_leverage = signal_metadata.get("leverage", h_params["leverage"]) if signal_metadata else h_params["leverage"]
 
             # [FASE 4: ASIMETRÍA EXPONENCIAL (KELLY DINÁMICO)]
-            ml_conf = signal_metadata.get('ml_confidence', signal_metadata.get('strength', 0.0)) if signal_metadata else 0.0
-            
-            # ── QUANTUM SUTURA: Invocar Motor Exponencial (Quarter-Kelly Continuo) y B-DINÁMICO ──
+            # Fix: Read ml_confidence from metadata
+            ml_conf = signal_metadata.get('ml_confidence', signal_metadata.get('strength', 0.0)) if signal_metadata else 0.0            
+            # ── QUANTUM SUTURA: Invocar Motor en Rust (tg_core_fast) ──
             try:
-                from core.exponential_sizing import ExponentialSizing
+                import tg_core_fast
                 
                 # B-DYNAMIC RESOLUTION (Config 5D)
-                # Obtenemos TP/SL del horizonte/asset actual ya resuelto por _get_asset_params (4D Resolution Engine)
                 tp_pct_b = h_params.get("take_profit_pct", 0.0035)
                 sl_pct_b = h_params.get("stop_loss_pct", 0.0035)
                 dynamic_b = tp_pct_b / sl_pct_b if sl_pct_b > 0 else 1.5
                 
-                logger.debug(f"📊 [B-DYNAMIC] {symbol} {horizon} | TP: {tp_pct_b*100:.2f}% | SL: {sl_pct_b*100:.2f}% | b={dynamic_b:.2f}")
-                
-                esizing = ExponentialSizing(kelly_fraction=0.25, default_b=dynamic_b)
-                
-                import math
-                # Asumimos que ml_conf puede venir en probabilidad [0,1], si es así lo convertimos a logit
                 if 0.0 < ml_conf < 1.0:
-                    logit = math.log(ml_conf / (1.0 - ml_conf)) if ml_conf < 0.999 else 6.9
+                    win_prob = ml_conf
                 else:
-                    logit = ml_conf
+                    win_prob = 0.55 # Default
                     
-                _calc = esizing.calculate_kelly_risk(
-                    logit, 
-                    self.portfolio.get_total_equity(), 
-                    b=dynamic_b, 
-                    min_notional=5.0, 
-                    leverage=target_leverage
-                )
+                # Rust Nanosecond Kelly Calculation
+                kelly_f, status = tg_core_fast.calculate_kelly(win_prob, dynamic_b)
                 
-                if _calc["action"] == "SKIP":
-                    logger.warning(f"🛡️ [EXP-SIZING] Rejected {symbol}: {_calc.get('reason')}")
-                    return ShieldVerdict.REJECT, f"ExponentialSizing Reject: {_calc.get('reason')}"
+                if status != "PROCEED":
+                    logger.warning(f"🛡️ [RUST-KELLY] Rejected {symbol}: {status}")
+                    return ShieldVerdict.REJECT, f"Rust Kelly Reject: {status}"
                     
-                kelly_fraction = _calc["applied_f"] * 4.0 # Base kelly for logging
-                risk_amount = _calc["risk_amount_usd"]
+                # We apply quarter-kelly internally or dynamically
+                kelly_fraction = kelly_f * 0.25
+                risk_amount = self.portfolio.get_total_equity() * kelly_fraction
+                
             except Exception as e:
                 import logging
-                logging.getLogger(__name__).error(f"Error in Exponential Sizing / B-Dynamic: {e}")
+                logging.getLogger(__name__).error(f"Error in Rust Sizing Engine: {e}")
                 kelly_fraction = 0.25
                 risk_amount = self.portfolio.get_total_equity() * 0.05 # Fallback
             
@@ -2137,37 +2127,31 @@ class RiskManager:
                     kelly_multiplier = self.portfolio.compounding_engine.get_kelly_multiplier(horizon)
                 
                 # FORENSIC FIX: Micro-Account Strict Margin Limit per operation
-                # [QUANTUM EVOLUTION] Swarm Volatility Multiplier Injection + Asymmetric Compounding
-                _margin_to_use = available_cash * safe_kelly * resonance_multiplier * multiplier * asymmetric_mult * kelly_multiplier
-                
-                # Si el multiplicador es extremadamente alto (ej > 2.0x), permitimos absorber la liquidez disponible
-                if multiplier >= 1.5 or asymmetric_mult >= 1.5 or kelly_multiplier >= 1.5:
-                    _margin_to_use = min(available_cash * getattr(Config, "MAX_GLOBAL_MARGIN_PCT", 0.98), _margin_to_use) # Absorbe hasta el límite máximo de la cuenta para home-runs
-                    logger.info(f"🍯 [SWARM/ASYMMETRIC] KellyMult={kelly_multiplier:.1f}x. Absorbiendo liquidez masiva (${_margin_to_use:.2f})")
-                
-                # Minimum viable logic:
-                if _margin_to_use < 1.0:
-                    _margin_to_use = 1.0
-                
-                # 🛡️ DRAWDOWN SHIELD ERRADICADO (Singularidad Exponencial)
-                # El capital disponible (global_cash) ya se redujo naturalmente. No penalizar doblemente
-                # reduciendo el multiplicador de Kelly, de lo contrario la recuperación es matemáticamente imposible.
-                
-                # 🔀 MUTACIÓN 40: Pairs Trading Margin Split
-                is_paired = signal_metadata.get('is_paired', False) if signal_metadata else False
-                if is_paired:
-                    _margin_to_use = max(0.5, _margin_to_use / 2.0)
-                    logger.debug(f"⚖️ [PAIRS TRADING] Splitting micro margin to ${_margin_to_use:.2f}")
-                
-                # FASE 11: Asymmetric Leverage Application
-                final_leverage = min(75, int(target_leverage * asymmetric_mult))
-                notional_size = _margin_to_use * final_leverage
-                
-                # Minimum Binance enforcement
-                if notional_size < 5.5:
-                    notional_size = 5.5
+                # Rust Nanosecond Micro Sizing
+                try:
+                    import tg_core_fast
+                    min_notional_binance = getattr(getattr(Config, "Risk", object()), "MIN_NOTIONAL_USD", 5.50)
+                    risk_amount, notional_size, status = tg_core_fast.apply_micro_sizing(
+                        available_cash * safe_kelly * resonance_multiplier * multiplier * asymmetric_mult * kelly_multiplier,
+                        available_cash,
+                        target_leverage,
+                        min_notional_binance,
+                        safe_kelly
+                    )
                     
-                logger.debug(f"📐 [MICRO-SIZING] Compounding Phase: {horizon} -> Margin ${_margin_to_use:.2f} at {final_leverage}x (Base: {target_leverage}x) = Notional ${notional_size:.2f}")
+                    if status != "OK":
+                        logger.warning(f"⚠️ [RUST-SIZING] Not enough funds to meet Binance Floor: {status}")
+                        if signal_metadata is not None:
+                            signal_metadata["rejection_reason"] = RejectionReason.MARGIN_INSUFFICIENT
+                        return None
+                        
+                    final_leverage = target_leverage
+                except Exception as e:
+                    logger.error(f"Error in Rust apply_micro_sizing: {e}")
+                    final_leverage = target_leverage
+                    notional_size = available_cash * final_leverage
+                    
+                logger.debug(f"📐 [RUST MICRO-SIZING] {horizon} -> Margin ${risk_amount:.2f} at {final_leverage}x = Notional ${notional_size:.2f}")
             else:
                 win_rate = self.get_win_rate()
                 
@@ -2209,28 +2193,42 @@ class RiskManager:
                         f"Using static risk={effective_risk:.3f} | Res={resonance_multiplier:.1f}"
                     )
                 
-                # risk_amount = available_cash * effective_risk (REEMPLAZADO POR EXPONENTIAL SIZING)
-                if '_calc' in locals():
-                    risk_amount = _calc["risk_amount_usd"]
-                    effective_risk = _calc["applied_f"]
-                else:
+                # RUST NANOSECOND MICRO SIZING FOR SWING
+                try:
+                    import tg_core_fast
+                    min_notional_binance = getattr(getattr(Config, "Risk", object()), "MIN_NOTIONAL_USD", 5.50)
+                    
+                    # Apply shield reduction if requested
+                    effective_risk *= shield_size_multiplier
+                    
+                    # 🔀 MUTACIÓN 40: Pairs Trading Margin Split
+                    is_paired = signal_metadata.get('is_paired', False) if signal_metadata else False
+                    if is_paired:
+                        effective_risk /= 2.0
+                        logger.debug(f"⚖️ [PAIRS TRADING] Splitting SWING risk amount")
+
+                    risk_amount, notional_size, status = tg_core_fast.apply_micro_sizing(
+                        available_cash * effective_risk,
+                        available_cash,
+                        target_leverage,
+                        min_notional_binance,
+                        effective_risk
+                    )
+                    
+                    if status != "OK":
+                        logger.warning(f"⚠️ [RUST-SIZING] SWING Not enough funds to meet Binance Floor: {status}")
+                        if signal_metadata is not None:
+                            signal_metadata["rejection_reason"] = RejectionReason.MARGIN_INSUFFICIENT
+                        return None
+                        
+                except Exception as e:
+                    logger.error(f"Error in SWING Rust apply_micro_sizing: {e}")
                     risk_amount = available_cash * effective_risk
-                
-                # Apply shield reduction if requested
-                risk_amount *= shield_size_multiplier
-                
-                # 🔀 MUTACIÓN 40: Pairs Trading Margin Split
-                is_paired = signal_metadata.get('is_paired', False) if signal_metadata else False
-                if is_paired:
-                    risk_amount /= 2.0
-                    logger.debug(f"⚖️ [PAIRS TRADING] Splitting risk amount to ${risk_amount:.2f}")
-
-                # Notional = Risk_Amount / SL_Pct
-                if sl_pct > 0:
-                    notional_size = risk_amount / sl_pct
-                else:
-                    notional_size = available_cash * target_leverage * 0.5  # Conservador
-
+                    if sl_pct > 0:
+                        notional_size = risk_amount / sl_pct
+                    else:
+                        notional_size = available_cash * target_leverage * 0.5  # Conservador
+                        
                 # 4. Hardening para Cuentas Estándar
                 max_notional_from_cash = available_cash * target_leverage * 0.40
                 max_notional_from_headroom = remaining_margin_headroom * target_leverage
@@ -3226,6 +3224,11 @@ class RiskManager:
             if _sig_meta is None:
                 _sig_meta = {}
                 object.__setattr__(signal_event, 'metadata', _sig_meta)
+            
+            # Inject ml_confidence into metadata so size_position can access it
+            ml_conf_val = getattr(signal_event, 'ml_confidence', None)
+            if ml_conf_val is not None:
+                _sig_meta['ml_confidence'] = ml_conf_val
             
             _dir_str = "LONG" if signal_event.signal_type == SignalType.LONG else "SHORT"
             params = self.size_position(

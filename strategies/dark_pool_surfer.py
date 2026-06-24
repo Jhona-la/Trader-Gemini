@@ -23,7 +23,7 @@ class DarkPoolSurferStrategy:
         self.last_signal_time = {}
         self.cooldown = 3.0 # Segundos entre surfeos
         
-    def calculate_signals(self, event: MarketEvent) -> Union[List[SignalEvent], SignalEvent, None]:
+    def calculate_signals(self, event: MarketEvent, *args, **kwargs) -> Union[List[SignalEvent], SignalEvent, None]:
         if not self.active: return None
         if self.symbol != "ALL" and event.symbol != self.symbol: return None
         
@@ -32,14 +32,15 @@ class DarkPoolSurferStrategy:
         if not metrics:
             return None
             
-        is_dark_pool = metrics['is_dark_pool_print']
-        dark_side = metrics['dark_pool_side']
+        is_dark_pool = metrics.get('is_dark_pool_print', False)
+        dark_side = metrics.get('dark_pool_side', None)
         
         if not is_dark_pool or not dark_side:
             return None
             
         now = time.time()
-        if now - self.last_signal_time[sym] < self.cooldown:
+        last_time = self.last_signal_time.get(sym, 0.0)
+        if now - last_time < self.cooldown:
             return None
             
         self.last_signal_time[sym] = now

@@ -27,7 +27,7 @@ class CVDSniperStrategy:
         self.cvd_history = {}   # symbol -> deque
         self.last_update = {}
         
-    def calculate_signals(self, event: MarketEvent) -> Union[List[SignalEvent], SignalEvent, None]:
+    def calculate_signals(self, event: MarketEvent, *args, **kwargs) -> Union[List[SignalEvent], SignalEvent, None]:
         if not self.active: return None
         if self.symbol != "ALL" and event.symbol != self.symbol: return None
         

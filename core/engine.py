@@ -1081,9 +1081,13 @@ class Engine:
         # ================================================================
         if hasattr(self, 'quantum_router') and getattr(self, 'quantum_router', None) is not None:
             try:
-                unified_signal = self.quantum_router.evaluate_tick(event, strategies_to_run, event.close_price)
-                if unified_signal:
-                    self.events.put(unified_signal)
+                unified_signals = self.quantum_router.evaluate_tick(event, strategies_to_run, event.close_price)
+                if unified_signals:
+                    if isinstance(unified_signals, list):
+                        for usig in unified_signals:
+                            self.events.put(usig)
+                    else:
+                        self.events.put(unified_signals)
             except Exception as e:
                 logger.error(f"🌌 [QUANTUM] Error in evaluate_tick: {e}")
         else:

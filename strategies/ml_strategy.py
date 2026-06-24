@@ -303,6 +303,7 @@ class MLStrategyHybridUltimate(Strategy):
         self.events_queue = events_queue
         self.symbol = symbol
         self.horizon = horizon  # NEW: 'SCALPING' or 'SWING'
+        self.requires_training = True  # Added for unified backtest architecture
 
         # --- SUPREMO-V4 / MÓDULO OMEGA (FASE D): H1-H8 ISOLATION PROTOCOL ---
         # Aislar los modelos según su horizonte temporal estricto (H1 a H8) para

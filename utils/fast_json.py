@@ -48,9 +48,9 @@ class FastJson:
             if HAS_ORJSON:
                 # orjson.dumps doesn't like allow_nan, sort_keys, default, etc. as kwargs
                 option = orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY
-                if kwargs['indent']:
+                if kwargs.get('indent'):
                     option |= orjson.OPT_INDENT_2
-                if kwargs['sort_keys']:
+                if kwargs.get('sort_keys'):
                     option |= orjson.OPT_SORT_KEYS
                 
                 # Use default=str to catch complex objects like FontManager
@@ -73,7 +73,7 @@ class FastJson:
         try:
             if HAS_ORJSON:
                 option = orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY
-                if kwargs['indent']:
+                if kwargs.get('indent'):
                     option |= orjson.OPT_INDENT_2
                 
                 content = orjson.dumps(data, option=option, default=lambda x: str(x))

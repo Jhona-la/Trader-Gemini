@@ -65,3 +65,12 @@ tests/test_production_integrity.py
 .models/
 *.old
 *.bak
+
+# Large monitoring binaries - install separately
+monitoring_tools/grafana*/
+monitoring_tools/prometheus*/
+monitoring_tools/*.zip
+
+# Large backtest/output files
+graveyard/forensic_purge/bt_v12*.txt
+scripts/hyper_evolver_output.txt

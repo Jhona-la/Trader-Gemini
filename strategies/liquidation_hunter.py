@@ -68,13 +68,15 @@ class LiquidationHunterStrategy(Strategy):
     
     @validate_market_data
     @performance_timer
-    def calculate_signals(self, event):
+    def calculate_signals(self, event, *args, **kwargs):
         if not hasattr(event, 'symbol') or not event.symbol:
             target_symbols = self.data_provider.symbol_list
         else:
             target_symbols = [event.symbol]
             
         now = getattr(event, 'timestamp', self._now())
+        
+        generated_signals = []
         
         for symbol in target_symbols:
             try:
@@ -184,10 +186,12 @@ class LiquidationHunterStrategy(Strategy):
                     }
                 )
                 
-                self.events_queue.put(signal)
+                generated_signals.append(signal)
                 self.last_signal_time[symbol] = now
                 self.signal_count += 1
                 logger.info(f"🌋 [LIQUIDATION HUNTER] #{self.signal_count}: {signal_type.name} {symbol} | FR: {funding_rate:.4%} | OI Z-Score: {z_score_oi:.2f} (Drop: {oi_drop_pct:.2%})")
                 
             except Exception as e:
                 logger.error(f"LiquidationHunter error for {symbol}: {e}")
+
+        return generated_signals

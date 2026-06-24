@@ -136,12 +136,12 @@ class HyperOptimizer:
             if not self.search_space.no_colision(cfg):
                 raise optuna.exceptions.TrialPruned()
                 
-            score, metrics = self._evaluate_config(symbol, cfg)
+            trial_score, metrics = self._evaluate_config(symbol, cfg)
             
-            if score == -999.0:
+            if trial_score == -999.0:
                 raise optuna.exceptions.TrialPruned()
                 
-            return score
+            return trial_score
 
         # UCB-style acquisition (Optuna TPE consider_prior usa priors de la seed)
         sampler = optuna.samplers.TPESampler(consider_prior=True, seed=42)

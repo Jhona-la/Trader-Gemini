@@ -87,13 +87,12 @@ class StatisticalStrategy(Strategy):
 
     @validate_market_data
     @performance_timer
-    def calculate_signals(self, event):
+    def calculate_signals(self, event, *args, **kwargs):
+        if not Config.Statistical.ENABLED:
+            return []
+            
+        generated_signals = []
         try:
-            if event.type != EventType.MARKET:
-                return
-
-            # OMNI-SYNC: Iterate over all symbols in the basket vs BTC
-            # This allows the statistical strategy to capture mean reversion in all "Gems"
             target_symbols = [s for s in self.data_provider.symbol_list if 'BTC' not in s]
             x_sym = 'BTC/USDT'
             
@@ -386,8 +385,8 @@ class StatisticalStrategy(Strategy):
                     pos_y = self.portfolio.get_horizon_position(y_sym, self.horizon) or {}
                     pos_x = self.portfolio.get_horizon_position(x_sym, self.horizon) or {}
                 else:
-                    pos_y = self.portfolio.positions[y_sym]
-                    pos_x = self.portfolio.positions[x_sym]
+                    pos_y = self.get_active_pos(y_sym)
+                    pos_x = self.get_active_pos(x_sym)
 
                 # Ensure the positions actually belong to the Statistical Strategy
                 strat_id = getattr(self, 'strategy_id', 'STAT_ARB')
@@ -439,14 +438,14 @@ class StatisticalStrategy(Strategy):
                         from datetime import datetime, timezone
                         signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                         
-                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        generated_signals.append(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
                     if qty_x != 0:
                         print(f"  🚑 Closing naked leg {x_sym}")
                         
                         from datetime import datetime, timezone
                         signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                         
-                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        generated_signals.append(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
                     continue # Stop processing for this symbol
 
                 if self.invested[y_sym] == 0:
@@ -498,8 +497,8 @@ class StatisticalStrategy(Strategy):
                             from datetime import datetime, timezone
                             signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                             
-                            self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
-                            self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
+                            generated_signals.append(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
+                            generated_signals.append(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
                             # self.invested = 1 # Wait for fill
                             
                     elif z_score > effective_z_entry:
@@ -550,8 +549,8 @@ class StatisticalStrategy(Strategy):
                             from datetime import datetime, timezone
                             signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                             
-                            self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
-                            self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
+                            generated_signals.append(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.SHORT, strength=strength, atr=atr_y, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
+                            generated_signals.append(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.LONG, strength=strength, atr=atr_x, horizon=self.horizon, priority=self.priority, metadata={'sophia': sophia_report_dict_y}))
                             # self.invested = -1 # Wait for fill
 
                 elif self.invested[y_sym] == 1:
@@ -562,8 +561,8 @@ class StatisticalStrategy(Strategy):
                         from datetime import datetime, timezone
                         signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                         
-                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
-                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        generated_signals.append(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        generated_signals.append(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
 
                 elif self.invested[y_sym] == -1:
                     # Exit Short Spread when Z-score returns to mean
@@ -573,11 +572,12 @@ class StatisticalStrategy(Strategy):
                         from datetime import datetime, timezone
                         signal_timestamp = getattr(event, 'timestamp', datetime.now(timezone.utc))
                         
-                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
-                        self.events_queue.put(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        generated_signals.append(SignalEvent(strategy_id=self.strategy_id, symbol=y_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
+                        generated_signals.append(SignalEvent(strategy_id=self.strategy_id, symbol=x_sym, datetime=signal_timestamp, signal_type=SignalType.EXIT, strength=1.0, horizon=self.horizon, priority=self.priority))
         except Exception as e:
             print(f"⚠️  Statistical Strategy Error: {e}")
 
+        return generated_signals
     def _get_1h_trend(self, symbol):
         """
         Helper to get 1h trend using CLOSED candles.

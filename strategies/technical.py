@@ -42,15 +42,21 @@ class HybridScalpingStrategy(Strategy):
         'noise_level': 0.5,
         'is_active': False
     }
-    
-    def __init__(self, data_provider, events_queue, genotype: Genotype = None, horizon: str = "SCALPING", priority: int = 1):
-        self.data_provider = data_provider
-        self.events_queue = events_queue
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Genotype & specialized configs
+        self.genotype = kwargs.get('genotype')
+        self.requires_training = False
+
+        # Apply specific logic (using self.horizon instead of local parameter)
+        self.data_provider = kwargs.get('data_provider')
+        self.events_queue = kwargs.get('events_queue')
+        self.portfolio = kwargs.get('portfolio')
+        self.horizon = kwargs.get('horizon', 'SCALPING')
+        self.priority = kwargs.get('priority', 1)
+        
         base_label = getattr(Config, 'STRATEGY_LABELS', {})["technical"]
-        lbl = "[SCL]" if horizon == "SCALPING" else "[SWG]"
-        self.strategy_id = f"{lbl}_{base_label}_{horizon}"
-        self.genotype = genotype
-        self.symbol = genotype.symbol if genotype else None
         self.horizon = horizon
         self.priority = priority
         
@@ -232,6 +238,7 @@ class HybridScalpingStrategy(Strategy):
         # Pre-load provided genotype if any
         if genotype:
             self.genotypes[genotype.symbol] = genotype
+
 
     def get_symbol_params(self, symbol):
         """Devuelve parámetros adaptados al símbolo (Merged Genotype + Legacy Profile + Optimized)"""
@@ -1330,7 +1337,7 @@ class HybridScalpingStrategy(Strategy):
 
                 # Retrieve Brain for this symbol
                 if hasattr(self, 'data_provider') and self.data_provider:
-                    real_pos = self.data_provider.get_active_positions().get(symbol)
+                    real_pos = self.get_active_pos(symbol)
                     if real_pos:
                         # Logic for fused insight or other processing
                         pass
@@ -1347,7 +1354,7 @@ class HybridScalpingStrategy(Strategy):
                 if use_fused_path and current_genotype and 'brain_weights' in current_genotype.genes:
                     try:
                         # 1. Obtain Portfolio State
-                        real_pos = self.data_provider.get_active_positions().get(symbol)
+                        real_pos = self.get_active_pos(symbol)
                         
                         # 2. Fused Insight (Indicators -> State -> Inference)
                         fused_decision, fused_confidence = self.get_fused_insight(
@@ -1789,7 +1796,7 @@ class HybridScalpingStrategy(Strategy):
                 # 🧬 PHASE 42: AVOID OVEREXPOSURE (Max 1 layer per side per symbol)
                 # V6.0 Anti-Crash Fix for overexposure check
                 if hasattr(self, 'data_provider') and self.data_provider:
-                    existing_pos = self.data_provider.get_active_positions().get(symbol)
+                    existing_pos = self.get_active_pos(symbol)
                     if existing_pos:
                         pos_qty = existing_pos.get('quantity', 0)
                         if (signal_type == SignalType.LONG and pos_qty > 0) or (signal_type == SignalType.SHORT and pos_qty < 0):
@@ -1830,7 +1837,7 @@ class HybridScalpingStrategy(Strategy):
                 self._apply_infinitesimal_tuning(symbol, current_genotype)
                 # --- INTELLIGENT REVERSE DETECTION ---
                 if self.bought[symbol]:
-                    existing_pos = self.data_provider.get_active_positions().get(symbol)
+                    existing_pos = self.get_active_pos(symbol)
                     if existing_pos:
                         current_qty = existing_pos.get('quantity', 0)
                         

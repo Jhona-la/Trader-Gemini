@@ -2866,13 +2866,13 @@ class Portfolio:
             # FORENSIC-V21 FIX #7: Show SL/TP targets
             _vkey_base = f"{event.symbol}_{horizon}"
             _pos_temp = (
-                self.virtual_ledger[f"{_vkey_base}_LONG"] or
-                self.virtual_ledger[f"{_vkey_base}_SHORT"] or
-                self.virtual_ledger[_vkey_base] or
-                self.positions[event.symbol]
+                self.virtual_ledger.get(f"{_vkey_base}_LONG") or
+                self.virtual_ledger.get(f"{_vkey_base}_SHORT") or
+                self.virtual_ledger.get(_vkey_base) or
+                self.positions.get(event.symbol) or {}
             )
-            sl_display = _pos_temp['sl_pct']
-            tp_display = _pos_temp['tp_pct']
+            sl_display = _pos_temp.get('sl_pct') if isinstance(_pos_temp, dict) else None
+            tp_display = _pos_temp.get('tp_pct') if isinstance(_pos_temp, dict) else None
             if sl_display or tp_display:
                 sl_str = f"{float(sl_display)*100:.2f}%" if sl_display else "N/A"
                 tp_str = f"{float(tp_display)*100:.2f}%" if tp_display else "N/A"
@@ -3042,8 +3042,8 @@ class Portfolio:
                 if not _event_tid:
                     _pos_side_guess = 'LONG' if event.direction == OrderSide.BUY else 'SHORT'
                     _vkey_guess = f"{event.symbol}_{horizon}_{_pos_side_guess}"
-                    _vpos = self.virtual_ledger[_vkey_guess]
-                    _event_tid = _vpos['trade_id']
+                    _vpos = self.virtual_ledger.get(_vkey_guess, {})
+                    _event_tid = _vpos.get('trade_id') if isinstance(_vpos, dict) else None
                 notif_trade_id = _event_tid or str(_uuid.uuid4())
                 
                 # For ENTRY events, extract predictions from the event/metadata itself

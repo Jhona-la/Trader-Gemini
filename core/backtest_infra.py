@@ -204,7 +204,7 @@ class BacktestDataProvider(DataProvider):
                 # Resampled timeframes for multi-TF strategies
                 for tf_pd, tf_pl in [("3min", "3m"), ("5min", "5m"), ("15min", "15m"), ("1h", "1h"), ("4h", "4h"), ("1D", "1d"), ("1W", "1w")]:
                     df_res = (
-                        df_1m.group_by_dynamic("timestamp", every=tf_pl)
+                        df_1m.sort("timestamp").group_by_dynamic("timestamp", every=tf_pl)
                         .agg([
                             pl.col("open").first(),
                             pl.col("high").max(),

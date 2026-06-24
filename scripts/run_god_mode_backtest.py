@@ -1337,10 +1337,10 @@ def run_global_backtest(
                                             
                                             # Save metadata and arrays
                                             strat._global_feature_cache_ts = full_df["timestamp"].to_numpy() if hasattr(full_df["timestamp"], "to_numpy") else full_df["timestamp"].values
-                                            strat._global_feature_columns = full_df.columns.tolist()
+                                            strat._global_feature_columns = list(full_df.columns)
                                             
                                             # Convert to float32 numpy array to save space and write directly to SSD
-                                            features_np = full_df.to_numpy(dtype=np.float32)
+                                            features_np = full_df.to_numpy().astype(np.float32)
                                             np.save(mmap_file, features_np)
                                             strat._global_feature_mmap_path = mmap_file
                                             
@@ -1349,7 +1349,6 @@ def run_global_backtest(
                                             # Force GC to free RAM immediately
                                             del full_df
                                             del features_np
-                                            import gc
                                             gc.collect()
                             except Exception as e:
                                 logger.error(f"     ❌ [QUANTUM CACHE] Error pre-calculating for {sym}/{strat.strategy_id}: {e}")
@@ -1667,39 +1666,40 @@ def run_global_backtest(
                         # FORENSIC-V9-FIX: Attempt training if untrained
                         # POR QUÉ: Algunos modelos no entrenan durante warmup porque
                         #   necesitan más datos. Cada 500 epochs, intentar de nuevo.
-                        if not getattr(strat, "is_trained", False):
-                            if hasattr(strat, "_launch_training"):
-                                bars = data_provider.get_latest_bars(
-                                    symbol,
-                                    getattr(strat, "lookback", 500),
-                                    getattr(strat, "PRIMARY_TF", "5m"),
-                                )
-                                if bars is not None and len(bars) > 50:
-                                    # 🛡️ TRAINING GUARD: Don't spam training threads
-                                    is_training = (
-                                        hasattr(strat, "_training_thread")
-                                        and strat._training_thread
-                                        and strat._training_thread.is_alive()
+                        if getattr(strat, "requires_training", True) or hasattr(strat, "_launch_training") or hasattr(strat, "_train_model"):
+                            if not getattr(strat, "is_trained", False):
+                                if hasattr(strat, "_launch_training"):
+                                    bars = data_provider.get_latest_bars(
+                                        symbol,
+                                        getattr(strat, "lookback", 500),
+                                        getattr(strat, "PRIMARY_TF", "5m"),
                                     )
-                                    if not is_training:
+                                    if bars is not None and len(bars) > 50:
+                                        # 🛡️ TRAINING GUARD: Don't spam training threads
+                                        is_training = (
+                                            hasattr(strat, "_training_thread")
+                                            and strat._training_thread
+                                            and strat._training_thread.is_alive()
+                                        )
+                                        if not is_training:
+                                            try:
+                                                strat._launch_training(bars, "Full", sync=True)
+                                            except Exception:
+                                                pass
+                                elif epoch_count % 500 == 0:
+                                    if hasattr(strat, "_train_model"):
                                         try:
-                                            strat._launch_training(bars, "Full", sync=True)
+                                            strat._train_model()
                                         except Exception:
                                             pass
-                            elif epoch_count % 500 == 0:
-                                if hasattr(strat, "_train_model"):
-                                    try:
-                                        strat._train_model()
-                                    except Exception:
-                                        pass
-                                elif hasattr(strat, "train_model"):
-                                    try:
-                                        strat.train_model()
-                                    except Exception:
-                                        pass
+                                    elif hasattr(strat, "train_model"):
+                                        try:
+                                            strat.train_model()
+                                        except Exception:
+                                            pass
     
-                            if not getattr(strat, "is_trained", False):
-                                continue  # Skip inference for untrained
+                                if not getattr(strat, "is_trained", False):
+                                    continue  # Skip inference for untrained ML models
     
                         # FORENSIC-V11 Fix #4: ML QUALITY GATE (Shadow Mode)
                         # After ML_LOSS_STREAK_LIMIT consecutive losses, enter shadow mode
@@ -1781,10 +1781,18 @@ def run_global_backtest(
                                 except ImportError:
                                     pass  # Fallback si no está compilado el hyper_kernel
 
-                            strat._run_inference()
+                            if hasattr(strat, "_run_inference"):
+                                strat._run_inference()
+                            else:
+                                for me in market_events:
+                                    signal = strat.calculate_signals(me)
+                                    if signal:
+                                        if isinstance(signal, list):
+                                            for s in signal:
+                                                events_queue.put(s)
+                                        else:
+                                            events_queue.put(signal)
                         except Exception as e:
-                            import traceback
-                            print(f"❌ [ERROR in run_ml] {strat.strategy_id} error: {e}")
                             traceback.print_exc()
                         
                     except Exception:

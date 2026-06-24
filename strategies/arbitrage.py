@@ -198,11 +198,13 @@ class ArbitrageStrategy(Strategy):
     def generate_signals(self, event):
         from config import Config
         from utils.cooldown_manager import cooldown_manager
+        
+        generated_signals = []
 
         # Cooldown: HORIZON-AWARE
         cooldown_key = f"ARBITRAGE_SCAN_{self.horizon}"
         if not cooldown_manager.check_custom_cooldown(cooldown_key, duration_seconds=self.COOLDOWN_SECONDS):
-            return
+            return generated_signals
 
         pairs = Config.TRADING_PAIRS
         for symbol in pairs:
@@ -237,10 +239,12 @@ class ArbitrageStrategy(Strategy):
             
             # Safely replace attributes of frozen dataclass
             new_signal = replace(signal, strategy_id=self.strategy_id, horizon=self.horizon, metadata=new_metadata, ml_confidence=sophia_report.win_probability if 'sophia_report' in locals() and sophia_report else 0.5)
-            self.events_queue.put(new_signal)
+            generated_signals.append(new_signal)
             
-    def calculate_signals(self, event):
-        self.generate_signals(event)
+        return generated_signals
+            
+    def calculate_signals(self, event, *args, **kwargs):
+        return self.generate_signals(event)
 
     def check_exit(self, position, current_price, data_provider, now=None):
         if now is None:
