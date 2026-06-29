@@ -56,7 +56,7 @@ impl BinanceStreamer {
                 }
                 Err(_) => {
                     // Fallo de conexión, esperar 1 segundo antes de reconectar
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
             }
         }
