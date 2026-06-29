@@ -14,14 +14,14 @@ fn main() {
     println!("🌌 RUST QUANTUM EVOLUTION ENGINE (GENETIC ALGORITHM)");
     println!("============================================================");
 
-    let forest_path = "../../models/nano_forest.json";
+    let forest_path = "models/nano_forest.json";
     if let Ok(_) = NanoForest::load_from_json(forest_path) {
         println!("✅ NanoForest Loaded for Evolution: {}", forest_path);
     } else {
         println!("⚠️ NanoForest NOT FOUND! Evolution will proceed with dummy/random probabilities.");
     }
 
-    let mmap_path = "../../data/backtest_mmap.bin";
+    let mmap_path = "data/backtest_mmap.bin";
     let mut file = match File::open(mmap_path) {
         Ok(f) => f,
         Err(_) => {
@@ -100,11 +100,11 @@ fn main() {
             let mut score = capital;
             if trades < 1.0 { score -= 500.0; } // We need at least some operations
             
-            // Phase 26: Supreme Win Rate priority (User explicitly requested ~100% WR for 13 USD protection)
-            if win_rate < 0.95 {
-                score -= 10000.0 * (1.0 - win_rate);
+            // Phase 28: Supreme 100% Win Rate priority (User explicitly requested 100% WR for Scalping thresholds)
+            if win_rate < 0.999 {
+                score -= 50000.0 * (1.0 - win_rate);
             } else {
-                score += win_rate * 5000.0;
+                score += win_rate * 10000.0;
             }
             
             if dd > 0.05 { score -= dd * 5000.0; } // Extreme drawdown penalty
@@ -136,6 +136,6 @@ fn main() {
         best_config.sl_pct, best_config.tp_pct, best_config.ml_threshold_l, best_config.ml_threshold_s, best_config.tech_threshold_l, best_config.tech_threshold_s
     );
     
-    std::fs::write("../../data/dynamic_config.json", out_json).expect("Unable to write dynamic_config.json");
+    std::fs::write("data/dynamic_config.json", out_json).expect("Unable to write dynamic_config.json");
     println!("💾 Exported to data/dynamic_config.json successfully.");
 }
