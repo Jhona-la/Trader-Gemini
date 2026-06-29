@@ -1,10 +1,11 @@
 # Rust build artifacts - ALL variants
 /target/
-/target_persistent/
-/target_release_god/
-/target_release*/
 /target_*/
 /Cargo.lock
+
+# Generated results/data (NEVER commit output)
+/results/
+/scratch/
 
 # ML/Experiment logs
 /wandb/
@@ -17,17 +18,20 @@
 *.ckpt
 *.safetensors
 
-# Environment files (secrets!)
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets
 *.env
 !example.env
 !template.env.example
 template.env
 
-# OS files
+# OS/IDE
 .DS_Store
 Thumbs.db
-
-# IDE
 .idea/
 .vscode/
 *.swp
