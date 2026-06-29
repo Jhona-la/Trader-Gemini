@@ -16,8 +16,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⚡ Sub-Microsecond Execution Core initialized.");
     println!("========================================================");
 
-    // 1. Initialize State
-    // Box the arena to ensure stable memory address and zero-copy semantics
     let mut arena = Box::new(QuantumStateArena {
         prices: std::ptr::null(),
         volumes: std::ptr::null(),
@@ -27,8 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         timestamp_ns: 0,
     });
     
-    // 2. Load symbols adaptively
-    let config_str = std::fs::read_to_string("../../data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
+    let config_str = std::fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
     let config_json: serde_json::Value = serde_json::from_str(&config_str).unwrap_or(serde_json::json!({}));
     
     let default_symbols = vec!["btcusdt".to_string(), "ethusdt".to_string()];
@@ -48,71 +45,90 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let url = format!("wss://stream.binance.com:9443/stream?streams={}", streams);
 
-    // Channels for Inter-Core Communication
     let (tx_scalp, mut rx_scalp) = mpsc::unbounded_channel::<String>();
     let (tx_swing, mut rx_swing) = mpsc::unbounded_channel::<String>();
 
-    // Instantiate the Binance WS Executor for Zero-Latency Execution
     let api_key = env::var("BINANCE_API_KEY").unwrap_or_else(|_| "test_key".to_string());
     let secret_key = env::var("BINANCE_SECRET_KEY").unwrap_or_else(|_| "test_secret".to_string());
     let executor = Arc::new(quantum_engine::executor::BinanceWSFuturesExecutor::new(api_key.clone(), secret_key, true).await);
 
-    // Start User Data Stream to receive real PnL events
     let api_key_uds = api_key.clone();
     tokio::spawn(async move {
         quantum_engine::executor::BinanceUserDataStream::start(api_key_uds, true).await;
     });
-    // SCALPING CORE (Fast Path - Pinned to Logical Core 2)
+
     let executor_clone = Arc::clone(&executor);
     
     // Shared Atomic Thresholds for Hot-Reloading
     let ml_thresh_l = Arc::new(AtomicU32::new(f32::to_bits(0.95)));
     let ml_thresh_s = Arc::new(AtomicU32::new(f32::to_bits(0.95)));
+    let sl_pct = Arc::new(AtomicU32::new(f32::to_bits(0.01)));
+    let tp_pct = Arc::new(AtomicU32::new(f32::to_bits(0.02)));
+    let tech_thresh_l = Arc::new(AtomicU32::new(f32::to_bits(0.005)));
+    let tech_thresh_s = Arc::new(AtomicU32::new(f32::to_bits(0.005)));
     
-    // Initial Load of Config
-    let config_str = std::fs::read_to_string("../../data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
+    let config_str = std::fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
     if let Ok(config_json) = serde_json::from_str::<serde_json::Value>(&config_str) {
         let l = config_json["ml_threshold_l"].as_f64().unwrap_or(0.95) as f32;
         let s = config_json["ml_threshold_s"].as_f64().unwrap_or(0.95) as f32;
+        let sl = config_json["sl_pct"].as_f64().unwrap_or(0.01) as f32;
+        let tp = config_json["tp_pct"].as_f64().unwrap_or(0.02) as f32;
+        let tl = config_json["tech_threshold_l"].as_f64().unwrap_or(0.005) as f32;
+        let ts = config_json["tech_threshold_s"].as_f64().unwrap_or(0.005) as f32;
         ml_thresh_l.store(f32::to_bits(l), Ordering::SeqCst);
         ml_thresh_s.store(f32::to_bits(s), Ordering::SeqCst);
-        println!("🧬 [INIT] Loaded Genetic Config: L>={:.4} S>={:.4}", l, s);
+        sl_pct.store(f32::to_bits(sl), Ordering::SeqCst);
+        tp_pct.store(f32::to_bits(tp), Ordering::SeqCst);
+        tech_thresh_l.store(f32::to_bits(tl), Ordering::SeqCst);
+        tech_thresh_s.store(f32::to_bits(ts), Ordering::SeqCst);
+        println!("🧬 [INIT] Loaded Genetic Config: L>={:.4} S>={:.4} SL={:.4} TP={:.4}", l, s, sl, tp);
     }
     
-    // 🧬 HOT-RELOAD WATCHER (Evolution Absorber)
     let thresh_l_clone = Arc::clone(&ml_thresh_l);
     let thresh_s_clone = Arc::clone(&ml_thresh_s);
+    let sl_pct_clone = Arc::clone(&sl_pct);
+    let tp_pct_clone = Arc::clone(&tp_pct);
+    let tech_thresh_l_clone = Arc::clone(&tech_thresh_l);
+    let tech_thresh_s_clone = Arc::clone(&tech_thresh_s);
+    
     tokio::spawn(async move {
         println!("👀 [HOT-RELOAD] Watcher started. Monitoring DNA and ML Weights...");
-        let mut last_config_ts = std::fs::metadata("../../data/dynamic_config.json").and_then(|m| m.modified()).ok();
-        let mut last_forest_ts = std::fs::metadata("../../models/nano_forest.json").and_then(|m| m.modified()).ok();
+        let mut last_config_ts = std::fs::metadata("data/dynamic_config.json").and_then(|m| m.modified()).ok();
+        let mut last_forest_ts = std::fs::metadata("models/nano_forest.json").and_then(|m| m.modified()).ok();
         
         loop {
             sleep(Duration::from_secs(10)).await;
             
-            // Check config
-            if let Ok(meta) = std::fs::metadata("../../data/dynamic_config.json") {
+            if let Ok(meta) = std::fs::metadata("data/dynamic_config.json") {
                 if let Ok(modified) = meta.modified() {
                     if Some(modified) != last_config_ts {
                         last_config_ts = Some(modified);
-                        let config_str = std::fs::read_to_string("../../data/dynamic_config.json").unwrap_or_default();
+                        let config_str = std::fs::read_to_string("data/dynamic_config.json").unwrap_or_default();
                         if let Ok(config_json) = serde_json::from_str::<serde_json::Value>(&config_str) {
                             let l = config_json["ml_threshold_l"].as_f64().unwrap_or(0.95) as f32;
                             let s = config_json["ml_threshold_s"].as_f64().unwrap_or(0.95) as f32;
+                            let sl = config_json["sl_pct"].as_f64().unwrap_or(0.01) as f32;
+                            let tp = config_json["tp_pct"].as_f64().unwrap_or(0.02) as f32;
+                            let tl = config_json["tech_threshold_l"].as_f64().unwrap_or(0.005) as f32;
+                            let ts = config_json["tech_threshold_s"].as_f64().unwrap_or(0.005) as f32;
+                            
                             thresh_l_clone.store(f32::to_bits(l), Ordering::SeqCst);
                             thresh_s_clone.store(f32::to_bits(s), Ordering::SeqCst);
-                            println!("🔥 [HOT-RELOAD] Dynamic Config absorbed in 0ns! L>={:.4} S>={:.4}", l, s);
+                            sl_pct_clone.store(f32::to_bits(sl), Ordering::SeqCst);
+                            tp_pct_clone.store(f32::to_bits(tp), Ordering::SeqCst);
+                            tech_thresh_l_clone.store(f32::to_bits(tl), Ordering::SeqCst);
+                            tech_thresh_s_clone.store(f32::to_bits(ts), Ordering::SeqCst);
+                            println!("🔥 [HOT-RELOAD] Dynamic Config absorbed! L>={:.4} S>={:.4} SL={:.4} TP={:.4}", l, s, sl, tp);
                         }
                     }
                 }
             }
             
-            // Check model
-            if let Ok(meta) = std::fs::metadata("../../models/nano_forest.json") {
+            if let Ok(meta) = std::fs::metadata("models/nano_forest.json") {
                 if let Ok(modified) = meta.modified() {
                     if Some(modified) != last_forest_ts {
                         last_forest_ts = Some(modified);
-                        if quantum_engine::ml_inference::NanoForest::load_global("../../models/nano_forest.json").is_ok() {
+                        if quantum_engine::ml_inference::NanoForest::load_global("models/nano_forest.json").is_ok() {
                             println!("🔥 [HOT-RELOAD] NanoForest AI Brain hot-swapped successfully!");
                         }
                     }
@@ -121,7 +137,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // 🔬 EVOLUTION RUNNER TASK (Runs every 6 hours)
     tokio::spawn(async move {
         println!("⏰ [EVOLUTION-TASK] Scheduled to run genetic algorithm every 6 hours.");
         loop {
@@ -129,7 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("🧬 [EVOLUTION-TASK] Waking up to evolve genetic config...");
             match std::process::Command::new("cargo")
                 .args(&["run", "--release", "--bin", "evolution_engine"])
-                .current_dir("../../core/rust_engine")
+                .current_dir(".")
                 .spawn() {
                 Ok(mut child) => {
                     let _ = child.wait();
@@ -141,42 +156,87 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     
     let scalp_thresh_l = Arc::clone(&ml_thresh_l);
+    let scalp_thresh_s = Arc::clone(&ml_thresh_s);
+    let scalp_sl = Arc::clone(&sl_pct);
+    let scalp_tp = Arc::clone(&tp_pct);
     
     let scalp_handle = tokio::spawn(async move {
         println!("🧠 [SCALP CORE] Initialized. Target latency: <500ns");
         let mut engines: std::collections::HashMap<String, quantum_engine::stateful_engine::StatefulEngine> = std::collections::HashMap::new();
         let mut current_capital = 13.0; // Phase 13: 13 USD capital constraint
+        
+        let mut in_pos = false;
+        let mut side = 0_i32; 
+        let mut entry_price = 0.0;
+        let mut current_qty = 0.0;
 
         while let Some(msg) = rx_scalp.recv().await {
             let start = Instant::now();
             
-            // 1. Instant Parse
             if let Some((_e_time, _t_time, price, qty, _is_maker, parsed_sym)) = parsers::parse_binance_trade(&msg) {
-                
                 let engine = engines.entry(parsed_sym.clone()).or_insert_with(quantum_engine::stateful_engine::StatefulEngine::new);
                 engine.process_tick(price, qty);
                 
-                // 2. Predict / Strategy Logic
-                let features = engine.get_features();
-                let prob = quantum_engine::ml_inference::NanoForest::predict_global(&features);
-                
-                // If RF confidence > threshold -> Check Risk & Execute!
-                let current_thresh_l = f32::from_bits(scalp_thresh_l.load(Ordering::Relaxed));
-                if prob > current_thresh_l {
-                    // PHASE 13: Micro-Capital Risk Management
-                    let leverage = 50.0;
-                    if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, current_capital) {
-                        println!("⚡ [GHOST-MAKER] Scalp Signal on {}! Prob: {:.2}%. Allocated Qty: {:.4}. Shooting Market Order via WS...", parsed_sym, prob * 100.0, micro_qty);
-                        let req_id = format!("scalp_{}", parsed_sym);
-                        executor_clone.place_order(&parsed_sym, "BUY", micro_qty, "LONG", &req_id).await;
-                        // Deduct estimated margin from local tracking
-                        let required_margin = (micro_qty * price) / leverage;
+                let current_sl = f32::from_bits(scalp_sl.load(Ordering::Relaxed)) as f64 * 0.33;
+                let current_tp = f32::from_bits(scalp_tp.load(Ordering::Relaxed)) as f64 * 0.33;
+
+                // EXIT LOGIC
+                if in_pos {
+                    let pnl_pct = if side == 1 { (price - entry_price) / entry_price } else { (entry_price - price) / entry_price };
+                    
+                    let mut close_pos = false;
+                    if pnl_pct >= current_tp {
+                        println!("💰 [SCALP CORE] TAKE PROFIT HIT! PnL: {:.2}%", pnl_pct * 100.0);
+                        close_pos = true;
+                    } else if pnl_pct <= -current_sl {
+                        println!("🛑 [SCALP CORE] STOP LOSS HIT! PnL: {:.2}%", pnl_pct * 100.0);
+                        close_pos = true;
+                    }
+
+                    if close_pos {
+                        let order_side = if side == 1 { "SELL" } else { "BUY" };
+                        let req_id = format!("scalp_close_{}", parsed_sym);
+                        executor_clone.place_order(&parsed_sym, order_side, current_qty, "MARKET", &req_id).await;
                         
-                        let profit_margin = required_margin * 0.01 * leverage; // Mock visual increase
-                        current_capital += profit_margin;
-                        println!("⚡ [GHOST-MAKER] Order dispatched. Awaiting real PnL via UserDataStream...");
-                    } else {
-                        println!("⚠️ [RISK SHIELD] Signal skipped on {}. Insufficient funds to meet minNotional of 5 USD.", parsed_sym);
+                        let leverage = 50.0;
+                        let pnl_amount = current_qty * (price - entry_price) * (side as f64);
+                        current_capital += pnl_amount;
+                        
+                        println!("⚡ [SCALP CORE] Closed Position on {}. New estimated capital: {:.2}", parsed_sym, current_capital);
+                        in_pos = false;
+                    }
+                }
+
+                // ENTRY LOGIC
+                if !in_pos {
+                    let features = engine.get_features();
+                    let prob = quantum_engine::ml_inference::NanoForest::predict_global(&features);
+                    
+                    let tl = f32::from_bits(scalp_thresh_l.load(Ordering::Relaxed));
+                    let ts = f32::from_bits(scalp_thresh_s.load(Ordering::Relaxed));
+                    
+                    if prob > tl {
+                        let leverage = 50.0;
+                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, current_capital) {
+                            println!("⚡ [GHOST-MAKER] Scalp LONG Signal! Prob: {:.2}%. Shooting Market Order via WS...", prob * 100.0);
+                            let req_id = format!("scalp_{}", parsed_sym);
+                            executor_clone.place_order(&parsed_sym, "BUY", micro_qty, "LONG", &req_id).await;
+                            in_pos = true;
+                            side = 1;
+                            entry_price = price;
+                            current_qty = micro_qty;
+                        }
+                    } else if prob < (1.0 - ts) {
+                        let leverage = 50.0;
+                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, current_capital) {
+                            println!("🩸 [GHOST-MAKER] Scalp SHORT Signal! Prob: {:.2}%. Shooting Market Order via WS...", prob * 100.0);
+                            let req_id = format!("scalp_{}", parsed_sym);
+                            executor_clone.place_order(&parsed_sym, "SELL", micro_qty, "SHORT", &req_id).await;
+                            in_pos = true;
+                            side = -1;
+                            entry_price = price;
+                            current_qty = micro_qty;
+                        }
                     }
                 }
                 
@@ -188,41 +248,91 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // SWING CORE (Predictive ML Path - Pinned to Logical Core 4)
     let executor_swing = Arc::clone(&executor);
-    let swing_thresh_l = Arc::clone(&ml_thresh_l);
+    let swing_thresh_l = Arc::clone(&tech_thresh_l);
+    let swing_thresh_s = Arc::clone(&tech_thresh_s);
+    let swing_sl = Arc::clone(&sl_pct);
+    let swing_tp = Arc::clone(&tp_pct);
+
     let swing_handle = tokio::spawn(async move {
         println!("🧠 [SWING CORE] Initialized. Target latency: <2μs. Subscribed to 1H Klines.");
         let mut engines: std::collections::HashMap<String, quantum_engine::stateful_engine::StatefulEngine> = std::collections::HashMap::new();
-        let current_capital = 13.0;
+        let mut current_capital = 13.0;
         
+        let mut in_pos = false;
+        let mut side = 0_i32; 
+        let mut entry_price = 0.0;
+        let mut current_qty = 0.0;
+
         while let Some(msg) = rx_swing.recv().await {
             let start = Instant::now();
             
-            // In Swing Core, we ONLY react to Klines (1h)
             if let Some((_e_time, parsed_sym, _open, _high, _low, close_price, volume, is_closed)) = parsers::parse_binance_kline(&msg) {
                 
-                // We only feed the engine when the 1H candle actually closes,
-                // this ensures the Swing Core mathematically operates on 1H resolutions.
-                // Or we can feed it live and just not trade until closed. 
-                // Feeding it live allows intra-hour ML predictions!
                 let engine = engines.entry(parsed_sym.clone()).or_insert_with(quantum_engine::stateful_engine::StatefulEngine::new);
                 engine.process_tick(close_price, volume);
                 
-                if is_closed {
+                let current_sl_pct = f32::from_bits(swing_sl.load(Ordering::Relaxed)) as f64;
+                let current_tp_pct = f32::from_bits(swing_tp.load(Ordering::Relaxed)) as f64;
+
+                // EXIT LOGIC (Continuous monitoring even if not closed)
+                if in_pos {
+                    let pnl_pct = if side == 1 { (close_price - entry_price) / entry_price } else { (entry_price - close_price) / entry_price };
+                    
+                    let mut close_pos = false;
+                    if pnl_pct >= current_tp_pct {
+                        println!("💰 [SWING CORE] TAKE PROFIT HIT! PnL: {:.2}%", pnl_pct * 100.0);
+                        close_pos = true;
+                    } else if pnl_pct <= -current_sl_pct {
+                        println!("🛑 [SWING CORE] STOP LOSS HIT! PnL: {:.2}%", pnl_pct * 100.0);
+                        close_pos = true;
+                    }
+
+                    if close_pos {
+                        let order_side = if side == 1 { "SELL" } else { "BUY" };
+                        let req_id = format!("swing_close_{}", parsed_sym);
+                        executor_swing.place_order(&parsed_sym, order_side, current_qty, "MARKET", &req_id).await;
+                        
+                        let leverage = 15.0;
+                        let pnl_amount = current_qty * (close_price - entry_price) * (side as f64);
+                        current_capital += pnl_amount;
+                        
+                        println!("🚀 [SWING CORE] Closed Position on {}. New estimated capital: {:.2}", parsed_sym, current_capital);
+                        in_pos = false;
+                    }
+                }
+
+                // ENTRY LOGIC (Only on 1H close)
+                if !in_pos && is_closed {
                     println!("📊 [SWING MACRO] 1H Kline Closed for {}. Close Price: {}", parsed_sym, close_price);
                     
-                    let features = engine.get_features();
-                    let prob = quantum_engine::ml_inference::NanoForest::predict_global(&features);
+                    let fast = engine.ema_fast;
+                    let slow = engine.ema_slow;
                     
-                    // Since it operates on 1H, signals are rare, require high confidence
-                    let current_thresh_l = f32::from_bits(swing_thresh_l.load(Ordering::Relaxed));
-                    if prob > current_thresh_l {
+                    let tl = f32::from_bits(swing_thresh_l.load(Ordering::Relaxed)) as f64;
+                    let ts = f32::from_bits(swing_thresh_s.load(Ordering::Relaxed)) as f64;
+                    
+                    if fast > slow * (1.0 + tl) {
                         let leverage = 15.0; // Lower leverage for swing
                         if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, current_capital) {
                             println!("🚀 [SWING CORE] LONG SIGNAL on {} at {} (Qty: {})", parsed_sym, close_price, micro_qty);
                             let req_id = format!("swing_{}", parsed_sym);
                             executor_swing.place_order(&parsed_sym, "BUY", micro_qty, "LONG", &req_id).await;
+                            in_pos = true;
+                            side = 1;
+                            entry_price = close_price;
+                            current_qty = micro_qty;
+                        }
+                    } else if fast < slow * (1.0 - ts) {
+                        let leverage = 15.0; 
+                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, current_capital) {
+                            println!("🩸 [SWING CORE] SHORT SIGNAL on {} at {} (Qty: {})", parsed_sym, close_price, micro_qty);
+                            let req_id = format!("swing_{}", parsed_sym);
+                            executor_swing.place_order(&parsed_sym, "SELL", micro_qty, "SHORT", &req_id).await;
+                            in_pos = true;
+                            side = -1;
+                            entry_price = close_price;
+                            current_qty = micro_qty;
                         }
                     }
                 }
@@ -247,7 +357,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match message {
             Ok(msg) => {
                 if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
-                    // Send to both cores
                     tx_scalp.send(text.clone()).unwrap_or(());
                     tx_swing.send(text).unwrap_or(());
                     

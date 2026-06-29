@@ -1,0 +1,115 @@
+   0.522477900s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="quantum_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { ..: lib_target("quantum_engine", ["cdylib", "staticlib", "rlib"], "C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\lib.rs", Edition2021) }
+   0.523426500s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="quantum_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-c4a341ea5d258574\test-lib-quantum_engine`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.547440300s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "evolution_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\evolution_engine.rs", Edition2021) }
+   0.547771600s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-9f4fda7c468db703\bin-evolution_engine`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.549937400s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "evolution_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\evolution_engine.rs", Edition2021) }
+   0.550022400s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-855fa797a5ee7e1b\test-bin-evolution_engine`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.553988800s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="god_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "god_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\god_engine.rs", Edition2021) }
+   0.554054100s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="god_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-2f7cb5d4ab6bb5c5\test-bin-god_engine`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+    Checking quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)
+error: could not compile `quantum_engine` (bin "god_engine" test) due to 1 previous error; 8 warnings emitted
+warning: build failed, waiting for other jobs to finish...
