@@ -6,6 +6,7 @@ members = [
     "crates/feature-engine",
     "crates/signal-engine",
     "crates/risk-engine",
+    "crates/execution-engine",
 ]
 
 [package]
