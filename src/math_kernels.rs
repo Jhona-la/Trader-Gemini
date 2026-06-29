@@ -690,6 +690,98 @@ pub fn fused_compute_step(
         out_scores[act] = score;
     }
 }
+
+/// O(1) Second Derivative of Order Book Imbalance (Liquidity Acceleration)
+#[derive(Debug, Clone, Default)]
+pub struct ObiAcceleration {
+    pub prev_obi: f64,
+    pub prev_obi_velocity: f64,
+}
+
+impl ObiAcceleration {
+    #[inline(always)]
+    pub fn new() -> Self {
+        Self { prev_obi: 0.0, prev_obi_velocity: 0.0 }
+    }
+
+    #[inline(always)]
+    pub fn update(&mut self, current_obi: f64) -> f64 {
+        let current_velocity = current_obi - self.prev_obi;
+        let acceleration = current_velocity - self.prev_obi_velocity;
+        self.prev_obi = current_obi;
+        self.prev_obi_velocity = current_velocity;
+        acceleration
+    }
+}
+
+/// O(1) Funding Rate Elasticity (∂FundingRate / ∂Price)
+#[derive(Debug, Clone, Default)]
+pub struct FundingRateElasticity {
+    pub prev_funding_rate: f64,
+    pub prev_price: f64,
+}
+
+impl FundingRateElasticity {
+    #[inline(always)]
+    pub fn new() -> Self {
+        Self { prev_funding_rate: 0.0, prev_price: 0.0 }
+    }
+
+    #[inline(always)]
+    pub fn update(&mut self, funding_rate: f64, price: f64) -> f64 {
+        let delta_fr = funding_rate - self.prev_funding_rate;
+        let delta_p = price - self.prev_price;
+        
+        self.prev_funding_rate = funding_rate;
+        self.prev_price = price;
+
+        if delta_p.abs() > f64::EPSILON && self.prev_price > 0.0 {
+            let pct_delta_p = delta_p / self.prev_price;
+            if pct_delta_p.abs() > f64::EPSILON {
+                return delta_fr / pct_delta_p;
+            }
+        }
+        0.0
+    }
+}
+
+/// O(1) Exponential Decay Tensor for MEV/RBF Severity (Dark Alpha)
+#[derive(Debug, Clone)]
+pub struct ExponentialDecayTensor {
+    pub current_severity: f64,
+    pub decay_lambda: f64,
+    pub last_timestamp_ms: u64,
+}
+
+impl ExponentialDecayTensor {
+    #[inline(always)]
+    pub fn new(half_life_ms: f64) -> Self {
+        let decay_lambda = std::f64::consts::LN_2 / half_life_ms;
+        Self {
+            current_severity: 0.0,
+            decay_lambda,
+            last_timestamp_ms: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn apply_event(&mut self, event_severity: f64, timestamp_ms: u64) {
+        self.decay_to(timestamp_ms);
+        self.current_severity += event_severity;
+        self.last_timestamp_ms = timestamp_ms;
+    }
+
+    #[inline(always)]
+    pub fn decay_to(&mut self, current_timestamp_ms: u64) -> f64 {
+        if current_timestamp_ms > self.last_timestamp_ms {
+            let dt = (current_timestamp_ms - self.last_timestamp_ms) as f64;
+            let decay_factor = (-self.decay_lambda * dt).exp();
+            self.current_severity *= decay_factor;
+            self.last_timestamp_ms = current_timestamp_ms;
+        }
+        self.current_severity
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

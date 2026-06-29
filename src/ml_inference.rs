@@ -3,8 +3,10 @@ use std::io::BufReader;
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
 
+use std::collections::HashMap;
+
 lazy_static::lazy_static! {
-    pub static ref GLOBAL_FOREST: RwLock<Option<NanoForest>> = RwLock::new(None);
+    pub static ref GLOBAL_FORESTS: RwLock<HashMap<String, NanoForest>> = RwLock::new(HashMap::new());
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -40,19 +42,19 @@ impl NanoForest {
         Ok(NanoForest { data })
     }
 
-    /// Loads the forest into the global static cache
-    pub fn load_global(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    /// Loads the forest into the global static cache under a specific key
+    pub fn load_global(key: &str, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let forest = Self::load_model(path)?;
-        if let Ok(mut lock) = crate::ml_inference::GLOBAL_FOREST.write() {
-            *lock = Some(forest);
+        if let Ok(mut lock) = crate::ml_inference::GLOBAL_FORESTS.write() {
+            lock.insert(key.to_string(), forest);
         }
         Ok(())
     }
 
-    /// Predicts using the global forest
-    pub fn predict_global(features: &[f32]) -> f32 {
-        if let Ok(lock) = crate::ml_inference::GLOBAL_FOREST.read() {
-            if let Some(forest) = lock.as_ref() {
+    /// Predicts using a specific global forest
+    pub fn predict_global(key: &str, features: &[f32]) -> f32 {
+        if let Ok(lock) = crate::ml_inference::GLOBAL_FORESTS.read() {
+            if let Some(forest) = lock.get(key) {
                 return forest.predict(features);
             }
         }

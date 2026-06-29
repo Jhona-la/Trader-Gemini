@@ -146,48 +146,91 @@ fn flatten_tree(
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let mut symbol = "BTCUSDT".to_string();
+    let mut horizon = "SCALP".to_string();
+
+    for i in 1..args.len() {
+        if args[i] == "--symbol" && i + 1 < args.len() {
+            symbol = args[i+1].clone();
+        } else if args[i] == "--horizon" && i + 1 < args.len() {
+            horizon = args[i+1].clone();
+        }
+    }
+
     println!("============================================================");
-    println!("🧠 RUST QUANTUM ML TRAINER (NATIVE NANO-FOREST)");
+    println!("🌳 TRAINING NANO FOREST: {} | HORIZON: {}", symbol, horizon);
     println!("============================================================");
-    
-    let sym = "BTCUSDT";
-    let file_path = format!("data/historical/{}_1m.csv", sym);
     
     let mut engine = StatefulEngine::new();
     let mut all_samples = Vec::new();
-    let mut closes_history = Vec::new();
+    let mut closes_history: Vec<f64> = Vec::new();
+
+    let file_path = format!("data/{}_ticks.bin", symbol);
+    
+    let mut file = match std::fs::File::open(&file_path) {
+        Ok(f) => f,
+        Err(_) => {
+            println!("❌ Failed to open {}. Make sure data is converted.", file_path);
+            return;
+        }
+    };
 
     println!("📥 Loading historical data from {}...", file_path);
     let start_load = Instant::now();
     
-    if let Ok(file) = File::open(&file_path) {
-        let reader = BufReader::new(file);
-        for line in reader.lines().filter_map(|l| l.ok()).skip(1) {
-            let parts: Vec<&str> = line.split(',').collect();
-            if parts.len() >= 6 {
-                if let (Ok(c), Ok(v)) = (parts[4].parse::<f64>(), parts[5].parse::<f64>()) {
-                    engine.process_tick(c, v);
-                    closes_history.push(c);
-                    if closes_history.len() > 50 {
-                        let features = engine.get_features();
-                        all_samples.push(Sample {
-                            features: features.to_vec(),
-                            label: 0.0,
-                        });
-                    }
-                }
-            }
-        }
-    } else {
-        println!("❌ Failed to open data. Run data_loader first.");
+    use std::io::Read;
+    // Fast memory mapped or read-all approach
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).unwrap();
+    let num_ticks = buf.len() / (4 * 8); // 4 f64s per tick: timestamp, price, volume, is_buyer_maker
+    
+    if num_ticks == 0 {
+        println!("❌ No data found.");
         return;
+    }
+    
+    let ptr = buf.as_ptr() as *const f64;
+    // Tick binary layout: timestamps, prices, quantities, is_buyer_maker
+    let timestamps = unsafe { std::slice::from_raw_parts(ptr.add(num_ticks * 0), num_ticks) };
+    let closes = unsafe { std::slice::from_raw_parts(ptr.add(num_ticks * 1), num_ticks) };
+    let volumes = unsafe { std::slice::from_raw_parts(ptr.add(num_ticks * 2), num_ticks) };
+    let is_buyer_maker = unsafe { std::slice::from_raw_parts(ptr.add(num_ticks * 3), num_ticks) };
+    
+    let mut proxy_obi = 0.0;
+    
+    for i in 0..num_ticks {
+        let c = closes[i];
+        let v = volumes[i];
+        let maker = is_buyer_maker[i];
+        
+        engine.process_tick(c, v);
+        
+        // Simulating OBI acceleration: buyer_maker = 1.0 means sell trade (taker sold).
+        // A simple EMA of trade imbalance
+        let trade_dir = if maker > 0.0 { -1.0 } else { 1.0 };
+        proxy_obi = proxy_obi * 0.99 + trade_dir * 0.01;
+        engine.update_macro_features(proxy_obi, 0.0); // Funding rate zeroed for training
+        
+        closes_history.push(c);
+        if closes_history.len() > 50 {
+            let features = engine.get_features();
+            all_samples.push(Sample {
+                features: features.to_vec(),
+                label: 0.0,
+            });
+        }
     }
     
     if all_samples.is_empty() { return; }
 
-    println!("🏷️ Labeling data (Lookahead: 15 mins, Target: +0.2% growth)...");
-    let lookahead = 15;
-    let target_pct = 0.002;
+    let (lookahead, target_pct) = if horizon == "SWING" {
+        println!("🏷️ Labeling data (Lookahead: 50,000 Ticks, Target: +1.5% growth)...");
+        (50000, 0.015)
+    } else {
+        println!("🏷️ Labeling data (Lookahead: 1000 Ticks, Target: +0.2% growth)...");
+        (1000, 0.002)
+    };
     
     for i in 0..(all_samples.len() - lookahead) {
         let current_close = closes_history[i + 50];
@@ -257,7 +300,16 @@ fn main() {
     
     std::fs::create_dir_all("models").unwrap();
     let json_str = serde_json::to_string_pretty(&forest_data).unwrap();
-    std::fs::write("models/nano_forest.json", json_str).unwrap();
-    println!("💾 Saved NanoForest to models/nano_forest.json");
+    let out_path = format!("models/{}_{}.json", symbol, horizon);
+    std::fs::write(&out_path, json_str).unwrap();
+    println!("💾 Saved NanoForest to {}", out_path);
+    
+    // Auto compile to bin
+    let bin_path = out_path.replace(".json", ".bin");
+    if let Ok(encoded) = bincode::serialize(&forest_data) {
+        let _ = std::fs::write(&bin_path, encoded);
+        println!("🗜️ Compiled NanoForest to {}", bin_path);
+    }
+
     println!("🚀 The ML Engine is now 100% Rust Native!");
 }

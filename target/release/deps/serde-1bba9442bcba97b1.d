@@ -1,0 +1,14 @@
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\release\deps\serde-1bba9442bcba97b1.d: C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\jhona\Documents\Proyectos\Trader\ Gemini\target\release\build\serde-96dc959f0345bc24\out/private.rs
+
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\release\deps\libserde-1bba9442bcba97b1.rlib: C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\jhona\Documents\Proyectos\Trader\ Gemini\target\release\build\serde-96dc959f0345bc24\out/private.rs
+
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\release\deps\libserde-1bba9442bcba97b1.rmeta: C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\jhona\Documents\Proyectos\Trader\ Gemini\target\release\build\serde-96dc959f0345bc24\out/private.rs
+
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs:
+C:\Users\jhona\Documents\Proyectos\Trader\ Gemini\target\release\build\serde-96dc959f0345bc24\out/private.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\target\\release\\build\\serde-96dc959f0345bc24\\out

@@ -65,7 +65,7 @@ impl RiskManager {
         }
     }
 
-    pub fn calculate_micro_position_size_local(&self, symbol: &str, current_price: f64, leverage: f64, capital: f64) -> Option<f64> {
+    pub fn calculate_micro_position_size_local(&self, symbol: &str, current_price: f64, leverage: f64, capital: f64, current_atr_pct: f64) -> Option<f64> {
         let (min_qty, step_size, min_notional) = Self::get_symbol_constraints(symbol);
         
         // Target risk based on Kelly Criterion
@@ -77,14 +77,26 @@ impl RiskManager {
             }
         };
 
+        // Asymptotic Risk Tapering
+        // Cap <= $50 -> 25% max
+        // Cap >= $500 -> 2% max
+        let dynamic_max_risk = if capital <= 50.0 {
+            0.25
+        } else if capital >= 500.0 {
+            0.02
+        } else {
+            let t = (capital - 50.0) / (500.0 - 50.0);
+            0.25 - t * (0.25 - 0.02)
+        };
+
         // Enforce max risk ceiling
-        let safe_kelly = kelly_fraction.clamp(0.01, self.max_risk_per_trade);
+        let safe_kelly = kelly_fraction.clamp(0.01, dynamic_max_risk);
 
         // Required capital per trade
         let max_loss_capital = capital * safe_kelly;
 
-        // Assumed average SL distance (e.g., 1.5%) - Phase 13 tuning
-        let avg_sl_pct = 0.015;
+        // Assumed average SL distance based on current ATR
+        let avg_sl_pct = current_atr_pct.max(0.001);
         let notional_target = max_loss_capital / avg_sl_pct;
 
         let effective_notional = notional_target.max(min_notional);
@@ -109,9 +121,9 @@ impl RiskManager {
         Some(final_qty)
     }
 
-    pub fn calculate_micro_position_size(symbol: &str, current_price: f64, leverage: f64, capital: f64) -> Option<f64> {
+    pub fn calculate_micro_position_size(symbol: &str, current_price: f64, leverage: f64, capital: f64, current_atr_pct: f64) -> Option<f64> {
         let risk = GLOBAL_RISK.read().unwrap();
-        risk.calculate_micro_position_size_local(symbol, current_price, leverage, capital)
+        risk.calculate_micro_position_size_local(symbol, current_price, leverage, capital, current_atr_pct)
     }
 
     pub fn can_open_position(horizon: i32, requested_qty: f64, current_price: f64, dynamic_leverage: f64) -> bool {
@@ -185,34 +197,66 @@ mod tests {
     #[test]
     fn test_micro_capital_btc_sizing() {
         // BTCUSDT at $60,000, Leverage 50x, Capital 13 USD.
-        // target_notional = 1.3 USD (10% of 13) * 50 = 65 USD.
-        // effective_notional = max(65, 5.0) = 65 USD.
-        // raw_qty = 65 / 60000 = 0.001083.
+        // capital < 50, dynamic_max_risk = 0.25.
+        // If kelly = 0.10, safe_kelly = 0.10.
+        // target_notional = 1.3 USD (10% of 13) / 0.015 = 86.66 USD.
+        // effective_notional = max(86.66, 5.0) = 86.66 USD.
+        // raw_qty = 86.66 / 60000 = 0.001444.
         // step_size = 0.001. final_qty = 0.001.
         // required_margin = 0.001 * 60000 / 50 = 1.2 USD. 1.2 <= 13.
         
-        let qty = RiskManager::calculate_micro_position_size("BTCUSDT", 60000.0, 50.0, 13.0);
+        let qty = RiskManager::calculate_micro_position_size("BTCUSDT", 60000.0, 50.0, 13.0, 0.015);
         assert_eq!(qty, Some(0.001));
     }
 
     #[test]
     fn test_micro_capital_ada_sizing() {
         // ADAUSDT at $0.45, Leverage 50x, Capital 13 USD.
-        // target_notional = 1.3 * 50 = 65 USD.
-        // raw_qty = 65 / 0.45 = 144.44.
-        // step_size = 1.0. final_qty = 144.0.
-        // required_margin = 144 * 0.45 / 50 = 1.296 USD. 1.296 <= 13.
+        // target_notional = 1.3 / 0.015 = 86.66 USD.
+        // raw_qty = 86.66 / 0.45 = 192.59.
+        // step_size = 1.0. final_qty = 192.0.
+        // required_margin = 192 * 0.45 / 50 = 1.728 USD. 1.728 <= 13.
         
-        let qty = RiskManager::calculate_micro_position_size("ADAUSDT", 0.45, 50.0, 13.0);
-        assert_eq!(qty, Some(144.0));
+        let qty = RiskManager::calculate_micro_position_size("ADAUSDT", 0.45, 50.0, 13.0, 0.015);
+        assert_eq!(qty, Some(192.0));
     }
     
     #[test]
     fn test_insufficient_funds_rejected() {
         // BTCUSDT at $60,000, Leverage 1x, Capital 13 USD.
-        // minimum notional is 60 USD.
-        // required_margin at 1x is 60 USD > 13 USD -> should return None.
-        let qty = RiskManager::calculate_micro_position_size("BTCUSDT", 60000.0, 1.0, 13.0);
+        // required_margin at 1x is > 13 USD -> should return None.
+        let qty = RiskManager::calculate_micro_position_size("BTCUSDT", 60000.0, 1.0, 13.0, 0.015);
         assert_eq!(qty, None);
+    }
+    
+    #[test]
+    fn test_asymptotic_risk_tapering() {
+        let mut rm = RiskManager::new(0.05, 1.0);
+        // Force kelly tracking to high win rate
+        rm.report_trade_result_local("BTCUSDT", true, 0.05);
+        rm.report_trade_result_local("BTCUSDT", true, 0.05);
+        rm.report_trade_result_local("BTCUSDT", true, 0.05);
+        rm.report_trade_result_local("BTCUSDT", true, 0.05);
+        rm.report_trade_result_local("BTCUSDT", true, 0.05);
+        rm.report_trade_result_local("BTCUSDT", false, -0.01);
+
+        let kelly_high = rm.kelly_trackers.get("BTCUSDT").unwrap().sizing_fraction();
+        assert!(kelly_high > 0.25); // the raw fractional is high
+        
+        // Scenario A: $13 Capital -> cap at 0.25
+        // max loss cap = 13 * 0.25 = 3.25
+        // notional = 3.25 / 0.01 = 325
+        // raw = 325 / 60000 = 0.0054
+        // final_qty = 0.005
+        let qty_small = rm.calculate_micro_position_size_local("BTCUSDT", 60000.0, 50.0, 13.0, 0.01);
+        assert_eq!(qty_small, Some(0.005));
+        
+        // Scenario B: $1000 Capital -> cap at 0.02
+        // max loss cap = 1000 * 0.02 = 20
+        // notional = 20 / 0.01 = 2000
+        // raw = 2000 / 60000 = 0.0333
+        // final_qty = 0.033
+        let qty_large = rm.calculate_micro_position_size_local("BTCUSDT", 60000.0, 50.0, 1000.0, 0.01);
+        assert_eq!(qty_large, Some(0.033));
     }
 }

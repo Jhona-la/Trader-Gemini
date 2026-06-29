@@ -1,9 +1,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::math_kernels::RecursiveHurst;
+use crate::math_kernels::{RecursiveHurst, ObiAcceleration, FundingRateElasticity, ContinuousVPIN, ShannonEntropy, ExponentialDecayTensor};
 
 pub static DROP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum MarketRegime {
     Scalping,
     Swing,
@@ -21,6 +21,12 @@ pub struct StatefulEngine {
     pub a_t: f64,
     pub tick_count: u64,
     pub hurst: RecursiveHurst,
+    pub obi_accel: ObiAcceleration,
+    pub fr_elasticity: FundingRateElasticity,
+    pub cvpin: ContinuousVPIN,
+    pub entropy: ShannonEntropy,
+    pub dark_alpha: ExponentialDecayTensor,
+    pub last_entropy: f64,
 }
 
 impl StatefulEngine {
@@ -35,6 +41,12 @@ impl StatefulEngine {
             a_t: 0.0,
             tick_count: 0,
             hurst: RecursiveHurst::new(),
+            obi_accel: ObiAcceleration::new(),
+            fr_elasticity: FundingRateElasticity::new(),
+            cvpin: ContinuousVPIN::new(100.0), // 100 volume bucket size
+            entropy: ShannonEntropy::new(),
+            dark_alpha: ExponentialDecayTensor::new(10000.0), // 10s half-life
+            last_entropy: 0.0,
         }
     }
 
@@ -55,12 +67,25 @@ impl StatefulEngine {
             
             let diff = (price - self.last_price).abs();
             self.v_t = (self.v_t * 0.9) + (diff * 0.1);
+            
+            let norm_return = (price - self.last_price) / self.last_price;
+            self.last_entropy = self.entropy.update(norm_return);
         }
         
         self.hurst.update(price);
         
+        // Note: ObiAcceleration and FundingRateElasticity are typically updated in a separate method or ingested from DarkAlphaRouter/Binance. 
+        // We leave them as 0.0 updates here if purely price-volume ticks are passed, but expose methods for them.
+        self.cvpin.update(_volume, price < self.last_price); // Approximation: tick down = seller initiated
+        
         self.last_price = price;
         self.tick_count += 1;
+    }
+    
+    pub fn update_macro_features(&mut self, obi: f64, funding_rate: f64, dex_severity: f64, ts_ms: u64) {
+        self.obi_accel.update(obi);
+        self.fr_elasticity.update(funding_rate, self.last_price);
+        self.dark_alpha.apply_event(dex_severity, ts_ms);
     }
     
     pub fn get_market_regime(&self) -> MarketRegime {
@@ -76,7 +101,7 @@ impl StatefulEngine {
     }
 
     /// Extracts NanoForest ML Features
-    pub fn get_features(&self) -> [f32; 4] {
+    pub fn get_features(&self) -> [f32; 10] {
         let price_change = if self.last_price != 0.0 && self.ema_slow != 0.0 {
             (self.ema_fast - self.ema_slow) / self.ema_slow
         } else {
@@ -100,7 +125,22 @@ impl StatefulEngine {
             ema_fast_dist as f32,
             ema_slow_dist as f32,
             self.v_t as f32,
+            self.obi_accel.prev_obi_velocity as f32,
+            self.obi_accel.prev_obi as f32,
+            self.fr_elasticity.prev_funding_rate as f32,
+            self.cvpin.buy_volume as f32 - self.cvpin.sell_volume as f32,
+            self.last_entropy as f32,
+            self.dark_alpha.current_severity as f32,
         ]
+    }
+
+    /// Returns ATR as a percentage of last price for Stop Loss scaling
+    pub fn get_atr_pct(&self) -> f64 {
+        if self.last_price > 0.0 {
+            self.v_t / self.last_price
+        } else {
+            0.0
+        }
     }
 
     /// Projects the state out to the f32 barrier (576 bytes / 144 floats)

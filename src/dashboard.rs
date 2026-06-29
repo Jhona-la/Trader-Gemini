@@ -9,6 +9,7 @@ pub enum TelemetryEvent {
     LatencyUpdate(u64),      // Nanoseconds
     LogUpdate(String, String), // (type, message) e.g., ("info", "Connected...")
     CapitalUpdate(f64),      // Current capital
+    TensorUpdate([f32; 10]), // 10D State Vector
 }
 
 pub async fn start_server(tx: broadcast::Sender<TelemetryEvent>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -54,6 +55,14 @@ pub async fn start_server(tx: broadcast::Sender<TelemetryEvent>) -> Result<(), B
                             }
                         }
                     }
+                } else if request.starts_with("GET /style.css") {
+                    let css = fs::read_to_string("static/style.css").unwrap_or_else(|_| "".to_string());
+                    let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/css\r\n\r\n{}", css);
+                    let _ = socket.write_all(response.as_bytes()).await;
+                } else if request.starts_with("GET /app.js") {
+                    let js = fs::read_to_string("static/app.js").unwrap_or_else(|_| "".to_string());
+                    let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\n\r\n{}", js);
+                    let _ = socket.write_all(response.as_bytes()).await;
                 } else {
                     let html = fs::read_to_string("static/index.html").unwrap_or_else(|_| "<h1>Error: static/index.html not found</h1>".to_string());
                     let response = format!(

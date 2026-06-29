@@ -2,50 +2,77 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Sniffing de Mempool (RBF) y WebSockets de DEX
 /// Alimenta al QuantumStateArena con señales de presión de liquidez y pánico de red.
+/// Totalmente lock-free usando AtomicU64 bitcasting (f64 <-> u64) para Axioma V y VIII.
+#[repr(C, align(64))]
 pub struct DarkAlphaRouter {
-    pub mempool_panic_score: f32,
-    pub net_liq_pressure: f32,
-    pub liquidation_cascade_risk: f32,
+    pub mempool_panic_score: AtomicU64, // f64
+    pub net_liq_pressure: AtomicU64,    // f64
+    pub liquidation_cascade_risk: AtomicU64, // f64
     
     // Concurrency stats
-    processed_packets: AtomicU64,
+    pub processed_packets: AtomicU64,
 }
 
 impl DarkAlphaRouter {
     pub fn new() -> Self {
         Self {
-            mempool_panic_score: 0.0,
-            net_liq_pressure: 0.0,
-            liquidation_cascade_risk: 0.0,
+            mempool_panic_score: AtomicU64::new(0f64.to_bits()),
+            net_liq_pressure: AtomicU64::new(0f64.to_bits()),
+            liquidation_cascade_risk: AtomicU64::new(0f64.to_bits()),
             processed_packets: AtomicU64::new(0),
         }
     }
 
-    /// Update with L2/L3 Orderbook data and DEX events
-    pub fn ingest_l2_snapshot(&mut self, bids_vol: f32, asks_vol: f32, spread: f32) {
-        self.processed_packets.fetch_add(1, Ordering::Relaxed);
-        
-        let total_vol = bids_vol + asks_vol;
-        if total_vol > 0.0 {
-            // Pressure ranges from -1.0 to +1.0
-            self.net_liq_pressure = (bids_vol - asks_vol) / total_vol;
-        }
-
-        // Extremely basic cascading liquidation risk based on spread widening and lack of liquidity
-        if spread > 0.005 && total_vol < 10.0 {
-            self.liquidation_cascade_risk = (self.liquidation_cascade_risk + 0.1).clamp(0.0, 1.0);
-        } else {
-            self.liquidation_cascade_risk *= 0.9; // Decay
-        }
+    #[inline(always)]
+    pub fn set_mempool_panic_score(&self, score: f64) {
+        self.mempool_panic_score.store(score.to_bits(), Ordering::Release);
     }
 
-    /// Ingests Mempool RBF (Replace-By-Fee) transactions as a proxy for network panic
-    pub fn ingest_mempool_rbf(&mut self, rbf_tx_count: usize, avg_fee_surge: f32) {
+    #[inline(always)]
+    pub fn get_mempool_panic_score(&self) -> f64 {
+        f64::from_bits(self.mempool_panic_score.load(Ordering::Acquire))
+    }
+
+    #[inline(always)]
+    pub fn set_net_liq_pressure(&self, pressure: f64) {
+        self.net_liq_pressure.store(pressure.to_bits(), Ordering::Release);
+    }
+
+    #[inline(always)]
+    pub fn get_net_liq_pressure(&self) -> f64 {
+        f64::from_bits(self.net_liq_pressure.load(Ordering::Acquire))
+    }
+
+    #[inline(always)]
+    pub fn set_liquidation_cascade_risk(&self, risk: f64) {
+        self.liquidation_cascade_risk.store(risk.to_bits(), Ordering::Release);
+    }
+
+    #[inline(always)]
+    pub fn get_liquidation_cascade_risk(&self) -> f64 {
+        f64::from_bits(self.liquidation_cascade_risk.load(Ordering::Acquire))
+    }
+    
+    #[inline(always)]
+    pub fn inc_processed_packets(&self) {
         self.processed_packets.fetch_add(1, Ordering::Relaxed);
+    }
+    
+    /// Ingresa un pulso de liquidez oscuro (MEV, Liquidaciones DEX)
+    /// Aplica un decaimiento básico y lo funde con el estado atómico O(1).
+    #[inline(always)]
+    pub fn ingest_l2_snapshot(&self, qty: f64, _delay_ms: f64, impact: f64, _tick_count: u64) {
+        let current_liq = self.get_liquidation_cascade_risk();
+        let current_pressure = self.get_net_liq_pressure();
         
-        // If mempool RBF surges, panic increases.
-        let surge = avg_fee_surge * (rbf_tx_count as f32) * 0.01;
-        self.mempool_panic_score = (self.mempool_panic_score + surge).clamp(0.0, 1.0);
-        self.mempool_panic_score *= 0.95; // Decay
+        // Decaimiento Exponencial simplificado (lambda = 0.05) para efecto del tick
+        let decay = 0.95; 
+        let new_liq = (current_liq * decay) + (impact * 10.0);
+        let new_pressure = (current_pressure * decay) + (qty * impact);
+        
+        self.set_liquidation_cascade_risk(new_liq);
+        self.set_net_liq_pressure(new_pressure);
+        self.inc_processed_packets();
     }
 }
+

@@ -1,0 +1,12 @@
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\target_persistent\release\deps\tinystr-5608c7f040ed51d9.d: C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\lib.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\macros.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\ascii.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\asciibyte.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\error.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\int_ops.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\unvalidated.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\ule.rs
+
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\target_persistent\release\deps\libtinystr-5608c7f040ed51d9.rmeta: C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\lib.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\macros.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\ascii.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\asciibyte.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\error.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\int_ops.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\unvalidated.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\ule.rs
+
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\lib.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\macros.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\ascii.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\asciibyte.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\error.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\int_ops.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\unvalidated.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tinystr-0.8.3\src\ule.rs:

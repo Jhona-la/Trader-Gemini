@@ -1,6 +1,7 @@
 use crate::stateful_engine::{StatefulEngine, MarketRegime};
 use crate::ml_inference::NanoForest;
 use crate::risk::RiskManager;
+use crate::dark_alpha_router::DarkAlphaRouter;
 
 #[repr(C)]
 #[derive(Clone)]
@@ -21,6 +22,7 @@ pub fn run_backtest_native(
     cfg: &UnifiedConfig,
     out_pnl: &mut [f64],
     out_stats: &mut [f64],
+    symbol: &str,
 ) -> usize {
     let len = closes.len();
     
@@ -32,6 +34,8 @@ pub fn run_backtest_native(
     let mut swing_engine = StatefulEngine::new();
     
     let mut risk_manager = RiskManager::new(0.05, 1.0); 
+    // In backtest, Dark Alpha is baseline zero unless we have historical DEX data.
+    let dark_alpha = DarkAlphaRouter::new();
     
     let mut capital = 13.0; // Phase 13 rule: 13 USD starting capital
     let mut peak_capital = 13.0;
@@ -56,7 +60,11 @@ pub fn run_backtest_native(
         let current_close = closes[i];
         
         scalp_engine.process_tick(current_close, volumes[i]);
-        swing_engine.process_tick(current_close, volumes[i]);
+        
+        let is_hourly_close = (i % 60 == 59) && (i > 10);
+        if is_hourly_close {
+            swing_engine.process_tick(current_close, volumes[i]);
+        }
         
         let scalp_regime = scalp_engine.get_market_regime();
         let swing_regime = swing_engine.get_market_regime();
@@ -67,7 +75,7 @@ pub fn run_backtest_native(
         let mut ml_prob = 0.0;
         if i > 10 {
             let features = scalp_engine.get_features();
-            ml_prob = crate::ml_inference::NanoForest::predict_global(&features);
+            ml_prob = crate::ml_inference::NanoForest::predict_global(&format!("{}_SCALP", symbol), &features);
         }
 
         // --- 1. EVALUATE EXITS ---
@@ -159,16 +167,39 @@ pub fn run_backtest_native(
         }
 
         // --- 2. EVALUATE ENTRIES ---
+        // Auto-Ajuste de Frecuencia (Crecimiento 100% / 3 días)
+        let mut freq_multiplier = if capital <= 50.0 {
+            0.90 // 10% looser threshold when capital is microscopically small to guarantee trades
+        } else if capital <= 100.0 {
+            0.95 // 5% looser
+        } else {
+            1.00 // Standard threshold
+        };
+
+        // Dark Alpha Injection (Axioma XVIII: Anticipación Asimétrica)
+        let cascade_risk = dark_alpha.get_liquidation_cascade_risk();
+        let panic_score = dark_alpha.get_mempool_panic_score();
+        
+        // If there's high cascade risk or mempool panic, we loosen the ML entry threshold
+        // to aggressively front-run the cascade.
+        if cascade_risk > 1.0 || panic_score > 5.0 {
+            freq_multiplier *= 0.85; // 15% more aggressive entry
+        }
+
         if !scalp_in_pos && (scalp_regime == MarketRegime::Neutral || scalp_regime == MarketRegime::Scalping) {
-            if ml_prob > cfg.ml_threshold_l as f32 {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, 50.0, capital) {
+            let scalp_atr_pct = scalp_engine.get_atr_pct();
+            let dynamic_ml_l = cfg.ml_threshold_l * freq_multiplier;
+            let dynamic_ml_s = cfg.ml_threshold_s * freq_multiplier;
+
+            if ml_prob > dynamic_ml_l as f32 {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, 50.0, capital, scalp_atr_pct) {
                     scalp_in_pos = true;
                     scalp_side = 1;
                     scalp_entry = current_close;
                     scalp_qty = qty;
                 }
-            } else if ml_prob < (1.0 - cfg.ml_threshold_s as f32) {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, 50.0, capital) {
+            } else if ml_prob < (1.0 - dynamic_ml_s as f32) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, 50.0, capital, scalp_atr_pct) {
                     scalp_in_pos = true;
                     scalp_side = -1;
                     scalp_entry = current_close;
@@ -179,17 +210,20 @@ pub fn run_backtest_native(
 
         // Production only enters swing on 1H kline close (is_closed gate).
         // On 1m data, this means only every 60th bar to match production behavior.
-        let is_hourly_close = (i % 60 == 59) && (i > 10);
         if !swing_in_pos && swing_regime == MarketRegime::Swing && is_hourly_close {
-            if fast > slow * (1.0 + cfg.tech_threshold_l) {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, 15.0, capital) {
+            let swing_atr_pct = swing_engine.get_atr_pct();
+            let dynamic_tech_l = cfg.tech_threshold_l * freq_multiplier;
+            let dynamic_tech_s = cfg.tech_threshold_s * freq_multiplier;
+
+            if fast > slow * (1.0 + dynamic_tech_l) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, 15.0, capital, swing_atr_pct) {
                     swing_in_pos = true;
                     swing_side = 1;
                     swing_entry = current_close;
                     swing_qty = qty;
                 }
-            } else if fast < slow * (1.0 - cfg.tech_threshold_s) {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, 15.0, capital) {
+            } else if fast < slow * (1.0 - dynamic_tech_s) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, 15.0, capital, swing_atr_pct) {
                     swing_in_pos = true;
                     swing_side = -1;
                     swing_entry = current_close;
@@ -217,8 +251,9 @@ pub extern "C" fn ffi_run_unified_backtest(
     config: *const UnifiedConfig,
     out_pnl_ptr: *mut f64,
     out_stats_ptr: *mut f64,
+    symbol_ptr: *const std::os::raw::c_char,
 ) -> usize {
-    if closes_ptr.is_null() || highs_ptr.is_null() || lows_ptr.is_null() || config.is_null() || out_pnl_ptr.is_null() || out_stats_ptr.is_null() {
+    if closes_ptr.is_null() || highs_ptr.is_null() || lows_ptr.is_null() || config.is_null() || out_pnl_ptr.is_null() || out_stats_ptr.is_null() || symbol_ptr.is_null() {
         return 0;
     }
 
@@ -229,8 +264,11 @@ pub extern "C" fn ffi_run_unified_backtest(
     let cfg = unsafe { &*config };
     let out_pnl = unsafe { std::slice::from_raw_parts_mut(out_pnl_ptr, len) };
     let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, 4) };
+    
+    let sym_c = unsafe { std::ffi::CStr::from_ptr(symbol_ptr) };
+    let sym_str = sym_c.to_str().unwrap_or("BTCUSDT");
 
-    run_backtest_native(closes, highs, lows, volumes, cfg, out_pnl, out_stats)
+    run_backtest_native(closes, highs, lows, volumes, cfg, out_pnl, out_stats, sym_str)
 }
 
 #[no_mangle]
@@ -240,8 +278,9 @@ pub extern "C" fn ffi_run_unified_backtest_mmap(
     config: *const UnifiedConfig,
     out_pnl_ptr: *mut f64,
     out_stats_ptr: *mut f64,
+    symbol_ptr: *const std::os::raw::c_char,
 ) -> usize {
-    if filepath_ptr.is_null() || config.is_null() || out_pnl_ptr.is_null() || out_stats_ptr.is_null() {
+    if filepath_ptr.is_null() || config.is_null() || out_pnl_ptr.is_null() || out_stats_ptr.is_null() || symbol_ptr.is_null() {
         return 0;
     }
     
@@ -276,5 +315,8 @@ pub extern "C" fn ffi_run_unified_backtest_mmap(
     let out_pnl = unsafe { std::slice::from_raw_parts_mut(out_pnl_ptr, len) };
     let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, 4) };
 
-    run_backtest_native(closes, highs, lows, volumes, cfg, out_pnl, out_stats)
+    let sym_c = unsafe { std::ffi::CStr::from_ptr(symbol_ptr) };
+    let sym_str = sym_c.to_str().unwrap_or("BTCUSDT");
+
+    run_backtest_native(closes, highs, lows, volumes, cfg, out_pnl, out_stats, sym_str)
 }

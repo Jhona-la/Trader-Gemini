@@ -51,20 +51,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let mut highs = Vec::with_capacity(arr.len());
                                 let mut lows = Vec::with_capacity(arr.len());
                                 let mut vols = Vec::with_capacity(arr.len());
+                                let mut taker_vols = Vec::with_capacity(arr.len());
                                 
                                 for row in arr {
                                     let row_arr = row.as_array().unwrap();
                                     
-                                    if let (Ok(h), Ok(l), Ok(c), Ok(v)) = (
+                                    if let (Ok(h), Ok(l), Ok(c), Ok(v), Ok(taker_v)) = (
                                         row_arr[2].as_str().unwrap_or("0").parse::<f64>(),
                                         row_arr[3].as_str().unwrap_or("0").parse::<f64>(),
                                         row_arr[4].as_str().unwrap_or("0").parse::<f64>(),
                                         row_arr[5].as_str().unwrap_or("0").parse::<f64>(),
+                                        row_arr[9].as_str().unwrap_or("0").parse::<f64>(),
                                     ) {
                                         highs.push(h);
                                         lows.push(l);
                                         closes.push(c);
                                         vols.push(v);
+                                        taker_vols.push(taker_v);
                                     }
                                     
                                     let line: Vec<String> = row_arr.iter().map(|v| v.to_string().replace("\"", "")).collect();
@@ -91,6 +94,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // 4. Volumes
                                 let slice_v = unsafe { std::slice::from_raw_parts(vols.as_ptr() as *const u8, vols.len() * 8) };
                                 bin_file.write_all(slice_v)?;
+                                
+                                // 5. Taker Buy Base Asset Volumes
+                                let slice_taker = unsafe { std::slice::from_raw_parts(taker_vols.as_ptr() as *const u8, taker_vols.len() * 8) };
+                                bin_file.write_all(slice_taker)?;
                                 
                                 println!("✅ Saved {} records to {} and {}", arr.len(), file_path, bin_path);
                             }

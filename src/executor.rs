@@ -3,6 +3,8 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use hex;
 use serde_json::Value;
+use simd_json::prelude::*;
+use simd_json::prelude::ValueObjectAccess;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
 
@@ -148,6 +150,31 @@ impl BinanceRestExecutor {
             }
         }
     }
+
+    pub async fn enable_hedge_mode(&self) -> Result<Value, String> {
+        let timestamp = Self::get_timestamp();
+        let query = format!("dualSidePosition=true&timestamp={}", timestamp);
+        let signature = self.generate_signature(&query);
+        let url = format!("{}/fapi/v1/positionSide/dual?{}&signature={}", self.base_url, query, signature);
+
+        match self.client.post(&url).send().await {
+            Ok(res) => {
+                let status = res.status();
+                if status.is_success() || status.as_u16() == 400 {
+                    // 400 often means it's already in hedge mode
+                    self.circuit_breaker.record_success();
+                    Ok(res.json::<Value>().await.unwrap_or(Value::Null))
+                } else {
+                    self.circuit_breaker.record_failure();
+                    Err(format!("HTTP Error: {}", status))
+                }
+            },
+            Err(e) => {
+                self.circuit_breaker.record_failure();
+                Err(e.to_string())
+            }
+        }
+    }
 }
 
 use futures_util::{SinkExt, StreamExt};
@@ -219,7 +246,7 @@ impl BinanceWSFuturesExecutor {
         hex::encode(result.into_bytes())
     }
 
-    pub async fn place_order(
+    pub fn place_order(
         &self,
         symbol: &str,
         side: &str,
@@ -229,30 +256,53 @@ impl BinanceWSFuturesExecutor {
     ) {
         let timestamp = BinanceRestExecutor::get_timestamp();
         
-        let query_string = format!(
-            "apiKey={}&positionSide={}&quantity={}&side={}&symbol={}&timestamp={}&type=MARKET",
-            self.api_key, position_side, quantity, side, symbol, timestamp
-        );
+        let mut query = String::with_capacity(256);
+        query.push_str("apiKey=");
+        query.push_str(&self.api_key);
+        query.push_str("&positionSide=");
+        query.push_str(position_side);
+        query.push_str("&quantity=");
+        
+        let mut ryu_buf = ryu::Buffer::new();
+        let qty_str = ryu_buf.format(quantity);
+        query.push_str(qty_str);
+        
+        query.push_str("&side=");
+        query.push_str(side);
+        query.push_str("&symbol=");
+        query.push_str(symbol);
+        query.push_str("&timestamp=");
+        
+        let mut itoa_buf = itoa::Buffer::new();
+        let ts_str = itoa_buf.format(timestamp);
+        query.push_str(ts_str);
+        
+        query.push_str("&type=MARKET");
 
-        let signature = self.generate_signature(&query_string);
+        let signature = self.generate_signature(&query);
 
-        let payload = json!({
-            "id": req_id,
-            "method": "order.place",
-            "params": {
-                "apiKey": self.api_key,
-                "positionSide": position_side,
-                "quantity": quantity.to_string(),
-                "side": side,
-                "symbol": symbol,
-                "timestamp": timestamp,
-                "type": "MARKET",
-                "signature": signature
-            }
-        });
+        // Zero-Alloc-Style payload formulation (avoids serde_json DOM and format! trait overhead)
+        let mut payload = String::with_capacity(512);
+        payload.push_str(r#"{"id":""#);
+        payload.push_str(req_id);
+        payload.push_str(r#"","method":"order.place","params":{"apiKey":""#);
+        payload.push_str(&self.api_key);
+        payload.push_str(r#"","positionSide":""#);
+        payload.push_str(position_side);
+        payload.push_str(r#"","quantity":""#);
+        payload.push_str(qty_str);
+        payload.push_str(r#"","side":""#);
+        payload.push_str(side);
+        payload.push_str(r#"","symbol":""#);
+        payload.push_str(symbol);
+        payload.push_str(r#"","timestamp":"#);
+        payload.push_str(ts_str);
+        payload.push_str(r#","type":"MARKET","signature":""#);
+        payload.push_str(&signature);
+        payload.push_str(r#""}}"#);
 
         // Non-blocking fire-and-forget for nanosecond latency in God Engine
-        let _ = self.tx_cmd.try_send(payload.to_string());
+        let _ = self.tx_cmd.try_send(payload);
     }
 }
 
@@ -296,7 +346,8 @@ impl BinanceUserDataStream {
                             loop {
                                 tokio::time::sleep(tokio::time::Duration::from_secs(30 * 60)).await;
                                 let res = client_clone.put(&url_clone).send().await;
-                                if res.is_err() || !res.unwrap().status().is_success() {
+                                let success = res.map(|r| r.status().is_success()).unwrap_or(false);
+                                if !success {
                                     break; // Force reconnect
                                 }
                             }
@@ -310,19 +361,26 @@ impl BinanceUserDataStream {
                                 let (_, mut read) = ws_stream.split();
                                 while let Some(msg_result) = read.next().await {
                                     if let Ok(Message::Text(text)) = msg_result {
-                                        if let Ok(data) = serde_json::from_str::<Value>(&text) {
-                                            if data["e"] == "ORDER_TRADE_UPDATE" {
-                                                let order = &data["o"];
-                                                if order["X"] == "FILLED" {
-                                                    let rp_str = order["rp"].as_str().unwrap_or("0");
-                                                    let realized_pnl: f64 = rp_str.parse().unwrap_or(0.0);
-                                                    let symbol = order["s"].as_str().unwrap_or("UNKNOWN");
+                                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
+                                            if data.get("e").and_then(|v| v.as_str()) == Some("ORDER_TRADE_UPDATE") {
+                                                if let Some(order) = data.get("o") {
+                                                    if order.get("X").and_then(|v| v.as_str()) == Some("FILLED") {
+                                                        let rp_str = order.get("rp").and_then(|v| v.as_str()).unwrap_or("0");
+                                                        let realized_pnl: f64 = rp_str.parse().unwrap_or(0.0);
+                                                        let symbol = order.get("s").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
                                                     
-                                                    if realized_pnl != 0.0 {
-                                                        let is_win = realized_pnl > 0.0;
-                                                        let pnl_pct = 0.01; 
-                                                        crate::risk::RiskManager::report_trade_result(symbol, is_win, pnl_pct);
-                                                        println!("💰 [REAL PNL] Trade Closed! Symbol: {}, PnL: {:.4} USD (Win: {}).", symbol, realized_pnl, is_win);
+                                                        if realized_pnl != 0.0 {
+                                                            let is_win = realized_pnl > 0.0;
+                                                            let qty: f64 = order.get("q").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0);
+                                                            let price: f64 = order.get("p").and_then(|v| v.as_str()).unwrap_or("0").parse().unwrap_or(0.0);
+                                                            let pnl_pct = if qty > 0.0 && price > 0.0 {
+                                                                (realized_pnl / (qty * price)).abs()
+                                                            } else {
+                                                                if is_win { 0.01 } else { -0.01 }
+                                                            };
+                                                            crate::risk::RiskManager::report_trade_result(symbol, is_win, pnl_pct);
+                                                            println!("💰 [REAL PNL] Trade Closed! Symbol: {}, PnL: {:.4} USD (Win: {}).", symbol, realized_pnl, is_win);
+                                                        }
                                                     }
                                                 }
                                             }

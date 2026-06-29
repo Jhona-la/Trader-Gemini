@@ -1,4 +1,3 @@
-pub mod execution;
 pub mod parsers;
 pub mod portfolio;
 pub mod risk;
