@@ -13,7 +13,7 @@ pub struct UnifiedConfig {
     pub tech_threshold_s: f64,
 }
 
-fn internal_run_backtest(
+pub fn run_backtest_native(
     closes: &[f64],
     highs: &[f64],
     lows: &[f64],
@@ -200,7 +200,7 @@ pub extern "C" fn ffi_run_unified_backtest(
     let out_pnl = unsafe { std::slice::from_raw_parts_mut(out_pnl_ptr, len) };
     let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, 4) };
 
-    internal_run_backtest(closes, highs, lows, volumes, cfg, out_pnl, out_stats)
+    run_backtest_native(closes, highs, lows, volumes, cfg, out_pnl, out_stats)
 }
 
 #[no_mangle]
@@ -246,5 +246,5 @@ pub extern "C" fn ffi_run_unified_backtest_mmap(
     let out_pnl = unsafe { std::slice::from_raw_parts_mut(out_pnl_ptr, len) };
     let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, 4) };
 
-    internal_run_backtest(closes, highs, lows, volumes, cfg, out_pnl, out_stats)
+    run_backtest_native(closes, highs, lows, volumes, cfg, out_pnl, out_stats)
 }

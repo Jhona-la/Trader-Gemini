@@ -44,3 +44,7 @@ path = "src/bin/data_loader.rs"
 [[bin]]
 name = "backtest_engine"
 path = "src/bin/backtest_engine.rs"
+
+[[bin]]
+name = "train_nano_forest"
+path = "src/bin/train_nano_forest.rs"

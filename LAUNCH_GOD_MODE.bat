@@ -3,9 +3,8 @@ echo ========================================================
 echo 🚀 GOD MODE ACTIVATED - TRADER GEMINI (RUST EDITION)
 echo ========================================================
 echo.
-echo Starting Quantum Engine...
+echo Starting Quantum Engine in Production Mode...
 
-cd core\rust_engine
 cargo build --release
 if %errorlevel% neq 0 (
     echo [ERROR] Failed to compile Rust Engine!

@@ -118,17 +118,25 @@ fn main() {
             let capital = out_stats[2];
             let dd = out_stats[3];
             
-            let mut score = capital;
-            if trades < 1.0 { score -= 500.0; } // We need at least some operations
+            // Assume 1-minute klines (1440 mins/day)
+            let days_simulated = (len as f64) / 1440.0;
+            let periods_of_3_days = days_simulated / 3.0;
             
-            // Phase 28: Supreme 100% Win Rate priority (User explicitly requested 100% WR for Scalping thresholds)
-            if win_rate < 0.999 {
-                score -= 50000.0 * (1.0 - win_rate);
+            // If capital grew from 13.0 to 26.0 in 3 days, ratio is 2.0.
+            // powf(1.0 / periods) gives the compounding rate per 3-day window.
+            let compound_rate_3d = if capital > 0.0 && periods_of_3_days > 0.0 {
+                (capital / 13.0).powf(1.0 / periods_of_3_days)
             } else {
-                score += win_rate * 10000.0;
-            }
+                0.0
+            };
             
-            if dd > 0.05 { score -= dd * 5000.0; } // Extreme drawdown penalty
+            let mut score = compound_rate_3d * 10000.0;
+            
+            if trades < (days_simulated * 5.0) { score -= 5000.0; } // Expect at least 5 trades per day
+            
+            // Extreme penalties for failing the 100% / 3 Days goal or losing capital
+            if capital < 13.0 { score -= 50000.0; }
+            if dd > 0.10 { score -= dd * 50000.0; } // Allow up to 10% max DD before heavy penalty
             if score > best_score {
                 best_score = score;
                 best_config = test_cfg.clone();
@@ -139,7 +147,7 @@ fn main() {
         }
         
         if gen % 50 == 0 || gen == generations - 1 {
-            println!("🧬 Gen {}: Best Score = {:.2} | SL: {:.4} | TP: {:.4} | WR: Target Max", gen, gen_best_score, best_config.sl_pct, best_config.tp_pct);
+            println!("🧬 Gen {}: Best Score = {:.2} | SL: {:.4} | TP: {:.4} | Target: 2.0x/3d", gen, gen_best_score, best_config.sl_pct, best_config.tp_pct);
         }
     }
     

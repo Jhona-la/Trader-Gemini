@@ -106,8 +106,10 @@ impl BinanceWSFuturesExecutor {
         let url = ws_url.to_string();
         
         tokio::spawn(async move {
+            let mut retry_delay = 1;
             loop {
                 if let Ok((ws_stream, _)) = connect_async(&url).await {
+                    retry_delay = 1; // Reset delay on successful connection
                     let (mut write, mut read) = ws_stream.split();
                     
                     loop {
@@ -116,19 +118,21 @@ impl BinanceWSFuturesExecutor {
                                 if let Some(msg_str) = cmd {
                                     let _ = write.send(Message::Text(msg_str)).await;
                                 } else {
-                                    break;
+                                    return; // Channel closed, shutdown task
                                 }
                             }
                             msg = read.next() => {
                                 if msg.is_none() {
-                                    break; // Disconnected
+                                    break; // Disconnected, reconnect loop will trigger
                                 }
                                 // In a real HFT engine, we parse ACK here to measure latency
                             }
                         }
                     }
                 }
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                println!("⚠️ [WS EXECUTOR] Disconnected. Reconnecting in {}s...", retry_delay);
+                tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay)).await;
+                retry_delay = std::cmp::min(retry_delay * 2, 60);
             }
         });
 
@@ -231,8 +235,10 @@ impl BinanceUserDataStream {
                     // Spawn WS Connection
                     tokio::spawn(async move {
                         println!("🔗 [USER DATA STREAM] Connecting to Binance Execution Stream...");
+                        let mut retry_delay = 1;
                         loop {
                             if let Ok((ws_stream, _)) = connect_async(&ws_url).await {
+                                retry_delay = 1;
                                 let (_, mut read) = ws_stream.split();
                                 while let Some(msg_result) = read.next().await {
                                     if let Ok(Message::Text(text)) = msg_result {
@@ -257,7 +263,9 @@ impl BinanceUserDataStream {
                                     }
                                 }
                             }
-                            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                            println!("⚠️ [USER DATA STREAM] Disconnected. Reconnecting in {}s...", retry_delay);
+                            tokio::time::sleep(tokio::time::Duration::from_secs(retry_delay)).await;
+                            retry_delay = std::cmp::min(retry_delay * 2, 60);
                         }
                     });
                 } else {

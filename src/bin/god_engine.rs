@@ -59,6 +59,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let executor_clone = Arc::clone(&executor);
     
+    // Shared Atomic Capital Pool ($13 constraint)
+    let global_capital = Arc::new(std::sync::atomic::AtomicU64::new(13.0_f64.to_bits()));
+    
     // Shared Atomic Thresholds for Hot-Reloading
     let ml_thresh_l = Arc::new(AtomicU32::new(f32::to_bits(0.95)));
     let ml_thresh_s = Arc::new(AtomicU32::new(f32::to_bits(0.95)));
@@ -176,16 +179,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scalp_tp = Arc::clone(&tp_pct);
     
     let scalp_lev = Arc::clone(&scalp_lev);
+    let scalp_capital = Arc::clone(&global_capital);
     
     let scalp_handle = tokio::spawn(async move {
         println!("🧠 [SCALP CORE] Initialized. Target latency: <500ns");
         let mut engines: std::collections::HashMap<String, quantum_engine::stateful_engine::StatefulEngine> = std::collections::HashMap::new();
-        let mut current_capital = 13.0; // Phase 13: 13 USD capital constraint
         
         let mut in_pos = false;
         let mut side = 0_i32; 
         let mut entry_price = 0.0;
         let mut current_qty = 0.0;
+        let mut msg_count = 0u64;
 
         while let Some(msg) = rx_scalp.recv().await {
             let start = Instant::now();
@@ -216,15 +220,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         executor_clone.place_order(&parsed_sym, order_side, current_qty, "MARKET", &req_id).await;
                         
                         let pnl_amount = current_qty * (price - entry_price) * (side as f64);
-                        current_capital += pnl_amount;
                         
-                        println!("⚡ [SCALP CORE] Closed Position on {}. New estimated capital: {:.2}", parsed_sym, current_capital);
+                        // Atomically add PnL
+                        let mut curr_cap = f64::from_bits(scalp_capital.load(Ordering::Relaxed));
+                        curr_cap += pnl_amount;
+                        scalp_capital.store(curr_cap.to_bits(), Ordering::SeqCst);
+                        
+                        println!("⚡ [SCALP CORE] Closed Position on {}. New shared capital: {:.2}", parsed_sym, curr_cap);
                         in_pos = false;
                     }
                 }
 
                 // ENTRY LOGIC
                 if !in_pos {
+                    let curr_cap = f64::from_bits(scalp_capital.load(Ordering::Relaxed));
                     let features = engine.get_features();
                     let prob = quantum_engine::ml_inference::NanoForest::predict_global(&features);
                     
@@ -233,7 +242,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     
                     if prob > tl {
                         let leverage = f32::from_bits(scalp_lev.load(Ordering::Relaxed)) as f64;
-                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, current_capital) {
+                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, curr_cap) {
                             println!("⚡ [GHOST-MAKER] Scalp LONG Signal! Prob: {:.2}%. Shooting Market Order via WS...", prob * 100.0);
                             let req_id = format!("scalp_{}", parsed_sym);
                             executor_clone.place_order(&parsed_sym, "BUY", micro_qty, "LONG", &req_id).await;
@@ -244,7 +253,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     } else if prob < (1.0 - ts) {
                         let leverage = f32::from_bits(scalp_lev.load(Ordering::Relaxed)) as f64;
-                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, current_capital) {
+                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, curr_cap) {
                             println!("🩸 [GHOST-MAKER] Scalp SHORT Signal! Prob: {:.2}%. Shooting Market Order via WS...", prob * 100.0);
                             let req_id = format!("scalp_{}", parsed_sym);
                             executor_clone.place_order(&parsed_sym, "SELL", micro_qty, "SHORT", &req_id).await;
@@ -256,9 +265,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 
-                let elapsed = start.elapsed().as_nanos();
-                if elapsed > 1000000 { 
-                    println!("SCALP tick {} processed in {} ns", parsed_sym, elapsed);
+                msg_count += 1;
+                if msg_count % 1000 == 0 {
+                    println!("⏱️ [TELEMETRY-SCALP] Tick {} processed in {} ns", msg_count, start.elapsed().as_nanos());
                 }
             }
         }
@@ -270,16 +279,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let swing_sl = Arc::clone(&sl_pct);
     let swing_tp = Arc::clone(&tp_pct);
     let swing_lev = Arc::clone(&swing_lev);
+    let swing_capital = Arc::clone(&global_capital);
 
     let swing_handle = tokio::spawn(async move {
         println!("🧠 [SWING CORE] Initialized. Target latency: <2μs. Subscribed to 1H Klines.");
         let mut engines: std::collections::HashMap<String, quantum_engine::stateful_engine::StatefulEngine> = std::collections::HashMap::new();
-        let mut current_capital = 13.0;
         
         let mut in_pos = false;
         let mut side = 0_i32; 
         let mut entry_price = 0.0;
         let mut current_qty = 0.0;
+        let mut msg_count = 0u64;
 
         while let Some(msg) = rx_swing.recv().await {
             let start = Instant::now();
@@ -311,15 +321,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         executor_swing.place_order(&parsed_sym, order_side, current_qty, "MARKET", &req_id).await;
                         
                         let pnl_amount = current_qty * (close_price - entry_price) * (side as f64);
-                        current_capital += pnl_amount;
                         
-                        println!("🚀 [SWING CORE] Closed Position on {}. New estimated capital: {:.2}", parsed_sym, current_capital);
+                        let mut curr_cap = f64::from_bits(swing_capital.load(Ordering::Relaxed));
+                        curr_cap += pnl_amount;
+                        swing_capital.store(curr_cap.to_bits(), Ordering::SeqCst);
+                        
+                        println!("🚀 [SWING CORE] Closed Position on {}. New shared capital: {:.2}", parsed_sym, curr_cap);
                         in_pos = false;
                     }
                 }
 
                 // ENTRY LOGIC (Only on 1H close)
                 if !in_pos && is_closed {
+                    let curr_cap = f64::from_bits(swing_capital.load(Ordering::Relaxed));
                     println!("📊 [SWING MACRO] 1H Kline Closed for {}. Close Price: {}", parsed_sym, close_price);
                     
                     let fast = engine.ema_fast;
@@ -330,7 +344,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     
                     if fast > slow * (1.0 + tl) {
                         let leverage = f32::from_bits(swing_lev.load(Ordering::Relaxed)) as f64;
-                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, current_capital) {
+                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, curr_cap) {
                             println!("🚀 [SWING CORE] LONG SIGNAL on {} at {} (Qty: {})", parsed_sym, close_price, micro_qty);
                             let req_id = format!("swing_{}", parsed_sym);
                             executor_swing.place_order(&parsed_sym, "BUY", micro_qty, "LONG", &req_id).await;
@@ -341,7 +355,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     } else if fast < slow * (1.0 - ts) {
                         let leverage = f32::from_bits(swing_lev.load(Ordering::Relaxed)) as f64;
-                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, current_capital) {
+                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, curr_cap) {
                             println!("🩸 [SWING CORE] SHORT SIGNAL on {} at {} (Qty: {})", parsed_sym, close_price, micro_qty);
                             let req_id = format!("swing_{}", parsed_sym);
                             executor_swing.place_order(&parsed_sym, "SELL", micro_qty, "SHORT", &req_id).await;
@@ -353,9 +367,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            let elapsed = start.elapsed().as_nanos();
-            if elapsed > 2000000 { 
-                // Log only slow ticks
+            
+            msg_count += 1;
+            if msg_count % 100 == 0 {
+                let elapsed = start.elapsed().as_nanos();
+                println!("⏱️ [TELEMETRY-SWING] 1H Kline {} processed in {} ns", msg_count, elapsed);
             }
         }
     });
