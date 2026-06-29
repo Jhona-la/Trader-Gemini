@@ -1,0 +1,8 @@
+[package]
+name = "risk-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+quantum-arena = { path = "../quantum-arena" }
+signal-engine = { path = "../signal-engine" }

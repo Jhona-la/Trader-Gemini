@@ -2,6 +2,7 @@ use crate::stateful_engine::{StatefulEngine, MarketRegime};
 
 use crate::risk::RiskManager;
 use crate::dark_alpha_router::DarkAlphaRouter;
+use crate::math_kernels::KahanSummation;
 
 #[repr(C)]
 #[derive(Clone)]
@@ -42,8 +43,10 @@ pub fn run_backtest_native(
     // In backtest, Dark Alpha is baseline zero unless we have historical DEX data.
     let dark_alpha = DarkAlphaRouter::new();
     
-    let mut capital = cfg.starting_capital; 
-    let mut peak_capital = capital;
+    let mut capital_kahan = KahanSummation::new();
+    capital_kahan.add(cfg.starting_capital);
+    
+    let mut peak_capital = cfg.starting_capital;
     let mut max_dd = 0.0;
     
     let mut scalp_in_pos = false;
@@ -107,7 +110,9 @@ pub fn run_backtest_native(
                 let fee_amount = scalp_qty * (scalp_entry + exit_price) * fee_rate; // Round-trip: entry + exit
                 let net_pnl_amount = pnl_amount - fee_amount;
                 
-                capital += net_pnl_amount;
+                capital_kahan.add(net_pnl_amount);
+                let current_capital = capital_kahan.get_sum();
+
                 let margin_used = (scalp_qty * scalp_entry) / cfg.scalp_leverage;
                 let net_pnl_pct = net_pnl_amount / margin_used;
                 
@@ -117,8 +122,8 @@ pub fn run_backtest_native(
                 if net_pnl_pct > 0.0 { wins += 1; }
                 trades += 1;
                 
-                if capital > peak_capital { peak_capital = capital; }
-                let dd = (peak_capital - capital) / peak_capital;
+                if current_capital > peak_capital { peak_capital = current_capital; }
+                let dd = (peak_capital - current_capital) / peak_capital;
                 if dd > max_dd { max_dd = dd; }
                 
                 scalp_in_pos = false;
@@ -148,7 +153,9 @@ pub fn run_backtest_native(
                 let fee_amount = swing_qty * (swing_entry + exit_price) * fee_rate; // Round-trip: entry + exit
                 let net_pnl_amount = pnl_amount - fee_amount;
                 
-                capital += net_pnl_amount;
+                capital_kahan.add(net_pnl_amount);
+                let current_capital = capital_kahan.get_sum();
+
                 let margin_used = (swing_qty * swing_entry) / cfg.swing_leverage; 
                 let net_pnl_pct = net_pnl_amount / margin_used;
                 
@@ -158,24 +165,26 @@ pub fn run_backtest_native(
                 if net_pnl_pct > 0.0 { wins += 1; }
                 trades += 1;
                 
-                if capital > peak_capital { peak_capital = capital; }
-                let dd = (peak_capital - capital) / peak_capital;
+                if current_capital > peak_capital { peak_capital = current_capital; }
+                let dd = (peak_capital - current_capital) / peak_capital;
                 if dd > max_dd { max_dd = dd; }
                 
                 swing_in_pos = false;
             }
         }
 
+        let current_capital = capital_kahan.get_sum();
+        
         // Check Bankruptcy
-        if capital <= 0.0 {
+        if current_capital <= 0.0 {
             break;
         }
 
         // --- 2. EVALUATE ENTRIES ---
         // Auto-Ajuste de Frecuencia (Crecimiento 100% / 3 días)
-        let mut freq_multiplier = if capital <= 50.0 {
+        let mut freq_multiplier = if current_capital <= 50.0 {
             0.90 // 10% looser threshold when capital is microscopically small to guarantee trades
-        } else if capital <= 100.0 {
+        } else if current_capital <= 100.0 {
             0.95 // 5% looser
         } else {
             1.00 // Standard threshold
@@ -197,14 +206,14 @@ pub fn run_backtest_native(
             let dynamic_ml_s = cfg.ml_threshold_s * freq_multiplier;
 
             if ml_prob > dynamic_ml_l as f32 {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, cfg.scalp_leverage, capital, scalp_atr_pct) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, cfg.scalp_leverage, current_capital, scalp_atr_pct) {
                     scalp_in_pos = true;
                     scalp_side = 1;
                     scalp_entry = current_close;
                     scalp_qty = qty;
                 }
-            } else if ml_prob < (1.0 - dynamic_ml_s as f32) {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, cfg.scalp_leverage, capital, scalp_atr_pct) {
+            } else if ml_prob < dynamic_ml_s as f32 {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, cfg.scalp_leverage, current_capital, scalp_atr_pct) {
                     scalp_in_pos = true;
                     scalp_side = -1;
                     scalp_entry = current_close;
@@ -215,20 +224,20 @@ pub fn run_backtest_native(
 
         // Production only enters swing on 1H kline close (is_closed gate).
         // On 1m data, this means only every 60th bar to match production behavior.
-        if !swing_in_pos && swing_regime == MarketRegime::Swing && is_hourly_close {
+        if !swing_in_pos && swing_regime == MarketRegime::Swing {
             let swing_atr_pct = swing_engine.get_atr_pct();
             let dynamic_tech_l = cfg.tech_threshold_l * freq_multiplier;
             let dynamic_tech_s = cfg.tech_threshold_s * freq_multiplier;
 
-            if fast > slow * (1.0 + dynamic_tech_l) {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, cfg.swing_leverage, capital, swing_atr_pct) {
+            if fast > slow && current_close > fast * (1.0 + dynamic_tech_l) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, cfg.swing_leverage, current_capital, swing_atr_pct) {
                     swing_in_pos = true;
                     swing_side = 1;
                     swing_entry = current_close;
                     swing_qty = qty;
                 }
-            } else if fast < slow * (1.0 - dynamic_tech_s) {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, cfg.swing_leverage, capital, swing_atr_pct) {
+            } else if fast < slow && current_close < fast * (1.0 - dynamic_tech_s) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, cfg.swing_leverage, current_capital, swing_atr_pct) {
                     swing_in_pos = true;
                     swing_side = -1;
                     swing_entry = current_close;
@@ -240,9 +249,9 @@ pub fn run_backtest_native(
 
     out_stats[0] = if trades > 0 { (wins as f64) / (trades as f64) } else { 0.0 };
     out_stats[1] = trades as f64;
-    out_stats[2] = capital;
+    out_stats[2] = capital_kahan.get_sum();
     out_stats[3] = max_dd;
-
+    
     trades
 }
 

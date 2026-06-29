@@ -1,0 +1,8 @@
+[package]
+name = "signal-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+quantum-arena = { path = "../quantum-arena" }
+feature-engine = { path = "../feature-engine" }

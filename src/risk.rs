@@ -51,17 +51,17 @@ impl RiskManager {
         // Returns (minQty, stepSize, minNotional)
         // Values approximate Binance Futures limits as of 2026
         match symbol.to_uppercase().as_str() {
-            "BTCUSDT" => (0.001, 0.001, 5.0),
-            "ETHUSDT" => (0.001, 0.001, 5.0),
-            "SOLUSDT" => (1.0, 1.0, 5.0),
-            "ADAUSDT" => (1.0, 1.0, 5.0),
-            "DOGEUSDT" => (1.0, 1.0, 5.0),
-            "XRPUSDT" => (1.0, 1.0, 5.0),
-            "BNBUSDT" => (0.01, 0.01, 5.0),
-            "AVAXUSDT" => (0.1, 0.1, 5.0),
-            "DOTUSDT" => (0.1, 0.1, 5.0),
-            "LINKUSDT" => (0.1, 0.1, 5.0),
-            _ => (1.0, 1.0, 5.0), // Default fallback
+            "BTCUSDT" => (0.001, 0.001, 5.05),
+            "ETHUSDT" => (0.001, 0.001, 5.05),
+            "SOLUSDT" => (1.0, 1.0, 5.05),
+            "ADAUSDT" => (1.0, 1.0, 5.05),
+            "DOGEUSDT" => (1.0, 1.0, 5.05),
+            "XRPUSDT" => (1.0, 1.0, 5.05),
+            "BNBUSDT" => (0.01, 0.01, 5.05),
+            "AVAXUSDT" => (0.1, 0.1, 5.05),
+            "DOTUSDT" => (0.1, 0.1, 5.05),
+            "LINKUSDT" => (0.1, 0.1, 5.05),
+            _ => (1.0, 1.0, 5.05), // Default fallback
         }
     }
 

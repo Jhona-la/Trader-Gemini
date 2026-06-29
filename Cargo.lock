@@ -319,6 +319,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
+name = "feature-engine"
+version = "0.1.0"
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1152,6 +1156,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "risk-engine"
+version = "0.1.0"
+dependencies = [
+ "quantum-arena",
+ "signal-engine",
+]
+
+[[package]]
 name = "rsqlite-vfs"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1361,6 +1373,14 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "signal-engine"
+version = "0.1.0"
+dependencies = [
+ "feature-engine",
+ "quantum-arena",
+]
 
 [[package]]
 name = "signal-hook-registry"
