@@ -50,7 +50,17 @@ Thumbs.db
 # Generated reports and JSON outputs
 *.json
 !package.json
+!package-lock.json
 !tsconfig.json
+!Cargo.lock
+!docs/**/*.json
+!package.json
+!tsconfig.json
+!docs/**/*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!Cargo.lock
 !docs/**/*.json
 
 # Legacy/dead code
@@ -65,3 +75,4 @@ Thumbs.db
 # Modelos serializados
 *.joblib
 *.ubj
+
