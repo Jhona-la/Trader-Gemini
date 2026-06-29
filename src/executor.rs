@@ -17,9 +17,9 @@ pub struct BinanceRestExecutor {
 impl BinanceRestExecutor {
     pub fn new(api_key: String, secret_key: String, is_testnet: bool) -> Self {
         let base_url = if is_testnet {
-            "https://testnet.binance.vision".to_string()
+            "https://testnet.binancefuture.com".to_string()
         } else {
-            "https://api.binance.com".to_string()
+            "https://fapi.binance.com".to_string()
         };
 
         let mut headers = header::HeaderMap::new();

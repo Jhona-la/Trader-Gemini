@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             streams.push('/');
         }
     }
-    let url = format!("wss://stream.binance.com:9443/stream?streams={}", streams);
+    let url = format!("wss://fstream.binance.com/stream?streams={}", streams);
 
     let (tx_scalp, mut rx_scalp) = mpsc::unbounded_channel::<String>();
     let (tx_swing, mut rx_swing) = mpsc::unbounded_channel::<String>();
@@ -67,6 +67,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tech_thresh_l = Arc::new(AtomicU32::new(f32::to_bits(0.005)));
     let tech_thresh_s = Arc::new(AtomicU32::new(f32::to_bits(0.005)));
     
+    let scalp_lev = Arc::new(AtomicU32::new(f32::to_bits(50.0)));
+    let swing_lev = Arc::new(AtomicU32::new(f32::to_bits(15.0)));
+    
     let config_str = std::fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
     if let Ok(config_json) = serde_json::from_str::<serde_json::Value>(&config_str) {
         let l = config_json["ml_threshold_l"].as_f64().unwrap_or(0.95) as f32;
@@ -75,13 +78,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tp = config_json["tp_pct"].as_f64().unwrap_or(0.02) as f32;
         let tl = config_json["tech_threshold_l"].as_f64().unwrap_or(0.005) as f32;
         let ts = config_json["tech_threshold_s"].as_f64().unwrap_or(0.005) as f32;
+        let scl = config_json["scalp_leverage"].as_f64().unwrap_or(50.0) as f32;
+        let swl = config_json["swing_leverage"].as_f64().unwrap_or(15.0) as f32;
+        
         ml_thresh_l.store(f32::to_bits(l), Ordering::SeqCst);
         ml_thresh_s.store(f32::to_bits(s), Ordering::SeqCst);
         sl_pct.store(f32::to_bits(sl), Ordering::SeqCst);
         tp_pct.store(f32::to_bits(tp), Ordering::SeqCst);
         tech_thresh_l.store(f32::to_bits(tl), Ordering::SeqCst);
         tech_thresh_s.store(f32::to_bits(ts), Ordering::SeqCst);
-        println!("🧬 [INIT] Loaded Genetic Config: L>={:.4} S>={:.4} SL={:.4} TP={:.4}", l, s, sl, tp);
+        scalp_lev.store(f32::to_bits(scl), Ordering::SeqCst);
+        swing_lev.store(f32::to_bits(swl), Ordering::SeqCst);
+        println!("🧬 [INIT] Loaded Config: L>={:.4} S>={:.4} SL={:.4} TP={:.4} SCL={:.1} SWL={:.1}", l, s, sl, tp, scl, swl);
     }
     
     let thresh_l_clone = Arc::clone(&ml_thresh_l);
@@ -90,6 +98,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tp_pct_clone = Arc::clone(&tp_pct);
     let tech_thresh_l_clone = Arc::clone(&tech_thresh_l);
     let tech_thresh_s_clone = Arc::clone(&tech_thresh_s);
+    let scalp_lev_clone = Arc::clone(&scalp_lev);
+    let swing_lev_clone = Arc::clone(&swing_lev);
     
     tokio::spawn(async move {
         println!("👀 [HOT-RELOAD] Watcher started. Monitoring DNA and ML Weights...");
@@ -111,6 +121,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let tp = config_json["tp_pct"].as_f64().unwrap_or(0.02) as f32;
                             let tl = config_json["tech_threshold_l"].as_f64().unwrap_or(0.005) as f32;
                             let ts = config_json["tech_threshold_s"].as_f64().unwrap_or(0.005) as f32;
+                            let scl = config_json["scalp_leverage"].as_f64().unwrap_or(50.0) as f32;
+                            let swl = config_json["swing_leverage"].as_f64().unwrap_or(15.0) as f32;
                             
                             thresh_l_clone.store(f32::to_bits(l), Ordering::SeqCst);
                             thresh_s_clone.store(f32::to_bits(s), Ordering::SeqCst);
@@ -118,7 +130,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             tp_pct_clone.store(f32::to_bits(tp), Ordering::SeqCst);
                             tech_thresh_l_clone.store(f32::to_bits(tl), Ordering::SeqCst);
                             tech_thresh_s_clone.store(f32::to_bits(ts), Ordering::SeqCst);
-                            println!("🔥 [HOT-RELOAD] Dynamic Config absorbed! L>={:.4} S>={:.4} SL={:.4} TP={:.4}", l, s, sl, tp);
+                            scalp_lev_clone.store(f32::to_bits(scl), Ordering::SeqCst);
+                            swing_lev_clone.store(f32::to_bits(swl), Ordering::SeqCst);
+                            
+                            println!("🔥 [HOT-RELOAD] Dynamic Config absorbed! L>={:.4} S>={:.4} SL={:.4} TP={:.4} SCL={:.1} SWL={:.1}", l, s, sl, tp, scl, swl);
                         }
                     }
                 }
@@ -160,6 +175,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scalp_sl = Arc::clone(&sl_pct);
     let scalp_tp = Arc::clone(&tp_pct);
     
+    let scalp_lev = Arc::clone(&scalp_lev);
+    
     let scalp_handle = tokio::spawn(async move {
         println!("🧠 [SCALP CORE] Initialized. Target latency: <500ns");
         let mut engines: std::collections::HashMap<String, quantum_engine::stateful_engine::StatefulEngine> = std::collections::HashMap::new();
@@ -198,7 +215,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let req_id = format!("scalp_close_{}", parsed_sym);
                         executor_clone.place_order(&parsed_sym, order_side, current_qty, "MARKET", &req_id).await;
                         
-                        let leverage = 50.0;
                         let pnl_amount = current_qty * (price - entry_price) * (side as f64);
                         current_capital += pnl_amount;
                         
@@ -216,7 +232,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let ts = f32::from_bits(scalp_thresh_s.load(Ordering::Relaxed));
                     
                     if prob > tl {
-                        let leverage = 50.0;
+                        let leverage = f32::from_bits(scalp_lev.load(Ordering::Relaxed)) as f64;
                         if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, current_capital) {
                             println!("⚡ [GHOST-MAKER] Scalp LONG Signal! Prob: {:.2}%. Shooting Market Order via WS...", prob * 100.0);
                             let req_id = format!("scalp_{}", parsed_sym);
@@ -227,7 +243,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             current_qty = micro_qty;
                         }
                     } else if prob < (1.0 - ts) {
-                        let leverage = 50.0;
+                        let leverage = f32::from_bits(scalp_lev.load(Ordering::Relaxed)) as f64;
                         if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, current_capital) {
                             println!("🩸 [GHOST-MAKER] Scalp SHORT Signal! Prob: {:.2}%. Shooting Market Order via WS...", prob * 100.0);
                             let req_id = format!("scalp_{}", parsed_sym);
@@ -253,6 +269,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let swing_thresh_s = Arc::clone(&tech_thresh_s);
     let swing_sl = Arc::clone(&sl_pct);
     let swing_tp = Arc::clone(&tp_pct);
+    let swing_lev = Arc::clone(&swing_lev);
 
     let swing_handle = tokio::spawn(async move {
         println!("🧠 [SWING CORE] Initialized. Target latency: <2μs. Subscribed to 1H Klines.");
@@ -293,7 +310,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let req_id = format!("swing_close_{}", parsed_sym);
                         executor_swing.place_order(&parsed_sym, order_side, current_qty, "MARKET", &req_id).await;
                         
-                        let leverage = 15.0;
                         let pnl_amount = current_qty * (close_price - entry_price) * (side as f64);
                         current_capital += pnl_amount;
                         
@@ -313,7 +329,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let ts = f32::from_bits(swing_thresh_s.load(Ordering::Relaxed)) as f64;
                     
                     if fast > slow * (1.0 + tl) {
-                        let leverage = 15.0; // Lower leverage for swing
+                        let leverage = f32::from_bits(swing_lev.load(Ordering::Relaxed)) as f64;
                         if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, current_capital) {
                             println!("🚀 [SWING CORE] LONG SIGNAL on {} at {} (Qty: {})", parsed_sym, close_price, micro_qty);
                             let req_id = format!("swing_{}", parsed_sym);
@@ -324,7 +340,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             current_qty = micro_qty;
                         }
                     } else if fast < slow * (1.0 - ts) {
-                        let leverage = 15.0; 
+                        let leverage = f32::from_bits(swing_lev.load(Ordering::Relaxed)) as f64;
                         if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, current_capital) {
                             println!("🩸 [SWING CORE] SHORT SIGNAL on {} at {} (Qty: {})", parsed_sym, close_price, micro_qty);
                             let req_id = format!("swing_{}", parsed_sym);

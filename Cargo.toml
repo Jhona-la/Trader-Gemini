@@ -30,3 +30,7 @@ path = "src/bin/god_engine.rs"
 [[bin]]
 name = "evolution_engine"
 path = "src/bin/evolution_engine.rs"
+
+[[bin]]
+name = "dashboard"
+path = "src/bin/dashboard.rs"

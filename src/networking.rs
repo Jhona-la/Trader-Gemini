@@ -36,7 +36,7 @@ impl BinanceWsClient {
             streams.push(format!("{}@bookTicker", lower)); // BBO (Best Bid/Offer) for OrderBook
         }
         let streams_str = streams.join("/");
-        let url = format!("wss://stream.binance.com:9443/stream?streams={}", streams_str);
+        let url = format!("wss://fstream.binance.com/stream?streams={}", streams_str);
 
         let url = url::Url::parse(&url).unwrap();
         
