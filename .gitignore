@@ -1,7 +1,27 @@
-# Rust build artifacts - NEVER commit these
+# Rust build artifacts - ALL variants
 /target/
 /target_persistent/
+/target_release_god/
+/target_release*/
+/target_*/
 /Cargo.lock
+
+# ML/Experiment logs
+/wandb/
+/mlruns/
+/.neptune/
+/lightning_logs/
+/tensorboard_logs/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Environment files (secrets!)
+*.env
+!example.env
+!template.env.example
+template.env
 
 # OS files
 .DS_Store
