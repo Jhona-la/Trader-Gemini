@@ -5,14 +5,22 @@ use risk_engine::RiskEngine;
 use signal_engine::{ScalpEngine, SwingEngine, SignalType};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::env;
 
 #[tokio::main]
 async fn main() {
+    // 0. Cargar variables de entorno
+    dotenvy::dotenv().ok();
+
     println!("🚀 TRADER GEMINI V5 - INITIALIZING GENESIS SEQUENCE...");
 
+    let initial_capital: f64 = env::var("INITIAL_CAPITAL")
+        .unwrap_or_else(|_| "13.0".to_string())
+        .parse()
+        .expect("INITIAL_CAPITAL debe ser un número");
+
     // 1. Instanciar la Arena Cuántica (Memoria Compartida O(1))
-    // El capital inicial del usuario es $13 USD
-    let mut arena = GlobalArena::new(13.0);
+    let mut arena = GlobalArena::new(initial_capital);
     
     // Configurar límites agresivos pero seguros
     arena.config.global_leverage.store(10.0, Ordering::Relaxed);
@@ -26,15 +34,16 @@ async fn main() {
     let mut swing_engine = SwingEngine::new();
 
     // 3. Encender el Escudo
-    let mut risk_engine = RiskEngine::new(13.0);
+    let mut risk_engine = RiskEngine::new(initial_capital);
 
     // 4. Encender el Gatillo (Las Manos)
-    // TODO: En el futuro esto vendrá de variables de entorno o archivo encriptado
-    let api_secret = "DUMMY_SECRET_KEY_FOR_NOW_REPLACE_IN_PROD".to_string();
+    let api_secret = env::var("BINANCE_API_SECRET")
+        .unwrap_or_else(|_| "DUMMY_SECRET_KEY_FOR_NOW_REPLACE_IN_PROD".to_string());
     let executor = OrderExecutor::new(api_secret);
 
     // 5. Configurar el par de trading
-    let symbol = "bnbusdt"; // BNB es altamente líquido y de bajas comisiones en Binance
+    let symbol = env::var("TRADING_SYMBOL")
+        .unwrap_or_else(|_| "bnbusdt".to_string());
 
     println!("⚡ SISTEMAS EN LÍNEA. CONECTANDO AL NERVIO ÓPTICO (HFT)...");
 

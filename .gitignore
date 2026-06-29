@@ -89,3 +89,9 @@ data/fast_lob.*
 mypy.ini
 pyrightconfig.json
 pytest.ini
+/target_persistent/
+/target/
+/Cargo.lock
+*.o
+*.rmeta
+*.rcgu.o

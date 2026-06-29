@@ -29,15 +29,24 @@ impl BinanceStreamer {
         // stream: <symbol>@bookTicker
         let stream_url = format!("{}{}@bookTicker", BINANCE_WS_URL, self.symbol);
         let url = Url::parse(&stream_url).expect("Bad WS URL");
+        
+        let mut backoff_ms = 100;
+        let max_backoff_ms = 5000;
 
         loop {
             // Intentar conectar
             match connect_async(url.clone()).await {
                 Ok((ws_stream, _)) => {
-                    // split() divide en escritura y lectura, por ahora solo leemos.
+                    let connected_at = std::time::Instant::now();
+                    // Si logramos conectar, reseteamos el backoff después de probar que es estable
                     let (_, mut read) = ws_stream.split();
 
                     while let Some(msg) = read.next().await {
+                        // Si llevamos conectados más de 10 segundos sin errores, la conexión es estable
+                        if connected_at.elapsed().as_secs() > 10 {
+                            backoff_ms = 100;
+                        }
+
                         match msg {
                             Ok(msg) => {
                                 if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
@@ -48,15 +57,17 @@ impl BinanceStreamer {
                                 }
                             }
                             Err(_) => {
-                                // Error de red interno, romper el bucle interno y reconectar
+                                // Error de red interno (stream corrupto/desconexión Binance), romper el bucle interno y reconectar
                                 break;
                             }
                         }
                     }
                 }
                 Err(_) => {
-                    // Fallo de conexión, esperar 1 segundo antes de reconectar
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    // Fallo de conexión directa, esperar el backoff actual antes de reintentar
+                    tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                    // Aumentar backoff exponencialmente (clamp a max_backoff_ms)
+                    backoff_ms = (backoff_ms * 2).min(max_backoff_ms);
                 }
             }
         }
