@@ -1,0 +1,7 @@
+[package]
+name = "quantum-arena"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Sin dependencias pesadas, memoria cuántica pura de std

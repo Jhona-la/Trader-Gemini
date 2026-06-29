@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/os-guardian",
+    "crates/quantum-arena",
 ]
 
 [package]
