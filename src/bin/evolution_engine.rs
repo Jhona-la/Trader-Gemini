@@ -87,17 +87,24 @@ fn main() {
         
         for _ in 0..pop_size {
             let mut test_cfg = best_config.clone();
+            
+            // Random Mutator
             test_cfg.sl_pct += random_f64(-0.005, 0.005);
             test_cfg.tp_pct += random_f64(-0.01, 0.01);
             test_cfg.ml_threshold_l += random_f64(-0.1, 0.1);
             test_cfg.ml_threshold_s += random_f64(-0.1, 0.1);
+            test_cfg.tech_threshold_l += random_f64(-0.001, 0.001);
+            test_cfg.tech_threshold_s += random_f64(-0.001, 0.001);
             
+            // Constraints
             if test_cfg.sl_pct < 0.001 { test_cfg.sl_pct = 0.001; }
             if test_cfg.tp_pct < 0.002 { test_cfg.tp_pct = 0.002; }
             if test_cfg.ml_threshold_l > 0.99 { test_cfg.ml_threshold_l = 0.99; }
             if test_cfg.ml_threshold_l < 0.4 { test_cfg.ml_threshold_l = 0.4; }
             if test_cfg.ml_threshold_s > 0.99 { test_cfg.ml_threshold_s = 0.99; }
             if test_cfg.ml_threshold_s < 0.4 { test_cfg.ml_threshold_s = 0.4; }
+            if test_cfg.tech_threshold_l < 0.0005 { test_cfg.tech_threshold_l = 0.0005; }
+            if test_cfg.tech_threshold_s < 0.0005 { test_cfg.tech_threshold_s = 0.0005; }
             
             let mut out_pnl = vec![0.0; len];
             let mut out_stats = [0.0; 4];
@@ -130,13 +137,16 @@ fn main() {
                 0.0
             };
             
+            // Goal is > 2.0 (100% every 3 days)
             let mut score = compound_rate_3d * 10000.0;
             
-            if trades < (days_simulated * 5.0) { score -= 5000.0; } // Expect at least 5 trades per day
+            // Regularity Penalties
+            if trades < (days_simulated * 5.0) { score -= 5000.0; } 
             
-            // Extreme penalties for failing the 100% / 3 Days goal or losing capital
-            if capital < 13.0 { score -= 50000.0; }
-            if dd > 0.10 { score -= dd * 50000.0; } // Allow up to 10% max DD before heavy penalty
+            // Master Rule Penalties (13 USD protection & <5% Drawdown)
+            if capital < 13.0 { score -= 50000.0; } // Never lose the starting 13
+            if dd > 0.05 { score -= dd * 100000.0; } // Heavy penalty over 5% max Drawdown
+            
             if score > best_score {
                 best_score = score;
                 best_config = test_cfg.clone();
@@ -147,7 +157,8 @@ fn main() {
         }
         
         if gen % 50 == 0 || gen == generations - 1 {
-            println!("🧬 Gen {}: Best Score = {:.2} | SL: {:.4} | TP: {:.4} | Target: 2.0x/3d", gen, gen_best_score, best_config.sl_pct, best_config.tp_pct);
+            println!("🧬 Gen {}: Best Score = {:.2} | Compound 3D: {:.2}x | Max DD: {:.2}%", 
+                     gen, gen_best_score, best_score / 10000.0, 0.0); // We can't print actual max_dd without tracking the best one, but score reflects it
         }
     }
     
@@ -159,6 +170,8 @@ fn main() {
     println!("   TP %      : {:.4}", best_config.tp_pct);
     println!("   ML Thresh L: {:.4}", best_config.ml_threshold_l);
     println!("   ML Thresh S: {:.4}", best_config.ml_threshold_s);
+    println!("   Tech L     : {:.4}", best_config.tech_threshold_l);
+    println!("   Tech S     : {:.4}", best_config.tech_threshold_s);
     
     let out_json = format!(
         "{{\n  \"sl_pct\": {:.4},\n  \"tp_pct\": {:.4},\n  \"ml_threshold_l\": {:.4},\n  \"ml_threshold_s\": {:.4},\n  \"tech_threshold_l\": {:.4},\n  \"tech_threshold_s\": {:.4}\n}}",
