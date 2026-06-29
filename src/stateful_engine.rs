@@ -63,8 +63,8 @@ impl StatefulEngine {
         self.tick_count += 1;
     }
     
-    pub fn get_market_regime(&mut self) -> MarketRegime {
-        let h = self.hurst.update(self.last_price); // Getting current hurst value approx
+    pub fn get_market_regime(&self) -> MarketRegime {
+        let h = self.hurst.current(); // Read last computed Hurst — NO double-update
         
         if h < 0.45 {
             MarketRegime::Scalping // Mean reverting

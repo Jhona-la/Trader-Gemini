@@ -50,7 +50,7 @@ pub fn run_backtest_native(
     let mut wins = 0;
     let mut trades = 0;
 
-    let fee_rate = 0.000375 * 2.0;
+    let fee_rate = 0.0004; // Binance taker fee per side (0.04%)
 
     for i in 0..len {
         let current_close = closes[i];
@@ -75,11 +75,14 @@ pub fn run_backtest_native(
             let pnl_pct = if scalp_side == 1 { (current_close - scalp_entry) / scalp_entry } else { (scalp_entry - current_close) / scalp_entry };
             let mut exit = false;
             let mut exit_price = current_close;
-            let scalp_tp = cfg.tp_pct * 0.33;
-            let scalp_sl = cfg.sl_pct * 0.33;
+            let scalp_tp = cfg.tp_pct * 0.33; // Must match production: scalp uses tighter TP
+            let scalp_sl = cfg.sl_pct * 0.33; // Must match production: scalp uses tighter SL
 
             if pnl_pct >= scalp_tp { exit = true; }
             else if pnl_pct <= -scalp_sl { exit = true; }
+            // Symmetrical Intra-Bar Evaluation for Stop Loss & Take Profit
+            else if scalp_side == 1 && highs[i] >= scalp_entry * (1.0 + scalp_tp) { exit = true; exit_price = scalp_entry * (1.0 + scalp_tp); }
+            else if scalp_side == -1 && lows[i] <= scalp_entry * (1.0 - scalp_tp) { exit = true; exit_price = scalp_entry * (1.0 - scalp_tp); }
             else if scalp_side == 1 && lows[i] <= scalp_entry * (1.0 - scalp_sl) { exit = true; exit_price = scalp_entry * (1.0 - scalp_sl); }
             else if scalp_side == -1 && highs[i] >= scalp_entry * (1.0 + scalp_sl) { exit = true; exit_price = scalp_entry * (1.0 + scalp_sl); }
             
@@ -88,7 +91,7 @@ pub fn run_backtest_native(
 
             if exit {
                 let pnl_amount = scalp_qty * (exit_price - scalp_entry) * (scalp_side as f64);
-                let fee_amount = scalp_qty * exit_price * fee_rate;
+                let fee_amount = scalp_qty * (scalp_entry + exit_price) * fee_rate; // Round-trip: entry + exit
                 let net_pnl_amount = pnl_amount - fee_amount;
                 
                 capital += net_pnl_amount;
@@ -118,6 +121,9 @@ pub fn run_backtest_native(
 
             if pnl_pct >= swing_tp { exit = true; }
             else if pnl_pct <= -swing_sl { exit = true; }
+            // Symmetrical Intra-Bar Evaluation for Stop Loss & Take Profit
+            else if swing_side == 1 && highs[i] >= swing_entry * (1.0 + swing_tp) { exit = true; exit_price = swing_entry * (1.0 + swing_tp); }
+            else if swing_side == -1 && lows[i] <= swing_entry * (1.0 - swing_tp) { exit = true; exit_price = swing_entry * (1.0 - swing_tp); }
             else if swing_side == 1 && lows[i] <= swing_entry * (1.0 - swing_sl) { exit = true; exit_price = swing_entry * (1.0 - swing_sl); }
             else if swing_side == -1 && highs[i] >= swing_entry * (1.0 + swing_sl) { exit = true; exit_price = swing_entry * (1.0 + swing_sl); }
             
@@ -126,7 +132,7 @@ pub fn run_backtest_native(
 
             if exit {
                 let pnl_amount = swing_qty * (exit_price - swing_entry) * (swing_side as f64);
-                let fee_amount = swing_qty * exit_price * fee_rate;
+                let fee_amount = swing_qty * (swing_entry + exit_price) * fee_rate; // Round-trip: entry + exit
                 let net_pnl_amount = pnl_amount - fee_amount;
                 
                 capital += net_pnl_amount;
@@ -171,7 +177,10 @@ pub fn run_backtest_native(
             }
         }
 
-        if !swing_in_pos && swing_regime == MarketRegime::Swing && i > 10 {
+        // Production only enters swing on 1H kline close (is_closed gate).
+        // On 1m data, this means only every 60th bar to match production behavior.
+        let is_hourly_close = (i % 60 == 59) && (i > 10);
+        if !swing_in_pos && swing_regime == MarketRegime::Swing && is_hourly_close {
             if fast > slow * (1.0 + cfg.tech_threshold_l) {
                 if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, 15.0, capital) {
                     swing_in_pos = true;

@@ -1,5 +1,1 @@
-error: can't find bin `dashboard` at path `C:\Users\jhona\Documents\Proyectos\Trader Gemini\src\bin\dashboard.rs`
- --> C:\Users\jhona\Documents\Proyectos\Trader Gemini\Cargo.toml
-error: can't find bin `dashboard` at path `C:\Users\jhona\Documents\Proyectos\Trader Gemini\src\bin\dashboard.rs`
- --> C:\Users\jhona\Documents\Proyectos\Trader Gemini\Cargo.toml
-error: could not compile due to 2 previous target resolution errors
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.44s

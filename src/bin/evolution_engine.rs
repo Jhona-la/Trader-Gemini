@@ -4,9 +4,20 @@ use std::fs::File;
 use std::io::Read;
 use std::time::Instant;
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static RNG_STATE: AtomicU64 = AtomicU64::new(0);
+
+/// xorshift64 PRNG — fast, well-distributed, no correlation between calls
 fn random_f64(min: f64, max: f64) -> f64 {
-    let rand_val = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos() as f64 / 1_000_000_000.0;
-    min + rand_val * (max - min)
+    let mut s = RNG_STATE.fetch_add(1, Ordering::Relaxed)
+        .wrapping_add(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as u64);
+    s ^= s << 13;
+    s ^= s >> 7;
+    s ^= s << 17;
+    RNG_STATE.store(s, Ordering::Relaxed);
+    let norm = (s as f64) / (u64::MAX as f64); // [0.0, 1.0)
+    min + norm * (max - min)
 }
 
 fn main() {
@@ -15,7 +26,7 @@ fn main() {
     println!("============================================================");
 
     let forest_path = "models/nano_forest.json";
-    if let Ok(_) = NanoForest::load_model(forest_path) {
+    if let Ok(_) = NanoForest::load_global(forest_path) {
         println!("✅ NanoForest Loaded for Evolution: {}", forest_path);
     } else {
         println!("⚠️ NanoForest NOT FOUND! Evolution will proceed with dummy/random probabilities.");
@@ -151,11 +162,29 @@ fn main() {
     println!("   Tech L     : {:.4}", best_config.tech_threshold_l);
     println!("   Tech S     : {:.4}", best_config.tech_threshold_s);
     
+    // Read existing config to preserve fields we don't optimize (symbols, leverage)
+    let existing_json: serde_json::Value = std::fs::read_to_string("data/dynamic_config.json")
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::json!({}));
+    
+    let symbols = existing_json.get("symbols")
+        .map(|v| v.to_string())
+        .unwrap_or("[\"btcusdt\", \"ethusdt\"]".to_string());
+    let scalp_lev = existing_json.get("scalp_leverage")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(50.0);
+    let swing_lev = existing_json.get("swing_leverage")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(15.0);
+    
     let out_json = format!(
-        "{{\n  \"sl_pct\": {:.4},\n  \"tp_pct\": {:.4},\n  \"ml_threshold_l\": {:.4},\n  \"ml_threshold_s\": {:.4},\n  \"tech_threshold_l\": {:.4},\n  \"tech_threshold_s\": {:.4}\n}}",
-        best_config.sl_pct, best_config.tp_pct, best_config.ml_threshold_l, best_config.ml_threshold_s, best_config.tech_threshold_l, best_config.tech_threshold_s
+        "{{\n  \"sl_pct\": {:.4},\n  \"tp_pct\": {:.4},\n  \"ml_threshold_l\": {:.4},\n  \"ml_threshold_s\": {:.4},\n  \"tech_threshold_l\": {:.4},\n  \"tech_threshold_s\": {:.4},\n  \"scalp_leverage\": {:.1},\n  \"swing_leverage\": {:.1},\n  \"symbols\": {}\n}}",
+        best_config.sl_pct, best_config.tp_pct, best_config.ml_threshold_l, best_config.ml_threshold_s, 
+        best_config.tech_threshold_l, best_config.tech_threshold_s,
+        scalp_lev, swing_lev, symbols
     );
     
     std::fs::write("data/dynamic_config.json", out_json).expect("Unable to write dynamic_config.json");
-    println!("💾 Exported to data/dynamic_config.json successfully.");
+    println!("💾 Exported to data/dynamic_config.json (all fields preserved).");
 }

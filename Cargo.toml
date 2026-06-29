@@ -38,9 +38,7 @@ path = "src/bin/god_engine.rs"
 name = "evolution_engine"
 path = "src/bin/evolution_engine.rs"
 
-[[bin]]
-name = "dashboard"
-path = "src/bin/dashboard.rs"
+
 
 [[bin]]
 name = "data_loader"
@@ -50,6 +48,10 @@ path = "src/bin/data_loader.rs"
 [[bin]]
 name = "train_nano_forest"
 path = "src/bin/train_nano_forest.rs"
+
+[[bin]]
+name = "csv_to_bin"
+path = "src/bin/csv_to_bin.rs"
 
 [profile.release]
 opt-level = 3

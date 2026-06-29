@@ -2,13 +2,13 @@ use std::sync::RwLock;
 use std::collections::HashMap;
 use lazy_static::lazy_static;
 use crate::portfolio::{Portfolio, GLOBAL_PORTFOLIO, Position};
-use crate::math_kernels::QuarterKelly;
+use crate::math_kernels::DynamicKelly;
 
 #[derive(Debug)]
 pub struct RiskManager {
     pub max_drawdown: f64,
     pub max_risk_per_trade: f64,
-    pub kelly_trackers: HashMap<String, QuarterKelly>,
+    pub kelly_trackers: HashMap<String, DynamicKelly>,
 }
 
 lazy_static! {
@@ -36,7 +36,8 @@ impl RiskManager {
     }
 
     pub fn report_trade_result_local(&mut self, symbol: &str, is_win: bool, pnl_pct: f64) {
-        let kelly = self.kelly_trackers.entry(symbol.to_string()).or_insert_with(QuarterKelly::new);
+        // Multiplier set to 0.75 (Aggressive Kelly) to compound 13 USD quickly.
+        let kelly = self.kelly_trackers.entry(symbol.to_string()).or_insert_with(|| DynamicKelly::new(0.75));
         kelly.update(is_win, pnl_pct);
     }
 

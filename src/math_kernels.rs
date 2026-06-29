@@ -217,37 +217,52 @@ impl RecursiveEMA {
     }
 }
 
-/// Adaptive Quarter-Kelly Sizing for aggressive exponential compounding
+/// True Dynamic Kelly Sizing for exponential compounding
 #[derive(Debug, Clone)]
-pub struct QuarterKelly {
+pub struct DynamicKelly {
     pub win_rate_welford: WelfordVariance,
-    pub pnl_welford: WelfordVariance,
+    pub win_size_welford: WelfordVariance,
+    pub loss_size_welford: WelfordVariance,
+    pub kelly_multiplier: f64,
 }
 
-impl QuarterKelly {
-    pub fn new() -> Self {
+impl DynamicKelly {
+    pub fn new(multiplier: f64) -> Self {
         Self {
             win_rate_welford: WelfordVariance::new(),
-            pnl_welford: WelfordVariance::new(),
+            win_size_welford: WelfordVariance::new(),
+            loss_size_welford: WelfordVariance::new(),
+            kelly_multiplier: multiplier,
         }
     }
 
     #[inline(always)]
     pub fn update(&mut self, is_win: bool, pnl_pct: f64) {
         self.win_rate_welford.update(if is_win { 1.0 } else { 0.0 });
-        self.pnl_welford.update(pnl_pct);
+        if is_win {
+            self.win_size_welford.update(pnl_pct.abs());
+        } else {
+            self.loss_size_welford.update(pnl_pct.abs());
+        }
     }
 
     #[inline(always)]
     pub fn sizing_fraction(&self) -> f64 {
         let wr = self.win_rate_welford.mean;
-        let avg_win = self.pnl_welford.mean.max(0.0001); // Avoid div zero
-        // In this aggressive strategy we assume loss size = stop_loss ~= avg_win * 1.5 typically.
-        // For standard Kelly: K = W - ( (1 - W) / R )
-        // Using an approximated R of 1.0
-        let kelly = wr - (1.0 - wr); 
-        let quarter_kelly = kelly * 0.25;
-        quarter_kelly.clamp(0.0, 1.0)
+        let avg_win = self.win_size_welford.mean;
+        let avg_loss = self.loss_size_welford.mean;
+        
+        // If not enough data, return a safe base default
+        if self.win_rate_welford.count < 5.0 || avg_loss == 0.0 {
+            return 0.10;
+        }
+
+        let r = avg_win / avg_loss;
+        // Kelly Formula: K = W - ((1 - W) / R)
+        let kelly = wr - ((1.0 - wr) / r); 
+        let adjusted_kelly = kelly * self.kelly_multiplier;
+        
+        adjusted_kelly.clamp(0.01, 1.0)
     }
 }
 
@@ -310,6 +325,19 @@ impl RecursiveHurst {
             (rs.ln() / self.n.ln()).clamp(0.0, 1.0)
         } else {
             0.5 // Random walk
+        }
+    }
+
+    /// Returns the current Hurst exponent WITHOUT updating state.
+    #[inline(always)]
+    pub fn current(&self) -> f64 {
+        let range = self.max_p - self.min_p;
+        let std = self.std_dev.std_dev();
+        if std > 0.0 && self.n > 2.0 {
+            let rs = range / std;
+            (rs.ln() / self.n.ln()).clamp(0.0, 1.0)
+        } else {
+            0.5
         }
     }
 }
