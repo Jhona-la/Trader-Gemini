@@ -36,17 +36,12 @@ echo ========================================================
 echo.
 
 :: Cargar variables de entorno desde .env
-if exist ".env" (
-    echo [INFO] Cargando configuracion de entorno (.env)...
-    for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
-        :: Evitar comentarios
-        echo %%A | findstr /b /c:"#" >nul || (
-            set "%%A=%%B"
-        )
-    )
-) else (
-    echo [WARNING] No se encontro archivo .env
+if not exist ".env" goto skip_env
+echo [INFO] Cargando configuracion de entorno (.env)...
+for /f "usebackq eol=# tokens=1,* delims==" %%A in (".env") do (
+    set "%%A=%%B"
 )
+:skip_env
 
 :: Ejecuta el bot. En caso de crash el terminal quedara abierto.
 .\target_release_god\release\god_engine.exe

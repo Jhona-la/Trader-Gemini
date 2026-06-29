@@ -1,6 +1,9 @@
 pub mod scalp;
 pub mod swing;
 
+pub use scalp::ScalpEngine;
+pub use swing::SwingEngine;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SignalType {
     Long,

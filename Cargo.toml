@@ -7,16 +7,18 @@ members = [
     "crates/signal-engine",
     "crates/risk-engine",
     "crates/execution-engine",
-    "crates/data-pipeline",
+    "crates/data-pipeline", "crates/evolution-engine", "crates/telemetry-server",
 ]
 
 [package]
 name = "trader-gemini-v5"
 version = "0.1.0"
+authors = ["Trader Gemini"]
 edition = "2021"
 default-run = "trader-gemini-v5"
 
 [dependencies]
+dotenvy = "0.15"
 os-guardian = { path = "crates/os-guardian" }
 quantum-arena = { path = "crates/quantum-arena" }
 feature-engine = { path = "crates/feature-engine" }
@@ -24,7 +26,9 @@ signal-engine = { path = "crates/signal-engine" }
 risk-engine = { path = "crates/risk-engine" }
 execution-engine = { path = "crates/execution-engine" }
 data-pipeline = { path = "crates/data-pipeline" }
-tokio = { version = "1.37.0", features = ["full"] }
+evolution-engine = { path = "crates/evolution-engine" }
+telemetry-server = { path = "crates/telemetry-server" }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 bincode = "1.3"

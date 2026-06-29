@@ -72,7 +72,7 @@ fn main() {
     
     println!("✅ Memory-Mapped {} ticks (Train: 70% = {}, Test: 30% = {})", len, train_len, test_len);
     
-    let iterations = 10000;
+    let iterations = 250;
     let initial_temp = 100.0;
     let cooling_rate = 0.995;
     

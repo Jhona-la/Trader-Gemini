@@ -344,10 +344,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let latency_ms = now_ms - event_time;
             let mut latency_panic = false;
             
-            if event_time > 0 && latency_ms > 150 {
-                // If the delta is larger than 150ms, we are operating in the past.
+            if event_time > 0 && latency_ms > 800 {
+                // If the delta is larger than 800ms, we are operating in the past.
                 latency_panic = true;
-                println!("⚠️ [LATENCY_PANIC] Delta = {}ms (>150ms limit). Skiping O(1) Scalp execution.", latency_ms);
+                println!("⚠️ [LATENCY_PANIC] Delta = {}ms (>800ms limit). Skiping O(1) Scalp execution.", latency_ms);
             }
             
             if let Some(parsed_sym_raw) = parsed_sym_opt {

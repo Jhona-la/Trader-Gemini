@@ -23,6 +23,7 @@ pub struct QuantumConfig {
     pub range_threshold: AtomicF64,
     
     // 5. Capa ESTRATEGIA (Scalp / Swing)
+    pub scalp_obi_threshold: AtomicF64,
     pub scalp_tp_base: AtomicF64,
     pub scalp_sl_base: AtomicF64,
     pub swing_tp_base: AtomicF64,
@@ -44,6 +45,7 @@ impl Default for QuantumConfig {
             trend_threshold: AtomicF64::new(0.65), // Hurst > 0.65
             range_threshold: AtomicF64::new(0.45), // Hurst < 0.45
 
+            scalp_obi_threshold: AtomicF64::new(0.6), // 60% imbalance default
             scalp_tp_base: AtomicF64::new(0.005), // 0.5% TP base
             scalp_sl_base: AtomicF64::new(0.002), // 0.2% SL base
             swing_tp_base: AtomicF64::new(0.030), // 3.0% TP base

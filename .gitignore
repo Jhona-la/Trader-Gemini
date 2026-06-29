@@ -40,3 +40,28 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Data and models (generated/large)
+/data/
+/models/
+/.models/
+/logs/
+
+# Generated reports and JSON outputs
+*.json
+!package.json
+!tsconfig.json
+!docs/**/*.json
+
+# Legacy/dead code
+/_legacy*/
+
+# OS/IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Modelos serializados
+*.joblib
+*.ubj

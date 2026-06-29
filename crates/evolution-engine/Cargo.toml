@@ -1,0 +1,8 @@
+[package]
+name = "evolution-engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+quantum-arena = { path = "../quantum-arena" }
+tokio = { version = "1.37.0", features = ["time", "rt"] }

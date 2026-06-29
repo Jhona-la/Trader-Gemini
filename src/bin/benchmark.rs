@@ -18,7 +18,7 @@ fn main() {
 
     let arena_ptr = Arc::new(arena);
     let mut scalp_engine = ScalpEngine::new();
-    let mut swing_engine = SwingEngine::new();
+    let mut swing_engine = SwingEngine::default();
     let mut risk_engine = RiskEngine::new(initial_capital);
     let api_secret = "LAB_DUMMY_SECRET_KEY".to_string();
     let executor = OrderExecutor::new(api_secret);
@@ -33,23 +33,16 @@ fn main() {
     for i in 0..iterations {
         // Simular fluctuación del mercado
         let fake_price = 600.0 + (i as f64 % 10.0);
+        let fake_bid_vol = 100.0 + (i as f64 % 5.0);
+        let fake_ask_vol = 98.0 + (i as f64 % 7.0);
         
         // --- INICIO DEL HOT PATH ---
         
-        // 1. Scalp Engine piensa
-        let signal = scalp_engine.evaluate_tick(fake_price);
+        let obi_threshold = arena_ptr.config.scalp_obi_threshold.load(Ordering::Relaxed);
+        let scalp_intent = scalp_engine.evaluate_microstructure(fake_bid_vol, fake_ask_vol, obi_threshold);
         
-        if signal != SignalType::Hold {
-            // 2. Risk Engine valida
-            let _validated_order = risk_engine.validate_signal(
-                signal, 
-                fake_price, 
-                arena_ptr.clone()
-            );
-
-            // 3. (Condicional) Executor firma
-            // Evitamos la generación de HMAC en el loop base porque es costoso y criptográfico,
-            // pero podemos habilitarlo si _validated_order es Some(). Para el benchmark base, asumimos que evalúa.
+        if scalp_intent.signal != SignalType::Flat {
+            let _validated_order = risk_engine.evaluate(scalp_intent, &arena_ptr, true);
         }
         
         // --- FIN DEL HOT PATH ---

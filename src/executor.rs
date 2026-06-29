@@ -420,7 +420,7 @@ impl BinanceUserDataStream {
                         }
                         keep_alive_handle.abort();
                     } else {
-                        println!("❌ [USER DATA STREAM] Failed to get listenKey. Check API key permissions.");
+                        println!("❌ [USER DATA STREAM] Failed to get listenKey. Binance response: {}", json);
                         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                     }
                 }

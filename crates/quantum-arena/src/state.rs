@@ -22,9 +22,9 @@ impl Default for ScalpState {
             pnl_realized: AtomicF64::new(0.0),
             pnl_unrealized: AtomicF64::new(0.0),
             active_positions: AtomicUsize::new(0),
-            win_rate: AtomicF64::new(0.50),     // Asumimos 50% inicial
-            profit_factor: AtomicF64::new(1.0), // Neutro inicial
-            kelly_fraction: AtomicF64::new(0.0), 
+            win_rate: AtomicF64::new(0.55),     // Asumimos 55% inicial para que Kelly sea > 0
+            profit_factor: AtomicF64::new(1.5), // Profit factor rentable
+            kelly_fraction: AtomicF64::new(0.0),
         }
     }
 }
@@ -45,8 +45,8 @@ impl Default for SwingState {
             pnl_realized: AtomicF64::new(0.0),
             pnl_unrealized: AtomicF64::new(0.0),
             active_positions: AtomicUsize::new(0),
-            win_rate: AtomicF64::new(0.50),
-            profit_factor: AtomicF64::new(1.0),
+            win_rate: AtomicF64::new(0.55),
+            profit_factor: AtomicF64::new(1.5),
             kelly_fraction: AtomicF64::new(0.0),
         }
     }
@@ -59,6 +59,7 @@ pub struct GlobalArena {
     pub config: QuantumConfig,
     pub scalp: ScalpState,
     pub swing: SwingState,
+    pub positions: crate::position::PositionManager,
     pub unified_capital: AtomicF64,
     pub tick_counter: AtomicU64,
 }
@@ -69,6 +70,7 @@ impl GlobalArena {
             config: QuantumConfig::default(),
             scalp: ScalpState::default(),
             swing: SwingState::default(),
+            positions: crate::position::PositionManager::default(),
             unified_capital: AtomicF64::new(initial_capital),
             tick_counter: AtomicU64::new(0),
         }
