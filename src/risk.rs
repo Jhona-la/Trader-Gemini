@@ -36,8 +36,8 @@ impl RiskManager {
     }
 
     pub fn report_trade_result_local(&mut self, symbol: &str, is_win: bool, pnl_pct: f64) {
-        // Multiplier set to 0.75 (Aggressive Kelly) to compound 13 USD quickly.
-        let kelly = self.kelly_trackers.entry(symbol.to_string()).or_insert_with(|| DynamicKelly::new(0.75));
+        // Multiplier set to 0.85 (Hyper-Aggressive Kelly) to compound geometrically
+        let kelly = self.kelly_trackers.entry(symbol.to_string()).or_insert_with(|| DynamicKelly::new(0.85));
         kelly.update(is_win, pnl_pct);
     }
 
@@ -77,16 +77,16 @@ impl RiskManager {
             }
         };
 
-        // Asymptotic Risk Tapering
-        // Cap <= $50 -> 25% max
-        // Cap >= $500 -> 2% max
-        let dynamic_max_risk = if capital <= 50.0 {
+        // True Geometric Compounding Target
+        // Cap <= $1000 -> 25% max (Aggressive Scaling Phase)
+        // Cap >= $10000 -> 5% max (Liquidity Constraints Phase)
+        let dynamic_max_risk = if capital <= 1000.0 {
             0.25
-        } else if capital >= 500.0 {
-            0.02
+        } else if capital >= 10000.0 {
+            0.05
         } else {
-            let t = (capital - 50.0) / (500.0 - 50.0);
-            0.25 - t * (0.25 - 0.02)
+            let t = (capital - 1000.0) / (10000.0 - 1000.0);
+            0.25 - t * (0.25 - 0.05)
         };
 
         // Enforce max risk ceiling
@@ -251,12 +251,12 @@ mod tests {
         let qty_small = rm.calculate_micro_position_size_local("BTCUSDT", 60000.0, 50.0, 13.0, 0.01);
         assert_eq!(qty_small, Some(0.005));
         
-        // Scenario B: $1000 Capital -> cap at 0.02
-        // max loss cap = 1000 * 0.02 = 20
-        // notional = 20 / 0.01 = 2000
-        // raw = 2000 / 60000 = 0.0333
-        // final_qty = 0.033
-        let qty_large = rm.calculate_micro_position_size_local("BTCUSDT", 60000.0, 50.0, 1000.0, 0.01);
-        assert_eq!(qty_large, Some(0.033));
+        // Scenario B: $10,000 Capital -> cap at 0.05
+        // max loss cap = 10000 * 0.05 = 500
+        // notional = 500 / 0.01 = 50000
+        // raw = 50000 / 60000 = 0.8333
+        // final_qty = 0.833
+        let qty_large = rm.calculate_micro_position_size_local("BTCUSDT", 60000.0, 50.0, 10000.0, 0.01);
+        assert_eq!(qty_large, Some(0.833));
     }
 }

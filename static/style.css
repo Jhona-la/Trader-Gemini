@@ -113,10 +113,29 @@ h2 {
     text-shadow: 0 0 10px rgba(255, 0, 255, 0.3);
 }
 
+.header-stats {
+    display: flex;
+    gap: 2rem;
+}
+
 .capital-display, .latency-display {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+}
+
+.latency-panic {
+    animation: panicFlash 0.3s infinite;
+    background: rgba(255, 0, 0, 0.2);
+    border: 1px solid red;
+    border-radius: 8px;
+    padding: 0.5rem;
+}
+
+@keyframes panicFlash {
+    0% { color: #f00; box-shadow: 0 0 10px #f00; }
+    50% { color: #fff; box-shadow: 0 0 20px #f00; }
+    100% { color: #f00; box-shadow: 0 0 10px #f00; }
 }
 
 .label {

@@ -51,6 +51,29 @@ eventSource.onmessage = function(event) {
                 latencyEl.innerText = `${(ns / 1000000).toFixed(2)} ms`;
             }
         }
+        else if (data.OmniUpdate) {
+            const omni = data.OmniUpdate;
+            const latencyBox = document.getElementById('latency-box');
+            if (omni.latency_panic) {
+                latencyBox.classList.add('latency-panic');
+                latencyEl.innerText = `${omni.latency_ms} ms (PANIC)`;
+            } else {
+                latencyBox.classList.remove('latency-panic');
+                // The actual internal latency is still updated by LatencyUpdate
+            }
+            
+            const scalpEl = document.getElementById('scalp-pnl');
+            const swingEl = document.getElementById('swing-pnl');
+            const darkEl = document.getElementById('dark-alpha');
+            
+            scalpEl.innerText = `$${omni.scalp_pnl.toFixed(4)}`;
+            scalpEl.style.color = omni.scalp_pnl >= 0 ? '#0f0' : '#f00';
+            
+            swingEl.innerText = `$${omni.swing_pnl.toFixed(4)}`;
+            swingEl.style.color = omni.swing_pnl >= 0 ? '#0f0' : '#f00';
+            
+            darkEl.innerText = omni.dark_alpha.toFixed(2);
+        }
         else if (data.LogUpdate) {
             const type = data.LogUpdate[0];
             const msg = data.LogUpdate[1];

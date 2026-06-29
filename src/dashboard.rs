@@ -10,6 +10,13 @@ pub enum TelemetryEvent {
     LogUpdate(String, String), // (type, message) e.g., ("info", "Connected...")
     CapitalUpdate(f64),      // Current capital
     TensorUpdate([f32; 10]), // 10D State Vector
+    OmniUpdate {
+        latency_ms: u64,
+        latency_panic: bool,
+        dark_alpha: f64,
+        scalp_pnl: f64,
+        swing_pnl: f64,
+    },
 }
 
 pub async fn start_server(tx: broadcast::Sender<TelemetryEvent>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

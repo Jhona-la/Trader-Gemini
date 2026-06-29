@@ -65,13 +65,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (tx_events, mut rx_events) = mpsc::unbounded_channel::<String>();
 
-    let api_key = env::var("BINANCE_API_KEY").unwrap_or_else(|_| "test_key".to_string());
-    let secret_key = env::var("BINANCE_SECRET_KEY").unwrap_or_else(|_| "test_secret".to_string());
-    let executor = Arc::new(quantum_engine::executor::BinanceWSFuturesExecutor::new(api_key.clone(), secret_key, true).await);
+    let api_key = env::var("BINANCE_API_KEY").unwrap_or_else(|_| "".to_string());
+    let secret_key = env::var("BINANCE_SECRET_KEY").unwrap_or_else(|_| "".to_string());
+    
+    if api_key.is_empty() || api_key == "test_key" {
+        panic!("🚨 [FATAL ERROR] Producción Abortada: Falta BINANCE_API_KEY real en el entorno.");
+    }
+    if secret_key.is_empty() || secret_key == "test_secret" {
+        panic!("🚨 [FATAL ERROR] Producción Abortada: Falta BINANCE_SECRET_KEY real en el entorno.");
+    }
+
+    // MAINNET ACTIVATION: is_testnet = false
+    let executor = Arc::new(quantum_engine::executor::BinanceWSFuturesExecutor::new(api_key.clone(), secret_key, false).await);
 
     let api_key_uds = api_key.clone();
     tokio::spawn(async move {
-        quantum_engine::executor::BinanceUserDataStream::start(api_key_uds, true).await;
+        quantum_engine::executor::BinanceUserDataStream::start(api_key_uds, false).await;
     });
     
     let dark_router = Arc::new(quantum_engine::dark_alpha_router::DarkAlphaRouter::new());
@@ -260,30 +269,59 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         let mut msg_count = 0u64;
 
-        while let Some(msg) = rx_events.recv().await {
+        while let Some(mut msg) = rx_events.recv().await {
             let start = Instant::now();
             
             let is_trade = msg.contains("\"e\":\"trade\"");
             let is_kline = msg.contains("\"e\":\"kline\"");
+            let is_depth = msg.contains("\"e\":\"depthUpdate\"");
             
             let mut parsed_sym_opt = None;
             let mut current_price = 0.0;
             let mut qty = 0.0;
             let mut is_kline_closed = false;
+            let mut event_time = 0i64;
+            let mut depth_obi = 0.0;
+            let mut depth_micro_div = 0.0;
             
             if is_trade {
-                if let Some((_, _, p, q, _, sym)) = parsers::parse_binance_trade(&msg) {
+                if let Some((e, _, p, q, _, sym)) = parsers::parse_binance_trade(&mut msg) {
+                    event_time = e;
                     parsed_sym_opt = Some(sym);
                     current_price = p;
                     qty = q;
                 }
             } else if is_kline {
-                if let Some((_, sym, _, _, _, p, v, c)) = parsers::parse_binance_kline(&msg) {
+                if let Some((e, sym, _, _, _, p, v, c)) = parsers::parse_binance_kline(&mut msg) {
+                    event_time = e;
                     parsed_sym_opt = Some(sym);
                     current_price = p;
                     qty = v;
                     is_kline_closed = c;
                 }
+            } else if is_depth {
+                if let Some((e, sym, _, bp, bq, ap, aq)) = parsers::parse_binance_depth(&mut msg) {
+                    event_time = e;
+                    parsed_sym_opt = Some(sym);
+                    let total_q = bq + aq;
+                    if total_q > 0.0 {
+                        depth_obi = (bq - aq) / total_q;
+                        let microprice = (bp * aq + ap * bq) / total_q;
+                        let midprice = (bp + ap) / 2.0;
+                        depth_micro_div = if midprice > 0.0 { (microprice - midprice) / midprice } else { 0.0 };
+                    }
+                }
+            }
+            
+            // FASE 23: QUANTUM LATENCY KILL-SWITCH
+            let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
+            let latency_ms = now_ms - event_time;
+            let mut latency_panic = false;
+            
+            if event_time > 0 && latency_ms > 150 {
+                // If the delta is larger than 150ms, we are operating in the past.
+                latency_panic = true;
+                println!("⚠️ [LATENCY_PANIC] Delta = {}ms (>150ms limit). Skiping O(1) Scalp execution.", latency_ms);
             }
             
             if let Some(parsed_sym_raw) = parsed_sym_opt {
@@ -299,6 +337,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if is_kline && is_kline_closed {
                     swing_engine.process_tick(current_price, qty);
                 }
+                if is_depth {
+                    scalp_engine.update_macro_features(depth_obi, depth_micro_div);
+                    dark_router_clone.ingest_l2_snapshot(0.0, depth_obi, depth_micro_div, event_time as u64);
+                }
                 
                 let scalp_regime = scalp_engine.get_market_regime();
                 let swing_regime = swing_engine.get_market_regime();
@@ -308,7 +350,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let regime = if horizon == 0 { scalp_regime } else { swing_regime };
                     
                     let (is_active_entry, sl_mult, tp_mult, trail_atr_mult, t_params) = match horizon {
-                        0 => (is_trade && (regime == MarketRegime::Scalping || regime == MarketRegime::Neutral), 0.15, 0.35, 0.005, (0.001, 1.0, 1.5, 2.0, 0.8)),
+                        0 => (!latency_panic && is_trade && (regime == MarketRegime::Scalping || regime == MarketRegime::Neutral), 0.15, 0.35, 0.005, (0.001, 1.0, 1.5, 2.0, 0.8)),
                         1 => (is_kline && is_kline_closed && regime == MarketRegime::Swing, 0.8, 2.0, 0.01, (0.005, 1.5, 3.0, 4.0, 1.0)),
                         _ => unreachable!(),
                     };
@@ -446,6 +488,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             msg_count += 1;
             if msg_count % 100 == 0 {
                 let lat = start.elapsed().as_nanos();
+                
+                let mut scalp_pnl = 0.0;
+                let mut swing_pnl = 0.0;
+                for (k, v) in open_positions.iter() {
+                    let pnl = if v.side == 1 { (current_price - v.entry_price) / v.entry_price } else { (v.entry_price - current_price) / v.entry_price };
+                    if k.1 == 0 { scalp_pnl += pnl * v.qty * current_price; } else { swing_pnl += pnl * v.qty * current_price; }
+                }
+                
+                let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::OmniUpdate {
+                    latency_ms: if event_time > 0 { latency_ms as u64 } else { 0 },
+                    latency_panic,
+                    dark_alpha: dark_router_clone.get_liquidation_cascade_risk(),
+                    scalp_pnl,
+                    swing_pnl,
+                });
+                
                 let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::LatencyUpdate(lat as u64));
             }
             if msg_count % 5000 == 0 {

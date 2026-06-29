@@ -258,8 +258,8 @@ fn main() {
     println!("🌳 Data loaded: {} samples. Starting Forest Generation...", valid_samples.len());
     let train_start = Instant::now();
     
-    let n_trees = 10;
-    let max_depth = 5;
+    let n_trees = 50;
+    let max_depth = 8;
     
     let mut forest_data = NanoForestData {
         children_left: Vec::new(),

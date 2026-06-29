@@ -13,15 +13,29 @@
     <div class="blob blob-2"></div>
     
     <div class="container">
-        <header class="glass-panel">
+        <header class="glass-panel" id="main-header">
             <h1><span class="neon-text">OMNI</span> QUANTUM DASHBOARD</h1>
-            <div class="capital-display">
-                <span class="label">Asymmetric Capital</span>
-                <span class="value" id="capital">$13.00</span>
-            </div>
-            <div class="latency-display">
-                <span class="label">Engine Latency</span>
-                <span class="value" id="latency">0 ns</span>
+            <div class="header-stats">
+                <div class="capital-display">
+                    <span class="label">Asymmetric Capital</span>
+                    <span class="value" id="capital">$13.00</span>
+                </div>
+                <div class="latency-display" id="latency-box">
+                    <span class="label">Engine Latency</span>
+                    <span class="value" id="latency">0 ns</span>
+                </div>
+                <div class="capital-display">
+                    <span class="label">Scalp PnL</span>
+                    <span class="value" id="scalp-pnl" style="color: #0f0;">$0.00</span>
+                </div>
+                <div class="capital-display">
+                    <span class="label">Swing PnL</span>
+                    <span class="value" id="swing-pnl" style="color: #0f0;">$0.00</span>
+                </div>
+                <div class="capital-display">
+                    <span class="label">Dark Alpha</span>
+                    <span class="value" id="dark-alpha" style="color: #f0f;">0.00</span>
+                </div>
             </div>
         </header>
 
