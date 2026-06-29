@@ -1,131 +1,183 @@
-const eventSource = new EventSource('/events');
+// God Engine L3 Terminal - Vanilla JS (O(1) updates)
 
-// DOM Elements
-const capitalEl = document.getElementById('capital');
-const latencyEl = document.getElementById('latency');
-const logsEl = document.getElementById('logs');
+const DOM = {
+    wsStatus: document.getElementById('ws-status'),
+    wsLed: document.getElementById('ws-led'),
+    capital: document.getElementById('capital-val'),
+    scalpPnl: document.getElementById('scalp-pnl'),
+    swingPnl: document.getElementById('swing-pnl'),
+    alphaBar: document.getElementById('alpha-bar'),
+    alphaVal: document.getElementById('alpha-val'),
+    alphaAlert: document.getElementById('alpha-alert'),
+    latency: document.getElementById('latency-val'),
+    latencyPanic: document.getElementById('latency-panic'),
+    tensorGrid: document.getElementById('tensor-grid'),
+    logContainer: document.getElementById('log-container')
+};
 
-// Tensor Elements
-const tensorBars = [];
-const tensorVals = [];
+// Canvas for latency radar
+const canvas = document.getElementById('latency-canvas');
+const ctx = canvas.getContext('2d');
+const latencyHistory = new Array(400).fill(0);
+let maxLatency = 100000; // 100 microseconds max scale baseline
+
+// Initialize Tensors
+const tensors = [];
 for (let i = 0; i < 10; i++) {
-    tensorBars.push(document.getElementById(`t${i}`));
-    tensorVals.push(document.getElementById(`tv${i}`));
+    const container = document.createElement('div');
+    container.className = 'tensor-bar-container';
+    const fill = document.createElement('div');
+    fill.className = 'tensor-bar-fill';
+    container.appendChild(fill);
+    DOM.tensorGrid.appendChild(container);
+    tensors.push(fill);
 }
 
-// Configuration for tensor normalization (min, max for visual scaling 0-100%)
-const tensorRanges = [
-    [-0.01, 0.01],    // 0: Price Δ
-    [-0.05, 0.05],    // 1: Fast EMA Dist
-    [-0.1, 0.1],      // 2: Slow EMA Dist
-    [0, 50],          // 3: Velocity
-    [-5, 5],          // 4: OBI Velocity
-    [-1, 1],          // 5: OBI Accel
-    [-0.005, 0.005],  // 6: Fund. Elasticity
-    [-100, 100],      // 7: C-VPIN Net
-    [0, 5],           // 8: Shannon Entropy
-    [0, 100],         // 9: Dark Alpha Panic
-];
+// Format numbers
+function formatMoney(val) {
+    return val.toFixed(6);
+}
 
-eventSource.onmessage = function(event) {
-    try {
-        const data = JSON.parse(event.data);
-        
-        if (data.CapitalUpdate) {
-            const cap = data.CapitalUpdate;
-            capitalEl.innerText = `$${cap.toFixed(4)}`;
-            
-            // Add a subtle flash effect
-            capitalEl.style.textShadow = '0 0 20px #00ff88';
-            setTimeout(() => {
-                capitalEl.style.textShadow = '0 0 10px rgba(0,255,136,0.4)';
-            }, 300);
-        } 
-        else if (data.LatencyUpdate) {
-            const ns = data.LatencyUpdate;
-            if (ns < 1000) {
-                latencyEl.innerText = `${ns} ns`;
-            } else if (ns < 1000000) {
-                latencyEl.innerText = `${(ns / 1000).toFixed(2)} µs`;
-            } else {
-                latencyEl.innerText = `${(ns / 1000000).toFixed(2)} ms`;
-            }
-        }
-        else if (data.OmniUpdate) {
-            const omni = data.OmniUpdate;
-            const latencyBox = document.getElementById('latency-box');
-            if (omni.latency_panic) {
-                latencyBox.classList.add('latency-panic');
-                latencyEl.innerText = `${omni.latency_ms} ms (PANIC)`;
-            } else {
-                latencyBox.classList.remove('latency-panic');
-                // The actual internal latency is still updated by LatencyUpdate
-            }
-            
-            const scalpEl = document.getElementById('scalp-pnl');
-            const swingEl = document.getElementById('swing-pnl');
-            const darkEl = document.getElementById('dark-alpha');
-            
-            scalpEl.innerText = `$${omni.scalp_pnl.toFixed(4)}`;
-            scalpEl.style.color = omni.scalp_pnl >= 0 ? '#0f0' : '#f00';
-            
-            swingEl.innerText = `$${omni.swing_pnl.toFixed(4)}`;
-            swingEl.style.color = omni.swing_pnl >= 0 ? '#0f0' : '#f00';
-            
-            darkEl.innerText = omni.dark_alpha.toFixed(2);
-        }
-        else if (data.LogUpdate) {
-            const type = data.LogUpdate[0];
-            const msg = data.LogUpdate[1];
-            
-            const entry = document.createElement('div');
-            entry.className = `log-entry log-${type}`;
-            const time = new Date().toISOString().split('T')[1].slice(0, -1);
-            entry.innerText = `[${time}] ${msg}`;
-            
-            logsEl.appendChild(entry);
-            
-            // Keep only last 50 logs
-            if (logsEl.children.length > 50) {
-                logsEl.removeChild(logsEl.firstChild);
-            }
-            
-            // Auto scroll to bottom
-            logsEl.scrollTop = logsEl.scrollHeight;
-        }
-        else if (data.TensorUpdate) {
-            const tensors = data.TensorUpdate;
-            
-            for (let i = 0; i < 10; i++) {
-                const val = tensors[i];
-                const [min, max] = tensorRanges[i];
-                
-                // Normalize to 0-100%
-                let pct = ((val - min) / (max - min)) * 100;
-                pct = Math.max(0, Math.min(100, pct)); // clamp
-                
-                tensorBars[i].style.width = `${pct}%`;
-                
-                // Set color intensity based on value magnitude
-                const intensity = Math.abs(val) > (max / 2) ? 'var(--neon-magenta)' : 'var(--neon-cyan)';
-                tensorBars[i].style.boxShadow = `0 0 10px ${intensity}`;
-                
-                tensorVals[i].innerText = val.toFixed(4);
-            }
-        }
-    } catch (e) {
-        console.error("Error parsing event:", e, event.data);
+function updateColor(element, val) {
+    if (val > 0) {
+        element.className = 'val green';
+    } else if (val < 0) {
+        element.className = 'val red';
+    } else {
+        element.className = 'val';
+        element.style.color = '#fff';
     }
-};
+}
 
-eventSource.onerror = function(err) {
-    console.error("EventSource failed:", err);
-};
+function addLog(msg, type = "info") {
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    const now = new Date();
+    const ts = `[${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}]`;
+    line.innerHTML = `<span class="timestamp">${ts}</span> <span class="${type}">${msg}</span>`;
+    DOM.logContainer.appendChild(line);
+    if (DOM.logContainer.children.length > 50) {
+        DOM.logContainer.removeChild(DOM.logContainer.firstChild);
+    }
+    DOM.logContainer.scrollTop = DOM.logContainer.scrollHeight;
+}
 
-// Initial welcome log
-setTimeout(() => {
-    const entry = document.createElement('div');
-    entry.className = `log-entry log-success`;
-    entry.innerText = `[SYSTEM] Omni-Dashboard UI Initialized. Waiting for Quantum Tensors...`;
-    logsEl.appendChild(entry);
-}, 500);
+// Latency Radar Drawing
+function drawRadar() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw Grid
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height / 2);
+    ctx.lineTo(canvas.width, canvas.height / 2);
+    ctx.stroke();
+
+    // Draw Line
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < latencyHistory.length; i++) {
+        const val = latencyHistory[i];
+        let normalized = val / maxLatency;
+        if (normalized > 1) normalized = 1;
+        
+        const x = i;
+        const y = canvas.height - (normalized * canvas.height);
+        
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+}
+
+// Connect SSE
+function connect() {
+    addLog("Connecting to Quantum Telemetry...", "info");
+    const source = new EventSource('/events');
+
+    source.onopen = () => {
+        DOM.wsLed.className = 'led pulse-green';
+        DOM.wsStatus.innerText = 'TELEMETRY LINK: ONLINE';
+        addLog("Telemetry Link Established.", "info");
+    };
+
+    source.onerror = () => {
+        DOM.wsLed.className = 'led pulse-red';
+        DOM.wsStatus.innerText = 'TELEMETRY LINK: OFFLINE';
+    };
+
+    source.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            
+            if (data.OmniUpdate) {
+                // Latency
+                const lat = data.OmniUpdate.latency_ms; // actually ns
+                DOM.latency.innerText = lat.toString();
+                
+                latencyHistory.shift();
+                latencyHistory.push(lat);
+                
+                if (lat > maxLatency) maxLatency = lat * 1.2; // auto-scale
+                
+                requestAnimationFrame(drawRadar);
+                
+                if (data.OmniUpdate.latency_panic) {
+                    DOM.latencyPanic.innerText = "PANIC: >50ms";
+                    DOM.latencyPanic.style.color = "var(--neon-red)";
+                } else {
+                    DOM.latencyPanic.innerText = "STABLE";
+                    DOM.latencyPanic.style.color = "var(--neon-green)";
+                }
+
+                // Dark Alpha (0.0 to 1.0)
+                const alpha = data.OmniUpdate.dark_alpha;
+                DOM.alphaBar.style.width = `${(alpha * 100).toFixed(1)}%`;
+                DOM.alphaVal.innerText = `${(alpha * 100).toFixed(2)}%`;
+                
+                if (alpha > 0.8) {
+                    DOM.alphaAlert.innerText = "CASCADE WARNING";
+                    DOM.alphaAlert.style.color = "var(--neon-red)";
+                    DOM.alphaBar.style.background = "var(--neon-red)";
+                } else {
+                    DOM.alphaAlert.innerText = "SAFE";
+                    DOM.alphaAlert.style.color = "var(--neon-green)";
+                    DOM.alphaBar.style.background = "linear-gradient(90deg, var(--neon-blue), var(--neon-red))";
+                }
+
+                // PnL
+                DOM.scalpPnl.innerText = data.OmniUpdate.scalp_pnl.toFixed(4);
+                DOM.swingPnl.innerText = data.OmniUpdate.swing_pnl.toFixed(4);
+                updateColor(DOM.scalpPnl, data.OmniUpdate.scalp_pnl);
+                updateColor(DOM.swingPnl, data.OmniUpdate.swing_pnl);
+            }
+            
+            if (data.CapitalUpdate) {
+                DOM.capital.innerText = formatMoney(data.CapitalUpdate);
+            }
+            
+            if (data.TensorUpdate) {
+                const vec = data.TensorUpdate;
+                for (let i = 0; i < 10; i++) {
+                    // Assume inputs are normalized mostly -1 to 1 or 0 to 1
+                    let val = Math.abs(vec[i]);
+                    if (val > 1) val = 1;
+                    tensors[i].style.height = `${(val * 100).toFixed(1)}%`;
+                    tensors[i].style.background = vec[i] > 0 ? 'var(--neon-green)' : 'var(--neon-red)';
+                }
+            }
+            
+            if (data.LogUpdate) {
+                addLog(data.LogUpdate[1], data.LogUpdate[0]);
+            }
+            
+        } catch (e) {
+            console.error("Parse error", e);
+        }
+    };
+}
+
+// Start
+connect();

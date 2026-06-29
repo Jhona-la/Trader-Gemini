@@ -281,7 +281,7 @@ impl ShannonEntropy {
     #[inline(always)]
     pub fn update(&mut self, norm_return: f64) -> f64 {
         // Map norm_return (-0.05 to 0.05) to bin 0-9
-        let bin_idx = ((norm_return * 100.0 + 5.0).clamp(0.0, 9.99) as usize);
+        let bin_idx = (norm_return * 100.0 + 5.0).clamp(0.0, 9.99) as usize;
         self.bins[bin_idx] += 1.0;
         self.total_count += 1.0;
         

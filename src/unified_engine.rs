@@ -1,5 +1,5 @@
 use crate::stateful_engine::{StatefulEngine, MarketRegime};
-use crate::ml_inference::NanoForest;
+
 use crate::risk::RiskManager;
 use crate::dark_alpha_router::DarkAlphaRouter;
 
@@ -12,6 +12,11 @@ pub struct UnifiedConfig {
     pub ml_threshold_s: f64,
     pub tech_threshold_l: f64,
     pub tech_threshold_s: f64,
+    pub starting_capital: f64,
+    pub scalp_leverage: f64,
+    pub swing_leverage: f64,
+    pub scalp_sl_ratio: f64,
+    pub scalp_tp_ratio: f64,
 }
 
 pub fn run_backtest_native(
@@ -37,8 +42,8 @@ pub fn run_backtest_native(
     // In backtest, Dark Alpha is baseline zero unless we have historical DEX data.
     let dark_alpha = DarkAlphaRouter::new();
     
-    let mut capital = 13.0; // Phase 13 rule: 13 USD starting capital
-    let mut peak_capital = 13.0;
+    let mut capital = cfg.starting_capital; 
+    let mut peak_capital = capital;
     let mut max_dd = 0.0;
     
     let mut scalp_in_pos = false;
@@ -83,8 +88,8 @@ pub fn run_backtest_native(
             let pnl_pct = if scalp_side == 1 { (current_close - scalp_entry) / scalp_entry } else { (scalp_entry - current_close) / scalp_entry };
             let mut exit = false;
             let mut exit_price = current_close;
-            let scalp_tp = cfg.tp_pct * 0.33; // Must match production: scalp uses tighter TP
-            let scalp_sl = cfg.sl_pct * 0.33; // Must match production: scalp uses tighter SL
+            let scalp_tp = cfg.tp_pct * cfg.scalp_tp_ratio; // Adaptive ratio
+            let scalp_sl = cfg.sl_pct * cfg.scalp_sl_ratio; // Adaptive ratio
 
             if pnl_pct >= scalp_tp { exit = true; }
             else if pnl_pct <= -scalp_sl { exit = true; }
@@ -103,7 +108,7 @@ pub fn run_backtest_native(
                 let net_pnl_amount = pnl_amount - fee_amount;
                 
                 capital += net_pnl_amount;
-                let margin_used = (scalp_qty * scalp_entry) / 50.0;
+                let margin_used = (scalp_qty * scalp_entry) / cfg.scalp_leverage;
                 let net_pnl_pct = net_pnl_amount / margin_used;
                 
                 risk_manager.report_trade_result_local("BTCUSDT", net_pnl_pct > 0.0, net_pnl_pct);
@@ -144,7 +149,7 @@ pub fn run_backtest_native(
                 let net_pnl_amount = pnl_amount - fee_amount;
                 
                 capital += net_pnl_amount;
-                let margin_used = (swing_qty * swing_entry) / 15.0; // Swing leverage 15.0
+                let margin_used = (swing_qty * swing_entry) / cfg.swing_leverage; 
                 let net_pnl_pct = net_pnl_amount / margin_used;
                 
                 risk_manager.report_trade_result_local("BTCUSDT_SWING", net_pnl_pct > 0.0, net_pnl_pct);
@@ -192,14 +197,14 @@ pub fn run_backtest_native(
             let dynamic_ml_s = cfg.ml_threshold_s * freq_multiplier;
 
             if ml_prob > dynamic_ml_l as f32 {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, 50.0, capital, scalp_atr_pct) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, cfg.scalp_leverage, capital, scalp_atr_pct) {
                     scalp_in_pos = true;
                     scalp_side = 1;
                     scalp_entry = current_close;
                     scalp_qty = qty;
                 }
             } else if ml_prob < (1.0 - dynamic_ml_s as f32) {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, 50.0, capital, scalp_atr_pct) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, cfg.scalp_leverage, capital, scalp_atr_pct) {
                     scalp_in_pos = true;
                     scalp_side = -1;
                     scalp_entry = current_close;
@@ -216,14 +221,14 @@ pub fn run_backtest_native(
             let dynamic_tech_s = cfg.tech_threshold_s * freq_multiplier;
 
             if fast > slow * (1.0 + dynamic_tech_l) {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, 15.0, capital, swing_atr_pct) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, cfg.swing_leverage, capital, swing_atr_pct) {
                     swing_in_pos = true;
                     swing_side = 1;
                     swing_entry = current_close;
                     swing_qty = qty;
                 }
             } else if fast < slow * (1.0 - dynamic_tech_s) {
-                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, 15.0, capital, swing_atr_pct) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, cfg.swing_leverage, capital, swing_atr_pct) {
                     swing_in_pos = true;
                     swing_side = -1;
                     swing_entry = current_close;

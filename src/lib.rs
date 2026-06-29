@@ -5,6 +5,7 @@ pub mod math_kernels;
 pub mod quantum_arena;
 pub mod stateful_engine;
 pub mod dark_alpha_router;
+pub mod dark_alpha_sniffer;
 pub mod trailing;
 pub mod networking;
 pub mod executor;
@@ -18,7 +19,6 @@ pub mod ml_inference;
 pub use quantum_arena::{QuantumRingBuffer, FEATURE_SIZE, QuantumStateArena};
 pub use stateful_engine::StatefulEngine;
 pub use trailing::{evaluate_quantum_trailing, TrailingResult};
-use std::os::raw::c_char;
 
 #[no_mangle]
 pub extern "C" fn ffi_update_portfolio(usdt_balance: f64) {

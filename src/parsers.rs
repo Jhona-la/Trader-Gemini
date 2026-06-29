@@ -1,7 +1,6 @@
 use simd_json::prelude::*;
 use simd_json::prelude::ValueAsScalar;
 use simd_json::prelude::ValueObjectAccess;
-use simd_json::prelude::ValueArrayAccess;
 
 /// Parses a Binance DepthUpdate (Orderbook) JSON string instantly.
 /// Returns (Event_time, symbol, last_update_id, best_bid_price, best_bid_qty, best_ask_price, best_ask_qty)

@@ -1,7 +1,7 @@
 use std::sync::RwLock;
 use std::collections::HashMap;
 use lazy_static::lazy_static;
-use crate::portfolio::{Portfolio, GLOBAL_PORTFOLIO, Position};
+use crate::portfolio::Portfolio;
 use crate::math_kernels::DynamicKelly;
 
 #[derive(Debug)]
@@ -89,8 +89,11 @@ impl RiskManager {
             0.25 - t * (0.25 - 0.05)
         };
 
-        // Enforce max risk ceiling
-        let safe_kelly = kelly_fraction.clamp(0.01, dynamic_max_risk);
+        let heat = Portfolio::get_heat(current_price);
+        let heat_penalty = (1.0 - heat).clamp(0.1, 1.0);
+
+        // Enforce max risk ceiling and apply heat penalty
+        let safe_kelly = kelly_fraction.clamp(0.01, dynamic_max_risk) * heat_penalty;
 
         // Required capital per trade
         let max_loss_capital = capital * safe_kelly;

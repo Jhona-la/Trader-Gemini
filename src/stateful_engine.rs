@@ -50,11 +50,26 @@ impl StatefulEngine {
         }
     }
 
+    /// Flushes all internal buffers. Used to auto-heal time-series glitches after network disconnects.
+    pub fn reset(&mut self) {
+        self.ema_fast = 0.0;
+        self.ema_slow = 0.0;
+        self.rsi_rs = 0.0;
+        self.last_price = 0.0;
+        self.v_t = 0.0;
+        self.a_t = 0.0;
+        self.tick_count = 0;
+        self.hurst = RecursiveHurst::new();
+        self.obi_accel = ObiAcceleration::new();
+        self.fr_elasticity = FundingRateElasticity::new();
+        self.cvpin = ContinuousVPIN::new(100.0);
+        self.entropy = ShannonEntropy::new();
+        self.dark_alpha = ExponentialDecayTensor::new(10000.0);
+        self.last_entropy = 0.0;
+    }
+
     /// Processes a new tick internally in f64
     pub fn process_tick(&mut self, price: f64, _volume: f64) {
-        if price == -999.0 {
-            panic!("INTENTIONAL PANIC FOR FFI RECOVERY TEST");
-        }
         if self.last_price == 0.0 {
             self.ema_fast = price;
             self.ema_slow = price;

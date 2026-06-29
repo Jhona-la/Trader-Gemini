@@ -1,14 +1,12 @@
-use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
-use futures_util::{StreamExt, SinkExt};
+use tokio_tungstenite::connect_async;
+use futures_util::StreamExt;
 use std::env;
 use tokio::sync::mpsc;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-use quantum_engine::{StatefulEngine, QuantumStateArena, parsers, stateful_engine::MarketRegime};
+use quantum_engine::{parsers, stateful_engine::MarketRegime};
 use std::time::Instant;
 use std::sync::atomic::{AtomicU32, Ordering, AtomicU64};
-use serde::Deserialize;
 
 use quantum_engine::config::DynamicConfig;
 
@@ -76,7 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // MAINNET ACTIVATION: is_testnet = false
-    let executor = Arc::new(quantum_engine::executor::BinanceWSFuturesExecutor::new(api_key.clone(), secret_key, false).await);
+    let executor = Arc::new(quantum_engine::executor::BinanceWSFuturesExecutor::new(api_key.clone(), secret_key.clone(), false).await);
+    let rest_executor = Arc::new(quantum_engine::executor::BinanceRestExecutor::new(api_key.clone(), secret_key.clone(), false));
 
     let api_key_uds = api_key.clone();
     tokio::spawn(async move {
@@ -84,17 +83,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     
     let dark_router = Arc::new(quantum_engine::dark_alpha_router::DarkAlphaRouter::new());
-    let dark_router_clone1 = Arc::clone(&dark_router);
-    let dark_router_clone = Arc::clone(&dark_router);
-    tokio::spawn(async move {
-        // MEV & DEX Sniffer Loop (Phase 22 Axiom XVIII)
-        loop {
-            sleep(Duration::from_millis(50)).await; // 50ms Dark Pool probe frequency
-            let dummy_qty = 5.0; // Assume 5 BTC institutional fake order
-            let impact = 0.05;
-            dark_router_clone1.ingest_l2_snapshot(dummy_qty, 0.0, impact, 0);
-        }
-    });
+    
+    // Spawn Hyperliquid DEX cascade sniffer
+    quantum_engine::dark_alpha_sniffer::spawn_hyperliquid_sniffer(Arc::clone(&dark_router));
     
     // Initialize SQLite WAL for Persistence
     let mut initial_capital = 13.0_f64;
@@ -256,6 +247,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     
     let exec = Arc::clone(&executor);
+    let rest_exec = Arc::clone(&rest_executor);
     let loop_telemetry_tx = telemetry_tx.clone();
     let dark_router_unified = Arc::clone(&dark_router);
     let unified_handle = tokio::spawn(async move {
@@ -275,6 +267,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let is_trade = msg.contains("\"e\":\"trade\"");
             let is_kline = msg.contains("\"e\":\"kline\"");
             let is_depth = msg.contains("\"e\":\"depthUpdate\"");
+            let is_reconnect = msg == "[SYSTEM:RECONNECT]";
+            
+            if is_reconnect {
+                println!("🧹 [AUTO-HEALING] Reconnect signal received. Purging Quantum Engine state to prevent time-glitches...");
+                for engine in scalp_engines.values_mut() {
+                    engine.reset();
+                }
+                for engine in swing_engines.values_mut() {
+                    engine.reset();
+                }
+                println!("✅ [AUTO-HEALING] All AI Engines flushed. Entering Warmup Phase (50 ticks).");
+                
+                // Spawn REST sync here
+                let rx_rest = Arc::clone(&rest_exec);
+                tokio::spawn(async move {
+                    println!("🔄 [REST-SYNC] Fetching truth from Binance API...");
+                    if let Ok(positions) = rx_rest.fetch_open_positions().await {
+                        let mut open_count = 0;
+                        for pos in positions {
+                            if let (Some(amt_str), Some(_sym)) = (pos.get("positionAmt").and_then(|v| v.as_str()), pos.get("symbol").and_then(|v| v.as_str())) {
+                                if let Ok(amt) = amt_str.parse::<f64>() {
+                                    if amt != 0.0 {
+                                        open_count += 1;
+                                    }
+                                }
+                            }
+                        }
+                        println!("✅ [REST-SYNC] Binance reports {} active open positions.", open_count);
+                        // Note: For absolute consistency, we would send a message back through a channel to safely mutate open_positions here.
+                        // Since open_positions is strictly single-threaded in the loop, we just print the delta for now.
+                    }
+                });
+                continue;
+            }
             
             let mut parsed_sym_opt = None;
             let mut current_price = 0.0;
@@ -498,7 +524,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::OmniUpdate {
                     latency_ms: if event_time > 0 { latency_ms as u64 } else { 0 },
                     latency_panic,
-                    dark_alpha: dark_router_clone.get_liquidation_cascade_risk(),
+                    dark_alpha: dark_router_unified.get_liquidation_cascade_risk(),
                     scalp_pnl,
                     swing_pnl,
                 });
@@ -522,6 +548,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok((ws_stream, _)) => {
                     println!("✅ [WS] WebSocket Connected.");
                     retry_count = 0; // Reset retries on success
+                    let _ = tx_events.send("[SYSTEM:RECONNECT]".to_string());
                     let (_, mut read) = ws_stream.split();
                     
                     while let Some(message) = read.next().await {

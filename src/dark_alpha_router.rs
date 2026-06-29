@@ -8,6 +8,7 @@ pub struct DarkAlphaRouter {
     pub mempool_panic_score: AtomicU64, // f64
     pub net_liq_pressure: AtomicU64,    // f64
     pub liquidation_cascade_risk: AtomicU64, // f64
+    pub last_update_ts: AtomicU64, // ms
     
     // Concurrency stats
     pub processed_packets: AtomicU64,
@@ -19,6 +20,7 @@ impl DarkAlphaRouter {
             mempool_panic_score: AtomicU64::new(0f64.to_bits()),
             net_liq_pressure: AtomicU64::new(0f64.to_bits()),
             liquidation_cascade_risk: AtomicU64::new(0f64.to_bits()),
+            last_update_ts: AtomicU64::new(0),
             processed_packets: AtomicU64::new(0),
         }
     }
@@ -59,20 +61,41 @@ impl DarkAlphaRouter {
     }
     
     /// Ingresa un pulso de liquidez oscuro (MEV, Liquidaciones DEX)
-    /// Aplica un decaimiento básico y lo funde con el estado atómico O(1).
+    /// Aplica un decaimiento exponencial estricto O(1) basado en dt (Axioma XVIII)
     #[inline(always)]
-    pub fn ingest_l2_snapshot(&self, qty: f64, _delay_ms: f64, impact: f64, _tick_count: u64) {
+    pub fn ingest_dex_liquidation(&self, qty: f64, impact: f64, ts_ms: u64) {
         let current_liq = self.get_liquidation_cascade_risk();
         let current_pressure = self.get_net_liq_pressure();
         
-        // Decaimiento Exponencial simplificado (lambda = 0.05) para efecto del tick
-        let decay = 0.95; 
-        let new_liq = (current_liq * decay) + (impact * 10.0);
-        let new_pressure = (current_pressure * decay) + (qty * impact);
+        let last_ts = self.last_update_ts.load(Ordering::Acquire);
+        let dt = if ts_ms > last_ts { (ts_ms - last_ts) as f64 } else { 0.0 };
+        
+        // Decaimiento Exponencial: lambda = 0.001 (media vida de ~693ms)
+        let lambda = 0.001;
+        let decay_factor = (-lambda * dt).exp(); 
+        
+        let new_liq = (current_liq * decay_factor) + (impact * 10.0);
+        let new_pressure = (current_pressure * decay_factor) + (qty * impact);
         
         self.set_liquidation_cascade_risk(new_liq);
         self.set_net_liq_pressure(new_pressure);
+        
+        // Update TS only if newer
+        let mut curr_ts = last_ts;
+        while ts_ms > curr_ts {
+            match self.last_update_ts.compare_exchange_weak(curr_ts, ts_ms, Ordering::Release, Ordering::Relaxed) {
+                Ok(_) => break,
+                Err(actual) => curr_ts = actual,
+            }
+        }
+        
         self.inc_processed_packets();
+    }
+    
+    // Proxy for backward compatibility with god_engine currently passing 4 params
+    #[inline(always)]
+    pub fn ingest_l2_snapshot(&self, qty: f64, _obi: f64, impact: f64, ts_ms: u64) {
+        self.ingest_dex_liquidation(qty, impact, ts_ms);
     }
 }
 

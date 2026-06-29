@@ -1,10 +1,8 @@
-use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio::task;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use futures_util::{StreamExt, SinkExt};
+use futures_util::StreamExt;
 use serde_json::Value;
-use std::sync::Arc;
 
 pub struct BinanceWsClient {
     symbols: Vec<String>,

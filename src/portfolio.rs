@@ -69,4 +69,19 @@ impl Portfolio {
         }
         None
     }
+
+    pub fn get_heat(current_price: f64) -> f64 {
+        if let Ok(port) = GLOBAL_PORTFOLIO.read() {
+            if port.usdt_balance <= 0.0 { return 1.0; }
+            let mut used_margin = 0.0;
+            if let Some(pos) = port.scalping_position {
+                used_margin += (pos.qty * current_price) / 50.0; // Phase 13: approx 50x
+            }
+            if let Some(pos) = port.swing_position {
+                used_margin += (pos.qty * current_price) / 15.0; // Phase 13: approx 15x
+            }
+            return used_margin / port.usdt_balance;
+        }
+        0.0
+    }
 }

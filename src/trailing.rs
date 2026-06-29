@@ -165,7 +165,7 @@ pub extern "C" fn evaluate_quantum_trailing(
     }
 
     // Force Close Check
-    let mut dd_atr = mfe_atr - pnl_atr;
+    let dd_atr = mfe_atr - pnl_atr;
     let mut current_tol = pullback_tol;
     if current_phase == 3 || current_phase == 4 {
         current_tol *= 0.8;

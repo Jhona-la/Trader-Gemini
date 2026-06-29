@@ -3,10 +3,10 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use hex;
 use serde_json::Value;
-use simd_json::prelude::*;
-use simd_json::prelude::ValueObjectAccess;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
+use simd_json::prelude::ValueObjectAccess;
+use simd_json::prelude::ValueAsScalar;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -60,7 +60,7 @@ impl CircuitBreaker {
 }
 
 pub struct BinanceRestExecutor {
-    api_key: String,
+    _api_key: String,
     secret_key: String,
     base_url: String,
     client: Client,
@@ -85,7 +85,7 @@ impl BinanceRestExecutor {
             .unwrap();
 
         Self {
-            api_key,
+            _api_key: api_key,
             secret_key,
             base_url,
             client,
@@ -175,11 +175,33 @@ impl BinanceRestExecutor {
             }
         }
     }
+    pub async fn fetch_open_positions(&self) -> Result<Vec<Value>, String> {
+        let timestamp = Self::get_timestamp();
+        let query = format!("timestamp={}", timestamp);
+        let signature = self.generate_signature(&query);
+        let url = format!("{}/fapi/v2/positionRisk?{}&signature={}", self.base_url, query, signature);
+
+        match self.client.get(&url).send().await {
+            Ok(res) => {
+                let status = res.status();
+                if status.is_success() {
+                    self.circuit_breaker.record_success();
+                    Ok(res.json::<Vec<Value>>().await.unwrap_or_else(|_| vec![]))
+                } else {
+                    self.circuit_breaker.record_failure();
+                    Err(format!("HTTP Error: {}", status))
+                }
+            },
+            Err(e) => {
+                self.circuit_breaker.record_failure();
+                Err(e.to_string())
+            }
+        }
+    }
 }
 
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use serde_json::json;
 use tokio::sync::mpsc;
 
 pub struct BinanceWSFuturesExecutor {
@@ -361,7 +383,8 @@ impl BinanceUserDataStream {
                                 let (_, mut read) = ws_stream.split();
                                 while let Some(msg_result) = read.next().await {
                                     if let Ok(Message::Text(text)) = msg_result {
-                                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
+                                        let mut bytes = text.into_bytes();
+                                        if let Ok(data) = simd_json::to_borrowed_value(&mut bytes) {
                                             if data.get("e").and_then(|v| v.as_str()) == Some("ORDER_TRADE_UPDATE") {
                                                 if let Some(order) = data.get("o") {
                                                     if order.get("X").and_then(|v| v.as_str()) == Some("FILLED") {
@@ -384,7 +407,7 @@ impl BinanceUserDataStream {
                                                     }
                                                 }
                                             }
-                                        }
+                                        }; // Semi-colon here!
                                     }
                                 }
                             }
