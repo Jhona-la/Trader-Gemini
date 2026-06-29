@@ -1,0 +1,4 @@
+LIBRARY
+EXPORTS
+  __rustc_proc_macro_decls_7690c43e787705e2__ DATA
+  rust_metadata_serde_derive_7690c43e787705e2 DATA

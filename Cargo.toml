@@ -22,6 +22,8 @@ futures-util = "0.3"
 url = "2.4"
 lazy_static = "1.4"
 memmap2 = "0.9"
+chrono = "0.4"
+csv = "1.1"
 
 [[bin]]
 name = "god_engine"
@@ -34,3 +36,11 @@ path = "src/bin/evolution_engine.rs"
 [[bin]]
 name = "dashboard"
 path = "src/bin/dashboard.rs"
+
+[[bin]]
+name = "data_loader"
+path = "src/bin/data_loader.rs"
+
+[[bin]]
+name = "backtest_engine"
+path = "src/bin/backtest_engine.rs"

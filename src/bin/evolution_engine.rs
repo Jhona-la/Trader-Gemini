@@ -21,26 +21,47 @@ fn main() {
         println!("⚠️ NanoForest NOT FOUND! Evolution will proceed with dummy/random probabilities.");
     }
 
-    let mmap_path = "data/backtest_mmap.bin";
-    let mut file = match File::open(mmap_path) {
-        Ok(f) => f,
-        Err(_) => {
-            println!("❌ Failed to open backtest_mmap.bin. Please run run_nanosecond_backtest.py first.");
-            return;
+    let sym = "BTCUSDT";
+    let file_path = format!("data/historical/{}_1m.csv", sym);
+    let mut closes_vec = Vec::new();
+    let mut highs_vec = Vec::new();
+    let mut lows_vec = Vec::new();
+    let mut vols_vec = Vec::new();
+
+    if let Ok(file) = File::open(&file_path) {
+        use std::io::{BufRead, BufReader};
+        let reader = BufReader::new(file);
+        for line in reader.lines().filter_map(|l| l.ok()).skip(1) {
+            let parts: Vec<&str> = line.split(',').collect();
+            if parts.len() >= 6 {
+                if let (Ok(h), Ok(l), Ok(c), Ok(v)) = (
+                    parts[2].parse::<f64>(),
+                    parts[3].parse::<f64>(),
+                    parts[4].parse::<f64>(),
+                    parts[5].parse::<f64>(),
+                ) {
+                    highs_vec.push(h);
+                    lows_vec.push(l);
+                    closes_vec.push(c);
+                    vols_vec.push(v);
+                }
+            }
         }
-    };
+    } else {
+        println!("❌ Failed to open {}. Please run data_loader first.", file_path);
+        return;
+    }
+
+    let len = closes_vec.len();
+    if len == 0 {
+        println!("❌ No data loaded.");
+        return;
+    }
     
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).unwrap();
-    
-    let float_count = buffer.len() / 8;
-    let len = float_count / 4;
-    
-    let ptr = buffer.as_ptr() as *const f64;
-    let closes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    let highs = unsafe { std::slice::from_raw_parts(ptr.add(len), len) };
-    let lows = unsafe { std::slice::from_raw_parts(ptr.add(len * 2), len) };
-    let volumes = unsafe { std::slice::from_raw_parts(ptr.add(len * 3), len) };
+    let closes = &closes_vec[..];
+    let highs = &highs_vec[..];
+    let lows = &lows_vec[..];
+    let volumes = &vols_vec[..];
     
     println!("✅ Loaded {} ticks for Backtest Evolution.", len);
     
