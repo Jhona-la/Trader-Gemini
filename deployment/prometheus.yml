@@ -1,9 +1,0 @@
-global:
-  scrape_interval: 5s     # Scrape frequently for HFT monitoring
-  evaluation_interval: 5s
-
-scrape_configs:
-  - job_name: 'trader_gemini'
-    static_configs:
-      - targets: ['host.docker.internal:9091']
-    metrics_path: '/metrics'

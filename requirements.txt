@@ -42,3 +42,8 @@ winloop>=0.1.6;sys_platform=='win32'
 uvloop>=0.19.0;sys_platform!='win32'
 duckdb>=0.10.0
 
+# ═══════════════════════════════════════════════════════════════
+# TRADFI MULTI-BROKER INTEGRATION
+# ═══════════════════════════════════════════════════════════════
+ib_insync==0.9.86
+alpaca-py==0.16.0

@@ -73,6 +73,12 @@ The architecture strictly simulates the **Cruel Reality** of Binance Futures fee
 4. **Fees y Costos:** Opera maker sobre taker preferiblemente. Calcula breakeven exacto (incluyendo fees) en microscalping antes de entrar.
 5. **Liquidez y Selección de Pares:** Monitorea order books. Rota pares dinámicamente priorizando volumen, spread, y volatilidad. 
 
+### Phase 33+: AEGIS V2 HFT Dual-Engine & Quantum Compounding
+1. **Zero-Drop Data Queues & Forensic Telemetry:** Rastreo riguroso del `tick_id` desde `binance_loader.py` hasta el cierre de órdenes en `engine.py`. Permite auditorías sistémicas exactas de dónde y por qué se pierde latencia o datos.
+2. **Streaming Features O(1):** `math_kernel.py` ha sido equipado con algoritmos O(1) asíncronos para EMA y RSI (recursividad matemática), evitando recalculaciones de arreglos completos para mitigar bloqueos en HFT.
+3. **Bifurcación de Motores (FastLane vs HeavyLane):** El event loop HFT de `engine.py` se dividió. Estrategias `Scalping` se procesan "inline" de forma síncrona en microsegundos (`FastLane`), mientras `Swing/ML` pesadas se descargan a un `ThreadPoolExecutor` (`HeavyLane`), evadiendo contención.
+4. **Matemática Expansiva All-In (Micro-Accounts):** `risk_manager.py` aplica apalancamiento compuesto que arriesga hasta el 95% del capital total para cuentas `< $50`, ejecutando Asymmetric Kelly Fraction para salir del fango exponencialmente.
+
 ---
 
 ## 4. GESTIÓN DE RIESGO ESTRUCTURAL

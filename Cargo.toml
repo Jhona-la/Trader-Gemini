@@ -1,0 +1,32 @@
+[package]
+name = "quantum_engine"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "quantum_engine"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+tokio = { version = "1.32", features = ["full"] }
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+tokio-tungstenite = { version = "0.20", features = ["rustls-tls-native-roots"] }
+futures-util = "0.3"
+url = "2.4"
+lazy_static = "1.4"
+memmap2 = "0.9"
+
+[[bin]]
+name = "god_engine"
+path = "src/bin/god_engine.rs"
+
+[[bin]]
+name = "evolution_engine"
+path = "src/bin/evolution_engine.rs"

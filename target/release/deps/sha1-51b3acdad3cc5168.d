@@ -1,0 +1,11 @@
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\core\rust_engine\target\release\deps\sha1-51b3acdad3cc5168.d: C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\lib.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\consts.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress\soft.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress\x86.rs
+
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\core\rust_engine\target\release\deps\libsha1-51b3acdad3cc5168.rlib: C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\lib.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\consts.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress\soft.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress\x86.rs
+
+C:\Users\jhona\Documents\Proyectos\Trader Gemini\core\rust_engine\target\release\deps\libsha1-51b3acdad3cc5168.rmeta: C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\lib.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\consts.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress\soft.rs C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress\x86.rs
+
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\lib.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\consts.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress\soft.rs:
+C:\Users\jhona\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\sha-1-0.9.8\src\compress\x86.rs:

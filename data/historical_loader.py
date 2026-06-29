@@ -2,6 +2,7 @@ import polars as pl
 import numpy as np
 from .data_provider import DataProvider
 from core.events import MarketEvent
+from core.event_pool import EventPool
 
 class HistoricalCSVData(DataProvider):
     """
@@ -76,7 +77,7 @@ class HistoricalCSVData(DataProvider):
                     return
 
             if any_data:
-                self.events_queue.put(MarketEvent())
+                self.events_queue.put(EventPool.create_market_event())
             else:
                 self.continue_backtest = False
                 

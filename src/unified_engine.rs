@@ -1,0 +1,250 @@
+use crate::stateful_engine::StatefulEngine;
+use crate::ml_inference::NanoForest;
+use crate::risk::RiskManager;
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct UnifiedConfig {
+    pub sl_pct: f64,
+    pub tp_pct: f64,
+    pub ml_threshold_l: f64,
+    pub ml_threshold_s: f64,
+    pub tech_threshold_l: f64,
+    pub tech_threshold_s: f64,
+}
+
+fn internal_run_backtest(
+    closes: &[f64],
+    highs: &[f64],
+    lows: &[f64],
+    volumes: &[f64],
+    cfg: &UnifiedConfig,
+    out_pnl: &mut [f64],
+    out_stats: &mut [f64],
+) -> usize {
+    let len = closes.len();
+    let mut engine = StatefulEngine::new();
+    let mut risk_manager = RiskManager::new(0.05, 1.0); // 5% max drawdown, max 100% allowed risk per trade
+    
+    let mut capital = 13.0; // Phase 13 rule: 13 USD starting capital
+    let mut peak_capital = 13.0;
+    let mut max_dd = 0.0;
+    
+    let mut scalp_in_pos = false;
+    let mut scalp_side = 0_i32; 
+    let mut scalp_entry = 0.0;
+    let mut scalp_qty = 0.0;
+    
+    let mut swing_in_pos = false;
+    let mut swing_side = 0_i32; 
+    let mut swing_entry = 0.0;
+    let mut swing_qty = 0.0;
+    
+    let mut wins = 0;
+    let mut trades = 0;
+
+    let fee_rate = 0.000375 * 2.0;
+
+    for i in 0..len {
+        let current_close = closes[i];
+        engine.process_tick(current_close, volumes[i]);
+        let fast = engine.ema_fast;
+        let slow = engine.ema_slow;
+
+        let mut ml_prob = 0.0;
+        if i > 10 {
+            let features = engine.get_features();
+            ml_prob = crate::ml_inference::NanoForest::predict_global(&features);
+        }
+
+        // --- 1. EVALUATE EXITS ---
+        if scalp_in_pos {
+            let pnl_pct = if scalp_side == 1 { (current_close - scalp_entry) / scalp_entry } else { (scalp_entry - current_close) / scalp_entry };
+            let mut exit = false;
+            let mut exit_price = current_close;
+            let scalp_tp = cfg.tp_pct * 0.33;
+            let scalp_sl = cfg.sl_pct * 0.33;
+
+            if pnl_pct >= scalp_tp { exit = true; }
+            else if pnl_pct <= -scalp_sl { exit = true; }
+            else if scalp_side == 1 && lows[i] <= scalp_entry * (1.0 - scalp_sl) { exit = true; exit_price = scalp_entry * (1.0 - scalp_sl); }
+            else if scalp_side == -1 && highs[i] >= scalp_entry * (1.0 + scalp_sl) { exit = true; exit_price = scalp_entry * (1.0 + scalp_sl); }
+
+            if exit {
+                let pnl_amount = scalp_qty * (exit_price - scalp_entry) * (scalp_side as f64);
+                let fee_amount = scalp_qty * exit_price * fee_rate;
+                let net_pnl_amount = pnl_amount - fee_amount;
+                
+                capital += net_pnl_amount;
+                let margin_used = (scalp_qty * scalp_entry) / 50.0;
+                let net_pnl_pct = net_pnl_amount / margin_used;
+                
+                risk_manager.report_trade_result_local("BTCUSDT", net_pnl_pct > 0.0, net_pnl_pct);
+                
+                out_pnl[trades] = net_pnl_pct;
+                if net_pnl_pct > 0.0 { wins += 1; }
+                trades += 1;
+                
+                if capital > peak_capital { peak_capital = capital; }
+                let dd = (peak_capital - capital) / peak_capital;
+                if dd > max_dd { max_dd = dd; }
+                
+                scalp_in_pos = false;
+            }
+        }
+
+        if swing_in_pos {
+            let pnl_pct = if swing_side == 1 { (current_close - swing_entry) / swing_entry } else { (swing_entry - current_close) / swing_entry };
+            let mut exit = false;
+            let mut exit_price = current_close;
+            let swing_tp = cfg.tp_pct;
+            let swing_sl = cfg.sl_pct;
+
+            if pnl_pct >= swing_tp { exit = true; }
+            else if pnl_pct <= -swing_sl { exit = true; }
+            else if swing_side == 1 && lows[i] <= swing_entry * (1.0 - swing_sl) { exit = true; exit_price = swing_entry * (1.0 - swing_sl); }
+            else if swing_side == -1 && highs[i] >= swing_entry * (1.0 + swing_sl) { exit = true; exit_price = swing_entry * (1.0 + swing_sl); }
+
+            if exit {
+                let pnl_amount = swing_qty * (exit_price - swing_entry) * (swing_side as f64);
+                let fee_amount = swing_qty * exit_price * fee_rate;
+                let net_pnl_amount = pnl_amount - fee_amount;
+                
+                capital += net_pnl_amount;
+                let margin_used = (swing_qty * swing_entry) / 30.0;
+                let net_pnl_pct = net_pnl_amount / margin_used;
+                
+                risk_manager.report_trade_result_local("BTCUSDT_SWING", net_pnl_pct > 0.0, net_pnl_pct);
+                
+                out_pnl[trades] = net_pnl_pct;
+                if net_pnl_pct > 0.0 { wins += 1; }
+                trades += 1;
+                
+                if capital > peak_capital { peak_capital = capital; }
+                let dd = (peak_capital - capital) / peak_capital;
+                if dd > max_dd { max_dd = dd; }
+                
+                swing_in_pos = false;
+            }
+        }
+
+        // Check Bankruptcy
+        if capital <= 0.0 {
+            break;
+        }
+
+        // --- 2. EVALUATE ENTRIES ---
+        if !scalp_in_pos && ml_prob > cfg.ml_threshold_l as f32 {
+            if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, 50.0, capital) {
+                scalp_in_pos = true;
+                scalp_side = 1;
+                scalp_entry = current_close;
+                scalp_qty = qty;
+            }
+        } else if !scalp_in_pos && ml_prob < (1.0 - cfg.ml_threshold_s as f32) {
+            if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT", current_close, 50.0, capital) {
+                scalp_in_pos = true;
+                scalp_side = -1;
+                scalp_entry = current_close;
+                scalp_qty = qty;
+            }
+        }
+
+        if !swing_in_pos && i > 10 {
+            if fast > slow * (1.0 + cfg.tech_threshold_l) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, 30.0, capital) {
+                    swing_in_pos = true;
+                    swing_side = 1;
+                    swing_entry = current_close;
+                    swing_qty = qty;
+                }
+            } else if fast < slow * (1.0 - cfg.tech_threshold_s) {
+                if let Some(qty) = risk_manager.calculate_micro_position_size_local("BTCUSDT_SWING", current_close, 30.0, capital) {
+                    swing_in_pos = true;
+                    swing_side = -1;
+                    swing_entry = current_close;
+                    swing_qty = qty;
+                }
+            }
+        }
+    }
+
+    out_stats[0] = if trades > 0 { (wins as f64) / (trades as f64) } else { 0.0 };
+    out_stats[1] = trades as f64;
+    out_stats[2] = capital;
+    out_stats[3] = max_dd;
+
+    trades
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_run_unified_backtest(
+    closes_ptr: *const f64,
+    highs_ptr: *const f64,
+    lows_ptr: *const f64,
+    volumes_ptr: *const f64,
+    len: usize,
+    config: *const UnifiedConfig,
+    out_pnl_ptr: *mut f64,
+    out_stats_ptr: *mut f64,
+) -> usize {
+    if closes_ptr.is_null() || highs_ptr.is_null() || lows_ptr.is_null() || config.is_null() || out_pnl_ptr.is_null() || out_stats_ptr.is_null() {
+        return 0;
+    }
+
+    let closes = unsafe { std::slice::from_raw_parts(closes_ptr, len) };
+    let highs = unsafe { std::slice::from_raw_parts(highs_ptr, len) };
+    let lows = unsafe { std::slice::from_raw_parts(lows_ptr, len) };
+    let volumes = unsafe { std::slice::from_raw_parts(volumes_ptr, len) };
+    let cfg = unsafe { &*config };
+    let out_pnl = unsafe { std::slice::from_raw_parts_mut(out_pnl_ptr, len) };
+    let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, 4) };
+
+    internal_run_backtest(closes, highs, lows, volumes, cfg, out_pnl, out_stats)
+}
+
+#[no_mangle]
+pub extern "C" fn ffi_run_unified_backtest_mmap(
+    filepath_ptr: *const std::os::raw::c_char,
+    len: usize,
+    config: *const UnifiedConfig,
+    out_pnl_ptr: *mut f64,
+    out_stats_ptr: *mut f64,
+) -> usize {
+    if filepath_ptr.is_null() || config.is_null() || out_pnl_ptr.is_null() || out_stats_ptr.is_null() {
+        return 0;
+    }
+    
+    let filepath_c = unsafe { std::ffi::CStr::from_ptr(filepath_ptr) };
+    let filepath = match filepath_c.to_str() {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+
+    let file = match std::fs::File::open(filepath) {
+        Ok(f) => f,
+        Err(_) => return 0,
+    };
+
+    let mmap = match unsafe { memmap2::MmapOptions::new().map(&file) } {
+        Ok(m) => m,
+        Err(_) => return 0,
+    };
+
+    let expected_bytes = len * 4 * 8;
+    if mmap.len() < expected_bytes {
+        return 0;
+    }
+
+    let ptr = mmap.as_ptr() as *const f64;
+    let closes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    let highs = unsafe { std::slice::from_raw_parts(ptr.add(len), len) };
+    let lows = unsafe { std::slice::from_raw_parts(ptr.add(len * 2), len) };
+    let volumes = unsafe { std::slice::from_raw_parts(ptr.add(len * 3), len) };
+
+    let cfg = unsafe { &*config };
+    let out_pnl = unsafe { std::slice::from_raw_parts_mut(out_pnl_ptr, len) };
+    let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, 4) };
+
+    internal_run_backtest(closes, highs, lows, volumes, cfg, out_pnl, out_stats)
+}

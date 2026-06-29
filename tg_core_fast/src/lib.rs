@@ -30,11 +30,11 @@ fn apply_micro_sizing(
     // For accounts under $100, we apply full Kelly to the remaining capital limit
     if current_capital < 100.0 {
         let max_allocated = current_capital * 0.95; // Leave 5% buffer
-        let kelly_amount = current_capital * kelly_f;
         
-        // Take the min of what Kelly suggests vs max allowed
-        base_risk_amount = if kelly_amount < max_allocated {
-            kelly_amount
+        // Base risk amount already contains the Python adaptive multipliers
+        // We just ensure it doesn't exceed 95% of current micro-capital
+        base_risk_amount = if base_risk_amount < max_allocated {
+            base_risk_amount
         } else {
             max_allocated
         };
