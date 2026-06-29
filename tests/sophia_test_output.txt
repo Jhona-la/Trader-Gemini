@@ -1,0 +1,28 @@
+00:07:20 [INFO] 📊 [SOPHIA] PostMortem initialized (window=100)
+✅ All sophia modules parse OK
+✅ technical.py parses OK
+✅ portfolio.py parses OK
+✅ All imports OK
+✅ BayesianCalibrator: P(Win)=0.5577 (in [0,1])
+✅ Monotonic: P(0.2)=0.4430 < P(0.9)=0.5873
+✅ Prior Sync: P_prior=0.5833 (expected ~0.5833)
+✅ FeatureAttributor: Top-5 features computed
+✅ SurvivalEstimator: E[T]=23.3min, GARCH_vol=0.003275
+✅ AlphaDecayFunction: Expires at 2.9min
+✅ EntropyAnalyzer: H=0.7420 (Moderada)
+✅ Entropy monotonic: H(0.85)=0.7420 < H(0.55)=1.3894
+✅ TailRiskAnalyzer (normal): Kurt=-0.2306, FatTails=False
+✅ TailRiskAnalyzer (fat): Kurt=20.4575, FatTails=True
+✅ NarrativeGenerator: "Abro LONG (compra) en BTC/USDT a $50,000.00 porque detecto reversión a la media ..."
+✅ PostMortem Narrative: "✅ POST-MORTEM BTC/USDT LONG: Predicho 78% de éxito → Resultado: WIN (PnL=$+5.230..."
+✅ PostMortem WIN: Brier=0.0625 (expected 0.0625)
+✅ PostMortem LOSS: Brier=0.4225 (expected 0.4225)
+✅ Calibration Status: {'rolling_brier': 0.2425, 'lifetime_brier': 0.2425, 'status': 'DEGRADADA ⚠️⚠️', 'trend': 'STABLE', 'n_trades_rolling': 2, 'n_trades_total': 2}
+✅ SophiaReport.to_log_line(): [SOPHIA] P(Win)=78.0% | E[T]=12min | Top3=[RSI=+0.120] | H=0.35 (Alta Convicción)
+✅ SophiaReport.to_dict(): 16 fields
+
+============================================================
+🎉 ALL 16 SOPHIA-INTELLIGENCE TESTS PASSED!
+============================================================
+00:07:20 [INFO]    ✅ POST-MORTEM BTC/USDT LONG: Predicho 75% de éxito → Resultado: WIN (PnL=$+5.0000). Brier Score: 0.0625. Calibración: BUENA ✅. Duración: 10.0min (estimado: 10.0min). Estimación temporal PRECISA.
+00:07:20 [INFO]    ❌ POST-MORTEM ETH/USDT SHORT: Predicho 65% de éxito → Resultado: LOSS (PnL=$-3.0000). Brier Score: 0.4225. Calibración: POBRE ❌ (recalibrar modelo). Duración: 15.0min (estimado: 8.0min). Estimación temporal PRECISA.

@@ -1,0 +1,115 @@
+# =============================================================================
+# PROMTAIL: DUAL-SHIPPING MULTIPLEXER (HOT-COLD SURVEILLANCE)
+# =============================================================================
+# QUÉ:    Promtail scrapes JSON logs from the bot and ships them to:
+#         - Loki (HOT) - always active for real-time dashboards
+#         - Logstash (COLD) - only when ELK profile is active
+# POR QUÉ: Dual destinations allow forensic analysis without impacting
+#          the lightweight Loki path used for live monitoring.
+# CÓMO:   Promtail's multi-client feature sends to both targets.
+#         If Logstash is down, Promtail retries silently without blocking.
+# CUÁNDO: Always running as part of the default observability stack.
+# DÓNDE:  deployment/promtail.yml
+# QUIÉN:  Container omega-promtail
+# =============================================================================
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+# ═══════════════════════════════════════════════════
+# DUAL-SHIPPING CLIENTS (Hot + Cold)
+# ═══════════════════════════════════════════════════
+clients:
+  # ─── CLIENT A: LOKI (HOT — Always Active) ───
+  - url: http://loki:3100/loki/api/v1/push
+    # Primary destination: real-time dashboards
+    batchwait: 1s
+    batchsize: 102400  # 100KB batches
+
+  # ─── CLIENT B: LOGSTASH (COLD — Fire & Forget) ───
+  # When ELK is dormant, Promtail will fail silently on this client.
+  # No blocking, no retries that would affect the hot path.
+  - url: http://logstash:5044
+    batchwait: 5s
+    batchsize: 524288  # 512KB batches (larger = fewer round-trips)
+    # Backoff config: fail fast, don't block hot path
+    backoff_config:
+      min_period: 500ms
+      max_period: 5s
+      max_retries: 3    # Give up quickly if ELK is down
+
+scrape_configs:
+  # ═══════════════════════════════════════════
+  # TRADER GEMINI JSON LOGS
+  # ═══════════════════════════════════════════
+  - job_name: trader_gemini
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: trader
+          app: omega-bot
+          __path__: /var/log/trader/*.json
+
+    pipeline_stages:
+      # Step 1: Parse JSON log lines
+      - json:
+          expressions:
+            level: level
+            module: module
+            function: function
+            message: message
+            timestamp: timestamp
+
+      # Step 2: Extract labels for filtering in Grafana
+      - labels:
+          level:
+          module:
+
+      # Step 3: Extract symbol from message if present (e.g., "BTC/USDT")
+      - regex:
+          expression: '(?P<symbol>[A-Z]+/USDT)'
+          source: message
+
+      - labels:
+          symbol:
+
+      # Step 4: Set timestamp from log JSON
+      - timestamp:
+          source: timestamp
+          format: '2006-01-02 15:04:05'
+
+      # Step 5: Final output line
+      - output:
+          source: message
+
+  # ═══════════════════════════════════════════
+  # ERROR LOGS (Separate stream for alerting)
+  # ═══════════════════════════════════════════
+  - job_name: trader_errors
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: trader_errors
+          app: omega-bot
+          __path__: /var/log/trader/error_*.json
+
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            module: module
+            message: message
+            exception: exception
+
+      - labels:
+          level:
+          module:
+
+      - output:
+          source: message

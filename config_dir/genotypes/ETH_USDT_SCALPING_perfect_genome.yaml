@@ -1,0 +1,21 @@
+symbol: ETH/USDT
+horizon: SCALPING
+sl_pct: 0.0055
+tp_sl_ratio: 1.0
+tp_pct: 0.0055
+strength_threshold: null
+ml_confidence: null
+adx_threshold: null
+cooldown_seconds: 10
+zombie_chaser_atr_mult: 0.2
+ml_kelly_fraction: 1.4
+compounding_growth_factor: 0.6
+max_concurrent_trades: 4
+max_drawdown_limit: 0.03
+global_stop_loss_pct: 0.060000000000000005
+performance:
+  win_rate: 0
+  pnl_usd: 0.0
+  trades: 0
+  max_dd_pct: 0.0
+timestamp: '2026-06-15T11:08:29.052482'

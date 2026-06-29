@@ -1299,8 +1299,8 @@ class DatabaseHandler:
                     trade_dict['strategy_id'],
                     trade_dict['pnl'],
                     trade_dict['commission'],
-                    trade_dict.get('trade_id', getattr(trade_dict, 'trade_id', None)),
-                    trade_dict.get('thought_id', getattr(trade_dict, 'thought_id', None))
+                    trade_dict['trade_id'],
+                    trade_dict['thought_id']
                 ))
                 
                 # 2. Update Position

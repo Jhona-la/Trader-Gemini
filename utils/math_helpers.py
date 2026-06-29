@@ -1,0 +1,45 @@
+import numpy as np
+import math
+
+def safe_div(a, b, fill_value=0.0):
+    """
+    Safely divide a by b, replacing division by zero or NaN results with fill_value.
+    Supports both scalar and array-like inputs (lists, numpy arrays).
+    
+    Args:
+        a: Numerator
+        b: Denominator
+        fill_value: Value to return where division is invalid (default: 0.0)
+        
+    Returns:
+        Result of division with invalid values replaced by fill_value.
+    """
+    # Handle scalar case specifically to avoid overhead/types issues if simple floats
+    if np.isscalar(a) and np.isscalar(b):
+        if b == 0 or math.isnan(b) or math.isnan(a):
+            return fill_value
+        return a / b
+
+    # Convert to numpy arrays for vectorized operation
+    # using strict float type to allow NaN/Inf handling
+    a_arr = np.array(a, dtype=float)
+    b_arr = np.array(b, dtype=float)
+    
+    # Perform division ignoring invalid errors (handled by valid_mask later)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        result = np.divide(a_arr, b_arr)
+    
+    # Identify invalid indices:
+    # 1. Infinite results (division by zero)
+    # 2. NaN results (0/0 or NaN input)
+    mask = ~np.isfinite(result) # This catches Inf and NaN
+    
+    # Replace invalid values with fill_value:
+    # If fill_value is array-like, only assign corresponding indices to prevent shape mismatch
+    if np.isscalar(fill_value):
+        result[mask] = fill_value
+    else:
+        fill_arr = np.array(fill_value, dtype=float)
+        result[mask] = fill_arr[mask]
+    
+    return result

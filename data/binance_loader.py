@@ -1,18 +1,17 @@
 # import ccxt  <-- REMOVED (Rule 3.1 Separation of Concerns)
-# from binance.client import Client # MUTILATED FOR RUST
-# from binance.enums import * # MUTILATED FOR RUST
+from binance.client import Client # Synchronous Client for REST calls
+from binance.enums import *
 import time
 from datetime import datetime, timezone
 from .data_provider import DataProvider
 from core.events import MarketEvent
-from core.event_pool import EventPool
 from config import Config  # Import Config
 from utils.logger import logger
 from utils.debug_tracer import trace_execution
 from utils.thread_monitor import monitor
 import asyncio
 from typing import List, Dict, Optional, Any
-# from binance import AsyncClient, BinanceSocketManager # MUTILATED FOR RUST
+from binance import AsyncClient, BinanceSocketManager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import collections
 import numpy as np
@@ -34,12 +33,6 @@ from data.validators.ohlcv_validator import OHLCVValidator
 
 
 class BinanceData(DataProvider):
-    # Dummy fallbacks for FFI parsers
-    global ffi_fast_parse_depth
-    global ffi_fast_parse_trade
-    def ffi_fast_parse_depth(raw): return None
-    def ffi_fast_parse_trade(raw): return None
-
     def __init__(self, events_queue, symbol_list):
         from data.data_provider import register_data_provider
         register_data_provider(self)
@@ -50,7 +43,7 @@ class BinanceData(DataProvider):
         # ZMQ IPC Node
         
         # 1. Thread Pool for Parallel Fetching (I/O Bound) - Phase 24: Nanosecond Boot
-        self.executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="BinanceFetch")
+        self.executor = ThreadPoolExecutor(max_workers=30, thread_name_prefix="BinanceFetch")
         
         # 2. Data Buffers Dictionary Initialization (Phase 9/98)
         self.buffers_1m = {}
@@ -75,7 +68,7 @@ class BinanceData(DataProvider):
         self.current_ws_latency = 0.0
         
         # PHASE 29: Derivatives Metrics (OI, Funding)
-        self.derivatives_metrics = {s: {'funding_rate': 0.0, 'oi': 0.0, 'oi_delta': 0.0, 'liquidations': 0.0} for s in self.symbol_list}
+        self.derivatives_metrics = {}
         
         # PHASE II: Dynamic Drift Correction
         self.system_drift_ms = 0.0
@@ -215,11 +208,7 @@ class BinanceData(DataProvider):
     def _push_event(self, event):
         """Helper to push events to either ZMQ or local Queue depending on architecture."""
         if getattr(self, 'events_queue', None):
-            try:
-                self.events_queue.put_nowait(event)
-            except Exception:
-                # If queue is full, fallback to put (or drop depending on architecture)
-                self.events_queue.put(event)
+            self.events_queue.put(event)
             
     async def update_symbol_list(self, new_symbols):
         """Updates the tracked symbols list and reinitializes structures"""
@@ -384,18 +373,7 @@ class BinanceData(DataProvider):
         from core.metal.ingester_bridge import retina_bridge
 
         if not self.client:
-            retry_count = 0
-            while retry_count < 3:
-                try:
-                    self.client = await AsyncClient.create(api_key, api_secret, testnet=testnet)
-                    break
-                except Exception as e:
-                    retry_count += 1
-                    logger.warning(f"⚠️ [BinanceLoader] AsyncClient.create timeout/error ({retry_count}/3): {e}")
-                    if retry_count >= 3:
-                        raise Exception(f"Failed to initialize Binance AsyncClient after 3 retries: {e}")
-                    await asyncio.sleep(5)
-                    
+            self.client = await AsyncClient.create(api_key, api_secret, testnet=testnet)
             self.bsm = BinanceSocketManager(self.client, max_queue_size=50000)
             
         import collections
@@ -492,7 +470,7 @@ class BinanceData(DataProvider):
                                     continue
                                     
                                 # Mutación 36: Quantum Ping-Drift (Latency tracking)
-                                event_time = msg.get('data', {}).get('E', 0)
+                                event_time = msg['data']['E']
                                 if event_time > 0:
                                     local_time = int((time.time() + self.system_drift_ms / 1000.0) * 1000)
                                     latency = local_time - event_time
@@ -599,15 +577,15 @@ class BinanceData(DataProvider):
             now = time.time()
             if not hasattr(self, '_last_kline_event'):
                 self._last_kline_event = {}
-            last_time = self._last_kline_event.get(symbol, 0)
+            last_time = self._last_kline_event[symbol]
             
             if is_closed or (now - last_time) >= 0.5:
                 # Update the 1m buffer with this latest candle
                 with self._data_lock:
                     buf = self.buffers_1m[symbol]
-                    if buf.size > 0:
-                        last_view = buf.get_latest_view()
-                        if last_view[0] == ts:
+                    if buf:
+                        last_t_arr = buf.get_last(1)
+                        if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
                             buf.rewind_one()
                         buf.push(ts, np.float32(o), np.float32(h), np.float32(l), np.float32(c), np.float32(v))
                         
@@ -617,8 +595,7 @@ class BinanceData(DataProvider):
 
                 # Emit the event
                 from core.events import MarketEvent
-                from core.event_pool import EventPool
-                evt = EventPool.create_market_event(
+                evt = MarketEvent(
                     symbol=symbol,
                     timestamp=event_timestamp,
                     close_price=c,
@@ -629,63 +606,10 @@ class BinanceData(DataProvider):
                 self._push_event(evt)
                 self._last_kline_event[symbol] = now
                 
-                # [HORIZON SPECIALIZATION] Dynamically build higher timeframes
-                if is_closed:
-                    self._resample_higher_timeframes(symbol, ts, o, h, l, c, v)
-                
-                
         except Exception as e:
             import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
             import logging
             logging.getLogger(__name__).error(f"Silent exception caught: {e}", exc_info=True)
-
-    def _resample_higher_timeframes(self, symbol, ts_1m, o, h, l, c, v):
-        """
-        Dynamically updates higher timeframe buffers (5m, 15m, 1h, 4h, 1d) from a closed 1m candle.
-        This provides O(1) latency real-time data for Swing strategies without REST fetching.
-        """
-        try:
-            # ts_1m is in milliseconds. 
-            timeframes = {
-                '5m': (5 * 60 * 1000, self.buffers_5m),
-                '15m': (15 * 60 * 1000, self.buffers_15m),
-                '1h': (60 * 60 * 1000, self.buffers_1h),
-                '4h': (4 * 60 * 60 * 1000, self.buffers_4h),
-                '1d': (24 * 60 * 60 * 1000, self.buffers_1d)
-            }
-            
-            with self._data_lock:
-                for tf_name, (ms_interval, buffers_dict) in timeframes.items():
-                    buf = buffers_dict.get(symbol)
-                    if not buf: continue
-                    
-                    # Rellenamos/actualizamos la vela superior
-                    # Determinar el timestamp base de la vela superior (el inicio de la vela)
-                    base_ts = (ts_1m // ms_interval) * ms_interval
-                    
-                    # Revisamos si ya existe la vela en el buffer
-                    if buf.size > 0:
-                        t_res, o_res, h_res, l_res, c_res, v_res = buf.get_last(1)
-                        last_ts = t_res[0]
-                        
-                        if last_ts == base_ts:
-                            # Actualizamos vela existente
-                            new_o = o_res[0]
-                            new_h = max(h_res[0], h)
-                            new_l = min(l_res[0], l)
-                            new_c = c
-                            new_v = v_res[0] + v
-                            buf.rewind_one()
-                            buf.push(base_ts, np.float32(new_o), np.float32(new_h), np.float32(new_l), np.float32(new_c), np.float32(new_v))
-                        elif ts_1m >= last_ts + ms_interval:
-                            # Es una vela nueva
-                            buf.push(base_ts, np.float32(o), np.float32(h), np.float32(l), np.float32(c), np.float32(v))
-                    else:
-                        # Buffer vacío, agregamos primera vela
-                        buf.push(base_ts, np.float32(o), np.float32(h), np.float32(l), np.float32(c), np.float32(v))
-                        
-        except Exception as e:
-            import logging; logging.getLogger(__name__).error(f"Error in _resample_higher_timeframes: {e}", exc_info=True)
 
     def _process_depth_msg(self, msg):
         """
@@ -744,9 +668,6 @@ class BinanceData(DataProvider):
                 best_ask_price, best_ask_vol = float(data['asks'][0][0]), float(data['asks'][0][1])
                 
             micro_price = compute_microprice_jit(best_bid_price, best_bid_vol, best_ask_price, best_ask_vol)
-            
-            if symbol in self.microstructure:
-                self.microstructure[symbol].on_depth(best_bid_price, best_bid_vol, best_ask_price, best_ask_vol)
             
             if symbol not in self.order_flow_metrics:
 
@@ -820,7 +741,7 @@ class BinanceData(DataProvider):
                         self._btc_oracle_data['last_time'] = curr_time
                         
                         # Store in global state for Engine/Strategies to read
-                        from core.global_state import global_state
+                        from core.state_manager import global_state
                         global_state.btc_velocity = self._btc_oracle_data['velocity']
             
             if symbol not in self.order_flow_metrics:
@@ -843,27 +764,14 @@ class BinanceData(DataProvider):
                 
             qty = float(data['q'])
             is_buyer_maker = data['m']
-            price = float(data['p'])
             
-            if symbol in self.microstructure:
-                self.microstructure[symbol].on_trade(price, qty, is_buyer_maker)
-            
+            # In Binance, if buyer is maker, the trade was initiated by the seller (sell market order)
             if is_buyer_maker:
                 metrics['sell_volume'] += qty
                 metrics['cvd'] -= qty
             else:
                 metrics['buy_volume'] += qty
                 metrics['cvd'] += qty
-                
-            # ⚡ [FASE 2] INYECCIÓN DIRECTA AL BUS C-CONTIGUO
-            try:
-                from core.fast_memory_bus import get_bus
-                bus = get_bus(symbol)
-                # Timestamp is 'E' (Event time) or 'T' (Trade time) from data
-                ts = int(data.get('T', time.time() * 1000))
-                bus.write_tick(timestamp=ts, price=price, volume=qty, is_buyer_maker=is_buyer_maker)
-            except Exception as e:
-                import logging; logging.getLogger(__name__).error(f'FastMemoryBus write failed: {e}', exc_info=True)
                 
         except Exception as e:
             import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
@@ -932,7 +840,7 @@ class BinanceData(DataProvider):
             # routes this event to strategies (without close_price, the event
             # falls into the else branch and never reaches calculate_signals).
             # ═══════════════════════════════════════════════════════════════
-            self._push_event(EventPool.create_market_event(
+            self._push_event(MarketEvent(
                 symbol=symbol, 
                 close_price=price,
                 order_flow={
@@ -1203,54 +1111,18 @@ class BinanceData(DataProvider):
         if bars is None or len(bars) == 0:
             return pl.DataFrame()
             
-        import pyarrow as pa
-        # REAL Zero-Copy Arrow Bridge
-        # numpy -> pyarrow -> polars avoids all python dict/heap allocations
-        try:
-            arrow_arrays = [pa.array(bars[name]) for name in bars.dtype.names]
-            arrow_table = pa.Table.from_arrays(arrow_arrays, names=list(bars.dtype.names))
-            df = pl.from_arrow(arrow_table)
-        except Exception:
-            # Fallback for older polars versions
-            pl_dict = {name: bars[name] for name in bars.dtype.names}
-            df = pl.DataFrame(pl_dict)
-            
+        # Zero-copy structured array to Polars
+        pl_dict = {name: bars[name].astype('float64') if bars[name].dtype.kind == 'f' else bars[name] for name in bars.dtype.names}
+        df = pl.DataFrame(pl_dict)
         return df
 
 
-    def _fetch_deep_history_worker(self, symbol, interval, hours, dest_dict=None):
-        """Worker function for threading to prevent GIL lock blocks."""
+    def _fetch_deep_history_worker(self, symbol, interval, hours, dest_dict, limit_per_req=1000, buffer_multiplier=1.2):
+        """Worker function for parallel history fetching"""
         try:
-            # 1. Initialization and sleep jitter against API Bans
-            client = self.client_sync
-            sym_clean = symbol.replace('/', '')
-            
-            import random
-            time.sleep(random.uniform(0.5, 3.5))
-            
-            if dest_dict is not None and isinstance(dest_dict, int):
-                # We overloaded dest_dict parameter to pass `last_ts` for Delta-Fetch!
-                since = dest_dict + 1 # Start right after the last saved candle
-            else:
-                since = int(time.time() * 1000) - (hours * 60 * 60 * 1000)
-                
-            # If `since` is already very close to current time (less than 1 minute gap for 1m interval), we don't need to fetch.
-            if int(time.time() * 1000) - since < 60000:
-                logger.info(f"✅ [Data Delta] {symbol} {interval} is already up to date. Skipping API.")
-                return
-            
-            kl_interval = (
-                Client.KLINE_INTERVAL_1MINUTE if interval == '1m' else
-                Client.KLINE_INTERVAL_5MINUTE if interval == '5m' else
-                Client.KLINE_INTERVAL_15MINUTE if interval == '15m' else
-                Client.KLINE_INTERVAL_1HOUR if interval == '1h' else
-                Client.KLINE_INTERVAL_4HOUR if interval == '4h' else
-                Client.KLINE_INTERVAL_1DAY if interval == '1d' else
-                Client.KLINE_INTERVAL_1WEEK if interval == '1w' else
-                Client.KLINE_INTERVAL_1MINUTE
-            )
-            
-            interval_mins = (
+            time_needed = Config.Strategies.ML_LOOKBACK_BARS * buffer_multiplier if interval == '1m' else hours * 60
+            minutes_needed = hours * 60
+            total_candles_needed = minutes_needed / (
                 15 if interval == '15m' else
                 60 if interval == '1h' else
                 240 if interval == '4h' else
@@ -1258,40 +1130,63 @@ class BinanceData(DataProvider):
                 10080 if interval == '1w' else
                 5 if interval == '5m' else 1
             )
-            total_candles_needed = (hours * 60) // interval_mins
-            limit_per_req = 1000
-            processed_bars = []
             
-            while len(processed_bars) < total_candles_needed:
+            # Adjust calculation for 1m bars specifically
+            if interval == '1m':
+                total_candles_needed = hours * 60
+            
+            all_candles = []
+            since = int(time.time() * 1000) - (hours * 60 * 60 * 1000)
+            
+            # determine interval string constant
+            kl_interval = Client.KLINE_INTERVAL_1MINUTE
+            if interval == '5m': kl_interval = Client.KLINE_INTERVAL_5MINUTE
+            elif interval == '15m': kl_interval = Client.KLINE_INTERVAL_15MINUTE
+            elif interval == '1h': kl_interval = Client.KLINE_INTERVAL_1HOUR
+            elif interval == '4h': kl_interval = Client.KLINE_INTERVAL_4HOUR
+            elif interval == '1d': kl_interval = Client.KLINE_INTERVAL_1DAY
+            elif interval == '1w': kl_interval = Client.KLINE_INTERVAL_1WEEK
+            
+            sym_clean = symbol.replace('/', '')
+            
+            while len(all_candles) < total_candles_needed:
                 client = self.client_sync
                 candles = client.get_klines(symbol=sym_clean, interval=kl_interval, limit=limit_per_req, startTime=since)
                 if not candles:
                     break
                 
-                # Process IMMEDIATELY to avoid memory fragmentation/Heap Corruption
-                for c in candles:
-                    o, h, l, cl, v = float(c[1]), float(c[2]), float(c[3]), float(c[4]), float(c[5])
-                    
-                    # O1: High/Low Physics
-                    if h < max(o, cl) - 1e-8 or l > min(o, cl) + 1e-8:
-                        continue
-                    # O3: Zero Volume with price movement
-                    if o != cl and v <= 0:
-                        continue
-                        
-                    processed_bars.append({
-                        'symbol': symbol,
-                        'timestamp': int(c[0]),
-                        'open': o, 'high': h, 'low': l, 'close': cl, 'volume': v
-                    })
-                
-                # Pagination delay (Anti-Spam)
-                time.sleep(0.2)
-                
-                since = candles[-1][0] + (60000 * interval_mins)
+                all_candles.extend(candles)
+                since = candles[-1][0] + (60000 * (
+                    15 if interval == '15m' else
+                    60 if interval == '1h' else
+                    240 if interval == '4h' else
+                    1440 if interval == '1d' else
+                    10080 if interval == '1w' else
+                    5 if interval == '5m' else 1
+                ))
                 
                 if len(candles) < limit_per_req:
                     break
+            
+            # Process and store
+            processed_bars = []
+            for c in all_candles:
+                # OMEGA Validation (Dimensión 1)
+                o, h, l, cl, v = float(c[1]), float(c[2]), float(c[3]), float(c[4]), float(c[5])
+                
+                # O1: High/Low Physics
+                if h < max(o, cl) - 1e-8 or l > min(o, cl) + 1e-8:
+                    continue
+                # O3: Zero Volume with price movement
+                if o != cl and v <= 0:
+                    continue
+                    
+                # No pd.to_datetime here (Phase 1: Zero-Pandas)
+                processed_bars.append({
+                    'symbol': symbol,
+                    'timestamp': int(c[0]),
+                    'open': o, 'high': h, 'low': l, 'close': cl, 'volume': v
+                })
             
             # RAM OPTIMIZATION (Filled into Ring Buffers)
             if interval == '1m': target_map = self.buffers_1m
@@ -1351,27 +1246,32 @@ class BinanceData(DataProvider):
 
     def fetch_initial_history(self):
         """
-        Fetches historical data (1m candles) using Delta-Fetch architecture.
+        Fetches ~25 hours of historical data (1m candles) in PARALLEL.
+        PHASE 5: Checks Parquet Cache First.
         """
-        logger.info("⏳ [Data] Starting parallel history fetch for 1m...")
+        logger.info("⏳ [Data] Starting parallel history fetch...")
         
-        # Ensure we have loaded snapshots
-        if not hasattr(self, 'loaded_snapshot_ts'):
-            self.load_snapshot()
-            
-        loaded_1m = self.loaded_snapshot_ts.get('1m', {})
+        # 1. Try Load from Disk
+        loaded_symbols = self.load_snapshot()
+        missing_symbols = [s for s in self.symbol_list if s not in loaded_symbols]
+        
+        if not missing_symbols:
+            logger.info("✅ [Data] All symbols loaded from Cache!")
+            return
+
+        # 2. Fetch Missing from API
+        logger.info(f"🌍 [Data] Fetching missing {len(missing_symbols)} symbols from Binance API...")
         
         time_needed = Config.Strategies.ML_LOOKBACK_BARS * 1.2
-        # [PHASE 42: OMEGA OPTIMIZATION] Hard-limit to exactly 6 months (180 days = 4320 hours)
-        default_hours = 4320
+        hours = int(time_needed / 60) + 5
         
         futures = []
-        for s in self.symbol_list:
-            last_ts = loaded_1m.get(s, None)
+        for s in missing_symbols:
             futures.append(self.executor.submit(
-                self._fetch_deep_history_worker, s, '1m', default_hours, last_ts
+                self._fetch_deep_history_worker, s, '1m', hours, None
             ))
         
+        # Wait for all to complete
         from concurrent.futures import as_completed
         errors = []
         for f in as_completed(futures):
@@ -1384,18 +1284,16 @@ class BinanceData(DataProvider):
         if errors:
             raise RuntimeError(f"Failed to fetch initial history for one or more symbols: {errors}")
 
+
     def fetch_initial_history_1h(self):
-        """Fetches 1h historical data using Delta-Fetch."""
+        """Fetches ~200 hours of 1h data in PARALLEL."""
         logger.info("Fetching 1h historical data (250h) in PARALLEL...")
-        # [PHASE 42] Hard-limit to exactly 6 months
-        default_hours = 4320
-        loaded_1h = getattr(self, 'loaded_snapshot_ts', {}).get('1h', {})
+        hours = 250
         
         futures = []
         for s in self.symbol_list:
-            last_ts = loaded_1h.get(s, None)
             futures.append(self.executor.submit(
-                self._fetch_deep_history_worker, s, '1h', default_hours, last_ts
+                self._fetch_deep_history_worker, s, '1h', hours, None
             ))
             
         from concurrent.futures import as_completed
@@ -1403,17 +1301,14 @@ class BinanceData(DataProvider):
             pass
 
     def fetch_initial_history_4h(self):
-        """Fetches 4h macro historical data using Delta-Fetch."""
+        """Fetches 4h data in PARALLEL."""
         logger.info("Fetching 4h macro historical data (400h) in PARALLEL...")
-        # [PHASE 42] Hard-limit to exactly 6 months
-        default_hours = 4320
-        loaded_4h = getattr(self, 'loaded_snapshot_ts', {}).get('4h', {})
+        hours = 400
         
         futures = []
         for s in self.symbol_list:
-            last_ts = loaded_4h.get(s, None)
             futures.append(self.executor.submit(
-                self._fetch_deep_history_worker, s, '4h', default_hours, last_ts
+                self._fetch_deep_history_worker, s, '4h', hours, None
             ))
             
         from concurrent.futures import as_completed
@@ -1421,68 +1316,54 @@ class BinanceData(DataProvider):
             pass
 
     def fetch_initial_history_5m(self):
-        """Fetches 5m historical data using Delta-Fetch."""
+        """Fetches 5m data in PARALLEL."""
         logger.info("Fetching 5m historical data (100h) in PARALLEL...")
-        # [PHASE 42] Hard-limit to exactly 6 months
-        default_hours = 4320
-        loaded_5m = getattr(self, 'loaded_snapshot_ts', {}).get('5m', {})
+        hours = 100
         
         futures = []
         for s in self.symbol_list:
-            last_ts = loaded_5m.get(s, None)
             futures.append(self.executor.submit(
-                self._fetch_deep_history_worker, s, '5m', default_hours, last_ts
+                self._fetch_deep_history_worker, s, '5m', hours, None
             ))
         from concurrent.futures import as_completed
         for f in as_completed(futures):
             pass
 
     def fetch_initial_history_15m(self):
-        """Fetches 15m historical data using Delta-Fetch."""
+        """Fetches 15m data in PARALLEL."""
         logger.info("Fetching 15m historical data (100h) in PARALLEL...")
-        # [PHASE 42] Hard-limit to exactly 6 months
-        default_hours = 4320
-        loaded_15m = getattr(self, 'loaded_snapshot_ts', {}).get('15m', {})
+        hours = 100
         
         futures = []
         for s in self.symbol_list:
-            last_ts = loaded_15m.get(s, None)
             futures.append(self.executor.submit(
-                self._fetch_deep_history_worker, s, '15m', default_hours, last_ts
+                self._fetch_deep_history_worker, s, '15m', hours, None
             ))
         from concurrent.futures import as_completed
         for f in as_completed(futures):
             pass
 
     def fetch_initial_history_1d(self):
-        """Fetches 1d macro historical data using Delta-Fetch."""
+        """Fetches 1d data in PARALLEL."""
         logger.info("Fetching 1d macro historical data (500d) in PARALLEL...")
-        # [PHASE 42: OMEGA OPTIMIZATION] Hard-limit to exactly 6 months (180 days = 4320 hours) for 26+ assets
-        default_hours = 4320
-        loaded_1d = getattr(self, 'loaded_snapshot_ts', {}).get('1d', {})
-        
+        hours = 12000 # 500 days
         futures = []
         for s in self.symbol_list:
-            last_ts = loaded_1d.get(s, None)
             futures.append(self.executor.submit(
-                self._fetch_deep_history_worker, s, '1d', default_hours, last_ts
+                self._fetch_deep_history_worker, s, '1d', hours, None
             ))
         from concurrent.futures import as_completed
         for f in as_completed(futures):
             pass
 
     def fetch_initial_history_1w(self):
-        """Fetches 1w structural historical data using Delta-Fetch."""
+        """Fetches 1w data in PARALLEL."""
         logger.info("Fetching 1w structural historical data (300w) in PARALLEL...")
-        # [PHASE 42] Hard-limit to exactly 6 months
-        default_hours = 4320
-        loaded_1w = getattr(self, 'loaded_snapshot_ts', {}).get('1w', {})
-        
+        hours = 50400 # 300 weeks
         futures = []
         for s in self.symbol_list:
-            last_ts = loaded_1w.get(s, None)
             futures.append(self.executor.submit(
-                self._fetch_deep_history_worker, s, '1w', default_hours, last_ts
+                self._fetch_deep_history_worker, s, '1w', hours, None
             ))
         from concurrent.futures import as_completed
         for f in as_completed(futures):
@@ -1553,8 +1434,8 @@ class BinanceData(DataProvider):
                          last_t_arr = buf.get_last(1)
                          
                          # Gap Detection
-                         if last_t_arr is not None and len(last_t_arr[0]) > 0:
-                             last_ts = last_t_arr[0][0]
+                         if last_t_arr is not None and len(last_t_arr) > 0:
+                             last_ts = last_t_arr['timestamp'][0]
                              time_diff = ts - last_ts
                              if time_diff > 60000 and last_ts != ts:
                                  missed = int((time_diff/60000)-1)
@@ -1568,13 +1449,13 @@ class BinanceData(DataProvider):
                                      global_state.circuit_breaker_active = True
                                  except ImportError:
                                      pass
-                         if last_t_arr is not None and len(last_t_arr[0]) > 0 and last_t_arr[0][0] == ts:
+                         if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
                               buf.rewind_one()
                          
                          buf.push(ts, np.float32(bar['open']), np.float32(bar['high']), 
                                   np.float32(bar['low']), np.float32(bar['close']), np.float32(bar['volume']))
                          
-                         self._push_event(EventPool.create_market_event(symbol=s, close_price=bar['close'], timestamp=datetime.now()))
+                         self._push_event(MarketEvent(symbol=s, close_price=bar['close'], timestamp=datetime.now()))
 
                 if '5m' in data_packet:
                     bar = data_packet['5m']
@@ -1582,7 +1463,7 @@ class BinanceData(DataProvider):
                     with self._data_lock:
                          buf = self.buffers_5m[s]
                          last_t_arr = buf.get_last(1)
-                         if last_t_arr is not None and len(last_t_arr[0]) > 0 and last_t_arr[0][0] == ts:
+                         if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
                               buf.rewind_one()
                          buf.push(ts, np.float32(bar['open']), np.float32(bar['high']), 
                                   np.float32(bar['low']), np.float32(bar['close']), np.float32(bar['volume']))
@@ -1593,7 +1474,7 @@ class BinanceData(DataProvider):
                     with self._data_lock:
                          buf = self.buffers_15m[s]
                          last_t_arr = buf.get_last(1)
-                         if last_t_arr is not None and len(last_t_arr[0]) > 0 and last_t_arr[0][0] == ts:
+                         if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
                               buf.rewind_one()
                          buf.push(ts, np.float32(bar['open']), np.float32(bar['high']), 
                                   np.float32(bar['low']), np.float32(bar['close']), np.float32(bar['volume']))
@@ -1604,7 +1485,7 @@ class BinanceData(DataProvider):
                     with self._data_lock:
                          buf = self.buffers_1h[s]
                          last_t_arr = buf.get_last(1)
-                         if last_t_arr is not None and len(last_t_arr[0]) > 0 and last_t_arr[0][0] == ts:
+                         if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
                               buf.rewind_one()
                          buf.push(ts, np.float32(bar['open']), np.float32(bar['high']), 
                                   np.float32(bar['low']), np.float32(bar['close']), np.float32(bar['volume']))
@@ -1615,7 +1496,7 @@ class BinanceData(DataProvider):
                     with self._data_lock:
                          buf = self.buffers_4h[s]
                          last_t_arr = buf.get_last(1)
-                         if last_t_arr is not None and len(last_t_arr[0]) > 0 and last_t_arr[0][0] == ts:
+                         if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
                               buf.rewind_one()
                          buf.push(ts, np.float32(bar['open']), np.float32(bar['high']), 
                                   np.float32(bar['low']), np.float32(bar['close']), np.float32(bar['volume']))
@@ -1626,7 +1507,7 @@ class BinanceData(DataProvider):
                     with self._data_lock:
                          buf = self.buffers_1d[s]
                          last_t_arr = buf.get_last(1)
-                         if last_t_arr is not None and len(last_t_arr[0]) > 0 and last_t_arr[0][0] == ts:
+                         if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
                               buf.rewind_one()
                          buf.push(ts, np.float32(bar['open']), np.float32(bar['high']), 
                                   np.float32(bar['low']), np.float32(bar['close']), np.float32(bar['volume']))
@@ -1637,7 +1518,7 @@ class BinanceData(DataProvider):
                     with self._data_lock:
                          buf = self.buffers_1w[s]
                          last_t_arr = buf.get_last(1)
-                         if last_t_arr is not None and len(last_t_arr[0]) > 0 and last_t_arr[0][0] == ts:
+                         if last_t_arr is not None and len(last_t_arr) > 0 and last_t_arr['timestamp'][0] == ts:
                               buf.rewind_one()
                          buf.push(ts, np.float32(bar['open']), np.float32(bar['high']), 
                                   np.float32(bar['low']), np.float32(bar['close']), np.float32(bar['volume']))
@@ -1668,8 +1549,8 @@ class BinanceData(DataProvider):
             ref_data = ref_buf.get_last(61)
             target_data = target_buf.get_last(61)
             
-            ref_rets = np.diff(ref_data[4]) / ref_data[4][:-1]
-            target_rets = np.diff(target_data[4]) / target_data[4][:-1]
+            ref_rets = np.diff(ref_data['close']) / ref_data['close'][:-1]
+            target_rets = np.diff(target_data['close']) / target_data['close'][:-1]
             
             # Correlación en lags de -5 a +5
             best_corr = -1.0
@@ -1746,11 +1627,6 @@ class BinanceData(DataProvider):
         if symbol in self.derivatives_metrics:
             return self.derivatives_metrics[symbol]
         return {'funding_rate': 0.0, 'oi': 0.0, 'oi_delta': 0.0, 'liquidations': 0.0}
-
-    def get_funding_rate(self, symbol: str) -> float:
-        """Returns the current funding rate for a symbol. Wrapper around get_derivatives_metrics."""
-        metrics = self.get_derivatives_metrics(symbol)
-        return metrics.get('funding_rate', 0.0)
 
     async def start_socket(self):
         """
@@ -1956,19 +1832,6 @@ class BinanceData(DataProvider):
                     except Exception as e:
                         logger.error(f"Failed to close WS connection: {e}")
                 
-                # AEGIS V4 FIX: Async recovery logic to patch 15m/1h candles
-                async def _delayed_patch():
-                    await asyncio.sleep(5)  # Wait for sockets to reconnect
-                    try:
-                        logger.info("🩹 [Watchdog] Patching missing 15m and 1h candles after disconnect...")
-                        await asyncio.to_thread(self.fetch_initial_history_15m)
-                        await asyncio.to_thread(self.fetch_initial_history_1h)
-                        logger.info("🩹 [Watchdog] Missing candles patched successfully.")
-                    except Exception as e:
-                        logger.error(f"Failed to patch missing candles: {e}")
-                
-                asyncio.create_task(_delayed_patch())
-                
                 # Reset timestamp to avoid infinite trigger while reconnecting
                 self.last_ws_msg_time = time.time()
     def _process_kline_event(self, kline_data, stream_name):
@@ -2048,14 +1911,14 @@ class BinanceData(DataProvider):
             elif '@kline_1d' in stream_name: tf = '1d' # Phase 4
             elif '@kline_1w' in stream_name: tf = '1w' # Phase 4
 
-            # Extract data with Phase 4: Downcasting disabled to prevent precision loss (float64)
+            # Extract data with Phase 4: Downcasting (float32 for memory)
             # [NANO-SPEED] Extirpado pd.to_datetime del loop caliente
             timestamp_ms = int(kline['t'])
-            open_price = np.float64(kline['o'])
-            high_price = np.float64(kline['h'])
-            low_price = np.float64(kline['l'])
-            close_price = np.float64(kline['c'])
-            volume = np.float64(kline['v'])
+            open_price = np.float32(kline['o'])
+            high_price = np.float32(kline['h'])
+            low_price = np.float32(kline['l'])
+            close_price = np.float32(kline['c'])
+            volume = np.float32(kline['v'])
 
             # FASE HORIZONS: Clave compuesta para separar memorias por timeframe
             tf_key = f"{tf}_{internal_symbol}"
@@ -2176,7 +2039,7 @@ class BinanceData(DataProvider):
                         micro_metrics = self.microstructure[internal_symbol].get_metrics()
                         of_metrics.update(micro_metrics)
                     
-                    self._push_event(EventPool.create_market_event(
+                    self._push_event(MarketEvent(
                         symbol=internal_symbol,
                         close_price=close_price,
                         timestamp=datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc),
@@ -2191,13 +2054,12 @@ class BinanceData(DataProvider):
                     metrics['last_update'] = time.time()
                 else:
                     # Trigger without order flow if not available
-                    self._push_event(EventPool.create_market_event(
+                    self._push_event(MarketEvent(
                         symbol=internal_symbol,
                         close_price=close_price,
                         timestamp=datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc),
                         health_metrics=health_metrics,
-                        is_closed=is_closed,
-                        timeframe=tf
+                        is_closed=is_closed
                     ))
             
             if is_closed:
@@ -2664,7 +2526,7 @@ class BinanceData(DataProvider):
                 from datetime import datetime, timezone
                 event_timestamp = datetime.fromtimestamp(event_ts, timezone.utc)
                 
-                self._push_event(EventPool.create_market_event(
+                self._push_event(MarketEvent(
                     symbol=internal_sym,
                     close_price=qbar['close'],
                     timestamp=event_timestamp,
@@ -2715,26 +2577,22 @@ class BinanceData(DataProvider):
             
             # Fetch history in a separate daemon thread to avoid blocking asyncio loop
             # and to avoid ThreadPoolExecutor deadlocks!
-            # ⚠️ CRITICAL: Sequential timeframe fetches (NOT parallel).
-            # Each timeframe already parallelizes 26 symbols internally via self.executor.
-            # Parallel timeframes (7 × 26 = 182 threads) caused silent OOM kills on 16GB RAM.
             import threading
             def _fetch_all_history():
                 try:
+                    # Phase 24: Parallelize the timeframe fetches themselves
                     timeframes = [
-                        ("1m", self.fetch_initial_history),
-                        ("1h", self.fetch_initial_history_1h),
-                        ("4h", self.fetch_initial_history_4h),
-                        ("5m", self.fetch_initial_history_5m),
-                        ("15m", self.fetch_initial_history_15m),
-                        ("1d", self.fetch_initial_history_1d),
-                        ("1w", self.fetch_initial_history_1w),
+                        self.fetch_initial_history,
+                        self.fetch_initial_history_1h,
+                        self.fetch_initial_history_4h,
+                        self.fetch_initial_history_5m,
+                        self.fetch_initial_history_15m,
+                        self.fetch_initial_history_1d,
+                        self.fetch_initial_history_1w
                     ]
-                    for tf_name, tf_func in timeframes:
-                        try:
-                            tf_func()
-                        except Exception as e:
-                            logger.error(f"❌ Dynamic history fetch error for {tf_name}: {e}")
+                    from concurrent.futures import ThreadPoolExecutor
+                    with ThreadPoolExecutor(max_workers=7) as tf_executor:
+                        list(tf_executor.map(lambda f: f(), timeframes))
                     logger.info("✅ Dynamic update history fetch complete.")
                 except Exception as e:
                     logger.error(f"Error fetching dynamic history: {e}")
@@ -2901,104 +2759,86 @@ class BinanceData(DataProvider):
     # ==========================================================
     def save_snapshot(self):
         """
-        Guarda el estado actual de los RingBuffers en disco (Parquet + ZSTD) para TODOS los timeframes.
+        Guarda el estado actual de los RingBuffers en disco (Parquet + ZSTD).
         """
         try:
             cache_dir = "data/cache_parquet"
             os.makedirs(cache_dir, exist_ok=True)
             count = 0
             
-            timeframes = {
-                '1m': self.get_latest_bars,
-                '5m': self.get_latest_bars_5m,
-                '15m': self.get_latest_bars_15m,
-                '1h': self.get_latest_bars_1h,
-                '4h': self.get_latest_bars_4h,
-                '1d': self.get_latest_bars_1d,
-                '1w': self.get_latest_bars_1w
-            }
-            
-            import polars as pl
             for symbol in self.symbol_list:
                 safe_sym = symbol.replace('/', '')
                 
-                for tf_name, getter_func in timeframes.items():
-                    data = getter_func(symbol, n=5000)
-                    if data is not None and len(data) > 0:
-                        np_data = np.copy(data)
-                        df = pl.DataFrame({
-                            'timestamp': np_data['timestamp'],
-                            'open': np_data['open'],
-                            'high': np_data['high'],
-                            'low': np_data['low'],
-                            'close': np_data['close'],
-                            'volume': np_data['volume']
-                        })
-                        path = f"{cache_dir}/{safe_sym}_{tf_name}.parquet"
-                        df.write_parquet(path, compression='zstd')
-                count += 1
+                # Snapshot 1m (Base)
+                data = self.get_latest_bars(symbol, n=5000)
+                if data is not None:
+                    # Convert Structured Array to DataFrame for convenience in Parquet saving
+                    import polars as pl
+                    # COPY DEEP to prevent PyArrow Segfaults on live-updating ring buffers
+                    np_data = np.copy(data)
+                    df = pl.DataFrame({
+                        'timestamp': np_data['timestamp'],
+                        'open': np_data['open'],
+                        'high': np_data['high'],
+                        'low': np_data['low'],
+                        'close': np_data['close'],
+                        'volume': np_data['volume']
+                    })
+                    
+                    path = f"{cache_dir}/{safe_sym}_1m.parquet"
+                    df.write_parquet(path, compression='zstd')
+                    count += 1
             
-            logger.info(f"💾 [Persistence] Saved {count} symbols (all timeframes) to Parquet.")
+            logger.info(f"💾 [Persistence] Saved {count} symbols to Parquet.")
         except Exception as e:
             logger.error(f"❌ [Persistence] Save failed: {e}")
 
     def load_snapshot(self):
         """
-        Carga datos históricos desde Parquet para TODOS los timeframes y retorna el último timestamp por símbolo y timeframe.
-        Returns: Dict {tf: {symbol: last_timestamp_ms}}
+        Carga datos históricos desde Parquet para evitar peticiones API.
+        Returns: Set of symbols loaded successfully.
         """
-        loaded_symbols = {tf: {} for tf in ['1m', '5m', '15m', '1h', '4h', '1d', '1w']}
+        loaded_symbols = set()
         cache_dir = "data/cache_parquet"
         if not os.path.exists(cache_dir):
             return loaded_symbols
             
-        logger.info("📂 [Persistence] Loading local Parquet cache (All Timeframes)...")
+        logger.info("📂 [Persistence] Loading local Parquet cache...")
         
-        target_maps = {
-            '1m': self.buffers_1m,
-            '5m': self.buffers_5m,
-            '15m': self.buffers_15m,
-            '1h': self.buffers_1h,
-            '4h': self.buffers_4h,
-            '1d': self.buffers_1d,
-            '1w': self.buffers_1w
-        }
-        
-        import polars as pl
         for symbol in self.symbol_list:
             safe_sym = symbol.replace('/', '')
+            path = f"{cache_dir}/{safe_sym}_1m.parquet"
             
-            for tf_name, t_map in target_maps.items():
-                path = f"{cache_dir}/{safe_sym}_{tf_name}.parquet"
-                
-                if os.path.exists(path):
-                    try:
-                        # We REMOVED the 4-hour max age. Data is data.
-                        df = pl.read_parquet(path)
-                        if not df.is_empty():
-                            # Enforce symbol initialization in maps
-                            if symbol not in t_map:
-                                self._init_symbol_buffer(symbol)
-                                
-                            buf = t_map[symbol]
-                            
-                            timestamps = df['timestamp'].to_numpy()
-                            opens = df['open'].to_numpy()
-                            highs = df['high'].to_numpy()
-                            lows = df['low'].to_numpy()
-                            closes = df['close'].to_numpy()
-                            vols = df['volume'].to_numpy()
-                            
-                            for i in range(len(timestamps)):
-                                buf.push(timestamps[i], opens[i], highs[i], lows[i], closes[i], vols[i])
-                                
-                            loaded_symbols[tf_name][symbol] = int(timestamps[-1])
-                    except Exception as e:
-                        import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
-                        logger.warning(f"⚠️ Failed to load parquet for {symbol} ({tf_name}): {e}")
+            if os.path.exists(path):
+                try:
+                    # Check age of file
+                    mtime = os.path.getmtime(path)
+                    if (time.time() - mtime) > 3600 * 4: # 4 hours old max
+                        continue
                         
-        logger.info(f"📂 [Persistence] Loaded Parquet caches for incremental fetch.")
-        self.loaded_snapshot_ts = loaded_symbols
+                    import polars as pl
+                    df = pl.read_parquet(path)
+                    if not df.is_empty():
+                        self._init_symbol_buffer(symbol) 
+                        buf = self.buffers_1m[symbol]
+                        
+                        # Fastest way: Vectorized NumPy injection instead of iterrows
+                        timestamps = df['timestamp'].to_numpy()
+                        opens = df['open'].to_numpy()
+                        highs = df['high'].to_numpy()
+                        lows = df['low'].to_numpy()
+                        closes = df['close'].to_numpy()
+                        vols = df['volume'].to_numpy()
+                        
+                        for i in range(len(timestamps)):
+                            buf.push(timestamps[i], opens[i], highs[i], lows[i], closes[i], vols[i])
+                            
+                        loaded_symbols.add(symbol)
+                except Exception as e:
+                    import logging; logging.getLogger(__name__).error('Silent exception caught', exc_info=True)
+                    logger.warning(f"⚠️ Failed to load parquet for {symbol}: {e}")
+                    
+        logger.info(f"📂 [Persistence] Loaded {len(loaded_symbols)} symbols from disk.")
         return loaded_symbols
 
     async def shutdown(self):
@@ -3299,18 +3139,17 @@ class BinanceData(DataProvider):
                     internal_sym = s
                     break
                     
-        # In-place reference to avoid deepcopy GC pressure. Use direct access or structural update.
         metrics = self.order_flow_metrics[internal_sym]
+        of_metrics = metrics.copy()
         
-        # Merge True Microstructure in-place (mutates original if acceptable, or just returns a reference wrapper)
+        # Merge True Microstructure
         if internal_sym in getattr(self, 'microstructure', {}):
             micro_metrics = self.microstructure[internal_sym].get_metrics()
-            # Update the existing dictionary instead of creating a copy every tick
-            for k, v in micro_metrics.items():
-                metrics[k] = v
-            metrics['toxicity_index'] = micro_metrics.get('vpin', 0.0)
-                
-        return metrics
+            of_metrics.update(micro_metrics)
+            # Mutación 13: Expose explicit toxicity_index
+            of_metrics['toxicity_index'] = micro_metrics['vpin']
+            
+        return of_metrics
 
     def get_derivatives_metrics(self, symbol: str) -> dict:
         """

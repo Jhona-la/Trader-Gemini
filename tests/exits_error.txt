@@ -1,0 +1,138 @@
+
+🔒 TestSecurityGuard: LOCKED (No real API calls allowed)
+============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\jhona\Documents\Proyectos\Trader Gemini
+configfile: pytest.ini
+plugins: asyncio-1.3.0, cov-7.0.0, mock-3.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 5 items
+
+tests\test_exits.py F
+
+================================== FAILURES ===================================
+___________________________ test_tp1_trailing_stop ____________________________
+
+    def test_tp1_trailing_stop():
+        """Test TP1 trailing stop (+1% profit, 50% retracement)"""
+        print("\n" + "="*70)
+        print("TEST 1: TP1 Trailing Stop (+1%)")
+        print("="*70)
+    
+        test_csv = os.path.join(Config.DATA_DIR, "test_trades.csv")
+        test_status = os.path.join(Config.DATA_DIR, "test_status.csv")
+    
+        portfolio = Portfolio(initial_capital=10000.0, csv_path=test_csv, status_path=test_status)
+        risk_mgr = RiskManager(max_concurrent_positions=5, portfolio=portfolio)
+    
+        try:
+            # Rallied $3000 -> $3045 (+1.5%), dropped to $3022
+            # peak_pnl_pct = 1.5% (>= 1%, activates TP1)
+            # TP1 stop = $3022.50, current = $3022 < stop
+            portfolio.positions['BTC/USDT'] = {
+                'quantity': 1.0,
+                'avg_price': 3000.0,
+                'current_price': 3022.0,
+                'high_water_mark': 3045.0,
+                'stop_distance': 60.0
+            }
+    
+>           stop_signals = risk_mgr.check_stops(portfolio, None)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_exits.py:48: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <risk.risk_manager.RiskManager object at 0x000001DBF106DE80>
+portfolio = <core.portfolio.Portfolio object at 0x000001DBF106D940>
+data_provider = None
+
+    def check_stops(self, portfolio, data_provider):
+        """
+        🚀 ALPHA-MAX: Advanced exit orchestration.
+        - Dynamic TP Targets (ATR-based from Entry)
+        - Break-Even 2.0 (Fee protection + Profit Guard)
+        - Momentum Protection (Phase 42)
+        """
+        stop_signals = []
+        now = datetime.now(timezone.utc)
+    
+        for symbol, pos in portfolio.positions.items():
+            qty = pos['quantity']
+            if qty == 0: continue
+    
+            current_price = pos.get('current_price')
+            entry_price = pos.get('avg_price')
+            if not current_price or not entry_price: continue
+    
+            # Metadata retrieval
+            sl_pct = pos.get('sl_pct', 0.003) or 0.003
+            tp_pct = pos.get('tp_pct', 0.008) or 0.008
+            hwm = pos.get('high_water_mark', entry_price)
+            lwm = pos.get('low_water_mark', entry_price)
+    
+            unrealized_pnl_pct = ((current_price - entry_price) / entry_price) * 100 if qty > 0 else \
+                                 ((entry_price - current_price) / entry_price) * 100
+    
+            # LONG POSITION
+            if qty > 0:
+                # 1. Momentum Exit (Proactive)
+                if self._check_momentum_exit(symbol, 'LONG', data_provider):
+                    print(f"🪂 MOMENTUM EXIT {symbol}! (Proactive)")
+                    stop_signals.append(SignalEvent(strategy_id="MOMENT_MGR", symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
+                    self.record_trade_result(True, 0.0)
+                    continue
+    
+                # 2 & 3. 3-STAGE ADAPTIVE TRAILING (Break-Even + Standard Trail + Tight Trail)
+                fee_buffer = getattr(Config, 'BINANCE_TAKER_FEE_BNB', 0.00075) * 2  # Round-trip fee
+                peak_pnl = ((hwm - entry_price) / entry_price) * 100
+                tp_target_pct = tp_pct * 100 if tp_pct > 0 else 1.0  # Safe fallback
+    
+                progress = peak_pnl / tp_target_pct if tp_target_pct > 0 else 0
+    
+                trail_price = None
+                trail_name = None
+    
+                # Fetch dynamically passed momentum threshold for this trade
+                self._last_momentum_accel = pos.get('metadata', {}).get('momentum_exit_accel', -0.012) if isinstance(pos.get('metadata'), dict) else -0.012
+    
+                if progress >= 0.75:
+                    # Stage 3: Tight trail - protect 85% of gains from peak
+                    trail_price = hwm - ((hwm - entry_price) * 0.15)
+                    trail_name = "TRAIL_STAGE_3_TIGHT"
+                elif progress >= 0.50:
+                    # Stage 2: Standard trail - protect 70% of gains from peak
+                    trail_price = hwm - ((hwm - entry_price) * 0.30)
+                    trail_name = "TRAIL_STAGE_2_STD"
+                elif progress >= 0.25:
+                    # Stage 1: Move to breakeven + round-trip fees
+                    trail_price = entry_price * (1 + fee_buffer)
+                    trail_name = "TRAIL_STAGE_1_BE"
+    
+                if trail_price and current_price < trail_price:
+                    print(f"🛡️/💰 [LONG] {trail_name} {symbol}! Triggered at {current_price:.4f} (Peak: +{peak_pnl:.2f}%)")
+>                   stop_signals.append(SignalEvent(strategy_id=trail_name, symbol=symbol, datetime=now, signal_type=SignalType.EXIT, strength=1.0))
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   TypeError: SignalEvent.__init__() missing 1 required keyword-only argument: 'horizon'
+
+risk\risk_manager.py:1464: TypeError
+---------------------------- Captured stdout call -----------------------------
+
+======================================================================
+TEST 1: TP1 Trailing Stop (+1%)
+======================================================================
+🛡️/💰 [LONG] TRAIL_STAGE_3_TIGHT BTC/USDT! Triggered at 3022.0000 (Peak: +1.50%)
+---------------------------- Captured stderr call -----------------------------
+22:22:34 [INFO] 📊 [SOPHIA] PostMortem initialized (window=100)
+22:22:34 [INFO] ⚔️ [NÉMESIS] Retrospección engine initialized
+22:22:34 [ERROR] Momentum Check Error: 'NoneType' object has no attribute 'get_latest_bars'
+------------------------------ Captured log call ------------------------------
+INFO     trader_gemini:post_mortem.py:121 📊 [SOPHIA] PostMortem initialized (window=100)
+INFO     trader_gemini:nemesis.py:952 ⚔️ [NÉMESIS] Retrospección engine initialized
+ERROR    trader_gemini:risk_manager.py:426 Momentum Check Error: 'NoneType' object has no attribute 'get_latest_bars'
+=========================== short test summary info ===========================
+FAILED tests/test_exits.py::test_tp1_trailing_stop - TypeError: SignalEvent._...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+============================== 1 failed in 5.41s ==============================
+
+🔓 TestSecurityGuard: UNLOCKED

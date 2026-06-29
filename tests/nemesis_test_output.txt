@@ -1,0 +1,34 @@
+✅ All modules parse OK
+✅ All imports OK
+✅ BrierBucketAnalyzer: 4 buckets populated correctly
+✅ OverconfidencePenalizer: no penalty for good Brier (avg=0.05)
+✅ OverconfidencePenalizer: penalty=1.60x (expected 1.60x)
+✅ OverconfidencePenalizer: P(Win)=0.80 → adjusted 0.500
+✅ FalsePositiveAnalyzer: P=90% + WIN → not FP
+✅ FalsePositiveAnalyzer: P=90% + LOSS + Kurt=8 → TAIL_EVENT
+✅ FalsePositiveAnalyzer: P=88% + LOSS + decay → SIGNAL_DECAY
+✅ FalsePositiveAnalyzer: P=60% + LOSS → not FP (below threshold)
+✅ TimeDeviationAnalyzer: 12min/10min = 1.2x → PRECISE
+✅ TimeDeviationAnalyzer: 30min/10min = 3.0x → ALPHA_LEAK
+✅ TimeDeviationAnalyzer: 25min/8min = 3.125x → VOLATILITY_STALL
+✅ TimeDeviationAnalyzer: 2min/15min = 0.133x → PREMATURE_EXIT
+✅ EfficiencyCalculator: E=0.05$/min, E_norm=1.0, class=GOOD
+✅ DispositionBiasDetector: WIN in 3min (expected 15) → PREMATURE_PROFIT
+✅ DispositionBiasDetector: LOSS in 20min (expected 5) → LOSS_HOLDING
+00:22:51 [WARNING] ⚠️ [NÉMESIS] Exceso de confianza detectado! Brier_avg=0.350. Penalty factor=1.60x para próximos 5 trades.
+✅ PostTradeSHAPComparator: accuracy=0.667, misses=['Volume Ratio']
+✅ SlippageForensics: trigger=$50000, fill=$50003 → slip=0.0060%
+✅ GenePenalizer: Brier=0.10 → no penalty
+✅ GenePenalizer: 3 consecutive poor → flagged, penalty=0.3
+✅ ManifestWriter: "❌ Pensé que perdíía con 85% de probabilidad en BTC/USDT LONG, y perdí (PnL=$-2.5000). Brier=0.7225. ..."
+00:22:51 [WARNING] 🚨 [NÉMESIS] FALSE POSITIVE: P=90% → LOSS. Razón: TAIL_EVENT
+00:22:51 [WARNING] 🚨 [NÉMESIS] FALSE POSITIVE: P=88% → LOSS. Razón: SIGNAL_DECAY
+00:22:51 [WARNING] 🧬 [NÉMESIS] Genotype 'gene_b' flagged for REPLACEMENT: 3 consecutive poor trades.
+00:22:51 [INFO] ⚔️ [NÉMESIS] Retrospección engine initialized
+00:22:51 [INFO]    ⚔️ [NÉMESIS] Brier=0.518 (70-85%) | T_dev=1.88x (PRECISE) | E=-0.1000$/min (POOR) | Sesgo: LOSS_HOLDING | Slip=0.047%
+00:22:51 [INFO]    📝 ❌ Pensé que perdíía con 72% de probabilidad en ETH/USDT SHORT, y perdí (PnL=$-1.5000). Brier=0.5184. Diagnóstico: sesgo de disposición: mantuve pérdidas por esperanza; features que fallaron: RSI, ADX. Ajuste: Reducir peso de RSI, ADX en próximas señales. Revisar lógica de SL/TP para corregir sesgo de disposición.
+Traceback (most recent call last):
+  File "C:\Users\jhona\Documents\Proyectos\Trader Gemini\tests\test_nemesis.py", line 275, in <module>
+    assert report.time_deviation_class == "VOLATILITY_STALL"  # 15/8=1.875 → >2 and loss
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

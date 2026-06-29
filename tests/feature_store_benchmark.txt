@@ -1,0 +1,5 @@
+STORE: 123ms for 5000 rows
+GET:   111ms for 5000 rows
+Stats: {'exists': True, 'rows': 5000, 'columns': 5, 'size_mb': 0.27508544921875, 'min_ts': '2026-01-01 00:00:00', 'max_ts': '2026-01-18 08:35:00'}
+Columns retrieved: 5
+PASS: Store+Get = 234ms (target <500ms)
