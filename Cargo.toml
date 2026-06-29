@@ -11,38 +11,20 @@ members = [
 ]
 
 [package]
-name = "quantum_engine"
+name = "trader-gemini-v5"
 version = "0.1.0"
 edition = "2021"
-
-[lib]
-name = "quantum_engine"
-crate-type = ["cdylib", "staticlib", "rlib"]
+default-run = "trader-gemini-v5"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-bincode = "1.3"
-
-hmac = "0.12"
-sha2 = "0.10"
-hex = "0.4"
-
-tokio = { version = "1.32", features = ["full"] }
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
-tokio-tungstenite = { version = "0.20", features = ["rustls-tls-native-roots"] }
-futures-util = "0.3"
-url = "2.4"
-lazy_static = "1.4"
-memmap2 = "0.9"
-chrono = "0.4"
-csv = "1.1"
-rusqlite = { version = "0.40.1", features = ["bundled"] }
-simd-json = "0.17.0"
-zip = "0.6"
-itoa = "1.0.18"
-ryu = "1.0.23"
-crossbeam-channel = "0.5.15"
+os-guardian = { path = "crates/os-guardian" }
+quantum-arena = { path = "crates/quantum-arena" }
+feature-engine = { path = "crates/feature-engine" }
+signal-engine = { path = "crates/signal-engine" }
+risk-engine = { path = "crates/risk-engine" }
+execution-engine = { path = "crates/execution-engine" }
+data-pipeline = { path = "crates/data-pipeline" }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros"] }
 
 [[bin]]
 name = "config_compiler"
