@@ -24,38 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                     let _ = socket.write_all(response.as_bytes()).await;
                 } else {
-                    let html = r#"<!DOCTYPE html>
-<html>
-<head>
-    <title>Trader Gemini Dashboard</title>
-    <style>
-        body { background: #0a0a0a; color: #00ffcc; font-family: 'Courier New', monospace; padding: 20px; }
-        .card { background: #111; padding: 20px; border: 1px solid #333; margin-bottom: 20px; border-radius: 8px;}
-        h1 { text-shadow: 0 0 10px #00ffcc; }
-        .val { color: #fff; font-weight: bold; }
-    </style>
-    <script>
-        async function fetchStats() {
-            try {
-                let res = await fetch('/api/stats');
-                let data = await res.json();
-                document.getElementById('config').innerText = JSON.stringify(data, null, 2);
-            } catch (e) {
-                console.error(e);
-            }
-        }
-        setInterval(fetchStats, 2000);
-        window.onload = fetchStats;
-    </script>
-</head>
-<body>
-    <h1>🚀 God Engine - Quantum Dashboard</h1>
-    <div class="card">
-        <h2>Live Dynamic Config</h2>
-        <pre id="config" class="val">Loading...</pre>
-    </div>
-</body>
-</html>"#;
+                    let html = fs::read_to_string("static/index.html").unwrap_or_else(|_| "<h1>Error: static/index.html not found</h1>".to_string());
                     let response = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n{}",
                         html

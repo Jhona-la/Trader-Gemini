@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trader Gemini - God Mode Terminal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #050505;
+            --panel-bg: rgba(20, 20, 25, 0.7);
+            --border-color: #333;
+            --accent-glow: 0 0 15px rgba(0, 255, 204, 0.3);
+            --text-main: #f0f0f0;
+            --text-muted: #888;
+            --neon-green: #00ffcc;
+            --neon-red: #ff3366;
+            --neon-blue: #00e5ff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background-image: radial-gradient(circle at 50% 0%, #1a1a24 0%, transparent 50%);
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 30px;
+            border-bottom: 1px solid var(--border-color);
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+        }
+
+        .logo {
+            font-weight: 900;
+            font-size: 1.5rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--neon-blue);
+            text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--neon-green);
+        }
+
+        .pulse {
+            width: 10px;
+            height: 10px;
+            background: var(--neon-green);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--neon-green);
+            animation: pulsate 1s infinite alternate;
+        }
+
+        @keyframes pulsate {
+            0% { transform: scale(1); opacity: 0.8; }
+            100% { transform: scale(1.2); opacity: 1; }
+        }
+
+        main {
+            display: grid;
+            grid-template-columns: 300px 1fr 350px;
+            gap: 20px;
+            padding: 20px;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .panel h2 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 1.5px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Metrics */
+        .metric-group {
+            margin-bottom: 25px;
+        }
+
+        .metric-title {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+        }
+
+        .metric-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--neon-green);
+            text-shadow: var(--accent-glow);
+        }
+        
+        .metric-sub {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 5px;
+        }
+
+        /* Config Grid */
+        .config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .config-item {
+            background: rgba(0,0,0,0.4);
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #222;
+        }
+
+        .config-item span {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+        }
+
+        .config-item strong {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--neon-blue);
+        }
+
+        /* Logs */
+        .log-container {
+            flex: 1;
+            background: #000;
+            border-radius: 8px;
+            border: 1px solid #222;
+            padding: 10px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+
+        .log-time { color: #555; margin-right: 10px; }
+        .log-info { color: #aaa; }
+        .log-success { color: var(--neon-green); }
+        .log-warn { color: #ffaa00; }
+        .log-error { color: var(--neon-red); }
+
+        /* Chart Placeholder */
+        .chart-area {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            border: 1px dashed #333;
+            color: #444;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #222;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--neon-green);
+            width: 50%; /* 13 to 26 is 0 to 100, 13 is 0, 26 is 100. */
+            box-shadow: 0 0 10px var(--neon-green);
+            transition: width 1s ease;
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">TRADER GEMINI <span style="color:#555;font-size:0.8rem;">:: RUST EDITION</span></div>
+        <div class="status-badge">
+            <div class="pulse"></div>
+            SYSTEM ONLINE - NANOSECOND MODE
+        </div>
+    </header>
+
+    <main>
+        <!-- LEFT PANEL: Capital & DNA -->
+        <div class="panel">
+            <h2><span style="color:var(--neon-green)">●</span> Portfolio Tracker</h2>
+            
+            <div class="metric-group">
+                <div class="metric-title">GLOBAL CAPITAL</div>
+                <div class="metric-value" id="capital-val">$13.00</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="capital-progress" style="width: 5%;"></div>
+                </div>
+                <div class="metric-sub">Target: $26.00 (x2 in 3 days)</div>
+            </div>
+
+            <h2><span style="color:var(--neon-blue)">●</span> ML DNA Config</h2>
+            <div class="config-grid" id="config-grid">
+                <!-- Populated by JS -->
+                <div class="config-item"><span>Loading</span><strong>...</strong></div>
+            </div>
+        </div>
+
+        <!-- CENTER PANEL: Telemetry -->
+        <div class="panel">
+            <h2><span style="color:var(--neon-red)">●</span> Quantum Telemetry</h2>
+            <div class="chart-area" id="latency-chart">
+                <div class="metric-group" style="text-align:center; margin-bottom: 0;">
+                    <div class="metric-title">LAST LATENCY (SCALP)</div>
+                    <div class="metric-value" style="font-size: 4rem; color: #fff" id="latency-val">0 ns</div>
+                </div>
+                <div class="metric-sub">Target: < 2000 ns</div>
+            </div>
+        </div>
+
+        <!-- RIGHT PANEL: Event Stream -->
+        <div class="panel">
+            <h2><span style="color:#ffaa00">●</span> Live Event Stream</h2>
+            <div class="log-container" id="log-stream">
+                <div class="log-entry"><span class="log-time">00:00:00.000</span> <span class="log-success">SYSTEM BOOT... CONNECTING TO ENGINE</span></div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Simulate logs for visual effect while backend connects
+        const logStream = document.getElementById('log-stream');
+        function addLog(msg, type="info") {
+            const now = new Date();
+            const timeStr = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}.${now.getMilliseconds().toString().padStart(3,'0')}`;
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            div.innerHTML = `<span class="log-time">${timeStr}</span> <span class="log-${type}">${msg}</span>`;
+            logStream.appendChild(div);
+            logStream.scrollTop = logStream.scrollHeight;
+            
+            // Keep max 100 logs
+            if (logStream.children.length > 100) {
+                logStream.removeChild(logStream.firstChild);
+            }
+        }
+
+        async function fetchConfig() {
+            try {
+                let res = await fetch('/api/stats');
+                let data = await res.json();
+                
+                const grid = document.getElementById('config-grid');
+                grid.innerHTML = '';
+                
+                const fields = [
+                    {k: 'ml_threshold_l', l: 'ML Long Thresh'},
+                    {k: 'ml_threshold_s', l: 'ML Short Thresh'},
+                    {k: 'sl_pct', l: 'Stop Loss'},
+                    {k: 'tp_pct', l: 'Take Profit'},
+                    {k: 'scalp_leverage', l: 'Scalp Lev'},
+                    {k: 'swing_leverage', l: 'Swing Lev'}
+                ];
+
+                fields.forEach(f => {
+                    const val = data[f.k] !== undefined ? data[f.k] : 'N/A';
+                    grid.innerHTML += `
+                        <div class="config-item">
+                            <span>${f.l}</span>
+                            <strong>${val}</strong>
+                        </div>
+                    `;
+                });
+                
+            } catch(e) {
+                console.error("Config error:", e);
+            }
+        }
+
+        // Mock latency simulation until backend connects
+        setInterval(() => {
+            const lat = Math.floor(Math.random() * 800) + 200;
+            document.getElementById('latency-val').innerText = `${lat} ns`;
+            addLog(`Processed market tick via Websocket`, 'info');
+        }, 1000);
+
+        setInterval(fetchConfig, 2000);
+        fetchConfig();
+    </script>
+</body>
+</html>

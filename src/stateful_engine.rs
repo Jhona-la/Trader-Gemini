@@ -1,6 +1,14 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::math_kernels::RecursiveHurst;
 
 pub static DROP_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Debug, PartialEq)]
+pub enum MarketRegime {
+    Scalping,
+    Swing,
+    Neutral,
+}
 
 /// Internal recursive state using strictly f64 (Double Precision)
 #[repr(C, align(64))]
@@ -12,6 +20,7 @@ pub struct StatefulEngine {
     pub v_t: f64,
     pub a_t: f64,
     pub tick_count: u64,
+    pub hurst: RecursiveHurst,
 }
 
 impl StatefulEngine {
@@ -25,6 +34,7 @@ impl StatefulEngine {
             v_t: 0.0,
             a_t: 0.0,
             tick_count: 0,
+            hurst: RecursiveHurst::new(),
         }
     }
 
@@ -43,32 +53,32 @@ impl StatefulEngine {
             self.ema_fast = (price - self.ema_fast) * alpha_fast + self.ema_fast;
             self.ema_slow = (price - self.ema_slow) * alpha_slow + self.ema_slow;
             
-            // Basic Volatility Proxy (Max/Min over last ticks not stored, just use absolute change)
             let diff = (price - self.last_price).abs();
             self.v_t = (self.v_t * 0.9) + (diff * 0.1);
         }
+        
+        self.hurst.update(price);
+        
         self.last_price = price;
         self.tick_count += 1;
     }
+    
+    pub fn get_market_regime(&self) -> MarketRegime {
+        let h = self.hurst.update(self.last_price); // Getting current hurst value approx
+        
+        if h < 0.45 {
+            MarketRegime::Scalping // Mean reverting
+        } else if h > 0.55 {
+            MarketRegime::Swing // Trending
+        } else {
+            MarketRegime::Neutral // Random walk
+        }
+    }
 
     /// Extracts NanoForest ML Features
-    /// Feature 0: Price Change Pct
-    /// Feature 1: EMA Fast Distance Pct
-    /// Feature 2: EMA Slow Distance Pct
-    /// Feature 3: Volatility Proxy (v_t)
     pub fn get_features(&self) -> [f32; 4] {
-        let price_change = if self.last_price != 0.0 && self.ema_fast != 0.0 {
-            // We approximate price change using ema distance for now, unless we track previous price.
-            // Wait, we can track tick to tick change using the a_t variable or just tracking prev_price.
-            // Let's use standard return. We will need to update the struct.
-            // Actually, we can use (self.last_price - self.ema_fast) / self.ema_fast as momentum,
-            // but since it's already ema_fast_dist, let's make price_change = (last_price - ema_slow) / last_price
-            // Wait, let's just make it a robust momentum: difference between fast and slow EMA.
-            if self.ema_slow != 0.0 {
-                (self.ema_fast - self.ema_slow) / self.ema_slow
-            } else {
-                0.0
-            }
+        let price_change = if self.last_price != 0.0 && self.ema_slow != 0.0 {
+            (self.ema_fast - self.ema_slow) / self.ema_slow
         } else {
             0.0
         };
@@ -99,13 +109,13 @@ impl StatefulEngine {
         out[1] = self.ema_slow as f32;
         out[2] = self.rsi_rs as f32;
         out[3] = self.last_price as f32;
-        // Rest remain unchanged
+        // Add Hurst for external observability
+        out[4] = self.hurst.update(self.last_price) as f32;
     }
 }
 
 impl Drop for StatefulEngine {
     fn drop(&mut self) {
-        // Decrease drop counter when freed to track FFI memory leaks
         DROP_COUNTER.fetch_sub(1, Ordering::SeqCst);
     }
 }

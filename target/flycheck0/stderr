@@ -1,8 +1,5 @@
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on build directory
-  56.055290000s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="quantum_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { ..: lib_target("quantum_engine", ["cdylib", "staticlib", "rlib"], "C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\lib.rs", Edition2021) }
-  56.055445700s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="quantum_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-fc4f4122523ef88a\test-lib-quantum_engine`
+   0.907806200s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="quantum_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { ..: lib_target("quantum_engine", ["cdylib", "staticlib", "rlib"], "C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\lib.rs", Edition2021) }
+   0.908072400s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="quantum_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-826959dea537854e\lib-quantum_engine`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -29,8 +26,8 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.164780300s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="backtest_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "backtest_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\backtest_engine.rs", Edition2021) }
-  56.164873900s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="backtest_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-d1803fd51259727d\bin-backtest_engine`
+   1.285054900s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="quantum_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { ..: lib_target("quantum_engine", ["cdylib", "staticlib", "rlib"], "C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\lib.rs", Edition2021) }
+   1.285173800s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="quantum_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-fc4f4122523ef88a\test-lib-quantum_engine`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -57,8 +54,8 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.169320500s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="backtest_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "backtest_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\backtest_engine.rs", Edition2021) }
-  56.169436600s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="backtest_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-118f800dbc1772ec\test-bin-backtest_engine`
+   1.291916200s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="backtest_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "backtest_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\backtest_engine.rs", Edition2021) }
+   1.292036500s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="backtest_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-d1803fd51259727d\bin-backtest_engine`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -85,8 +82,8 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.173604300s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="dashboard"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "dashboard", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\dashboard.rs", Edition2021) }
-  56.173891800s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="dashboard"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-cfdbde1f7d9f5a9a\bin-dashboard`
+   1.295731400s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="backtest_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "backtest_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\backtest_engine.rs", Edition2021) }
+   1.295821800s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="backtest_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-118f800dbc1772ec\test-bin-backtest_engine`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -113,8 +110,8 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.184283600s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="dashboard"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "dashboard", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\dashboard.rs", Edition2021) }
-  56.184755900s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="dashboard"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-9e305a5a0cae15a0\test-bin-dashboard`
+   1.298882600s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="dashboard"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "dashboard", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\dashboard.rs", Edition2021) }
+   1.298967300s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="dashboard"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-cfdbde1f7d9f5a9a\bin-dashboard`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -141,8 +138,8 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.192080100s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="data_loader"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "data_loader", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\data_loader.rs", Edition2021) }
-  56.192187900s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="data_loader"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-296c13b949902633\bin-data_loader`
+   1.301802200s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="dashboard"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "dashboard", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\dashboard.rs", Edition2021) }
+   1.301888200s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="dashboard"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-9e305a5a0cae15a0\test-bin-dashboard`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -169,8 +166,8 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.196903300s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="data_loader"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "data_loader", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\data_loader.rs", Edition2021) }
-  56.196986900s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="data_loader"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-bcc2c70721ce55f9\test-bin-data_loader`
+   1.305012000s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="data_loader"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "data_loader", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\data_loader.rs", Edition2021) }
+   1.305104100s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="data_loader"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-296c13b949902633\bin-data_loader`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -197,8 +194,8 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.200620200s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "evolution_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\evolution_engine.rs", Edition2021) }
-  56.200961800s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-eb0ab337111c2a50\bin-evolution_engine`
+   1.309297200s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="data_loader"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "data_loader", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\data_loader.rs", Edition2021) }
+   1.309405700s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="data_loader"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-bcc2c70721ce55f9\test-bin-data_loader`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -225,8 +222,8 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.204495700s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "evolution_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\evolution_engine.rs", Edition2021) }
-  56.204605600s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-fec15ae70ffa2123\test-bin-evolution_engine`
+   1.313393200s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "evolution_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\evolution_engine.rs", Edition2021) }
+   1.313534700s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-eb0ab337111c2a50\bin-evolution_engine`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -253,8 +250,8 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.208506400s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="god_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "god_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\god_engine.rs", Edition2021) }
-  56.208631500s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="god_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-fb3b2c95e4e1cad3\bin-god_engine`
+   1.317136300s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "evolution_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\evolution_engine.rs", Edition2021) }
+   1.317249400s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="evolution_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-fec15ae70ffa2123\test-bin-evolution_engine`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -281,8 +278,8 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.212337100s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="god_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "god_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\god_engine.rs", Edition2021) }
-  56.212434300s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="god_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-45abfef9431a688c\test-bin-god_engine`
+   1.320671200s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="god_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "god_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\god_engine.rs", Edition2021) }
+   1.320771900s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="god_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-fb3b2c95e4e1cad3\bin-god_engine`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -309,8 +306,8 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.218999100s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="train_nano_forest"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "train_nano_forest", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\train_nano_forest.rs", Edition2021) }
-  56.219115700s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="train_nano_forest"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-ec31bab0e5f67f61\bin-train_nano_forest`
+   1.324058500s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="god_engine"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "god_engine", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\god_engine.rs", Edition2021) }
+   1.324155200s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="god_engine"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-45abfef9431a688c\test-bin-god_engine`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -337,8 +334,36 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-  56.226120200s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="train_nano_forest"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "train_nano_forest", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\train_nano_forest.rs", Edition2021) }
-  56.226239900s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="train_nano_forest"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-b3f5623ce1b063be\test-bin-train_nano_forest`
+   1.330142100s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="train_nano_forest"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: false }/TargetInner { name: "train_nano_forest", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\train_nano_forest.rs", Edition2021) }
+   1.330321200s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="train_nano_forest"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-ec31bab0e5f67f61\bin-train_nano_forest`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   1.334844700s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="train_nano_forest"}: cargo::core::compiler::fingerprint: fingerprint error for quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)/Check { test: true }/TargetInner { name: "train_nano_forest", doc: true, ..: with_path("C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\src\\bin\\train_nano_forest.rs", Edition2021) }
+   1.334938700s  INFO prepare_target{force=false package_id=quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini) target="train_nano_forest"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\jhona\Documents\Proyectos\Trader Gemini\target\debug\.fingerprint\quantum_engine-b3f5623ce1b063be\test-bin-train_nano_forest`
 
 Caused by:
     The system cannot find the file specified. (os error 2)
@@ -366,6 +391,6 @@ Stack backtrace:
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
     Checking quantum_engine v0.1.0 (C:\Users\jhona\Documents\Proyectos\Trader Gemini)
-error: could not compile `quantum_engine` (bin "train_nano_forest" test) due to 1 previous error
+error: could not compile `quantum_engine` (lib) due to 3 previous errors; 10 warnings emitted
 warning: build failed, waiting for other jobs to finish...
-error: could not compile `quantum_engine` (bin "train_nano_forest") due to 1 previous error
+error: could not compile `quantum_engine` (lib test) due to 3 previous errors; 10 warnings emitted

@@ -5,25 +5,23 @@ use std::env;
 use tokio::sync::mpsc;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-use quantum_engine::{StatefulEngine, QuantumStateArena, parsers};
+use quantum_engine::{StatefulEngine, QuantumStateArena, parsers, stateful_engine::MarketRegime};
 use std::time::Instant;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering, AtomicU64};
+
+#[derive(Debug, Clone)]
+struct PositionInfo {
+    side: i32,
+    entry_price: f64,
+    qty: f64,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("========================================================");
-    println!("🚀 GOD ENGINE - NATIVE RUST ORCHESTRATOR");
+    println!("🚀 GOD ENGINE - NATIVE RUST ORCHESTRATOR (UNIFIED SCALP/SWING)");
     println!("⚡ Sub-Microsecond Execution Core initialized.");
     println!("========================================================");
-
-    let mut arena = Box::new(QuantumStateArena {
-        prices: std::ptr::null(),
-        volumes: std::ptr::null(),
-        tensor_len: 26,
-        mempool_panic_score: 0.0,
-        net_liq_pressure: 0.0,
-        timestamp_ns: 0,
-    });
     
     let config_str = std::fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
     let config_json: serde_json::Value = serde_json::from_str(&config_str).unwrap_or(serde_json::json!({}));
@@ -45,8 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let url = format!("wss://fstream.binance.com/stream?streams={}", streams);
 
-    let (tx_scalp, mut rx_scalp) = mpsc::unbounded_channel::<String>();
-    let (tx_swing, mut rx_swing) = mpsc::unbounded_channel::<String>();
+    let (tx_events, mut rx_events) = mpsc::unbounded_channel::<String>();
 
     let api_key = env::var("BINANCE_API_KEY").unwrap_or_else(|_| "test_key".to_string());
     let secret_key = env::var("BINANCE_SECRET_KEY").unwrap_or_else(|_| "test_secret".to_string());
@@ -56,11 +53,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         quantum_engine::executor::BinanceUserDataStream::start(api_key_uds, true).await;
     });
-
-    let executor_clone = Arc::clone(&executor);
     
     // Shared Atomic Capital Pool ($13 constraint)
-    let global_capital = Arc::new(std::sync::atomic::AtomicU64::new(13.0_f64.to_bits()));
+    let global_capital = Arc::new(AtomicU64::new(13.0_f64.to_bits()));
     
     // Shared Atomic Thresholds for Hot-Reloading
     let ml_thresh_l = Arc::new(AtomicU32::new(f32::to_bits(0.95)));
@@ -69,11 +64,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tp_pct = Arc::new(AtomicU32::new(f32::to_bits(0.02)));
     let tech_thresh_l = Arc::new(AtomicU32::new(f32::to_bits(0.005)));
     let tech_thresh_s = Arc::new(AtomicU32::new(f32::to_bits(0.005)));
-    
     let scalp_lev = Arc::new(AtomicU32::new(f32::to_bits(50.0)));
     let swing_lev = Arc::new(AtomicU32::new(f32::to_bits(15.0)));
     
-    let config_str = std::fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
     if let Ok(config_json) = serde_json::from_str::<serde_json::Value>(&config_str) {
         let l = config_json["ml_threshold_l"].as_f64().unwrap_or(0.95) as f32;
         let s = config_json["ml_threshold_s"].as_f64().unwrap_or(0.95) as f32;
@@ -95,8 +88,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("🧬 [INIT] Loaded Config: L>={:.4} S>={:.4} SL={:.4} TP={:.4} SCL={:.1} SWL={:.1}", l, s, sl, tp, scl, swl);
     }
     
-    let thresh_l_clone = Arc::clone(&ml_thresh_l);
-    let thresh_s_clone = Arc::clone(&ml_thresh_s);
+    let ml_thresh_l_clone = Arc::clone(&ml_thresh_l);
+    let ml_thresh_s_clone = Arc::clone(&ml_thresh_s);
     let sl_pct_clone = Arc::clone(&sl_pct);
     let tp_pct_clone = Arc::clone(&tp_pct);
     let tech_thresh_l_clone = Arc::clone(&tech_thresh_l);
@@ -127,8 +120,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let scl = config_json["scalp_leverage"].as_f64().unwrap_or(50.0) as f32;
                             let swl = config_json["swing_leverage"].as_f64().unwrap_or(15.0) as f32;
                             
-                            thresh_l_clone.store(f32::to_bits(l), Ordering::SeqCst);
-                            thresh_s_clone.store(f32::to_bits(s), Ordering::SeqCst);
+                            ml_thresh_l_clone.store(f32::to_bits(l), Ordering::SeqCst);
+                            ml_thresh_s_clone.store(f32::to_bits(s), Ordering::SeqCst);
                             sl_pct_clone.store(f32::to_bits(sl), Ordering::SeqCst);
                             tp_pct_clone.store(f32::to_bits(tp), Ordering::SeqCst);
                             tech_thresh_l_clone.store(f32::to_bits(tl), Ordering::SeqCst);
@@ -136,7 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             scalp_lev_clone.store(f32::to_bits(scl), Ordering::SeqCst);
                             swing_lev_clone.store(f32::to_bits(swl), Ordering::SeqCst);
                             
-                            println!("🔥 [HOT-RELOAD] Dynamic Config absorbed! L>={:.4} S>={:.4} SL={:.4} TP={:.4} SCL={:.1} SWL={:.1}", l, s, sl, tp, scl, swl);
+                            println!("🔥 [HOT-RELOAD] Dynamic Config absorbed!");
                         }
                     }
                 }
@@ -160,218 +153,184 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             sleep(Duration::from_secs(6 * 3600)).await;
             println!("🧬 [EVOLUTION-TASK] Waking up to evolve genetic config...");
-            match std::process::Command::new("cargo")
+            let _ = std::process::Command::new("cargo")
                 .args(&["run", "--release", "--bin", "evolution_engine"])
                 .current_dir(".")
-                .spawn() {
-                Ok(mut child) => {
-                    let _ = child.wait();
-                    println!("🧬 [EVOLUTION-TASK] Evolution completed. Watcher will hot-reload automatically.");
-                },
-                Err(e) => println!("❌ [EVOLUTION-TASK] Failed to run evolution: {}", e),
-            }
+                .spawn()
+                .and_then(|mut child| child.wait());
         }
     });
     
-    let scalp_thresh_l = Arc::clone(&ml_thresh_l);
-    let scalp_thresh_s = Arc::clone(&ml_thresh_s);
-    let scalp_sl = Arc::clone(&sl_pct);
-    let scalp_tp = Arc::clone(&tp_pct);
+    let exec = Arc::clone(&executor);
     
-    let scalp_lev = Arc::clone(&scalp_lev);
-    let scalp_capital = Arc::clone(&global_capital);
-    
-    let scalp_handle = tokio::spawn(async move {
-        println!("🧠 [SCALP CORE] Initialized. Target latency: <500ns");
-        let mut engines: std::collections::HashMap<String, quantum_engine::stateful_engine::StatefulEngine> = std::collections::HashMap::new();
+    // Unified Event Loop Task
+    let unified_handle = tokio::spawn(async move {
+        println!("🧠 [UNIFIED CORE] Initialized. Target latency: <500ns.");
         
-        let mut in_pos = false;
-        let mut side = 0_i32; 
-        let mut entry_price = 0.0;
-        let mut current_qty = 0.0;
+        let mut scalp_engines: std::collections::HashMap<String, quantum_engine::stateful_engine::StatefulEngine> = std::collections::HashMap::new();
+        let mut swing_engines: std::collections::HashMap<String, quantum_engine::stateful_engine::StatefulEngine> = std::collections::HashMap::new();
+        
+        let mut scalp_positions: std::collections::HashMap<String, PositionInfo> = std::collections::HashMap::new();
+        let mut swing_positions: std::collections::HashMap<String, PositionInfo> = std::collections::HashMap::new();
+        
         let mut msg_count = 0u64;
 
-        while let Some(msg) = rx_scalp.recv().await {
+        while let Some(msg) = rx_events.recv().await {
             let start = Instant::now();
             
-            if let Some((_e_time, _t_time, price, qty, _is_maker, parsed_sym)) = parsers::parse_binance_trade(&msg) {
-                let engine = engines.entry(parsed_sym.clone()).or_insert_with(quantum_engine::stateful_engine::StatefulEngine::new);
-                engine.process_tick(price, qty);
-                
-                let current_sl = f32::from_bits(scalp_sl.load(Ordering::Relaxed)) as f64 * 0.33;
-                let current_tp = f32::from_bits(scalp_tp.load(Ordering::Relaxed)) as f64 * 0.33;
-
-                // EXIT LOGIC
-                if in_pos {
-                    let pnl_pct = if side == 1 { (price - entry_price) / entry_price } else { (entry_price - price) / entry_price };
-                    
-                    let mut close_pos = false;
-                    if pnl_pct >= current_tp {
-                        println!("💰 [SCALP CORE] TAKE PROFIT HIT! PnL: {:.2}%", pnl_pct * 100.0);
-                        close_pos = true;
-                    } else if pnl_pct <= -current_sl {
-                        println!("🛑 [SCALP CORE] STOP LOSS HIT! PnL: {:.2}%", pnl_pct * 100.0);
-                        close_pos = true;
-                    }
-
-                    if close_pos {
-                        let order_side = if side == 1 { "SELL" } else { "BUY" };
-                        let req_id = format!("scalp_close_{}", parsed_sym);
-                        executor_clone.place_order(&parsed_sym, order_side, current_qty, "MARKET", &req_id).await;
-                        
-                        let pnl_amount = current_qty * (price - entry_price) * (side as f64);
-                        
-                        // Atomically add PnL
-                        let mut curr_cap = f64::from_bits(scalp_capital.load(Ordering::Relaxed));
-                        curr_cap += pnl_amount;
-                        scalp_capital.store(curr_cap.to_bits(), Ordering::SeqCst);
-                        
-                        println!("⚡ [SCALP CORE] Closed Position on {}. New shared capital: {:.2}", parsed_sym, curr_cap);
-                        in_pos = false;
-                    }
-                }
-
-                // ENTRY LOGIC
-                if !in_pos {
-                    let curr_cap = f64::from_bits(scalp_capital.load(Ordering::Relaxed));
-                    let features = engine.get_features();
-                    let prob = quantum_engine::ml_inference::NanoForest::predict_global(&features);
-                    
-                    let tl = f32::from_bits(scalp_thresh_l.load(Ordering::Relaxed));
-                    let ts = f32::from_bits(scalp_thresh_s.load(Ordering::Relaxed));
-                    
-                    if prob > tl {
-                        let leverage = f32::from_bits(scalp_lev.load(Ordering::Relaxed)) as f64;
-                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, curr_cap) {
-                            println!("⚡ [GHOST-MAKER] Scalp LONG Signal! Prob: {:.2}%. Shooting Market Order via WS...", prob * 100.0);
-                            let req_id = format!("scalp_{}", parsed_sym);
-                            executor_clone.place_order(&parsed_sym, "BUY", micro_qty, "LONG", &req_id).await;
-                            in_pos = true;
-                            side = 1;
-                            entry_price = price;
-                            current_qty = micro_qty;
-                        }
-                    } else if prob < (1.0 - ts) {
-                        let leverage = f32::from_bits(scalp_lev.load(Ordering::Relaxed)) as f64;
-                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, curr_cap) {
-                            println!("🩸 [GHOST-MAKER] Scalp SHORT Signal! Prob: {:.2}%. Shooting Market Order via WS...", prob * 100.0);
-                            let req_id = format!("scalp_{}", parsed_sym);
-                            executor_clone.place_order(&parsed_sym, "SELL", micro_qty, "SHORT", &req_id).await;
-                            in_pos = true;
-                            side = -1;
-                            entry_price = price;
-                            current_qty = micro_qty;
-                        }
-                    }
-                }
-                
-                msg_count += 1;
-                if msg_count % 1000 == 0 {
-                    println!("⏱️ [TELEMETRY-SCALP] Tick {} processed in {} ns", msg_count, start.elapsed().as_nanos());
-                }
-            }
-        }
-    });
-
-    let executor_swing = Arc::clone(&executor);
-    let swing_thresh_l = Arc::clone(&tech_thresh_l);
-    let swing_thresh_s = Arc::clone(&tech_thresh_s);
-    let swing_sl = Arc::clone(&sl_pct);
-    let swing_tp = Arc::clone(&tp_pct);
-    let swing_lev = Arc::clone(&swing_lev);
-    let swing_capital = Arc::clone(&global_capital);
-
-    let swing_handle = tokio::spawn(async move {
-        println!("🧠 [SWING CORE] Initialized. Target latency: <2μs. Subscribed to 1H Klines.");
-        let mut engines: std::collections::HashMap<String, quantum_engine::stateful_engine::StatefulEngine> = std::collections::HashMap::new();
-        
-        let mut in_pos = false;
-        let mut side = 0_i32; 
-        let mut entry_price = 0.0;
-        let mut current_qty = 0.0;
-        let mut msg_count = 0u64;
-
-        while let Some(msg) = rx_swing.recv().await {
-            let start = Instant::now();
+            // 1. Determine event type from JSON quickly
+            let mut event_type = 0; // 0 = unknown, 1 = trade, 2 = kline
+            if msg.contains("\"e\":\"trade\"") { event_type = 1; }
+            else if msg.contains("\"e\":\"kline\"") { event_type = 2; }
             
-            if let Some((_e_time, parsed_sym, _open, _high, _low, close_price, volume, is_closed)) = parsers::parse_binance_kline(&msg) {
-                
-                let engine = engines.entry(parsed_sym.clone()).or_insert_with(quantum_engine::stateful_engine::StatefulEngine::new);
-                engine.process_tick(close_price, volume);
-                
-                let current_sl_pct = f32::from_bits(swing_sl.load(Ordering::Relaxed)) as f64;
-                let current_tp_pct = f32::from_bits(swing_tp.load(Ordering::Relaxed)) as f64;
-
-                // EXIT LOGIC (Continuous monitoring even if not closed)
-                if in_pos {
-                    let pnl_pct = if side == 1 { (close_price - entry_price) / entry_price } else { (entry_price - close_price) / entry_price };
+            if event_type == 1 {
+                // SCALP LOGIC
+                if let Some((_e_time, _t_time, price, qty, _is_maker, parsed_sym)) = parsers::parse_binance_trade(&msg) {
+                    let engine = scalp_engines.entry(parsed_sym.clone()).or_insert_with(quantum_engine::stateful_engine::StatefulEngine::new);
+                    engine.process_tick(price, qty);
                     
-                    let mut close_pos = false;
-                    if pnl_pct >= current_tp_pct {
-                        println!("💰 [SWING CORE] TAKE PROFIT HIT! PnL: {:.2}%", pnl_pct * 100.0);
-                        close_pos = true;
-                    } else if pnl_pct <= -current_sl_pct {
-                        println!("🛑 [SWING CORE] STOP LOSS HIT! PnL: {:.2}%", pnl_pct * 100.0);
-                        close_pos = true;
+                    let regime = engine.get_market_regime();
+                    
+                    let current_sl = f32::from_bits(sl_pct.load(Ordering::Relaxed)) as f64 * 0.33;
+                    let current_tp = f32::from_bits(tp_pct.load(Ordering::Relaxed)) as f64 * 0.33;
+                    
+                    // Exit Logic
+                    if let Some(pos) = scalp_positions.get(&parsed_sym).cloned() {
+                        let pnl_pct = if pos.side == 1 { (price - pos.entry_price) / pos.entry_price } else { (pos.entry_price - price) / pos.entry_price };
+                        
+                        let mut close_pos = false;
+                        if pnl_pct >= current_tp {
+                            println!("💰 [SCALP CORE] TAKE PROFIT HIT! PnL: {:.2}%", pnl_pct * 100.0);
+                            close_pos = true;
+                        } else if pnl_pct <= -current_sl {
+                            println!("🛑 [SCALP CORE] STOP LOSS HIT! PnL: {:.2}%", pnl_pct * 100.0);
+                            close_pos = true;
+                        }
+                        
+                        // Adaptive Regime Exit (If market turns against scalp mean reversion)
+                        if regime == MarketRegime::Swing && pnl_pct > 0.0 {
+                            println!("🔄 [SCALP CORE] MARKET REGIME SHIFTED TO SWING. Taking early profit: {:.2}%", pnl_pct * 100.0);
+                            close_pos = true;
+                        }
+
+                        if close_pos {
+                            let order_side = if pos.side == 1 { "SELL" } else { "BUY" };
+                            let req_id = format!("scalp_close_{}", parsed_sym);
+                            exec.place_order(&parsed_sym, order_side, pos.qty, "MARKET", &req_id).await;
+                            
+                            let pnl_amount = pos.qty * (price - pos.entry_price) * (pos.side as f64);
+                            let mut curr_cap = f64::from_bits(global_capital.load(Ordering::Relaxed));
+                            curr_cap += pnl_amount;
+                            global_capital.store(curr_cap.to_bits(), Ordering::SeqCst);
+                            
+                            scalp_positions.remove(&parsed_sym);
+                        }
                     }
 
-                    if close_pos {
-                        let order_side = if side == 1 { "SELL" } else { "BUY" };
-                        let req_id = format!("swing_close_{}", parsed_sym);
-                        executor_swing.place_order(&parsed_sym, order_side, current_qty, "MARKET", &req_id).await;
+                    // Entry Logic (Only execute scalps in Mean Reverting or Neutral regimes)
+                    if !scalp_positions.contains_key(&parsed_sym) && (regime == MarketRegime::Scalping || regime == MarketRegime::Neutral) {
+                        let curr_cap = f64::from_bits(global_capital.load(Ordering::Relaxed));
+                        let features = engine.get_features();
+                        let prob = quantum_engine::ml_inference::NanoForest::predict_global(&features);
                         
-                        let pnl_amount = current_qty * (close_price - entry_price) * (side as f64);
+                        let tl = f32::from_bits(ml_thresh_l.load(Ordering::Relaxed));
+                        let ts = f32::from_bits(ml_thresh_s.load(Ordering::Relaxed));
                         
-                        let mut curr_cap = f64::from_bits(swing_capital.load(Ordering::Relaxed));
-                        curr_cap += pnl_amount;
-                        swing_capital.store(curr_cap.to_bits(), Ordering::SeqCst);
-                        
-                        println!("🚀 [SWING CORE] Closed Position on {}. New shared capital: {:.2}", parsed_sym, curr_cap);
-                        in_pos = false;
+                        if prob > tl {
+                            let leverage = f32::from_bits(scalp_lev.load(Ordering::Relaxed)) as f64;
+                            if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, curr_cap) {
+                                println!("⚡ [SCALP CORE] LONG Signal (Regime: {:?})! Prob: {:.2}%. WS Order sent.", regime, prob * 100.0);
+                                let req_id = format!("scalp_{}", parsed_sym);
+                                exec.place_order(&parsed_sym, "BUY", micro_qty, "LONG", &req_id).await;
+                                scalp_positions.insert(parsed_sym.clone(), PositionInfo { side: 1, entry_price: price, qty: micro_qty });
+                            }
+                        } else if prob < (1.0 - ts) {
+                            let leverage = f32::from_bits(scalp_lev.load(Ordering::Relaxed)) as f64;
+                            if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, curr_cap) {
+                                println!("🩸 [SCALP CORE] SHORT Signal (Regime: {:?})! Prob: {:.2}%. WS Order sent.", regime, prob * 100.0);
+                                let req_id = format!("scalp_{}", parsed_sym);
+                                exec.place_order(&parsed_sym, "SELL", micro_qty, "SHORT", &req_id).await;
+                                scalp_positions.insert(parsed_sym.clone(), PositionInfo { side: -1, entry_price: price, qty: micro_qty });
+                            }
+                        }
                     }
                 }
+            } else if event_type == 2 {
+                // SWING LOGIC
+                if let Some((_e_time, parsed_sym, _open, _high, _low, close_price, volume, is_closed)) = parsers::parse_binance_kline(&msg) {
+                    let engine = swing_engines.entry(parsed_sym.clone()).or_insert_with(quantum_engine::stateful_engine::StatefulEngine::new);
+                    engine.process_tick(close_price, volume);
+                    
+                    let regime = engine.get_market_regime();
+                    
+                    let current_sl_pct = f32::from_bits(sl_pct.load(Ordering::Relaxed)) as f64;
+                    let current_tp_pct = f32::from_bits(tp_pct.load(Ordering::Relaxed)) as f64;
 
-                // ENTRY LOGIC (Only on 1H close)
-                if !in_pos && is_closed {
-                    let curr_cap = f64::from_bits(swing_capital.load(Ordering::Relaxed));
-                    println!("📊 [SWING MACRO] 1H Kline Closed for {}. Close Price: {}", parsed_sym, close_price);
-                    
-                    let fast = engine.ema_fast;
-                    let slow = engine.ema_slow;
-                    
-                    let tl = f32::from_bits(swing_thresh_l.load(Ordering::Relaxed)) as f64;
-                    let ts = f32::from_bits(swing_thresh_s.load(Ordering::Relaxed)) as f64;
-                    
-                    if fast > slow * (1.0 + tl) {
-                        let leverage = f32::from_bits(swing_lev.load(Ordering::Relaxed)) as f64;
-                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, curr_cap) {
-                            println!("🚀 [SWING CORE] LONG SIGNAL on {} at {} (Qty: {})", parsed_sym, close_price, micro_qty);
-                            let req_id = format!("swing_{}", parsed_sym);
-                            executor_swing.place_order(&parsed_sym, "BUY", micro_qty, "LONG", &req_id).await;
-                            in_pos = true;
-                            side = 1;
-                            entry_price = close_price;
-                            current_qty = micro_qty;
+                    // Exit Logic Continuous
+                    if let Some(pos) = swing_positions.get(&parsed_sym).cloned() {
+                        let pnl_pct = if pos.side == 1 { (close_price - pos.entry_price) / pos.entry_price } else { (pos.entry_price - close_price) / pos.entry_price };
+                        
+                        let mut close_pos = false;
+                        if pnl_pct >= current_tp_pct {
+                            println!("💰 [SWING CORE] TAKE PROFIT HIT! PnL: {:.2}%", pnl_pct * 100.0);
+                            close_pos = true;
+                        } else if pnl_pct <= -current_sl_pct {
+                            println!("🛑 [SWING CORE] STOP LOSS HIT! PnL: {:.2}%", pnl_pct * 100.0);
+                            close_pos = true;
                         }
-                    } else if fast < slow * (1.0 - ts) {
-                        let leverage = f32::from_bits(swing_lev.load(Ordering::Relaxed)) as f64;
-                        if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, curr_cap) {
-                            println!("🩸 [SWING CORE] SHORT SIGNAL on {} at {} (Qty: {})", parsed_sym, close_price, micro_qty);
-                            let req_id = format!("swing_{}", parsed_sym);
-                            executor_swing.place_order(&parsed_sym, "SELL", micro_qty, "SHORT", &req_id).await;
-                            in_pos = true;
-                            side = -1;
-                            entry_price = close_price;
-                            current_qty = micro_qty;
+                        
+                        if regime == MarketRegime::Scalping && pnl_pct > 0.0 {
+                            println!("🔄 [SWING CORE] MARKET REGIME SHIFTED TO SCALPING (Chop). Securing profit: {:.2}%", pnl_pct * 100.0);
+                            close_pos = true;
+                        }
+
+                        if close_pos {
+                            let order_side = if pos.side == 1 { "SELL" } else { "BUY" };
+                            let req_id = format!("swing_close_{}", parsed_sym);
+                            exec.place_order(&parsed_sym, order_side, pos.qty, "MARKET", &req_id).await;
+                            
+                            let pnl_amount = pos.qty * (close_price - pos.entry_price) * (pos.side as f64);
+                            let mut curr_cap = f64::from_bits(global_capital.load(Ordering::Relaxed));
+                            curr_cap += pnl_amount;
+                            global_capital.store(curr_cap.to_bits(), Ordering::SeqCst);
+                            
+                            swing_positions.remove(&parsed_sym);
+                        }
+                    }
+
+                    // Entry Logic (Only on 1H close, and only in Trending regimes)
+                    if !swing_positions.contains_key(&parsed_sym) && is_closed && regime == MarketRegime::Swing {
+                        let curr_cap = f64::from_bits(global_capital.load(Ordering::Relaxed));
+                        let fast = engine.ema_fast;
+                        let slow = engine.ema_slow;
+                        
+                        let tl = f32::from_bits(tech_thresh_l.load(Ordering::Relaxed)) as f64;
+                        let ts = f32::from_bits(tech_thresh_s.load(Ordering::Relaxed)) as f64;
+                        
+                        if fast > slow * (1.0 + tl) {
+                            let leverage = f32::from_bits(swing_lev.load(Ordering::Relaxed)) as f64;
+                            if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, curr_cap) {
+                                println!("🚀 [SWING CORE] LONG SIGNAL on {} (Regime: {:?})", parsed_sym, regime);
+                                let req_id = format!("swing_{}", parsed_sym);
+                                exec.place_order(&parsed_sym, "BUY", micro_qty, "LONG", &req_id).await;
+                                swing_positions.insert(parsed_sym.clone(), PositionInfo { side: 1, entry_price: close_price, qty: micro_qty });
+                            }
+                        } else if fast < slow * (1.0 - ts) {
+                            let leverage = f32::from_bits(swing_lev.load(Ordering::Relaxed)) as f64;
+                            if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, curr_cap) {
+                                println!("🩸 [SWING CORE] SHORT SIGNAL on {} (Regime: {:?})", parsed_sym, regime);
+                                let req_id = format!("swing_{}", parsed_sym);
+                                exec.place_order(&parsed_sym, "SELL", micro_qty, "SHORT", &req_id).await;
+                                swing_positions.insert(parsed_sym.clone(), PositionInfo { side: -1, entry_price: close_price, qty: micro_qty });
+                            }
                         }
                     }
                 }
             }
             
             msg_count += 1;
-            if msg_count % 100 == 0 {
-                let elapsed = start.elapsed().as_nanos();
-                println!("⏱️ [TELEMETRY-SWING] 1H Kline {} processed in {} ns", msg_count, elapsed);
+            if msg_count % 5000 == 0 {
+                println!("⏱️ [TELEMETRY] Processed 5000 ticks/klines. Last tick: {} ns", start.elapsed().as_nanos());
             }
         }
     });
@@ -382,22 +341,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (_, mut read) = ws_stream.split();
 
-    let mut msg_count = 0;
-    let mut last_log = Instant::now();
-    
     while let Some(message) = read.next().await {
         match message {
             Ok(msg) => {
                 if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
-                    tx_scalp.send(text.clone()).unwrap_or(());
-                    tx_swing.send(text).unwrap_or(());
-                    
-                    msg_count += 1;
-                    if msg_count % 5000 == 0 {
-                        let qps = 5000.0 / last_log.elapsed().as_secs_f64();
-                        println!("⚡ Flow Rate: {:.2} msgs/sec", qps);
-                        last_log = Instant::now();
-                    }
+                    tx_events.send(text).unwrap_or(());
                 }
             }
             Err(e) => {
@@ -406,7 +354,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let _ = tokio::join!(scalp_handle, swing_handle);
+    let _ = unified_handle.await;
 
     Ok(())
 }

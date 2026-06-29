@@ -113,14 +113,13 @@ impl RiskManager {
         risk.calculate_micro_position_size_local(symbol, current_price, leverage, capital)
     }
 
-    pub fn can_open_position(horizon: i32, requested_qty: f64, current_price: f64) -> bool {
+    pub fn can_open_position(horizon: i32, requested_qty: f64, current_price: f64, dynamic_leverage: f64) -> bool {
         let balance = Portfolio::get_balance();
         if balance <= 0.0 {
             return false;
         }
 
-        let assumed_leverage = if horizon == 0 { 50.0 } else { 30.0 };
-        let required_margin = (requested_qty * current_price) / assumed_leverage;
+        let required_margin = (requested_qty * current_price) / dynamic_leverage;
         let risk_guard = GLOBAL_RISK.read().unwrap();
         
         let max_capital_allowed = balance * risk_guard.max_risk_per_trade;
