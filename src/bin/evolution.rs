@@ -77,12 +77,17 @@ fn main() {
     let cooling_rate = 0.995;
     
     let mut current_config = UnifiedConfig {
-        sl_pct: 0.015,
-        tp_pct: 0.030,
-        ml_threshold_l: 0.8,
-        ml_threshold_s: 0.8,
-        tech_threshold_l: 0.002,
-        tech_threshold_s: 0.002,
+        sl_pct: 0.02,
+        tp_pct: 0.06,
+        ml_threshold_l: 0.70,
+        ml_threshold_s: 0.70,
+        tech_threshold_l: 0.005,
+        tech_threshold_s: 0.005,
+        starting_capital: 13.0,
+        scalp_leverage: 50.0,
+        swing_leverage: 15.0,
+        scalp_sl_ratio: 0.33,
+        scalp_tp_ratio: 0.33,
     };
     
     let mut best_config = current_config.clone();

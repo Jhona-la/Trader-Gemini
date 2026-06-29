@@ -68,6 +68,11 @@ fn main() {
             ml_threshold_s: random_f64(0.5, 0.9),
             tech_threshold_l: random_f64(0.001, 0.005),
             tech_threshold_s: random_f64(0.001, 0.005),
+            starting_capital: 13.0,
+            scalp_leverage: 50.0,
+            swing_leverage: 15.0,
+            scalp_sl_ratio: 0.33,
+            scalp_tp_ratio: 0.33,
         });
     }
 

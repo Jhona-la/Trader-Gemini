@@ -1,3 +1,9 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/os-guardian",
+]
+
 [package]
 name = "quantum_engine"
 version = "0.1.0"

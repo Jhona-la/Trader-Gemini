@@ -1,19 +1,48 @@
 @echo off
+title GOD ENGINE L3 - Mainnet Execution
+color 0A
+cls
+
 echo ========================================================
-echo 🚀 GOD MODE ACTIVATED - TRADER GEMINI (RUST EDITION)
+echo                 T R A D E R   G E M I N I 
+echo                  L A U N C H   M A S T E R 
 echo ========================================================
 echo.
-echo Starting Quantum Engine in Production Mode...
+echo [1] Compilando Binario Rust [Perfil: Ultra-Release / LTO / Abort]
+echo.
 
-set CARGO_TARGET_DIR=C:\temp\quantum_engine_target
-cargo build --release
-if %errorlevel% neq 0 (
-    echo [ERROR] Failed to compile Rust Engine!
+set CARGO_TARGET_DIR=target_release_god
+cargo build --release --bin god_engine -j 1
+if %ERRORLEVEL% neq 0 (
+    color 0C
+    echo.
+    echo [CRITICAL ERROR] Fallo en la compuerta de compilacion cuantica.
     pause
-    exit /b %errorlevel%
+    exit /b %ERRORLEVEL%
 )
 
-echo [SUCCESS] Engine Compiled. Igniting...
-cargo run --release --bin god_engine
+echo.
+echo [2] Compilacion Exitosa. Desplegando Dashboard L3 (TUI Matrix)...
+echo.
 
+:: Abre el dashboard en el navegador por defecto (es asincrono)
+start http://localhost:8080
+
+echo.
+echo [3] Iniciando IA Engine y Motores de Red en Mainnet.
+echo ========================================================
+echo                  WARNING: REAL FUNDS ACTIVE
+echo ========================================================
+echo.
+
+:: Ejecuta el bot. En caso de crash el terminal quedara abierto.
+.\target_release_god\release\god_engine.exe
+
+if %ERRORLEVEL% neq 0 (
+    color 0C
+    echo.
+    echo [CRITICAL PANIC] Engine Exited Abnormally! Code: %ERRORLEVEL%
+)
+
+echo.
 pause
