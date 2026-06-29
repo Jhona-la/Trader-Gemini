@@ -8,6 +8,9 @@ use tokio::time::{sleep, Duration};
 use quantum_engine::{StatefulEngine, QuantumStateArena, parsers, stateful_engine::MarketRegime};
 use std::time::Instant;
 use std::sync::atomic::{AtomicU32, Ordering, AtomicU64};
+use serde::Deserialize;
+
+use quantum_engine::config::DynamicConfig;
 
 #[derive(Debug, Clone)]
 struct PositionInfo {
@@ -23,16 +26,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⚡ Sub-Microsecond Execution Core initialized.");
     println!("========================================================");
     
-    let config_str = std::fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
-    let config_json: serde_json::Value = serde_json::from_str(&config_str).unwrap_or(serde_json::json!({}));
+    let config_bytes = std::fs::read("data/dynamic_config.bin").unwrap_or_default();
+    let config: DynamicConfig = bincode::deserialize(&config_bytes).unwrap_or_else(|_| {
+        // Fallback to json if bin doesn't exist and write it out!
+        let config_str = std::fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
+        let cfg: DynamicConfig = serde_json::from_str(&config_str).expect("CRITICAL: Failed to parse dynamic_config.json");
+        if let Ok(encoded) = bincode::serialize(&cfg) {
+            let _ = std::fs::write("data/dynamic_config.bin", encoded);
+        }
+        cfg
+    });
     
-    let default_symbols = vec!["btcusdt".to_string(), "ethusdt".to_string()];
-    let symbols: Vec<String> = config_json["symbols"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
-        .unwrap_or(default_symbols);
+    let symbols = config.symbols;
 
     println!("🌍 [OMNI-AWARENESS] Tracking {} symbols from configuration.", symbols.len());
+
+    let (telemetry_tx, _) = tokio::sync::broadcast::channel(100);
+    
+    let dashboard_tx = telemetry_tx.clone();
+    tokio::spawn(async move {
+        if let Err(e) = quantum_engine::dashboard::start_server(dashboard_tx).await {
+            println!("❌ [DASHBOARD] Failed to start server: {}", e);
+        }
+    });
 
     let mut streams = String::new();
     for (i, sym) in symbols.iter().enumerate() {
@@ -67,26 +83,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scalp_lev = Arc::new(AtomicU32::new(f32::to_bits(50.0)));
     let swing_lev = Arc::new(AtomicU32::new(f32::to_bits(15.0)));
     
-    if let Ok(config_json) = serde_json::from_str::<serde_json::Value>(&config_str) {
-        let l = config_json["ml_threshold_l"].as_f64().unwrap_or(0.95) as f32;
-        let s = config_json["ml_threshold_s"].as_f64().unwrap_or(0.95) as f32;
-        let sl = config_json["sl_pct"].as_f64().unwrap_or(0.01) as f32;
-        let tp = config_json["tp_pct"].as_f64().unwrap_or(0.02) as f32;
-        let tl = config_json["tech_threshold_l"].as_f64().unwrap_or(0.005) as f32;
-        let ts = config_json["tech_threshold_s"].as_f64().unwrap_or(0.005) as f32;
-        let scl = config_json["scalp_leverage"].as_f64().unwrap_or(50.0) as f32;
-        let swl = config_json["swing_leverage"].as_f64().unwrap_or(15.0) as f32;
-        
-        ml_thresh_l.store(f32::to_bits(l), Ordering::SeqCst);
-        ml_thresh_s.store(f32::to_bits(s), Ordering::SeqCst);
-        sl_pct.store(f32::to_bits(sl), Ordering::SeqCst);
-        tp_pct.store(f32::to_bits(tp), Ordering::SeqCst);
-        tech_thresh_l.store(f32::to_bits(tl), Ordering::SeqCst);
-        tech_thresh_s.store(f32::to_bits(ts), Ordering::SeqCst);
-        scalp_lev.store(f32::to_bits(scl), Ordering::SeqCst);
-        swing_lev.store(f32::to_bits(swl), Ordering::SeqCst);
-        println!("🧬 [INIT] Loaded Config: L>={:.4} S>={:.4} SL={:.4} TP={:.4} SCL={:.1} SWL={:.1}", l, s, sl, tp, scl, swl);
-    }
+    ml_thresh_l.store(f32::to_bits(config.ml_threshold_l), Ordering::SeqCst);
+    ml_thresh_s.store(f32::to_bits(config.ml_threshold_s), Ordering::SeqCst);
+    sl_pct.store(f32::to_bits(config.sl_pct), Ordering::SeqCst);
+    tp_pct.store(f32::to_bits(config.tp_pct), Ordering::SeqCst);
+    tech_thresh_l.store(f32::to_bits(config.tech_threshold_l), Ordering::SeqCst);
+    tech_thresh_s.store(f32::to_bits(config.tech_threshold_s), Ordering::SeqCst);
+    scalp_lev.store(f32::to_bits(config.scalp_leverage), Ordering::SeqCst);
+    swing_lev.store(f32::to_bits(config.swing_leverage), Ordering::SeqCst);
+    println!("🧬 [INIT] Loaded Config: L>={:.4} S>={:.4} SL={:.4} TP={:.4} SCL={:.1} SWL={:.1}", 
+             config.ml_threshold_l, config.ml_threshold_s, config.sl_pct, config.tp_pct, config.scalp_leverage, config.swing_leverage);
     
     let ml_thresh_l_clone = Arc::clone(&ml_thresh_l);
     let ml_thresh_s_clone = Arc::clone(&ml_thresh_s);
@@ -109,28 +115,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(modified) = meta.modified() {
                     if Some(modified) != last_config_ts {
                         last_config_ts = Some(modified);
-                        let config_str = std::fs::read_to_string("data/dynamic_config.json").unwrap_or_default();
-                        if let Ok(config_json) = serde_json::from_str::<serde_json::Value>(&config_str) {
-                            let l = config_json["ml_threshold_l"].as_f64().unwrap_or(0.95) as f32;
-                            let s = config_json["ml_threshold_s"].as_f64().unwrap_or(0.95) as f32;
-                            let sl = config_json["sl_pct"].as_f64().unwrap_or(0.01) as f32;
-                            let tp = config_json["tp_pct"].as_f64().unwrap_or(0.02) as f32;
-                            let tl = config_json["tech_threshold_l"].as_f64().unwrap_or(0.005) as f32;
-                            let ts = config_json["tech_threshold_s"].as_f64().unwrap_or(0.005) as f32;
-                            let scl = config_json["scalp_leverage"].as_f64().unwrap_or(50.0) as f32;
-                            let swl = config_json["swing_leverage"].as_f64().unwrap_or(15.0) as f32;
-                            
-                            ml_thresh_l_clone.store(f32::to_bits(l), Ordering::SeqCst);
-                            ml_thresh_s_clone.store(f32::to_bits(s), Ordering::SeqCst);
-                            sl_pct_clone.store(f32::to_bits(sl), Ordering::SeqCst);
-                            tp_pct_clone.store(f32::to_bits(tp), Ordering::SeqCst);
-                            tech_thresh_l_clone.store(f32::to_bits(tl), Ordering::SeqCst);
-                            tech_thresh_s_clone.store(f32::to_bits(ts), Ordering::SeqCst);
-                            scalp_lev_clone.store(f32::to_bits(scl), Ordering::SeqCst);
-                            swing_lev_clone.store(f32::to_bits(swl), Ordering::SeqCst);
-                            
-                            println!("🔥 [HOT-RELOAD] Dynamic Config absorbed!");
-                        }
+                        let config_bytes = std::fs::read("data/dynamic_config.bin").unwrap_or_default();
+                        let cfg: DynamicConfig = bincode::deserialize(&config_bytes).unwrap_or_else(|_| {
+                            let config_str = std::fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
+                            serde_json::from_str(&config_str).unwrap_or_else(|_| DynamicConfig {
+                                symbols: vec!["btcusdt".to_string(), "ethusdt".to_string()],
+                                sl_pct: 0.002, tp_pct: 0.004,
+                                ml_threshold_l: 0.5, ml_threshold_s: 0.5,
+                                tech_threshold_l: 0.002, tech_threshold_s: 0.002,
+                                scalp_leverage: 50.0, swing_leverage: 30.0,
+                            })
+                        });
+
+                        ml_thresh_l_clone.store(f32::to_bits(cfg.ml_threshold_l), Ordering::SeqCst);
+                        ml_thresh_s_clone.store(f32::to_bits(cfg.ml_threshold_s), Ordering::SeqCst);
+                        sl_pct_clone.store(f32::to_bits(cfg.sl_pct), Ordering::SeqCst);
+                        tp_pct_clone.store(f32::to_bits(cfg.tp_pct), Ordering::SeqCst);
+                        tech_thresh_l_clone.store(f32::to_bits(cfg.tech_threshold_l), Ordering::SeqCst);
+                        tech_thresh_s_clone.store(f32::to_bits(cfg.tech_threshold_s), Ordering::SeqCst);
+                        scalp_lev_clone.store(f32::to_bits(cfg.scalp_leverage), Ordering::SeqCst);
+                        swing_lev_clone.store(f32::to_bits(cfg.swing_leverage), Ordering::SeqCst);
+                        
+                        println!("🔥 [HOT-RELOAD] Dynamic Config absorbed successfully in Nanoseconds!");
                     }
                 }
             }
@@ -163,6 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let exec = Arc::clone(&executor);
     
+    let loop_telemetry_tx = telemetry_tx.clone();
     // Unified Event Loop Task
     let unified_handle = tokio::spawn(async move {
         println!("🧠 [UNIFIED CORE] Initialized. Target latency: <500ns.");
@@ -222,6 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let mut curr_cap = f64::from_bits(global_capital.load(Ordering::Relaxed));
                             curr_cap += pnl_amount;
                             global_capital.store(curr_cap.to_bits(), Ordering::SeqCst);
+                            let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::CapitalUpdate(curr_cap));
                             
                             scalp_positions.remove(&parsed_sym);
                         }
@@ -240,6 +248,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let leverage = f32::from_bits(scalp_lev.load(Ordering::Relaxed)) as f64;
                             if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, curr_cap) {
                                 println!("⚡ [SCALP CORE] LONG Signal (Regime: {:?})! Prob: {:.2}%. WS Order sent.", regime, prob * 100.0);
+                                let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::LogUpdate(
+                                    "success".to_string(), 
+                                    format!("⚡ SCALP LONG on {} (Prob: {:.2}%)", parsed_sym, prob * 100.0)
+                                ));
                                 let req_id = format!("scalp_{}", parsed_sym);
                                 exec.place_order(&parsed_sym, "BUY", micro_qty, "LONG", &req_id).await;
                                 scalp_positions.insert(parsed_sym.clone(), PositionInfo { side: 1, entry_price: price, qty: micro_qty });
@@ -248,6 +260,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let leverage = f32::from_bits(scalp_lev.load(Ordering::Relaxed)) as f64;
                             if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, price, leverage, curr_cap) {
                                 println!("🩸 [SCALP CORE] SHORT Signal (Regime: {:?})! Prob: {:.2}%. WS Order sent.", regime, prob * 100.0);
+                                let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::LogUpdate(
+                                    "error".to_string(), 
+                                    format!("🩸 SCALP SHORT on {} (Prob: {:.2}%)", parsed_sym, prob * 100.0)
+                                ));
                                 let req_id = format!("scalp_{}", parsed_sym);
                                 exec.place_order(&parsed_sym, "SELL", micro_qty, "SHORT", &req_id).await;
                                 scalp_positions.insert(parsed_sym.clone(), PositionInfo { side: -1, entry_price: price, qty: micro_qty });
@@ -293,6 +309,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let mut curr_cap = f64::from_bits(global_capital.load(Ordering::Relaxed));
                             curr_cap += pnl_amount;
                             global_capital.store(curr_cap.to_bits(), Ordering::SeqCst);
+                            let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::CapitalUpdate(curr_cap));
                             
                             swing_positions.remove(&parsed_sym);
                         }
@@ -311,6 +328,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let leverage = f32::from_bits(swing_lev.load(Ordering::Relaxed)) as f64;
                             if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, curr_cap) {
                                 println!("🚀 [SWING CORE] LONG SIGNAL on {} (Regime: {:?})", parsed_sym, regime);
+                                let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::LogUpdate(
+                                    "info".to_string(), 
+                                    format!("🚀 SWING LONG on {}", parsed_sym)
+                                ));
                                 let req_id = format!("swing_{}", parsed_sym);
                                 exec.place_order(&parsed_sym, "BUY", micro_qty, "LONG", &req_id).await;
                                 swing_positions.insert(parsed_sym.clone(), PositionInfo { side: 1, entry_price: close_price, qty: micro_qty });
@@ -319,6 +340,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let leverage = f32::from_bits(swing_lev.load(Ordering::Relaxed)) as f64;
                             if let Some(micro_qty) = quantum_engine::risk::RiskManager::calculate_micro_position_size(&parsed_sym, close_price, leverage, curr_cap) {
                                 println!("🩸 [SWING CORE] SHORT SIGNAL on {} (Regime: {:?})", parsed_sym, regime);
+                                let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::LogUpdate(
+                                    "warn".to_string(), 
+                                    format!("🩸 SWING SHORT on {}", parsed_sym)
+                                ));
                                 let req_id = format!("swing_{}", parsed_sym);
                                 exec.place_order(&parsed_sym, "SELL", micro_qty, "SHORT", &req_id).await;
                                 swing_positions.insert(parsed_sym.clone(), PositionInfo { side: -1, entry_price: close_price, qty: micro_qty });
@@ -329,6 +354,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             
             msg_count += 1;
+            if msg_count % 100 == 0 {
+                let lat = start.elapsed().as_nanos();
+                let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::LatencyUpdate(lat as u64));
+            }
             if msg_count % 5000 == 0 {
                 println!("⏱️ [TELEMETRY] Processed 5000 ticks/klines. Last tick: {} ns", start.elapsed().as_nanos());
             }

@@ -47,12 +47,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             writeln!(file, "open_time,open,high,low,close,volume,close_time,quote_asset_volume,number_of_trades,taker_buy_base_asset_volume,taker_buy_quote_asset_volume,ignore")?;
                             
                             if let Some(arr) = data.as_array() {
+                                let mut closes = Vec::with_capacity(arr.len());
+                                let mut highs = Vec::with_capacity(arr.len());
+                                let mut lows = Vec::with_capacity(arr.len());
+                                let mut vols = Vec::with_capacity(arr.len());
+                                
                                 for row in arr {
                                     let row_arr = row.as_array().unwrap();
+                                    
+                                    if let (Ok(h), Ok(l), Ok(c), Ok(v)) = (
+                                        row_arr[2].as_str().unwrap_or("0").parse::<f64>(),
+                                        row_arr[3].as_str().unwrap_or("0").parse::<f64>(),
+                                        row_arr[4].as_str().unwrap_or("0").parse::<f64>(),
+                                        row_arr[5].as_str().unwrap_or("0").parse::<f64>(),
+                                    ) {
+                                        highs.push(h);
+                                        lows.push(l);
+                                        closes.push(c);
+                                        vols.push(v);
+                                    }
+                                    
                                     let line: Vec<String> = row_arr.iter().map(|v| v.to_string().replace("\"", "")).collect();
                                     writeln!(file, "{}", line.join(","))?;
                                 }
-                                println!("✅ Saved {} records to {}", arr.len(), file_path);
+                                
+                                // Generate mmap compatible binary file
+                                let bin_path = format!("data/historical/{}_{}.bin", sym_upper, interval);
+                                let mut bin_file = File::create(&bin_path)?;
+                                
+                                // Write contiguous blocks: [closes], [highs], [lows], [volumes]
+                                // 1. Closes
+                                let slice_c = unsafe { std::slice::from_raw_parts(closes.as_ptr() as *const u8, closes.len() * 8) };
+                                bin_file.write_all(slice_c)?;
+                                
+                                // 2. Highs
+                                let slice_h = unsafe { std::slice::from_raw_parts(highs.as_ptr() as *const u8, highs.len() * 8) };
+                                bin_file.write_all(slice_h)?;
+                                
+                                // 3. Lows
+                                let slice_l = unsafe { std::slice::from_raw_parts(lows.as_ptr() as *const u8, lows.len() * 8) };
+                                bin_file.write_all(slice_l)?;
+                                
+                                // 4. Volumes
+                                let slice_v = unsafe { std::slice::from_raw_parts(vols.as_ptr() as *const u8, vols.len() * 8) };
+                                bin_file.write_all(slice_v)?;
+                                
+                                println!("✅ Saved {} records to {} and {}", arr.len(), file_path, bin_path);
                             }
                             break;
                         } else {

@@ -15,55 +15,33 @@ fn main() {
     println!("============================================================");
 
     let forest_path = "models/nano_forest.json";
-    if let Ok(_) = NanoForest::load_from_json(forest_path) {
+    if let Ok(_) = NanoForest::load_model(forest_path) {
         println!("✅ NanoForest Loaded for Evolution: {}", forest_path);
     } else {
         println!("⚠️ NanoForest NOT FOUND! Evolution will proceed with dummy/random probabilities.");
     }
 
     let sym = "BTCUSDT";
-    let file_path = format!("data/historical/{}_1m.csv", sym);
-    let mut closes_vec = Vec::new();
-    let mut highs_vec = Vec::new();
-    let mut lows_vec = Vec::new();
-    let mut vols_vec = Vec::new();
-
-    if let Ok(file) = File::open(&file_path) {
-        use std::io::{BufRead, BufReader};
-        let reader = BufReader::new(file);
-        for line in reader.lines().filter_map(|l| l.ok()).skip(1) {
-            let parts: Vec<&str> = line.split(',').collect();
-            if parts.len() >= 6 {
-                if let (Ok(h), Ok(l), Ok(c), Ok(v)) = (
-                    parts[2].parse::<f64>(),
-                    parts[3].parse::<f64>(),
-                    parts[4].parse::<f64>(),
-                    parts[5].parse::<f64>(),
-                ) {
-                    highs_vec.push(h);
-                    lows_vec.push(l);
-                    closes_vec.push(c);
-                    vols_vec.push(v);
-                }
-            }
-        }
-    } else {
-        println!("❌ Failed to open {}. Please run data_loader first.", file_path);
-        return;
-    }
-
-    let len = closes_vec.len();
+    let file_path = format!("data/historical/{}_1m.bin", sym);
+    
+    let file = File::open(&file_path).expect("❌ Failed to open .bin file. Run data_loader first.");
+    let mmap = unsafe { memmap2::MmapOptions::new().map(&file).expect("Failed to mmap file") };
+    
+    let bytes_len = mmap.len();
+    let len = bytes_len / (4 * 8); // 4 arrays of f64 (closes, highs, lows, volumes)
+    
     if len == 0 {
-        println!("❌ No data loaded.");
+        println!("❌ No data loaded or file is empty.");
         return;
     }
     
-    let closes = &closes_vec[..];
-    let highs = &highs_vec[..];
-    let lows = &lows_vec[..];
-    let volumes = &vols_vec[..];
+    let ptr = mmap.as_ptr() as *const f64;
+    let closes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    let highs = unsafe { std::slice::from_raw_parts(ptr.add(len), len) };
+    let lows = unsafe { std::slice::from_raw_parts(ptr.add(len * 2), len) };
+    let volumes = unsafe { std::slice::from_raw_parts(ptr.add(len * 3), len) };
     
-    println!("✅ Loaded {} ticks for Backtest Evolution.", len);
+    println!("✅ Memory-Mapped {} ticks for Quantum Evolution in O(1).", len);
     
     let generations = 2000;
     let pop_size = 200;

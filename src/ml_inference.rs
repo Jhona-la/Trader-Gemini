@@ -23,16 +23,26 @@ pub struct NanoForest {
 }
 
 impl NanoForest {
-    pub fn load_from_json(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let data: NanoForestData = serde_json::from_reader(reader)?;
+    pub fn load_model(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let bin_path = path.replace(".json", ".bin");
+        let data: NanoForestData = if let Ok(bin_data) = std::fs::read(&bin_path) {
+            bincode::deserialize(&bin_data)?
+        } else {
+            // Fallback to JSON and auto-compile to bin!
+            let file = File::open(path)?;
+            let reader = BufReader::new(file);
+            let parsed: NanoForestData = serde_json::from_reader(reader)?;
+            if let Ok(encoded) = bincode::serialize(&parsed) {
+                let _ = std::fs::write(&bin_path, encoded);
+            }
+            parsed
+        };
         Ok(NanoForest { data })
     }
 
     /// Loads the forest into the global static cache
     pub fn load_global(path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let forest = Self::load_from_json(path)?;
+        let forest = Self::load_model(path)?;
         if let Ok(mut lock) = crate::ml_inference::GLOBAL_FOREST.write() {
             *lock = Some(forest);
         }

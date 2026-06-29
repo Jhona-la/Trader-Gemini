@@ -74,3 +74,18 @@ monitoring_tools/*.zip
 # Large backtest/output files
 graveyard/forensic_purge/bt_v12*.txt
 scripts/hyper_evolver_output.txt
+
+# Phase 6 Legacy Purge
+*.pyd
+*.pyx
+*.prof
+*.db
+*.c
+*.cpp
+rust_quantum_bridge/
+tg_core_fast/
+data/fast_lob.*
+.coverage
+mypy.ini
+pyrightconfig.json
+pytest.ini

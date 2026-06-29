@@ -63,7 +63,7 @@ impl StatefulEngine {
         self.tick_count += 1;
     }
     
-    pub fn get_market_regime(&self) -> MarketRegime {
+    pub fn get_market_regime(&mut self) -> MarketRegime {
         let h = self.hurst.update(self.last_price); // Getting current hurst value approx
         
         if h < 0.45 {
@@ -104,7 +104,7 @@ impl StatefulEngine {
     }
 
     /// Projects the state out to the f32 barrier (576 bytes / 144 floats)
-    pub fn export_f32(&self, out: &mut [f32; 144]) {
+    pub fn export_f32(&mut self, out: &mut [f32; 144]) {
         out[0] = self.ema_fast as f32;
         out[1] = self.ema_slow as f32;
         out[2] = self.rsi_rs as f32;

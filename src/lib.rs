@@ -12,8 +12,8 @@ pub mod executor;
 pub mod orderbook;
 pub mod ffi_networking;
 pub mod unified_engine;
-
 pub mod config;
+pub mod dashboard;
 pub mod ml_inference;
 
 pub use quantum_arena::{QuantumRingBuffer, FEATURE_SIZE, QuantumStateArena};
@@ -38,7 +38,7 @@ pub extern "C" fn ffi_clear_position(horizon: i32) {
 
 #[no_mangle]
 pub extern "C" fn ffi_can_open_position(horizon: i32, requested_qty: f64, current_price: f64) -> bool {
-    risk::RiskManager::can_open_position(horizon, requested_qty, current_price)
+    risk::RiskManager::can_open_position(horizon, requested_qty, current_price, 1.0)
 }
 
 #[no_mangle]
