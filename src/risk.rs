@@ -98,8 +98,11 @@ impl RiskManager {
         // Assumed average SL distance based on current ATR
         let avg_sl_pct = current_atr_pct.max(0.001);
         let notional_target = max_loss_capital / avg_sl_pct;
+        let max_affordable_notional = capital * leverage * 0.95; // 95% of available margin
 
-        let effective_notional = notional_target.max(min_notional);
+        let mut effective_notional = notional_target.min(max_affordable_notional);
+        effective_notional = effective_notional.max(min_notional);
+        
         let mut raw_qty = effective_notional / current_price;
         
         // Enforce minQty
@@ -115,7 +118,7 @@ impl RiskManager {
         let required_margin = (final_qty * current_price) / leverage;
 
         if required_margin > capital {
-            return None; // Cannot afford the minimum trade
+            return None; // Still cannot afford even the absolute minimum trade
         }
         
         Some(final_qty)

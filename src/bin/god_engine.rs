@@ -84,15 +84,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     
     let dark_router = Arc::new(quantum_engine::dark_alpha_router::DarkAlphaRouter::new());
+    let dark_router_clone1 = Arc::clone(&dark_router);
     let dark_router_clone = Arc::clone(&dark_router);
     tokio::spawn(async move {
         // MEV & DEX Sniffer Loop (Phase 22 Axiom XVIII)
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            // Simulated dark pulse injection (ready to be wired to Hyperliquid/Jupiter WS)
-            let dummy_qty = 10.0;
+            sleep(Duration::from_millis(50)).await; // 50ms Dark Pool probe frequency
+            let dummy_qty = 5.0; // Assume 5 BTC institutional fake order
             let impact = 0.05;
-            dark_router_clone.ingest_l2_snapshot(dummy_qty, 0.0, impact, 0);
+            dark_router_clone1.ingest_l2_snapshot(dummy_qty, 0.0, impact, 0);
         }
     });
     
@@ -119,9 +119,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     
     // Shared Atomic Capital Pool ($13 base limit tracked persistently)
-    // Axiom V: Isolated Pockets
-    let scalp_capital = Arc::new(AtomicU64::new((initial_capital / 2.0).to_bits()));
-    let swing_capital = Arc::new(AtomicU64::new((initial_capital / 2.0).to_bits()));
+    // Axiom V: Unified Cross-Margin Pool
+    let unified_capital = Arc::new(AtomicU64::new(initial_capital.to_bits()));
     
     // Non-blocking SQLite persistence channel
     let (db_tx, mut db_rx) = mpsc::unbounded_channel::<(f64, f64)>();
@@ -258,6 +257,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let exec = Arc::clone(&executor);
     let loop_telemetry_tx = telemetry_tx.clone();
+    let dark_router_unified = Arc::clone(&dark_router);
     let unified_handle = tokio::spawn(async move {
         println!("🧠 [UNIFIED CORE] Initialized. Target latency: <500ns.");
         
@@ -338,8 +338,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     swing_engine.process_tick(current_price, qty);
                 }
                 if is_depth {
-                    scalp_engine.update_macro_features(depth_obi, depth_micro_div);
-                    dark_router_clone.ingest_l2_snapshot(0.0, depth_obi, depth_micro_div, event_time as u64);
+                    scalp_engine.update_macro_features(depth_obi, depth_micro_div, 0.0, event_time as u64);
+                    dark_router_unified.ingest_l2_snapshot(0.0, depth_obi, depth_micro_div, event_time as u64);
                 }
                 
                 let scalp_regime = scalp_engine.get_market_regime();
@@ -403,15 +403,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             exec.place_order(parsed_sym, order_side, pos.qty, pos_side_str, &req_id);
                             
                             let pnl_amount = pos.qty * (current_price - pos.entry_price) * (pos.side as f64);
-                            let cap_ref = if horizon == 0 { &scalp_capital } else { &swing_capital };
+                            let cap_ref = &unified_capital;
                             let mut curr_cap = f64::from_bits(cap_ref.load(Ordering::Relaxed));
                             curr_cap += pnl_amount;
                             cap_ref.store(curr_cap.to_bits(), Ordering::SeqCst);
                             
-                            let sc = f64::from_bits(scalp_capital.load(Ordering::Relaxed));
-                            let sw = f64::from_bits(swing_capital.load(Ordering::Relaxed));
-                            let _ = db_tx.send((sc, sw));
-                            let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::CapitalUpdate(sc + sw));
+                            let unified = f64::from_bits(unified_capital.load(Ordering::Relaxed));
+                            let _ = db_tx.send((unified, 0.0));
+                            let _ = loop_telemetry_tx.send(quantum_engine::dashboard::TelemetryEvent::CapitalUpdate(unified));
                             
                             should_remove = true;
                         }
@@ -422,7 +421,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     // Entry Logic
                     if !open_positions.contains_key(&pos_key) && is_active_entry {
-                        let cap_ref = if horizon == 0 { &scalp_capital } else { &swing_capital };
+                        let cap_ref = &unified_capital;
                         let curr_cap = f64::from_bits(cap_ref.load(Ordering::Relaxed));
                         let horizon_name = if horizon == 0 { "SCALP" } else { "SWING" };
                         
