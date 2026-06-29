@@ -6,6 +6,7 @@
 # Generated results/data (NEVER commit output)
 /results/
 /scratch/
+/monitoring_tools/
 
 # ML/Experiment logs
 /wandb/
