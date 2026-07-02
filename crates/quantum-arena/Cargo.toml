@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Sin dependencias pesadas, memoria cuántica pura de std
+omniscient-registry = { path = "../omniscient-registry" }

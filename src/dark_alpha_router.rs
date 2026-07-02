@@ -14,6 +14,12 @@ pub struct DarkAlphaRouter {
     pub processed_packets: AtomicU64,
 }
 
+impl Default for DarkAlphaRouter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DarkAlphaRouter {
     pub fn new() -> Self {
         Self {

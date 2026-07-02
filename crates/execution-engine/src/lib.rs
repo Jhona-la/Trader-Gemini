@@ -1,5 +1,8 @@
 pub mod binance_api;
 pub mod executor;
+pub mod client;
+pub mod simulator;
+pub mod shadow;
 
 #[derive(Debug, Clone)]
 pub struct ExecutionPayload {

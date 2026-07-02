@@ -25,23 +25,20 @@ pub fn spawn_hyperliquid_sniffer(router: Arc<DarkAlphaRouter>) {
                             let mut bytes = text.into_bytes();
                             
                             // Zero-alloc parsing via simd_json
-                            match simd_json::to_borrowed_value(&mut bytes) {
-                                Ok(parsed) => {
-                                    if let Some(data) = parsed.get("data") {
-                                        if let Some(_levels) = data.get("levels") {
-                                            // For simplicity and speed, we approximate pressure by the presence of a deep update
-                                            // In a fully fledged model, we sum the top 5 levels and calculate the micro-imbalance
-                                            
-                                            // Example synthetic logic representing Cascade Risk
-                                            let impact = 0.05; // 5% synthetic impact probability
-                                            let qty = 10.0;    // 10 BTC equivalent synthetic flow
-                                            let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
-                                            
-                                            router.ingest_dex_liquidation(qty, impact, ts);
-                                        }
+                            if let Ok(parsed) = simd_json::to_borrowed_value(&mut bytes) {
+                                if let Some(data) = parsed.get("data") {
+                                    if let Some(_levels) = data.get("levels") {
+                                        // For simplicity and speed, we approximate pressure by the presence of a deep update
+                                        // In a fully fledged model, we sum the top 5 levels and calculate the micro-imbalance
+                                        
+                                        // Example synthetic logic representing Cascade Risk
+                                        let impact = 0.05; // 5% synthetic impact probability
+                                        let qty = 10.0;    // 10 BTC equivalent synthetic flow
+                                        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                                        
+                                        router.ingest_dex_liquidation(qty, impact, ts);
                                     }
                                 }
-                                Err(_) => {}
                             };
                         }
                     }

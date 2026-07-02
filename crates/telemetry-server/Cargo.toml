@@ -1,0 +1,16 @@
+[package]
+name = "telemetry-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.7.5"
+tokio = { version = "1.37.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+quantum-arena = { path = "../quantum-arena" }
+lazy_static = "1.4"
+memmap2 = "0.9"
+crossbeam = "0.8.4"
+arc-swap = "1.9.2"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }

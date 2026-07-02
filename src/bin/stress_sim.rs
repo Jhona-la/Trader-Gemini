@@ -55,6 +55,10 @@ fn main() {
         swing_leverage: 20.0,
         scalp_sl_ratio: 1.0,
         scalp_tp_ratio: 1.0,
+        dyn_atr_min: 0.0001,
+        dyn_obi: 0.10,
+        dyn_ema: 0.00005,
+        dyn_ofi: 0.05,
     };
 
     let mut out_pnl = vec![0.0; len];

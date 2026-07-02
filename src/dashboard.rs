@@ -9,7 +9,8 @@ pub enum TelemetryEvent {
     LatencyUpdate(u64),      // Nanoseconds
     LogUpdate(String, String), // (type, message) e.g., ("info", "Connected...")
     CapitalUpdate(f64),      // Current capital
-    TensorUpdate([f32; 10]), // 10D State Vector
+    TensorUpdate([f32; 12]), // 12D State Vector (Scalp)
+    SwingTensorUpdate(Vec<f32>), // 34D State Vector (Swing)
     OmniUpdate {
         latency_ms: u64,
         latency_panic: bool,

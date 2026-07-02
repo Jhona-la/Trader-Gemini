@@ -1,0 +1,14 @@
+[package]
+name = "strategy-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+omniscient-registry = { path = "../omniscient-registry" }
+
+
+feature-engine = { path = "../feature-engine" }
+quantum-arena = { path = "../quantum-arena" }
+data-pipeline = { path = "../data-pipeline" }
+rand = "0.10.1"
+smartcore = "0.5.0"

@@ -1,0 +1,10 @@
+[package]
+name = "phase-runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+os-guardian = { path = "../os-guardian" }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros", "time"] }
+chrono = "0.4"
+serde = { version = "1.0", features = ["derive"] }

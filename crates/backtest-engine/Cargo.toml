@@ -1,0 +1,20 @@
+[package]
+name = "backtest-engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+god-engine-core = { path = "../god-engine-core" }
+data-pipeline = { path = "../data-pipeline" }
+quantum-arena = { path = "../quantum-arena" }
+signal-engine = { path = "../signal-engine" }
+risk-engine = { path = "../risk-engine" }
+execution-engine = { path = "../execution-engine" }
+tokio = { version = "1.37", features = ["full"] }
+csv = "1.1"
+serde = { version = "1.0", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1.0"
+lazy_static = "1.4"
+memmap2 = "0.9"
+polars = { version = "0.43.1", features = ["lazy", "dtype-datetime", "performant", "chunked_ids", "rolling_window", "parquet"], default-features = false }

@@ -33,6 +33,12 @@ pub struct QuantumRingBuffer {
     pub lap_violation_count: AtomicU64,
 }
 
+impl Default for QuantumRingBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QuantumRingBuffer {
     pub fn new() -> Self {
         Self {
@@ -73,7 +79,7 @@ impl QuantumRingBuffer {
             let seq1 = self.seqlock.load(Ordering::Acquire);
             
             // If odd, a write is in progress.
-            if seq1 % 2 != 0 {
+            if !seq1.is_multiple_of(2) {
                 retries += 1;
                 if retries > 100 { return false; } // Degrade to older state or fail
                 std::hint::spin_loop();

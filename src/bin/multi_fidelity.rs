@@ -73,6 +73,10 @@ fn main() {
             swing_leverage: 15.0,
             scalp_sl_ratio: 0.33,
             scalp_tp_ratio: 0.33,
+            dyn_atr_min: random_f64(0.00005, 0.0002),
+            dyn_obi: random_f64(0.05, 0.20),
+            dyn_ema: random_f64(0.00002, 0.00010),
+            dyn_ofi: random_f64(0.02, 0.10),
         });
     }
 

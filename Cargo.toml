@@ -8,41 +8,88 @@ members = [
     "crates/risk-engine",
     "crates/execution-engine",
     "crates/data-pipeline",
+    "crates/evolution-engine",
+    "crates/telemetry-server",
+    "crates/backtest-engine",
+    "crates/dark-alpha-engine",
+    "crates/flight-recorder",
+    "crates/god-engine-core",
+    "crates/graph-architecture",
+    "crates/omniscient-registry",
+    "crates/phase-runner",
+    "crates/strategy-core",
+    "crates/data-ingest",
+    "crates/graph-4d",
+    "crates/audit-engine"
 ]
 
 [package]
-name = "quantum_engine"
+name = "trader-gemini-v5"
+default-run = "god_engine"
 version = "0.1.0"
+authors = ["Trader Gemini"]
 edition = "2021"
 
-[lib]
-name = "quantum_engine"
-crate-type = ["cdylib", "staticlib", "rlib"]
+autobins = false
 
 [dependencies]
+dotenvy = "0.15"
+os-guardian = { path = "crates/os-guardian" }
+quantum-arena = { path = "crates/quantum-arena" }
+god-engine-core = { path = "crates/god-engine-core" }
+feature-engine = { path = "crates/feature-engine" }
+signal-engine = { path = "crates/signal-engine" }
+risk-engine = { path = "crates/risk-engine" }
+execution-engine = { path = "crates/execution-engine" }
+data-pipeline = { path = "crates/data-pipeline" }
+evolution-engine = { path = "crates/evolution-engine" }
+dark-alpha-engine = { path = "crates/dark-alpha-engine" }
+telemetry-server = { path = "crates/telemetry-server" }
+graph-architecture = { version = "0.1.0", path = "crates/graph-architecture" }
+omniscient-registry = { path = "crates/omniscient-registry" }
+phase-runner = { path = "crates/phase-runner" }
+strategy-core = { path = "crates/strategy-core" }
+data-ingest = { path = "crates/data-ingest" }
+graph-4d = { path = "crates/graph-4d" }
+audit-engine = { path = "crates/audit-engine" }
+
+syn = { version = "2.0", features = ["full", "visit"] }
+petgraph = "0.6.4"
+rkyv = { version = "0.7", features = ["validation"] }
+uuid = { version = "1.8", features = ["v7"] }
+warp = "0.3"
+
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-bincode = "1.3"
-
+arc-swap = "1.7.1"
+crossbeam = "0.8.4"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
-
-tokio = { version = "1.32", features = ["full"] }
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
-tokio-tungstenite = { version = "0.20", features = ["rustls-tls-native-roots"] }
+reqwest = { version = "0.11", features = ["blocking", "json", "rustls-tls"], default-features = false }
+tokio-tungstenite = { version = "0.21.0", features = ["native-tls"] }
 futures-util = "0.3"
 url = "2.4"
 lazy_static = "1.4"
 memmap2 = "0.9"
 chrono = "0.4"
 csv = "1.1"
-rusqlite = { version = "0.40.1", features = ["bundled"] }
+redb = "2.1.1"
 simd-json = "0.17.0"
 zip = "0.6"
 itoa = "1.0.18"
 ryu = "1.0.23"
 crossbeam-channel = "0.5.15"
+crossterm = "0.29.0"
+rayon = "1.12.0"
+rand = "0.10.1"
+memchr = "2.8.2"
+bincode = "1.3"
+core_affinity = "0.8.3"
+polars = { version = "0.43.1", features = ["parquet", "lazy"] }
+mimalloc = "0.1.52"
+backtest-engine = { version = "0.1.0", path = "crates/backtest-engine" }
 
 [[bin]]
 name = "config_compiler"
@@ -53,36 +100,69 @@ name = "god_engine"
 path = "src/bin/god_engine.rs"
 
 [[bin]]
-name = "evolution_engine"
+name = "quantum_benchmark"
+path = "src/bin/benchmark.rs"
+
+[[bin]]
+name = "multi_coin_simulator"
+path = "src/bin/multi_coin_simulator.rs"
+
+[[bin]]
+name = "evolver"
+path = "src/bin/evolver.rs"
+
+[[bin]]
+name = "download_history"
+path = "src/bin/download_history.rs"
+
+[[bin]]
+name = "live_trader"
+path = "src/bin/live_trader.rs"
+
+[[bin]]
+name = "graph_server"
+path = "src/bin/graph_server.rs"
+
+[[bin]]
+name = "feature_validator"
+path = "src/bin/feature_validator.rs"
+
+[[bin]]
+name = "parquet_to_bin"
+path = "src/bin/parquet_to_bin.rs"
+
+[[bin]]
+name = "evolution"
 path = "src/bin/evolution.rs"
 
 [[bin]]
-name = "multi_fidelity"
-path = "src/bin/multi_fidelity.rs"
-[[bin]]
-name = "data_loader"
-path = "src/bin/data_loader.rs"
-
+name = "feature_exporter"
+path = "src/bin/feature_exporter.rs"
 
 [[bin]]
-name = "train_nano_forest"
-path = "src/bin/train_nano_forest.rs"
+name = "binance_vision_sync"
+path = "src/bin/binance_vision_sync.rs"
 
 [[bin]]
-name = "csv_to_bin"
-path = "src/bin/csv_to_bin.rs"
-
-[[bin]]
-name = "csv_to_bin_ticks"
-path = "src/bin/csv_to_bin_ticks.rs"
-
-[[bin]]
-name = "downloader"
-path = "src/bin/downloader.rs"
+name = "macro_history_sync"
+path = "src/bin/macro_history_sync.rs"
 
 [profile.release]
 opt-level = 3
-lto = "fat"
-codegen-units = 1
+lto = false
+codegen-units = 16
 panic = "abort"
 strip = true
+
+[lib]
+name = "quantum_engine"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "train_dark_alpha"
+path = "src/bin/train_dark_alpha.rs"
+
+
+[[bin]]
+name = "auto_trainer_daemon"
+path = "src/bin/auto_trainer_daemon.rs"

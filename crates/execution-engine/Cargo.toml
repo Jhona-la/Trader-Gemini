@@ -9,3 +9,12 @@ signal-engine = { path = "../signal-engine" }
 hmac = "0.12.1"
 sha2 = "0.10.8"
 hex = "0.4.3"
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio-tungstenite = "0.29.0"
+futures-util = "0.3.32"
+url = "2.5.8"
+ryu = "1.0.23"
+itoa = "1.0.18"

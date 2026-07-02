@@ -1,0 +1,13 @@
+[package]
+name = "data-ingest"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+polars = { version = "0.43.1", features = ["parquet", "lazy"] }
+memmap2 = "0.9"
+crossbeam = "0.8.4"
+reqwest = { version = "0.13.4", features = ["json"] }
+tokio = { version = "1.52.3", features = ["rt", "macros"] }
+serde_json = "1.0.150"
+

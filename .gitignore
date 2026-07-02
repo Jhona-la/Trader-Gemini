@@ -1,91 +1,27 @@
-# 🚫 [Trader Gemini] Git Exclusion List
+# Rust build artifacts — catch ALL variants
+/target*
+/**/target*
+**/*.rs.bk
+Cargo.lock
 
-# Environment and Credentials
+# Environment files
 .env
-.env.*
 *.env
-secrets.json
-*.key
-*.pem
+!template.env
+!*.env.example
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
-.venv/
-venv/
-ENV/
-
-# Logs and Data (Sensitive Production Info)
-logs/
-data/
-dashboard/data/
+# Logs
 *.log
-*.csv
-*.json
-!**/.gitkeep
+logs/
 
-# Models (Heavy and Dynamic)
+# Data & models (usually shouldn't be in git)
+data/
 models/
-*.joblib
-*.pkl
+.models/
+wandb/
+results/
+scratch/
 
-# IDEs
+# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# Project Specific
-production_reset.py
-flight_diagnostic.py
-tests/test_production_integrity.py
-
-# Temp & Artifacts
-.models/
-*.old
-*.bak
-
-# Large monitoring binaries - install separately
-monitoring_tools/grafana*/
-monitoring_tools/prometheus*/
-monitoring_tools/*.zip
-
-# Large backtest/output files
-graveyard/forensic_purge/bt_v12*.txt
-scripts/hyper_evolver_output.txt
-
-# Phase 6 Legacy Purge
-*.pyd
-*.pyx
-*.prof
-*.db
-*.c
-*.cpp
-rust_quantum_bridge/
-tg_core_fast/
-data/fast_lob.*
-.coverage
-mypy.ini
-pyrightconfig.json
-pytest.ini

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trader Gemini - 4D Architecture Graph</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+    <style>
+        body {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #cy {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            background-color: rgba(22, 27, 34, 0.9);
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 16px;
+            z-index: 10;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            display: none;
+        }
+        h2 {
+            font-size: 16px;
+            margin-top: 0;
+            margin-bottom: 8px;
+            color: #58a6ff;
+        }
+        p {
+            font-size: 14px;
+            margin: 4px 0;
+            word-wrap: break-word;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        .bg-feature { background-color: #238636; color: white; }
+        .bg-function { background-color: #8957e5; color: white; }
+        .bg-struct { background-color: #e3b341; color: black; }
+        .bg-module { background-color: #30363d; color: white; }
+        .bg-workspace { background-color: #f85149; color: white; }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            font-size: 24px;
+            font-weight: bold;
+            color: #58a6ff;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Scanning Quantum Core AST...</div>
+    <div id="cy"></div>
+    <div id="info-panel">
+        <h2 id="node-label">Node Name</h2>
+        <span id="node-badge" class="badge">Type</span>
+        <p><strong>Path:</strong> <span id="node-path">path/to/file.rs</span></p>
+        <p><strong>Line:</strong> <span id="node-line">1</span></p>
+        <p><strong>Latencia (ns):</strong> <span id="node-latency">0</span></p>
+        <p id="node-orphan" style="color: #f85149; font-weight: bold; display: none;">⚠️ ORPHAN NODE</p>
+    </div>
+
+    <script>
+        fetch('/api/graph')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('loading').style.display = 'none';
+
+                let elements = [];
+
+                // Convert nodes
+                for (let key in data.nodes) {
+                    let n = data.nodes[key];
+                    elements.push({
+                        data: {
+                            id: n.id,
+                            label: n.label,
+                            type: n.node_type,
+                            file_path: n.file_path,
+                            line: n.line_number,
+                            orphan: n.is_orphan,
+                            latency: n.average_latency_ns
+                        }
+                    });
+                }
+
+                // Convert edges
+                data.edges.forEach((e, index) => {
+                    elements.push({
+                        data: {
+                            id: 'e' + index,
+                            source: e.source,
+                            target: e.target,
+                            type: e.edge_type
+                        }
+                    });
+                });
+
+                let cy = cytoscape({
+                    container: document.getElementById('cy'),
+                    elements: elements,
+                    style: [
+                        {
+                            selector: 'node',
+                            style: {
+                                'label': 'data(label)',
+                                'color': '#c9d1d9',
+                                'text-valign': 'bottom',
+                                'text-margin-y': 5,
+                                'font-size': '10px',
+                                'background-color': '#8957e5',
+                                'width': 20,
+                                'height': 20
+                            }
+                        },
+                        {
+                            selector: 'node[type="feature"]',
+                            style: { 'background-color': '#238636', 'shape': 'diamond', 'width': 25, 'height': 25 }
+                        },
+                        {
+                            selector: 'node[type="struct"]',
+                            style: { 'background-color': '#e3b341', 'shape': 'round-rectangle' }
+                        },
+                        {
+                            selector: 'node[type="module"]',
+                            style: { 'background-color': '#30363d', 'width': 30, 'height': 30, 'font-size': '14px', 'font-weight': 'bold' }
+                        },
+                        {
+                            selector: 'node[type="workspace"]',
+                            style: { 'background-color': '#f85149', 'width': 40, 'height': 40, 'font-size': '16px' }
+                        },
+                        {
+                            selector: 'node[?orphan]',
+                            style: { 'border-width': 3, 'border-color': '#f85149' }
+                        },
+                        {
+                            selector: 'edge',
+                            style: {
+                                'width': 1.5,
+                                'line-color': '#30363d',
+                                'target-arrow-color': '#30363d',
+                                'target-arrow-shape': 'triangle',
+                                'curve-style': 'bezier',
+                                'opacity': 0.6
+                            }
+                        },
+                        {
+                            selector: 'edge[type="calls"]',
+                            style: {
+                                'line-color': '#58a6ff',
+                                'target-arrow-color': '#58a6ff',
+                                'line-style': 'dashed'
+                            }
+                        }
+                    ],
+                    layout: {
+                        name: 'cose',
+                        animate: false,
+                        nodeRepulsion: 400000,
+                        idealEdgeLength: 100,
+                        edgeElasticity: 100,
+                        nestingFactor: 5,
+                        gravity: 80,
+                        numIter: 1000
+                    }
+                });
+
+                // UI Interactivity
+                cy.on('tap', 'node', function(evt){
+                    let node = evt.target;
+                    let data = node.data();
+                    
+                    let panel = document.getElementById('info-panel');
+                    panel.style.display = 'block';
+                    
+                    document.getElementById('node-label').innerText = data.id;
+                    document.getElementById('node-path').innerText = data.file_path;
+                    document.getElementById('node-line').innerText = data.line;
+                    document.getElementById('node-latency').innerText = data.latency;
+                    
+                    let badge = document.getElementById('node-badge');
+                    badge.innerText = data.type.toUpperCase();
+                    badge.className = 'badge bg-' + data.type;
+
+                    let orphanLabel = document.getElementById('node-orphan');
+                    orphanLabel.style.display = data.orphan ? 'block' : 'none';
+                });
+
+                cy.on('tap', function(evt){
+                    if( evt.target === cy ){
+                        document.getElementById('info-panel').style.display = 'none';
+                    }
+                });
+            })
+            .catch(err => {
+                document.getElementById('loading').innerText = "Error loading AST Data: " + err;
+                document.getElementById('loading').style.color = "#f85149";
+            });
+    </script>
+</body>
+</html>

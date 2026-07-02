@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 quantum-arena = { path = "../quantum-arena" }
 feature-engine = { path = "../feature-engine" }
+dark-alpha-engine = { path = "../dark-alpha-engine" }
+
+strategy-core = { path = "../strategy-core" }
