@@ -2,6 +2,7 @@ pub mod active_universe;
 pub mod atomic_float;
 pub mod config;
 pub mod genome;
+pub mod genome_store;
 pub mod position;
 pub mod state;
 pub mod symbol_registry;

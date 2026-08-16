@@ -333,25 +333,26 @@ async fn main() -> Result<(), String> {
 
         // Save as SuperGenotype JSON
         if best_cap > initial_capital {
-            let dir_path = "config_dir/genotypes";
-            let _ = std::fs::create_dir_all(dir_path);
-            let file_path = format!("{}/active_genome.json", dir_path);
-
-            match serde_json::to_string_pretty(genome) {
-                Ok(json_str) => {
-                    if let Err(e) = std::fs::write(&file_path, &json_str) {
-                        println!(
-                            "❌ Error al escribir active_genome.json en {}: {}",
-                            file_path, e
-                        );
-                    } else {
-                        println!("🧬 ✅ active_genome.json actualizado en {}. Live Trader lo cargará en <60s.", file_path);
-                    }
-                }
-                Err(e) => println!("❌ Error serializando genome: {}", e),
+            // F4.3: embudo único — envelope versionado con linaje (generación,
+            // fuente, métricas) + historia inmutable + espejo legacy atómico.
+            // El write directo a active_genome.json queda abolido: sin versión
+            // ni auditoría era imposible saber quién promovió qué ni revertir.
+            match quantum_arena::genome_store::GenomeEnvelope::promote(
+                genome.clone(),
+                "ga_evolver",
+                &format!(
+                    "capital {:.2} → {:.2} ({:+.2}%)",
+                    initial_capital, best_cap, pnl_pct
+                ),
+            ) {
+                Ok(env) => println!(
+                    "🧬 ✅ Genoma generación {} promovido (padre {}). Envelope + historia + espejo legacy escritos.",
+                    env.generation, env.parent_generation
+                ),
+                Err(e) => println!("❌ Error promoviendo genoma al almacén: {}", e),
             }
         } else {
-            println!("⚠️ Ninguna configuración generó ganancia. No se guarda active_genome.json.");
+            println!("⚠️ Ninguna configuración generó ganancia. No se promueve genoma.");
         }
     } else {
         println!("Ninguna configuración sobrevivió.");

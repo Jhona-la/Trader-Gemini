@@ -417,6 +417,18 @@ impl SuperGenotype {
     }
 
     pub fn load_or_baseline(maker_base: f64, taker_base: f64) -> Self {
+        // F4.3: envelope versionado primero (fuente de verdad con linaje);
+        // la ruta legacy queda como fallback de compatibilidad.
+        if let Some(envelope) = crate::genome_store::GenomeEnvelope::load_active() {
+            telemetry_engine::telemetry!(
+                "🧬 [GENOMA] Envelope activo: generación {} (fuente: {}, padre: {}) — {}",
+                envelope.generation,
+                envelope.source,
+                envelope.parent_generation,
+                envelope.promotion_reason
+            );
+            return envelope.genome;
+        }
         if let Ok(data) = std::fs::read_to_string("config_dir/genotypes/active_genome.json") {
             if let Ok(genome) = serde_json::from_str::<Self>(&data) {
                 telemetry_engine::telemetry!("🧬 [GENOMA] Loaded evolved SuperGenotype from config_dir/genotypes/active_genome.json");

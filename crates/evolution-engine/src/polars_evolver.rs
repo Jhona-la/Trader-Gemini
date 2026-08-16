@@ -115,28 +115,21 @@ pub fn start_polars_evolver_daemon(
                         best_sharpe
                     );
 
-                    // Sobrescribir active_genome.json
-                    let new_genome = Genome {
-                        scalp_tp: best_cfg.scalp_tp_base,
-                        scalp_sl: best_cfg.scalp_sl_base,
-                        swing_tp: best_cfg.swing_tp_base,
-                        swing_sl: best_cfg.swing_sl_base,
-                        ml_threshold: 0.1,
-                        dyn_atr_min: best_cfg.regime_atr_multiplier,
-                        dyn_obi: best_cfg.dynamic_obi_threshold,
-                        dyn_ema: best_cfg.trend_threshold,
-                        dyn_ofi: best_cfg.dynamic_ofi_threshold,
-                        sharpe_ratio: best_sharpe,
-                        win_rate: 0.0,
-                        max_drawdown: 0.0,
-                        generation: 1,
-                        fitness: best_sharpe,
-                    };
-
-                    if let Ok(json) = serde_json::to_string_pretty(&new_genome) {
-                        let _ =
-                            tokio::fs::write("config_dir/genotypes/active_genome.json", json).await;
-                        println!("[EVOLVER] 💾 active_genome.json actualizado en caliente.");
+                    // F4.3 — FIX CORRUPCIÓN DE SCHEMA: este bloque escribía un
+                    // struct REPORT legacy (14 campos) sobre active_genome.json,
+                    // donde el loader espera el SuperGenotype completo (100+ genes)
+                    // — la siguiente promo habría dejado el motor en baseline
+                    // silencioso. Ahora: embudo único con linaje y espejo atómico.
+                    match quantum_arena::genome_store::GenomeEnvelope::promote(
+                        best_cfg.clone(),
+                        "polars_evolver",
+                        &format!("pseudo-sharpe {:.4}", best_sharpe),
+                    ) {
+                        Ok(env) => println!(
+                            "[EVOLVER] 💾 Genoma generación {} promovido (padre {}).",
+                            env.generation, env.parent_generation
+                        ),
+                        Err(e) => println!("[EVOLVER] ❌ promo falló: {}", e),
                     }
                 } // Cierra if best_sharpe > 0.0
             } // Cierra loop
