@@ -1072,8 +1072,6 @@ impl ExecutionProvider for OrderExecutor {
         sl_buf.push_str(side);
         sl_buf.push_str("&positionSide=");
         sl_buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
-        sl_buf.push_str("&positionSide=");
-        sl_buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
         sl_buf.push_str("&type=STOP_MARKET");
         sl_buf.push_str("&reduceOnly=true");
         sl_buf.push_str("&quantity=");
@@ -1093,8 +1091,6 @@ impl ExecutionProvider for OrderExecutor {
         tp_buf.push_str(symbol);
         tp_buf.push_str("&side=");
         tp_buf.push_str(side);
-        tp_buf.push_str("&positionSide=");
-        tp_buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
         tp_buf.push_str("&positionSide=");
         tp_buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
         tp_buf.push_str("&type=TAKE_PROFIT_MARKET");
@@ -1123,7 +1119,7 @@ impl ExecutionProvider for OrderExecutor {
         tp_buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf_tp) });
 
         // Fire both simultaneously to minimize latency
-        let (sl_res, tp_res) = tokio::join!(
+        let (mut sl_res, mut tp_res) = tokio::join!(
             self.client.execute_order_payload(sl_buf.as_str()),
             self.client.execute_order_payload(tp_buf.as_str())
         );
@@ -1135,8 +1131,46 @@ impl ExecutionProvider for OrderExecutor {
             self.update_limits(limits);
         }
 
+        // F1.9 — FIX OCO PARCIAL: antes, una pierna fallida devolvía Ok(())
+        // dejando la posición protegida por UN solo lado (naked al otro).
+        // Política correcta: reintentar la pierna caída UNA vez; si sigue
+        // caída, cancelar la pierna buena y devolver Err — el caller decide
+        // aplanar o alertar. Nunca protección parcial silenciosa.
+        if sl_res.is_err() || tp_res.is_err() {
+            let sl_down = sl_res.is_err();
+            let tp_down = tp_res.is_err();
+            println!(
+                "⚠️ [OCO] Pierna(s) fallida(s) (SL={}, TP={}). Reintentando...",
+                sl_down, tp_down
+            );
+            if sl_down {
+                sl_res = self.client.execute_order_payload(sl_buf.as_str()).await;
+                if let Ok(limits) = &sl_res {
+                    self.update_limits(limits);
+                }
+            }
+            if tp_down {
+                tp_res = self.client.execute_order_payload(tp_buf.as_str()).await;
+                if let Ok(limits) = &tp_res {
+                    self.update_limits(limits);
+                }
+            }
+        }
+
         if sl_res.is_err() && tp_res.is_err() {
             return Err("Ambas órdenes OCO fallaron.".to_string());
+        }
+        if sl_res.is_err() || tp_res.is_err() {
+            let good_id = if sl_res.is_ok() {
+                format!("{}_SL", base_client_id)
+            } else {
+                format!("{}_TP", base_client_id)
+            };
+            let _ = self.cancel_order(symbol, &good_id).await;
+            return Err(format!(
+                "OCO PARCIAL: pierna fallida tras retry; pierna buena {} cancelada. Posición SIN protección — aplanar o alertar.",
+                good_id
+            ));
         }
         Ok(())
     }
