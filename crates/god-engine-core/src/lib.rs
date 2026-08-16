@@ -1210,11 +1210,21 @@ impl GodEngineCore {
             }
 
             // 2. Latency Interlock (Fase 6/7: Cisne Negro / HFT Spoofing)
-            // Si el tiempo desde que Binance generó el tick hasta ahora > 10ms
+            // F5.2 — FIX UMBRAL ABSURDO: era 3.000.000 ms (¡50 minutos!) con un
+            // comentario que decía ">10ms": el guardián de datos obsoletos estaba
+            // discapacitado desde su nacimiento. Ahora usa latency_ms_panic_threshold
+            // del GENOMA — la MISMA fuente de verdad que el timeout de lectura del
+            // WS — con piso absoluto de 50ms (operar con datos más viejos es
+            // spoofing garantizado, no HFT).
+            let latency_threshold_ms = self
+                .arena
+                .config
+                .latency_ms_panic_threshold
+                .load(Ordering::Relaxed)
+                .max(50.0);
             let latency_ms = self.arena.last_ws_latency_ms.load(Ordering::Relaxed);
-            if latency_ms > 3000000 {
-                // Entramos en "Modo Pánico": descartar el procesamiento de este tick
-                // y no emitir señales para evitar trades atrasados
+            if latency_ms > latency_threshold_ms as u64 {
+                // Modo Pánico: descartar el tick y no emitir señales.
                 if self
                     .arena
                     .tick_counter
@@ -1222,8 +1232,9 @@ impl GodEngineCore {
                     .is_multiple_of(1000)
                 {
                     telemetry_server::telemetry_log!(
-                        "🚨 [LATENCY PANIC] Latencia de {}ms detectada! Cortando motor cuántico para evitar spoofing.",
-                        latency_ms
+                        "🚨 [LATENCY PANIC] Latencia {}ms > umbral {:.0}ms! Tick descartado — sin señales con datos obsoletos.",
+                        latency_ms,
+                        latency_threshold_ms
                     );
                 }
                 return (None, None, None, None, None);

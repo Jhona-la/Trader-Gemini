@@ -49,9 +49,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     telemetry_server::telemetry_log!("\n========================================================");
     let args: Vec<String> = env::args().collect();
-    // FASE 28: El calentamiento cuántico es obligatorio. Siempre inicia en Demo/Testnet (Warmup)
-    // a menos que se active el override de emergencia `--force-live`.
-    let is_demo_mode = !args.contains(&"--force-live".to_string());
+    // FASE 28 + F5.2: El calentamiento cuántico es obligatorio. Siempre inicia en
+    // Demo/Testnet salvo --force-live CON armado humano explícito.
+    //
+    // PUERTA HUMANA DE MAINNET (Plan Maestro 7.4): --force-live solo activa
+    // producción si EXISTE el archivo físico `config_dir/MAINNET_ARMED`
+    // (creado a mano por el operador tras la certificación demo) y NO existe
+    // STOP_TRADING.LOCK. Un flag de CLI jamás volverá a ser suficiente para
+    // tocar capital real — el audit halló mainnet alcanzable tras 120 ticks.
+    let requested_live = args.contains(&"--force-live".to_string());
+    let mainnet_armed = std::path::Path::new("config_dir/MAINNET_ARMED").exists();
+    let emergency_lock = std::path::Path::new("STOP_TRADING.LOCK").exists();
+    let is_demo_mode = if requested_live && mainnet_armed && !emergency_lock {
+        telemetry_server::telemetry_log!(
+            "🔴 [MODO PRODUCCION ARMADO] MAINNET_ARMED presente — fuego real AUTORIZADO por el operador."
+        );
+        false
+    } else if requested_live {
+        if emergency_lock {
+            telemetry_server::telemetry_log!(
+                "🛑 [PUERTA MAINNET] STOP_TRADING.LOCK activo — --force-live IGNORADO. Modo demo."
+            );
+        } else {
+            telemetry_server::telemetry_log!(
+                "🛑 [PUERTA MAINNET] --force-live sin config_dir/MAINNET_ARMED — capital real PROHIBIDO hasta certificación (Plan 7.4). Cayendo a DEMO."
+            );
+        }
+        true
+    } else {
+        true
+    };
 
     let darwin_approved = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let orchestrator = Arc::new(std::sync::RwLock::new(PhaseOrchestrator::new(
@@ -673,9 +700,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         arena_shadow.config.live_taker_fee.store(live_taker, Ordering::Relaxed);
 
         // FASE 38 & 14: Guardian Activo (Memory Panic)
+        // F5.3 — FIX AFINIDAD: 0xFFFF asumía 16 cores — en una máquina de 8 el
+        // guardian pedía cores inexistentes. Máscara derivada del hardware REAL.
+        let cpu_mask = {
+            let cores = core_affinity::get_core_ids().map(|c| c.len()).unwrap_or(1);
+            if cores >= 64 {
+                usize::MAX
+            } else {
+                (1usize << cores) - 1
+            }
+        };
         let memory_per_symbol_mb = 128;
         let dynamic_memory_limit = (num_symbols * memory_per_symbol_mb) + 2048; // Escala dinámica basada en el Universo
-        os_guardian::init_guardian(0xFFFF, dynamic_memory_limit, Arc::clone(&arena_real));
+        os_guardian::init_guardian(cpu_mask, dynamic_memory_limit, Arc::clone(&arena_real));
 
         unsafe {
             if os_guardian::memory_compaction::lock_critical_memory(&*arena_real) {
@@ -690,6 +727,92 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if os_guardian::memory_compaction::lock_critical_memory_slice(&*arena_shadow.coins) {
                 telemetry_server::telemetry_log!("🔒 [OS-GUARDIAN] arena_shadow.coins (TickRings) asegurados en RAM física");
             }
+        }
+
+        // ── F5.2: SISTEMA INMUNE — el kill-switch por fin ARMADO ──────────────
+        // Auditoría: arena.kill_switch_active NUNCA se armaba (ningún writer en
+        // el camino vivo) y STOP_TRADING.LOCK no lo leía nadie (decorativo).
+        // Ahora: cada 5s se vigila (1) STOP_TRADING.LOCK del operador,
+        // (2) drawdown vs límite del genoma sobre el pico observado,
+        // (3) latencia obsoleta SOSTENIDA (3 strikes ≈ 15s).
+        // Al disparar: kill-switch en arena + executor + FLATTEN de todo.
+        // LATCH: rearme solo reiniciando el proceso — decisión humana.
+        {
+            let arena_imm = Arc::clone(&arena_real);
+            let exec_imm = Arc::clone(&exec);
+            rt_handle.spawn(async move {
+                let mut latched = false;
+                let mut peak_capital = arena_imm.unified_capital.load(Ordering::Relaxed);
+                let mut latency_strikes: u32 = 0;
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    if latched {
+                        continue;
+                    }
+
+                    // (1) El operador manda: el archivo existe ⇒ parar TODO.
+                    let operator_lock = std::path::Path::new("STOP_TRADING.LOCK").exists();
+
+                    // (2) Drawdown sobre pico observado (muestreo 5s).
+                    let cap = arena_imm.unified_capital.load(Ordering::Relaxed);
+                    if cap > peak_capital {
+                        peak_capital = cap;
+                    }
+                    let dd = if peak_capital > 0.0 {
+                        (peak_capital - cap) / peak_capital
+                    } else {
+                        0.0
+                    };
+                    let max_dd = arena_imm.config.global_max_drawdown.load(Ordering::Relaxed);
+                    let dd_breach = cap > 0.0 && max_dd > 0.0 && dd >= max_dd;
+
+                    // (3) Latencia: 3 muestras consecutivas por encima del umbral.
+                    let lat = arena_imm.last_ws_latency_ms.load(Ordering::Relaxed);
+                    let lat_thresh = arena_imm
+                        .config
+                        .latency_ms_panic_threshold
+                        .load(Ordering::Relaxed)
+                        .max(50.0) as u64;
+                    if lat > lat_thresh {
+                        latency_strikes += 1;
+                    } else {
+                        latency_strikes = 0;
+                    }
+                    let lat_breach = latency_strikes >= 3;
+
+                    if operator_lock || dd_breach || lat_breach {
+                        let reason = if operator_lock {
+                            "STOP_TRADING.LOCK del operador".to_string()
+                        } else if dd_breach {
+                            format!(
+                                "drawdown {:.1}% >= límite {:.1}%",
+                                dd * 100.0,
+                                max_dd * 100.0
+                            )
+                        } else {
+                            format!("latencia {}ms > {}ms sostenida", lat, lat_thresh)
+                        };
+                        telemetry_server::telemetry_log!(
+                            "🚨 [SISTEMA INMUNE] ACTIVADO: {}. Kill-switch ARMADO + aplanado total.",
+                            reason
+                        );
+                        arena_imm.kill_switch_active.store(true, Ordering::Relaxed);
+                        exec_imm.load().trigger_kill_switch();
+                        match exec_imm.load().flatten_all_positions().await {
+                            Ok((syms, positions)) => telemetry_server::telemetry_log!(
+                                "🧹 [SISTEMA INMUNE] Aplanado: {} símbolos con órdenes canceladas, {} posiciones cerradas. Reinicio manual para rearmar.",
+                                syms,
+                                positions
+                            ),
+                            Err(e) => telemetry_server::telemetry_log!(
+                                "🚨 [SISTEMA INMUNE] Aplanado FALLÓ: {} — INTERVENCIÓN MANUAL URGENTE.",
+                                e
+                            ),
+                        }
+                        latched = true;
+                    }
+                }
+            });
         }
 
         // Update fees dynamically
@@ -788,6 +911,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _msg_count: u64 = 0;
         let mut has_transitioned = false;
         let mut engine_real = god_engine_core::GodEngineCore::new(Arc::clone(&arena_real));
+
+        // ── F5.1: ENVOLVENTE KELLY BAYESIANA ───────────────────────────────────
+        // El leverage YA NO sale de hardcodes (10/5): emerge del posterior del
+        // edge con guard de ruina. Sin evidencia ⇒ f=0 ⇒ NO se opera hasta
+        // acumular historial (directriz: la matemática decide, no constantes).
+        let mut risk_envelope = risk_engine::kelly_envelope::RiskEnvelope::new();
+        let mut avg_win_abs: f64 = 0.0;
+        let mut avg_loss_abs: f64 = 0.0;
+        let mut trade_count_env: u64 = 0;
 
         engine_real.reality.mode = god_engine_core::reality_physics::EngineMode::Optimistic;
         engine_real.set_model_rx(rx_real);
@@ -1032,6 +1164,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let live_taker_fee = engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed);
                         let fee = (qty * current_price) * (live_maker_fee + live_taker_fee);
                         let net = pnl - fee;
+                        // F5.1: alimentar el posterior del edge con CADA cierre real.
+                        trade_count_env += 1;
+                        if net >= 0.0 {
+                            avg_win_abs = if avg_win_abs == 0.0 { net.abs() } else { avg_win_abs * 0.95 + net.abs() * 0.05 };
+                        } else {
+                            avg_loss_abs = if avg_loss_abs == 0.0 { net.abs() } else { avg_loss_abs * 0.95 + net.abs() * 0.05 };
+                        }
+                        risk_envelope.record_trade(net > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
                         scalp_gross_pnl += pnl;
                         scalp_pnl += net;
                         scalp_fees += fee;
@@ -1061,6 +1201,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let live_taker_fee = engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed);
                         let fee = (qty * current_price) * (live_maker_fee + live_taker_fee);
                         let net = pnl - fee;
+                        // F5.1: posterior compartido — todo cierre real alimenta el edge.
+                        trade_count_env += 1;
+                        if net >= 0.0 {
+                            avg_win_abs = if avg_win_abs == 0.0 { net.abs() } else { avg_win_abs * 0.95 + net.abs() * 0.05 };
+                        } else {
+                            avg_loss_abs = if avg_loss_abs == 0.0 { net.abs() } else { avg_loss_abs * 0.95 + net.abs() * 0.05 };
+                        }
+                        risk_envelope.record_trade(net > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
                         swing_gross_pnl += pnl;
                         swing_pnl += net;
                         swing_fees += fee;
@@ -1091,7 +1239,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut is_high_confidence_scalp = false;
 
                     if let Some((is_long, entry_price, qty)) = new_sc {
-                        max_leverage = 10;
+                        // F5.1: leverage por ENVOLVENTE, no hardcode. El stop del
+                        // scalp (piso ATR) define el sizing: L = f_riesgo / stop.
+                        let cap_now = engine_real.arena.unified_capital.load(Ordering::Relaxed);
+                        let scalp_stop_pct = engine_real
+                            .arena
+                            .config
+                            .scalp_sl_base
+                            .load(Ordering::Relaxed)
+                            .max(engine_real.feature_engines[coin_id].get_atr_pct() * 1.5)
+                            .max(0.0015);
+                        let (env_lev, operable) =
+                            risk_envelope.max_leverage(cap_now, scalp_stop_pct, 5.0, 1.64, 50.0);
+                        // Deadlock resuelto por EXPLORACIÓN: sin historial la envolvente
+                        // da f=0 ⇒ sin entradas ⇒ sin evidencia ⇒ bucle eterno. Con
+                        // <30 trades cerrados: stakes mínimos (leverage 1) para GENERAR
+                        // evidencia real; el riesgo de exploración es ~stop×capital.
+                        if risk_envelope.posterior.n() < 30.0 {
+                            max_leverage = 1;
+                        } else {
+                            max_leverage = if operable { env_lev.floor().max(1.0) as u32 } else { 0 };
+                        }
                         net_qty += if is_long { qty } else { -qty };
                         let _ = tx_log_worker.try_send((true, is_long, coin_id));
 
@@ -1113,7 +1281,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if let Some((is_long, entry_price, qty)) = new_sw {
-                        max_leverage = 5;
+                        // F5.1: swing también por envolvente — stop ancho (3×ATR)
+                        // ⇒ leverage menor que scalp, emergente del sizing.
+                        let cap_now = engine_real.arena.unified_capital.load(Ordering::Relaxed);
+                        let swing_stop_pct = engine_real
+                            .arena
+                            .config
+                            .swing_sl_base
+                            .load(Ordering::Relaxed)
+                            .max(engine_real.feature_engines[coin_id].get_atr_pct() * 3.0)
+                            .max(0.003);
+                        let (env_lev, operable) =
+                            risk_envelope.max_leverage(cap_now, swing_stop_pct, 5.0, 1.64, 50.0);
+                        // Exploración (<30 trades): stakes mínimos; luego la envolvente manda.
+                        if risk_envelope.posterior.n() < 30.0 {
+                            max_leverage = 1;
+                        } else {
+                            max_leverage = if operable { env_lev.floor().max(1.0) as u32 } else { 0 };
+                        }
                         net_qty += if is_long { qty } else { -qty };
                         let _ = tx_log_worker.try_send((false, is_long, coin_id));
 
@@ -1141,6 +1326,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let notional_volume = final_qty * current_price;
 
                         rt_handle.spawn(async move {
+                            // F5.1: la envolvente (LCB sin evidencia, o capital que
+                            // no sostiene el riesgo mínimo) dijo NO — sin orden.
+                            if max_leverage == 0 {
+                                telemetry_engine::telemetry!(
+                                    "🛡️ [ENVOLVENTE] Entrada bloqueada: evidencia insuficiente o capital no sostiene el riesgo mínimo (Kelly bayesiano)"
+                                );
+                                return;
+                            }
                             if max_leverage > 1 {
                                 let _ = exec_clone.load().set_leverage(&parsed_sym_str, max_leverage).await;
                             }

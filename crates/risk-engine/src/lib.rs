@@ -1,5 +1,6 @@
 pub mod guard;
 pub mod kelly;
+pub mod kelly_envelope;
 pub mod leverage_matrix;
 pub mod orchestrator;
 pub mod regime;
