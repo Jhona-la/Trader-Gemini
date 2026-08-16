@@ -41,6 +41,9 @@ pub struct LiveEvolutionDaemon {
     pub champion_path: String,
     pub ewma_sharpe: f64, // HC-12: Sharpe adaptativo para kill switch
     pub forest: crate::online_random_forest::TrueOnlineRandomForest,
+    /// F4.5: PnL realizado visto por coin en el ciclo anterior — para muestrear
+    /// retornos de la ESTRATEGIA (deltas reales), no beta del mercado.
+    pub last_realized_by_coin: std::collections::HashMap<usize, f64>,
 }
 
 impl LiveEvolutionDaemon {
@@ -66,6 +69,7 @@ impl LiveEvolutionDaemon {
             champion_path: champion_path.to_string(),
             ewma_sharpe: 0.0,
             forest: crate::online_random_forest::TrueOnlineRandomForest::new(5000),
+            last_realized_by_coin: std::collections::HashMap::new(),
         }
     }
 
@@ -124,31 +128,32 @@ impl LiveEvolutionDaemon {
         // FASE 3: Dynamic Batch Sizing adaptativo a la memoria del sistema
         let _batch_size = 5000;
         
-        // Extraer retornos reales del mercado desde TODOS los activos activos (no solo coins[0])
-        let mut recent_returns = Vec::with_capacity(5000);
-        
-        let maker_fee = self.arena.config.live_maker_fee.load(std::sync::atomic::Ordering::Relaxed);
-        let taker_fee = self.arena.config.live_taker_fee.load(std::sync::atomic::Ordering::Relaxed);
-        let roundtrip_fee = maker_fee + taker_fee;
-        
+        // F4.5 — FIX SEUDOCIENCIA: los "retornos" anteriores eran el cambio de
+        // precio del MERCADO (mid a mid) menos una fee constante — beta long-only
+        // disfrazada de sharpe de estrategia: un mercado alcista disparaba el
+        // hot-swap y uno plano el kill. Ahora: retornos de la ESTRATEGIA —
+        // delta de PnL realizado por ciclo y símbolo (neto, como lo contabiliza
+        // el core), normalizado por el capital del arena.
+        let mut recent_returns = Vec::with_capacity(256);
+        let capital = self.arena.unified_capital.load(std::sync::atomic::Ordering::Relaxed);
+
         for coin_id in 0..self.arena.coins.len() {
-            let current_price = self.arena.coins[coin_id].current_price.load(std::sync::atomic::Ordering::Relaxed);
-            if current_price <= 0.0 { continue; }
-            
-            let ticks = self.arena.coins[coin_id].tick_ring.snapshot_recent(1000);
-            let mut last_price = 0.0;
-            
-            for tick in ticks {
-                let mid = (tick.bid_price + tick.ask_price) / 2.0;
-                if last_price > 0.0 {
-                    let gross_return = (mid - last_price) / last_price;
-                    // Penalizamos el retorno bruto con los fees reales de la API (Net PnL)
-                    recent_returns.push(gross_return - roundtrip_fee);
+            let coin = &self.arena.coins[coin_id];
+            let realized = f64::from_bits(coin.scalp.pnl_realized.load(std::sync::atomic::Ordering::Relaxed))
+                + f64::from_bits(coin.swing.pnl_realized.load(std::sync::atomic::Ordering::Relaxed));
+
+            if let Some(&prev) = self.last_realized_by_coin.get(&coin_id) {
+                let delta = realized - prev;
+                if delta.abs() > 0.0 && capital > 0.0 {
+                    recent_returns.push(delta / capital);
                 }
-                last_price = mid;
             }
+            self.last_realized_by_coin.insert(coin_id, realized);
         }
-        
+
+        // Un ciclo no basta: la serie crece UNA observación por símbolo que
+        // cerró trades desde el ciclo anterior. Antes de ~10 observaciones no
+        // hay estadística posible.
         if recent_returns.len() < 10 {
             return;
         }
@@ -275,13 +280,12 @@ impl LiveEvolutionDaemon {
             self.state.has_new_genome.store(true, Ordering::Release);
             
             println!("⚡ [HOT-SWAP TRIGGERED] Shadow Strategy superó métricas base tras iterar 1000 universos. Desplegando.");
-            
-            // Si el kill switch de Drift estaba activo, lo desactivamos al tener un buen genoma
-            if self.arena.kill_switch_active.load(Ordering::Relaxed) {
-                println!("✅ [DRIFT RECOVERY] Rentabilidad demostrada (Sharpe {:.2}). Desactivando Kill Switch.", current_shadow_sharpe);
-                self.arena.kill_switch_active.store(false, Ordering::Relaxed);
-            }
-            
+
+            // F4.5 — ELIMINADO: este bloque DESACTIVABA el kill-switch porque un
+            // sharpe de sombra se veía bien. Ninguna métrica automatizada puede
+            // desarmar la protección: el kill-switch es LATCH (F5.2) y su rearme
+            // es humano (reiniciar el proceso, con STOP_TRADING.LOCK verificado).
+
             // Persistimos el genoma campeón
             if let Ok(file) = std::fs::File::create(&self.champion_path) {
                 let _ = serde_json::to_writer_pretty(file, &best_genome);

@@ -122,9 +122,47 @@ fn main() {
             std::thread::sleep(std::time::Duration::from_secs(10));
             continue;
         }
+
+        // ── F4.2: VIGILANCIA DE ENTRENAMIENTO ──────────────────────────────────
+        // Bug de auditoría corregido: el forward de TRAIN usaba features CRUDAS
+        // mientras predict() aplica el scaler — se entrenaba y se inferaba en
+        // DOS distribuciones distintas. Ahora el train escala igual que la
+        // inferencia. Y: holdout 10% temporal + gate de promoción — el modelo
+        // solo se guarda si MEJORA la pérdida de validación (antes se
+        // sobrescribía cada 30s incondicionalmente, pudiendo regresar).
+        let scaler_clone = engine.scaler.clone();
+        let val_size = (num_samples / 10).max(1);
+        let train_size = num_samples - val_size;
+        let val_inputs = inputs[train_size..].to_vec();
+        let val_targets = targets[train_size..].to_vec();
+        let inputs = &inputs[..train_size];
+        let targets = &targets[..train_size];
+
+        // Snapshot pre-entrenamiento para rollback si no hay mejora.
+        let snap_l1 = engine.layer1.clone();
+        let snap_l2 = engine.layer2.clone();
+        let snap_l3 = engine.layer3.clone();
+
+        // Pérdida de validación (predict aplica el scaler: consistente con inferencia).
+        let val_bce = |eng: &mut DarkAlphaEngine, xs: &[Vec<f64>], ys: &[f64]| -> f64 {
+            let mut loss = 0.0;
+            for (x, y) in xs.iter().zip(ys.iter()) {
+                if let Some(p) = eng.predict(x) {
+                    let p = p.clamp(1e-7, 1.0 - 1e-7);
+                    loss += -(y * p.ln() + (1.0 - y) * (1.0 - p).ln());
+                }
+            }
+            if xs.is_empty() {
+                f64::INFINITY
+            } else {
+                loss / xs.len() as f64
+            }
+        };
+        let val_before = val_bce(&mut engine, &val_inputs, &val_targets);
+
         println!(
-            "✅ Loaded {} samples. Starting Adam Optimization...",
-            num_samples
+            "✅ Loaded {} samples (train {}, val {}). Val BCE pre: {:.6}. Starting Adam...",
+            num_samples, train_size, val_size, val_before
         );
 
         let epochs = 5; // Reduced epochs per batch since it's continuous online learning!
@@ -157,7 +195,11 @@ fn main() {
 
                 for b in 0..b_size {
                     let idx = indices[batch_start + b];
-                    let x = &inputs[idx];
+                    // F4.2: paridad train↔inferencia — escalar IGUAL que predict().
+                    let mut x = inputs[idx].clone();
+                    if let Some(sc) = &scaler_clone {
+                        sc.scale(&mut x);
+                    }
                     let y = targets[idx];
 
                     // --- FORWARD PASS ---
@@ -313,6 +355,25 @@ fn main() {
         println!(
             "⏱️ Training finished in {:.2}s",
             start_time.elapsed().as_secs_f64()
+        );
+
+        // ── F4.2: GATE DE PROMOCIÓN ────────────────────────────────────────────
+        let val_after = val_bce(&mut engine, &val_inputs, &val_targets);
+        if val_after >= val_before {
+            println!(
+                "🛡️ [GATE] Val BCE no mejoró ({:.6} ≥ {:.6}) — pesos RESTAURADOS, modelo NO promovido.",
+                val_after, val_before
+            );
+            engine.layer1 = snap_l1;
+            engine.layer2 = snap_l2;
+            engine.layer3 = snap_l3;
+            println!("💤 Sleeping 30s before next training generation...");
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            continue;
+        }
+        println!(
+            "✅ [GATE] Val BCE mejoró: {:.6} → {:.6}. Promoviendo.",
+            val_before, val_after
         );
 
         // Save model atomically

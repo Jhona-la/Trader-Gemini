@@ -42,34 +42,62 @@ pub fn run_evolution_daemon(
             // ═══════════════════════════════════════════════════════
             let (real_scalp_pnl, real_scalp_trades, real_scalp_wr, real_scalp_pf) = 
                 aggregate_real_stats(&arena, true);
-            let (real_swing_pnl, real_swing_trades, real_swing_wr, real_swing_pf) = 
+            let (real_swing_pnl, real_swing_trades, real_swing_wr, real_swing_pf) =
                 aggregate_real_stats(&arena, false);
+
+            // ═══════════════════════════════════════════════════════
+            // F4.5 — OOS REAL POR CICLO (era fabricado: is=pnl*0.7, oos=pnl*0.3
+            // del MISMO dato ⇒ la "validación" siempre pasaba). Ahora: el delta
+            // de PnL/trades acumulado desde la evaluación ANTERIOR es
+            // genuinamente fuera-de-muestra respecto al ciclo previo — un
+            // walk-forward real sobre datos vivos.
+            // ═══════════════════════════════════════════════════════
+            fn oos_delta(slot: usize, pnl_now: f64, trades_now: usize) -> (f64, usize) {
+                use std::sync::Mutex;
+                static LASTS: std::sync::OnceLock<[Mutex<[(f64, usize); 2]>; 1]> =
+                    std::sync::OnceLock::new();
+                let lasts = LASTS.get_or_init(|| [Mutex::new([(0.0, 0_usize); 2])]);
+                if let Ok(mut guard) = lasts[0].lock() {
+                    let (pnl_prev, trades_prev) = guard[slot];
+                    let delta = (pnl_now - pnl_prev, trades_now.saturating_sub(trades_prev));
+                    guard[slot] = (pnl_now, trades_now);
+                    delta
+                } else {
+                    (0.0, 0)
+                }
+            }
 
             // ═══════════════════════════════════════════════════════
             // EVOLUCIÓN DE SCALP MOE
             // ═══════════════════════════════════════════════════════
             if drawdown > panic_threshold || should_explore(real_scalp_wr, real_scalp_trades) {
-                println!("🚨 [EVOLUTION-ENGINE] Scalp: Drawdown {:.2}% o WR bajo ({:.1}%). Disparando Hiper-Mutación NEAT.", 
+                println!("🚨 [EVOLUTION-ENGINE] Scalp: Drawdown {:.2}% o WR bajo ({:.1}%). Disparando Hiper-Mutación NEAT.",
                     drawdown * 100.0, real_scalp_wr * 100.0);
-                
+
                 let mut new_scalp = (**scalp_moe.load()).clone();
                 new_scalp.force_hyper_mutation(current_cap);
-                
+
                 // V9: Calcular estadísticas reales para el AntiBiasGovernor
                 let (real_kurtosis, real_skewness) = estimate_distribution_shape(real_scalp_pf, real_scalp_wr);
-                
-                let is_trades = (real_scalp_trades as f64 * 0.70) as usize;
-                let oos_trades = real_scalp_trades.saturating_sub(is_trades);
-                
+
+                let (oos_pnl_raw, oos_trades_raw) = oos_delta(0, real_scalp_pnl, real_scalp_trades);
+
                 // V13+FASE22 Reality Slippage Penalty (Fee real del Arena)
                 let actual_fee = arena.config.sim_fee_rate.load(Ordering::Relaxed).max(0.0001);
                 let penalized_pnl = EntropyFitness::reality_slippage_penalty(real_scalp_pnl, real_scalp_trades, actual_fee);
-                let is_pnl = penalized_pnl * 0.70;
-                let oos_pnl = penalized_pnl * 0.30;
-                
-                let is_valid = AntiBiasGovernor::validate_out_of_sample(
-                    is_pnl, oos_pnl, is_trades.max(1), oos_trades.max(1)
-                );
+
+                // IS = ciclo previo acumulado; OOS = delta desde entonces.
+                let is_pnl = penalized_pnl - oos_pnl_raw.max(0.0);
+                let is_trades = real_scalp_trades.saturating_sub(oos_trades_raw);
+                let oos_pnl = oos_pnl_raw;
+                let oos_trades = oos_trades_raw;
+
+                // Sin OOS suficiente (primer ciclo o sin trades nuevos) NO se
+                // promueve: honestidad antes que actividad.
+                let is_valid = oos_trades >= 5
+                    && AntiBiasGovernor::validate_out_of_sample(
+                        is_pnl, oos_pnl, is_trades.max(1), oos_trades,
+                    );
 
                 let bayesian_penalty = EntropyFitness::bayesian_posterior_collapse_penalty(
                     0.80, real_scalp_wr, real_scalp_trades
@@ -120,19 +148,23 @@ pub fn run_evolution_daemon(
                 new_swing.force_hyper_mutation(current_cap);
                 
                 let (real_kurtosis, real_skewness) = estimate_distribution_shape(real_swing_pf, real_swing_wr);
-                
-                let is_trades = (real_swing_trades as f64 * 0.70) as usize;
-                let oos_trades = real_swing_trades.saturating_sub(is_trades);
-                
+
+                // F4.5: OOS real por ciclo (delta desde la evaluación anterior).
+                let (oos_pnl_raw, oos_trades_raw) = oos_delta(1, real_swing_pnl, real_swing_trades);
+
                 // V13+FASE22 Reality Slippage Penalty (Fee real del Arena)
                 let actual_fee = arena.config.sim_fee_rate.load(Ordering::Relaxed).max(0.0001);
                 let penalized_swing_pnl = EntropyFitness::reality_slippage_penalty(real_swing_pnl, real_swing_trades, actual_fee);
-                let is_pnl = penalized_swing_pnl * 0.70;
-                let oos_pnl = penalized_swing_pnl * 0.30;
-                
-                let is_valid = AntiBiasGovernor::validate_out_of_sample(
-                    is_pnl, oos_pnl, is_trades.max(1), oos_trades.max(1)
-                );
+
+                let is_pnl = penalized_swing_pnl - oos_pnl_raw.max(0.0);
+                let is_trades = real_swing_trades.saturating_sub(oos_trades_raw);
+                let oos_pnl = oos_pnl_raw;
+                let oos_trades = oos_trades_raw;
+
+                let is_valid = oos_trades >= 5
+                    && AntiBiasGovernor::validate_out_of_sample(
+                        is_pnl, oos_pnl, is_trades.max(1), oos_trades,
+                    );
 
                 let bayesian_penalty = EntropyFitness::bayesian_posterior_collapse_penalty(
                     0.80, real_swing_wr, real_swing_trades
