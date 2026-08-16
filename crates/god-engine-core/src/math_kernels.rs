@@ -308,12 +308,14 @@ impl ShannonEntropy {
 }
 
 /// Hurst Exponent via Rescaled Range (O(1) Recursive Approximation)
+/// Hurst Exponent via Exact Rescaled Range (Sliding Window Ring Buffer)
+/// FASE 17: O(1) decay mathematically destroys R/S range. 
+/// Using a highly optimized ring buffer for exact nanosecond tick-level Hurst.
 #[derive(Debug, Clone)]
 pub struct RecursiveHurst {
-    pub max_p: f64,
-    pub min_p: f64,
-    pub std_dev: WelfordVariance,
-    pub n: f64,
+    pub window: [f64; 256], // Power of 2 for fast masking
+    pub index: usize,
+    pub count: usize,
 }
 
 impl Default for RecursiveHurst {
@@ -324,44 +326,57 @@ impl Default for RecursiveHurst {
 
 impl RecursiveHurst {
     pub fn new() -> Self {
-        Self { max_p: f64::MIN, min_p: f64::MAX, std_dev: WelfordVariance::new(), n: 0.0 }
+        Self {
+            window: [0.0; 256],
+            index: 0,
+            count: 0,
+        }
     }
     
     #[inline(always)]
     pub fn update(&mut self, price: f64) -> f64 {
-        if self.n >= 2000.0 {
-            self.n = 1999.0;
+        self.window[self.index] = price;
+        self.index = (self.index + 1) & 255; // Fast modulo 256
+        if self.count < 256 {
+            self.count += 1;
         }
-        self.n += 1.0;
-        
-        if price > self.max_p { self.max_p = price; }
-        if price < self.min_p { self.min_p = price; }
-        
-        // Decaimiento suave para olvidar extremos antiguos (Rolling Window proxy)
-        self.max_p -= (self.max_p - price) * 0.0005;
-        self.min_p += (price - self.min_p) * 0.0005;
-        
-        self.std_dev.update(price);
-        
-        let range = self.max_p - self.min_p;
-        let std = self.std_dev.std_dev();
-        
-        if std > 0.0 && self.n > 2.0 {
-            let rs = range / std;
-            (rs.ln() / self.n.ln()).clamp(0.0, 1.0)
-        } else {
-            0.5 // Random walk
-        }
+        self.current()
     }
 
     /// Returns the current Hurst exponent WITHOUT updating state.
     #[inline(always)]
     pub fn current(&self) -> f64 {
-        let range = self.max_p - self.min_p;
-        let std = self.std_dev.std_dev();
-        if std > 0.0 && self.n > 2.0 {
-            let rs = range / std;
-            (rs.ln() / self.n.ln()).clamp(0.0, 1.0)
+        if self.count < 10 {
+            return 0.5; // Random walk fallback while warming up
+        }
+        
+        let mut min_p = f64::MAX;
+        let mut max_p = f64::MIN;
+        let mut sum = 0.0;
+        
+        // Unroll/vectorize friendly loop
+        for i in 0..self.count {
+            let p = self.window[i];
+            if p < min_p { min_p = p; }
+            if p > max_p { max_p = p; }
+            sum += p;
+        }
+        
+        let mean = sum / (self.count as f64);
+        let mut sq_sum = 0.0;
+        for i in 0..self.count {
+            let diff = self.window[i] - mean;
+            sq_sum += diff * diff;
+        }
+        
+        let variance = sq_sum / (self.count as f64 - 1.0);
+        let std = variance.sqrt();
+        let range = max_p - min_p;
+        
+        if std > 0.0 {
+            let rs = (range / std).max(1.0001); // Evitar ln(rs) <= 0
+            let n_f64 = self.count as f64;
+            (rs.ln() / n_f64.ln()).clamp(0.0, 1.0)
         } else {
             0.5
         }

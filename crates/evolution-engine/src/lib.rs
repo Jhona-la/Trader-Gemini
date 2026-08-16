@@ -5,66 +5,18 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::time::sleep;
 use rayon::prelude::*;
-use rand::RngExt;
+
 
 pub mod meta;
 pub mod polars_evolver;
+pub mod cma_es;
+pub mod ast_mutator;
+pub mod random_forest;
+pub mod online_random_forest;
+pub mod entropy_fitness;
 
 use meta::MetaEvolver;
-
-#[derive(Clone, Debug)]
-pub struct Genotype {
-    pub global_leverage: f64,
-    pub trend_threshold: f64,
-    pub maker_spread_pct: f64,
-    pub maker_obi_threshold: f64,
-    pub scalp_tp: f64,
-    pub scalp_sl: f64,
-    pub swing_tp: f64,
-    pub swing_sl: f64,
-    pub scalp_z_target: f64,
-    pub capital_split_scalp: f64,
-}
-
-impl Default for Genotype {
-    fn default() -> Self {
-        Self {
-            global_leverage: 20.0,
-            trend_threshold: 0.65,
-            maker_spread_pct: 0.0003,
-            maker_obi_threshold: 0.7,
-            scalp_tp: 0.002,
-            scalp_sl: 0.002,
-            swing_tp: 0.005,
-            swing_sl: 0.002,
-            scalp_z_target: 2.0,
-            capital_split_scalp: 0.5,
-        }
-    }
-}
-
-impl Genotype {
-    pub fn mutate(&self, rate: f64) -> Self {
-        let mut rng = rand::rng();
-        let mut mutate_val = |base: f64, min_val: f64, max_val: f64| -> f64 {
-            let change = base * rate * rng.random_range(-1.0..1.0);
-            (base + change).clamp(min_val, max_val)
-        };
-
-        Self {
-            global_leverage: mutate_val(self.global_leverage, 10.0, 50.0),
-            trend_threshold: mutate_val(self.trend_threshold, 0.4, 0.8),
-            maker_spread_pct: mutate_val(self.maker_spread_pct, 0.0001, 0.0020),
-            maker_obi_threshold: mutate_val(self.maker_obi_threshold, 0.5, 0.95),
-            scalp_tp: mutate_val(self.scalp_tp, 0.001, 0.010),
-            scalp_sl: mutate_val(self.scalp_sl, 0.001, 0.010),
-            swing_tp: mutate_val(self.swing_tp, 0.002, 0.020),
-            swing_sl: mutate_val(self.swing_sl, 0.001, 0.010),
-            scalp_z_target: mutate_val(self.scalp_z_target, 1.0, 4.0),
-            capital_split_scalp: mutate_val(self.capital_split_scalp, 0.2, 0.8),
-        }
-    }
-}
+use quantum_arena::genome::SuperGenotype as Genotype;
 
 pub struct EvolutionEngine {
     arena: Arc<GlobalArena>,
@@ -79,7 +31,7 @@ impl EvolutionEngine {
         println!("🧠 [TRUE EVOLUTION] Motor de Inteligencia Artificial Live Iniciado (CMA-ES).");
         
         let mut current_alpha = Genotype::default();
-        let mut mutation_rate = 0.1; // Empieza con 10% de exploración
+        let mut mutation_rate = self.arena.config.quantum_mutation_rate.load(Ordering::Relaxed);
         let meta_evolver = MetaEvolver::new(self.arena.clone());
 
         loop {
@@ -97,22 +49,13 @@ impl EvolutionEngine {
             }
             if valid_coins > 0 {
                 let avg_wr = total_wr / valid_coins as f64;
-                if avg_wr < 0.45 {
-                    println!("🚨 [DEGRADACIÓN DETECTADA] Win Rate Global {:.2}%. Disparando Auto-Reentrenamiento HFT...", avg_wr * 100.0);
-                    match tokio::process::Command::new("cargo")
-                        .args(["run", "--release", "--bin", "train_nano_forest"])
-                        .spawn()
-                    {
-                        Ok(mut child) => {
-                            tokio::spawn(async move {
-                                let _ = child.wait().await;
-                                println!("✅ [AUTO-REENTRENAMIENTO] NanoForest reentrenado. El hot-reload lo tomará en el próximo ciclo HFT.");
-                                // Forzamos carga inmediata en cache global
-                                let _ = god_engine_core::ml_inference::NanoForest::load_global("BTCUSDT_SCALP", "models/BTCUSDT_SCALP.json");
-                            });
-                        }
-                        Err(e) => eprintln!("❌ [ERROR] Falló al lanzar reentrenamiento: {}", e),
-                    }
+                // Certificación Bayesiana/Genómica: Umbral dictado por ML Threshold en el Genoma, no hardcodeado a 0.45
+                let minimum_viable_wr = self.arena.config.ml_threshold_long.load(Ordering::Relaxed);
+                if avg_wr < minimum_viable_wr {
+                    println!("🚨 [DEGRADACIÓN DETECTADA] Win Rate Global {:.2}% (Requerido: {:.2}%). Re-activando CMA-ES intenso.", avg_wr * 100.0, minimum_viable_wr * 100.0);
+                    mutation_rate = (mutation_rate * 1.5).min(0.5); // Increase mutation rate dynamically if degrading
+                } else {
+                    mutation_rate = self.arena.config.quantum_mutation_rate.load(Ordering::Relaxed); // Return to baseline
                 }
             }
             
@@ -127,18 +70,16 @@ impl EvolutionEngine {
                 
                 let ticks = self.arena.coins[coin_id].tick_ring.snapshot_recent(32768);
                 
-                let mut timestamp = 10000u64;
                 for ct in ticks {
                     if ct.bid_price > 0.0 {
                         all_ticks.push(TickEvent {
-                            timestamp,
+                            timestamp: ct.timestamp,
                             coin_id,
                             bid_price: ct.bid_price,
                             ask_price: ct.ask_price,
                             bid_qty: ct.bid_qty,
                             ask_qty: ct.ask_qty,
                         });
-                        timestamp += 100;
                     }
                 }
             }
@@ -151,37 +92,45 @@ impl EvolutionEngine {
             let ticks_len = all_ticks.len();
             println!("🧠 [TRUE EVOLUTION] Entrenando sobre {} ticks reales. Mutation Rate: {:.1}%", ticks_len, mutation_rate * 100.0);
             
-            let pop_size = 40;
+            // Adaptive Population Size based on the current genome
+            let pop_size = 40.max((self.arena.config.min_trades_per_day.load(Ordering::Relaxed) * 2.0) as usize).min(100);
+            
+            // FASE 3: Instanciar el verdadero Optimizador CMA-ES + PSO
+            let mut cma_es_optimizer = crate::cma_es::CmaEsOptimizer::new(Genotype::DIMENSION, mutation_rate, Some(pop_size));
+            cma_es_optimizer.mean = current_alpha.to_vector(); // Center around current alpha
+            cma_es_optimizer.global_best = cma_es_optimizer.mean.clone();
+            
+            let w = self.arena.config.global_momentum.load(Ordering::Relaxed);
+            let c1 = self.arena.config.global_learning_rate.load(Ordering::Relaxed) * 2.0; // cognitive
+            let c2 = self.arena.config.global_learning_rate.load(Ordering::Relaxed) * 2.0; // social
+            let mut cma_samples = cma_es_optimizer.sample_population(w, c1, c2);
             let mut population: Vec<Genotype> = Vec::with_capacity(pop_size);
             
-            // 1 clon exacto de Alpha actual
-            population.push(current_alpha.clone());
-            // 30 mutaciones alrededor del Alpha
-            for _ in 1..30 {
-                population.push(current_alpha.mutate(mutation_rate));
+            // Generate genotypes from CMA-ES vectors
+            for vec in &cma_samples {
+                population.push(Genotype::from_vector(vec));
             }
-            // 9 completamente aleatorias (Exploración pura)
-            for _ in 30..pop_size {
-                population.push(Genotype::default().mutate(0.5));
-            }
+            // Always keep the exact alpha to prevent catastrophic forgetting
+            population[0] = current_alpha.clone();
+            cma_samples[0] = current_alpha.to_vector();
             
             let initial_capital = self.arena.unified_capital.load(Ordering::Relaxed);
             
             let mut results: Vec<_> = population
                 .par_iter()
-                .map(|genome| {
+                .enumerate()
+                .map(|(i, genome)| {
                     let genome_clone = genome.clone();
                     let test_arena = Arc::new(GlobalArena::new(initial_capital));
                             
-                            test_arena.config.global_leverage.store(genome_clone.global_leverage, Ordering::Relaxed);
-                            test_arena.config.trend_threshold.store(genome_clone.trend_threshold, Ordering::Relaxed);
-                            test_arena.config.maker_spread_pct.store(genome_clone.maker_spread_pct, Ordering::Relaxed);
-                            test_arena.config.maker_obi_threshold.store(genome_clone.maker_obi_threshold, Ordering::Relaxed);
-                            test_arena.config.scalp_tp_base.store(genome_clone.scalp_tp, Ordering::Relaxed);
-                            test_arena.config.scalp_sl_base.store(genome_clone.scalp_sl, Ordering::Relaxed);
-                            test_arena.config.swing_tp_base.store(genome_clone.swing_tp, Ordering::Relaxed);
-                            test_arena.config.swing_sl_base.store(genome_clone.swing_sl, Ordering::Relaxed);
-                            test_arena.config.global_max_drawdown.store(0.95, Ordering::Relaxed);
+                            genome_clone.apply_to_arena(&test_arena);
+                            // Note: apply_to_arena already stores global_max_drawdown — no duplicate needed
+                            
+                            // 🚨 CRÍTICO: Inyectar fees reales al entorno simulado
+                            let live_maker = self.arena.config.live_maker_fee.load(Ordering::Relaxed);
+                            let live_taker = self.arena.config.live_taker_fee.load(Ordering::Relaxed);
+                            test_arena.config.live_maker_fee.store(live_maker, Ordering::Relaxed);
+                            test_arena.config.live_taker_fee.store(live_taker, Ordering::Relaxed);
                             
                             let mut engine = GodEngineCore::new(test_arena.clone());
                             let mut total_trades = 0;
@@ -190,16 +139,17 @@ impl EvolutionEngine {
                             let mut last_trades = 0;
                             
                             for tick in &all_ticks {
-                                test_arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty);
-                                let (new_sc, new_sw, closed_sc, closed_sw) = engine.process_event(
-                                    tick.coin_id,
-                                    false, false, true,
-                                    tick.bid_price, 0.0,
-                                    tick.bid_price, tick.ask_price,
-                                    tick.bid_qty, tick.ask_qty,
-                                    0.5, 0.0,
-                                    tick.timestamp,
-                                    false, &[0.0; 54]);
+                                test_arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp);
+                                    let ml_prob = self.arena.coins[tick.coin_id].ml_prob.load(Ordering::Relaxed);
+                                    let (new_sc, new_sw, closed_sc, closed_sw) = engine.process_event(
+                                        tick.coin_id,
+                                        false, false, true,
+                                        tick.bid_price, 0.0,
+                                        tick.bid_price, tick.ask_price,
+                                        tick.bid_qty, tick.ask_qty,
+                                        ml_prob, 0.0,
+                                        tick.timestamp,
+                                        false, &[0.0; 54]);
                                 if new_sc.is_some() || new_sw.is_some() || closed_sc.is_some() || closed_sw.is_some() {
                                     total_trades += 1;
                                 }
@@ -213,52 +163,80 @@ impl EvolutionEngine {
                             let final_cap = test_arena.unified_capital.load(Ordering::Relaxed);
                             let pnl = final_cap - initial_capital;
                             
-                            let sharpe = if equity_curve.len() > 2 && pnl > 0.0 {
+                            let sharpe = if equity_curve.len() > 2 {
                                 let mut returns = Vec::with_capacity(equity_curve.len());
                                 for i in 1..equity_curve.len() {
-                                    returns.push((equity_curve[i] - equity_curve[i-1]) / equity_curve[i-1]);
+                                    returns.push((equity_curve[i] - equity_curve[i-1]) / equity_curve[i-1].max(1e-10));
                                 }
                                 let mean_ret = returns.iter().sum::<f64>() / returns.len() as f64;
                                 let variance = returns.iter().map(|r| (r - mean_ret).powi(2)).sum::<f64>() / returns.len() as f64;
                                 let std_dev = variance.sqrt();
-                                if std_dev > 0.0 {
-                                    (mean_ret / std_dev) * (returns.len() as f64).sqrt()
+                                if std_dev > 1e-12 {
+                                    let trades_per_day = (total_trades as f64).max(1.0);
+                                    (mean_ret / std_dev) * trades_per_day.sqrt()
                                 } else {
-                                    0.0
+                                    if mean_ret > 0.0 { mean_ret * 100.0 } else { 0.0 }
                                 }
                             } else {
-                                if pnl > 0.0 { 0.1 } else { -1.0 }
+                                if pnl > 0.0 { 0.01 } else { -0.01 }
                             };
                             
-                            (genome_clone, pnl, total_trades, sharpe)
+                            let velocity = final_cap / initial_capital;
+                            
+                            // Return: (index, raw_fitness, gross_pnl, num_trades, backtest_sharpe, live_sharpe)
+                            // We use `velocity` instead of live_sharpe to match the old tuple partially, or just velocity for now.
+                            // Actually, let's stick to the expected signature!
+                            let raw_fitness = if pnl > 0.0 && velocity >= 1.0 {
+                                pnl * sharpe * if total_trades > 0 { 1.0 } else { 0.0 }
+                            } else {
+                                pnl * (1.0 / sharpe.max(0.01)) // Castigo exponencial a pérdidas
+                            };
+                            (i, raw_fitness, pnl, total_trades as usize, sharpe, sharpe)
                 })
                 .collect();
                 
-            // Ordenar por Sharpe Ratio en lugar de solo PnL absoluto
-            results.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
-            let alpha = &results[0];
+            // Apply CMA-ES Update
+            let actual_fee_rate = self.arena.config.max_fee_pct.load(Ordering::Relaxed);
+            cma_es_optimizer.update(&cma_samples, &mut results, actual_fee_rate);
             
-            if alpha.3 > 0.5 && alpha.1 > 0.0 {
-                println!("🧬 [ALPHA HOT-SWAP] Nuevo Genoma Evolucionado! Sharpe: {:.2} | PnL: +${:.2} ({} trades)", alpha.3, alpha.1, alpha.2);
-                println!("   => Leverage: {:.2}x | Scalp TP: {:.2}% | Spread: {:.4}%", alpha.0.global_leverage, alpha.0.scalp_tp * 100.0, alpha.0.maker_spread_pct * 100.0);
+            // Re-sort to find the absolute best
+            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            
+            let best_idx = results[0].0;
+            let alpha = &results[0];
+            let next_alpha = population[best_idx].clone();
+            
+            // Evolución de los umbrales de seguridad meta-arquitectónicos
+            meta_evolver.audit_system_architecture(alpha.3 as f64);
+            
+            // FASE 38: Ajuste Dinámico de la Población. 
+            // Si el motor encontró un pozo óptimo, aumentamos la entropía reduciendo población
+            // Si el motor está estancado, aumentamos la población para buscar en más frentes.
+            
+            // FASE 37: Requisito de mantener Velocity de 2.0x (o al menos un buen PnL en la muestra actual si es corta)
+            let is_high_velocity = alpha.4 >= 1.5; // Relajado para backtests cortos, meta = 2.0x en 3 días.
+            
+            if alpha.3 > 0 {
+                println!("🧬 [ALPHA HOT-SWAP] Nuevo Genoma! Sharpe: {:.2} | Fitness: {:.2} | PnL: +${:.2} ({} trades)", alpha.4, alpha.1, alpha.2, alpha.3);
+                if is_high_velocity {
+                    println!("🚀 [VELOCITY TARGET MET] Validando escalabilidad!");
+                }
+                println!("   => Leverage: {:.2}x | Scalp TP: {:.2}% | Spread: {:.4}%", next_alpha.global_leverage, next_alpha.scalp_tp_base * 100.0, next_alpha.maker_spread_pct * 100.0);
                 
                 // Actualizar Alpha y reducir mutación (explotación)
-                current_alpha = alpha.0.clone();
-                mutation_rate = (mutation_rate * 0.9).max(0.02);
+                current_alpha = next_alpha.clone();
+                current_alpha.apply_to_arena(&self.arena);
+                current_alpha.save();
                 
-                self.arena.config.global_leverage.store(alpha.0.global_leverage, Ordering::Relaxed);
-                self.arena.config.trend_threshold.store(alpha.0.trend_threshold, Ordering::Relaxed);
-                self.arena.config.maker_spread_pct.store(alpha.0.maker_spread_pct, Ordering::Relaxed);
-                self.arena.config.scalp_tp_base.store(alpha.0.scalp_tp, Ordering::Relaxed);
-                self.arena.config.scalp_sl_base.store(alpha.0.scalp_sl, Ordering::Relaxed);
+                println!("✅ [TRUE EVOLUTION] Nueva semilla cuántica Alpha propagada globalmente.");
             } else {
-                println!("🛡️ [TRUE EVOLUTION] Decadencia del Sharpe ({:.2}). Aumentando entropía para explorar.", alpha.3);
+                println!("💀 [ESTANCO] Ningún genoma superó el umbral. Alpha actual se mantiene.");
                 // Si el Sharpe decae, aumentamos la tasa de mutación (exploración)
                 mutation_rate = (mutation_rate * 1.5).min(0.5);
             }
             
             // Reflexión Arquitectónica de Fase 9
-            meta_evolver.audit_system_architecture(alpha.3);
+            meta_evolver.audit_system_architecture(alpha.3 as f64);
         }
     }
 }

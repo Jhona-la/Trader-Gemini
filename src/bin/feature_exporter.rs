@@ -1,6 +1,6 @@
-use std::env;
+
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{Write, BufWriter};
 use god_engine_core::stateful_engine::StatefulEngine;
 
 fn main() {
@@ -38,11 +38,12 @@ fn main() {
     println!("✅ Loaded {} candles for {}", len, symbol);
     
     let out_path = format!("data/{}_FEATURES.csv", symbol);
-    let mut out_file = File::create(&out_path).unwrap();
+    let out_file = File::create(&out_path).unwrap();
+    let mut out_file = BufWriter::new(out_file);
     
     // Escribir cabeceras
     let mut header = String::from("target_5m");
-    for i in 0..25 {
+    for i in 0..34 {
         header.push_str(&format!(",feature_{}", i));
     }
     writeln!(out_file, "{}", header).unwrap();
@@ -66,12 +67,12 @@ fn main() {
         let bid = lows[i];
         let ask = highs[i];
         let total_vol = bid_qty + ask_qty;
-        let depth_obi = if total_vol > 0.0 { (bid_qty - ask_qty) / total_vol } else { 0.0 };
+        let _depth_obi = if total_vol > 0.0 { (bid_qty - ask_qty) / total_vol } else { 0.0 };
         
         let mid_price = (bid + ask) / 2.0;
         let pseudo_maker = bid_qty > ask_qty;
         
-        feature_engine.process_tick(mid_price, total_vol);
+        feature_engine.process_tick(mid_price, total_vol, _timestamps[i] as u64);
         feature_engine.update_trade_flow(total_vol, pseudo_maker);
         let _ = feature_engine.update_ofi(bid, ask, bid_qty, ask_qty);
         
@@ -79,13 +80,12 @@ fn main() {
         if i >= 100 && i + 5 < len {
             let future_return = (closes[i + 5] - closes[i]) / closes[i];
             // Generar features idénticas a GodEngineCore
-            let stateful_feats = feature_engine.get_features();
+            let stateful_feats = feature_engine.get_swing_features();
             
-            let mut features = [0.0; 25];
-            features[0] = stateful_feats[0]; // EMA trend
-            features[1] = stateful_feats[1]; // Hurst
-            features[2] = stateful_feats[2]; // OFI
-            features[3] = feature_engine.get_atr_pct() as f32;
+            let mut features = [0.0; 34];
+            for j in 0..34 {
+                features[j] = stateful_feats[j];
+            }
             
             let mut row = format!("{:.6}", future_return);
             for f in &features {

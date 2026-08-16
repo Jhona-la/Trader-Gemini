@@ -1,65 +1,46 @@
 pub mod vectorized;
 
-#[repr(C)]
-#[derive(Clone)]
-pub struct UnifiedConfig {
-    pub sl_pct: f64,
-    pub tp_pct: f64,
-    pub ml_threshold_l: f64,
-    pub ml_threshold_s: f64,
-    pub tech_threshold_l: f64,
-    pub tech_threshold_s: f64,
-    pub starting_capital: f64,
-    pub scalp_leverage: f64,
-    pub swing_leverage: f64,
-    pub scalp_sl_ratio: f64,
-    pub scalp_tp_ratio: f64,
-    pub dyn_atr_min: f64,
-    pub dyn_obi: f64,
-    pub dyn_ema: f64,
-    pub dyn_ofi: f64,
-}
+use quantum_arena::genome::SuperGenotype;
 
 pub fn run_backtest_native(
     closes: &[f64],
-    highs: &[f64],
-    lows: &[f64],
+    _highs: &[f64],
+    _lows: &[f64],
     volumes: &[f64],
-    cfg: &UnifiedConfig,
+    cfg: &SuperGenotype,
     out_pnl: &mut [f64],
     out_stats: &mut [f64],
     _symbol: &str,
+    initial_capital: f64,
 ) -> usize {
     let len = closes.len();
     
-    // Axioma VII: Paridad Absoluta. Usamos la misma Arena y Core que producción.
+    // 🚨 AXIOMA FASE 33: ALERTA DE DIVERGENCIA FORENSE 🚨
+    // Este motor de backtest utiliza "Ticks Sintéticos" interpolados a partir de Klines 1m.
+    // Esto significa que la microestructura (OFI/OBI) generada aquí NO refleja la latencia y liquidez
+    // real del WebSocket de Mainnet. El Backtest es probabilístico y sujeto a divergencia de ejecución.
+    // Para validación final absoluta, utilizar el Modo Demo (Paper Trading) de god_engine conectado a Mainnet.
+    
+    // Axioma VII: Paridad Absoluta de Modelos. Usamos la misma Arena y Core que producción.
     use std::sync::Arc;
     use god_engine_core::GodEngineCore;
     
     use quantum_arena::GlobalArena;
     use std::sync::atomic::Ordering;
 
-    let arena = Arc::new(GlobalArena::new(cfg.starting_capital));
+    let arena = Arc::new(GlobalArena::new(initial_capital)); // Dynamic capital for absolute GA evaluation
     // Apply configs from Evolution to GlobalArena
-    arena.config.scalp_tp_base.store(cfg.tp_pct * cfg.scalp_tp_ratio, Ordering::Relaxed);
-    arena.config.scalp_sl_base.store(cfg.sl_pct * cfg.scalp_sl_ratio, Ordering::Relaxed);
-    arena.config.global_leverage.store(cfg.scalp_leverage, Ordering::Relaxed);
-    arena.config.scalp_obi_threshold.store(cfg.ml_threshold_l, Ordering::Relaxed); // Simplified mapping
-    
-    arena.config.dynamic_atr_min.store(cfg.dyn_atr_min, Ordering::Relaxed);
-    arena.config.dynamic_obi_threshold.store(cfg.dyn_obi, Ordering::Relaxed);
-    arena.config.dynamic_ema_trend.store(cfg.dyn_ema, Ordering::Relaxed);
-    arena.config.dynamic_ofi_threshold.store(cfg.dyn_ofi, Ordering::Relaxed);
-    
-    // Set static kelly for backtest baseline
-    arena.config.scalp_kelly_fraction.store(0.2, Ordering::Relaxed);
+    cfg.apply_to_arena(&arena);
     
     let mut core = GodEngineCore::new(arena.clone());
     
-    let mut wins = 0;
+    let mut gross_wins = 0;
+    let mut net_wins = 0;
     let mut trades = 0;
+    let mut gross_pnl_sum = 0.0;
+    let mut net_pnl_sum = 0.0;
     
-    let mut peak_capital = cfg.starting_capital;
+    let mut peak_capital = initial_capital;
     let mut max_dd = 0.0;
     
     for i in 0..len {
@@ -92,21 +73,25 @@ pub fn run_backtest_native(
         let mut closed_sc = None;
         let mut closed_sw = None;
         
-        let mut synthetic_omni = [0.0; 54];
+        let mut noise_seed = (i as u64).wrapping_mul(1103515245).wrapping_add(12345);
         
         for t in 0..num_ticks {
-            sim_price += price_step;
+            noise_seed = noise_seed.wrapping_mul(1103515245).wrapping_add(12345);
+            let noise_fract = (noise_seed % 1000) as f64 / 1000.0 - 0.5; // -0.5 to +0.5
+            let vol_noise = (noise_seed % 100) as f64 / 100.0;
+            
+            let volatility = prev_close * cfg.base_slippage_floor; // Genome-evolved noise amplitude
+            sim_price += price_step + (noise_fract * volatility);
+            
             let is_kline = t == num_ticks - 1; // Solo el último tick cierra la vela
             
-            // Simular spread real (2 bps)
-            let sim_bid = sim_price * 0.9999;
-            let sim_ask = sim_price * 1.0001;
+            // Simulate spread using genome-derived maker_spread_pct
+            let half_spread = cfg.maker_spread_pct.max(0.00005); // Min 0.5 bps safety
+            let sim_bid = sim_price * (1.0 - half_spread);
+            let sim_ask = sim_price * (1.0 + half_spread);
             
-            // Llenar synthetic_omni con lo que haya calculado el feature_engine localmente
-            let local_features = core.get_features(0);
-            for (idx, &val) in local_features.iter().enumerate() {
-                if idx < 54 { synthetic_omni[idx] = val as f64; }
-            }
+            let sim_bid_qty = bid_qty_step * (0.5 + vol_noise);
+            let sim_ask_qty = ask_qty_step * (1.5 - vol_noise);
             
             let (_, _, sc, sw) = core.process_event(
                 0,
@@ -114,29 +99,37 @@ pub fn run_backtest_native(
                 sim_price,
                 vol_step,
                 sim_bid, sim_ask,
-                bid_qty_step, ask_qty_step,
+                sim_bid_qty, sim_ask_qty,
                 0.5, 0.0,
                 (i as u64 * 1000) + (t as u64 * 100),
-                false, &synthetic_omni);
+                false, &[0.0; 54]);
                 
             if sc.is_some() { closed_sc = sc; }
             if sw.is_some() { closed_sw = sw; }
         }
         
-        // Registrar resultados
-        if let Some((_is_long, pnl, _qty)) = closed_sc {
-            let margin = 5.0; // Minimal placeholder margin
-            let pct = pnl / margin;
-            out_pnl[trades] = pct;
-            if pct > 0.0 { wins += 1; }
+        if let Some((_is_long, net_pnl, _qty)) = closed_sc {
+            out_pnl[trades] = net_pnl; // Store net
+            
+            // out_stats will aggregate
+            // In the core engine, the 'pnl' emitted is already NET of all fees. 
+            // We just use it directly.
+            gross_pnl_sum += net_pnl;
+            net_pnl_sum += net_pnl;
+            if net_pnl > 0.0 { gross_wins += 1; }
+            if net_pnl > 0.0 { net_wins += 1; }
+            
             trades += 1;
         }
         
-        if let Some((_is_long, pnl, _qty)) = closed_sw {
-            let margin = 5.0;
-            let pct = pnl / margin;
-            out_pnl[trades] = pct;
-            if pct > 0.0 { wins += 1; }
+        if let Some((_is_long, net_pnl, _qty)) = closed_sw {
+            out_pnl[trades] = net_pnl;
+            
+            gross_pnl_sum += net_pnl;
+            net_pnl_sum += net_pnl;
+            if net_pnl > 0.0 { gross_wins += 1; }
+            if net_pnl > 0.0 { net_wins += 1; }
+            
             trades += 1;
         }
         
@@ -150,32 +143,33 @@ pub fn run_backtest_native(
         }
     }
     
-    let final_cap = core.arena.unified_capital.load(Ordering::Relaxed);
-    let win_rate = if trades > 0 { wins as f64 / trades as f64 } else { 0.0 };
+    let mut final_cap = core.arena.unified_capital.load(Ordering::Relaxed);
     
-    // Calcular Sharpe, Avg Win, Avg Loss
-    let mut total_win_pct = 0.0;
-    let mut total_loss_pct = 0.0;
-    let mut count_wins = 0.0;
-    let mut count_losses = 0.0;
-    let mut sum_pnl = 0.0;
-    
-    for i in 0..trades {
-        let p = out_pnl[i];
-        sum_pnl += p;
-        if p > 0.0 {
-            total_win_pct += p;
-            count_wins += 1.0;
-        } else {
-            total_loss_pct += p;
-            count_losses += 1.0;
-        }
+    // Add unrealized PnL from open positions to prevent missing large drawdowns at end
+    let last_price = closes[len - 1];
+    let scalp_pos = &core.arena.coins[0].positions.scalp_position;
+    if scalp_pos.is_open() {
+        let entry = scalp_pos.entry_price.load(Ordering::Relaxed);
+        let qty = scalp_pos.quantity.load(Ordering::Relaxed);
+        let is_long = scalp_pos.is_long.load(Ordering::Relaxed);
+        let unrealized = (last_price - entry) * qty * if is_long { 1.0 } else { -1.0 };
+        final_cap += unrealized;
+    }
+    let swing_pos = &core.arena.coins[0].positions.swing_position;
+    if swing_pos.is_open() {
+        let entry = swing_pos.entry_price.load(Ordering::Relaxed);
+        let qty = swing_pos.quantity.load(Ordering::Relaxed);
+        let is_long = swing_pos.is_long.load(Ordering::Relaxed);
+        let unrealized = (last_price - entry) * qty * if is_long { 1.0 } else { -1.0 };
+        final_cap += unrealized;
     }
     
-    let avg_win = if count_wins > 0.0 { total_win_pct / count_wins } else { 0.0 };
-    let avg_loss = if count_losses > 0.0 { total_loss_pct / count_losses } else { 0.0 };
-    let mean_pnl = if trades > 0 { sum_pnl / trades as f64 } else { 0.0 };
+    let gross_win_rate = if trades > 0 { gross_wins as f64 / trades as f64 } else { 0.0 };
+    let net_win_rate = if trades > 0 { net_wins as f64 / trades as f64 } else { 0.0 };
     
+    // We already have sums, no need to loop again for mean.
+    // Simplify sharpe logic for performance if needed, or keep it.
+    let mean_pnl = if trades > 0 { net_pnl_sum / trades as f64 } else { 0.0 };
     let mut variance = 0.0;
     if trades > 1 {
         for i in 0..trades {
@@ -186,13 +180,14 @@ pub fn run_backtest_native(
     let std_dev = variance.sqrt();
     let sharpe = if std_dev > 0.0 { mean_pnl / std_dev } else { 0.0 };
 
-    out_stats[0] = win_rate;
+    out_stats[0] = net_win_rate;
     out_stats[1] = trades as f64;
     out_stats[2] = final_cap;
     out_stats[3] = max_dd;
     out_stats[4] = sharpe;
-    out_stats[5] = avg_win;
-    out_stats[6] = avg_loss;
+    out_stats[5] = gross_pnl_sum;
+    out_stats[6] = net_pnl_sum;
+    out_stats[7] = gross_win_rate;
 
     trades
 }
@@ -204,7 +199,7 @@ pub unsafe extern "C" fn ffi_run_unified_backtest(
     lows_ptr: *const f64,
     volumes_ptr: *const f64,
     len: usize,
-    config: *const UnifiedConfig,
+    config: *const quantum_arena::genome::SuperGenotype,
     out_pnl_ptr: *mut f64,
     out_stats_ptr: *mut f64,
     symbol_ptr: *const std::os::raw::c_char,
@@ -224,14 +219,15 @@ pub unsafe extern "C" fn ffi_run_unified_backtest(
     let sym_c = unsafe { std::ffi::CStr::from_ptr(symbol_ptr) };
     let sym_str = sym_c.to_str().unwrap_or("BTCUSDT");
 
-    run_backtest_native(closes, highs, lows, volumes, cfg, out_pnl, out_stats, sym_str)
+    let initial_capital = std::env::var("INITIAL_CAPITAL").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
+    run_backtest_native(closes, highs, lows, volumes, cfg, out_pnl, out_stats, sym_str, initial_capital)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffi_run_unified_backtest_mmap(
     filepath_ptr: *const std::os::raw::c_char,
     len: usize,
-    config: *const UnifiedConfig,
+    config: *const quantum_arena::genome::SuperGenotype,
     out_pnl_ptr: *mut f64,
     out_stats_ptr: *mut f64,
     symbol_ptr: *const std::os::raw::c_char,
@@ -274,14 +270,15 @@ pub unsafe extern "C" fn ffi_run_unified_backtest_mmap(
     let sym_c = unsafe { std::ffi::CStr::from_ptr(symbol_ptr) };
     let sym_str = sym_c.to_str().unwrap_or("BTCUSDT");
 
-    run_backtest_native(closes, highs, lows, volumes, cfg, out_pnl, out_stats, sym_str)
+    let initial_capital = std::env::var("INITIAL_CAPITAL").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
+    run_backtest_native(closes, highs, lows, volumes, cfg, out_pnl, out_stats, sym_str, initial_capital)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ffi_run_polars_backtest_mmap(
+pub unsafe extern "C" fn ffi_run_polars_backtest_mmap(
     filepath_ptr: *const std::os::raw::c_char,
     len: usize,
-    config: *const UnifiedConfig,
+    config: *const quantum_arena::genome::SuperGenotype,
     out_stats_ptr: *mut f64,
 ) -> usize {
     if filepath_ptr.is_null() || config.is_null() || out_stats_ptr.is_null() {

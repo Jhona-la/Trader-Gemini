@@ -2,7 +2,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
-use backtest_engine::{UnifiedConfig, run_backtest_native};
+use quantum_arena::genome::SuperGenotype as Genotype;
+use backtest_engine::run_backtest_native;
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,7 +32,7 @@ pub fn start_polars_evolver_daemon(
     highs: Arc<Vec<f64>>,
     lows: Arc<Vec<f64>>,
     volumes: Arc<Vec<f64>>,
-    base_config: UnifiedConfig,
+    base_config: Genotype,
 ) {
     if EVOLUTION_RUNNING.swap(true, Ordering::SeqCst) {
         return; // Ya está corriendo
@@ -63,51 +64,53 @@ pub fn start_polars_evolver_daemon(
                 let mut best_sharpe = 0.0;
                 let mut best_cfg = base_config.clone();
                 
-                // Simular variaciones de hiperparámetros de microestructura
-                for atr in [0.00005, 0.0001, 0.0002] {
-                    for obi in [0.05, 0.10, 0.15] {
-                        for ema in [0.00002, 0.00005, 0.00010] {
-                            let mut test_cfg = base_config.clone();
-                            test_cfg.dyn_atr_min = atr;
-                            test_cfg.dyn_obi = obi;
-                            test_cfg.dyn_ema = ema;
-                            test_cfg.dyn_ofi = 0.05; // fixed for now to keep grid small
-                            
-                            let mut pnl = vec![0.0];
-                            let mut stats = vec![0.0; 4];
-                            let final_cap = run_backtest_native(
-                                &closes, &highs, &lows, &volumes, &test_cfg, &mut pnl, &mut stats, "SIM"
-                            );
-                            
-                            // Native backtest returns length of output or something, stats[0] is final cap
-                            let trades = stats[1] as f64;
-                            let wins = stats[2] as f64;
-                            let final_capital = stats[0];
-                            
-                            let wr = if trades > 0.0 { wins / trades } else { 0.0 };
-                            let sharpe = (final_capital - test_cfg.starting_capital) * wr; // Pseudo-Sharpe
-                            
-                            if sharpe > best_sharpe {
-                                best_sharpe = sharpe;
-                                best_cfg = test_cfg.clone();
-                            }
-                        }
+                // Simular variaciones de hiperparámetros estocásticos (1000 iteraciones cuánticas)
+                for _ in 0..1000 {
+                    let mut test_cfg = Genotype::new_random();
+                    // Merge some base properties or rely entirely on random
+                    
+                    let mut pnl = vec![0.0];
+                    let mut stats = vec![0.0; 4];
+                    let _final_cap = run_backtest_native(
+                        &closes, &highs, &lows, &volumes, &test_cfg, &mut pnl, &mut stats, "SIM", 100.0
+                    );
+                    
+                    // Native backtest populates stats exactly as follows:
+                    // 0: net_win_rate, 1: trades, 2: final_cap, 3: max_dd, 4: sharpe
+                    let trades = stats[1];
+                    let final_capital = stats[2];
+                    let max_dd = stats[3];
+                    let wr = stats[0];
+                    
+                    // Penalización severa por Drawdown 
+                    let dd_penalty = crate::entropy_fitness::EntropyFitness::drawdown_adversarial_penalty(max_dd, test_cfg.global_max_drawdown);
+                    
+                    // Penalización por significancia estadística (Cero ghost code)
+                    let min_trades_penalty = if trades < 15.0 { (trades / 15.0).max(0.1) } else { 1.0 };
+                    
+                    // Pseudo-Sharpe Cuántico con Penalización
+                    let sharpe = (final_capital - 100.0) * wr * dd_penalty * min_trades_penalty;
+                    
+                    if sharpe > best_sharpe {
+                        best_sharpe = sharpe;
+                        best_cfg = test_cfg.clone();
                     }
                 }
                 
-                println!("[EVOLVER] 🏆 Nuevo genotipo élite encontrado (Pseudo-Sharpe: {:.2})", best_sharpe);
+                if best_sharpe > 0.0 {
+                    println!("[EVOLVER] 🏆 Nuevo genotipo élite encontrado (Pseudo-Sharpe: {:.2})", best_sharpe);
                 
-                // Sobrescribir active_genome.json
-                let new_genome = Genome {
-                    scalp_tp: best_cfg.tp_pct,
-                    scalp_sl: best_cfg.sl_pct,
-                    swing_tp: best_cfg.tp_pct * 2.0,
-                    swing_sl: best_cfg.sl_pct * 2.0,
+                    // Sobrescribir active_genome.json
+                    let new_genome = Genome {
+                    scalp_tp: best_cfg.scalp_tp_base,
+                    scalp_sl: best_cfg.scalp_sl_base,
+                    swing_tp: best_cfg.swing_tp_base,
+                    swing_sl: best_cfg.swing_sl_base,
                     ml_threshold: 0.1,
-                    dyn_atr_min: best_cfg.dyn_atr_min,
-                    dyn_obi: best_cfg.dyn_obi,
-                    dyn_ema: best_cfg.dyn_ema,
-                    dyn_ofi: best_cfg.dyn_ofi,
+                    dyn_atr_min: best_cfg.regime_atr_multiplier,
+                    dyn_obi: best_cfg.dynamic_obi_threshold,
+                    dyn_ema: best_cfg.trend_threshold,
+                    dyn_ofi: best_cfg.dynamic_ofi_threshold,
                     sharpe_ratio: best_sharpe,
                     win_rate: 0.0,
                     max_drawdown: 0.0,
@@ -119,7 +122,8 @@ pub fn start_polars_evolver_daemon(
                     let _ = tokio::fs::write("config_dir/genotypes/active_genome.json", json).await;
                     println!("[EVOLVER] 💾 active_genome.json actualizado en caliente.");
                 }
-            }
-        });
-    });
-}
+                } // Cierra if best_sharpe > 0.0
+            } // Cierra loop
+        }); // Cierra rt.block_on
+    }); // Cierra thread::spawn
+} // Cierra fn

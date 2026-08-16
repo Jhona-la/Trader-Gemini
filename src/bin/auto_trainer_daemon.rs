@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::time::Instant;
-use dark_alpha_engine::{DarkAlphaEngine, DenseLayer};
+use dark_alpha_engine::DarkAlphaEngine;
 
 // Adam Optimizer state for a DenseLayer
 struct AdamState {
@@ -52,6 +52,21 @@ fn main() {
     
     println!("🤖 [AUTO-TRAINER DAEMON] Starting continuous learning loop for {}", symbol);
     
+    // Initialize or load existing model for true incremental online learning
+    let model_path = format!("models/DarkAlpha_{}.json", symbol);
+    let mut engine = DarkAlphaEngine::load_json(&model_path)
+        .unwrap_or_else(|_| {
+            println!("🆕 No existing model found. Creating a new DarkAlphaEngine from scratch.");
+            DarkAlphaEngine::new(54, 64, 32)
+        });
+    
+    // Initialize Adam States (Preserved across batches for true momentum!)
+    let mut adam1 = AdamState::new(54, 64);
+    let mut adam2 = AdamState::new(64, 32);
+    let mut adam3 = AdamState::new(32, 1);
+    
+    let mut t = 0; // Adam time step (continuous)
+    
     loop {
         let file = match File::open("data/dark_alpha_dataset.csv") {
             Ok(f) => f,
@@ -94,7 +109,7 @@ fn main() {
         }
     }
     
-        let num_samples = inputs.len();
+    let num_samples = inputs.len();
         if num_samples == 0 {
             println!("❌ No valid samples found. Waiting 10s...");
             std::thread::sleep(std::time::Duration::from_secs(10));
@@ -102,24 +117,15 @@ fn main() {
         }
         println!("✅ Loaded {} samples. Starting Adam Optimization...", num_samples);
     
-    let mut engine = DarkAlphaEngine::new(54, 64, 32);
-    
-    // Initialize Adam States
-    let mut adam1 = AdamState::new(54, 64);
-    let mut adam2 = AdamState::new(64, 32);
-    let mut adam3 = AdamState::new(32, 1);
-    
-    let epochs = 50;
+    let epochs = 5; // Reduced epochs per batch since it's continuous online learning!
     let batch_size = 256;
-    let learning_rate = 0.001;
+    let learning_rate = 0.0001; // Smaller LR for online fine-tuning
     let beta1 = 0.9;
     let beta2 = 0.999;
     let epsilon = 1e-8;
     
     let mut indices: Vec<usize> = (0..num_samples).collect();
     let mut prng = XorShift::new(123456789);
-    
-    let mut t = 0; // Adam time step
     
     let start_time = Instant::now();
     
@@ -226,7 +232,7 @@ fn main() {
             t += 1;
             let scale = 1.0 / b_size as f64;
             
-            let mut apply_adam = |w: &mut Vec<f64>, g: &Vec<f64>, m: &mut Vec<f64>, v: &mut Vec<f64>| {
+            let apply_adam = |w: &mut Vec<f64>, g: &Vec<f64>, m: &mut Vec<f64>, v: &mut Vec<f64>| {
                 for i in 0..w.len() {
                     let grad = g[i] * scale;
                     m[i] = beta1 * m[i] + (1.0 - beta1) * grad;

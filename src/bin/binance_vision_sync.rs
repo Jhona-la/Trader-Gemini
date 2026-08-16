@@ -28,7 +28,7 @@ fn main() {
     for symbol in SYMBOLS {
         println!("🚀 Iniciando descarga para {}", symbol);
         
-        let mut out_file_path = data_dir.join(format!("{}_6M.csv", symbol));
+        let out_file_path = data_dir.join(format!("{}_6M.csv", symbol));
         let mut out_file = File::create(&out_file_path).unwrap();
         
         // CSV Header (Binance Vision Format)

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trader Gemini - Panóptico Cuántico 4D</title>
+    <!-- Cytoscape JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+    <script src="https://unpkg.com/layout-base/layout-base.js"></script>
+    <script src="https://unpkg.com/cose-base/cose-base.js"></script>
+    <script src="https://unpkg.com/cytoscape-fcose/cytoscape-fcose.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@300;500;700&display=swap');
+
+        :root {
+            --bg-dark: #0a0a0f;
+            --panel-bg: rgba(20, 20, 30, 0.7);
+            --neon-green: #00ff88;
+            --neon-red: #ff3366;
+            --neon-blue: #00f0ff;
+            --neon-purple: #b026ff;
+            --text-main: #e0e0e0;
+            --text-muted: #888899;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(0, 255, 136, 0.05), transparent 35%),
+                radial-gradient(circle at 85% 30%, rgba(0, 240, 255, 0.05), transparent 35%);
+        }
+
+        #cy {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        .hud-panel {
+            position: absolute;
+            z-index: 10;
+            background: var(--panel-bg);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            transition: all 0.3s ease;
+        }
+
+        #title-panel {
+            top: 2rem;
+            left: 2rem;
+        }
+
+        #title-panel h1 {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.8rem;
+            margin: 0;
+            background: linear-gradient(90deg, var(--neon-blue), var(--neon-green));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+        }
+
+        #title-panel p {
+            margin: 0.5rem 0 0 0;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        #info-panel {
+            top: 2rem;
+            right: 2rem;
+            width: 300px;
+            transform: translateX(120%);
+            opacity: 0;
+        }
+        
+        #info-panel.visible {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        .info-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.2rem;
+            color: var(--neon-blue);
+            margin-bottom: 1rem;
+            word-break: break-all;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-bottom: 0.5rem;
+        }
+
+        .metric-label {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .metric-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.95rem;
+            color: var(--neon-green);
+        }
+
+        .metric-value.warning {
+            color: var(--neon-red);
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 1rem;
+            z-index: 10;
+        }
+
+        button {
+            background: rgba(0, 240, 255, 0.1);
+            border: 1px solid rgba(0, 240, 255, 0.3);
+            color: var(--neon-blue);
+            font-family: 'JetBrains Mono', monospace;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(5px);
+        }
+
+        button:hover {
+            background: rgba(0, 240, 255, 0.2);
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
+            transform: translateY(-2px);
+        }
+
+        /* Drill-down visual hint */
+        .drill-down-hint {
+            margin-top: 1rem;
+            font-size: 0.8rem;
+            color: var(--neon-purple);
+            text-align: center;
+            font-style: italic;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div id="cy"></div>
+
+    <div id="title-panel" class="hud-panel">
+        <h1>Panóptico Cuántico</h1>
+        <p>Grafo 4D Interactivo AST + Latencia (RDTSC)</p>
+    </div>
+
+    <div id="info-panel" class="hud-panel">
+        <div class="info-title" id="node-name">Seleccione un Nodo</div>
+        
+        <div class="metric">
+            <span class="metric-label">Tipo</span>
+            <span class="metric-value" id="node-type">-</span>
+        </div>
+        
+        <div class="metric">
+            <span class="metric-label">Archivo</span>
+            <span class="metric-value" id="node-file" style="font-size: 0.75rem; text-align: right; max-width: 60%;">-</span>
+        </div>
+        
+        <div class="metric">
+            <span class="metric-label">Latencia Promedio</span>
+            <span class="metric-value" id="node-latency">-</span>
+        </div>
+
+        <div class="metric">
+            <span class="metric-label">Dependencias (Out)</span>
+            <span class="metric-value" id="node-deps">-</span>
+        </div>
+
+        <div class="drill-down-hint">Doble clic para Drill-Down (VS Code)</div>
+    </div>
+
+    <div class="controls">
+        <button onclick="cy.layout({name: 'fcose', animationDuration: 1000}).run()">Re-Organizar (fCose)</button>
+        <button onclick="findOrphans()">Detectar Huérfanos</button>
+        <button onclick="fetchGraph()">Actualizar Telemetría</button>
+    </div>
+
+    <script>
+        let cy;
+
+        // Estilos del grafo
+        const style = [
+            {
+                selector: 'node',
+                style: {
+                    'label': 'data(label)',
+                    'color': '#fff',
+                    'font-family': 'JetBrains Mono',
+                    'font-size': '10px',
+                    'text-valign': 'bottom',
+                    'text-margin-y': 5,
+                    'background-color': '#2a2a35',
+                    'border-width': 2,
+                    'border-color': 'data(color)',
+                    'width': 'mapData(weight, 1, 100, 20, 60)',
+                    'height': 'mapData(weight, 1, 100, 20, 60)',
+                    'transition-property': 'background-color, border-color, width, height',
+                    'transition-duration': '0.3s'
+                }
+            },
+            {
+                selector: 'edge',
+                style: {
+                    'width': 1.5,
+                    'line-color': 'rgba(136, 136, 153, 0.4)',
+                    'target-arrow-color': 'rgba(136, 136, 153, 0.4)',
+                    'target-arrow-shape': 'triangle',
+                    'curve-style': 'bezier',
+                    'transition-property': 'line-color, target-arrow-color',
+                    'transition-duration': '0.3s'
+                }
+            },
+            {
+                selector: 'node:selected',
+                style: {
+                    'border-width': 4,
+                    'border-color': '#00f0ff',
+                    'box-shadow': '0 0 20px #00f0ff'
+                }
+            },
+            {
+                selector: '.orphan',
+                style: {
+                    'background-color': '#ff3366',
+                    'border-color': '#ff3366',
+                    'border-style': 'dashed'
+                }
+            },
+            {
+                selector: '.highlighted',
+                style: {
+                    'line-color': '#00f0ff',
+                    'target-arrow-color': '#00f0ff',
+                    'width': 3,
+                    'z-index': 999
+                }
+            },
+            {
+                selector: '.highlighted-node',
+                style: {
+                    'border-color': '#00f0ff',
+                    'border-width': 3
+                }
+            },
+            {
+                selector: '.faded',
+                style: {
+                    'opacity': 0.1
+                }
+            }
+        ];
+
+        async function fetchGraph() {
+            try {
+                const res = await fetch('/api/graph');
+                const data = await res.json();
+
+                const elements = [];
+
+                // Procesar Nodos
+                for (const [id, node] of Object.entries(data.nodes)) {
+                    // Color coding based on latency (heatmap)
+                    let nodeColor = '#00ff88'; // Fast (Green)
+                    let weight = 20;
+
+                    if (node.average_latency_ns > 0) {
+                        weight = Math.min(100, 20 + (Math.log10(node.average_latency_ns) * 10));
+                        if (node.average_latency_ns > 500) {
+                            nodeColor = '#ffaa00'; // Warning (Orange)
+                        }
+                        if (node.average_latency_ns > 5000) {
+                            nodeColor = '#ff3366'; // Danger (Red)
+                        }
+                    } else {
+                        nodeColor = '#888899'; // Unmeasured
+                    }
+
+                    elements.push({
+                        data: {
+                            id: node.id,
+                            label: node.id.split('::').pop(), // Short name
+                            full_id: node.id,
+                            type: node.type_,
+                            file: node.file_path,
+                            latency: node.average_latency_ns,
+                            color: nodeColor,
+                            weight: weight
+                        }
+                    });
+                }
+
+                // Procesar Edges
+                data.edges.forEach(edge => {
+                    elements.push({
+                        data: {
+                            source: edge.source,
+                            target: edge.target,
+                            weight: edge.weight,
+                            type: edge.edge_type
+                        }
+                    });
+                });
+
+                if (!cy) {
+                    cy = cytoscape({
+                        container: document.getElementById('cy'),
+                        elements: elements,
+                        style: style,
+                        layout: {
+                            name: 'fcose',
+                            quality: 'proof',
+                            animate: true,
+                            animationDuration: 1500,
+                            nodeRepulsion: 6500,
+                            idealEdgeLength: 100
+                        }
+                    });
+
+                    setupInteractions();
+                } else {
+                    // Update elements (for telemetry refreshes)
+                    cy.json({ elements: elements });
+                    cy.layout({ name: 'fcose', randomize: false, animate: true }).run();
+                }
+            } catch (err) {
+                console.error("Error fetching graph:", err);
+            }
+        }
+
+        function setupInteractions() {
+            cy.on('tap', 'node', function(e) {
+                const node = e.target;
+                const data = node.data();
+                
+                // Show info panel
+                const panel = document.getElementById('info-panel');
+                panel.classList.add('visible');
+                
+                document.getElementById('node-name').innerText = data.full_id;
+                document.getElementById('node-type').innerText = data.type;
+                document.getElementById('node-file').innerText = data.file;
+                
+                const latEl = document.getElementById('node-latency');
+                if (data.latency > 0) {
+                    latEl.innerText = `${data.latency} ns`;
+                    latEl.className = data.latency > 5000 ? 'metric-value warning' : 'metric-value';
+                } else {
+                    latEl.innerText = 'No medido';
+                    latEl.className = 'metric-value';
+                }
+
+                document.getElementById('node-deps').innerText = node.outgoers('edge').length;
+
+                // Highlight neighborhood
+                cy.elements().addClass('faded');
+                node.removeClass('faded');
+                
+                // Highlight incoming/outgoing edges
+                node.outgoers().removeClass('faded').addClass('highlighted-node');
+                node.outgoers('edge').addClass('highlighted');
+                
+                node.incomers().removeClass('faded').addClass('highlighted-node');
+                node.incomers('edge').addClass('highlighted');
+            });
+
+            cy.on('tap', function(e) {
+                if (e.target === cy) {
+                    // Clicked on background
+                    document.getElementById('info-panel').classList.remove('visible');
+                    cy.elements().removeClass('faded highlighted highlighted-node orphan');
+                }
+            });
+
+            // Drill-Down: Double click to open in VS Code (using vscode:// URI scheme)
+            cy.on('dblclick', 'node', function(e) {
+                const node = e.target;
+                const file = node.data('file');
+                if (file && file !== '') {
+                    // Requires VS Code to be registered for vscode:// URIs
+                    window.location.href = `vscode://file/${file}`;
+                }
+            });
+        }
+
+        function findOrphans() {
+            cy.elements().removeClass('faded highlighted highlighted-node orphan');
+            // Find nodes with indegree 0 and outdegree 0
+            const orphans = cy.nodes().filter(n => n.incomers('edge').length === 0 && n.outgoers('edge').length === 0);
+            
+            cy.elements().addClass('faded');
+            orphans.removeClass('faded');
+            orphans.addClass('orphan');
+
+            console.log(`Encontrados ${orphans.length} nodos huérfanos.`);
+        }
+
+        // INIT
+        fetchGraph();
+
+        // Actualizar latencias cada 5 segundos
+        setInterval(fetchGraph, 5000);
+
+    </script>
+</body>
+</html>

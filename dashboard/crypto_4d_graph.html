@@ -1,0 +1,93 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trader Gemini V5 - 4D Crypto Network</title>
+    <script src="https://unpkg.com/3d-force-graph"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #0b0c10; color: #66fcf1; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
+        #3d-graph { width: 100vw; height: 100vh; }
+        #overlay {
+            position: absolute; top: 20px; left: 20px; z-index: 10;
+            background: rgba(11, 12, 16, 0.85); padding: 20px; border-radius: 10px;
+            border: 1px solid #45a29e; box-shadow: 0 0 15px rgba(102, 252, 241, 0.3);
+            pointer-events: none;
+        }
+        h1 { margin-top: 0; font-size: 1.2rem; text-transform: uppercase; }
+        p { font-size: 0.9rem; color: #c5c6c7; margin-bottom: 5px; }
+        .hud-value { color: #00ff88; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="overlay">
+        <h1>Quantum 4D Magnetism Network</h1>
+        <p>Active Symbols: <span class="hud-value" id="hud-symbols">26</span></p>
+        <p>Neural Clusters: <span class="hud-value" id="hud-clusters">3</span></p>
+        <p>Market Regime: <span class="hud-value" id="hud-regime">SCANNING...</span></p>
+    </div>
+    <div id="3d-graph"></div>
+
+    <script>
+        // Simulate real-time API fetch for crypto network
+        const symbols = ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","ADAUSDT","AVAXUSDT","DOTUSDT","LINKUSDT","MATICUSDT","DOGEUSDT","SHIBUSDT","LTCUSDT","ATOMUSDT","UNIUSDT","NEARUSDT","ICPUSDT","APTUSDT","OPUSDT","ARBUSDT","FILUSDT","INJUSDT","RENDERUSDT","TIAUSDT","STXUSDT","SUIUSDT"];
+        
+        const nodes = symbols.map(id => ({ 
+            id, 
+            group: id === "BTCUSDT" || id === "ETHUSDT" ? 1 : (id.includes("USDT") ? 2 : 3),
+            val: id === "BTCUSDT" ? 20 : (id === "ETHUSDT" ? 15 : 5 + Math.random() * 5)
+        }));
+        
+        const links = [];
+        // Connect altcoins to BTC and ETH
+        nodes.forEach(n => {
+            if (n.id !== "BTCUSDT" && n.id !== "ETHUSDT") {
+                links.push({ source: n.id, target: "BTCUSDT", value: Math.random() * 2 });
+                if (Math.random() > 0.5) {
+                    links.push({ source: n.id, target: "ETHUSDT", value: Math.random() * 2 });
+                }
+            }
+        });
+        // Connect random clusters
+        for(let i=0; i<15; i++) {
+            let s1 = symbols[Math.floor(Math.random()*symbols.length)];
+            let s2 = symbols[Math.floor(Math.random()*symbols.length)];
+            if (s1 !== s2) {
+                links.push({ source: s1, target: s2, value: Math.random() * 3 });
+            }
+        }
+
+        const gData = { nodes, links };
+
+        const Graph = ForceGraph3D()
+            (document.getElementById('3d-graph'))
+            .graphData(gData)
+            .nodeLabel('id')
+            .nodeAutoColorBy('group')
+            .linkWidth(link => link.value)
+            .linkDirectionalParticles(2)
+            .linkDirectionalParticleWidth(1.5)
+            .linkDirectionalParticleSpeed(d => d.value * 0.005)
+            .backgroundColor('#0b0c10');
+
+        // Dynamic rotation
+        let angle = 0;
+        setInterval(() => {
+            Graph.cameraPosition({
+                x: 300 * Math.sin(angle),
+                z: 300 * Math.cos(angle)
+            });
+            angle += Math.PI / 1000;
+        }, 30);
+        
+        // Dynamic fetch to /api/state to update HUD
+        setInterval(() => {
+            fetch('/api/state')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('hud-regime').innerText = (data.active_coins_scalp > 0 || data.active_coins_swing > 0) ? "ACTIVE" : "NEUTRAL / SCANNING";
+                }).catch(e => console.log(e));
+        }, 5000);
+    </script>
+</body>
+</html>

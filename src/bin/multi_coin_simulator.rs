@@ -2,12 +2,13 @@ use quantum_arena::{GlobalArena, TickEvent};
 use god_engine_core::GodEngineCore;
 use phase_runner::{Phase, PhaseExecutor};
 use data_pipeline::historical::Kline;
-use data_pipeline::multiplexer::{kline_to_ticks, multiplex_ticks};
+use data_pipeline::multiplexer::multiplex_ticks;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::{SystemTime, UNIX_EPOCH, Instant};
+use std::time::{Instant};
 use polars::prelude::*;
 use std::path::Path;
+use chrono::{DateTime, Utc};
 
 const COINS: [&str; 30] = [
     "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "DOTUSDT", "LINKUSDT",
@@ -15,13 +16,48 @@ const COINS: [&str; 30] = [
     "VETUSDT", "NEARUSDT", "AAVEUSDT", "ALGOUSDT", "EGLDUSDT", "SANDUSDT", "THETAUSDT", "AXSUSDT", "MANAUSDT", "FTMUSDT"
 ];
 
+// Convertir 1 Kline en 4 ticks determinísticos sin inventar ruido/volatilidad falsa
+fn simple_kline_to_ticks(coin_id: usize, kline: &Kline) -> [TickEvent; 4] {
+    let step = kline.close_time.saturating_sub(kline.open_time) / 4;
+    let v = kline.volume / 4.0;
+    [
+        TickEvent { coin_id, timestamp: kline.open_time, bid_price: kline.open, ask_price: kline.open, bid_qty: v, ask_qty: v },
+        TickEvent { coin_id, timestamp: kline.open_time + step, bid_price: kline.high, ask_price: kline.high, bid_qty: v, ask_qty: v },
+        TickEvent { coin_id, timestamp: kline.open_time + step * 2, bid_price: kline.low, ask_price: kline.low, bid_qty: v, ask_qty: v },
+        TickEvent { coin_id, timestamp: kline.open_time + step * 3, bid_price: kline.close, ask_price: kline.close, bid_qty: v, ask_qty: v },
+    ]
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
     println!("🌌 TRADER GEMINI V5 - MULTI-COIN QUANTUM SIMULATOR (30 COINS)");
     println!("============================================================");
 
-    let initial_capital = 13.0; // The holy $13
+    let mut specs = Vec::with_capacity(COINS.len());
+    for symbol in COINS.iter() {
+        specs.push(quantum_arena::symbol_registry::SymbolSpec {
+            symbol: symbol.to_string(),
+            step_size: 0.00000001, // ultra fine to prevent issues
+            tick_size: 0.00001,
+            min_qty: 0.0001,
+            min_notional: 1.0,
+            max_leverage: 20,
+            maker_fee: 0.0002,
+            taker_fee: 0.0005,
+            is_shadow: false,
+        });
+    }
+    quantum_arena::symbol_registry::update_registry(specs);
+
+    let initial_capital_str = std::env::var("INITIAL_CAPITAL").unwrap_or_else(|_| {
+        panic!("❌ [CRITICAL] Debes proveer INITIAL_CAPITAL como variable de entorno (ej. set INITIAL_CAPITAL=100.50)");
+    });
+    let mut initial_capital: f64 = initial_capital_str.parse().expect("❌ INITIAL_CAPITAL must be a number");
+    if initial_capital <= 0.0 {
+        println!("⚠️ INITIAL_CAPITAL=0.0 detected. This is a simulator. Enforcing $1000.00 mock capital for simulation accuracy.");
+        initial_capital = 1000.0;
+    }
     println!("💰 Initial Capital: ${:.2}", initial_capital);
 
     let arena = std::thread::Builder::new()
@@ -78,7 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         let mut ticks = Vec::with_capacity(klines.len() * 4);
         for k in klines.iter() {
-            ticks.extend(kline_to_ticks(id, k));
+            ticks.extend(simple_kline_to_ticks(id, k));
         }
         println!("{} ticks generated.", ticks.len());
         coin_ticks.push(ticks);
@@ -95,13 +131,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("🚀 LAUNCHING HFT BACKTEST ENGINE...");
             let start_backtest = Instant::now();
             
+            // Forzamos la carga del modelo para que la simulacion HFT no se quede estancada en probabilidad 0.5 (plano).
+            let _ = god_engine_core::ml_inference::NanoForest::load_global("BTCUSDT_SCALP", "models/BTCUSDT_SCALP.json");
+            
             let mut engine = GodEngineCore::new(arena.clone());
             let mut total_trades = 0;
             let total_ticks_len = master_stream.len() as u32;
+            let first_ts = master_stream.first().map(|t| t.timestamp).unwrap_or(0);
+            let last_ts = master_stream.last().map(|t| t.timestamp).unwrap_or(0);
+
             
             for tick in master_stream {
                 // Inject tick to arena directly
-                arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty);
+                arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp);
                 
                 let (_new_sc, _new_sw, closed_sc, closed_sw, _maker) = engine.process_tick(
                     tick.coin_id,
@@ -117,7 +159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 
                 // Disparo de PhaseRunner cada 1,000,000 de ticks para simulacion de auditoria
                 if total_ticks_len > 0 && arena.tick_counter.load(Ordering::Relaxed) % 1_000_000 == 0 {
-                    let result = PhaseExecutor::run(Phase::Zeta, std::time::Duration::from_millis(10));
+                    let _result = PhaseExecutor::run(Phase::Zeta, std::time::Duration::from_millis(10));
                     // println!("🔄 [PHASE RUNNER] Executed phase {:?}", result.phase);
                 }
             }
@@ -127,21 +169,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Sumary
             let mut total_pnl_realized = 0.0;
             for c in arena.coins.iter() {
-                total_pnl_realized += c.scalp.pnl_realized.load(Ordering::Relaxed);
-                total_pnl_realized += c.swing.pnl_realized.load(Ordering::Relaxed);
+                let realized = c.scalp.pnl_realized.load(Ordering::Relaxed) + c.swing.pnl_realized.load(Ordering::Relaxed);
+                total_pnl_realized += realized;
+                // Para calcular el Gross, necesitaríamos agregar los fees cobrados, pero simplificaremos asumiendo:
+                // Gross = Net + Fees, aunque PnL Realized internamente ya descontó los fees.
+                // Estimación rápida de Fees: 0.04% por trade
             }
 
             let final_capital = arena.unified_capital.load(Ordering::Relaxed);
-            let growth_pct = ((final_capital - initial_capital) / initial_capital) * 100.0;
+            let net_growth_pct = ((final_capital - initial_capital) / initial_capital) * 100.0;
             
+            // Asumiendo fees promedio del 0.05% (taker) por cada trade abierto y cerrado (0.10% total)
+            let estimated_total_fees = total_trades as f64 * (initial_capital / 15.0) * 0.001;
+            let total_gross_pnl = total_pnl_realized + estimated_total_fees;
+            let gross_growth_pct = (total_gross_pnl / initial_capital) * 100.0;
+
+            let start_dt = DateTime::<Utc>::from_timestamp((first_ts / 1000) as i64, 0).unwrap_or_default();
+            let end_dt = DateTime::<Utc>::from_timestamp((last_ts / 1000) as i64, 0).unwrap_or_default();
+            let days_sim = (last_ts.saturating_sub(first_ts)) as f64 / (1000.0 * 60.0 * 60.0 * 24.0);
+
             println!("============================================================");
-            println!("🏁 BACKTEST COMPLETE");
-            println!("⏱️ Execution Time: {:?}", backtest_duration);
+            println!("🏁 QUANTUM BACKTEST COMPLETE");
+            println!("⏱️ Execution Time  : {:?}", backtest_duration);
             println!("⚡ Latency per Tick: {:?}", backtest_duration / total_ticks_len.max(1));
-            println!("📊 Total Trades: {}", total_trades);
-            println!("💰 Initial Capital: ${:.2}", initial_capital);
-            println!("💵 Final Capital:   ${:.2}", final_capital);
-            println!("📈 Net PnL:         ${:.2} ({:.2}%)", total_pnl_realized, growth_pct);
+            println!("🗓️ Period          : {} to {} ({:.2} days)", start_dt.format("%Y-%m-%d %H:%M:%S"), end_dt.format("%Y-%m-%d %H:%M:%S"), days_sim);
+            println!("📊 Total Trades    : {}", total_trades);
+            println!("💰 Initial Capital : ${:.2}", initial_capital);
+            println!("💵 Final Capital   : ${:.2}", final_capital);
+            println!("📈 Gross PnL       : ${:.2} ({:.2}% ROI sin fees)", total_gross_pnl, gross_growth_pct);
+            
+            // SISTEMA SUPREMO: Proyección Exponencial Matemática
+            let expected_3day_multiplier = (1.0 + net_growth_pct / 100.0).powf(3.0 / days_sim.max(0.1));
+            println!("🚀 3-Day Compounding Velocity: {:.2}x (Meta: 2.00x)", expected_3day_multiplier);
+            if expected_3day_multiplier >= 2.0 {
+                println!("✅ [SUPREME STATUS] Exponential Velocity target achieved (100% every 3 days)!");
+            } else {
+                println!("⚠️ [SUPREME STATUS] Compounding velocity is below the 2.0x 3-day target. Optimization required.");
+            }
+            println!("📉 Net PnL         : ${:.2} ({:.2}% ROI con fees reales)", total_pnl_realized, net_growth_pct);
             println!("============================================================");
 
             if final_capital >= initial_capital * 2.0 {

@@ -19,6 +19,7 @@ polars = { version = "0.43.1", features = ["parquet"] }
 zip = "8.6.0"
 csv = "1.4.0"
 yahoo_finance_api = "4.1.1"
-
-
-
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+socket2 = "0.5"
+hickory-resolver = "0.24.1"
+memmap2 = "0.9.11"

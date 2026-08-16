@@ -9,3 +9,4 @@ feature-engine = { path = "../feature-engine" }
 dark-alpha-engine = { path = "../dark-alpha-engine" }
 
 strategy-core = { path = "../strategy-core" }
+telemetry-engine = { version = "0.1.0", path = "../telemetry-engine" }

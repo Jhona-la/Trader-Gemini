@@ -21,18 +21,19 @@ impl<'a> PortfolioOrchestrator<'a> {
         let win_rate = coin.scalp.win_rate.load(Ordering::Relaxed);
         let profit_factor = coin.scalp.profit_factor.load(Ordering::Relaxed);
         
-        // Pseudo-Sharpe Ratio (Rendimiento ajustado al riesgo)
-        // Si el win_rate es alto y el PF es alto, multiplicamos la confianza
-        let performance_multiplier = if win_rate > 0.55 && profit_factor > 1.2 {
-            1.5 // Sinergia positiva, asignar más capital
-        } else if win_rate < 0.45 || profit_factor < 0.9 {
-            0.5 // Degradación, reducir capital
-        } else {
-            1.0
-        };
+        // CONTINUOUS Performance Multiplier (sigmoid-based, no step functions)
+        // Maps WR×PF product into a smooth [0.3, 2.0] range via generalized logistic
+        // Center at WR=0.50, PF=1.0 (breakeven point)
+        let performance_score = win_rate * profit_factor;
+        let portfolio_perf_mult_steepness = self.arena.config.portfolio_perf_mult_steepness.load(Ordering::Relaxed);
+        let portfolio_perf_mult_min = self.arena.config.portfolio_perf_mult_min.load(Ordering::Relaxed);
+        let portfolio_perf_mult_max = self.arena.config.portfolio_perf_mult_max.load(Ordering::Relaxed);
+        let portfolio_perf_mult_center = self.arena.config.portfolio_perf_mult_center.load(Ordering::Relaxed);
+        
+        let range = portfolio_perf_mult_max - portfolio_perf_mult_min;
+        let performance_multiplier = portfolio_perf_mult_min + range / (1.0 + (-portfolio_perf_mult_steepness * (performance_score - portfolio_perf_mult_center)).exp());
 
-        // Drawdown concurrente (Fase 8)
-        // Calculamos el PnL no realizado global del portafolio
+        // CONTINUOUS Drawdown Penalty (exponential decay, no step functions)
         let mut global_unrealized: f64 = 0.0;
         for c in self.arena.coins.iter() {
             global_unrealized += c.scalp.pnl_unrealized.load(Ordering::Relaxed);
@@ -40,15 +41,11 @@ impl<'a> PortfolioOrchestrator<'a> {
         }
         
         let capital = self.arena.unified_capital.load(Ordering::Relaxed);
+        let portfolio_dd_penalty_decay = self.arena.config.portfolio_dd_penalty_decay.load(Ordering::Relaxed);
         let drawdown_penalty = if capital > 0.0 && global_unrealized < 0.0 {
             let dd_pct = (global_unrealized.abs() / capital).clamp(0.0, 1.0);
-            if dd_pct > 0.05 { // Si el portafolio entero está en -5% DD
-                0.2 // Cortamos severamente la nueva exposición
-            } else if dd_pct > 0.02 {
-                0.5 // Reducción conservadora
-            } else {
-                1.0
-            }
+            // Smooth exponential decay: at 0% DD = 1.0, at 5% DD ≈ 0.47, at 10% DD ≈ 0.22
+            (-dd_pct * portfolio_dd_penalty_decay).exp()
         } else {
             1.0
         };
@@ -100,28 +97,23 @@ impl<'a> PortfolioOrchestrator<'a> {
 
         let total_exposure = total_long_margin + total_short_margin + required_margin;
         
-        // 1. Max Gross Exposure limit
-        let exposure_limit = if regime == crate::regime::MarketRegime::BullRun {
-            0.95 // En Bull Run permitimos desplegar hasta el 95% del capital
-        } else if regime == crate::regime::MarketRegime::Crash {
-            0.40 // En Crash somos conservadores
-        } else {
-            0.80
-        };
+        // Max Gross Exposure limit: Read from arena config (genome-evolvable)
+        // Defaults to 1.0 (100% capital efficiency) but can be tightened by the genome
+        // Prevent complete freezing by asserting a minimal theoretical bounds
+        let exposure_limit = self.arena.config.global_max_drawdown.load(Ordering::Relaxed).max(0.1);
 
         if total_exposure > capital * exposure_limit {
             return false;
         }
 
-        // 2. Net Delta / Correlation Limit
+        // Net Delta / Directional Limit: Smooth continuous check
+        // Allow full directional exposure but respect capital limits
         if intent_is_long {
-            let delta_limit = if regime == crate::regime::MarketRegime::BullRun { 0.90 } else { 0.50 };
-            if (total_long_margin + required_margin) > capital * delta_limit {
+            if (total_long_margin + required_margin) > capital * exposure_limit {
                 return false; 
             }
         } else {
-            let delta_limit = if regime == crate::regime::MarketRegime::Crash { 0.80 } else { 0.50 };
-            if (total_short_margin + required_margin) > capital * delta_limit {
+            if (total_short_margin + required_margin) > capital * exposure_limit {
                 return false; 
             }
         }

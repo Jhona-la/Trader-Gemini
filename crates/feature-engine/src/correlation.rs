@@ -58,8 +58,7 @@ impl MarketCorrelationHeatmap {
         let mut sum_correlation = 0.0;
         let mut valid_assets = 0.0;
 
-        for i in 0..self.num_assets {
-            let ret = current_returns[i];
+        for (i, &ret) in current_returns.iter().enumerate().take(self.num_assets) {
             if ret == 0.0 && self.last_prices[i] == 0.0 {
                 continue; // No data yet
             }

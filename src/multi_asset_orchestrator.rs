@@ -46,7 +46,9 @@ impl MultiAssetOrchestrator {
             let volatility = (ask - bid) / bid; 
             let maker_spread_pct = 0.0005; // Fallback since MAO doesn't use the arena config fully
             let maker_obi_threshold = 0.7;
-            let new_quote = self.maker_engine.generate_quote(bid, ask, bid_qty, ask_qty, self.btc_inventory_usd, volatility, maker_spread_pct, maker_obi_threshold);
+            let tensor_poly_a_fallback = 0.05;
+            let tensor_poly_b_fallback = 0.005;
+            let new_quote = self.maker_engine.generate_quote(bid, ask, bid_qty, ask_qty, self.btc_inventory_usd, volatility, maker_spread_pct, maker_obi_threshold, tensor_poly_a_fallback, tensor_poly_b_fallback);
             quote = Some(new_quote);
         } else if sym_lower.starts_with("eth") {
             self.eth_bid = bid;

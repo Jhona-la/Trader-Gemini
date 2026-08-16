@@ -9,6 +9,28 @@ pub enum MarketRegime {
     Chaotic,
 }
 
+impl From<u8> for MarketRegime {
+    fn from(val: u8) -> Self {
+        match val {
+            1 => MarketRegime::BullRun,
+            2 => MarketRegime::Crash,
+            3 => MarketRegime::Chaotic,
+            _ => MarketRegime::Range,
+        }
+    }
+}
+
+impl Into<u8> for MarketRegime {
+    fn into(self) -> u8 {
+        match self {
+            MarketRegime::Range => 0,
+            MarketRegime::BullRun => 1,
+            MarketRegime::Crash => 2,
+            MarketRegime::Chaotic => 3,
+        }
+    }
+}
+
 
 pub struct RegimeDetector {
     correlation_threshold: f64,

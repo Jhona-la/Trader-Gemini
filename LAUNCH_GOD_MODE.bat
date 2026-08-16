@@ -12,7 +12,7 @@ echo [1] Compilando Binario Rust [Perfil: Ultra-Release / LTO / Abort]
 echo.
 
 set CARGO_TARGET_DIR=target_release_god
-cargo build --release --bin god_engine -j 1
+cargo build --release --bin god_engine -j 3
 if %ERRORLEVEL% neq 0 (
     color 0C
     echo.

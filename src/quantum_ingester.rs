@@ -70,7 +70,7 @@ pub extern "C" fn ingest_raw_ws_frame(
     if prev_price > 0.0 {
         norm_ret = (bid_price - prev_price) / prev_price;
     }
-    let entropy_val = math_state.shannon.update(norm_ret as f64);
+    let entropy_val = math_state.shannon.update(norm_ret as f64).unwrap_or(0.0);
     // (El valor de entropía se inyecta en dark_alpha temporalmente o se omite si no hay array explícito)
     
     // 4. Kyle's Lambda

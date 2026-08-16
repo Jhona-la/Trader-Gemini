@@ -1,4 +1,4 @@
-﻿use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
 use serde_json::Value;
@@ -9,6 +9,12 @@ pub struct MacroState {
     pub nasdaq_index: AtomicU64,
     pub sp500_index: AtomicU64,
     pub btc_dominance: AtomicU64,
+}
+
+impl Default for MacroState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MacroState {
@@ -49,8 +55,6 @@ pub async fn run_macro_feed_poller(state: Arc<MacroState>) {
                         let mut dxy = 0.0;
                         let mut ndx = 0.0;
                         let mut spy = 0.0;
-                        let mut btc = 0.0;
-
                         for item in results {
                             let symbol = item["symbol"].as_str().unwrap_or("");
                             let price = item["regularMarketPrice"].as_f64().unwrap_or(0.0);
@@ -59,7 +63,7 @@ pub async fn run_macro_feed_poller(state: Arc<MacroState>) {
                                 "DX-Y.NYB" => dxy = price,
                                 "^NDX" => ndx = price,
                                 "^GSPC" => spy = price,
-                                "BTC-USD" => btc = price, // Placeholder para calcular dominancia si tuviéramos altcap
+                                "BTC-USD" => { /* Placeholder para dominancia */ },
                                 _ => {}
                             }
                         }

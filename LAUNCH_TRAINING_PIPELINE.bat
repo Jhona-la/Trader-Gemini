@@ -1,6 +1,6 @@
 @echo off
 echo ========================================================
-echo 🧠 NANO-FOREST TRAINING PIPELINE (RUST EDITION)
+echo 🧠 DARK ALPHA TRAINING PIPELINE (RUST EDITION)
 echo ========================================================
 echo.
 echo [1/3] Downloading latest historical data...
@@ -11,10 +11,10 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-echo [2/3] Training NanoForest ML Model in nanoseconds...
-cargo run --release --bin train_nano_forest
+echo [2/3] Training Dark Alpha Model (Rust Native)...
+cargo run --release --bin train_dark_alpha
 if %errorlevel% neq 0 (
-    echo [ERROR] train_nano_forest failed!
+    echo [ERROR] train_dark_alpha failed!
     pause
     exit /b %errorlevel%
 )

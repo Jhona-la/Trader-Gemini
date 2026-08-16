@@ -8,12 +8,20 @@ use polars::prelude::*;
 #[allow(dead_code)]
 struct BinanceFundingRate {
     symbol: String,
-    fundingTime: u64,
-    fundingRate: String,
+    #[serde(rename = "fundingTime")]
+    funding_time: u64,
+    #[serde(rename = "fundingRate")]
+    funding_rate: String,
 }
 
 pub struct MarketContextFetcher {
     client: Client,
+}
+
+impl Default for MarketContextFetcher {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MarketContextFetcher {
@@ -22,7 +30,9 @@ impl MarketContextFetcher {
     }
 
     pub async fn fetch_funding_history(&self, symbol: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let url = format!("https://fapi.binance.com/fapi/v1/fundingRate?symbol={}&limit=1000", symbol);
+        let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+        let base_url = if is_testnet { "https://testnet.binancefuture.com" } else { "https://fapi.binance.com" };
+        let url = format!("{}/fapi/v1/fundingRate?symbol={}&limit=1000", base_url, symbol);
         
         let response = self.client.get(&url).send().await?;
         if !response.status().is_success() {
@@ -35,8 +45,8 @@ impl MarketContextFetcher {
             return Ok(());
         }
 
-        let timestamps: Vec<u64> = rates.iter().map(|r| r.fundingTime).collect();
-        let funding_rates: Vec<f64> = rates.iter().map(|r| r.fundingRate.parse::<f64>().unwrap_or(0.0)).collect();
+        let timestamps: Vec<u64> = rates.iter().map(|r| r.funding_time).collect();
+        let funding_rates: Vec<f64> = rates.iter().map(|r| r.funding_rate.parse::<f64>().unwrap_or(0.0)).collect();
 
         let time_series = Series::new("timestamp".into(), timestamps);
         let rate_series = Series::new("funding_rate".into(), funding_rates);

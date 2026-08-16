@@ -62,22 +62,22 @@ impl StatArbEngine {
                 self.is_in_position = true;
                 self.current_direction = SignalType::Short;
                 // A está sobrevalorado respecto a B -> Short A, Long B
-                return SignalIntent { signal: SignalType::Short, confidence: z_score.abs() };
+                return SignalIntent { signal: SignalType::Short, confidence: z_score.abs(), ..Default::default() };
             } else if z_score < -self.z_score_threshold {
                 self.is_in_position = true;
                 self.current_direction = SignalType::Long;
                 // A está infravalorado respecto a B -> Long A, Short B
-                return SignalIntent { signal: SignalType::Long, confidence: z_score.abs() };
+                return SignalIntent { signal: SignalType::Long, confidence: z_score.abs(), ..Default::default() };
             }
         } else {
             // Regresión a la media (Exit)
             if z_score.abs() < 0.1 {
                 self.is_in_position = false;
                 self.current_direction = SignalType::Flat;
-                return SignalIntent { signal: SignalType::Flat, confidence: 1.0 }; // Flag de Cierre
+                return SignalIntent { signal: SignalType::Flat, confidence: 1.0, ..Default::default() }; // Flag de Cierre
             } else {
                 // Mantener
-                return SignalIntent { signal: self.current_direction, confidence: z_score.abs() };
+                return SignalIntent { signal: self.current_direction, confidence: z_score.abs(), ..Default::default() };
             }
         }
         

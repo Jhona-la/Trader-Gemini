@@ -5,13 +5,14 @@ use signal_engine::{ScalpEngine, SwingEngine, SignalType};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
+use std::env;
 
 fn main() {
     println!("===========================================================");
     println!("🔬 TRADER GEMINI V5 - QUANTUM PROFILER (LABORATORY)");
     println!("===========================================================");
 
-    let initial_capital = 13.0;
+    let initial_capital = std::env::var("INITIAL_CAPITAL").unwrap_or_else(|_| "100.0".to_string()).parse().unwrap_or(100.0);
     let arena = GlobalArena::new(initial_capital);
     arena.config.global_leverage.store(10.0, Ordering::Relaxed);
     arena.config.global_max_drawdown.store(0.15, Ordering::Relaxed);
@@ -21,8 +22,8 @@ fn main() {
     let _swing_engine = SwingEngine::default();
     let mut risk_engine = RiskEngine::new(initial_capital);
     let api_key = "LAB_DUMMY_KEY".to_string();
-    let api_secret = "LAB_DUMMY_SECRET_KEY".to_string();
-    let _executor = OrderExecutor::new(api_key, api_secret);
+    let is_testnet = env::var("BINANCE_IS_TESTNET").unwrap_or_else(|_| "false".to_string()).parse::<bool>().unwrap_or(false);
+    let _executor = OrderExecutor::new(api_key, "LAB_DUMMY_SECRET_KEY".to_string(), is_testnet);
 
     let _symbol = "bnbusdt";
     let iterations = 1_000_000;
@@ -40,7 +41,7 @@ fn main() {
         // --- INICIO DEL HOT PATH ---
         
         let obi_threshold = arena_ptr.config.scalp_obi_threshold.load(Ordering::Relaxed);
-        let scalp_intent = scalp_engine.evaluate_microstructure(fake_bid_vol, fake_ask_vol, obi_threshold);
+        let scalp_intent = scalp_engine.evaluate_microstructure(fake_bid_vol, fake_ask_vol, obi_threshold, &arena_ptr);
         
         if scalp_intent.signal != SignalType::Flat {
             // coin_id for bnbusdt is 2

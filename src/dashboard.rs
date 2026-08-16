@@ -17,7 +17,13 @@ pub enum TelemetryEvent {
         dark_alpha: f64,
         scalp_pnl: f64,
         swing_pnl: f64,
+        gross_pnl: f64,
+        net_pnl: f64,
+        win_rate: f64,
+        trade_duration_avg: f64,
     },
+    GenomeUpdate(Box<quantum_arena::genome::SuperGenotype>), // FASE 17: Non-blocking Genome Telemetry
+    ShadowLeaderboard(Vec<f64>), // FASE 13: Live competition leaderboard
 }
 
 pub async fn start_server(tx: broadcast::Sender<TelemetryEvent>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

@@ -2,7 +2,6 @@ pub mod scalp;
 pub mod swing;
 pub mod maker;
 pub mod stat_arb;
-pub mod rf;
 pub mod types;
 
 pub use types::*;

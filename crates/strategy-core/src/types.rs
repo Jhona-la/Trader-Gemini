@@ -1,38 +1,37 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum SignalType {
     Long,
     Short,
+    #[default]
     Flat,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum TradeHorizon {
+    #[default]
+    Scalp,
+    Swing,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SignalIntent {
     pub signal: SignalType,
     pub confidence: f64,
+    pub expected_duration_ms: u64,
+    pub expected_volume_usd: f64,
+    pub volume_flow_rate: f64,
+    pub drift: f64,
+    pub expected_magnitude: f64,
+    pub tp_price_target: f64,
+    pub sl_price_target: f64,
+    pub trajectory_volatility: f64,
+    pub horizon: TradeHorizon,
 }
 
 impl SignalIntent {
     pub fn flat() -> Self {
-        Self {
-            signal: SignalType::Flat,
-            confidence: 0.0,
-        }
+        Self::default()
     }
 }
 
-pub struct ScalpML;
-impl ScalpML {
-    pub fn new() -> Self { Self }
-    pub fn infer(&self, _obi: f64, _accel: f64, _spread: f64) -> f64 { 0.0 }
-}
 
-pub struct SwingML;
-impl SwingML {
-    pub fn new() -> Self { Self }
-    pub fn infer(&self, _macd: f64, _z_score: f64, _hurst: f64) -> f64 { 0.0 }
-}
-
-// Stubs for missing math functions previously in feature_engine
-pub fn calculate_atr(_high: f64, _low: f64, _close: f64, _prev_close: f64) -> f64 { 0.0 }
-pub fn calculate_hurst_exponent(_prices: &[f64]) -> f64 { 0.5 }
-pub fn calculate_z_score_welford(_val: f64, _mean: f64, _std_dev: f64) -> f64 { 0.0 }

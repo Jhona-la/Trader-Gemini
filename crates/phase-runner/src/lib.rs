@@ -39,7 +39,7 @@ impl Phase {
 
 pub struct AdaptiveTimer {
     base_interval: Duration,
-    max_memory_mb: usize,
+    _max_memory_mb: usize,
     last_run_timestamp: AtomicU64,
 }
 
@@ -47,7 +47,7 @@ impl AdaptiveTimer {
     pub fn new(base_interval_ms: u64, max_memory_mb: usize) -> Self {
         Self {
             base_interval: Duration::from_millis(base_interval_ms),
-            max_memory_mb,
+            _max_memory_mb: max_memory_mb,
             last_run_timestamp: AtomicU64::new(0),
         }
     }
@@ -55,11 +55,9 @@ impl AdaptiveTimer {
     /// Sleeps dynamically based on current CPU load.
     /// If CPU > 50%, it dilates the interval to avoid starving HFT engines.
     pub async fn wait_next_cycle(&self) {
-        // En una implementación real de OS Guardian tendríamos lecturas de CPU.
-        // Aquí asumimos un multiplicador de carga simulado si no hay API directa.
-        // Simulamos un checkeo (podría usar WMI en Windows o PDH, que ya deberíamos tener en os-guardian).
-        
-        let cpu_load = 0.3; // Placeholder para la carga de CPU, idealmente de os-guardian
+        // Se obtiene la telemetría real del SO.
+        let telemetry = os_guardian::telemetry::get_system_telemetry();
+        let cpu_load = telemetry.cpu_usage / 100.0;
         let mut actual_interval = self.base_interval;
 
         if cpu_load > 0.5 {

@@ -32,6 +32,12 @@ pub struct StatefulEngine {
     pub ema_fast: f64,
     pub ema_slow: f64,
     pub omni: feature_engine::OmniStrategyEngine,
+    // Native Kline Aggregator
+    pub kline_start_ms: u64,
+    pub kline_open: f64,
+    pub kline_high: f64,
+    pub kline_low: f64,
+    pub kline_volume: f64,
 }
 
 impl Default for StatefulEngine {
@@ -61,6 +67,11 @@ impl StatefulEngine {
             ema_fast: 0.0,
             ema_slow: 0.0,
             omni: feature_engine::OmniStrategyEngine::new(),
+            kline_start_ms: 0,
+            kline_open: 0.0,
+            kline_high: 0.0,
+            kline_low: 0.0,
+            kline_volume: 0.0,
         }
     }
 
@@ -83,10 +94,15 @@ impl StatefulEngine {
         self.ema_fast = 0.0;
         self.ema_slow = 0.0;
         self.omni = feature_engine::OmniStrategyEngine::new();
+        self.kline_start_ms = 0;
+        self.kline_open = 0.0;
+        self.kline_high = 0.0;
+        self.kline_low = 0.0;
+        self.kline_volume = 0.0;
     }
 
     /// Processes a new tick internally in f64
-    pub fn process_tick(&mut self, price: f64, _volume: f64) {
+    pub fn process_tick(&mut self, price: f64, _volume: f64, event_time_ms: u64) {
         if self.last_price == 0.0 {
             self.ema_fast = price;
             self.ema_slow = price;
@@ -98,7 +114,7 @@ impl StatefulEngine {
             self.ema_slow = (price - self.ema_slow) * alpha_slow + self.ema_slow;
             
             let diff = (price - self.last_price).abs();
-            let new_v_t = (self.v_t * 0.9) + (diff * 0.1);
+            let new_v_t = (self.v_t * 0.8) + (diff * 0.2);
             self.a_t = new_v_t - self.v_t;
             self.v_t = new_v_t;
             
@@ -109,7 +125,28 @@ impl StatefulEngine {
         self.hurst.update(price);
         self.cvpin.update(_volume, price < self.last_price); // Approximation: tick down = seller initiated
         
-        self.omni.update(price, price, price); // For pure tick data, H=L=C=price
+        if self.kline_start_ms == 0 {
+            self.kline_start_ms = event_time_ms;
+            self.kline_open = price;
+            self.kline_high = price;
+            self.kline_low = price;
+            self.kline_volume = _volume;
+        } else {
+            self.kline_high = self.kline_high.max(price);
+            self.kline_low = self.kline_low.min(price);
+            self.kline_volume += _volume;
+            
+            // Generate 1-minute Kline internally (60,000 ms)
+            if event_time_ms - self.kline_start_ms >= 60000 {
+                self.omni.update(price, self.kline_high, self.kline_low);
+                
+                self.kline_start_ms = event_time_ms;
+                self.kline_open = price;
+                self.kline_high = price;
+                self.kline_low = price;
+                self.kline_volume = _volume;
+            }
+        }
 
         self.last_price = price;
         self.tick_count += 1;
@@ -122,6 +159,24 @@ impl StatefulEngine {
     /// Updates the Order Flow Imbalance (OFI) predictive model
     pub fn update_ofi(&mut self, bid_price: f64, ask_price: f64, bid_qty: f64, ask_qty: f64) -> f64 {
         self.ofi_model.update(bid_price, ask_price, bid_qty, ask_qty)
+    }
+    
+    pub fn process_kline(&mut self, _open: f64, high: f64, low: f64, close: f64, _volume: f64) {
+        self.omni.update(close, high, low);
+        self.hurst.update(close);
+        self.last_price = close;
+        
+        if self.ema_fast == 0.0 {
+            self.ema_fast = close;
+            self.ema_slow = close;
+        } else {
+            let alpha_fast = 2.0 / (12.0 + 1.0);
+            let alpha_slow = 2.0 / (26.0 + 1.0);
+            self.ema_fast = (close - self.ema_fast) * alpha_fast + self.ema_fast;
+            self.ema_slow = (close - self.ema_slow) * alpha_slow + self.ema_slow;
+        }
+        
+        self.v_t = self.v_t * 0.8 + (high - low) * 0.2;
     }
     
     pub fn update_macro_features(&mut self, obi: f64, funding_rate: f64, dex_severity: f64, ts_ms: u64) {

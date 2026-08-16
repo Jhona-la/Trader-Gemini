@@ -5,10 +5,12 @@ edition = "2021"
 
 [dependencies]
 omniscient-registry = { path = "../omniscient-registry" }
-
+polars = { version = "0.43.1", features = ["lazy", "dtype-datetime", "performant"] }
+smartcore = { version = "0.3.2", features = ["serde"] }
 
 feature-engine = { path = "../feature-engine" }
 quantum-arena = { path = "../quantum-arena" }
 data-pipeline = { path = "../data-pipeline" }
 rand = "0.10.1"
-smartcore = "0.5.0"
+
+telemetry-server = { path = "../telemetry-server" }

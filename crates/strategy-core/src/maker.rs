@@ -20,6 +20,7 @@ impl MakerEngine {
     }
 
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub fn generate_quote(
         &mut self,
         bid: f64,
@@ -30,6 +31,8 @@ impl MakerEngine {
         volatility: f64,
         genome_spread_pct: f64,
         genome_obi_threshold: f64,
+        tensor_poly_a: f64,
+        tensor_poly_b: f64,
     ) -> MakerQuote {
         let _ofi = self.ofi_model.update(bid, ask, bid_qty, ask_qty);
         let total_vol = bid_qty + ask_qty;
@@ -38,21 +41,24 @@ impl MakerEngine {
         let mid = (bid + ask) / 2.0;
         
         // Ampliamos el spread si la volatilidad es alta para protegernos de toxicidad
-        // Usamos el spread base dinámico proveniente del genoma
-        let dynamic_spread_pct = genome_spread_pct + (volatility * 0.005);
+        // Usamos tensor_poly_b en vez del viejo hardcode "0.005"
+        let dynamic_spread_pct = genome_spread_pct + (volatility * tensor_poly_b);
         let half_spread = mid * dynamic_spread_pct;
         
         // Skews
         // Si OBI > threshold (gran presión compradora), subimos los precios asimétricamente
+        // Usamos tensor_poly_a * 0.01 para representar el sesgo (ej: 0.01 a 0.2% dictado por ML) en vez de "0.0002"
         let mut obi_skew = 0.0;
+        let dynamic_obi_skew = mid * (tensor_poly_a * 0.01);
         if obi > genome_obi_threshold {
-            obi_skew = mid * 0.0002; // Subir precio 0.02%
+            obi_skew = dynamic_obi_skew;
         } else if obi < -genome_obi_threshold {
-            obi_skew = -mid * 0.0002; // Bajar precio 0.02%
+            obi_skew = -dynamic_obi_skew;
         }
         
         // Si inventory > 0 (estamos Long), bajamos los precios para salir rápido y evitar acumular
-        let inv_skew = inventory_delta_usd * (mid * 0.000005); 
+        // Usamos tensor_poly_b para inventario, calibrado a nivel de micro-ticks
+        let inv_skew = inventory_delta_usd * (mid * (tensor_poly_b * 0.001)); 
         
         let total_skew = obi_skew - inv_skew;
         

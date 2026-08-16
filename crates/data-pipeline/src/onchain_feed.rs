@@ -8,6 +8,12 @@ pub struct OnChainState {
     pub btc_open_interest: AtomicU64,
 }
 
+impl Default for OnChainState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OnChainState {
     pub fn new() -> Self {
         Self {
@@ -24,14 +30,16 @@ impl OnChainState {
 pub async fn run_onchain_feed(state: Arc<OnChainState>) {
     let mut ticker = interval(Duration::from_secs(30));
     let client = reqwest::Client::new();
-    let url_funding = "https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT";
-    let url_oi = "https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT";
+    let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+    let base_url = if is_testnet { "https://testnet.binancefuture.com" } else { "https://fapi.binance.com" };
+    let url_funding = format!("{}/fapi/v1/premiumIndex?symbol=BTCUSDT", base_url);
+    let url_oi = format!("{}/fapi/v1/openInterest?symbol=BTCUSDT", base_url);
 
     loop {
         ticker.tick().await;
         
         // Fetch Funding Rate
-        if let Ok(res) = client.get(url_funding).send().await {
+        if let Ok(res) = client.get(&url_funding).send().await {
             if let Ok(json) = res.json::<Value>().await {
                 if let Some(funding_str) = json.get("lastFundingRate").and_then(|v| v.as_str()) {
                     if let Ok(funding) = funding_str.parse::<f64>() {
@@ -42,7 +50,7 @@ pub async fn run_onchain_feed(state: Arc<OnChainState>) {
         }
 
         // Fetch Open Interest
-        if let Ok(res) = client.get(url_oi).send().await {
+        if let Ok(res) = client.get(&url_oi).send().await {
             if let Ok(json) = res.json::<Value>().await {
                 if let Some(oi_str) = json.get("openInterest").and_then(|v| v.as_str()) {
                     if let Ok(oi) = oi_str.parse::<f64>() {

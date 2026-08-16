@@ -47,6 +47,19 @@ impl AtomicF64 {
             }
         }
     }
+
+    #[inline(always)]
+    pub fn compare_exchange(&self, current: f64, new: f64, success: Ordering, failure: Ordering) -> Result<f64, f64> {
+        match self.0.compare_exchange(
+            current.to_bits(),
+            new.to_bits(),
+            success,
+            failure,
+        ) {
+            Ok(v) => Ok(f64::from_bits(v)),
+            Err(v) => Err(f64::from_bits(v)),
+        }
+    }
 }
 
 impl Default for AtomicF64 {

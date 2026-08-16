@@ -12,7 +12,13 @@ const DOM = {
     latency: document.getElementById('latency-val'),
     latencyPanic: document.getElementById('latency-panic'),
     tensorGrid: document.getElementById('tensor-grid'),
-    logContainer: document.getElementById('log-container')
+    logContainer: document.getElementById('log-container'),
+    grossPnl: document.getElementById('gross-pnl'),
+    netPnl: document.getElementById('net-pnl'),
+    totalFees: document.getElementById('total-fees'),
+    scalpWr: document.getElementById('scalp-wr'),
+    swingWr: document.getElementById('swing-wr'),
+    roiVals: document.getElementById('roi-vals')
 };
 
 // Canvas for latency radar
@@ -147,11 +153,29 @@ function connect() {
                     DOM.alphaBar.style.background = "linear-gradient(90deg, var(--neon-blue), var(--neon-red))";
                 }
 
-                // PnL
-                DOM.scalpPnl.innerText = data.OmniUpdate.scalp_pnl.toFixed(4);
-                DOM.swingPnl.innerText = data.OmniUpdate.swing_pnl.toFixed(4);
-                updateColor(DOM.scalpPnl, data.OmniUpdate.scalp_pnl);
-                updateColor(DOM.swingPnl, data.OmniUpdate.swing_pnl);
+                DOM.scalpPnl.innerText = data.OmniUpdate.pnl_realized_scalp.toFixed(4);
+                DOM.swingPnl.innerText = data.OmniUpdate.pnl_realized_swing.toFixed(4);
+                updateColor(DOM.scalpPnl, data.OmniUpdate.pnl_realized_scalp);
+                updateColor(DOM.swingPnl, data.OmniUpdate.pnl_realized_swing);
+
+                DOM.grossPnl.innerText = data.OmniUpdate.pnl_pre_fees.toFixed(4);
+                DOM.netPnl.innerText = data.OmniUpdate.pnl_post_fees.toFixed(4);
+                updateColor(DOM.grossPnl, data.OmniUpdate.pnl_pre_fees);
+                updateColor(DOM.netPnl, data.OmniUpdate.pnl_post_fees);
+
+                DOM.totalFees.innerText = data.OmniUpdate.total_fees_paid.toFixed(4);
+
+                DOM.capital.innerText = formatMoney(data.OmniUpdate.unified_capital);
+                
+                DOM.scalpWr.innerText = (data.OmniUpdate.win_rate_scalp * 100).toFixed(2) + "%";
+                DOM.swingWr.innerText = (data.OmniUpdate.win_rate_swing * 100).toFixed(2) + "%";
+                
+                DOM.roiVals.innerText = data.OmniUpdate.roi_pre_fees.toFixed(2) + "% / " + data.OmniUpdate.roi_post_fees.toFixed(2) + "%";
+                if (data.OmniUpdate.roi_post_fees >= 0) {
+                    DOM.roiVals.style.color = 'var(--neon-green)';
+                } else {
+                    DOM.roiVals.style.color = 'var(--neon-red)';
+                }
             }
             
             if (data.CapitalUpdate) {

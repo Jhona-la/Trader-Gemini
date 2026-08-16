@@ -3,6 +3,10 @@ pub mod config;
 pub mod state;
 pub mod position;
 pub mod tick_source;
+pub mod symbol_registry;
+pub mod symbols;
+pub mod active_universe;
+pub mod genome;
 
 // Re-exportamos los componentes principales
 pub use atomic_float::AtomicF64;

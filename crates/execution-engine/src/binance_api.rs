@@ -8,6 +8,7 @@ pub const ORDER_TYPE_MARKET: &str = "MARKET";
 pub const ORDER_TYPE_LIMIT: &str = "LIMIT";
 pub const TIME_IN_FORCE_IOC: &str = "IOC";
 pub const TIME_IN_FORCE_GTC: &str = "GTC";
+pub const TIME_IN_FORCE_GTX: &str = "GTX"; // Post Only (Maker)
 pub const SIDE_BUY: &str = "BUY";
 pub const SIDE_SELL: &str = "SELL";
 

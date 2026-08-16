@@ -58,7 +58,7 @@ impl NanoForest {
     }
 
     /// Predicts using a specific global forest
-    pub fn predict_global(key: &str, features: &[f32]) -> f32 {
+    pub fn predict_global(key: &str, features: &[f32]) -> Option<f32> {
         let map = crate::ml_inference::GLOBAL_FORESTS.load();
         if let Some(forest) = map.get(key) {
             return forest.predict(features);
@@ -102,7 +102,10 @@ impl NanoForest {
     }
 
     /// Predicts the probability for the given features.
-    pub fn predict(&self, features: &[f32]) -> f32 {
+    pub fn predict(&self, features: &[f32]) -> Option<f32> {
+        if self.data.tree_offsets.len() <= 1 {
+            return None;
+        }
         let n_trees = self.data.tree_offsets.len() - 1;
         let mut sum = self.data.init_score;
 
@@ -111,6 +114,6 @@ impl NanoForest {
         }
 
         // Apply sigmoid for GradientBoostingClassifier
-        1.0 / (1.0 + (-sum).exp())
+        Some(1.0 / (1.0 + (-sum).exp()))
     }
 }

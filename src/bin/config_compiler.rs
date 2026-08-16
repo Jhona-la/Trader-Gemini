@@ -2,19 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct DynamicConfig {
-    pub sl_pct: f32,
-    pub tp_pct: f32,
-    pub ml_threshold_l: f32,
-    pub ml_threshold_s: f32,
-    pub tech_threshold_l: f32,
-    pub tech_threshold_s: f32,
-    #[serde(default)]
-    pub scalp_leverage: f32,
-    #[serde(default)]
-    pub swing_leverage: f32,
-}
+use quantum_engine::config::TensorConfig;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NanoForest {
@@ -32,7 +20,7 @@ fn main() {
     if let Ok(mut file) = File::open("data/dynamic_config.json") {
         let mut contents = String::new();
         file.read_to_string(&mut contents).unwrap();
-        if let Ok(config) = serde_json::from_str::<DynamicConfig>(&contents) {
+        if let Ok(config) = serde_json::from_str::<TensorConfig>(&contents) {
             let encoded = bincode::serialize(&config).unwrap();
             let mut bin_file = File::create("data/dynamic_config.bin").unwrap();
             bin_file.write_all(&encoded).unwrap();

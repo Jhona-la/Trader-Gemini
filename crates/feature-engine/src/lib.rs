@@ -11,3 +11,5 @@ pub use welford::WelfordOnline;
 pub use omni_strategies::OmniStrategyEngine;
 pub use correlation::MarketCorrelationHeatmap;
 
+
+pub mod normalizer;

@@ -2,14 +2,22 @@ use std::collections::BTreeMap;
 use std::cmp::Ordering;
 
 // A custom float wrapper to allow using f64 as keys in BTreeMap
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct OrderedFloat(pub f64);
 
 impl Eq for OrderedFloat {}
 
+impl PartialOrd for OrderedFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl Ord for OrderedFloat {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+        // En un Orderbook HFT cuántico, garantizamos que no entran NaNs (Estasis Predictiva).
+        // Aún así, hacemos fallback a Equal para no causar Pánicos en BTreeMap.
+        self.0.partial_cmp(&other.0).unwrap_or(Ordering::Equal)
     }
 }
 
@@ -29,6 +37,11 @@ impl OrderBook {
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.bids.clear();
+        self.asks.clear();
     }
 
     pub fn update_bid(&mut self, price: f64, quantity: f64) {

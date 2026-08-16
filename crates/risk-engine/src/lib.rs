@@ -2,6 +2,7 @@ pub mod guard;
 pub mod kelly;
 pub mod orchestrator;
 pub mod regime;
+pub mod leverage_matrix;
 
 use signal_engine::{SignalIntent, SignalType};
 use quantum_arena::GlobalArena;
@@ -12,6 +13,10 @@ pub struct ValidatedOrder {
     pub signal: SignalType,
     pub volume_usd: f64,
     pub leverage: f64,
+    pub maker_only: bool,
+    pub tp_target: f64,
+    pub sl_target: f64,
+    pub fee_buffer_multiplier: f64,
 }
 
 impl ValidatedOrder {
@@ -20,69 +25,16 @@ impl ValidatedOrder {
             signal: SignalType::Flat,
             volume_usd: 0.0,
             leverage: 1.0,
+            maker_only: false,
+            tp_target: 0.0,
+            sl_target: 0.0,
+            fee_buffer_multiplier: 1.01,
         }
     }
 }
 
-pub fn get_symbol_constraints(symbol: &str) -> (f64, f64, f64) {
-    // Returns (minQty, stepSize, minNotional)
-    match symbol.to_uppercase().as_str() {
-        "BTCUSDT" => (0.001, 0.001, 5.05),
-        "ETHUSDT" => (0.001, 0.001, 5.05),
-        "SOLUSDT" => (1.0, 1.0, 5.05),
-        "ADAUSDT" => (1.0, 1.0, 5.05),
-        "DOGEUSDT" => (1.0, 1.0, 5.05),
-        "XRPUSDT" => (1.0, 1.0, 5.05),
-        "BNBUSDT" => (0.01, 0.01, 5.05),
-        "AVAXUSDT" => (0.1, 0.1, 5.05),
-        "DOTUSDT" => (0.1, 0.1, 5.05),
-        "LINKUSDT" => (0.1, 0.1, 5.05),
-        _ => (1.0, 1.0, 5.05),
-    }
-}
-
-pub fn calculate_dynamic_position_size(
-    symbol: &str,
-    current_price: f64,
-    leverage: f64,
-    capital: f64,
-    current_atr_pct: f64,
-    win_rate: f64,
-    profit_factor: f64,
-) -> Option<f64> {
-    let (min_qty, step_size, min_notional) = get_symbol_constraints(symbol);
-    
-    // 1. Get Base Kelly Fraction
-    let mut safe_kelly = kelly::calculate_kelly_fraction(win_rate, profit_factor, capital);
-    
-    // Fallback if no history or flat kelly: 15% risk for <$50 rapid scaling
-    if safe_kelly <= 0.0 {
-        safe_kelly = if capital < 50.0 { 0.15 } else { 0.05 };
-    }
-    
-    let max_loss_capital = capital * safe_kelly;
-    let avg_sl_pct = current_atr_pct.max(0.001);
-    let notional_target = max_loss_capital / avg_sl_pct;
-    
-    let max_affordable_notional = capital * leverage * 0.95; 
-    let mut effective_notional = notional_target.min(max_affordable_notional);
-    effective_notional = effective_notional.max(min_notional);
-    
-    let mut raw_qty = effective_notional / current_price;
-    if raw_qty < min_qty {
-        raw_qty = min_qty;
-    }
-    
-    let step_multiplier = 1.0 / step_size;
-    let final_qty = (raw_qty * step_multiplier).floor() / step_multiplier;
-    
-    let required_margin = (final_qty * current_price) / leverage;
-    if required_margin > capital {
-        return None; 
-    }
-    
-    Some(final_qty)
-}
+// Symbol constraints and size limits have been removed to allow purely dynamic and infinite asset discovery.
+// The engine now strictly relies on mathematical limits derived from Kelly and margin constraints.
 
 pub struct RiskEngine {
     pub peak_capital: f64, // Memoria histórica del capital más alto
@@ -102,7 +54,7 @@ impl RiskEngine {
         scalp_intent: SignalIntent,
         swing_intent: SignalIntent,
         arena: &GlobalArena,
-    ) -> ValidatedOrder {
+    ) -> (ValidatedOrder, ValidatedOrder) {
         let current_capital = arena.unified_capital.load(Ordering::Relaxed);
         
         // 1. Actualizar pico de capital
@@ -118,108 +70,173 @@ impl RiskEngine {
             0.0
         };
         
-        // HARD STOP KILL SWITCH: Dinámico según capital
-        // Si el capital es < $50, toleramos hasta 50% de DD para permitir volatilidad inicial con alto apalancamiento
-        let hard_stop_limit = if self.peak_capital < 50.0 { 0.50 } else { 0.20 };
+        let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
+        let capital_ratio = self.peak_capital / base_capital.max(1.0);
+        let hard_stop_base = arena.config.hard_stop_base_limit.load(Ordering::Relaxed);
+        let hard_stop_decay = arena.config.hard_stop_decay_factor.load(Ordering::Relaxed);
+        let hard_stop_limit = hard_stop_base / (1.0 + capital_ratio.ln().max(0.0) * hard_stop_decay).clamp(1.0, 2.5);
         
         if current_drawdown >= hard_stop_limit {
-            // Se bloquean silenciosamente para no inundar el log en simulaciones HFT
-            return ValidatedOrder::rejected();
+            return (ValidatedOrder::rejected(), ValidatedOrder::rejected());
         }
 
-        if !guard::check_drawdown_limit(current_capital, self.peak_capital, max_dd) {
-            return ValidatedOrder::rejected(); // Drawdown normal excedido
+        let guard_dd_sigmoid_steepness = arena.config.guard_dd_sigmoid_steepness.load(Ordering::Relaxed);
+        let guard_dd_sigmoid_center = arena.config.guard_dd_sigmoid_center.load(Ordering::Relaxed);
+        if !guard::check_drawdown_limit(current_capital, self.peak_capital, max_dd, base_capital, guard_dd_sigmoid_steepness, guard_dd_sigmoid_center) {
+            return (ValidatedOrder::rejected(), ValidatedOrder::rejected());
         }
 
-        // 3. Obtener métricas históricas de la moneda actual
         let coin = &arena.coins[coin_id];
         let scalp_wr = coin.scalp.win_rate.load(Ordering::Relaxed);
         let scalp_pf = coin.scalp.profit_factor.load(Ordering::Relaxed);
         let swing_wr = coin.swing.win_rate.load(Ordering::Relaxed);
         let swing_pf = coin.swing.profit_factor.load(Ordering::Relaxed);
 
-        // 4. Calcular fracciones de Kelly independientes
-        let mut scalp_kelly = kelly::calculate_kelly_fraction(scalp_wr, scalp_pf, current_capital);
-        let mut swing_kelly = kelly::calculate_kelly_fraction(swing_wr, swing_pf, current_capital);
+        let kelly_survival_cap_ratio = arena.config.kelly_survival_cap_ratio.load(Ordering::Relaxed);
+        let kelly_expansion_mult = arena.config.kelly_expansion_mult.load(Ordering::Relaxed);
         
-        // Fallback básico para arrancar si no hay suficientes trades para Kelly
-        if scalp_kelly <= 0.0 { scalp_kelly = 0.1; }
-        if swing_kelly <= 0.0 { swing_kelly = 0.1; }
+        let split = arena.config.capital_split_scalp.load(Ordering::Relaxed).clamp(0.1, 0.9);
+        let scalp_capital = current_capital * split;
+        let swing_capital = current_capital * (1.0 - split);
 
-        // Calcular exposiciones direccionales (Long = positivo, Short = negativo, Flat = 0)
-        let scalp_dir = match scalp_intent.signal {
-            SignalType::Long => 1.0,
-            SignalType::Short => -1.0,
-            SignalType::Flat => 0.0,
-        };
+        let mut scalp_kelly = kelly::calculate_kelly_fraction(scalp_wr, scalp_pf, scalp_capital, base_capital * split, kelly_survival_cap_ratio, kelly_expansion_mult);
+        let mut swing_kelly = kelly::calculate_kelly_fraction(swing_wr, swing_pf, swing_capital, base_capital * (1.0 - split), kelly_survival_cap_ratio, kelly_expansion_mult);
         
-        let swing_dir = match swing_intent.signal {
-            SignalType::Long => 1.0,
-            SignalType::Short => -1.0,
-            SignalType::Flat => 0.0,
-        };
-
-        // Multiplicar dirección por Confidence * Kelly * Capital
-        let scalp_exposure = scalp_dir * scalp_intent.confidence * scalp_kelly * current_capital;
-        let swing_exposure = swing_dir * swing_intent.confidence * swing_kelly * current_capital;
-
-        // 5. Matriz de Sinergia y Delta Neto
-        let mut net_exposure = scalp_exposure + swing_exposure;
+        let current_ratio = current_capital / base_capital.max(1.0);
+        let kelly_cold = arena.config.kelly_bootstrap_cold.load(Ordering::Relaxed);
+        let kelly_bootstrap_ratio_threshold = arena.config.kelly_bootstrap_ratio_threshold.load(Ordering::Relaxed);
+        let kelly_bootstrap_min_exposure = arena.config.kelly_bootstrap_min_exposure.load(Ordering::Relaxed);
         
-        // Boost si están en la misma dirección y ambos tienen señal
-        if scalp_dir == swing_dir && scalp_dir != 0.0 {
-            net_exposure *= 1.5; // Sinergia (Axioma V)
+        if current_ratio < kelly_bootstrap_ratio_threshold {
+            scalp_kelly = kelly_cold;
+            swing_kelly = kelly_cold;
+        } else {
+            let spec = quantum_arena::symbol_registry::spec(coin_id);
+            let dynamic_min_notional = spec.min_notional.max(spec.min_qty * coin.current_price.load(Ordering::Relaxed).max(1e-8));
+            
+            let safe_bootstrap = (dynamic_min_notional / current_capital.max(1.0)).clamp(kelly_bootstrap_min_exposure, 0.5);
+            if scalp_kelly <= 0.0 { scalp_kelly = safe_bootstrap; }
+            if swing_kelly <= 0.0 { swing_kelly = safe_bootstrap; }
         }
 
-        if net_exposure == 0.0 {
+        let scalp_order = self.evaluate_single_intent(
+            coin_id, &scalp_intent, scalp_kelly, scalp_capital, base_capital * split, scalp_pf, true, arena
+        );
+        
+        let swing_order = self.evaluate_single_intent(
+            coin_id, &swing_intent, swing_kelly, swing_capital, base_capital * (1.0 - split), swing_pf, false, arena
+        );
+
+        (scalp_order, swing_order)
+    }
+
+    fn evaluate_single_intent(
+        &self,
+        coin_id: usize,
+        intent: &SignalIntent,
+        kelly_fraction: f64,
+        allocated_capital: f64,
+        base_allocated: f64,
+        profit_factor: f64,
+        is_scalp: bool,
+        arena: &GlobalArena,
+    ) -> ValidatedOrder {
+        if intent.signal == SignalType::Flat || allocated_capital <= 0.0 {
             return ValidatedOrder::rejected();
         }
 
-        let global_leverage = arena.config.global_leverage.load(Ordering::Relaxed);
-        let min_notional = arena.config.min_notional.load(Ordering::Relaxed);
+        let dir = match intent.signal {
+            SignalType::Long => 1.0,
+            SignalType::Short => -1.0,
+            _ => 0.0,
+        };
 
-        // Limitar la exposición bruta al MARGEN disponible (capital)
-        let max_margin_exposure = current_capital;
-        let bounded_exposure = net_exposure.clamp(-max_margin_exposure, max_margin_exposure);
+        let raw_exposure = dir * intent.confidence * kelly_fraction * allocated_capital;
+        if raw_exposure == 0.0 {
+            return ValidatedOrder::rejected();
+        }
+
+        let coin = &arena.coins[coin_id];
+        let spec = quantum_arena::symbol_registry::spec(coin_id);
+        let max_exchange_leverage = spec.max_leverage as f64;
         
+        let current_atr = coin.current_atr.load(Ordering::Relaxed);
+        let current_price = coin.current_price.load(Ordering::Relaxed).max(1e-8);
+        let atr_pct = current_atr / current_price;
+        
+        let hurst_exponent = coin.hurst_exponent.load(Ordering::Relaxed);
+        let vol_mult = if coin_id == 0 {
+            arena.config.btc_volatility_multiplier.load(Ordering::Relaxed)
+        } else {
+            arena.config.eth_volatility_multiplier.load(Ordering::Relaxed)
+        };
+        let genome_max_leverage = arena.config.global_leverage.load(Ordering::Relaxed).min(max_exchange_leverage);
+        
+        let mut dynamic_leverage = leverage_matrix::QuantumLeverageMatrix::calculate_dynamic_leverage(
+            intent, is_scalp, allocated_capital, base_allocated, atr_pct, vol_mult, hurst_exponent, profit_factor, genome_max_leverage, arena
+        );
+        
+        let maker_fee = arena.config.live_maker_fee.load(Ordering::Relaxed);
+        let taker_fee = arena.config.live_taker_fee.load(Ordering::Relaxed);
+        let roundtrip_fee = maker_fee + taker_fee; 
+        
+        let target_volatility = atr_pct.max(0.001);
+        let confidence = intent.confidence.max(0.51);
+        let r_ratio = arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed).max(1.0);
+        let expected_value_pct = (confidence * r_ratio * target_volatility) - ((1.0 - confidence) * target_volatility);
+        
+        let ev_fee_multiplier = arena.config.ev_fee_multiplier.load(Ordering::Relaxed).max(1.05);
+        if expected_value_pct <= (roundtrip_fee * ev_fee_multiplier) {
+            return ValidatedOrder::rejected();
+        }
+        
+        let max_acceptable_fee_pct = arena.config.max_fee_pct.load(Ordering::Relaxed);
+        let max_safe_leverage = if roundtrip_fee > 0.0 { max_acceptable_fee_pct / roundtrip_fee } else { 100.0 };
+        dynamic_leverage = dynamic_leverage.clamp(1.0, max_exchange_leverage.min(max_safe_leverage));
+
+        let dynamic_min_notional = spec.min_notional.max(spec.min_qty * current_price);
+        
+        let bounded_exposure = raw_exposure.clamp(-allocated_capital, allocated_capital);
         let mut final_margin = bounded_exposure.abs();
         
-        // Force minimum notional for micro-accounts ($13)
-        let required_margin_for_min_notional = min_notional / global_leverage;
+        if allocated_capital > 0.0 && allocated_capital * dynamic_leverage < dynamic_min_notional {
+            let candidate_leverage = (dynamic_min_notional / allocated_capital) * 1.10;
+            let fee_impact_pct = roundtrip_fee * candidate_leverage;
+            if fee_impact_pct > max_acceptable_fee_pct {
+                return ValidatedOrder::rejected();
+            }
+            dynamic_leverage = candidate_leverage.min(genome_max_leverage).min(max_safe_leverage);
+        }
+
+        let required_margin_for_min_notional = dynamic_min_notional / dynamic_leverage;
         if final_margin < required_margin_for_min_notional {
             final_margin = required_margin_for_min_notional;
         }
         
-        // Si aun forzando el mínimo no nos alcanza el capital, entonces sí rechazamos
-        if final_margin > current_capital * 0.95 { // 95% para dejar buffer de fees
+        let margin_cushion_pct = arena.config.margin_cushion_pct.load(Ordering::Relaxed);
+        if final_margin > allocated_capital * margin_cushion_pct { 
             return ValidatedOrder::rejected();
         }
 
-        let final_signal = if bounded_exposure > 0.0 {
-            SignalType::Long
-        } else {
-            SignalType::Short
-        };
-
-        // 6. Check con el Orquestador del Portafolio (Capa 3)
         let orchestrator = orchestrator::PortfolioOrchestrator::new(arena);
-        
         let raw_regime = arena.market_regime.load(Ordering::Relaxed);
-        let regime = match raw_regime {
-            1 => crate::regime::MarketRegime::BullRun,
-            2 => crate::regime::MarketRegime::Crash,
-            3 => crate::regime::MarketRegime::Chaotic,
-            _ => crate::regime::MarketRegime::Range,
-        };
+        let regime = crate::regime::MarketRegime::from(raw_regime);
 
-        if !orchestrator.allow_trade(bounded_exposure > 0.0, final_margin * global_leverage, regime) {
+        if !orchestrator.allow_trade(bounded_exposure > 0.0, final_margin, regime) {
             return ValidatedOrder::rejected();
         }
+
+        let maker_capital_threshold = arena.config.maker_only_capital_threshold.load(Ordering::Relaxed);
+        let maker_only = allocated_capital >= maker_capital_threshold;
 
         ValidatedOrder {
-            signal: final_signal,
+            signal: intent.signal,
             volume_usd: final_margin,
-            leverage: global_leverage,
+            leverage: dynamic_leverage,
+            maker_only,
+            tp_target: intent.tp_price_target,
+            sl_target: intent.sl_price_target,
+            fee_buffer_multiplier: ev_fee_multiplier,
         }
     }
 }

@@ -27,6 +27,9 @@
 //! ## QUIÉN
 //! Llamado desde `GodEngineCore::process_event()` y desde `evolution.rs` para optimizar.
 
+pub mod online_ppo;
+pub mod neuro_plasticity;
+
 use serde::{Serialize, Deserialize};
 
 /// Pesos de una capa lineal en layout contiguo (row-major).
@@ -118,10 +121,37 @@ impl DenseLayer {
                 }
             }
             
-            // Fast sigmoid: 1 / (1 + exp(-x)), clamped to prevent overflow
-            let clamped = sum.clamp(-15.0, 15.0);
+            // Limite matemático para evitar f64::exp overflow (f64 límite es ~709.0)
+            let clamped = sum.clamp(-700.0, 700.0);
             unsafe {
                 *output.get_unchecked_mut(i) = 1.0 / (1.0 + (-clamped).exp());
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Scaler {
+    pub mean: Vec<f64>,
+    pub std_dev: Vec<f64>,
+}
+
+impl Scaler {
+    pub fn new(mean: Vec<f64>, std_dev: Vec<f64>) -> Self {
+        Self { mean, std_dev }
+    }
+    
+    #[inline(always)]
+    pub fn scale(&self, features: &mut [f64]) {
+        for i in 0..features.len() {
+            if i < self.mean.len() && i < self.std_dev.len() {
+                if self.std_dev[i] > 1e-8 {
+                    features[i] = (features[i] - self.mean[i]) / self.std_dev[i];
+                } else {
+                    features[i] = features[i] - self.mean[i];
+                }
+                // Limitar sólo por seguridad matemática (f64 exp overflow) no heurística
+                features[i] = features[i].clamp(-700.0, 700.0);
             }
         }
     }
@@ -140,7 +170,10 @@ pub struct DarkAlphaEngine {
     pub layer1: DenseLayer,
     pub layer2: DenseLayer,
     pub layer3: DenseLayer,
+    pub scaler: Option<Scaler>,
     // Buffers pre-alocados para evitar allocations en hot path
+    #[serde(skip)]
+    buf_scaled: Vec<f64>,
     #[serde(skip)]
     buf_h1: Vec<f64>,
     #[serde(skip)]
@@ -157,6 +190,8 @@ impl DarkAlphaEngine {
             layer1: DenseLayer::new(input_dim, hidden1),
             layer2: DenseLayer::new(hidden1, hidden2),
             layer3: DenseLayer::new(hidden2, 1),
+            scaler: None,
+            buf_scaled: vec![0.0; input_dim],
             buf_h1: vec![0.0; hidden1],
             buf_h2: vec![0.0; hidden2],
             buf_out: vec![0.0; 1],
@@ -172,16 +207,94 @@ impl DarkAlphaEngine {
     ///
     /// `features` debe tener exactamente `input_dim` elementos normalizados [-1, 1]
     #[inline(always)]
-    pub fn predict(&mut self, features: &[f64]) -> f64 {
-        if features.len() != self.layer1.in_features {
-            return 0.5; // Neutral si el tamaño no coincide
-        }
+    pub fn predict(&mut self, features: &[f64]) -> Option<f64> {
+        telemetry_server::profile_node!("DarkAlphaEngine::predict", {
+            let in_dim = self.layer1.in_features;
+            if features.len() < in_dim {
+                return None; // Fallo explícito si faltan datos (Leakage prevent)
+            }
 
-        self.layer1.forward_relu(features, &mut self.buf_h1);
-        self.layer2.forward_relu(&self.buf_h1, &mut self.buf_h2);
-        self.layer3.forward_sigmoid(&self.buf_h2, &mut self.buf_out);
+            // Adaptabilidad dimensional: copia sólo lo que el modelo conoce (Ej. 34 de los 54)
+            self.buf_scaled[..in_dim].copy_from_slice(&features[..in_dim]);
+            if let Some(scaler) = &self.scaler {
+                scaler.scale(&mut self.buf_scaled[..in_dim]);
+            }
+
+            self.layer1.forward_relu(&self.buf_scaled[..in_dim], &mut self.buf_h1);
+            self.layer2.forward_relu(&self.buf_h1, &mut self.buf_h2);
+            self.layer3.forward_sigmoid(&self.buf_h2, &mut self.buf_out);
+            
+            Some(self.buf_out[0])
+        })
+    }
+
+    /// Entrena la red neuronal usando SGD (Stochastic Gradient Descent)
+    pub fn fit(&mut self, features_batch: &[Vec<f64>], targets_batch: &[f64], epochs: usize, learning_rate: f64) {
+        if features_batch.is_empty() || targets_batch.is_empty() || features_batch.len() != targets_batch.len() {
+            return;
+        }
         
-        self.buf_out[0]
+        let start = std::time::Instant::now();
+        let mut h1 = vec![0.0; self.layer1.out_features];
+        let mut h2 = vec![0.0; self.layer2.out_features];
+        let mut out = vec![0.0; self.layer3.out_features];
+        
+        let mut grad_h2 = vec![0.0; self.layer2.out_features];
+        let mut grad_h1 = vec![0.0; self.layer1.out_features];
+
+        for _epoch in 0..epochs {
+            for (features, &target) in features_batch.iter().zip(targets_batch.iter()) {
+                if features.len() != self.layer1.in_features { continue; }
+                
+                // --- FORWARD PASS ---
+                self.layer1.forward_relu(features, &mut h1);
+                self.layer2.forward_relu(&h1, &mut h2);
+                self.layer3.forward_sigmoid(&h2, &mut out);
+                
+                let prediction = out[0];
+                let target_sig = if target > 0.0 { 1.0 } else { 0.0 }; // Normalized to [0,1]
+                
+                // --- BACKWARD PASS ---
+                // Loss derivative (MSE): 2 * (pred - target)
+                // Sigmoid derivative: pred * (1 - pred)
+                let delta_out = 2.0 * (prediction - target_sig) * prediction * (1.0 - prediction);
+                
+                // Compute gradients for Layer 3 (Hidden 2 -> Out)
+                for i in 0..self.layer2.out_features {
+                    grad_h2[i] = self.layer3.weights[i] * delta_out;
+                    self.layer3.weights[i] -= learning_rate * delta_out * h2[i];
+                }
+                self.layer3.biases[0] -= learning_rate * delta_out;
+                
+                // Compute gradients for Layer 2 (Hidden 1 -> Hidden 2)
+                for i in 0..self.layer2.out_features {
+                    // ReLU derivative: 1 if h2[i] > 0 else 0
+                    let d_relu_h2 = if h2[i] > 0.0 { 1.0 } else { 0.0 };
+                    let delta_h2 = grad_h2[i] * d_relu_h2;
+                    
+                    let row_offset = i * self.layer2.in_features;
+                    for j in 0..self.layer1.out_features {
+                        grad_h1[j] += self.layer2.weights[row_offset + j] * delta_h2;
+                        self.layer2.weights[row_offset + j] -= learning_rate * delta_h2 * h1[j];
+                    }
+                    self.layer2.biases[i] -= learning_rate * delta_h2;
+                }
+                
+                // Compute gradients for Layer 1 (Input -> Hidden 1)
+                for i in 0..self.layer1.out_features {
+                    let d_relu_h1 = if h1[i] > 0.0 { 1.0 } else { 0.0 };
+                    let delta_h1 = grad_h1[i] * d_relu_h1;
+                    grad_h1[i] = 0.0; // Reset for next iteration
+                    
+                    let row_offset = i * self.layer1.in_features;
+                    for (j, &feat) in features.iter().enumerate().take(self.layer1.in_features) {
+                        self.layer1.weights[row_offset + j] -= learning_rate * delta_h1 * feat;
+                    }
+                    self.layer1.biases[i] -= learning_rate * delta_h1;
+                }
+            }
+        }
+        println!("⚡ [Dark Alpha] Neural Network entrenada nativamente vía SGD en {:?}", start.elapsed());
     }
 
     /// Guardar modelo a disco en formato bincode (más rápido que JSON)
@@ -196,6 +309,7 @@ impl DarkAlphaEngine {
         let data = std::fs::read(path)?;
         let mut model: Self = bincode::deserialize(&data)?;
         // Re-initialize buffers
+        model.buf_scaled = vec![0.0; model.layer1.in_features];
         model.buf_h1 = vec![0.0; model.layer1.out_features];
         model.buf_h2 = vec![0.0; model.layer2.out_features];
         model.buf_out = vec![0.0; model.layer3.out_features];
@@ -207,6 +321,7 @@ impl DarkAlphaEngine {
         let file = std::fs::File::open(path)?;
         let reader = std::io::BufReader::new(file);
         let mut model: Self = serde_json::from_reader(reader)?;
+        model.buf_scaled = vec![0.0; model.layer1.in_features];
         model.buf_h1 = vec![0.0; model.layer1.out_features];
         model.buf_h2 = vec![0.0; model.layer2.out_features];
         model.buf_out = vec![0.0; model.layer3.out_features];
@@ -222,15 +337,15 @@ mod tests {
     fn test_forward_pass_returns_valid_probability() {
         let mut engine = DarkAlphaEngine::default_model();
         let features = vec![0.1; 54];
-        let result = engine.predict(&features);
-        assert!(result >= 0.0 && result <= 1.0, "Result {} out of [0,1]", result);
+        let result = engine.predict(&features).expect("input completo debe producir predicción");
+        assert!((0.0..=1.0).contains(&result), "Result {} out of [0,1]", result);
     }
 
     #[test]
-    fn test_wrong_input_size_returns_neutral() {
+    fn test_wrong_input_size_returns_none() {
         let mut engine = DarkAlphaEngine::default_model();
         let features = vec![0.1; 5]; // Wrong size
-        assert_eq!(engine.predict(&features), 0.5);
+        assert_eq!(engine.predict(&features), None, "features insuficientes deben fallar explícitamente, nunca inferir");
     }
 
     #[test]

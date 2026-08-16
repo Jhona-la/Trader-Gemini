@@ -5,7 +5,7 @@ use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 use rkyv::{Archive, Serialize as RkyvSerialize, Deserialize as RkyvDeserialize};
 use std::fs::File;
-use std::io::{Write, Read};
+use std::io::Write;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub enum ParameterKind {
@@ -33,6 +33,7 @@ pub struct Parameter {
     pub kind: ParameterKind,
     pub value: AtomicU64,
     pub owner: String,
+    pub consumers: crossbeam_skiplist::SkipSet<String>,
     pub timestamp: i64,
 }
 
@@ -44,6 +45,7 @@ impl Parameter {
             kind,
             value: AtomicU64::new(initial_value.to_bits()),
             owner: owner.to_string(),
+            consumers: crossbeam_skiplist::SkipSet::new(),
             timestamp: chrono::Utc::now().timestamp_millis(),
         }
     }
@@ -78,8 +80,14 @@ impl OmniscientRegistry {
         Ok(())
     }
 
-    pub fn get(&self, name: &str) -> Option<Arc<Parameter>> {
-        self.map.get(name).map(|entry| entry.value().clone())
+    pub fn get(&self, name: &str, consumer_name: &str) -> Option<Arc<Parameter>> {
+        if let Some(entry) = self.map.get(name) {
+            let param = entry.value().clone();
+            param.consumers.insert(consumer_name.to_string());
+            Some(param)
+        } else {
+            None
+        }
     }
 
     pub fn detect_collisions(&self) -> Vec<String> {
@@ -136,7 +144,8 @@ mod tests {
         let param = Parameter::new("test_param", ParameterKind::Fixed, 42.0, "test_owner");
         assert!(registry.register(param).is_ok());
         
-        let retrieved = registry.get("test_param").unwrap();
+        let retrieved = registry.get("test_param", "test_consumer").unwrap();
         assert_eq!(retrieved.get_value(), 42.0);
+        assert!(retrieved.consumers.contains("test_consumer"));
     }
 }

@@ -10,3 +10,6 @@ crossbeam = "0.8"
 omniscient-registry = { path = "../omniscient-registry" }
 phase-runner = { path = "../phase-runner" }
 graph-4d = { path = "../graph-4d" }
+crossbeam-channel = "0.5.16"
+once_cell = "1.21.4"
+quantum-arena = { path = "../quantum-arena" }

@@ -1,7 +1,9 @@
-use backtest_engine::{run_backtest_native, UnifiedConfig};
+use backtest_engine::run_backtest_native;
+use quantum_arena::genome::SuperGenotype as Genotype;
 use god_engine_core::ml_inference::NanoForest;
 use std::fs::File;
 use std::time::Instant;
+use chrono::{DateTime, Utc};
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -20,13 +22,34 @@ fn random_f64(min: f64, max: f64) -> f64 {
 }
 
 fn main() {
+    quantum_arena::symbol_registry::update_registry(vec![
+        quantum_arena::symbol_registry::SymbolSpec {
+            symbol: "BTCUSDT".to_string(),
+            min_notional: 5.0,
+            tick_size: 0.1,
+            step_size: 0.001,
+            max_leverage: 120,
+            maker_fee: 0.0002,
+            taker_fee: 0.0004,
+            min_qty: 0.001,
+            is_shadow: false,
+        }
+    ]);
+
     let args: Vec<String> = std::env::args().collect();
     let mut symbol = "BTCUSDT".to_string();
+    let mut initial_capital = 0.0;
     
     for i in 1..args.len() {
         if args[i] == "--symbol" && i + 1 < args.len() {
             symbol = args[i+1].clone();
+        } else if let Ok(parsed_bal) = args[i].parse::<f64>() {
+            initial_capital = parsed_bal;
         }
+    }
+    
+    if initial_capital <= 0.0 {
+        panic!("❌ [CRITICAL] Debes proveer un balance inicial válido como argumento (ej. cargo run --release --bin evolution -- 100.50)");
     }
     
     println!("============================================================");
@@ -51,50 +74,56 @@ fn main() {
     
     let mmap = unsafe { memmap2::MmapOptions::new().map(&file).expect("Failed to mmap file") };
     
+    #[derive(Debug, Clone, Copy)]
+    #[repr(C)]
+    struct BinTick {
+        pub timestamp: u64,
+        pub bid_price: f64,
+        pub ask_price: f64,
+        pub bid_qty: f64,
+        pub ask_qty: f64,
+    }
+    
     let bytes_len = mmap.len();
-    let len = bytes_len / (5 * 8); // 5 arrays of f64 (timestamps, closes, highs, lows, volumes)
+    let tick_size = std::mem::size_of::<BinTick>();
+    let original_len = bytes_len / tick_size;
+    
+    let max_ticks = 300_000;
+    let offset = if original_len > max_ticks { original_len - max_ticks } else { 0 };
+    let len = original_len - offset;
     
     if len == 0 {
         println!("❌ No data loaded or file is empty.");
         return;
     }
     
+    let ptr = mmap.as_ptr() as *const BinTick;
+    let ticks = unsafe { std::slice::from_raw_parts(ptr.add(offset), len) };
+    
+    let mut timestamps = Vec::with_capacity(len);
+    let mut closes = Vec::with_capacity(len);
+    let mut highs = Vec::with_capacity(len);
+    let mut lows = Vec::with_capacity(len);
+    let mut volumes = Vec::with_capacity(len);
+    
+    for t in ticks {
+        timestamps.push(t.timestamp as f64);
+        closes.push(t.bid_price);
+        highs.push(t.ask_price);
+        lows.push(t.bid_qty);
+        volumes.push(t.ask_qty);
+    }
+    
     let train_len = (len as f64 * 0.7) as usize;
     let test_len = len - train_len;
     
-    let ptr = mmap.as_ptr() as *const f64;
-    let timestamps = unsafe { std::slice::from_raw_parts(ptr, len) };
-    let closes = unsafe { std::slice::from_raw_parts(ptr.add(len), len) };
-    let highs = unsafe { std::slice::from_raw_parts(ptr.add(len * 2), len) };
-    let lows = unsafe { std::slice::from_raw_parts(ptr.add(len * 3), len) };
-    let volumes = unsafe { std::slice::from_raw_parts(ptr.add(len * 4), len) };
+    println!("✅ Memory-Mapped {} ticks (Train: 70% = {}, Test: 30% = {}) [FAST OPTIMIZATION]", len, train_len, test_len);
     
-    // Train/Test slices already mapped above via full-length slices.
-    // OOS uses the TAIL of the original full-length arrays.
-    
-    println!("✅ Memory-Mapped {} ticks (Train: 70% = {}, Test: 30% = {})", len, train_len, test_len);
-    
-    let iterations = 250;
+    let iterations = 50;
     let initial_temp = 100.0;
-    let cooling_rate = 0.995;
+    let cooling_rate = 0.90;
     
-    let mut current_config = UnifiedConfig {
-        sl_pct: 0.02,
-        tp_pct: 0.06,
-        ml_threshold_l: 0.40,
-        ml_threshold_s: 0.40,
-        tech_threshold_l: 0.005,
-        tech_threshold_s: 0.005,
-        starting_capital: 13.0,
-        scalp_leverage: 50.0,
-        swing_leverage: 15.0,
-        scalp_sl_ratio: 0.33,
-        scalp_tp_ratio: 0.33,
-        dyn_atr_min: 0.0001,
-        dyn_obi: 0.10,
-        dyn_ema: 0.00005,
-        dyn_ofi: 0.05,
-    };
+    let mut current_config = Genotype::load_or_default();
     
     let mut best_config = current_config.clone();
     let mut current_score = -9999999.0;
@@ -107,75 +136,95 @@ fn main() {
     for i in 0..iterations {
         let mut test_cfg = current_config.clone();
         
-        // Random Neighbor Generation (Wider bounds for ML threshold)
-        test_cfg.sl_pct += random_f64(-0.001, 0.001) * temp / initial_temp;
-        test_cfg.tp_pct += random_f64(-0.005, 0.005) * temp / initial_temp;
-        test_cfg.ml_threshold_l += random_f64(-0.1, 0.1) * temp / initial_temp;
-        test_cfg.ml_threshold_s += random_f64(-0.1, 0.1) * temp / initial_temp;
-        test_cfg.tech_threshold_l += random_f64(-0.005, 0.005) * temp / initial_temp;
-        test_cfg.tech_threshold_s += random_f64(-0.005, 0.005) * temp / initial_temp;
-        test_cfg.scalp_leverage += random_f64(-5.0, 5.0) * temp / initial_temp;
+        // Random Neighbor Generation
+        test_cfg.scalp_sl_base += random_f64(-0.001, 0.001) * temp / initial_temp;
+        test_cfg.scalp_tp_base += random_f64(-0.005, 0.005) * temp / initial_temp;
+        test_cfg.ml_threshold_long += random_f64(-0.1, 0.1) * temp / initial_temp;
+        test_cfg.ml_threshold_short += random_f64(-0.1, 0.1) * temp / initial_temp;
+        test_cfg.trend_threshold += random_f64(-0.05, 0.05) * temp / initial_temp;
+        test_cfg.global_leverage += random_f64(-5.0, 5.0) * temp / initial_temp;
         
-        test_cfg.dyn_atr_min += random_f64(-0.00005, 0.00005) * temp / initial_temp;
-        test_cfg.dyn_obi += random_f64(-0.05, 0.05) * temp / initial_temp;
-        test_cfg.dyn_ema += random_f64(-0.00001, 0.00001) * temp / initial_temp;
-        test_cfg.dyn_ofi += random_f64(-0.02, 0.02) * temp / initial_temp;
+        test_cfg.dynamic_obi_threshold += random_f64(-0.05, 0.05) * temp / initial_temp;
+        test_cfg.dynamic_ofi_threshold += random_f64(-0.02, 0.02) * temp / initial_temp;
+        test_cfg.weight_obi += random_f64(-0.1, 0.1) * temp / initial_temp;
+        test_cfg.weight_ofi += random_f64(-0.1, 0.1) * temp / initial_temp;
+        test_cfg.weight_vpin += random_f64(-0.05, 0.05) * temp / initial_temp;
+        test_cfg.dynamic_atr_min += random_f64(-0.0002, 0.0002) * temp / initial_temp;
         
-        // Constraints (Forcing Risk-Taking & Micro Scalping)
-        if test_cfg.sl_pct < 0.0001 { test_cfg.sl_pct = 0.0001; } 
-        if test_cfg.sl_pct > 0.0200 { test_cfg.sl_pct = 0.0200; } // Widen to 2.0%
-        if test_cfg.tp_pct < 0.0005 { test_cfg.tp_pct = 0.0005; } 
-        if test_cfg.tp_pct > 0.0500 { test_cfg.tp_pct = 0.0500; } // Widen to 5.0%
-        if test_cfg.scalp_leverage < 5.0 { test_cfg.scalp_leverage = 5.0; }
-        if test_cfg.scalp_leverage > 100.0 { test_cfg.scalp_leverage = 100.0; }
+        // Genome Limit Mutations (Eradicating hardcoded biases)
+        test_cfg.global_max_drawdown += random_f64(-0.02, 0.02) * temp / initial_temp;
+        test_cfg.min_trades_per_day += random_f64(-1.0, 1.0) * temp / initial_temp;
+        test_cfg.survival_capital_threshold += random_f64(-0.05, 0.05) * temp / initial_temp;
         
-        // OBI Threshold Bounds (now mapped to absolute ml_threshold)
-        if test_cfg.ml_threshold_l > 0.999 { test_cfg.ml_threshold_l = 0.999; } 
-        if test_cfg.ml_threshold_l < 0.0 { test_cfg.ml_threshold_l = 0.0; }
-        if test_cfg.ml_threshold_s > 0.999 { test_cfg.ml_threshold_s = 0.999; } 
-        if test_cfg.ml_threshold_s < 0.0 { test_cfg.ml_threshold_s = 0.0; }
+        // Micro-Capital Adaptive Constraints
+        let max_safe_leverage = if initial_capital < 50.0 {
+            // Si el capital es pequeño, priorizamos supervivencia sobre explosividad extrema
+            (initial_capital / 100.0).max(1.0) * 50.0 // ej: 13 USD -> 50.0 max
+        } else {
+            100.0
+        };
+        let min_required_leverage = if initial_capital < 10.0 {
+            (5.0 / initial_capital) * 1.05 // Para 13 USD, el mínimo es 1.0x (ya que 13 > 5)
+        } else {
+            1.0
+        };
         
-        if test_cfg.tech_threshold_l > 0.005 { test_cfg.tech_threshold_l = 0.005; }
-        if test_cfg.tech_threshold_l < 0.0001 { test_cfg.tech_threshold_l = 0.0001; }
-        if test_cfg.tech_threshold_s > 0.005 { test_cfg.tech_threshold_s = 0.005; }
-        if test_cfg.tech_threshold_s < 0.0001 { test_cfg.tech_threshold_s = 0.0001; }
+        test_cfg.global_leverage = test_cfg.global_leverage.clamp(min_required_leverage, max_safe_leverage.max(min_required_leverage));
         
-        if test_cfg.dyn_atr_min < 0.000001 { test_cfg.dyn_atr_min = 0.000001; }
-        if test_cfg.dyn_atr_min > 0.0005 { test_cfg.dyn_atr_min = 0.0005; }
-        if test_cfg.dyn_obi < 0.01 { test_cfg.dyn_obi = 0.01; }
-        if test_cfg.dyn_obi > 0.30 { test_cfg.dyn_obi = 0.30; }
-        if test_cfg.dyn_ema < 0.000005 { test_cfg.dyn_ema = 0.000005; }
-        if test_cfg.dyn_ema > 0.0002 { test_cfg.dyn_ema = 0.0002; }
-        if test_cfg.dyn_ofi < 0.01 { test_cfg.dyn_ofi = 0.01; }
-        if test_cfg.dyn_ofi > 0.20 { test_cfg.dyn_ofi = 0.20; }
+        // Give it space to breathe (stop loss max 5% instead of 2%)
+        test_cfg.scalp_sl_base = test_cfg.scalp_sl_base.clamp(0.001, 0.050);
+        test_cfg.scalp_tp_base = test_cfg.scalp_tp_base.clamp(0.001, 0.100);
+        
+        test_cfg.global_max_drawdown = test_cfg.global_max_drawdown.clamp(0.05, 0.30);
+        test_cfg.survival_capital_threshold = test_cfg.survival_capital_threshold.clamp(0.50, 0.95);
+        test_cfg.min_trades_per_day = test_cfg.min_trades_per_day.clamp(1.0, 50.0);
+        
+        test_cfg.ml_threshold_long = test_cfg.ml_threshold_long.clamp(0.0, 0.999);
+        test_cfg.ml_threshold_short = test_cfg.ml_threshold_short.clamp(0.0, 0.999);
+        test_cfg.trend_threshold = test_cfg.trend_threshold.clamp(0.1, 0.8);
+        
+        test_cfg.dynamic_obi_threshold = test_cfg.dynamic_obi_threshold.clamp(0.01, 0.30);
+        test_cfg.dynamic_ofi_threshold = test_cfg.dynamic_ofi_threshold.clamp(0.01, 0.20);
+        test_cfg.weight_obi = test_cfg.weight_obi.clamp(0.1, 0.8);
+        test_cfg.weight_ofi = test_cfg.weight_ofi.clamp(0.1, 0.8);
+        test_cfg.weight_vpin = test_cfg.weight_vpin.clamp(0.05, 0.5);
+        // Force minimum EV threshold to be slightly higher to only take the best trades
+        test_cfg.dynamic_atr_min = test_cfg.dynamic_atr_min.clamp(0.0001, 0.01);
+        test_cfg.ev_fee_multiplier = 0.0; // Allow trades during evolution exploration
         
         let mut out_pnl = vec![0.0; train_len];
         let mut out_stats = [0.0; 10];
         
         run_backtest_native(
-            closes,
-            highs,
-            lows,
-            volumes,
+            &closes,
+            &highs,
+            &lows,
+            &volumes,
             &test_cfg,
             &mut out_pnl,
             &mut out_stats,
-            &symbol
+            &symbol,
+            initial_capital
         );
         
-        let win_rate = out_stats[0];
+        let _net_win_rate = out_stats[0];
         let trades = out_stats[1];
         let capital = out_stats[2];
         let dd = out_stats[3];
+        let _gross_pnl = out_stats[5];
+        let _net_pnl = out_stats[6];
+        let _gross_win_rate = out_stats[7];
         
         let days_simulated = (timestamps[train_len - 1] - timestamps[0]) / (1000.0 * 60.0 * 60.0 * 24.0);
         let days_simulated = if days_simulated < 0.1 { 1.0 } else { days_simulated };
         let periods_of_3_days = days_simulated / 3.0;
         
-        // If capital grew from 13.0 to 26.0 in 3 days, ratio is 2.0.
-        // powf(1.0 / periods) gives the compounding rate per 3-day window.
+    // removed starting_capital declaration
+
+        let initial_cap_f64 = initial_capital;
+        
         let compound_rate_3d = if capital > 0.0 && periods_of_3_days > 0.0 {
-            let exp_growth = (capital / 13.0_f64).powf(1.0_f64 / periods_of_3_days);
+            let exp_growth = (capital / initial_cap_f64).powf(1.0_f64 / periods_of_3_days);
             exp_growth
         } else {
             0.0
@@ -189,20 +238,27 @@ fn main() {
             compound_rate_3d.powf(2.0) * 10000.0
         };
         
-        // Regularity Penalties
-        if trades < (days_simulated * 5.0) { score -= 10000.0; } // Relaxed to 5 trades per day for quality
-        
-        // Asymmetric Master Rule Penalties
-        // Allow temporary drawdown down to $11.0 if the final compounding is amazing
-        if capital < 11.0 { 
-            score -= 200000.0; 
-        } else if capital < 13.0 {
-            score -= 10000.0 * (13.0 - capital); // Linear penalty instead of flat wall
+        // FASE 17: Aplicar la penalización de Drawdown Bayesiana
+        let dd_threshold = test_cfg.global_max_drawdown / 3.0; // Deseable is 1/3 of max drawdown
+        if dd > dd_threshold {
+            let decay = f64::exp(-(dd - dd_threshold) * 20.0).clamp(0.01, 1.0);
+            score *= decay; // Destruir la puntuación exponencialmente basado en Max Drawdown
         }
         
-        if dd > 0.15 { 
-            score -= dd * 100000.0; 
-        } // 15% Max DD allowed for explosive compounding
+        // Regularity Penalties
+        if trades < (days_simulated * test_cfg.min_trades_per_day) { score -= 10000.0; }
+        
+        // Asymmetric Master Rule Penalties
+        let survival_threshold = initial_capital * test_cfg.survival_capital_threshold;
+        if capital < survival_threshold { 
+            score -= 200000.0; 
+        } else if capital < initial_capital {
+            score -= 10000.0 * (initial_capital - capital); // Linear penalty instead of flat wall
+        }
+        
+        if dd > test_cfg.global_max_drawdown { 
+            score -= dd * 200000.0; 
+        } // Aniquilación inmediata (Penalización Absoluta)
         
         if i % 20 == 0 {
             println!("🔄 Iter {}: Curr Score = {:.2} (Best: {:.2}) | IS Cap: {:.2}, Trades: {}, WinRate: {:.2} | Temp: {:.2}", i, score, best_score, capital, trades, out_stats[0], temp);
@@ -241,38 +297,44 @@ fn main() {
     let mut best_out_pnl = vec![0.0; train_len];
     let mut best_out_stats = [0.0; 10];
     run_backtest_native(
-        closes, highs, lows, volumes,
+        &closes, &highs, &lows, &volumes,
         &best_config,
-        &mut best_out_pnl,
-        &mut best_out_stats,
-        &symbol
+        &mut best_out_pnl, &mut best_out_stats, &symbol, initial_capital
     );
-    let best_is_win_rate = best_out_stats[0];
+    let best_is_net_win_rate = best_out_stats[0];
     let best_is_trades = best_out_stats[1];
     let best_is_capital = best_out_stats[2];
     let best_is_dd = best_out_stats[3];
     let best_is_sharpe = best_out_stats[4];
-    let best_is_avg_win = best_out_stats[5];
-    let best_is_avg_loss = best_out_stats[6];
+    let best_is_gross_pnl = best_out_stats[5];
+    let best_is_net_pnl = best_out_stats[6];
+    let best_is_gross_win_rate = best_out_stats[7];
 
     let elapsed = start_time.elapsed();
     println!("============================================================");
     println!("✅ Evolution Complete in {:.2}ms", elapsed.as_secs_f64() * 1000.0);
     println!("🏆 Best Config Found (In-Sample):");
-    println!("   SL %      : {:.4}", best_config.sl_pct);
-    println!("   TP %      : {:.4}", best_config.tp_pct);
-    println!("   ML Thresh L: {:.4}", best_config.ml_threshold_l);
-    println!("   ML Thresh S: {:.4}", best_config.ml_threshold_s);
-    println!("   Tech L     : {:.4}", best_config.tech_threshold_l);
-    println!("   Tech S     : {:.4}", best_config.tech_threshold_s);
+    println!("   SL %      : {:.4}", best_config.scalp_sl_base);
+    println!("   TP %      : {:.4}", best_config.scalp_tp_base);
+    println!("   ML Thresh L: {:.4}", best_config.ml_threshold_long);
+    println!("   ML Thresh S: {:.4}", best_config.ml_threshold_short);
+    let train_start = DateTime::<Utc>::from_timestamp((timestamps[0] / 1000.0) as i64, 0).unwrap_or_default();
+    let train_end = DateTime::<Utc>::from_timestamp((timestamps[train_len - 1] / 1000.0) as i64, 0).unwrap_or_default();
+    let days_train = (timestamps[train_len - 1] - timestamps[0]) / (1000.0 * 60.0 * 60.0 * 24.0);
+    
+    println!("   Tech L     : {:.4}", best_config.trend_threshold);
+    println!("   Tech S     : {:.4}", best_config.trend_threshold);
+    println!("------------------------------------------------------------");
+    println!("🗓️ IS Period : {} to {} ({:.2} days)", train_start.format("%Y-%m-%d %H:%M:%S"), train_end.format("%Y-%m-%d %H:%M:%S"), days_train);
     println!("------------------------------------------------------------");
     println!("   IS Capital: ${:.2}", best_is_capital);
-    println!("   IS Win Rate: {:.2}%", best_is_win_rate * 100.0);
+    println!("   IS Gross Win Rate: {:.2}%", best_is_gross_win_rate * 100.0);
+    println!("   IS Net Win Rate: {:.2}%", best_is_net_win_rate * 100.0);
     println!("   IS Trades : {}", best_is_trades);
     println!("   IS Max DD : {:.2}%", best_is_dd * 100.0);
     println!("   IS Sharpe : {:.4}", best_is_sharpe);
-    println!("   IS Avg Win: {:.4}%", best_is_avg_win * 100.0);
-    println!("   IS Avg Loss: {:.4}%", best_is_avg_loss * 100.0);
+    println!("   IS Gross PnL: ${:.4} (ROI: {:.2}%)", best_is_gross_pnl, (best_is_gross_pnl / initial_capital) * 100.0);
+    println!("   IS Net PnL: ${:.4} (ROI: {:.2}%)", best_is_net_pnl, (best_is_net_pnl / initial_capital) * 100.0);
     
     println!("============================================================");
     println!("🧪 RUNNING OUT-OF-SAMPLE TEST (Walk-Forward Validation)");
@@ -287,38 +349,39 @@ fn main() {
     let oos_volumes = &volumes[train_len..];
 
     run_backtest_native(
-        oos_closes,
-        oos_highs,
-        oos_lows,
-        oos_volumes,
+        oos_closes, oos_highs, oos_lows, oos_volumes,
         &best_config,
-        &mut out_pnl_test,
-        &mut out_stats_test,
-        &symbol
+        &mut out_pnl_test, &mut out_stats_test, &symbol, initial_capital
     );
     
-    let oos_win_rate = out_stats_test[0];
+    let oos_net_win_rate = out_stats_test[0];
     let oos_trades = out_stats_test[1];
     let oos_capital = out_stats_test[2];
     let oos_dd = out_stats_test[3];
     let oos_sharpe = out_stats_test[4];
-    let oos_avg_win = out_stats_test[5];
-    let oos_avg_loss = out_stats_test[6];
+    let oos_gross_pnl = out_stats_test[5];
+    let oos_net_pnl = out_stats_test[6];
+    let oos_gross_win_rate = out_stats_test[7];
     
+    let test_start = DateTime::<Utc>::from_timestamp((timestamps[train_len] / 1000.0) as i64, 0).unwrap_or_default();
+    let test_end = DateTime::<Utc>::from_timestamp((timestamps[len - 1] / 1000.0) as i64, 0).unwrap_or_default();
+    let days_test = (timestamps[len - 1] - timestamps[train_len]) / (1000.0 * 60.0 * 60.0 * 24.0);
+
     println!("📊 Out-Of-Sample Results ({} ticks):", test_len);
-    println!("   Final Capital : ${:.2} (Starting: $13.00)", oos_capital);
-    println!("   Win Rate      : {:.2}%", oos_win_rate * 100.0);
+    println!("🗓️ Period        : {} to {} ({:.2} days)", test_start.format("%Y-%m-%d %H:%M:%S"), test_end.format("%Y-%m-%d %H:%M:%S"), days_test);
+    println!("   Final Capital : ${:.2} (Starting: ${:.2})", oos_capital, initial_capital);
+    println!("   Gross Win Rate: {:.2}%", oos_gross_win_rate * 100.0);
+    println!("   Net Win Rate  : {:.2}%", oos_net_win_rate * 100.0);
     println!("   Total Trades  : {}", oos_trades);
     println!("   Max Drawdown  : {:.2}%", oos_dd * 100.0);
     println!("   Sharpe Ratio  : {:.4}", oos_sharpe);
-    println!("   Avg Win       : {:.4}%", oos_avg_win * 100.0);
-    println!("   Avg Loss      : {:.4}%", oos_avg_loss * 100.0);
+    println!("   Gross PnL     : ${:.4} (ROI: {:.2}%)", oos_gross_pnl, (oos_gross_pnl / initial_capital) * 100.0);
+    println!("   Net PnL       : ${:.4} (ROI: {:.2}%)", oos_net_pnl, (oos_net_pnl / initial_capital) * 100.0);
     
-    let days_test = (timestamps[len - 1] - timestamps[train_len]) / (1000.0 * 60.0 * 60.0 * 24.0);
-    let days_test = if days_test < 0.1 { 0.5 } else { days_test };
-    let periods_test = days_test / 3.0;
+    let days_test_for_compound = if days_test < 0.1 { 0.5 } else { days_test };
+    let periods_test = days_test_for_compound / 3.0;
     let compound_test = if oos_capital > 0.0 && periods_test > 0.0 {
-        let oos_exp_growth = (oos_capital / 13.0_f64).powf(1.0_f64 / periods_test);
+        let oos_exp_growth = (oos_capital / initial_capital).powf(1.0_f64 / periods_test);
         oos_exp_growth
     } else {
         0.0
@@ -344,8 +407,8 @@ fn main() {
     
     let out_json = format!(
         "{{\n  \"sl_pct\": {:.4},\n  \"tp_pct\": {:.4},\n  \"ml_threshold_l\": {:.4},\n  \"ml_threshold_s\": {:.4},\n  \"tech_threshold_l\": {:.4},\n  \"tech_threshold_s\": {:.4},\n  \"scalp_leverage\": {:.1},\n  \"swing_leverage\": {:.1},\n  \"symbols\": {}\n}}",
-        best_config.sl_pct, best_config.tp_pct, best_config.ml_threshold_l, best_config.ml_threshold_s, 
-        best_config.tech_threshold_l, best_config.tech_threshold_s,
+        best_config.scalp_sl_base, best_config.scalp_tp_base, best_config.ml_threshold_long, best_config.ml_threshold_short, 
+        best_config.trend_threshold, best_config.trend_threshold,
         scalp_lev, swing_lev, symbols
     );
     

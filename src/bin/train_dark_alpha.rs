@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::time::Instant;
-use dark_alpha_engine::{DarkAlphaEngine, DenseLayer};
+use dark_alpha_engine::{DarkAlphaEngine};
 
 // Adam Optimizer state for a DenseLayer
 struct AdamState {
@@ -73,24 +73,25 @@ fn main() {
         if let Ok(l) = line {
             if skip_header { skip_header = false; continue; }
             let parts: Vec<&str> = l.split(',').collect();
-            if parts.len() == 26 {
+            if parts.len() == 35 {
                 if let Ok(target_return) = parts[0].parse::<f64>() {
-                    let mut feat = vec![0.0; 54];
-                    let mut valid = true;
-                    for i in 0..25 {
+                    let mut feat = vec![0.0; 34];
+                    for i in 0..34 {
                         if let Ok(val) = parts[i+1].parse::<f64>() {
-                            feat[i] = val;
+                            if val.is_nan() || val.is_infinite() {
+                                feat[i] = 0.0;
+                            } else {
+                                feat[i] = val;
+                            }
                         } else {
-                            valid = false;
+                            feat[i] = 0.0;
                         }
                     }
-                    if valid {
-                        // Swing label: If return in 5 periods > 0.05% -> 1.0 (Long)
-                        // If return < -0.05% -> 0.0 (Short/Avoid)
-                        let label = if target_return > 0.0005 { 1.0 } else { 0.0 };
-                        inputs.push(feat);
-                        targets.push(label);
-                    }
+                    // Swing label: If return in 5 periods > 0.15% -> 1.0 (Long)
+                    // If return < -0.15% -> 0.0 (Short/Avoid)
+                    let label = if target_return > 0.0015 { 1.0 } else { 0.0 };
+                    inputs.push(feat);
+                    targets.push(label);
                 }
             }
         }
@@ -101,18 +102,53 @@ fn main() {
         println!("❌ No valid samples found.");
         return;
     }
-    println!("✅ Loaded {} samples. Starting Adam Optimization...", num_samples);
     
-    let mut engine = DarkAlphaEngine::new(54, 64, 32);
+    // --- ETL: COMPUTE MEAN AND STD DEV ---
+    println!("🧹 Calculating Means and StdDevs for Normalization...");
+    let mut mean = vec![0.0; 34];
+    for x in &inputs {
+        for i in 0..34 {
+            mean[i] += x[i];
+        }
+    }
+    for i in 0..34 {
+        mean[i] /= num_samples as f64;
+    }
+    
+    let mut std_dev = vec![0.0; 34];
+    for x in &inputs {
+        for i in 0..34 {
+            let diff = x[i] - mean[i];
+            std_dev[i] += diff * diff;
+        }
+    }
+    for i in 0..34 {
+        std_dev[i] = (std_dev[i] / num_samples as f64).sqrt();
+        if std_dev[i] < 1e-8 {
+            std_dev[i] = 1e-8; // Prevent division by zero
+        }
+    }
+    
+    let scaler = dark_alpha_engine::Scaler::new(mean, std_dev);
+    
+    // Normalize inputs
+    for x in &mut inputs {
+        scaler.scale(x);
+    }
+    
+    println!("✅ Loaded and Normalized {} valid samples. Starting Adam Optimization...", num_samples);
+    
+    let mut engine = DarkAlphaEngine::new(34, 64, 32);
+    engine.scaler = Some(scaler);
     
     // Initialize Adam States
-    let mut adam1 = AdamState::new(54, 64);
+    let mut adam1 = AdamState::new(34, 64);
     let mut adam2 = AdamState::new(64, 32);
     let mut adam3 = AdamState::new(32, 1);
     
-    let epochs = 50;
-    let batch_size = 256;
-    let learning_rate = 0.001;
+    let epochs = 20;
+    let batch_size = 1024;
+    let learning_rate = 0.005;
     let beta1 = 0.9;
     let beta2 = 0.999;
     let epsilon = 1e-8;
@@ -133,7 +169,7 @@ fn main() {
             let b_size = end - batch_start;
             
             // Gradients accumulation
-            let mut g_w1 = vec![0.0; 64 * 54];
+            let mut g_w1 = vec![0.0; 64 * 34];
             let mut g_b1 = vec![0.0; 64];
             let mut g_w2 = vec![0.0; 32 * 64];
             let mut g_b2 = vec![0.0; 32];
@@ -146,17 +182,17 @@ fn main() {
                 let y = targets[idx];
                 
                 // --- FORWARD PASS ---
-                let mut z1 = vec![0.0; 64];
-                let mut a1 = vec![0.0; 64];
+                let mut z1 = [0.0; 64];
+                let mut a1 = [0.0; 64];
                 for i in 0..64 {
                     let mut sum = engine.layer1.biases[i];
-                    for j in 0..54 { sum += engine.layer1.weights[i * 54 + j] * x[j]; }
+                    for j in 0..34 { sum += engine.layer1.weights[i * 34 + j] * x[j]; }
                     z1[i] = sum;
                     a1[i] = if sum > 0.0 { sum } else { 0.0 }; // ReLU
                 }
                 
-                let mut z2 = vec![0.0; 32];
-                let mut a2 = vec![0.0; 32];
+                let mut z2 = [0.0; 32];
+                let mut a2 = [0.0; 32];
                 for i in 0..32 {
                     let mut sum = engine.layer2.biases[i];
                     for j in 0..64 { sum += engine.layer2.weights[i * 64 + j] * a1[j]; }
@@ -185,11 +221,11 @@ fn main() {
                 }
                 
                 // Backprop to Layer 2
-                let mut d_a2 = vec![0.0; 32];
+                let mut d_a2 = [0.0; 32];
                 for j in 0..32 {
                     d_a2[j] = d_z3 * engine.layer3.weights[j];
                 }
-                let mut d_z2 = vec![0.0; 32];
+                let mut d_z2 = [0.0; 32];
                 for j in 0..32 {
                     d_z2[j] = if z2[j] > 0.0 { d_a2[j] } else { 0.0 }; // ReLU derivative
                 }
@@ -203,13 +239,13 @@ fn main() {
                 }
                 
                 // Backprop to Layer 1
-                let mut d_a1 = vec![0.0; 64];
+                let mut d_a1 = [0.0; 64];
                 for i in 0..32 {
                     for j in 0..64 {
                         d_a1[j] += d_z2[i] * engine.layer2.weights[i * 64 + j];
                     }
                 }
-                let mut d_z1 = vec![0.0; 64];
+                let mut d_z1 = [0.0; 64];
                 for j in 0..64 {
                     d_z1[j] = if z1[j] > 0.0 { d_a1[j] } else { 0.0 };
                 }
@@ -217,8 +253,8 @@ fn main() {
                 // Layer 1 Gradients
                 for i in 0..64 {
                     g_b1[i] += d_z1[i];
-                    for j in 0..54 {
-                        g_w1[i * 54 + j] += d_z1[i] * x[j];
+                    for j in 0..34 {
+                        g_w1[i * 34 + j] += d_z1[i] * x[j];
                     }
                 }
             }
@@ -227,7 +263,7 @@ fn main() {
             t += 1;
             let scale = 1.0 / b_size as f64;
             
-            let mut apply_adam = |w: &mut Vec<f64>, g: &Vec<f64>, m: &mut Vec<f64>, v: &mut Vec<f64>| {
+            let apply_adam = |w: &mut Vec<f64>, g: &Vec<f64>, m: &mut Vec<f64>, v: &mut Vec<f64>| {
                 for i in 0..w.len() {
                     let grad = g[i] * scale;
                     m[i] = beta1 * m[i] + (1.0 - beta1) * grad;

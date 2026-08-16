@@ -4,7 +4,7 @@
 
 /// Fórmula Dinámica de Kelly para Supervivencia y Crecimiento Exponencial
 #[inline(always)]
-pub fn calculate_kelly_fraction(win_rate: f64, profit_factor: f64, current_capital: f64) -> f64 {
+pub fn calculate_kelly_fraction(win_rate: f64, profit_factor: f64, current_capital: f64, base_capital: f64, kelly_survival_cap_ratio: f64, kelly_expansion_mult: f64) -> f64 {
     if profit_factor <= 0.0 || win_rate < 0.01 {
         return 0.0;
     }
@@ -14,13 +14,20 @@ pub fn calculate_kelly_fraction(win_rate: f64, profit_factor: f64, current_capit
         return 0.0;
     }
 
-    let mut dynamic_max_risk = win_rate.powi(2); // Auto-adaptable: 100% WR permite 100% riesgo
+    let _dynamic_max_risk = win_rate.powi(2); // Auto-adaptable: 100% WR permite 100% riesgo
     
-    if current_capital < 50.0 {
-        kelly.clamp(0.0, dynamic_max_risk.max(0.10))
-    } else if current_capital < 200.0 {
-        (kelly * 0.75).clamp(0.0, (dynamic_max_risk * 0.75).max(0.05))
+    // Asimetría Matemática (Fase 8): Supervivencia vs Expansión Parabólica (Scale-Invariant)
+    let capital_ratio = (current_capital / base_capital.max(1.0)).max(0.01);
+    let capital_scale = if capital_ratio < kelly_survival_cap_ratio {
+        // Modo Supervivencia: Fractional Kelly adaptativo a la ratio de capital
+        (0.15 * win_rate * capital_ratio.sqrt()).clamp(0.05, 0.5)
     } else {
-        (kelly * 0.50).clamp(0.0, (dynamic_max_risk * 0.50).max(0.01))
-    }
+        // Modo Expansión Parabólica (Interés Compuesto):
+        let expansion = (capital_ratio.log10() * kelly_expansion_mult + 0.5).clamp(0.5, 2.5);
+        (0.5 * expansion).clamp(0.5, 1.0)
+    };
+    
+    // Retornamos el Kelly ajustado asimétricamente
+    (kelly * capital_scale).clamp(0.0, 1.0)
 }
+

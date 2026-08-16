@@ -33,6 +33,11 @@ pub fn parse_binance_depth<'a>(json_str: &'a mut str) -> Option<(i64, &'a str, i
     let ap = best_ask[0].as_str()?.parse::<f64>().ok()?;
     let aq = best_ask[1].as_str()?.parse::<f64>().ok()?;
     
+    // Data Integrity & Normalization Validation
+    if bp <= 0.0 || ap <= 0.0 || bq < 0.0 || aq < 0.0 || bp > ap * 1.5 {
+        return None;
+    }
+    
     Some((e, s, last_update_id, bp, bq, ap, aq))
 }
 
@@ -51,12 +56,19 @@ pub fn parse_binance_trade<'a>(json_str: &'a mut str) -> Option<(i64, i64, f64, 
     let s_temp = data.get("s")?.as_str()?;
     let s: &'a str = unsafe { std::mem::transmute(s_temp) };
     
+    // Data Integrity Validation
+    if p <= 0.0 || q < 0.0 {
+        return None;
+    }
+    
     Some((e, t, p, q, m, s))
 }
 
+pub type KlineData<'a> = (i64, &'a str, f64, f64, f64, f64, f64, bool);
+
 /// Parses a Binance Kline/Candlestick JSON string.
 /// Returns (Event_time, symbol, open, high, low, close, volume, is_kline_closed)
-pub fn parse_binance_kline<'a>(json_str: &'a mut str) -> Option<(i64, &'a str, f64, f64, f64, f64, f64, bool)> {
+pub fn parse_binance_kline<'a>(json_str: &'a mut str) -> Option<KlineData<'a>> {
     let bytes: &'a mut [u8] = unsafe { json_str.as_bytes_mut() };
     let parsed = simd_json::to_borrowed_value(bytes).ok()?;
     let data = if let Some(d) = parsed.get("data") { d } else { &parsed };
@@ -77,6 +89,11 @@ pub fn parse_binance_kline<'a>(json_str: &'a mut str) -> Option<(i64, &'a str, f
     let close = k.get("c")?.as_str()?.parse::<f64>().ok()?;
     let volume = k.get("v")?.as_str()?.parse::<f64>().ok()?;
     let is_closed = k.get("x")?.as_bool()?;
+    
+    // Data Integrity Validation
+    if open <= 0.0 || high < low || low <= 0.0 || close <= 0.0 || volume < 0.0 {
+        return None; // Protect the engine from absurd or manipulated data
+    }
     
     Some((e, s, open, high, low, close, volume, is_closed))
 }

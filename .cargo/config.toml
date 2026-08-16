@@ -1,2 +1,2 @@
-﻿[build]
-target-dir = "target_persistent"
+[build]
+rustflags = ["-C", "target-cpu=native", "-C", "opt-level=3"]

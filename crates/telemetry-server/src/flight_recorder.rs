@@ -33,6 +33,7 @@ impl FlightRecorder {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(path)
             .expect("Fallo al crear archivo de Flight Recorder");
             

@@ -1,4 +1,4 @@
-use crate::{SignalIntent, SignalType, ScalpML};
+use crate::{SignalIntent, SignalType};
 use feature_engine::{obi_acceleration, order_book_imbalance, WelfordOnline};
 
 /// Motor de Scalping (Axioma V: Aislamiento)
@@ -9,8 +9,6 @@ pub struct ScalpEngine {
     prev_obi: f64,
     // Estadísticas dinámicas de aceleración
     accel_stats: WelfordOnline,
-    // Integración de Inteligencia Artificial Nativa
-    ml_model: ScalpML,
 }
 
 impl ScalpEngine {
@@ -18,64 +16,64 @@ impl ScalpEngine {
         Self { 
             prev_obi: 0.0,
             accel_stats: WelfordOnline::new(),
-            ml_model: ScalpML::new(),
         }
     }
 
     /// Evalúa la microestructura y retorna una intención.
     /// `z_target` se calibra según el régimen de volatilidad (ej. 2.0 o 3.0 para alta confianza).
     #[inline(always)]
-    pub fn evaluate_microstructure(&mut self, bid_vol: f64, ask_vol: f64, z_target: f64) -> SignalIntent {
-        let current_obi = order_book_imbalance(bid_vol, ask_vol);
-        let accel = obi_acceleration(current_obi, self.prev_obi);
-        
-        // Guardamos el estado O(1)
-        self.prev_obi = current_obi;
-        
-        // Actualizamos estadísticas para umbral adaptativo
-        self.accel_stats.update(accel);
-        
-        // Si no hay suficientes datos para desviación estándar, no operamos
-        if self.accel_stats.count < 30.0 {
-            return SignalIntent::flat();
-        }
-        
-        let z_score = self.accel_stats.z_score(accel);
-        
-        // Inferencia del modelo de Machine Learning (si está activo/entrenado)
-        // Usamos un spread proxy fijo de 1.0 por ahora si no tenemos data L2
-        let ml_pred = self.ml_model.infer(current_obi, accel, 1.0);
-        
-        let mut final_confidence = (z_score.abs() / 3.0).clamp(0.5, 1.0);
-        
-        // Fusión Cuántica: Z-Score + Random Forest
-        let signal = if z_score > z_target {
-            if ml_pred > 0.0 { final_confidence += 0.2; }
-            SignalType::Long
-        } else if z_score < -z_target {
-            if ml_pred < 0.0 { final_confidence += 0.2; }
-            SignalType::Short
-        } else {
-            // Si el modelo predictivo tiene mucha fuerza pero el Z-Score no llegó al target
-            if ml_pred > 0.8 {
-                final_confidence = ml_pred;
+    pub fn evaluate_microstructure(&mut self, bid_vol: f64, ask_vol: f64, z_target: f64, arena: &quantum_arena::GlobalArena) -> SignalIntent {
+        telemetry_server::profile_node!("ScalpEngine::evaluate_microstructure", {
+            let current_obi = order_book_imbalance(bid_vol, ask_vol);
+            let accel = obi_acceleration(current_obi, self.prev_obi);
+            
+            // Guardamos el estado O(1)
+            self.prev_obi = current_obi;
+            
+            // Actualizamos estadísticas para umbral adaptativo
+            self.accel_stats.update(accel);
+            
+            // Si no hay suficientes datos para desviación estándar, no operamos
+            let min_samples = arena.config.scalp_accel_min_samples.load(std::sync::atomic::Ordering::Relaxed);
+            if self.accel_stats.count < min_samples {
+                return SignalIntent::flat();
+            }
+            
+            let z_score = self.accel_stats.z_score(accel);
+            
+            // Eliminamos ml_model, dependemos puramente de Z-Score OBI por ahora
+            let base_z = arena.config.turbo_z_score_stdev.load(std::sync::atomic::Ordering::Relaxed);
+            let conf_clamp = arena.config.explosive_confidence_threshold.load(std::sync::atomic::Ordering::Relaxed); // Removed .min(0.9) clamp
+            
+            let final_confidence = (z_score.abs() / base_z).max(conf_clamp);
+            
+            let signal = if z_score > z_target {
                 SignalType::Long
-            } else if ml_pred < -0.8 {
-                final_confidence = ml_pred.abs();
+            } else if z_score < -z_target {
                 SignalType::Short
             } else {
                 SignalType::Flat
-            }
-        };
+            };
 
-        if signal != SignalType::Flat {
-            SignalIntent {
-                signal,
-                confidence: final_confidence.clamp(0.0, 1.0),
+            if signal != SignalType::Flat {
+                let dynamic_duration = arena.config.base_duration_ms.load(std::sync::atomic::Ordering::Relaxed) as u64;
+                SignalIntent {
+                    signal,
+                    confidence: final_confidence.tanh(),
+                    expected_duration_ms: dynamic_duration,
+                    expected_volume_usd: 0.0,
+                    volume_flow_rate: 0.0,
+                    drift: 0.0,
+                    expected_magnitude: 0.0,
+                    tp_price_target: 0.0,
+                    sl_price_target: 0.0,
+                    trajectory_volatility: 0.0,
+                    horizon: crate::TradeHorizon::Scalp,
+                }
+            } else {
+                SignalIntent::flat()
             }
-        } else {
-            SignalIntent::flat()
-        }
+        })
     }
 }
 

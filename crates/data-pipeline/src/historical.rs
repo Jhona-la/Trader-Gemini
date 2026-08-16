@@ -27,12 +27,14 @@ impl Default for HistoricalLoader {
 
 impl HistoricalLoader {
     pub fn new() -> Self {
+        let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+        let base_url = if is_testnet { "https://testnet.binancefuture.com/fapi/v1/klines" } else { "https://fapi.binance.com/fapi/v1/klines" };
         Self {
             client: Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()
                 .unwrap(),
-            base_url: "https://fapi.binance.com/fapi/v1/klines".to_string(),
+            base_url: base_url.to_string(),
         }
     }
 
@@ -96,8 +98,15 @@ impl HistoricalLoader {
         start_time: u64,
         end_time: u64,
     ) -> Result<Vec<quantum_arena::TickEvent>, String> {
-        let mut all_ticks = Vec::new();
+        let mut all_ticks = Vec::with_capacity(100_000); // 100k limit to protect RAM
         let mut current_start = start_time;
+        
+        let max_time_span = 7 * 24 * 60 * 60 * 1000; // Max 7 days
+        let end_time = if end_time - start_time > max_time_span {
+            start_time + max_time_span
+        } else {
+            end_time
+        };
         
         // El límite de la API de Binance es 1 hora entre start y end para aggTrades
         let max_window = 60 * 60 * 1000; 
@@ -108,9 +117,11 @@ impl HistoricalLoader {
                 current_end = end_time;
             }
 
+            let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+            let base_url = if is_testnet { "https://testnet.binancefuture.com/fapi/v1/aggTrades" } else { "https://fapi.binance.com/fapi/v1/aggTrades" };
             let url = format!(
                 "{}?symbol={}&startTime={}&endTime={}&limit=1000",
-                "https://fapi.binance.com/fapi/v1/aggTrades",
+                base_url,
                 symbol.to_uppercase(),
                 current_start,
                 current_end

@@ -123,7 +123,7 @@ impl DarwinDaemon {
         let current_active = Genotype::current_from_arena(&self.live_arena);
         population[0] = current_active.clone();
 
-        let initial_capital = 13.0; // Standardize for testing fitness
+        let initial_capital = self.live_arena.unified_capital.load(Ordering::Relaxed); // Dynamic fitness baseline
         let mut best_all_time = (population[0].clone(), 0.0_f64);
 
         for generation in 1..=generations {
@@ -139,7 +139,7 @@ impl DarwinDaemon {
                     let mut peak_capital = initial_capital;
 
                     for tick in &master_stream {
-                        arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty);
+                        arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, 0);
                         let (_sc, _sw, c_sc, c_sw, _) = engine.process_tick(
                             tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp, &[0.0; 54]);
                         
@@ -201,7 +201,7 @@ impl DarwinDaemon {
                 if rand::rng().random_bool(mutation_rate) { child.min_confidence *= rand::rng().random_range(0.9..1.1); }
                 if rand::rng().random_bool(mutation_rate) { child.explosive_leverage_multiplier *= rand::rng().random_range(0.5..2.0); }
                 
-                child.global_leverage = child.global_leverage.clamp(1.0, 125.0);
+                child.global_leverage = child.global_leverage.clamp(25.0, 35.0);
                 child.trend_threshold = child.trend_threshold.clamp(0.1, 0.9);
                 child.maker_spread_pct = child.maker_spread_pct.clamp(0.0001, 0.05);
                 child.maker_obi_threshold = child.maker_obi_threshold.clamp(0.1, 0.95);
@@ -227,7 +227,7 @@ impl DarwinDaemon {
             let mut max_drawdown = 0.0;
             let mut peak_capital = initial_capital;
             for tick in &master_stream {
-                arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty);
+                arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, 0);
                 let (_sc, _sw, c_sc, c_sw, _) = engine.process_tick(
                     tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp, &[0.0; 54]);
                 if c_sc.is_some() || c_sw.is_some() {

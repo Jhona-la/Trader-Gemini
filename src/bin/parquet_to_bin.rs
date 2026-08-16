@@ -24,12 +24,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut file = File::open(&in_path)?;
         let df = ParquetReader::new(&mut file).finish()?;
 
-        let opens = df.column("open")?.f64()?;
+        let _opens = df.column("open")?.f64()?;
         let highs = df.column("high")?.f64()?;
         let lows = df.column("low")?.f64()?;
         let closes = df.column("close")?.f64()?;
         let volumes = df.column("volume")?.f64()?;
-        let open_times = df.column("open_time")?.u64()?;
+        let _open_times = df.column("open_time")?.u64()?;
 
         let count = df.height();
         
