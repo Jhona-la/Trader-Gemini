@@ -16,8 +16,24 @@ pub fn run_vectorized_hybrid(
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(0.0);
-    if len == 0 {
-        return Ok((initial_capital, 0.0, 0, 0));
+    // F3.4: sin capital real no hay backtest — basura silenciosa fuera.
+    if len == 0 || !initial_capital.is_finite() || initial_capital <= 0.0 {
+        return Ok((initial_capital.max(0.0), 0.0, 0, 0));
+    }
+
+    // F3.2 — FIX SMA REAL: el "mock" anterior era sma_14 = close ⇒
+    // close > close = siempre falso ⇒ CERO trades para siempre (motor muerto).
+    // SMA-14 calculada en Rust puro (rolling_mean de polars cambia de firma
+    // entre versiones; esto es estable y O(N)).
+    let sma_window = 14usize;
+    let mut sma14 = vec![f64::NAN; len];
+    let mut running_sum = 0.0;
+    for i in 0..len {
+        running_sum += closes[i];
+        if i >= sma_window {
+            running_sum -= closes[i - sma_window];
+            sma14[i] = running_sum / sma_window as f64;
+        }
     }
 
     // 1. Cargar datos en memoria columnar (Zero-Copy si fuera mmap, aquí copiamos a Series)
@@ -25,18 +41,15 @@ pub fn run_vectorized_hybrid(
     let s_high = Series::new("high".into(), highs);
     let s_low = Series::new("low".into(), lows);
     let s_volume = Series::new("volume".into(), volumes);
+    let s_sma = Series::new("sma_14".into(), sma14);
 
-    let df = DataFrame::new(vec![s_close, s_high, s_low, s_volume])?;
+    let df = DataFrame::new(vec![s_close, s_high, s_low, s_volume, s_sma])?;
     let lf = df.lazy();
 
     // 2. Vectorización Masiva (Generación de Features y Señales SIMD)
-    // Usaremos un umbral de momentum simple para propósitos de backtest.
-    // En producción, esto replicaría los 150+ features.
     let signals_lf = lf
         .with_columns(vec![
             (col("close") - col("close").shift(lit(1))).alias("delta"),
-            // Mock de SMA para que compile sin depender de RollingOptions que cambia de firma entre versiones
-            col("close").alias("sma_14"),
         ])
         .with_columns(vec![
             // Señal Long: Cierre cruza SMA hacia arriba con Momentum
@@ -70,9 +83,11 @@ pub fn run_vectorized_hybrid(
     let tp_ratio = cfg.scalp_tp_base;
     let sl_ratio = cfg.scalp_sl_base;
 
-    // Fee model: Use genome-evolved max_fee_pct as the realistic taker fee ceiling.
-    // The evolver tunes this to match the user's actual Binance tier.
-    let taker_fee = cfg.max_fee_pct.min(0.001); // Genome-evolved, clamped to 0.1% safety ceiling
+    // F3.4/F4.5 — LOS COSTOS NO SE EVOLUCIONAN: fee con PISO realista
+    // (taker mínimo 0.04% en Binance futures). El genoma podía evolucionar
+    // max_fee_pct → 0 y "ganar" cobrándose a sí mismo cero comisión.
+    // El techo 0.1% cubre VIP negativo. Rango real, no superstición.
+    let taker_fee = cfg.max_fee_pct.clamp(0.0004, 0.001);
 
     for i in 1..len {
         // Ignoramos i=0 por los shifts
@@ -83,11 +98,13 @@ pub fn run_vectorized_hybrid(
         let sl_long = sig_long_ca.get(i).unwrap_or(false);
         let sl_short = sig_short_ca.get(i).unwrap_or(false);
 
-        // Simulación de Funding Rates cada 480 velas (≈8h en TF 1m)
-        // Usa funding_rate_sensitivity del genoma en vez de un valor fijo.
+        // Simulación de Funding Rates cada 480 velas (≈8h en TF 1m).
+        // F4.5: sensibilidad del genoma acotada a banda REALISTA [0.5, 2.0]×
+        // (0.005%-0.02% por periodo de 8h) — el costo de carry no se evoluciona a cero.
         if i % 480 == 0 && position != 0 {
             let notional = entry_price * position_size;
-            let funding_drag = notional * cfg.funding_rate_sensitivity * 0.0001; // Genome-scaled
+            let funding_rate = cfg.funding_rate_sensitivity.clamp(0.5, 2.0) * 0.0001;
+            let funding_drag = notional * funding_rate;
             capital -= funding_drag;
         }
 

@@ -220,16 +220,27 @@ fn main() {
         test_cfg.weight_vpin = test_cfg.weight_vpin.clamp(0.05, 0.5);
         // Force minimum EV threshold to be slightly higher to only take the best trades
         test_cfg.dynamic_atr_min = test_cfg.dynamic_atr_min.clamp(0.0001, 0.01);
-        test_cfg.ev_fee_multiplier = 0.0; // Allow trades during evolution exploration
+        // F3.6 — LOS FEES SE PAGAN TAMBIÉN AL EVOLUCIONAR: antes multiplier=0
+        // ("permitir exploración") ⇒ el GA seleccionaba estrategias que solo
+        // viven en un mundo sin costos y mueren al primer fill real.
+        test_cfg.ev_fee_multiplier = 1.0;
 
         let mut out_pnl = vec![0.0; train_len];
         let mut out_stats = [0.0; 10];
 
+        // F3.6 — SIN CONTAMINACIÓN OOS: antes se optimizaba sobre `closes`
+        // COMPLETO (train+test) y luego se "validaba" sobre el test — que ya
+        // había sido parte de la selección. Solo la ventana TRAIN se usa aquí.
+        let train_closes = &closes[..train_len];
+        let train_highs = &highs[..train_len];
+        let train_lows = &lows[..train_len];
+        let train_volumes = &volumes[..train_len];
+
         run_backtest_native(
-            &closes,
-            &highs,
-            &lows,
-            &volumes,
+            train_closes,
+            train_highs,
+            train_lows,
+            train_volumes,
             &test_cfg,
             &mut out_pnl,
             &mut out_stats,
@@ -265,13 +276,17 @@ fn main() {
             0.0
         };
 
-        // Asymmetric Reward for > 1.0x compound rate
-        let mut score = if compound_rate_3d > 2.0 {
-            // Hyper-compounding target achieved (x2.0 every 3 days)
-            compound_rate_3d.powf(4.0) * 50000.0
+        // F3.6 — FITNESS HONESTO: antes, x2 cada 3 días recibía ^4×50000 —
+        // presión de selección hacia leverage extremo (la meta absurda de
+        // ARCHITECTURE.md horneada en el fitness). Ahora: crecimiento NETO de
+        // fees en escala logarítmica — premia compounding suave y sostenido,
+        // sin bono explosivo; el castigo al drawdown sigue abajo.
+        let total_growth = if capital > 0.0 && initial_cap_f64 > 0.0 {
+            capital / initial_cap_f64
         } else {
-            compound_rate_3d.powf(2.0) * 10000.0
+            1e-6
         };
+        let mut score = total_growth.ln().max(-20.0) * 10_000.0; // 1.0x = 0 pts; e^x crece lineal en log
 
         // FASE 17: Aplicar la penalización de Drawdown Bayesiana
         let dd_threshold = test_cfg.global_max_drawdown / 3.0; // Deseable is 1/3 of max drawdown

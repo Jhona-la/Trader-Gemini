@@ -105,8 +105,20 @@ async fn main() {
 
     let mut core = god_engine_core::GodEngineCore::new(arena.clone());
 
-    // Inicializar DarkAlphaEngine — mismo que producción (54 features)
-    core.swing_nn = Some(dark_alpha_engine::DarkAlphaEngine::new(54, 64, 32));
+    // F3.1 — FIX PARIDAD REAL: antes se instanciaba una NN ALEATORIA
+    // (DarkAlphaEngine::new) y el "backtest forense" evaluaba ruido.
+    // Ahora: modelo ENTRENADO o NADA. Sin modelo ⇒ swing_nn = None ⇒
+    // el motor no opera swing en el backtest (honesto), jamás pesos random.
+    match dark_alpha_engine::DarkAlphaEngine::load_json("models/DarkAlpha_BTCUSDT.json") {
+        Ok(nn) => {
+            println!("🧠 DarkAlpha (Swing NN) REAL cargado: models/DarkAlpha_BTCUSDT.json");
+            core.swing_nn = Some(nn);
+        }
+        Err(e) => {
+            println!("⚠️ DarkAlpha_BTCUSDT.json no disponible ({}). Swing queda DESACTIVADO en este backtest — sin pesos aleatorios.", e);
+            core.swing_nn = None;
+        }
+    }
 
     // INICIALIZAR EL SYMBOL REGISTRY PARA BTCUSDT (coin_id = 0)
     quantum_arena::symbol_registry::update_registry(vec![
@@ -227,6 +239,68 @@ async fn main() {
     println!();
 
     // ═══════════════════════════════════════════════════════════════════════
+    // F3.1 — MACRO HISTÓRICO REAL (era &[0.0; 54]: la NN swing evaluaba ceros)
+    // FRED entrega la serie COMPLETA con fechas: alineamos VIX/S&P/Nasdaq/
+    // US10Y/DXY/WTI por fecha a cada barra. Las features crypto cross-exchange
+    // no tienen serie histórica accesible — quedan en default y CONSTAN;
+    // el macro (la mitad informativa del vector omni) es el REAL de cada día.
+    // ═══════════════════════════════════════════════════════════════════════
+    println!("🌐 [MACRO-HIST] Descargando series históricas FRED...");
+    let ts_first_ms = ticks_slice[warmup_ticks].timestamp;
+    let cosd = chrono::DateTime::<chrono::Utc>::from_timestamp((ts_first_ms / 1000) as i64, 0)
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| "2024-01-01".to_string());
+
+    let fred_series: [(&str, u8); 6] = [
+        ("SP500", 0),
+        ("NASDAQCOM", 1),
+        ("VIXCLS", 2),
+        ("DGS10", 3),
+        ("DTWEXBGS", 4),
+        ("DCOILWTICO", 5),
+    ];
+    let http = reqwest::Client::new();
+    let mut macro_hist: Vec<Vec<(i64, f64)>> = Vec::new(); // (días desde epoch, valor)
+    for (series, _) in &fred_series {
+        let url = format!(
+            "https://fred.stlouisfed.org/graph/fredgraph.csv?id={}&cosd={}",
+            series, cosd
+        );
+        let parsed: Vec<(i64, f64)> = match http.get(&url).send().await {
+            Ok(res) if res.status().is_success() => match res.text().await {
+                Ok(csv) => csv
+                    .lines()
+                    .skip(1)
+                    .filter_map(|l| {
+                        let mut p = l.split(',');
+                        let d = p.next()?.trim();
+                        let v = p.next()?.trim().parse::<f64>().ok()?;
+                        let date = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()?;
+                        Some((date.and_hms_opt(0, 0, 0)?.and_utc().timestamp() / 86_400, v))
+                    })
+                    .collect(),
+                Err(_) => Vec::new(),
+            },
+            _ => Vec::new(),
+        };
+        println!("   {} → {} puntos", series, parsed.len());
+        macro_hist.push(parsed);
+    }
+    let macro_lookup = |idx: usize, days: i64| -> f64 {
+        // Step function: último valor conocido ≤ fecha de la barra.
+        let s = &macro_hist[idx];
+        match s.binary_search_by_key(&days, |&(d, _)| d) {
+            Ok(i) => s[i].1,
+            Err(0) => s.first().map(|v| v.1).unwrap_or(0.0),
+            Err(i) => s[i - 1].1,
+        }
+    };
+
+    let omni_state = Arc::new(data_pipeline::omni_multiplexer::OmniState::new());
+    let mut last_macro_day = i64::MIN;
+    println!("🌐 [MACRO-HIST] Series alineadas por fecha a cada barra.\n");
+
+    // ═══════════════════════════════════════════════════════════════════════
     // PASO 5: Simulación Forense (tick-by-tick, idéntico a producción)
     // ═══════════════════════════════════════════════════════════════════════
     println!(
@@ -297,10 +371,49 @@ async fn main() {
             0.0
         };
 
+        // F3.1: features omni con MACRO REAL del día de esta barra.
+        // Solo re-consultamos cuando cambia el día (macro es diaria).
+        let day = (ts / 86_400_000) as i64;
+        if day != last_macro_day {
+            last_macro_day = day;
+            use std::sync::atomic::Ordering as Ord2;
+            omni_state
+                .sp500
+                .store(macro_lookup(0, day).to_bits(), Ord2::Relaxed);
+            omni_state
+                .nasdaq
+                .store(macro_lookup(1, day).to_bits(), Ord2::Relaxed);
+            omni_state
+                .vix
+                .store(macro_lookup(2, day).to_bits(), Ord2::Relaxed);
+            omni_state
+                .us10y
+                .store(macro_lookup(3, day).to_bits(), Ord2::Relaxed);
+            omni_state
+                .dxy
+                .store(macro_lookup(4, day).to_bits(), Ord2::Relaxed);
+            omni_state
+                .oil_wti
+                .store(macro_lookup(5, day).to_bits(), Ord2::Relaxed);
+        }
+        let omni_features = omni_state.get_features();
+
         let (new_sc, new_sw, closed_sc, closed_sw) = core.process_event(
-            0, true, true, true, price, vol, sim_bid, sim_ask, bid_qty, ask_qty,
+            0,
+            true,
+            true,
+            true,
+            price,
+            vol,
+            sim_bid,
+            sim_ask,
+            bid_qty,
+            ask_qty,
             real_obi, // FASE 17: Use real OBI instead of static 0.5
-            0.0, ts, false, &[0.0; 54],
+            0.0,
+            ts,
+            false,
+            &omni_features,
         );
 
         // DEEP DIAGNOSTIC: Log ML predictions, features, and signal flow every 100k ticks

@@ -69,8 +69,11 @@ pub fn start_polars_evolver_daemon(
                     let mut test_cfg = Genotype::new_random();
                     // Merge some base properties or rely entirely on random
 
-                    let mut pnl = vec![0.0];
-                    let mut stats = vec![0.0; 4];
+                    // F3.3: buffers según el CONTRATO del motor (antes: pnl de
+                    // tamaño 1 y stats de 4 → OOB garantizado al primer trade).
+                    let n = closes.len();
+                    let mut pnl = vec![0.0; n];
+                    let mut stats = vec![0.0; backtest_engine::STATS_LEN];
                     let _final_cap = run_backtest_native(
                         &closes, &highs, &lows, &volumes, &test_cfg, &mut pnl, &mut stats, "SIM",
                         100.0,

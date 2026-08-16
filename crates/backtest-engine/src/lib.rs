@@ -2,6 +2,12 @@ pub mod vectorized;
 
 use quantum_arena::genome::SuperGenotype;
 
+/// F3.3: contrato de tamaño del buffer out_stats. El código anterior escribía
+/// 8 floats en buffers de 4 creados por los wrappers FFI → corrupción de heap
+/// y pánico garantizado en polars_evolver (vec![0.0] para pnl). Todo caller
+/// DEBE usar STATS_LEN.
+pub const STATS_LEN: usize = 8;
+
 pub fn run_backtest_native(
     closes: &[f64],
     _highs: &[f64],
@@ -15,11 +21,19 @@ pub fn run_backtest_native(
 ) -> usize {
     let len = closes.len();
 
+    // F3.4: capital 0/NaN ⇒ arena rota y métricas basura. Rechazo explícito:
+    // el caller debe extraer el balance real (API en demo/prod).
+    if !initial_capital.is_finite() || initial_capital <= 0.0 {
+        return 0;
+    }
+    if out_stats.len() < STATS_LEN {
+        return 0; // contrato violado: sin corrupción silenciosa
+    }
+
     // 🚨 AXIOMA FASE 33: ALERTA DE DIVERGENCIA FORENSE 🚨
-    // Este motor de backtest utiliza "Ticks Sintéticos" interpolados a partir de Klines 1m.
-    // Esto significa que la microestructura (OFI/OBI) generada aquí NO refleja la latencia y liquidez
-    // real del WebSocket de Mainnet. El Backtest es probabilístico y sujeto a divergencia de ejecución.
-    // Para validación final absoluta, utilizar el Modo Demo (Paper Trading) de god_engine conectado a Mainnet.
+    // Este motor sintetiza micro-ticks a partir de Klines 1m: la microestructura
+    // NO refleja la del WS real. Motor rápido para GA; la VERDAD de validación es
+    // audit_forensic_backtest (aggTrades + fees reales de la cuenta).
 
     // Axioma VII: Paridad Absoluta de Modelos. Usamos la misma Arena y Core que producción.
     use god_engine_core::GodEngineCore;
@@ -39,9 +53,22 @@ pub fn run_backtest_native(
     let mut trades = 0;
     let mut gross_pnl_sum = 0.0;
     let mut net_pnl_sum = 0.0;
+    let mut fees_est_sum = 0.0;
+    // Fee estimado por trade: qty × precio_barra × fee medio.
+    // ESTIMACIÓN documentada (el PnL emitido ya es net): para métricas pre-fee
+    // exactas usar audit_forensic (fees reales de la cuenta vía API).
+    // Floor realista Binance futures (0.02%/0.04%) hasta que F3.4 cablee la
+    // commission API — el genoma JAMÁS puede evolucionar los costos a cero.
+    let avg_fee_est = (0.0002 + 0.0004) * 0.5;
 
     let mut peak_capital = initial_capital;
     let mut max_dd = 0.0;
+
+    // F3.2 — FIX LOOK-AHEAD: el OFI sintético se deriva ahora del delta de la
+    // vela ANTERIOR (información disponible al abrir la vela actual). Antes:
+    // delta de la vela COMPLETA — el motor "veía" el resultado del bar antes
+    // de simular sus micro-ticks (win rate inflado por construcción).
+    let mut prev_delta = 0.0;
 
     for i in 0..len {
         let current_close = closes[i];
@@ -50,19 +77,19 @@ pub fn run_backtest_native(
         let prev_close = if i > 0 { closes[i - 1] } else { current_close };
         let delta = current_close - prev_close;
 
-        // Synthesize microstructure (Order Flow Imbalance estimation)
-        // If price goes up, buyers were aggressive -> higher bid qty.
+        // OFI NO anticipado: señal de la vela PREVIA (disponible en t=0 de esta).
         let mut bid_ratio = 0.5;
-        if delta > 0.0 {
-            bid_ratio = 1.0; // 100% buys
-        } else if delta < 0.0 {
-            bid_ratio = 0.0; // 100% sells
+        if prev_delta > 0.0 {
+            bid_ratio = 0.8;
+        } else if prev_delta < 0.0 {
+            bid_ratio = 0.2;
         }
 
         let bid_qty = current_vol * bid_ratio;
         let ask_qty = current_vol * (1.0 - bid_ratio);
 
-        // Interpolación HFT (FASE C): Dividimos la vela en 10 micro-ticks para estimular OFI/OBI
+        // Interpolación (modelado): la trayectoria lineal al cierre conocido
+        // permanece como suposición de suavizado — divergencia documentada arriba.
         let num_ticks = 10;
         let price_step = delta / num_ticks as f64;
         let vol_step = current_vol / num_ticks as f64;
@@ -119,15 +146,15 @@ pub fn run_backtest_native(
             }
         }
 
-        if let Some((_is_long, net_pnl, _qty)) = closed_sc {
-            out_pnl[trades] = net_pnl; // Store net
-
-            // out_stats will aggregate
-            // In the core engine, the 'pnl' emitted is already NET of all fees.
-            // We just use it directly.
-            gross_pnl_sum += net_pnl;
+        if let Some((_is_long, net_pnl, qty)) = closed_sc {
+            if trades < out_pnl.len() {
+                out_pnl[trades] = net_pnl;
+            }
+            let fees_est = qty * current_close * avg_fee_est;
+            fees_est_sum += fees_est;
+            gross_pnl_sum += net_pnl + fees_est;
             net_pnl_sum += net_pnl;
-            if net_pnl > 0.0 {
+            if net_pnl + fees_est > 0.0 {
                 gross_wins += 1;
             }
             if net_pnl > 0.0 {
@@ -137,12 +164,15 @@ pub fn run_backtest_native(
             trades += 1;
         }
 
-        if let Some((_is_long, net_pnl, _qty)) = closed_sw {
-            out_pnl[trades] = net_pnl;
-
-            gross_pnl_sum += net_pnl;
+        if let Some((_is_long, net_pnl, qty)) = closed_sw {
+            if trades < out_pnl.len() {
+                out_pnl[trades] = net_pnl;
+            }
+            let fees_est = qty * current_close * avg_fee_est;
+            fees_est_sum += fees_est;
+            gross_pnl_sum += net_pnl + fees_est;
             net_pnl_sum += net_pnl;
-            if net_pnl > 0.0 {
+            if net_pnl + fees_est > 0.0 {
                 gross_wins += 1;
             }
             if net_pnl > 0.0 {
@@ -151,6 +181,10 @@ pub fn run_backtest_native(
 
             trades += 1;
         }
+        let _ = fees_est_sum; // expuesto vía stats[7]/stats[5] abajo
+
+        // F3.2: el delta de ESTA vela queda disponible para la SIGUIENTE.
+        prev_delta = delta;
 
         let current_cap = core.arena.unified_capital.load(Ordering::Relaxed);
         if current_cap > peak_capital {
@@ -202,8 +236,6 @@ pub fn run_backtest_native(
         0.0
     };
 
-    // We already have sums, no need to loop again for mean.
-    // Simplify sharpe logic for performance if needed, or keep it.
     let mean_pnl = if trades > 0 {
         net_pnl_sum / trades as f64
     } else {
@@ -211,10 +243,12 @@ pub fn run_backtest_native(
     };
     let mut variance = 0.0;
     if trades > 1 {
-        for i in 0..trades {
-            variance += (out_pnl[i] - mean_pnl).powi(2);
+        // Solo los PnL realmente escritos en el buffer participan.
+        let stored = trades.min(out_pnl.len());
+        for pnl in out_pnl[..stored].iter() {
+            variance += (pnl - mean_pnl).powi(2);
         }
-        variance /= (trades - 1) as f64;
+        variance /= (stored - 1) as f64;
     }
     let std_dev = variance.sqrt();
     let sharpe = if std_dev > 0.0 {
@@ -264,7 +298,7 @@ pub unsafe extern "C" fn ffi_run_unified_backtest(
     let volumes = unsafe { std::slice::from_raw_parts(volumes_ptr, len) };
     let cfg = unsafe { &*config };
     let out_pnl = unsafe { std::slice::from_raw_parts_mut(out_pnl_ptr, len) };
-    let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, 4) };
+    let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, STATS_LEN) };
 
     let sym_c = unsafe { std::ffi::CStr::from_ptr(symbol_ptr) };
     let sym_str = sym_c.to_str().unwrap_or("BTCUSDT");
@@ -333,7 +367,7 @@ pub unsafe extern "C" fn ffi_run_unified_backtest_mmap(
 
     let cfg = unsafe { &*config };
     let out_pnl = unsafe { std::slice::from_raw_parts_mut(out_pnl_ptr, len) };
-    let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, 4) };
+    let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, STATS_LEN) };
 
     let sym_c = unsafe { std::ffi::CStr::from_ptr(symbol_ptr) };
     let sym_str = sym_c.to_str().unwrap_or("BTCUSDT");
@@ -394,7 +428,7 @@ pub unsafe extern "C" fn ffi_run_polars_backtest_mmap(
     let volumes = unsafe { std::slice::from_raw_parts(ptr.add(len * 3), len) };
 
     let cfg = unsafe { &*config };
-    let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, 4) };
+    let out_stats = unsafe { std::slice::from_raw_parts_mut(out_stats_ptr, STATS_LEN) };
 
     if let Ok((final_cap, max_dd, trades, wins)) =
         vectorized::run_vectorized_hybrid(closes, highs, lows, volumes, cfg)
