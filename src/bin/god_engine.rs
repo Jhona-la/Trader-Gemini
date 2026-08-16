@@ -492,6 +492,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         restored_positions.clear();
     }
 
+    // ── F1.11 MODO HEDGE ─────────────────────────────────────────────────────
+    // El motor envía positionSide=LONG/SHORT siempre; si la cuenta está en
+    // one-way, TODA orden falla con -4061. Verificar/activar antes de operar.
+    if !orchestrator.read().unwrap().is_demo_mode {
+        match exec.load().ensure_hedge_mode().await {
+            Ok(true) => {
+                telemetry_server::telemetry_log!("🔀 [PRE-FLIGHT] Cuenta migrada a modo HEDGE")
+            }
+            Ok(false) => telemetry_server::telemetry_log!("🔀 [PRE-FLIGHT] Modo HEDGE ya activo"),
+            Err(e) => telemetry_server::telemetry_log!(
+                "🚨 [PRE-FLIGHT] No se pudo garantizar modo hedge: {} — TODA orden fallará (-4061)",
+                e
+            ),
+        }
+    }
+
     // ── F1.7 RECONCILIACIÓN AL ARRANQUE ──────────────────────────────────────
     // positionRisk (verdad del exchange) diff contra OrderRegistry (F1.5).
     // Directiva: saber SIEMPRE si hay posiciones abiertas antes de operar.

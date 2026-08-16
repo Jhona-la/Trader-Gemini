@@ -121,10 +121,26 @@ impl DenseLayer {
             let row_offset = i * self.in_features;
             let mut sum = unsafe { *self.biases.get_unchecked(i) };
 
-            for j in 0..self.in_features {
+            let mut j = 0;
+            let len = self.in_features;
+
+            while j + 4 <= len {
+                unsafe {
+                    sum += *self.weights.get_unchecked(row_offset + j) * *input.get_unchecked(j)
+                        + *self.weights.get_unchecked(row_offset + j + 1)
+                            * *input.get_unchecked(j + 1)
+                        + *self.weights.get_unchecked(row_offset + j + 2)
+                            * *input.get_unchecked(j + 2)
+                        + *self.weights.get_unchecked(row_offset + j + 3)
+                            * *input.get_unchecked(j + 3);
+                }
+                j += 4;
+            }
+            while j < len {
                 unsafe {
                     sum += *self.weights.get_unchecked(row_offset + j) * *input.get_unchecked(j);
                 }
+                j += 1;
             }
 
             // Limite matemático para evitar f64::exp overflow (f64 límite es ~709.0)

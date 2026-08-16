@@ -202,6 +202,193 @@ impl OrderExecutor {
         &self.client
     }
 
+    /// F1.11: verifica que la cuenta esté en modo HEDGE (dualSidePosition).
+    /// El motor SIEMPRE envía positionSide=LONG/SHORT: con la cuenta en modo
+    /// one-way TODA orden falla con -4061 (hallazgo real del ciclo testnet).
+    /// Si no está en hedge, la activa (POST firmado /fapi/v1/positionSide/dual).
+    pub async fn ensure_hedge_mode(&self) -> Result<bool, String> {
+        if self.is_paper_trading {
+            return Ok(true);
+        }
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let api_secret = self.api_secret.read().unwrap().clone();
+
+        // 1) Modo actual (GET firmado)
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/positionSide/dual?");
+        let payload_start = buf.as_str().len();
+        buf.push_str("timestamp=");
+        buf.push_u64(timestamp);
+        let mut sig_buf = [0u8; 64];
+        sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
+        buf.push_str("&signature=");
+        buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
+
+        let (_, body) = self.client.get_payload(buf.as_str()).await?;
+        #[derive(serde::Deserialize)]
+        struct ModeResp {
+            #[serde(rename = "dualSidePosition")]
+            dual: bool,
+        }
+        let mode: ModeResp = serde_json::from_str(&body)
+            .map_err(|e| format!("POSITION_MODE_PARSE: {} body={}", e, body))?;
+        if mode.dual {
+            return Ok(false); // ya estaba en hedge: no se cambió nada
+        }
+
+        // 2) Activar hedge (POST firmado dualSidePosition=true)
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/positionSide/dual?");
+        let payload_start = buf.as_str().len();
+        buf.push_str("dualSidePosition=true&timestamp=");
+        buf.push_u64(timestamp);
+        let mut sig_buf = [0u8; 64];
+        sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
+        buf.push_str("&signature=");
+        buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
+
+        match self.client.post_payload(buf.as_str()).await {
+            Ok(_) => {
+                println!("🔀 [POSITION-MODE] Cuenta migrada a HEDGE (dualSidePosition=true)");
+                Ok(true)
+            }
+            Err(e) => Err(format!(
+                "No se pudo activar modo hedge: {}. Sin hedge, TODA orden falla (-4061).",
+                e
+            )),
+        }
+    }
+
+    /// F1.11/F5.2: APLANADO TOTAL — cancela todas las órdenes abiertas y cierra
+    /// todas las posiciones con MARKET reduceOnly (side opuesto, qty exacta).
+    /// Mode-aware: en one-way se OMITE positionSide (si no, -4061).
+    /// Usos: pre-flight de demo (limpiar huérfanas de sesiones previas) y
+    /// primitivo del kill-switch real. Devuelve (órdenes canceladas, posiciones cerradas).
+    pub async fn flatten_all_positions(&self) -> Result<(usize, usize), String> {
+        if self.is_paper_trading {
+            return Ok((0, 0));
+        }
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let api_secret = self.api_secret.read().unwrap().clone();
+
+        // Modo de la cuenta (dual=hedge) — determina si se envía positionSide.
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/positionSide/dual?");
+        let payload_start = buf.as_str().len();
+        buf.push_str("timestamp=");
+        buf.push_u64(timestamp);
+        let mut sig_buf = [0u8; 64];
+        sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
+        buf.push_str("&signature=");
+        buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
+        let (_, mode_body) = self.client.get_payload(buf.as_str()).await?;
+        #[derive(serde::Deserialize)]
+        struct ModeResp {
+            #[serde(rename = "dualSidePosition")]
+            dual: bool,
+        }
+        let dual = serde_json::from_str::<ModeResp>(&mode_body)
+            .map(|m| m.dual)
+            .unwrap_or(true); // el motor ES hedge; asumir dual si no se puede leer
+
+        // 1) Cancelar TODAS las órdenes abiertas por símbolo con posiciones.
+        let entries = self.fetch_position_risk().await?;
+        let symbols: Vec<String> = entries
+            .iter()
+            .filter(|p| p.is_open())
+            .map(|p| p.symbol.clone())
+            .collect();
+        let mut cancelled = 0usize;
+        for sym in &symbols {
+            let ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            let mut buf = ZeroAllocBuffer::new();
+            buf.push_str(self.client.get_base_url());
+            buf.push_str("/fapi/v1/allOpenOrders?");
+            let payload_start = buf.as_str().len();
+            buf.push_str("symbol=");
+            buf.push_str(sym);
+            buf.push_str("&timestamp=");
+            buf.push_u64(ts);
+            let mut sig_buf = [0u8; 64];
+            sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
+            buf.push_str("&signature=");
+            buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
+            if self.client.cancel_order_payload(buf.as_str()).await.is_ok() {
+                cancelled += 1;
+            }
+        }
+
+        // 2) Cerrar cada posición con MARKET reduceOnly del lado opuesto.
+        let mut closed = 0usize;
+        for p in entries.iter().filter(|p| p.is_open()) {
+            let is_long = p.is_long();
+            let ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            let coid = uuid::Uuid::now_v7().simple().to_string();
+            let mut buf = ZeroAllocBuffer::new();
+            buf.push_str(self.client.get_base_url());
+            buf.push_str("/fapi/v1/order?");
+            let payload_start = buf.as_str().len();
+            buf.push_str("symbol=");
+            buf.push_str(&p.symbol);
+            buf.push_str("&side=");
+            buf.push_str(if is_long { "SELL" } else { "BUY" });
+            if dual {
+                buf.push_str("&positionSide=");
+                buf.push_str(if is_long { "LONG" } else { "SHORT" });
+            }
+            buf.push_str("&type=MARKET&reduceOnly=true&quantity=");
+            buf.push_f64(p.position_amt.abs());
+            buf.push_str("&newClientOrderId=");
+            buf.push_str(&coid);
+            buf.push_str("&timestamp=");
+            buf.push_u64(ts);
+            let mut sig_buf = [0u8; 64];
+            sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
+            buf.push_str("&signature=");
+            buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
+
+            match self.client.execute_order_payload_typed(buf.as_str()).await {
+                Ok((limits, ack)) => {
+                    self.update_limits(&limits);
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis() as u64;
+                    self.order_registry.apply_ack(&ack, now);
+                    closed += 1;
+                    println!(
+                        "🧹 [FLATTEN] {} cerrada {} @ ~{} (status {})",
+                        p.symbol,
+                        p.position_amt.abs(),
+                        ack.avg_price,
+                        ack.status
+                    );
+                }
+                Err(e) => println!("⚠️ [FLATTEN] {} NO cerrada: {}", p.symbol, e),
+            }
+        }
+        Ok((cancelled, closed))
+    }
+
     /// F1.7: GET /fapi/v2/positionRisk — posiciones abiertas según el EXCHANGE.
     /// Fuente de verdad para reconciliación al arranque y periódica.
     pub async fn fetch_position_risk(
@@ -922,8 +1109,6 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long { "LONG" } else { "SHORT" });
         buf.push_str("&positionSide=");
         buf.push_str(if is_long { "LONG" } else { "SHORT" });
         buf.push_str("&type=");

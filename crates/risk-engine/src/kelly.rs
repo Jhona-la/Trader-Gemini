@@ -23,15 +23,15 @@ pub fn calculate_kelly_fraction(
 
     let _dynamic_max_risk = win_rate.powi(2); // Auto-adaptable: 100% WR permite 100% riesgo
 
-    // Asimetría Matemática (Fase 8): Supervivencia vs Expansión Parabólica (Scale-Invariant)
+    // Asimetría Matemática: Supervivencia vs Expansión Parabólica (Scale-Invariant)
     let capital_ratio = (current_capital / base_capital.max(1.0)).max(0.01);
     let capital_scale = if capital_ratio < kelly_survival_cap_ratio {
-        // Modo Supervivencia: Fractional Kelly adaptativo a la ratio de capital
-        (0.15 * win_rate * capital_ratio.sqrt()).clamp(0.05, 0.5)
+        // Modo Supervivencia Adaptativa: Base fraction scaled by win rate
+        (0.25 * win_rate * capital_ratio.sqrt()).clamp(0.10, 0.60)
     } else {
         // Modo Expansión Parabólica (Interés Compuesto):
-        let expansion = (capital_ratio.log10() * kelly_expansion_mult + 0.5).clamp(0.5, 2.5);
-        (0.5 * expansion).clamp(0.5, 1.0)
+        let expansion = (capital_ratio.log10() * kelly_expansion_mult + 0.6).clamp(0.6, 2.5);
+        (0.6 * expansion).clamp(0.6, 1.0)
     };
 
     // Retornamos el Kelly ajustado asimétricamente

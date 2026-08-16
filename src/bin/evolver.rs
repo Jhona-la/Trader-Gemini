@@ -27,14 +27,11 @@ async fn main() -> Result<(), String> {
     println!("🧬 TRADER GEMINI V5 - TICK-LEVEL REALITY EVOLVER (SuperGenotype)");
     println!("============================================================");
 
-    let initial_capital_str = env::var("INITIAL_CAPITAL")
-        .expect("❌ INITIAL_CAPITAL must be provided as environment variable");
-    let mut initial_capital: f64 = initial_capital_str
-        .parse()
-        .expect("❌ INITIAL_CAPITAL must be a number");
+    let initial_capital_str = env::var("INITIAL_CAPITAL").unwrap_or_else(|_| "13.0".to_string());
+    let mut initial_capital: f64 = initial_capital_str.parse().unwrap_or(13.0);
     if initial_capital <= 0.0 {
-        println!("⚠️ INITIAL_CAPITAL=0.0 detected. Enforcing $1000.00 mock capital for evolutionary testing.");
-        initial_capital = 1000.0;
+        println!("⚠️ INITIAL_CAPITAL <= 0.0 detected. Defaulting to $13.00 base capital.");
+        initial_capital = 13.0;
     }
 
     let _arena_for_cap = std::thread::Builder::new()
@@ -209,19 +206,21 @@ async fn main() -> Result<(), String> {
                     0.0
                 };
 
-                // Fitness: reward capital growth + trade volume, penalize drawdown
-                let fitness = if max_drawdown > 0.90 || total_trades < 10 {
+                // Fitness: reward compound growth + positive expectancy, penalize catastrophic ruin
+                let fitness = if max_drawdown > 0.90 || total_trades < 5 {
                     0.0
                 } else {
                     let pnl = final_capital - initial_capital;
+                    let growth = pnl / initial_capital;
+                    let dd_penalty = (1.0 - max_drawdown).powf(1.5).max(0.01);
+                    let trade_factor = (total_trades as f64).sqrt().clamp(1.0, 20.0);
+                    let wr_factor = (win_rate * 2.0).clamp(0.5, 2.0);
+
                     if pnl > 0.0 {
-                        let growth = pnl / initial_capital;
-                        let dd_penalty = (1.0 - max_drawdown).max(0.01);
-                        let trade_bonus = (total_trades as f64).ln().max(1.0);
-                        10.0 + (growth * dd_penalty * trade_bonus * 100.0)
+                        10.0 + (growth * dd_penalty * trade_factor * wr_factor * 50.0)
                     } else {
                         let loss_pct = pnl.abs() / initial_capital;
-                        (10.0 - (loss_pct * 100.0)).max(0.1)
+                        (10.0 - (loss_pct * 10.0)).max(0.01)
                     }
                 };
                 (

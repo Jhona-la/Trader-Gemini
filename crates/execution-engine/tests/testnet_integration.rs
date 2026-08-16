@@ -57,17 +57,43 @@ async fn t01_conectividad_tiempo_y_lector_precio() {
 #[ignore = "requiere BINANCE_TESTNET_API_KEY/SECRET"]
 async fn t02_ciclo_de_vida_orden_new_query_cancel() {
     let exec = executor();
+    // Higiene de DEMO (dinero falso): huérfanas de sesiones previas bloquean
+    // el cambio de modo (-4068) y ensucian la reconciliación. Aplanar primero.
+    let (cancelled_syms, closed_positions) = exec
+        .flatten_all_positions()
+        .await
+        .expect("flatten demo leftovers");
+    println!("flatten demo: {cancelled_syms} símbolos con órdenes canceladas, {closed_positions} posiciones cerradas");
+
+    // El motor es hedge (positionSide LONG/SHORT): la cuenta debe estar en
+    // dualSidePosition o TODA orden falla -4061 (hallazgo de este ciclo).
+    let changed = exec.ensure_hedge_mode().await.expect("ensure_hedge_mode");
+    println!(
+        "modo hedge: {}",
+        if changed {
+            "activado por el test"
+        } else {
+            "ya estaba activo"
+        }
+    );
     let price = btc_price(&exec).await;
     // GTX post-only al 50% del precio: garantizado NEW, jamás fill.
-    let far_price = (price * 0.5 * 100.0).round() / 100.0;
+    // BTCUSDT futuros: tickSize=0.1 — el precio DEBE alinear al tick o
+    // Binance rechaza con -4014 (lección validada en vivo, gap #4 del API map).
+    let tick = 0.1;
+    let far_price = (price * 0.5 / tick).round() * tick;
+    // Notional mínimo del testnet: $50 (-4164). Cantidad dinámica para
+    // garantizar ~$100 de notional al precio lejano, alineada al step 0.001.
+    let step = 0.001;
+    let qty = ((100.0 / far_price) / step).ceil() * step;
 
     let coid = uuid::Uuid::now_v7().simple().to_string();
     exec.registry()
-        .register_intent(&coid, "BTCUSDT", "BUY", "LONG", "LIMIT", 0.001, 0);
+        .register_intent(&coid, "BTCUSDT", "BUY", "LONG", "LIMIT", qty, 0);
 
     // Colocar LIMIT GTX (via camino interno del executor).
     let limit_res = exec
-        .execute_limit_order("BTCUSDT", true, 0.001, far_price, 0.001, 0.01, &coid)
+        .execute_limit_order("BTCUSDT", true, qty, far_price, step, tick, &coid)
         .await;
     assert!(
         limit_res.is_ok(),
