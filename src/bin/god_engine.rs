@@ -1056,22 +1056,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
                         if ml_prob > 0.80 || ml_prob < 0.20 {
                             is_high_confidence_scalp = true;
-                            // _scalp_entry_price = entry_price;
-                            let base_tp = engine_real.arena.config.scalp_tp_base.load(Ordering::Relaxed);
-                            let base_sl = engine_real.arena.config.scalp_sl_base.load(Ordering::Relaxed);
-                            let atr_pct = engine_real.feature_engines[coin_id].get_atr_pct();
-                            let scalp_tp = base_tp.max(atr_pct * 2.0).max(0.002);
-                            let scalp_sl = base_sl.max(atr_pct * 1.5).max(0.0015);
-
-                            scalp_tp_price = if is_long { entry_price * (1.0 + scalp_tp) } else { entry_price * (1.0 - scalp_tp) };
-                            scalp_sl_price = if is_long { entry_price * (1.0 - scalp_sl) } else { entry_price * (1.0 + scalp_sl) };
                         }
+
+                        // F1.9b: TP/SL genome-driven para TODA entrada scalp (antes
+                        // solo alta confianza). Bases del genoma con piso ATR.
+                        let base_tp = engine_real.arena.config.scalp_tp_base.load(Ordering::Relaxed);
+                        let base_sl = engine_real.arena.config.scalp_sl_base.load(Ordering::Relaxed);
+                        let atr_pct = engine_real.feature_engines[coin_id].get_atr_pct();
+                        let scalp_tp = base_tp.max(atr_pct * 2.0).max(0.002);
+                        let scalp_sl = base_sl.max(atr_pct * 1.5).max(0.0015);
+
+                        scalp_tp_price = if is_long { entry_price * (1.0 + scalp_tp) } else { entry_price * (1.0 - scalp_tp) };
+                        scalp_sl_price = if is_long { entry_price * (1.0 - scalp_sl) } else { entry_price * (1.0 + scalp_sl) };
                     }
 
-                    if let Some((is_long, _price, qty)) = new_sw {
+                    if let Some((is_long, entry_price, qty)) = new_sw {
                         max_leverage = 5;
                         net_qty += if is_long { qty } else { -qty };
                         let _ = tx_log_worker.try_send((false, is_long, coin_id));
+
+                        // F1.9b: swing TAMBIÉN lleva TP/SL genome-driven (gen de
+                        // horizonte mayor). Si scalp y swing coinciden en el tick,
+                        // el swing domina la protección (horizonte más ancho).
+                        let base_tp = engine_real.arena.config.swing_tp_base.load(Ordering::Relaxed);
+                        let base_sl = engine_real.arena.config.swing_sl_base.load(Ordering::Relaxed);
+                        let atr_pct = engine_real.feature_engines[coin_id].get_atr_pct();
+                        let swing_tp = base_tp.max(atr_pct * 4.0);
+                        let swing_sl = base_sl.max(atr_pct * 3.0);
+
+                        scalp_tp_price = if is_long { entry_price * (1.0 + swing_tp) } else { entry_price * (1.0 - swing_tp) };
+                        scalp_sl_price = if is_long { entry_price * (1.0 - swing_sl) } else { entry_price * (1.0 + swing_sl) };
                     }
 
                     if net_qty.abs() > 0.0 {
@@ -1088,6 +1102,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if max_leverage > 1 {
                                 let _ = exec_clone.load().set_leverage(&parsed_sym_str, max_leverage).await;
                             }
+                            // F1.9b: capturar resultado de la entrada — jamás tragado.
+                            let entry_result: Result<(), String>;
                             if force_maker {
                                 let mut id_buf = [0u8; 32];
                                 id_buf[0..3].copy_from_slice(b"mc_");
@@ -1096,29 +1112,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let micros_str = itoa_buf.format(micros);
                                 id_buf[3..3 + micros_str.len()].copy_from_slice(micros_str.as_bytes());
                                 let order_id = unsafe { std::str::from_utf8_unchecked(&id_buf[..3 + micros_str.len()]) };
-                                let _ = exec_clone.load().execute_maker_chase(&parsed_sym_str, final_is_long, final_qty, maker_price, 0.001, 0.0001, &order_id).await;
+                                entry_result = exec_clone.load().execute_maker_chase(&parsed_sym_str, final_is_long, final_qty, maker_price, 0.001, 0.0001, &order_id).await;
                             } else if notional_volume > iceberg_threshold {
                                 let iceberg_qty = final_qty / iceberg_slices;
                                 telemetry_engine::telemetry!("🧊 [ICEBERG ROUTER] Fragmentando orden institucional ({} USDT) en pedazos de {}...", notional_volume, iceberg_qty);
-                                let _ = exec_clone.load().execute_iceberg_limit(&parsed_sym_str, final_is_long, final_qty, maker_price, iceberg_qty, 0.001, 0.0001, "iceberg_01").await;
+                                entry_result = exec_clone.load().execute_iceberg_limit(&parsed_sym_str, final_is_long, final_qty, maker_price, iceberg_qty, 0.001, 0.0001, "iceberg_01").await;
                             } else {
-                                let _ = exec_clone.load().execute_raw_qty(&parsed_sym_str, final_is_long, final_qty, 0.001).await;
+                                entry_result = exec_clone.load().execute_raw_qty(&parsed_sym_str, final_is_long, final_qty, 0.001).await;
+                            }
 
-                                // FASE 12: PARALLEL OCO INJECTION FOR HIGH CONFIDENCE SCALPS
-                                if is_high_confidence_scalp {
-                                    telemetry_engine::telemetry!("🎯 [OCO TENSOR] High confidence detected! Firing Parallel OCO for {} (TP: {:.4}, SL: {:.4})", parsed_sym_str, scalp_tp_price, scalp_sl_price);
-                                    let is_long_close = final_is_long; // if we entered LONG, we close it with a SELL
+                            match entry_result {
+                                Err(e) => {
+                                    // Entrada fallida: SIN OCO (proteger una posición
+                                    // inexistente crearía una posición inversa desnuda).
+                                    telemetry_engine::telemetry!(
+                                        "❌ [ENTRY] {} rechazada: {}",
+                                        parsed_sym_str, e
+                                    );
+                                }
+                                Ok(()) => {
+                                    // F1.9b: TODA posición lleva TP/SL genome-driven.
+                                    // (antes: solo scalps de alta confianza — el resto naked)
+                                    if scalp_tp_price > 0.0 && scalp_sl_price > 0.0 {
+                                        let tag = if is_high_confidence_scalp { "🎯 [OCO TENSOR]" } else { "🛡️ [OCO GUARD]" };
+                                        telemetry_engine::telemetry!(
+                                            "{} Protección para {} (TP: {:.4}, SL: {:.4})",
+                                            tag, parsed_sym_str, scalp_tp_price, scalp_sl_price
+                                        );
+                                        let is_long_close = final_is_long; // si entramos LONG, cerramos con SELL
 
-                                    let mut id_buf = [0u8; 32];
-                                    id_buf[0..4].copy_from_slice(b"oco_");
-                                    let micros = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros();
-                                    let mut itoa_buf = itoa::Buffer::new();
-                                    let micros_str = itoa_buf.format(micros);
-                                    id_buf[4..4 + micros_str.len()].copy_from_slice(micros_str.as_bytes());
-                                    let base_id = unsafe { std::str::from_utf8_unchecked(&id_buf[..4 + micros_str.len()]) };
+                                        let mut id_buf = [0u8; 32];
+                                        id_buf[0..4].copy_from_slice(b"oco_");
+                                        let micros = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros();
+                                        let mut itoa_buf = itoa::Buffer::new();
+                                        let micros_str = itoa_buf.format(micros);
+                                        id_buf[4..4 + micros_str.len()].copy_from_slice(micros_str.as_bytes());
+                                        let base_id = unsafe { std::str::from_utf8_unchecked(&id_buf[..4 + micros_str.len()]) };
 
-                                    // Use tick_size and step_size of 0.001 as fallback, or ideally fetch it from exchange info.
-                                    let _ = exec_clone.load().execute_oco_order(&parsed_sym_str, is_long_close, final_qty, scalp_tp_price, scalp_sl_price, 0.001, 0.0001, &base_id).await;
+                                        // tick/step 0.001 de fallback; F1.0 traerá el tickSize real por símbolo.
+                                        if let Err(oco_err) = exec_clone.load().execute_oco_order(&parsed_sym_str, is_long_close, final_qty, scalp_tp_price, scalp_sl_price, 0.001, 0.0001, &base_id).await {
+                                            telemetry_engine::telemetry!(
+                                                "🚨 [OCO GUARD] {} quedó SIN protección: {} — aplanar manual o alertar",
+                                                parsed_sym_str, oco_err
+                                            );
+                                        }
+                                    }
                                 }
                             }
                         });

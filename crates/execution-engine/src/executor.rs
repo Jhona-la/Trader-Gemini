@@ -165,6 +165,10 @@ pub struct OrderExecutor {
     /// F1.5: memoria del ciclo de vida de órdenes — compartida con el
     /// user-data stream (F1.6) y la reconciliación (F1.7).
     order_registry: std::sync::Arc<crate::order_registry::OrderRegistry>,
+    /// F1.8: no enviar órdenes hasta este timestamp (cooldown post-429).
+    cooldown_until_ms: AtomicU64,
+    /// F1.8: 429s consecutivos — >=3 sugiere ban inminente → kill-switch real.
+    consecutive_429: AtomicUsize,
 }
 
 impl OrderExecutor {
@@ -184,6 +188,8 @@ impl OrderExecutor {
             active_leverage: std::sync::RwLock::new(std::collections::HashMap::new()),
             is_paper_trading: is_testnet, // Initially mapped to is_testnet, will be overridden by PhaseOrchestrator if in PaperTrading mode
             order_registry: std::sync::Arc::new(crate::order_registry::OrderRegistry::new()),
+            cooldown_until_ms: AtomicU64::new(0),
+            consecutive_429: AtomicUsize::new(0),
         }
     }
 
@@ -270,6 +276,55 @@ impl OrderExecutor {
         if let Some(o) = limits.orders_1m {
             self.binance_orders_1m.store(o, Ordering::Relaxed);
         }
+        // Respuesta exitosa = la ventana de rate limit está sana.
+        self.consecutive_429.store(0, Ordering::Relaxed);
+    }
+
+    /// F1.8: política centralizada ante rate limits de Binance.
+    /// - 429: cooldown temporal (Retry-After o 60s default); kill-switch SOLO
+    ///   si se acumulan 3+ consecutivos (patrón de ban inminente).
+    /// - 418: IP baneada → kill-switch inmediato y legítimo.
+    /// Antes: un SOLO 429 disparaba el kill-switch permanente — el sistema
+    /// quedaba muerto hasta reinicio por un freno transitorio del exchange.
+    fn handle_rate_limit_error(&self, e: &str) -> String {
+        if e.starts_with("HTTP_429_RATE_LIMITED") {
+            let retry_after_s: u64 = e
+                .split("retry_after=")
+                .nth(1)
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(60);
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let until = now.saturating_add(retry_after_s.saturating_mul(1000));
+            // Máximo atómico: conservar cooldown mayor si ya existía.
+            let mut cur = self.cooldown_until_ms.load(Ordering::Relaxed);
+            while until > cur {
+                match self.cooldown_until_ms.compare_exchange(
+                    cur,
+                    until,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(v) => cur = v,
+                }
+            }
+            let n = self.consecutive_429.fetch_add(1, Ordering::Relaxed) + 1;
+            println!(
+                "⏳ [RATE-LIMIT] 429 consecutivo #{}: cooldown {}s (hasta ms {})",
+                n, retry_after_s, until
+            );
+            if n >= 3 {
+                self.trigger_kill_switch();
+                println!("🚨 [KILL SWITCH] 3+ rate limits consecutivos — freno total preventivo.");
+            }
+        } else if e.starts_with("HTTP_418_IP_BANNED") {
+            self.trigger_kill_switch();
+            println!("🚨 [KILL SWITCH] HTTP 418: IP baneada por Binance. Freno total.");
+        }
+        e.to_string()
     }
 
     #[inline(always)]
@@ -278,19 +333,43 @@ impl OrderExecutor {
             return Err("KILL SWITCH ACTIVE. Execution blocked.".to_string());
         }
 
+        // F1.8: cooldown post-429 — Binance ya nos frenó; respetar la ventana.
+        if timestamp_ms < self.cooldown_until_ms.load(Ordering::Relaxed) {
+            return Err(format!(
+                "RATE_LIMIT_COOLDOWN: activo hasta {} (ahora {})",
+                self.cooldown_until_ms.load(Ordering::Relaxed),
+                timestamp_ms
+            ));
+        }
+
         let bw1m = self.binance_weight_1m.load(Ordering::Relaxed);
         let bo10s = self.binance_orders_10s.load(Ordering::Relaxed);
         let bo1m = self.binance_orders_1m.load(Ordering::Relaxed);
 
-        let max_bw1m = self.max_weight_1m.load(Ordering::Relaxed);
-        let max_bo10s = self.max_orders_10s.load(Ordering::Relaxed);
-        let max_bo1m = self.max_orders_1m.load(Ordering::Relaxed);
+        let max_bw1m = self.max_weight_1m.load(Ordering::Relaxed) as f64;
+        let max_bo10s = self.max_orders_10s.load(Ordering::Relaxed) as f64;
+        let max_bo1m = self.max_orders_1m.load(Ordering::Relaxed) as f64;
 
-        if bw1m > max_bw1m || bo10s > max_bo10s || bo1m > max_bo1m {
-            // BACKPRESSURE: Don't kill the whole system, just block this specific execution
+        // F1.8: HEADROOM 80% — los contadores de Binance llegan POR RESPUESTA;
+        // frenar al 100% ya es tarde (requests en vuelo cruzan el límite).
+        // Constante de infraestructura justificada, no parámetro de estrategia.
+        const HEADROOM: f64 = 0.8;
+        if bw1m as f64 > max_bw1m * HEADROOM {
             return Err(format!(
-                "RATE LIMIT APPROACHING: W:{} O10:{} O1m:{}. Throttling execution.",
-                bw1m, bo10s, bo1m
+                "RATE_LIMIT_HEADROOM_WEIGHT: {}/{}",
+                bw1m, max_bw1m as usize
+            ));
+        }
+        if bo10s as f64 > max_bo10s * HEADROOM {
+            return Err(format!(
+                "RATE_LIMIT_HEADROOM_ORDERS_10S: {}/{}",
+                bo10s, max_bo10s as usize
+            ));
+        }
+        if bo1m as f64 > max_bo1m * HEADROOM {
+            return Err(format!(
+                "RATE_LIMIT_HEADROOM_ORDERS_1M: {}/{}",
+                bo1m, max_bo1m as usize
             ));
         }
 
@@ -506,10 +585,8 @@ impl ExecutionProvider for OrderExecutor {
                     Ok(())
                 }
                 Err(e) => {
-                    if e == "HTTP_429_TOO_MANY_REQUESTS_OR_BANNED" {
-                        self.trigger_kill_switch();
-                        println!("🚨 [KILL SWITCH] HTTP 429/418 Rate Limit Hit! API Banned. Halting all executions.");
-                        return Err(e.clone());
+                    if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
+                        return Err(self.handle_rate_limit_error(e));
                     }
                     // F1.2: error ambiguo (timeout/5xx) — la orden PUEDE existir.
                     // Consultar por clientOrderId ANTES de reportar error: jamás duplicar.
@@ -631,9 +708,8 @@ impl ExecutionProvider for OrderExecutor {
                 Ok(())
             }
             Err(e) => {
-                if e == "HTTP_429_TOO_MANY_REQUESTS_OR_BANNED" {
-                    self.trigger_kill_switch();
-                    println!("🚨 [KILL SWITCH] HTTP 429/418 Rate Limit Hit! API Banned. Halting all executions.");
+                if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
+                    return Err(self.handle_rate_limit_error(e));
                 }
                 Err(e.clone())
             }
@@ -718,9 +794,8 @@ impl ExecutionProvider for OrderExecutor {
                 Ok(())
             }
             Err(e) => {
-                if e == "HTTP_429_TOO_MANY_REQUESTS_OR_BANNED" {
-                    self.trigger_kill_switch();
-                    println!("🚨 [KILL SWITCH] HTTP 429/418 Rate Limit Hit! API Banned. Halting all executions.");
+                if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
+                    return Err(self.handle_rate_limit_error(e));
                 }
                 Err(e.clone())
             }

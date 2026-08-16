@@ -102,6 +102,17 @@ fn extract_limits(headers: &HeaderMap) -> BinanceRateLimits {
     limits
 }
 
+/// F1.8: Retry-After del 429 (segundos). Default 60 si Binance no lo envía:
+/// conservador y documentado — cubre la ventana típica de reinicio de peso.
+#[inline(always)]
+fn extract_retry_after(headers: &HeaderMap) -> u64 {
+    headers
+        .get("Retry-After")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(60)
+}
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone)]
@@ -226,8 +237,11 @@ impl BinanceClient {
                 if resp.status().is_success() {
                     let limits = extract_limits(resp.headers());
                     Ok(limits)
-                } else if resp.status().as_u16() == 429 || resp.status().as_u16() == 418 {
-                    Err("HTTP_429_TOO_MANY_REQUESTS_OR_BANNED".to_string())
+                } else if resp.status().as_u16() == 429 {
+                    let retry_after = extract_retry_after(resp.headers());
+                    Err(format!("HTTP_429_RATE_LIMITED retry_after={}", retry_after))
+                } else if resp.status().as_u16() == 418 {
+                    Err("HTTP_418_IP_BANNED".to_string())
                 } else {
                     let text = resp
                         .text()
@@ -265,6 +279,7 @@ impl BinanceClient {
         match response {
             Ok(resp) => {
                 let limits = extract_limits(resp.headers());
+                let retry_after = extract_retry_after(resp.headers());
                 let status = resp.status();
                 let body = resp
                     .text()
@@ -273,8 +288,12 @@ impl BinanceClient {
                 if status.is_success() {
                     let ack: OrderAck = parse_order_body(&body)?;
                     Ok((limits, ack))
-                } else if status.as_u16() == 429 || status.as_u16() == 418 {
-                    Err("HTTP_429_TOO_MANY_REQUESTS_OR_BANNED".to_string())
+                } else if status.as_u16() == 429 {
+                    // F1.8: rate limit = cooldown temporal, no kill-switch.
+                    Err(format!("HTTP_429_RATE_LIMITED retry_after={}", retry_after))
+                } else if status.as_u16() == 418 {
+                    // F1.8: 418 = IP baneada por Binance → kill-switch legítimo.
+                    Err("HTTP_418_IP_BANNED".to_string())
                 } else if status.is_client_error() {
                     // 4xx: Binance procesó el request y lo rechazó — la orden NO existe.
                     Err(parse_reject_body(&body, status.as_u16()))
