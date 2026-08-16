@@ -514,7 +514,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 🔍 FETCH FORENSE DE POSICIONES ACTIVAS CON BINANCE API
     let mut restored_positions = exec.load().fetch_open_positions().await.unwrap_or_default();
-    if orchestrator.read().unwrap().is_demo_mode {
+    if orchestrator
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_demo_mode
+    {
         telemetry_server::telemetry_log!("⚠️ [DEMO MODE] Ignorando reconciliación de posiciones REST para mantener Paper Trading.");
         restored_positions.clear();
     }
@@ -522,7 +526,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── F1.11 MODO HEDGE ─────────────────────────────────────────────────────
     // El motor envía positionSide=LONG/SHORT siempre; si la cuenta está en
     // one-way, TODA orden falla con -4061. Verificar/activar antes de operar.
-    if !orchestrator.read().unwrap().is_demo_mode {
+    if !orchestrator
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_demo_mode
+    {
         match exec.load().ensure_hedge_mode().await {
             Ok(true) => {
                 telemetry_server::telemetry_log!("🔀 [PRE-FLIGHT] Cuenta migrada a modo HEDGE")
@@ -538,7 +546,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── F1.7 RECONCILIACIÓN AL ARRANQUE ──────────────────────────────────────
     // positionRisk (verdad del exchange) diff contra OrderRegistry (F1.5).
     // Directiva: saber SIEMPRE si hay posiciones abiertas antes de operar.
-    if !orchestrator.read().unwrap().is_demo_mode {
+    if !orchestrator
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_demo_mode
+    {
         match exec.load().fetch_position_risk().await {
             Ok(entries) => {
                 let report =
@@ -927,6 +939,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // --- PHASE 3 WARMUP INJECTION ---
         telemetry_server::telemetry_log!("📥 [PHASE 3] Inyectando historial REST K-lines para calentar SwingState...");
         for (_i, sym) in symbols_clone.iter().enumerate() {
+            // F5.4: índice acotado — universo dinámico mayor que los slots del
+            // motor ya no pánico (abort) sino skip documentado.
+            if _i >= engine_real.feature_engines.len() {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [WARMUP] {} fuera de rango de feature_engines ({} slots) — omitido",
+                    sym,
+                    engine_real.feature_engines.len()
+                );
+                continue;
+            }
             if let Some(klines) = historical_klines.get(sym) {
                 // Dummy loop over f64 (klines is Vec<f64>)
                 for &k in klines.iter() {
@@ -988,6 +1010,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut dbq = 0.0;
             let mut daq = 0.0;
 
+            // F5.4 — FIX UB: from_utf8_unchecked sobre bytes de RED era UB
+            // instantáneo ante payload corrupto. Los parsers son zero-copy
+            // in-place (necesitan &mut str): VALIDAR UTF-8 primero y solo
+            // entonces mutar — la mutación de los parsers preserva ASCII
+            // (invariante documentada), la validez se mantiene. Inválido: fuera.
+            if std::str::from_utf8(&msg_bytes).is_err() {
+                msg_count += 1;
+                continue;
+            }
             let msg_str = unsafe { std::str::from_utf8_unchecked_mut(&mut msg_bytes) };
 
             if is_trade {
@@ -1051,6 +1082,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(parsed_sym) = parsed_sym_opt {
                 let coin_id = symbol_to_id.get(&parsed_sym.to_lowercase()).copied().unwrap_or(0);
 
+                // F5.4 — GUARD DE ORIGEN: acota TODOS los índices aguas abajo
+                // (coins[coin_id], feature_engines[coin_id] en core y aquí).
+                // Antes: símbolo fuera del universo ⇒ índice pánico ⇒ abort
+                // del proceso con posiciones abiertas.
+                if coin_id >= engine_real.arena.coins.len() {
+                    msg_count += 1;
+                    continue;
+                }
+
                 // --- SANITY CHECKS (DATA INTEGRITY & NORMALIZATION) ---
                 if current_price <= 0.0 || qty < 0.0 || current_price.is_nan() || qty.is_nan() {
                     continue; // Drop corrupt data
@@ -1091,7 +1131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let is_trading_allowed: bool;
                 let is_paper_trading: bool;
                 {
-                    let mut orch = orchestrator.write().unwrap();
+                    let mut orch = orchestrator.write().unwrap_or_else(|e| e.into_inner());
                     current_phase = orch.on_tick();
                     is_trading_allowed = orch.is_trading_allowed();
                     is_paper_trading = orch.is_paper_trading();
@@ -1247,7 +1287,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .config
                             .scalp_sl_base
                             .load(Ordering::Relaxed)
-                            .max(engine_real.feature_engines[coin_id].get_atr_pct() * 1.5)
+                            .max(engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0) * 1.5)
                             .max(0.0015);
                         let (env_lev, operable) =
                             risk_envelope.max_leverage(cap_now, scalp_stop_pct, 5.0, 1.64, 50.0);
@@ -1272,7 +1312,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // solo alta confianza). Bases del genoma con piso ATR.
                         let base_tp = engine_real.arena.config.scalp_tp_base.load(Ordering::Relaxed);
                         let base_sl = engine_real.arena.config.scalp_sl_base.load(Ordering::Relaxed);
-                        let atr_pct = engine_real.feature_engines[coin_id].get_atr_pct();
+                        let atr_pct = engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0);
                         let scalp_tp = base_tp.max(atr_pct * 2.0).max(0.002);
                         let scalp_sl = base_sl.max(atr_pct * 1.5).max(0.0015);
 
@@ -1289,7 +1329,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .config
                             .swing_sl_base
                             .load(Ordering::Relaxed)
-                            .max(engine_real.feature_engines[coin_id].get_atr_pct() * 3.0)
+                            .max(engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0) * 3.0)
                             .max(0.003);
                         let (env_lev, operable) =
                             risk_envelope.max_leverage(cap_now, swing_stop_pct, 5.0, 1.64, 50.0);
@@ -1307,7 +1347,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // el swing domina la protección (horizonte más ancho).
                         let base_tp = engine_real.arena.config.swing_tp_base.load(Ordering::Relaxed);
                         let base_sl = engine_real.arena.config.swing_sl_base.load(Ordering::Relaxed);
-                        let atr_pct = engine_real.feature_engines[coin_id].get_atr_pct();
+                        let atr_pct = engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0);
                         let swing_tp = base_tp.max(atr_pct * 4.0);
                         let swing_sl = base_sl.max(atr_pct * 3.0);
 

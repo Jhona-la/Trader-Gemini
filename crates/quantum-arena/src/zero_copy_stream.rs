@@ -14,7 +14,22 @@ pub struct ZeroCopyBinTick {
 }
 
 impl ZeroCopyBinTick {
-    /// Carga directamente un tick desde un slice de bytes en O(1)
+    /// Carga directamente un tick desde un slice de bytes en O(1).
+    /// F5.4 — SEGURA: el cast `packed` sin verificación era UB (lecturas OOB y
+    /// referencias f64 desalineadas). Ahora valida longitud y devuelve None.
+    /// `from_bytes_unchecked` se mantiene solo para buffers ya verificados
+    /// por el lector mmap (longución múltiplo exacto del tamaño del struct).
+    #[inline(always)]
+    pub fn from_bytes(bytes: &[u8]) -> Option<&Self> {
+        if bytes.len() < std::mem::size_of::<Self>() {
+            return None;
+        }
+        // Safety: longitud verificada; Self es #[repr(C, packed)] sin padding,
+        // cualquier alineación de u8 es válida para leerlo por valor copiado.
+        Some(unsafe { &*(bytes.as_ptr() as *const Self) })
+    }
+
+    /// SOLO para buffers verificados (len % size_of == 0). Ver from_bytes.
     #[inline(always)]
     pub unsafe fn from_bytes_unchecked(bytes: &[u8]) -> &Self {
         &*(bytes.as_ptr() as *const Self)

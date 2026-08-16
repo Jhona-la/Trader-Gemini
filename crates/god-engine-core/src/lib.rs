@@ -701,7 +701,7 @@ impl GodEngineCore {
                         fr.record(telemetry_server::FlightEvent {
                             timestamp: std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
+                                .unwrap_or_default()
                                 .as_nanos() as u64,
                             trace_id: self.arena.tick_counter.load(Ordering::Relaxed),
                             event_type: 1,
@@ -1924,7 +1924,7 @@ impl GodEngineCore {
                 fr.record(telemetry_server::FlightEvent {
                     timestamp: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
+                        .unwrap_or_default()
                         .as_nanos() as u64,
                     trace_id: tick,
                     event_type: 1, // 1 = ML Prediction

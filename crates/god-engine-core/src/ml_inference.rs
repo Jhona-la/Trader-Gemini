@@ -57,13 +57,13 @@ impl NanoForest {
         Ok(())
     }
 
-    /// Predicts using a specific global forest
+    /// Predicts using a specific global forest.
+    /// F5.4: firma Option ⇒ comportamiento Option. El panic anterior mataba el
+    /// proceso (panic=abort) con posiciones abiertas si un modelo no estaba
+    /// cargado. Sin modelo: None ⇒ el caller decide (neutral 0.5 o no-trade).
     pub fn predict_global(key: &str, features: &[f32]) -> Option<f32> {
         let map = crate::ml_inference::GLOBAL_FORESTS.load();
-        if let Some(forest) = map.get(key) {
-            return forest.predict(features);
-        }
-        panic!("Axioma VII Violado: NanoForest '{}' no cargado.", key);
+        map.get(key).and_then(|forest| forest.predict(features))
     }
 
     /// Fetches a clone of the global forest for hot-path use without RwLock
