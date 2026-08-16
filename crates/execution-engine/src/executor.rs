@@ -2,6 +2,7 @@ use crate::binance_api::{
     sign_payload_to_buffer, ORDER_TYPE_LIMIT, ORDER_TYPE_MARKET, SIDE_BUY, SIDE_SELL,
     TIME_IN_FORCE_IOC,
 };
+use crate::order_types::OrderAck;
 use crate::ExecutionPayload;
 use risk_engine::ValidatedOrder;
 use signal_engine::SignalType;
@@ -123,6 +124,14 @@ pub trait ExecutionProvider: Send + Sync {
     ) -> Result<(), String>;
 
     async fn cancel_order(&self, symbol: &str, client_order_id: &str) -> Result<(), String>;
+
+    /// F1.2/F1.3: consulta el estado REAL de una orden por su clientOrderId.
+    /// Fuente de verdad para: resolver timeouts ambiguos, calcular el remanente
+    /// tras un cancel en maker-chase, y reconciliación.
+    async fn query_order(&self, symbol: &str, client_order_id: &str) -> Result<OrderAck, String> {
+        let _ = (symbol, client_order_id);
+        Err("query_order no implementado en este provider".to_string())
+    }
 
     async fn fetch_open_positions(&self) -> Result<Vec<ActivePosition>, String>;
 
@@ -257,8 +266,9 @@ impl OrderExecutor {
         symbol: &str,
         current_price: f64,
         step_size: f64,
+        tick_size: f64,
     ) -> Option<ExecutionPayload> {
-        if order.volume_usd <= 0.0 || current_price <= 0.0 {
+        if order.volume_usd <= 0.0 || current_price <= 0.0 || tick_size <= 0.0 {
             return None;
         }
 
@@ -283,34 +293,41 @@ impl OrderExecutor {
             .unwrap()
             .as_millis() as u64;
 
-        // FASE 19: Órdenes Institucionales y Evasión de Taker Fees
-        let (order_type, time_in_force, price_str) = if order.maker_only {
-            // LIMIT_MAKER (POST_ONLY) para garantizar 0 fees o rebate
-            // En Binance USDT-M, POST_ONLY se envía como type=LIMIT y timeInForce=GTX
-            // También se debe enviar el precio (bid o ask dependiendo de la dirección).
-            // Para simplificar asumiendo current_price en HFT:
-            let formatted_price = format!("{:.4}", current_price); // Idealmente usar tick_size
-            ("LIMIT", "GTX", format!("&price={}", formatted_price))
+        // F1.2: identificador idempotente — toda orden lleva newClientOrderId.
+        let client_order_id = uuid::Uuid::now_v7().simple().to_string();
+
+        // FASE 19 + F1.4: Órdenes Institucionales y Evasión de Taker Fees.
+        // El maker (POST_ONLY) exige timeInForce=GTX Y price en el MISMO query
+        // que se firma y se envía. Precio redondeado al tickSize REAL del símbolo
+        // (nunca un {:.4} fijo que viola el filtro PRICE_FILTER).
+        let (order_type, time_in_force, extra_params) = if order.maker_only {
+            let final_price = Self::round_to_step_size(current_price, tick_size);
+            (
+                ORDER_TYPE_LIMIT,
+                crate::binance_api::TIME_IN_FORCE_GTX,
+                format!("&timeInForce=GTX&price={}", final_price),
+            )
         } else {
-            ("MARKET", "IOC", String::new())
+            (ORDER_TYPE_MARKET, TIME_IN_FORCE_IOC, String::new())
         };
 
-        // Construir Query String (Formato URL Encoded para REST API)
-        let query_string = format!(
-            "symbol={}&side={}&positionSide={}&type={}&quantity={}{}&timestamp={}",
+        // F1.4: query EXACTA que se firma = query EXACTA que se envía.
+        let signed_query = format!(
+            "symbol={}&side={}&positionSide={}&type={}&quantity={}{}&newClientOrderId={}&timestamp={}",
             symbol,
             side,
             if side == SIDE_BUY { "LONG" } else { "SHORT" },
             order_type,
             final_quantity,
-            price_str,
+            extra_params,
+            client_order_id,
             timestamp
         );
 
         // Firmar
         let mut sig_buf = [0u8; 64];
         let api_secret = self.api_secret.read().unwrap().clone();
-        sign_payload_to_buffer(&query_string, &api_secret, &mut sig_buf);
+        sign_payload_to_buffer(&signed_query, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) }.to_string();
 
         Some(ExecutionPayload {
@@ -324,6 +341,8 @@ impl OrderExecutor {
             } else {
                 "SHORT".to_string()
             },
+            signed_query,
+            client_order_id,
             signature,
             timestamp,
         })
@@ -380,36 +399,65 @@ impl ExecutionProvider for OrderExecutor {
             .as_millis() as u64;
         self.check_rate_limits(timestamp)?;
 
-        if let Some(payload) = self.build_payload(order, symbol, current_price, step_size) {
+        // F1.4: tickSize real del símbolo para el camino maker.
+        let tick_size = self.fetch_exchange_info(symbol).await.unwrap_or(0.01);
+
+        if let Some(payload) =
+            self.build_payload(order, symbol, current_price, step_size, tick_size)
+        {
+            // F1.4: se envía EXACTAMENTE la query firmada. Sin reconstrucción.
             let mut buf = ZeroAllocBuffer::new();
             buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
                 "https://testnet.binancefuture.com/fapi/v1/order?"
             } else {
                 "https://fapi.binance.com/fapi/v1/order?"
             });
-            buf.push_str("symbol=");
-            buf.push_str(&payload.symbol);
-            buf.push_str("&side=");
-            buf.push_str(&payload.side);
-            buf.push_str("&type=");
-            buf.push_str(&payload.order_type);
-            buf.push_str("&quantity=");
-            buf.push_f64(payload.quantity);
-            buf.push_str("&timestamp=");
-            buf.push_u64(payload.timestamp);
+            buf.push_str(&payload.signed_query);
             buf.push_str("&signature=");
             buf.push_str(&payload.signature);
 
-            let res = self.client.execute_order_payload(buf.as_str()).await;
+            if buf.is_overflow() {
+                return Err(
+                    "SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string(),
+                );
+            }
+
+            let res = self.client.execute_order_payload_typed(buf.as_str()).await;
             match &res {
-                Ok(limits) => {
+                Ok((limits, ack)) => {
                     self.update_limits(limits);
+                    if !ack.is_filled() && !ack.is_active() && !ack.status.is_empty() {
+                        println!(
+                            "⚠️ [EXECUTION] Orden {} estado final inesperado: {} (executed={})",
+                            payload.client_order_id, ack.status, ack.executed_qty
+                        );
+                    }
                     Ok(())
                 }
                 Err(e) => {
                     if e == "HTTP_429_TOO_MANY_REQUESTS_OR_BANNED" {
                         self.trigger_kill_switch();
                         println!("🚨 [KILL SWITCH] HTTP 429/418 Rate Limit Hit! API Banned. Halting all executions.");
+                        return Err(e.clone());
+                    }
+                    // F1.2: error ambiguo (timeout/5xx) — la orden PUEDE existir.
+                    // Consultar por clientOrderId ANTES de reportar error: jamás duplicar.
+                    if e.starts_with("AMBIGUOUS") {
+                        println!(
+                            "⏳ [EXECUTION] Timeout ambiguo para {}. Consultando estado real...",
+                            payload.client_order_id
+                        );
+                        if let Ok(ack) = self.query_order(symbol, &payload.client_order_id).await {
+                            if ack.is_active() {
+                                let _ = self.cancel_order(symbol, &payload.client_order_id).await;
+                                println!("🛡️ [EXECUTION] Orden ambigua {} estaba VIVA ({} ejecutado) — cancelada. Sin duplicación.", payload.client_order_id, ack.executed_qty);
+                            } else {
+                                println!(
+                                    "🛡️ [EXECUTION] Orden ambigua {} resuelta: {} (executed={})",
+                                    payload.client_order_id, ack.status, ack.executed_qty
+                                );
+                            }
+                        }
                     }
                     Err(e.clone())
                 }
@@ -456,6 +504,9 @@ impl ExecutionProvider for OrderExecutor {
 
         self.check_rate_limits(timestamp)?;
 
+        // F1.2: toda orden market lleva newClientOrderId (idempotencia).
+        let client_order_id = uuid::Uuid::now_v7().simple().to_string();
+
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
             "https://testnet.binancefuture.com/fapi/v1/order?"
@@ -470,14 +521,18 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(side);
         buf.push_str("&positionSide=");
         buf.push_str(if is_long { "LONG" } else { "SHORT" });
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long { "LONG" } else { "SHORT" });
         buf.push_str("&type=");
         buf.push_str(ORDER_TYPE_MARKET);
         buf.push_str("&quantity=");
         buf.push_f64(final_quantity);
+        buf.push_str("&newClientOrderId=");
+        buf.push_str(&client_order_id);
         buf.push_str("&timestamp=");
         buf.push_u64(timestamp);
+
+        if buf.is_overflow() {
+            return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
+        }
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
@@ -487,10 +542,11 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        let res = self.client.execute_order_payload(buf.as_str()).await;
+        let res = self.client.execute_order_payload_typed(buf.as_str()).await;
         match &res {
-            Ok(limits) => {
+            Ok((limits, ack)) => {
                 self.update_limits(limits);
+                let _ = ack; // F1.5 conectará el ack a la máquina de estados de orden
                 Ok(())
             }
             Err(e) => {
@@ -549,8 +605,6 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(side);
         buf.push_str("&positionSide=");
         buf.push_str(if is_long { "LONG" } else { "SHORT" });
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long { "LONG" } else { "SHORT" });
         buf.push_str("&type=");
         buf.push_str(ORDER_TYPE_LIMIT);
         buf.push_str("&timeInForce=");
@@ -563,6 +617,10 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(client_order_id);
         buf.push_str("&timestamp=");
         buf.push_u64(timestamp);
+
+        if buf.is_overflow() {
+            return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
+        }
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
@@ -631,11 +689,38 @@ impl ExecutionProvider for OrderExecutor {
         // 2. Esperar 50ms (Tolerancia de Latencia Cuántica)
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        // 3. Cancelar orden preventivamente (si ya se llenó, Binance ignorará o dará error benigno)
+        // 3. Cancelar la orden límite. Si ya se llenó, Binance responde con
+        //    error benigno — el fill YA ocurrió y no se puede deshacer.
         let _ = self.cancel_order(symbol, client_order_id).await;
 
-        // 4. Ejecutar como Taker lo que haya quedado (Market Order)
-        self.execute_raw_qty(symbol, is_long, quantity, step_size)
+        // F1.3 — FIX DOUBLE-FILL: consultar el estado REAL de la orden tras el
+        // cancel y mercadear ÚNICAMENTE el remanente (origQty - executedQty).
+        // Antes: se mercadeaba la cantidad completa aunque el límite se hubiera
+        // llenado parcial o totalmente → posición duplicada (bug crítico de auditoría).
+        let executed = match self.query_order(symbol, client_order_id).await {
+            Ok(ack) => ack.executed_qty,
+            Err(e) => {
+                // Sin estado verificable NO se mercadea nada: a ciegas es el bug
+                // original. El remanente se materializa vía reconciliación (F1.7).
+                println!("🛑 [MAKER-CHASE] No se pudo verificar estado de {} ({}). Abortando chase SIN market de respaldo para evitar doble-fill.", client_order_id, e);
+                return Err(format!("MAKER_CHASE_UNVERIFIED: {}", e));
+            }
+        };
+
+        let remaining = Self::round_to_step_size((quantity - executed).max(0.0), step_size);
+        if executed > 0.0 {
+            println!(
+                "🛡️ [MAKER-CHASE] {} maker ejecutado {} de {}. Remanente: {}",
+                symbol, executed, quantity, remaining
+            );
+        }
+        if remaining <= 0.0 || remaining < step_size {
+            // Total o casi total lleno como maker: nada que completar.
+            return Ok(());
+        }
+
+        // 4. Ejecutar como Taker SOLO el remanente (Market Order)
+        self.execute_raw_qty(symbol, is_long, remaining, step_size)
             .await
     }
 
@@ -1102,6 +1187,61 @@ impl ExecutionProvider for OrderExecutor {
             self.update_limits(limits);
         }
         res.map(|_| ())
+    }
+
+    /// F1.2/F1.3: GET /fapi/v1/order por origClientOrderId — estado REAL de la orden.
+    /// Fuente de verdad para maker-chase y resolución de timeouts ambiguos.
+    async fn query_order(&self, symbol: &str, client_order_id: &str) -> Result<OrderAck, String> {
+        if self.is_paper_trading {
+            // En paper no hay exchange: fingir orden nueva sin fills.
+            return Ok(OrderAck {
+                symbol: symbol.to_string(),
+                client_order_id: client_order_id.to_string(),
+                orig_qty: 0.0,
+                executed_qty: 0.0,
+                status: "NEW".to_string(),
+                ..Default::default()
+            });
+        }
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        self.check_rate_limits(timestamp)?;
+
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/order?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/order?"
+        });
+        let payload_start = buf.as_str().len();
+
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
+        buf.push_str("&origClientOrderId=");
+        buf.push_str(client_order_id);
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
+
+        let mut sig_buf = [0u8; 64];
+        let payload = &buf.as_str()[payload_start..];
+        let api_secret = self.api_secret.read().unwrap().clone();
+        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
+        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+        buf.push_str("&signature=");
+        buf.push_str(signature);
+
+        let res = self.client.get_payload(buf.as_str()).await;
+        match res {
+            Ok((limits, body)) => {
+                self.update_limits(&limits);
+                crate::order_types::parse_order_body(&body)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     async fn fetch_server_time(&self) -> Result<i64, String> {

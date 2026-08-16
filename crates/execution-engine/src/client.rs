@@ -5,26 +5,40 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Buffer stack de 512 bytes para cero-alocación.
+/// Buffer stack para cero-alocación en el hot-path.
+/// F1.2: 1024 bytes (un clientOrderId UUIDv7 + firma excedían el margen del
+/// original de 512) y detección de overflow: jamás pánico ni truncamiento
+/// silencioso — el caller consulta `is_overflow()` antes de firmar/enviar.
 pub struct ZeroAllocBuffer {
-    bytes: [u8; 512],
+    bytes: [u8; 1024],
     len: usize,
+    overflow: bool,
 }
 
 impl ZeroAllocBuffer {
     #[inline(always)]
     pub fn new() -> Self {
         Self {
-            bytes: [0; 512],
+            bytes: [0; 1024],
             len: 0,
+            overflow: false,
         }
     }
 
     #[inline(always)]
     pub fn push_str(&mut self, s: &str) {
         let b = s.as_bytes();
+        if self.len + b.len() > self.bytes.len() {
+            self.overflow = true;
+            return;
+        }
         self.bytes[self.len..self.len + b.len()].copy_from_slice(b);
         self.len += b.len();
+    }
+
+    #[inline(always)]
+    pub fn is_overflow(&self) -> bool {
+        self.overflow
     }
 
     #[inline(always)]
@@ -47,6 +61,7 @@ impl ZeroAllocBuffer {
     #[inline(always)]
     pub fn clear(&mut self) {
         self.len = 0;
+        self.overflow = false;
     }
 }
 
@@ -159,6 +174,57 @@ impl BinanceClient {
                 }
             }
             Err(e) => Err(format!("Network Error: {}", e)),
+        }
+    }
+
+    /// F1.1: POST de orden con respuesta TIPADA — lee el body completo y lo
+    /// parsea a OrderAck (orderId, status, executedQty, avgPrice, fills).
+    /// Distingue tres clases de fallo para idempotencia (F1.2):
+    ///   - Err empezando con "AMBIGUOUS:" → timeout/red: la orden PUEDE existir
+    ///     en Binance; el caller DEBE consultar por clientOrderId antes de reintentar.
+    ///   - Err con code negativo → rechazo definitivo, seguro reintentar.
+    ///   - Ok(ack) → respuesta conocida.
+    #[inline(always)]
+    pub async fn execute_order_payload_typed(
+        &self,
+        full_url: &str,
+    ) -> Result<(BinanceRateLimits, crate::order_types::OrderAck), String> {
+        use crate::order_types::{parse_order_body, parse_reject_body, truncate, OrderAck};
+
+        let api_key = self.api_key.load();
+        let response = self
+            .http
+            .post(full_url)
+            .header("X-MBX-APIKEY", api_key.as_ref().clone())
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) => {
+                let limits = extract_limits(resp.headers());
+                let status = resp.status();
+                let body = resp
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                if status.is_success() {
+                    let ack: OrderAck = parse_order_body(&body)?;
+                    Ok((limits, ack))
+                } else if status.as_u16() == 429 || status.as_u16() == 418 {
+                    Err("HTTP_429_TOO_MANY_REQUESTS_OR_BANNED".to_string())
+                } else if status.is_client_error() {
+                    // 4xx: Binance procesó el request y lo rechazó — la orden NO existe.
+                    Err(parse_reject_body(&body, status.as_u16()))
+                } else {
+                    // 5xx: estado desconocido — tratar como ambiguo.
+                    Err(format!(
+                        "AMBIGUOUS: HTTP {} body={}",
+                        status.as_u16(),
+                        truncate(&body, 200)
+                    ))
+                }
+            }
+            Err(e) => Err(format!("AMBIGUOUS: Network Error: {}", e)),
         }
     }
 
