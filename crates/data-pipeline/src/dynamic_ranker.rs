@@ -110,12 +110,20 @@ pub async fn fetch_dynamic_universe(
         })
         .collect();
 
-    // Ordenar por métrica combinada
+    // F4.6 — RANKING RAZONADO (antes: volumen×(1+vol%) — favorece exóticos
+    // manipulados con vol inflado). Métrica documentada:
+    //   score = ln(1 + quote_volume) × banda_de_volatilidad(pct)
+    // - ln(volumen): liquidez es de cola pesada; log da escala comparable.
+    // - banda = pct × e^(-pct/15): premia volatilidad MODERADA (oportunidad
+    //   real para scalp/swing) y castiga la extrema (casino/manipulación) —
+    //   máximo en 15% diario, decae exponencialmente después.
+    let score = |a: &SelectedAsset| -> f64 {
+        let pct = a.volatility;
+        (1.0 + a.volume).ln() * pct * (-pct / 15.0_f64).exp()
+    };
     valid_assets.sort_by(|a, b| {
-        let score_a = a.volume * (1.0 + a.volatility / 100.0);
-        let score_b = b.volume * (1.0 + b.volatility / 100.0);
-        score_b
-            .partial_cmp(&score_a)
+        score(b)
+            .partial_cmp(&score(a))
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     valid_assets.truncate(limit);
