@@ -9,6 +9,7 @@ pub mod onchain_feed;
 pub mod parser;
 pub mod persistence;
 pub mod state_db;
+pub mod validation;
 pub mod ws_client;
 
 // Exportar la conexión

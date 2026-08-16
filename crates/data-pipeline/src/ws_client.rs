@@ -81,32 +81,33 @@ impl BinanceStreamer {
         let host = url.host_str().unwrap_or("fstream.binance.com");
         let port = url.port_or_known_default().unwrap_or(443);
 
-        // FASE 14: Acelerador DNS Cuántico (Cloudflare 1.1.1.1) + IP Pinning Institucional
-        // Resolvemos la IP EXACTAMENTE UNA VEZ. La fijamos en memoria RAM (IP Pinning)
-        // para que en caso de caída del Websocket, la reconexión tome microsegundos en lugar de milisegundos DNS.
-        let target_addr_cache = {
-            let mut resolved_addr = None;
-            let resolver =
-                AsyncResolver::tokio(ResolverConfig::cloudflare(), ResolverOpts::default());
-            println!(
-                "⚡ [DNS QUANTUM] Iniciando Resolución Cloudflare 1.1.1.1 para {}",
-                host
-            );
+        // ── F2.2: IP PINNING CON INVALIDACIÓN ─────────────────────────────────
+        // El pinning original era PARA SIEMPRE: si Binance rota la IP (lo hace),
+        // el stream reconectaba infinitamente a una IP muerta. Nueva política:
+        // la IP se cachea mientras la conexión sea sana; tras fallos TCP/TLS
+        // consecutivos se RE-RESUELVE DNS (GeoDNS entrega IPs frescas).
+        // Jamás .expect(): DNS caído NO mata el motor (panic=abort).
+        let resolver = AsyncResolver::tokio(ResolverConfig::cloudflare(), ResolverOpts::default());
+        let mut dns_resolution_count: u64 = 0;
+        let mut target_cache: Option<std::net::SocketAddr> = None;
+        let mut consecutive_failures: u32 = 0;
 
-            if let Ok(Ok(response)) = tokio::time::timeout(
-                std::time::Duration::from_millis(1500),
-                resolver.lookup_ip(host.to_string()),
-            )
-            .await
-            {
-                if let Some(ip) = response.into_iter().next() {
-                    resolved_addr = Some(std::net::SocketAddr::new(ip, port));
-                    println!("🟢 [IP PINNING] Rutas ancladas a Binance: {}", ip);
+        let resolve_target = |host: &str| {
+            let resolver = &resolver;
+            let host = host.to_string();
+            async move {
+                // 1) Cloudflare 1.1.1.1
+                if let Ok(Ok(response)) = tokio::time::timeout(
+                    std::time::Duration::from_millis(1500),
+                    resolver.lookup_ip(host.clone()),
+                )
+                .await
+                {
+                    if let Some(ip) = response.into_iter().next() {
+                        return Some(std::net::SocketAddr::new(ip, port));
+                    }
                 }
-            }
-
-            if resolved_addr.is_none() {
-                // Fallback local OS
+                // 2) Fallback DNS del SO
                 if let Ok(Ok(mut addrs)) = tokio::time::timeout(
                     std::time::Duration::from_millis(1500),
                     tokio::net::lookup_host((host, port)),
@@ -114,21 +115,53 @@ impl BinanceStreamer {
                 .await
                 {
                     if let Some(addr) = addrs.next() {
-                        resolved_addr = Some(addr);
-                        println!("⚠️ [IP PINNING FALLBACK] DNS Local usado: {}", addr.ip());
+                        return Some(addr);
                     }
                 }
+                None
             }
-            resolved_addr.expect(
-                "❌ [CRÍTICO] Imposible resolver DNS de Binance. Imposible iniciar el motor HFT.",
-            )
         };
 
         loop {
-            let target_addr = target_addr_cache;
+            let addr_now = match target_cache {
+                Some(a) => a,
+                None => {
+                    dns_resolution_count += 1;
+                    match resolve_target(host).await {
+                        Some(addr) => {
+                            println!(
+                                "🟢 [DNS] Resolución #{} para {}: {} ({})",
+                                dns_resolution_count,
+                                host,
+                                addr.ip(),
+                                if dns_resolution_count == 1 {
+                                    "inicial"
+                                } else {
+                                    "re-resolución tras fallos"
+                                }
+                            );
+                            if dns_resolution_count > 1 {
+                                backoff_ms = backoff_ms.min(500);
+                            }
+                            consecutive_failures = 0;
+                            target_cache = Some(addr);
+                            addr
+                        }
+                        None => {
+                            println!(
+                                "⚠️ [DNS] Resolución fallida para {} (intento #{}). Reintentando en {}ms...",
+                                host, dns_resolution_count, backoff_ms
+                            );
+                            tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                            backoff_ms = (backoff_ms * 2).min(max_backoff_ms);
+                            continue;
+                        }
+                    }
+                }
+            };
 
             // FASE 22: Conexión directa TCP con Zero-Nagle para latencia nula
-            match tokio::net::TcpStream::connect(target_addr).await {
+            match tokio::net::TcpStream::connect(addr_now).await {
                 Ok(tcp_stream) => {
                     let _ = tcp_stream.set_nodelay(true);
 
@@ -174,6 +207,8 @@ impl BinanceStreamer {
                                             .last_ws_latency_ms
                                             .store(dynamic_timeout_ms, Ordering::Relaxed);
                                         // The GodEngine will pick this up and activate kill switch
+                                        // F2.2: la ruta puede estar muerta — invalidar IP y re-resolver.
+                                        target_cache = None;
                                         break;
                                     }
                                 };
@@ -193,6 +228,15 @@ impl BinanceStreamer {
                                         if let Some(mut event) =
                                             BookTickerEvent::parse_from_json(&bytes)
                                         {
+                                            // F2.1: aduana de datos — lo corrupto NUNCA
+                                            // entra al motor ni al tensor (directriz).
+                                            if let Err(reason) =
+                                                crate::validation::validate_book_ticker(&event)
+                                            {
+                                                crate::validation::count_reject(reason);
+                                                continue;
+                                            }
+
                                             // FASE 9: Bayesian Anomaly Rejection (Estasis Probabilística)
                                             // Protege al motor de glitches usando micro-volatilidad histórica real
                                             let current_price =
@@ -298,21 +342,40 @@ impl BinanceStreamer {
                                         }
                                     }
                                     Err(_) => {
-                                        // Error de red interno (stream corrupto/desconexión Binance), romper el bucle interno y reconectar
+                                        // Error de red interno (stream corrupto): invalidar IP y reconectar
+                                        target_cache = None;
                                         break;
                                     }
                                 }
                             }
                         }
                         Err(_) => {
-                            // Fallo de conexión TLS
+                            // Fallo TLS: la IP cacheada puede estar muerta (F2.2).
+                            consecutive_failures += 1;
+                            if consecutive_failures >= 3 {
+                                println!(
+                                    "🔁 [WS] {} fallos TLS consecutivos a {} — re-resolviendo DNS",
+                                    consecutive_failures, addr_now
+                                );
+                                target_cache = None;
+                                consecutive_failures = 0;
+                            }
                             tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
                             backoff_ms = (backoff_ms * 2).min(max_backoff_ms);
                         }
                     }
                 }
                 Err(_) => {
-                    // Fallo de conexión TCP
+                    // Fallo TCP: Binance rota IPs — la pineada puede haber muerto.
+                    consecutive_failures += 1;
+                    if consecutive_failures >= 2 {
+                        println!(
+                            "🔁 [WS] TCP a {} falló {} veces — re-resolviendo DNS (rotación de IP de Binance)",
+                            addr_now, consecutive_failures
+                        );
+                        target_cache = None;
+                        consecutive_failures = 0;
+                    }
                     tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
                     backoff_ms = (backoff_ms * 2).min(max_backoff_ms);
                 }

@@ -121,12 +121,18 @@ fn main() {
     let mut lows = Vec::with_capacity(len);
     let mut volumes = Vec::with_capacity(len);
 
+    // F2.3 — FIX MAPEO: antes lows=bid_qty y volumes=ask_qty — el evolutivo
+    // optimizaba sobre CANTIDADES disfrazadas de OHLC (bug de auditoría).
+    // Mapeo honesto desde un book tick: el quote solo acota high/low por sus
+    // precios; el "volumen" es liquidez descansando, NO volumen operado
+    // (eso llega con aggTrades en F3).
     for t in ticks {
         timestamps.push(t.timestamp as f64);
-        closes.push(t.bid_price);
+        let mid = (t.bid_price + t.ask_price) * 0.5;
+        closes.push(mid);
         highs.push(t.ask_price);
-        lows.push(t.bid_qty);
-        volumes.push(t.ask_qty);
+        lows.push(t.bid_price);
+        volumes.push(t.bid_qty + t.ask_qty);
     }
 
     let train_len = (len as f64 * 0.7) as usize;

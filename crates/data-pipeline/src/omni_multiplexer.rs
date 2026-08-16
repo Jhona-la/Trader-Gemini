@@ -59,6 +59,10 @@ pub struct OmniState {
     pub wb_us_cpi_inflation: AtomicU64,
     pub wb_us_real_interest: AtomicU64,
     pub wb_global_gdp_growth: AtomicU64,
+    /// F2.4: timestamp del último fetch macro exitoso. Un valor viejo ⇒ las
+    /// features macro están CONGELADAS y deben exponerse como staleness,
+    /// jamás usarse en silencio como si estuvieran vivas.
+    pub macro_last_success_ms: AtomicU64,
 }
 
 impl Default for OmniState {
@@ -124,6 +128,7 @@ impl OmniState {
             wb_us_cpi_inflation: AtomicU64::new(3.2_f64.to_bits()),
             wb_us_real_interest: AtomicU64::new(2.3_f64.to_bits()),
             wb_global_gdp_growth: AtomicU64::new(2.5_f64.to_bits()),
+            macro_last_success_ms: AtomicU64::new(0),
         }
     }
 
@@ -310,31 +315,99 @@ pub async fn run_okx_ws(state: Arc<OmniState>, symbol: String) {
     }
 }
 
+/// F2.4 — MACRO FEED VIVO (FRED + Binance PAXG).
+/// El endpoint Yahoo v7 murió y fallaba EN SILENCIO: DXY/VIX/S&P quedaban
+/// congelados desde hace meses mientras las features los consumían como
+/// vivos. Fuentes validadas en vivo (2026-08-16):
+///   - FRED (Reserva Federal, CSV sin auth, actualización diaria):
+///     SP500, NASDAQCOM, VIXCLS, DGS10, DTWEXBGS (dólar trade-weighted —
+///     no es el ICE DXY pero es el estándar de la Fed), DCOILWTICO.
+///   - Oro: PAXG/USDT de Binance (proxy on-chain del oro, minuto a minuto,
+///     más fresco que cualquier fix diario).
+/// Éxito actualiza macro_last_success_ms → staleness medible (F4.1 lo
+/// cablea como feature). Fallo LOGUEA (cada 10º) — jamás congelamiento mudo.
 pub async fn run_macro_rest_poller(state: Arc<OmniState>) {
     let mut ticker = interval(Duration::from_secs(60));
     let client = reqwest::Client::new();
-    let url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=DX-Y.NYB,^GSPC,^NDX,^VIX,GC=F,CL=F,^TNX";
+    let mut fail_count: u64 = 0;
+
+    let fred_series: [(&str, &AtomicU64); 6] = [
+        ("SP500", &state.sp500),
+        ("NASDAQCOM", &state.nasdaq),
+        ("VIXCLS", &state.vix),
+        ("DGS10", &state.us10y),
+        ("DTWEXBGS", &state.dxy),
+        ("DCOILWTICO", &state.oil_wti),
+    ];
 
     loop {
         ticker.tick().await;
-        if let Ok(res) = client.get(url).send().await {
-            if let Ok(json) = res.json::<Value>().await {
-                if let Some(results) = json["quoteResponse"]["result"].as_array() {
-                    for item in results {
-                        let symbol = item["symbol"].as_str().unwrap_or("");
-                        let price = item["regularMarketPrice"].as_f64().unwrap_or(0.0);
-                        match symbol {
-                            "DX-Y.NYB" => state.dxy.store(price.to_bits(), Ordering::Relaxed),
-                            "^GSPC" => state.sp500.store(price.to_bits(), Ordering::Relaxed),
-                            "^NDX" => state.nasdaq.store(price.to_bits(), Ordering::Relaxed),
-                            "^VIX" => state.vix.store(price.to_bits(), Ordering::Relaxed),
-                            "GC=F" => state.gold.store(price.to_bits(), Ordering::Relaxed),
-                            "CL=F" => state.oil_wti.store(price.to_bits(), Ordering::Relaxed),
-                            "^TNX" => state.us10y.store(price.to_bits(), Ordering::Relaxed),
-                            _ => {}
-                        }
+        let mut updated = 0usize;
+
+        for (series, slot) in &fred_series {
+            let url = format!(
+                "https://fred.stlouisfed.org/graph/fredgraph.csv?id={}",
+                series
+            );
+            if let Ok(res) = client.get(&url).send().await {
+                if let Ok(csv) = res.text().await {
+                    // Última fila con valor válido ("." = sin dato ese día).
+                    if let Some((_, val)) = csv
+                        .lines()
+                        .skip(1)
+                        .filter_map(|l| {
+                            let mut parts = l.split(',');
+                            let d = parts.next()?.trim();
+                            let v = parts.next()?.trim();
+                            let f = v.parse::<f64>().ok()?;
+                            Some((d, f))
+                        })
+                        .last()
+                    {
+                        slot.store(val.to_bits(), Ordering::Relaxed);
+                        updated += 1;
                     }
                 }
+            }
+        }
+
+        // Oro on-chain: PAXG/USDT (público, sin firma).
+        let is_testnet = std::env::var("USE_TESTNET")
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase()
+            == "true";
+        let base = if is_testnet {
+            "https://testnet.binancefuture.com"
+        } else {
+            "https://fapi.binance.com"
+        };
+        if let Ok(res) = client
+            .get(format!("{}/fapi/v1/ticker/price?symbol=PAXGUSDT", base))
+            .send()
+            .await
+        {
+            if let Ok(json) = res.json::<Value>().await {
+                if let Some(p) = json["price"].as_str().and_then(|s| s.parse::<f64>().ok()) {
+                    state.gold.store(p.to_bits(), Ordering::Relaxed);
+                    updated += 1;
+                }
+            }
+        }
+
+        if updated > 0 {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            state.macro_last_success_ms.store(now, Ordering::Relaxed);
+            fail_count = 0;
+        } else {
+            fail_count += 1;
+            if fail_count % 10 == 1 {
+                println!(
+                    "⚠️ [MACRO] FRED/PAXG sin datos utilizables (fallo #{fail_count}) — features macro con staleness creciente"
+                );
             }
         }
     }
