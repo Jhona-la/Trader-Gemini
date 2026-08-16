@@ -1,8 +1,8 @@
+use crate::anomaly_detector::{AnomalyScore, StatisticalAnomalyDetector};
+use crate::ebpf_core::{EbpfSensor, KernelEvents};
+use crate::pmu_sensor::{PmuSensor, PmuVector};
 use std::thread;
 use std::time::Duration;
-use crate::pmu_sensor::{PmuSensor, PmuVector};
-use crate::ebpf_core::{EbpfSensor, KernelEvents};
-use crate::anomaly_detector::{StatisticalAnomalyDetector, AnomalyScore};
 
 /// The Hardware-Assisted Out-of-Band Observability Plane.
 /// This runs on its own isolated CPU core (e.g. CPU 5).
@@ -47,9 +47,12 @@ impl ObservabilityPlane {
                     let anomaly_score = self.detector.observe(&pmu_vec, &kernel_ev);
 
                     if anomaly_score.is_anomaly {
-                        println!("[OBSERVABILITY-ALERT] Riesgo en HFT Detectado! Score: {:.2}", anomaly_score.score);
+                        println!(
+                            "[OBSERVABILITY-ALERT] Riesgo en HFT Detectado! Score: {:.2}",
+                            anomaly_score.score
+                        );
                         println!("[OBSERVABILITY-CAUSAL-HINT] {}", anomaly_score.causal_hint);
-                        
+
                         // Aquí se inyectaría la mitigación en el genoma o se activaría un kill switch en el engine
                     }
 

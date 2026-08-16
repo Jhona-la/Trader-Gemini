@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EngineMode {
-    Optimistic,    // Solo Fees fijos, sin impacto de latencia ni de libro de órdenes. (Ideal para IA training inicial)
+    Optimistic, // Solo Fees fijos, sin impacto de latencia ni de libro de órdenes. (Ideal para IA training inicial)
     HyperRealistic, // Fricción exponencial basada en nominal size y demoras estocásticas.
 }
 
@@ -50,12 +50,12 @@ impl RealityPhysics {
         // --- HYPER REALISTIC PHYSICS ---
         // 1. Orderbook impact: Asumimos que 1 Millón de dólares mueve el precio 0.05% en activos ultra-líquidos.
         // Pero el impacto es cuadrático para castigar tamaños absurdos (ej: si mete 10M, el impacto no es 10x, sino 100x).
-        let impact_multiplier = (nominal_usd_size / 1_000_000.0).powf(1.2); 
+        let impact_multiplier = (nominal_usd_size / 1_000_000.0).powf(1.2);
         let slippage_impact_pct = impact_multiplier * 0.0005;
 
-        // 2. Latency slippage: Durante 15ms el precio pudo haberse movido a nuestro favor o en contra. 
+        // 2. Latency slippage: Durante 15ms el precio pudo haberse movido a nuestro favor o en contra.
         // Asumiremos el peor caso (movimiento adverso igual a la volatilidad del tick * 10%).
-        let latency_slippage = tick_volatility * 0.10; 
+        let latency_slippage = tick_volatility * 0.10;
 
         let total_slippage_pct = slippage_impact_pct + latency_slippage;
 
@@ -80,11 +80,19 @@ impl RealityPhysics {
         tick_volatility: f64,
     ) -> (f64, f64) {
         if self.mode == EngineMode::Optimistic {
-            let fee_rate = if is_maker { self.base_maker_fee } else { self.base_taker_fee };
+            let fee_rate = if is_maker {
+                self.base_maker_fee
+            } else {
+                self.base_taker_fee
+            };
             return (base_price, nominal_usd_size * fee_rate);
         }
 
-        let fee_rate = if is_maker { self.base_maker_fee } else { self.base_taker_fee };
+        let fee_rate = if is_maker {
+            self.base_maker_fee
+        } else {
+            self.base_taker_fee
+        };
         let fee_usd = nominal_usd_size * fee_rate;
 
         // Si somos Maker, proveemos liquidez. Teóricamente ejecutamos AL precio límite exacto sin slippage de libro.

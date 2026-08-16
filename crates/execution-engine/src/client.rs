@@ -1,10 +1,9 @@
-use reqwest::{Client, ClientBuilder};
-use reqwest::header::{HeaderMap, HeaderValue};
-use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use arc_swap::ArcSwap;
+use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::{Client, ClientBuilder};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-
+use std::time::Duration;
 
 /// Buffer stack de 512 bytes para cero-alocación.
 pub struct ZeroAllocBuffer {
@@ -15,13 +14,16 @@ pub struct ZeroAllocBuffer {
 impl ZeroAllocBuffer {
     #[inline(always)]
     pub fn new() -> Self {
-        Self { bytes: [0; 512], len: 0 }
+        Self {
+            bytes: [0; 512],
+            len: 0,
+        }
     }
 
     #[inline(always)]
     pub fn push_str(&mut self, s: &str) {
         let b = s.as_bytes();
-        self.bytes[self.len..self.len+b.len()].copy_from_slice(b);
+        self.bytes[self.len..self.len + b.len()].copy_from_slice(b);
         self.len += b.len();
     }
 
@@ -47,7 +49,6 @@ impl ZeroAllocBuffer {
         self.len = 0;
     }
 }
-
 
 pub const BINANCE_BASE_URL: &str = "https://fapi.binance.com";
 pub const BINANCE_TESTNET_URL: &str = "https://testnet.binancefuture.com";
@@ -107,14 +108,15 @@ impl BinanceClient {
             .build()
             .expect("Failed to build hyper-optimized reqwest client");
 
-        let header_val = HeaderValue::from_str(&api_key).unwrap_or_else(|_| HeaderValue::from_static(""));
-        Self { 
-            http, 
-            api_key: ArcSwap::from_pointee(header_val), 
-            is_testnet: AtomicBool::new(is_testnet) 
+        let header_val =
+            HeaderValue::from_str(&api_key).unwrap_or_else(|_| HeaderValue::from_static(""));
+        Self {
+            http,
+            api_key: ArcSwap::from_pointee(header_val),
+            is_testnet: AtomicBool::new(is_testnet),
         }
     }
-    
+
     pub fn get_base_url(&self) -> &str {
         if self.is_testnet.load(Ordering::Relaxed) {
             BINANCE_TESTNET_URL
@@ -124,7 +126,8 @@ impl BinanceClient {
     }
 
     pub fn hot_swap_credentials(&self, new_key: String, is_testnet: bool) {
-        let header_val = HeaderValue::from_str(&new_key).unwrap_or_else(|_| HeaderValue::from_static(""));
+        let header_val =
+            HeaderValue::from_str(&new_key).unwrap_or_else(|_| HeaderValue::from_static(""));
         self.api_key.store(Arc::new(header_val));
         self.is_testnet.store(is_testnet, Ordering::Relaxed);
     }
@@ -148,7 +151,10 @@ impl BinanceClient {
                 } else if resp.status().as_u16() == 429 || resp.status().as_u16() == 418 {
                     Err("HTTP_429_TOO_MANY_REQUESTS_OR_BANNED".to_string())
                 } else {
-                    let text = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    let text = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
                     Err(format!("Binance API Error: {}", text))
                 }
             }
@@ -173,7 +179,10 @@ impl BinanceClient {
                     let limits = extract_limits(resp.headers());
                     Ok(limits)
                 } else {
-                    let text = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    let text = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
                     Err(format!("Binance API Error: {}", text))
                 }
             }
@@ -195,12 +204,18 @@ impl BinanceClient {
             Ok(resp) => {
                 let status = resp.status();
                 let limits = extract_limits(resp.headers());
-                let raw_text = resp.text().await.unwrap_or_else(|e| format!("TEXT_ERR: {}", e));
+                let raw_text = resp
+                    .text()
+                    .await
+                    .unwrap_or_else(|e| format!("TEXT_ERR: {}", e));
                 if status.is_success() {
                     Ok((limits, raw_text))
                 } else {
                     // Nunca loguear `full_url`: contiene la firma HMAC del request.
-                    Err(format!("Binance API Error: status={} body={}", status, raw_text))
+                    Err(format!(
+                        "Binance API Error: status={} body={}",
+                        status, raw_text
+                    ))
                 }
             }
             Err(e) => Err(format!("Network Error: {}", e)),
@@ -209,7 +224,10 @@ impl BinanceClient {
 
     /// POST payload (used for changing leverage, margin type, etc)
     #[inline(always)]
-    pub async fn post_payload(&self, full_url: &str) -> Result<(BinanceRateLimits, String), String> {
+    pub async fn post_payload(
+        &self,
+        full_url: &str,
+    ) -> Result<(BinanceRateLimits, String), String> {
         let api_key_arc = self.api_key.load();
         let api_key = (*api_key_arc).clone();
         let response = self
@@ -226,7 +244,10 @@ impl BinanceClient {
                     let text = resp.text().await.unwrap_or_else(|_| "[]".to_string());
                     Ok((limits, text))
                 } else {
-                    let text = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    let text = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
                     Err(format!("Binance API Error: {}", text))
                 }
             }

@@ -1,7 +1,7 @@
-use serde::{Serialize, Deserialize};
 use crate::GlobalArena;
-use std::sync::atomic::Ordering;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::Ordering;
 
 /// Axioma X: SuperGenotype (El ADN de Trader Gemini)
 /// Integra todos los 50+ parámetros del God Engine en un solo vector.
@@ -131,7 +131,7 @@ pub struct SuperGenotype {
     // --- FASE 14: Erradicación Matemática de Capital Fijo (13 USD vs 10k USD) ---
     pub hawkes_volume_norm: f64,
     pub base_duration_ms: f64,
-    
+
     // FASE 3: Kelly, Guard & Orchestrator Evolutive Parameters
     pub kelly_survival_cap_ratio: f64,
     pub kelly_expansion_mult: f64,
@@ -142,7 +142,7 @@ pub struct SuperGenotype {
     pub portfolio_perf_mult_min: f64,
     pub portfolio_perf_mult_max: f64,
     pub portfolio_perf_mult_center: f64,
-    
+
     // --- FASE 15: Optimizador Macro-Regime Genómico ---
     pub macro_hurst_confidence_offset: f64,
     pub macro_hurst_confidence_scale: f64,
@@ -151,7 +151,7 @@ pub struct SuperGenotype {
     pub macro_max_cooldown_ratio: f64,
     pub macro_cooldown_reduction_factor: f64,
     pub macro_leverage_momentum_scale: f64,
-    
+
     // --- FASE 4: Quantum De-hardcoding (Leverage, Scalp, Executor) ---
     pub lev_matrix_vol_clamp_min: f64,
     pub lev_matrix_growth_scalar: f64,
@@ -159,7 +159,7 @@ pub struct SuperGenotype {
     pub scalp_accel_min_samples: f64,
     pub executor_max_orders_10s: f64,
     pub executor_max_weight_1m: f64,
-    
+
     // --- FASE 6: Iceberg & IOC Limits ---
     pub iceberg_volume_threshold: f64,
     pub iceberg_slice_count: f64,
@@ -176,12 +176,27 @@ impl SuperGenotype {
         Self {
             global_max_drawdown: arena.config.global_max_drawdown.load(Ordering::Relaxed),
             global_leverage: arena.config.global_leverage.load(Ordering::Relaxed),
-            btc_volatility_multiplier: arena.config.btc_volatility_multiplier.load(Ordering::Relaxed),
-            eth_volatility_multiplier: arena.config.eth_volatility_multiplier.load(Ordering::Relaxed),
+            btc_volatility_multiplier: arena
+                .config
+                .btc_volatility_multiplier
+                .load(Ordering::Relaxed),
+            eth_volatility_multiplier: arena
+                .config
+                .eth_volatility_multiplier
+                .load(Ordering::Relaxed),
             min_trades_per_day: arena.config.min_trades_per_day.load(Ordering::Relaxed),
-            survival_capital_threshold: arena.config.survival_capital_threshold.load(Ordering::Relaxed),
-            funding_rate_sensitivity: arena.config.funding_rate_sensitivity.load(Ordering::Relaxed),
-            global_correlation_threshold: arena.config.global_correlation_threshold.load(Ordering::Relaxed),
+            survival_capital_threshold: arena
+                .config
+                .survival_capital_threshold
+                .load(Ordering::Relaxed),
+            funding_rate_sensitivity: arena
+                .config
+                .funding_rate_sensitivity
+                .load(Ordering::Relaxed),
+            global_correlation_threshold: arena
+                .config
+                .global_correlation_threshold
+                .load(Ordering::Relaxed),
             trend_threshold: arena.config.trend_threshold.load(Ordering::Relaxed),
             range_threshold: arena.config.range_threshold.load(Ordering::Relaxed),
             scalp_kelly_fraction: arena.config.scalp_kelly_fraction.load(Ordering::Relaxed),
@@ -208,11 +223,17 @@ impl SuperGenotype {
             capital_split_scalp: arena.config.capital_split_scalp.load(Ordering::Relaxed),
             kelly_clamp_min: arena.config.kelly_clamp_min.load(Ordering::Relaxed),
             kelly_clamp_max: arena.config.kelly_clamp_max.load(Ordering::Relaxed),
-            explosive_leverage_multiplier: arena.config.explosive_leverage_multiplier.load(Ordering::Relaxed),
+            explosive_leverage_multiplier: arena
+                .config
+                .explosive_leverage_multiplier
+                .load(Ordering::Relaxed),
             quantum_mutation_rate: arena.config.quantum_mutation_rate.load(Ordering::Relaxed),
             temporal_memory_decay: arena.config.temporal_memory_decay.load(Ordering::Relaxed),
             leverage_cap: arena.config.leverage_cap.load(Ordering::Relaxed),
-            explosive_confidence_threshold: arena.config.explosive_confidence_threshold.load(Ordering::Relaxed),
+            explosive_confidence_threshold: arena
+                .config
+                .explosive_confidence_threshold
+                .load(Ordering::Relaxed),
             weight_obi: arena.config.weight_obi.load(Ordering::Relaxed),
             weight_ofi: arena.config.weight_ofi.load(Ordering::Relaxed),
             weight_vpin: arena.config.weight_vpin.load(Ordering::Relaxed),
@@ -222,18 +243,27 @@ impl SuperGenotype {
             scalp_trail_step_atr: arena.config.scalp_trail_step_atr.load(Ordering::Relaxed),
             scalp_trail_max_atr: arena.config.scalp_trail_max_atr.load(Ordering::Relaxed),
             scalp_trail_min_pnl: arena.config.scalp_trail_min_pnl.load(Ordering::Relaxed),
-            scalp_trail_atr_mult_base: arena.config.scalp_trail_atr_mult_base.load(Ordering::Relaxed),
+            scalp_trail_atr_mult_base: arena
+                .config
+                .scalp_trail_atr_mult_base
+                .load(Ordering::Relaxed),
             swing_trail_act_atr: arena.config.swing_trail_act_atr.load(Ordering::Relaxed),
             swing_trail_step_atr: arena.config.swing_trail_step_atr.load(Ordering::Relaxed),
             swing_trail_max_atr: arena.config.swing_trail_max_atr.load(Ordering::Relaxed),
             swing_trail_min_pnl: arena.config.swing_trail_min_pnl.load(Ordering::Relaxed),
-            swing_trail_atr_mult_base: arena.config.swing_trail_atr_mult_base.load(Ordering::Relaxed),
+            swing_trail_atr_mult_base: arena
+                .config
+                .swing_trail_atr_mult_base
+                .load(Ordering::Relaxed),
             zombie_timeout_ms: arena.config.zombie_timeout_ms.load(Ordering::Relaxed),
             hurst_trend_threshold: arena.config.hurst_trend_threshold.load(Ordering::Relaxed),
             cvd_veto_threshold: arena.config.cvd_veto_threshold.load(Ordering::Relaxed),
             wall_veto_threshold: arena.config.wall_veto_threshold.load(Ordering::Relaxed),
             flash_crash_jump_pct: arena.config.flash_crash_jump_pct.load(Ordering::Relaxed),
-            latency_ms_panic_threshold: arena.config.latency_ms_panic_threshold.load(Ordering::Relaxed),
+            latency_ms_panic_threshold: arena
+                .config
+                .latency_ms_panic_threshold
+                .load(Ordering::Relaxed),
             ema_fast_period: arena.config.ema_fast_period.load(Ordering::Relaxed),
             ema_slow_period: arena.config.ema_slow_period.load(Ordering::Relaxed),
             hurst_scalp_threshold: arena.config.hurst_scalp_threshold.load(Ordering::Relaxed),
@@ -242,7 +272,10 @@ impl SuperGenotype {
             synergy_leverage_boost: arena.config.synergy_leverage_boost.load(Ordering::Relaxed),
             max_fee_pct: arena.config.max_fee_pct.load(Ordering::Relaxed),
             kelly_bootstrap_cold: arena.config.kelly_bootstrap_cold.load(Ordering::Relaxed),
-            latency_penalty_ms: arena.config.latency_penalty_ms_physics.load(Ordering::Relaxed),
+            latency_penalty_ms: arena
+                .config
+                .latency_penalty_ms_physics
+                .load(Ordering::Relaxed),
             base_slippage_floor: arena.config.base_slippage_floor.load(Ordering::Relaxed),
             spot_spread_threshold: arena.config.spot_spread_threshold.load(Ordering::Relaxed),
             spot_bias_value: arena.config.spot_bias_value.load(Ordering::Relaxed),
@@ -254,10 +287,16 @@ impl SuperGenotype {
             fractional_alpha_order: arena.config.fractional_alpha_order.load(Ordering::Relaxed),
             fractional_clip_max: arena.config.fractional_clip_max.load(Ordering::Relaxed),
             bft_consensus_tolerance: arena.config.bft_consensus_tolerance.load(Ordering::Relaxed),
-            turbo_coherence_threshold: arena.config.turbo_coherence_threshold.load(Ordering::Relaxed),
+            turbo_coherence_threshold: arena
+                .config
+                .turbo_coherence_threshold
+                .load(Ordering::Relaxed),
             turbo_z_score_stdev: arena.config.turbo_z_score_stdev.load(Ordering::Relaxed),
             sl_atr_multiplier: arena.config.sl_atr_multiplier.load(Ordering::Relaxed),
-            coaxial_squeeze_threshold: arena.config.coaxial_squeeze_threshold.load(Ordering::Relaxed),
+            coaxial_squeeze_threshold: arena
+                .config
+                .coaxial_squeeze_threshold
+                .load(Ordering::Relaxed),
             tensor_op_add_bias: arena.config.tensor_op_add_bias.load(Ordering::Relaxed),
             tensor_op_mul_weight: arena.config.tensor_op_mul_weight.load(Ordering::Relaxed),
             topo_layer_1_activation: arena.config.topo_layer_1_activation.load(Ordering::Relaxed),
@@ -280,38 +319,95 @@ impl SuperGenotype {
             ppo_weight_min_clip: arena.config.ppo_weight_min_clip.load(Ordering::Relaxed),
             hard_stop_decay_factor: arena.config.hard_stop_decay_factor.load(Ordering::Relaxed),
             hard_stop_base_limit: arena.config.hard_stop_base_limit.load(Ordering::Relaxed),
-            kelly_bootstrap_ratio_threshold: arena.config.kelly_bootstrap_ratio_threshold.load(Ordering::Relaxed),
-            kelly_bootstrap_min_exposure: arena.config.kelly_bootstrap_min_exposure.load(Ordering::Relaxed),
+            kelly_bootstrap_ratio_threshold: arena
+                .config
+                .kelly_bootstrap_ratio_threshold
+                .load(Ordering::Relaxed),
+            kelly_bootstrap_min_exposure: arena
+                .config
+                .kelly_bootstrap_min_exposure
+                .load(Ordering::Relaxed),
             ev_fee_multiplier: arena.config.ev_fee_multiplier.load(Ordering::Relaxed),
             margin_cushion_pct: arena.config.margin_cushion_pct.load(Ordering::Relaxed),
-            maker_only_capital_threshold: arena.config.maker_only_capital_threshold.load(Ordering::Relaxed),
-            
-            kelly_survival_cap_ratio: arena.config.kelly_survival_cap_ratio.load(Ordering::Relaxed),
+            maker_only_capital_threshold: arena
+                .config
+                .maker_only_capital_threshold
+                .load(Ordering::Relaxed),
+
+            kelly_survival_cap_ratio: arena
+                .config
+                .kelly_survival_cap_ratio
+                .load(Ordering::Relaxed),
             kelly_expansion_mult: arena.config.kelly_expansion_mult.load(Ordering::Relaxed),
-            guard_dd_sigmoid_steepness: arena.config.guard_dd_sigmoid_steepness.load(Ordering::Relaxed),
+            guard_dd_sigmoid_steepness: arena
+                .config
+                .guard_dd_sigmoid_steepness
+                .load(Ordering::Relaxed),
             guard_dd_sigmoid_center: arena.config.guard_dd_sigmoid_center.load(Ordering::Relaxed),
-            portfolio_perf_mult_steepness: arena.config.portfolio_perf_mult_steepness.load(Ordering::Relaxed),
-            portfolio_dd_penalty_decay: arena.config.portfolio_dd_penalty_decay.load(Ordering::Relaxed),
+            portfolio_perf_mult_steepness: arena
+                .config
+                .portfolio_perf_mult_steepness
+                .load(Ordering::Relaxed),
+            portfolio_dd_penalty_decay: arena
+                .config
+                .portfolio_dd_penalty_decay
+                .load(Ordering::Relaxed),
             portfolio_perf_mult_min: arena.config.portfolio_perf_mult_min.load(Ordering::Relaxed),
             portfolio_perf_mult_max: arena.config.portfolio_perf_mult_max.load(Ordering::Relaxed),
-            portfolio_perf_mult_center: arena.config.portfolio_perf_mult_center.load(Ordering::Relaxed),
-            
-            macro_hurst_confidence_offset: arena.config.macro_hurst_confidence_offset.load(Ordering::Relaxed),
-            macro_hurst_confidence_scale: arena.config.macro_hurst_confidence_scale.load(Ordering::Relaxed),
-            macro_vol_confidence_scale: arena.config.macro_vol_confidence_scale.load(Ordering::Relaxed),
-            macro_min_cooldown_ratio: arena.config.macro_min_cooldown_ratio.load(Ordering::Relaxed),
-            macro_max_cooldown_ratio: arena.config.macro_max_cooldown_ratio.load(Ordering::Relaxed),
-            macro_cooldown_reduction_factor: arena.config.macro_cooldown_reduction_factor.load(Ordering::Relaxed),
-            macro_leverage_momentum_scale: arena.config.macro_leverage_momentum_scale.load(Ordering::Relaxed),
+            portfolio_perf_mult_center: arena
+                .config
+                .portfolio_perf_mult_center
+                .load(Ordering::Relaxed),
+
+            macro_hurst_confidence_offset: arena
+                .config
+                .macro_hurst_confidence_offset
+                .load(Ordering::Relaxed),
+            macro_hurst_confidence_scale: arena
+                .config
+                .macro_hurst_confidence_scale
+                .load(Ordering::Relaxed),
+            macro_vol_confidence_scale: arena
+                .config
+                .macro_vol_confidence_scale
+                .load(Ordering::Relaxed),
+            macro_min_cooldown_ratio: arena
+                .config
+                .macro_min_cooldown_ratio
+                .load(Ordering::Relaxed),
+            macro_max_cooldown_ratio: arena
+                .config
+                .macro_max_cooldown_ratio
+                .load(Ordering::Relaxed),
+            macro_cooldown_reduction_factor: arena
+                .config
+                .macro_cooldown_reduction_factor
+                .load(Ordering::Relaxed),
+            macro_leverage_momentum_scale: arena
+                .config
+                .macro_leverage_momentum_scale
+                .load(Ordering::Relaxed),
             hawkes_scalp_threshold: arena.config.hawkes_scalp_threshold.load(Ordering::Relaxed),
             obi_zscore_threshold: arena.config.obi_zscore_threshold.load(Ordering::Relaxed),
-            lev_matrix_vol_clamp_min: arena.config.lev_matrix_vol_clamp_min.load(Ordering::Relaxed),
-            lev_matrix_growth_scalar: arena.config.lev_matrix_growth_scalar.load(Ordering::Relaxed),
-            lev_matrix_log_cap_divisor: arena.config.lev_matrix_log_cap_divisor.load(Ordering::Relaxed),
+            lev_matrix_vol_clamp_min: arena
+                .config
+                .lev_matrix_vol_clamp_min
+                .load(Ordering::Relaxed),
+            lev_matrix_growth_scalar: arena
+                .config
+                .lev_matrix_growth_scalar
+                .load(Ordering::Relaxed),
+            lev_matrix_log_cap_divisor: arena
+                .config
+                .lev_matrix_log_cap_divisor
+                .load(Ordering::Relaxed),
             scalp_accel_min_samples: arena.config.scalp_accel_min_samples.load(Ordering::Relaxed),
             executor_max_orders_10s: arena.config.executor_max_orders_10s.load(Ordering::Relaxed),
             executor_max_weight_1m: arena.config.executor_max_weight_1m.load(Ordering::Relaxed),
-            iceberg_volume_threshold: arena.config.iceberg_volume_threshold.load(Ordering::Relaxed),
+            iceberg_volume_threshold: arena
+                .config
+                .iceberg_volume_threshold
+                .load(Ordering::Relaxed),
             iceberg_slice_count: arena.config.iceberg_slice_count.load(Ordering::Relaxed),
         }
     }
@@ -329,7 +425,9 @@ impl SuperGenotype {
         }
         if let Ok(data) = std::fs::read_to_string("data/genesis_genome.json") {
             if let Ok(genome) = serde_json::from_str::<Self>(&data) {
-                telemetry_engine::telemetry!("🧬 [GENOMA] Loaded surviving SuperGenotype from genesis_genome.json");
+                telemetry_engine::telemetry!(
+                    "🧬 [GENOMA] Loaded surviving SuperGenotype from genesis_genome.json"
+                );
                 return genome;
             }
         }
@@ -349,18 +447,18 @@ impl SuperGenotype {
         let pi = std::f64::consts::PI;
         let e_const = std::f64::consts::E;
         let golden_ratio = 1.618033988749895_f64;
-        
-        let scalp_tp_math = taker_base * 6.0; 
-        let scalp_sl_math = scalp_tp_math / 2.0; 
-        let swing_tp_math = taker_base * 30.0; 
-        let swing_sl_math = swing_tp_math / 2.0; 
-        
+
+        let scalp_tp_math = taker_base * 6.0;
+        let scalp_sl_math = scalp_tp_math / 2.0;
+        let swing_tp_math = taker_base * 30.0;
+        let swing_sl_math = swing_tp_math / 2.0;
+
         let r_scalp = scalp_tp_math / scalp_sl_math;
         let r_swing = swing_tp_math / swing_sl_math;
-        
+
         let k_scalp = w_base - ((1.0 - w_base) / r_scalp);
         let k_swing = w_base - ((1.0 - w_base) / r_swing);
-        
+
         Self {
             global_max_drawdown: 1.0 - (taker_base * 100.0).clamp(0.01, 0.10), // Derivado del costo del mercado
             global_leverage: 30.0, // Apalancamiento para cuentas pequeñas futures
@@ -370,11 +468,11 @@ impl SuperGenotype {
             survival_capital_threshold: golden_ratio / 2.0, // ~0.809
             funding_rate_sensitivity: w_base,
             global_correlation_threshold: golden_ratio - 1.0, // 0.618
-            trend_threshold: pi / 10.0, // ~0.314
-            range_threshold: e_const / 6.0, // ~0.453
-            scalp_kelly_fraction: k_scalp, 
-            swing_kelly_fraction: k_swing, 
-            scalp_obi_threshold: taker_base * 50.0, 
+            trend_threshold: pi / 10.0,                       // ~0.314
+            range_threshold: e_const / 6.0,                   // ~0.453
+            scalp_kelly_fraction: k_scalp,
+            swing_kelly_fraction: k_swing,
+            scalp_obi_threshold: taker_base * 50.0,
             scalp_tp_base: scalp_tp_math,
             scalp_sl_base: scalp_sl_math,
             swing_tp_base: swing_tp_math,
@@ -382,7 +480,7 @@ impl SuperGenotype {
             sl_atr_mult_btc: 1.0,
             tp_rr_ratio_btc: r_scalp,
             min_confidence_btc: w_base * 1.018, // Ligeramente mayor que base
-            veto_threshold_btc: w_base * 1.09, 
+            veto_threshold_btc: w_base * 1.09,
             tech_threshold: taker_base * 5.0,
             ml_threshold_long: w_base * 1.036,
             ml_threshold_short: w_base * 1.036,
@@ -396,7 +494,7 @@ impl SuperGenotype {
             capital_split_scalp: 0.5,
             kelly_clamp_min: k_scalp / 10.0,
             kelly_clamp_max: w_base,
-            explosive_leverage_multiplier: pi / 2.0, 
+            explosive_leverage_multiplier: pi / 2.0,
             quantum_mutation_rate: taker_base * 100.0,
             temporal_memory_decay: 1.0 - maker_base,
             leverage_cap: 1.0 / (taker_base * 20.0), // Escala inversamente al costo
@@ -404,7 +502,7 @@ impl SuperGenotype {
             weight_obi: w_base * 0.7,
             weight_ofi: w_base * 0.7,
             weight_vpin: w_base * 0.35,
-            regime_duration_ms: (1.0 / taker_base) * 60.0, 
+            regime_duration_ms: (1.0 / taker_base) * 60.0,
             regime_atr_multiplier: golden_ratio,
             scalp_trail_act_atr: taker_base * 10.0,
             scalp_trail_step_atr: pi,
@@ -422,8 +520,8 @@ impl SuperGenotype {
             wall_veto_threshold: pi * 5.0,
             flash_crash_jump_pct: taker_base * 300.0,
             latency_ms_panic_threshold: 1000.0 * pi, // ~3141ms
-            ema_fast_period: pi * 4.0, // ~12.5
-            ema_slow_period: pi * 8.0, // ~25.1
+            ema_fast_period: pi * 4.0,               // ~12.5
+            ema_slow_period: pi * 8.0,               // ~25.1
             hurst_scalp_threshold: (golden_ratio - 1.0) * 0.7, // ~0.43
             hurst_swing_threshold: (golden_ratio - 1.0) * 0.9, // ~0.55
             synergy_exposure_boost: golden_ratio,
@@ -471,7 +569,7 @@ impl SuperGenotype {
             ev_fee_multiplier: 1.1,
             margin_cushion_pct: 1.0 + (taker_base * 100.0),
             maker_only_capital_threshold: taker_base * 100000.0,
-            
+
             kelly_survival_cap_ratio: golden_ratio,
             kelly_expansion_mult: golden_ratio,
             guard_dd_sigmoid_steepness: pi,
@@ -481,7 +579,7 @@ impl SuperGenotype {
             portfolio_perf_mult_min: w_base * 0.5,
             portfolio_perf_mult_max: w_base * 3.0,
             portfolio_perf_mult_center: w_base,
-            
+
             macro_hurst_confidence_offset: 0.45,
             macro_hurst_confidence_scale: 10.0,
             macro_vol_confidence_scale: 200.0,
@@ -491,10 +589,10 @@ impl SuperGenotype {
             macro_leverage_momentum_scale: 0.5,
             hawkes_scalp_threshold: 0.55,
             obi_zscore_threshold: 1.0,
-            
+
             hawkes_volume_norm: taker_base * 100000.0, // Default to a derived ratio
             base_duration_ms: (1.0 / taker_base) * 60.0,
-            
+
             lev_matrix_vol_clamp_min: 0.3,
             lev_matrix_growth_scalar: 0.3,
             lev_matrix_log_cap_divisor: 7.0,
@@ -617,7 +715,7 @@ impl SuperGenotype {
             ev_fee_multiplier: rand::rng().random_range(1.05..2.0),
             margin_cushion_pct: rand::rng().random_range(1.01..1.20),
             maker_only_capital_threshold: rand::rng().random_range(10.0..200.0),
-            
+
             kelly_survival_cap_ratio: rand::rng().random_range(1.0..3.0),
             kelly_expansion_mult: rand::rng().random_range(1.0..3.0),
             guard_dd_sigmoid_steepness: rand::rng().random_range(1.0..5.0),
@@ -627,7 +725,7 @@ impl SuperGenotype {
             portfolio_perf_mult_min: rand::rng().random_range(0.1..0.5),
             portfolio_perf_mult_max: rand::rng().random_range(1.5..3.0),
             portfolio_perf_mult_center: rand::rng().random_range(0.3..0.8),
-            
+
             macro_hurst_confidence_offset: rand::rng().random_range(0.35..0.55),
             macro_hurst_confidence_scale: rand::rng().random_range(1.0..20.0),
             macro_vol_confidence_scale: rand::rng().random_range(10.0..500.0),
@@ -637,10 +735,10 @@ impl SuperGenotype {
             macro_leverage_momentum_scale: rand::rng().random_range(0.1..2.0),
             hawkes_scalp_threshold: rand::rng().random_range(0.1..1.0),
             obi_zscore_threshold: rand::rng().random_range(0.1..3.0),
-            
+
             hawkes_volume_norm: rand::rng().random_range(100.0..10_000_000.0),
             base_duration_ms: rand::rng().random_range(10_000.0..120_000.0),
-            
+
             lev_matrix_vol_clamp_min: rand::rng().random_range(0.1..0.8),
             lev_matrix_growth_scalar: rand::rng().random_range(0.1..1.0),
             lev_matrix_log_cap_divisor: rand::rng().random_range(3.0..10.0),
@@ -654,151 +752,526 @@ impl SuperGenotype {
 
     /// Applica el genoma completo directamente al Arena lock-free
     pub fn apply_to_arena(&self, arena: &GlobalArena) {
-        arena.config.global_max_drawdown.store(self.global_max_drawdown, Ordering::Relaxed);
-        arena.config.global_leverage.store(self.global_leverage, Ordering::Relaxed);
-        arena.config.btc_volatility_multiplier.store(self.btc_volatility_multiplier, Ordering::Relaxed);
-        arena.config.eth_volatility_multiplier.store(self.eth_volatility_multiplier, Ordering::Relaxed);
-        arena.config.funding_rate_sensitivity.store(self.funding_rate_sensitivity, Ordering::Relaxed);
-        arena.config.global_correlation_threshold.store(self.global_correlation_threshold, Ordering::Relaxed);
-        arena.config.trend_threshold.store(self.trend_threshold, Ordering::Relaxed);
-        arena.config.range_threshold.store(self.range_threshold, Ordering::Relaxed);
-        arena.config.scalp_kelly_fraction.store(self.scalp_kelly_fraction, Ordering::Relaxed);
-        arena.config.swing_kelly_fraction.store(self.swing_kelly_fraction, Ordering::Relaxed);
-        arena.config.scalp_obi_threshold.store(self.scalp_obi_threshold, Ordering::Relaxed);
-        arena.config.scalp_tp_base.store(self.scalp_tp_base, Ordering::Relaxed);
-        arena.config.scalp_sl_base.store(self.scalp_sl_base, Ordering::Relaxed);
-        arena.config.swing_tp_base.store(self.swing_tp_base, Ordering::Relaxed);
-        arena.config.swing_sl_base.store(self.swing_sl_base, Ordering::Relaxed);
-        arena.config.sl_atr_mult_btc.store(self.sl_atr_mult_btc, Ordering::Relaxed);
-        arena.config.tp_rr_ratio_btc.store(self.tp_rr_ratio_btc, Ordering::Relaxed);
-        arena.config.min_confidence_btc.store(self.min_confidence_btc, Ordering::Relaxed);
-        arena.config.veto_threshold_btc.store(self.veto_threshold_btc, Ordering::Relaxed);
-        arena.config.tech_threshold.store(self.tech_threshold, Ordering::Relaxed);
-        arena.config.ml_threshold_long.store(self.ml_threshold_long, Ordering::Relaxed);
-        arena.config.ml_threshold_short.store(self.ml_threshold_short, Ordering::Relaxed);
-        arena.config.maker_spread_pct.store(self.maker_spread_pct, Ordering::Relaxed);
-        arena.config.maker_obi_threshold.store(self.maker_obi_threshold, Ordering::Relaxed);
-        arena.config.target_volatility.store(self.target_volatility, Ordering::Relaxed);
-        arena.config.dynamic_atr_min.store(self.dynamic_atr_min, Ordering::Relaxed);
-        arena.config.dynamic_obi_threshold.store(self.dynamic_obi_threshold, Ordering::Relaxed);
-        arena.config.dynamic_ema_trend.store(self.dynamic_ema_trend, Ordering::Relaxed);
-        arena.config.dynamic_ofi_threshold.store(self.dynamic_ofi_threshold, Ordering::Relaxed);
-        arena.config.capital_split_scalp.store(self.capital_split_scalp, Ordering::Relaxed);
-        arena.config.kelly_clamp_min.store(self.kelly_clamp_min, Ordering::Relaxed);
-        arena.config.kelly_clamp_max.store(self.kelly_clamp_max, Ordering::Relaxed);
-        arena.config.explosive_leverage_multiplier.store(self.explosive_leverage_multiplier, Ordering::Relaxed);
-        arena.config.quantum_mutation_rate.store(self.quantum_mutation_rate, Ordering::Relaxed);
-        arena.config.temporal_memory_decay.store(self.temporal_memory_decay, Ordering::Relaxed);
-        arena.config.leverage_cap.store(self.leverage_cap, Ordering::Relaxed);
-        arena.config.explosive_confidence_threshold.store(self.explosive_confidence_threshold, Ordering::Relaxed);
-        arena.config.hawkes_volume_norm.store(self.hawkes_volume_norm, Ordering::Relaxed);
-        arena.config.base_duration_ms.store(self.base_duration_ms, Ordering::Relaxed);
-        arena.config.weight_obi.store(self.weight_obi, Ordering::Relaxed);
-        arena.config.weight_ofi.store(self.weight_ofi, Ordering::Relaxed);
-        arena.config.weight_vpin.store(self.weight_vpin, Ordering::Relaxed);
-        arena.config.regime_duration_ms.store(self.regime_duration_ms, Ordering::Relaxed);
-        arena.config.regime_atr_multiplier.store(self.regime_atr_multiplier, Ordering::Relaxed);
-        
-        arena.config.scalp_trail_act_atr.store(self.scalp_trail_act_atr, Ordering::Relaxed);
-        arena.config.scalp_trail_step_atr.store(self.scalp_trail_step_atr, Ordering::Relaxed);
-        arena.config.scalp_trail_max_atr.store(self.scalp_trail_max_atr, Ordering::Relaxed);
-        arena.config.scalp_trail_min_pnl.store(self.scalp_trail_min_pnl, Ordering::Relaxed);
-        arena.config.scalp_trail_atr_mult_base.store(self.scalp_trail_atr_mult_base, Ordering::Relaxed);
-        
-        arena.config.swing_trail_act_atr.store(self.swing_trail_act_atr, Ordering::Relaxed);
-        arena.config.swing_trail_step_atr.store(self.swing_trail_step_atr, Ordering::Relaxed);
-        arena.config.swing_trail_max_atr.store(self.swing_trail_max_atr, Ordering::Relaxed);
-        arena.config.swing_trail_min_pnl.store(self.swing_trail_min_pnl, Ordering::Relaxed);
-        arena.config.swing_trail_atr_mult_base.store(self.swing_trail_atr_mult_base, Ordering::Relaxed);
-        
-        arena.config.zombie_timeout_ms.store(self.zombie_timeout_ms, Ordering::Relaxed);
-        arena.config.hurst_trend_threshold.store(self.hurst_trend_threshold, Ordering::Relaxed);
-        arena.config.cvd_veto_threshold.store(self.cvd_veto_threshold, Ordering::Relaxed);
-        arena.config.wall_veto_threshold.store(self.wall_veto_threshold, Ordering::Relaxed);
-        arena.config.flash_crash_jump_pct.store(self.flash_crash_jump_pct, Ordering::Relaxed);
-        arena.config.latency_ms_panic_threshold.store(self.latency_ms_panic_threshold, Ordering::Relaxed);
-        arena.config.ema_fast_period.store(self.ema_fast_period, Ordering::Relaxed);
-        arena.config.ema_slow_period.store(self.ema_slow_period, Ordering::Relaxed);
-        arena.config.hurst_scalp_threshold.store(self.hurst_scalp_threshold, Ordering::Relaxed);
-        arena.config.hurst_swing_threshold.store(self.hurst_swing_threshold, Ordering::Relaxed);
-        arena.config.synergy_exposure_boost.store(self.synergy_exposure_boost, Ordering::Relaxed);
-        arena.config.synergy_leverage_boost.store(self.synergy_leverage_boost, Ordering::Relaxed);
-        arena.config.max_fee_pct.store(self.max_fee_pct, Ordering::Relaxed);
-        arena.config.kelly_bootstrap_cold.store(self.kelly_bootstrap_cold, Ordering::Relaxed);
-        arena.config.latency_penalty_ms_physics.store(self.latency_penalty_ms, Ordering::Relaxed);
-        arena.config.base_slippage_floor.store(self.base_slippage_floor, Ordering::Relaxed);
-        arena.config.spot_spread_threshold.store(self.spot_spread_threshold, Ordering::Relaxed);
-        arena.config.spot_bias_value.store(self.spot_bias_value, Ordering::Relaxed);
-        arena.config.obi_confidence_fallback.store(self.obi_confidence_fallback, Ordering::Relaxed);
-        arena.config.ml_clip_lower.store(self.ml_clip_lower, Ordering::Relaxed);
-        arena.config.ml_clip_upper.store(self.ml_clip_upper, Ordering::Relaxed);
-        arena.config.tensor_poly_a.store(self.tensor_poly_a, Ordering::Relaxed);
-        arena.config.tensor_poly_b.store(self.tensor_poly_b, Ordering::Relaxed);
-        arena.config.fractional_alpha_order.store(self.fractional_alpha_order, Ordering::Relaxed);
-        arena.config.fractional_clip_max.store(self.fractional_clip_max, Ordering::Relaxed);
-        arena.config.bft_consensus_tolerance.store(self.bft_consensus_tolerance, Ordering::Relaxed);
-        arena.config.turbo_coherence_threshold.store(self.turbo_coherence_threshold, Ordering::Relaxed);
-        arena.config.turbo_z_score_stdev.store(self.turbo_z_score_stdev, Ordering::Relaxed);
-        arena.config.sl_atr_multiplier.store(self.sl_atr_multiplier, Ordering::Relaxed);
-        arena.config.coaxial_squeeze_threshold.store(self.coaxial_squeeze_threshold, Ordering::Relaxed);
-        arena.config.tensor_op_add_bias.store(self.tensor_op_add_bias, Ordering::Relaxed);
-        arena.config.tensor_op_mul_weight.store(self.tensor_op_mul_weight, Ordering::Relaxed);
-        arena.config.topo_layer_1_activation.store(self.topo_layer_1_activation, Ordering::Relaxed);
-        arena.config.topo_layer_2_activation.store(self.topo_layer_2_activation, Ordering::Relaxed);
-        arena.config.tensor_dropout_rate.store(self.tensor_dropout_rate, Ordering::Relaxed);
-        arena.config.quantum_entropy_seed.store(self.quantum_entropy_seed, Ordering::Relaxed);
-        
-        arena.config.ppo_clip_eps.store(self.ppo_clip_eps, Ordering::Relaxed);
-        arena.config.ppo_weight_min_clip.store(self.ppo_weight_min_clip, Ordering::Relaxed);
-        arena.config.hard_stop_decay_factor.store(self.hard_stop_decay_factor, Ordering::Relaxed);
-        arena.config.hard_stop_base_limit.store(self.hard_stop_base_limit, Ordering::Relaxed);
-        arena.config.kelly_bootstrap_ratio_threshold.store(self.kelly_bootstrap_ratio_threshold, Ordering::Relaxed);
-        arena.config.kelly_bootstrap_min_exposure.store(self.kelly_bootstrap_min_exposure, Ordering::Relaxed);
-        arena.config.ev_fee_multiplier.store(self.ev_fee_multiplier, Ordering::Relaxed);
-        arena.config.margin_cushion_pct.store(self.margin_cushion_pct, Ordering::Relaxed);
-        arena.config.maker_only_capital_threshold.store(self.maker_only_capital_threshold, Ordering::Relaxed);
-        arena.config.hawkes_scalp_threshold.store(self.hawkes_scalp_threshold, Ordering::Relaxed);
-        arena.config.obi_zscore_threshold.store(self.obi_zscore_threshold, Ordering::Relaxed);
-        
+        arena
+            .config
+            .global_max_drawdown
+            .store(self.global_max_drawdown, Ordering::Relaxed);
+        arena
+            .config
+            .global_leverage
+            .store(self.global_leverage, Ordering::Relaxed);
+        arena
+            .config
+            .btc_volatility_multiplier
+            .store(self.btc_volatility_multiplier, Ordering::Relaxed);
+        arena
+            .config
+            .eth_volatility_multiplier
+            .store(self.eth_volatility_multiplier, Ordering::Relaxed);
+        arena
+            .config
+            .funding_rate_sensitivity
+            .store(self.funding_rate_sensitivity, Ordering::Relaxed);
+        arena
+            .config
+            .global_correlation_threshold
+            .store(self.global_correlation_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .trend_threshold
+            .store(self.trend_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .range_threshold
+            .store(self.range_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_kelly_fraction
+            .store(self.scalp_kelly_fraction, Ordering::Relaxed);
+        arena
+            .config
+            .swing_kelly_fraction
+            .store(self.swing_kelly_fraction, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_obi_threshold
+            .store(self.scalp_obi_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_tp_base
+            .store(self.scalp_tp_base, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_sl_base
+            .store(self.scalp_sl_base, Ordering::Relaxed);
+        arena
+            .config
+            .swing_tp_base
+            .store(self.swing_tp_base, Ordering::Relaxed);
+        arena
+            .config
+            .swing_sl_base
+            .store(self.swing_sl_base, Ordering::Relaxed);
+        arena
+            .config
+            .sl_atr_mult_btc
+            .store(self.sl_atr_mult_btc, Ordering::Relaxed);
+        arena
+            .config
+            .tp_rr_ratio_btc
+            .store(self.tp_rr_ratio_btc, Ordering::Relaxed);
+        arena
+            .config
+            .min_confidence_btc
+            .store(self.min_confidence_btc, Ordering::Relaxed);
+        arena
+            .config
+            .veto_threshold_btc
+            .store(self.veto_threshold_btc, Ordering::Relaxed);
+        arena
+            .config
+            .tech_threshold
+            .store(self.tech_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .ml_threshold_long
+            .store(self.ml_threshold_long, Ordering::Relaxed);
+        arena
+            .config
+            .ml_threshold_short
+            .store(self.ml_threshold_short, Ordering::Relaxed);
+        arena
+            .config
+            .maker_spread_pct
+            .store(self.maker_spread_pct, Ordering::Relaxed);
+        arena
+            .config
+            .maker_obi_threshold
+            .store(self.maker_obi_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .target_volatility
+            .store(self.target_volatility, Ordering::Relaxed);
+        arena
+            .config
+            .dynamic_atr_min
+            .store(self.dynamic_atr_min, Ordering::Relaxed);
+        arena
+            .config
+            .dynamic_obi_threshold
+            .store(self.dynamic_obi_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .dynamic_ema_trend
+            .store(self.dynamic_ema_trend, Ordering::Relaxed);
+        arena
+            .config
+            .dynamic_ofi_threshold
+            .store(self.dynamic_ofi_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .capital_split_scalp
+            .store(self.capital_split_scalp, Ordering::Relaxed);
+        arena
+            .config
+            .kelly_clamp_min
+            .store(self.kelly_clamp_min, Ordering::Relaxed);
+        arena
+            .config
+            .kelly_clamp_max
+            .store(self.kelly_clamp_max, Ordering::Relaxed);
+        arena
+            .config
+            .explosive_leverage_multiplier
+            .store(self.explosive_leverage_multiplier, Ordering::Relaxed);
+        arena
+            .config
+            .quantum_mutation_rate
+            .store(self.quantum_mutation_rate, Ordering::Relaxed);
+        arena
+            .config
+            .temporal_memory_decay
+            .store(self.temporal_memory_decay, Ordering::Relaxed);
+        arena
+            .config
+            .leverage_cap
+            .store(self.leverage_cap, Ordering::Relaxed);
+        arena
+            .config
+            .explosive_confidence_threshold
+            .store(self.explosive_confidence_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .hawkes_volume_norm
+            .store(self.hawkes_volume_norm, Ordering::Relaxed);
+        arena
+            .config
+            .base_duration_ms
+            .store(self.base_duration_ms, Ordering::Relaxed);
+        arena
+            .config
+            .weight_obi
+            .store(self.weight_obi, Ordering::Relaxed);
+        arena
+            .config
+            .weight_ofi
+            .store(self.weight_ofi, Ordering::Relaxed);
+        arena
+            .config
+            .weight_vpin
+            .store(self.weight_vpin, Ordering::Relaxed);
+        arena
+            .config
+            .regime_duration_ms
+            .store(self.regime_duration_ms, Ordering::Relaxed);
+        arena
+            .config
+            .regime_atr_multiplier
+            .store(self.regime_atr_multiplier, Ordering::Relaxed);
+
+        arena
+            .config
+            .scalp_trail_act_atr
+            .store(self.scalp_trail_act_atr, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_trail_step_atr
+            .store(self.scalp_trail_step_atr, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_trail_max_atr
+            .store(self.scalp_trail_max_atr, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_trail_min_pnl
+            .store(self.scalp_trail_min_pnl, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_trail_atr_mult_base
+            .store(self.scalp_trail_atr_mult_base, Ordering::Relaxed);
+
+        arena
+            .config
+            .swing_trail_act_atr
+            .store(self.swing_trail_act_atr, Ordering::Relaxed);
+        arena
+            .config
+            .swing_trail_step_atr
+            .store(self.swing_trail_step_atr, Ordering::Relaxed);
+        arena
+            .config
+            .swing_trail_max_atr
+            .store(self.swing_trail_max_atr, Ordering::Relaxed);
+        arena
+            .config
+            .swing_trail_min_pnl
+            .store(self.swing_trail_min_pnl, Ordering::Relaxed);
+        arena
+            .config
+            .swing_trail_atr_mult_base
+            .store(self.swing_trail_atr_mult_base, Ordering::Relaxed);
+
+        arena
+            .config
+            .zombie_timeout_ms
+            .store(self.zombie_timeout_ms, Ordering::Relaxed);
+        arena
+            .config
+            .hurst_trend_threshold
+            .store(self.hurst_trend_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .cvd_veto_threshold
+            .store(self.cvd_veto_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .wall_veto_threshold
+            .store(self.wall_veto_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .flash_crash_jump_pct
+            .store(self.flash_crash_jump_pct, Ordering::Relaxed);
+        arena
+            .config
+            .latency_ms_panic_threshold
+            .store(self.latency_ms_panic_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .ema_fast_period
+            .store(self.ema_fast_period, Ordering::Relaxed);
+        arena
+            .config
+            .ema_slow_period
+            .store(self.ema_slow_period, Ordering::Relaxed);
+        arena
+            .config
+            .hurst_scalp_threshold
+            .store(self.hurst_scalp_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .hurst_swing_threshold
+            .store(self.hurst_swing_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .synergy_exposure_boost
+            .store(self.synergy_exposure_boost, Ordering::Relaxed);
+        arena
+            .config
+            .synergy_leverage_boost
+            .store(self.synergy_leverage_boost, Ordering::Relaxed);
+        arena
+            .config
+            .max_fee_pct
+            .store(self.max_fee_pct, Ordering::Relaxed);
+        arena
+            .config
+            .kelly_bootstrap_cold
+            .store(self.kelly_bootstrap_cold, Ordering::Relaxed);
+        arena
+            .config
+            .latency_penalty_ms_physics
+            .store(self.latency_penalty_ms, Ordering::Relaxed);
+        arena
+            .config
+            .base_slippage_floor
+            .store(self.base_slippage_floor, Ordering::Relaxed);
+        arena
+            .config
+            .spot_spread_threshold
+            .store(self.spot_spread_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .spot_bias_value
+            .store(self.spot_bias_value, Ordering::Relaxed);
+        arena
+            .config
+            .obi_confidence_fallback
+            .store(self.obi_confidence_fallback, Ordering::Relaxed);
+        arena
+            .config
+            .ml_clip_lower
+            .store(self.ml_clip_lower, Ordering::Relaxed);
+        arena
+            .config
+            .ml_clip_upper
+            .store(self.ml_clip_upper, Ordering::Relaxed);
+        arena
+            .config
+            .tensor_poly_a
+            .store(self.tensor_poly_a, Ordering::Relaxed);
+        arena
+            .config
+            .tensor_poly_b
+            .store(self.tensor_poly_b, Ordering::Relaxed);
+        arena
+            .config
+            .fractional_alpha_order
+            .store(self.fractional_alpha_order, Ordering::Relaxed);
+        arena
+            .config
+            .fractional_clip_max
+            .store(self.fractional_clip_max, Ordering::Relaxed);
+        arena
+            .config
+            .bft_consensus_tolerance
+            .store(self.bft_consensus_tolerance, Ordering::Relaxed);
+        arena
+            .config
+            .turbo_coherence_threshold
+            .store(self.turbo_coherence_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .turbo_z_score_stdev
+            .store(self.turbo_z_score_stdev, Ordering::Relaxed);
+        arena
+            .config
+            .sl_atr_multiplier
+            .store(self.sl_atr_multiplier, Ordering::Relaxed);
+        arena
+            .config
+            .coaxial_squeeze_threshold
+            .store(self.coaxial_squeeze_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .tensor_op_add_bias
+            .store(self.tensor_op_add_bias, Ordering::Relaxed);
+        arena
+            .config
+            .tensor_op_mul_weight
+            .store(self.tensor_op_mul_weight, Ordering::Relaxed);
+        arena
+            .config
+            .topo_layer_1_activation
+            .store(self.topo_layer_1_activation, Ordering::Relaxed);
+        arena
+            .config
+            .topo_layer_2_activation
+            .store(self.topo_layer_2_activation, Ordering::Relaxed);
+        arena
+            .config
+            .tensor_dropout_rate
+            .store(self.tensor_dropout_rate, Ordering::Relaxed);
+        arena
+            .config
+            .quantum_entropy_seed
+            .store(self.quantum_entropy_seed, Ordering::Relaxed);
+
+        arena
+            .config
+            .ppo_clip_eps
+            .store(self.ppo_clip_eps, Ordering::Relaxed);
+        arena
+            .config
+            .ppo_weight_min_clip
+            .store(self.ppo_weight_min_clip, Ordering::Relaxed);
+        arena
+            .config
+            .hard_stop_decay_factor
+            .store(self.hard_stop_decay_factor, Ordering::Relaxed);
+        arena
+            .config
+            .hard_stop_base_limit
+            .store(self.hard_stop_base_limit, Ordering::Relaxed);
+        arena
+            .config
+            .kelly_bootstrap_ratio_threshold
+            .store(self.kelly_bootstrap_ratio_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .kelly_bootstrap_min_exposure
+            .store(self.kelly_bootstrap_min_exposure, Ordering::Relaxed);
+        arena
+            .config
+            .ev_fee_multiplier
+            .store(self.ev_fee_multiplier, Ordering::Relaxed);
+        arena
+            .config
+            .margin_cushion_pct
+            .store(self.margin_cushion_pct, Ordering::Relaxed);
+        arena
+            .config
+            .maker_only_capital_threshold
+            .store(self.maker_only_capital_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .hawkes_scalp_threshold
+            .store(self.hawkes_scalp_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .obi_zscore_threshold
+            .store(self.obi_zscore_threshold, Ordering::Relaxed);
+
         // CORRECCIÓN CRÍTICA: Estos 9 campos estaban definidos, se mutaban,
         // pero NUNCA se propagaban al Arena. Eran nodos silenciosos (FALLO TIPO 1).
         // El evolver gastaba CPU evolucionando valores que el sistema nunca leía.
-        arena.config.kelly_survival_cap_ratio.store(self.kelly_survival_cap_ratio, Ordering::Relaxed);
-        arena.config.kelly_expansion_mult.store(self.kelly_expansion_mult, Ordering::Relaxed);
-        arena.config.guard_dd_sigmoid_steepness.store(self.guard_dd_sigmoid_steepness, Ordering::Relaxed);
-        arena.config.guard_dd_sigmoid_center.store(self.guard_dd_sigmoid_center, Ordering::Relaxed);
-        arena.config.portfolio_perf_mult_steepness.store(self.portfolio_perf_mult_steepness, Ordering::Relaxed);
-        arena.config.portfolio_dd_penalty_decay.store(self.portfolio_dd_penalty_decay, Ordering::Relaxed);
-        arena.config.portfolio_perf_mult_min.store(self.portfolio_perf_mult_min, Ordering::Relaxed);
-        arena.config.portfolio_perf_mult_max.store(self.portfolio_perf_mult_max, Ordering::Relaxed);
-        arena.config.portfolio_perf_mult_center.store(self.portfolio_perf_mult_center, Ordering::Relaxed);
-        
-        arena.config.macro_hurst_confidence_offset.store(self.macro_hurst_confidence_offset, Ordering::Relaxed);
-        arena.config.macro_hurst_confidence_scale.store(self.macro_hurst_confidence_scale, Ordering::Relaxed);
-        arena.config.macro_vol_confidence_scale.store(self.macro_vol_confidence_scale, Ordering::Relaxed);
-        arena.config.macro_min_cooldown_ratio.store(self.macro_min_cooldown_ratio, Ordering::Relaxed);
-        arena.config.macro_max_cooldown_ratio.store(self.macro_max_cooldown_ratio, Ordering::Relaxed);
-        arena.config.macro_cooldown_reduction_factor.store(self.macro_cooldown_reduction_factor, Ordering::Relaxed);
-        arena.config.macro_leverage_momentum_scale.store(self.macro_leverage_momentum_scale, Ordering::Relaxed);
-        
+        arena
+            .config
+            .kelly_survival_cap_ratio
+            .store(self.kelly_survival_cap_ratio, Ordering::Relaxed);
+        arena
+            .config
+            .kelly_expansion_mult
+            .store(self.kelly_expansion_mult, Ordering::Relaxed);
+        arena
+            .config
+            .guard_dd_sigmoid_steepness
+            .store(self.guard_dd_sigmoid_steepness, Ordering::Relaxed);
+        arena
+            .config
+            .guard_dd_sigmoid_center
+            .store(self.guard_dd_sigmoid_center, Ordering::Relaxed);
+        arena
+            .config
+            .portfolio_perf_mult_steepness
+            .store(self.portfolio_perf_mult_steepness, Ordering::Relaxed);
+        arena
+            .config
+            .portfolio_dd_penalty_decay
+            .store(self.portfolio_dd_penalty_decay, Ordering::Relaxed);
+        arena
+            .config
+            .portfolio_perf_mult_min
+            .store(self.portfolio_perf_mult_min, Ordering::Relaxed);
+        arena
+            .config
+            .portfolio_perf_mult_max
+            .store(self.portfolio_perf_mult_max, Ordering::Relaxed);
+        arena
+            .config
+            .portfolio_perf_mult_center
+            .store(self.portfolio_perf_mult_center, Ordering::Relaxed);
+
+        arena
+            .config
+            .macro_hurst_confidence_offset
+            .store(self.macro_hurst_confidence_offset, Ordering::Relaxed);
+        arena
+            .config
+            .macro_hurst_confidence_scale
+            .store(self.macro_hurst_confidence_scale, Ordering::Relaxed);
+        arena
+            .config
+            .macro_vol_confidence_scale
+            .store(self.macro_vol_confidence_scale, Ordering::Relaxed);
+        arena
+            .config
+            .macro_min_cooldown_ratio
+            .store(self.macro_min_cooldown_ratio, Ordering::Relaxed);
+        arena
+            .config
+            .macro_max_cooldown_ratio
+            .store(self.macro_max_cooldown_ratio, Ordering::Relaxed);
+        arena
+            .config
+            .macro_cooldown_reduction_factor
+            .store(self.macro_cooldown_reduction_factor, Ordering::Relaxed);
+        arena
+            .config
+            .macro_leverage_momentum_scale
+            .store(self.macro_leverage_momentum_scale, Ordering::Relaxed);
+
         // FASE 4: De-hardcoding
-        arena.config.lev_matrix_vol_clamp_min.store(self.lev_matrix_vol_clamp_min, Ordering::Relaxed);
-        arena.config.lev_matrix_growth_scalar.store(self.lev_matrix_growth_scalar, Ordering::Relaxed);
-        arena.config.lev_matrix_log_cap_divisor.store(self.lev_matrix_log_cap_divisor, Ordering::Relaxed);
-        arena.config.scalp_accel_min_samples.store(self.scalp_accel_min_samples, Ordering::Relaxed);
-        arena.config.executor_max_orders_10s.store(self.executor_max_orders_10s, Ordering::Relaxed);
-        arena.config.executor_max_weight_1m.store(self.executor_max_weight_1m, Ordering::Relaxed);
-        arena.config.iceberg_volume_threshold.store(self.iceberg_volume_threshold, Ordering::Relaxed);
-        arena.config.iceberg_slice_count.store(self.iceberg_slice_count, Ordering::Relaxed);
+        arena
+            .config
+            .lev_matrix_vol_clamp_min
+            .store(self.lev_matrix_vol_clamp_min, Ordering::Relaxed);
+        arena
+            .config
+            .lev_matrix_growth_scalar
+            .store(self.lev_matrix_growth_scalar, Ordering::Relaxed);
+        arena
+            .config
+            .lev_matrix_log_cap_divisor
+            .store(self.lev_matrix_log_cap_divisor, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_accel_min_samples
+            .store(self.scalp_accel_min_samples, Ordering::Relaxed);
+        arena
+            .config
+            .executor_max_orders_10s
+            .store(self.executor_max_orders_10s, Ordering::Relaxed);
+        arena
+            .config
+            .executor_max_weight_1m
+            .store(self.executor_max_weight_1m, Ordering::Relaxed);
+        arena
+            .config
+            .iceberg_volume_threshold
+            .store(self.iceberg_volume_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .iceberg_slice_count
+            .store(self.iceberg_slice_count, Ordering::Relaxed);
     }
-    
+
     pub fn mutate_cmaes(&self, rate: f64) -> Self {
         let mut rng = rand::rng();
         let mut mutate_val = |base: f64, min_val: f64, max_val: f64| -> f64 {
             let change = base * rate * rng.random_range(-1.0..1.0);
             (base + change).clamp(min_val, max_val)
         };
-        
+
         Self {
             global_max_drawdown: mutate_val(self.global_max_drawdown, 0.5, 0.99),
             global_leverage: mutate_val(self.global_leverage, 25.0, 35.0),
@@ -834,11 +1307,19 @@ impl SuperGenotype {
             capital_split_scalp: mutate_val(self.capital_split_scalp, 0.1, 1.0),
             kelly_clamp_min: mutate_val(self.kelly_clamp_min, 0.001, 0.1),
             kelly_clamp_max: mutate_val(self.kelly_clamp_max, 0.1, 1.0),
-            explosive_leverage_multiplier: mutate_val(self.explosive_leverage_multiplier, 1.0, 10.0),
+            explosive_leverage_multiplier: mutate_val(
+                self.explosive_leverage_multiplier,
+                1.0,
+                10.0,
+            ),
             quantum_mutation_rate: mutate_val(self.quantum_mutation_rate, 0.01, 0.5),
             temporal_memory_decay: mutate_val(self.temporal_memory_decay, 0.8, 0.9999),
             leverage_cap: mutate_val(self.leverage_cap, 10.0, 125.0),
-            explosive_confidence_threshold: mutate_val(self.explosive_confidence_threshold, 0.7, 0.99),
+            explosive_confidence_threshold: mutate_val(
+                self.explosive_confidence_threshold,
+                0.7,
+                0.99,
+            ),
             weight_obi: mutate_val(self.weight_obi, 0.1, 1.0),
             weight_ofi: mutate_val(self.weight_ofi, 0.1, 1.0),
             weight_vpin: mutate_val(self.weight_vpin, 0.1, 1.0),
@@ -904,47 +1385,67 @@ impl SuperGenotype {
             ppo_weight_min_clip: mutate_val(self.ppo_weight_min_clip, 0.01, 0.10),
             hard_stop_decay_factor: mutate_val(self.hard_stop_decay_factor, 0.1, 1.0),
             hard_stop_base_limit: mutate_val(self.hard_stop_base_limit, 0.10, 0.80),
-            kelly_bootstrap_ratio_threshold: mutate_val(self.kelly_bootstrap_ratio_threshold, 0.05, 0.30),
+            kelly_bootstrap_ratio_threshold: mutate_val(
+                self.kelly_bootstrap_ratio_threshold,
+                0.05,
+                0.30,
+            ),
             kelly_bootstrap_min_exposure: mutate_val(self.kelly_bootstrap_min_exposure, 0.01, 0.5),
             ev_fee_multiplier: mutate_val(self.ev_fee_multiplier, 1.0, 5.0),
             margin_cushion_pct: mutate_val(self.margin_cushion_pct, 1.01, 1.20),
             maker_only_capital_threshold: 50.0,
             hawkes_scalp_threshold: mutate_val(self.hawkes_scalp_threshold, 0.1, 1.0),
             obi_zscore_threshold: mutate_val(self.obi_zscore_threshold, 0.1, 3.0),
-            
+
             hawkes_volume_norm: mutate_val(self.hawkes_volume_norm, 100.0, 10_000_000.0),
             base_duration_ms: mutate_val(self.base_duration_ms, 10_000.0, 120_000.0),
-            
+
             kelly_survival_cap_ratio: mutate_val(self.kelly_survival_cap_ratio, 1.0, 3.0),
             kelly_expansion_mult: mutate_val(self.kelly_expansion_mult, 1.0, 3.0),
             guard_dd_sigmoid_steepness: mutate_val(self.guard_dd_sigmoid_steepness, 1.0, 5.0),
             guard_dd_sigmoid_center: mutate_val(self.guard_dd_sigmoid_center, 1.0, 5.0),
-            portfolio_perf_mult_steepness: mutate_val(self.portfolio_perf_mult_steepness, 3.0, 15.0),
+            portfolio_perf_mult_steepness: mutate_val(
+                self.portfolio_perf_mult_steepness,
+                3.0,
+                15.0,
+            ),
             portfolio_dd_penalty_decay: mutate_val(self.portfolio_dd_penalty_decay, 5.0, 25.0),
             portfolio_perf_mult_min: mutate_val(self.portfolio_perf_mult_min, 0.1, 0.5),
             portfolio_perf_mult_max: mutate_val(self.portfolio_perf_mult_max, 1.1, 3.0),
             portfolio_perf_mult_center: mutate_val(self.portfolio_perf_mult_center, 0.4, 0.6),
-            
-            macro_hurst_confidence_offset: mutate_val(self.macro_hurst_confidence_offset, 0.35, 0.55),
+
+            macro_hurst_confidence_offset: mutate_val(
+                self.macro_hurst_confidence_offset,
+                0.35,
+                0.55,
+            ),
             macro_hurst_confidence_scale: mutate_val(self.macro_hurst_confidence_scale, 1.0, 20.0),
             macro_vol_confidence_scale: mutate_val(self.macro_vol_confidence_scale, 10.0, 500.0),
             macro_min_cooldown_ratio: mutate_val(self.macro_min_cooldown_ratio, 0.05, 0.5),
             macro_max_cooldown_ratio: mutate_val(self.macro_max_cooldown_ratio, 10.0, 500.0),
-            macro_cooldown_reduction_factor: mutate_val(self.macro_cooldown_reduction_factor, 0.1, 2.0),
+            macro_cooldown_reduction_factor: mutate_val(
+                self.macro_cooldown_reduction_factor,
+                0.1,
+                2.0,
+            ),
             macro_leverage_momentum_scale: mutate_val(self.macro_leverage_momentum_scale, 0.1, 2.0),
-            
+
             lev_matrix_vol_clamp_min: mutate_val(self.lev_matrix_vol_clamp_min, 0.1, 0.8),
             lev_matrix_growth_scalar: mutate_val(self.lev_matrix_growth_scalar, 0.1, 1.0),
             lev_matrix_log_cap_divisor: mutate_val(self.lev_matrix_log_cap_divisor, 3.0, 10.0),
             scalp_accel_min_samples: mutate_val(self.scalp_accel_min_samples, 10.0, 50.0),
             executor_max_orders_10s: mutate_val(self.executor_max_orders_10s, 100.0, 500.0),
             executor_max_weight_1m: mutate_val(self.executor_max_weight_1m, 1000.0, 5000.0),
-            iceberg_volume_threshold: mutate_val(self.iceberg_volume_threshold, 10_000.0, 100_000.0),
+            iceberg_volume_threshold: mutate_val(
+                self.iceberg_volume_threshold,
+                10_000.0,
+                100_000.0,
+            ),
             iceberg_slice_count: mutate_val(self.iceberg_slice_count, 2.0, 10.0),
         }
     }
 
-// Generated extensions
+    // Generated extensions
     pub const DIMENSION: usize = 137;
 
     pub fn to_vector(&self) -> Vec<f64> {
@@ -1231,286 +1732,31 @@ impl SuperGenotype {
 
     pub fn get_lower_bounds() -> Vec<f64> {
         vec![
-            0.5,
-            25.0,
-            0.5,
-            0.5,
-            1.0,
-            0.5,
-            0.1,
-            0.2,
-            0.1,
-            0.1,
-            0.1,
-            0.01,
-            0.05,
-            0.0005,
-            0.0002,
-            0.005,
-            0.001,
-            0.5,
-            1.0,
-            0.5,
-            0.5,
-            0.001,
-            0.5,
-            0.5,
-            0.0001,
-            0.1,
-            0.005,
-            0.0001,
-            0.05,
-            0.0001,
-            0.05,
-            0.1,
-            0.001,
-            0.1,
-            1.0,
-            0.01,
-            0.8,
-            10.0,
-            0.7,
-            0.1,
-            0.1,
-            0.1,
-            30000.0,
-            0.5,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
-            10000.0,
-            0.4,
-            0.1,
-            5.0,
-            0.05,
-            500.0,
-            5.0,
-            15.0,
-            0.30,
-            0.50,
-            1.0,
-            1.0,
-            0.005,
-            0.1,
-            5.0,
-            0.00005,
-            0.5,
-            0.05,
-            0.70,
-            0.01,
-            0.80,
-            0.01,
-            0.001,
-            0.1,
-            5.0,
-            0.05,
-            0.1,
-            0.1,
-            0.2,
-            0.1,
-            0.01,
-            0.5,
-            0.1,
-            0.1,
-            0.01,
-            0.0,
-            0.01,
-            0.01,
-            0.01,
-            0.01,
-            0.01,
-            0.0001,
-            0.5,
-            0.001,
-            0.001,
-            0.01,
-            0.05,
-            0.01,
-            0.1,
-            0.10,
-            0.05,
-            0.01,
-            1.0,
-            1.01,
-            50.0,
-            0.1,
-            0.1,
-            100.0,
-            10000.0,
-            1.0,
-            1.0,
-            1.0,
-            1.0,
-            3.0,
-            5.0,
-            0.1,
-            1.1,
-            0.4,
-            0.35,
-            1.0,
-            10.0,
-            0.05,
-            10.0,
-            0.1,
-            0.1,
-            0.1,
-            0.1,
-            3.0,
-            10.0,
-            100.0,
-            1000.0,
-            10_000.0,
-            2.0,
+            0.5, 25.0, 0.5, 0.5, 1.0, 0.5, 0.1, 0.2, 0.1, 0.1, 0.1, 0.01, 0.05, 0.0005, 0.0002,
+            0.005, 0.001, 0.5, 1.0, 0.5, 0.5, 0.001, 0.5, 0.5, 0.0001, 0.1, 0.005, 0.0001, 0.05,
+            0.0001, 0.05, 0.1, 0.001, 0.1, 1.0, 0.01, 0.8, 10.0, 0.7, 0.1, 0.1, 0.1, 30000.0, 0.5,
+            0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 10000.0, 0.4,
+            0.1, 5.0, 0.05, 500.0, 5.0, 15.0, 0.30, 0.50, 1.0, 1.0, 0.005, 0.1, 5.0, 0.00005, 0.5,
+            0.05, 0.70, 0.01, 0.80, 0.01, 0.001, 0.1, 5.0, 0.05, 0.1, 0.1, 0.2, 0.1, 0.01, 0.5,
+            0.1, 0.1, 0.01, 0.0, 0.01, 0.01, 0.01, 0.01, 0.01, 0.0001, 0.5, 0.001, 0.001, 0.01,
+            0.05, 0.01, 0.1, 0.10, 0.05, 0.01, 1.0, 1.01, 50.0, 0.1, 0.1, 100.0, 10000.0, 1.0, 1.0,
+            1.0, 1.0, 3.0, 5.0, 0.1, 1.1, 0.4, 0.35, 1.0, 10.0, 0.05, 10.0, 0.1, 0.1, 0.1, 0.1,
+            3.0, 10.0, 100.0, 1000.0, 10_000.0, 2.0,
         ]
     }
 
     pub fn get_upper_bounds() -> Vec<f64> {
         vec![
-            0.99,
-            35.0,
-            3.0,
-            3.0,
-            50.0,
-            0.95,
-            2.0,
-            0.9,
-            0.9,
-            0.9,
-            2.0,
-            1.0,
-            1.0,
-            0.005,
-            0.002,
-            0.10,
-            0.05,
-            5.0,
-            10.0,
-            0.95,
-            0.99,
-            0.05,
-            0.95,
-            0.95,
-            0.01,
-            0.95,
-            0.1,
-            0.01,
-            0.95,
-            0.01,
-            0.95,
-            1.0,
-            0.1,
-            1.0,
-            10.0,
-            0.5,
-            0.9999,
-            125.0,
-            0.99,
-            1.0,
-            1.0,
-            1.0,
-            600000.0,
-            5.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
-            3600000.0,
-            0.8,
-            2.0,
-            50.0,
-            0.50,
-            10000.0,
-            30.0,
-            60.0,
-            0.50,
-            0.70,
-            3.0,
-            2.0,
-            0.05,
-            1.0,
-            100.0,
-            0.0005,
-            3.0,
-            0.30,
-            0.95,
-            0.20,
-            0.99,
-            0.20,
-            0.05,
-            0.9,
-            20.0,
-            0.30,
-            0.6,
-            1.5,
-            2.0,
-            0.8,
-            0.5,
-            3.0,
-            0.9,
-            0.9,
-            0.5,
-            1000.0,
-            0.5,
-            0.5,
-            0.5,
-            0.5,
-            0.5,
-            0.05,
-            0.99,
-            0.1,
-            0.1,
-            0.2,
-            0.40,
-            0.10,
-            1.0,
-            0.80,
-            0.30,
-            0.5,
-            5.0,
-            1.20,
-            50.0,
-            1.0,
-            3.0,
-            10000000.0,
-            120000.0,
-            3.0,
-            3.0,
-            5.0,
-            5.0,
-            15.0,
-            25.0,
-            0.5,
-            3.0,
-            0.6,
-            0.55,
-            20.0,
-            500.0,
-            0.5,
-            500.0,
-            2.0,
-            2.0,
-            0.8,
-            1.0,
-            10.0,
-            50.0,
-            500.0,
-            5000.0,
-            100_000.0,
-            10.0,
+            0.99, 35.0, 3.0, 3.0, 50.0, 0.95, 2.0, 0.9, 0.9, 0.9, 2.0, 1.0, 1.0, 0.005, 0.002,
+            0.10, 0.05, 5.0, 10.0, 0.95, 0.99, 0.05, 0.95, 0.95, 0.01, 0.95, 0.1, 0.01, 0.95, 0.01,
+            0.95, 1.0, 0.1, 1.0, 10.0, 0.5, 0.9999, 125.0, 0.99, 1.0, 1.0, 1.0, 600000.0, 5.0,
+            20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 3600000.0, 0.8, 2.0, 50.0,
+            0.50, 10000.0, 30.0, 60.0, 0.50, 0.70, 3.0, 2.0, 0.05, 1.0, 100.0, 0.0005, 3.0, 0.30,
+            0.95, 0.20, 0.99, 0.20, 0.05, 0.9, 20.0, 0.30, 0.6, 1.5, 2.0, 0.8, 0.5, 3.0, 0.9, 0.9,
+            0.5, 1000.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.05, 0.99, 0.1, 0.1, 0.2, 0.40, 0.10, 1.0, 0.80,
+            0.30, 0.5, 5.0, 1.20, 50.0, 1.0, 3.0, 10000000.0, 120000.0, 3.0, 3.0, 5.0, 5.0, 15.0,
+            25.0, 0.5, 3.0, 0.6, 0.55, 20.0, 500.0, 0.5, 500.0, 2.0, 2.0, 0.8, 1.0, 10.0, 50.0,
+            500.0, 5000.0, 100_000.0, 10.0,
         ]
     }
-
 }

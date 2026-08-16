@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TradeResult {
     pub symbol_id: usize,
@@ -43,12 +42,13 @@ impl DriftAuditor {
     pub fn audit_execution(&self, real: &TradeResult, shadow: &TradeResult) -> Result<f64, f64> {
         // En un mundo ideal, real.pnl_pct == shadow.pnl_pct.
         // Si el real pierde dinero y el shadow gana, hay un "Negative Drift".
-        let drift = shadow.pnl_pct - real.pnl_pct; 
-        
+        let drift = shadow.pnl_pct - real.pnl_pct;
+
         let current_drift_bits = self.total_drift_pct.load(Ordering::Relaxed);
         let current_drift = f64::from_bits(current_drift_bits);
         let new_drift = current_drift + drift;
-        self.total_drift_pct.store(new_drift.to_bits(), Ordering::Relaxed);
+        self.total_drift_pct
+            .store(new_drift.to_bits(), Ordering::Relaxed);
 
         if drift.abs() > self.max_allowed_drift {
             self.mismatch_count.fetch_add(1, Ordering::Relaxed);

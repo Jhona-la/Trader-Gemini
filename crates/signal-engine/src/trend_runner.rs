@@ -20,16 +20,16 @@ impl HighPayoffTrendRunner {
         // Activación continua: Hurst (>0.5 indica tendencia) y VPIN (fuerza de volumen)
         let trend_score = ((hurst - 0.5) * 4.0).tanh().max(0.0);
         let volume_score = (vpin * 2.0).tanh().max(0.0);
-        
+
         // Factor de expansión tensorial (0.0 a 1.0)
         let expansion_factor = trend_score * volume_score;
-        
+
         // Cálculo del TP expandido, integrando directamente la volatilidad (atr_pct)
         let expanded_tp = base_tp_magnitude * (1.0 + (expansion_factor * 8.0));
         let vol_boost = atr_pct * expansion_factor * 10.0;
-        
+
         let final_tp = (expanded_tp + vol_boost).max(0.0120);
-        
+
         // Límite superior suave continuo usando tanh() en lugar de un clamp() brusco.
         // Asymptotically approaches upper_bound sin romper derivabilidad.
         let safe_bound = upper_bound.max(0.01); // Prevent div by zero

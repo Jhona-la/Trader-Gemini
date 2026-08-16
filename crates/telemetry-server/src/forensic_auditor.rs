@@ -1,6 +1,6 @@
-use tokio::sync::broadcast::Receiver;
-use rusqlite::{Connection, params};
 use crate::TelemetryEvent;
+use rusqlite::{Connection, params};
+use tokio::sync::broadcast::Receiver;
 
 pub struct ForensicAuditor {
     conn: Connection,
@@ -14,13 +14,14 @@ impl ForensicAuditor {
         }
 
         let conn = Connection::open(db_path).expect("Error al abrir DB forense");
-        
+
         // Habilitar modo WAL para concurrencia masiva (lector/escritor paralelo)
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;
-             PRAGMA temp_store=MEMORY;"
-        ).expect("Fallo al configurar PRAGMA de SQLite");
+             PRAGMA temp_store=MEMORY;",
+        )
+        .expect("Fallo al configurar PRAGMA de SQLite");
 
         // Tabla de métricas globales (OmniUpdate)
         conn.execute(
@@ -38,7 +39,8 @@ impl ForensicAuditor {
                 trade_duration_avg REAL
             )",
             [],
-        ).expect("Fallo al crear tabla global_metrics");
+        )
+        .expect("Fallo al crear tabla global_metrics");
 
         // Tabla de genomas (Guardar snapshots genéticos)
         conn.execute(
@@ -48,7 +50,8 @@ impl ForensicAuditor {
                 genome_json TEXT
             )",
             [],
-        ).expect("Fallo al crear tabla genome_snapshots");
+        )
+        .expect("Fallo al crear tabla genome_snapshots");
 
         // FASE 18: Tabla de operaciones cerradas
         conn.execute(
@@ -63,14 +66,15 @@ impl ForensicAuditor {
                 ml_prob REAL
             )",
             [],
-        ).expect("Fallo al crear tabla trade_events");
+        )
+        .expect("Fallo al crear tabla trade_events");
 
         Self { conn }
     }
 
     pub async fn start(self, mut rx: Receiver<TelemetryEvent>) {
         println!("🔍 [FORENSIC] Auditoría en base de datos WAL iniciada en hilo independiente.");
-        
+
         // Bucle asíncrono pasivo, no bloquea al motor HFT
         while let Ok(event) = rx.recv().await {
             match event {

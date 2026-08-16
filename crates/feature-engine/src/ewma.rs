@@ -10,7 +10,7 @@ pub struct Ewma {
 }
 
 impl Ewma {
-    /// Crea un nuevo EWMA. 
+    /// Crea un nuevo EWMA.
     /// `alpha` determina la velocidad de decaimiento (0 < alpha <= 1).
     #[inline(always)]
     pub fn new(alpha: f64) -> Self {

@@ -1,4 +1,4 @@
-use feature_engine::{OFIModel, order_book_imbalance};
+use feature_engine::{order_book_imbalance, OFIModel};
 use polars::prelude::*;
 use std::fs::File;
 use std::path::Path;
@@ -11,7 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let file_path = Path::new("data/historical/BTCUSDT_6M.parquet");
     if !file_path.exists() {
-        println!("❌ Archivo no encontrado: {:?}. Ejecuta 'cargo run --bin download_history' primero.", file_path);
+        println!(
+            "❌ Archivo no encontrado: {:?}. Ejecuta 'cargo run --bin download_history' primero.",
+            file_path
+        );
         return Ok(());
     }
 
@@ -19,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_load = Instant::now();
     let mut file = File::open(file_path)?;
     let df = ParquetReader::new(&mut file).finish()?;
-    
+
     let _opens = df.column("open")?.f64()?;
     let closes = df.column("close")?.f64()?;
     let highs = df.column("high")?.f64()?;
@@ -30,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Cargadas {} filas en {:?}", rows, start_load.elapsed());
 
     let mut ofi_model = OFIModel::new();
-    
+
     // Variables de backtest simplificado (Sin comisiones por ahora, puramente capacidad predictiva del feature)
     let mut position = 0; // 1 = Long, -1 = Short, 0 = Flat
     let mut entry_price = 0.0;
@@ -39,18 +42,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut winning_trades = 0;
 
     let take_profit_pct = 0.002; // 0.2%
-    let stop_loss_pct = 0.002;   // 0.2%
+    let stop_loss_pct = 0.002; // 0.2%
     let obi_threshold = 0.7;
 
     println!("🧪 Feature a evaluar: Order Book Imbalance (OBI) puro.");
-    println!("🧪 Hipótesis: OBI > {} augura subida, OBI < -{} augura bajada a micro-escala.", obi_threshold, obi_threshold);
-    println!("⚙️ Parámetros de prueba: TP {:.2}% | SL {:.2}%", take_profit_pct * 100.0, stop_loss_pct * 100.0);
+    println!(
+        "🧪 Hipótesis: OBI > {} augura subida, OBI < -{} augura bajada a micro-escala.",
+        obi_threshold, obi_threshold
+    );
+    println!(
+        "⚙️ Parámetros de prueba: TP {:.2}% | SL {:.2}%",
+        take_profit_pct * 100.0,
+        stop_loss_pct * 100.0
+    );
 
     let start_sim = Instant::now();
 
     for i in 1..rows {
         let current_close = closes.get(i).unwrap_or(0.0);
-        let prev_close = closes.get(i-1).unwrap_or(0.0);
+        let prev_close = closes.get(i - 1).unwrap_or(0.0);
         let current_high = highs.get(i).unwrap_or(0.0);
         let current_low = lows.get(i).unwrap_or(0.0);
         let volume = volumes.get(i).unwrap_or(0.0);
@@ -82,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else if position == 1 {
             let unrealized = (current_high - entry_price) / entry_price;
             let max_loss = (current_low - entry_price) / entry_price;
-            
+
             if unrealized >= take_profit_pct {
                 pnl += take_profit_pct;
                 total_trades += 1;
@@ -96,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else if position == -1 {
             let unrealized = (entry_price - current_low) / entry_price;
             let max_loss = (entry_price - current_high) / entry_price;
-            
+
             if unrealized >= take_profit_pct {
                 pnl += take_profit_pct;
                 total_trades += 1;
@@ -111,14 +121,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let elapsed = start_sim.elapsed();
-    let win_rate = if total_trades > 0 { (winning_trades as f64 / total_trades as f64) * 100.0 } else { 0.0 };
+    let win_rate = if total_trades > 0 {
+        (winning_trades as f64 / total_trades as f64) * 100.0
+    } else {
+        0.0
+    };
 
     println!("\n📊 === RESULTADOS DEL POC (FASE 6) ===");
     println!("⏱️ Tiempo de evaluación: {:?}", elapsed);
     println!("📈 PnL Acumulado (Sin apalancamiento): {:.2}%", pnl * 100.0);
     println!("🔄 Total Trades Ejecutados: {}", total_trades);
     println!("🏆 Win Rate de Feature Aislado: {:.2}%", win_rate);
-    
+
     if win_rate > 55.0 && pnl > 0.0 {
         println!("✅ VEREDICTO: El Feature OBI posee Ventaja Estadística Independiente.");
     } else {

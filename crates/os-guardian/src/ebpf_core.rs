@@ -1,14 +1,14 @@
 /// Capa base para eBPF y eventos de Kernel.
-/// En la arquitectura HFT (High Frequency Trading) definitiva, esta capa 
-/// no hace "polling" desde el userspace, sino que inyecta programas eBPF 
+/// En la arquitectura HFT (High Frequency Trading) definitiva, esta capa
+/// no hace "polling" desde el userspace, sino que inyecta programas eBPF
 /// (Extended Berkeley Packet Filter) en el kernel para suscribirse a:
-/// 
+///
 /// - Context Switches
 /// - Page Faults
 /// - System calls seleccionadas
 /// - Interrupciones de red (IRQ/SoftIRQ)
-/// 
-/// Estas trazas alimentan un lock-free ring buffer directamente hacia el 
+///
+/// Estas trazas alimentan un lock-free ring buffer directamente hacia el
 /// Anomaly Engine.
 
 #[derive(Debug, Clone, Copy)]
@@ -30,7 +30,7 @@ impl EbpfSensor {
 
     #[cfg(target_os = "linux")]
     pub fn read_events(&self) -> KernelEvents {
-        // TODO: Mapear BPF map file descriptor y leer los contadores 
+        // TODO: Mapear BPF map file descriptor y leer los contadores
         // incrementados atómicamente por el programa BPF en espacio de Kernel.
         KernelEvents {
             context_switches: 0,

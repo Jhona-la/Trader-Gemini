@@ -20,7 +20,11 @@ pub struct PhaseOrchestrator {
 }
 
 impl PhaseOrchestrator {
-    pub fn new(warmup_ticks_required: u64, is_demo_mode: bool, darwin_approved: Arc<AtomicBool>) -> Self {
+    pub fn new(
+        warmup_ticks_required: u64,
+        is_demo_mode: bool,
+        darwin_approved: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             current_phase: SystemPhase::Initialization,
             darwin_approved,
@@ -41,14 +45,19 @@ impl PhaseOrchestrator {
             SystemPhase::DataWarmup => {
                 self.current_ticks += 1;
                 if self.current_ticks >= self.warmup_ticks_required {
-                    println!("🚀 [ORCHESTRATOR] Fase: DataWarmup -> GenomicAudit (Ticks: {})", self.current_ticks);
+                    println!(
+                        "🚀 [ORCHESTRATOR] Fase: DataWarmup -> GenomicAudit (Ticks: {})",
+                        self.current_ticks
+                    );
                     self.current_phase = SystemPhase::GenomicAudit;
                 }
             }
             SystemPhase::GenomicAudit => {
                 // En GenomicAudit esperamos a que Darwin apruebe el inicio
                 if self.darwin_approved.load(Ordering::Relaxed) {
-                    println!("🚀 [ORCHESTRATOR] Fase: GenomicAudit -> DemoVerify (Darwin Approved)");
+                    println!(
+                        "🚀 [ORCHESTRATOR] Fase: GenomicAudit -> DemoVerify (Darwin Approved)"
+                    );
                     self.current_phase = SystemPhase::DemoVerify;
                 }
             }
@@ -73,7 +82,8 @@ impl PhaseOrchestrator {
     }
 
     pub fn is_trading_allowed(&self) -> bool {
-        self.current_phase == SystemPhase::PaperTrading || self.current_phase == SystemPhase::ProductionMainnet
+        self.current_phase == SystemPhase::PaperTrading
+            || self.current_phase == SystemPhase::ProductionMainnet
     }
 
     pub fn is_paper_trading(&self) -> bool {

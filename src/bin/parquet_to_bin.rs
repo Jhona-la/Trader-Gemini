@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _open_times = df.column("open_time")?.u64()?;
 
         let count = df.height();
-        
+
         let mut c_arr: Vec<f64> = Vec::with_capacity(count);
         let mut h_arr: Vec<f64> = Vec::with_capacity(count);
         let mut l_arr: Vec<f64> = Vec::with_capacity(count);
@@ -48,7 +48,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut bin_file = File::create(&out_path)?;
 
         let write_slice = |file: &mut File, data: &[f64]| -> std::io::Result<()> {
-            let bytes = unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 8) };
+            let bytes =
+                unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 8) };
             file.write_all(bytes)
         };
 
@@ -58,7 +59,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         write_slice(&mut bin_file, &l_arr)?;
         write_slice(&mut bin_file, &v_arr)?;
 
-        println!("✅ Converted {} → {} ({} candles)", in_path.display(), out_path.display(), count);
+        println!(
+            "✅ Converted {} → {} ({} candles)",
+            in_path.display(),
+            out_path.display(),
+            count
+        );
     }
 
     Ok(())

@@ -9,7 +9,7 @@ pub struct OnlineLearningModule {
     pub learning_rate: f32,
     pub momentum: f32,
     pub velocity: [f32; 64],
-    
+
     // Kalman Filter (Aproximación diagonal por recursos limitados 16GB)
     pub p_covariance: [f32; 64], // Matriz de Incertidumbre (Diagonal)
     pub q_noise: f32,            // Process Noise (evolucionable)
@@ -57,10 +57,15 @@ impl OnlineLearningModule {
     }
 
     /// Actualiza los pesos de forma continua usando un Filtro de Kalman Tensorial
-    /// td_error es el (Reward Observado - Predicción). 
+    /// td_error es el (Reward Observado - Predicción).
     /// lyapunov_chaos determina si la actualización es segura (filtro de drift).
     #[inline(always)]
-    pub fn update_weights_with_kalman(&mut self, features: &[f32; 64], td_error: f32, lyapunov_chaos: f32) {
+    pub fn update_weights_with_kalman(
+        &mut self,
+        features: &[f32; 64],
+        td_error: f32,
+        lyapunov_chaos: f32,
+    ) {
         // [Fase XXXIX] Tensorized Chaos Damping (Continuous Online Learning)
         // En lugar del corte estricto `if lyapunov_chaos > 1.5 { return; }`,
         // usamos una curva continua que amortigua asintóticamente la capacidad de aprendizaje
@@ -69,7 +74,9 @@ impl OnlineLearningModule {
 
         for i in 0..64 {
             let x = features[i];
-            if x == 0.0 { continue; } // Omitir features inactivos para rendimiento
+            if x == 0.0 {
+                continue;
+            } // Omitir features inactivos para rendimiento
 
             // 1. Prediction Step (Kalman)
             self.p_covariance[i] += self.q_noise;
@@ -79,25 +86,32 @@ impl OnlineLearningModule {
             let kalman_gain = (self.p_covariance[i] * x) / s;
 
             // La innovación en el contexto de Q-learning online es el td_error
-            let innovation = td_error; 
+            let innovation = td_error;
 
             // Actualización del peso modulada por la confianza (inversamente proporcional al caos)
             let weight_update = kalman_gain * innovation * chaos_damping;
-            
+
             // Integrando Momentum (Adam/SGD híbrido con Kalman)
-            self.velocity[i] = self.momentum * self.velocity[i] + self.learning_rate * weight_update;
+            self.velocity[i] =
+                self.momentum * self.velocity[i] + self.learning_rate * weight_update;
             self.weights[i] += self.velocity[i];
 
             // 3. Actualizar la covarianza
             self.p_covariance[i] = (1.0 - kalman_gain * x) * self.p_covariance[i];
-            
+
             // Decadencia de pesos suave (Regularización L2 — evolucionable)
             self.weights[i] *= self.l2_decay;
         }
     }
 
     /// Constructor extendido con parámetros Kalman evolucionables
-    pub fn new_with_kalman(learning_rate: f32, momentum: f32, q_noise: f32, r_noise: f32, l2_decay: f32) -> Self {
+    pub fn new_with_kalman(
+        learning_rate: f32,
+        momentum: f32,
+        q_noise: f32,
+        r_noise: f32,
+        l2_decay: f32,
+    ) -> Self {
         Self {
             weights: [0.0; 64],
             learning_rate,
@@ -111,38 +125,42 @@ impl OnlineLearningModule {
     }
 }
 
-use storage_engine::MmapTelemetryReader;
 use std::sync::Arc;
+use storage_engine::MmapTelemetryReader;
 use tokio::sync::Mutex;
 
 /// Inicia el consumidor asíncrono en background para autoevolucionar leyendo el MmapTelemetryBus.
 pub fn spawn_telemetry_consumer(
     learning_module: Arc<Mutex<OnlineLearningModule>>,
-    mmap_path: &'static str
+    mmap_path: &'static str,
 ) {
     tokio::spawn(async move {
         let reader_result = MmapTelemetryReader::new(mmap_path);
         if reader_result.is_err() {
-            println!("⚠️ [METACORTEX] No se pudo inicializar MmapTelemetryReader para Online Learning.");
+            println!(
+                "⚠️ [METACORTEX] No se pudo inicializar MmapTelemetryReader para Online Learning."
+            );
             return;
         }
         let mut reader = reader_result.unwrap();
-        
+
         // FASE 23: Stateful Correlation Buffer for True PnL Online Learning
         // Correlate Decision features (Frame 1) with their actual market results (Frame 13)
         let mut last_features = [[0.0_f32; 64]; 30];
         let mut last_entropy = [1.0_f32; 30];
-        
+
         loop {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            
+
             if let Ok(frames) = reader.read_latest_frames() {
                 if !frames.is_empty() {
                     let mut module = learning_module.lock().await;
                     for frame in frames {
                         let coin_id = frame.payload[0] as usize;
-                        if coin_id >= 30 { continue; }
-                        
+                        if coin_id >= 30 {
+                            continue;
+                        }
+
                         // Frame type 1 = Decision Trace (Features)
                         if frame.frame_type == 1 {
                             // Extraer payload: [coin_id, latency, holistic, hawkes, entropy, ml_prob]
@@ -160,12 +178,16 @@ pub fn spawn_telemetry_consumer(
                         else if frame.frame_type == 13 {
                             // Extraer payload: [coin_id, gross_pnl, net_pnl, maker_fee, taker_fee, win_flag]
                             let net_pnl = frame.payload[2] as f32;
-                            
+
                             // True TD Error is the actual Net PnL percentage
-                            let td_error = net_pnl; 
-                            
+                            let td_error = net_pnl;
+
                             // Evolucionamos usando las features de la última decisión y el resultado real
-                            module.update_weights_with_kalman(&last_features[coin_id], td_error, last_entropy[coin_id]);
+                            module.update_weights_with_kalman(
+                                &last_features[coin_id],
+                                td_error,
+                                last_entropy[coin_id],
+                            );
                         }
                     }
                 }

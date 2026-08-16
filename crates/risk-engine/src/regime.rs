@@ -1,6 +1,5 @@
 /// El régimen de mercado global, calculado basándose en la correlación de los N activos y la tendencia media.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum MarketRegime {
     BullRun,
     Crash,
@@ -30,7 +29,6 @@ impl Into<u8> for MarketRegime {
         }
     }
 }
-
 
 pub struct RegimeDetector {
     correlation_threshold: f64,

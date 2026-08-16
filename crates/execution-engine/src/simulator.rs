@@ -8,7 +8,6 @@ pub struct SimulatedExecutor {
     pub simulated_capital: f64,
 }
 
-
 impl SimulatedExecutor {
     pub fn new(simulated_capital: f64) -> Self {
         Self {
@@ -16,7 +15,7 @@ impl SimulatedExecutor {
             simulated_capital,
         }
     }
-    
+
     async fn simulate_network_delay(&self) {
         // En una máquina de 16GB, tokio::time::sleep puede no ser ultra-preciso
         // pero es suficiente para forzar el path asíncrono y simular red.
@@ -53,7 +52,10 @@ impl ExecutionProvider for SimulatedExecutor {
         self.simulate_network_delay().await;
         let is_long = order.signal == signal_engine::SignalType::Long;
         let side = if is_long { "BUY" } else { "SELL" };
-        println!("👻 [SHADOW MODE] Executed {} {} @ {} (Network delay: {}ms)", side, symbol, current_price, self.average_latency_ms);
+        println!(
+            "👻 [SHADOW MODE] Executed {} {} @ {} (Network delay: {}ms)",
+            side, symbol, current_price, self.average_latency_ms
+        );
         Ok(())
     }
 
@@ -68,7 +70,10 @@ impl ExecutionProvider for SimulatedExecutor {
         self.simulate_network_delay().await;
         let side = if is_long { "BUY" } else { "SELL" };
         // Asumimos slippage microscópico en log
-        println!("👻 [SHADOW MODE] Executed RAW {} {:.4} {} (Network delay: {}ms)", side, quantity, symbol, self.average_latency_ms);
+        println!(
+            "👻 [SHADOW MODE] Executed RAW {} {:.4} {} (Network delay: {}ms)",
+            side, quantity, symbol, self.average_latency_ms
+        );
         Ok(())
     }
 
@@ -85,7 +90,10 @@ impl ExecutionProvider for SimulatedExecutor {
     ) -> Result<(), String> {
         self.simulate_network_delay().await;
         let side = if is_long { "BUY" } else { "SELL" };
-        println!("👻 [SHADOW MODE] Limit {} {:.4} {} @ {} (ID: {})", side, quantity, symbol, price, client_order_id);
+        println!(
+            "👻 [SHADOW MODE] Limit {} {:.4} {} @ {} (ID: {})",
+            side, quantity, symbol, price, client_order_id
+        );
         Ok(())
     }
 
@@ -102,7 +110,10 @@ impl ExecutionProvider for SimulatedExecutor {
     ) -> Result<(), String> {
         self.simulate_network_delay().await;
         let side = if is_long { "BUY" } else { "SELL" };
-        println!("👻 [SHADOW MODE] Maker-Chase {} {:.4} {} @ {} (ID: {})", side, quantity, symbol, price, client_order_id);
+        println!(
+            "👻 [SHADOW MODE] Maker-Chase {} {:.4} {} @ {} (ID: {})",
+            side, quantity, symbol, price, client_order_id
+        );
         Ok(())
     }
 
@@ -118,24 +129,35 @@ impl ExecutionProvider for SimulatedExecutor {
     ) -> Result<(), String> {
         self.simulate_network_delay().await;
         let side = if is_long { "BUY" } else { "SELL" };
-        println!("👻 [SHADOW MODE] IOC {} {:.4} {} @ {} (ID: {})", side, quantity, symbol, price, client_order_id);
+        println!(
+            "👻 [SHADOW MODE] IOC {} {:.4} {} @ {} (ID: {})",
+            side, quantity, symbol, price, client_order_id
+        );
         Ok(())
     }
 
     async fn execute_exchange_trailing_stop(
         &self,
         symbol: &str,
-        is_long: bool, 
+        is_long: bool,
         quantity: f64,
         activation_price: f64,
-        callback_rate: f64, 
+        callback_rate: f64,
         _step_size: f64,
         _tick_size: f64,
         client_order_id: &str,
     ) -> Result<(), String> {
         self.simulate_network_delay().await;
         let side = if is_long { "BUY" } else { "SELL" };
-        println!("👻 [SHADOW MODE] Trailing {} {:.4} {} Act: {} Callback: {}% (ID: {})", side, quantity, symbol, activation_price, callback_rate * 100.0, client_order_id);
+        println!(
+            "👻 [SHADOW MODE] Trailing {} {:.4} {} Act: {} Callback: {}% (ID: {})",
+            side,
+            quantity,
+            symbol,
+            activation_price,
+            callback_rate * 100.0,
+            client_order_id
+        );
         Ok(())
     }
 
@@ -151,7 +173,10 @@ impl ExecutionProvider for SimulatedExecutor {
         _base_client_id: &str,
     ) -> Result<(), String> {
         let side = if is_long_close { "SELL" } else { "BUY" };
-        println!("🎮 [SIMULATOR] OCO Order {} {} Qty: {} TP: {} SL: {}", symbol, side, quantity, take_profit_price, stop_loss_price);
+        println!(
+            "🎮 [SIMULATOR] OCO Order {} {} Qty: {} TP: {} SL: {}",
+            symbol, side, quantity, take_profit_price, stop_loss_price
+        );
         Ok(())
     }
 
@@ -165,14 +190,20 @@ impl ExecutionProvider for SimulatedExecutor {
     ) -> Result<(), String> {
         self.simulate_network_delay().await;
         let side = if is_long_close { "SELL" } else { "BUY" };
-        println!("👻 [SHADOW MODE] Reduce-Only {} {:.4} {}", side, quantity, symbol);
+        println!(
+            "👻 [SHADOW MODE] Reduce-Only {} {:.4} {}",
+            side, quantity, symbol
+        );
         Ok(())
     }
 
     #[inline(always)]
     async fn cancel_order(&self, symbol: &str, client_order_id: &str) -> Result<(), String> {
         self.simulate_network_delay().await;
-        println!("👻 [SHADOW MODE] Cancelled order {} on {}", client_order_id, symbol);
+        println!(
+            "👻 [SHADOW MODE] Cancelled order {} on {}",
+            client_order_id, symbol
+        );
         Ok(())
     }
 
@@ -181,9 +212,12 @@ impl ExecutionProvider for SimulatedExecutor {
         self.simulate_network_delay().await;
         Ok(vec![])
     }
-    
+
     async fn fetch_server_time(&self) -> Result<i64, String> {
-        Ok(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64)
+        Ok(std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64)
     }
 
     async fn fetch_commission_rate(&self, _symbol: &str) -> Result<(f64, f64), String> {

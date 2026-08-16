@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 // A custom float wrapper to allow using f64 as keys in BTreeMap
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -73,7 +73,7 @@ impl OrderBook {
     pub fn micro_price(&self) -> Option<f64> {
         let (bb_price, bb_qty) = self.best_bid()?;
         let (ba_price, ba_qty) = self.best_ask()?;
-        
+
         let total_qty = bb_qty + ba_qty;
         if total_qty == 0.0 {
             return None;

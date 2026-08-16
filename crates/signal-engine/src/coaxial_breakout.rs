@@ -22,16 +22,23 @@ impl CoaxialBreakoutEngine {
         // El factor de compresión crece cuando el ATR de baja escala es menor al de alta escala
         let comp_1s = (1.0 - (atr_1s / atr_5s.max(1e-8))).max(0.0);
         let comp_5s = (1.0 - (atr_5s / atr_1m.max(1e-8))).max(0.0);
-        
+
         // Producto tensorial de compresión (ambos marcos temporales deben estar comprimidos)
         let coaxial_squeeze = (comp_1s * comp_5s * 4.0).tanh();
-        
+
         // Emitir señal si la compresión acumulada es matemáticamente relevante
         use std::sync::atomic::Ordering;
-        let squeeze_threshold = arena.config.coaxial_squeeze_threshold.load(Ordering::Relaxed);
+        let squeeze_threshold = arena
+            .config
+            .coaxial_squeeze_threshold
+            .load(Ordering::Relaxed);
         if coaxial_squeeze > squeeze_threshold {
             return Some(SignalIntent {
-                signal: if is_bullish_flow { SignalType::Long } else { SignalType::Short },
+                signal: if is_bullish_flow {
+                    SignalType::Long
+                } else {
+                    SignalType::Short
+                },
                 confidence: coaxial_squeeze,
                 ..Default::default()
             });

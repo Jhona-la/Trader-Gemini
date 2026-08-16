@@ -11,13 +11,12 @@
 //! QUIÉN: live_trader.rs consulta is_active(coin_id), god_engine filtra señales.
 use super::symbol_registry::spec;
 
-
 /// Máximo de monedas activas por rango de capital.
 /// Estos límites están calculados para garantizar que cada moneda reciba
 /// suficiente margen para operar sin leverage suicida (>20x).
 /// FASE 1: Modelado Matemático Continuo (Crecimiento Logarítmico Asintótico)
-/// Reemplaza el hardcoding arbitrario de escalones. Calcula la distribución 
-/// óptima del portafolio basada en una curva logarítmica que se ajusta a 
+/// Reemplaza el hardcoding arbitrario de escalones. Calcula la distribución
+/// óptima del portafolio basada en una curva logarítmica que se ajusta a
 /// la ley de rendimientos decrecientes y la volatilidad del capital.
 #[inline(always)]
 pub fn max_active_coins_for_capital(capital: f64) -> usize {
@@ -54,7 +53,11 @@ pub struct CoinFitness {
 /// Calcula el universo activo óptimo para el capital dado.
 /// Retorna un vector ordenado de coin_ids que deberían estar activos,
 /// y un bitmap de 64 bits para consulta O(1) lock-free.
-pub fn calculate_active_universe(capital: f64, prices: &[f64], forced_coin_ids: &[usize]) -> (Vec<CoinFitness>, u64) {
+pub fn calculate_active_universe(
+    capital: f64,
+    prices: &[f64],
+    forced_coin_ids: &[usize],
+) -> (Vec<CoinFitness>, u64) {
     let max_coins = max_active_coins_for_capital(capital);
     let mut candidates: Vec<CoinFitness> = Vec::with_capacity(prices.len());
 
@@ -70,7 +73,7 @@ pub fn calculate_active_universe(capital: f64, prices: &[f64], forced_coin_ids: 
         let lot_notional = spec_ref.min_qty * price;
         let tick_impact = spec_ref.tick_size * spec_ref.min_qty;
 
-        // FASE 28: Zero-Orphans (Hard-Forcing). Si tenemos posiciones abiertas en esta moneda, 
+        // FASE 28: Zero-Orphans (Hard-Forcing). Si tenemos posiciones abiertas en esta moneda,
         // le inyectamos una infinidad de score y evadimos el filtro de capital.
         let is_forced = forced_coin_ids.contains(&i);
 
@@ -87,9 +90,11 @@ pub fn calculate_active_universe(capital: f64, prices: &[f64], forced_coin_ids: 
         let granularity_score = 1.0 / (tick_impact.max(0.000001));
         let fee_score = 1.0 / ((spec_ref.maker_fee + spec_ref.taker_fee).max(0.0001));
 
-        let mut scalp_score = accessibility_score * 10.0 + granularity_score * 5.0 + fee_score * 1.0;
-        let mut swing_score = accessibility_score * 20.0 + fee_score * 0.5 + granularity_score * 0.1;
-        
+        let mut scalp_score =
+            accessibility_score * 10.0 + granularity_score * 5.0 + fee_score * 1.0;
+        let mut swing_score =
+            accessibility_score * 20.0 + fee_score * 0.5 + granularity_score * 0.1;
+
         if is_forced {
             scalp_score += 1_000_000.0;
             swing_score += 1_000_000.0;
@@ -106,13 +111,17 @@ pub fn calculate_active_universe(capital: f64, prices: &[f64], forced_coin_ids: 
     }
 
     // Sort default by scalp_score since Scalping is the primary HFT engine
-    candidates.sort_by(|a, b| b.scalp_score.partial_cmp(&a.scalp_score).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.scalp_score
+            .partial_cmp(&a.scalp_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Si los forced coins exceden max_coins, igual los incluimos a todos
     // (el mercado manda sobre las reglas logarítmicas de capital).
     let take_count = max_coins.max(forced_coin_ids.len());
     candidates.truncate(take_count);
-    
+
     let mut bitmap = 0u64;
     for c in &candidates {
         bitmap |= 1u64 << c.coin_id;
@@ -123,11 +132,11 @@ pub fn calculate_active_universe(capital: f64, prices: &[f64], forced_coin_ids: 
 
 /// 🚀 FASE XXI: Selección Dinámica basada en Momentum y Volumen (L2 Radar)
 pub fn calculate_dynamic_universe(
-    capital: f64, 
-    prices: &[f64], 
+    capital: f64,
+    prices: &[f64],
     volumes_usd: &[f64],
     price_changes_pct: &[f64],
-    forced_coin_ids: &[usize]
+    forced_coin_ids: &[usize],
 ) -> (Vec<CoinFitness>, u64) {
     let max_coins = max_active_coins_for_capital(capital);
     let mut candidates: Vec<CoinFitness> = Vec::with_capacity(prices.len());
@@ -136,18 +145,22 @@ pub fn calculate_dynamic_universe(
         let spec_data = spec(i);
         let spec_ref = &spec_data;
         let price = prices[i];
-        if price <= 0.0 { continue; }
+        if price <= 0.0 {
+            continue;
+        }
 
         let lot_notional = spec_ref.min_qty * price;
         let tick_impact = spec_ref.tick_size * spec_ref.min_qty;
         let capital_per_coin = capital / max_coins as f64;
-        
+
         let is_forced = forced_coin_ids.contains(&i);
-        if !is_forced && lot_notional > capital_per_coin * 20.0 { continue; }
+        if !is_forced && lot_notional > capital_per_coin * 20.0 {
+            continue;
+        }
 
         let accessibility_score = 1.0 / (lot_notional.max(0.01));
         let granularity_score = 1.0 / (tick_impact.max(0.000001));
-        
+
         let fee_score = 1.0 / ((spec_ref.maker_fee + spec_ref.taker_fee).max(0.0001));
         // Momentum = |% Change| * log10(Volumecapital base)
         // Monedas que se mueven rápido con alto volumen tendrán un momentum_score altísimo
@@ -156,11 +169,17 @@ pub fn calculate_dynamic_universe(
         // Mezclamos la accesibilidad base con el momentum dinámico
         // BIFURCACIÓN DE ESTRATEGIA (SCALP VS SWING)
         // Scalp valora infinitamente más la granularidad (tick size) y fees bajos.
-        let mut scalp_score = (accessibility_score * 5.0) + (granularity_score * 0.5) + (momentum_score * 2.0) + fee_score * 1.0;
-        
+        let mut scalp_score = (accessibility_score * 5.0)
+            + (granularity_score * 0.5)
+            + (momentum_score * 2.0)
+            + fee_score * 1.0;
+
         // Swing valora más la accesibilidad global (margen) y soporta peor granularidad.
-        let mut swing_score = (accessibility_score * 20.0) + (momentum_score * 5.0) + (granularity_score * 0.1) + fee_score * 0.5;
-        
+        let mut swing_score = (accessibility_score * 20.0)
+            + (momentum_score * 5.0)
+            + (granularity_score * 0.1)
+            + fee_score * 0.5;
+
         if is_forced {
             scalp_score += 1_000_000.0;
             swing_score += 1_000_000.0;
@@ -177,11 +196,15 @@ pub fn calculate_dynamic_universe(
     }
 
     // Sort default by scalp_score since Scalping is the primary HFT engine
-    candidates.sort_by(|a, b| b.scalp_score.partial_cmp(&a.scalp_score).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.scalp_score
+            .partial_cmp(&a.scalp_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let take_count = max_coins.max(forced_coin_ids.len());
     candidates.truncate(take_count);
-    
+
     let mut bitmap = 0u64;
     for c in &candidates {
         bitmap |= 1u64 << c.coin_id;
@@ -193,7 +216,9 @@ pub fn calculate_dynamic_universe(
 /// Consulta O(1) lock-free si una moneda está en el universo activo.
 #[inline(always)]
 pub fn is_coin_active(bitmap: u64, coin_id: usize) -> bool {
-    if coin_id >= 64 { return false; }
+    if coin_id >= 64 {
+        return false;
+    }
     bitmap & (1u64 << coin_id) != 0
 }
 
@@ -269,20 +294,32 @@ mod tests {
         // Precios aproximados realistas
         let mut prices = vec![0.0f64; 100];
         prices[0] = 60000.0; // BTC
-        prices[1] = 3500.0;  // ETH
-        prices[2] = 600.0;   // BNB
-        prices[3] = 150.0;   // SOL
-        prices[4] = 0.50;    // XRP
-        prices[5] = 0.40;    // ADA
-        prices[6] = 35.0;    // AVAX
-        prices[7] = 0.15;    // DOGE
+        prices[1] = 3500.0; // ETH
+        prices[2] = 600.0; // BNB
+        prices[3] = 150.0; // SOL
+        prices[4] = 0.50; // XRP
+        prices[5] = 0.40; // ADA
+        prices[6] = 35.0; // AVAX
+        prices[7] = 0.15; // DOGE
 
         let (selected, _bitmap) = calculate_active_universe(50.0, &prices, &[]);
-        assert!(!selected.is_empty(), "con specs registradas debe seleccionar monedas");
-        assert!(selected.len() <= 30, "Should select up to 30 coins, got {}", selected.len());
+        assert!(
+            !selected.is_empty(),
+            "con specs registradas debe seleccionar monedas"
+        );
+        assert!(
+            selected.len() <= 30,
+            "Should select up to 30 coins, got {}",
+            selected.len()
+        );
         telemetry_engine::telemetry!("Selected coins for $50:");
         for c in &selected {
-            telemetry_engine::telemetry!("  {} score={:.2} lot_notional=${:.4}", c.symbol, c.scalp_score, c.lot_notional_usd);
+            telemetry_engine::telemetry!(
+                "  {} score={:.2} lot_notional=${:.4}",
+                c.symbol,
+                c.scalp_score,
+                c.lot_notional_usd
+            );
         }
     }
 }

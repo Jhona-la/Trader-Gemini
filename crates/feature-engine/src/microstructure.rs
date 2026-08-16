@@ -36,23 +36,28 @@ impl OrderFlowTracker {
         } else {
             (volume, 0.0)
         };
-        
+
         self.cumulative_buy_vol += buy_v;
         self.cumulative_sell_vol += sell_v;
-        
+
         // Instant Imbalance for this tick
-        let tick_imbalance = if volume == 0.0 { 0.0 } else { (buy_v - sell_v) / volume };
-        
+        let tick_imbalance = if volume == 0.0 {
+            0.0
+        } else {
+            (buy_v - sell_v) / volume
+        };
+
         // EWMA update
         let short_alpha = 0.1; // Fast
         let long_alpha = 0.01; // Slow
-        
+
         let prev_short = self.short_ema_obi;
-        self.short_ema_obi = (tick_imbalance - self.short_ema_obi) * short_alpha + self.short_ema_obi;
+        self.short_ema_obi =
+            (tick_imbalance - self.short_ema_obi) * short_alpha + self.short_ema_obi;
         self.long_ema_obi = (tick_imbalance - self.long_ema_obi) * long_alpha + self.long_ema_obi;
-        
+
         self.velocity_obi = self.short_ema_obi - prev_short;
-        
+
         tick_imbalance
     }
 
@@ -135,7 +140,7 @@ impl OFIModel {
 
         // Suavizado EWMA para evitar ruido (alpha = 0.1)
         self.ema_ofi = (ofi - self.ema_ofi) * 0.1 + self.ema_ofi;
-        
+
         self.ema_ofi
     }
 }

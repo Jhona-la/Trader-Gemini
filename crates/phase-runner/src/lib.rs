@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
-use std::time::Duration;
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,7 +68,7 @@ impl AdaptiveTimer {
         }
 
         tokio::time::sleep(actual_interval).await;
-        
+
         let now = chrono::Utc::now().timestamp_millis() as u64;
         self.last_run_timestamp.store(now, Ordering::Relaxed);
     }
@@ -88,15 +88,15 @@ pub struct PhaseExecutor;
 impl PhaseExecutor {
     pub fn run(phase: Phase, base_interval: Duration) -> PhaseResult {
         let start = Instant::now();
-        
+
         // Simular ejecución de fase
         let findings = vec![format!("Audited phase: {}", phase.to_str())];
-        
+
         // Simular tiempo de cómputo
         std::thread::sleep(Duration::from_millis(10));
-        
+
         let duration = start.elapsed();
-        
+
         PhaseResult {
             phase,
             findings,

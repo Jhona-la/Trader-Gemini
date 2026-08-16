@@ -53,7 +53,7 @@ impl QuantumRingBuffer {
     pub fn write_tick(&mut self, reader_idx: usize, payload: &[f32; FEATURE_SIZE]) -> bool {
         let current_seq = self.seqlock.load(Ordering::Relaxed);
         let writer_idx = ((current_seq / 2) as usize) % RING_CAPACITY;
-        
+
         // LAP DETECTION: Don't overwrite what the reader is currently reading.
         // We drop the tick instead of corrupting the read.
         if (writer_idx + 1) % RING_CAPACITY == reader_idx {
@@ -77,11 +77,13 @@ impl QuantumRingBuffer {
         let mut retries = 0;
         loop {
             let seq1 = self.seqlock.load(Ordering::Acquire);
-            
+
             // If odd, a write is in progress.
             if !seq1.is_multiple_of(2) {
                 retries += 1;
-                if retries > 100 { return false; } // Degrade to older state or fail
+                if retries > 100 {
+                    return false;
+                } // Degrade to older state or fail
                 std::hint::spin_loop();
                 continue;
             }

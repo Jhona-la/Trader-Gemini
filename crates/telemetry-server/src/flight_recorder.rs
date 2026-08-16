@@ -36,12 +36,17 @@ impl FlightRecorder {
             .truncate(true)
             .open(path)
             .expect("Fallo al crear archivo de Flight Recorder");
-            
-        file.set_len(file_size as u64).expect("Fallo al reservar espacio de Flight Recorder");
-        
-        let mut mmap = unsafe { MmapOptions::new().map_mut(&file).expect("Fallo al hacer mmap") };
+
+        file.set_len(file_size as u64)
+            .expect("Fallo al reservar espacio de Flight Recorder");
+
+        let mut mmap = unsafe {
+            MmapOptions::new()
+                .map_mut(&file)
+                .expect("Fallo al hacer mmap")
+        };
         let mmap_ptr = mmap.as_mut_ptr();
-        
+
         Self {
             mmap: mmap_ptr,
             head: AtomicUsize::new(0),
@@ -55,7 +60,7 @@ impl FlightRecorder {
     pub fn record(&self, event: FlightEvent) {
         let idx = self.head.fetch_add(1, Ordering::Relaxed) % self.capacity;
         let offset = idx * std::mem::size_of::<FlightEvent>();
-        
+
         unsafe {
             let dest = self.mmap.add(offset);
             std::ptr::copy_nonoverlapping(

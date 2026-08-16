@@ -3,10 +3,10 @@ use std::sync::atomic::Ordering;
 
 pub mod atomic_compat {
     use std::sync::atomic::{AtomicU64, Ordering};
-    
+
     #[repr(transparent)]
     pub struct AtomicF64(AtomicU64);
-    
+
     impl AtomicF64 {
         pub const fn new(val: f64) -> Self {
             Self(AtomicU64::new(val.to_bits()))
@@ -28,7 +28,7 @@ use atomic_compat::AtomicF64;
 /// FASE 25: 100% Lock-Free usando AtomicF64 y EMA.
 pub struct OnlinePpoPolicyEngine {
     pub weights: [AtomicF64; 5], // Pesos adaptativos para (OFI, OBI, Hawkes, LeadLag, MarketRegime)
-    pub reward_ema: AtomicF64,  // Media Móvil Exponencial (EMA) de la recompensa
+    pub reward_ema: AtomicF64,   // Media Móvil Exponencial (EMA) de la recompensa
 }
 
 impl OnlinePpoPolicyEngine {
@@ -49,7 +49,16 @@ impl OnlinePpoPolicyEngine {
     /// `plasticity_multiplier`: Multiplicador de aprendizaje basado en la entropía del mercado.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub fn update_policy(&self, reward: f64, state_features: &[f64; 5], plasticity_multiplier: f64, alpha_ema: f64, dynamic_learning_rate: f64, dynamic_clip_eps: f64, dynamic_weight_min_clip: f64) {
+    pub fn update_policy(
+        &self,
+        reward: f64,
+        state_features: &[f64; 5],
+        plasticity_multiplier: f64,
+        alpha_ema: f64,
+        dynamic_learning_rate: f64,
+        dynamic_clip_eps: f64,
+        dynamic_weight_min_clip: f64,
+    ) {
         // Actualizamos EMA de la recompensa usando el alpha proporcionado dinámicamente
         let alpha = alpha_ema;
         let prev_ema = self.reward_ema.load(Ordering::Relaxed);

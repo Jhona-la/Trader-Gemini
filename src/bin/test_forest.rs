@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufReader;
-use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NanoForestData {
@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let file = File::open("models/BTCUSDT_SCALP.json")?;
     let reader = BufReader::new(file);
     let data: NanoForestData = serde_json::from_reader(reader)?;
-    
+
     let n_trees = data.tree_offsets.len() - 1;
     for &val in &[0.0, 1.0, -1.0, 100.0, -100.0] {
         let features = [val; 12];

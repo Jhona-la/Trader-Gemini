@@ -1,5 +1,5 @@
-use quantum_arena::{GlobalArena, genome::SuperGenotype};
 use god_engine_core::GodEngineCore;
+use quantum_arena::{GlobalArena, genome::SuperGenotype};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -19,29 +19,33 @@ impl ShadowForest {
 
         for i in 0..num_trees {
             let arena = Arc::new(GlobalArena::new(initial_capital));
-            
+
             // FASE 7: Lock parallel universe memory (Zero Swapping)
             unsafe {
                 let _ = os_guardian::memory_compaction::lock_critical_memory(&*arena);
                 let _ = os_guardian::memory_compaction::lock_critical_memory_slice(&*arena.coins);
             }
-            
+
             // Tree 0 es el genoma base (control). Los demás son mutaciones puras.
             let mutation = if i == 0 {
                 base_genome.clone()
             } else {
                 base_genome.mutate_cmaes(0.15)
             };
-            
+
             mutation.apply_to_arena(&arena);
-            
+
             let mut engine = GodEngineCore::new(arena);
             // HyperRealistic para que incluya todos los fees y latencias simuladas
             engine.reality.mode = god_engine_core::reality_physics::EngineMode::HyperRealistic;
-            // Simulamos el peor caso estadístico de latencia API Binance (AWS AP-Northeast a Tokyo) 
+            // Simulamos el peor caso estadístico de latencia API Binance (AWS AP-Northeast a Tokyo)
             // para que las mutaciones sobrevivan en el mundo real, no en simulaciones ideales.
-            engine.arena.config.latency_penalty_ms_physics.store(25.0, std::sync::atomic::Ordering::Relaxed); 
-            
+            engine
+                .arena
+                .config
+                .latency_penalty_ms_physics
+                .store(25.0, std::sync::atomic::Ordering::Relaxed);
+
             engines.push(engine);
             genomes.push(mutation);
         }
@@ -80,11 +84,15 @@ impl ShadowForest {
 
         for engine in self.engines.iter_mut() {
             // Actualizamos la arena interna del engine
-            engine.arena.update_market_data(coin_id, dbp, dap, dbq, daq, event_time);
+            engine
+                .arena
+                .update_market_data(coin_id, dbp, dap, dbq, daq, event_time);
             if is_trade {
-                engine.arena.coins[coin_id].current_price.store(current_price, Ordering::Relaxed);
+                engine.arena.coins[coin_id]
+                    .current_price
+                    .store(current_price, Ordering::Relaxed);
             }
-            
+
             engine.process_event(
                 coin_id,
                 is_trade,
@@ -100,7 +108,7 @@ impl ShadowForest {
                 depth_micro_div,
                 event_time,
                 false, // No panic latency in shadow
-                &[0.0; 54]
+                &[0.0; 54],
             );
         }
     }
@@ -112,7 +120,10 @@ impl ShadowForest {
         let mut best_idx = 0;
         let mut leaderboard = Vec::with_capacity(self.engines.len());
 
-        let control_cap = self.engines[0].arena.unified_capital.load(Ordering::Relaxed);
+        let control_cap = self.engines[0]
+            .arena
+            .unified_capital
+            .load(Ordering::Relaxed);
         let control_pnl = control_cap - self.initial_capital;
 
         for (i, engine) in self.engines.iter().enumerate() {
@@ -125,14 +136,14 @@ impl ShadowForest {
             }
         }
 
-        // Axioma de Inercia: Solo proponemos cambio si la mutación venció al control 
+        // Axioma de Inercia: Solo proponemos cambio si la mutación venció al control
         // significativamente (> 1% de PnL superior) para evitar inestabilidad del sistema y comisiones inútiles.
         let winner = if best_idx != 0 && best_pnl > (control_pnl * 1.01) && best_pnl > 0.0 {
             Some((self.genomes[best_idx].clone(), best_pnl))
         } else {
             None
         };
-        
+
         (winner, leaderboard)
     }
 
@@ -140,8 +151,15 @@ impl ShadowForest {
     pub fn replant(&mut self, new_alpha: SuperGenotype) {
         for (i, engine) in self.engines.iter_mut().enumerate() {
             // Reset capital
-            engine.arena.unified_capital.store(self.initial_capital, Ordering::Relaxed);
-            engine.arena.config.base_capital.store(self.initial_capital, Ordering::Relaxed);
+            engine
+                .arena
+                .unified_capital
+                .store(self.initial_capital, Ordering::Relaxed);
+            engine
+                .arena
+                .config
+                .base_capital
+                .store(self.initial_capital, Ordering::Relaxed);
             // Cerramos todas las posiciones virtuales
             for coin in engine.arena.coins.iter() {
                 coin.positions.scalp_position.close();
@@ -153,7 +171,7 @@ impl ShadowForest {
             } else {
                 new_alpha.mutate_cmaes(0.15)
             };
-            
+
             mutation.apply_to_arena(&engine.arena);
             self.genomes[i] = mutation;
         }

@@ -1,7 +1,7 @@
-use std::time::{Instant, Duration};
 use std::net::ToSocketAddrs;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 pub struct DnsOptimizer {
     pub best_endpoint: Arc<std::sync::RwLock<String>>,

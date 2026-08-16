@@ -2,18 +2,18 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use futures_util::StreamExt;
-use std::env;
-use tokio::sync::mpsc;
-use std::sync::Arc;
-use tokio::time::{sleep, Duration};
 use quantum_engine::parsers;
+use std::env;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::time::{sleep, Duration};
 
 use god_engine_core::orchestrator::PhaseOrchestrator;
 
 use execution_engine::executor::ExecutionProvider;
+use redb::{Database, ReadableTable, TableDefinition};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
-use std::sync::atomic::{Ordering, AtomicU64};
-use redb::{Database, TableDefinition, ReadableTable};
 const CAPITAL_TABLE: TableDefinition<u32, f64> = TableDefinition::new("capital_state");
 
 // Removed ActiveExecutor
@@ -40,47 +40,59 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     telemetry_engine::telemetry!("========================================================");
-    telemetry_server::telemetry_log!("🚀 GOD ENGINE - NATIVE RUST ORCHESTRATOR (UNIFIED SCALP/SWING)");
+    telemetry_server::telemetry_log!(
+        "🚀 GOD ENGINE - NATIVE RUST ORCHESTRATOR (UNIFIED SCALP/SWING)"
+    );
     telemetry_server::telemetry_log!("⚡ Sub-Microsecond Execution Core initialized.");
     telemetry_server::telemetry_log!("🛡️ OS Guardian active: strict resource isolation.");
     telemetry_server::telemetry_log!("========================================================");
 
-    telemetry_server::telemetry_log!("\n========================================================");    
+    telemetry_server::telemetry_log!("\n========================================================");
     let args: Vec<String> = env::args().collect();
     // FASE 28: El calentamiento cuántico es obligatorio. Siempre inicia en Demo/Testnet (Warmup)
     // a menos que se active el override de emergencia `--force-live`.
     let is_demo_mode = !args.contains(&"--force-live".to_string());
-    
+
     let darwin_approved = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let orchestrator = Arc::new(std::sync::RwLock::new(PhaseOrchestrator::new(120, is_demo_mode, Arc::clone(&darwin_approved))));
+    let orchestrator = Arc::new(std::sync::RwLock::new(PhaseOrchestrator::new(
+        120,
+        is_demo_mode,
+        Arc::clone(&darwin_approved),
+    )));
 
     if is_demo_mode {
-        telemetry_server::telemetry_log!("🔥 [MODO WARMUP/DEMO ACTIVO] El sistema inicia en Paper Trading para simulación.");
+        telemetry_server::telemetry_log!(
+            "🔥 [MODO WARMUP/DEMO ACTIVO] El sistema inicia en Paper Trading para simulación."
+        );
     } else {
-        telemetry_server::telemetry_log!("🔴 [MODO PRODUCCION ACTIVO] El sistema inicia en MAINNET con fuego real.");
+        telemetry_server::telemetry_log!(
+            "🔴 [MODO PRODUCCION ACTIVO] El sistema inicia en MAINNET con fuego real."
+        );
     }
 
     // FASE 38: Gestión de Memoria Estricta para Host de 16GB (Cero Swapping)
     // Asignamos 6144 MB (6GB) como límite de JobObject y VirtualLock.
     // Esto garantiza 10GB libres para Windows, erradicando por completo el Page Swap.
     // (Movido a la inicialización de arena_real)
-    
+
     // ==========================================
     // FASE 1 Y 2 (BOOTLOADER CUÁNTICO INTEGRADO)
     // ==========================================
     let (_ntp_offset_ms, symbols) = god_engine_core::bootloader::SystemDiagnostics::execute_phase_1_and_2(false).await.unwrap_or_else(|e| {
         panic!("⚠️ [CRITICAL] Fallo en la Secuencia de Lanzamiento: {}. El sistema no puede operar a ciegas sin datos de red o símbolos. Abortando.", e);
     });
-    
+
     quantum_arena::symbols::update_dynamic_universe(symbols.clone());
 
     let config_bytes = std::fs::read("data/dynamic_config.bin").unwrap_or_default();
     let mut config: TensorConfig = bincode::deserialize(&config_bytes).unwrap_or_else(|_| {
-        let config_str = std::fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "".to_string());
-        let cfg: TensorConfig = serde_json::from_str(&config_str).unwrap_or_else(|_| TensorConfig {
-            symbols: symbols.clone(),
-            is_testnet: false, // We always use mainnet data, paper trading intercepts execution
-        });
+        let config_str =
+            std::fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "".to_string());
+        let cfg: TensorConfig =
+            serde_json::from_str(&config_str).unwrap_or_else(|_| TensorConfig {
+                symbols: symbols.clone(),
+                is_testnet: false, // We always use mainnet data, paper trading intercepts execution
+            });
         if let Ok(encoded) = bincode::serialize(&cfg) {
             let _ = std::fs::write("data/dynamic_config.bin", encoded);
         }
@@ -89,7 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     config.symbols = symbols.clone(); // Update config memory
 
     let (telemetry_tx, _) = tokio::sync::broadcast::channel(100);
-    
+
     // let dashboard_tx = telemetry_tx.clone(); // Removed unused variable
     // [FASE 23] Deprecated old dashboard in favor of zero-copy telemetry_server
     /*
@@ -99,7 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     */
-    
+
     // Telemetry Async Formatter (Lock-Free Offload)
     // Telemetry Async Formatter (Lock-Free Offload)
     let (tx_log_worker, rx_log_worker) = crossbeam_channel::bounded::<(bool, bool, usize)>(1000);
@@ -111,18 +123,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let parsed_sym = &symbols_for_log[coin_id];
             if is_scalp {
                 let _ = dash_tx_clone.send(telemetry_server::TelemetryEvent::LogUpdate(
-                    "success".to_string(), 
-                    format!("⚡ SCALP {} on {}", side_str, parsed_sym)
+                    "success".to_string(),
+                    format!("⚡ SCALP {} on {}", side_str, parsed_sym),
                 ));
             } else {
                 let _ = dash_tx_clone.send(telemetry_server::TelemetryEvent::LogUpdate(
-                    "success".to_string(), 
-                    format!("🚀 SWING {} on {}", side_str, parsed_sym)
+                    "success".to_string(),
+                    format!("🚀 SWING {} on {}", side_str, parsed_sym),
                 ));
             }
         }
     });
-    
+
     // Spawn Dynamic Symbol Manager (Top 10 Evolver)
     tokio::spawn(async move {
         quantum_engine::symbol_manager::evolve_symbols_daemon().await;
@@ -137,7 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         streams.push_str("@depth5/");
         streams.push_str(sym);
         streams.push_str("@kline_1h");
-        
+
         if i < symbols.len() - 1 {
             streams.push('/');
         }
@@ -146,7 +158,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let initial_ws_host = if let Ok(ep) = env::var("BEST_WS_ENDPOINT") {
         ep
     } else {
-        let is_env_testnet = env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+        let is_env_testnet = env::var("USE_TESTNET")
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase()
+            == "true";
         if is_env_testnet {
             "stream.binancefuture.com".to_string()
         } else {
@@ -165,8 +181,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let start = tokio::time::Instant::now();
                         if let Ok(_) = tokio::time::timeout(
                             tokio::time::Duration::from_millis(500),
-                            tokio::net::TcpStream::connect(addr)
-                        ).await {
+                            tokio::net::TcpStream::connect(addr),
+                        )
+                        .await
+                        {
                             let latency = start.elapsed().as_millis();
                             if latency < best_latency {
                                 best_latency = latency;
@@ -178,15 +196,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             if !best_ip.is_empty() {
-                telemetry_server::telemetry_log!("🚀 [LATENCY ACCELERATOR] Selected WS IP {} (Host: {}) with {}ms latency", best_ip, best_host, best_latency);
+                telemetry_server::telemetry_log!(
+                    "🚀 [LATENCY ACCELERATOR] Selected WS IP {} (Host: {}) with {}ms latency",
+                    best_ip,
+                    best_host,
+                    best_latency
+                );
                 best_host
             } else {
                 best_host
             }
         }
     };
-    let ws_url = Arc::new(arc_swap::ArcSwap::from_pointee(format!("wss://{}/stream?streams={}", initial_ws_host, streams_str)));
-    
+    let ws_url = Arc::new(arc_swap::ArcSwap::from_pointee(format!(
+        "wss://{}/stream?streams={}",
+        initial_ws_host, streams_str
+    )));
+
     let (tx_ws_control, mut rx_ws_control) = tokio::sync::mpsc::channel::<()>(1);
     let (tx_events, rx_events) = crossbeam_channel::bounded::<Vec<u8>>(250_000);
 
@@ -195,7 +221,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut testnet_secret = env::var("TESTNET_SECRET_KEY").unwrap_or_default();
     let mut mainnet_key = env::var("MAINNET_API_KEY").unwrap_or_default();
     let mut mainnet_secret = env::var("MAINNET_SECRET_KEY").unwrap_or_default();
-    
+
     // Auto-map TESTNET keys
     if testnet_key.is_empty() {
         testnet_key = env::var("BINANCE_TESTNET_API_KEY").unwrap_or_default();
@@ -206,31 +232,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         mainnet_key = env::var("BINANCE_API_KEY").unwrap_or_default();
         mainnet_secret = env::var("BINANCE_SECRET_KEY").unwrap_or_default();
     }
-    
+
     if testnet_key.is_empty() || mainnet_key.is_empty() {
         telemetry_server::telemetry_log!("⚠️ [WARNING] TESTNET_API_KEY or MAINNET_API_KEY not found. Ensure both are set for seamless transition.");
     }
 
-    let is_env_testnet = env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+    let is_env_testnet = env::var("USE_TESTNET")
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase()
+        == "true";
     let (active_key, active_secret, is_testnet) = if is_env_testnet {
-        telemetry_server::telemetry_log!("🌐 [ENV DETECTED] Using BINANCE TESTNET for API connections.");
+        telemetry_server::telemetry_log!(
+            "🌐 [ENV DETECTED] Using BINANCE TESTNET for API connections."
+        );
         (testnet_key.clone(), testnet_secret.clone(), true)
     } else {
-        telemetry_server::telemetry_log!("🌐 [ENV DETECTED] Using BINANCE MAINNET for API connections.");
+        telemetry_server::telemetry_log!(
+            "🌐 [ENV DETECTED] Using BINANCE MAINNET for API connections."
+        );
         (mainnet_key.clone(), mainnet_secret.clone(), false)
     };
 
-    let mut order_executor = execution_engine::executor::OrderExecutor::new(active_key, active_secret, is_testnet);
+    let mut order_executor =
+        execution_engine::executor::OrderExecutor::new(active_key, active_secret, is_testnet);
     // If we are on Testnet, we want to hit the Testnet API natively, not intercept locally as Paper Trading
     if is_env_testnet {
         order_executor.set_paper_trading(false);
     }
     let exec = Arc::new(arc_swap::ArcSwap::from_pointee(order_executor));
-    
+
     let initial_capital = loop {
         match exec.load().fetch_account_balance().await {
             Ok(bal) => {
-                telemetry_server::telemetry_log!("🌍 [OMNI-AWARENESS] API Real Balance Extracted: ${:.4}", bal);
+                telemetry_server::telemetry_log!(
+                    "🌍 [OMNI-AWARENESS] API Real Balance Extracted: ${:.4}",
+                    bal
+                );
                 break bal;
             }
             Err(e) => {
@@ -239,17 +277,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     };
-    
+
     // Inject Dynamic Capital into Institutional Telemetry Projections
     audit_engine::telemetry::update_dynamic_capital(initial_capital);
-    
+
     let (live_maker, live_taker) = if let Some(first_sym) = symbols.first() {
         loop {
             match exec.load().fetch_commission_rate(first_sym).await {
                 Ok((m, t)) => {
                     telemetry_server::telemetry_log!("🌍 [OMNI-AWARENESS] API Real VIP Fees Extracted: Maker {:.4}%, Taker {:.4}%", m * 100.0, t * 100.0);
                     break (m, t);
-                },
+                }
                 Err(e) => {
                     telemetry_server::telemetry_log!("⚠️ [CRITICAL] Failed to fetch fees from API: {}. Retrying in 5s to enforce 100% Reality Parity...", e);
                     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
@@ -260,26 +298,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         panic!("⚠️ [CRITICAL] No symbols defined. Cannot extract fees.");
     };
 
-    let initial_genome = quantum_arena::genome::SuperGenotype::load_or_baseline(live_maker, live_taker);
-    telemetry_server::telemetry_log!("🧬 [INIT] Genesis Genome Loaded. DarwinDaemon is ready to evolve.");
-    
-    let historical_klines = god_engine_core::bootloader::SystemDiagnostics::execute_phase_3_warmup(is_demo_mode, &symbols).await;
-    
+    let initial_genome =
+        quantum_arena::genome::SuperGenotype::load_or_baseline(live_maker, live_taker);
+    telemetry_server::telemetry_log!(
+        "🧬 [INIT] Genesis Genome Loaded. DarwinDaemon is ready to evolve."
+    );
+
+    let historical_klines = god_engine_core::bootloader::SystemDiagnostics::execute_phase_3_warmup(
+        is_demo_mode,
+        &symbols,
+    )
+    .await;
+
     let global_learning_rate = 0.001 * (1.0 + initial_genome.quantum_mutation_rate);
     let training_epochs = (10.0 * (1.0 + initial_genome.quantum_mutation_rate)).max(5.0) as usize;
-    
-    let _swing_nn = god_engine_core::bootloader::SystemDiagnostics::execute_phase_4_training(&symbols, &historical_klines, global_learning_rate, training_epochs).await;
+
+    let _swing_nn = god_engine_core::bootloader::SystemDiagnostics::execute_phase_4_training(
+        &symbols,
+        &historical_klines,
+        global_learning_rate,
+        training_epochs,
+    )
+    .await;
 
     let dark_router = Arc::new(quantum_engine::dark_alpha_router::DarkAlphaRouter::new());
-    
+
     // Spawn Hyperliquid DEX cascade sniffer
     quantum_engine::dark_alpha_sniffer::spawn_hyperliquid_sniffer(Arc::clone(&dark_router));
-    
+
     // El genoma inicial fue validado. Aprobamos la transición al Orchestrator.
     darwin_approved.store(true, Ordering::Relaxed);
-    
-    let mut forest_timestamps: std::collections::HashMap<String, std::time::SystemTime> = std::collections::HashMap::new();
-    
+
+    let mut forest_timestamps: std::collections::HashMap<String, std::time::SystemTime> =
+        std::collections::HashMap::new();
+
     // Initial load of all models
     if let Ok(entries) = std::fs::read_dir("models") {
         for entry in entries.filter_map(|e| e.ok()) {
@@ -289,7 +341,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Ok(meta) = std::fs::metadata(&path) {
                         if let Ok(modified) = meta.modified() {
                             forest_timestamps.insert(file_stem.to_string(), modified);
-                            let _ = god_engine_core::ml_inference::NanoForest::load_global(file_stem, path.to_str().unwrap());
+                            let _ = god_engine_core::ml_inference::NanoForest::load_global(
+                                file_stem,
+                                path.to_str().unwrap(),
+                            );
                             telemetry_server::telemetry_log!("🧠 Loaded ML Model: {}", file_stem);
                         }
                     }
@@ -299,12 +354,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     tokio::spawn(async move {
-        telemetry_server::telemetry_log!("👀 [HOT-RELOAD] Watcher started. Monitoring DNA and ML Weights...");
-        let mut last_config_ts = std::fs::metadata("data/dynamic_config.json").and_then(|m| m.modified()).ok();
-        
+        telemetry_server::telemetry_log!(
+            "👀 [HOT-RELOAD] Watcher started. Monitoring DNA and ML Weights..."
+        );
+        let mut last_config_ts = std::fs::metadata("data/dynamic_config.json")
+            .and_then(|m| m.modified())
+            .ok();
+
         loop {
             sleep(Duration::from_secs(10)).await;
-            
+
             if let Ok(meta) = std::fs::metadata("data/dynamic_config.json") {
                 if let Ok(modified) = meta.modified() {
                     if Some(modified) != last_config_ts {
@@ -313,7 +372,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            
+
             if let Ok(entries) = std::fs::read_dir("models") {
                 for entry in entries.filter_map(|e| e.ok()) {
                     let path = entry.path();
@@ -324,7 +383,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let last_ts = forest_timestamps.get(file_stem);
                                     if last_ts != Some(&modified) {
                                         forest_timestamps.insert(file_stem.to_string(), modified);
-                                        if god_engine_core::ml_inference::NanoForest::load_global(file_stem, path.to_str().unwrap()).is_ok() {
+                                        if god_engine_core::ml_inference::NanoForest::load_global(
+                                            file_stem,
+                                            path.to_str().unwrap(),
+                                        )
+                                        .is_ok()
+                                        {
                                             telemetry_server::telemetry_log!("🔥 [HOT-RELOAD] NanoForest AI Brain hot-swapped for {}!", file_stem);
                                         }
                                     }
@@ -342,26 +406,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // dentro del loop principal, eliminando condiciones de carrera y spaghetti code.
 
     // Initialize Redb Zero-Copy Persistence and Real Balance
-    
+
     let ic_clone = initial_capital;
     tokio::spawn(async move {
-        telemetry_server::telemetry_log!("⏰ [EVOLUTION-TASK] Scheduled to run genetic algorithm every 6 hours.");
+        telemetry_server::telemetry_log!(
+            "⏰ [EVOLUTION-TASK] Scheduled to run genetic algorithm every 6 hours."
+        );
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
-            telemetry_server::telemetry_log!("🧬 [EVOLUTION-TASK] Waking up to evolve genetic config...");
+            telemetry_server::telemetry_log!(
+                "🧬 [EVOLUTION-TASK] Waking up to evolve genetic config..."
+            );
             let _ = std::process::Command::new("cargo")
-                .args(["run", "--release", "--bin", "evolution", "--", &ic_clone.to_string()])
+                .args([
+                    "run",
+                    "--release",
+                    "--bin",
+                    "evolution",
+                    "--",
+                    &ic_clone.to_string(),
+                ])
                 .current_dir(".")
                 .spawn()
                 .and_then(|mut child| child.wait());
         }
     });
 
-    
     std::fs::create_dir_all("data").unwrap_or_default();
-    
-    let db = Arc::new(Database::create("data/state.redb").expect("CRITICAL: Failed to create redb database"));
-    
+
+    let db = Arc::new(
+        Database::create("data/state.redb").expect("CRITICAL: Failed to create redb database"),
+    );
+
     if let Ok(write_txn) = db.begin_write() {
         {
             let mut table = write_txn.open_table(CAPITAL_TABLE).unwrap();
@@ -373,13 +449,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         let _ = write_txn.commit();
-        telemetry_server::telemetry_log!("💾 [PERSISTENCE] Capital Redb Zero-Copy loaded: ${:.4}", initial_capital);
+        telemetry_server::telemetry_log!(
+            "💾 [PERSISTENCE] Capital Redb Zero-Copy loaded: ${:.4}",
+            initial_capital
+        );
     }
-    
+
     // Shared Atomic Capital Pool (Dynamically scaled from API extraction)
     // Axiom V: Unified Cross-Margin Pool
     let unified_capital = Arc::new(AtomicU64::new(initial_capital.to_bits()));
-    
+
     // Non-blocking Zero-Copy persistence channel
     let (db_tx, mut db_rx) = mpsc::channel::<(f64, f64)>(5000);
     let db_clone = Arc::clone(&db);
@@ -394,24 +473,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    
+
     let exec = Arc::clone(&exec);
     let loop_telemetry_tx = telemetry_tx.clone();
     let dark_router_unified = Arc::clone(&dark_router);
-    
+
     let symbols_clone = symbols.clone();
-    let mut symbol_to_id: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut symbol_to_id: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for (i, sym) in symbols_clone.iter().enumerate() {
         symbol_to_id.insert(sym.to_lowercase(), i);
     }
-    
+
     // 🔍 FETCH FORENSE DE POSICIONES ACTIVAS CON BINANCE API
     let mut restored_positions = exec.load().fetch_open_positions().await.unwrap_or_default();
     if orchestrator.read().unwrap().is_demo_mode {
         telemetry_server::telemetry_log!("⚠️ [DEMO MODE] Ignorando reconciliación de posiciones REST para mantener Paper Trading.");
         restored_positions.clear();
     }
-    
+
     let rx_events = rx_events;
 
     // FASE 15: GLOBAL ROI & PnL TRACKERS (Bifurcación Cuántica)
@@ -426,23 +506,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut swing_fees = 0.0;
     let mut swing_trades = 0;
     let mut swing_wins = 0;
-    
+
     let rt_handle = tokio::runtime::Handle::current();
-    
+
     let server_time_ms = match exec.load().fetch_server_time().await {
         Ok(time) => {
-            telemetry_server::telemetry_log!("⏱️ [NTP SYNC] Binance Server Time retrieved: {}", time);
+            telemetry_server::telemetry_log!(
+                "⏱️ [NTP SYNC] Binance Server Time retrieved: {}",
+                time
+            );
             time
-        },
+        }
         Err(_) => {
-            telemetry_server::telemetry_log!("⚠️ [NTP SYNC FAILED] Falling back to local SystemTime");
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64
+            telemetry_server::telemetry_log!(
+                "⚠️ [NTP SYNC FAILED] Falling back to local SystemTime"
+            );
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64
         }
     };
-    let local_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
+    let local_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
     let ntp_offset_ms = server_time_ms - local_ms;
-    telemetry_server::telemetry_log!("⏱️ [NTP SYNC] Local Time: {}, Offset to Binance: {}ms", local_ms, ntp_offset_ms);
-    
+    telemetry_server::telemetry_log!(
+        "⏱️ [NTP SYNC] Local Time: {}, Offset to Binance: {}ms",
+        local_ms,
+        ntp_offset_ms
+    );
+
     let num_symbols = symbols.len();
     let unified_handle = std::thread::Builder::new().stack_size(32 * 1024 * 1024).spawn({
         let loop_ws_url = Arc::clone(&ws_url);
@@ -1065,8 +1160,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }).unwrap();
 
-    telemetry_server::telemetry_log!("🔗 Connecting to Binance WebSocket: {} streams", symbols.len());
-    
+    telemetry_server::telemetry_log!(
+        "🔗 Connecting to Binance WebSocket: {} streams",
+        symbols.len()
+    );
+
     // Auto-Reconnecting WebSocket Loop (Isolated & Pinned)
     std::thread::Builder::new().name("ws-reader".to_string()).spawn(move || {
         if let Some(core_ids) = core_affinity::get_core_ids() {

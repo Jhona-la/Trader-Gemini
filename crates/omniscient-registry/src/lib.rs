@@ -1,13 +1,24 @@
 use crossbeam_skiplist::SkipMap;
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
-use serde::{Serialize, Deserialize};
-use rkyv::{Archive, Serialize as RkyvSerialize, Deserialize as RkyvDeserialize};
-use std::fs::File;
-use std::io::Write;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    Archive,
+    RkyvSerialize,
+    RkyvDeserialize,
+)]
 pub enum ParameterKind {
     Fixed,
     Adaptive,
@@ -143,7 +154,7 @@ mod tests {
         let registry = OmniscientRegistry::new();
         let param = Parameter::new("test_param", ParameterKind::Fixed, 42.0, "test_owner");
         assert!(registry.register(param).is_ok());
-        
+
         let retrieved = registry.get("test_param", "test_consumer").unwrap();
         assert_eq!(retrieved.get_value(), 42.0);
         assert!(retrieved.consumers.contains("test_consumer"));

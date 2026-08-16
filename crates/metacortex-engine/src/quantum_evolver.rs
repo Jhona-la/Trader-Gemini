@@ -21,7 +21,9 @@ impl QuantumState {
         let mut rng = seed;
         let mut amplitudes = Vec::with_capacity(16);
         for i in 0..16 {
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let amp = (rng as f64 / u64::MAX as f64) * 2.0 - 1.0;
             amplitudes.push(amp);
             let _ = i;
@@ -64,7 +66,9 @@ pub struct QuantumEvolver {
 
 impl Default for QuantumEvolver {
     fn default() -> Self {
-        Self { num_candidates: 100 }
+        Self {
+            num_candidates: 100,
+        }
     }
 }
 

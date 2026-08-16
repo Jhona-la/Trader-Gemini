@@ -1,11 +1,11 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-use crate::pmu_sensor::PmuVector;
 use crate::ebpf_core::KernelEvents;
+use crate::pmu_sensor::PmuVector;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Motor Estadístico de Anomalías Base.
 /// Usa EWMA (Exponentially Weighted Moving Average) y MAD (Median Absolute Deviation)
-/// para rastrear latencias de cola y anomalías de hardware (context switches excesivos, 
-/// caída de IPC). No hace inferencia neuronal todavía; opera a la velocidad del hardware 
+/// para rastrear latencias de cola y anomalías de hardware (context switches excesivos,
+/// caída de IPC). No hace inferencia neuronal todavía; opera a la velocidad del hardware
 /// para encontrar fallas determinísticas.
 pub struct StatisticalAnomalyDetector {
     // EMA states (almacenado en u64 multiplicando x 10000 para lock-free concurrency)
@@ -44,8 +44,10 @@ impl StatisticalAnomalyDetector {
         let new_ipc = prev_ipc + self.alpha * (current_ipc - prev_ipc);
         let new_delay = prev_delay + self.alpha * (current_delay - prev_delay);
 
-        self.ipc_ema.store((new_ipc * 10000.0) as u64, Ordering::Relaxed);
-        self.sched_delay_ema.store(new_delay as u64, Ordering::Relaxed);
+        self.ipc_ema
+            .store((new_ipc * 10000.0) as u64, Ordering::Relaxed);
+        self.sched_delay_ema
+            .store(new_delay as u64, Ordering::Relaxed);
 
         // Detectar desviaciones críticas
         // IPC cae más del 50% respecto al baseline
@@ -71,7 +73,8 @@ impl StatisticalAnomalyDetector {
             return AnomalyScore {
                 is_anomaly: true,
                 score: 0.90,
-                causal_hint: "Context switches detectados en CPU supuestamente aislado (Isolcpus roto).",
+                causal_hint:
+                    "Context switches detectados en CPU supuestamente aislado (Isolcpus roto).",
             };
         }
 

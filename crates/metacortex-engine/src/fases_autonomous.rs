@@ -101,7 +101,10 @@ impl FaseAutonomousManager {
                 }
             }
             FaseAutonomous::Fase4Operacion => {
-                if metrics.real_drawdown_pct > 0.08 || metrics.execution_latency_us > 500_000 || !metrics.data_checksum_ok {
+                if metrics.real_drawdown_pct > 0.08
+                    || metrics.execution_latency_us > 500_000
+                    || !metrics.data_checksum_ok
+                {
                     FaseAutonomous::Fase7Crisis
                 } else if metrics.concept_drift_score > 0.70 {
                     FaseAutonomous::Fase5Mutacion

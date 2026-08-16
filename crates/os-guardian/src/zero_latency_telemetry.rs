@@ -1,7 +1,7 @@
 use crossbeam_queue::ArrayQueue;
+use once_cell::sync::Lazy;
 use std::sync::Arc;
 use std::thread;
-use once_cell::sync::Lazy;
 
 /// Métrica de telemetría atómica sin bloqueo
 #[derive(Debug, Clone, Copy)]
@@ -13,7 +13,7 @@ pub struct QuantumMetric {
 }
 
 /// Motor de telemetría Cero-Latencia (Lock-Free)
-/// Utiliza una cola atómica ArrayQueue para extraer métricas del Hot-Path 
+/// Utiliza una cola atómica ArrayQueue para extraer métricas del Hot-Path
 /// en menos de 10 nanosegundos sin bloquear.
 pub struct TelemetryEngine {
     queue: Arc<ArrayQueue<QuantumMetric>>,
@@ -61,7 +61,7 @@ impl TelemetryEngine {
                         // Por ahora consumimos el evento.
                         count += 1;
                     }
-                    
+
                     if count == 0 {
                         // Si no hay métricas, dormimos el hilo para no quemar CPU (ahorrando RAM/CPU)
                         thread::sleep(std::time::Duration::from_millis(50));

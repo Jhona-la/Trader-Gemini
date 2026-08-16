@@ -1,11 +1,11 @@
-use quantum_arena::GlobalArena;
 use crate::GodEngineCore;
+use quantum_arena::GlobalArena;
+use rayon::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use rayon::prelude::*;
 
-use rand::RngExt;
 use quantum_arena::tick_source::TickEvent;
+use rand::RngExt;
 
 /// Axioma X: The Darwin Daemon
 /// Continuous Online Evolution. Evaluates the recent market microstructure
@@ -58,24 +58,63 @@ impl Genotype {
             scalp_z_target: arena.config.scalp_obi_threshold.load(Ordering::Relaxed),
             capital_split_scalp: arena.config.capital_split_scalp.load(Ordering::Relaxed),
             min_confidence: arena.config.min_confidence_btc.load(Ordering::Relaxed),
-            explosive_leverage_multiplier: arena.config.explosive_leverage_multiplier.load(Ordering::Relaxed),
+            explosive_leverage_multiplier: arena
+                .config
+                .explosive_leverage_multiplier
+                .load(Ordering::Relaxed),
         }
     }
 
     pub fn apply_to_arena(&self, arena: &GlobalArena) {
-        arena.config.global_leverage.store(self.global_leverage, Ordering::Relaxed);
+        arena
+            .config
+            .global_leverage
+            .store(self.global_leverage, Ordering::Relaxed);
         // Kelly fractions are pure math now, removed from Darwin
-        arena.config.trend_threshold.store(self.trend_threshold, Ordering::Relaxed);
-        arena.config.maker_spread_pct.store(self.maker_spread_pct, Ordering::Relaxed);
-        arena.config.maker_obi_threshold.store(self.maker_obi_threshold, Ordering::Relaxed);
-        arena.config.scalp_tp_base.store(self.scalp_tp, Ordering::Relaxed);
-        arena.config.scalp_sl_base.store(self.scalp_sl, Ordering::Relaxed);
-        arena.config.swing_tp_base.store(self.swing_tp, Ordering::Relaxed);
-        arena.config.swing_sl_base.store(self.swing_sl, Ordering::Relaxed);
-        arena.config.scalp_obi_threshold.store(self.scalp_z_target, Ordering::Relaxed);
-        arena.config.capital_split_scalp.store(self.capital_split_scalp, Ordering::Relaxed);
-        arena.config.min_confidence_btc.store(self.min_confidence, Ordering::Relaxed);
-        arena.config.explosive_leverage_multiplier.store(self.explosive_leverage_multiplier, Ordering::Relaxed);
+        arena
+            .config
+            .trend_threshold
+            .store(self.trend_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .maker_spread_pct
+            .store(self.maker_spread_pct, Ordering::Relaxed);
+        arena
+            .config
+            .maker_obi_threshold
+            .store(self.maker_obi_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_tp_base
+            .store(self.scalp_tp, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_sl_base
+            .store(self.scalp_sl, Ordering::Relaxed);
+        arena
+            .config
+            .swing_tp_base
+            .store(self.swing_tp, Ordering::Relaxed);
+        arena
+            .config
+            .swing_sl_base
+            .store(self.swing_sl, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_obi_threshold
+            .store(self.scalp_z_target, Ordering::Relaxed);
+        arena
+            .config
+            .capital_split_scalp
+            .store(self.capital_split_scalp, Ordering::Relaxed);
+        arena
+            .config
+            .min_confidence_btc
+            .store(self.min_confidence, Ordering::Relaxed);
+        arena
+            .config
+            .explosive_leverage_multiplier
+            .store(self.explosive_leverage_multiplier, Ordering::Relaxed);
     }
 }
 
@@ -91,11 +130,13 @@ impl DarwinDaemon {
     /// Extacts the recent ticks from the live arena, sorts them, and runs a fast GA
     pub fn evolve_online(&self) {
         let mut master_stream = Vec::with_capacity(4 * 32768);
-        
+
         // 1. Extract memory snapshot (lock-free: snapshot_recent never blocks the writer)
         for coin_id in 0..4 {
-            let ticks = self.live_arena.coins[coin_id].tick_ring.snapshot_recent(32768);
-            
+            let ticks = self.live_arena.coins[coin_id]
+                .tick_ring
+                .snapshot_recent(32768);
+
             for tick in ticks {
                 master_stream.push(TickEvent {
                     coin_id,
@@ -107,17 +148,20 @@ impl DarwinDaemon {
                 });
             }
         }
-        
+
         if master_stream.is_empty() {
             return;
         }
-        
-        println!("[Darwin] Extracted {} recent ticks. Starting online evolution...", master_stream.len());
+
+        println!(
+            "[Darwin] Extracted {} recent ticks. Starting online evolution...",
+            master_stream.len()
+        );
 
         let pop_size = 20; // Fast mini-evolution
         let generations = 5;
         let mutation_rate = 0.3;
-        
+
         let mut population: Vec<Genotype> = (0..pop_size).map(|_| Genotype::new_random()).collect();
         // Ensure current active genotype is in the pool (Elitism baseline)
         let current_active = Genotype::current_from_arena(&self.live_arena);
@@ -132,22 +176,43 @@ impl DarwinDaemon {
                 .map(|genome| {
                     let arena = Arc::new(GlobalArena::new(initial_capital));
                     genome.apply_to_arena(&arena);
-                    arena.config.global_max_drawdown.store(0.95, Ordering::Relaxed);
-                    
+                    arena
+                        .config
+                        .global_max_drawdown
+                        .store(0.95, Ordering::Relaxed);
+
                     let mut engine = GodEngineCore::new(arena.clone());
                     let mut max_drawdown = 0.0;
                     let mut peak_capital = initial_capital;
 
                     for tick in &master_stream {
-                        arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, 0);
+                        arena.update_market_data(
+                            tick.coin_id,
+                            tick.bid_price,
+                            tick.ask_price,
+                            tick.bid_qty,
+                            tick.ask_qty,
+                            0,
+                        );
                         let (_sc, _sw, c_sc, c_sw, _) = engine.process_tick(
-                            tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp, &[0.0; 54]);
-                        
+                            tick.coin_id,
+                            tick.bid_price,
+                            tick.ask_price,
+                            tick.bid_qty,
+                            tick.ask_qty,
+                            tick.timestamp,
+                            &[0.0; 54],
+                        );
+
                         if c_sc.is_some() || c_sw.is_some() {
                             let current_cap = arena.unified_capital.load(Ordering::Relaxed);
-                            if current_cap > peak_capital { peak_capital = current_cap; }
+                            if current_cap > peak_capital {
+                                peak_capital = current_cap;
+                            }
                             let dd = (peak_capital - current_cap) / peak_capital;
-                            if dd > max_drawdown { max_drawdown = dd; }
+                            if dd > max_drawdown {
+                                max_drawdown = dd;
+                            }
                         }
                     }
 
@@ -156,51 +221,127 @@ impl DarwinDaemon {
                     (genome.clone(), final_cap, fitness)
                 })
                 .collect();
-                
+
             results.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
             let best_gen = &results[0];
-            
+
             if best_gen.2 > best_all_time.1 {
                 best_all_time = (best_gen.0.clone(), best_gen.2);
             }
-            
-            if generation == generations { break; }
-            
+
+            if generation == generations {
+                break;
+            }
+
             let mut next_gen = Vec::with_capacity(pop_size);
-            for i in 0..(pop_size / 4) { next_gen.push(results[i].0.clone()); } // Top 25% elites
-            
+            for i in 0..(pop_size / 4) {
+                next_gen.push(results[i].0.clone());
+            } // Top 25% elites
+
             while next_gen.len() < pop_size {
-                let p1 = &results[rand::rng().random_range(0..(pop_size/2))].0;
-                let p2 = &results[rand::rng().random_range(0..(pop_size/2))].0;
-                
+                let p1 = &results[rand::rng().random_range(0..(pop_size / 2))].0;
+                let p2 = &results[rand::rng().random_range(0..(pop_size / 2))].0;
+
                 let mut child = Genotype {
-                    global_leverage: if rand::rng().random_bool(0.5) { p1.global_leverage } else { p2.global_leverage },
-                    trend_threshold: if rand::rng().random_bool(0.5) { p1.trend_threshold } else { p2.trend_threshold },
-                    maker_spread_pct: if rand::rng().random_bool(0.5) { p1.maker_spread_pct } else { p2.maker_spread_pct },
-                    maker_obi_threshold: if rand::rng().random_bool(0.5) { p1.maker_obi_threshold } else { p2.maker_obi_threshold },
-                    scalp_tp: if rand::rng().random_bool(0.5) { p1.scalp_tp } else { p2.scalp_tp },
-                    scalp_sl: if rand::rng().random_bool(0.5) { p1.scalp_sl } else { p2.scalp_sl },
-                    swing_tp: if rand::rng().random_bool(0.5) { p1.swing_tp } else { p2.swing_tp },
-                    swing_sl: if rand::rng().random_bool(0.5) { p1.swing_sl } else { p2.swing_sl },
-                    scalp_z_target: if rand::rng().random_bool(0.5) { p1.scalp_z_target } else { p2.scalp_z_target },
-                    capital_split_scalp: if rand::rng().random_bool(0.5) { p1.capital_split_scalp } else { p2.capital_split_scalp },
-                    min_confidence: if rand::rng().random_bool(0.5) { p1.min_confidence } else { p2.min_confidence },
-                    explosive_leverage_multiplier: if rand::rng().random_bool(0.5) { p1.explosive_leverage_multiplier } else { p2.explosive_leverage_multiplier },
+                    global_leverage: if rand::rng().random_bool(0.5) {
+                        p1.global_leverage
+                    } else {
+                        p2.global_leverage
+                    },
+                    trend_threshold: if rand::rng().random_bool(0.5) {
+                        p1.trend_threshold
+                    } else {
+                        p2.trend_threshold
+                    },
+                    maker_spread_pct: if rand::rng().random_bool(0.5) {
+                        p1.maker_spread_pct
+                    } else {
+                        p2.maker_spread_pct
+                    },
+                    maker_obi_threshold: if rand::rng().random_bool(0.5) {
+                        p1.maker_obi_threshold
+                    } else {
+                        p2.maker_obi_threshold
+                    },
+                    scalp_tp: if rand::rng().random_bool(0.5) {
+                        p1.scalp_tp
+                    } else {
+                        p2.scalp_tp
+                    },
+                    scalp_sl: if rand::rng().random_bool(0.5) {
+                        p1.scalp_sl
+                    } else {
+                        p2.scalp_sl
+                    },
+                    swing_tp: if rand::rng().random_bool(0.5) {
+                        p1.swing_tp
+                    } else {
+                        p2.swing_tp
+                    },
+                    swing_sl: if rand::rng().random_bool(0.5) {
+                        p1.swing_sl
+                    } else {
+                        p2.swing_sl
+                    },
+                    scalp_z_target: if rand::rng().random_bool(0.5) {
+                        p1.scalp_z_target
+                    } else {
+                        p2.scalp_z_target
+                    },
+                    capital_split_scalp: if rand::rng().random_bool(0.5) {
+                        p1.capital_split_scalp
+                    } else {
+                        p2.capital_split_scalp
+                    },
+                    min_confidence: if rand::rng().random_bool(0.5) {
+                        p1.min_confidence
+                    } else {
+                        p2.min_confidence
+                    },
+                    explosive_leverage_multiplier: if rand::rng().random_bool(0.5) {
+                        p1.explosive_leverage_multiplier
+                    } else {
+                        p2.explosive_leverage_multiplier
+                    },
                 };
-                
-                if rand::rng().random_bool(mutation_rate) { child.global_leverage *= rand::rng().random_range(0.8..1.2); }
-                if rand::rng().random_bool(mutation_rate) { child.trend_threshold *= rand::rng().random_range(0.9..1.1); }
-                if rand::rng().random_bool(mutation_rate) { child.maker_spread_pct *= rand::rng().random_range(0.5..2.0); }
-                if rand::rng().random_bool(mutation_rate) { child.maker_obi_threshold *= rand::rng().random_range(0.8..1.2); }
-                if rand::rng().random_bool(mutation_rate) { child.scalp_tp *= rand::rng().random_range(0.7..1.5); }
-                if rand::rng().random_bool(mutation_rate) { child.scalp_sl *= rand::rng().random_range(0.7..1.5); }
-                if rand::rng().random_bool(mutation_rate) { child.swing_tp *= rand::rng().random_range(0.7..1.5); }
-                if rand::rng().random_bool(mutation_rate) { child.swing_sl *= rand::rng().random_range(0.7..1.5); }
-                if rand::rng().random_bool(mutation_rate) { child.scalp_z_target *= rand::rng().random_range(0.8..1.2); }
-                if rand::rng().random_bool(mutation_rate) { child.capital_split_scalp *= rand::rng().random_range(0.8..1.2); }
-                if rand::rng().random_bool(mutation_rate) { child.min_confidence *= rand::rng().random_range(0.9..1.1); }
-                if rand::rng().random_bool(mutation_rate) { child.explosive_leverage_multiplier *= rand::rng().random_range(0.5..2.0); }
-                
+
+                if rand::rng().random_bool(mutation_rate) {
+                    child.global_leverage *= rand::rng().random_range(0.8..1.2);
+                }
+                if rand::rng().random_bool(mutation_rate) {
+                    child.trend_threshold *= rand::rng().random_range(0.9..1.1);
+                }
+                if rand::rng().random_bool(mutation_rate) {
+                    child.maker_spread_pct *= rand::rng().random_range(0.5..2.0);
+                }
+                if rand::rng().random_bool(mutation_rate) {
+                    child.maker_obi_threshold *= rand::rng().random_range(0.8..1.2);
+                }
+                if rand::rng().random_bool(mutation_rate) {
+                    child.scalp_tp *= rand::rng().random_range(0.7..1.5);
+                }
+                if rand::rng().random_bool(mutation_rate) {
+                    child.scalp_sl *= rand::rng().random_range(0.7..1.5);
+                }
+                if rand::rng().random_bool(mutation_rate) {
+                    child.swing_tp *= rand::rng().random_range(0.7..1.5);
+                }
+                if rand::rng().random_bool(mutation_rate) {
+                    child.swing_sl *= rand::rng().random_range(0.7..1.5);
+                }
+                if rand::rng().random_bool(mutation_rate) {
+                    child.scalp_z_target *= rand::rng().random_range(0.8..1.2);
+                }
+                if rand::rng().random_bool(mutation_rate) {
+                    child.capital_split_scalp *= rand::rng().random_range(0.8..1.2);
+                }
+                if rand::rng().random_bool(mutation_rate) {
+                    child.min_confidence *= rand::rng().random_range(0.9..1.1);
+                }
+                if rand::rng().random_bool(mutation_rate) {
+                    child.explosive_leverage_multiplier *= rand::rng().random_range(0.5..2.0);
+                }
+
                 child.global_leverage = child.global_leverage.clamp(25.0, 35.0);
                 child.trend_threshold = child.trend_threshold.clamp(0.1, 0.9);
                 child.maker_spread_pct = child.maker_spread_pct.clamp(0.0001, 0.05);
@@ -212,8 +353,9 @@ impl DarwinDaemon {
                 child.scalp_z_target = child.scalp_z_target.clamp(0.5, 5.0);
                 child.capital_split_scalp = child.capital_split_scalp.clamp(0.1, 1.0);
                 child.min_confidence = child.min_confidence.clamp(0.5, 0.99);
-                child.explosive_leverage_multiplier = child.explosive_leverage_multiplier.clamp(1.0, 10.0);
-                
+                child.explosive_leverage_multiplier =
+                    child.explosive_leverage_multiplier.clamp(1.0, 10.0);
+
                 next_gen.push(child);
             }
             population = next_gen;
@@ -227,14 +369,32 @@ impl DarwinDaemon {
             let mut max_drawdown = 0.0;
             let mut peak_capital = initial_capital;
             for tick in &master_stream {
-                arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, 0);
+                arena.update_market_data(
+                    tick.coin_id,
+                    tick.bid_price,
+                    tick.ask_price,
+                    tick.bid_qty,
+                    tick.ask_qty,
+                    0,
+                );
                 let (_sc, _sw, c_sc, c_sw, _) = engine.process_tick(
-                    tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp, &[0.0; 54]);
+                    tick.coin_id,
+                    tick.bid_price,
+                    tick.ask_price,
+                    tick.bid_qty,
+                    tick.ask_qty,
+                    tick.timestamp,
+                    &[0.0; 54],
+                );
                 if c_sc.is_some() || c_sw.is_some() {
                     let cap = arena.unified_capital.load(Ordering::Relaxed);
-                    if cap > peak_capital { peak_capital = cap; }
+                    if cap > peak_capital {
+                        peak_capital = cap;
+                    }
                     let dd = (peak_capital - cap) / peak_capital;
-                    if dd > max_drawdown { max_drawdown = dd; }
+                    if dd > max_drawdown {
+                        max_drawdown = dd;
+                    }
                 }
             }
             let final_cap = arena.unified_capital.load(Ordering::Relaxed);
@@ -254,5 +414,3 @@ impl DarwinDaemon {
         }
     }
 }
-
-

@@ -1,8 +1,8 @@
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
-use syn::{Item, File};
 use std::fs;
 use std::path::Path;
+use syn::{File, Item};
 
 pub struct GraphNode {
     pub name: String,
@@ -22,11 +22,20 @@ impl SystemGraph {
         }
     }
 
-    pub fn parse_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn parse_file<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let content = fs::read_to_string(&path)?;
         let ast: File = syn::parse_file(&content)?;
 
-        let module_name = path.as_ref().file_stem().unwrap().to_str().unwrap().to_string();
+        let module_name = path
+            .as_ref()
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
         let module_idx = self.get_or_add_node(&module_name, "Module");
 
         for item in ast.items {
@@ -34,21 +43,24 @@ impl SystemGraph {
                 Item::Struct(s) => {
                     let struct_name = s.ident.to_string();
                     let struct_idx = self.get_or_add_node(&struct_name, "Struct");
-                    self.graph.add_edge(module_idx, struct_idx, "contains".to_string());
-                },
+                    self.graph
+                        .add_edge(module_idx, struct_idx, "contains".to_string());
+                }
                 Item::Fn(f) => {
                     let fn_name = f.sig.ident.to_string();
                     let fn_idx = self.get_or_add_node(&fn_name, "Function");
-                    self.graph.add_edge(module_idx, fn_idx, "contains".to_string());
-                },
+                    self.graph
+                        .add_edge(module_idx, fn_idx, "contains".to_string());
+                }
                 Item::Enum(e) => {
                     let enum_name = e.ident.to_string();
                     let enum_idx = self.get_or_add_node(&enum_name, "Enum");
-                    self.graph.add_edge(module_idx, enum_idx, "contains".to_string());
-                },
+                    self.graph
+                        .add_edge(module_idx, enum_idx, "contains".to_string());
+                }
                 Item::Use(_u) => {
                     // Could extract dependencies from `use` statements here
-                },
+                }
                 _ => {}
             }
         }

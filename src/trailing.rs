@@ -18,7 +18,7 @@ pub struct TrailingResult {
 /// El fee de roundtrip (maker + taker) se extrae dinámicamente de la API de Binance
 /// y se pasa como parámetro. NUNCA hardcodear fees.
 pub fn evaluate_quantum_trailing(
-    pos_side: i32,       // 1 for LONG, -1 for SHORT
+    pos_side: i32, // 1 for LONG, -1 for SHORT
     entry_price: f64,
     current_price: f64,
     current_atr: f64,
@@ -76,7 +76,11 @@ pub fn evaluate_quantum_trailing(
     }
 
     // 4. Mechanism Proposals
-    let mut best_stop = if current_trail_stop > 1e-9 { current_trail_stop } else { 0.0 };
+    let mut best_stop = if current_trail_stop > 1e-9 {
+        current_trail_stop
+    } else {
+        0.0
+    };
     let mut proposals = [0.0; 3];
     let mut prop_count = 0;
 
@@ -89,7 +93,7 @@ pub fn evaluate_quantum_trailing(
             4 => trail_runner,
             _ => trail_f1, // Fallback al parámetro del genoma, NO a un valor hardcodeado
         };
-        
+
         let t1_stop = if pos_side == 1 {
             current_price - (dist_atr * current_atr)
         } else {
@@ -103,10 +107,14 @@ pub fn evaluate_quantum_trailing(
     // T3: Parabolic Trailing
     if mfe_atr >= 3.0 {
         let mut factor = 0.02 + (mfe_atr - 3.0) * 0.05;
-        if factor > 0.20 { factor = 0.20; }
-        
+        if factor > 0.20 {
+            factor = 0.20;
+        }
+
         let mut dist_parabolic = trail_f3 - (mfe_atr * factor);
-        if dist_parabolic < 0.5 { dist_parabolic = 0.5; }
+        if dist_parabolic < 0.5 {
+            dist_parabolic = 0.5;
+        }
 
         let t3_stop = if pos_side == 1 {
             current_price - (dist_parabolic * current_atr)

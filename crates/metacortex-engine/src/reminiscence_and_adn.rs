@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenerationMetadata {
@@ -27,8 +27,14 @@ impl AdnBackupCatalog {
     }
 
     /// Guarda una generación completa en la memoria genética inmutable
-    pub fn archive_generation(&self, meta: &GenerationMetadata, code_content: &str) -> std::io::Result<()> {
-        let gen_folder = self.base_dir.join(format!("generaciones/gen_{:04}", meta.gen_id));
+    pub fn archive_generation(
+        &self,
+        meta: &GenerationMetadata,
+        code_content: &str,
+    ) -> std::io::Result<()> {
+        let gen_folder = self
+            .base_dir
+            .join(format!("generaciones/gen_{:04}", meta.gen_id));
         fs::create_dir_all(&gen_folder)?;
 
         let meta_json = serde_json::to_string_pretty(meta).unwrap_or_default();
@@ -72,10 +78,19 @@ impl ReminiscenceModule {
 
     /// Evalúa si existe alguna generación previa archivada que coincida con el régimen actual
     /// y presente superioridad de Sharpe/Teleonomía para resucitar como semilla mutacional.
-    pub fn find_ancestral_seed(&self, current_regime: &str, min_sharpe: f64) -> Option<GenerationMetadata> {
+    pub fn find_ancestral_seed(
+        &self,
+        current_regime: &str,
+        min_sharpe: f64,
+    ) -> Option<GenerationMetadata> {
         let archived = self.catalog.list_archived_generations();
-        archived.into_iter()
+        archived
+            .into_iter()
             .filter(|g| g.active_regime == current_regime && g.sharpe_ratio >= min_sharpe)
-            .max_by(|a, b| a.teleonomia_score.partial_cmp(&b.teleonomia_score).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| {
+                a.teleonomia_score
+                    .partial_cmp(&b.teleonomia_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     }
 }

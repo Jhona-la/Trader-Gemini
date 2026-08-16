@@ -30,14 +30,14 @@ struct SystemState {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = stdout();
-    
+
     // Configurar terminal interactiva
     execute!(stdout, EnterAlternateScreen, Hide)?;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_millis(50))
         .build()?;
-    
+
     let url = "http://127.0.0.1:3000/api/state";
     let initial_capital = std::env::var("INITIAL_CAPITAL")
         .unwrap_or_else(|_| "0.0".to_string())
@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(response) => {
                 if let Ok(state) = response.json::<SystemState>().await {
                     execute!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
-                    
+
                     // Render Header
                     execute!(
                         stdout,
@@ -59,34 +59,104 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Print("====================================================\n"),
                         ResetColor
                     )?;
-                    
+
                     // Render Metrics
-                    let pnl_total = if initial_capital > 0.0 { state.unified_capital - initial_capital } else { 0.0 };
-                    let pnl_color = if pnl_total >= 0.0 { Color::Green } else { Color::Red };
-                    let un_color = if state.pnl_unrealized_scalp >= 0.0 { Color::Green } else { Color::Red };
-                    let growth = if initial_capital > 0.0 { ((state.unified_capital - initial_capital) / initial_capital) * 100.0 } else { 0.0 };
-                    
+                    let pnl_total = if initial_capital > 0.0 {
+                        state.unified_capital - initial_capital
+                    } else {
+                        0.0
+                    };
+                    let pnl_color = if pnl_total >= 0.0 {
+                        Color::Green
+                    } else {
+                        Color::Red
+                    };
+                    let un_color = if state.pnl_unrealized_scalp >= 0.0 {
+                        Color::Green
+                    } else {
+                        Color::Red
+                    };
+                    let growth = if initial_capital > 0.0 {
+                        ((state.unified_capital - initial_capital) / initial_capital) * 100.0
+                    } else {
+                        0.0
+                    };
+
                     execute!(
                         stdout,
                         Print("\n"),
-                        SetForegroundColor(Color::Magenta), Print(format!(">> CAPITAL:       ${:.4}\n", state.unified_capital)),
-                        SetForegroundColor(Color::White), Print(if initial_capital > 0.0 { format!(">> COMPOUND GRO.: {:.2}%\n", growth) } else { ">> COMPOUND GRO.: N/A (Missing INITIAL_CAPITAL)\n".to_string() }),
-                        SetForegroundColor(pnl_color), Print(if initial_capital > 0.0 { format!(">> PNL NETO TOT.: ${:.4}\n", pnl_total) } else { ">> PNL NETO TOT.: N/A\n".to_string() }),
+                        SetForegroundColor(Color::Magenta),
+                        Print(format!(">> CAPITAL:       ${:.4}\n", state.unified_capital)),
+                        SetForegroundColor(Color::White),
+                        Print(if initial_capital > 0.0 {
+                            format!(">> COMPOUND GRO.: {:.2}%\n", growth)
+                        } else {
+                            ">> COMPOUND GRO.: N/A (Missing INITIAL_CAPITAL)\n".to_string()
+                        }),
+                        SetForegroundColor(pnl_color),
+                        Print(if initial_capital > 0.0 {
+                            format!(">> PNL NETO TOT.: ${:.4}\n", pnl_total)
+                        } else {
+                            ">> PNL NETO TOT.: N/A\n".to_string()
+                        }),
                         Print("\n"),
-                        SetForegroundColor(Color::Cyan), Print("--- ⚡ SCALP ENGINE ---\n"),
-                        SetForegroundColor(Color::Yellow), Print(format!(">> WIN RATE:       {:.2}%\n", state.win_rate_scalp * 100.0)),
-                        SetForegroundColor(Color::White), Print(format!(">> GROSS PNL:      ${:.4}\n", state.pnl_gross_scalp)),
-                        SetForegroundColor(Color::White), Print(format!(">> NET PNL (FEES): ${:.4}\n", state.pnl_realized_scalp)),
-                        SetForegroundColor(un_color), Print(format!(">> UNREALIZED PNL: ${:.4}\n", state.pnl_unrealized_scalp)),
+                        SetForegroundColor(Color::Cyan),
+                        Print("--- ⚡ SCALP ENGINE ---\n"),
+                        SetForegroundColor(Color::Yellow),
+                        Print(format!(
+                            ">> WIN RATE:       {:.2}%\n",
+                            state.win_rate_scalp * 100.0
+                        )),
+                        SetForegroundColor(Color::White),
+                        Print(format!(
+                            ">> GROSS PNL:      ${:.4}\n",
+                            state.pnl_gross_scalp
+                        )),
+                        SetForegroundColor(Color::White),
+                        Print(format!(
+                            ">> NET PNL (FEES): ${:.4}\n",
+                            state.pnl_realized_scalp
+                        )),
+                        SetForegroundColor(un_color),
+                        Print(format!(
+                            ">> UNREALIZED PNL: ${:.4}\n",
+                            state.pnl_unrealized_scalp
+                        )),
                         Print("\n"),
-                        SetForegroundColor(Color::Magenta), Print("--- 🚀 SWING ENGINE ---\n"),
-                        SetForegroundColor(Color::Yellow), Print(format!(">> WIN RATE:       {:.2}%\n", state.win_rate_swing * 100.0)),
-                        SetForegroundColor(Color::White), Print(format!(">> GROSS PNL:      ${:.4}\n", state.pnl_gross_swing)),
-                        SetForegroundColor(Color::White), Print(format!(">> NET PNL (FEES): ${:.4}\n", state.pnl_realized_swing)),
-                        SetForegroundColor(if state.pnl_unrealized_swing >= 0.0 { Color::Green } else { Color::Red }), Print(format!(">> UNREALIZED PNL: ${:.4}\n", state.pnl_unrealized_swing)),
+                        SetForegroundColor(Color::Magenta),
+                        Print("--- 🚀 SWING ENGINE ---\n"),
+                        SetForegroundColor(Color::Yellow),
+                        Print(format!(
+                            ">> WIN RATE:       {:.2}%\n",
+                            state.win_rate_swing * 100.0
+                        )),
+                        SetForegroundColor(Color::White),
+                        Print(format!(
+                            ">> GROSS PNL:      ${:.4}\n",
+                            state.pnl_gross_swing
+                        )),
+                        SetForegroundColor(Color::White),
+                        Print(format!(
+                            ">> NET PNL (FEES): ${:.4}\n",
+                            state.pnl_realized_swing
+                        )),
+                        SetForegroundColor(if state.pnl_unrealized_swing >= 0.0 {
+                            Color::Green
+                        } else {
+                            Color::Red
+                        }),
+                        Print(format!(
+                            ">> UNREALIZED PNL: ${:.4}\n",
+                            state.pnl_unrealized_swing
+                        )),
                         Print("\n"),
-                        SetForegroundColor(Color::DarkGrey), Print(format!(">> LEVERAGE:       {:.1}x\n", state.global_leverage)),
-                        SetForegroundColor(Color::DarkGrey), Print(format!(">> ENGINE TICKS:   {}\n", state.tick_counter)),
+                        SetForegroundColor(Color::DarkGrey),
+                        Print(format!(
+                            ">> LEVERAGE:       {:.1}x\n",
+                            state.global_leverage
+                        )),
+                        SetForegroundColor(Color::DarkGrey),
+                        Print(format!(">> ENGINE TICKS:   {}\n", state.tick_counter)),
                         Print("\n"),
                         SetForegroundColor(Color::Cyan),
                         Print("====================================================\n"),
@@ -105,11 +175,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
             }
         }
-        
+
         // 10 Hz refresh rate
         sleep(Duration::from_millis(100)).await;
     }
-    
+
     // #[allow(unreachable_code)]
     // execute!(stdout, Show, LeaveAlternateScreen)?;
     // Ok(())

@@ -1,3 +1,5 @@
+> ⚠️ **NOTA F0 (2026-08-16):** Las referencias a `technical.py` / `ml_strategy.py` corresponden a la era Python (archivada). Las estrategias vivas están en Rust: `crates/strategy-core`, `crates/god-engine-core` (scalp+swing), `crates/signal-engine`. Documentación viva: `docs/INVENTORY.md`.
+
 # 🧠 TRADER GEMINI: DOCUMENTACIÓN DE ESTRATEGIAS (STRATEGIES.md)
 **Documento Maestro de Orquestación Algorítmica y Señales**
 

@@ -36,12 +36,10 @@ impl AtomicF64 {
         loop {
             let current_f = f64::from_bits(current);
             let new_val = current_f + val;
-            match self.0.compare_exchange_weak(
-                current,
-                new_val.to_bits(),
-                order,
-                Ordering::Relaxed,
-            ) {
+            match self
+                .0
+                .compare_exchange_weak(current, new_val.to_bits(), order, Ordering::Relaxed)
+            {
                 Ok(v) => return f64::from_bits(v),
                 Err(v) => current = v,
             }
@@ -49,13 +47,17 @@ impl AtomicF64 {
     }
 
     #[inline(always)]
-    pub fn compare_exchange(&self, current: f64, new: f64, success: Ordering, failure: Ordering) -> Result<f64, f64> {
-        match self.0.compare_exchange(
-            current.to_bits(),
-            new.to_bits(),
-            success,
-            failure,
-        ) {
+    pub fn compare_exchange(
+        &self,
+        current: f64,
+        new: f64,
+        success: Ordering,
+        failure: Ordering,
+    ) -> Result<f64, f64> {
+        match self
+            .0
+            .compare_exchange(current.to_bits(), new.to_bits(), success, failure)
+        {
             Ok(v) => Ok(f64::from_bits(v)),
             Err(v) => Err(f64::from_bits(v)),
         }

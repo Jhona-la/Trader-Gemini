@@ -1,6 +1,9 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::math_kernels::{RecursiveHurst, ObiAcceleration, FundingRateElasticity, ContinuousVPIN, ShannonEntropy, ExponentialDecayTensor};
+use crate::math_kernels::{
+    ContinuousVPIN, ExponentialDecayTensor, FundingRateElasticity, ObiAcceleration, RecursiveHurst,
+    ShannonEntropy,
+};
 use feature_engine::OrderFlowTracker;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub static DROP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -109,22 +112,22 @@ impl StatefulEngine {
         } else {
             let alpha_fast = 2.0 / (12.0 + 1.0);
             let alpha_slow = 2.0 / (26.0 + 1.0);
-            
+
             self.ema_fast = (price - self.ema_fast) * alpha_fast + self.ema_fast;
             self.ema_slow = (price - self.ema_slow) * alpha_slow + self.ema_slow;
-            
+
             let diff = (price - self.last_price).abs();
             let new_v_t = (self.v_t * 0.8) + (diff * 0.2);
             self.a_t = new_v_t - self.v_t;
             self.v_t = new_v_t;
-            
+
             let norm_return = (price - self.last_price) / self.last_price;
             self.last_entropy = self.entropy.update(norm_return);
         }
-        
+
         self.hurst.update(price);
         self.cvpin.update(_volume, price < self.last_price); // Approximation: tick down = seller initiated
-        
+
         if self.kline_start_ms == 0 {
             self.kline_start_ms = event_time_ms;
             self.kline_open = price;
@@ -135,11 +138,11 @@ impl StatefulEngine {
             self.kline_high = self.kline_high.max(price);
             self.kline_low = self.kline_low.min(price);
             self.kline_volume += _volume;
-            
+
             // Generate 1-minute Kline internally (60,000 ms)
             if event_time_ms - self.kline_start_ms >= 60000 {
                 self.omni.update(price, self.kline_high, self.kline_low);
-                
+
                 self.kline_start_ms = event_time_ms;
                 self.kline_open = price;
                 self.kline_high = price;
@@ -151,21 +154,28 @@ impl StatefulEngine {
         self.last_price = price;
         self.tick_count += 1;
     }
-    
+
     pub fn update_trade_flow(&mut self, volume: f64, is_buyer_maker: bool) {
         self.order_flow.update(volume, is_buyer_maker);
     }
-    
+
     /// Updates the Order Flow Imbalance (OFI) predictive model
-    pub fn update_ofi(&mut self, bid_price: f64, ask_price: f64, bid_qty: f64, ask_qty: f64) -> f64 {
-        self.ofi_model.update(bid_price, ask_price, bid_qty, ask_qty)
+    pub fn update_ofi(
+        &mut self,
+        bid_price: f64,
+        ask_price: f64,
+        bid_qty: f64,
+        ask_qty: f64,
+    ) -> f64 {
+        self.ofi_model
+            .update(bid_price, ask_price, bid_qty, ask_qty)
     }
-    
+
     pub fn process_kline(&mut self, _open: f64, high: f64, low: f64, close: f64, _volume: f64) {
         self.omni.update(close, high, low);
         self.hurst.update(close);
         self.last_price = close;
-        
+
         if self.ema_fast == 0.0 {
             self.ema_fast = close;
             self.ema_slow = close;
@@ -175,19 +185,25 @@ impl StatefulEngine {
             self.ema_fast = (close - self.ema_fast) * alpha_fast + self.ema_fast;
             self.ema_slow = (close - self.ema_slow) * alpha_slow + self.ema_slow;
         }
-        
+
         self.v_t = self.v_t * 0.8 + (high - low) * 0.2;
     }
-    
-    pub fn update_macro_features(&mut self, obi: f64, funding_rate: f64, dex_severity: f64, ts_ms: u64) {
+
+    pub fn update_macro_features(
+        &mut self,
+        obi: f64,
+        funding_rate: f64,
+        dex_severity: f64,
+        ts_ms: u64,
+    ) {
         self.obi_accel.update(obi);
         self.fr_elasticity.update(funding_rate, self.last_price);
         self.dark_alpha.apply_event(dex_severity, ts_ms);
     }
-    
+
     pub fn get_market_regime(&self) -> MarketRegime {
         let h = self.hurst.current(); // Read last computed Hurst — NO double-update
-        
+
         if h < 0.45 {
             MarketRegime::Scalping // Mean reverting
         } else if h > 0.55 {
@@ -203,7 +219,7 @@ impl StatefulEngine {
         } else {
             0.0
         };
-        
+
         let hurst = self.hurst.current();
         let ofi = self.ofi_model.ema_ofi;
         let vol_delta = self.order_flow.get_volume_delta_ratio();
@@ -230,15 +246,41 @@ impl StatefulEngine {
         let omni_feats = self.omni.extract_features();
 
         [
-            micro[0], micro[1], micro[2], micro[3], micro[4],
-            micro[5], micro[6], micro[7], micro[8], micro[9],
-            micro[10], micro[11],
+            micro[0],
+            micro[1],
+            micro[2],
+            micro[3],
+            micro[4],
+            micro[5],
+            micro[6],
+            micro[7],
+            micro[8],
+            micro[9],
+            micro[10],
+            micro[11],
             // Omni Features (22 slots)
-            omni_feats[0], omni_feats[1], omni_feats[2], omni_feats[3], omni_feats[4],
-            omni_feats[5], omni_feats[6], omni_feats[7], omni_feats[8], omni_feats[9],
-            omni_feats[10], omni_feats[11], omni_feats[12], omni_feats[13], omni_feats[14],
-            omni_feats[15], omni_feats[16], omni_feats[17], omni_feats[18], omni_feats[19],
-            omni_feats[20], omni_feats[21],
+            omni_feats[0],
+            omni_feats[1],
+            omni_feats[2],
+            omni_feats[3],
+            omni_feats[4],
+            omni_feats[5],
+            omni_feats[6],
+            omni_feats[7],
+            omni_feats[8],
+            omni_feats[9],
+            omni_feats[10],
+            omni_feats[11],
+            omni_feats[12],
+            omni_feats[13],
+            omni_feats[14],
+            omni_feats[15],
+            omni_feats[16],
+            omni_feats[17],
+            omni_feats[18],
+            omni_feats[19],
+            omni_feats[20],
+            omni_feats[21],
         ]
     }
 

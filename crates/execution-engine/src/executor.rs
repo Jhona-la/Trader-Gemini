@@ -1,9 +1,12 @@
-use crate::binance_api::{sign_payload_to_buffer, ORDER_TYPE_MARKET, ORDER_TYPE_LIMIT, SIDE_BUY, SIDE_SELL, TIME_IN_FORCE_IOC};
+use crate::binance_api::{
+    sign_payload_to_buffer, ORDER_TYPE_LIMIT, ORDER_TYPE_MARKET, SIDE_BUY, SIDE_SELL,
+    TIME_IN_FORCE_IOC,
+};
 use crate::ExecutionPayload;
 use risk_engine::ValidatedOrder;
 use signal_engine::SignalType;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::sync::atomic::{AtomicU64, AtomicUsize, AtomicBool, Ordering};
 
 use crate::client::{BinanceClient, ZeroAllocBuffer};
 
@@ -67,7 +70,7 @@ pub trait ExecutionProvider: Send + Sync {
         client_order_id: &str,
     ) -> Result<(), String>;
 
-    /// FASE 22: Advanced API Exploitation - Iceberg Limit Orders 
+    /// FASE 22: Advanced API Exploitation - Iceberg Limit Orders
     /// Oculta volumen real dividiéndolo en icebergQty para evitar ser "cazado" por HFTs institucionales.
     async fn execute_iceberg_limit(
         &self,
@@ -217,14 +220,18 @@ impl OrderExecutor {
 
         if bw1m > max_bw1m || bo10s > max_bo10s || bo1m > max_bo1m {
             // BACKPRESSURE: Don't kill the whole system, just block this specific execution
-            return Err(format!("RATE LIMIT APPROACHING: W:{} O10:{} O1m:{}. Throttling execution.", bw1m, bo10s, bo1m));
+            return Err(format!(
+                "RATE LIMIT APPROACHING: W:{} O10:{} O1m:{}. Throttling execution.",
+                bw1m, bo10s, bo1m
+            ));
         }
 
         let current_sec = timestamp_ms / 1000;
         let last_reset = self.last_reset_timestamp.load(Ordering::Relaxed);
-        
+
         if current_sec > last_reset {
-            self.last_reset_timestamp.store(current_sec, Ordering::Relaxed);
+            self.last_reset_timestamp
+                .store(current_sec, Ordering::Relaxed);
             self.rate_limit_counter.store(1, Ordering::Relaxed);
         } else {
             let ops = self.rate_limit_counter.fetch_add(1, Ordering::Relaxed);
@@ -257,7 +264,8 @@ impl OrderExecutor {
 
         // FASE 21: Ensure volume accounts for fees margin safety buffer dynamically via Genome
         // We add the EV fee buffer multiplier to the required volume to ensure it never hits the $5 limit due to fees/slippage
-        let raw_quantity = (order.volume_usd * order.leverage * order.fee_buffer_multiplier) / current_price;
+        let raw_quantity =
+            (order.volume_usd * order.leverage * order.fee_buffer_multiplier) / current_price;
         let final_quantity = Self::round_to_step_size(raw_quantity, step_size);
 
         if final_quantity == 0.0 {
@@ -290,7 +298,13 @@ impl OrderExecutor {
         // Construir Query String (Formato URL Encoded para REST API)
         let query_string = format!(
             "symbol={}&side={}&positionSide={}&type={}&quantity={}{}&timestamp={}",
-            symbol, side, if side == SIDE_BUY { "LONG" } else { "SHORT" }, order_type, final_quantity, price_str, timestamp
+            symbol,
+            side,
+            if side == SIDE_BUY { "LONG" } else { "SHORT" },
+            order_type,
+            final_quantity,
+            price_str,
+            timestamp
         );
 
         // Firmar
@@ -305,7 +319,11 @@ impl OrderExecutor {
             quantity: final_quantity,
             order_type: order_type.to_string(),
             time_in_force: time_in_force.to_string(),
-            position_side: if side == SIDE_BUY { "LONG".to_string() } else { "SHORT".to_string() },
+            position_side: if side == SIDE_BUY {
+                "LONG".to_string()
+            } else {
+                "SHORT".to_string()
+            },
             signature,
             timestamp,
         })
@@ -314,7 +332,8 @@ impl OrderExecutor {
 
 impl ExecutionProvider for OrderExecutor {
     fn trigger_kill_switch(&self) {
-        self.kill_switch.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.kill_switch
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Despacha la orden a Binance usando el cliente HTTP hiper-optimizado.
@@ -335,17 +354,20 @@ impl ExecutionProvider for OrderExecutor {
             println!("📝 [PAPER TRADING LOCAL] Ejecutando orden de {:?} para {}. No se envió a Testnet API para evitar divergencia de latencia.", order.signal, symbol);
             return Ok(());
         }
-        
+
         // Parametrizar dinámicamente el Leverage (Kelly Criterion)
         let target_leverage = order.leverage as u32;
         let needs_update = {
             let cache = self.active_leverage.read().unwrap();
             cache.get(symbol).copied().unwrap_or(0) != target_leverage
         };
-        
+
         if needs_update {
             if let Err(e) = self.set_leverage(symbol, target_leverage).await {
-                println!("⚠️ [EXECUTION] Failed to set dynamic leverage for {}: {}", symbol, e);
+                println!(
+                    "⚠️ [EXECUTION] Failed to set dynamic leverage for {}: {}",
+                    symbol, e
+                );
             } else {
                 let mut cache = self.active_leverage.write().unwrap();
                 cache.insert(symbol.to_string(), target_leverage);
@@ -357,7 +379,7 @@ impl ExecutionProvider for OrderExecutor {
             .unwrap()
             .as_millis() as u64;
         self.check_rate_limits(timestamp)?;
-        
+
         if let Some(payload) = self.build_payload(order, symbol, current_price, step_size) {
             let mut buf = ZeroAllocBuffer::new();
             buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -408,7 +430,10 @@ impl ExecutionProvider for OrderExecutor {
         step_size: f64,
     ) -> Result<(), String> {
         if quantity.is_infinite() || quantity.is_nan() || quantity <= 0.0 {
-            return Err("SEGURIDAD: quantity inválido (infinito, NaN o <= 0.0). Orden abortada.".to_string());
+            return Err(
+                "SEGURIDAD: quantity inválido (infinito, NaN o <= 0.0). Orden abortada."
+                    .to_string(),
+            );
         }
         let final_quantity = Self::round_to_step_size(quantity, step_size);
         if final_quantity == 0.0 {
@@ -416,7 +441,10 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         if self.is_paper_trading {
-            println!("📝 [PAPER TRADING LOCAL] Ejecutando raw_qty {} para {}. Cero latencia simulada.", final_quantity, symbol);
+            println!(
+                "📝 [PAPER TRADING LOCAL] Ejecutando raw_qty {} para {}. Cero latencia simulada.",
+                final_quantity, symbol
+            );
             return Ok(());
         }
 
@@ -491,7 +519,7 @@ impl ExecutionProvider for OrderExecutor {
         if final_quantity == 0.0 {
             return Err("Volumen 0 despues de round_to_step_size".to_string());
         }
-        
+
         let final_price = Self::round_to_step_size(price, tick_size);
 
         if self.is_paper_trading {
@@ -560,7 +588,7 @@ impl ExecutionProvider for OrderExecutor {
         }
     }
 
-    /// Implementa el algoritmo Maker-Chase: Coloca orden Límite Maker (GTX), espera 50ms, 
+    /// Implementa el algoritmo Maker-Chase: Coloca orden Límite Maker (GTX), espera 50ms,
     /// si no se llena (o por simplicidad, la cancela preventivamente), y cae a orden Market (Taker).
     #[inline(always)]
     async fn execute_maker_chase(
@@ -574,15 +602,30 @@ impl ExecutionProvider for OrderExecutor {
         client_order_id: &str,
     ) -> Result<(), String> {
         if self.is_paper_trading {
-            println!("📝 [PAPER TRADING LOCAL] Ejecutando MAKER_CHASE para {}. Cero latencia simulada.", symbol);
+            println!(
+                "📝 [PAPER TRADING LOCAL] Ejecutando MAKER_CHASE para {}. Cero latencia simulada.",
+                symbol
+            );
             return Ok(());
         }
 
         // 1. Intentar colocar la orden Límite Maker
-        let maker_res = self.execute_limit_order(symbol, is_long, quantity, price, step_size, tick_size, client_order_id).await;
+        let maker_res = self
+            .execute_limit_order(
+                symbol,
+                is_long,
+                quantity,
+                price,
+                step_size,
+                tick_size,
+                client_order_id,
+            )
+            .await;
         if maker_res.is_err() {
             // Si la orden GTX es rechazada (ej. cruza el libro inmediatamente), caemos a Taker.
-            return self.execute_raw_qty(symbol, is_long, quantity, step_size).await;
+            return self
+                .execute_raw_qty(symbol, is_long, quantity, step_size)
+                .await;
         }
 
         // 2. Esperar 50ms (Tolerancia de Latencia Cuántica)
@@ -592,7 +635,8 @@ impl ExecutionProvider for OrderExecutor {
         let _ = self.cancel_order(symbol, client_order_id).await;
 
         // 4. Ejecutar como Taker lo que haya quedado (Market Order)
-        self.execute_raw_qty(symbol, is_long, quantity, step_size).await
+        self.execute_raw_qty(symbol, is_long, quantity, step_size)
+            .await
     }
 
     /// FASE 8: Immediate-Or-Cancel. Intenta llenar limit; si no puede, se cancela automáticamente por Binance.
@@ -608,7 +652,9 @@ impl ExecutionProvider for OrderExecutor {
         client_order_id: &str,
     ) -> Result<(), String> {
         let final_quantity = Self::round_to_step_size(quantity, step_size);
-        if final_quantity == 0.0 { return Err("Volumen 0".to_string()); }
+        if final_quantity == 0.0 {
+            return Err("Volumen 0".to_string());
+        }
         let final_price = Self::round_to_step_size(price, tick_size);
 
         if self.is_paper_trading {
@@ -617,40 +663,57 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) { "https://testnet.binancefuture.com/fapi/v1/order?" } else { "https://fapi.binance.com/fapi/v1/order?" });
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/order?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/order?"
+        });
         let payload_start = buf.as_str().len();
 
-        buf.push_str("symbol="); buf.push_str(symbol);
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
         buf.push_str("&positionSide=");
         buf.push_str(if is_long { "LONG" } else { "SHORT" });
         buf.push_str("&positionSide=");
         buf.push_str(if is_long { "LONG" } else { "SHORT" });
-        buf.push_str("&type="); buf.push_str(ORDER_TYPE_LIMIT);
-        buf.push_str("&timeInForce="); buf.push_str(TIME_IN_FORCE_IOC);
-        buf.push_str("&quantity="); buf.push_f64(final_quantity);
-        buf.push_str("&price="); buf.push_f64(final_price);
-        buf.push_str("&newClientOrderId="); buf.push_str(client_order_id);
-        buf.push_str("&timestamp="); buf.push_u64(timestamp);
+        buf.push_str("&type=");
+        buf.push_str(ORDER_TYPE_LIMIT);
+        buf.push_str("&timeInForce=");
+        buf.push_str(TIME_IN_FORCE_IOC);
+        buf.push_str("&quantity=");
+        buf.push_f64(final_quantity);
+        buf.push_str("&price=");
+        buf.push_f64(final_price);
+        buf.push_str("&newClientOrderId=");
+        buf.push_str(client_order_id);
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
         let api_secret = self.api_secret.read().unwrap().clone();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
-        buf.push_str("&signature="); buf.push_str(signature);
+        buf.push_str("&signature=");
+        buf.push_str(signature);
 
         let res = self.client.execute_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res { self.update_limits(limits); }
+        if let Ok(limits) = &res {
+            self.update_limits(limits);
+        }
         res.map(|_| ())
     }
 
-    /// FASE 22: Advanced API Exploitation - Iceberg Limit Orders 
+    /// FASE 22: Advanced API Exploitation - Iceberg Limit Orders
     #[inline(always)]
     async fn execute_iceberg_limit(
         &self,
@@ -664,11 +727,15 @@ impl ExecutionProvider for OrderExecutor {
         client_order_id: &str,
     ) -> Result<(), String> {
         let final_quantity = Self::round_to_step_size(quantity, step_size);
-        if final_quantity == 0.0 { return Err("Volumen 0".to_string()); }
-        
+        if final_quantity == 0.0 {
+            return Err("Volumen 0".to_string());
+        }
+
         let final_iceberg_qty = Self::round_to_step_size(iceberg_qty, step_size);
-        if final_iceberg_qty == 0.0 { return Err("Iceberg Volumen 0".to_string()); }
-        
+        if final_iceberg_qty == 0.0 {
+            return Err("Iceberg Volumen 0".to_string());
+        }
+
         let final_price = Self::round_to_step_size(price, tick_size);
 
         if self.is_paper_trading {
@@ -677,37 +744,55 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) { "https://testnet.binancefuture.com/fapi/v1/order?" } else { "https://fapi.binance.com/fapi/v1/order?" });
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/order?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/order?"
+        });
         let payload_start = buf.as_str().len();
 
-        buf.push_str("symbol="); buf.push_str(symbol);
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
         buf.push_str("&positionSide=");
         buf.push_str(if is_long { "LONG" } else { "SHORT" });
         buf.push_str("&positionSide=");
         buf.push_str(if is_long { "LONG" } else { "SHORT" });
-        buf.push_str("&type="); buf.push_str(ORDER_TYPE_LIMIT);
-        buf.push_str("&timeInForce="); buf.push_str(crate::binance_api::TIME_IN_FORCE_GTC); // Iceberg requiere GTC
-        buf.push_str("&quantity="); buf.push_f64(final_quantity);
-        buf.push_str("&icebergQty="); buf.push_f64(final_iceberg_qty);
-        buf.push_str("&price="); buf.push_f64(final_price);
-        buf.push_str("&newClientOrderId="); buf.push_str(client_order_id);
-        buf.push_str("&timestamp="); buf.push_u64(timestamp);
+        buf.push_str("&type=");
+        buf.push_str(ORDER_TYPE_LIMIT);
+        buf.push_str("&timeInForce=");
+        buf.push_str(crate::binance_api::TIME_IN_FORCE_GTC); // Iceberg requiere GTC
+        buf.push_str("&quantity=");
+        buf.push_f64(final_quantity);
+        buf.push_str("&icebergQty=");
+        buf.push_f64(final_iceberg_qty);
+        buf.push_str("&price=");
+        buf.push_f64(final_price);
+        buf.push_str("&newClientOrderId=");
+        buf.push_str(client_order_id);
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
         let api_secret = self.api_secret.read().unwrap().clone();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
-        buf.push_str("&signature="); buf.push_str(signature);
+        buf.push_str("&signature=");
+        buf.push_str(signature);
 
         let res = self.client.execute_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res { self.update_limits(limits); }
+        if let Ok(limits) = &res {
+            self.update_limits(limits);
+        }
         res.map(|_| ())
     }
 
@@ -721,7 +806,9 @@ impl ExecutionProvider for OrderExecutor {
         step_size: f64,
     ) -> Result<(), String> {
         let final_quantity = Self::round_to_step_size(quantity, step_size);
-        if final_quantity <= 0.0 { return Err("Volumen 0 despues de round_to_step_size".to_string()); }
+        if final_quantity <= 0.0 {
+            return Err("Volumen 0 despues de round_to_step_size".to_string());
+        }
 
         if self.is_paper_trading {
             println!("📝 [PAPER TRADING LOCAL] Reduciendo posicion de {} para {}. Cero latencia simulada.", final_quantity, symbol);
@@ -729,34 +816,48 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long_close { SIDE_SELL } else { SIDE_BUY };
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) { "https://testnet.binancefuture.com/fapi/v1/order?" } else { "https://fapi.binance.com/fapi/v1/order?" });
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/order?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/order?"
+        });
         let payload_start = buf.as_str().len();
 
-        buf.push_str("symbol="); buf.push_str(symbol);
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
         buf.push_str("&positionSide=");
         buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
         buf.push_str("&positionSide=");
         buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
-        buf.push_str("&type="); buf.push_str(ORDER_TYPE_MARKET);
+        buf.push_str("&type=");
+        buf.push_str(ORDER_TYPE_MARKET);
         buf.push_str("&reduceOnly=true");
-        buf.push_str("&quantity="); buf.push_f64(final_quantity);
-        buf.push_str("&timestamp="); buf.push_u64(timestamp);
+        buf.push_str("&quantity=");
+        buf.push_f64(final_quantity);
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
         let api_secret = self.api_secret.read().unwrap().clone();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
-        buf.push_str("&signature="); buf.push_str(signature);
+        buf.push_str("&signature=");
+        buf.push_str(signature);
 
         let res = self.client.execute_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res { self.update_limits(limits); }
+        if let Ok(limits) = &res {
+            self.update_limits(limits);
+        }
         res.map(|_| ())
     }
 
@@ -765,18 +866,20 @@ impl ExecutionProvider for OrderExecutor {
     async fn execute_exchange_trailing_stop(
         &self,
         symbol: &str,
-        is_long: bool, 
+        is_long: bool,
         quantity: f64,
         activation_price: f64,
-        callback_rate: f64, 
+        callback_rate: f64,
         step_size: f64,
         tick_size: f64,
         client_order_id: &str,
     ) -> Result<(), String> {
         let final_quantity = Self::round_to_step_size(quantity, step_size);
-        if final_quantity == 0.0 { return Err("Volumen 0".to_string()); }
+        if final_quantity == 0.0 {
+            return Err("Volumen 0".to_string());
+        }
         let final_price = Self::round_to_step_size(activation_price, tick_size);
-        
+
         // El callbackRate en binance futures debe ser entre 0.1 y 5.
         let safe_callback = callback_rate.clamp(0.1, 5.0);
 
@@ -786,14 +889,22 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) { "https://testnet.binancefuture.com/fapi/v1/order?" } else { "https://fapi.binance.com/fapi/v1/order?" });
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/order?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/order?"
+        });
         let payload_start = buf.as_str().len();
 
-        buf.push_str("symbol="); buf.push_str(symbol);
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
         buf.push_str("&positionSide=");
@@ -801,21 +912,29 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&positionSide=");
         buf.push_str(if is_long { "SHORT" } else { "LONG" });
         buf.push_str("&type=TRAILING_STOP_MARKET");
-        buf.push_str("&quantity="); buf.push_f64(final_quantity);
-        buf.push_str("&activationPrice="); buf.push_f64(final_price);
-        buf.push_str("&callbackRate="); buf.push_f64(safe_callback);
-        buf.push_str("&newClientOrderId="); buf.push_str(client_order_id);
-        buf.push_str("&timestamp="); buf.push_u64(timestamp);
+        buf.push_str("&quantity=");
+        buf.push_f64(final_quantity);
+        buf.push_str("&activationPrice=");
+        buf.push_f64(final_price);
+        buf.push_str("&callbackRate=");
+        buf.push_f64(safe_callback);
+        buf.push_str("&newClientOrderId=");
+        buf.push_str(client_order_id);
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
         let api_secret = self.api_secret.read().unwrap().clone();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
-        buf.push_str("&signature="); buf.push_str(signature);
+        buf.push_str("&signature=");
+        buf.push_str(signature);
 
         let res = self.client.execute_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res { self.update_limits(limits); }
+        if let Ok(limits) = &res {
+            self.update_limits(limits);
+        }
         res.map(|_| ())
     }
 
@@ -833,8 +952,10 @@ impl ExecutionProvider for OrderExecutor {
         base_client_id: &str,
     ) -> Result<(), String> {
         let final_quantity = Self::round_to_step_size(quantity, step_size);
-        if final_quantity == 0.0 { return Err("Volumen 0".to_string()); }
-        
+        if final_quantity == 0.0 {
+            return Err("Volumen 0".to_string());
+        }
+
         let final_tp = Self::round_to_step_size(take_profit_price, tick_size);
         let final_sl = Self::round_to_step_size(stop_loss_price, tick_size);
 
@@ -844,16 +965,24 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long_close { SIDE_SELL } else { SIDE_BUY };
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
         self.check_rate_limits(timestamp)?;
 
-        let base_url = if self.client.is_testnet.load(Ordering::Relaxed) { "https://testnet.binancefuture.com/fapi/v1/order?" } else { "https://fapi.binance.com/fapi/v1/order?" };
+        let base_url = if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/order?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/order?"
+        };
 
         // 1. Build Stop Loss Order (STOP_MARKET)
         let mut sl_buf = ZeroAllocBuffer::new();
         sl_buf.push_str(base_url);
         let sl_payload_start = sl_buf.as_str().len();
-        sl_buf.push_str("symbol="); sl_buf.push_str(symbol);
+        sl_buf.push_str("symbol=");
+        sl_buf.push_str(symbol);
         sl_buf.push_str("&side=");
         sl_buf.push_str(side);
         sl_buf.push_str("&positionSide=");
@@ -862,16 +991,21 @@ impl ExecutionProvider for OrderExecutor {
         sl_buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
         sl_buf.push_str("&type=STOP_MARKET");
         sl_buf.push_str("&reduceOnly=true");
-        sl_buf.push_str("&quantity="); sl_buf.push_f64(final_quantity);
-        sl_buf.push_str("&stopPrice="); sl_buf.push_f64(final_sl);
-        sl_buf.push_str("&newClientOrderId="); sl_buf.push_str(&format!("{}_SL", base_client_id));
-        sl_buf.push_str("&timestamp="); sl_buf.push_u64(timestamp);
+        sl_buf.push_str("&quantity=");
+        sl_buf.push_f64(final_quantity);
+        sl_buf.push_str("&stopPrice=");
+        sl_buf.push_f64(final_sl);
+        sl_buf.push_str("&newClientOrderId=");
+        sl_buf.push_str(&format!("{}_SL", base_client_id));
+        sl_buf.push_str("&timestamp=");
+        sl_buf.push_u64(timestamp);
 
         // 2. Build Take Profit Order (TAKE_PROFIT_MARKET)
         let mut tp_buf = ZeroAllocBuffer::new();
         tp_buf.push_str(base_url);
         let tp_payload_start = tp_buf.as_str().len();
-        tp_buf.push_str("symbol="); tp_buf.push_str(symbol);
+        tp_buf.push_str("symbol=");
+        tp_buf.push_str(symbol);
         tp_buf.push_str("&side=");
         tp_buf.push_str(side);
         tp_buf.push_str("&positionSide=");
@@ -880,22 +1014,28 @@ impl ExecutionProvider for OrderExecutor {
         tp_buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
         tp_buf.push_str("&type=TAKE_PROFIT_MARKET");
         tp_buf.push_str("&reduceOnly=true");
-        tp_buf.push_str("&quantity="); tp_buf.push_f64(final_quantity);
-        tp_buf.push_str("&stopPrice="); tp_buf.push_f64(final_tp);
-        tp_buf.push_str("&newClientOrderId="); tp_buf.push_str(&format!("{}_TP", base_client_id));
-        tp_buf.push_str("&timestamp="); tp_buf.push_u64(timestamp);
+        tp_buf.push_str("&quantity=");
+        tp_buf.push_f64(final_quantity);
+        tp_buf.push_str("&stopPrice=");
+        tp_buf.push_f64(final_tp);
+        tp_buf.push_str("&newClientOrderId=");
+        tp_buf.push_str(&format!("{}_TP", base_client_id));
+        tp_buf.push_str("&timestamp=");
+        tp_buf.push_u64(timestamp);
 
         let api_secret = self.api_secret.read().unwrap().clone();
-        
+
         let mut sig_buf_sl = [0u8; 64];
         let sl_payload = &sl_buf.as_str()[sl_payload_start..];
         sign_payload_to_buffer(sl_payload, &api_secret, &mut sig_buf_sl);
-        sl_buf.push_str("&signature="); sl_buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf_sl) });
+        sl_buf.push_str("&signature=");
+        sl_buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf_sl) });
 
         let mut sig_buf_tp = [0u8; 64];
         let tp_payload = &tp_buf.as_str()[tp_payload_start..];
         sign_payload_to_buffer(tp_payload, &api_secret, &mut sig_buf_tp);
-        tp_buf.push_str("&signature="); tp_buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf_tp) });
+        tp_buf.push_str("&signature=");
+        tp_buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf_tp) });
 
         // Fire both simultaneously to minimize latency
         let (sl_res, tp_res) = tokio::join!(
@@ -903,8 +1043,12 @@ impl ExecutionProvider for OrderExecutor {
             self.client.execute_order_payload(tp_buf.as_str())
         );
 
-        if let Ok(limits) = &sl_res { self.update_limits(limits); }
-        if let Ok(limits) = &tp_res { self.update_limits(limits); }
+        if let Ok(limits) = &sl_res {
+            self.update_limits(limits);
+        }
+        if let Ok(limits) = &tp_res {
+            self.update_limits(limits);
+        }
 
         if sl_res.is_err() && tp_res.is_err() {
             return Err("Ambas órdenes OCO fallaron.".to_string());
@@ -914,13 +1058,12 @@ impl ExecutionProvider for OrderExecutor {
 
     /// Cancela una orden activa usando el client_order_id
     #[inline(always)]
-    async fn cancel_order(
-        &self,
-        symbol: &str,
-        client_order_id: &str,
-    ) -> Result<(), String> {
+    async fn cancel_order(&self, symbol: &str, client_order_id: &str) -> Result<(), String> {
         if self.is_paper_trading {
-            println!("📝 [PAPER TRADING LOCAL] Orden Cancelada: {} en {}", client_order_id, symbol);
+            println!(
+                "📝 [PAPER TRADING LOCAL] Orden Cancelada: {} en {}",
+                client_order_id, symbol
+            );
             return Ok(());
         }
 
@@ -964,7 +1107,7 @@ impl ExecutionProvider for OrderExecutor {
     async fn fetch_server_time(&self) -> Result<i64, String> {
         let base_url = self.client.get_base_url();
         let url = format!("{}/fapi/v1/time", base_url);
-        
+
         match self.client.get_payload(&url).await {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
@@ -1014,12 +1157,13 @@ impl ExecutionProvider for OrderExecutor {
                 if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&text) {
                     if let Some(arr) = json_val.as_array() {
                         for item in arr {
-                            if let Some(amt_str) = item.get("positionAmt").and_then(|v| v.as_str()) {
+                            if let Some(amt_str) = item.get("positionAmt").and_then(|v| v.as_str())
+                            {
                                 if let Ok(amt) = amt_str.parse::<f64>() {
                                     if amt.abs() > 1e-8 {
                                         if let (Some(sym), Some(price_str)) = (
                                             item.get("symbol").and_then(|v| v.as_str()),
-                                            item.get("entryPrice").and_then(|v| v.as_str())
+                                            item.get("entryPrice").and_then(|v| v.as_str()),
                                         ) {
                                             if let Ok(entry_price) = price_str.parse::<f64>() {
                                                 open_positions.push(ActivePosition {
@@ -1072,11 +1216,12 @@ impl ExecutionProvider for OrderExecutor {
         match self.client.get_payload(buf.as_str()).await {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
-                
+
                 // Parse the JSON object using serde_json to find availableBalance
                 if let Ok(account_info) = serde_json::from_str::<serde_json::Value>(&text) {
                     // Try to fetch availableBalance first, fallback to totalWalletBalance
-                    let bal_str = account_info.get("availableBalance")
+                    let bal_str = account_info
+                        .get("availableBalance")
                         .or_else(|| account_info.get("totalWalletBalance"))
                         .and_then(|v| v.as_str());
 
@@ -1086,7 +1231,10 @@ impl ExecutionProvider for OrderExecutor {
                         }
                     }
                 }
-                Err(format!("Failed to parse balance from Binance API /fapi/v2/account. Response: {}", text))
+                Err(format!(
+                    "Failed to parse balance from Binance API /fapi/v2/account. Response: {}",
+                    text
+                ))
             }
             Err(e) => Err(e),
         }
@@ -1106,7 +1254,7 @@ impl ExecutionProvider for OrderExecutor {
         } else {
             buf.push_str("https://fapi.binance.com/fapi/v1/leverage?");
         }
-        
+
         let payload_start = buf.as_str().len();
         buf.push_str("symbol=");
         buf.push_str(symbol);
@@ -1167,10 +1315,14 @@ impl ExecutionProvider for OrderExecutor {
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
                     if let (Some(m_str), Some(t_str)) = (
                         json["makerCommissionRate"].as_str(),
-                        json["takerCommissionRate"].as_str()
+                        json["takerCommissionRate"].as_str(),
                     ) {
-                        let maker = m_str.parse::<f64>().map_err(|e| format!("Parse error maker fee: {}", e))?;
-                        let taker = t_str.parse::<f64>().map_err(|e| format!("Parse error taker fee: {}", e))?;
+                        let maker = m_str
+                            .parse::<f64>()
+                            .map_err(|e| format!("Parse error maker fee: {}", e))?;
+                        let taker = t_str
+                            .parse::<f64>()
+                            .map_err(|e| format!("Parse error taker fee: {}", e))?;
                         // CORRECCIÓN: No usar unwrap_or con fallbacks hardcodeados
                         // Si Binance devuelve datos que no se pueden parsear, es un error real
                         return Ok((maker, taker));
@@ -1189,7 +1341,7 @@ impl ExecutionProvider for OrderExecutor {
         } else {
             buf.push_str("https://fapi.binance.com/fapi/v1/exchangeInfo");
         }
-        
+
         match self.client.get_payload(buf.as_str()).await {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
@@ -1200,8 +1352,12 @@ impl ExecutionProvider for OrderExecutor {
                                 if let Some(filters) = sym_info["filters"].as_array() {
                                     for filter in filters {
                                         if filter["filterType"] == "MIN_NOTIONAL" {
-                                            if let Some(min_notional_str) = filter["notional"].as_str() {
-                                                if let Ok(min_notional) = min_notional_str.parse::<f64>() {
+                                            if let Some(min_notional_str) =
+                                                filter["notional"].as_str()
+                                            {
+                                                if let Ok(min_notional) =
+                                                    min_notional_str.parse::<f64>()
+                                                {
                                                     return Ok(min_notional);
                                                 }
                                             }
@@ -1212,7 +1368,10 @@ impl ExecutionProvider for OrderExecutor {
                         }
                     }
                 }
-                Err(format!("No se encontró MIN_NOTIONAL para el símbolo {} en la API.", symbol))
+                Err(format!(
+                    "No se encontró MIN_NOTIONAL para el símbolo {} en la API.",
+                    symbol
+                ))
             }
             Err(e) => Err(e),
         }

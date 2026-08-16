@@ -1,8 +1,8 @@
+use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
-use serde_json::Value;
 use std::time::Instant;
+use tokio::time::{sleep, Duration};
 
 /// World Bank Open Data Client
 /// API Indicators:
@@ -29,8 +29,11 @@ impl WorldBankClient {
 
     /// Fetches a World Bank indicator and returns the latest numeric value
     async fn fetch_indicator(&self, country: &str, indicator: &str) -> Option<f64> {
-        let url = format!("http://api.worldbank.org/v2/country/{}/indicator/{}?format=json&per_page=1", country, indicator);
-        
+        let url = format!(
+            "http://api.worldbank.org/v2/country/{}/indicator/{}?format=json&per_page=1",
+            country, indicator
+        );
+
         match self.client.get(&url).send().await {
             Ok(resp) => {
                 if let Ok(json) = resp.json::<Value>().await {
@@ -60,19 +63,24 @@ impl WorldBankClient {
             println!("🌍 [WORLD BANK] Daemon Started. Syncing Geopolitical Macro-Context...");
             loop {
                 let start = Instant::now();
-                
+
                 // Fetch US Inflation (FP.CPI.TOTL.ZG)
                 if let Some(inflation) = self.fetch_indicator("US", "FP.CPI.TOTL.ZG").await {
-                    self.inflation_var.store(inflation.to_bits(), Ordering::Relaxed);
+                    self.inflation_var
+                        .store(inflation.to_bits(), Ordering::Relaxed);
                     println!("🏦 [WORLD BANK] US Inflation Updated: {:.2}%", inflation);
                 }
 
                 // Fetch US Lending Interest Rate (FR.INR.LEND)
                 if let Some(interest_rate) = self.fetch_indicator("US", "FR.INR.LEND").await {
-                    self.interest_rate_var.store(interest_rate.to_bits(), Ordering::Relaxed);
-                    println!("🏦 [WORLD BANK] US Interest Rate Updated: {:.2}%", interest_rate);
+                    self.interest_rate_var
+                        .store(interest_rate.to_bits(), Ordering::Relaxed);
+                    println!(
+                        "🏦 [WORLD BANK] US Interest Rate Updated: {:.2}%",
+                        interest_rate
+                    );
                 }
-                
+
                 let lat = start.elapsed().as_millis();
                 println!("✅ [WORLD BANK] Macro-Context Synced in {} ms.", lat);
 

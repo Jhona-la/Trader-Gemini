@@ -1,5 +1,5 @@
-use strategy_core::SignalType;
 use std::collections::HashMap;
+use strategy_core::SignalType;
 
 /// 🧬 ALGORITMO #77: SHANNON ENTROPY FITNESS
 /// Calcula la entropía de información de las decisiones de un modelo evolutivo.
@@ -48,7 +48,7 @@ impl EntropyFitness {
         // Si la realidad (live_wr) es mucho peor que la teoría (prior_wr),
         // el teorema de bayes colapsa rápidamente la confianza.
         let divergence = (prior_wr - live_wr).max(0.0);
-        
+
         // Función de decaimiento exponencial basada en la divergencia y la cantidad de evidencia
         let evidence_weight = (live_trades as f64 / 30.0).min(1.0);
         let penalty = f64::exp(-divergence * 10.0 * evidence_weight);
@@ -68,13 +68,17 @@ impl EntropyFitness {
         if live_trades < 10 {
             return 1.0; // Muy poca evidencia en vivo, no penalizar todavía.
         }
-        
+
         let gap = (backtest_sharpe - live_sharpe).max(0.0);
-        let ratio = if backtest_sharpe > 0.0 { gap / backtest_sharpe } else { 0.0 };
-        
+        let ratio = if backtest_sharpe > 0.0 {
+            gap / backtest_sharpe
+        } else {
+            0.0
+        };
+
         // Si el gap es > 50% (ej. Sharpe 4 en backtest, 1.5 en live), penalización masiva (fitness mutante)
         let decay = 1.0 - (ratio * 1.5).tanh();
-        
+
         decay.clamp(0.05, 1.0)
     }
 
@@ -90,17 +94,17 @@ impl EntropyFitness {
         if total_trades == 0 {
             return gross_pnl;
         }
-        // Asumimos una distribución de fricción donde cada trade tiene 
+        // Asumimos una distribución de fricción donde cada trade tiene
         // una probabilidad Poisson de sufrir latencia/slippage de ~5bps.
         let lambda = total_trades as f64 * 0.05; // 5% of trades suffer heavy slippage
         let std_dev = lambda.sqrt();
-        
+
         // FASE 22: Fricción base inevitable usa la comisión REAL del tier VIP de Binance
         let deterministic_friction = total_trades as f64 * actual_fee_rate;
         let stochastic_friction = (lambda + std_dev * 1.96) * 0.001; // Worst case 95% CI
-        
+
         let real_net_pnl = gross_pnl - deterministic_friction - stochastic_friction;
-        
+
         real_net_pnl
     }
 
@@ -115,10 +119,10 @@ impl EntropyFitness {
 
         // Exceso sobre el umbral
         let excess = max_drawdown_pct - threshold_pct;
-        
+
         // Decaimiento exponencial abrupto. Un DD de 20% multiplicaría por ~0.04 (aniquilado)
         let decay = f64::exp(-excess * 20.0);
-        
+
         decay.clamp(0.01, 1.0)
     }
 }

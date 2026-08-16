@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use crossbeam::queue::ArrayQueue;
 use arc_swap::ArcSwap;
+use crossbeam::queue::ArrayQueue;
 use lazy_static::lazy_static;
-use std::thread;
-use std::time::Duration;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
+use std::time::Duration;
 
 lazy_static! {
     // Lock-free queue for telemetry events (capacity 65536)
@@ -105,7 +105,7 @@ pub fn start_profiler_auditor() {
         crate::telemetry_log!("[TELEMETRY] ⏱️ Auditor de Latencia y Rendimiento Iniciado.");
         loop {
             thread::sleep(Duration::from_secs(10));
-            
+
             // Read-Copy-Update (RCU) wait-free update
             let mut aggregator = (**GLOBAL_AGGREGATOR.load()).clone();
             aggregator.drain_queue();
@@ -114,18 +114,24 @@ pub fn start_profiler_auditor() {
             let total_fees = f64::from_bits(TOTAL_FEES.load(Ordering::Relaxed));
             let win_rate = f64::from_bits(WIN_RATE.load(Ordering::Relaxed));
             let gross_pnl = f64::from_bits(TOTAL_GROSS_PNL.load(Ordering::Relaxed));
-            
+
             aggregator.roi_net = roi_net;
             aggregator.total_fees = total_fees;
             aggregator.win_rate = win_rate;
             aggregator.total_gross_pnl = gross_pnl;
-            
+
             // Mostrar promedios si existen
             if !averages.is_empty() {
                 crate::telemetry_log!("--- [TELEMETRY LATENCY & FINANCIAL REPORT] ---");
-                crate::telemetry_log!("💰 Gross PnL: {:.4} | Net PnL: {:.4} | Fees: {:.4} | ROI Net: {:.2}% | Win-Rate: {:.2}%", 
-                    gross_pnl, gross_pnl - total_fees, total_fees, roi_net, win_rate);
-                
+                crate::telemetry_log!(
+                    "💰 Gross PnL: {:.4} | Net PnL: {:.4} | Fees: {:.4} | ROI Net: {:.2}% | Win-Rate: {:.2}%",
+                    gross_pnl,
+                    gross_pnl - total_fees,
+                    total_fees,
+                    roi_net,
+                    win_rate
+                );
+
                 let mut all_latencies: Vec<u64> = averages.values().cloned().collect();
                 all_latencies.sort_unstable();
                 let median_latency = *all_latencies.get(all_latencies.len() / 2).unwrap_or(&0);
@@ -133,13 +139,18 @@ pub fn start_profiler_auditor() {
 
                 for (name, avg_ns) in &averages {
                     if *avg_ns > threshold && *avg_ns > 1000 {
-                        crate::telemetry_log!("⚠️ ANOMALÍA LENTITUD RELATIVA | {}: {} ns (Mediana del sistema: {} ns)", name, avg_ns, median_latency);
+                        crate::telemetry_log!(
+                            "⚠️ ANOMALÍA LENTITUD RELATIVA | {}: {} ns (Mediana del sistema: {} ns)",
+                            name,
+                            avg_ns,
+                            median_latency
+                        );
                     } else {
                         crate::telemetry_log!("✅ {}: {} ns", name, avg_ns);
                     }
                 }
             }
-            
+
             GLOBAL_AGGREGATOR.store(Arc::new(aggregator));
         }
     });

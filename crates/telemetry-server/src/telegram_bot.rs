@@ -23,23 +23,24 @@ impl TelegramBot {
     /// Envía un mensaje de texto al chat configurado.
     pub async fn send_message(&self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
         let url = format!("https://api.telegram.org/bot{}/sendMessage", self.token);
-        
+
         let payload = json!({
             "chat_id": self.chat_id,
             "text": text,
             "parse_mode": "MarkdownV2"
         });
 
-        self.client.post(&url)
-            .json(&payload)
-            .send()
-            .await?;
+        self.client.post(&url).json(&payload).send().await?;
 
         Ok(())
     }
 
     /// Envía una alerta de urgencia formateada
-    pub async fn send_alert(&self, title: &str, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn send_alert(
+        &self,
+        title: &str,
+        message: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Escapar caracteres para MarkdownV2
         let escaped_title = Self::escape_markdown(title);
         let escaped_message = Self::escape_markdown(message);
@@ -50,9 +51,12 @@ impl TelegramBot {
 
     fn escape_markdown(text: &str) -> String {
         // En MarkdownV2 de Telegram hay que escapar varios caracteres especiales
-        let specials = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'];
+        let specials = [
+            '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.',
+            '!',
+        ];
         let mut escaped = String::with_capacity(text.len());
-        
+
         for c in text.chars() {
             if specials.contains(&c) {
                 escaped.push('\\');

@@ -1,19 +1,46 @@
-use quantum_arena::{GlobalArena, TickEvent};
-use god_engine_core::GodEngineCore;
-use phase_runner::{Phase, PhaseExecutor};
+use chrono::{DateTime, Utc};
 use data_pipeline::historical::Kline;
 use data_pipeline::multiplexer::multiplex_ticks;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use std::time::{Instant};
+use god_engine_core::GodEngineCore;
+use phase_runner::{Phase, PhaseExecutor};
 use polars::prelude::*;
+use quantum_arena::{GlobalArena, TickEvent};
 use std::path::Path;
-use chrono::{DateTime, Utc};
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::time::Instant;
 
 const COINS: [&str; 30] = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "DOTUSDT", "LINKUSDT",
-    "TRXUSDT", "LTCUSDT", "BCHUSDT", "XLMUSDT", "ATOMUSDT", "UNIUSDT", "XMRUSDT", "ETCUSDT", "FILUSDT", "ICPUSDT",
-    "VETUSDT", "NEARUSDT", "AAVEUSDT", "ALGOUSDT", "EGLDUSDT", "SANDUSDT", "THETAUSDT", "AXSUSDT", "MANAUSDT", "FTMUSDT"
+    "BTCUSDT",
+    "ETHUSDT",
+    "BNBUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "ADAUSDT",
+    "AVAXUSDT",
+    "DOGEUSDT",
+    "DOTUSDT",
+    "LINKUSDT",
+    "TRXUSDT",
+    "LTCUSDT",
+    "BCHUSDT",
+    "XLMUSDT",
+    "ATOMUSDT",
+    "UNIUSDT",
+    "XMRUSDT",
+    "ETCUSDT",
+    "FILUSDT",
+    "ICPUSDT",
+    "VETUSDT",
+    "NEARUSDT",
+    "AAVEUSDT",
+    "ALGOUSDT",
+    "EGLDUSDT",
+    "SANDUSDT",
+    "THETAUSDT",
+    "AXSUSDT",
+    "MANAUSDT",
+    "FTMUSDT",
 ];
 
 // Convertir 1 Kline en 4 ticks determinísticos sin inventar ruido/volatilidad falsa
@@ -21,10 +48,38 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline) -> [TickEvent; 4] {
     let step = kline.close_time.saturating_sub(kline.open_time) / 4;
     let v = kline.volume / 4.0;
     [
-        TickEvent { coin_id, timestamp: kline.open_time, bid_price: kline.open, ask_price: kline.open, bid_qty: v, ask_qty: v },
-        TickEvent { coin_id, timestamp: kline.open_time + step, bid_price: kline.high, ask_price: kline.high, bid_qty: v, ask_qty: v },
-        TickEvent { coin_id, timestamp: kline.open_time + step * 2, bid_price: kline.low, ask_price: kline.low, bid_qty: v, ask_qty: v },
-        TickEvent { coin_id, timestamp: kline.open_time + step * 3, bid_price: kline.close, ask_price: kline.close, bid_qty: v, ask_qty: v },
+        TickEvent {
+            coin_id,
+            timestamp: kline.open_time,
+            bid_price: kline.open,
+            ask_price: kline.open,
+            bid_qty: v,
+            ask_qty: v,
+        },
+        TickEvent {
+            coin_id,
+            timestamp: kline.open_time + step,
+            bid_price: kline.high,
+            ask_price: kline.high,
+            bid_qty: v,
+            ask_qty: v,
+        },
+        TickEvent {
+            coin_id,
+            timestamp: kline.open_time + step * 2,
+            bid_price: kline.low,
+            ask_price: kline.low,
+            bid_qty: v,
+            ask_qty: v,
+        },
+        TickEvent {
+            coin_id,
+            timestamp: kline.open_time + step * 3,
+            bid_price: kline.close,
+            ask_price: kline.close,
+            bid_qty: v,
+            ask_qty: v,
+        },
     ]
 }
 
@@ -53,7 +108,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let initial_capital_str = std::env::var("INITIAL_CAPITAL").unwrap_or_else(|_| {
         panic!("❌ [CRITICAL] Debes proveer INITIAL_CAPITAL como variable de entorno (ej. set INITIAL_CAPITAL=100.50)");
     });
-    let mut initial_capital: f64 = initial_capital_str.parse().expect("❌ INITIAL_CAPITAL must be a number");
+    let mut initial_capital: f64 = initial_capital_str
+        .parse()
+        .expect("❌ INITIAL_CAPITAL must be a number");
     if initial_capital <= 0.0 {
         println!("⚠️ INITIAL_CAPITAL=0.0 detected. This is a simulator. Enforcing $1000.00 mock capital for simulation accuracy.");
         initial_capital = 1000.0;
@@ -62,9 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let arena = std::thread::Builder::new()
         .stack_size(64 * 1024 * 1024) // 64 MB stack to prevent 30MB GlobalArena stack overflow
-        .spawn(move || {
-            Arc::new(GlobalArena::new(initial_capital))
-        })
+        .spawn(move || Arc::new(GlobalArena::new(initial_capital)))
         .unwrap()
         .join()
         .unwrap();
@@ -78,17 +133,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (id, &symbol) in COINS.iter().enumerate() {
         print!("  -> Loading {}... ", symbol);
         let file_path = format!("data/historical/{}_6M.parquet", symbol);
-        
+
         if !Path::new(&file_path).exists() {
-            println!("❌ File not found: {}. Please run download_history first.", file_path);
+            println!(
+                "❌ File not found: {}. Please run download_history first.",
+                file_path
+            );
             continue;
         }
 
         let mut file = std::fs::File::open(&file_path)?;
         let df = ParquetReader::new(&mut file).finish()?;
-        
+
         let mut klines = Vec::with_capacity(df.height());
-        
+
         // Polars filter is possible but iterating is simple enough since it's only 6M
         let open_times = df.column("open_time")?.u64()?;
         let opens = df.column("open")?.f64()?;
@@ -98,7 +156,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let volumes = df.column("volume")?.f64()?;
         let close_times = df.column("close_time")?.u64()?;
         let total_rows = df.height();
-        let start_idx = if total_rows > three_days_rows { total_rows - three_days_rows } else { 0 };
+        let start_idx = if total_rows > three_days_rows {
+            total_rows - three_days_rows
+        } else {
+            0
+        };
 
         for i in start_idx..total_rows {
             klines.push(Kline {
@@ -111,7 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 close_time: close_times.get(i).unwrap(),
             });
         }
-        
+
         let mut ticks = Vec::with_capacity(klines.len() * 4);
         for k in klines.iter() {
             ticks.extend(simple_kline_to_ticks(id, k));
@@ -123,7 +185,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔄 Multiplexing and sorting chronologically (Merge Sort O(N log N))...");
     let start_sort = Instant::now();
     let master_stream = multiplex_ticks(coin_ticks);
-    println!("✅ Multiplexing done in {:?}. Total Ticks: {}", start_sort.elapsed(), master_stream.len());
+    println!(
+        "✅ Multiplexing done in {:?}. Total Ticks: {}",
+        start_sort.elapsed(),
+        master_stream.len()
+    );
 
     let backtest_thread = std::thread::Builder::new()
         .stack_size(64 * 1024 * 1024)
@@ -216,7 +282,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         })
         .unwrap();
-        
+
     backtest_thread.join().unwrap();
 
     Ok(())

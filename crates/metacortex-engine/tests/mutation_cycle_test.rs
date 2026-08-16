@@ -1,8 +1,8 @@
+use chrono::Utc;
 use metacortex_engine::{
-    MetacortexEngine, WaveletFeatureParams, WaveletType, TraumaRecord, EpigenomaSymbolParams
+    EpigenomaSymbolParams, MetacortexEngine, TraumaRecord, WaveletFeatureParams, WaveletType,
 };
 use tempfile::tempdir;
-use chrono::Utc;
 
 #[test]
 fn test_template_generation_and_immune_system() {
@@ -20,7 +20,10 @@ fn test_template_generation_and_immune_system() {
         activation_factor: 1.0,
     };
 
-    let generated_file = engine.template_engine.generate_wavelet_feature(&params).unwrap();
+    let generated_file = engine
+        .template_engine
+        .generate_wavelet_feature(&params)
+        .unwrap();
     assert!(generated_file.exists());
     let content = std::fs::read_to_string(&generated_file).unwrap();
     assert!(content.contains("FeatureWaveletRegimen_v101"));
@@ -56,7 +59,10 @@ fn test_template_generation_and_immune_system() {
         max_leverage: 20.0,
     };
 
-    let saved_path = engine.hot_swap.save_symbol_epigenoma(&symbol_params).unwrap();
+    let saved_path = engine
+        .hot_swap
+        .save_symbol_epigenoma(&symbol_params)
+        .unwrap();
     assert!(saved_path.exists());
     let epigenoma_content = std::fs::read_to_string(&saved_path).unwrap();
     assert!(epigenoma_content.contains("BTCUSDT"));

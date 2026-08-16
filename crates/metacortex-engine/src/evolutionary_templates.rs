@@ -69,7 +69,10 @@ impl EvolutionaryTemplateEngine {
     }
 
     /// Generates a new Wavelet Feature source file in `cortex/`
-    pub fn generate_wavelet_feature(&self, params: &WaveletFeatureParams) -> std::io::Result<PathBuf> {
+    pub fn generate_wavelet_feature(
+        &self,
+        params: &WaveletFeatureParams,
+    ) -> std::io::Result<PathBuf> {
         let file_name = format!("wavelet_feature_v{}.rs", params.id);
         let target_path = self.cortex_dir.join(&file_name);
 
@@ -128,7 +131,10 @@ pub extern "C" fn compute_wavelet_v{id}(data_ptr: *const f64, len: usize) -> f64
     }
 
     /// Generates a Volume & Funding Predictor source file in `cortex/`
-    pub fn generate_volume_funding_predictor(&self, params: &VolumeFundingParams) -> std::io::Result<PathBuf> {
+    pub fn generate_volume_funding_predictor(
+        &self,
+        params: &VolumeFundingParams,
+    ) -> std::io::Result<PathBuf> {
         let file_name = format!("volumen_funding_predictor_v{}.rs", params.id);
         let target_path = self.cortex_dir.join(&file_name);
 
@@ -190,7 +196,10 @@ pub extern "C" fn predict_volume_funding_v{id}(vols_ptr: *const f64, len: usize,
     }
 
     /// Generates a Dual Horizon Scalp/Swing strategy source file in `cortex/`
-    pub fn generate_dual_horizon_strategy(&self, params: &DualHorizonStrategyParams) -> std::io::Result<PathBuf> {
+    pub fn generate_dual_horizon_strategy(
+        &self,
+        params: &DualHorizonStrategyParams,
+    ) -> std::io::Result<PathBuf> {
         let file_name = format!("dual_horizon_strategy_v{}.rs", params.id);
         let target_path = self.cortex_dir.join(&file_name);
 

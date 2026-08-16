@@ -2,11 +2,11 @@
 //!
 //! Manages dynamic library loading (`libloading`) and atomic state persistence in `memoria/epigenoma/`.
 
+use memmap2::MmapMut;
+use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use memmap2::MmapMut;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpigenomaSymbolParams {
@@ -48,8 +48,14 @@ impl HotSwapController {
     }
 
     /// Saves symbol state to TOML inside `memoria/epigenoma/activos/`
-    pub fn save_symbol_epigenoma(&self, params: &EpigenomaSymbolParams) -> std::io::Result<PathBuf> {
-        let target = self.epigenoma_dir.join("activos").join(format!("{}.toml", params.symbol));
+    pub fn save_symbol_epigenoma(
+        &self,
+        params: &EpigenomaSymbolParams,
+    ) -> std::io::Result<PathBuf> {
+        let target = self
+            .epigenoma_dir
+            .join("activos")
+            .join(format!("{}.toml", params.symbol));
         let content = format!(
             r#"# Epigenoma State for {}
 symbol = "{}"
@@ -93,7 +99,10 @@ max_leverage = {:.6}
 
     /// # Safety
     /// Dynamically loading a shared library is unsafe. The caller must ensure the library conforms to expected ABIs.
-    pub unsafe fn load_dynamic_library<P: AsRef<Path>>(&mut self, library_path: P) -> Result<Arc<libloading::Library>, libloading::Error> {
+    pub unsafe fn load_dynamic_library<P: AsRef<Path>>(
+        &mut self,
+        library_path: P,
+    ) -> Result<Arc<libloading::Library>, libloading::Error> {
         let lib = libloading::Library::new(library_path.as_ref())?;
         let arc_lib = Arc::new(lib);
         self.loaded_libraries.push(arc_lib.clone());
@@ -102,7 +111,9 @@ max_leverage = {:.6}
 
     /// # Safety
     /// Returning a symbol relies on the library providing a compatible function signature.
-    pub unsafe fn get_evaluate_tensor(&self) -> Option<libloading::Symbol<'_, unsafe extern "C" fn(*const f32, usize) -> f32>> {
+    pub unsafe fn get_evaluate_tensor(
+        &self,
+    ) -> Option<libloading::Symbol<'_, unsafe extern "C" fn(*const f32, usize) -> f32>> {
         if let Some(lib) = self.loaded_libraries.last() {
             lib.get(b"evaluate_tensor\0").ok()
         } else {

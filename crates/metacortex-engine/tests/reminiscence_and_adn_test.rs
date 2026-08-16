@@ -16,7 +16,9 @@ fn test_adn_backup_and_reminiscence_resurrection() {
         active_regime: "BTC_Bull".to_string(),
         code_hash: 0xAABBCC,
     };
-    catalog.archive_generation(&gen1, "// Cortex Gen 1 Rust Code").expect("Failed to archive Gen 1");
+    catalog
+        .archive_generation(&gen1, "// Cortex Gen 1 Rust Code")
+        .expect("Failed to archive Gen 1");
 
     // 2. Archive Generation 2 (ETH Volatile Regime)
     let gen2 = GenerationMetadata {
@@ -29,7 +31,9 @@ fn test_adn_backup_and_reminiscence_resurrection() {
         active_regime: "ETH_Volatile".to_string(),
         code_hash: 0xDDEEFF,
     };
-    catalog.archive_generation(&gen2, "// Cortex Gen 2 Rust Code").expect("Failed to archive Gen 2");
+    catalog
+        .archive_generation(&gen2, "// Cortex Gen 2 Rust Code")
+        .expect("Failed to archive Gen 2");
 
     // 3. Verify listing archived generations
     let archived = catalog.list_archived_generations();
@@ -40,7 +44,10 @@ fn test_adn_backup_and_reminiscence_resurrection() {
     // 4. Test Reminiscence Module when market shifts back to BTC Bull Regime
     let reminiscence = ReminiscenceModule::new(catalog);
     let ancestral_seed = reminiscence.find_ancestral_seed("BTC_Bull", 2.5);
-    assert!(ancestral_seed.is_some(), "Reminiscence MUST find Gen 1 seed for BTC_Bull regime");
+    assert!(
+        ancestral_seed.is_some(),
+        "Reminiscence MUST find Gen 1 seed for BTC_Bull regime"
+    );
 
     let seed = ancestral_seed.unwrap();
     assert_eq!(seed.gen_id, 1);

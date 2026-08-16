@@ -1,15 +1,15 @@
-use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use std::fs;
-use tokio::sync::broadcast;
 use serde::Serialize;
+use std::fs;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::sync::broadcast;
 
 #[derive(Clone, Serialize, Debug)]
 pub enum TelemetryEvent {
-    LatencyUpdate(u64),      // Nanoseconds
-    LogUpdate(String, String), // (type, message) e.g., ("info", "Connected...")
-    CapitalUpdate(f64),      // Current capital
-    TensorUpdate([f32; 12]), // 12D State Vector (Scalp)
+    LatencyUpdate(u64),          // Nanoseconds
+    LogUpdate(String, String),   // (type, message) e.g., ("info", "Connected...")
+    CapitalUpdate(f64),          // Current capital
+    TensorUpdate([f32; 12]),     // 12D State Vector (Scalp)
     SwingTensorUpdate(Vec<f32>), // 34D State Vector (Swing)
     OmniUpdate {
         latency_ms: u64,
@@ -26,23 +26,31 @@ pub enum TelemetryEvent {
     ShadowLeaderboard(Vec<f64>), // FASE 13: Live competition leaderboard
 }
 
-pub async fn start_server(tx: broadcast::Sender<TelemetryEvent>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start_server(
+    tx: broadcast::Sender<TelemetryEvent>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = 8080;
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-    println!("🌐 [DASHBOARD] Embedded Rust Dashboard running on http://localhost:{}", port);
+    println!(
+        "🌐 [DASHBOARD] Embedded Rust Dashboard running on http://localhost:{}",
+        port
+    );
 
     loop {
         let (mut socket, _) = listener.accept().await?;
         let tx = tx.clone();
-        
+
         tokio::spawn(async move {
             let mut buf = [0; 1024];
             if let Ok(n) = socket.read(&mut buf).await {
-                if n == 0 { return; }
+                if n == 0 {
+                    return;
+                }
                 let request = String::from_utf8_lossy(&buf[..n]);
-                
+
                 if request.starts_with("GET /api/stats") {
-                    let config_str = fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "{}".to_string());
+                    let config_str = fs::read_to_string("data/dynamic_config.json")
+                        .unwrap_or_else(|_| "{}".to_string());
                     let response = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\n\r\n{}",
                         config_str
@@ -57,7 +65,7 @@ pub async fn start_server(tx: broadcast::Sender<TelemetryEvent>) -> Result<(), B
                     if socket.write_all(response.as_bytes()).await.is_err() {
                         return;
                     }
-                    
+
                     let mut rx = tx.subscribe();
                     loop {
                         if let Ok(event) = rx.recv().await {
@@ -70,19 +78,24 @@ pub async fn start_server(tx: broadcast::Sender<TelemetryEvent>) -> Result<(), B
                         }
                     }
                 } else if request.starts_with("GET /style.css") {
-                    let css = fs::read_to_string("static/style.css").unwrap_or_else(|_| "".to_string());
-                    let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/css\r\n\r\n{}", css);
+                    let css =
+                        fs::read_to_string("static/style.css").unwrap_or_else(|_| "".to_string());
+                    let response =
+                        format!("HTTP/1.1 200 OK\r\nContent-Type: text/css\r\n\r\n{}", css);
                     let _ = socket.write_all(response.as_bytes()).await;
                 } else if request.starts_with("GET /app.js") {
                     let js = fs::read_to_string("static/app.js").unwrap_or_else(|_| "".to_string());
-                    let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\n\r\n{}", js);
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\n\r\n{}",
+                        js
+                    );
                     let _ = socket.write_all(response.as_bytes()).await;
                 } else {
-                    let html = fs::read_to_string("static/index.html").unwrap_or_else(|_| "<h1>Error: static/index.html not found</h1>".to_string());
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n{}",
-                        html
-                    );
+                    let html = fs::read_to_string("static/index.html").unwrap_or_else(|_| {
+                        "<h1>Error: static/index.html not found</h1>".to_string()
+                    });
+                    let response =
+                        format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n{}", html);
                     let _ = socket.write_all(response.as_bytes()).await;
                 }
             }

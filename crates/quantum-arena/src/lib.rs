@@ -1,16 +1,16 @@
+pub mod active_universe;
 pub mod atomic_float;
 pub mod config;
-pub mod state;
+pub mod genome;
 pub mod position;
-pub mod tick_source;
+pub mod state;
 pub mod symbol_registry;
 pub mod symbols;
-pub mod active_universe;
-pub mod genome;
+pub mod tick_source;
 
 // Re-exportamos los componentes principales
 pub use atomic_float::AtomicF64;
 pub use config::QuantumConfig;
+pub use position::{Position, PositionManager};
 pub use state::{GlobalArena, ScalpState, SwingState};
-pub use position::{PositionManager, Position};
-pub use tick_source::{TickSource, TickEvent};
+pub use tick_source::{TickEvent, TickSource};

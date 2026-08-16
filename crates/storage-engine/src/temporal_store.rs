@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::{_mm_stream_si128, _mm_set_epi64x, __m128i};
+use std::arch::x86_64::{__m128i, _mm_set_epi64x, _mm_stream_si128};
 
 /// 🚀 ALGORITMO #89: TEMPORAL OBJECT STORE (SSD Picosecond Writer)
 /// Almacenamiento ultra-masivo para Genomas de IA y Market Data usando
@@ -31,7 +31,7 @@ impl TemporalObjectStore {
 
         // Pre-allocate space to avoid fragmentation and file extension latencies at runtime
         file.set_len(prealloc_bytes as u64)?;
-        
+
         let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
 
         Ok(Self {
@@ -47,7 +47,7 @@ impl TemporalObjectStore {
     #[inline(always)]
     pub fn write_tensor_block_64(&self, data: &[f64; 8]) -> Result<(), &'static str> {
         let current_offset = self.write_cursor.fetch_add(64, Ordering::AcqRel);
-        
+
         if current_offset + 64 > self.capacity {
             // Buffer lleno (En un entorno real implementaríamos Rotación Log-Structured)
             return Err("TemporalObjectStore capacity exceeded");
@@ -55,18 +55,16 @@ impl TemporalObjectStore {
 
         unsafe {
             let base_ptr = self.mmap.as_ptr().add(current_offset);
-            
+
             #[cfg(target_arch = "x86_64")]
             {
                 let dest_ptr = base_ptr as *mut __m128i;
                 let src_ptr = data.as_ptr();
-                
+
                 // Procesar 64 bytes (4 bloques de 128-bits)
                 for i in 0..4 {
-                    let chunk = _mm_set_epi64x(
-                        *src_ptr.add(i * 2 + 1) as i64, 
-                        *src_ptr.add(i * 2) as i64
-                    );
+                    let chunk =
+                        _mm_set_epi64x(*src_ptr.add(i * 2 + 1) as i64, *src_ptr.add(i * 2) as i64);
                     // _mm_stream_si128: Escribe directo a memoria RAM (Mmap) bypasseando CPU Cache
                     _mm_stream_si128(dest_ptr.add(i), chunk);
                 }
@@ -74,14 +72,10 @@ impl TemporalObjectStore {
             #[cfg(not(target_arch = "x86_64"))]
             {
                 // Fallback genérico para arquitecturas no-x86_64 (como ARM/M1)
-                std::ptr::copy_nonoverlapping(
-                    data.as_ptr() as *const u8, 
-                    base_ptr as *mut u8, 
-                    64
-                );
+                std::ptr::copy_nonoverlapping(data.as_ptr() as *const u8, base_ptr as *mut u8, 64);
             }
         }
-        
+
         Ok(())
     }
 }

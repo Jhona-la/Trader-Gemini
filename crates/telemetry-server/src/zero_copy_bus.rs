@@ -1,20 +1,21 @@
-/// 🛸 ZERO-COPY TELEMETRY BUS (V10)
-/// 
-/// Un buffer circular gigante (Ring Buffer) de 64MB pre-localizado en memoria RAM.
-/// Diseñado para absorber millones de eventos (Tensores, ML, PnL) por segundo 
-/// con CERO overhead (latencia < 5ns por escritura).
-/// 
-/// Un "Ghost Thread" (Hilo Fantasma) drena asíncronamente este buffer hacia un 
-/// archivo SSD persistente o base de datos WAL sin bloquear jamás el hilo principal.
-use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+use lazy_static::lazy_static;
 use std::cell::UnsafeCell;
+use std::sync::Arc;
+/// 🛸 ZERO-COPY TELEMETRY BUS (V10)
+///
+/// Un buffer circular gigante (Ring Buffer) de 64MB pre-localizado en memoria RAM.
+/// Diseñado para absorber millones de eventos (Tensores, ML, PnL) por segundo
+/// con CERO overhead (latencia < 5ns por escritura).
+///
+/// Un "Ghost Thread" (Hilo Fantasma) drena asíncronamente este buffer hacia un
+/// archivo SSD persistente o base de datos WAL sin bloquear jamás el hilo principal.
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::time::sleep;
-use std::sync::Arc;
-use lazy_static::lazy_static;
 
 lazy_static! {
-    pub static ref GLOBAL_TELEMETRY: Arc<ZeroCopyTelemetryBus> = Arc::new(ZeroCopyTelemetryBus::new());
+    pub static ref GLOBAL_TELEMETRY: Arc<ZeroCopyTelemetryBus> =
+        Arc::new(ZeroCopyTelemetryBus::new());
 }
 
 // FASE XV: Subsystems and Event Enums for Lock-Free Analytics
@@ -87,8 +88,11 @@ impl ZeroCopyTelemetryBus {
         for _ in 0..ZERO_COPY_RING_SIZE {
             vec.push(UnsafeCell::new(TelemetryFrame::default()));
         }
-        let buffer = vec.into_boxed_slice().try_into().unwrap_or_else(|_| panic!("Failed to allocate 64MB Ring Buffer"));
-        
+        let buffer = vec
+            .into_boxed_slice()
+            .try_into()
+            .unwrap_or_else(|_| panic!("Failed to allocate 64MB Ring Buffer"));
+
         // Fase 11: OS Guardian Memory Compaction para el Ring Buffer gigante
         unsafe {
             // El buffer gigante se fija en RAM para no tocar el disco jamás.
@@ -109,8 +113,11 @@ impl ZeroCopyTelemetryBus {
     pub fn emit(&self, subsystem_id: u8, event_type: u8, context_id: u8, payload: [f64; 6]) {
         let head = self.write_head.fetch_add(1, Ordering::Relaxed);
         let idx = head & ZERO_COPY_RING_MASK;
-        
-        let now_ns = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as u64;
+
+        let now_ns = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
 
         unsafe {
             let slot = self.buffer[idx].get();
@@ -125,30 +132,32 @@ impl ZeroCopyTelemetryBus {
     /// Inicia el Hilo Fantasma que drena la memoria RAM al SSD (Disk Flush).
     pub fn start_ghost_flusher(self: std::sync::Arc<Self>) {
         tokio::spawn(async move {
-            crate::telemetry_log!("🛸 [TELEMETRY] Hilo Fantasma (Ghost Flusher) iniciado. Monitoreando Ring Buffer de 64MB.");
-            
+            crate::telemetry_log!(
+                "🛸 [TELEMETRY] Hilo Fantasma (Ghost Flusher) iniciado. Monitoreando Ring Buffer de 64MB."
+            );
+
             // En producción, esto apuntaría a un archivo MemoryMapped (memmap2) o SQLite WAL.
             // Por simplicidad, simularemos la lectura masiva.
             let mut local_tail = 0;
-            
+
             while self.is_active.load(Ordering::Relaxed) {
                 let current_head = self.write_head.load(Ordering::Acquire);
-                
+
                 if current_head > local_tail {
                     let pending_frames = current_head - local_tail;
-                    
+
                     // Solo vaciamos al SSD cuando hay suficientes frames (batching) para no castigar el IOPS
                     if pending_frames > 10_000 {
                         // Simulación de volcado masivo a SSD (Batch Flush)
                         // let frames_to_write = ...
-                        
+
                         local_tail = current_head;
                         self.read_tail.store(local_tail, Ordering::Release);
-                        
+
                         // crate::telemetry_log!("🛸 [TELEMETRY] Flushed {} frames a SSD.", pending_frames);
                     }
                 }
-                
+
                 // Dormir 50ms para no consumir CPU (El HFT sigue escribiendo mientras dormimos)
                 sleep(Duration::from_millis(50)).await;
             }
@@ -159,7 +168,7 @@ impl ZeroCopyTelemetryBus {
     pub fn read_recent_events(&self, limit: usize, target_event_type: u8) -> Vec<TelemetryFrame> {
         let head = self.write_head.load(Ordering::Acquire);
         let mut results = Vec::with_capacity(limit.min(10_000));
-        
+
         let start_offset = head.saturating_sub(limit);
         for i in start_offset..head {
             let idx = i & ZERO_COPY_RING_MASK;

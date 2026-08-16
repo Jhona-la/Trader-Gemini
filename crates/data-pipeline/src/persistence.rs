@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result, OpenFlags};
+use rusqlite::{Connection, OpenFlags, Result};
 use std::path::Path;
 
 pub struct WalStorage {
@@ -47,7 +47,7 @@ impl WalStorage {
     #[inline(always)]
     pub fn insert_tick(&self, symbol: &str, price: f64, volume: f64, timestamp: u64) -> Result<()> {
         let mut stmt = self.conn.prepare_cached(
-            "INSERT INTO tick_data (symbol, price, volume, timestamp) VALUES (?1, ?2, ?3, ?4)"
+            "INSERT INTO tick_data (symbol, price, volume, timestamp) VALUES (?1, ?2, ?3, ?4)",
         )?;
         stmt.execute(rusqlite::params![symbol, price, volume, timestamp as i64])?;
         Ok(())

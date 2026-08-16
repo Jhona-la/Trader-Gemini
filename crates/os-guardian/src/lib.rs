@@ -1,32 +1,31 @@
-pub mod memory_compaction;
+pub mod anomaly_detector;
+pub mod ebpf_core;
 pub mod memory_audit;
+pub mod memory_compaction;
+pub mod observability_plane;
+pub mod pmu_sensor;
 pub mod telemetry;
 pub mod zero_latency_telemetry;
-pub mod pmu_sensor;
-pub mod ebpf_core;
-pub mod anomaly_detector;
-pub mod observability_plane;
 use std::sync::atomic::{AtomicBool, Ordering};
 use uuid::Uuid;
 
-use windows::Win32::System::Threading::{
-    GetCurrentProcess, GetCurrentThread, SetPriorityClass, SetThreadPriority, SetProcessAffinityMask,
-    SetThreadIdealProcessor,
-    HIGH_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, THREAD_PRIORITY_TIME_CRITICAL
-};
 use windows::Win32::System::JobObjects::{
-    CreateJobObjectW, AssignProcessToJobObject, SetInformationJobObject,
-    JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JOB_OBJECT_LIMIT_JOB_MEMORY
+    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+    SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_JOB_MEMORY,
 };
-use windows::Win32::System::Threading::{SetProcessWorkingSetSize};
+use windows::Win32::System::Threading::SetProcessWorkingSetSize;
+use windows::Win32::System::Threading::{
+    GetCurrentProcess, GetCurrentThread, SetPriorityClass, SetProcessAffinityMask,
+    SetThreadIdealProcessor, SetThreadPriority, HIGH_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
+    THREAD_PRIORITY_TIME_CRITICAL,
+};
 
 use std::ffi::c_void;
 
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-use std::sync::Arc;
 use quantum_arena::GlobalArena;
+use std::sync::Arc;
 
 /// Inicializa la protección del sistema operativo Windows.
 /// Configura la prioridad del proceso y la afinidad de núcleos.
@@ -38,11 +37,11 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
     if INITIALIZED.swap(true, Ordering::SeqCst) {
         return process_id; // Ya inicializado
     }
-    
+
     #[cfg(windows)]
     unsafe {
         let process = GetCurrentProcess();
-        
+
         // 1. Establecer prioridad de proceso a HIGH_PRIORITY_CLASS (Fase 24)
         if let Err(e) = SetPriorityClass(process, HIGH_PRIORITY_CLASS) {
             eprintln!("[OS-GUARDIAN] Error estableciendo prioridad HIGH: {:?}", e);
@@ -51,12 +50,15 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
         } else {
             println!("[OS-GUARDIAN] Prioridad del proceso establecida en HIGH_PRIORITY_CLASS.");
         }
-        
+
         // 2. Establecer afinidad de CPU
         if SetProcessAffinityMask(process, affinity_mask).is_err() {
             eprintln!("[OS-GUARDIAN] Error estableciendo afinidad de CPU.");
         } else {
-            println!("[OS-GUARDIAN] Afinidad de CPU establecida con máscara: {:#X}.", affinity_mask);
+            println!(
+                "[OS-GUARDIAN] Afinidad de CPU establecida con máscara: {:#X}.",
+                affinity_mask
+            );
         }
 
         // 3. Establecer límites de Memoria vía JobObject
@@ -74,7 +76,10 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
 
             if result.is_ok() {
                 if AssignProcessToJobObject(job, process).is_ok() {
-                    println!("[OS-GUARDIAN] Job Object Memory Limit establecido a {} MB.", max_memory_mb);
+                    println!(
+                        "[OS-GUARDIAN] Job Object Memory Limit establecido a {} MB.",
+                        max_memory_mb
+                    );
                 } else {
                     eprintln!("[OS-GUARDIAN] Error asignando proceso al JobObject.");
                 }
@@ -82,20 +87,23 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
                 eprintln!("[OS-GUARDIAN] Error configurando Memory Limit en JobObject.");
             }
         }
-        
+
         // 4. Forzar memoria física pura (Lock RAM, Disable Pagefile swapping)
         // Primero vaciamos el working set para evitar overhead legacy (equivale a EmptyWorkingSet)
         let _ = SetProcessWorkingSetSize(process, usize::MAX, usize::MAX);
-        
+
         let min_working_set = (max_memory_mb / 2) * 1024 * 1024;
         let max_working_set = max_memory_mb * 1024 * 1024;
         if let Err(e) = SetProcessWorkingSetSize(process, min_working_set, max_working_set) {
-            eprintln!("⚠️ [OS-GUARDIAN] No se pudo fijar Working Set (Privilegios insuficientes?): {:?}", e);
+            eprintln!(
+                "⚠️ [OS-GUARDIAN] No se pudo fijar Working Set (Privilegios insuficientes?): {:?}",
+                e
+            );
         } else {
             println!("🔒 [OS-GUARDIAN] RAM Physical Lock: {} MB - {} MB (Pagefile swap disabled para latencia cero).", min_working_set / 1_048_576, max_working_set / 1_048_576);
         }
     }
-    
+
     // Iniciar el auditor dinámico
     memory_audit::start_memory_auditor(max_memory_mb, arena);
 
@@ -107,12 +115,11 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
     // Asignar al CPU core 5 (fuera del rango de HFT)
     obs_plane.spawn_isolated(Some(5));
 
-
     #[cfg(not(windows))]
     {
         println!("[OS-GUARDIAN] Ejecutando en modo NO-Windows. Guardián inactivo.");
     }
-    
+
     process_id
 }
 
@@ -140,9 +147,12 @@ pub fn set_current_thread_time_critical() {
         let thread = GetCurrentThread();
         // Pin to a specific physical core (e.g., Core 1) for L3 cache hit guarantee
         let _ = SetThreadIdealProcessor(thread, 1);
-        
+
         if let Err(e) = SetThreadPriority(thread, THREAD_PRIORITY_TIME_CRITICAL) {
-            eprintln!("⚠️ [OS-GUARDIAN] No se pudo asignar THREAD_PRIORITY_TIME_CRITICAL: {:?}", e);
+            eprintln!(
+                "⚠️ [OS-GUARDIAN] No se pudo asignar THREAD_PRIORITY_TIME_CRITICAL: {:?}",
+                e
+            );
         } else {
             println!("⚡ [OS-GUARDIAN] Hilo promocionado a THREAD_PRIORITY_TIME_CRITICAL (Latencia 0) y anclado a L3 Caché.");
         }

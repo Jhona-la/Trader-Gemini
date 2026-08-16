@@ -1,3 +1,5 @@
+> ⚠️ **NOTA F0 (2026-08-16):** El objetivo "+100% neto cada 3 días" NO es meta de diseño del sistema actual — matemáticamente insostenible y peligroso como axioma. La meta operativa del Plan Maestro es: expectancy NETO de fees positivo, certificado estadísticamente en demo antes de escalar exposición (Kelly fraccional bayesiano + cota de ruina). El resto del documento se conserva como referencia histórica.
+
 # 🏛️ SISTEMA AUTÓNOMO DE FUTUROS BINANCE — TRADER GEMINI
 **DOCUMENTO MAESTRO DE ARQUITECTURA Y REGLAS INAMOVIBLES**
 

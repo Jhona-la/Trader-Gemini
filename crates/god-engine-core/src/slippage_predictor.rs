@@ -27,7 +27,7 @@ impl BookDepthSlippagePredictor {
         // FASE 11: Penalización por Asimetría Estructural (Order Book Imbalance)
         // Si compramos y el OBI es fuertemente negativo (presión de venta), el slippage real será mayor.
         let directional_obi = if is_long { obi } else { -obi };
-        
+
         // Si directional_obi es negativo, vamos contra la corriente -> slippage exponencial
         // Si directional_obi es positivo, el impacto de mercado es mitigado por la liquidez a favor
         let pressure_multiplier = if directional_obi < 0.0 {

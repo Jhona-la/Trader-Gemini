@@ -9,11 +9,14 @@ pub struct WelfordVariance {
     pub m2: f64,
 }
 
-
 impl WelfordVariance {
     #[inline(always)]
     pub fn new() -> Self {
-        Self { count: 0.0, mean: 0.0, m2: 0.0 }
+        Self {
+            count: 0.0,
+            mean: 0.0,
+            m2: 0.0,
+        }
     }
 
     #[inline(always)]
@@ -41,7 +44,7 @@ impl WelfordVariance {
     pub fn std_dev(&self) -> f64 {
         self.variance().sqrt()
     }
-    
+
     #[inline(always)]
     pub fn remove(&mut self, old_value: f64) {
         if self.count <= 1.0 {
@@ -113,7 +116,7 @@ impl KylesLambda {
             self.delta_v_kahan.add(volume);
         }
         self.last_price = current_price;
-        
+
         let dv = self.delta_v_kahan.get_sum();
         if dv > 0.0 {
             let lambda = self.delta_p_kahan.get_sum() / dv;
@@ -149,7 +152,7 @@ impl ContinuousVPIN {
         } else {
             self.buy_volume += volume;
         }
-        
+
         // Decay to keep within bucket context (EWMA style decay for O(1) rolling VPIN)
         let total_vol = self.buy_volume + self.sell_volume;
         if total_vol > self.bucket_size {
@@ -157,7 +160,7 @@ impl ContinuousVPIN {
             self.buy_volume *= ratio;
             self.sell_volume *= ratio;
         }
-        
+
         if total_vol > 0.0 {
             (self.buy_volume - self.sell_volume).abs() / total_vol
         } else {
@@ -177,9 +180,13 @@ pub struct RecursiveSMA {
 impl RecursiveSMA {
     #[inline(always)]
     pub fn new(window: usize) -> Self {
-        Self { sum: 0.0, count: 0, window }
+        Self {
+            sum: 0.0,
+            count: 0,
+            window,
+        }
     }
-    
+
     #[inline(always)]
     pub fn update(&mut self, new_val: f64, old_val: f64) -> f64 {
         if self.count < self.window {
@@ -209,7 +216,7 @@ impl RecursiveEMA {
             initialized: false,
         }
     }
-    
+
     #[inline(always)]
     pub fn update(&mut self, new_val: f64) -> f64 {
         if !self.initialized {
@@ -256,7 +263,7 @@ impl DynamicKelly {
         let wr = self.win_rate_welford.mean;
         let avg_win = self.win_size_welford.mean;
         let avg_loss = self.loss_size_welford.mean;
-        
+
         // If not enough data, return a safe base default
         if self.win_rate_welford.count < 5.0 || avg_loss == 0.0 {
             return 0.10;
@@ -264,9 +271,9 @@ impl DynamicKelly {
 
         let r = avg_win / avg_loss;
         // Kelly Formula: K = W - ((1 - W) / R)
-        let kelly = wr - ((1.0 - wr) / r); 
+        let kelly = wr - ((1.0 - wr) / r);
         let adjusted_kelly = kelly * self.kelly_multiplier;
-        
+
         adjusted_kelly.clamp(0.01, 1.0)
     }
 }
@@ -286,16 +293,19 @@ impl Default for ShannonEntropy {
 
 impl ShannonEntropy {
     pub fn new() -> Self {
-        Self { bins: [0.0; 10], total_count: 0.0 }
+        Self {
+            bins: [0.0; 10],
+            total_count: 0.0,
+        }
     }
-    
+
     #[inline(always)]
     pub fn update(&mut self, norm_return: f64) -> f64 {
         // Map norm_return (-0.05 to 0.05) to bin 0-9
         let bin_idx = (norm_return * 100.0 + 5.0).clamp(0.0, 9.99) as usize;
         self.bins[bin_idx] += 1.0;
         self.total_count += 1.0;
-        
+
         let mut entropy = 0.0;
         for &count in self.bins.iter() {
             if count > 0.0 {
@@ -309,7 +319,7 @@ impl ShannonEntropy {
 
 /// Hurst Exponent via Rescaled Range (O(1) Recursive Approximation)
 /// Hurst Exponent via Exact Rescaled Range (Sliding Window Ring Buffer)
-/// FASE 17: O(1) decay mathematically destroys R/S range. 
+/// FASE 17: O(1) decay mathematically destroys R/S range.
 /// Using a highly optimized ring buffer for exact nanosecond tick-level Hurst.
 #[derive(Debug, Clone)]
 pub struct RecursiveHurst {
@@ -332,7 +342,7 @@ impl RecursiveHurst {
             count: 0,
         }
     }
-    
+
     #[inline(always)]
     pub fn update(&mut self, price: f64) -> f64 {
         self.window[self.index] = price;
@@ -349,30 +359,34 @@ impl RecursiveHurst {
         if self.count < 10 {
             return 0.5; // Random walk fallback while warming up
         }
-        
+
         let mut min_p = f64::MAX;
         let mut max_p = f64::MIN;
         let mut sum = 0.0;
-        
+
         // Unroll/vectorize friendly loop
         for i in 0..self.count {
             let p = self.window[i];
-            if p < min_p { min_p = p; }
-            if p > max_p { max_p = p; }
+            if p < min_p {
+                min_p = p;
+            }
+            if p > max_p {
+                max_p = p;
+            }
             sum += p;
         }
-        
+
         let mean = sum / (self.count as f64);
         let mut sq_sum = 0.0;
         for i in 0..self.count {
             let diff = self.window[i] - mean;
             sq_sum += diff * diff;
         }
-        
+
         let variance = sq_sum / (self.count as f64 - 1.0);
         let std = variance.sqrt();
         let range = max_p - min_p;
-        
+
         if std > 0.0 {
             let rs = (range / std).max(1.0001); // Evitar ln(rs) <= 0
             let n_f64 = self.count as f64;
@@ -386,7 +400,14 @@ impl RecursiveHurst {
 // FFI Kelly Fraction & Stats Calculation
 
 #[inline(always)]
-pub fn compute_kelly_fraction(p: f64, b: f64, apply_mult: bool, kelly_mult: f64, stress_score: f64, max_exposure: f64) -> f64 {
+pub fn compute_kelly_fraction(
+    p: f64,
+    b: f64,
+    apply_mult: bool,
+    kelly_mult: f64,
+    stress_score: f64,
+    max_exposure: f64,
+) -> f64 {
     if b <= 0.0 {
         return 0.0;
     }
@@ -430,8 +451,16 @@ pub fn extract_kelly_stats(pnl_array: &[f64], is_win_array: &[bool]) -> (f64, f6
     }
     let p = if wins > 0.0 { wins / n } else { 0.5 };
     let avg_win = if wins > 0.0 { sum_wins / wins } else { 0.01 };
-    let avg_loss = if losses > 0.0 { sum_losses / losses } else { 0.01 };
-    let b = if avg_loss > 0.0 { avg_win / avg_loss } else { 1.0 };
+    let avg_loss = if losses > 0.0 {
+        sum_losses / losses
+    } else {
+        0.01
+    };
+    let b = if avg_loss > 0.0 {
+        avg_win / avg_loss
+    } else {
+        1.0
+    };
     (p, b)
 }
 
@@ -443,11 +472,11 @@ pub fn compute_cvar(loss_history: &[f64], confidence_level: f64) -> f64 {
     let mut sorted_losses = loss_history.to_vec();
     // Sort in descending order (largest losses first)
     sorted_losses.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    
+
     let n = sorted_losses.len();
     let cutoff_idx = ((1.0 - confidence_level) * n as f64).floor() as usize;
     let cutoff_idx = cutoff_idx.max(1);
-    
+
     let mut sum = 0.0;
     for i in 0..cutoff_idx {
         sum += sorted_losses[i];
@@ -476,13 +505,15 @@ pub fn compute_ema_vectorized(data: &[f64], period: usize, out: &mut [f64]) {
 pub fn compute_rsi_vectorized(data: &[f64], period: usize, out: &mut [f64]) {
     let n = data.len();
     if n < period || period == 0 || out.len() != n {
-        for i in 0..n { out[i] = 50.0; } // Default safe value
+        for i in 0..n {
+            out[i] = 50.0;
+        } // Default safe value
         return;
     }
-    
+
     let mut gain = 0.0;
     let mut loss = 0.0;
-    
+
     // Seed first window
     for i in 1..period {
         let diff = data[i] - data[i - 1];
@@ -492,22 +523,22 @@ pub fn compute_rsi_vectorized(data: &[f64], period: usize, out: &mut [f64]) {
             loss -= diff;
         }
     }
-    
+
     gain /= period as f64;
     loss /= period as f64;
-    
+
     // Fill until period with 50.0 to prevent artifacting
     for i in 0..period {
         out[i] = 50.0;
     }
-    
+
     if loss == 0.0 {
         out[period - 1] = 100.0;
     } else {
         let rs = gain / loss;
         out[period - 1] = 100.0 - (100.0 / (1.0 + rs));
     }
-    
+
     // Smoothed Wilders moving average
     for i in period..n {
         let diff = data[i] - data[i - 1];
@@ -528,7 +559,14 @@ pub fn compute_rsi_vectorized(data: &[f64], period: usize, out: &mut [f64]) {
 }
 
 #[inline(always)]
-pub fn compute_bollinger_bands(data: &[f64], period: usize, std_dev_mult: f64, out_up: &mut [f64], out_mid: &mut [f64], out_low: &mut [f64]) {
+pub fn compute_bollinger_bands(
+    data: &[f64],
+    period: usize,
+    std_dev_mult: f64,
+    out_up: &mut [f64],
+    out_mid: &mut [f64],
+    out_low: &mut [f64],
+) {
     let n = data.len();
     if n < period || period == 0 {
         for i in 0..n {
@@ -538,13 +576,13 @@ pub fn compute_bollinger_bands(data: &[f64], period: usize, std_dev_mult: f64, o
         }
         return;
     }
-    
-    for i in 0..period-1 {
+
+    for i in 0..period - 1 {
         out_mid[i] = data[i];
         out_up[i] = data[i];
         out_low[i] = data[i];
     }
-    
+
     let window = period as f64;
     for i in (period - 1)..n {
         let mut sum = 0.0;
@@ -552,14 +590,14 @@ pub fn compute_bollinger_bands(data: &[f64], period: usize, std_dev_mult: f64, o
             sum += data[i - j];
         }
         let mean = sum / window;
-        
+
         let mut variance = 0.0;
         for j in 0..period {
             let diff = data[i - j] - mean;
             variance += diff * diff;
         }
         let std_dev = (variance / window).sqrt();
-        
+
         out_mid[i] = mean;
         out_up[i] = mean + std_dev_mult * std_dev;
         out_low[i] = mean - std_dev_mult * std_dev;
@@ -567,22 +605,32 @@ pub fn compute_bollinger_bands(data: &[f64], period: usize, std_dev_mult: f64, o
 }
 
 #[inline(always)]
-pub fn compute_macd(data: &[f64], fast_period: usize, slow_period: usize, signal_period: usize, out_macd: &mut [f64], out_signal: &mut [f64], out_hist: &mut [f64]) {
+pub fn compute_macd(
+    data: &[f64],
+    fast_period: usize,
+    slow_period: usize,
+    signal_period: usize,
+    out_macd: &mut [f64],
+    out_signal: &mut [f64],
+    out_hist: &mut [f64],
+) {
     let n = data.len();
-    if n == 0 { return; }
-    
+    if n == 0 {
+        return;
+    }
+
     let mut fast_ema = vec![0.0; n];
     let mut slow_ema = vec![0.0; n];
-    
+
     compute_ema_vectorized(data, fast_period, &mut fast_ema);
     compute_ema_vectorized(data, slow_period, &mut slow_ema);
-    
+
     for i in 0..n {
         out_macd[i] = fast_ema[i] - slow_ema[i];
     }
-    
+
     compute_ema_vectorized(out_macd, signal_period, out_signal);
-    
+
     for i in 0..n {
         out_hist[i] = out_macd[i] - out_signal[i];
     }
@@ -602,7 +650,9 @@ pub fn predict_rf(
     tree_offsets: &[i64],
 ) -> f64 {
     let n_trees = tree_offsets.len().saturating_sub(1);
-    if n_trees == 0 { return 0.0; }
+    if n_trees == 0 {
+        return 0.0;
+    }
     let mut total_prob = 0.0;
 
     for i in 0..n_trees {
@@ -664,7 +714,7 @@ pub fn fused_compute_step(
     brain_weights: &[f64; 100], // 25 * 4 = 100 flattened
     l2_state: &[f64; 2],        // [ofi, microprice_divergence]
     window: usize,
-    out_scores: &mut [f64; 4]
+    out_scores: &mut [f64; 4],
 ) {
     let n = closes.len();
     if n < 30 {
@@ -723,25 +773,25 @@ pub fn fused_compute_step(
     // 3. Neural Inference Dot Product (SIMD AVX-512 / AVX2 optimized)
     for act in 0..4 {
         let base_idx = act * 25;
-        
+
         // 3 x 8 = 24 elements using SIMD
         let st_0 = f64x8::from_slice(&state_tensor[0..8]);
         let bw_0 = f64x8::from_slice(&brain_weights[base_idx..base_idx + 8]);
         let mut sim_sum = st_0 * bw_0;
-        
+
         let st_1 = f64x8::from_slice(&state_tensor[8..16]);
         let bw_1 = f64x8::from_slice(&brain_weights[base_idx + 8..base_idx + 16]);
         sim_sum += st_1 * bw_1;
-        
+
         let st_2 = f64x8::from_slice(&state_tensor[16..24]);
         let bw_2 = f64x8::from_slice(&brain_weights[base_idx + 16..base_idx + 24]);
         sim_sum += st_2 * bw_2;
 
         let mut score = sim_sum.reduce_sum();
-        
+
         // 1 remaining element
         score += state_tensor[24] * brain_weights[base_idx + 24];
-        
+
         out_scores[act] = score;
     }
 }
@@ -757,7 +807,11 @@ pub struct ObiAcceleration {
 impl ObiAcceleration {
     #[inline(always)]
     pub fn new() -> Self {
-        Self { prev_obi: 0.0, prev_obi_velocity: 0.0, accel: 0.0 }
+        Self {
+            prev_obi: 0.0,
+            prev_obi_velocity: 0.0,
+            accel: 0.0,
+        }
     }
 
     #[inline(always)]
@@ -781,14 +835,17 @@ pub struct FundingRateElasticity {
 impl FundingRateElasticity {
     #[inline(always)]
     pub fn new() -> Self {
-        Self { prev_funding_rate: 0.0, prev_price: 0.0 }
+        Self {
+            prev_funding_rate: 0.0,
+            prev_price: 0.0,
+        }
     }
 
     #[inline(always)]
     pub fn update(&mut self, funding_rate: f64, price: f64) -> f64 {
         let delta_fr = funding_rate - self.prev_funding_rate;
         let delta_p = price - self.prev_price;
-        
+
         self.prev_funding_rate = funding_rate;
         self.prev_price = price;
 
@@ -851,18 +908,18 @@ mod tests {
         welford.update(14.0);
         welford.update(16.0);
         welford.update(18.0);
-        
+
         let mean = welford.mean;
         let std_dev = welford.std_dev();
-        
+
         // Mean of 10, 12, 14, 16, 18 is 14
         assert!((mean - 14.0).abs() < 1e-6);
-        
+
         // Variance of sample is sum((x - mean)^2) / (n - 1)
         // 16 + 4 + 0 + 4 + 16 = 40. 40 / 4 = 10
         // Std Dev = sqrt(10) = 3.162277...
         assert!((std_dev - 10.0_f64.sqrt()).abs() < 1e-6);
-        
+
         // Test rolling removal
         welford.remove(10.0);
         assert!((welford.mean - 15.0).abs() < 1e-6); // Mean of 12, 14, 16, 18
@@ -877,7 +934,7 @@ mod tests {
         }
         // Then add a very small number
         kahan.add(1e-10);
-        
+
         assert!((kahan.get_sum() - 10_000_000.0000000001).abs() < 1e-10);
     }
 }

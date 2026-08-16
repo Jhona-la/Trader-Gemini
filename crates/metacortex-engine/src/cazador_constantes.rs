@@ -3,9 +3,9 @@
 //! AST scanner using `syn::visit_mut` that strips hardcoded magic numbers from Rust code
 //! and replaces them with dynamic unique `Epigenoma` mmap state lookups (`gene_line{X}_col{Y}`).
 
-use syn::visit_mut::{self, VisitMut};
-use syn::{Expr, ExprLit, Lit, parse_file};
 use quote::quote;
+use syn::visit_mut::{self, VisitMut};
+use syn::{parse_file, Expr, ExprLit, Lit};
 
 pub struct CazadorConstantesVisitor {
     pub constants_replaced: usize,

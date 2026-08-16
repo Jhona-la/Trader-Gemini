@@ -49,7 +49,16 @@ impl Default for Position {
 impl Position {
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    pub fn open(&self, is_long: bool, price: f64, qty: f64, margin: f64, current_time_ms: u64, tp: f64, sl: f64) {
+    pub fn open(
+        &self,
+        is_long: bool,
+        price: f64,
+        qty: f64,
+        margin: f64,
+        current_time_ms: u64,
+        tp: f64,
+        sl: f64,
+    ) {
         self.is_long.store(is_long, Ordering::Relaxed);
         self.entry_price.store(price, Ordering::Relaxed);
         self.quantity.store(qty, Ordering::Relaxed);
@@ -92,4 +101,3 @@ pub struct PositionManager {
     pub scalp_position: Position,
     pub swing_position: Position,
 }
-

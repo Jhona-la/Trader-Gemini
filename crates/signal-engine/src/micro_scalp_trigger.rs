@@ -20,10 +20,18 @@ impl MicroScalpTriggerEngine {
         let obi_thresh = arena.config.obi_zscore_threshold.load(Ordering::Relaxed);
         let ml_long_thresh = arena.config.ml_threshold_long.load(Ordering::Relaxed);
         let ml_short_thresh = arena.config.ml_threshold_short.load(Ordering::Relaxed);
-        
+
         let hawkes_ok = hawkes_ratio >= hawkes_thresh;
-        let obi_ok = if is_long { obi_zscore >= obi_thresh } else { obi_zscore <= -obi_thresh };
-        let ml_ok = if is_long { ml_prob >= ml_long_thresh } else { ml_prob <= ml_short_thresh };
+        let obi_ok = if is_long {
+            obi_zscore >= obi_thresh
+        } else {
+            obi_zscore <= -obi_thresh
+        };
+        let ml_ok = if is_long {
+            ml_prob >= ml_long_thresh
+        } else {
+            ml_prob <= ml_short_thresh
+        };
         hawkes_ok && obi_ok && ml_ok
     }
 }

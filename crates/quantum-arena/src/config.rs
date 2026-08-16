@@ -51,7 +51,7 @@ pub struct QuantumConfig {
     pub weight_obi: AtomicF64,
     pub weight_ofi: AtomicF64,
     pub weight_vpin: AtomicF64,
-    pub regime_duration_ms: AtomicF64, 
+    pub regime_duration_ms: AtomicF64,
     pub regime_atr_multiplier: AtomicF64,
     pub scalp_trail_act_atr: AtomicF64,
     pub scalp_trail_step_atr: AtomicF64,
@@ -120,11 +120,11 @@ pub struct QuantumConfig {
     pub maker_only_capital_threshold: AtomicF64,
     pub hawkes_scalp_threshold: AtomicF64,
     pub obi_zscore_threshold: AtomicF64,
-    
+
     // FASE 14: Erradicación Matemática de Capital Fijo (13 USD vs 10k USD)
     pub hawkes_volume_norm: AtomicF64,
     pub base_duration_ms: AtomicF64,
-    
+
     // FASE 3: Kelly, Guard & Orchestrator Evolutive Parameters
     pub kelly_survival_cap_ratio: AtomicF64,
     pub kelly_expansion_mult: AtomicF64,
@@ -135,7 +135,7 @@ pub struct QuantumConfig {
     pub portfolio_perf_mult_min: AtomicF64,
     pub portfolio_perf_mult_max: AtomicF64,
     pub portfolio_perf_mult_center: AtomicF64,
-    
+
     // FASE 15: Optimizador Macro-Regime Genómico
     pub macro_hurst_confidence_offset: AtomicF64,
     pub macro_hurst_confidence_scale: AtomicF64,
@@ -150,7 +150,7 @@ pub struct QuantumConfig {
     pub scalp_accel_min_samples: AtomicF64,
     pub executor_max_orders_10s: AtomicF64,
     pub executor_max_weight_1m: AtomicF64,
-    
+
     // --- FASE 6: Iceberg & IOC Limits ---
     pub iceberg_volume_threshold: AtomicF64,
     pub iceberg_slice_count: AtomicF64,
@@ -275,10 +275,10 @@ impl QuantumConfig {
             maker_only_capital_threshold: AtomicF64::new(genome.maker_only_capital_threshold),
             hawkes_scalp_threshold: AtomicF64::new(genome.hawkes_scalp_threshold),
             obi_zscore_threshold: AtomicF64::new(genome.obi_zscore_threshold),
-            
+
             hawkes_volume_norm: AtomicF64::new(genome.hawkes_volume_norm),
             base_duration_ms: AtomicF64::new(genome.base_duration_ms),
-            
+
             kelly_survival_cap_ratio: AtomicF64::new(genome.kelly_survival_cap_ratio),
             kelly_expansion_mult: AtomicF64::new(genome.kelly_expansion_mult),
             guard_dd_sigmoid_steepness: AtomicF64::new(genome.guard_dd_sigmoid_steepness),
@@ -288,7 +288,7 @@ impl QuantumConfig {
             portfolio_perf_mult_min: AtomicF64::new(genome.portfolio_perf_mult_min),
             portfolio_perf_mult_max: AtomicF64::new(genome.portfolio_perf_mult_max),
             portfolio_perf_mult_center: AtomicF64::new(genome.portfolio_perf_mult_center),
-            
+
             macro_hurst_confidence_offset: AtomicF64::new(genome.macro_hurst_confidence_offset),
             macro_hurst_confidence_scale: AtomicF64::new(genome.macro_hurst_confidence_scale),
             macro_vol_confidence_scale: AtomicF64::new(genome.macro_vol_confidence_scale),

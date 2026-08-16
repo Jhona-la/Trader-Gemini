@@ -1,4 +1,4 @@
-use crate::{SignalType, SignalIntent};
+use crate::{SignalIntent, SignalType};
 
 pub struct StatArbEngine {
     window_size: usize,
@@ -32,10 +32,10 @@ impl StatArbEngine {
     #[inline(always)]
     pub fn update(&mut self, price_a: f64, price_b: f64) -> SignalIntent {
         let spread = price_a.ln() - price_b.ln();
-        
+
         let old_val = self.history[self.index];
         self.history[self.index] = spread;
-        
+
         if self.count < self.window_size {
             self.count += 1;
             self.sum += spread;
@@ -44,43 +44,63 @@ impl StatArbEngine {
             self.sum += spread - old_val;
             self.sum_sq += (spread * spread) - (old_val * old_val);
         }
-        
+
         self.index = (self.index + 1) % self.window_size;
-        
+
         if self.count < self.window_size {
             return SignalIntent::flat();
         }
-        
+
         let mean = self.sum / self.window_size as f64;
         let variance = (self.sum_sq / self.window_size as f64) - (mean * mean);
-        let stdev = if variance > 0.0 { variance.sqrt() } else { 0.000001 };
-        
+        let stdev = if variance > 0.0 {
+            variance.sqrt()
+        } else {
+            0.000001
+        };
+
         let z_score = (spread - mean) / stdev;
-        
+
         if !self.is_in_position {
             if z_score > self.z_score_threshold {
                 self.is_in_position = true;
                 self.current_direction = SignalType::Short;
                 // A está sobrevalorado respecto a B -> Short A, Long B
-                return SignalIntent { signal: SignalType::Short, confidence: z_score.abs(), ..Default::default() };
+                return SignalIntent {
+                    signal: SignalType::Short,
+                    confidence: z_score.abs(),
+                    ..Default::default()
+                };
             } else if z_score < -self.z_score_threshold {
                 self.is_in_position = true;
                 self.current_direction = SignalType::Long;
                 // A está infravalorado respecto a B -> Long A, Short B
-                return SignalIntent { signal: SignalType::Long, confidence: z_score.abs(), ..Default::default() };
+                return SignalIntent {
+                    signal: SignalType::Long,
+                    confidence: z_score.abs(),
+                    ..Default::default()
+                };
             }
         } else {
             // Regresión a la media (Exit)
             if z_score.abs() < 0.1 {
                 self.is_in_position = false;
                 self.current_direction = SignalType::Flat;
-                return SignalIntent { signal: SignalType::Flat, confidence: 1.0, ..Default::default() }; // Flag de Cierre
+                return SignalIntent {
+                    signal: SignalType::Flat,
+                    confidence: 1.0,
+                    ..Default::default()
+                }; // Flag de Cierre
             } else {
                 // Mantener
-                return SignalIntent { signal: self.current_direction, confidence: z_score.abs(), ..Default::default() };
+                return SignalIntent {
+                    signal: self.current_direction,
+                    confidence: z_score.abs(),
+                    ..Default::default()
+                };
             }
         }
-        
+
         SignalIntent::flat()
     }
 }

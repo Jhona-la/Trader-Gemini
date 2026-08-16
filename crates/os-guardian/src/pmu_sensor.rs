@@ -1,23 +1,23 @@
 /// Abstracción para Performance Monitoring Units (PMU).
-/// 
+///
 /// En Linux, esto se conectaría a `perf_event_open` para leer:
 /// - Instrucciones
 /// - Ciclos de CPU
 /// - Cache Misses (L1/LLC)
 /// - Branch Mispredictions
-/// 
+///
 /// Actualmente expone una interfaz "Mock" para entornos no-Linux (ej. Windows)
 /// que simula la recolección de HW counters para el motor de anomalías sin bloquear
 /// el hot path.
 
 #[derive(Debug, Clone, Copy)]
 pub struct PmuVector {
-    pub ipc: f64,              // Instructions Per Cycle
-    pub l1_miss_rate: f64,     // L1 Cache miss rate
-    pub llc_miss_rate: f64,    // Last Level Cache miss rate
-    pub branch_mispred: f64,   // Branch misprediction rate
-    pub cycles: u64,           // Ciclos totales consumidos en la ventana
-    pub instructions: u64,     // Instrucciones totales ejecutadas
+    pub ipc: f64,            // Instructions Per Cycle
+    pub l1_miss_rate: f64,   // L1 Cache miss rate
+    pub llc_miss_rate: f64,  // Last Level Cache miss rate
+    pub branch_mispred: f64, // Branch misprediction rate
+    pub cycles: u64,         // Ciclos totales consumidos en la ventana
+    pub instructions: u64,   // Instrucciones totales ejecutadas
 }
 
 pub struct PmuSensor {
@@ -46,11 +46,11 @@ impl PmuSensor {
 
     #[cfg(not(target_os = "linux"))]
     pub fn sample(&self) -> PmuVector {
-        // En Windows devolvemos un vector de simulación con ligero ruido estocástico 
+        // En Windows devolvemos un vector de simulación con ligero ruido estocástico
         // para alimentar el Anomaly Engine
         let base_cycles = 50_000;
         let noise = (unsafe { std::arch::x86_64::_rdtsc() } % 1000) as u64;
-        
+
         PmuVector {
             ipc: 1.8 + (noise as f64 / 10000.0),
             l1_miss_rate: 0.03 + (noise as f64 / 50000.0),

@@ -1,15 +1,15 @@
-use rusqlite::{Connection, params};
-use crossbeam_channel::{unbounded, Sender, Receiver};
+use crossbeam_channel::{unbounded, Receiver, Sender};
+use rusqlite::{params, Connection};
 use std::thread;
 
 /// Un evento de posesión para actualizar el Ledger Local
 #[derive(Debug, Clone)]
 pub struct LedgerEvent {
     pub symbol: String,
-    pub position_side: String, // "LONG" o "SHORT"
-    pub strategy: String,      // "scalp" o "swing"
-    pub qty_delta: f64,        // Positivo (abrir) o Negativo (cerrar)
-    pub price: f64,            // Precio promedio
+    pub position_side: String,      // "LONG" o "SHORT"
+    pub strategy: String,           // "scalp" o "swing"
+    pub qty_delta: f64,             // Positivo (abrir) o Negativo (cerrar)
+    pub price: f64,                 // Precio promedio
     pub is_absolute_override: bool, // Si es true, sobrescribe en vez de sumar (útil para conciliación)
 }
 
@@ -52,7 +52,6 @@ impl PositionLedger {
 
             // Bucle infinito recibiendo eventos Lock-Free con Batching asíncrono
             while let Ok(event) = rx.recv() {
-                
                 let mut batch = vec![event];
                 // Drenar el resto de la cola sin bloquear
                 while let Ok(e) = rx.try_recv() {
@@ -125,9 +124,13 @@ impl PositionLedger {
     }
 
     /// Método síncrono para inicialización: Leer estado del Ledger
-    pub fn get_ownership(db_path: &str, symbol: &str, position_side: &str) -> Option<(f64, f64, f64, f64)> {
+    pub fn get_ownership(
+        db_path: &str,
+        symbol: &str,
+        position_side: &str,
+    ) -> Option<(f64, f64, f64, f64)> {
         let conn = Connection::open(db_path).ok()?;
-        
+
         // Retornamos (scalp_qty, scalp_price, swing_qty, swing_price)
         let mut scalp_qty = 0.0;
         let mut scalp_price = 0.0;
@@ -136,7 +139,7 @@ impl PositionLedger {
 
         let mut stmt = conn.prepare("SELECT strategy, qty, entry_price FROM position_ownership WHERE symbol=?1 AND position_side=?2").ok()?;
         let mut rows = stmt.query(params![symbol, position_side]).ok()?;
-        
+
         while let Ok(Some(row)) = rows.next() {
             let strat: String = row.get(0).unwrap_or_default();
             let q: f64 = row.get(1).unwrap_or(0.0);
@@ -149,7 +152,7 @@ impl PositionLedger {
                 swing_price = p;
             }
         }
-        
+
         Some((scalp_qty, scalp_price, swing_qty, swing_price))
     }
 }

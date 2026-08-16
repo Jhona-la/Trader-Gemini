@@ -7,9 +7,8 @@ pub fn init_telemetry(capacity: usize) {
 }
 
 pub fn pop_telemetry() -> Option<String> {
-    atomic_telemetry::pop_binary_telemetry().map(|(buf, len)| {
-        String::from_utf8_lossy(&buf[..len]).into_owned()
-    })
+    atomic_telemetry::pop_binary_telemetry()
+        .map(|(buf, len)| String::from_utf8_lossy(&buf[..len]).into_owned())
 }
 
 pub use atomic_telemetry::TradeStats;
@@ -53,7 +52,7 @@ macro_rules! telemetry_err {
     };
 }
 
-use crossbeam::channel::{bounded, Sender, Receiver};
+use crossbeam::channel::{Receiver, Sender, bounded};
 use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy)]

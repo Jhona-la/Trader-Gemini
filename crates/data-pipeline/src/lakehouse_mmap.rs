@@ -1,8 +1,8 @@
 use memmap2::{MmapMut, MmapOptions};
 use std::fs::OpenOptions;
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::path::Path;
 
 /// FASE 13: Zero-Copy Memory-Mapped Tensor Dumper
 /// Permite volcar tensores de la red neuronal al Data Lakehouse en O(1) sin syscalls.
@@ -13,7 +13,7 @@ pub struct LakehouseMmap {
 }
 
 // We need unsafe impls because MmapMut pointers are raw inside our structure, but we only mutate atomically.
-// Note: MmapMut does not implement Clone, but we wrapped it in Arc. We cannot mutate it safely through Arc 
+// Note: MmapMut does not implement Clone, but we wrapped it in Arc. We cannot mutate it safely through Arc
 // without unsafe code, but we guarantee disjoint writes via atomic offset.
 unsafe impl Send for LakehouseMmap {}
 unsafe impl Sync for LakehouseMmap {}
@@ -47,7 +47,12 @@ impl LakehouseMmap {
 
     /// Escribe un tensor float al lakehouse crudo
     #[inline(always)]
-    pub fn append_tensor(&self, timestamp: u64, features: &[f64], probabilities: &[f64]) -> Result<(), &'static str> {
+    pub fn append_tensor(
+        &self,
+        timestamp: u64,
+        features: &[f64],
+        probabilities: &[f64],
+    ) -> Result<(), &'static str> {
         // Calculate needed bytes
         // 8 bytes (timestamp) + 4 bytes (features len) + 4 bytes (probs len) + arrays
         let needed = 8 + 4 + 4 + (features.len() * 8) + (probabilities.len() * 8);
@@ -63,7 +68,11 @@ impl LakehouseMmap {
 
         unsafe {
             // Write timestamp
-            std::ptr::copy_nonoverlapping(&timestamp as *const u64 as *const u8, ptr.add(cursor), 8);
+            std::ptr::copy_nonoverlapping(
+                &timestamp as *const u64 as *const u8,
+                ptr.add(cursor),
+                8,
+            );
             cursor += 8;
 
             // Write features len
@@ -83,7 +92,11 @@ impl LakehouseMmap {
 
             // Write probs
             let p_bytes = probabilities.len() * 8;
-            std::ptr::copy_nonoverlapping(probabilities.as_ptr() as *const u8, ptr.add(cursor), p_bytes);
+            std::ptr::copy_nonoverlapping(
+                probabilities.as_ptr() as *const u8,
+                ptr.add(cursor),
+                p_bytes,
+            );
         }
 
         Ok(())

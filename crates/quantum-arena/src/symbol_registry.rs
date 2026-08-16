@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use arc_swap::ArcSwap;
 use lazy_static::lazy_static;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct SymbolSpec {
@@ -37,7 +37,8 @@ impl SymbolSpec {
 }
 
 lazy_static! {
-    static ref DYNAMIC_REGISTRY: ArcSwap<Vec<SymbolSpec>> = ArcSwap::from_pointee(get_default_specs());
+    static ref DYNAMIC_REGISTRY: ArcSwap<Vec<SymbolSpec>> =
+        ArcSwap::from_pointee(get_default_specs());
 }
 
 pub fn update_registry(new_specs: Vec<SymbolSpec>) {

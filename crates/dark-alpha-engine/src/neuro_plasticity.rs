@@ -16,22 +16,22 @@ impl NeuroPlasticityEngine {
         if !anomaly_detected {
             return 0;
         }
-        
+
         // Quantum PICOSECOND entropía mediante RDTSC (Timestamp Counter) y XORShift
         let mut count = 0;
         let mut seed = unsafe { std::arch::x86_64::_rdtsc() };
         let len = weights.len();
-        
+
         for weight in weights.iter_mut().take(len) {
             if weight.abs() < 0.01 {
                 // Xorshift64 simple, rápido, ~1 ciclo de reloj
                 seed ^= seed << 13;
                 seed ^= seed >> 7;
                 seed ^= seed << 17;
-                
+
                 // Mapear el u64 resultante a un float pseudoaleatorio entre -1.0 y 1.0
                 let rand_f64 = ((seed % 2000) as f64 - 1000.0) / 1000.0;
-                
+
                 // Reconexión sináptica adaptativa ultra rápida
                 *weight = rand_f64 * learning_rate;
                 count += 1;
@@ -39,7 +39,6 @@ impl NeuroPlasticityEngine {
         }
         count
     }
-
 
     /// 🛡️ FASE 7: META-EVOLUCIÓN
     /// Conecta la entropía cuántica del Order Book para alterar cómo el bot aprende.
@@ -63,7 +62,7 @@ impl NeuroPlasticityEngine {
             1.0
         };
 
-        // MicroAccountHyperMutation: Si la cuenta es micro (< $50), necesitamos reaccionar 
+        // MicroAccountHyperMutation: Si la cuenta es micro (< $50), necesitamos reaccionar
         // 3 veces más rápido para evitar quiebra.
         if capital < 50.0 {
             multiplier *= 3.0;
@@ -82,13 +81,15 @@ impl NeuroPlasticityEngine {
         outputs: &[f64],
         in_features: usize,
         out_features: usize,
-        learning_rate: f64
+        learning_rate: f64,
     ) {
-        if learning_rate < 1e-9 { return; }
+        if learning_rate < 1e-9 {
+            return;
+        }
         for (i, &y_j) in outputs.iter().enumerate().take(out_features) {
             let row_offset = i * in_features;
             let rate_y = learning_rate * y_j;
-            
+
             for j in 0..in_features {
                 let x_i = inputs[j];
                 let w = weights[row_offset + j];

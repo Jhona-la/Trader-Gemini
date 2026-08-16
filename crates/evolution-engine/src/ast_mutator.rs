@@ -1,6 +1,6 @@
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
-use serde_json::Value;
 
 /// Demonio Autoevolutivo (AST-Modifier)
 /// Este mutador tiene permisos para reescribir lógica en .rs y archivos .json
@@ -41,7 +41,12 @@ impl ASTMutator {
 
         let new_content = serde_json::to_string_pretty(&json)?;
         fs::write(path, new_content)?;
-        println!("🧬 [AST Mutator] Evolved {} at {} to {}", path.display(), key, new_value);
+        println!(
+            "🧬 [AST Mutator] Evolved {} at {} to {}",
+            path.display(),
+            key,
+            new_value
+        );
         Ok(())
     }
 
@@ -55,18 +60,24 @@ impl ASTMutator {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let path = path.as_ref();
         let content = fs::read_to_string(path)?;
-        
-        let pattern = format!(r"(?m)(^\s*pub\s*const\s*{}\s*:\s*[a-zA-Z0-9_]+\s*=\s*)([^;]+)(;)", const_name);
+
+        let pattern = format!(
+            r"(?m)(^\s*pub\s*const\s*{}\s*:\s*[a-zA-Z0-9_]+\s*=\s*)([^;]+)(;)",
+            const_name
+        );
         let regex = regex::Regex::new(&pattern)?;
-        
+
         if regex.is_match(&content) {
             let replaced = regex.replace(&content, format!("${{1}}{}$3", new_value));
             fs::write(path, replaced.to_string())?;
-            println!("🧬 [AST Mutator] Evolved .rs constant {} to {}", const_name, new_value);
+            println!(
+                "🧬 [AST Mutator] Evolved .rs constant {} to {}",
+                const_name, new_value
+            );
         } else {
             return Err("Constant not found or malformed in the source file".into());
         }
-        
+
         Ok(())
     }
 }

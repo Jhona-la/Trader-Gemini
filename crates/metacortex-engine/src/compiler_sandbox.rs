@@ -90,13 +90,14 @@ impl CompilerSandbox {
         loop {
             match child.try_wait() {
                 Ok(Some(status)) => {
-                    let output = child.wait_with_output().unwrap_or_else(|_| {
-                        std::process::Output {
-                            status,
-                            stdout: Vec::new(),
-                            stderr: Vec::new(),
-                        }
-                    });
+                    let output =
+                        child
+                            .wait_with_output()
+                            .unwrap_or_else(|_| std::process::Output {
+                                status,
+                                stdout: Vec::new(),
+                                stderr: Vec::new(),
+                            });
 
                     let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
                     let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
@@ -109,10 +110,22 @@ impl CompilerSandbox {
                     };
 
                     let artifact_path = if success {
-                        let profile = if self.config.release_mode { "release" } else { "debug" };
+                        let profile = if self.config.release_mode {
+                            "release"
+                        } else {
+                            "debug"
+                        };
                         let dll_name = format!("{}.dll", package_name.replace('-', "_"));
-                        let p = self.workspace_root.join("target").join(profile).join(dll_name);
-                        if p.exists() { Some(p) } else { None }
+                        let p = self
+                            .workspace_root
+                            .join("target")
+                            .join(profile)
+                            .join(dll_name);
+                        if p.exists() {
+                            Some(p)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     };

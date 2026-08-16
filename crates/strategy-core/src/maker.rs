@@ -36,15 +36,19 @@ impl MakerEngine {
     ) -> MakerQuote {
         let _ofi = self.ofi_model.update(bid, ask, bid_qty, ask_qty);
         let total_vol = bid_qty + ask_qty;
-        let obi = if total_vol > 0.0 { (bid_qty - ask_qty) / total_vol } else { 0.0 };
-        
+        let obi = if total_vol > 0.0 {
+            (bid_qty - ask_qty) / total_vol
+        } else {
+            0.0
+        };
+
         let mid = (bid + ask) / 2.0;
-        
+
         // Ampliamos el spread si la volatilidad es alta para protegernos de toxicidad
         // Usamos tensor_poly_b en vez del viejo hardcode "0.005"
         let dynamic_spread_pct = genome_spread_pct + (volatility * tensor_poly_b);
         let half_spread = mid * dynamic_spread_pct;
-        
+
         // Skews
         // Si OBI > threshold (gran presión compradora), subimos los precios asimétricamente
         // Usamos tensor_poly_a * 0.01 para representar el sesgo (ej: 0.01 a 0.2% dictado por ML) en vez de "0.0002"
@@ -55,20 +59,20 @@ impl MakerEngine {
         } else if obi < -genome_obi_threshold {
             obi_skew = -dynamic_obi_skew;
         }
-        
+
         // Si inventory > 0 (estamos Long), bajamos los precios para salir rápido y evitar acumular
         // Usamos tensor_poly_b para inventario, calibrado a nivel de micro-ticks
-        let inv_skew = inventory_delta_usd * (mid * (tensor_poly_b * 0.001)); 
-        
+        let inv_skew = inventory_delta_usd * (mid * (tensor_poly_b * 0.001));
+
         let total_skew = obi_skew - inv_skew;
-        
+
         let optimal_bid = mid - half_spread + total_skew;
         let optimal_ask = mid + half_spread + total_skew;
-        
+
         // Regla estricta de Market Maker: NUNCA cruzar el spread real de mercado (eso pagaría Taker fee)
         let final_bid = optimal_bid.min(bid);
         let final_ask = optimal_ask.max(ask);
-        
+
         MakerQuote {
             bid_price: final_bid,
             ask_price: final_ask,

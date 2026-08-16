@@ -8,7 +8,11 @@ pub struct QuantumOscillatorEngine;
 impl QuantumOscillatorEngine {
     /// Calcula la fuerza del pozo de potencial anarmónico en O(1)
     #[inline(always)]
-    pub fn compute_quantum_restoring_force(position: f64, k_spring: f64, lambda_anharmonic: f64) -> f64 {
+    pub fn compute_quantum_restoring_force(
+        position: f64,
+        k_spring: f64,
+        lambda_anharmonic: f64,
+    ) -> f64 {
         let x = position;
         -(k_spring * x + 4.0 * lambda_anharmonic * x * x * x)
     }

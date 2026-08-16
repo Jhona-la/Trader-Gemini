@@ -1,11 +1,11 @@
 use memmap2::{MmapMut, MmapOptions};
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::{__m128i, _mm_set_epi64x, _mm_stream_si128};
+use std::cell::UnsafeCell;
 use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::cell::UnsafeCell;
-use std::io::Write;
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::{_mm_stream_si128, _mm_set_epi64x, __m128i};
 
 /// Un frame de telemetría de 64 bytes (1 cache line exacto)
 /// #[repr(C)] garantiza que los datos se guarden tal cual en la memoria (y por tanto, en el SSD).
@@ -45,14 +45,14 @@ impl MmapTelemetryBus {
     /// Inicializa o abre el archivo mapeado en memoria (RAM transparente sobre SSD).
     pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
         let file_size = HEADER_SIZE + (RING_CAPACITY * std::mem::size_of::<TelemetryFrame>());
-        
+
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
             .open(&path)?;
-            
+
         let metadata = file.metadata()?;
         if metadata.len() < file_size as u64 {
             file.set_len(file_size as u64)?;
@@ -62,7 +62,7 @@ impl MmapTelemetryBus {
         }
 
         let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
-        
+
         Ok(Self {
             mmap: UnsafeCell::new(mmap),
         })
@@ -84,7 +84,7 @@ impl MmapTelemetryBus {
         // FASE XLIII RCU Fix: Determine index, write data, SFENCE, then publish head.
         let current_head = head.load(Ordering::Acquire);
         let current_idx = current_head % RING_CAPACITY;
-        
+
         let frame = TelemetryFrame {
             timestamp_ns: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -100,26 +100,26 @@ impl MmapTelemetryBus {
             let mmap = &mut *self.mmap.get();
             let base_ptr = mmap.as_mut_ptr().add(HEADER_SIZE);
             let frame_ptr = (base_ptr as *mut TelemetryFrame).add(current_idx);
-            
+
             // FASE XLII: Zero-Latency Telemetry (Non-Temporal Store)
             // Evitamos golpear el Caché L1/L2 del procesador usando intrínsecos SIMD
             #[cfg(target_arch = "x86_64")]
             {
                 let ptr = frame_ptr as *mut __m128i;
                 let payload_ptr = frame.payload.as_ptr();
-                
+
                 // Chunk 1: timestamp (u64) + metadata (u64)
                 let meta_u64 = (frame.subsystem_id as u64) | ((frame.frame_type as u64) << 8);
                 let chunk1 = _mm_set_epi64x(meta_u64 as i64, frame.timestamp_ns as i64);
                 _mm_stream_si128(ptr, chunk1);
-                
+
                 // Chunk 2, 3, 4: payload [f64; 6]
                 let chunk2 = _mm_set_epi64x(*payload_ptr.add(1) as i64, *payload_ptr as i64);
                 _mm_stream_si128(ptr.add(1), chunk2);
-                
+
                 let chunk3 = _mm_set_epi64x(*payload_ptr.add(3) as i64, *payload_ptr.add(2) as i64);
                 _mm_stream_si128(ptr.add(2), chunk3);
-                
+
                 let chunk4 = _mm_set_epi64x(*payload_ptr.add(5) as i64, *payload_ptr.add(4) as i64);
                 _mm_stream_si128(ptr.add(3), chunk4);
 
@@ -161,7 +161,7 @@ impl MmapTelemetryReader {
     pub fn read_latest_frames(&mut self) -> std::io::Result<Vec<TelemetryFrame>> {
         #[cfg(windows)]
         use std::os::windows::fs::OpenOptionsExt;
-        
+
         let mut opts = OpenOptions::new();
         opts.read(true);
         #[cfg(windows)]
@@ -172,9 +172,9 @@ impl MmapTelemetryReader {
 
         let head_ptr = unsafe { &*(mmap.as_ptr() as *const AtomicUsize) };
         let current_head = head_ptr.load(Ordering::Acquire);
-        
+
         let mut frames = Vec::new();
-        
+
         // Prevención de overflow / saturación de buffer
         if current_head > self.last_read_idx + RING_CAPACITY {
             // Saltamos al punto más reciente disponible, descartando lo muy viejo.
@@ -185,13 +185,13 @@ impl MmapTelemetryReader {
 
         while self.last_read_idx < current_head {
             let ring_idx = self.last_read_idx % RING_CAPACITY;
-            
+
             unsafe {
                 let frame_ptr = (base_ptr as *const TelemetryFrame).add(ring_idx);
                 let frame = std::ptr::read_volatile(frame_ptr);
                 frames.push(frame);
             }
-            
+
             self.last_read_idx += 1;
         }
 

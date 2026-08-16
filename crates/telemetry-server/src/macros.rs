@@ -3,9 +3,8 @@
 //! These macros allow printing information and warnings without blocking the Hot Path.
 //! They submit logs into a global lock-free ArrayQueue.
 
-
-use std::sync::{OnceLock, Arc};
 use std::fmt::{self, Write};
+use std::sync::{Arc, OnceLock};
 
 /// Limit the max string length to avoid large dynamic allocations in hot paths.
 pub const MAX_LOG_LEN: usize = 512;
@@ -23,7 +22,7 @@ impl FixedLogBuffer {
             len: 0,
         }
     }
-    
+
     pub fn as_str(&self) -> &str {
         std::str::from_utf8(&self.data[..self.len]).unwrap_or("UTF8_ERR")
     }
@@ -96,4 +95,3 @@ macro_rules! telemetry_err {
         }
     }};
 }
-

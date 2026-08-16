@@ -5,16 +5,51 @@ use std::path::Path;
 use zip::ZipArchive;
 
 const SYMBOLS: &[&str] = &[
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "AVAXUSDT",
-    "DOTUSDT", "DOGEUSDT", "LINKUSDT", "TRXUSDT", "LTCUSDT", "BCHUSDT",
-    "ATOMUSDT", "UNIUSDT", "XMRUSDT", "ETCUSDT", "FILUSDT", "ICPUSDT", "VETUSDT",
-    "NEARUSDT", "AAVEUSDT", "ALGOUSDT", "EGLDUSDT", "SANDUSDT", "THETAUSDT",
-    "AXSUSDT", "MANAUSDT", "XLMUSDT", "GALAUSDT", "FTMUSDT", "RUNEUSDT",
-    "WAVESUSDT", "ZECUSDT", "DASHUSDT", "ENJUSDT", "BATUSDT", "ZILUSDT",
-    "COMPUSDT", "SNXUSDT"
+    "BTCUSDT",
+    "ETHUSDT",
+    "BNBUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "ADAUSDT",
+    "AVAXUSDT",
+    "DOTUSDT",
+    "DOGEUSDT",
+    "LINKUSDT",
+    "TRXUSDT",
+    "LTCUSDT",
+    "BCHUSDT",
+    "ATOMUSDT",
+    "UNIUSDT",
+    "XMRUSDT",
+    "ETCUSDT",
+    "FILUSDT",
+    "ICPUSDT",
+    "VETUSDT",
+    "NEARUSDT",
+    "AAVEUSDT",
+    "ALGOUSDT",
+    "EGLDUSDT",
+    "SANDUSDT",
+    "THETAUSDT",
+    "AXSUSDT",
+    "MANAUSDT",
+    "XLMUSDT",
+    "GALAUSDT",
+    "FTMUSDT",
+    "RUNEUSDT",
+    "WAVESUSDT",
+    "ZECUSDT",
+    "DASHUSDT",
+    "ENJUSDT",
+    "BATUSDT",
+    "ZILUSDT",
+    "COMPUSDT",
+    "SNXUSDT",
 ];
 
-const MONTHS: &[&str] = &["2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05"];
+const MONTHS: &[&str] = &[
+    "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05",
+];
 
 fn main() {
     println!("============================================================");
@@ -27,10 +62,10 @@ fn main() {
 
     for symbol in SYMBOLS {
         println!("🚀 Iniciando descarga para {}", symbol);
-        
+
         let out_file_path = data_dir.join(format!("{}_6M.csv", symbol));
         let mut out_file = File::create(&out_file_path).unwrap();
-        
+
         // CSV Header (Binance Vision Format)
         writeln!(out_file, "open_time,open,high,low,close,volume,close_time,quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore").unwrap();
 
@@ -39,9 +74,9 @@ fn main() {
                 "https://data.binance.vision/data/futures/um/monthly/klines/{}/1m/{}-1m-{}.zip",
                 symbol, symbol, month
             );
-            
+
             let zip_path = data_dir.join(format!("{}-{}.zip", symbol, month));
-            
+
             println!("   📥 Descargando: {}", url);
             let mut resp = match client.get(&url).send() {
                 Ok(r) => {
@@ -50,16 +85,16 @@ fn main() {
                         continue;
                     }
                     r
-                },
+                }
                 Err(e) => {
                     println!("   ❌ Reqwest Error: {}", e);
                     continue;
                 }
             };
-            
+
             let mut dest = File::create(&zip_path).unwrap();
             resp.copy_to(&mut dest).unwrap();
-            
+
             // Unzip the file and append to CSV
             let zip_file = File::open(&zip_path).unwrap();
             if let Ok(mut archive) = ZipArchive::new(zip_file) {
@@ -72,11 +107,11 @@ fn main() {
             } else {
                 println!("   ❌ Error reading ZIP: {:?}", zip_path);
             }
-            
+
             // Eliminar zip temporal
             let _ = std::fs::remove_file(&zip_path);
         }
-        
+
         println!("✅ {} completado y ensamblado.", symbol);
     }
 }

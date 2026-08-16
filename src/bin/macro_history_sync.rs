@@ -25,12 +25,12 @@ fn main() {
 
     for (ticker, name) in symbols {
         println!("🚀 Descargando historial macro para: {}", name);
-        
+
         let url = format!(
             "https://query1.finance.yahoo.com/v7/finance/download/{}?period1={}&period2={}&interval=1d&events=history&includeAdjustedClose=true",
             ticker, period1, period2
         );
-        
+
         match client.get(&url).send() {
             Ok(r) => {
                 if r.status().is_success() {
@@ -43,12 +43,12 @@ fn main() {
                 } else {
                     println!("   ❌ Error HTTP {}: {}", r.status(), url);
                 }
-            },
+            }
             Err(e) => {
                 println!("   ❌ Error de conexión: {}", e);
             }
         }
     }
-    
+
     println!("✅ Descarga de datos macroeconómicos completada.");
 }

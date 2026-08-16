@@ -16,8 +16,8 @@ services:
       - BINANCE_API_KEY=${BINANCE_API_KEY}
       - BINANCE_SECRET_KEY=${BINANCE_SECRET_KEY}
       - WANDB_API_KEY=${WANDB_API_KEY:-}
-      - BOT_MODE=${BOT_MODE:-live}
-      - PYTHONUNBUFFERED=1
+      - BOT_MODE=${BOT_MODE:-paper}
+      -  # legacy python eliminado
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
@@ -70,7 +70,7 @@ services:
     container_name: omega-grafana
     restart: unless-stopped
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=omega2026
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_UNIFIED_ALERTING_ENABLED=true
     volumes:

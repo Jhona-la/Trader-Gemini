@@ -1,14 +1,14 @@
-pub mod parsers;
+pub mod config;
 pub mod dark_alpha_router;
 pub mod dark_alpha_sniffer;
-pub mod trailing;
-pub mod quantum_arena;
-pub mod orderbook;
-pub mod config;
 pub mod dashboard;
 pub mod multi_asset_orchestrator;
+pub mod orderbook;
+pub mod parsers;
+pub mod quantum_arena;
 pub mod symbol_manager;
-pub use quantum_arena::{QuantumRingBuffer, FEATURE_SIZE, QuantumStateArena};
+pub mod trailing;
+pub use quantum_arena::{QuantumRingBuffer, QuantumStateArena, FEATURE_SIZE};
 pub use trailing::{evaluate_quantum_trailing, TrailingResult};
 
 // NOTA: Las funciones FFI extern "C" (quantum_ring_new, quantum_ring_free, quantum_ring_read_tick)

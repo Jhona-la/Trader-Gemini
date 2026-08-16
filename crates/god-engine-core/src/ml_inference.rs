@@ -1,9 +1,9 @@
+use arc_swap::ArcSwap;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use arc_swap::ArcSwap;
-use std::collections::HashMap;
 
 lazy_static::lazy_static! {
     pub static ref GLOBAL_FORESTS: ArcSwap<HashMap<String, Arc<NanoForest>>> = ArcSwap::from_pointee(HashMap::new());

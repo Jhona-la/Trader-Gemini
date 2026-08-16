@@ -13,12 +13,11 @@ impl BookTickerEvent {
     /// Asume el formato ordenado de Binance: {"u":...,"s":"...","b":"...","B":"...","a":"...","A":"..."}
     #[inline(always)]
     pub fn parse_from_json(bytes: &[u8]) -> Option<Self> {
-        
         let (bid_price, i) = Self::extract_f64_from(bytes, 0, b"\"b\":\"")?;
         let (bid_qty, i) = Self::extract_f64_from(bytes, i, b"\"B\":\"")?;
         let (ask_price, i) = Self::extract_f64_from(bytes, i, b"\"a\":\"")?;
         let (ask_qty, i) = Self::extract_f64_from(bytes, i, b"\"A\":\"")?;
-        
+
         // Extract Event Time (E) or Transaction Time (T)
         // Note: they are not in quotes: "E":1656093845014
         let event_time = if let Some((t, _)) = Self::extract_u64_from(bytes, i, b"\"E\":") {
@@ -28,10 +27,10 @@ impl BookTickerEvent {
         } else {
             0
         };
-        
+
         // El symbol lo dejamos hardcodeado por ahora o no lo parseamos dinámicamente si no se usa
         // En Producción unificada, the symbol is known by the Streamer.
-        
+
         Some(Self {
             bid_price,
             bid_qty,
@@ -47,11 +46,11 @@ impl BookTickerEvent {
         // memmem::find es acelerado por hardware (SIMD)
         let found_idx = memchr::memmem::find(&bytes[i..], key)?;
         let start = i + found_idx + key.len();
-        
+
         // Find the closing quote using memchr (also SIMD)
         let end_offset = memchr::memchr(b'"', &bytes[start..])?;
         let end = start + end_offset;
-        
+
         // Zero-copy, zero-UTF8 validation parse using fast_float
         let val = fast_float::parse(&bytes[start..end]).ok()?;
         Some((val, end + 1))
@@ -61,12 +60,12 @@ impl BookTickerEvent {
     pub fn extract_u64_from(bytes: &[u8], i: usize, key: &[u8]) -> Option<(u64, usize)> {
         let found_idx = memchr::memmem::find(&bytes[i..], key)?;
         let start = i + found_idx + key.len();
-        
+
         let mut end = start;
         while end < bytes.len() && bytes[end].is_ascii_digit() {
             end += 1;
         }
-        
+
         let mut val = 0u64;
         for &b in &bytes[start..end] {
             val = val * 10 + (b - b'0') as u64;
@@ -88,11 +87,11 @@ impl AggTradeEvent {
         // En un aggTrade, extraemos p (price), q (qty) y m (is_buyer_maker)
         let (price, i) = BookTickerEvent::extract_f64_from(bytes, 0, b"\"p\":\"")?;
         let (qty, i) = BookTickerEvent::extract_f64_from(bytes, i, b"\"q\":\"")?;
-        
+
         let m_idx = memchr::memmem::find(&bytes[i..], b"\"m\":")?;
         let m_start = i + m_idx + 4;
         let is_buyer_maker = bytes.get(m_start) == Some(&b't'); // "t"rue or "f"alse
-        
+
         Some(Self {
             price,
             qty,
@@ -108,18 +107,20 @@ pub struct DepthEvent {
 
 impl DepthEvent {
     pub fn parse_from_json(bytes: &[u8]) -> Option<Self> {
-        // Para depth@100ms usamos serde_json porque solo llega 10 veces por segundo, 
+        // Para depth@100ms usamos serde_json porque solo llega 10 veces por segundo,
         // a diferencia del tick que llega miles de veces por segundo.
         // Binance @depth10 stream no manda "e":"depthUpdate", manda "bids" y "asks"
-        if memchr::memmem::find(bytes, b"\"bids\"").is_none() || memchr::memmem::find(bytes, b"\"asks\"").is_none() {
+        if memchr::memmem::find(bytes, b"\"bids\"").is_none()
+            || memchr::memmem::find(bytes, b"\"asks\"").is_none()
+        {
             return None;
         }
-        
+
         if let Ok(json) = serde_json::from_slice::<serde_json::Value>(bytes) {
             let data = &json["data"];
             let mut bid_wall = 0.0;
             let mut ask_wall = 0.0;
-            
+
             if let Some(bids) = data["bids"].as_array() {
                 for bid in bids {
                     if let Some(qty_str) = bid[1].as_str() {
@@ -134,7 +135,7 @@ impl DepthEvent {
                     }
                 }
             }
-            
+
             return Some(Self { bid_wall, ask_wall });
         }
         None
@@ -169,20 +170,28 @@ impl OnlineNormalizer {
     #[inline(always)]
     pub fn update(&mut self, value: f64) {
         self.count += 1;
-        
+
         let delta = value - self.mean;
         self.mean += delta / (self.count as f64);
-        
+
         let delta2 = value - self.mean;
         self.m2 += delta * delta2;
 
-        if value < self.min { self.min = value; }
-        if value > self.max { self.max = value; }
+        if value < self.min {
+            self.min = value;
+        }
+        if value > self.max {
+            self.max = value;
+        }
     }
 
     #[inline(always)]
     pub fn variance(&self) -> f64 {
-        if self.count < 2 { 0.0 } else { self.m2 / (self.count as f64 - 1.0) }
+        if self.count < 2 {
+            0.0
+        } else {
+            self.m2 / (self.count as f64 - 1.0)
+        }
     }
 
     #[inline(always)]

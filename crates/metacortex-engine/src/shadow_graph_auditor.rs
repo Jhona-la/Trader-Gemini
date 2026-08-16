@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
 use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 /// FASE 2: MOTOR DE AUDITORÍA SHADOW GRAPH (FORENSE)
 /// Compara en tiempo real la expectativa teórica del modelo vs la realidad.
@@ -45,20 +45,26 @@ impl ShadowGraphAuditor {
     pub fn record_event(&self, event: ShadowEvent) {
         let current_head = self.head.load(Ordering::Relaxed);
         let idx = current_head & SHADOW_RING_MASK;
-        
+
         unsafe {
             (*self.buffer.get())[idx] = event;
         }
-        
-        self.head.store(current_head.wrapping_add(1), Ordering::Release);
-        
-        // Acumulación cruda del Drift. 
+
+        self.head
+            .store(current_head.wrapping_add(1), Ordering::Release);
+
+        // Acumulación cruda del Drift.
         // Si el drift se vuelve muy negativo, el bot está perdiendo su borde matemático.
         let mut current_bits = self.aggregate_drift.load(Ordering::Relaxed);
         loop {
             let current_drift = f64::from_bits(current_bits);
             let new_drift = current_drift + event.pnl_drift;
-            match self.aggregate_drift.compare_exchange_weak(current_bits, new_drift.to_bits(), Ordering::Relaxed, Ordering::Relaxed) {
+            match self.aggregate_drift.compare_exchange_weak(
+                current_bits,
+                new_drift.to_bits(),
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
                 Ok(_) => break,
                 Err(b) => current_bits = b,
             }
@@ -75,7 +81,7 @@ impl ShadowGraphAuditor {
         let alarms = self.critical_drift_alarms.load(Ordering::Relaxed);
         let agg_drift_bits = self.aggregate_drift.load(Ordering::Relaxed);
         let agg_drift = f64::from_bits(agg_drift_bits);
-        
+
         // Si hay más de 50 alarmas críticas o el drift acumulado destruye > 5% del margen
         if alarms > 50 || agg_drift < -5.0 {
             // Se requiere Hot-Swapping genético urgente

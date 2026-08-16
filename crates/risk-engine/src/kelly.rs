@@ -4,7 +4,14 @@
 
 /// Fórmula Dinámica de Kelly para Supervivencia y Crecimiento Exponencial
 #[inline(always)]
-pub fn calculate_kelly_fraction(win_rate: f64, profit_factor: f64, current_capital: f64, base_capital: f64, kelly_survival_cap_ratio: f64, kelly_expansion_mult: f64) -> f64 {
+pub fn calculate_kelly_fraction(
+    win_rate: f64,
+    profit_factor: f64,
+    current_capital: f64,
+    base_capital: f64,
+    kelly_survival_cap_ratio: f64,
+    kelly_expansion_mult: f64,
+) -> f64 {
     if profit_factor <= 0.0 || win_rate < 0.01 {
         return 0.0;
     }
@@ -15,7 +22,7 @@ pub fn calculate_kelly_fraction(win_rate: f64, profit_factor: f64, current_capit
     }
 
     let _dynamic_max_risk = win_rate.powi(2); // Auto-adaptable: 100% WR permite 100% riesgo
-    
+
     // Asimetría Matemática (Fase 8): Supervivencia vs Expansión Parabólica (Scale-Invariant)
     let capital_ratio = (current_capital / base_capital.max(1.0)).max(0.01);
     let capital_scale = if capital_ratio < kelly_survival_cap_ratio {
@@ -26,8 +33,7 @@ pub fn calculate_kelly_fraction(win_rate: f64, profit_factor: f64, current_capit
         let expansion = (capital_ratio.log10() * kelly_expansion_mult + 0.5).clamp(0.5, 2.5);
         (0.5 * expansion).clamp(0.5, 1.0)
     };
-    
+
     // Retornamos el Kelly ajustado asimétricamente
     (kelly * capital_scale).clamp(0.0, 1.0)
 }
-

@@ -1,30 +1,33 @@
 use axum::{
-    extract::{State, ws::{WebSocketUpgrade, WebSocket, Message}},
+    Extension, Router,
+    extract::{
+        State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
     response::{Html, IntoResponse, Json},
     routing::get,
-    Router, Extension,
 };
 pub mod flight_recorder;
+pub mod forensic_auditor;
+pub mod macros;
 pub mod profiler;
 pub mod telegram_bot;
 pub mod telemetry_mmap;
-pub mod forensic_auditor;
-pub mod macros;
 pub mod zero_copy_bus;
-pub use flight_recorder::{FlightRecorder, FlightEvent};
-pub use telegram_bot::TelegramBot;
+pub use flight_recorder::{FlightEvent, FlightRecorder};
 pub use forensic_auditor::ForensicAuditor;
 use quantum_arena::GlobalArena;
 use serde::Serialize;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
+pub use telegram_bot::TelegramBot;
 
 #[derive(Clone, Serialize, Debug)]
 pub enum TelemetryEvent {
-    LatencyUpdate(u64),      // Nanoseconds
-    LogUpdate(String, String), // (type, message) e.g., ("info", "Connected...")
-    CapitalUpdate(f64),      // Current capital
-    TensorUpdate([f32; 12]), // 12D State Vector (Scalp)
+    LatencyUpdate(u64),          // Nanoseconds
+    LogUpdate(String, String),   // (type, message) e.g., ("info", "Connected...")
+    CapitalUpdate(f64),          // Current capital
+    TensorUpdate([f32; 12]),     // 12D State Vector (Scalp)
     SwingTensorUpdate(Vec<f32>), // 34D State Vector (Swing)
     OmniUpdate {
         latency_ms: u64,
@@ -91,32 +94,38 @@ struct CoinState {
 
 /// Inicia el servidor web en background.
 /// Escucha en localhost:3000
-pub async fn start_telemetry_server(arena: Arc<GlobalArena>, tx: tokio::sync::broadcast::Sender<TelemetryEvent>) {
+pub async fn start_telemetry_server(
+    arena: Arc<GlobalArena>,
+    tx: tokio::sync::broadcast::Sender<TelemetryEvent>,
+) {
     profiler::start_profiler_auditor();
-    
+
     // Iniciar Auditor Forense (SQLite WAL)
     let forensic_auditor = ForensicAuditor::new("data/forensic_audit.db");
     let auditor_rx = tx.subscribe();
     tokio::spawn(async move {
         forensic_auditor.start(auditor_rx).await;
     });
-    
+
     // Iniciar el Bot de Telegram si las variables de entorno existen
     let telegram_bot = TelegramBot::new();
     if let Some(bot) = telegram_bot {
         let bot_arc = Arc::new(bot);
         let arena_clone = arena.clone();
-        
+
         tokio::spawn(async move {
             println!("🤖 [TELEGRAM] Bot iniciado y escuchando el motor HFT...");
             let mut last_capital = arena_clone.unified_capital.load(Ordering::Relaxed);
-            
+
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await; // Reporte cada 1 hora
                 let current_capital = arena_clone.unified_capital.load(Ordering::Relaxed);
                 let pnl = current_capital - last_capital;
-                
-                let msg = format!("📊 Reporte Horario\nCapital: ${:.2}\nPnL (1h): ${:.2}", current_capital, pnl);
+
+                let msg = format!(
+                    "📊 Reporte Horario\nCapital: ${:.2}\nPnL (1h): ${:.2}",
+                    current_capital, pnl
+                );
                 let _ = bot_arc.send_message(&msg).await;
                 last_capital = current_capital;
             }
@@ -163,7 +172,9 @@ async fn get_tensor(
     })
 }
 
-async fn get_genome(State(arena): State<Arc<GlobalArena>>) -> Json<quantum_arena::genome::SuperGenotype> {
+async fn get_genome(
+    State(arena): State<Arc<GlobalArena>>,
+) -> Json<quantum_arena::genome::SuperGenotype> {
     let genome = quantum_arena::genome::SuperGenotype::current_from_arena(&arena);
     Json(genome)
 }
@@ -203,7 +214,7 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
     let mut active_coins = 0.0;
     let mut active_scalp_coins = 0.0;
     let mut active_swing_coins = 0.0;
-    
+
     for coin in arena.coins.iter() {
         let sc_realized = coin.scalp.pnl_realized.load(Ordering::Relaxed);
         let sw_realized = coin.swing.pnl_realized.load(Ordering::Relaxed);
@@ -213,11 +224,11 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
         let sw_unrealized = coin.swing.pnl_unrealized.load(Ordering::Relaxed);
         let wr_scalp = coin.scalp.win_rate.load(Ordering::Relaxed);
         let wr_swing = coin.swing.win_rate.load(Ordering::Relaxed);
-        
+
         let ml = coin.ml_prob.load(Ordering::Relaxed); // Phase 22: ml_prob
         let hurst = coin.hurst_exponent.load(Ordering::Relaxed);
         let zombies = coin.scalp.zombie_promotions.load(Ordering::Relaxed);
-        
+
         pnl_realized_scalp += sc_realized;
         pnl_gross_scalp += sc_gross;
         pnl_unrealized_scalp += sc_unrealized;
@@ -225,25 +236,47 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
         pnl_gross_swing += sw_gross;
         pnl_unrealized_swing += sw_unrealized;
         total_zombies += zombies;
-        
+
         ml_prob_sum += ml;
         hurst_sum += hurst;
-        
-        if sc_realized != 0.0 || sc_unrealized != 0.0 || coin.scalp.active_positions.load(Ordering::Relaxed) > 0 {
+
+        if sc_realized != 0.0
+            || sc_unrealized != 0.0
+            || coin.scalp.active_positions.load(Ordering::Relaxed) > 0
+        {
             win_rate_scalp_sum += wr_scalp;
             active_scalp_coins += 1.0;
         }
-        if sw_realized != 0.0 || sw_unrealized != 0.0 || coin.swing.active_positions.load(Ordering::Relaxed) > 0 {
+        if sw_realized != 0.0
+            || sw_unrealized != 0.0
+            || coin.swing.active_positions.load(Ordering::Relaxed) > 0
+        {
             win_rate_swing_sum += wr_swing;
             active_swing_coins += 1.0;
         }
         active_coins += 1.0;
     }
-    
-    let avg_win_rate_scalp = if active_scalp_coins > 0.0 { win_rate_scalp_sum / active_scalp_coins } else { 0.55 };
-    let avg_win_rate_swing = if active_swing_coins > 0.0 { win_rate_swing_sum / active_swing_coins } else { 0.55 };
-    let avg_ml_prob = if active_coins > 0.0 { ml_prob_sum / active_coins } else { 0.5 };
-    let avg_hurst = if active_coins > 0.0 { hurst_sum / active_coins } else { 0.5 };
+
+    let avg_win_rate_scalp = if active_scalp_coins > 0.0 {
+        win_rate_scalp_sum / active_scalp_coins
+    } else {
+        0.55
+    };
+    let avg_win_rate_swing = if active_swing_coins > 0.0 {
+        win_rate_swing_sum / active_swing_coins
+    } else {
+        0.55
+    };
+    let avg_ml_prob = if active_coins > 0.0 {
+        ml_prob_sum / active_coins
+    } else {
+        0.5
+    };
+    let avg_hurst = if active_coins > 0.0 {
+        hurst_sum / active_coins
+    } else {
+        0.5
+    };
 
     let total_net_pnl = pnl_realized_scalp + pnl_realized_swing;
     let total_gross_pnl = pnl_gross_scalp + pnl_gross_swing;
@@ -255,7 +288,7 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
     } else {
         current_cap.max(1.0)
     };
-    
+
     let net_roi_pct = (total_net_pnl / initial_cap) * 100.0;
     let gross_roi_pct = (total_gross_pnl / initial_cap) * 100.0;
 
@@ -290,14 +323,14 @@ async fn get_coins(State(arena): State<Arc<GlobalArena>>) -> Json<Vec<CoinState>
     let mut coins_data = Vec::with_capacity(30);
     // Extraemos la lista dinámica actual desde la memoria
     let active_symbols = quantum_arena::symbols::get_active_universe();
-    
+
     for (i, coin) in arena.coins.iter().enumerate() {
         let symbol_name = if i < active_symbols.len() {
             active_symbols[i].clone()
         } else {
             format!("COIN_{}", i)
         };
-        
+
         coins_data.push(CoinState {
             id: i,
             symbol: symbol_name,
@@ -848,5 +881,3 @@ async fn dashboard_html() -> impl IntoResponse {
     "#;
     Html(html)
 }
-
-

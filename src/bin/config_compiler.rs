@@ -24,7 +24,10 @@ fn main() {
             let encoded = bincode::serialize(&config).unwrap();
             let mut bin_file = File::create("data/dynamic_config.bin").unwrap();
             bin_file.write_all(&encoded).unwrap();
-            println!("✅ dynamic_config.json -> dynamic_config.bin ({} bytes)", encoded.len());
+            println!(
+                "✅ dynamic_config.json -> dynamic_config.bin ({} bytes)",
+                encoded.len()
+            );
         }
     } else {
         println!("⚠️ dynamic_config.json not found.");
@@ -38,11 +41,14 @@ fn main() {
             let encoded = bincode::serialize(&forest).unwrap();
             let mut bin_file = File::create("models/nano_forest.bin").unwrap();
             bin_file.write_all(&encoded).unwrap();
-            println!("✅ nano_forest.json -> nano_forest.bin ({} bytes)", encoded.len());
+            println!(
+                "✅ nano_forest.json -> nano_forest.bin ({} bytes)",
+                encoded.len()
+            );
         }
     } else {
         println!("⚠️ nano_forest.json not found.");
     }
-    
+
     println!("🏁 Compilation Finished.");
 }

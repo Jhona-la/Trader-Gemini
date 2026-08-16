@@ -8,7 +8,11 @@ pub struct GameTheoreticNashEngine;
 impl GameTheoreticNashEngine {
     /// Calcula la posición óptima del equilibrio de Nash para colocar órdenes pasivas
     #[inline(always)]
-    pub fn compute_nash_equilibrium_price(best_bid: f64, best_ask: f64, liquidity_imbalance: f64) -> f64 {
+    pub fn compute_nash_equilibrium_price(
+        best_bid: f64,
+        best_ask: f64,
+        liquidity_imbalance: f64,
+    ) -> f64 {
         let mid = (best_bid + best_ask) * 0.5;
         let spread = best_ask - best_bid;
         let nash_offset = spread * 0.25 * liquidity_imbalance.clamp(-1.0, 1.0);

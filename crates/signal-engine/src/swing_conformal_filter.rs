@@ -18,12 +18,20 @@ impl SwingConformalFilterEngine {
         use std::sync::atomic::Ordering;
         let conformal_alpha = arena.config.conformal_alpha.load(Ordering::Relaxed);
         let vecm_threshold = arena.config.vecm_beta_hedge.load(Ordering::Relaxed);
-        
+
         // P-Value must be high enough (1 - alpha approx)
         let conformal_ok = conformal_p_value >= (1.0 - conformal_alpha);
-        let trend_ok = if is_long { ema_trend > 0.0 } else { ema_trend < 0.0 };
+        let trend_ok = if is_long {
+            ema_trend > 0.0
+        } else {
+            ema_trend < 0.0
+        };
         // Assuming vecm_threshold is normally distributed Z-score bound (e.g. 1.0)
-        let vecm_ok = if is_long { vecm_zscore <= -vecm_threshold } else { vecm_zscore >= vecm_threshold };
+        let vecm_ok = if is_long {
+            vecm_zscore <= -vecm_threshold
+        } else {
+            vecm_zscore >= vecm_threshold
+        };
         conformal_ok && trend_ok && vecm_ok
     }
 }

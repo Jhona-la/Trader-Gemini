@@ -54,7 +54,8 @@ impl DynamicSelector {
                     item.get("priceChangePercent").and_then(|v| v.as_str()),
                 ) {
                     if sym.ends_with("USDT") && !sym.contains("_") {
-                        if let (Ok(vol), Ok(pct)) = (vol_str.parse::<f64>(), pct_str.parse::<f64>()) {
+                        if let (Ok(vol), Ok(pct)) = (vol_str.parse::<f64>(), pct_str.parse::<f64>())
+                        {
                             // Ignorar activos con nulo volumen (delisted o pausados)
                             if vol > 1_000_000.0 {
                                 let volatility = pct.abs();
@@ -74,11 +75,15 @@ impl DynamicSelector {
         }
 
         // Ordenar de mayor a menor score
-        assets.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        assets.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Tomar los 10 mejores
         let top_10: Vec<String> = assets.into_iter().take(10).map(|a| a.symbol).collect();
-        
+
         if top_10.is_empty() {
             Err("No se encontraron activos que cumplan el criterio".to_string())
         } else {

@@ -3,10 +3,10 @@
 //! Generates dynamic Rust unit tests in `sistema_inmune/tests_vivos/` derived from historical
 //! trauma logs (`memoria/trauma/`). Ensures the organism never repeats structural prediction errors.
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraumaRecord {
@@ -46,7 +46,11 @@ impl LivingImmuneSystem {
 
     /// Records a new trauma event to JSON
     pub fn record_trauma(&self, trauma: &TraumaRecord) -> std::io::Result<PathBuf> {
-        let filename = format!("trauma_{}_{}.json", trauma.symbol, trauma.timestamp.format("%Y%m%d_%H%M%S"));
+        let filename = format!(
+            "trauma_{}_{}.json",
+            trauma.symbol,
+            trauma.timestamp.format("%Y%m%d_%H%M%S")
+        );
         let target = self.trauma_dir.join(&filename);
         let content = serde_json::to_string_pretty(trauma)?;
         fs::write(&target, content)?;
@@ -82,7 +86,8 @@ impl LivingImmuneSystem {
         let file_name = format!("immune_test_{}.rs", safe_id);
         let target_path = self.tests_vivos_dir.join(&file_name);
 
-        let inputs_formatted = trauma.inputs_snapshot
+        let inputs_formatted = trauma
+            .inputs_snapshot
             .iter()
             .map(|x| format!("{:.6}", x))
             .collect::<Vec<String>>()

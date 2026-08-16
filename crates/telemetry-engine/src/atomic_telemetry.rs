@@ -1,7 +1,7 @@
 use crossbeam_queue::ArrayQueue;
-use std::sync::OnceLock;
+use serde::{Deserialize, Serialize};
 use std::fmt;
-use serde::{Serialize, Deserialize};
+use std::sync::OnceLock;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct TradeStats {

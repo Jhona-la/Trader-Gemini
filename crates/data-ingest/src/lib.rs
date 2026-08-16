@@ -1,12 +1,12 @@
-pub mod world_bank;
 pub mod dynamic_selector;
-use polars::prelude::LazyFileListReader;
+pub mod world_bank;
 use memmap2::MmapOptions;
+use polars::prelude::LazyFileListReader;
 use std::fs::File;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
 use std::sync::OnceLock;
+use std::time::Instant;
 
 fn get_monotonic_ms() -> u64 {
     static BASE_INSTANT: OnceLock<Instant> = OnceLock::new();
@@ -37,26 +37,40 @@ impl TokenBucket {
     pub fn try_consume(&self) -> bool {
         loop {
             let now = get_monotonic_ms();
-                
+
             let last = self.last_update.load(Ordering::SeqCst);
             let current_tokens = self.tokens.load(Ordering::SeqCst);
-            
+
             let elapsed_ms = now.saturating_sub(last);
             let added_tokens = (elapsed_ms as f64 * self.fill_rate) as u64;
-            
+
             let mut new_tokens = std::cmp::min(self.capacity, current_tokens + added_tokens);
-            
+
             if new_tokens == 0 {
                 return false;
             }
-            
+
             new_tokens -= 1;
-            
+
             // Try to update time and tokens atomically via CAS-like loop approach
             // In a strict high-concurrency setting, we might use a spin-loop with compare_exchange
-            if self.tokens.compare_exchange(current_tokens, new_tokens, Ordering::SeqCst, Ordering::Relaxed).is_ok() {
+            if self
+                .tokens
+                .compare_exchange(
+                    current_tokens,
+                    new_tokens,
+                    Ordering::SeqCst,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 if added_tokens > 0 {
-                    let _ = self.last_update.compare_exchange(last, now, Ordering::SeqCst, Ordering::Relaxed);
+                    let _ = self.last_update.compare_exchange(
+                        last,
+                        now,
+                        Ordering::SeqCst,
+                        Ordering::Relaxed,
+                    );
                 }
                 return true;
             }
@@ -94,13 +108,16 @@ impl PolarsIngest {
     }
 
     /// Retorna un LazyFrame que no carga los datos en RAM hasta que se llama a .collect().
-    /// Esto permite filtrar (ej. fechas específicas) y luego hacer chunking a tensores 
+    /// Esto permite filtrar (ej. fechas específicas) y luego hacer chunking a tensores
     /// manteniendo el consumo de memoria plano.
     pub fn get_lazy_frame(&self) -> Result<polars::prelude::LazyFrame, String> {
         let path_str = self.path.to_str().unwrap_or_default();
         if path_str.ends_with(".parquet") {
-            polars::prelude::LazyFrame::scan_parquet(path_str, polars::prelude::ScanArgsParquet::default())
-                .map_err(|e| format!("Fallo al leer Parquet: {}", e))
+            polars::prelude::LazyFrame::scan_parquet(
+                path_str,
+                polars::prelude::ScanArgsParquet::default(),
+            )
+            .map_err(|e| format!("Fallo al leer Parquet: {}", e))
         } else if path_str.ends_with(".csv") {
             // Asume Csv sin configuraciones especiales
             polars::prelude::LazyCsvReader::new(path_str)

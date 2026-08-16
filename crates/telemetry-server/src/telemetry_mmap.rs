@@ -1,9 +1,9 @@
-use quantum_arena::GlobalArena;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use memmap2::MmapMut;
+use quantum_arena::GlobalArena;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Axiom IX: Zero-Latency Telemetry via Memory-Mapped Files (SHM)
 ///
@@ -25,34 +25,38 @@ pub struct TelemetrySnapshot {
     pub ai_ml_prob: f64,
     pub hurst_exponent: f64,
     pub memory_used_mb: f64,
-    pub global_roi: f64,          // Added: ROI general antes y después de fees aproximado
-    pub win_rate: f64,            // Added: Tasa de victorias real-time
-    pub tensor_drift: f64,        // Added: Drift del tensor online
+    pub global_roi: f64, // Added: ROI general antes y después de fees aproximado
+    pub win_rate: f64,   // Added: Tasa de victorias real-time
+    pub tensor_drift: f64, // Added: Drift del tensor online
 }
 
 impl MmapTelemetry {
     pub fn new(arena: Arc<GlobalArena>, path: &str) -> std::io::Result<Self> {
         let size = std::mem::size_of::<TelemetrySnapshot>() as u64;
-        
+
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(true)
             .open(path)?;
-            
+
         file.set_len(size)?;
-        
+
         let mut mmap = unsafe { MmapMut::map_mut(&file)? };
-        
+
         let ptr = mmap.as_mut_ptr() as *mut std::ffi::c_void;
         let locked = unsafe { os_guardian::lock_memory_region(ptr, size as usize) };
         if !locked {
-            crate::telemetry_err!("⚠️ [TELEMETRY] Warning: Failed to VirtualLock mmap telemetry region.");
+            crate::telemetry_err!(
+                "⚠️ [TELEMETRY] Warning: Failed to VirtualLock mmap telemetry region."
+            );
         } else {
-            crate::telemetry_log!("🔒 [TELEMETRY] Mmap region VirtualLocked (Zero-Latency Guarantee).");
+            crate::telemetry_log!(
+                "🔒 [TELEMETRY] Mmap region VirtualLocked (Zero-Latency Guarantee)."
+            );
         }
-        
+
         Ok(Self { mmap, arena })
     }
 
@@ -62,22 +66,35 @@ impl MmapTelemetry {
         let mut ml_prob_sum = 0.0;
         let mut hurst_sum = 0.0;
         let mut active_coins = 0.0;
-        
+
         for coin in self.arena.coins.iter() {
-            pnl_realized += coin.scalp.pnl_realized.load(Ordering::Relaxed) + coin.swing.pnl_realized.load(Ordering::Relaxed);
+            pnl_realized += coin.scalp.pnl_realized.load(Ordering::Relaxed)
+                + coin.swing.pnl_realized.load(Ordering::Relaxed);
             ml_prob_sum += coin.ml_prob.load(Ordering::Relaxed);
             hurst_sum += coin.hurst_exponent.load(Ordering::Relaxed);
             active_coins += 1.0;
         }
 
-        let avg_ml_prob = if active_coins > 0.0 { ml_prob_sum / active_coins } else { 0.5 };
-        let avg_hurst = if active_coins > 0.0 { hurst_sum / active_coins } else { 0.5 };
-        
+        let avg_ml_prob = if active_coins > 0.0 {
+            ml_prob_sum / active_coins
+        } else {
+            0.5
+        };
+        let avg_hurst = if active_coins > 0.0 {
+            hurst_sum / active_coins
+        } else {
+            0.5
+        };
+
         let os_telemetry = os_guardian::telemetry::get_system_telemetry();
-        
+
         let base = self.arena.config.base_capital.load(Ordering::Relaxed);
         let uni = self.arena.unified_capital.load(Ordering::Relaxed);
-        let roi = if base > 0.0 { ((uni - base) / base) * 100.0 } else { 0.0 };
+        let roi = if base > 0.0 {
+            ((uni - base) / base) * 100.0
+        } else {
+            0.0
+        };
 
         let snap = TelemetrySnapshot {
             tick_counter: self.arena.tick_counter.load(Ordering::Relaxed),
@@ -91,9 +108,10 @@ impl MmapTelemetry {
             win_rate: 0.0, // To be fed dynamically
             tensor_drift: 0.0,
         };
-        
+
         // Write struct directly to memory map
-        let bytes: [u8; std::mem::size_of::<TelemetrySnapshot>()] = unsafe { std::mem::transmute(snap) };
+        let bytes: [u8; std::mem::size_of::<TelemetrySnapshot>()] =
+            unsafe { std::mem::transmute(snap) };
         let _ = (&mut self.mmap[..]).write_all(&bytes);
     }
 }

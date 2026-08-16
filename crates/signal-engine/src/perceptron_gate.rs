@@ -20,7 +20,7 @@ impl PerceptronGateEngine {
         // Tasa de aprendizaje base (0.05) modulada inversamente por el riesgo (std_dev).
         // A mayor volatilidad/incertidumbre (alto std_dev), menor es el paso de mutación.
         let learning_rate = 0.05 / (1.0 + std_dev * 100.0);
-        
+
         if recent_pnl > 0.0 {
             *weight = (*weight + learning_rate).min(2.0);
         } else if recent_pnl < 0.0 {

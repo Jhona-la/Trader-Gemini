@@ -1,19 +1,15 @@
-use yahoo_finance_api as yahoo;
 use polars::prelude::*;
 use std::fs::File;
 use std::path::Path;
+use yahoo_finance_api as yahoo;
 
 pub struct MacroFetcher;
 
 impl MacroFetcher {
     pub async fn fetch_and_save_macro_data() -> Result<(), Box<dyn std::error::Error>> {
         let provider = yahoo::YahooConnector::new()?;
-        
-        let symbols = vec![
-            ("^GSPC", "SP500"),
-            ("DX-Y.NYB", "DXY"),
-            ("^VIX", "VIX"),
-        ];
+
+        let symbols = vec![("^GSPC", "SP500"), ("DX-Y.NYB", "DXY"), ("^VIX", "VIX")];
 
         let data_dir = Path::new("data/historical");
         if !data_dir.exists() {
@@ -24,7 +20,7 @@ impl MacroFetcher {
             // Bajamos los ultimos 6 meses
             let response = provider.get_quote_range(ticker, "1d", "6mo").await?;
             let quotes = response.quotes()?;
-            
+
             if quotes.is_empty() {
                 continue;
             }
@@ -39,7 +35,7 @@ impl MacroFetcher {
 
             let file_path = data_dir.join(format!("MACRO_{}.parquet", name));
             let mut file = File::create(&file_path)?;
-            
+
             ParquetWriter::new(&mut file)
                 .with_compression(ParquetCompression::Zstd(None))
                 .finish(&mut df)?;

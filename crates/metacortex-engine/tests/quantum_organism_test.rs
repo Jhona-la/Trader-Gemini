@@ -1,5 +1,6 @@
 use metacortex_engine::{
-    ConsejoDeliberacion, CazadorConstantes, QuantumEvolver, FaseAutonomousManager, FaseAutonomous, HealthMetrics, MarketSnapshotPayload, set_epigenoma_gene, read_epigenoma_gene
+    read_epigenoma_gene, set_epigenoma_gene, CazadorConstantes, ConsejoDeliberacion,
+    FaseAutonomous, FaseAutonomousManager, HealthMetrics, MarketSnapshotPayload, QuantumEvolver,
 };
 
 #[test]
@@ -15,7 +16,10 @@ fn test_quantum_organism_components() {
         estimated_slippage_bps: 0.001,
     };
     let result = consejo.deliberar(&healthy_payload, 0.65);
-    assert!(result.approved, "Council should approve healthy market snapshot");
+    assert!(
+        result.approved,
+        "Council should approve healthy market snapshot"
+    );
     assert!(result.vetoed_by.is_none());
 
     // Test Risk Veto (Drawdown 25% > 15% limit)
@@ -25,7 +29,10 @@ fn test_quantum_organism_components() {
     };
     let veto_result = consejo.deliberar(&risky_payload, 0.65);
     assert!(!veto_result.approved);
-    assert_eq!(veto_result.vetoed_by, Some(metacortex_engine::SeniorRole::Riesgo));
+    assert_eq!(
+        veto_result.vetoed_by,
+        Some(metacortex_engine::SeniorRole::Riesgo)
+    );
 
     // Test Data Integrity Veto (Corrupt NaN payload)
     let corrupt_payload = MarketSnapshotPayload {
