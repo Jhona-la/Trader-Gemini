@@ -627,10 +627,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let num_symbols = symbols.len();
+
+    // ── F4.1: OMNI FEATURES REALES EN PRODUCCIÓN ────────────────────────────
+    // El swing NN recibía &[0.0;54] SIEMPRE: el subsistema macro era un
+    // fantasma — god_engine jamás creó el OmniState. Ahora: estado vivo +
+    // pollers REST ligeros (macro FRED/PAXG + sentiment). Los WS cross-exchange
+    // pesados quedan desconectados (documentado) — pero la mitad macro del
+    // vector es REAL en vivo, con staleness medible.
+    let omni_state_live = Arc::new(data_pipeline::omni_multiplexer::OmniState::new());
+    {
+        let st = Arc::clone(&omni_state_live);
+        tokio::spawn(async move {
+            data_pipeline::omni_multiplexer::run_macro_rest_poller(st).await;
+        });
+        let st = Arc::clone(&omni_state_live);
+        tokio::spawn(async move {
+            data_pipeline::omni_multiplexer::run_sentiment_onchain_poller(st).await;
+        });
+        telemetry_server::telemetry_log!(
+            "🌐 [OMNI] Features macro REALES cableadas al swing NN (FRED/PAXG + sentiment, 60s/120s)"
+        );
+    }
+
     let unified_handle = std::thread::Builder::new().stack_size(32 * 1024 * 1024).spawn({
         let loop_ws_url = Arc::clone(&ws_url);
         let loop_streams_str = streams_str.clone();
         let historical_klines = historical_klines.clone();
+        let omni_state_hot = Arc::clone(&omni_state_live);
         move || {
         if let Some(core_ids) = core_affinity::get_core_ids() {
             if core_ids.len() > 1 {
@@ -915,10 +938,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 // --- 1. DELEGATE TO UNIFIED GOD ENGINE CORE ---
+                // F4.1: features omni REALES (macro FRED/PAXG + sentiment vivos).
+                // Antes: &[0.0; 54] — la NN swing evaluaba ceros en producción.
+                let omni_features_hot = omni_state_hot.get_features();
                 let (new_sc, new_sw, closed_sc, closed_sw) = engine_real.process_event(
                     coin_id, is_trade, is_kline_closed, is_depth,
                     current_price, qty, dbp, dap, dbq, daq,
-                    depth_obi, depth_micro_div, event_time as u64, latency_panic, &[0.0; 54]
+                    depth_obi, depth_micro_div, event_time as u64, latency_panic, &omni_features_hot
                 );
 
                 shadow_forest.broadcast_tick(
