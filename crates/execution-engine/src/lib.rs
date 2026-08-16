@@ -2,11 +2,17 @@ pub mod binance_api;
 pub mod client;
 pub mod executor;
 pub mod hot_swap;
+pub mod order_registry;
 pub mod order_types;
+pub mod reconciliation;
 pub mod router;
 pub mod simulator;
+pub mod user_data_stream;
 
+pub use order_registry::{OrderRegistry, OrderStatus, TrackedOrder};
 pub use order_types::{Fill, OrderAck};
+pub use reconciliation::{reconcile, PositionRiskEntry, ReconciliationReport};
+pub use user_data_stream::{AccountSink, RemotePosition, UserDataStreamer};
 
 #[derive(Debug, Clone)]
 pub struct ExecutionPayload {

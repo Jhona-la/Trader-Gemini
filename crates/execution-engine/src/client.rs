@@ -104,10 +104,14 @@ fn extract_limits(headers: &HeaderMap) -> BinanceRateLimits {
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[derive(Clone)]
 pub struct BinanceClient {
     http: Client,
-    pub api_key: ArcSwap<HeaderValue>,
-    pub is_testnet: AtomicBool,
+    /// Arc: ArcSwap no es Clone por diseño; los clones comparten el swap
+    /// (hot-swap de credenciales coherente entre réplica del stream F1.6).
+    pub api_key: std::sync::Arc<ArcSwap<HeaderValue>>,
+    /// Arc interno: los clones comparten el flag (hot-swap coherente, F1.6).
+    pub is_testnet: std::sync::Arc<AtomicBool>,
 }
 
 impl BinanceClient {
@@ -127,8 +131,8 @@ impl BinanceClient {
             HeaderValue::from_str(&api_key).unwrap_or_else(|_| HeaderValue::from_static(""));
         Self {
             http,
-            api_key: ArcSwap::from_pointee(header_val),
-            is_testnet: AtomicBool::new(is_testnet),
+            api_key: std::sync::Arc::new(ArcSwap::from_pointee(header_val)),
+            is_testnet: std::sync::Arc::new(AtomicBool::new(is_testnet)),
         }
     }
 
@@ -145,6 +149,65 @@ impl BinanceClient {
             HeaderValue::from_str(&new_key).unwrap_or_else(|_| HeaderValue::from_static(""));
         self.api_key.store(Arc::new(header_val));
         self.is_testnet.store(is_testnet, Ordering::Relaxed);
+    }
+
+    /// F1.6: POST /fapi/v1/listenKey — crea la clave del user-data stream.
+    /// NO requiere firma: solo el header X-MBX-APIKEY.
+    pub async fn create_listen_key(&self) -> Result<String, String> {
+        let api_key = self.api_key.load();
+        let url = format!("{}/fapi/v1/listenKey", self.get_base_url());
+        let response = self
+            .http
+            .post(&url)
+            .header("X-MBX-APIKEY", api_key.as_ref().clone())
+            .send()
+            .await
+            .map_err(|e| format!("Network Error: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(crate::order_types::parse_reject_body(
+                &body,
+                status.as_u16(),
+            ));
+        }
+        let body = response
+            .text()
+            .await
+            .map_err(|e| format!("TEXT_ERR: {}", e))?;
+        #[derive(serde::Deserialize)]
+        struct ListenKeyResp {
+            #[serde(rename = "listenKey")]
+            listen_key: String,
+        }
+        let parsed: ListenKeyResp =
+            serde_json::from_str(&body).map_err(|e| format!("LISTENKEY_PARSE: {}", e))?;
+        Ok(parsed.listen_key)
+    }
+
+    /// F1.6: PUT /fapi/v1/listenKey — keepalive (expira a los 60 min; refrescar a los 30).
+    pub async fn keep_alive_listen_key(&self) -> Result<(), String> {
+        let api_key = self.api_key.load();
+        let url = format!("{}/fapi/v1/listenKey", self.get_base_url());
+        let response = self
+            .http
+            .put(&url)
+            .header("X-MBX-APIKEY", api_key.as_ref().clone())
+            .send()
+            .await
+            .map_err(|e| format!("Network Error: {}", e))?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(crate::order_types::parse_reject_body(
+                &body,
+                status.as_u16(),
+            ))
+        }
     }
 
     /// Ejecuta una orden firmada enviando el payload HTTP de forma asíncrona O(1).

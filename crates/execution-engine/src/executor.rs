@@ -162,6 +162,9 @@ pub struct OrderExecutor {
     kill_switch: AtomicBool,
     active_leverage: std::sync::RwLock<std::collections::HashMap<String, u32>>,
     is_paper_trading: bool,
+    /// F1.5: memoria del ciclo de vida de órdenes — compartida con el
+    /// user-data stream (F1.6) y la reconciliación (F1.7).
+    order_registry: std::sync::Arc<crate::order_registry::OrderRegistry>,
 }
 
 impl OrderExecutor {
@@ -180,6 +183,62 @@ impl OrderExecutor {
             kill_switch: AtomicBool::new(false),
             active_leverage: std::sync::RwLock::new(std::collections::HashMap::new()),
             is_paper_trading: is_testnet, // Initially mapped to is_testnet, will be overridden by PhaseOrchestrator if in PaperTrading mode
+            order_registry: std::sync::Arc::new(crate::order_registry::OrderRegistry::new()),
+        }
+    }
+
+    /// Registro de órdenes (F1.5) — para spawn del user-data stream y queries.
+    pub fn registry(&self) -> std::sync::Arc<crate::order_registry::OrderRegistry> {
+        self.order_registry.clone()
+    }
+
+    pub fn client(&self) -> &BinanceClient {
+        &self.client
+    }
+
+    /// F1.7: GET /fapi/v2/positionRisk — posiciones abiertas según el EXCHANGE.
+    /// Fuente de verdad para reconciliación al arranque y periódica.
+    pub async fn fetch_position_risk(
+        &self,
+    ) -> Result<Vec<crate::reconciliation::PositionRiskEntry>, String> {
+        if self.is_paper_trading {
+            return Ok(Vec::new());
+        }
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        self.check_rate_limits(timestamp)?;
+
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v2/positionRisk?");
+        let payload_start = buf.as_str().len();
+        buf.push_str("timestamp=");
+        buf.push_u64(timestamp);
+
+        let mut sig_buf = [0u8; 64];
+        let payload = &buf.as_str()[payload_start..];
+        let api_secret = self.api_secret.read().unwrap().clone();
+        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
+        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+        buf.push_str("&signature=");
+        buf.push_str(signature);
+
+        let res = self.client.get_payload(buf.as_str()).await;
+        match res {
+            Ok((limits, body)) => {
+                self.update_limits(&limits);
+                serde_json::from_str(&body).map_err(|e| {
+                    format!(
+                        "POSITION_RISK_PARSE: {} body={}",
+                        e,
+                        crate::order_types::truncate(&body, 200)
+                    )
+                })
+            }
+            Err(e) => Err(e),
         }
     }
 
@@ -405,6 +464,17 @@ impl ExecutionProvider for OrderExecutor {
         if let Some(payload) =
             self.build_payload(order, symbol, current_price, step_size, tick_size)
         {
+            // F1.5: registrar la intención ANTES del envío (si la red muere, la
+            // orden queda referenciada por clientOrderId para resolución).
+            self.order_registry.register_intent(
+                &payload.client_order_id,
+                symbol,
+                &payload.side,
+                &payload.position_side,
+                &payload.order_type,
+                payload.quantity,
+                payload.timestamp,
+            );
             // F1.4: se envía EXACTAMENTE la query firmada. Sin reconstrucción.
             let mut buf = ZeroAllocBuffer::new();
             buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -426,6 +496,7 @@ impl ExecutionProvider for OrderExecutor {
             match &res {
                 Ok((limits, ack)) => {
                     self.update_limits(limits);
+                    self.order_registry.apply_ack(ack, payload.timestamp);
                     if !ack.is_filled() && !ack.is_active() && !ack.status.is_empty() {
                         println!(
                             "⚠️ [EXECUTION] Orden {} estado final inesperado: {} (executed={})",
@@ -506,6 +577,16 @@ impl ExecutionProvider for OrderExecutor {
 
         // F1.2: toda orden market lleva newClientOrderId (idempotencia).
         let client_order_id = uuid::Uuid::now_v7().simple().to_string();
+        // F1.5: registrar la intención antes del envío.
+        self.order_registry.register_intent(
+            &client_order_id,
+            symbol,
+            side,
+            if is_long { "LONG" } else { "SHORT" },
+            ORDER_TYPE_MARKET,
+            final_quantity,
+            timestamp,
+        );
 
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -546,7 +627,7 @@ impl ExecutionProvider for OrderExecutor {
         match &res {
             Ok((limits, ack)) => {
                 self.update_limits(limits);
-                let _ = ack; // F1.5 conectará el ack a la máquina de estados de orden
+                self.order_registry.apply_ack(ack, timestamp);
                 Ok(())
             }
             Err(e) => {

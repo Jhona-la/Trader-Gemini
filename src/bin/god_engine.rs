@@ -492,6 +492,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         restored_positions.clear();
     }
 
+    // ── F1.7 RECONCILIACIÓN AL ARRANQUE ──────────────────────────────────────
+    // positionRisk (verdad del exchange) diff contra OrderRegistry (F1.5).
+    // Directiva: saber SIEMPRE si hay posiciones abiertas antes de operar.
+    if !orchestrator.read().unwrap().is_demo_mode {
+        match exec.load().fetch_position_risk().await {
+            Ok(entries) => {
+                let report =
+                    execution_engine::reconciliation::reconcile(&entries, &exec.load().registry());
+                telemetry_server::telemetry_log!("🧾 [RECONCILIACIÓN ARRANQUE] {}", report.summary);
+                for p in &report.open_positions {
+                    telemetry_server::telemetry_log!(
+                        "   📍 {} {} @ {:.4} (uPnL {:+.4}, liq {:.2}, lev {:.0}x)",
+                        p.symbol,
+                        p.position_amt,
+                        p.entry_price,
+                        p.unrealized_pnl,
+                        p.liquidation_price,
+                        p.leverage
+                    );
+                }
+                for s in &report.suspicious_active_orders {
+                    telemetry_server::telemetry_log!("   ⚠️ ORDEN SOSPECHOSA: {}", s);
+                }
+            }
+            Err(e) => {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [RECONCILIACIÓN ARRANQUE] positionRisk no disponible: {}",
+                    e
+                );
+            }
+        }
+    }
+
+    // ── F1.6 USER-DATA STREAM (fills en tiempo real) ─────────────────────────
+    // ORDER_TRADE_UPDATE → OrderRegistry; ACCOUNT_UPDATE → puente de capital.
+    // La adopción de posiciones al arena es dueño el mapa de estado (F4.9);
+    // aquí garantizamos que el capital dinámico refleje la verdad del exchange.
+    {
+        struct CapitalBridgeSink;
+        impl execution_engine::user_data_stream::AccountSink for CapitalBridgeSink {
+            fn on_capital(&self, usdt: f64) {
+                audit_engine::telemetry::update_dynamic_capital(usdt);
+            }
+            fn on_positions(
+                &self,
+                positions: &[execution_engine::user_data_stream::RemotePosition],
+            ) {
+                if !positions.is_empty() {
+                    let summary: Vec<String> = positions
+                        .iter()
+                        .map(|p| format!("{} {}", p.symbol, p.position_amt))
+                        .collect();
+                    telemetry_server::telemetry_log!(
+                        "📡 [USER-DATA] Posiciones vivas: {}",
+                        summary.join(", ")
+                    );
+                }
+            }
+        }
+        let streamer = execution_engine::user_data_stream::UserDataStreamer::new(
+            exec.load().client().clone(),
+            exec.load().registry(),
+        )
+        .with_sink(std::sync::Arc::new(CapitalBridgeSink));
+        tokio::spawn(async move {
+            streamer.start().await;
+        });
+        telemetry_server::telemetry_log!(
+            "🔌 [USER-DATA] Stream privado spawned (fills en tiempo real + capital vivo)"
+        );
+    }
+
     let rx_events = rx_events;
 
     // FASE 15: GLOBAL ROI & PnL TRACKERS (Bifurcación Cuántica)
