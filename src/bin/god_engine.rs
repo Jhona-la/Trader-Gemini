@@ -552,7 +552,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         os_guardian::set_current_thread_time_critical();
         telemetry_server::telemetry_log!("🧠 [UNIFIED CORE] Initialized. Target latency: <500ns.");
-        
+
         // Axiom XIV: Superposición Cuántica - Mentes Aisladas (Scalp vs Swing)
         let arena_real = Arc::new(quantum_arena::GlobalArena::new(initial_capital));
         let arena_shadow = Arc::new(quantum_arena::GlobalArena::new(initial_capital));
@@ -560,12 +560,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         arena_real.config.live_taker_fee.store(live_taker, Ordering::Relaxed);
         arena_shadow.config.live_maker_fee.store(live_maker, Ordering::Relaxed);
         arena_shadow.config.live_taker_fee.store(live_taker, Ordering::Relaxed);
-        
+
         // FASE 38 & 14: Guardian Activo (Memory Panic)
         let memory_per_symbol_mb = 128;
         let dynamic_memory_limit = (num_symbols * memory_per_symbol_mb) + 2048; // Escala dinámica basada en el Universo
         os_guardian::init_guardian(0xFFFF, dynamic_memory_limit, Arc::clone(&arena_real));
-        
+
         unsafe {
             if os_guardian::memory_compaction::lock_critical_memory(&*arena_real) {
                 telemetry_server::telemetry_log!("🔒 [OS-GUARDIAN] arena_real asegurada en RAM física (Zero Swapping)");
@@ -580,17 +580,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 telemetry_server::telemetry_log!("🔒 [OS-GUARDIAN] arena_shadow.coins (TickRings) asegurados en RAM física");
             }
         }
-        
+
         // Update fees dynamically
         arena_real.config.live_maker_fee.store(live_maker, Ordering::Relaxed);
         arena_real.config.live_taker_fee.store(live_taker, Ordering::Relaxed);
         arena_real.server_time_offset_ms.store(ntp_offset_ms, Ordering::Relaxed);
-        
+
         // Reality Physics: Shadow Simulator uses identical dynamic fees extracted from exchange
         arena_shadow.config.live_maker_fee.store(live_maker, Ordering::Relaxed);
         arena_shadow.config.live_taker_fee.store(live_taker, Ordering::Relaxed);
         arena_shadow.server_time_offset_ms.store(ntp_offset_ms, Ordering::Relaxed);
-        
+
         // Phase 17: Apply Genotype Object Directly
         telemetry_server::telemetry_log!("🧬 [GENOMA] Applying Active Genome to Unified Core...");
         initial_genome.apply_to_arena(&arena_real);
@@ -622,11 +622,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let (tx_real, rx_real) = std::sync::mpsc::channel();
         let (tx_shadow, _rx_shadow) = std::sync::mpsc::channel();
-        
+
         let rt_for_darwin = rt_handle.clone();
-        
+
         // La evaluación de Warmup en hilo separado fue removida para centralizar la orquestación en el PhaseOrchestrator del motor HFT, evitando colisiones.
-        
+
         // Spawn Auto-Evolucion (Model Watcher)
         rt_for_darwin.spawn(async move {
             telemetry_server::telemetry_log!("🧠 [MODEL WATCHER] Escaneando mutaciones en models/DarkAlpha_BTCUSDT.json cada 10s...");
@@ -647,7 +647,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         });
-        
+
         let rt_for_gc = rt_handle.clone();
         rt_for_gc.spawn(async move {
             telemetry_server::telemetry_log!("🧹 [OS-GUARDIAN] Inicializando Garbage Collector Estadístico (1H interval)...");
@@ -659,7 +659,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         });
-        
+
         // FASE 33: Iniciar Motor Evolutivo en Tiempo Real (Grafo Silencioso Erradicado)
         let daemon = god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&arena_real));
         rt_for_darwin.spawn(async move {
@@ -677,10 +677,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _msg_count: u64 = 0;
         let mut has_transitioned = false;
         let mut engine_real = god_engine_core::GodEngineCore::new(Arc::clone(&arena_real));
-        
+
         engine_real.reality.mode = god_engine_core::reality_physics::EngineMode::Optimistic;
         engine_real.set_model_rx(rx_real);
-        
+
         // --- PHASE 3 WARMUP INJECTION ---
         telemetry_server::telemetry_log!("📥 [PHASE 3] Inyectando historial REST K-lines para calentar SwingState...");
         for (_i, sym) in symbols_clone.iter().enumerate() {
@@ -705,24 +705,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut local_orderbook = quantum_engine::orderbook::OrderBook::new("BTCUSDT".to_string());
         let mut msg_count: u64 = 0;
         let mut consecutive_slow_ticks = 0;
-        
+
         // FASE 6 (EVENT LOOP)
         god_engine_core::bootloader::SystemDiagnostics::execute_phase_6_hft();
-        
+
         while let Ok(mut msg_bytes) = rx_events.recv() {
             let start = Instant::now();
-            
+
             let is_trade = memchr::memmem::find(&msg_bytes, b"\"e\":\"trade\"").is_some();
             let is_kline = memchr::memmem::find(&msg_bytes, b"\"e\":\"kline\"").is_some();
             let is_depth = memchr::memmem::find(&msg_bytes, b"\"e\":\"depthUpdate\"").is_some();
             let is_reconnect = msg_bytes == b"[SYSTEM:RECONNECT]";
-            
+
             if is_reconnect {
                 telemetry_server::telemetry_log!("🧹 [AUTO-HEALING] Reconnect signal received. Purging Quantum Engine state to prevent time-glitches...");
                 engine_real.reset_engines();
                 local_orderbook.clear();
                 telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed. Entering Warmup Phase (50 ticks).");
-                
+
                 let rx_rest = Arc::clone(&exec);
                 rt_handle.spawn(async move {
                     telemetry_server::telemetry_log!("🔄 [REST-SYNC] Fetching truth from Binance API...");
@@ -732,7 +732,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
                 continue;
             }
-            
+
             let mut parsed_sym_opt = None;
             let mut current_price = 0.0;
             let mut qty = 0.0;
@@ -744,9 +744,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut dap = 0.0;
             let mut dbq = 0.0;
             let mut daq = 0.0;
-            
+
             let msg_str = unsafe { std::str::from_utf8_unchecked_mut(&mut msg_bytes) };
-            
+
             if is_trade {
                 if let Some((e, _, p, q, _, sym)) = parsers::parse_binance_trade(msg_str) {
                     event_time = e;
@@ -778,41 +778,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            
+
             // FASE 23: QUANTUM LATENCY KILL-SWITCH (Optimized via TSC)
             let now_ms = epoch_baseline_ms + instant_baseline.elapsed().as_millis() as i64;
             let latency_ms = now_ms - event_time;
             let mut latency_panic = false;
-            
+
             let panic_threshold = engine_real.arena.config.latency_ms_panic_threshold.load(std::sync::atomic::Ordering::Relaxed) as i64;
-            
+
             // Phase 4: Synthetic Volatility Kill Switch
             if event_time > 0 && latency_ms > panic_threshold {
                 consecutive_slow_ticks += 1;
             } else if event_time > 0 {
                 consecutive_slow_ticks = 0;
             }
-            
+
             if consecutive_slow_ticks >= 10 {
                 latency_panic = true;
                 if consecutive_slow_ticks == 10 {
                     telemetry_server::telemetry_log!("🚨 [KILL_SWITCH] Latencia > {}ms detectada por 10 ticks. Volatilidad Sintética activada. SCALP DESACTIVADO.", panic_threshold);
                 }
             }
-            
+
             if event_time > 0 && latency_ms > panic_threshold {
                 latency_panic = true;
                 telemetry_server::telemetry_log!("⚠️ [LATENCY_PANIC] Delta = {}ms (>{panic_threshold}ms limit). Skiping O(1) Scalp execution.", latency_ms);
             }
-            
+
             if let Some(parsed_sym) = parsed_sym_opt {
                 let coin_id = symbol_to_id.get(&parsed_sym.to_lowercase()).copied().unwrap_or(0);
-                
+
                 // --- SANITY CHECKS (DATA INTEGRITY & NORMALIZATION) ---
                 if current_price <= 0.0 || qty < 0.0 || current_price.is_nan() || qty.is_nan() {
                     continue; // Drop corrupt data
                 }
-                
+
                 // --- OUTLIER REJECTION (> 15% FLASH CRASH FILTER) ---
                 let recent_ticks = engine_real.arena.coins[coin_id].tick_ring.snapshot_recent(1);
                 if !recent_ticks.is_empty() {
@@ -855,7 +855,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if newly_transitioned {
                     has_transitioned = true;
                 }
-                
+
                 if !is_trading_allowed {
                     if msg_count > 0 && msg_count.is_multiple_of(5000) {
                         telemetry_server::telemetry_log!("🔥 [ORCHESTRATOR] Syncing buffers... {} ticks (Fase: {:?}).", msg_count, current_phase);
@@ -863,14 +863,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     if newly_transitioned {
                         telemetry_server::telemetry_log!("✅ [WARMUP COMPLETE] System state synchronized & Darwin Approved. Transitioning to {:?}", current_phase);
-                        
+
                         let is_env_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
                         let (target_key, target_secret, target_is_testnet) = if is_env_testnet {
                             (testnet_key.clone(), testnet_secret.clone(), true)
                         } else {
                             (mainnet_key.clone(), mainnet_secret.clone(), false)
                         };
-                        
+
                         let mut mainnet_executor = execution_engine::executor::OrderExecutor::new(target_key, target_secret, target_is_testnet);
                         if is_env_testnet {
                             mainnet_executor.set_paper_trading(false);
@@ -878,7 +878,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             mainnet_executor.set_paper_trading(is_paper_trading);
                         }
                         exec.store(Arc::new(mainnet_executor));
-                        
+
                         let base_ws_url = if is_env_testnet { "wss://stream.binancefuture.com/stream" } else { "wss://fstream.binance.com/stream" };
                         loop_ws_url.store(Arc::new(format!("{}?streams={}", base_ws_url, loop_streams_str)));
                         let _ = tx_ws_control.try_send(());
@@ -893,7 +893,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 arena_real_clone.config.base_capital.store(bal, Ordering::Relaxed);
                                 let _ = db_tx_clone.send((bal, 0.0)).await;
                             }
-                            
+
                             if let Ok(real_positions) = exec_clone.load().fetch_open_positions().await {
                                 telemetry_server::telemetry_log!("🔍 [TRUTH-SYNC] Reconciling Mainnet API Positions...");
                                 for pos in real_positions {
@@ -904,15 +904,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         });
                     }
-                    
+
                     let unified_cap = f64::from_bits(unified_capital.load(Ordering::Relaxed));
-                    
+
                     // FASE 15: Internal Netting Engine
                     let mut net_qty: f64 = 0.0;
                     let mut max_leverage = 1;
                     let force_maker = false;
                     let maker_price = current_price;
-                    
+
                     if let Some((is_long, pnl, qty)) = closed_sc {
                         let live_maker_fee = engine_real.arena.config.live_maker_fee.load(Ordering::Relaxed);
                         let live_taker_fee = engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed);
@@ -941,7 +941,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let is_long_order = !is_long;
                         net_qty += if is_long_order { qty } else { -qty };
                     }
-                    
+
                     if let Some((is_long, pnl, qty)) = closed_sw {
                         let live_maker_fee = engine_real.arena.config.live_maker_fee.load(Ordering::Relaxed);
                         let live_taker_fee = engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed);
@@ -970,7 +970,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let is_long_order = !is_long;
                         net_qty += if is_long_order { qty } else { -qty };
                     }
-                    
+
                     let _scalp_entry_price = 0.0;
                     let mut scalp_tp_price = 0.0;
                     let mut scalp_sl_price = 0.0;
@@ -980,7 +980,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         max_leverage = 10;
                         net_qty += if is_long { qty } else { -qty };
                         let _ = tx_log_worker.try_send((true, is_long, coin_id));
-                        
+
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
                         if ml_prob > 0.80 || ml_prob < 0.20 {
                             is_high_confidence_scalp = true;
@@ -990,28 +990,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let atr_pct = engine_real.feature_engines[coin_id].get_atr_pct();
                             let scalp_tp = base_tp.max(atr_pct * 2.0).max(0.002);
                             let scalp_sl = base_sl.max(atr_pct * 1.5).max(0.0015);
-                            
+
                             scalp_tp_price = if is_long { entry_price * (1.0 + scalp_tp) } else { entry_price * (1.0 - scalp_tp) };
                             scalp_sl_price = if is_long { entry_price * (1.0 - scalp_sl) } else { entry_price * (1.0 + scalp_sl) };
                         }
                     }
-                    
+
                     if let Some((is_long, _price, qty)) = new_sw {
                         max_leverage = 5;
                         net_qty += if is_long { qty } else { -qty };
                         let _ = tx_log_worker.try_send((false, is_long, coin_id));
                     }
-                    
+
                     if net_qty.abs() > 0.0 {
                         let parsed_sym_str = parsed_sym.to_string();
                         let exec_clone = Arc::clone(&exec);
                         let final_is_long = net_qty > 0.0;
                         let final_qty = net_qty.abs();
-                        
+
                         let iceberg_threshold = engine_real.arena.config.iceberg_volume_threshold.load(Ordering::Relaxed);
                         let iceberg_slices = engine_real.arena.config.iceberg_slice_count.load(Ordering::Relaxed).max(2.0);
                         let notional_volume = final_qty * current_price;
-                        
+
                         rt_handle.spawn(async move {
                             if max_leverage > 1 {
                                 let _ = exec_clone.load().set_leverage(&parsed_sym_str, max_leverage).await;
@@ -1031,12 +1031,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let _ = exec_clone.load().execute_iceberg_limit(&parsed_sym_str, final_is_long, final_qty, maker_price, iceberg_qty, 0.001, 0.0001, "iceberg_01").await;
                             } else {
                                 let _ = exec_clone.load().execute_raw_qty(&parsed_sym_str, final_is_long, final_qty, 0.001).await;
-                                
+
                                 // FASE 12: PARALLEL OCO INJECTION FOR HIGH CONFIDENCE SCALPS
                                 if is_high_confidence_scalp {
                                     telemetry_engine::telemetry!("🎯 [OCO TENSOR] High confidence detected! Firing Parallel OCO for {} (TP: {:.4}, SL: {:.4})", parsed_sym_str, scalp_tp_price, scalp_sl_price);
                                     let is_long_close = final_is_long; // if we entered LONG, we close it with a SELL
-                                    
+
                                     let mut id_buf = [0u8; 32];
                                     id_buf[0..4].copy_from_slice(b"oco_");
                                     let micros = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros();
@@ -1044,29 +1044,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let micros_str = itoa_buf.format(micros);
                                     id_buf[4..4 + micros_str.len()].copy_from_slice(micros_str.as_bytes());
                                     let base_id = unsafe { std::str::from_utf8_unchecked(&id_buf[..4 + micros_str.len()]) };
-                                    
+
                                     // Use tick_size and step_size of 0.001 as fallback, or ideally fetch it from exchange info.
                                     let _ = exec_clone.load().execute_oco_order(&parsed_sym_str, is_long_close, final_qty, scalp_tp_price, scalp_sl_price, 0.001, 0.0001, &base_id).await;
                                 }
                             }
                         });
-                        
+
                         telemetry!("⚡ [NETTING ENGINE] Orden Neta enviada a Binance (qty: {:.4}, is_long: {}, force_maker: {}).", final_qty, final_is_long, force_maker);
                     }
                 }
             }
-            
+
             msg_count += 1;
             if msg_count.is_multiple_of(100) {
                 let limit_10s = engine_real.arena.config.executor_max_orders_10s.load(Ordering::Relaxed) as usize;
                 let limit_w1m = engine_real.arena.config.executor_max_weight_1m.load(Ordering::Relaxed) as usize;
                 exec.load().set_rate_limit_thresholds(limit_w1m, limit_10s, 1100);
-                
+
                 let lat = start.elapsed().as_nanos();
-                
+
                 let mut scalp_unrealized_pnl = 0.0;
                 let mut swing_unrealized_pnl = 0.0;
-                
+
                 for coin in engine_real.arena.coins.iter() {
                     if coin.positions.scalp_position.is_open() {
                         scalp_unrealized_pnl += coin.scalp.pnl_unrealized.load(Ordering::Relaxed);
@@ -1075,7 +1075,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         swing_unrealized_pnl += coin.swing.pnl_unrealized.load(Ordering::Relaxed);
                     }
                 }
-                
+
                 let total_trades = scalp_trades + swing_trades;
                 let total_wins = scalp_wins + swing_wins;
                 let scalp_wr = if scalp_trades > 0 { (scalp_wins as f64 / scalp_trades as f64) * 100.0 } else { 0.0 };
@@ -1089,7 +1089,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     win_rate,
                     f64::from_bits(unified_capital.load(std::sync::atomic::Ordering::Relaxed))
                 );
-                
+
                 // FASE 18: Emitir al Zero-Copy Bus (Ring Buffer pre-allocado)
                 // Cero locks, cero allocations. 3-5ns delay en lugar de milisegundos.
                 let mut payload = [0.0; 6];
@@ -1100,7 +1100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 payload[3] = swing_unrealized_pnl;
                 payload[4] = scalp_wr;
                 payload[5] = swing_wr;
-                
+
                 if latency_panic {
                     telemetry_server::zero_copy_bus::GLOBAL_TELEMETRY.emit(
                         telemetry_server::zero_copy_bus::SUBSYSTEM_GOD_ENGINE,
@@ -1109,15 +1109,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         [lat as f64, 0.0, 0.0, 0.0, 0.0, 0.0]
                     );
                 }
-                
+
                 telemetry_server::zero_copy_bus::GLOBAL_TELEMETRY.emit(
                     telemetry_server::zero_copy_bus::SUBSYSTEM_GOD_ENGINE,
                     telemetry_server::zero_copy_bus::EVT_OMNI_UPDATE_FAST,
                     0,
                     payload
                 );
-                
-                // Enviar también al ws clásico temporalmente si es estricto, o preferiblemente 
+
+                // Enviar también al ws clásico temporalmente si es estricto, o preferiblemente
                 // dejar que un background task procese el ring buffer.
                 // Como es refactorización cuántica, delegamos OmniUpdate al background.
                 let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::OmniUpdate {
@@ -1129,25 +1129,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     gross_pnl: scalp_gross_pnl + swing_gross_pnl,
                     net_pnl: scalp_pnl + swing_pnl,
                     win_rate,
-                    trade_duration_avg: 0.0, 
+                    trade_duration_avg: 0.0,
                 });
-                
+
                 let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::LatencyUpdate(lat as u64));
-                
+
                 // FASE 8: Legacy process respawn removed in favor of in-memory Hot-Swap via PhaseOrchestrator.
             }
             if msg_count.is_multiple_of(5000) {
                 telemetry_server::telemetry_log!("⏱️ [TELEMETRY] Processed 5000 ticks/klines. Cumulative Fees (Scalp: ${:.4}, Swing: ${:.4}). Last tick: {} ns", scalp_fees, swing_fees, start.elapsed().as_nanos());
-                
+
                 // FASE 12: Cosecha Cuántica en vivo (ShadowForest)
                 let (winner, leaderboard) = shadow_forest.harvest_best_genome();
                 let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::ShadowLeaderboard(leaderboard));
-                
+
                 if let Some((new_alpha, pnl_gained)) = winner {
                     telemetry!("🧬 [SHADOW FOREST] ¡Cosecha Exitosa! Universo Mutante generó +${:.2} extra. Aplicando Hot-Swap...", pnl_gained);
                     new_alpha.apply_to_arena(&engine_real.arena);
                     shadow_forest.replant(new_alpha.clone());
-                    
+
                     let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::GenomeUpdate(Box::new(new_alpha)));
                 } else {
                     // Si no hubo cosecha, enviamos el genoma actual
@@ -1174,12 +1174,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         os_guardian::set_current_thread_time_critical();
-        
+
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
-            
+
         rt.block_on(async move {
             let mut retry_count = 0;
         loop {
@@ -1187,7 +1187,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let url = url::Url::parse(&current_url).expect("Invalid WS URL");
             let host = url.host_str().unwrap_or("stream.binancefuture.com");
             let port = url.port_or_known_default().unwrap_or(443);
-            
+
             // FASE 8: Happy Eyeballs TCP Parallel Connection
             // Resolve IPs dynamically instead of hardcoding AWS endpoints
             let host_port = format!("{}:{}", host, port);
@@ -1198,7 +1198,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     vec![]
                 }
             };
-            
+
             // Allow manual IP injection via ENV to bypass DNS if desired
             if let Ok(env_ips) = std::env::var("BINANCE_WS_IPS") {
                 for ip_str in env_ips.split(',') {
@@ -1209,7 +1209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            
+
             if resolved_addrs.is_empty() {
                 // Safe fallback in worst case
                 if let Ok(fallback) = format!("{}:{}", host, port).parse::<std::net::SocketAddr>() {
@@ -1220,14 +1220,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
             }
-            
+
             telemetry_server::telemetry_log!("🔄 [WS] Parallel TCP Connection Race (Happy Eyeballs) to {} endpoints...", resolved_addrs.len());
-            
+
             let mut tasks = Vec::new();
             for addr in resolved_addrs.iter() {
                 tasks.push(Box::pin(tokio::net::TcpStream::connect(*addr)));
             }
-            
+
             // For TLS SNI, we still pass the original URL with the hostname (e.g. stream.binancefuture.com)
             // but the underlying TCP stream is connected directly to the fastest raw IP.
             let tcp_stream = match futures_util::future::select_ok(tasks).await {
@@ -1238,20 +1238,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
             };
-            
+
             let target_addr = tcp_stream.peer_addr().unwrap();
             telemetry_server::telemetry_log!("✅ [WS] Fast-Lane TCP Connection established to {}...", target_addr);
-            
+
             // FASE 22: Conexión directa TCP con Zero-Nagle para latencia nula
             let _ = tcp_stream.set_nodelay(true);
-            
+
             match tokio_tungstenite::client_async_tls(url, tcp_stream).await {
                 Ok((ws_stream, _)) => {
                     telemetry_server::telemetry_log!("✅ [WS] WebSocket TLS Connected with TCP_NODELAY.");
                     retry_count = 0; // Reset retries on success
                     let _ = tx_events.send(b"[SYSTEM:RECONNECT]".to_vec());
                     let (_, mut read) = ws_stream.split();
-                    
+
                     loop {
                         tokio::select! {
                             msg_opt = tokio::time::timeout(std::time::Duration::from_secs(5), read.next()) => {
@@ -1286,7 +1286,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     retry_count += 1;
                 }
             }
-            
+
             // Exponential backoff capped at 5 seconds
             let backoff_ms = std::cmp::min(100 * (2u64.pow(retry_count.min(6))), 5000);
             telemetry_server::telemetry_log!("⏳ [WS] Waiting {}ms before next attempt...", backoff_ms);

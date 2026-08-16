@@ -502,7 +502,7 @@ fn main() {
 
     let out_json = format!(
         "{{\n  \"sl_pct\": {:.4},\n  \"tp_pct\": {:.4},\n  \"ml_threshold_l\": {:.4},\n  \"ml_threshold_s\": {:.4},\n  \"tech_threshold_l\": {:.4},\n  \"tech_threshold_s\": {:.4},\n  \"scalp_leverage\": {:.1},\n  \"swing_leverage\": {:.1},\n  \"symbols\": {}\n}}",
-        best_config.scalp_sl_base, best_config.scalp_tp_base, best_config.ml_threshold_long, best_config.ml_threshold_short, 
+        best_config.scalp_sl_base, best_config.scalp_tp_base, best_config.ml_threshold_long, best_config.ml_threshold_short,
         best_config.trend_threshold, best_config.trend_threshold,
         scalp_lev, swing_lev, symbols
     );

@@ -66,7 +66,7 @@ impl PositionLedger {
                 if let Ok(tx) = conn.transaction() {
                     for event in batch {
                         let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
-                        
+
                         if event.is_absolute_override {
                             if event.qty_delta <= 1e-8 {
                                 let _ = tx.execute(
@@ -92,17 +92,17 @@ impl PositionLedger {
                                  VALUES (?1, ?2, ?3, 0.0, ?4, ?5)",
                                 params![event.symbol, event.position_side, event.strategy, event.price, ts as i64],
                             );
-                            
+
                             // 2. Actualizamos el delta de la cantidad y hacemos promedio del entry_price si qty sube
                             let _ = tx.execute(
-                                "UPDATE position_ownership SET 
+                                "UPDATE position_ownership SET
                                     entry_price = CASE WHEN ?4 > 0.0 THEN ((qty * entry_price) + (?4 * ?5)) / (qty + ?4) ELSE entry_price END,
                                     qty = qty + ?4,
                                     updated_at = ?6
                                  WHERE symbol=?1 AND position_side=?2 AND strategy=?3",
                                 params![event.symbol, event.position_side, event.strategy, event.qty_delta, event.price, ts as i64],
                             );
-                            
+
                             // 3. Limpiamos si bajó a cero (o negativo por dust)
                             let _ = tx.execute(
                                 "DELETE FROM position_ownership WHERE qty <= 1e-8 AND symbol=?1 AND position_side=?2 AND strategy=?3",

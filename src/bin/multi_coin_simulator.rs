@@ -196,21 +196,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .spawn(move || {
             println!("🚀 LAUNCHING HFT BACKTEST ENGINE...");
             let start_backtest = Instant::now();
-            
+
             // Forzamos la carga del modelo para que la simulacion HFT no se quede estancada en probabilidad 0.5 (plano).
             let _ = god_engine_core::ml_inference::NanoForest::load_global("BTCUSDT_SCALP", "models/BTCUSDT_SCALP.json");
-            
+
             let mut engine = GodEngineCore::new(arena.clone());
             let mut total_trades = 0;
             let total_ticks_len = master_stream.len() as u32;
             let first_ts = master_stream.first().map(|t| t.timestamp).unwrap_or(0);
             let last_ts = master_stream.last().map(|t| t.timestamp).unwrap_or(0);
 
-            
+
             for tick in master_stream {
                 // Inject tick to arena directly
                 arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp);
-                
+
                 let (_new_sc, _new_sw, closed_sc, closed_sw, _maker) = engine.process_tick(
                     tick.coin_id,
                     tick.bid_price, tick.ask_price,
@@ -222,14 +222,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if closed_sc.is_some() || closed_sw.is_some() {
                     total_trades += 1;
                 }
-                
+
                 // Disparo de PhaseRunner cada 1,000,000 de ticks para simulacion de auditoria
                 if total_ticks_len > 0 && arena.tick_counter.load(Ordering::Relaxed) % 1_000_000 == 0 {
                     let _result = PhaseExecutor::run(Phase::Zeta, std::time::Duration::from_millis(10));
                     // println!("🔄 [PHASE RUNNER] Executed phase {:?}", result.phase);
                 }
             }
-            
+
             let backtest_duration = start_backtest.elapsed();
 
             // Sumary
@@ -244,7 +244,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let final_capital = arena.unified_capital.load(Ordering::Relaxed);
             let net_growth_pct = ((final_capital - initial_capital) / initial_capital) * 100.0;
-            
+
             // Asumiendo fees promedio del 0.05% (taker) por cada trade abierto y cerrado (0.10% total)
             let estimated_total_fees = total_trades as f64 * (initial_capital / 15.0) * 0.001;
             let total_gross_pnl = total_pnl_realized + estimated_total_fees;
@@ -263,7 +263,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("💰 Initial Capital : ${:.2}", initial_capital);
             println!("💵 Final Capital   : ${:.2}", final_capital);
             println!("📈 Gross PnL       : ${:.2} ({:.2}% ROI sin fees)", total_gross_pnl, gross_growth_pct);
-            
+
             // SISTEMA SUPREMO: Proyección Exponencial Matemática
             let expected_3day_multiplier = (1.0 + net_growth_pct / 100.0).powf(3.0 / days_sim.max(0.1));
             println!("🚀 3-Day Compounding Velocity: {:.2}x (Meta: 2.00x)", expected_3day_multiplier);
