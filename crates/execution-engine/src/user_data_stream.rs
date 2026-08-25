@@ -26,12 +26,13 @@ pub struct RemotePosition {
     pub entry_price: f64,
     pub unrealized_pnl: f64,
     pub isolated_wallet: f64,
+    pub position_side: String,
 }
 
 /// Interfaz del host para eventos de cuenta. El motor implementa esto para
 /// actualizar su estado (capital, posiciones) con la verdad del exchange.
 pub trait AccountSink: Send + Sync {
-    fn on_capital(&self, usdt_wallet_balance: f64);
+    fn on_capital(&self, usdt_total_equity: f64);
     fn on_positions(&self, positions: &[RemotePosition]);
 }
 
@@ -41,11 +42,15 @@ impl AccountSink for NoopSink {
     fn on_positions(&self, _p: &[RemotePosition]) {}
 }
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 /// F1.6: stream privado. `start()` es infinito (diseñado para tokio::spawn).
 pub struct UserDataStreamer {
     client: BinanceClient,
     registry: Arc<OrderRegistry>,
     sink: Arc<dyn AccountSink>,
+    cached_positions: Mutex<HashMap<(String, String), f64>>,
 }
 
 impl UserDataStreamer {
@@ -54,6 +59,7 @@ impl UserDataStreamer {
             client,
             registry,
             sink: Arc::new(NoopSink),
+            cached_positions: Mutex::new(HashMap::new()),
         }
     }
 
@@ -62,99 +68,131 @@ impl UserDataStreamer {
         self
     }
 
+    /// Loop principal: listenKey → connect WebSocket → lee frames → reintenta
+    /// en desconexión. Diseñado para ejecutarse en `tokio::spawn`.
     pub async fn start(&self) {
-        let base_ws_url = if self
-            .client
-            .is_testnet
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            "wss://stream.binancefuture.com/ws/"
+        let is_testnet = self.client.is_testnet.load(std::sync::atomic::Ordering::Relaxed);
+        let base_ws = if is_testnet {
+            "wss://stream.binancefuture.com/ws"
         } else {
-            "wss://fstream.binance.com/ws/"
+            "wss://fstream.binance.com/ws"
         };
-        let mut backoff_ms: u64 = 100;
 
+        let mut backoff_ms = 500u64;
         loop {
-            // listenKey + keepalive periódico (expira a los 60 min en Binance).
             let listen_key = match self.client.create_listen_key().await {
-                Ok(key) => key,
-                Err(e) => {
-                    println!(
-                        "❌ [UserDataWS] ListenKey error: {}. Reintento en {}ms",
-                        e, backoff_ms
-                    );
+                Ok(k) if !k.is_empty() => {
+                    backoff_ms = 500;
+                    k
+                }
+                Ok(_) => {
+                    println!("⚠️ [USER-STREAM] listenKey vacío; reintentando en {}ms...", backoff_ms);
                     tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms)).await;
-                    backoff_ms = (backoff_ms * 2).min(10_000);
+                    backoff_ms = (backoff_ms * 2).min(30_000);
+                    continue;
+                }
+                Err(e) => {
+                    println!("⚠️ [USER-STREAM] create_listen_key falló: {}; reintentando en {}ms...", e, backoff_ms);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms)).await;
+                    backoff_ms = (backoff_ms * 2).min(30_000);
                     continue;
                 }
             };
-            println!("✅ [UserDataWS] ListenKey activo (stream privado listo)");
 
-            let stream_url = format!("{}{}", base_ws_url, listen_key);
-            let Ok(url) = Url::parse(&stream_url) else {
-                println!("❌ [UserDataWS] URL inválida: {}", stream_url);
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                continue;
+            let ws_url = format!("{}/{}", base_ws, listen_key);
+            let url = match Url::parse(&ws_url) {
+                Ok(u) => u,
+                Err(e) => {
+                    println!("❌ [USER-STREAM] URL inválida {}: {}", ws_url, e);
+                    break;
+                }
             };
 
-            match connect_async(url.as_str()).await {
-                Ok((ws_stream, _)) => {
-                    println!("🚀 [UserDataWS] Conectado — fills en tiempo real");
-                    backoff_ms = 100;
-                    let (_, mut read) = ws_stream.split();
-
-                    // Keepalive cada 30 min mientras viva esta conexión.
-                    let keep_client = self.client.clone();
-                    let ping_task = tokio::spawn(async move {
-                        loop {
-                            tokio::time::sleep(tokio::time::Duration::from_secs(30 * 60)).await;
-                            let _ = keep_client.keep_alive_listen_key().await;
-                        }
-                    });
-
-                    // Watchdog: Binance hace ping < 3 min; 5 min sin nada = reconectar.
-                    loop {
-                        let next =
-                            tokio::time::timeout(std::time::Duration::from_secs(300), read.next())
-                                .await;
-                        let msg = match next {
-                            Ok(Some(Ok(m))) => m,
-                            Ok(Some(Err(_))) | Ok(None) | Err(_) => break,
-                        };
-                        let bytes = msg.into_data();
-                        if !bytes.is_empty() {
-                            self.dispatch(&bytes);
-                        }
-                    }
-                    ping_task.abort();
-                    println!("⚠️ [UserDataWS] Conexión perdida. Reconectando...");
+            println!("🔌 [USER-STREAM] Conectando a {}", ws_url);
+            let ws_stream = match connect_async(url.as_str()).await {
+                Ok((stream, _)) => {
+                    println!("✅ [USER-STREAM] Conectado. Escuchando fills y updates de cuenta.");
+                    stream
                 }
                 Err(e) => {
-                    println!("❌ [UserDataWS] Error de conexión: {}", e);
+                    println!("⚠️ [USER-STREAM] Conexión falló: {}; reintentando en {}ms...", e, backoff_ms);
                     tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms)).await;
-                    backoff_ms = (backoff_ms * 2).min(5_000);
+                    backoff_ms = (backoff_ms * 2).min(30_000);
+                    continue;
+                }
+            };
+
+            let (mut _write, mut read) = ws_stream.split();
+
+            // Tarea paralela de keepalive (PUT listenKey cada 25 min).
+            let client_clone = self.client.clone();
+            let keepalive_handle = tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(25 * 60)).await;
+                    if let Err(e) = client_clone.keep_alive_listen_key().await {
+                        println!("⚠️ [USER-STREAM] keep_alive_listen_key falló: {}", e);
+                    } else {
+                        println!("💓 [USER-STREAM] listenKey refrescado.");
+                    }
+                }
+            });
+
+            while let Some(msg) = read.next().await {
+                match msg {
+                    Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                        self.route_event(&text);
+                    }
+                    Ok(tokio_tungstenite::tungstenite::Message::Ping(_)) => {
+                        // Tungstenite responde auto-PONG.
+                    }
+                    Ok(tokio_tungstenite::tungstenite::Message::Close(frame)) => {
+                        println!("⚠️ [USER-STREAM] Servidor cerró conexión: {:?}", frame);
+                        break;
+                    }
+                    Err(e) => {
+                        println!("⚠️ [USER-STREAM] Error de lectura: {}", e);
+                        break;
+                    }
+                    _ => {}
                 }
             }
+
+            keepalive_handle.abort();
+            println!("🔌 [USER-STREAM] Desconectado. Reanudando en 1s...");
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
     }
 
-    fn dispatch(&self, bytes: &[u8]) {
-        // Ruteo barato por tipo de evento antes del parse completo.
+    /// Rutea según bytes crudos del WebSocket.
+    pub fn dispatch(&self, bytes: &[u8]) {
         let text = std::str::from_utf8(bytes).unwrap_or("");
-        if text.contains("\"ORDER_TRADE_UPDATE\"") {
-            self.on_order_trade_update(text);
-        } else if text.contains("\"ACCOUNT_UPDATE\"") {
-            self.on_account_update(text);
+        self.route_event(text);
+    }
+
+    /// Rutea según el campo `e` (tipo de evento).
+    pub(crate) fn route_event(&self, text: &str) {
+        #[derive(Deserialize)]
+        struct EventType {
+            #[serde(default)]
+            e: String,
+        }
+        let Ok(ev) = serde_json::from_str::<EventType>(text) else {
+            return;
+        };
+        match ev.e.as_str() {
+            "ORDER_TRADE_UPDATE" => self.on_order_trade_update(text),
+            "ACCOUNT_UPDATE" => self.on_account_update(text),
+            _ => {}
         }
     }
 
     fn on_order_trade_update(&self, text: &str) {
         #[derive(Deserialize)]
-        struct Raw {
-            #[serde(rename = "c")]
-            client_order_id: String,
+        struct OrderPayload {
             #[serde(rename = "s")]
             symbol: String,
+            #[serde(rename = "c")]
+            client_order_id: String,
             #[serde(rename = "S")]
             side: String,
             #[serde(rename = "o")]
@@ -163,45 +201,44 @@ impl UserDataStreamer {
             order_status: String,
             #[serde(rename = "i")]
             order_id: u64,
-            #[serde(rename = "q")]
-            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
-            orig_qty: f64,
-            #[serde(rename = "z")]
-            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
-            cumulative_filled_qty: f64,
             #[serde(rename = "l")]
             #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
             last_filled_qty: f64,
+            #[serde(rename = "z")]
+            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
+            cumulative_filled_qty: f64,
             #[serde(rename = "L")]
             #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
             last_filled_price: f64,
-            #[serde(rename = "ap")]
-            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
-            avg_price: f64,
             #[serde(rename = "n")]
             #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
             commission: f64,
-            #[serde(rename = "N", default)]
-            commission_asset: String,
-            #[serde(rename = "T", default)]
+            #[serde(rename = "N")]
+            commission_asset: Option<String>,
+            #[serde(rename = "T")]
             trade_time_ms: u64,
+            #[serde(rename = "ps", default)]
+            position_side: String,
+            #[serde(rename = "q")]
+            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
+            orig_qty: f64,
         }
         #[derive(Deserialize)]
         struct Event {
-            o: Raw,
+            #[allow(dead_code)]
+            #[serde(rename = "E")]
+            event_time_ms: u64,
+            o: OrderPayload,
         }
         let Ok(ev) = serde_json::from_str::<Event>(text) else {
-            println!(
-                "⚠️ [UserDataWS] ORDER_TRADE_UPDATE ilegible: {}",
-                crate::order_types::truncate(text, 150)
-            );
             return;
         };
         let o = ev.o;
         let update = TradeUpdate {
-            client_order_id: o.client_order_id.clone(),
-            symbol: o.symbol.clone(),
+            client_order_id: o.client_order_id,
+            symbol: o.symbol,
             side: o.side,
+            position_side: o.position_side,
             order_type: o.order_type,
             order_id: o.order_id,
             status: OrderStatus::parse(&o.order_status),
@@ -209,9 +246,9 @@ impl UserDataStreamer {
             cumulative_filled_qty: o.cumulative_filled_qty,
             last_filled_qty: o.last_filled_qty,
             last_filled_price: o.last_filled_price,
-            avg_price: o.avg_price,
+            avg_price: o.last_filled_price,
             commission: o.commission,
-            commission_asset: o.commission_asset,
+            commission_asset: o.commission_asset.unwrap_or_default(),
             trade_time_ms: o.trade_time_ms,
         };
         let now = std::time::SystemTime::now()
@@ -258,6 +295,8 @@ impl UserDataStreamer {
             #[serde(rename = "iw")]
             #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
             isolated_wallet: f64,
+            #[serde(rename = "ps", default)]
+            position_side: String,
         }
         #[derive(Deserialize)]
         struct AccountData {
@@ -273,22 +312,50 @@ impl UserDataStreamer {
         let Ok(ev) = serde_json::from_str::<Event>(text) else {
             return;
         };
+
+        // F1.6: Equidad total = Wallet Balance + Sum(Unrealized PnL acumulado de todas las posiciones)
+        // FIX #744: Binance envía deltas. Mantener cache de todas las posiciones para sumar PnL total real.
+        let total_unrealized_pnl: f64 = if let Ok(mut cache) = self.cached_positions.lock() {
+            for p in &ev.a.positions {
+                let key = (p.symbol.clone(), p.position_side.clone());
+                let pnl = if p.unrealized_pnl.is_finite() { p.unrealized_pnl } else { 0.0 };
+                if p.position_amt.abs() > 1e-8 {
+                    cache.insert(key, pnl);
+                } else {
+                    cache.remove(&key);
+                }
+            }
+            cache.values().sum()
+        } else {
+            ev.a
+                .positions
+                .iter()
+                .map(|p| if p.unrealized_pnl.is_finite() { p.unrealized_pnl } else { 0.0 })
+                .sum()
+        };
+
         for b in &ev.a.balances {
-            if b.asset == "USDT" && b.wallet_balance > 0.0 {
-                self.sink.on_capital(b.wallet_balance);
+            if b.asset == "USDT" && b.wallet_balance > 0.0 && b.wallet_balance.is_finite() {
+                let total_equity = if (b.wallet_balance + total_unrealized_pnl).is_finite() {
+                    (b.wallet_balance + total_unrealized_pnl).max(0.0)
+                } else {
+                    b.wallet_balance
+                };
+                self.sink.on_capital(total_equity);
             }
         }
+
         if !ev.a.positions.is_empty() {
             let positions: Vec<RemotePosition> =
                 ev.a.positions
                     .iter()
-                    .filter(|p| p.position_amt.abs() > 0.0)
                     .map(|p| RemotePosition {
                         symbol: p.symbol.clone(),
-                        position_amt: p.position_amt,
-                        entry_price: p.entry_price,
-                        unrealized_pnl: p.unrealized_pnl,
-                        isolated_wallet: p.isolated_wallet,
+                        position_amt: if p.position_amt.is_finite() { p.position_amt } else { 0.0 },
+                        entry_price: if p.entry_price.is_finite() && p.entry_price >= 0.0 { p.entry_price } else { 0.0 },
+                        unrealized_pnl: if p.unrealized_pnl.is_finite() { p.unrealized_pnl } else { 0.0 },
+                        isolated_wallet: if p.isolated_wallet.is_finite() && p.isolated_wallet >= 0.0 { p.isolated_wallet } else { 0.0 },
+                        position_side: p.position_side.clone(),
                     })
                     .collect();
             self.sink.on_positions(&positions);
@@ -336,7 +403,11 @@ mod tests {
         let v: Raw = serde_json::from_str::<Event>(raw)
             .expect("parse WS event")
             .o;
+        assert_eq!(v.client_order_id, "myId123");
         assert_eq!(v.symbol, "BTCUSDT");
+        assert_eq!(v.side, "BUY");
+        assert_eq!(v.order_type, "LIMIT");
+        assert_eq!(v.orig_qty, 2.0);
         assert_eq!(v.order_status, "PARTIALLY_FILLED");
         assert!((v.cumulative_filled_qty - 0.5).abs() < 1e-12);
         assert!((v.last_filled_qty - 0.5).abs() < 1e-12);
@@ -362,6 +433,26 @@ mod tests {
         )
         .with_sink(sink.clone());
         streamer.dispatch(raw.as_bytes());
-        assert_eq!(sink.0.load(std::sync::atomic::Ordering::Relaxed), 10525);
+        assert_eq!(sink.0.load(std::sync::atomic::Ordering::Relaxed), 10675);
+    }
+
+
+    #[test]
+    fn test_dispatch_order_trade_update_to_registry() {
+        let registry = Arc::new(OrderRegistry::new());
+        registry.register_intent("ORD_101", "BTCUSDT", "BUY", "LONG", "LIMIT", 1.0, 1000);
+
+        let streamer = UserDataStreamer::new(
+            BinanceClient::new("key".into(), true),
+            registry.clone(),
+        );
+
+        let trade_event = r#"{"e":"ORDER_TRADE_UPDATE","E":1700000000000,"o":{"s":"BTCUSDT","c":"ORD_101","S":"BUY","ps":"LONG","o":"LIMIT","f":"GTC","q":"1.0","p":"50000","ap":"50000","sp":"0","X":"FILLED","i":10101,"l":"1.0","z":"1.0","L":"50000","n":"0.0001","N":"USDT","T":1700000000000,"t":1,"m":false}}"#;
+        streamer.dispatch(trade_event.as_bytes());
+
+        let order = registry.get("ORD_101");
+        assert_eq!(order.map(|o| o.status), Some(OrderStatus::Filled));
     }
 }
+
+

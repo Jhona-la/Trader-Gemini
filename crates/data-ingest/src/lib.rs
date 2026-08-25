@@ -1,5 +1,8 @@
 pub mod dynamic_selector;
+pub mod tensor_parser;
 pub mod world_bank;
+
+pub use data_pipeline::ResilientStreamManager;
 use memmap2::MmapOptions;
 use polars::prelude::LazyFileListReader;
 use std::fs::File;
@@ -15,64 +18,69 @@ fn get_monotonic_ms() -> u64 {
 }
 
 pub struct TokenBucket {
-    capacity: u64,
+    capacity: u32,
     fill_rate: f64, // tokens per millisecond
-    tokens: AtomicU64,
-    last_update: AtomicU64,
+    state: AtomicU64, // packed: [32-bit tokens | 32-bit last_update_ms]
 }
 
 impl TokenBucket {
+    #[inline(always)]
+    fn pack(tokens: u32, last_ms: u32) -> u64 {
+        ((tokens as u64) << 32) | (last_ms as u64)
+    }
+
+    #[inline(always)]
+    fn unpack(val: u64) -> (u32, u32) {
+        ((val >> 32) as u32, val as u32)
+    }
+
+    // FIX #1490: Sanitización de fill_rate y capacity para prevenir divisiones por cero
     pub fn new(capacity: u64, fill_rate: f64) -> Self {
-        let now = get_monotonic_ms();
+        let now_ms = (get_monotonic_ms() & 0xFFFFFFFF) as u32;
+        let cap_u32 = capacity.min(u32::MAX as u64).max(1) as u32;
+        let safe_fill_rate = if fill_rate.is_finite() && fill_rate > 0.0 { fill_rate } else { 1.0 };
 
         Self {
-            capacity,
-            fill_rate,
-            tokens: AtomicU64::new(capacity),
-            last_update: AtomicU64::new(now),
+            capacity: cap_u32,
+            fill_rate: safe_fill_rate,
+            state: AtomicU64::new(Self::pack(cap_u32, now_ms)),
         }
     }
 
-    /// Try to consume 1 token. Lock-free logic.
+    /// Try to consume 1 token. 100% Lock-free single CAS logic.
+    #[inline(always)]
     pub fn try_consume(&self) -> bool {
+        let mut current = self.state.load(Ordering::Acquire);
         loop {
-            let now = get_monotonic_ms();
+            let (current_tokens, last_ms) = Self::unpack(current);
+            let now_ms = (get_monotonic_ms() & 0xFFFFFFFF) as u32;
 
-            let last = self.last_update.load(Ordering::SeqCst);
-            let current_tokens = self.tokens.load(Ordering::SeqCst);
+            let elapsed_ms = (now_ms.wrapping_sub(last_ms)) as f64;
+            let added_tokens = (elapsed_ms * self.fill_rate) as u32;
 
-            let elapsed_ms = now.saturating_sub(last);
-            let added_tokens = (elapsed_ms as f64 * self.fill_rate) as u64;
+            let total_tokens = std::cmp::min(self.capacity, current_tokens.saturating_add(added_tokens));
 
-            let mut new_tokens = std::cmp::min(self.capacity, current_tokens + added_tokens);
-
-            if new_tokens == 0 {
+            if total_tokens == 0 {
                 return false;
             }
 
-            new_tokens -= 1;
+            let new_tokens = total_tokens - 1;
+            let new_last_ms = if added_tokens > 0 {
+                let consumed_time_ms = ((added_tokens as f64) / self.fill_rate.max(1e-9)) as u32;
+                last_ms.wrapping_add(consumed_time_ms)
+            } else {
+                last_ms
+            };
+            let new_packed = Self::pack(new_tokens, new_last_ms);
 
-            // Try to update time and tokens atomically via CAS-like loop approach
-            // In a strict high-concurrency setting, we might use a spin-loop with compare_exchange
-            if self
-                .tokens
-                .compare_exchange(
-                    current_tokens,
-                    new_tokens,
-                    Ordering::SeqCst,
-                    Ordering::Relaxed,
-                )
-                .is_ok()
-            {
-                if added_tokens > 0 {
-                    let _ = self.last_update.compare_exchange(
-                        last,
-                        now,
-                        Ordering::SeqCst,
-                        Ordering::Relaxed,
-                    );
-                }
-                return true;
+            match self.state.compare_exchange_weak(
+                current,
+                new_packed,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => current = actual,
             }
         }
     }
@@ -129,3 +137,55 @@ impl PolarsIngest {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_token_bucket_rate_limiting() {
+        let bucket = TokenBucket::new(2, 0.01); // 2 tokens capacity
+        assert!(bucket.try_consume());
+        assert!(bucket.try_consume());
+        // Exhausted
+        assert!(!bucket.try_consume());
+    }
+
+    #[test]
+    fn test_polars_ingest_path_validation() {
+        let ingest = PolarsIngest::new("test.unsupported");
+        assert!(ingest.get_lazy_frame().is_err());
+    }
+
+    #[test]
+    fn test_zero_copy_reader_and_token_bucket_refill() {
+        let bucket = TokenBucket::new(5, 100.0); // 100 tokens per ms
+        assert!(bucket.try_consume());
+        assert!(bucket.try_consume());
+
+        // Test ZeroCopyReader with a temporary file
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_zero_copy.bin");
+        std::fs::write(&test_file, b"HFT_QUANTUM_DATA_123456").expect("write temp file");
+
+        let reader = ZeroCopyReader::new(&test_file).expect("mmap file");
+        assert_eq!(reader.as_bytes(), b"HFT_QUANTUM_DATA_123456");
+
+        let _ = std::fs::remove_file(&test_file);
+    }
+
+    #[test]
+    fn test_token_bucket_negative_and_nan_fill_rate_immunity() {
+        // NaN fill rate sanitized to 1.0
+        let nan_bucket = TokenBucket::new(10, f64::NAN);
+        assert_eq!(nan_bucket.fill_rate, 1.0);
+        assert!(nan_bucket.try_consume());
+
+        // Negative fill rate sanitized to 1.0
+        let neg_bucket = TokenBucket::new(5, -10.0);
+        assert_eq!(neg_bucket.fill_rate, 1.0);
+        assert!(neg_bucket.try_consume());
+    }
+}
+
+

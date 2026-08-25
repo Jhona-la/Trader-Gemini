@@ -3,6 +3,16 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+struct BinTick {
+    pub timestamp: u64,
+    pub bid_price: f64,
+    pub ask_price: f64,
+    pub bid_qty: f64,
+    pub ask_qty: f64,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("========================================================");
     println!("📊 PARQUET → BINARY CONVERTER (For Evolution Engine)");
@@ -24,46 +34,103 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut file = File::open(&in_path)?;
         let df = ParquetReader::new(&mut file).finish()?;
 
-        let _opens = df.column("open")?.f64()?;
+        let opens = df.column("open").ok().and_then(|c| c.f64().ok());
         let highs = df.column("high")?.f64()?;
         let lows = df.column("low")?.f64()?;
         let closes = df.column("close")?.f64()?;
         let volumes = df.column("volume")?.f64()?;
-        let _open_times = df.column("open_time")?.u64()?;
+        let open_times = df.column("open_time")?.u64()?;
 
         let count = df.height();
-
-        let mut c_arr: Vec<f64> = Vec::with_capacity(count);
-        let mut h_arr: Vec<f64> = Vec::with_capacity(count);
-        let mut l_arr: Vec<f64> = Vec::with_capacity(count);
-        let mut v_arr: Vec<f64> = Vec::with_capacity(count);
+        let mut ticks: Vec<BinTick> = Vec::with_capacity(count * 4);
 
         for i in 0..count {
-            c_arr.push(closes.get(i).unwrap_or(0.0));
-            h_arr.push(highs.get(i).unwrap_or(0.0));
-            l_arr.push(lows.get(i).unwrap_or(0.0));
-            v_arr.push(volumes.get(i).unwrap_or(0.0));
+            let raw_close = closes.get(i).unwrap_or(0.0);
+            if raw_close <= 0.0 || !raw_close.is_finite() {
+                continue;
+            }
+            let close = raw_close;
+            let open = opens.as_ref().and_then(|o| o.get(i)).unwrap_or(close);
+            let raw_high = highs.get(i).unwrap_or(close);
+            let high = if raw_high.is_finite() { raw_high.max(close).max(open) } else { close };
+            let raw_low = lows.get(i).unwrap_or(close);
+            let low = if raw_low.is_finite() { raw_low.min(close).min(open).max(1e-6) } else { close * 0.999 };
+            let raw_vol = volumes.get(i).unwrap_or(1.0);
+            let volume = if raw_vol.is_finite() && raw_vol >= 0.0 { raw_vol } else { 1.0 };
+            let ts = open_times.get(i).unwrap_or(0);
+
+            let is_bullish = close >= open;
+            let spread = (high - low).max(close * 0.0001);
+            let quarter_vol = (volume * 0.25).max(0.001);
+
+            // Sub-tick 1: Apertura (t + 0s)
+            let bid1 = (open - spread * 0.5).max(1e-6);
+            let ask1 = (open + spread * 0.5).max(bid1 + 1e-6);
+            ticks.push(BinTick {
+                timestamp: ts,
+                bid_price: bid1,
+                ask_price: ask1,
+                bid_qty: quarter_vol,
+                ask_qty: quarter_vol,
+            });
+
+            // Sub-tick 2: Extremo 1 (t + 15s)
+            let p2 = if is_bullish { high } else { low };
+            let bid2 = (p2 - spread * 0.5).max(1e-6);
+            let ask2 = (p2 + spread * 0.5).max(bid2 + 1e-6);
+            let (b_qty2, a_qty2) = if is_bullish {
+                (quarter_vol * 1.5, quarter_vol * 0.5) // Imbalance comprador
+            } else {
+                (quarter_vol * 0.5, quarter_vol * 1.5) // Imbalance vendedor
+            };
+            ticks.push(BinTick {
+                timestamp: ts + 15_000,
+                bid_price: bid2,
+                ask_price: ask2,
+                bid_qty: b_qty2,
+                ask_qty: a_qty2,
+            });
+
+            // Sub-tick 3: Extremo 2 (t + 35s)
+            let p3 = if is_bullish { low } else { high };
+            let bid3 = (p3 - spread * 0.5).max(1e-6);
+            let ask3 = (p3 + spread * 0.5).max(bid3 + 1e-6);
+            ticks.push(BinTick {
+                timestamp: ts + 35_000,
+                bid_price: bid3,
+                ask_price: ask3,
+                bid_qty: quarter_vol,
+                ask_qty: quarter_vol,
+            });
+
+            // Sub-tick 4: Cierre (t + 55s)
+            let bid4 = (close - spread * 0.5).max(1e-6);
+            let ask4 = (close + spread * 0.5).max(bid4 + 1e-6);
+            let (b_qty4, a_qty4) = if is_bullish {
+                (quarter_vol * 1.3, quarter_vol * 0.7)
+            } else {
+                (quarter_vol * 0.7, quarter_vol * 1.3)
+            };
+            ticks.push(BinTick {
+                timestamp: ts + 55_000,
+                bid_price: bid4,
+                ask_price: ask4,
+                bid_qty: b_qty4,
+                ask_qty: a_qty4,
+            });
         }
 
         let mut bin_file = File::create(&out_path)?;
-
-        let write_slice = |file: &mut File, data: &[f64]| -> std::io::Result<()> {
-            let bytes =
-                unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 8) };
-            file.write_all(bytes)
-        };
-
-        // Evolution.rs format is: [closes][highs][lows][volumes]
-        write_slice(&mut bin_file, &c_arr)?;
-        write_slice(&mut bin_file, &h_arr)?;
-        write_slice(&mut bin_file, &l_arr)?;
-        write_slice(&mut bin_file, &v_arr)?;
+        let byte_len = ticks.len() * std::mem::size_of::<BinTick>();
+        let bytes = unsafe { std::slice::from_raw_parts(ticks.as_ptr() as *const u8, byte_len) };
+        bin_file.write_all(bytes)?;
 
         println!(
-            "✅ Converted {} → {} ({} candles)",
+            "✅ Converted {} → {} ({} BinTicks, {} bytes)",
             in_path.display(),
             out_path.display(),
-            count
+            ticks.len(),
+            byte_len
         );
     }
 

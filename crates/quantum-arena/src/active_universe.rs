@@ -9,7 +9,6 @@
 //! CUÁNDO: Se recalcula al inicio y cada vez que el capital cambia significativamente.
 //! DÓNDE: quantum-arena crate, accesible lock-free desde todos los hilos.
 //! QUIÉN: live_trader.rs consulta is_active(coin_id), god_engine filtra señales.
-use super::symbol_registry::spec;
 
 /// Máximo de monedas activas por rango de capital.
 /// Estos límites están calculados para garantizar que cada moneda reciba
@@ -24,7 +23,8 @@ pub fn max_active_coins_for_capital(capital: f64) -> usize {
     // Distribución óptima que concentra micro-capital en pocas monedas
     // y expande naturalmente con el interés compuesto.
     // Ej: $13 -> ~2 monedas. $100 -> 5 monedas. $1000 -> 15 monedas.
-    let base_coins = (capital.max(1.0).sqrt() * 0.5).ceil() as usize;
+    let safe_capital = if capital.is_finite() { capital.max(0.0) } else { 13.0 };
+    let base_coins = (safe_capital.max(1.0).sqrt() * 0.5).ceil() as usize;
     let max_universe = crate::symbols::get_active_universe_size();
 
     if max_universe == 0 {
@@ -58,7 +58,8 @@ pub fn calculate_active_universe(
     prices: &[f64],
     forced_coin_ids: &[usize],
 ) -> (Vec<CoinFitness>, u64) {
-    let max_coins = max_active_coins_for_capital(capital);
+    let safe_capital = if capital.is_finite() { capital.max(0.0) } else { 13.0 };
+    let max_coins = max_active_coins_for_capital(safe_capital);
     let mut candidates: Vec<CoinFitness> = Vec::with_capacity(prices.len());
 
     for (i, &price) in prices.iter().enumerate() {
@@ -79,7 +80,7 @@ pub fn calculate_active_universe(
 
         if !is_forced {
             // Penalizar monedas cuyo lote mínimo excede el capital disponible por moneda
-            let capital_per_coin = capital / max_coins as f64;
+            let capital_per_coin = safe_capital / max_coins as f64;
             if lot_notional > capital_per_coin * 20.0 {
                 // Ni con 20x leverage podemos comprar el lote mínimo con nuestro capital/moneda
                 continue;
@@ -110,10 +111,13 @@ pub fn calculate_active_universe(
         });
     }
 
-    // Sort default by scalp_score since Scalping is the primary HFT engine
+    // Sort by joint multi-horizon fitness (max(scalp_score, swing_score))
+    // to guarantee both prime Scalp and high-conviction Swing assets are active simultaneously.
     candidates.sort_by(|a, b| {
-        b.scalp_score
-            .partial_cmp(&a.scalp_score)
+        let score_a = a.scalp_score.max(a.swing_score);
+        let score_b = b.scalp_score.max(b.swing_score);
+        score_b
+            .partial_cmp(&score_a)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
@@ -124,7 +128,9 @@ pub fn calculate_active_universe(
 
     let mut bitmap = 0u64;
     for c in &candidates {
-        bitmap |= 1u64 << c.coin_id;
+        if c.coin_id < 64 {
+            bitmap |= 1u64 << c.coin_id;
+        }
     }
 
     (candidates, bitmap)
@@ -142,7 +148,9 @@ pub fn calculate_dynamic_universe(
     let mut candidates: Vec<CoinFitness> = Vec::with_capacity(prices.len());
 
     for i in 0..prices.len() {
-        let spec_data = spec(i);
+        let Some(spec_data) = super::symbol_registry::try_spec(i) else {
+            continue;
+        };
         let spec_ref = &spec_data;
         let price = prices[i];
         if price <= 0.0 {
@@ -207,7 +215,9 @@ pub fn calculate_dynamic_universe(
 
     let mut bitmap = 0u64;
     for c in &candidates {
-        bitmap |= 1u64 << c.coin_id;
+        if c.coin_id < 64 {
+            bitmap |= 1u64 << c.coin_id;
+        }
     }
 
     (candidates, bitmap)
@@ -234,6 +244,7 @@ mod tests {
 
     #[test]
     fn test_micro_account_selects_few_coins() {
+        let _guard = crate::symbols::UNIVERSE_TEST_MUTEX.lock().unwrap();
         setup_universe_30();
         // Fórmula: ceil(sqrt(15) * 0.5) = ceil(1.94) = 2
         let max = max_active_coins_for_capital(15.0);
@@ -242,6 +253,7 @@ mod tests {
 
     #[test]
     fn test_medium_account_selects_more() {
+        let _guard = crate::symbols::UNIVERSE_TEST_MUTEX.lock().unwrap();
         setup_universe_30();
         // Fórmula: ceil(sqrt(100) * 0.5) = ceil(5.0) = 5
         let max = max_active_coins_for_capital(100.0);
@@ -250,6 +262,7 @@ mod tests {
 
     #[test]
     fn test_large_account_full_universe() {
+        let _guard = crate::symbols::UNIVERSE_TEST_MUTEX.lock().unwrap();
         setup_universe_30();
         // Fórmula: ceil(sqrt(5000) * 0.5) = 36, clamped al universo (30)
         let max = max_active_coins_for_capital(5000.0);
@@ -258,6 +271,7 @@ mod tests {
 
     #[test]
     fn test_empty_universe_does_not_panic() {
+        let _guard = crate::symbols::UNIVERSE_TEST_MUTEX.lock().unwrap();
         crate::symbols::update_dynamic_universe(Vec::new());
         // Universo sin registrar: debe devolver la base sin clamping, nunca pánico.
         assert_eq!(max_active_coins_for_capital(15.0), 2);

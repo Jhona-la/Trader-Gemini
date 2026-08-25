@@ -35,12 +35,17 @@ pub struct StatefulEngine {
     pub ema_fast: f64,
     pub ema_slow: f64,
     pub omni: feature_engine::OmniStrategyEngine,
+    pub spectral: feature_engine::SpectralCycleEngine,
+    pub multifractal: feature_engine::MultifractalSpectrumEngine,
+    pub lead_lag: feature_engine::LeadLagAlphaEngine,
     // Native Kline Aggregator
     pub kline_start_ms: u64,
     pub kline_open: f64,
     pub kline_high: f64,
     pub kline_low: f64,
     pub kline_volume: f64,
+    pub kline_ema_fast: f64,
+    pub kline_ema_slow: f64,
 }
 
 impl Default for StatefulEngine {
@@ -63,18 +68,23 @@ impl StatefulEngine {
             hurst: RecursiveHurst::new(),
             obi_accel: ObiAcceleration::new(),
             fr_elasticity: FundingRateElasticity::new(),
-            cvpin: ContinuousVPIN::new(100.0), // 100 volume bucket size
+            cvpin: ContinuousVPIN::new(10_000.0), // $10,000 USD rolling bucket size
             entropy: ShannonEntropy::new(),
             dark_alpha: ExponentialDecayTensor::new(10000.0), // 10s half-life
             last_entropy: 0.0,
             ema_fast: 0.0,
             ema_slow: 0.0,
             omni: feature_engine::OmniStrategyEngine::new(),
+            spectral: feature_engine::SpectralCycleEngine::new(),
+            multifractal: feature_engine::MultifractalSpectrumEngine::new(50),
+            lead_lag: feature_engine::LeadLagAlphaEngine::new(50),
             kline_start_ms: 0,
             kline_open: 0.0,
             kline_high: 0.0,
             kline_low: 0.0,
             kline_volume: 0.0,
+            kline_ema_fast: 0.0,
+            kline_ema_slow: 0.0,
         }
     }
 
@@ -90,22 +100,30 @@ impl StatefulEngine {
         self.hurst = RecursiveHurst::new();
         self.obi_accel = ObiAcceleration::new();
         self.fr_elasticity = FundingRateElasticity::new();
-        self.cvpin = ContinuousVPIN::new(100.0);
+        self.cvpin = ContinuousVPIN::new(10_000.0);
         self.entropy = ShannonEntropy::new();
         self.dark_alpha = ExponentialDecayTensor::new(10000.0);
         self.last_entropy = 0.0;
         self.ema_fast = 0.0;
         self.ema_slow = 0.0;
         self.omni = feature_engine::OmniStrategyEngine::new();
+        self.spectral = feature_engine::SpectralCycleEngine::new();
+        self.multifractal = feature_engine::MultifractalSpectrumEngine::new(50);
+        self.lead_lag = feature_engine::LeadLagAlphaEngine::new(50);
         self.kline_start_ms = 0;
         self.kline_open = 0.0;
         self.kline_high = 0.0;
         self.kline_low = 0.0;
         self.kline_volume = 0.0;
+        self.kline_ema_fast = 0.0;
+        self.kline_ema_slow = 0.0;
     }
 
     /// Processes a new tick internally in f64
     pub fn process_tick(&mut self, price: f64, _volume: f64, event_time_ms: u64) {
+        if price <= 0.0 || !price.is_finite() {
+            return;
+        }
         if self.last_price == 0.0 {
             self.ema_fast = price;
             self.ema_slow = price;
@@ -117,16 +135,24 @@ impl StatefulEngine {
             self.ema_slow = (price - self.ema_slow) * alpha_slow + self.ema_slow;
 
             let diff = (price - self.last_price).abs();
-            let new_v_t = (self.v_t * 0.8) + (diff * 0.2);
-            self.a_t = new_v_t - self.v_t;
-            self.v_t = new_v_t;
-
             let norm_return = (price - self.last_price) / self.last_price;
             self.last_entropy = self.entropy.update(norm_return);
+            self.spectral.push(norm_return);
+            self.multifractal.update(price);
+
+            // Tick-level instantaneous velocity & acceleration
+            let inst_v = diff;
+            let new_a = inst_v - self.a_t;
+            self.a_t = new_a;
         }
 
         self.hurst.update(price);
-        self.cvpin.update(_volume, price < self.last_price); // Approximation: tick down = seller initiated
+        let notional_usd = if _volume > 0.0 && price > 0.0 {
+            _volume * price
+        } else {
+            _volume
+        };
+        self.cvpin.update(notional_usd, price < self.last_price); // Nocional USD para invariancia multimoneda
 
         if self.kline_start_ms == 0 {
             self.kline_start_ms = event_time_ms;
@@ -134,14 +160,33 @@ impl StatefulEngine {
             self.kline_high = price;
             self.kline_low = price;
             self.kline_volume = _volume;
+            if self.v_t == 0.0 && price > 0.0 {
+                self.v_t = price * 0.005; // Fallback inicial 50 bps True Range
+            }
         } else {
             self.kline_high = self.kline_high.max(price);
             self.kline_low = self.kline_low.min(price);
             self.kline_volume += _volume;
 
-            // Generate 1-minute Kline internally (60,000 ms)
-            if event_time_ms - self.kline_start_ms >= 60000 {
-                self.omni.update(price, self.kline_high, self.kline_low);
+            // FIX #1206: Actualizar features Omni en tiempo real en cada tick para eliminar desfase de 59s en la inferencia HFT
+            self.omni.update(price, self.kline_high, self.kline_low);
+
+            // Generate 1-minute Kline internally (60,000 ms) and update True Range EMA & Trend EMAs
+            if event_time_ms.saturating_sub(self.kline_start_ms) >= 60000 {
+                // FIX #608: True Range robusto y no nulo para evitar distorsiones en SL dinámico
+                let tr = (self.kline_high - self.kline_low).max(price * 0.0005);
+                self.v_t = if self.v_t == 0.0 || !self.v_t.is_finite() { tr } else { (self.v_t * 0.85 + tr * 0.15).max(price * 0.0005) };
+
+                // Actualizar EMAs de tendencia macro de 1 minuto (EMA 9 y EMA 21)
+                let alpha_k_fast = 2.0 / (9.0 + 1.0);
+                let alpha_k_slow = 2.0 / (21.0 + 1.0);
+                if self.kline_ema_fast == 0.0 {
+                    self.kline_ema_fast = price;
+                    self.kline_ema_slow = price;
+                } else {
+                    self.kline_ema_fast = (price - self.kline_ema_fast) * alpha_k_fast + self.kline_ema_fast;
+                    self.kline_ema_slow = (price - self.kline_ema_slow) * alpha_k_slow + self.kline_ema_slow;
+                }
 
                 self.kline_start_ms = event_time_ms;
                 self.kline_open = price;
@@ -172,8 +217,17 @@ impl StatefulEngine {
     }
 
     pub fn process_kline(&mut self, _open: f64, high: f64, low: f64, close: f64, _volume: f64) {
+        // FIX #665: Descarte preventivo de klines con precios corruptos o no finitos
+        if !close.is_finite() || close <= 0.0 || !high.is_finite() || !low.is_finite() {
+            return;
+        }
+
         self.omni.update(close, high, low);
         self.hurst.update(close);
+        if self.last_price > 0.0 {
+            self.spectral.push((close - self.last_price) / self.last_price);
+        }
+        self.multifractal.update(close);
         self.last_price = close;
 
         if self.ema_fast == 0.0 {
@@ -186,7 +240,13 @@ impl StatefulEngine {
             self.ema_slow = (close - self.ema_slow) * alpha_slow + self.ema_slow;
         }
 
-        self.v_t = self.v_t * 0.8 + (high - low) * 0.2;
+        // FIX #624: True Range robusto y no nulo en kline processing
+        let tr = (high - low).max(close * 0.0005);
+        self.v_t = if self.v_t == 0.0 || !self.v_t.is_finite() {
+            tr
+        } else {
+            (self.v_t * 0.8 + tr * 0.2).max(close * 0.0005)
+        };
     }
 
     pub fn update_macro_features(
@@ -196,6 +256,11 @@ impl StatefulEngine {
         dex_severity: f64,
         ts_ms: u64,
     ) {
+        // FIX #665: Sanitizar macro features
+        if !obi.is_finite() || !funding_rate.is_finite() || !dex_severity.is_finite() {
+            return;
+        }
+
         self.obi_accel.update(obi);
         self.fr_elasticity.update(funding_rate, self.last_price);
         self.dark_alpha.apply_event(dex_severity, ts_ms);
@@ -223,20 +288,22 @@ impl StatefulEngine {
         let hurst = self.hurst.current();
         let ofi = self.ofi_model.ema_ofi;
         let vol_delta = self.order_flow.get_volume_delta_ratio();
+        let norm_vt = if self.last_price > 0.0 { (self.v_t / self.last_price).clamp(0.0, 1.0) } else { 0.005 };
+        let norm_at = if self.last_price > 0.0 { (self.a_t / self.last_price).clamp(-1.0, 1.0) } else { 0.0 };
 
         [
             price_change as f32,
             hurst as f32,
             ofi as f32,
-            self.v_t as f32,
+            norm_vt as f32,
             self.obi_accel.prev_obi_velocity as f32,
             self.obi_accel.prev_obi as f32,
             vol_delta as f32,
-            (self.cvpin.buy_volume - self.cvpin.sell_volume) as f32,
+            (((self.cvpin.buy_volume - self.cvpin.sell_volume) / (self.cvpin.buy_volume + self.cvpin.sell_volume).max(1e-6)).clamp(-1.0, 1.0)) as f32,
             self.last_entropy as f32,
             self.dark_alpha.current_severity as f32,
             self.obi_accel.accel as f32,
-            self.a_t as f32,
+            norm_at as f32,
         ]
     }
 
@@ -293,6 +360,28 @@ impl StatefulEngine {
         }
     }
 
+    /// Retorna la pendiente relativa del micro-trend (Tick-level EMA 12 vs 26)
+    #[inline(always)]
+    pub fn get_micro_trend(&self) -> f64 {
+        if self.ema_slow > 0.0 {
+            (self.ema_fast - self.ema_slow) / self.ema_slow
+        } else {
+            0.0
+        }
+    }
+
+    /// Retorna la pendiente relativa del macro-trend (1-Minute Kline EMA 9 vs 21)
+    #[inline(always)]
+    pub fn get_macro_trend(&self) -> f64 {
+        if self.kline_ema_slow > 0.0 {
+            (self.kline_ema_fast - self.kline_ema_slow) / self.kline_ema_slow
+        } else if self.ema_slow > 0.0 {
+            (self.ema_fast - self.ema_slow) / self.ema_slow
+        } else {
+            0.0
+        }
+    }
+
     /// Projects the state out to the f32 barrier (576 bytes / 144 floats)
     pub fn export_f32(&mut self, out: &mut [f32; 144]) {
         out[0] = self.ema_fast as f32;
@@ -307,5 +396,49 @@ impl StatefulEngine {
 impl Drop for StatefulEngine {
     fn drop(&mut self) {
         DROP_COUNTER.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_stateful_engine_reset_and_feature_extraction() {
+        let mut engine = StatefulEngine::new();
+        engine.reset();
+
+        let micro_feats = engine.get_features();
+        assert_eq!(micro_feats.len(), 12);
+        for f in &micro_feats {
+            assert!(f.is_finite(), "Micro feature debe ser finita");
+        }
+
+        let swing_feats = engine.get_swing_features();
+        assert_eq!(swing_feats.len(), 34);
+        for f in &swing_feats {
+            assert!(f.is_finite(), "Swing feature debe ser finita");
+        }
+    }
+
+    #[test]
+    fn test_stateful_engine_market_regime_classification() {
+        let engine = StatefulEngine::new();
+        let regime = engine.get_market_regime();
+        assert!(matches!(regime, MarketRegime::Scalping | MarketRegime::Swing | MarketRegime::Neutral));
+
+        let atr_pct = engine.get_atr_pct();
+        assert!(atr_pct.is_finite());
+    }
+
+    #[test]
+    fn test_stateful_engine_export_f32_stability() {
+        let mut engine = StatefulEngine::new();
+        let mut buffer = [0.0f32; 144];
+        engine.export_f32(&mut buffer);
+
+        for val in &buffer[0..5] {
+            assert!(val.is_finite());
+        }
     }
 }

@@ -63,7 +63,8 @@ impl FaseAutonomousManager {
 
     /// Evaluates epistemic conditions and executes phase transitions
     pub fn evaluate_transition(&mut self, tick: u64, metrics: &HealthMetrics) -> FaseAutonomous {
-        if metrics.auditor_discrepancy_pct > 0.10 || metrics.self_deception_detected {
+        let is_discrepancy_critical = !metrics.auditor_discrepancy_pct.is_finite() || metrics.auditor_discrepancy_pct > 0.10;
+        if is_discrepancy_critical || metrics.self_deception_detected {
             if self.current_phase != FaseAutonomous::Fase10CrisisEpistemica {
                 self.phase_history.push((self.current_phase, tick));
                 self.current_phase = FaseAutonomous::Fase10CrisisEpistemica;
@@ -160,3 +161,82 @@ impl FaseAutonomousManager {
         self.current_phase
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fase_autonomous_transition_lifecycle() {
+        let mut manager = FaseAutonomousManager::new();
+        assert_eq!(manager.current_phase, FaseAutonomous::Fase0Genesis);
+
+        let metrics = HealthMetrics {
+            concept_drift_score: 0.1,
+            real_drawdown_pct: 0.01,
+            sharpe_30d: 2.5,
+            execution_latency_us: 1000,
+            data_checksum_ok: true,
+            compilation_success: true,
+            immune_tests_pass: true,
+            auditor_discrepancy_pct: 0.01,
+            self_deception_detected: false,
+        };
+
+        // Fase 0 -> Fase 2 (data_checksum_ok)
+        let p = manager.evaluate_transition(1, &metrics);
+        assert_eq!(p, FaseAutonomous::Fase2Exploracion);
+
+        // Fase 2 -> Fase 3 (compilation_success)
+        let p = manager.evaluate_transition(2, &metrics);
+        assert_eq!(p, FaseAutonomous::Fase3Consolidacion);
+
+        // Fase 3 -> Fase 4 (immune_tests_pass)
+        let p = manager.evaluate_transition(3, &metrics);
+        assert_eq!(p, FaseAutonomous::Fase4Operacion);
+
+        // Fase 4 -> Fase 9 (sharpe > 2.0)
+        let p = manager.evaluate_transition(4, &metrics);
+        assert_eq!(p, FaseAutonomous::Fase9Reproduccion);
+    }
+
+    #[test]
+    fn test_fase_autonomous_epistemic_crisis_override() {
+        let mut manager = FaseAutonomousManager::new();
+        let crisis_metrics = HealthMetrics {
+            concept_drift_score: 0.1,
+            real_drawdown_pct: 0.01,
+            sharpe_30d: 2.5,
+            execution_latency_us: 1000,
+            data_checksum_ok: true,
+            compilation_success: true,
+            immune_tests_pass: true,
+            auditor_discrepancy_pct: 0.25, // Discrepancia crítica
+            self_deception_detected: true,
+        };
+
+        let p = manager.evaluate_transition(10, &crisis_metrics);
+        assert_eq!(p, FaseAutonomous::Fase10CrisisEpistemica);
+        assert_eq!(manager.current_phase, FaseAutonomous::Fase10CrisisEpistemica);
+    }
+
+    #[test]
+    fn test_fase_autonomous_nan_discrepancy_triggers_crisis() {
+        let mut manager = FaseAutonomousManager::new();
+        let nan_metrics = HealthMetrics {
+            concept_drift_score: 0.1,
+            real_drawdown_pct: 0.01,
+            sharpe_30d: 2.5,
+            execution_latency_us: 1000,
+            data_checksum_ok: true,
+            compilation_success: true,
+            immune_tests_pass: true,
+            auditor_discrepancy_pct: f64::NAN, // Discrepancia corrupta
+            self_deception_detected: false,
+        };
+
+        let p = manager.evaluate_transition(10, &nan_metrics);
+        assert_eq!(p, FaseAutonomous::Fase10CrisisEpistemica);
+    }
+}
+

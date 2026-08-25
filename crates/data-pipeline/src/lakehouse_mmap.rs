@@ -102,3 +102,21 @@ impl LakehouseMmap {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lakehouse_mmap_append_and_capacity_limit() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_lakehouse_mmap_small.bin");
+
+        let mmap = LakehouseMmap::new(&file_path, 1).unwrap();
+        let feats = [1.0, 2.0, 3.0];
+        let probs = [0.7, 0.3];
+
+        assert!(mmap.append_tensor(1672531200000, &feats, &probs).is_ok());
+        let _ = std::fs::remove_file(file_path);
+    }
+}

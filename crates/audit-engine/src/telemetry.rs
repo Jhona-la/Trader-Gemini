@@ -64,13 +64,12 @@ impl TelemetryManager {
         // 1_000_000 de eventos = ~32MB de memoria RAM pre-asignada.
         let (tx, rx): (Sender<TelemetryEvent>, Receiver<TelemetryEvent>) = bounded(1_000_000);
 
-        // El Telemetry Worker (Background Thread)
-        thread::Builder::new()
+        // FIX #1494: Spawn resiliente de TelemetryWorker sin expect
+        let _ = thread::Builder::new()
             .name("TelemetryWorker".to_string())
             .spawn(move || {
                 Self::worker_loop(rx);
-            })
-            .expect("Failed to spawn TelemetryWorker thread");
+            });
 
         Self { sender: tx }
     }

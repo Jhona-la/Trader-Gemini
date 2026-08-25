@@ -77,22 +77,29 @@ pub async fn shadow_tournament_daemon(arena_real: Arc<GlobalArena>, shadow_arena
 
         if best_shadow_trades >= min_trades_required {
             let p_hat = best_shadow_wins / (best_shadow_trades as f64);
-            let p0 = if real_trades >= 10 { real_wins / (real_trades as f64) } else { 0.55 }; // Null Hypothesis: Real Engine Win Rate (o base 55%)
+            // FIX #1466: Clamping de p0 para evitar colapso de varianza binomial en 0 o 1
+            let p0 = if real_trades >= 10 { real_wins / (real_trades as f64) } else { 0.55 };
+            let p0_clamped = p0.clamp(0.01, 0.99);
             
             // Estadístico Z para una proporción (One-sample Z-test)
-            z_score = (p_hat - p0) / ((p0 * (1.0 - p0)) / best_shadow_trades as f64).sqrt();
-            
-            // Aproximación de P-value para distribución normal estándar (One-sided)
-            p_value = 0.5 * (1.0 - libm::erf(z_score / std::f64::consts::SQRT_2));
+            let variance = (p0_clamped * (1.0 - p0_clamped)) / (best_shadow_trades as f64);
+            if variance > 0.0 {
+                let z = (p_hat - p0_clamped) / variance.sqrt();
+                if z.is_finite() {
+                    z_score = z;
+                    // Aproximación de P-value para distribución normal estándar (One-sided)
+                    p_value = (0.5 * (1.0 - libm::erf(z_score / std::f64::consts::SQRT_2))).clamp(0.0, 1.0);
+                }
+            }
         }
 
         // Calculamos la divergencia estadística entre Shadow y Real
         let reality_gap = (best_shadow_pnl - real_pnl).abs();
         
-        let inverse_shannon_penalty = if reality_gap > 0.0 {
-            let prob_divergence = reality_gap / (real_pnl.abs() + 1.0);
-            if prob_divergence > 0.0 && prob_divergence < 1.0 {
-                -(prob_divergence * prob_divergence.ln()) * 100.0
+        let inverse_shannon_penalty = if reality_gap > 0.0 && reality_gap.is_finite() {
+            let prob_divergence = (reality_gap / (real_pnl.abs() + 1.0)).clamp(0.0, 0.999);
+            if prob_divergence > 0.0 {
+                (-(prob_divergence * prob_divergence.ln()) * 100.0).clamp(0.0, 1000.0)
             } else {
                 50.0 
             }

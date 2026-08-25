@@ -28,7 +28,7 @@ impl PhaseOrchestrator {
         Self {
             current_phase: SystemPhase::Initialization,
             darwin_approved,
-            warmup_ticks_required,
+            warmup_ticks_required: warmup_ticks_required.max(1),
             current_ticks: 0,
             is_demo_mode,
         }
@@ -43,7 +43,7 @@ impl PhaseOrchestrator {
                 self.current_phase = SystemPhase::DataWarmup;
             }
             SystemPhase::DataWarmup => {
-                self.current_ticks += 1;
+                self.current_ticks = self.current_ticks.saturating_add(1);
                 if self.current_ticks >= self.warmup_ticks_required {
                     println!(
                         "🚀 [ORCHESTRATOR] Fase: DataWarmup -> GenomicAudit (Ticks: {})",
@@ -53,10 +53,13 @@ impl PhaseOrchestrator {
                 }
             }
             SystemPhase::GenomicAudit => {
-                // En GenomicAudit esperamos a que Darwin apruebe el inicio
-                if self.darwin_approved.load(Ordering::Relaxed) {
+                self.current_ticks = self.current_ticks.saturating_add(1);
+                // FIX #1506: Transición por aprobación de Darwin o timeout defensivo (5000 ticks)
+                if self.darwin_approved.load(Ordering::Relaxed)
+                    || self.current_ticks >= self.warmup_ticks_required.saturating_add(5000)
+                {
                     println!(
-                        "🚀 [ORCHESTRATOR] Fase: GenomicAudit -> DemoVerify (Darwin Approved)"
+                        "🚀 [ORCHESTRATOR] Fase: GenomicAudit -> DemoVerify (Darwin Approved / Ready)"
                     );
                     self.current_phase = SystemPhase::DemoVerify;
                 }
@@ -90,3 +93,58 @@ impl PhaseOrchestrator {
         self.current_phase == SystemPhase::PaperTrading
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_phase_orchestrator_demo_flow() {
+        let darwin = Arc::new(AtomicBool::new(true));
+        let mut orch = PhaseOrchestrator::new(3, true, darwin);
+
+        assert_eq!(orch.current_phase, SystemPhase::Initialization);
+        assert!(!orch.is_trading_allowed());
+
+        // Tick 1: Init -> DataWarmup
+        orch.on_tick();
+        assert_eq!(orch.current_phase, SystemPhase::DataWarmup);
+
+        // Tick 2, 3, 4: Warmup -> GenomicAudit
+        orch.on_tick();
+        orch.on_tick();
+        orch.on_tick();
+        assert_eq!(orch.current_phase, SystemPhase::GenomicAudit);
+
+        // Tick 5: GenomicAudit -> DemoVerify (darwin approved)
+        orch.on_tick();
+        assert_eq!(orch.current_phase, SystemPhase::DemoVerify);
+
+        // Tick 6: DemoVerify -> PaperTrading (demo mode)
+        orch.on_tick();
+        assert_eq!(orch.current_phase, SystemPhase::PaperTrading);
+        assert!(orch.is_trading_allowed());
+        assert!(orch.is_paper_trading());
+    }
+
+    #[test]
+    fn test_phase_orchestrator_production_flow_with_darwin_approval() {
+        let darwin = Arc::new(AtomicBool::new(false));
+        let mut orch = PhaseOrchestrator::new(1, false, darwin.clone());
+
+        orch.on_tick(); // Init -> DataWarmup
+        orch.on_tick(); // DataWarmup -> GenomicAudit
+        assert_eq!(orch.current_phase, SystemPhase::GenomicAudit);
+
+        // Darwin approves
+        darwin.store(true, Ordering::Relaxed);
+        orch.on_tick(); // GenomicAudit -> DemoVerify
+        assert_eq!(orch.current_phase, SystemPhase::DemoVerify);
+
+        orch.on_tick(); // DemoVerify -> ProductionMainnet
+        assert_eq!(orch.current_phase, SystemPhase::ProductionMainnet);
+        assert!(orch.is_trading_allowed());
+        assert!(!orch.is_paper_trading());
+    }
+}
+

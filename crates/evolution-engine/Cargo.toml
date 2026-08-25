@@ -22,3 +22,6 @@ parking_lot = "0.12.1"
 regex = "1.11.1"
 strategy-core = { version = "0.1.0", path = "../strategy-core" }
 smartcore = { version = "0.3.2", features = ["serde"] }
+dark-alpha-engine = { path = "../dark-alpha-engine" }
+data-pipeline = { path = "../data-pipeline" }
+arc-swap = "1.9.2"

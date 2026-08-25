@@ -80,25 +80,35 @@ pub struct OrderAck {
 }
 
 impl OrderAck {
+    // FIX #1502: Comparaciones insensibles a mayúsculas y espacios en blanco
     #[inline(always)]
     pub fn is_filled(&self) -> bool {
-        self.status == "FILLED"
+        self.status.trim().eq_ignore_ascii_case("FILLED")
     }
 
     #[inline(always)]
     pub fn is_active(&self) -> bool {
-        matches!(self.status.as_str(), "NEW" | "PARTIALLY_FILLED")
+        let s = self.status.trim();
+        s.eq_ignore_ascii_case("NEW") || s.eq_ignore_ascii_case("PARTIALLY_FILLED")
     }
 
     /// Cantidad restante por ejecutar (>= 0).
     #[inline(always)]
     pub fn remaining_qty(&self) -> f64 {
-        (self.orig_qty - self.executed_qty).max(0.0)
+        let rem = self.orig_qty - self.executed_qty;
+        if rem.is_finite() {
+            rem.max(0.0)
+        } else {
+            0.0
+        }
     }
 
     /// Comisión total pagada en los fills reportados.
     pub fn total_commission(&self) -> f64 {
-        self.fills.iter().map(|f| f.commission).sum()
+        self.fills
+            .iter()
+            .map(|f| if f.commission.is_finite() && f.commission >= 0.0 { f.commission } else { 0.0 })
+            .sum()
     }
 }
 
@@ -164,4 +174,30 @@ mod tests {
         let e: BinanceApiError = serde_json::from_str(body).expect("parse error");
         assert_eq!(e.code, error_codes::NEW_ORDER_REJECTED);
     }
+
+    #[test]
+    fn test_parse_reject_body_and_nan_commission_sanitization() {
+        let reject_json = r#"{"code": -4116, "msg": "Duplicate client order id"}"#;
+        let reject_msg = parse_reject_body(reject_json, 400);
+        assert!(reject_msg.contains("code=-4116"));
+        assert!(reject_msg.contains("Duplicate client order id"));
+
+        let unparseable = parse_reject_body("502 Bad Gateway", 502);
+        assert!(reject_msg.contains("code="));
+        assert!(unparseable.contains("http=502"));
+
+        let ack = OrderAck {
+            orig_qty: f64::NAN,
+            executed_qty: 0.0,
+            fills: vec![
+                Fill { commission: f64::NAN, ..Default::default() },
+                Fill { commission: -0.5, ..Default::default() },
+                Fill { commission: 0.05, ..Default::default() },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(ack.remaining_qty(), 0.0);
+        assert!((ack.total_commission() - 0.05).abs() < 1e-12);
+    }
 }
+

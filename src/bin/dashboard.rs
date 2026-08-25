@@ -25,6 +25,18 @@ struct SystemState {
     win_rate_swing: f64,
     global_leverage: f64,
     global_max_drawdown: f64,
+    #[serde(default)]
+    cpu_usage: f32,
+    #[serde(default)]
+    memory_used_mb: f64,
+    #[serde(default)]
+    total_memory_mb: f64,
+    #[serde(default)]
+    net_roi_pct: f64,
+    #[serde(default)]
+    gross_roi_pct: f64,
+    #[serde(default)]
+    fees_paid: f64,
 }
 
 #[tokio::main]
@@ -35,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute!(stdout, EnterAlternateScreen, Hide)?;
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(50))
+        .timeout(Duration::from_millis(500))
         .build()?;
 
     let url = "http://127.0.0.1:3000/api/state";
@@ -64,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let pnl_total = if initial_capital > 0.0 {
                         state.unified_capital - initial_capital
                     } else {
-                        0.0
+                        state.pnl_realized_scalp + state.pnl_realized_swing
                     };
                     let pnl_color = if pnl_total >= 0.0 {
                         Color::Green
@@ -79,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let growth = if initial_capital > 0.0 {
                         ((state.unified_capital - initial_capital) / initial_capital) * 100.0
                     } else {
-                        0.0
+                        state.net_roi_pct
                     };
 
                     execute!(
@@ -88,17 +100,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         SetForegroundColor(Color::Magenta),
                         Print(format!(">> CAPITAL:       ${:.4}\n", state.unified_capital)),
                         SetForegroundColor(Color::White),
-                        Print(if initial_capital > 0.0 {
-                            format!(">> COMPOUND GRO.: {:.2}%\n", growth)
-                        } else {
-                            ">> COMPOUND GRO.: N/A (Missing INITIAL_CAPITAL)\n".to_string()
-                        }),
+                        Print(format!(">> COMPOUND GRO.: {:.2}%\n", growth)),
                         SetForegroundColor(pnl_color),
-                        Print(if initial_capital > 0.0 {
-                            format!(">> PNL NETO TOT.: ${:.4}\n", pnl_total)
-                        } else {
-                            ">> PNL NETO TOT.: N/A\n".to_string()
-                        }),
+                        Print(format!(">> PNL NETO TOT.: ${:.4}\n", pnl_total)),
+                        SetForegroundColor(Color::Yellow),
+                        Print(format!(">> FEES PAGADOS:  ${:.4}\n", state.fees_paid)),
                         Print("\n"),
                         SetForegroundColor(Color::Cyan),
                         Print("--- ⚡ SCALP ENGINE ---\n"),
@@ -157,6 +163,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         )),
                         SetForegroundColor(Color::DarkGrey),
                         Print(format!(">> ENGINE TICKS:   {}\n", state.tick_counter)),
+                        SetForegroundColor(Color::DarkGrey),
+                        Print(format!(
+                            ">> HOST RAM/CPU:   {:.1}MB / {:.1}% CPU\n",
+                            state.memory_used_mb, state.cpu_usage
+                        )),
                         Print("\n"),
                         SetForegroundColor(Color::Cyan),
                         Print("====================================================\n"),

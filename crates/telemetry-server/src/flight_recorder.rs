@@ -28,17 +28,26 @@ unsafe impl Send for FlightRecorder {}
 
 impl FlightRecorder {
     pub fn new(path: &str, capacity_events: usize) -> Self {
-        let file_size = capacity_events * std::mem::size_of::<FlightEvent>();
+        // FIX #1441: Clamping defensivo de capacidad para evitar división por cero en record()
+        let safe_capacity = capacity_events.clamp(1, 10_000_000);
+        let file_size = safe_capacity * std::mem::size_of::<FlightEvent>();
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        // FIX #587: truncate(false) para preservar el registro forense previo tras reinicios
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .truncate(true)
+            .truncate(false)
             .open(path)
             .expect("Fallo al crear archivo de Flight Recorder");
 
-        file.set_len(file_size as u64)
-            .expect("Fallo al reservar espacio de Flight Recorder");
+        let meta = file.metadata().expect("Fallo al leer metadatos de Flight Recorder");
+        if meta.len() < file_size as u64 {
+            file.set_len(file_size as u64)
+                .expect("Fallo al reservar espacio de Flight Recorder");
+        }
 
         let mut mmap = unsafe {
             MmapOptions::new()
@@ -50,7 +59,7 @@ impl FlightRecorder {
         Self {
             mmap: mmap_ptr,
             head: AtomicUsize::new(0),
-            capacity: capacity_events,
+            capacity: safe_capacity,
             _mmap_guard: mmap,
         }
     }
@@ -71,3 +80,51 @@ impl FlightRecorder {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_telemetry_flight_recorder_mmap() {
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_telemetry_flight_recorder.bin");
+        let path_str = path.to_string_lossy().to_string();
+
+        let recorder = FlightRecorder::new(&path_str, 16);
+        let event = FlightEvent {
+            timestamp: 1672531200000,
+            trace_id: 42,
+            event_type: 1,
+            payload: [0u8; 47],
+        };
+        recorder.record(event);
+        assert_eq!(recorder.head.load(Ordering::Relaxed), 1);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_flight_recorder_circular_wrap_around_and_zero_capacity_clamping() {
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_telemetry_fr_wrap.bin");
+        let path_str = path.to_string_lossy().to_string();
+
+        // 0 capacity is clamped safely to 1
+        let recorder = FlightRecorder::new(&path_str, 0);
+        assert_eq!(recorder.capacity, 1);
+
+        for i in 0..10 {
+            recorder.record(FlightEvent {
+                timestamp: i,
+                trace_id: i * 100,
+                event_type: 2,
+                payload: [i as u8; 47],
+            });
+        }
+        assert_eq!(recorder.head.load(Ordering::Relaxed), 10);
+
+        let _ = std::fs::remove_file(path);
+    }
+}
+

@@ -10,26 +10,36 @@ pub struct BookTickerEvent {
 
 impl BookTickerEvent {
     /// Zero-allocation JSON parser para nanosegundos (Axioma V5).
-    /// Asume el formato ordenado de Binance: {"u":...,"s":"...","b":"...","B":"...","a":"...","A":"..."}
+    /// FIX #821: Cada campo se busca desde offset 0 (tolerante a reordenación de claves JSON).
+    /// Binance puede reordenar claves en payloads proxied/batched.
     #[inline(always)]
     pub fn parse_from_json(bytes: &[u8]) -> Option<Self> {
-        let (bid_price, i) = Self::extract_f64_from(bytes, 0, b"\"b\":\"")?;
-        let (bid_qty, i) = Self::extract_f64_from(bytes, i, b"\"B\":\"")?;
-        let (ask_price, i) = Self::extract_f64_from(bytes, i, b"\"a\":\"")?;
-        let (ask_qty, i) = Self::extract_f64_from(bytes, i, b"\"A\":\"")?;
+        // FIX #821: Búsqueda independiente por campo — tolerante a cualquier orden de claves JSON
+        let (bid_price, _) = Self::extract_f64_from(bytes, 0, b"\"b\":\"")?;
+        let (bid_qty, _) = Self::extract_f64_from(bytes, 0, b"\"B\":\"")?;
+        let (ask_price, _) = Self::extract_f64_from(bytes, 0, b"\"a\":\"")?;
+        let (ask_qty, _) = Self::extract_f64_from(bytes, 0, b"\"A\":\"")?;
 
-        // Extract Event Time (E) or Transaction Time (T)
-        // Note: they are not in quotes: "E":1656093845014
-        let event_time = if let Some((t, _)) = Self::extract_u64_from(bytes, i, b"\"E\":") {
+        if !bid_price.is_finite()
+            || !bid_qty.is_finite()
+            || !ask_price.is_finite()
+            || !ask_qty.is_finite()
+            || bid_price <= 0.0
+            || ask_price <= 0.0
+            || bid_qty < 0.0
+            || ask_qty < 0.0
+        {
+            return None;
+        }
+
+        // Extract Event Time (E) or Transaction Time (T) from the entire byte slice (offset 0)
+        let event_time = if let Some((t, _)) = Self::extract_u64_from(bytes, 0, b"\"E\":") {
             t
-        } else if let Some((t, _)) = Self::extract_u64_from(bytes, i, b"\"T\":") {
+        } else if let Some((t, _)) = Self::extract_u64_from(bytes, 0, b"\"T\":") {
             t
         } else {
             0
         };
-
-        // El symbol lo dejamos hardcodeado por ahora o no lo parseamos dinámicamente si no se usa
-        // En Producción unificada, the symbol is known by the Streamer.
 
         Some(Self {
             bid_price,
@@ -88,6 +98,10 @@ impl AggTradeEvent {
         let (price, i) = BookTickerEvent::extract_f64_from(bytes, 0, b"\"p\":\"")?;
         let (qty, i) = BookTickerEvent::extract_f64_from(bytes, i, b"\"q\":\"")?;
 
+        if !price.is_finite() || !qty.is_finite() || price <= 0.0 || qty < 0.0 {
+            return None;
+        }
+
         let m_idx = memchr::memmem::find(&bytes[i..], b"\"m\":")?;
         let m_start = i + m_idx + 4;
         let is_buyer_maker = bytes.get(m_start) == Some(&b't'); // "t"rue or "f"alse
@@ -117,21 +131,37 @@ impl DepthEvent {
         }
 
         if let Ok(json) = serde_json::from_slice::<serde_json::Value>(bytes) {
-            let data = &json["data"];
+            let data = if json.get("data").is_some() && !json["data"].is_null() {
+                &json["data"]
+            } else {
+                &json
+            };
             let mut bid_wall = 0.0;
             let mut ask_wall = 0.0;
 
             if let Some(bids) = data["bids"].as_array() {
                 for bid in bids {
-                    if let Some(qty_str) = bid[1].as_str() {
-                        bid_wall += qty_str.parse::<f64>().unwrap_or(0.0);
+                    if let Some(qty_val) = bid.get(1) {
+                        if let Some(qty_str) = qty_val.as_str() {
+                            if let Ok(qty) = qty_str.parse::<f64>() {
+                                if qty.is_finite() && qty > 0.0 {
+                                    bid_wall += qty;
+                                }
+                            }
+                        }
                     }
                 }
             }
             if let Some(asks) = data["asks"].as_array() {
                 for ask in asks {
-                    if let Some(qty_str) = ask[1].as_str() {
-                        ask_wall += qty_str.parse::<f64>().unwrap_or(0.0);
+                    if let Some(qty_val) = ask.get(1) {
+                        if let Some(qty_str) = qty_val.as_str() {
+                            if let Ok(qty) = qty_str.parse::<f64>() {
+                                if qty.is_finite() && qty > 0.0 {
+                                    ask_wall += qty;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -169,6 +199,11 @@ impl Default for OnlineNormalizer {
 impl OnlineNormalizer {
     #[inline(always)]
     pub fn update(&mut self, value: f64) {
+        // FIX #694: Protección contra valores no finitos para no corromper la media/varianza
+        if !value.is_finite() {
+            return;
+        }
+
         self.count += 1;
 
         let delta = value - self.mean;
@@ -218,3 +253,77 @@ impl OnlineNormalizer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_book_ticker_event_parse_from_json_nominal() {
+        let json = br#"{"u":400900217,"s":"BNBUSDT","b":"25.35190000","B":"31.21000000","a":"25.36520000","A":"40.66000000","T":1564014576000,"E":1564014576001}"#;
+        let event = BookTickerEvent::parse_from_json(json).expect("Debe parsear");
+        assert_eq!(event.bid_price, 25.3519);
+        assert_eq!(event.bid_qty, 31.21);
+        assert_eq!(event.ask_price, 25.3652);
+        assert_eq!(event.ask_qty, 40.66);
+        assert_eq!(event.event_time, 1564014576001);
+    }
+
+    #[test]
+    fn test_book_ticker_event_parse_from_json_reordered_keys() {
+        // Claves en orden inverso
+        let json = br#"{"E":1672531200000,"A":"10.0","a":"100.5","B":"5.0","b":"100.0","s":"BTCUSDT"}"#;
+        let event = BookTickerEvent::parse_from_json(json).expect("Debe parsear sin importar el orden");
+        assert_eq!(event.bid_price, 100.0);
+        assert_eq!(event.ask_price, 100.5);
+        assert_eq!(event.bid_qty, 5.0);
+        assert_eq!(event.ask_qty, 10.0);
+        assert_eq!(event.event_time, 1672531200000);
+    }
+
+    #[test]
+    fn test_book_ticker_event_parse_from_json_nan_and_negative_rejection() {
+        let json_negative = br#"{"b":"-10.0","B":"1.0","a":"10.0","A":"1.0","E":100}"#;
+        assert!(BookTickerEvent::parse_from_json(json_negative).is_none());
+
+        let json_zero_price = br#"{"b":"0.0","B":"1.0","a":"10.0","A":"1.0","E":100}"#;
+        assert!(BookTickerEvent::parse_from_json(json_zero_price).is_none());
+    }
+
+    #[test]
+    fn test_agg_trade_event_parse_from_json() {
+        let json = br#"{"e":"aggTrade","E":123456789,"s":"BNBUSDT","a":12345,"p":"0.001","q":"100","f":100,"l":105,"T":123456785,"m":true}"#;
+        let event = AggTradeEvent::parse_from_json(json).expect("Debe parsear");
+        assert_eq!(event.price, 0.001);
+        assert_eq!(event.qty, 100.0);
+        assert!(event.is_buyer_maker);
+    }
+
+    #[test]
+    fn test_depth_event_parse_from_json() {
+        let json = br#"{"bids":[["100.0","5.0"],["99.0","10.0"]],"asks":[["101.0","8.0"],["102.0","12.0"]]}"#;
+        let event = DepthEvent::parse_from_json(json).expect("Debe parsear");
+        assert_eq!(event.bid_wall, 15.0);
+        assert_eq!(event.ask_wall, 20.0);
+    }
+
+    #[test]
+    fn test_online_normalizer_welford_variance_and_nan_immunity() {
+        let mut normalizer = OnlineNormalizer::default();
+        normalizer.update(10.0);
+        normalizer.update(20.0);
+        normalizer.update(30.0);
+        normalizer.update(f64::NAN); // Inmune
+
+        assert_eq!(normalizer.count, 3);
+        assert_eq!(normalizer.mean, 20.0);
+        assert_eq!(normalizer.variance(), 100.0);
+        assert_eq!(normalizer.std_dev(), 10.0);
+        assert_eq!(normalizer.z_score(20.0), 0.0);
+        assert_eq!(normalizer.z_score(30.0), 1.0);
+        assert_eq!(normalizer.min_max(10.0), 0.0);
+        assert_eq!(normalizer.min_max(30.0), 1.0);
+        assert_eq!(normalizer.min_max(20.0), 0.5);
+    }
+}
+

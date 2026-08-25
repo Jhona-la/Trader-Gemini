@@ -29,6 +29,11 @@ impl OrderFlowTracker {
 
     #[inline(always)]
     pub fn update(&mut self, volume: f64, is_buyer_maker: bool) -> f64 {
+        // FIX #1457: Sanitización de volumen
+        if !volume.is_finite() || volume < 0.0 {
+            return 0.0;
+        }
+
         // En Binance: buyer_maker = true significa que el trade fue ejecutado contra el BID (Taker Sell)
         // buyer_maker = false significa que el trade fue ejecutado contra el ASK (Taker Buy)
         let (buy_v, sell_v) = if is_buyer_maker {
@@ -59,10 +64,10 @@ impl OrderFlowTracker {
     #[inline(always)]
     pub fn get_volume_delta_ratio(&self) -> f64 {
         let total = self.cumulative_buy_vol + self.cumulative_sell_vol;
-        if total == 0.0 {
+        if total <= 0.0 {
             0.0
         } else {
-            (self.cumulative_buy_vol - self.cumulative_sell_vol) / total
+            ((self.cumulative_buy_vol - self.cumulative_sell_vol) / total).clamp(-1.0, 1.0)
         }
     }
 }
@@ -98,6 +103,11 @@ impl OFIModel {
 
     #[inline(always)]
     pub fn update(&mut self, bid_price: f64, ask_price: f64, bid_qty: f64, ask_qty: f64) -> f64 {
+        // FIX #1457: Sanitización estricta de inputs del libro BBO
+        if !bid_price.is_finite() || !ask_price.is_finite() || !bid_qty.is_finite() || !ask_qty.is_finite() || bid_price <= 0.0 || ask_price <= 0.0 {
+            return self.ema_ofi;
+        }
+
         if self.prev_bid_price == 0.0 {
             self.prev_bid_price = bid_price;
             self.prev_bid_qty = bid_qty;
@@ -143,16 +153,58 @@ impl OFIModel {
 /// Calcula el Order Book Imbalance (OBI).
 #[inline(always)]
 pub fn order_book_imbalance(bid_vol: f64, ask_vol: f64) -> f64 {
+    // FIX #1457: Sanitización de volúmenes de imbalance
+    if !bid_vol.is_finite() || !ask_vol.is_finite() || bid_vol < 0.0 || ask_vol < 0.0 {
+        return 0.0;
+    }
     let total_vol = bid_vol + ask_vol;
-    if total_vol == 0.0 {
+    if total_vol <= 0.0 {
         0.0
     } else {
-        (bid_vol - ask_vol) / total_vol
+        ((bid_vol - ask_vol) / total_vol).clamp(-1.0, 1.0)
     }
 }
 
-/// Aceleración de Liquidez (Derivada del OBI)
 #[inline(always)]
 pub fn obi_acceleration(current_obi: f64, previous_obi: f64) -> f64 {
-    current_obi - previous_obi
+    // FIX #1457: Sanitización de aceleración OBI
+    let c = if current_obi.is_finite() { current_obi } else { 0.0 };
+    let p = if previous_obi.is_finite() { previous_obi } else { 0.0 };
+    c - p
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_order_flow_tracker_and_delta_ratio() {
+        let mut tracker = OrderFlowTracker::new();
+        // Buyer maker = false -> Taker Buy
+        tracker.update(10.0, false);
+        // Buyer maker = true -> Taker Sell
+        tracker.update(5.0, true);
+
+        assert_eq!(tracker.cumulative_buy_vol, 10.0);
+        assert_eq!(tracker.cumulative_sell_vol, 5.0);
+        // (10 - 5) / 15 = 5/15 = 1/3 ~ 0.3333
+        let ratio = tracker.get_volume_delta_ratio();
+        assert!((ratio - (1.0 / 3.0)).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_ofi_model_and_obi_acceleration() {
+        let mut ofi = OFIModel::new();
+        let _ = ofi.update(60000.0, 60001.0, 10.0, 10.0);
+        // Bid price goes up, volume = 15.0 -> e_bid = 15.0
+        let res = ofi.update(60000.5, 60001.0, 15.0, 10.0);
+        assert!(res > 0.0, "OFI should be positive when bid price rises");
+
+        let obi = order_book_imbalance(15.0, 5.0);
+        assert_eq!(obi, 0.5);
+
+        let accel = obi_acceleration(0.5, 0.2);
+        assert!((accel - 0.3).abs() < 1e-10);
+    }
+}
+

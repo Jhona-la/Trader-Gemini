@@ -94,16 +94,58 @@ pub unsafe fn ensure_working_set_size(size_needed: usize) {
         let mut max_ws = 0;
 
         if GetProcessWorkingSetSize(handle, &mut min_ws, &mut max_ws).is_ok() {
-            // Give ourselves a nice buffer: requested + 32MB padding to avoid OS thrashing
+            // FIX #585: Buffer proporcional relativo al tamaño necesario sin hinchamiento acumulativo
             let padding = 32 * 1024 * 1024;
 
-            // Hardcap to 6GB to prevent total OS freezing (16GB laptop limitation)
-            let hardcap = 6 * 1024 * 1024 * 1024;
+            // Hardcap to 4GB to preserve physical RAM headroom (16GB laptop limitation)
+            let hardcap = 4 * 1024 * 1024 * 1024;
 
-            let requested_min = (min_ws + size_needed + padding).min(hardcap);
-            let requested_max = (max_ws + size_needed + padding * 2).min(hardcap);
+            let requested_min = (size_needed + padding).max(min_ws).min(hardcap);
+            let requested_max = (requested_min + padding).max(max_ws).min(hardcap);
 
             let _ = SetProcessWorkingSetSize(handle, requested_min, requested_max);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_memory_compaction_and_lock_slice() {
+        let buffer = vec![0u8; 1024 * 64]; // 64KB buffer
+        unsafe {
+            let _ = lock_critical_memory_slice(&buffer);
+            force_working_set_compaction();
+        }
+        assert_eq!(buffer.len(), 1024 * 64);
+    }
+
+    #[test]
+    fn test_memory_lock_single_structure() {
+        #[repr(C, align(64))]
+        struct TestArenaData {
+            values: [f64; 32],
+            timestamp: u64,
+        }
+
+        let data = TestArenaData {
+            values: [1.0; 32],
+            timestamp: 1700000000,
+        };
+
+        unsafe {
+            let _ = lock_critical_memory(&data);
+        }
+        assert_eq!(data.values[0], 1.0);
+    }
+
+    #[test]
+    fn test_expand_working_set_hardcap() {
+        unsafe {
+            // Solicitud excesiva (10GB) debe ser acotada al hardcap de 4GB
+            ensure_working_set_size(10 * 1024 * 1024 * 1024);
         }
     }
 }

@@ -58,16 +58,28 @@ fn main() {
 
     let client = Client::new();
     let data_dir = Path::new("data/vision");
-    std::fs::create_dir_all(data_dir).unwrap();
+    if let Err(e) = std::fs::create_dir_all(data_dir) {
+        println!("❌ Failed to create data/vision directory: {}", e);
+        return;
+    }
 
     for symbol in SYMBOLS {
         println!("🚀 Iniciando descarga para {}", symbol);
 
         let out_file_path = data_dir.join(format!("{}_6M.csv", symbol));
-        let mut out_file = File::create(&out_file_path).unwrap();
+        let mut out_file = match File::create(&out_file_path) {
+            Ok(f) => f,
+            Err(e) => {
+                println!("❌ Failed to create {}: {}", out_file_path.display(), e);
+                continue;
+            }
+        };
 
         // CSV Header (Binance Vision Format)
-        writeln!(out_file, "open_time,open,high,low,close,volume,close_time,quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore").unwrap();
+        if let Err(e) = writeln!(out_file, "open_time,open,high,low,close,volume,close_time,quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore") {
+            println!("❌ Failed to write header: {}", e);
+            continue;
+        }
 
         for month in MONTHS {
             let url = format!(
@@ -92,20 +104,38 @@ fn main() {
                 }
             };
 
-            let mut dest = File::create(&zip_path).unwrap();
-            resp.copy_to(&mut dest).unwrap();
+            let mut dest = match File::create(&zip_path) {
+                Ok(f) => f,
+                Err(e) => {
+                    println!("   ❌ Failed to create zip file {:?}: {}", zip_path, e);
+                    continue;
+                }
+            };
+            if let Err(e) = resp.copy_to(&mut dest) {
+                println!("   ❌ Failed to write zip contents: {}", e);
+                continue;
+            }
 
             // Unzip the file and append to CSV
-            let zip_file = File::open(&zip_path).unwrap();
-            if let Ok(mut archive) = ZipArchive::new(zip_file) {
-                if archive.len() > 0 {
-                    let mut file = archive.by_index(0).unwrap();
-                    let mut content = String::new();
-                    file.read_to_string(&mut content).unwrap();
-                    out_file.write_all(content.as_bytes()).unwrap();
+            if let Ok(zip_file) = File::open(&zip_path) {
+                if let Ok(mut archive) = ZipArchive::new(zip_file) {
+                    if archive.len() > 0 {
+                        if let Ok(mut file) = archive.by_index(0) {
+                            let mut content = String::new();
+                            if file.read_to_string(&mut content).is_ok() {
+                                // FIX #553: Filtrar cabeceras intermedias duplicadas en archivos mensuales
+                                for line in content.lines() {
+                                    if line.starts_with("open_time") || line.is_empty() {
+                                        continue;
+                                    }
+                                    let _ = writeln!(out_file, "{}", line);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    println!("   ❌ Error reading ZIP: {:?}", zip_path);
                 }
-            } else {
-                println!("   ❌ Error reading ZIP: {:?}", zip_path);
             }
 
             // Eliminar zip temporal

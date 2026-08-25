@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let take_profit_pct = 0.002; // 0.2%
     let stop_loss_pct = 0.002; // 0.2%
-    let obi_threshold = 0.7;
+    let obi_threshold = 0.30;
 
     println!("🧪 Feature a evaluar: Order Book Imbalance (OBI) puro.");
     println!(
@@ -58,38 +58,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let start_sim = Instant::now();
 
-    for i in 1..rows {
-        let current_close = closes.get(i).unwrap_or(0.0);
+    for i in 2..rows {
+        // Obtenemos barra pasada i-1 para generar la señal SIN lookahead leakage
         let prev_close = closes.get(i - 1).unwrap_or(0.0);
-        let current_high = highs.get(i).unwrap_or(0.0);
-        let current_low = lows.get(i).unwrap_or(0.0);
-        let volume = volumes.get(i).unwrap_or(0.0);
+        let _prev_prev_close = closes.get(i - 2).unwrap_or(prev_close);
+        let prev_high = highs.get(i - 1).unwrap_or(0.0);
+        let prev_low = lows.get(i - 1).unwrap_or(0.0);
+        let prev_volume = volumes.get(i - 1).unwrap_or(0.0);
 
-        // Simulamos Bid/Ask y Volúmenes usando Klines (Acercamiento tosco para POC ya que falta L2 real, pero útil como proxy direccional)
-        // Asumimos bid = low, ask = high temporalmente
-        let bid = current_low;
-        let ask = current_high;
-        // Volumen Bid vs Ask (Si vela verde = más volumen al ask, roja = más volumen al bid)
-        let (bid_qty, ask_qty) = if current_close >= prev_close {
-            (volume * 0.7, volume * 0.3)
-        } else {
-            (volume * 0.3, volume * 0.7)
-        };
+        let prev_range = (prev_high - prev_low).max(1e-6);
+        let buy_pressure = ((prev_close - prev_low) / prev_range).clamp(0.05, 0.95);
+        let bid_qty = prev_volume * buy_pressure;
+        let ask_qty = prev_volume * (1.0 - buy_pressure);
 
-        // Extraer Feature OBI
+        // Extraer Feature OBI de la barra anterior ya cerrada
         let current_obi = order_book_imbalance(bid_qty, ask_qty);
-        let _current_ofi = ofi_model.update(bid, ask, bid_qty, ask_qty);
+        let _ = ofi_model.update(prev_low, prev_high, bid_qty, ask_qty);
 
-        // Lógica de Ejecución Aislada
+        // Precios de la barra actual (i) donde se ejecuta la orden
+        let current_open = _opens.get(i).unwrap_or(prev_close);
+        let current_high = highs.get(i).unwrap_or(current_open);
+        let current_low = lows.get(i).unwrap_or(current_open);
+
+        // Lógica de Ejecución Causal Aislada
+        // FIX #1479: Validación de finitud y positividad de precios de entrada
         if position == 0 {
-            if current_obi > obi_threshold {
-                position = 1;
-                entry_price = ask;
-            } else if current_obi < -obi_threshold {
-                position = -1;
-                entry_price = bid;
+            if current_open > 0.0 && current_open.is_finite() {
+                if current_obi > obi_threshold {
+                    position = 1;
+                    entry_price = current_open;
+                } else if current_obi < -obi_threshold {
+                    position = -1;
+                    entry_price = current_open;
+                }
             }
-        } else if position == 1 {
+        } else if position == 1 && entry_price > 0.0 && entry_price.is_finite() {
             let unrealized = (current_high - entry_price) / entry_price;
             let max_loss = (current_low - entry_price) / entry_price;
 
@@ -103,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 total_trades += 1;
                 position = 0;
             }
-        } else if position == -1 {
+        } else if position == -1 && entry_price > 0.0 && entry_price.is_finite() {
             let unrealized = (entry_price - current_low) / entry_price;
             let max_loss = (entry_price - current_high) / entry_price;
 

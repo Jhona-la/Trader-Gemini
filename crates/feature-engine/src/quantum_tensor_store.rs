@@ -88,3 +88,41 @@ impl QuantumTensorStore {
         self.write_feature(coin, tf, 2, j);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quantum_tensor_store_read_write() {
+        let store = QuantumTensorStore::new(10);
+        store.write_feature(0, 1, 5, 42.5);
+        assert_eq!(store.read_feature(0, 1, 5), 42.5);
+        assert_eq!(store.read_feature(0, 1, 6), 0.0);
+    }
+
+    #[test]
+    fn test_quantum_tensor_store_extract_feature_vector() {
+        let store = QuantumTensorStore::new(5);
+        for feat in 0..NUM_FEATURES {
+            store.write_feature(1, 0, feat, feat as f64);
+        }
+
+        let vector = store.extract_feature_vector(1, 0);
+        assert_eq!(vector.len(), NUM_FEATURES);
+        for feat in 0..NUM_FEATURES {
+            assert_eq!(vector[feat], feat as f64);
+        }
+    }
+
+    #[test]
+    fn test_quantum_tensor_store_lyapunov_chaos() {
+        let store = QuantumTensorStore::new(5);
+        store.write_feature(0, 0, 0, 10.0);
+        store.write_feature(0, 1, 0, 6.0);
+
+        let chaos = store.calculate_lyapunov_chaos(0);
+        assert!(chaos > 0.0 && chaos.is_finite());
+    }
+}
+

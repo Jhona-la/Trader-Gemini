@@ -1,5 +1,5 @@
 use futures_util::{SinkExt, StreamExt};
-use simd_json::prelude::ValueObjectAccess;
+use simd_json::prelude::*;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_tungstenite::connect_async;
@@ -28,21 +28,45 @@ pub fn spawn_hyperliquid_sniffer(router: Arc<DarkAlphaRouter>) {
                         if let Ok(tokio_tungstenite::tungstenite::Message::Text(text)) = msg {
                             let mut bytes = text.into_bytes();
 
-                            // Zero-alloc parsing via simd_json
+                            // FIX #1420: Parseo real de niveles L2 de Hyperliquid DEX
                             if let Ok(parsed) = simd_json::to_borrowed_value(&mut bytes) {
                                 if let Some(data) = parsed.get("data") {
-                                    if let Some(_levels) = data.get("levels") {
-                                        // For simplicity and speed, we approximate pressure by the presence of a deep update
-                                        // In a fully fledged model, we sum the top 5 levels and calculate the micro-imbalance
+                                    if let Some(levels) = data.get("levels").and_then(|l| l.as_array()) {
+                                        let mut bid_vol = 0.0f64;
+                                        let mut ask_vol = 0.0f64;
+                                        if let Some(bids) = levels.get(0).and_then(|b| b.as_array()) {
+                                            for b in bids.iter().take(5) {
+                                                if let Some(sz_str) = b.get("sz").and_then(|s| s.as_str()) {
+                                                    // FIX #1468: Parseo seguro y validación de finitud
+                                                    if let Ok(v) = sz_str.parse::<f64>() {
+                                                        if v.is_finite() && v > 0.0 {
+                                                            bid_vol += v;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if let Some(asks) = levels.get(1).and_then(|a| a.as_array()) {
+                                            for a in asks.iter().take(5) {
+                                                if let Some(sz_str) = a.get("sz").and_then(|s| s.as_str()) {
+                                                    // FIX #1468: Parseo seguro y validación de finitud
+                                                    if let Ok(v) = sz_str.parse::<f64>() {
+                                                        if v.is_finite() && v > 0.0 {
+                                                            ask_vol += v;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
 
-                                        // Example synthetic logic representing Cascade Risk
-                                        let impact = 0.05; // 5% synthetic impact probability
-                                        let qty = 10.0; // 10 BTC equivalent synthetic flow
+                                        let total_vol = (bid_vol + ask_vol).max(1.0);
+                                        let impact = ((bid_vol - ask_vol) / total_vol).clamp(-1.0, 1.0);
+                                        let qty = total_vol.clamp(0.1, 1000.0);
+
                                         let ts = SystemTime::now()
                                             .duration_since(UNIX_EPOCH)
                                             .unwrap_or_default()
-                                            .as_millis()
-                                            as u64;
+                                            .as_millis() as u64;
 
                                         router.ingest_dex_liquidation(qty, impact, ts);
                                     }

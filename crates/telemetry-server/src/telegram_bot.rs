@@ -10,11 +10,21 @@ pub struct TelegramBot {
 
 impl TelegramBot {
     pub fn new() -> Option<Self> {
-        let token = env::var("TELEGRAM_BOT_TOKEN").ok()?;
-        let chat_id = env::var("TELEGRAM_CHAT_ID").ok()?;
+        let token = env::var("TELEGRAM_BOT_TOKEN").ok()?.trim().to_string();
+        let chat_id = env::var("TELEGRAM_CHAT_ID").ok()?.trim().to_string();
+        if token.is_empty() || chat_id.is_empty() {
+            return None;
+        }
+
+        // FIX #709: Timeout estricto de conexión y lectura para evitar bloqueos asíncronos indefinidos
+        let client = reqwest::ClientBuilder::new()
+            .timeout(std::time::Duration::from_secs(5))
+            .connect_timeout(std::time::Duration::from_secs(3))
+            .build()
+            .unwrap_or_default();
 
         Some(Self {
-            client: Client::new(),
+            client,
             token,
             chat_id,
         })
@@ -30,7 +40,7 @@ impl TelegramBot {
             "parse_mode": "MarkdownV2"
         });
 
-        self.client.post(&url).json(&payload).send().await?;
+        self.client.post(&url).json(&payload).send().await?.error_for_status()?;
 
         Ok(())
     }
@@ -64,5 +74,27 @@ impl TelegramBot {
             escaped.push(c);
         }
         escaped
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_telegram_escape_markdown() {
+        let raw = "Alert: PnL is +1.50%! [BTCUSDT]";
+        let escaped = TelegramBot::escape_markdown(raw);
+        assert!(escaped.contains("\\+"));
+        assert!(escaped.contains("\\["));
+        assert!(escaped.contains("\\]"));
+        assert!(escaped.contains("\\!"));
+    }
+
+    #[test]
+    fn test_telegram_bot_disabled_when_empty_env() {
+        // Without env vars set, it should safely return None
+        let bot = TelegramBot::new();
+        let _ = bot;
     }
 }

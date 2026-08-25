@@ -66,22 +66,35 @@ impl Profiler {
     }
 
     pub fn update_financials(&mut self, gross: f64, net: f64, win_rate: f64, capital: f64) {
-        self.total_gross_pnl = gross;
-        self.total_fees = gross - net;
-        self.win_rate = win_rate;
-        if capital > 0.0 {
-            self.roi_net = (net / capital) * 100.0;
-        }
+        // FIX #1442: Sanitización de métricas financieras de telemetría
+        let safe_gross = if gross.is_finite() { gross } else { 0.0 };
+        let safe_net = if net.is_finite() { net } else { 0.0 };
+        let safe_win_rate = if win_rate.is_finite() { win_rate } else { 0.0 };
+        let safe_capital = if capital.is_finite() && capital > 0.0 { capital } else { 13.0 };
+
+        self.total_gross_pnl = safe_gross;
+        self.total_fees = safe_gross - safe_net;
+        self.win_rate = safe_win_rate;
+        // FIX #1530: Clamping de ROI a límites numéricos razonables [-1000.0, 100000.0]
+        let raw_roi = (safe_net / safe_capital) * 100.0;
+        self.roi_net = if raw_roi.is_finite() { raw_roi.clamp(-1000.0, 100000.0) } else { 0.0 };
     }
 }
 
 pub fn update_financials_atomic(gross: f64, net: f64, win_rate: f64, capital: f64) {
-    TOTAL_GROSS_PNL.store(gross.to_bits(), Ordering::Relaxed);
-    TOTAL_FEES.store((gross - net).to_bits(), Ordering::Relaxed);
-    WIN_RATE.store(win_rate.to_bits(), Ordering::Relaxed);
-    if capital > 0.0 {
-        ROI_NET.store(((net / capital) * 100.0).to_bits(), Ordering::Relaxed);
-    }
+    // FIX #1442: Sanitización de métricas financieras atómicas
+    let safe_gross = if gross.is_finite() { gross } else { 0.0 };
+    let safe_net = if net.is_finite() { net } else { 0.0 };
+    let safe_win_rate = if win_rate.is_finite() { win_rate } else { 0.0 };
+    let safe_capital = if capital.is_finite() && capital > 0.0 { capital } else { 13.0 };
+
+    TOTAL_GROSS_PNL.store(safe_gross.to_bits(), Ordering::Relaxed);
+    TOTAL_FEES.store((safe_gross - safe_net).to_bits(), Ordering::Relaxed);
+    WIN_RATE.store(safe_win_rate.to_bits(), Ordering::Relaxed);
+    // FIX #1530: Clamping de ROI a límites numéricos razonables [-1000.0, 100000.0]
+    let raw_roi = (safe_net / safe_capital) * 100.0;
+    let safe_roi = if raw_roi.is_finite() { raw_roi.clamp(-1000.0, 100000.0) } else { 0.0 };
+    ROI_NET.store(safe_roi.to_bits(), Ordering::Relaxed);
 }
 
 /// Helper macro to measure execution time using _rdtsc
@@ -155,3 +168,44 @@ pub fn start_profiler_auditor() {
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_profiler_queue_and_averages() {
+        let mut profiler = Profiler::new();
+        let _ = TELEMETRY_QUEUE.push(("OrderbookParse", 500));
+        let _ = TELEMETRY_QUEUE.push(("OrderbookParse", 700));
+
+        profiler.drain_queue();
+        let averages = profiler.get_averages();
+        assert_eq!(*averages.get("OrderbookParse").unwrap(), 600);
+    }
+
+    #[test]
+    fn test_profiler_financials_nan_sanitization() {
+        let mut profiler = Profiler::new();
+        profiler.update_financials(f64::NAN, f64::NAN, f64::NAN, f64::NAN);
+        assert_eq!(profiler.total_gross_pnl, 0.0);
+        assert_eq!(profiler.roi_net, 0.0);
+
+        update_financials_atomic(10.0, 9.5, 0.75, 13.0);
+        assert_eq!(f64::from_bits(WIN_RATE.load(Ordering::Relaxed)), 0.75);
+    }
+
+    #[test]
+    fn test_profiler_roi_clamping_and_fee_calculation() {
+        let mut profiler = Profiler::new();
+        // Gross 20.0, Net 18.0 -> Fees 2.0, ROI (18.0 / 13.0) * 100 = 138.46%
+        profiler.update_financials(20.0, 18.0, 0.80, 13.0);
+        assert!((profiler.total_fees - 2.0).abs() < 1e-6);
+        assert!((profiler.roi_net - 138.461538).abs() < 1e-3);
+
+        // Clamping extreme ROI (infinite profit simulation)
+        profiler.update_financials(2_000_000.0, 2_000_000.0, 1.0, 1.0);
+        assert_eq!(profiler.roi_net, 100_000.0);
+    }
+}
+

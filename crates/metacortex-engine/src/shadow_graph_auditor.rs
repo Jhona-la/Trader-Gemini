@@ -43,26 +43,30 @@ impl ShadowGraphAuditor {
     /// O(1) Lock-free push event
     #[inline(always)]
     pub fn record_event(&self, event: ShadowEvent) {
-        let current_head = self.head.load(Ordering::Relaxed);
+        if !event.pnl_drift.is_finite() {
+            return;
+        }
+
+        let current_head = self.head.fetch_add(1, Ordering::AcqRel);
         let idx = current_head & SHADOW_RING_MASK;
 
         unsafe {
             (*self.buffer.get())[idx] = event;
         }
 
-        self.head
-            .store(current_head.wrapping_add(1), Ordering::Release);
-
-        // Acumulación cruda del Drift.
-        // Si el drift se vuelve muy negativo, el bot está perdiendo su borde matemático.
-        let mut current_bits = self.aggregate_drift.load(Ordering::Relaxed);
+        // FIX #618: Acumulación lock-free segura con validación de finitud y memoria AcqRel
+        let mut current_bits = self.aggregate_drift.load(Ordering::Acquire);
         loop {
             let current_drift = f64::from_bits(current_bits);
-            let new_drift = current_drift + event.pnl_drift;
+            let safe_current = if current_drift.is_finite() { current_drift } else { 0.0 };
+            let new_drift = safe_current + event.pnl_drift;
+            if !new_drift.is_finite() {
+                break;
+            }
             match self.aggregate_drift.compare_exchange_weak(
                 current_bits,
                 new_drift.to_bits(),
-                Ordering::Relaxed,
+                Ordering::Release,
                 Ordering::Relaxed,
             ) {
                 Ok(_) => break,
@@ -97,3 +101,55 @@ impl Default for ShadowGraphAuditor {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shadow_graph_auditor_record_and_drift() {
+        let auditor = ShadowGraphAuditor::new();
+
+        let event1 = ShadowEvent {
+            tick_id: 1,
+            expected_prob: 0.80,
+            actual_slippage: 0.0001,
+            latency_ms: 10,
+            pnl_drift: 0.05,
+        };
+        auditor.record_event(event1);
+
+        let agg = f64::from_bits(auditor.aggregate_drift.load(Ordering::Relaxed));
+        assert!((agg - 0.05).abs() < 1e-6);
+        assert!(!auditor.evaluate_system_drift());
+
+        let event_bad = ShadowEvent {
+            tick_id: 2,
+            expected_prob: 0.80,
+            actual_slippage: 0.005,
+            latency_ms: 150, // Triggers alarm
+            pnl_drift: -6.0,  // Triggers drift threshold
+        };
+        auditor.record_event(event_bad);
+
+        assert!(auditor.critical_drift_alarms.load(Ordering::Relaxed) >= 1);
+        assert!(auditor.evaluate_system_drift());
+    }
+
+    #[test]
+    fn test_shadow_graph_auditor_nan_immunity() {
+        let auditor = ShadowGraphAuditor::new();
+        let nan_event = ShadowEvent {
+            tick_id: 3,
+            expected_prob: f64::NAN,
+            actual_slippage: 0.0,
+            latency_ms: 5,
+            pnl_drift: f64::NAN,
+        };
+        auditor.record_event(nan_event);
+
+        let agg = f64::from_bits(auditor.aggregate_drift.load(Ordering::Relaxed));
+        assert_eq!(agg, 0.0);
+    }
+}
+

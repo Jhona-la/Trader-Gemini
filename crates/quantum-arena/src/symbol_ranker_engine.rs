@@ -114,13 +114,13 @@ impl SymbolRankerEngine {
                             let taker_fee = self.arena.config.live_taker_fee.load(std::sync::atomic::Ordering::Relaxed);
                             let fee_roundtrip_pct = maker_fee + taker_fee;
                             
-                            let fee_in_price = last * fee_roundtrip_pct;
-                            let breakeven_ticks = fee_in_price / tick_size.max(0.000000001);
+                            let tick_pct = (tick_size / last).max(1e-8);
+                            let breakeven_ticks = fee_roundtrip_pct / tick_pct;
                             
                             let liquidity_density = volume / trades.max(1.0);
                             let trade_frequency = trades / 1440.0;
                             
-                            let momentum_volatility_ratio = price_change_pct.abs() / (tick_size * 1000.0).max(0.1);
+                            let momentum_volatility_ratio = price_change_pct.abs() / (tick_pct * 100.0).max(0.01);
                             let tick_advantage = (20.0 / breakeven_ticks.max(1.0)).min(50.0);
                             
                             let liquidity_momentum = (liquidity_density.sqrt() * trade_frequency.sqrt()) / 100.0;
@@ -139,7 +139,7 @@ impl SymbolRankerEngine {
                                 tick_size,
                                 min_qty,
                                 min_notional,
-                                max_leverage: max_lev.max(10).min(125), // Safe bounds
+                                max_leverage: max_lev.clamp(1, 125), // Safe bounds without rejecting low-leverage pairs
                                 maker_fee,
                                 taker_fee,
                             };
@@ -195,8 +195,10 @@ impl SymbolRankerEngine {
         let mut new_specs: Vec<SymbolSpec> = Vec::with_capacity(final_coins.len());
         
         for coin in final_coins {
-            top_30.push(coin.symbol.clone());
-            new_specs.push(specs_map[&coin.symbol].clone());
+            if let Some(spec) = specs_map.get(&coin.symbol) {
+                top_30.push(coin.symbol.clone());
+                new_specs.push(spec.clone());
+            }
         }
         
         Ok((top_30, new_specs))

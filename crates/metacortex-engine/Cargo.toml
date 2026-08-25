@@ -18,3 +18,5 @@ tempfile = "3.10"
 tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros", "process", "sync", "time"] }
 lazy_static = "1.4"
 storage-engine = { path = "../storage-engine" }
+os-guardian = { path = "../os-guardian" }
+

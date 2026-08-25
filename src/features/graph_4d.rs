@@ -26,7 +26,13 @@ impl SystemGraph {
         let content = fs::read_to_string(&path)?;
         let ast: File = syn::parse_file(&content)?;
 
-        let module_name = path.as_ref().file_stem().unwrap().to_str().unwrap().to_string();
+        // FIX #1492: Extracción segura de module_name sin unwrap
+        let module_name = path
+            .as_ref()
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown_module")
+            .to_string();
         let module_idx = self.get_or_add_node(&module_name, "Module");
 
         for item in ast.items {

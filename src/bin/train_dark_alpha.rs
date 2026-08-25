@@ -78,10 +78,11 @@ fn main() {
                 continue;
             }
             let parts: Vec<&str> = l.split(',').collect();
-            if parts.len() == 35 {
+            if parts.len() >= 26 {
                 if let Ok(target_return) = parts[0].parse::<f64>() {
-                    let mut feat = vec![0.0; 34];
-                    for i in 0..34 {
+                    let max_cols = (parts.len() - 1).min(54);
+                    let mut feat = vec![0.0; max_cols];
+                    for i in 0..max_cols {
                         if let Ok(val) = parts[i + 1].parse::<f64>() {
                             if val.is_nan() || val.is_infinite() {
                                 feat[i] = 0.0;
@@ -92,9 +93,8 @@ fn main() {
                             feat[i] = 0.0;
                         }
                     }
-                    // Swing label: If return in 5 periods > 0.15% -> 1.0 (Long)
-                    // If return < -0.15% -> 0.0 (Short/Avoid)
-                    let label = if target_return > 0.0015 { 1.0 } else { 0.0 };
+                    // Target label directo del método Triple Barrier (1.0 = Long ganador, 0.0 = Short ganador)
+                    let label = if target_return > 0.5 { 1.0 } else { 0.0 };
                     inputs.push(feat);
                     targets.push(label);
                 }
@@ -108,26 +108,38 @@ fn main() {
         return;
     }
 
+    let long_count = targets.iter().filter(|&&t| t > 0.5).count();
+    let short_count = num_samples - long_count;
+    println!(
+        "📊 Class Balance: {} Long (Bullish, {:.2}%) vs {} Short (Bearish, {:.2}%)",
+        long_count,
+        (long_count as f64 / num_samples as f64) * 100.0,
+        short_count,
+        (short_count as f64 / num_samples as f64) * 100.0
+    );
+
+    let input_dim = inputs[0].len();
+
     // --- ETL: COMPUTE MEAN AND STD DEV ---
-    println!("🧹 Calculating Means and StdDevs for Normalization...");
-    let mut mean = vec![0.0; 34];
+    println!("🧹 Calculating Means and StdDevs for Normalization ({} features)...", input_dim);
+    let mut mean = vec![0.0; input_dim];
     for x in &inputs {
-        for i in 0..34 {
+        for i in 0..input_dim {
             mean[i] += x[i];
         }
     }
-    for i in 0..34 {
+    for i in 0..input_dim {
         mean[i] /= num_samples as f64;
     }
 
-    let mut std_dev = vec![0.0; 34];
+    let mut std_dev = vec![0.0; input_dim];
     for x in &inputs {
-        for i in 0..34 {
+        for i in 0..input_dim {
             let diff = x[i] - mean[i];
             std_dev[i] += diff * diff;
         }
     }
-    for i in 0..34 {
+    for i in 0..input_dim {
         std_dev[i] = (std_dev[i] / num_samples as f64).sqrt();
         if std_dev[i] < 1e-8 {
             std_dev[i] = 1e-8; // Prevent division by zero
@@ -142,24 +154,25 @@ fn main() {
     }
 
     println!(
-        "✅ Loaded and Normalized {} valid samples. Starting Adam Optimization...",
-        num_samples
+        "✅ Loaded and Normalized {} valid samples ({}D). Starting Adam Optimization with L2 Regularization...",
+        num_samples, input_dim
     );
 
-    let mut engine = DarkAlphaEngine::new(34, 64, 32);
+    let mut engine = DarkAlphaEngine::new(input_dim, 64, 32);
     engine.scaler = Some(scaler);
 
     // Initialize Adam States
-    let mut adam1 = AdamState::new(34, 64);
+    let mut adam1 = AdamState::new(input_dim, 64);
     let mut adam2 = AdamState::new(64, 32);
     let mut adam3 = AdamState::new(32, 1);
 
-    let epochs = 20;
+    let epochs = 30;
     let batch_size = 1024;
-    let learning_rate = 0.005;
+    let learning_rate = 0.001;
     let beta1 = 0.9;
     let beta2 = 0.999;
     let epsilon = 1e-8;
+    let l2_reg = 0.0001; // L2 weight decay to prevent weight explosion and sigmoid saturation
 
     let mut indices: Vec<usize> = (0..num_samples).collect();
     let mut prng = XorShift::new(123456789);
@@ -177,7 +190,7 @@ fn main() {
             let b_size = end - batch_start;
 
             // Gradients accumulation
-            let mut g_w1 = vec![0.0; 64 * 34];
+            let mut g_w1 = vec![0.0; 64 * input_dim];
             let mut g_b1 = vec![0.0; 64];
             let mut g_w2 = vec![0.0; 32 * 64];
             let mut g_b2 = vec![0.0; 32];
@@ -194,8 +207,8 @@ fn main() {
                 let mut a1 = [0.0; 64];
                 for i in 0..64 {
                     let mut sum = engine.layer1.biases[i];
-                    for j in 0..34 {
-                        sum += engine.layer1.weights[i * 34 + j] * x[j];
+                    for j in 0..input_dim {
+                        sum += engine.layer1.weights[i * input_dim + j] * x[j];
                     }
                     z1[i] = sum;
                     a1[i] = if sum > 0.0 { sum } else { 0.0 }; // ReLU
@@ -216,59 +229,45 @@ fn main() {
                 for j in 0..32 {
                     z3 += engine.layer3.weights[j] * a2[j];
                 }
+                let pred = 1.0 / (1.0 + (-z3.clamp(-700.0, 700.0)).exp());
 
-                let clamped: f64 = z3.clamp(-15.0, 15.0);
-                let a3: f64 = 1.0 / (1.0 + (-clamped).exp()); // Sigmoid
-
-                // BCE Loss: - (y * log(a3) + (1-y) * log(1-a3))
-                let a3_clamped: f64 = a3.clamp(1e-7, 1.0 - 1e-7);
-                epoch_loss -= y * a3_clamped.ln() + (1.0 - y) * (1.0 - a3_clamped).ln();
+                // Binary Cross Entropy Loss
+                let loss = -(y * (pred.max(1e-15)).ln() + (1.0 - y) * ((1.0 - pred).max(1e-15)).ln());
+                epoch_loss += loss;
 
                 // --- BACKWARD PASS ---
-                // dL/dz3 for BCE + Sigmoid is just (a3 - y)
-                let d_z3 = a3 - y;
+                let d_loss = pred - y; // BCE + Sigmoid derivative simplifies to (pred - y)
 
                 // Layer 3 Gradients
-                g_b3[0] += d_z3;
-                for j in 0..32 {
-                    g_w3[j] += d_z3 * a2[j];
-                }
-
-                // Backprop to Layer 2
+                g_b3[0] += d_loss;
                 let mut d_a2 = [0.0; 32];
                 for j in 0..32 {
-                    d_a2[j] = d_z3 * engine.layer3.weights[j];
-                }
-                let mut d_z2 = [0.0; 32];
-                for j in 0..32 {
-                    d_z2[j] = if z2[j] > 0.0 { d_a2[j] } else { 0.0 }; // ReLU derivative
+                    g_w3[j] += d_loss * a2[j];
+                    d_a2[j] = d_loss * engine.layer3.weights[j];
                 }
 
                 // Layer 2 Gradients
-                for i in 0..32 {
-                    g_b2[i] += d_z2[i];
-                    for j in 0..64 {
-                        g_w2[i * 64 + j] += d_z2[i] * a1[j];
-                    }
+                let mut d_z2 = [0.0; 32];
+                for j in 0..32 {
+                    d_z2[j] = if z2[j] > 0.0 { d_a2[j] } else { 0.0 };
+                    g_b2[j] += d_z2[j];
                 }
 
-                // Backprop to Layer 1
                 let mut d_a1 = [0.0; 64];
                 for i in 0..32 {
                     for j in 0..64 {
+                        g_w2[i * 64 + j] += d_z2[i] * a1[j];
                         d_a1[j] += d_z2[i] * engine.layer2.weights[i * 64 + j];
                     }
                 }
-                let mut d_z1 = [0.0; 64];
-                for j in 0..64 {
-                    d_z1[j] = if z1[j] > 0.0 { d_a1[j] } else { 0.0 };
-                }
 
                 // Layer 1 Gradients
+                let mut d_z1 = [0.0; 64];
                 for i in 0..64 {
+                    d_z1[i] = if z1[i] > 0.0 { d_a1[i] } else { 0.0 };
                     g_b1[i] += d_z1[i];
-                    for j in 0..34 {
-                        g_w1[i * 34 + j] += d_z1[i] * x[j];
+                    for j in 0..input_dim {
+                        g_w1[i * input_dim + j] += d_z1[i] * x[j];
                     }
                 }
             }
@@ -280,7 +279,7 @@ fn main() {
             let apply_adam =
                 |w: &mut Vec<f64>, g: &Vec<f64>, m: &mut Vec<f64>, v: &mut Vec<f64>| {
                     for i in 0..w.len() {
-                        let grad = g[i] * scale;
+                        let grad = g[i] * scale + l2_reg * w[i];
                         m[i] = beta1 * m[i] + (1.0 - beta1) * grad;
                         v[i] = beta2 * v[i] + (1.0 - beta2) * grad * grad;
 
@@ -344,11 +343,22 @@ fn main() {
         start_time.elapsed().as_secs_f64()
     );
 
-    // Save model
-    std::fs::create_dir_all("models").unwrap();
+    // FIX #1481: Creación de directorio y guardado resiliente de modelo JSON
+    if let Err(e) = std::fs::create_dir_all("models") {
+        println!("❌ Failed to create models directory: {}", e);
+        return;
+    }
     let out_path = format!("models/DarkAlpha_{}.json", symbol);
-    let json_str = serde_json::to_string_pretty(&engine).unwrap();
-    std::fs::write(&out_path, json_str).unwrap();
-
-    println!("💾 Dark Alpha Model Saved: {}", out_path);
+    match serde_json::to_string_pretty(&engine) {
+        Ok(json_str) => {
+            if let Err(e) = std::fs::write(&out_path, json_str) {
+                println!("❌ Failed to write model file {}: {}", out_path, e);
+            } else {
+                println!("💾 Dark Alpha Model Saved: {}", out_path);
+            }
+        }
+        Err(e) => {
+            println!("❌ Failed to serialize Dark Alpha model: {}", e);
+        }
+    }
 }

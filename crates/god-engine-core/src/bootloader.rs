@@ -34,15 +34,36 @@ impl SystemBootloader {
     }
 
     fn phase_1_integrity_check(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔍 [FASE 1] Verificando integridad de configuración y llaves...");
-        // Validar variables de entorno clave, configuración de red, y límites
+        println!("🔍 [FASE 1] Verificando integridad de configuración, topología de memoria y llaves...");
+        let base_cap = self.arena.config.base_capital.load(std::sync::atomic::Ordering::Relaxed);
+        if base_cap < 5.0 {
+            return Err(format!("Capital base inválido: ${:.2} (mínimo requerido: $5.00)", base_cap).into());
+        }
+        if self.arena.kill_switch_active.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err("Kill switch activo al arranque. Abortando inicio por seguridad.".into());
+        }
+        if self.arena.coins.len() != 30 {
+            return Err(format!("Topología de memoria corrupta: {} slots en lugar de 30", self.arena.coins.len()).into());
+        }
+        println!("   -> Capital base validado: ${:.2} USD", base_cap);
+        println!("   -> Memoria contigua: 30 CoinArenas L1/L2 alineadas.");
+        println!("   -> Kill Switch: Desarmado (Estado Seguro).");
         Ok(())
     }
 
     async fn phase_2_asset_selection(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("📊 [FASE 2] Verificando activos configurados (Coin Registry)...");
-        let coins = &self.arena.coins;
-        println!("   -> {} activos cargados.", coins.len());
+        println!("📊 [FASE 2] Verificando y seleccionando universo activo de activos...");
+        let mut active_count = 0;
+        for (id, _coin) in self.arena.coins.iter().enumerate() {
+            if let Some(spec) = quantum_arena::symbol_registry::try_spec(id) {
+                if !spec.symbol.is_empty() {
+                    active_count += 1;
+                }
+            }
+        }
+        let cap = self.arena.unified_capital.load(std::sync::atomic::Ordering::Relaxed);
+        println!("   -> {} activos registrados en memoria.", active_count);
+        println!("   -> Universo calibrado para capital actual: ${:.2} USD.", cap);
         Ok(())
     }
 
@@ -51,21 +72,29 @@ impl SystemBootloader {
         engine: &mut GodEngineCore,
     ) -> Result<(), Box<dyn std::error::Error>> {
         println!("🔥 [FASE 3] Calentando motores de características (Warm-Up)...");
-        let client = Client::new();
+        let client = Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| Client::new());
         let limit = 1000;
 
         for (coin_id, _coin) in self.arena.coins.iter().enumerate() {
-            let symbol = quantum_arena::symbol_registry::spec(coin_id).symbol;
-            if symbol.is_empty() {
-                continue;
-            }
+            let symbol = match quantum_arena::symbol_registry::try_spec(coin_id) {
+                Some(s) if !s.symbol.is_empty() => s.symbol,
+                _ => continue,
+            };
 
-            println!("   -> Fetching Klines for {}...", symbol);
-
-            // Binance API request for 1m klines
+            // FIX #1504: Endpoint adaptativo para Testnet vs Producción
+            let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+            let base_url = if is_testnet {
+                "https://testnet.binancefuture.com"
+            } else {
+                "https://fapi.binance.com"
+            };
             let url = format!(
-                "https://fapi.binance.com/fapi/v1/klines?symbol={}&interval=1m&limit={}",
-                symbol, limit
+                "{}/fapi/v1/klines?symbol={}&interval=1m&limit={}",
+                base_url, symbol, limit
             );
 
             let mut retries = 3;
@@ -143,13 +172,41 @@ impl SystemBootloader {
         &self,
         _engine: &mut GodEngineCore,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        println!("💾 [FASE 4] Recuperando estado de posiciones (SQLite WAL)...");
-        // To be connected with data-pipeline/state_db
+        println!("💾 [FASE 4] Recuperando y verificando continuidad de estado (State Continuity Engine)...");
+        let mut total_open_scalp = 0;
+        let mut total_open_swing = 0;
+
+        for (id, coin) in self.arena.coins.iter().enumerate() {
+            let scalp_pos = &coin.positions.scalp_position;
+            let swing_pos = &coin.positions.swing_position;
+
+            if scalp_pos.is_open() {
+                total_open_scalp += 1;
+                let chk = quantum_arena::state_continuity::StateContinuityEngine::compute_state_checksum(
+                    id,
+                    scalp_pos.quantity.load(std::sync::atomic::Ordering::Relaxed),
+                    scalp_pos.entry_price.load(std::sync::atomic::Ordering::Relaxed),
+                );
+                println!("   -> [SCALP] Posición abierta en ID {} detectada (Checksum: {:016X})", id, chk);
+            }
+            if swing_pos.is_open() {
+                total_open_swing += 1;
+                let chk = quantum_arena::state_continuity::StateContinuityEngine::compute_state_checksum(
+                    id,
+                    swing_pos.quantity.load(std::sync::atomic::Ordering::Relaxed),
+                    swing_pos.entry_price.load(std::sync::atomic::Ordering::Relaxed),
+                );
+                println!("   -> [SWING] Posición abierta en ID {} detectada (Checksum: {:016X})", id, chk);
+            }
+        }
+        println!("   -> Continuidad verificada: {} posiciones Scalp, {} posiciones Swing vivas.", total_open_scalp, total_open_swing);
         Ok(())
     }
 
     fn phase_5_ml_preload(&self) -> Result<(), Box<dyn std::error::Error>> {
         println!("🧠 [FASE 5] Verificando modelos ML cargados...");
+        let count = crate::ml_inference::GLOBAL_FORESTS.load().len();
+        println!("   -> Modelos NanoForest globales listos en ArcSwap: {} cargados.", count);
         Ok(())
     }
 
@@ -178,7 +235,7 @@ impl SystemDiagnostics {
             "shibusdt".to_string(),
             "dotusdt".to_string(),
             "linkusdt".to_string(),
-            "maticusdt".to_string(),
+            "polusdt".to_string(),
             "ltcusdt".to_string(),
             "bchusdt".to_string(),
             "atomusdt".to_string(),
@@ -189,10 +246,10 @@ impl SystemDiagnostics {
             "filusdt".to_string(),
             "vetusdt".to_string(),
             "avaxusdt".to_string(),
-            "opust".to_string(),
+            "opusdt".to_string(),
             "aptusdt".to_string(),
-            "arbust".to_string(),
-            "rndrusdt".to_string(),
+            "arbusdt".to_string(),
+            "renderusdt".to_string(),
             "ldousdt".to_string(),
         ];
         Ok((0, syms))
@@ -203,7 +260,11 @@ impl SystemDiagnostics {
         symbols: &[String],
     ) -> std::collections::HashMap<String, Vec<f64>> {
         let mut map = std::collections::HashMap::new();
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .timeout(tokio::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         let limit = 1000;
 
         for symbol in symbols {
@@ -225,7 +286,9 @@ impl SystemDiagnostics {
                                         .unwrap_or("0")
                                         .parse::<f64>()
                                         .unwrap_or(0.0);
-                                    klines_vec.push(close);
+                                    if close > 0.0 && close.is_finite() {
+                                        klines_vec.push(close);
+                                    }
                                 }
                             }
                         }

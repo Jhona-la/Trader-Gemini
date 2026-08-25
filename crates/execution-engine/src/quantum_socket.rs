@@ -14,10 +14,11 @@ pub struct QuantumSocketPool {
 impl QuantumSocketPool {
     pub fn new(host: &str, _port: u16, api_key: String) -> Self {
         
+        let clean_api_key = api_key.trim();
         let mut headers = header::HeaderMap::new();
         headers.insert(
             "X-MBX-APIKEY",
-            header::HeaderValue::from_str(&api_key).unwrap_or(header::HeaderValue::from_static(""))
+            header::HeaderValue::from_str(clean_api_key).unwrap_or(header::HeaderValue::from_static(""))
         );
         headers.insert(
             header::CONTENT_TYPE,
@@ -34,11 +35,11 @@ impl QuantumSocketPool {
             .tcp_keepalive(Duration::from_secs(15)) // FUNDAMENTAL: Latidos invisibles cada 15s para engañar a los routers y evitar drops fantasma
             .pool_idle_timeout(None) // EVITA QUE REQWEST CIERRE LA CONEXIÓN (MANTENER LA TUBERÍA SIEMPRE CALIENTE PARA EVITAR TLS HANDSHAKE)
             .pool_max_idle_per_host(50) // Mantenemos 50 tuberías ultra calientes a Binance listas para disparar
-            .timeout(Duration::from_secs(3)) // Reducido a 3s para fallar ultra rápido y hacer retry inmediato
             .hickory_dns(true) // FUNDAMENTAL: Bypass the OS blocking DNS resolver for zero-latency lookups
             .use_rustls_tls() // TLS optimizado y seguro (rustls instead of native for hickory-dns compatibility)
             .build()
-            .expect("Fallo al construir Cliente HFT Institucional");
+            // FIX #1503: Construcción resiliente de cliente HFT sin expect
+            .unwrap_or_else(|_| Client::new());
 
         Self {
             host: host.to_string(),
@@ -65,7 +66,12 @@ impl QuantumSocketPool {
 
     /// Dispara el payload usando hiper-conexiones recicladas
     pub async fn fire_raw_payload(&self, method: &str, path_and_query: &str) -> Result<String, String> {
-        let url = format!("https://{}{}", self.host, path_and_query);
+        let clean_path = if path_and_query.starts_with('/') {
+            path_and_query.to_string()
+        } else {
+            format!("/{}", path_and_query)
+        };
+        let url = format!("https://{}{}", self.host, clean_path);
         
         let req = match method {
             "GET" => self.client.get(&url),
@@ -100,16 +106,82 @@ impl QuantumSocketPool {
                     }
                 },
                 Err(e) => {
-                    // Si el error es de conexión (ej. broken pipe, dns, timeout) intentamos 1 vez más
-                    if e.is_connect() || e.is_timeout() {
-                        if retry_count == 0 {
-                            retry_count += 1;
-                            continue;
-                        }
+                    // Si el error es de conexión inicial (ej. broken pipe, dns) se puede reintentar si el request no se envió.
+                    // Para POST con timeout, NO reintentar ciegamente para evitar duplicación de órdenes en Binance.
+                    if (e.is_connect() || (e.is_timeout() && method != "POST")) && retry_count == 0 {
+                        retry_count += 1;
+                        continue;
                     }
                     return Err(format!("Error de Red al disparar orden: {}", e));
                 }
             }
         }
     }
+
+    /// Retorna el host configurado para el pool
+    pub fn get_host(&self) -> &str {
+        &self.host
+    }
+
+    /// Calcula la afinidad de socket/shard por símbolo en O(1) (Punto #177 / #178)
+    #[inline(always)]
+    pub fn compute_symbol_shard_affinity(symbol: &str, shard_count: usize) -> usize {
+        if shard_count <= 1 {
+            return 0;
+        }
+        let mut hash: u64 = 0xcbf29ce484222325;
+        for b in symbol.as_bytes() {
+            hash ^= *b as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        (hash as usize) % shard_count
+    }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quantum_socket_pool_creation_and_config() {
+        let pool = QuantumSocketPool::new("fapi.binance.com", 443, "test_api_key".to_string());
+        assert_eq!(pool.get_host(), "fapi.binance.com");
+    }
+
+    #[test]
+    fn test_quantum_socket_pool_headers() {
+        let pool = QuantumSocketPool::new("testnet.binancefuture.com", 443, "  api_key_with_spaces  ".to_string());
+        assert_eq!(pool.get_host(), "testnet.binancefuture.com");
+    }
+
+    #[test]
+    fn test_symbol_shard_affinity_distribution() {
+        let shard_count = 8;
+        let s1 = QuantumSocketPool::compute_symbol_shard_affinity("BTCUSDT", shard_count);
+        let s2 = QuantumSocketPool::compute_symbol_shard_affinity("ETHUSDT", shard_count);
+        let s3 = QuantumSocketPool::compute_symbol_shard_affinity("SOLUSDT", shard_count);
+
+        assert!(s1 < shard_count);
+        assert!(s2 < shard_count);
+        assert!(s3 < shard_count);
+        // Determinismo
+        assert_eq!(s1, QuantumSocketPool::compute_symbol_shard_affinity("BTCUSDT", shard_count));
+    }
+
+    #[test]
+    fn test_symbol_shard_affinity_edge_cases() {
+        assert_eq!(QuantumSocketPool::compute_symbol_shard_affinity("BTCUSDT", 0), 0);
+        assert_eq!(QuantumSocketPool::compute_symbol_shard_affinity("BTCUSDT", 1), 0);
+        let default_hash = (0xcbf29ce484222325_u64 as usize) % 4;
+        assert_eq!(QuantumSocketPool::compute_symbol_shard_affinity("", 4), default_hash);
+    }
+
+    #[tokio::test]
+    async fn test_quantum_socket_unsupported_http_method() {
+        let pool = QuantumSocketPool::new("127.0.0.1", 443, "dummy".to_string());
+        let res = pool.fire_raw_payload("PATCH", "/test").await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("no soportado"));
+    }
+}
+

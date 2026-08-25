@@ -2,6 +2,8 @@ pub mod config;
 pub mod dark_alpha_router;
 pub mod dark_alpha_sniffer;
 pub mod dashboard;
+pub mod env_manager;
+pub mod features;
 pub mod multi_asset_orchestrator;
 pub mod orderbook;
 pub mod parsers;

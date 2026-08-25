@@ -41,4 +41,33 @@ use std::fs;
     pub fn log_path(file_name: &str) -> String {
         Self::resolve_path("logs", Some(file_name))
     }
+
+    /// FIX #734: Extracción sanitizada con .trim() automático de variables de entorno
+    #[inline(always)]
+    pub fn get_var(key: &str) -> Option<String> {
+        env::var(key).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_env_manager_paths_and_vars() {
+        let p_data = EnvManager::data_path("test_state.bin");
+        assert!(p_data.contains("data"));
+        assert!(p_data.contains("test_state.bin"));
+
+        let p_model = EnvManager::model_path("weights.bin");
+        assert!(p_model.contains("models"));
+        assert!(p_model.contains("weights.bin"));
+
+        let p_log = EnvManager::log_path("app.log");
+        assert!(p_log.contains("logs"));
+        assert!(p_log.contains("app.log"));
+
+        let var = EnvManager::get_var("NON_EXISTENT_VAR_12345");
+        assert!(var.is_none());
+    }
 }

@@ -38,9 +38,19 @@ pub struct RegimeDetector {
 
 impl RegimeDetector {
     pub fn new(correlation_threshold: f64, trend_threshold: f64) -> Self {
+        let safe_corr = if correlation_threshold.is_finite() && correlation_threshold > 0.0 {
+            correlation_threshold
+        } else {
+            0.6
+        };
+        let safe_trend = if trend_threshold.is_finite() && trend_threshold > 0.0 {
+            trend_threshold
+        } else {
+            0.02
+        };
         Self {
-            correlation_threshold,
-            trend_threshold,
+            correlation_threshold: safe_corr,
+            trend_threshold: safe_trend,
             current_regime: MarketRegime::Range,
         }
     }
@@ -48,6 +58,9 @@ impl RegimeDetector {
     /// Actualiza el estado del régimen dado un valor de correlación media y el retorno medio (tendencia).
     #[inline(always)]
     pub fn update(&mut self, average_correlation: f64, average_trend: f64) -> MarketRegime {
+        if !average_correlation.is_finite() || !average_trend.is_finite() {
+            return self.current_regime;
+        }
         if average_correlation > self.correlation_threshold {
             if average_trend > self.trend_threshold {
                 self.current_regime = MarketRegime::BullRun;

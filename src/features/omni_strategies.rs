@@ -33,14 +33,14 @@ impl Default for OmniStrategyEngine {
 impl OmniStrategyEngine {
     pub fn new() -> Self {
         Self {
-            rsi_up_ewma: Ewma::new(14.0),
-            rsi_down_ewma: Ewma::new(14.0),
-            macd_fast: Ewma::new(12.0),
-            macd_slow: Ewma::new(26.0),
-            macd_signal: Ewma::new(9.0),
+            rsi_up_ewma: Ewma::from_period(14.0),
+            rsi_down_ewma: Ewma::from_period(14.0),
+            macd_fast: Ewma::from_period(12.0),
+            macd_slow: Ewma::from_period(26.0),
+            macd_signal: Ewma::from_period(9.0),
             bb_stats: WelfordOnline::new(),
-            atr_ewma: Ewma::new(14.0),
-            parkinson_ewma: Ewma::new(14.0),
+            atr_ewma: Ewma::from_period(14.0),
+            parkinson_ewma: Ewma::from_period(14.0),
             local_max: 0.0,
             local_min: f64::MAX,
             last_price: 0.0,
@@ -49,6 +49,11 @@ impl OmniStrategyEngine {
     
     #[inline(always)]
     pub fn update(&mut self, price: f64, high: f64, low: f64) {
+        // FIX #1454: Validación estricta de finitud y positividad
+        if !price.is_finite() || !high.is_finite() || !low.is_finite() || price <= 0.0 {
+            return;
+        }
+
         if self.last_price == 0.0 {
             self.last_price = price;
             self.local_max = high;
@@ -126,7 +131,7 @@ impl OmniStrategyEngine {
         // Volatility is used as the normalization baseline to make the inputs scale-invariant
         let baseline_vol = atr_pct.max(1e-5); 
         
-        [
+        let mut feats = [
             rsi_norm,
             macd_line / baseline_vol, // Scale-invariant MACD
             macd_hist / baseline_vol, // Scale-invariant Histogram
@@ -142,6 +147,47 @@ impl OmniStrategyEngine {
             parkinson_vol / baseline_vol, 
             0.0, 0.0, 0.0, 0.0, 
             0.0, 0.0, 0.0, 0.0, 0.0,
-        ]
+        ];
+
+        // FIX #1454: Sanitización de los 22 features del tensor
+        for f in feats.iter_mut() {
+            if !f.is_finite() {
+                *f = 0.0;
+            }
+        }
+        feats
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_omni_strategy_engine_update_and_extract() {
+        let mut engine = OmniStrategyEngine::new();
+        engine.update(60000.0, 60100.0, 59900.0);
+        engine.update(60050.0, 60150.0, 60000.0);
+        engine.update(60100.0, 60200.0, 60050.0);
+
+        let features = engine.extract_features();
+        assert_eq!(features.len(), 22);
+        for &f in &features {
+            assert!(f.is_finite(), "Feature was not finite: {}", f);
+        }
+    }
+
+    #[test]
+    fn test_omni_strategy_engine_nan_immunity() {
+        let mut engine = OmniStrategyEngine::new();
+        engine.update(60000.0, 60100.0, 59900.0);
+        engine.update(f64::NAN, 60100.0, 59900.0);
+        engine.update(-100.0, 60100.0, 59900.0);
+
+        let features = engine.extract_features();
+        for &f in &features {
+            assert!(f.is_finite());
+        }
+    }
+}
+

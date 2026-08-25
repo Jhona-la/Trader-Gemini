@@ -55,7 +55,7 @@ impl ZeroAllocBuffer {
 
     #[inline(always)]
     pub fn as_str(&self) -> &str {
-        unsafe { std::str::from_utf8_unchecked(&self.bytes[..self.len]) }
+        std::str::from_utf8(&self.bytes[..self.len]).unwrap_or("")
     }
 
     #[inline(always)]
@@ -127,16 +127,21 @@ pub struct BinanceClient {
 
 impl BinanceClient {
     pub fn new(api_key: String, is_testnet: bool) -> Self {
-        // HFT Connection Pooling with TCP_NODELAY (Disabling Nagle's algorithm)
+        // Timeout HFT calibrado a 1200ms para failover rápido y evitar slippage tardío
+        Self::with_timeout(api_key, is_testnet, Duration::from_millis(1200))
+    }
+
+    pub fn with_timeout(api_key: String, is_testnet: bool, timeout: Duration) -> Self {
+        // FIX #1497: Construcción resiliente de cliente HTTP reqwest HFT sin expect
         let http = ClientBuilder::new()
             .pool_max_idle_per_host(25) // Maximize concurrent keep-alives for Binance
             .pool_idle_timeout(None) // NEVER drop idle connections to avoid TLS handshake latency
             .tcp_nodelay(true)
-            .tcp_keepalive(Some(Duration::from_secs(30))) // Evita que los firewalls/OS dropeen la conexión silenciosamente
+            .tcp_keepalive(Some(Duration::from_secs(15))) // Latidos cada 15s para evitar drops fantasma de socket
             .hickory_dns(true) // Fast DNS
-            .timeout(Duration::from_millis(5000)) // 5 seconds timeout for init / testnet
+            .timeout(timeout) // Timeout optimizado para HFT
             .build()
-            .expect("Failed to build hyper-optimized reqwest client");
+            .unwrap_or_else(|_| Client::new());
 
         let header_val =
             HeaderValue::from_str(&api_key).unwrap_or_else(|_| HeaderValue::from_static(""));
@@ -153,6 +158,15 @@ impl BinanceClient {
         } else {
             BINANCE_BASE_URL
         }
+    }
+
+    pub fn set_testnet(&self, testnet: bool) {
+        self.is_testnet.store(testnet, Ordering::Relaxed);
+    }
+
+    pub fn update_api_key(&self, new_key: String) {
+        let header_val = HeaderValue::from_str(&new_key).unwrap_or_else(|_| HeaderValue::from_static(""));
+        self.api_key.store(std::sync::Arc::new(header_val));
     }
 
     pub fn hot_swap_credentials(&self, new_key: String, is_testnet: bool) {
@@ -250,7 +264,7 @@ impl BinanceClient {
                     Err(format!("Binance API Error: {}", text))
                 }
             }
-            Err(e) => Err(format!("Network Error: {}", e)),
+            Err(e) => Err(format!("AMBIGUOUS: Network Error: {}", e)),
         }
     }
 
@@ -403,3 +417,71 @@ impl BinanceClient {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zero_alloc_buffer_push_str_f64_u64_and_clear() {
+        let mut buf = ZeroAllocBuffer::new();
+        assert_eq!(buf.as_str(), "");
+        assert!(!buf.is_overflow());
+
+        buf.push_str("symbol=BTCUSDT&price=");
+        buf.push_f64(50000.5);
+        buf.push_str("&timestamp=");
+        buf.push_u64(1700000000000);
+
+        assert!(!buf.is_overflow());
+        let s = buf.as_str();
+        assert!(s.starts_with("symbol=BTCUSDT&price=50000.5&timestamp=1700000000000"));
+
+        buf.clear();
+        assert_eq!(buf.as_str(), "");
+        assert!(!buf.is_overflow());
+    }
+
+    #[test]
+    fn test_zero_alloc_buffer_overflow_detection() {
+        let mut buf = ZeroAllocBuffer::new();
+        let large_str = "A".repeat(1025);
+        buf.push_str(&large_str);
+        assert!(buf.is_overflow());
+    }
+
+    #[test]
+    fn test_binance_rate_limits_and_retry_after_extraction() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-MBX-USED-WEIGHT-1M", HeaderValue::from_static("350"));
+        headers.insert("X-MBX-ORDER-COUNT-10S", HeaderValue::from_static("25"));
+        headers.insert("X-MBX-ORDER-COUNT-1M", HeaderValue::from_static("120"));
+        headers.insert("Retry-After", HeaderValue::from_static("45"));
+
+        let limits = extract_limits(&headers);
+        assert_eq!(limits.weight_1m, Some(350));
+        assert_eq!(limits.orders_10s, Some(25));
+        assert_eq!(limits.orders_1m, Some(120));
+
+        let retry_after = extract_retry_after(&headers);
+        assert_eq!(retry_after, 45);
+
+        let empty_headers = HeaderMap::new();
+        let default_retry = extract_retry_after(&empty_headers);
+        assert_eq!(default_retry, 60);
+    }
+
+    #[test]
+    fn test_binance_client_hot_swap_api_key_and_testnet() {
+        let client = BinanceClient::new("key1".to_string(), true);
+        assert_eq!(client.get_base_url(), BINANCE_TESTNET_URL);
+
+        client.hot_swap_credentials("key2".to_string(), false);
+        assert_eq!(client.get_base_url(), BINANCE_BASE_URL);
+
+        let current_key = client.api_key.load();
+        assert_eq!(current_key.to_str().unwrap(), "key2");
+    }
+}
+
+

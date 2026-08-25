@@ -72,12 +72,63 @@ impl TrackedOrder {
     }
 }
 
+/// Helper para deducir el lado Hedge/One-Way de órdenes adoptadas (#556)
+/// FIX #737 & #1501: Detección exhaustiva de lado de posición Hedge Mode
+pub fn infer_position_side(client_order_id: &str, side: &str) -> String {
+    let upper = client_order_id.to_uppercase();
+
+    // Explicit position side markers take priority
+    if upper.contains("_L_")
+        || upper.contains("LONG")
+        || upper.contains("SCALP_L")
+        || upper.contains("SWING_L")
+        || upper.contains("POS_L")
+    {
+        return "LONG".to_string();
+    }
+    if upper.contains("_S_")
+        || upper.contains("SHORT")
+        || upper.contains("SCALP_S")
+        || upper.contains("SWING_S")
+        || upper.contains("POS_S")
+    {
+        return "SHORT".to_string();
+    }
+
+    // FIX #737: Close-position markers invert the side→positionSide mapping
+    // A BUY that closes a position is closing a SHORT (not opening a LONG)
+    // A SELL that closes a position is closing a LONG (not opening a SHORT)
+    let is_close_order = upper.contains("CLOSE")
+        || upper.contains("_TP_")
+        || upper.contains("_SL_")
+        || upper.contains("EXIT")
+        || upper.contains("TRAIL");
+
+    if is_close_order {
+        if side.eq_ignore_ascii_case("BUY") {
+            return "SHORT".to_string(); // Closing SHORT position
+        } else if side.eq_ignore_ascii_case("SELL") {
+            return "LONG".to_string(); // Closing LONG position
+        }
+    }
+
+    // Default: opening orders follow the natural mapping
+    if side.eq_ignore_ascii_case("BUY") {
+        "LONG".to_string()
+    } else if side.eq_ignore_ascii_case("SELL") {
+        "SHORT".to_string()
+    } else {
+        "BOTH".to_string()
+    }
+}
+
 /// Evento normalizado de ORDER_TRADE_UPDATE (WS privado de Binance).
 #[derive(Debug, Clone)]
 pub struct TradeUpdate {
     pub client_order_id: String,
     pub symbol: String,
     pub side: String,
+    pub position_side: String,
     pub order_type: String,
     pub order_id: u64,
     pub status: OrderStatus,
@@ -99,6 +150,7 @@ pub struct RegistryStats {
     pub partially_filled: usize,
     pub canceled: usize,
     pub rejected: usize,
+    pub expired: usize,
     pub unknown_status: usize,
 }
 
@@ -131,7 +183,8 @@ impl OrderRegistry {
         quantity: f64,
         now_ms: u64,
     ) {
-        let mut map = self.orders.write().unwrap();
+        // FIX #1500: Acceso resiliente a RwLock libre de pánicos por envenenamiento
+        let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
         map.entry(client_order_id.to_string())
             .or_insert_with(|| TrackedOrder {
                 client_order_id: client_order_id.to_string(),
@@ -155,14 +208,15 @@ impl OrderRegistry {
 
     /// Aplica un ack REST (respuesta de POST o GET /fapi/v1/order).
     pub fn apply_ack(&self, ack: &OrderAck, now_ms: u64) {
-        let mut map = self.orders.write().unwrap();
+        let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
+        let pos_side = infer_position_side(&ack.client_order_id, &ack.side);
         let entry = map
             .entry(ack.client_order_id.clone())
             .or_insert_with(|| TrackedOrder {
                 client_order_id: ack.client_order_id.clone(),
                 symbol: ack.symbol.clone(),
                 side: ack.side.clone(),
-                position_side: String::new(),
+                position_side: pos_side.clone(),
                 order_type: ack.order_type.clone(),
                 orig_qty: ack.orig_qty,
                 executed_qty: 0.0,
@@ -176,6 +230,9 @@ impl OrderRegistry {
                 last_fill_qty: 0.0,
                 last_fill_price: 0.0,
             });
+        if entry.position_side.is_empty() {
+            entry.position_side = pos_side;
+        }
         // Invariantes: executed_qty y avg_price del exchange son la verdad.
         if ack.executed_qty >= entry.executed_qty {
             entry.executed_qty = ack.executed_qty;
@@ -200,14 +257,20 @@ impl OrderRegistry {
     /// Aplica un ORDER_TRADE_UPDATE del user-data stream.
     /// Los eventos WS llegan por fill: acumular comisión, no sobrescriberla.
     pub fn apply_trade_update(&self, u: &TradeUpdate, now_ms: u64) {
-        let mut map = self.orders.write().unwrap();
+        let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
+        // FIX #1303: Priorizar posición explícita del Exchange si está disponible
+        let pos_side = if !u.position_side.is_empty() {
+            u.position_side.clone()
+        } else {
+            infer_position_side(&u.client_order_id, &u.side)
+        };
         let entry = map
             .entry(u.client_order_id.clone())
             .or_insert_with(|| TrackedOrder {
                 client_order_id: u.client_order_id.clone(),
                 symbol: u.symbol.clone(),
                 side: u.side.clone(),
-                position_side: String::new(),
+                position_side: pos_side.clone(),
                 order_type: u.order_type.clone(),
                 orig_qty: u.orig_qty,
                 executed_qty: 0.0,
@@ -221,6 +284,9 @@ impl OrderRegistry {
                 last_fill_qty: 0.0,
                 last_fill_price: 0.0,
             });
+        if entry.position_side.is_empty() {
+            entry.position_side = pos_side;
+        }
         if u.order_id > 0 {
             entry.order_id = u.order_id;
         }
@@ -247,14 +313,27 @@ impl OrderRegistry {
     }
 
     pub fn get(&self, client_order_id: &str) -> Option<TrackedOrder> {
-        self.orders.read().unwrap().get(client_order_id).cloned()
+        self.orders.read().unwrap_or_else(|p| p.into_inner()).get(client_order_id).cloned()
+    }
+
+    pub fn get_status(&self, client_order_id: &str) -> Option<OrderStatus> {
+        self.orders.read().unwrap_or_else(|p| p.into_inner()).get(client_order_id).map(|o| o.status)
     }
 
     /// Órdenes vivas por símbolo (para chase/cancel masivo).
     pub fn active_for_symbol(&self, symbol: &str) -> Vec<TrackedOrder> {
-        let map = self.orders.read().unwrap();
+        let map = self.orders.read().unwrap_or_else(|p| p.into_inner());
         map.values()
             .filter(|o| o.symbol == symbol && o.status.is_active())
+            .cloned()
+            .collect()
+    }
+
+    /// Todas las órdenes vivas en el registro global (para reconciliación O(N)).
+    pub fn active_orders(&self) -> Vec<TrackedOrder> {
+        let map = self.orders.read().unwrap_or_else(|p| p.into_inner());
+        map.values()
+            .filter(|o| o.status.is_active())
             .cloned()
             .collect()
     }
@@ -275,7 +354,7 @@ impl OrderRegistry {
     }
 
     pub fn stats(&self) -> RegistryStats {
-        let map = self.orders.read().unwrap();
+        let map = self.orders.read().unwrap_or_else(|p| p.into_inner());
         let mut s = RegistryStats::default();
         s.total = map.len();
         for o in map.values() {
@@ -284,7 +363,7 @@ impl OrderRegistry {
                 OrderStatus::Filled => s.filled += 1,
                 OrderStatus::Canceled => s.canceled += 1,
                 OrderStatus::Rejected => s.rejected += 1,
-                OrderStatus::Expired => s.unknown_status += 1,
+                OrderStatus::Expired => s.expired += 1,
                 OrderStatus::Unknown => s.unknown_status += 1,
             }
             if o.status == OrderStatus::PartiallyFilled {
@@ -296,10 +375,28 @@ impl OrderRegistry {
 
     /// Purga órdenes terminadas más viejas que `older_than_ms` (higiene de memoria).
     pub fn prune_terminated(&self, older_than_ms: u64) -> usize {
-        let mut map = self.orders.write().unwrap();
+        let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
         let before = map.len();
         map.retain(|_, o| o.status.is_active() || o.updated_ms >= older_than_ms);
         before - map.len()
+    }
+
+    /// Identifica y expira órdenes activas que han excedido su tiempo de vida máximo (stale timeout).
+    /// FIX #613: Evalúa tanto updated_ms como created_ms para no expirar órdenes activas que siguen recibiendo fills.
+    pub fn cleanup_stale_orders(&self, max_active_age_ms: u64, now_ms: u64) -> Vec<TrackedOrder> {
+        let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
+        let mut stale = Vec::new();
+        for order in map.values_mut() {
+            if order.status.is_active()
+                && now_ms.saturating_sub(order.updated_ms) > max_active_age_ms
+                && now_ms.saturating_sub(order.created_ms) > max_active_age_ms
+            {
+                order.status = OrderStatus::Expired;
+                order.updated_ms = now_ms;
+                stale.push(order.clone());
+            }
+        }
+        stale
     }
 }
 
@@ -338,6 +435,7 @@ mod tests {
                 client_order_id: "o1".into(),
                 symbol: "BTCUSDT".into(),
                 side: "BUY".into(),
+                position_side: "LONG".into(),
                 order_type: "LIMIT".into(),
                 order_id: 42,
                 status: OrderStatus::Filled,
@@ -367,6 +465,7 @@ mod tests {
                 client_order_id: "huérfana".into(),
                 symbol: "ETHUSDT".into(),
                 side: "SELL".into(),
+                position_side: "SHORT".into(),
                 order_type: "STOP_MARKET".into(),
                 order_id: 7,
                 status: OrderStatus::Filled,
@@ -409,8 +508,20 @@ mod tests {
         reg.apply_ack(&ack("c", "NEW", 0.0, 0.0), 100);
         let s = reg.stats();
         assert_eq!((s.total, s.active, s.filled, s.canceled), (3, 1, 1, 1));
-        // Terminadas con updated_ms < 500 se purgan; la activa queda.
         assert_eq!(reg.prune_terminated(500), 2);
         assert_eq!(reg.stats().total, 1);
+    }
+
+    #[test]
+    fn test_cleanup_stale_orders() {
+        let reg = OrderRegistry::new();
+        reg.register_intent("o_active", "BTCUSDT", "BUY", "LONG", "LIMIT", 1.0, 1000);
+        reg.register_intent("o_stale", "BTCUSDT", "BUY", "LONG", "LIMIT", 1.0, 100);
+
+        // A t=2000 ms, con max_age=500 ms, o_stale (t=100) debe expirar, o_active (t=1000) debe expirar si t - 1000 > 500
+        let stale = reg.cleanup_stale_orders(500, 2000);
+        assert_eq!(stale.len(), 2);
+        assert_eq!(reg.get("o_stale").unwrap().status, OrderStatus::Expired);
+        assert_eq!(reg.get("o_active").unwrap().status, OrderStatus::Expired);
     }
 }

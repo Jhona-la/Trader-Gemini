@@ -11,6 +11,31 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::client::{BinanceClient, ZeroAllocBuffer};
 
+#[derive(Debug, Clone, Copy)]
+pub struct SymbolFilter {
+    pub step_size: f64,
+    pub tick_size: f64,
+    pub min_notional: f64,
+}
+
+#[inline(always)]
+pub fn current_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+impl Default for SymbolFilter {
+    fn default() -> Self {
+        Self {
+            step_size: 0.001,
+            tick_size: 0.1,
+            min_notional: 5.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ActivePosition {
     pub symbol: String,
@@ -35,7 +60,21 @@ pub trait ExecutionProvider: Send + Sync {
         is_long: bool,
         quantity: f64,
         step_size: f64,
-    ) -> Result<(), String>;
+    ) -> Result<(), String> {
+        self.execute_raw_qty_with_client_id(symbol, is_long, quantity, step_size, "").await
+    }
+
+    async fn execute_raw_qty_with_client_id(
+        &self,
+        symbol: &str,
+        is_long: bool,
+        quantity: f64,
+        step_size: f64,
+        client_order_id: &str,
+    ) -> Result<(), String> {
+        let _ = client_order_id;
+        self.execute_raw_qty(symbol, is_long, quantity, step_size).await
+    }
 
     async fn execute_limit_order(
         &self,
@@ -169,6 +208,8 @@ pub struct OrderExecutor {
     cooldown_until_ms: AtomicU64,
     /// F1.8: 429s consecutivos — >=3 sugiere ban inminente → kill-switch real.
     consecutive_429: AtomicUsize,
+    /// Cache en RAM de filtros de símbolos (tickSize, stepSize, minNotional) O(1) < 5ns
+    symbol_filters: std::sync::RwLock<std::collections::HashMap<String, SymbolFilter>>,
 }
 
 impl OrderExecutor {
@@ -186,10 +227,11 @@ impl OrderExecutor {
             max_orders_1m: AtomicUsize::new(1100),
             kill_switch: AtomicBool::new(false),
             active_leverage: std::sync::RwLock::new(std::collections::HashMap::new()),
-            is_paper_trading: is_testnet, // Initially mapped to is_testnet, will be overridden by PhaseOrchestrator if in PaperTrading mode
+            is_paper_trading: false, // Desacoplado: false por defecto para permitir órdenes reales en Testnet/Mainnet; activar con set_paper_trading(true) si se desea simular
             order_registry: std::sync::Arc::new(crate::order_registry::OrderRegistry::new()),
             cooldown_until_ms: AtomicU64::new(0),
             consecutive_429: AtomicUsize::new(0),
+            symbol_filters: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
     }
 
@@ -210,10 +252,7 @@ impl OrderExecutor {
         if self.is_paper_trading {
             return Ok(true);
         }
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
         let api_secret = self.api_secret.read().unwrap().clone();
 
         // 1) Modo actual (GET firmado)
@@ -241,10 +280,7 @@ impl OrderExecutor {
         }
 
         // 2) Activar hedge (POST firmado dualSidePosition=true)
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
         buf.push_str("/fapi/v1/positionSide/dual?");
@@ -277,10 +313,7 @@ impl OrderExecutor {
         if self.is_paper_trading {
             return Ok((0, 0));
         }
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
         let api_secret = self.api_secret.read().unwrap().clone();
 
         // Modo de la cuenta (dual=hedge) — determina si se envía positionSide.
@@ -313,10 +346,7 @@ impl OrderExecutor {
             .collect();
         let mut cancelled = 0usize;
         for sym in &symbols {
-            let ts = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64;
+            let ts = current_timestamp_ms();
             let mut buf = ZeroAllocBuffer::new();
             buf.push_str(self.client.get_base_url());
             buf.push_str("/fapi/v1/allOpenOrders?");
@@ -338,10 +368,7 @@ impl OrderExecutor {
         let mut closed = 0usize;
         for p in entries.iter().filter(|p| p.is_open()) {
             let is_long = p.is_long();
-            let ts = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64;
+            let ts = current_timestamp_ms();
             let coid = uuid::Uuid::now_v7().simple().to_string();
             let mut buf = ZeroAllocBuffer::new();
             buf.push_str(self.client.get_base_url());
@@ -354,8 +381,10 @@ impl OrderExecutor {
             if dual {
                 buf.push_str("&positionSide=");
                 buf.push_str(if is_long { "LONG" } else { "SHORT" });
+                buf.push_str("&type=MARKET&quantity=");
+            } else {
+                buf.push_str("&type=MARKET&reduceOnly=true&quantity=");
             }
-            buf.push_str("&type=MARKET&reduceOnly=true&quantity=");
             buf.push_f64(p.position_amt.abs());
             buf.push_str("&newClientOrderId=");
             buf.push_str(&coid);
@@ -369,10 +398,7 @@ impl OrderExecutor {
             match self.client.execute_order_payload_typed(buf.as_str()).await {
                 Ok((limits, ack)) => {
                     self.update_limits(&limits);
-                    let now = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64;
+                    let now = current_timestamp_ms();
                     self.order_registry.apply_ack(&ack, now);
                     closed += 1;
                     println!(
@@ -397,10 +423,7 @@ impl OrderExecutor {
         if self.is_paper_trading {
             return Ok(Vec::new());
         }
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
 
         self.check_rate_limits(timestamp)?;
 
@@ -480,10 +503,7 @@ impl OrderExecutor {
                 .nth(1)
                 .and_then(|s| s.trim().parse().ok())
                 .unwrap_or(60);
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
+            let now = current_timestamp_ms();
             let until = now.saturating_add(retry_after_s.saturating_mul(1000));
             // Máximo atómico: conservar cooldown mayor si ya existía.
             let mut cur = self.cooldown_until_ms.load(Ordering::Relaxed);
@@ -579,8 +599,25 @@ impl OrderExecutor {
     /// Redondea la cantidad a los decimales permitidos (step_size).
     #[inline(always)]
     fn round_to_step_size(quantity: f64, step_size: f64) -> f64 {
+        if step_size <= 0.0 {
+            return quantity;
+        }
         let inv = 1.0 / step_size;
-        (quantity * inv).floor() / inv
+        ((quantity * inv) + 1e-9).floor() / inv
+    }
+
+    // FIX #738: Redondeo direccional de precio: ceil para SELL, floor para BUY
+    #[inline(always)]
+    fn round_price_to_tick(price: f64, tick_size: f64, is_sell: bool) -> f64 {
+        if tick_size <= 0.0 {
+            return price;
+        }
+        let inv = 1.0 / tick_size;
+        if is_sell {
+            ((price * inv) - 1e-9).ceil() / inv
+        } else {
+            ((price * inv) + 1e-9).floor() / inv
+        }
     }
 
     /// Toma la orden validada por el Risk Engine, calcula el lote de cripto exacto
@@ -597,10 +634,8 @@ impl OrderExecutor {
             return None;
         }
 
-        // FASE 21: Ensure volume accounts for fees margin safety buffer dynamically via Genome
-        // We add the EV fee buffer multiplier to the required volume to ensure it never hits the $5 limit due to fees/slippage
-        let raw_quantity =
-            (order.volume_usd * order.leverage * order.fee_buffer_multiplier) / current_price;
+        // Cantidad exacta calculada a partir del margen asignado y el apalancamiento aprobado
+        let raw_quantity = (order.volume_usd * order.leverage) / current_price;
         let final_quantity = Self::round_to_step_size(raw_quantity, step_size);
 
         if final_quantity == 0.0 {
@@ -613,10 +648,7 @@ impl OrderExecutor {
             SignalType::Flat => return None,
         };
 
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
 
         // F1.2: identificador idempotente — toda orden lleva newClientOrderId.
         let client_order_id = uuid::Uuid::now_v7().simple().to_string();
@@ -626,7 +658,8 @@ impl OrderExecutor {
         // que se firma y se envía. Precio redondeado al tickSize REAL del símbolo
         // (nunca un {:.4} fijo que viola el filtro PRICE_FILTER).
         let (order_type, time_in_force, extra_params) = if order.maker_only {
-            let final_price = Self::round_to_step_size(current_price, tick_size);
+            let is_sell = side == SIDE_SELL;
+            let final_price = Self::round_price_to_tick(current_price, tick_size, is_sell);
             (
                 ORDER_TYPE_LIMIT,
                 crate::binance_api::TIME_IN_FORCE_GTX,
@@ -671,6 +704,90 @@ impl OrderExecutor {
             signature,
             timestamp,
         })
+    }
+
+    pub async fn fetch_all_symbol_filters(
+        &self,
+    ) -> Result<std::collections::HashMap<String, SymbolFilter>, String> {
+        let mut buf = ZeroAllocBuffer::new();
+        if self.client.is_testnet.load(Ordering::Relaxed) {
+            buf.push_str("https://testnet.binancefuture.com/fapi/v1/exchangeInfo");
+        } else {
+            buf.push_str("https://fapi.binance.com/fapi/v1/exchangeInfo");
+        }
+
+        match self.client.get_payload(buf.as_str()).await {
+            Ok((limits, text)) => {
+                self.update_limits(&limits);
+                let mut map = std::collections::HashMap::new();
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                    if let Some(symbols) = json["symbols"].as_array() {
+                        for sym_info in symbols {
+                            if let Some(sym) = sym_info["symbol"].as_str() {
+                                let mut filter = SymbolFilter::default();
+                                if let Some(filters) = sym_info["filters"].as_array() {
+                                    for f in filters {
+                                        match f["filterType"].as_str() {
+                                            Some("LOT_SIZE") => {
+                                                if let Some(s) = f["stepSize"].as_str() {
+                                                    filter.step_size =
+                                                        s.parse::<f64>().unwrap_or(0.001);
+                                                }
+                                            }
+                                            Some("PRICE_FILTER") => {
+                                                if let Some(t) = f["tickSize"].as_str() {
+                                                    filter.tick_size =
+                                                        t.parse::<f64>().unwrap_or(0.1);
+                                                }
+                                            }
+                                            Some("MIN_NOTIONAL") => {
+                                                if let Some(n) = f["notional"].as_str() {
+                                                    filter.min_notional =
+                                                        n.parse::<f64>().unwrap_or(5.0);
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                                map.insert(sym.to_string(), filter);
+                            }
+                        }
+                    }
+                }
+                Ok(map)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub async fn get_symbol_filter(&self, symbol: &str) -> SymbolFilter {
+        {
+            if let Ok(cache) = self.symbol_filters.read() {
+                if let Some(f) = cache.get(symbol) {
+                    return *f;
+                }
+            }
+        }
+        if let Ok(filters) = self.fetch_all_symbol_filters().await {
+            let res = filters.get(symbol).copied();
+            if let Ok(mut cache) = self.symbol_filters.write() {
+                *cache = filters;
+            }
+            if let Some(f) = res {
+                return f;
+            }
+        }
+        if let Some(coin_id) = quantum_arena::symbol_registry::try_index(symbol) {
+            if let Some(spec) = quantum_arena::symbol_registry::try_spec(coin_id) {
+                return SymbolFilter {
+                    step_size: spec.step_size,
+                    tick_size: spec.tick_size,
+                    min_notional: spec.min_notional,
+                };
+            }
+        }
+        SymbolFilter::default()
     }
 }
 
@@ -718,14 +835,12 @@ impl ExecutionProvider for OrderExecutor {
             }
         }
 
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
         self.check_rate_limits(timestamp)?;
 
-        // F1.4: tickSize real del símbolo para el camino maker.
-        let tick_size = self.fetch_exchange_info(symbol).await.unwrap_or(0.01);
+        // F1.4: tickSize real del símbolo consultado en cache O(1) (< 5 ns)
+        let filter = self.get_symbol_filter(symbol).await;
+        let tick_size = filter.tick_size;
 
         if let Some(payload) =
             self.build_payload(order, symbol, current_price, step_size, tick_size)
@@ -802,8 +917,6 @@ impl ExecutionProvider for OrderExecutor {
         }
     }
 
-    /// Despacha una orden raw directamente con la cantidad final de crypto pre-calculada.
-    /// Utilizado por el GodEngineCore unificado.
     #[inline(always)]
     async fn execute_raw_qty(
         &self,
@@ -811,6 +924,18 @@ impl ExecutionProvider for OrderExecutor {
         is_long: bool,
         quantity: f64,
         step_size: f64,
+    ) -> Result<(), String> {
+        self.execute_raw_qty_with_client_id(symbol, is_long, quantity, step_size, "").await
+    }
+
+    #[inline(always)]
+    async fn execute_raw_qty_with_client_id(
+        &self,
+        symbol: &str,
+        is_long: bool,
+        quantity: f64,
+        step_size: f64,
+        client_order_id_param: &str,
     ) -> Result<(), String> {
         if quantity.is_infinite() || quantity.is_nan() || quantity <= 0.0 {
             return Err(
@@ -832,15 +957,16 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
 
         self.check_rate_limits(timestamp)?;
 
-        // F1.2: toda orden market lleva newClientOrderId (idempotencia).
-        let client_order_id = uuid::Uuid::now_v7().simple().to_string();
+        // F1.2: toda orden market lleva newClientOrderId (idempotencia y trazabilidad).
+        let client_order_id = if client_order_id_param.is_empty() {
+            uuid::Uuid::now_v7().simple().to_string()
+        } else {
+            client_order_id_param.to_string()
+        };
         // F1.5: registrar la intención antes del envío.
         self.order_registry.register_intent(
             &client_order_id,
@@ -920,7 +1046,8 @@ impl ExecutionProvider for OrderExecutor {
             return Err("Volumen 0 despues de round_to_step_size".to_string());
         }
 
-        let final_price = Self::round_to_step_size(price, tick_size);
+        // FIX #1414: Redondeo direccional de precio (ceil para SELL, floor para BUY)
+        let final_price = Self::round_price_to_tick(price, tick_size, !is_long);
 
         if self.is_paper_trading {
             println!("📝 [PAPER TRADING LOCAL] Ejecutando orden LIMIT de {} para {} @ {}. Cero latencia simulada.", final_quantity, symbol, final_price);
@@ -928,10 +1055,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
 
         self.check_rate_limits(timestamp)?;
 
@@ -1083,7 +1207,8 @@ impl ExecutionProvider for OrderExecutor {
         if final_quantity == 0.0 {
             return Err("Volumen 0".to_string());
         }
-        let final_price = Self::round_to_step_size(price, tick_size);
+        // FIX #1414: Redondeo direccional de precio en órdenes IOC
+        let final_price = Self::round_price_to_tick(price, tick_size, !is_long);
 
         if self.is_paper_trading {
             println!("📝 [PAPER TRADING LOCAL] Ejecutando orden IOC de {} para {} @ {}. Cero latencia simulada.", final_quantity, symbol, final_price);
@@ -1091,10 +1216,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
@@ -1170,10 +1292,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
@@ -1188,8 +1307,6 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long { "LONG" } else { "SHORT" });
         buf.push_str("&positionSide=");
         buf.push_str(if is_long { "LONG" } else { "SHORT" });
         buf.push_str("&type=");
@@ -1242,10 +1359,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long_close { SIDE_SELL } else { SIDE_BUY };
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
@@ -1262,13 +1376,13 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(side);
         buf.push_str("&positionSide=");
         buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
         buf.push_str("&type=");
         buf.push_str(ORDER_TYPE_MARKET);
-        buf.push_str("&reduceOnly=true");
         buf.push_str("&quantity=");
         buf.push_f64(final_quantity);
+        let client_order_id = uuid::Uuid::now_v7().simple().to_string();
+        buf.push_str("&newClientOrderId=");
+        buf.push_str(&client_order_id);
         buf.push_str("&timestamp=");
         buf.push_u64(timestamp);
 
@@ -1314,11 +1428,10 @@ impl ExecutionProvider for OrderExecutor {
             return Ok(());
         }
 
-        let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        // Para cerrar LONG: side = SELL, positionSide = LONG
+        // Para cerrar SHORT: side = BUY, positionSide = SHORT
+        let side = if is_long { SIDE_SELL } else { SIDE_BUY };
+        let timestamp = current_timestamp_ms();
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
@@ -1334,9 +1447,7 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&side=");
         buf.push_str(side);
         buf.push_str("&positionSide=");
-        buf.push_str(if is_long { "SHORT" } else { "LONG" });
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long { "SHORT" } else { "LONG" });
+        buf.push_str(if is_long { "LONG" } else { "SHORT" });
         buf.push_str("&type=TRAILING_STOP_MARKET");
         buf.push_str("&quantity=");
         buf.push_f64(final_quantity);
@@ -1391,10 +1502,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long_close { SIDE_SELL } else { SIDE_BUY };
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
         self.check_rate_limits(timestamp)?;
 
         let base_url = if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -1414,7 +1522,6 @@ impl ExecutionProvider for OrderExecutor {
         sl_buf.push_str("&positionSide=");
         sl_buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
         sl_buf.push_str("&type=STOP_MARKET");
-        sl_buf.push_str("&reduceOnly=true");
         sl_buf.push_str("&quantity=");
         sl_buf.push_f64(final_quantity);
         sl_buf.push_str("&stopPrice=");
@@ -1435,7 +1542,6 @@ impl ExecutionProvider for OrderExecutor {
         tp_buf.push_str("&positionSide=");
         tp_buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
         tp_buf.push_str("&type=TAKE_PROFIT_MARKET");
-        tp_buf.push_str("&reduceOnly=true");
         tp_buf.push_str("&quantity=");
         tp_buf.push_f64(final_quantity);
         tp_buf.push_str("&stopPrice=");
@@ -1527,10 +1633,7 @@ impl ExecutionProvider for OrderExecutor {
             return Ok(());
         }
 
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
 
         self.check_rate_limits(timestamp)?;
 
@@ -1579,10 +1682,7 @@ impl ExecutionProvider for OrderExecutor {
             });
         }
 
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
 
         self.check_rate_limits(timestamp)?;
 
@@ -1638,10 +1738,7 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn fetch_open_positions(&self) -> Result<Vec<ActivePosition>, String> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
 
         self.check_rate_limits(timestamp)?;
 
@@ -1702,10 +1799,7 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn fetch_account_balance(&self) -> Result<f64, String> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
 
         self.check_rate_limits(timestamp)?;
 
@@ -1756,10 +1850,7 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn set_leverage(&self, symbol: &str, leverage: u32) -> Result<(), String> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
 
         self.check_rate_limits(timestamp)?;
 
@@ -1797,10 +1888,7 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn fetch_commission_rate(&self, symbol: &str) -> Result<(f64, f64), String> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+        let timestamp = current_timestamp_ms();
 
         self.check_rate_limits(timestamp)?;
 
@@ -1850,45 +1938,7 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn fetch_exchange_info(&self, symbol: &str) -> Result<f64, String> {
-        let mut buf = ZeroAllocBuffer::new();
-        if self.client.is_testnet.load(Ordering::Relaxed) {
-            buf.push_str("https://testnet.binancefuture.com/fapi/v1/exchangeInfo");
-        } else {
-            buf.push_str("https://fapi.binance.com/fapi/v1/exchangeInfo");
-        }
-
-        match self.client.get_payload(buf.as_str()).await {
-            Ok((limits, text)) => {
-                self.update_limits(&limits);
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if let Some(symbols) = json["symbols"].as_array() {
-                        for sym_info in symbols {
-                            if sym_info["symbol"] == symbol {
-                                if let Some(filters) = sym_info["filters"].as_array() {
-                                    for filter in filters {
-                                        if filter["filterType"] == "MIN_NOTIONAL" {
-                                            if let Some(min_notional_str) =
-                                                filter["notional"].as_str()
-                                            {
-                                                if let Ok(min_notional) =
-                                                    min_notional_str.parse::<f64>()
-                                                {
-                                                    return Ok(min_notional);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(format!(
-                    "No se encontró MIN_NOTIONAL para el símbolo {} en la API.",
-                    symbol
-                ))
-            }
-            Err(e) => Err(e),
-        }
+        let filter = self.get_symbol_filter(symbol).await;
+        Ok(filter.min_notional)
     }
 }

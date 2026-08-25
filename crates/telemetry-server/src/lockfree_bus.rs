@@ -72,3 +72,45 @@ impl<T: Copy + Default> LockFreeBus<T> {
         None
     }
 }
+
+impl<T: Copy + Default> Default for LockFreeBus<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lockfree_bus_push_and_try_pop() {
+        let bus: LockFreeBus<u64> = LockFreeBus::default();
+        assert_eq!(bus.try_pop(), None);
+
+        bus.push(100);
+        bus.push(200);
+
+        assert_eq!(bus.try_pop(), Some(100));
+        assert_eq!(bus.try_pop(), Some(200));
+        assert_eq!(bus.try_pop(), None);
+    }
+
+    #[test]
+    fn test_lockfree_bus_overwrite_ring_wrap() {
+        let bus: LockFreeBus<u32> = LockFreeBus::new();
+        // Push more than RING_SIZE (1024)
+        for i in 0..1500 {
+            bus.push(i);
+        }
+
+        // Tail was advanced to catch up with overwrite
+        let mut count = 0;
+        while let Some(val) = bus.try_pop() {
+            assert!(val >= 1500 - 1024);
+            count += 1;
+        }
+        assert!(count <= 1024);
+    }
+}
+

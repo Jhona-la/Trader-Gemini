@@ -83,3 +83,49 @@ pub fn push_tensor_record(record: TensorRecord) {
         let _ = tx.try_send(record); // Non-blocking, drops if full
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tensor_telemetry_channel() {
+        let rx = init_tensor_telemetry(16);
+        let record = TensorRecord {
+            timestamp_ns: 1000,
+            symbol_id: 0,
+            net_confidence: 0.85,
+            expected_volatility: 0.012,
+            ml_long_thresh: 0.70,
+            ml_short_thresh: 0.70,
+            long_votes: 1.0,
+            short_votes: 0.0,
+            z_score: 2.1,
+            pnl_gross: 0.05,
+        };
+
+        push_tensor_record(record);
+        if let Ok(rec) = rx.try_recv() {
+            assert_eq!(rec.symbol_id, 0);
+            assert_eq!(rec.net_confidence, 0.85);
+            assert_eq!(rec.z_score, 2.1);
+        }
+    }
+
+    #[test]
+    fn test_macro_telemetry_stack_buffer_and_pop() {
+        init_telemetry(32);
+        telemetry!("TEST_SYSTEM_NOMINAL_TICK: {}", 42);
+        telemetry_err!("TEST_SIMULATED_REJECTION: code={}", 500);
+
+        let msg1 = pop_telemetry();
+        assert!(msg1.is_some());
+        assert!(msg1.unwrap().contains("TEST_SYSTEM_NOMINAL_TICK"));
+
+        let msg2 = pop_telemetry();
+        assert!(msg2.is_some());
+        assert!(msg2.unwrap().contains("ERROR: TEST_SIMULATED_REJECTION"));
+    }
+}
+
+

@@ -48,12 +48,24 @@ fn main() {
         if args[i] == "--symbol" && i + 1 < args.len() {
             symbol = args[i + 1].clone();
         } else if let Ok(parsed_bal) = args[i].parse::<f64>() {
-            initial_capital = parsed_bal;
+            if parsed_bal > 0.0 && parsed_bal.is_finite() {
+                initial_capital = parsed_bal;
+            }
         }
     }
 
-    if initial_capital <= 0.0 {
-        panic!("❌ [CRITICAL] Debes proveer un balance inicial válido como argumento (ej. cargo run --release --bin evolution -- 100.50)");
+    // FIX #1528: Fallback inteligente a $13.00 USD sin pánico
+    if initial_capital <= 0.0 || !initial_capital.is_finite() {
+        let env_cap = std::env::var("INITIAL_CAPITAL")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(13.0);
+        initial_capital = if env_cap > 0.0 && env_cap.is_finite() {
+            env_cap
+        } else {
+            13.0
+        };
+        println!("ℹ️ Capital inicial no especificado o inválido. Usando base autónoma de ${:.2} USD.", initial_capital);
     }
 
     println!("============================================================");
@@ -79,10 +91,13 @@ fn main() {
         }
     };
 
-    let mmap = unsafe {
-        memmap2::MmapOptions::new()
-            .map(&file)
-            .expect("Failed to mmap file")
+    // FIX #1529: Mapeo MMAP seguro sin expect
+    let mmap = match unsafe { memmap2::MmapOptions::new().map(&file) } {
+        Ok(m) => m,
+        Err(e) => {
+            println!("❌ Failed to mmap file {}: {}", file_path, e);
+            return;
+        }
     };
 
     #[derive(Debug, Clone, Copy)]
@@ -269,7 +284,7 @@ fn main() {
 
         let initial_cap_f64 = initial_capital;
 
-        let compound_rate_3d = if capital > 0.0 && periods_of_3_days > 0.0 {
+        let _compound_rate_3d = if capital > 0.0 && periods_of_3_days > 0.0 {
             let exp_growth = (capital / initial_cap_f64).powf(1.0_f64 / periods_of_3_days);
             exp_growth
         } else {

@@ -37,15 +37,49 @@ impl ZeroCopyBinTick {
 
     #[inline(always)]
     pub fn mid_price(&self) -> f64 {
-        (self.bid_price + self.ask_price) * 0.5
+        let bid = self.bid_price;
+        let ask = self.ask_price;
+        (bid + ask) * 0.5
     }
 
     #[inline(always)]
     pub fn spread_bps(&self) -> f64 {
-        if self.ask_price > 0.0 {
-            ((self.ask_price - self.bid_price) / self.ask_price) * 10000.0
+        let bid = self.bid_price;
+        let ask = self.ask_price;
+        if ask > 0.0 {
+            ((ask - bid) / ask) * 10000.0
         } else {
             0.0
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zero_copy_bin_tick_parsing_and_metrics() {
+        let tick = ZeroCopyBinTick {
+            timestamp: 1672531199000,
+            bid_price: 50000.0,
+            ask_price: 50005.0,
+            bid_qty: 1.5,
+            ask_qty: 2.0,
+        };
+        let slice: &[u8] = unsafe {
+            std::slice::from_raw_parts(
+                &tick as *const _ as *const u8,
+                std::mem::size_of::<ZeroCopyBinTick>(),
+            )
+        };
+
+        let parsed = ZeroCopyBinTick::from_bytes(slice).unwrap();
+        let ts = parsed.timestamp;
+        assert_eq!(ts, 1672531199000);
+        assert_eq!(parsed.mid_price(), 50002.5);
+        assert!((parsed.spread_bps() - 1.0).abs() < 1e-3);
+
+        assert!(ZeroCopyBinTick::from_bytes(&[0u8; 10]).is_none());
     }
 }

@@ -31,19 +31,33 @@ impl QuantumLeverageMatrix {
         volatility_multiplier: f64, // Extracted from SuperGenotype
         hurst_exponent: f64,        // TENSOR 5: Predictabilidad de la serie
         real_profit_factor: f64, // PF REAL del coin (de arena.coins[id].scalp/swing.profit_factor)
+        real_win_rate: f64,       // Win Rate REAL histórico del coin
         genome_max_leverage: f64, // Límite del genoma (de config.global_leverage)
         arena: &GlobalArena,
     ) -> f64 {
+        // FIX #651: Sanitizar parámetros entrantes asegurando robustez numérica total
+        let safe_curr_cap = if current_capital.is_finite() && current_capital > 0.0 { current_capital } else { 13.0 };
+        let safe_base_cap = if base_capital.is_finite() && base_capital > 0.0 { base_capital } else { 13.0 };
+        let safe_tick_vol = if tick_volatility.is_finite() && tick_volatility >= 0.0 { tick_volatility } else { 0.001 };
+        let safe_vol_mult = if volatility_multiplier.is_finite() && volatility_multiplier > 0.0 { volatility_multiplier } else { 1.0 };
+        let safe_hurst = if hurst_exponent.is_finite() { hurst_exponent.clamp(0.0, 1.0) } else { 0.5 };
+        let safe_pf = if real_profit_factor.is_finite() && real_profit_factor > 0.0 { real_profit_factor.max(0.1) } else { 1.0 };
+        let safe_wr = if real_win_rate.is_finite() && real_win_rate >= 0.0 { real_win_rate.clamp(0.0, 1.0) } else { 0.5 };
+        let safe_max_lev = if genome_max_leverage.is_finite() && genome_max_leverage >= 1.0 { genome_max_leverage.clamp(1.0, 50.0) } else { 20.0 };
+
         // ═══════════════════════════════════════════════════════
-        // TENSOR 1: Full Fractional Kelly (con profit_factor REAL)
+        // TENSOR 1: Full Fractional Kelly (con profit_factor y win_rate REAL)
         // ═══════════════════════════════════════════════════════
-        // Kelly: K = p - (1-p)/R donde R es el profit factor REAL
-        let prob_win = signal.confidence; // Remove .clamp(0.5, 0.99)
-        let pf = real_profit_factor.max(0.1); // PF real, fallback si no hay historial
+        // Fusión Bayesiana: si hay historial (WR > 0.05), pondera 70% historia + 30% convicción puntual
+        let prob_win = if safe_wr > 0.05 {
+            (safe_wr * 0.70 + signal.confidence.clamp(0.1, 1.0) * 0.30).clamp(0.10, 0.95)
+        } else {
+            signal.confidence.clamp(0.10, 0.95)
+        };
+        let pf = safe_pf; // PF real, fallback si no hay historial
         let kelly = (prob_win - (1.0 - prob_win) / pf).max(0.01);
 
         // Fracción adaptativa: Hurst × confidence determinan agresividad
-        // Usamos fraction multiplier dictado por el genoma o derivado de la escala predictiva.
         let fraction_multiplier =
             if prob_win > arena.config.veto_threshold_btc.load(Ordering::Relaxed) {
                 1.0
@@ -54,53 +68,63 @@ impl QuantumLeverageMatrix {
         let dynamic_kelly = kelly * fraction_multiplier;
 
         // ═══════════════════════════════════════════════════════
-        // TENSOR 2: Convicción de la Señal (Bayesian Proxy)
+        // TENSOR 2: Convicción de la Señal (Bayesian Proxy Adaptativo)
         // ═══════════════════════════════════════════════════════
-        let conviction_scale = volatility_multiplier.max(1.0); // Minimum 1.0, let genome control scale
-        let conviction = signal.confidence.powi(3) * conviction_scale;
+        let conviction_scale = volatility_multiplier.max(1.0);
+        let conviction = (0.40 + signal.confidence.clamp(0.1, 1.0) * 0.60) * conviction_scale;
 
         // ═══════════════════════════════════════════════════════
         // TENSOR 3: Freno de Volatilidad (SIEMPRE activo)
         // ═══════════════════════════════════════════════════════
-        let vol_sensitivity = volatility_multiplier.max(1.0); // Minimum 1.0, genome dictates
-        let vol_brake = 1.0 - (tick_volatility * vol_sensitivity).tanh();
+        let vol_sensitivity = safe_vol_mult.max(1.0); // Minimum 1.0, genome dictates
+        let vol_brake = 1.0 - (safe_tick_vol * vol_sensitivity).tanh();
 
         // ═══════════════════════════════════════════════════════
         // TENSOR 4: Micro-Capital Acceleration (Curva Logarítmica)
         // ═══════════════════════════════════════════════════════
         // A menor capital, mayor multiplicador para permitir interés compuesto rápido.
         // A mayor capital, amortiguación logarítmica para proteger patrimonio.
-        let log_divisor = arena
+        // FIX #597: Amortiguación logarítmica blindada contra capitales infinitesimales o nulos
+        // FIX #597 & #705: Amortiguación logarítmica blindada con sanitización de parámetros atómicos
+        let raw_log_div = arena
             .config
             .lev_matrix_log_cap_divisor
             .load(Ordering::Relaxed);
-        let capital_ratio = current_capital / base_capital.max(1.0);
-        let log_cap = current_capital.max(2.0).log10();
-        let logarithmic_dampener = (2.0 / log_cap).max(0.2); // Remove strict upper bound
+        let log_divisor = if raw_log_div.is_finite() && raw_log_div > 0.0 { raw_log_div.max(1.0) } else { 10.0 };
 
-        let growth_scalar = arena
+        let capital_ratio = (safe_curr_cap / safe_base_cap.max(1.0)).max(0.0);
+        let log_cap = safe_curr_cap.max(2.0).log10().max(0.3010); // log10(2.0) ≈ 0.3010
+        let raw_dampener = (log_divisor / log_cap.max(1.0)).min(3.0);
+        let logarithmic_dampener = if raw_dampener.is_finite() { raw_dampener.clamp(0.50, 3.0) } else { 1.0 };
+
+        let raw_growth_scalar = arena
             .config
             .lev_matrix_growth_scalar
             .load(Ordering::Relaxed);
-        let growth_factor = (1.0 + growth_scalar / (1.0 + capital_ratio)) * logarithmic_dampener;
+        let growth_scalar = if raw_growth_scalar.is_finite() && raw_growth_scalar >= 0.0 { raw_growth_scalar } else { 0.5 };
+        let raw_gf = (1.0 + growth_scalar / (1.0 + capital_ratio)) * logarithmic_dampener;
+        let growth_factor = if raw_gf.is_finite() { raw_gf.clamp(0.1, 10.0) } else { 1.0 };
 
-        // Techo dinámico logarítmico: capitales bajos permiten leverages altos guiados por EV
-        let dynamic_ceiling = (100.0 * (1.0 - (log_cap / log_divisor))).max(3.0); // Remove strict 100 max bound
-        let effective_max_leverage = genome_max_leverage.min(dynamic_ceiling);
+        // Techo dinámico logarítmico: capitales bajos permiten leverages guiados por EV pero acotados para micro-cuentas ($13 USD)
+        let raw_ceiling = 50.0 * (1.0 - (log_cap / (log_divisor * 2.0)).min(0.8));
+        let dynamic_ceiling = if raw_ceiling.is_finite() { raw_ceiling.clamp(5.0, 50.0) } else { 20.0 };
+        let effective_max_leverage = safe_max_lev.clamp(1.0, dynamic_ceiling);
 
         // ═══════════════════════════════════════════════════════
         // TENSOR 5: Hurst Predictability Bonus
         // ═══════════════════════════════════════════════════════
-        let hurst_bonus = if hurst_exponent > 0.5 {
-            1.0 + (hurst_exponent - 0.5) * 2.0
+        let raw_hurst_bonus = if safe_hurst > 0.5 {
+            1.0 + (safe_hurst - 0.5) * 2.0
         } else {
-            1.0 - (0.5 - hurst_exponent)
+            1.0 - (0.5 - safe_hurst)
         };
+        let hurst_bonus = if raw_hurst_bonus.is_finite() { raw_hurst_bonus.clamp(0.5, 2.0) } else { 1.0 };
 
-        let vol_clamp_min = arena
+        let raw_vol_clamp = arena
             .config
             .lev_matrix_vol_clamp_min
             .load(Ordering::Relaxed);
+        let vol_clamp_min = if raw_vol_clamp.is_finite() { raw_vol_clamp.clamp(0.0, 1.0) } else { 0.1 };
 
         let (final_vol_factor, final_dynamic_kelly) = if is_scalp {
             // SCALP (Milisegundos/Segundos): Extreme Volatility Dependency
@@ -116,10 +140,15 @@ impl QuantumLeverageMatrix {
         };
 
         // Capital factor: Kelly escala el leverage. Sqrt para suavizar.
-        let capital_factor = 1.0 + (final_dynamic_kelly * effective_max_leverage.sqrt()).sqrt();
+        let safe_dyn_kelly = if final_dynamic_kelly.is_finite() && final_dynamic_kelly >= 0.0 { final_dynamic_kelly } else { 0.0 };
+        let capital_factor = 1.0 + (safe_dyn_kelly * effective_max_leverage.sqrt()).sqrt();
 
         let final_leverage =
             capital_factor * conviction * final_vol_factor * growth_factor * hurst_bonus;
+
+        if !final_leverage.is_finite() {
+            return 1.0;
+        }
 
         let clamped = final_leverage.clamp(1.0, effective_max_leverage);
 

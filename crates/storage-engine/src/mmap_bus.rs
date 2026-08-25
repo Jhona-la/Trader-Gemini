@@ -80,20 +80,30 @@ impl MmapTelemetryBus {
     /// Escribe una traza atómicamente en memoria, que Windows paginará al SSD
     #[inline(always)]
     pub fn write_trace(&self, subsystem: u8, frame_type: u8, payload: [f64; 6]) {
+        // FIX #658: Sanitizar finitud de los flotantes en payload
+        let mut safe_payload = payload;
+        for p in &mut safe_payload {
+            if !p.is_finite() {
+                *p = 0.0;
+            }
+        }
+
         let head = self.get_head_ptr();
-        // FASE XLIII RCU Fix: Determine index, write data, SFENCE, then publish head.
-        let current_head = head.load(Ordering::Acquire);
-        let current_idx = current_head % RING_CAPACITY;
+        // Atomic fetch_add reserves a unique slot in the ring buffer across all concurrent threads
+        let slot_idx = head.fetch_add(1, Ordering::AcqRel);
+        let current_idx = slot_idx % RING_CAPACITY;
+
+        let timestamp_ns = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0);
 
         let frame = TelemetryFrame {
-            timestamp_ns: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos() as u64,
+            timestamp_ns,
             subsystem_id: subsystem,
             frame_type,
             padding: [0; 6],
-            payload,
+            payload: safe_payload,
         };
 
         unsafe {
@@ -108,22 +118,23 @@ impl MmapTelemetryBus {
                 let ptr = frame_ptr as *mut __m128i;
                 let payload_ptr = frame.payload.as_ptr();
 
-                // Chunk 1: timestamp (u64) + metadata (u64)
+                // Chunk 2, 3, 4: payload [f64; 6] (Preservar bits IEEE-754 exactos sin truncamiento a entero)
+                // FIX #1002: Escribir el payload PRIMERO para evitar lecturas sucias (tearing) si el lector ve timestamp != 0
+                let chunk2 = _mm_set_epi64x(payload_ptr.add(1).read().to_bits() as i64, payload_ptr.read().to_bits() as i64);
+                _mm_stream_si128(ptr.add(1), chunk2);
+
+                let chunk3 = _mm_set_epi64x(payload_ptr.add(3).read().to_bits() as i64, payload_ptr.add(2).read().to_bits() as i64);
+                _mm_stream_si128(ptr.add(2), chunk3);
+
+                let chunk4 = _mm_set_epi64x(payload_ptr.add(5).read().to_bits() as i64, payload_ptr.add(4).read().to_bits() as i64);
+                _mm_stream_si128(ptr.add(3), chunk4);
+
+                // Chunk 1: timestamp (u64) + metadata (u64) - Escribir al final como commit del frame
                 let meta_u64 = (frame.subsystem_id as u64) | ((frame.frame_type as u64) << 8);
                 let chunk1 = _mm_set_epi64x(meta_u64 as i64, frame.timestamp_ns as i64);
                 _mm_stream_si128(ptr, chunk1);
 
-                // Chunk 2, 3, 4: payload [f64; 6]
-                let chunk2 = _mm_set_epi64x(*payload_ptr.add(1) as i64, *payload_ptr as i64);
-                _mm_stream_si128(ptr.add(1), chunk2);
-
-                let chunk3 = _mm_set_epi64x(*payload_ptr.add(3) as i64, *payload_ptr.add(2) as i64);
-                _mm_stream_si128(ptr.add(2), chunk3);
-
-                let chunk4 = _mm_set_epi64x(*payload_ptr.add(5) as i64, *payload_ptr.add(4) as i64);
-                _mm_stream_si128(ptr.add(3), chunk4);
-
-                // CRITICAL: Memory fence to ensure non-temporal stores reach memory BEFORE index publishes
+                // CRITICAL: Memory fence to ensure non-temporal stores reach memory BEFORE read
                 std::arch::x86_64::_mm_sfence();
             }
             #[cfg(not(target_arch = "x86_64"))]
@@ -131,34 +142,31 @@ impl MmapTelemetryBus {
                 std::ptr::write_volatile(frame_ptr, frame);
             }
         }
-
-        // Publish the write (RCU commit)
-        head.store(current_head + 1, Ordering::Release);
     }
 }
 
 /// Lector lock-free del anillo de telemetría.
 /// Permite extraer métricas en vivo (O(1)) de la memoria mapeada sin interferir con el motor.
 pub struct MmapTelemetryReader {
-    mmap: MmapOptions,
+    mmap: Option<memmap2::Mmap>,
     path: std::path::PathBuf,
     last_read_idx: usize,
 }
 
 impl MmapTelemetryReader {
     /// Abre el archivo mapeado en memoria en modo SÓLO LECTURA.
-    pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
-        Ok(Self {
-            mmap: MmapOptions::new(),
-            path: path.as_ref().to_path_buf(),
+    // FIX #1499: Constructor no falible para latencia cero y drop explícito antes de borrar archivo
+    pub fn new<P: AsRef<Path>>(path: P) -> Self {
+        let path_buf = path.as_ref().to_path_buf();
+        let mmap = Self::open_mmap(&path_buf).ok();
+        Self {
+            mmap,
+            path: path_buf,
             last_read_idx: 0,
-        })
+        }
     }
 
-    /// Lee todos los frames nuevos desde la última vez que fue invocado.
-    /// Si hay saturación (el escritor dio más de 1 vuelta completa), saltamos al head más reciente
-    /// para siempre mantenernos en tiempo real (frontera de latencia).
-    pub fn read_latest_frames(&mut self) -> std::io::Result<Vec<TelemetryFrame>> {
+    fn open_mmap(path: &std::path::Path) -> std::io::Result<memmap2::Mmap> {
         #[cfg(windows)]
         use std::os::windows::fs::OpenOptionsExt;
 
@@ -167,34 +175,120 @@ impl MmapTelemetryReader {
         #[cfg(windows)]
         opts.share_mode(3); // FILE_SHARE_READ | FILE_SHARE_WRITE
 
-        let file = opts.open(&self.path)?;
-        let mmap = unsafe { self.mmap.map(&file)? };
+        let file = opts.open(path)?;
+        unsafe { MmapOptions::new().map(&file) }
+    }
+
+    /// Lee todos los frames nuevos desde la última vez que fue invocado.
+    /// Mantiene el mmap cacheado para latencia O(1) sin handle churn.
+    pub fn read_latest_frames(&mut self) -> std::io::Result<Vec<TelemetryFrame>> {
+        if self.mmap.is_none() {
+            self.mmap = Self::open_mmap(&self.path).ok();
+        }
+
+        let mmap = match &self.mmap {
+            Some(m) => m,
+            None => return Ok(Vec::new()),
+        };
 
         let head_ptr = unsafe { &*(mmap.as_ptr() as *const AtomicUsize) };
         let current_head = head_ptr.load(Ordering::Acquire);
 
         let mut frames = Vec::new();
 
-        // Prevención de overflow / saturación de buffer
-        if current_head > self.last_read_idx + RING_CAPACITY {
-            // Saltamos al punto más reciente disponible, descartando lo muy viejo.
-            self.last_read_idx = current_head.saturating_sub(RING_CAPACITY - 1);
+        // FIX #602: Prevención de overflow y limitación de lote para cero picos de RAM en 16GB
+        const MAX_BATCH_READ: usize = 10_000;
+        if current_head > self.last_read_idx + MAX_BATCH_READ {
+            self.last_read_idx = current_head - MAX_BATCH_READ;
         }
 
-        let base_ptr = unsafe { mmap.as_ptr().add(HEADER_SIZE) };
+        let ring_start_offset = 64;
+        let ring_bytes_len = std::mem::size_of::<[TelemetryFrame; RING_CAPACITY]>();
+
+        if mmap.len() < ring_start_offset + ring_bytes_len {
+            return Ok(frames);
+        }
+
+        let ring_ptr = unsafe { mmap.as_ptr().add(ring_start_offset) as *const TelemetryFrame };
 
         while self.last_read_idx < current_head {
-            let ring_idx = self.last_read_idx % RING_CAPACITY;
+            let slot = self.last_read_idx % RING_CAPACITY;
+            let frame = unsafe { std::ptr::read_volatile(ring_ptr.add(slot)) };
 
-            unsafe {
-                let frame_ptr = (base_ptr as *const TelemetryFrame).add(ring_idx);
-                let frame = std::ptr::read_volatile(frame_ptr);
+            // FIX #602: Descartar frames no inicializados (timestamp_ns == 0)
+            if frame.timestamp_ns != 0 {
                 frames.push(frame);
             }
-
             self.last_read_idx += 1;
         }
 
         Ok(frames)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mmap_telemetry_bus_write_and_read() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(12345);
+        let path = temp_dir.join(format!("test_mmap_bus_{}.dat", unique_id));
+        
+        {
+            let bus = MmapTelemetryBus::new(&path).expect("Failed to create mmap bus");
+            bus.write_trace(SUBSYSTEM_RISK_KELLY, FRAME_TYPE_BAYESIAN_PROB, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+            bus.write_trace(SUBSYSTEM_TENSOR_ML, FRAME_TYPE_TENSOR_ENTROPY, [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
+        }
+
+        {
+            let mut reader = MmapTelemetryReader::new(&path);
+            let frames = reader.read_latest_frames().expect("Failed to read frames");
+            assert_eq!(frames.len(), 2);
+            assert_eq!(frames[0].subsystem_id, SUBSYSTEM_RISK_KELLY);
+            assert_eq!(frames[0].payload[0], 1.0);
+            assert_eq!(frames[1].subsystem_id, SUBSYSTEM_TENSOR_ML);
+            assert_eq!(frames[1].payload[0], 0.5);
+            drop(reader);
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_mmap_telemetry_bus_nan_payload_sanitization() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(54321);
+        let path = temp_dir.join(format!("test_mmap_bus_nan_{}.dat", unique_id));
+
+        {
+            let bus = MmapTelemetryBus::new(&path).expect("Failed to create mmap bus");
+            bus.write_trace(
+                SUBSYSTEM_QUANT_MATH,
+                FRAME_TYPE_HURST_EXPONENT,
+                [f64::NAN, f64::INFINITY, -f64::INFINITY, 0.75, 10.0, 20.0],
+            );
+        }
+
+        {
+            let mut reader = MmapTelemetryReader::new(&path);
+            let frames = reader.read_latest_frames().expect("Failed to read frames");
+            assert_eq!(frames.len(), 1);
+            assert_eq!(frames[0].payload[0], 0.0); // Sanitized NaN -> 0.0
+            assert_eq!(frames[0].payload[1], 0.0); // Sanitized Inf -> 0.0
+            assert_eq!(frames[0].payload[2], 0.0); // Sanitized -Inf -> 0.0
+            assert_eq!(frames[0].payload[3], 0.75);
+            drop(reader);
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+}
+

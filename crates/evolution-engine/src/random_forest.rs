@@ -129,16 +129,17 @@ impl ShadowForest {
         for (i, engine) in self.engines.iter().enumerate() {
             let cap = engine.arena.unified_capital.load(Ordering::Relaxed);
             let pnl = cap - self.initial_capital;
-            leaderboard.push(pnl);
-            if pnl > best_pnl {
-                best_pnl = pnl;
+            let safe_pnl = if pnl.is_finite() { pnl } else { -999999.0 };
+            leaderboard.push(safe_pnl);
+            if safe_pnl > best_pnl {
+                best_pnl = safe_pnl;
                 best_idx = i;
             }
         }
 
         // Axioma de Inercia: Solo proponemos cambio si la mutación venció al control
-        // significativamente (> 1% de PnL superior) para evitar inestabilidad del sistema y comisiones inútiles.
-        let winner = if best_idx != 0 && best_pnl > (control_pnl * 1.01) && best_pnl > 0.0 {
+        // significativamente (> 0.5% del capital base) y tiene PnL positivo para evitar inestabilidad del sistema.
+        let winner = if best_idx != 0 && (best_pnl - control_pnl > self.initial_capital * 0.005) && best_pnl > 0.0 {
             Some((self.genomes[best_idx].clone(), best_pnl))
         } else {
             None
@@ -177,3 +178,36 @@ impl ShadowForest {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shadow_forest_instantiation_and_harvest() {
+        let base_genome = SuperGenotype::default();
+        let forest = ShadowForest::new(13.0, base_genome, 3);
+        assert_eq!(forest.engines.len(), 3);
+        assert_eq!(forest.genomes.len(), 3);
+
+        let (winner, leaderboard) = forest.harvest_best_genome();
+        assert_eq!(leaderboard.len(), 3);
+        assert!(winner.is_none());
+    }
+
+    #[test]
+    fn test_shadow_forest_replant_and_broadcast_tick() {
+        let base_genome = SuperGenotype::default();
+        let mut forest = ShadowForest::new(13.0, base_genome.clone(), 2);
+        let main_arena = Arc::new(GlobalArena::new(13.0));
+
+        forest.broadcast_tick(
+            0, true, false, false, 50000.0, 1.0, 49999.0, 50001.0, 10.0, 10.0, 0.1, 0.0, 1600000000, &main_arena
+        );
+
+        forest.replant(base_genome);
+        assert_eq!(forest.engines.len(), 2);
+        assert_eq!(forest.engines[0].arena.unified_capital.load(Ordering::Relaxed), 13.0);
+    }
+}
+

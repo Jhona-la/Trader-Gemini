@@ -40,14 +40,29 @@ impl DriftAuditor {
     /// Devuelve Ok(drift) si está dentro del margen.
     /// Devuelve Err(drift) si ha saltado el Circuit Breaker.
     pub fn audit_execution(&self, real: &TradeResult, shadow: &TradeResult) -> Result<f64, f64> {
+        // FIX #1467: Validación estricta de finitud de PnL
+        if !real.pnl_pct.is_finite() || !shadow.pnl_pct.is_finite() {
+            return Ok(0.0);
+        }
         // En un mundo ideal, real.pnl_pct == shadow.pnl_pct.
         // Si el real pierde dinero y el shadow gana, hay un "Negative Drift".
         let drift = shadow.pnl_pct - real.pnl_pct; 
-        
-        let current_drift_bits = self.total_drift_pct.load(Ordering::Relaxed);
-        let current_drift = f64::from_bits(current_drift_bits);
-        let new_drift = current_drift + drift;
-        self.total_drift_pct.store(new_drift.to_bits(), Ordering::Relaxed);
+        if !drift.is_finite() {
+            return Ok(0.0);
+        }
+
+        // FIX #1467: Lock-free CAS loop para actualización libre de data-race
+        let mut old_bits = self.total_drift_pct.load(Ordering::Relaxed);
+        loop {
+            let current = f64::from_bits(old_bits);
+            let safe_current = if current.is_finite() { current } else { 0.0 };
+            let new_val = safe_current + drift;
+            let new_bits = new_val.to_bits();
+            match self.total_drift_pct.compare_exchange_weak(old_bits, new_bits, Ordering::Release, Ordering::Relaxed) {
+                Ok(_) => break,
+                Err(b) => old_bits = b,
+            }
+        }
 
         if drift.abs() > self.max_allowed_drift {
             self.mismatch_count.fetch_add(1, Ordering::Relaxed);

@@ -9,11 +9,16 @@ use axum::{
 };
 pub mod flight_recorder;
 pub mod forensic_auditor;
+pub mod lock_free_logger;
+pub mod lockfree_bus;
 pub mod macros;
 pub mod profiler;
+pub mod stream;
 pub mod telegram_bot;
 pub mod telemetry_mmap;
+pub mod tensor_telemetry;
 pub mod zero_copy_bus;
+pub mod zero_copy_ring;
 pub use flight_recorder::{FlightEvent, FlightRecorder};
 pub use forensic_auditor::ForensicAuditor;
 use quantum_arena::GlobalArena;
@@ -142,13 +147,35 @@ pub async fn start_telemetry_server(
         .layer(Extension(tx))
         .with_state(arena);
 
-    println!("📡 [TELEMETRY] Servidor Táctico iniciado en http://127.0.0.1:3000");
+    // FIX #1416: Bind resiliente con fallback de puertos para evitar pánicos por colisión
+    let port_str = std::env::var("TELEMETRY_PORT").unwrap_or_else(|_| "3000".to_string());
+    let base_port: u16 = port_str.parse().unwrap_or(3000);
+    
+    let mut bound_listener = None;
+    let mut final_port = base_port;
+    for offset in 0..10 {
+        let test_port = base_port + offset;
+        let addr = format!("127.0.0.1:{}", test_port);
+        match tokio::net::TcpListener::bind(&addr).await {
+            Ok(l) => {
+                bound_listener = Some(l);
+                final_port = test_port;
+                break;
+            }
+            Err(e) => {
+                eprintln!("⚠️ [TELEMETRY] No se pudo vincular en {} ({}). Intentando puerto alternativo...", addr, e);
+            }
+        }
+    }
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
-        .await
-        .unwrap();
-
-    axum::serve(listener, app).await.unwrap();
+    if let Some(listener) = bound_listener {
+        println!("📡 [TELEMETRY] Servidor Táctico iniciado en http://127.0.0.1:{}", final_port);
+        if let Err(e) = axum::serve(listener, app).await {
+            eprintln!("⚠️ [TELEMETRY] Error en servidor Axum: {}", e);
+        }
+    } else {
+        eprintln!("🛑 [TELEMETRY] No se pudo iniciar el servidor HTTP en ningún puerto del rango {}-{}. Continuando sin servidor web.", base_port, base_port + 9);
+    }
 }
 
 #[derive(Serialize)]
@@ -162,7 +189,25 @@ async fn get_tensor(
     State(arena): State<Arc<GlobalArena>>,
 ) -> Json<TensorResponse> {
     let tensor = if coin_id < arena.coins.len() {
-        vec![0.0; 16]
+        let coin = &arena.coins[coin_id];
+        vec![
+            coin.current_price.load(Ordering::Relaxed) as f32,
+            coin.current_atr.load(Ordering::Relaxed) as f32,
+            coin.ml_prob.load(Ordering::Relaxed) as f32,
+            coin.hurst_exponent.load(Ordering::Relaxed) as f32,
+            coin.epigenetic_bias.load(Ordering::Relaxed) as f32,
+            coin.epigenetic_threshold_modifier.load(Ordering::Relaxed) as f32,
+            coin.spot_bid.load(Ordering::Relaxed) as f32,
+            coin.spot_ask.load(Ordering::Relaxed) as f32,
+            coin.spot_bid_qty.load(Ordering::Relaxed) as f32,
+            coin.spot_ask_qty.load(Ordering::Relaxed) as f32,
+            coin.agg_buy_vol.load(Ordering::Relaxed) as f32,
+            coin.agg_sell_vol.load(Ordering::Relaxed) as f32,
+            coin.scalp.win_rate.load(Ordering::Relaxed) as f32,
+            coin.scalp.pnl_realized.load(Ordering::Relaxed) as f32,
+            coin.swing.win_rate.load(Ordering::Relaxed) as f32,
+            coin.swing.pnl_realized.load(Ordering::Relaxed) as f32,
+        ]
     } else {
         vec![]
     };
@@ -292,6 +337,8 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
     let net_roi_pct = (total_net_pnl / initial_cap) * 100.0;
     let gross_roi_pct = (total_gross_pnl / initial_cap) * 100.0;
 
+    let sys_telem = os_guardian::telemetry::get_system_telemetry();
+
     let state = SystemState {
         tick_counter: arena.tick_counter.load(Ordering::Relaxed),
         unified_capital: current_cap,
@@ -308,9 +355,9 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
         ml_prob_avg: avg_ml_prob,
         hurst_avg: avg_hurst,
         zombie_count: total_zombies,
-        cpu_usage: 0.0, // Pendiente CPU realtime
-        memory_used_mb: os_guardian::memory_audit::get_memory_usage_mb(),
-        total_memory_mb: 6144.0, // Límite estricto OS Guardian Fase 5
+        cpu_usage: sys_telem.cpu_usage,
+        memory_used_mb: sys_telem.memory_used_mb,
+        total_memory_mb: sys_telem.total_memory_mb,
         net_roi_pct,
         gross_roi_pct,
         fees_paid,
@@ -881,3 +928,88 @@ async fn dashboard_html() -> impl IntoResponse {
     "#;
     Html(html)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_telemetry_system_state_serialization() {
+        let state = SystemState {
+            tick_counter: 100,
+            unified_capital: 13.0,
+            pnl_realized_scalp: 0.5,
+            pnl_gross_scalp: 0.6,
+            pnl_unrealized_scalp: 0.1,
+            win_rate_scalp: 0.85,
+            pnl_realized_swing: 1.0,
+            pnl_gross_swing: 1.2,
+            pnl_unrealized_swing: 0.2,
+            win_rate_swing: 0.75,
+            global_leverage: 10.0,
+            global_max_drawdown: 0.02,
+            ml_prob_avg: 0.78,
+            hurst_avg: 0.65,
+            zombie_count: 0,
+            cpu_usage: 15.0,
+            memory_used_mb: 250.0,
+            total_memory_mb: 16384.0,
+            net_roi_pct: 11.5,
+            gross_roi_pct: 13.8,
+            fees_paid: 0.03,
+        };
+
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("unified_capital"));
+        assert!(json.contains("13.0"));
+    }
+
+    #[test]
+    fn test_telemetry_event_trade_closed_serialization() {
+        let ev = TelemetryEvent::TradeClosed {
+            coin_id: 1,
+            trade_type: "SCALP".to_string(),
+            pnl: 0.45,
+            roi_pct: 3.46,
+            duration_ms: 12000,
+            ml_prob: 0.82,
+        };
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(json.contains("SCALP"));
+        assert!(json.contains("0.45"));
+    }
+
+    #[test]
+    fn test_telemetry_event_omni_and_coin_state_serialization() {
+        let omni = TelemetryEvent::OmniUpdate {
+            latency_ms: 12,
+            latency_panic: false,
+            dark_alpha: 0.88,
+            scalp_pnl: 2.5,
+            swing_pnl: 4.1,
+            gross_pnl: 6.6,
+            net_pnl: 6.55,
+            win_rate: 0.72,
+            trade_duration_avg: 45.0,
+        };
+        let omni_json = serde_json::to_string(&omni).unwrap();
+        assert!(omni_json.contains("dark_alpha"));
+        assert!(omni_json.contains("0.88"));
+
+        let coin = CoinState {
+            id: 0,
+            symbol: "BTCUSDT".to_string(),
+            scalp_pnl: 1.2,
+            swing_pnl: 2.3,
+            win_rate: 0.80,
+            ml_prob: 0.75,
+            hurst: 0.62,
+            active_scalp: true,
+            active_swing: false,
+        };
+        let coin_json = serde_json::to_string(&coin).unwrap();
+        assert!(coin_json.contains("BTCUSDT"));
+        assert!(coin_json.contains("active_scalp"));
+    }
+}
+

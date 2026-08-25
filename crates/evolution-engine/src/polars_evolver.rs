@@ -66,17 +66,25 @@ pub fn start_polars_evolver_daemon(
 
                 // Simular variaciones de hiperparámetros estocásticos (1000 iteraciones cuánticas)
                 for _ in 0..1000 {
-                    let mut test_cfg = Genotype::new_random();
+                    let test_cfg = Genotype::new_random();
                     // Merge some base properties or rely entirely on random
 
                     // F3.3: buffers según el CONTRATO del motor (antes: pnl de
                     // tamaño 1 y stats de 4 → OOB garantizado al primer trade).
                     let n = closes.len();
+                    // FIX #718: Guarda de series vacías o insuficientes (<10 velas)
+                    if n < 10 || highs.len() < n || lows.len() < n || volumes.len() < n {
+                        continue;
+                    }
+                    let initial_cap = std::env::var("INITIAL_CAPITAL")
+                        .ok()
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .unwrap_or(13.0);
                     let mut pnl = vec![0.0; n];
                     let mut stats = vec![0.0; backtest_engine::STATS_LEN];
                     let _final_cap = run_backtest_native(
                         &closes, &highs, &lows, &volumes, &test_cfg, &mut pnl, &mut stats, "SIM",
-                        100.0,
+                        initial_cap,
                     );
 
                     // Native backtest populates stats exactly as follows:
@@ -100,8 +108,10 @@ pub fn start_polars_evolver_daemon(
                         1.0
                     };
 
-                    // Pseudo-Sharpe Cuántico con Penalización
-                    let sharpe = (final_capital - 100.0) * wr * dd_penalty * min_trades_penalty;
+                    // Pseudo-Sharpe Cuántico con Penalización (Normalizado a retorno relativo - FIX #1408)
+                    let ret_pct = (final_capital - initial_cap) / initial_cap.max(1.0);
+                    let raw_sharpe = ret_pct * wr * dd_penalty * min_trades_penalty;
+                    let sharpe = if raw_sharpe.is_finite() { raw_sharpe } else { 0.0 };
 
                     if sharpe > best_sharpe {
                         best_sharpe = sharpe;
@@ -135,4 +145,35 @@ pub fn start_polars_evolver_daemon(
             } // Cierra loop
         }); // Cierra rt.block_on
     }); // Cierra thread::spawn
-} // Cierra fn
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_genome_struct_serialization() {
+        let g = Genome {
+            scalp_tp: 0.01,
+            scalp_sl: 0.005,
+            swing_tp: 0.05,
+            swing_sl: 0.02,
+            ml_threshold: 0.65,
+            dyn_atr_min: 0.001,
+            dyn_obi: 0.2,
+            dyn_ema: 0.1,
+            dyn_ofi: 0.3,
+            sharpe_ratio: 2.1,
+            win_rate: 0.68,
+            max_drawdown: 0.03,
+            generation: 1,
+            fitness: 15.2,
+        };
+
+        let json = serde_json::to_string(&g).unwrap();
+        let de: Genome = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.generation, 1);
+        assert_eq!(de.sharpe_ratio, 2.1);
+    }
+}
+ // Cierra fn

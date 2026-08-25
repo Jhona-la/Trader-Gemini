@@ -16,6 +16,9 @@ impl<'a> PortfolioOrchestrator<'a> {
     /// Calcula la asignación dinámica de capital (Fase 8: Redistribución basada en rendimiento)
     #[inline(always)]
     pub fn calculate_dynamic_allocation(&self, coin_id: usize, base_leverage: f64) -> f64 {
+        if coin_id >= self.arena.coins.len() || !base_leverage.is_finite() || base_leverage <= 0.0 {
+            return 1.0;
+        }
         let coin = &self.arena.coins[coin_id];
 
         let win_rate = coin.scalp.win_rate.load(Ordering::Relaxed);
@@ -24,7 +27,9 @@ impl<'a> PortfolioOrchestrator<'a> {
         // CONTINUOUS Performance Multiplier (sigmoid-based, no step functions)
         // Maps WR×PF product into a smooth [0.3, 2.0] range via generalized logistic
         // Center at WR=0.50, PF=1.0 (breakeven point)
-        let performance_score = win_rate * profit_factor;
+        let safe_wr = if win_rate.is_finite() && win_rate >= 0.0 { win_rate.clamp(0.0, 1.0) } else { 0.5 };
+        let safe_pf = if profit_factor.is_finite() && profit_factor > 0.0 { profit_factor.max(0.1) } else { 1.0 };
+        let performance_score = safe_wr * safe_pf;
         let portfolio_perf_mult_steepness = self
             .arena
             .config
@@ -75,7 +80,8 @@ impl<'a> PortfolioOrchestrator<'a> {
             1.0
         };
 
-        base_leverage * performance_multiplier * drawdown_penalty
+        let raw_alloc = base_leverage * performance_multiplier * drawdown_penalty;
+        if raw_alloc.is_finite() && raw_alloc > 0.0 { raw_alloc } else { 1.0 }
     }
 
     /// Evalúa si el portafolio permite la apertura de una nueva posición direccional
@@ -86,6 +92,9 @@ impl<'a> PortfolioOrchestrator<'a> {
         required_margin: f64,
         regime: crate::regime::MarketRegime,
     ) -> bool {
+        if !required_margin.is_finite() || required_margin <= 0.0 {
+            return false;
+        }
         // Regime Orchestration (Fase 13: Kill-Switch macro)
         if regime == crate::regime::MarketRegime::Crash && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.
@@ -127,15 +136,8 @@ impl<'a> PortfolioOrchestrator<'a> {
 
         let total_exposure = total_long_margin + total_short_margin + required_margin;
 
-        // Max Gross Exposure limit: Read from arena config (genome-evolvable)
-        // Defaults to 1.0 (100% capital efficiency) but can be tightened by the genome
-        // Prevent complete freezing by asserting a minimal theoretical bounds
-        let exposure_limit = self
-            .arena
-            .config
-            .global_max_drawdown
-            .load(Ordering::Relaxed)
-            .max(0.1);
+        // Max Margin Allocation limit: Allow up to 95% of unified capital to be allocated as collateral
+        let exposure_limit = (1.0 - self.arena.config.global_max_drawdown.load(Ordering::Relaxed).min(0.20)).clamp(0.80, 1.0);
 
         if total_exposure > capital * exposure_limit {
             return false;

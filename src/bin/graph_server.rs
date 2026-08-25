@@ -15,14 +15,15 @@ async fn main() {
     let graph_arc = Arc::new(graph);
 
     let api_graph = graph_arc.clone();
+    // FIX #731: Sanitización de latencias en telemetría de grafos 4D
     let api_route = warp::path!("api" / "graph").map(move || {
         let mut current_graph = (*api_graph).clone();
         let aggregator = telemetry_server::profiler::GLOBAL_AGGREGATOR.load();
         let averages = aggregator.get_averages();
         for node in current_graph.nodes.values_mut() {
-            // Try to match node label or id with telemetry keys
+            // Match node label or id with telemetry keys
             if let Some(&lat) = averages.get(node.label.as_str()) {
-                node.average_latency_ns = lat;
+                node.average_latency_ns = lat.min(10_000_000);
             }
         }
         warp::reply::json(&current_graph)

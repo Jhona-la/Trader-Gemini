@@ -51,9 +51,12 @@ impl OnlineLearningModule {
     pub fn predict(&self, features: &[f32; 64]) -> f32 {
         let mut sum = 0.0;
         for i in 0..64 {
-            sum += self.weights[i] * features[i];
+            let f = features[i];
+            if f.is_finite() {
+                sum += self.weights[i] * f;
+            }
         }
-        sum
+        if sum.is_finite() { sum.clamp(-100.0, 100.0) } else { 0.0 }
     }
 
     /// Actualiza los pesos de forma continua usando un Filtro de Kalman Tensorial
@@ -66,6 +69,10 @@ impl OnlineLearningModule {
         td_error: f32,
         lyapunov_chaos: f32,
     ) {
+        if !td_error.is_finite() || !lyapunov_chaos.is_finite() {
+            return;
+        }
+
         // [Fase XXXIX] Tensorized Chaos Damping (Continuous Online Learning)
         // En lugar del corte estricto `if lyapunov_chaos > 1.5 { return; }`,
         // usamos una curva continua que amortigua asintóticamente la capacidad de aprendizaje
@@ -74,7 +81,7 @@ impl OnlineLearningModule {
 
         for i in 0..64 {
             let x = features[i];
-            if x == 0.0 {
+            if !x.is_finite() || x == 0.0 {
                 continue;
             } // Omitir features inactivos para rendimiento
 
@@ -91,13 +98,17 @@ impl OnlineLearningModule {
             // Actualización del peso modulada por la confianza (inversamente proporcional al caos)
             let weight_update = kalman_gain * innovation * chaos_damping;
 
-            // Integrando Momentum (Adam/SGD híbrido con Kalman)
-            self.velocity[i] =
-                self.momentum * self.velocity[i] + self.learning_rate * weight_update;
+            // Integrando Momentum con la ganancia de Kalman directamente
+            self.velocity[i] = self.momentum * self.velocity[i] + weight_update;
             self.weights[i] += self.velocity[i];
 
-            // 3. Actualizar la covarianza
-            self.p_covariance[i] = (1.0 - kalman_gain * x) * self.p_covariance[i];
+            // 3. Actualizar la covarianza (protegida contra colapso numérico e incertidumbre congelada)
+            let updated_cov = ((1.0 - kalman_gain * x) * self.p_covariance[i]).clamp(1e-4, 10.0);
+            self.p_covariance[i] = if updated_cov < 1e-3 {
+                updated_cov + self.q_noise * 2.0
+            } else {
+                updated_cov
+            };
 
             // Decadencia de pesos suave (Regularización L2 — evolucionable)
             self.weights[i] *= self.l2_decay;
@@ -135,14 +146,7 @@ pub fn spawn_telemetry_consumer(
     mmap_path: &'static str,
 ) {
     tokio::spawn(async move {
-        let reader_result = MmapTelemetryReader::new(mmap_path);
-        if reader_result.is_err() {
-            println!(
-                "⚠️ [METACORTEX] No se pudo inicializar MmapTelemetryReader para Online Learning."
-            );
-            return;
-        }
-        let mut reader = reader_result.unwrap();
+        let mut reader = MmapTelemetryReader::new(mmap_path);
 
         // FASE 23: Stateful Correlation Buffer for True PnL Online Learning
         // Correlate Decision features (Frame 1) with their actual market results (Frame 13)
@@ -179,8 +183,9 @@ pub fn spawn_telemetry_consumer(
                             // Extraer payload: [coin_id, gross_pnl, net_pnl, maker_fee, taker_fee, win_flag]
                             let net_pnl = frame.payload[2] as f32;
 
-                            // True TD Error is the actual Net PnL percentage
-                            let td_error = net_pnl;
+                            // TD-Error exacto de Bellman: Reward observado menos predicción previa
+                            let prior_pred = module.predict(&last_features[coin_id]);
+                            let td_error = net_pnl - prior_pred;
 
                             // Evolucionamos usando las features de la última decisión y el resultado real
                             module.update_weights_with_kalman(
@@ -194,4 +199,27 @@ pub fn spawn_telemetry_consumer(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_online_learning_kalman_update() {
+        let mut module = OnlineLearningModule::new(0.01, 0.9);
+        let mut features = [0.0f32; 64];
+        features[0] = 1.0;
+        features[1] = 0.5;
+
+        let pred_initial = module.predict(&features);
+        assert_eq!(pred_initial, 0.0);
+
+        let reward = 0.05f32;
+        let td_error = reward - pred_initial;
+        module.update_weights_with_kalman(&features, td_error, 0.2);
+
+        let pred_updated = module.predict(&features);
+        assert!(pred_updated > 0.0, "Weight should adapt towards positive reward");
+    }
 }

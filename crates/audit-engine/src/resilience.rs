@@ -23,7 +23,15 @@ impl ChaosMonkey {
             return Err("HTTP 429 Too Many Requests (Simulado)".to_string());
         }
         
-        let rand_val = unsafe { core::arch::x86_64::_rdtsc() % 100 } as f64 / 100.0;
+        // FIX #1493: Entropía determinista y multi-arquitectura (x86_64 / ARM / WASM)
+        #[cfg(target_arch = "x86_64")]
+        let r = unsafe { core::arch::x86_64::_rdtsc() };
+        #[cfg(not(target_arch = "x86_64"))]
+        let r = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(12345);
+        let rand_val = (r % 100) as f64 / 100.0;
         if rand_val < self.drop_rate {
             return Err("Network Drop (Simulado)".to_string());
         }

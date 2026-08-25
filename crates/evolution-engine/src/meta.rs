@@ -76,3 +76,24 @@ impl MetaEvolver {
         println!("============================================================");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_meta_evolver_audit_system_architecture_nominal_and_stagnant() {
+        let arena = Arc::new(GlobalArena::new(13.0));
+        let evolver = MetaEvolver::new(arena.clone());
+
+        // Test with low sharpe
+        evolver.audit_system_architecture(0.2);
+
+        // Test with high sharpe
+        evolver.audit_system_architecture(2.5);
+
+        // Test with NaN sharpe
+        evolver.audit_system_architecture(f64::NAN);
+    }
+}
+

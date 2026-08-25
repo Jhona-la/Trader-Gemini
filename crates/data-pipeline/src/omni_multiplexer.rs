@@ -133,7 +133,7 @@ impl OmniState {
     }
 
     pub fn get_features(&self) -> [f64; 54] {
-        [
+        let mut feats = [
             f64::from_bits(self.binance_spot.load(Ordering::Relaxed)),
             f64::from_bits(self.binance_futures.load(Ordering::Relaxed)),
             f64::from_bits(self.bybit_linear.load(Ordering::Relaxed)),
@@ -188,13 +188,24 @@ impl OmniState {
             f64::from_bits(self.wb_us_cpi_inflation.load(Ordering::Relaxed)),
             f64::from_bits(self.wb_us_real_interest.load(Ordering::Relaxed)),
             f64::from_bits(self.wb_global_gdp_growth.load(Ordering::Relaxed)),
-        ]
+        ];
+        // FIX #1462: Sanitización de los 54 features macro
+        for f in feats.iter_mut() {
+            if !f.is_finite() {
+                *f = 0.0;
+            }
+        }
+        feats
     }
 }
 
 pub async fn run_bybit_ws(state: Arc<OmniState>, symbol: String) {
     let url = "wss://stream.bybit.com/v5/public/linear";
-    let url_parsed = url::Url::parse(url).unwrap();
+    // FIX #1462: Parseo seguro de URL sin unwrap frágil
+    let url_parsed = match url::Url::parse(url) {
+        Ok(u) => u,
+        Err(_) => return,
+    };
     let host = url_parsed.host_str().unwrap_or("stream.bybit.com");
     let port = url_parsed.port_or_known_default().unwrap_or(443);
 
@@ -208,19 +219,35 @@ pub async fn run_bybit_ws(state: Arc<OmniState>, symbol: String) {
         {
             if let Ok(tcp_stream) = tokio::net::TcpStream::connect(target_addr).await {
                 let _ = tcp_stream.set_nodelay(true);
-                let socket = socket2::Socket::from(tcp_stream.into_std().unwrap());
+                let std_stream = match tcp_stream.into_std() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("⚠️ [BYBIT WS] Failed into_std: {}", e);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                };
+                let socket = socket2::Socket::from(std_stream);
                 let _ = socket.set_recv_buffer_size(1024 * 1024 * 4); // 4MB
                 let keepalive =
                     socket2::TcpKeepalive::new().with_time(std::time::Duration::from_secs(30));
                 let _ = socket.set_tcp_keepalive(&keepalive);
-                let tcp_stream = tokio::net::TcpStream::from_std(socket.into()).unwrap();
+                let tcp_stream = match tokio::net::TcpStream::from_std(socket.into()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("⚠️ [BYBIT WS] Failed from_std: {}", e);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                };
 
                 if let Ok((mut ws_stream, _)) =
                     tokio_tungstenite::client_async_tls(url_parsed.clone(), tcp_stream).await
                 {
+                    let symbol_upper = symbol.to_uppercase();
                     let msg = format!(
                         r#"{{"op": "subscribe", "args": ["orderbook.1.{}"]}}"#,
-                        symbol
+                        symbol_upper
                     );
                     let _ = futures_util::SinkExt::send(
                         &mut ws_stream,
@@ -228,21 +255,33 @@ pub async fn run_bybit_ws(state: Arc<OmniState>, symbol: String) {
                     )
                     .await;
 
-                    while let Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text)))) =
-                        tokio::time::timeout(Duration::from_secs(30), ws_stream.next()).await
-                    {
-                        if let Ok(json) = serde_json::from_str::<Value>(&text) {
-                            if let Some(price_str) = json
-                                .get("data")
-                                .and_then(|d| d.get("b"))
-                                .and_then(|b| b.as_array()?.first())
-                                .and_then(|f| f.as_array()?.first())
-                                .and_then(|v| v.as_str())
-                            {
-                                if let Ok(p) = price_str.parse::<f64>() {
-                                    state.bybit_linear.store(p.to_bits(), Ordering::Relaxed);
+                    // FIX #824: Manejar Ping/Pong y extender timeout para activos de baja liquidez
+                    while let Ok(Some(msg_res)) = tokio::time::timeout(Duration::from_secs(60), ws_stream.next()).await {
+                        match msg_res {
+                            Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                                if let Ok(json) = serde_json::from_str::<Value>(&text) {
+                                    if let Some(price_str) = json
+                                        .get("data")
+                                        .and_then(|d| d.get("b"))
+                                        .and_then(|b| b.as_array()?.first())
+                                        .and_then(|f| f.as_array()?.first())
+                                        .and_then(|v| v.as_str())
+                                    {
+                                        if let Ok(p) = price_str.parse::<f64>() {
+                                            state.bybit_linear.store(p.to_bits(), Ordering::Relaxed);
+                                        }
+                                    }
                                 }
                             }
+                            Ok(tokio_tungstenite::tungstenite::Message::Ping(payload)) => {
+                                let _ = futures_util::SinkExt::send(
+                                    &mut ws_stream,
+                                    tokio_tungstenite::tungstenite::Message::Pong(payload),
+                                ).await;
+                            }
+                            Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
+                            Err(_) => break,
+                            _ => {}
                         }
                     }
                 }
@@ -254,9 +293,20 @@ pub async fn run_bybit_ws(state: Arc<OmniState>, symbol: String) {
 
 pub async fn run_okx_ws(state: Arc<OmniState>, symbol: String) {
     let url = "wss://ws.okx.com:8443/ws/v5/public";
-    // OKX usa BTC-USDT en lugar de BTCUSDT
-    let okx_symbol = symbol.replace("USDT", "-USDT");
-    let url_parsed = url::Url::parse(url).unwrap();
+    // OKX Perp Swap usa BTC-USDT-SWAP en lugar de BTCUSDT
+    let symbol_clean = symbol.to_uppercase();
+    let okx_symbol = if symbol_clean.ends_with("-SWAP") {
+        symbol_clean
+    } else {
+        format!("{}-SWAP", symbol_clean.replace("USDT", "-USDT"))
+    };
+    let url_parsed = match url::Url::parse(url) {
+        Ok(u) => u,
+        Err(e) => {
+            println!("⚠️ [OKX WS] Bad URL: {}", e);
+            return;
+        }
+    };
     let host = url_parsed.host_str().unwrap_or("ws.okx.com");
     let port = url_parsed.port_or_known_default().unwrap_or(8443);
 
@@ -270,12 +320,27 @@ pub async fn run_okx_ws(state: Arc<OmniState>, symbol: String) {
         {
             if let Ok(tcp_stream) = tokio::net::TcpStream::connect(target_addr).await {
                 let _ = tcp_stream.set_nodelay(true);
-                let socket = socket2::Socket::from(tcp_stream.into_std().unwrap());
+                let std_stream = match tcp_stream.into_std() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("⚠️ [OKX WS] Failed into_std: {}", e);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                };
+                let socket = socket2::Socket::from(std_stream);
                 let _ = socket.set_recv_buffer_size(1024 * 1024 * 4);
                 let keepalive =
                     socket2::TcpKeepalive::new().with_time(std::time::Duration::from_secs(30));
                 let _ = socket.set_tcp_keepalive(&keepalive);
-                let tcp_stream = tokio::net::TcpStream::from_std(socket.into()).unwrap();
+                let tcp_stream = match tokio::net::TcpStream::from_std(socket.into()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("⚠️ [OKX WS] Failed from_std: {}", e);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                };
 
                 if let Ok((mut ws_stream, _)) =
                     tokio_tungstenite::client_async_tls(url_parsed.clone(), tcp_stream).await
@@ -290,22 +355,34 @@ pub async fn run_okx_ws(state: Arc<OmniState>, symbol: String) {
                     )
                     .await;
 
-                    while let Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text)))) =
-                        tokio::time::timeout(Duration::from_secs(30), ws_stream.next()).await
-                    {
-                        if let Ok(json) = serde_json::from_str::<Value>(&text) {
-                            if let Some(price_str) = json
-                                .get("data")
-                                .and_then(|d| d.as_array()?.first())
-                                .and_then(|f| f.get("bids"))
-                                .and_then(|b| b.as_array()?.first())
-                                .and_then(|f| f.as_array()?.first())
-                                .and_then(|v| v.as_str())
-                            {
-                                if let Ok(p) = price_str.parse::<f64>() {
-                                    state.okx_swap.store(p.to_bits(), Ordering::Relaxed);
+                    // FIX #824: Manejar Ping/Pong y extender timeout para OKX
+                    while let Ok(Some(msg_res)) = tokio::time::timeout(Duration::from_secs(60), ws_stream.next()).await {
+                        match msg_res {
+                            Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                                if let Ok(json) = serde_json::from_str::<Value>(&text) {
+                                    if let Some(price_str) = json
+                                        .get("data")
+                                        .and_then(|d| d.as_array()?.first())
+                                        .and_then(|f| f.get("bids"))
+                                        .and_then(|b| b.as_array()?.first())
+                                        .and_then(|f| f.as_array()?.first())
+                                        .and_then(|v| v.as_str())
+                                    {
+                                        if let Ok(p) = price_str.parse::<f64>() {
+                                            state.okx_swap.store(p.to_bits(), Ordering::Relaxed);
+                                        }
+                                    }
                                 }
                             }
+                            Ok(tokio_tungstenite::tungstenite::Message::Ping(payload)) => {
+                                let _ = futures_util::SinkExt::send(
+                                    &mut ws_stream,
+                                    tokio_tungstenite::tungstenite::Message::Pong(payload),
+                                ).await;
+                            }
+                            Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
+                            Err(_) => break,
+                            _ => {}
                         }
                     }
                 }
@@ -436,9 +513,13 @@ pub async fn run_sentiment_onchain_poller(state: Arc<OmniState>) {
                 if let Some(data) = json.get("data").and_then(|d| d.as_array()?.first()) {
                     if let Some(val_str) = data.get("value").and_then(|v| v.as_str()) {
                         if let Ok(val) = val_str.parse::<f64>() {
-                            state
-                                .fear_greed_index
-                                .store(val.to_bits(), Ordering::Relaxed);
+                            if val.is_finite() {
+                                // FIX #1537: Clamping de índice de miedo/codicia a [0.0, 100.0]
+                                let safe_fg = val.clamp(0.0, 100.0);
+                                state
+                                    .fear_greed_index
+                                    .store(safe_fg.to_bits(), Ordering::Relaxed);
+                            }
                         }
                     }
                 }
@@ -448,7 +529,11 @@ pub async fn run_sentiment_onchain_poller(state: Arc<OmniState>) {
             if let Ok(json) = res.json::<Value>().await {
                 if let Some(funding_str) = json.get("lastFundingRate").and_then(|v| v.as_str()) {
                     if let Ok(f) = funding_str.parse::<f64>() {
-                        state.agg_funding_rate.store(f.to_bits(), Ordering::Relaxed);
+                        if f.is_finite() {
+                            // FIX #1537: Clamping de tasa de fondeo a [-1.0, 1.0]
+                            let safe_funding = f.clamp(-1.0, 1.0);
+                            state.agg_funding_rate.store(safe_funding.to_bits(), Ordering::Relaxed);
+                        }
                     }
                 }
             }
@@ -525,29 +610,85 @@ impl OmniDataHub {
         let state = Arc::clone(&self.omni_state);
         let symbol = target_symbol.clone();
 
-        let mut join_set = tokio::task::JoinSet::new();
-
-        join_set.spawn(run_bybit_ws(Arc::clone(&state), symbol.clone()));
-        join_set.spawn(run_okx_ws(Arc::clone(&state), symbol.clone()));
-        join_set.spawn(run_macro_rest_poller(Arc::clone(&state)));
-        join_set.spawn(run_sentiment_onchain_poller(Arc::clone(&state)));
-
-        // FASE 8: Institutional Lakehouse Persistencia Binaria Continua
-        join_set.spawn(spawn_lakehouse_telemetry(Arc::clone(&state)));
-
-        // FASE 13: Supervisor Cuántico de Tareas
-        // Evita fugas de memoria y tareas fantasma al recolectar los hilos
-        tokio::spawn(async move {
-            while let Some(res) = join_set.join_next().await {
-                if let Err(e) = res {
-                    println!(
-                        "⚠️ [OMNI MULTIPLEXER] Tarea de alimentación de datos colapsada: {:?}",
-                        e
-                    );
+        // 1. Supervisor Bybit WS con auto-reconexión
+        {
+            let state = Arc::clone(&state);
+            let sym = symbol.clone();
+            tokio::spawn(async move {
+                let mut backoff = 1u64;
+                loop {
+                    run_bybit_ws(Arc::clone(&state), sym.clone()).await;
+                    println!("⚠️ [OMNI MULTIPLEXER] Bybit WS reconectando en {}s...", backoff);
+                    tokio::time::sleep(Duration::from_secs(backoff)).await;
+                    backoff = (backoff * 2).min(30);
                 }
-            }
-            println!("🛑 [OMNI MULTIPLEXER] Todas las conexiones externas han finalizado.");
-        });
+            });
+        }
+
+        // 2. Supervisor OKX WS con auto-reconexión
+        {
+            let state = Arc::clone(&state);
+            let sym = symbol.clone();
+            tokio::spawn(async move {
+                let mut backoff = 1u64;
+                loop {
+                    run_okx_ws(Arc::clone(&state), sym.clone()).await;
+                    println!("⚠️ [OMNI MULTIPLEXER] OKX WS reconectando en {}s...", backoff);
+                    tokio::time::sleep(Duration::from_secs(backoff)).await;
+                    backoff = (backoff * 2).min(30);
+                }
+            });
+        }
+
+        // 3. Supervisor Macro REST Poller
+        {
+            let state = Arc::clone(&state);
+            tokio::spawn(async move {
+                let mut backoff = 5u64;
+                loop {
+                    run_macro_rest_poller(Arc::clone(&state)).await;
+                    println!("⚠️ [OMNI MULTIPLEXER] Macro REST Poller reiniciando en {}s...", backoff);
+                    tokio::time::sleep(Duration::from_secs(backoff)).await;
+                    backoff = (backoff * 2).min(60);
+                }
+            });
+        }
+
+        // 4. Supervisor Sentiment Onchain Poller
+        {
+            let state = Arc::clone(&state);
+            tokio::spawn(async move {
+                let mut backoff = 5u64;
+                loop {
+                    run_sentiment_onchain_poller(Arc::clone(&state)).await;
+                    println!("⚠️ [OMNI MULTIPLEXER] Sentiment Poller reiniciando en {}s...", backoff);
+                    tokio::time::sleep(Duration::from_secs(backoff)).await;
+                    backoff = (backoff * 2).min(60);
+                }
+            });
+        }
+
+        // 5. Supervisor World Bank Poller
+        {
+            let state = Arc::clone(&state);
+            tokio::spawn(async move {
+                let mut backoff = 30u64;
+                loop {
+                    run_world_bank_poller(Arc::clone(&state)).await;
+                    println!("⚠️ [OMNI MULTIPLEXER] World Bank Poller reiniciando en {}s...", backoff);
+                    tokio::time::sleep(Duration::from_secs(backoff)).await;
+                    backoff = (backoff * 2).min(300);
+                }
+            });
+        }
+
+        // 6. Lakehouse Telemetry MMap
+        {
+            let state = Arc::clone(&state);
+            tokio::spawn(async move {
+                spawn_lakehouse_telemetry(state).await;
+            });
+        }
     }
 }
 
@@ -565,31 +706,63 @@ pub async fn spawn_lakehouse_telemetry(state: Arc<OmniState>) {
 
     // Allocate a 1GB file for continuous tensor dumps (approx 2.3 million ticks)
     let file_path = "data/lakehouse/omni_telemetry_mmap.bin";
-    let file = OpenOptions::new()
+    let file = match OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
-        .truncate(true)
         .open(file_path)
-        .unwrap();
+    {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("⚠️ [LAKEHOUSE] No se pudo abrir omni_telemetry_mmap.bin: {}", e);
+            return;
+        }
+    };
 
-    let _ = file.set_len(1024 * 1024 * 1024); // 1GB
+    if file.metadata().map(|m| m.len()).unwrap_or(0) < 1024 * 1024 * 1024 {
+        let _ = file.set_len(1024 * 1024 * 1024); // 1GB
+    }
 
-    let mut mmap = unsafe { MmapOptions::new().map_mut(&file).unwrap() };
+    let mut mmap = match unsafe { MmapOptions::new().map_mut(&file) } {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("⚠️ [LAKEHOUSE] No se pudo mapear memoria para lakehouse: {}", e);
+            return;
+        }
+    };
     let mut offset = 0usize;
     let tensor_size = 8 + 54 * 8; // Timestamp (u64) + 54 f64 features
 
-    let mut ticker = interval(Duration::from_millis(500));
+    let mut ticker = interval(Duration::from_millis(250));
+    let mut last_features = [0.0; 54];
+    let mut last_flush_time = std::time::Instant::now();
 
     loop {
         ticker.tick().await;
 
+        let features = state.get_features();
+        let mut max_delta = 0.0f64;
+        for i in 0..54 {
+            let diff = (features[i] - last_features[i]).abs();
+            if diff > max_delta {
+                max_delta = diff;
+            }
+        }
+
+        // FASE 8: Only flush if tensor changed significantly (delta > 1e-6) or 5-second heartbeat
+        let should_flush = max_delta > 1e-6 || last_flush_time.elapsed().as_secs() >= 5;
+        if !should_flush {
+            continue;
+        }
+
+        last_features = features;
+        last_flush_time = std::time::Instant::now();
+
         if offset + tensor_size > mmap.len() {
-            // Buffer full. In a production system, we would rotate the file here and hand off to Polars Parquet compressor.
+            // Buffer full. Rotate circular pointer in mmap region
             offset = 0;
         }
 
-        let features = state.get_features();
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -604,3 +777,28 @@ pub async fn spawn_lakehouse_telemetry(state: Arc<OmniState>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_omni_state_initial_features_count_and_finiteness() {
+        let state = OmniState::new();
+        let feats = state.get_features();
+        assert_eq!(feats.len(), 54);
+        for (idx, &f) in feats.iter().enumerate() {
+            assert!(f.is_finite(), "Feature {} debe ser finita", idx);
+        }
+    }
+
+    #[test]
+    fn test_omni_state_macro_staleness_flag() {
+        let state = OmniState::new();
+        assert_eq!(state.macro_last_success_ms.load(Ordering::Relaxed), 0);
+
+        state.macro_last_success_ms.store(1700000000000, Ordering::Relaxed);
+        assert_eq!(state.macro_last_success_ms.load(Ordering::Relaxed), 1700000000000);
+    }
+}
+

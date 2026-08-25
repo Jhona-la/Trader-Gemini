@@ -41,17 +41,26 @@ pub struct PositionRiskEntry {
     pub liquidation_price: f64,
     #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
     pub leverage: f64,
+    #[serde(rename = "positionSide", default)]
+    pub position_side: String,
     #[serde(rename = "updateTime", default)]
     pub update_time: u64,
 }
 
 impl PositionRiskEntry {
     pub fn is_open(&self) -> bool {
-        self.position_amt.abs() > 0.0
+        self.position_amt.is_finite() && self.position_amt.abs() > 1e-12
     }
 
     pub fn is_long(&self) -> bool {
-        self.position_amt > 0.0
+        let side = self.position_side.trim();
+        if side.eq_ignore_ascii_case("LONG") {
+            true
+        } else if side.eq_ignore_ascii_case("SHORT") {
+            false
+        } else {
+            self.position_amt > 0.0
+        }
     }
 }
 
@@ -71,16 +80,35 @@ pub fn reconcile(remote: &[PositionRiskEntry], registry: &OrderRegistry) -> Reco
     let mut report = ReconciliationReport::default();
     report.open_positions = remote.iter().filter(|p| p.is_open()).cloned().collect();
 
-    // Una orden local "activa" en un símbolo cuya posición remota ya no existe
-    // merece auditoría (query_order / cancel) — no se toca a ciegas aquí.
-    for p in &report.open_positions {
-        for o in registry.active_for_symbol(&p.symbol) {
+    let remote_map: std::collections::HashMap<(&str, &str), &PositionRiskEntry> =
+        remote.iter().map(|p| ((p.symbol.as_str(), p.position_side.as_str()), p)).collect();
+
+    // Auditar TODAS las órdenes locales activas contra la realidad del exchange
+    for o in registry.active_orders() {
+        let sym = o.symbol.as_str();
+        let side_key = if o.position_side.is_empty() { "BOTH" } else { o.position_side.as_str() };
+        let matching_p = remote_map.get(&(sym, side_key))
+            .copied()
+            .or_else(|| remote_map.get(&(sym, "BOTH")).copied())
+            .or_else(|| remote_map.get(&(sym, "")).copied())
+            .or_else(|| remote.iter().find(|p| p.symbol == sym));
+
+        if let Some(p) = matching_p {
+            if !p.is_open() {
+                // Orden local activa pero posición remota plana (0.0): orden huérfana
+                report.suspicious_active_orders.push(format!(
+                    "{} orden {} activa (restante {}) con posición remota plana (0.0)",
+                    sym,
+                    o.client_order_id,
+                    o.remaining_qty()
+                ));
+            }
+        } else {
+            // Símbolo no presente en el exchange report
             report.suspicious_active_orders.push(format!(
-                "{} orden {} activa (restante {}) con posición remota {}",
-                p.symbol,
-                o.client_order_id,
-                o.remaining_qty(),
-                p.position_amt
+                "{} orden {} activa sin entrada remota",
+                sym,
+                o.client_order_id
             ));
         }
     }
@@ -99,6 +127,35 @@ pub fn reconcile(remote: &[PositionRiskEntry], registry: &OrderRegistry) -> Reco
     report
 }
 
+impl ReconciliationReport {
+    /// Adopta automáticamente las posiciones del exchange al OrderRegistry y reconcilia el estado local (#121-#140, #1405)
+    pub fn apply_to_registry(&self, registry: &OrderRegistry) -> usize {
+        let mut adopted = 0;
+        for pos in &self.open_positions {
+            let side = if pos.is_long() { "BUY" } else { "SELL" };
+            let client_id = format!("adopted_{}_{}", pos.symbol, pos.update_time);
+            let ack = crate::order_types::OrderAck {
+                client_order_id: client_id,
+                symbol: pos.symbol.clone(),
+                side: side.to_string(),
+                order_type: "MARKET".to_string(),
+                orig_qty: pos.position_amt.abs(),
+                executed_qty: pos.position_amt.abs(),
+                avg_price: pos.entry_price,
+                price: pos.entry_price,
+                cum_quote: pos.position_amt.abs() * pos.entry_price,
+                status: "FILLED".to_string(),
+                order_id: 0,
+                update_time: pos.update_time,
+                fills: Vec::new(),
+            };
+            registry.apply_ack(&ack, pos.update_time);
+            adopted += 1;
+        }
+        adopted
+    }
+}
+
 impl PositionRiskEntry {
     /// Conversión a la vista común del stream (F1.6).
     pub fn to_remote_position(&self) -> RemotePosition {
@@ -108,6 +165,7 @@ impl PositionRiskEntry {
             entry_price: self.entry_price,
             unrealized_pnl: self.unrealized_pnl,
             isolated_wallet: 0.0,
+            position_side: self.position_side.clone(),
         }
     }
 }
@@ -121,6 +179,7 @@ mod tests {
             symbol: symbol.into(),
             position_amt: amt,
             entry_price: 60000.0,
+            update_time: 1700000000000,
             ..Default::default()
         }
     }
@@ -129,21 +188,57 @@ mod tests {
     fn diff_detects_open_positions_and_suspicious_orders() {
         let registry = OrderRegistry::new();
         registry.register_intent("live1", "BTCUSDT", "BUY", "LONG", "LIMIT", 2.0, 1000);
-        // Orden activa + posición remota abierta → sospechosa (¿fill perdido?)
+        registry.register_intent("live2", "ETHUSDT", "BUY", "LONG", "LIMIT", 1.0, 1000);
+        
+        // BTCUSDT tiene posición abierta (0.5), ETHUSDT está FLAT (0.0)
         let remote = vec![entry("BTCUSDT", 0.5), entry("ETHUSDT", 0.0)];
         let report = reconcile(&remote, &registry);
-        assert_eq!(report.open_positions.len(), 1, "ETH flat no cuenta");
-        assert_eq!(report.suspicious_active_orders.len(), 1);
+        assert_eq!(report.open_positions.len(), 1, "ETH flat no cuenta en open_positions");
+        assert_eq!(report.suspicious_active_orders.len(), 1, "Solo la orden de ETH con posición plana es sospechosa");
+        assert!(report.suspicious_active_orders.iter().any(|s| s.contains("ETHUSDT") && s.contains("plana")));
         assert!(report.summary.contains("BTCUSDT"));
+
+        let adopted = report.apply_to_registry(&registry);
+        assert_eq!(adopted, 1);
     }
 
     #[test]
-    fn parse_position_risk_body() {
-        let body = r#"[{"symbol":"BTCUSDT","positionAmt":"0.002","entryPrice":"60000.0","unRealizedProfit":"1.5","liquidationPrice":"30000","leverage":"20","updateTime":1700000000000}]"#;
+    fn test_position_risk_json_parse() {
+        let body = r#"[{"symbol":"BTCUSDT","positionAmt":"0.5","entryPrice":"60000.0","unRealizedProfit":"100.0","liquidationPrice":"50000.0","leverage":"20","positionSide":"LONG","updateTime":1700000000000}]"#;
         let entries: Vec<PositionRiskEntry> =
             serde_json::from_str(body).expect("parse positionRisk");
         assert_eq!(entries.len(), 1);
         assert!(entries[0].is_open() && entries[0].is_long());
         assert!((entries[0].leverage - 20.0).abs() < 1e-12);
     }
+
+    #[test]
+    fn test_position_risk_short_and_nan_defense() {
+        let short_entry = PositionRiskEntry {
+            symbol: "SOLUSDT".to_string(),
+            position_amt: -5.0,
+            entry_price: 150.0,
+            unrealized_pnl: 10.0,
+            liquidation_price: 250.0,
+            leverage: 10.0,
+            position_side: "SHORT".to_string(),
+            update_time: 1700000000000,
+        };
+
+        assert!(short_entry.is_open());
+        assert!(!short_entry.is_long());
+
+        let remote = short_entry.to_remote_position();
+        assert_eq!(remote.symbol, "SOLUSDT");
+        assert_eq!(remote.position_amt, -5.0);
+        assert_eq!(remote.position_side, "SHORT");
+
+        let nan_entry = PositionRiskEntry {
+            symbol: "NAN_COIN".to_string(),
+            position_amt: f64::NAN,
+            ..Default::default()
+        };
+        assert!(!nan_entry.is_open());
+    }
 }
+

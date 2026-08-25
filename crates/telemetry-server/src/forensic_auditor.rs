@@ -15,11 +15,14 @@ impl ForensicAuditor {
 
         let conn = Connection::open(db_path).expect("Error al abrir DB forense");
 
-        // Habilitar modo WAL para concurrencia masiva (lector/escritor paralelo)
+        // FIX #1445: Habilitar modo WAL y optimizar pragmas de SQLite para concurrencia masiva
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;
-             PRAGMA temp_store=MEMORY;",
+             PRAGMA temp_store=MEMORY;
+             PRAGMA mmap_size=67108864;
+             PRAGMA cache_size=-32768;
+             PRAGMA busy_timeout=5000;",
         )
         .expect("Fallo al configurar PRAGMA de SQLite");
 
@@ -89,6 +92,14 @@ impl ForensicAuditor {
                     win_rate,
                     trade_duration_avg,
                 } => {
+                    let safe_dark = if dark_alpha.is_finite() { dark_alpha } else { 0.0 };
+                    let safe_scalp = if scalp_pnl.is_finite() { scalp_pnl } else { 0.0 };
+                    let safe_swing = if swing_pnl.is_finite() { swing_pnl } else { 0.0 };
+                    let safe_gross = if gross_pnl.is_finite() { gross_pnl } else { 0.0 };
+                    let safe_net = if net_pnl.is_finite() { net_pnl } else { 0.0 };
+                    let safe_wr = if win_rate.is_finite() { win_rate } else { 0.0 };
+                    let safe_avg = if trade_duration_avg.is_finite() { trade_duration_avg } else { 0.0 };
+
                     let _ = self.conn.execute(
                         "INSERT INTO global_metrics (
                             latency_ms, latency_panic, dark_alpha, scalp_pnl, swing_pnl, 
@@ -97,13 +108,13 @@ impl ForensicAuditor {
                         params![
                             latency_ms as i64,
                             latency_panic,
-                            dark_alpha,
-                            scalp_pnl,
-                            swing_pnl,
-                            gross_pnl,
-                            net_pnl,
-                            win_rate,
-                            trade_duration_avg
+                            safe_dark,
+                            safe_scalp,
+                            safe_swing,
+                            safe_gross,
+                            safe_net,
+                            safe_wr,
+                            safe_avg
                         ],
                     );
                 }
@@ -123,16 +134,20 @@ impl ForensicAuditor {
                     duration_ms,
                     ml_prob,
                 } => {
+                    let safe_pnl = if pnl.is_finite() { pnl } else { 0.0 };
+                    let safe_roi = if roi_pct.is_finite() { roi_pct } else { 0.0 };
+                    let safe_ml_prob = if ml_prob.is_finite() { ml_prob } else { 0.0 };
+
                     let _ = self.conn.execute(
                         "INSERT INTO trade_events (coin_id, trade_type, pnl, roi_pct, duration_ms, ml_prob) 
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                         params![
                             coin_id as i64,
                             trade_type,
-                            pnl,
-                            roi_pct,
+                            safe_pnl,
+                            safe_roi,
                             duration_ms as i64,
-                            ml_prob
+                            safe_ml_prob
                         ],
                     );
                 }
@@ -141,3 +156,71 @@ impl ForensicAuditor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_forensic_auditor_db_creation() {
+        let temp_dir = std::env::temp_dir();
+        let db_path = temp_dir.join("test_forensic_auditor.db");
+        let db_path_str = db_path.to_string_lossy().to_string();
+
+        let auditor = ForensicAuditor::new(&db_path_str);
+        let _ = auditor;
+
+        assert!(db_path.exists());
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    #[tokio::test]
+    async fn test_forensic_auditor_event_processing_and_nan_immunity() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let db_path = temp_dir.join(format!("test_forensic_{}.db", unique_id));
+        let db_path_str = db_path.to_string_lossy().to_string();
+
+        let auditor = ForensicAuditor::new(&db_path_str);
+        let (tx, rx) = tokio::sync::broadcast::channel(16);
+
+        tokio::spawn(async move {
+            auditor.start(rx).await;
+        });
+
+        // Send OmniUpdate with NaN
+        let _ = tx.send(TelemetryEvent::OmniUpdate {
+            latency_ms: 15,
+            latency_panic: false,
+            dark_alpha: f64::NAN,
+            scalp_pnl: 0.5,
+            swing_pnl: 1.2,
+            gross_pnl: 1.7,
+            net_pnl: 1.65,
+            win_rate: 0.85,
+            trade_duration_avg: 120.0,
+        });
+
+        // Send TradeClosed
+        let _ = tx.send(TelemetryEvent::TradeClosed {
+            coin_id: 1,
+            trade_type: "SCALP".to_string(),
+            pnl: 0.25,
+            roi_pct: 1.92,
+            duration_ms: 5000,
+            ml_prob: 0.88,
+        });
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        let conn = Connection::open(&db_path_str).expect("open audit db");
+        let count_metrics: i64 = conn.query_row("SELECT count(*) FROM global_metrics", [], |r| r.get(0)).unwrap();
+        let count_trades: i64 = conn.query_row("SELECT count(*) FROM trade_events", [], |r| r.get(0)).unwrap();
+
+        assert_eq!(count_metrics, 1);
+        assert_eq!(count_trades, 1);
+
+        let _ = std::fs::remove_file(db_path);
+    }
+}
+

@@ -1,6 +1,6 @@
-use crate::anomaly_detector::{AnomalyScore, StatisticalAnomalyDetector};
-use crate::ebpf_core::{EbpfSensor, KernelEvents};
-use crate::pmu_sensor::{PmuSensor, PmuVector};
+use crate::anomaly_detector::StatisticalAnomalyDetector;
+use crate::ebpf_core::EbpfSensor;
+use crate::pmu_sensor::PmuSensor;
 use std::thread;
 use std::time::Duration;
 
@@ -24,7 +24,7 @@ impl ObservabilityPlane {
     }
 
     /// Spawns the dedicated telemetry thread, optionally pinned to a CPU core.
-    pub fn spawn_isolated(self, core_id: Option<usize>) {
+    pub fn spawn_isolated(self, _core_id: Option<usize>) {
         thread::Builder::new()
             .name("OOB-Observability-Plane".into())
             .spawn(move || {
@@ -63,3 +63,16 @@ impl ObservabilityPlane {
             .expect("Failed to spawn ObservabilityPlane");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_observability_plane_new() {
+        let plane = ObservabilityPlane::new(100, 200);
+        let pmu = plane.pmu.sample();
+        assert!(pmu.ipc.is_finite());
+    }
+}
+

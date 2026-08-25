@@ -1,11 +1,17 @@
+pub mod conformal;
 pub mod maker;
+pub mod momentum_booster;
+pub mod multivariate_coint;
 pub mod scalp;
 pub mod stat_arb;
+pub mod strategy_telemetry;
 pub mod swing;
 pub mod types;
+pub mod vecm_arbitrage;
 
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
+pub use multivariate_coint::MultivariateCointegrationEngine;
 pub use types::*;
 
 pub trait QuantumStrategy: Send + Sync {
@@ -16,6 +22,11 @@ pub trait QuantumStrategy: Send + Sync {
 
     /// Main entry point to evaluate the strategy state on a new tick/bar
     fn evaluate(&self) -> f64; // returns signal strength or alpha
+
+    /// Target operational trading horizon (Scalp vs Swing)
+    fn horizon(&self) -> TradeHorizon {
+        TradeHorizon::Scalp
+    }
 }
 
 pub struct StrategyOrchestrator {

@@ -52,19 +52,29 @@ impl MarketContextFetcher {
 
         let response = self.client.get(&url).send().await?;
         if !response.status().is_success() {
+            eprintln!(
+                "⚠️ [MarketContextFetcher] HTTP error {} fetching funding rates for {}",
+                response.status(),
+                symbol
+            );
             return Ok(());
         }
 
         let rates: Vec<BinanceFundingRate> = response.json().await?;
 
         if rates.is_empty() {
+            println!("ℹ️ [MarketContextFetcher] No funding rates returned for {}", symbol);
             return Ok(());
         }
 
         let timestamps: Vec<u64> = rates.iter().map(|r| r.funding_time).collect();
         let funding_rates: Vec<f64> = rates
             .iter()
-            .map(|r| r.funding_rate.parse::<f64>().unwrap_or(0.0))
+            .map(|r| {
+                // FIX #1538: Sanitización y clamping de tasas de fondeo históricas
+                let parsed = r.funding_rate.parse::<f64>().unwrap_or(0.0);
+                if parsed.is_finite() { parsed.clamp(-1.0, 1.0) } else { 0.0 }
+            })
             .collect();
 
         let time_series = Series::new("timestamp".into(), timestamps);
@@ -78,13 +88,47 @@ impl MarketContextFetcher {
         }
 
         let file_path = data_dir.join(format!("{}_FUNDING.parquet", symbol));
-        let mut file = File::create(&file_path)?;
+        let tmp_path = data_dir.join(format!("{}_FUNDING.parquet.tmp", symbol));
+        let mut file = File::create(&tmp_path)?;
 
         ParquetWriter::new(&mut file)
             .with_compression(ParquetCompression::Zstd(None))
             .finish(&mut df)?;
 
-        println!("✅ Funding Rates guardadas para {}", symbol);
+        file.sync_all()?;
+        if file_path.exists() {
+            let _ = std::fs::remove_file(&file_path);
+        }
+        std::fs::rename(&tmp_path, &file_path)?;
+
+        println!("✅ Funding Rates guardadas atómicamente para {}", symbol);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_market_context_fetcher_instantiation() {
+        let fetcher = MarketContextFetcher::new();
+        let default_fetcher = MarketContextFetcher::default();
+        let _ = fetcher;
+        let _ = default_fetcher;
+    }
+
+    #[test]
+    fn test_binance_funding_rate_deserialization() {
+        let json_str = r#"{
+            "symbol": "BTCUSDT",
+            "fundingTime": 1672531200000,
+            "fundingRate": "0.00010000"
+        }"#;
+
+        let rate: BinanceFundingRate = serde_json::from_str(json_str).unwrap();
+        assert_eq!(rate.symbol, "BTCUSDT");
+        assert_eq!(rate.funding_time, 1672531200000);
+        assert_eq!(rate.funding_rate, "0.00010000");
     }
 }

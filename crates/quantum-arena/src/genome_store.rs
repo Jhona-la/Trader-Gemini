@@ -128,6 +128,9 @@ impl GenomeEnvelope {
 }
 
 fn atomic_write(path: &str, contents: &str) -> io::Result<()> {
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     let tmp = format!("{}.tmp", path);
     std::fs::write(&tmp, contents)?;
     std::fs::rename(&tmp, path)?;

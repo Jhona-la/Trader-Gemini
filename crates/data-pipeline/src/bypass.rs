@@ -21,3 +21,13 @@ pub mod kernel_bypass {
 pub fn configure_network_stack() {
     kernel_bypass::init_dpdk_uring();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_network_bypass_configuration() {
+        configure_network_stack();
+    }
+}

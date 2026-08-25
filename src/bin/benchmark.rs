@@ -12,11 +12,16 @@ fn main() {
     println!("🔬 TRADER GEMINI V5 - QUANTUM PROFILER (LABORATORY)");
     println!("===========================================================");
 
-    let initial_capital = std::env::var("INITIAL_CAPITAL")
-        .unwrap_or_else(|_| "100.0".to_string())
+    let initial_capital: f64 = std::env::var("INITIAL_CAPITAL")
+        .unwrap_or_else(|_| "13.0".to_string())
         .parse()
-        .unwrap_or(100.0);
-    let arena = GlobalArena::new(initial_capital);
+        .unwrap_or(13.0);
+    let safe_capital = if initial_capital > 0.0 && initial_capital.is_finite() {
+        initial_capital
+    } else {
+        13.0
+    };
+    let arena = GlobalArena::new(safe_capital);
     arena.config.global_leverage.store(10.0, Ordering::Relaxed);
     arena
         .config
@@ -26,7 +31,8 @@ fn main() {
     let arena_ptr = Arc::new(arena);
     let mut scalp_engine = ScalpEngine::new();
     let _swing_engine = SwingEngine::default();
-    let mut risk_engine = RiskEngine::new(initial_capital);
+    // FIX #1526: Inicializar RiskEngine con safe_capital validado
+    let mut risk_engine = RiskEngine::new(safe_capital);
     let api_key = "LAB_DUMMY_KEY".to_string();
     let is_testnet = env::var("BINANCE_IS_TESTNET")
         .unwrap_or_else(|_| "false".to_string())

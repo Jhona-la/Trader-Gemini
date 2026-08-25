@@ -82,14 +82,22 @@ impl LivingImmuneSystem {
     }
 
     fn generate_single_immune_test(&self, trauma: &TraumaRecord) -> std::io::Result<PathBuf> {
-        let safe_id = trauma.id.replace('-', "_");
+        // FIX #594: Sanitizar identificador Rust para evitar errores de sintaxis en el compilador
+        let safe_id: String = trauma
+            .id
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect();
         let file_name = format!("immune_test_{}.rs", safe_id);
         let target_path = self.tests_vivos_dir.join(&file_name);
 
         let inputs_formatted = trauma
             .inputs_snapshot
             .iter()
-            .map(|x| format!("{:.6}", x))
+            .map(|x| {
+                let safe_val = if x.is_finite() { *x } else { 0.0 };
+                format!("{:.6}", safe_val)
+            })
             .collect::<Vec<String>>()
             .join(", ");
 
@@ -154,3 +162,44 @@ fn test_immune_antibody_{safe_id}() {{
         Ok(count)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_living_immune_system_record_generate_archive() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(7890);
+        let base_path = temp_dir.join(format!("test_immune_{}", unique_id));
+
+        let immune = LivingImmuneSystem::new(&base_path);
+
+        let trauma = TraumaRecord {
+            id: "trauma_001".to_string(),
+            timestamp: Utc::now(),
+            symbol: "ETHUSDT".to_string(),
+            regime: "HIGH_VOLATILITY".to_string(),
+            expected_pnl_pct: 0.015,
+            actual_pnl_pct: -0.008,
+            predictor_name: "DarkAlphaNeural".to_string(),
+            inputs_snapshot: vec![0.5, -0.2, 0.8, 0.1],
+        };
+
+        let recorded = immune.record_trauma(&trauma).expect("Failed to record trauma");
+        assert!(recorded.exists());
+
+        let generated = immune.generate_immune_tests().expect("Failed to generate tests");
+        assert_eq!(generated.len(), 1);
+        assert!(generated[0].exists());
+        let code = std::fs::read_to_string(&generated[0]).expect("Failed to read generated test code");
+        assert!(code.contains("test_immune_antibody_trauma_001"));
+        assert!(code.contains("ETHUSDT"));
+
+        let _ = std::fs::remove_dir_all(base_path);
+    }
+}
+

@@ -98,14 +98,14 @@ impl TelemetryStorage {
         // This check has near zero overhead.
         let mmap_ptr = self.mmap.get();
         unsafe {
-            let mmap_len = (*mmap_ptr).len();
+            let mmap_len = (&*mmap_ptr).len();
             if offset + std::mem::size_of::<TelemetryTick>() > mmap_len {
                 eprintln!("CRITICAL STORAGE ERROR: Attempted to write outside memory map boundaries. Dropping telemetry safely.");
                 return;
             }
             
             let src = tick as *const TelemetryTick as *const u8;
-            let dst = (*mmap_ptr).as_mut_ptr().add(offset);
+            let dst = (&mut *mmap_ptr).as_mut_ptr().add(offset);
             std::ptr::copy_nonoverlapping(src, dst, std::mem::size_of::<TelemetryTick>());
         }
     }
@@ -114,7 +114,64 @@ impl TelemetryStorage {
     /// In Windows, the OS manages dirty pages automatically, but this forces it.
     pub fn flush_to_disk(&self) -> std::io::Result<()> {
         unsafe {
-            (*self.mmap.get()).flush_async()
+            (&*self.mmap.get()).flush_async()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_telemetry_tick_checksum() {
+        let mut tick = TelemetryTick {
+            timestamp: 1672531200000,
+            coin_id: 1,
+            bid_price: 50000.0,
+            ask_price: 50001.0,
+            bid_qty: 1.5,
+            ask_qty: 2.0,
+            checksum: 0,
+        };
+        let cs = tick.calculate_checksum();
+        assert_ne!(cs, 0);
+        tick.checksum = cs;
+        assert_eq!(tick.calculate_checksum(), tick.checksum);
+    }
+
+    #[test]
+    fn test_telemetry_storage_append_and_flush() {
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_telemetry_storage.bin");
+
+        let storage = TelemetryStorage::new(&path, 10).unwrap();
+        let mut tick = TelemetryTick {
+            timestamp: 1672531200000,
+            coin_id: 0,
+            bid_price: 50000.0,
+            ask_price: 50001.0,
+            bid_qty: 1.0,
+            ask_qty: 1.0,
+            checksum: 0,
+        };
+        tick.checksum = tick.calculate_checksum();
+
+        storage.append_tick(&tick);
+        assert!(storage.flush_to_disk().is_ok());
+
+        // Ingestión de tick corrupto con NaN no debe provocar pánico
+        let nan_tick = TelemetryTick {
+            timestamp: 1672531200000,
+            coin_id: 0,
+            bid_price: f32::NAN,
+            ask_price: 50001.0,
+            bid_qty: 1.0,
+            ask_qty: 1.0,
+            checksum: 0,
+        };
+        storage.append_tick(&nan_tick);
+
+        let _ = std::fs::remove_file(path);
     }
 }

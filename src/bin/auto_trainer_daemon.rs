@@ -50,7 +50,12 @@ fn shuffle(indices: &mut [usize], prng: &mut XorShift) {
 }
 
 fn main() {
-    let symbol = "BTCUSDT";
+    let args: Vec<String> = std::env::args().collect();
+    let symbol = if args.len() > 1 && !args[1].starts_with('-') {
+        args[1].clone()
+    } else {
+        std::env::var("SYMBOL").unwrap_or_else(|_| "BTCUSDT".to_string())
+    };
 
     println!(
         "🤖 [AUTO-TRAINER DAEMON] Starting continuous learning loop for {}",
@@ -60,7 +65,7 @@ fn main() {
     // Initialize or load existing model for true incremental online learning
     let model_path = format!("models/DarkAlpha_{}.json", symbol);
     let mut engine = DarkAlphaEngine::load_json(&model_path).unwrap_or_else(|_| {
-        println!("🆕 No existing model found. Creating a new DarkAlphaEngine from scratch.");
+        println!("🆕 No existing model found for {}. Creating a new DarkAlphaEngine from scratch.", symbol);
         DarkAlphaEngine::new(54, 64, 32)
     });
 
@@ -72,10 +77,12 @@ fn main() {
     let mut t = 0; // Adam time step (continuous)
 
     loop {
-        let file = match File::open("data/dark_alpha_dataset.csv") {
+        let dataset_path = format!("data/dark_alpha_dataset_{}.csv", symbol);
+        let fallback_path = "data/dark_alpha_dataset.csv";
+        let file = match File::open(&dataset_path).or_else(|_| File::open(fallback_path)) {
             Ok(f) => f,
             Err(_) => {
-                println!("❌ Could not open CSV file. Waiting 10s...");
+                println!("❌ Could not open CSV file ({}/{}). Waiting 10s...", dataset_path, fallback_path);
                 std::thread::sleep(std::time::Duration::from_secs(10));
                 continue;
             }
@@ -93,11 +100,12 @@ fn main() {
                     continue;
                 }
                 let parts: Vec<&str> = l.split(',').collect();
-                if parts.len() == 26 {
+                if parts.len() >= 26 {
                     if let Ok(target_return) = parts[0].parse::<f64>() {
                         let mut feat = vec![0.0; 54];
                         let mut valid = true;
-                        for i in 0..25 {
+                        let max_cols = (parts.len() - 1).min(54);
+                        for i in 0..max_cols {
                             if let Ok(val) = parts[i + 1].parse::<f64>() {
                                 feat[i] = val;
                             } else {
@@ -172,7 +180,8 @@ fn main() {
         let beta2 = 0.999;
         let epsilon = 1e-8;
 
-        let mut indices: Vec<usize> = (0..num_samples).collect();
+        // FIX #721: Generar índices y lotes sobre train_size para evitar IndexOutOfBounds
+        let mut indices: Vec<usize> = (0..train_size).collect();
         let mut prng = XorShift::new(123456789);
 
         let start_time = Instant::now();
@@ -181,8 +190,8 @@ fn main() {
             shuffle(&mut indices, &mut prng);
             let mut epoch_loss = 0.0;
 
-            for batch_start in (0..num_samples).step_by(batch_size) {
-                let end = (batch_start + batch_size).min(num_samples);
+            for batch_start in (0..train_size).step_by(batch_size) {
+                let end = (batch_start + batch_size).min(train_size);
                 let b_size = end - batch_start;
 
                 // Gradients accumulation

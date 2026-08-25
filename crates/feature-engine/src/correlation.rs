@@ -11,6 +11,7 @@ pub struct MarketCorrelationHeatmap {
     covariances: Vec<Ewma>,
 
     last_prices: Vec<f64>,
+    returns_buffer: Vec<f64>,
 }
 
 impl MarketCorrelationHeatmap {
@@ -23,6 +24,7 @@ impl MarketCorrelationHeatmap {
             market_variance_ewma: Ewma::from_period(period),
             covariances: (0..num_assets).map(|_| Ewma::from_period(period)).collect(),
             last_prices: vec![0.0; num_assets],
+            returns_buffer: vec![0.0; num_assets],
         }
     }
 
@@ -34,7 +36,6 @@ impl MarketCorrelationHeatmap {
             return 0.0; // Fail-safe
         }
 
-        let mut current_returns = vec![0.0; self.num_assets];
         let mut market_return = 0.0;
 
         for i in 0..self.num_assets {
@@ -43,8 +44,10 @@ impl MarketCorrelationHeatmap {
 
             if last_price > 0.0 {
                 let ret = (current_price - last_price) / last_price;
-                current_returns[i] = ret;
+                self.returns_buffer[i] = ret;
                 market_return += ret;
+            } else {
+                self.returns_buffer[i] = 0.0;
             }
             self.last_prices[i] = current_price;
         }
@@ -58,7 +61,7 @@ impl MarketCorrelationHeatmap {
         let mut sum_correlation = 0.0;
         let mut valid_assets = 0.0;
 
-        for (i, &ret) in current_returns.iter().enumerate().take(self.num_assets) {
+        for (i, &ret) in self.returns_buffer.iter().enumerate().take(self.num_assets) {
             if ret == 0.0 && self.last_prices[i] == 0.0 {
                 continue; // No data yet
             }

@@ -77,17 +77,20 @@ pub fn run_vectorized_hybrid(
             let tp_price = entry_price * (1.0 + tp_ratio);
             let sl_price = entry_price * (1.0 - sl_ratio);
             
-            if h >= tp_price { // TP hit
-                let pnl = (tp_price - entry_price) * position_size;
-                capital += pnl;
-                wins += 1;
-                position = 0;
-            } else if l <= sl_price { // SL hit
-                let pnl = (sl_price - entry_price) * position_size;
+            if l <= sl_price { // SL hit (priorizar SL ante alta volatilidad)
+                let exit_fee = (sl_price * position_size) * taker_fee;
+                let pnl = (sl_price - entry_price) * position_size - exit_fee;
                 capital += pnl;
                 position = 0;
-            } else if sl_short { // Reverse signal
-                let pnl = (c - entry_price) * position_size;
+            } else if h >= tp_price { // TP hit (Maker fee)
+                let exit_fee = (tp_price * position_size) * maker_fee;
+                let pnl = (tp_price - entry_price) * position_size - exit_fee;
+                capital += pnl;
+                if pnl > 0.0 { wins += 1; }
+                position = 0;
+            } else if sl_short { // Reverse signal (Taker fee)
+                let exit_fee = (c * position_size) * taker_fee;
+                let pnl = (c - entry_price) * position_size - exit_fee;
                 capital += pnl;
                 if pnl > 0.0 { wins += 1; }
                 position = 0;
@@ -96,17 +99,20 @@ pub fn run_vectorized_hybrid(
             let tp_price = entry_price * (1.0 - tp_ratio);
             let sl_price = entry_price * (1.0 + sl_ratio);
             
-            if l <= tp_price { // TP hit
-                let pnl = (entry_price - tp_price) * position_size;
+            if h >= sl_price { // SL hit
+                let exit_fee = (sl_price * position_size) * taker_fee;
+                let pnl = (entry_price - sl_price) * position_size - exit_fee;
                 capital += pnl;
-                wins += 1;
                 position = 0;
-            } else if h >= sl_price { // SL hit
-                let pnl = (entry_price - sl_price) * position_size;
+            } else if l <= tp_price { // TP hit
+                let exit_fee = (tp_price * position_size) * maker_fee;
+                let pnl = (entry_price - tp_price) * position_size - exit_fee;
                 capital += pnl;
+                if pnl > 0.0 { wins += 1; }
                 position = 0;
             } else if sl_long { // Reverse signal
-                let pnl = (entry_price - c) * position_size;
+                let exit_fee = (c * position_size) * taker_fee;
+                let pnl = (entry_price - c) * position_size - exit_fee;
                 capital += pnl;
                 if pnl > 0.0 { wins += 1; }
                 position = 0;
@@ -119,11 +125,15 @@ pub fn run_vectorized_hybrid(
                 position = 1;
                 entry_price = c;
                 position_size = (capital * cfg.scalp_leverage) / entry_price;
+                let entry_fee = (entry_price * position_size) * taker_fee;
+                capital -= entry_fee;
                 trades += 1;
             } else if sl_short {
                 position = -1;
                 entry_price = c;
                 position_size = (capital * cfg.scalp_leverage) / entry_price;
+                let entry_fee = (entry_price * position_size) * taker_fee;
+                capital -= entry_fee;
                 trades += 1;
             }
         }
@@ -131,7 +141,7 @@ pub fn run_vectorized_hybrid(
         if capital > peak_capital {
             peak_capital = capital;
         }
-        let dd = (peak_capital - capital) / peak_capital;
+        let dd = if peak_capital > 0.0 { (peak_capital - capital) / peak_capital } else { 0.0 };
         if dd > max_dd {
             max_dd = dd;
         }

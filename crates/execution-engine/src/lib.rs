@@ -1,17 +1,27 @@
 pub mod binance_api;
 pub mod client;
+pub mod dynamic_symbols;
 pub mod executor;
 pub mod hot_swap;
 pub mod order_registry;
 pub mod order_types;
+pub mod quantum_multiplexer;
+pub mod quantum_socket;
 pub mod reconciliation;
 pub mod router;
+pub mod shadow;
 pub mod simulator;
 pub mod user_data_stream;
 
+pub use dynamic_symbols::DynamicSymbolSelector;
+pub use hot_swap::HotSwapController;
 pub use order_registry::{OrderRegistry, OrderStatus, TrackedOrder};
 pub use order_types::{Fill, OrderAck};
+pub use quantum_multiplexer::QuantumMultiplexer;
+pub use quantum_socket::QuantumSocketPool;
 pub use reconciliation::{reconcile, PositionRiskEntry, ReconciliationReport};
+pub use router::QuantumOrderRouter;
+pub use shadow::ShadowExecutor;
 pub use user_data_stream::{AccountSink, RemotePosition, UserDataStreamer};
 
 #[derive(Debug, Clone)]

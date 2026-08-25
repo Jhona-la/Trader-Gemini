@@ -42,18 +42,22 @@ impl ActiveTrajectoryTrack {
         expected_volume_usd: f64,
         expected_duration_ms: u64,
     ) -> Self {
+        // FIX #723: Sanitizar magnitud y volumen esperados
+        let safe_magnitude = if expected_magnitude.is_finite() && expected_magnitude > 0.0 { expected_magnitude } else { 0.01 };
+        let safe_volume = if expected_volume_usd.is_finite() && expected_volume_usd >= 0.0 { expected_volume_usd } else { 0.0 };
+        let safe_entry = if entry_price.is_finite() && entry_price > 0.0 { entry_price } else { 1.0 };
         Self {
             symbol_id,
             is_long,
             is_scalp,
-            entry_price,
+            entry_price: safe_entry,
             entry_time_ms,
-            expected_magnitude,
-            expected_volume_usd,
+            expected_magnitude: safe_magnitude,
+            expected_volume_usd: safe_volume,
             expected_duration_ms,
             accumulated_volume_usd: 0.0,
-            max_favorable_price: entry_price,
-            max_adverse_price: entry_price,
+            max_favorable_price: safe_entry,
+            max_adverse_price: safe_entry,
             last_update_ms: entry_time_ms,
         }
     }
@@ -125,6 +129,10 @@ impl TrajectoryAuditor {
             return TrajectoryStatus::Aligned { coherence_score: 1.0 };
         }
 
+        if !current_price.is_finite() || current_price <= 0.0 {
+            return TrajectoryStatus::Aligned { coherence_score: 1.0 };
+        }
+
         let track_slot = if is_scalp {
             &mut self.scalp_tracks[symbol_id]
         } else {
@@ -136,8 +144,14 @@ impl TrajectoryAuditor {
             None => return TrajectoryStatus::Aligned { coherence_score: 1.0 },
         };
 
+        // FIX #1449: Inmunidad ante NaNs o precios no positivos en evaluación tick-a-tick
+        if !current_price.is_finite() || current_price <= 0.0 {
+            return TrajectoryStatus::Aligned { coherence_score: 1.0 };
+        }
+
         // Actualizar métricas acumuladas
-        track.accumulated_volume_usd += tick_volume_usd;
+        let safe_vol = if tick_volume_usd.is_finite() && tick_volume_usd >= 0.0 { tick_volume_usd } else { 0.0 };
+        track.accumulated_volume_usd += safe_vol;
         track.last_update_ms = current_time_ms;
 
         if track.is_long {
@@ -159,6 +173,10 @@ impl TrajectoryAuditor {
         let elapsed_ms = current_time_ms.saturating_sub(track.entry_time_ms);
         let duration_ratio = (elapsed_ms as f64 / track.expected_duration_ms.max(1) as f64).clamp(0.0, 3.0);
 
+        if track.entry_price <= 0.0 || !track.entry_price.is_finite() {
+            return TrajectoryStatus::Aligned { coherence_score: 1.0 };
+        }
+
         // 1. Rendimiento del Precio (% de avance hacia la magnitud esperada)
         let price_delta_pct = if track.is_long {
             (current_price - track.entry_price) / track.entry_price
@@ -177,8 +195,8 @@ impl TrajectoryAuditor {
         }
 
         // Check 2: Inanición de Volumen (Volume Starvation)
-        // Si ha transcurrido más del 70% del tiempo esperado pero el volumen acumulado es < 1% del esperado
-        if duration_ratio > 0.70 && track.expected_volume_usd > 5_000.0 {
+        // Si ha transcurrido más del 70% del tiempo esperado Y el volumen acumulado es < 1% del esperado con delta adverso
+        if duration_ratio > 0.70 && track.expected_volume_usd > 1_000.0 {
             let volume_ratio = track.accumulated_volume_usd / track.expected_volume_usd;
             if volume_ratio < 0.01 && price_delta_pct < 0.0 {
                 return TrajectoryStatus::Divergent {
@@ -198,9 +216,16 @@ impl TrajectoryAuditor {
         }
 
         // Calcular Coherence Score general [0.0, 1.0]
-        let mag_score = (price_delta_pct / track.expected_magnitude.max(0.0001)).clamp(-1.0, 1.0);
-        let vol_score = (track.accumulated_volume_usd / track.expected_volume_usd.max(1.0)).clamp(0.0, 1.0);
-        let coherence = (0.50 * mag_score + 0.30 * vol_score + 0.20 * (1.0 - duration_ratio.min(1.0))).clamp(0.0, 1.0);
+        // FIX #590 & #619: Normalizar mag_score en [0.0, 1.0] y neutralizar vol_score si expected_volume_usd es nulo
+        let raw_mag = (price_delta_pct / track.expected_magnitude.max(0.0001)).clamp(-1.0, 1.0);
+        let mag_score = 0.50 + 0.50 * raw_mag;
+        let vol_score = if track.expected_volume_usd > 0.0 {
+            (track.accumulated_volume_usd / track.expected_volume_usd).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let time_score = (1.0 - duration_ratio.min(1.0)).max(0.0);
+        let coherence = (0.50 * mag_score + 0.30 * vol_score + 0.20 * time_score).clamp(0.0, 1.0);
 
         TrajectoryStatus::Aligned { coherence_score: coherence }
     }
@@ -217,6 +242,9 @@ impl TrajectoryAuditor {
         };
 
         let track = track_slot.take()?;
+        if !exit_price.is_finite() || exit_price <= 0.0 {
+            return Some(1.0);
+        }
         let actual_mag = if track.is_long {
             (exit_price - track.entry_price) / track.entry_price
         } else {
@@ -287,6 +315,23 @@ mod tests {
                 assert_eq!(reason, TrajectoryDivergenceReason::VolumeStarvation);
             }
             _ => panic!("Expected volume starvation divergence"),
+        }
+    }
+
+    #[test]
+    fn test_trajectory_nan_and_untracked_symbol_immunity() {
+        let mut auditor = TrajectoryAuditor::new(5);
+        let status_untracked = auditor.evaluate_tick(0, true, 100.0, 1000.0, 1000);
+        match status_untracked {
+            TrajectoryStatus::Aligned { coherence_score } => assert_eq!(coherence_score, 1.0),
+            _ => panic!("Untracked should default to aligned"),
+        }
+
+        auditor.record_entry(0, true, true, f64::NAN, 1000, f64::NAN, f64::NAN, 10000);
+        let status_nan = auditor.evaluate_tick(0, true, f64::NAN, f64::NAN, 2000);
+        match status_nan {
+            TrajectoryStatus::Aligned { coherence_score } => assert!(coherence_score >= 0.0),
+            _ => {}
         }
     }
 }

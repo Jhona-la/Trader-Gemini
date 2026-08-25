@@ -54,9 +54,15 @@ impl QuantumState {
 
     /// Evaluates Hamiltonian Energy $\hat{H}$: $H = \text{Error} + \text{Complexity} + \text{Cost}$
     pub fn compute_hamiltonian(&mut self, historical_residual_error: f64) {
+        let err = if historical_residual_error.is_finite() {
+            historical_residual_error.max(0.0)
+        } else {
+            f64::MAX
+        };
         let complexity_penalty = (self.window_size as f64 / 256.0) * 0.05;
         let stability_cost = (self.threshold - 2.0).powi(2) * 0.02;
-        self.energy = historical_residual_error + complexity_penalty + stability_cost;
+        let total = err + complexity_penalty + stability_cost;
+        self.energy = if total.is_finite() { total } else { f64::MAX };
     }
 }
 
@@ -85,7 +91,8 @@ impl QuantumEvolver {
         for i in 0..self.num_candidates {
             let candidate_seed = seed.wrapping_add(i as u64 * 9999);
             let mut candidate = QuantumState::random_superposition(candidate_seed);
-            candidate.compute_hamiltonian(residual_error * (1.0 - (candidate.amplitudes[4] * 0.1)));
+            // FIX #866: Evaluación homogénea de residual_error puro sin sesgos artificiales de amplitudes
+            candidate.compute_hamiltonian(residual_error);
 
             if candidate.energy < best_state.energy {
                 best_state = candidate;

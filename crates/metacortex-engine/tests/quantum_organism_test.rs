@@ -46,19 +46,19 @@ fn test_quantum_organism_components() {
     let sample_rust_code = r#"
         pub fn compute_threshold() -> f64 {
             let limit = 0.05;
-            let count = 14;
-            limit * count as f64
+            let multiplier = 2.5;
+            limit * multiplier
         }
     "#;
 
     let (transformed, count) = CazadorConstantes::strip_constants(sample_rust_code).unwrap();
-    assert_eq!(count, 2, "Both 0.05 and 14 must be replaced");
-    assert!(transformed.contains("gene_float_idx_1"));
-    assert!(transformed.contains("gene_int_idx_2"));
+    assert_eq!(count, 2, "Both 0.05 and 2.5 must be replaced");
+    assert!(transformed.contains("gene_global_idx_1"));
+    assert!(transformed.contains("gene_global_idx_2"));
 
     // Verify Epigenoma store read/write
-    set_epigenoma_gene("gene_float_idx_1", 0.08);
-    assert_eq!(read_epigenoma_gene("gene_float_idx_1", 0.05), 0.08);
+    set_epigenoma_gene("gene_global_idx_1", 0.08);
+    assert_eq!(read_epigenoma_gene("gene_global_idx_1", 0.05), 0.08);
 
     // 3. Test Quantum State Annealing
     let evolver = QuantumEvolver::new();

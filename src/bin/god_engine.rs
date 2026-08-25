@@ -19,6 +19,7 @@ const CAPITAL_TABLE: TableDefinition<u32, f64> = TableDefinition::new("capital_s
 // Removed ActiveExecutor
 
 use quantum_engine::config::TensorConfig;
+use quantum_engine::env_manager::EnvManager;
 use telemetry_engine::telemetry;
 
 #[tokio::main]
@@ -111,17 +112,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     quantum_arena::symbols::update_dynamic_universe(symbols.clone());
 
-    let config_bytes = std::fs::read("data/dynamic_config.bin").unwrap_or_default();
+    let dynamic_config_bin_path = EnvManager::data_path("dynamic_config.bin");
+    let dynamic_config_json_path = EnvManager::data_path("dynamic_config.json");
+    let config_bytes = std::fs::read(&dynamic_config_bin_path).unwrap_or_default();
     let mut config: TensorConfig = bincode::deserialize(&config_bytes).unwrap_or_else(|_| {
         let config_str =
-            std::fs::read_to_string("data/dynamic_config.json").unwrap_or_else(|_| "".to_string());
+            std::fs::read_to_string(&dynamic_config_json_path).unwrap_or_else(|_| "".to_string());
         let cfg: TensorConfig =
             serde_json::from_str(&config_str).unwrap_or_else(|_| TensorConfig {
                 symbols: symbols.clone(),
                 is_testnet: false, // We always use mainnet data, paper trading intercepts execution
             });
         if let Ok(encoded) = bincode::serialize(&cfg) {
-            let _ = std::fs::write("data/dynamic_config.bin", encoded);
+            let _ = std::fs::write(&dynamic_config_bin_path, encoded);
         }
         cfg
     });
@@ -147,7 +150,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::thread::spawn(move || {
         while let Ok((is_scalp, is_long, coin_id)) = rx_log_worker.recv() {
             let side_str = if is_long { "LONG" } else { "SHORT" };
-            let parsed_sym = &symbols_for_log[coin_id];
+            // FIX #1518: Acceso seguro al símbolo por coin_id para evitar pánicos fuera de límites
+            let default_sym = format!("COIN_{}", coin_id);
+            let parsed_sym = symbols_for_log.get(coin_id).map(|s| s.as_str()).unwrap_or(&default_sym);
             if is_scalp {
                 let _ = dash_tx_clone.send(telemetry_server::TelemetryEvent::LogUpdate(
                     "success".to_string(),
@@ -359,11 +364,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut forest_timestamps: std::collections::HashMap<String, std::time::SystemTime> =
         std::collections::HashMap::new();
 
-    // Initial load of all models
+    // Initial load of all models (.bin and .json - FIX #1410)
     if let Ok(entries) = std::fs::read_dir("models") {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let ext = path.extension().and_then(|s| s.to_str());
+            if ext == Some("json") || ext == Some("bin") {
                 if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
                     if let Ok(meta) = std::fs::metadata(&path) {
                         if let Ok(modified) = meta.modified() {
@@ -384,14 +390,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         telemetry_server::telemetry_log!(
             "👀 [HOT-RELOAD] Watcher started. Monitoring DNA and ML Weights..."
         );
-        let mut last_config_ts = std::fs::metadata("data/dynamic_config.json")
+        let dynamic_config_json_path = EnvManager::data_path("dynamic_config.json");
+        let mut last_config_ts = std::fs::metadata(&dynamic_config_json_path)
             .and_then(|m| m.modified())
             .ok();
 
         loop {
             sleep(Duration::from_secs(10)).await;
 
-            if let Ok(meta) = std::fs::metadata("data/dynamic_config.json") {
+            if let Ok(meta) = std::fs::metadata(&dynamic_config_json_path) {
                 if let Ok(modified) = meta.modified() {
                     if Some(modified) != last_config_ts {
                         last_config_ts = Some(modified);
@@ -403,7 +410,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Ok(entries) = std::fs::read_dir("models") {
                 for entry in entries.filter_map(|e| e.ok()) {
                     let path = entry.path();
-                    if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                    let ext = path.extension().and_then(|s| s.to_str());
+                    if ext == Some("json") || ext == Some("bin") {
                         if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
                             if let Ok(meta) = std::fs::metadata(&path) {
                                 if let Ok(modified) = meta.modified() {
@@ -461,8 +469,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     std::fs::create_dir_all("data").unwrap_or_default();
 
+    let state_redb_path = EnvManager::data_path("state.redb");
     let db = Arc::new(
-        Database::create("data/state.redb").expect("CRITICAL: Failed to create redb database"),
+        Database::create(&state_redb_path).expect("CRITICAL: Failed to create redb database"),
     );
 
     if let Ok(write_txn) = db.begin_write() {
@@ -585,10 +594,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // La adopción de posiciones al arena es dueño el mapa de estado (F4.9);
     // aquí garantizamos que el capital dinámico refleje la verdad del exchange.
     {
-        struct CapitalBridgeSink;
+        struct CapitalBridgeSink {
+            unified_capital: Arc<AtomicU64>,
+        }
         impl execution_engine::user_data_stream::AccountSink for CapitalBridgeSink {
             fn on_capital(&self, usdt: f64) {
                 audit_engine::telemetry::update_dynamic_capital(usdt);
+                if usdt > 0.0 && usdt.is_finite() {
+                    self.unified_capital.store(usdt.to_bits(), Ordering::Relaxed);
+                }
             }
             fn on_positions(
                 &self,
@@ -610,7 +624,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             exec.load().client().clone(),
             exec.load().registry(),
         )
-        .with_sink(std::sync::Arc::new(CapitalBridgeSink));
+        .with_sink(std::sync::Arc::new(CapitalBridgeSink {
+            unified_capital: Arc::clone(&unified_capital),
+        }));
         tokio::spawn(async move {
             streamer.start().await;
         });
@@ -850,12 +866,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             telemetry_server::telemetry_log!("🔍 [RECONCILIATION] Cero posiciones abiertas en Binance. Arena inicializada limpia.");
         } else {
             telemetry_server::telemetry_log!("🔍 [RECONCILIATION] Detectadas {} posiciones abiertas en Binance API:", restored_positions.len());
+            let exec_restore = Arc::clone(&exec);
             for pos in &restored_positions {
                 telemetry_server::telemetry_log!("   👉 Símbolo activo en exchange: {} (Qty: {})", pos.symbol, pos.qty);
                 if let Some(&coin_idx) = symbol_to_id.get(&pos.symbol.to_lowercase()) {
                     let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
-                    arena_real.coins[coin_idx].positions.swing_position.open(pos.is_long, pos.entry_price, pos.qty, 1.0, now_ms, 0.0, 0.0);
-                    telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {}", pos.symbol);
+                    let calculated_margin = (pos.qty.abs() * pos.entry_price) / 10.0;
+                    arena_real.coins[coin_idx].positions.swing_position.open_with_horizon(
+                        pos.is_long,
+                        pos.entry_price,
+                        pos.qty,
+                        calculated_margin,
+                        now_ms,
+                        0.0,
+                        0.0,
+                        quantum_arena::position::PositionHorizon::Swing,
+                    );
+                    telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (Margen: ${:.2})", pos.symbol, calculated_margin);
+
+                    // FIX #348: Re-armar OCO remoto en Binance para posiciones restauradas
+                    let pos_sym = pos.symbol.clone();
+                    let pos_is_long = pos.is_long;
+                    let pos_qty = pos.qty.abs();
+                    let pos_entry = pos.entry_price;
+                    let exec_oco = Arc::clone(&exec_restore);
+                    let (step_size, tick_size) = {
+                        let spec = quantum_arena::symbol_registry::spec(coin_idx);
+                        (spec.step_size, spec.tick_size)
+                    };
+
+                    rt_handle.spawn(async move {
+                        let tp_price = if pos_is_long { pos_entry * 1.025 } else { pos_entry * 0.975 };
+                        let sl_price = if pos_is_long { pos_entry * 0.985 } else { pos_entry * 1.015 };
+                        let base_id = format!("oco_res_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_micros());
+                        if let Err(e) = exec_oco.load().execute_oco_order(&pos_sym, pos_is_long, pos_qty, tp_price, sl_price, step_size, tick_size, &base_id).await {
+                            telemetry_server::telemetry_log!("⚠️ [RESTORE OCO] No se pudo re-armar OCO para posición restaurada {}: {}", pos_sym, e);
+                        } else {
+                            telemetry_server::telemetry_log!("🛡️ [RESTORE OCO] OCO re-armada con éxito en Binance para posición restaurada {}", pos_sym);
+                        }
+                    });
                 }
             }
         }
@@ -919,6 +968,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
 
+        // F4.7 — ONLINE LEARNING DAEMON CABLEADO (era fantasma desde su creación):
+        // ingesta telemetría mmap → shadow forest → umbrales ML vivos →
+        // promociones vía el EMBUDO del almacén de genomas (linaje auditable).
+        // Sus protecciones F4.5 activas: sharpe de estrategia real (no beta del
+        // mercado) y kill-switch intocable por métricas.
+        {
+            let ledger_path = EnvManager::data_path("evolution_ledger.redb");
+            let mut online_daemon = evolution_engine::online_daemon::LiveEvolutionDaemon::new(
+                evolution_engine::online_daemon::QuantumHotSwapState::new(),
+                Arc::clone(&arena_real),
+                orchestrator
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .is_demo_mode,
+                &ledger_path,
+                "config_dir/genotypes/online_champion.json",
+            );
+            rt_for_darwin.spawn(async move {
+                telemetry_server::telemetry_log!(
+                    "🌐 [ONLINE-DAEMON] Aprendizaje online vivo (shadow forest + drift EWMA)"
+                );
+                online_daemon.run_online_learning_loop().await;
+            });
+        }
+
         // The PhaseOrchestrator is injected into the execution context
         let _msg_count: u64 = 0;
         let mut has_transitioned = false;
@@ -931,7 +1005,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut risk_envelope = risk_engine::kelly_envelope::RiskEnvelope::new();
         let mut avg_win_abs: f64 = 0.0;
         let mut avg_loss_abs: f64 = 0.0;
-        let mut trade_count_env: u64 = 0;
 
         engine_real.reality.mode = god_engine_core::reality_physics::EngineMode::Optimistic;
         engine_real.set_model_rx(rx_real);
@@ -950,9 +1023,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
             if let Some(klines) = historical_klines.get(sym) {
-                // Dummy loop over f64 (klines is Vec<f64>)
                 for &k in klines.iter() {
-                    engine_real.feature_engines[_i].process_kline(k, k, k, k, 0.0);
+                    if k > 0.0 {
+                        let high = k * 1.0005;
+                        let low = k * 0.9995;
+                        engine_real.feature_engines[_i].process_kline(k, high, low, k, 10.0);
+                    }
                 }
                 telemetry_server::telemetry_log!("   ✅ Inyectadas {} K-lines (1h) para {}", klines.len(), sym);
             }
@@ -967,7 +1043,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let local_ms_now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
         let epoch_baseline_ms = local_ms_now + ntp_offset_ms;
 
-        let mut local_orderbook = quantum_engine::orderbook::OrderBook::new("BTCUSDT".to_string());
+        let mut local_orderbooks: Vec<quantum_engine::orderbook::OrderBook> = symbols_clone
+            .iter()
+            .map(|s| quantum_engine::orderbook::OrderBook::new(s.clone()))
+            .collect();
         let mut msg_count: u64 = 0;
         let mut consecutive_slow_ticks = 0;
 
@@ -985,7 +1064,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if is_reconnect {
                 telemetry_server::telemetry_log!("🧹 [AUTO-HEALING] Reconnect signal received. Purging Quantum Engine state to prevent time-glitches...");
                 engine_real.reset_engines();
-                local_orderbook.clear();
+                for ob in local_orderbooks.iter_mut() {
+                    ob.clear();
+                }
                 telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed. Entering Warmup Phase (50 ticks).");
 
                 let rx_rest = Arc::clone(&exec);
@@ -1041,8 +1122,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     event_time = e;
                     parsed_sym_opt = Some(sym);
                     dbp = bp; dap = ap; dbq = bq; daq = aq;
-                    local_orderbook.update_bid(bp, bq);
-                    local_orderbook.update_ask(ap, aq);
+                    if let Some(sym_id) = symbol_to_id.get(&sym.to_lowercase()).copied() {
+                        if let Some(ob) = local_orderbooks.get_mut(sym_id) {
+                            ob.update_bid(bp, bq);
+                            ob.update_ask(ap, aq);
+                        }
+                    }
                     let total_q = bq + aq;
                     if total_q > 0.0 {
                         depth_obi = (bq - aq) / total_q;
@@ -1080,7 +1165,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if let Some(parsed_sym) = parsed_sym_opt {
-                let coin_id = symbol_to_id.get(&parsed_sym.to_lowercase()).copied().unwrap_or(0);
+                let coin_id = match symbol_to_id.get(&parsed_sym.to_lowercase()).copied() {
+                    Some(id) => id,
+                    None => {
+                        msg_count += 1;
+                        continue;
+                    }
+                };
 
                 // F5.4 — GUARD DE ORIGEN: acota TODOS los índices aguas abajo
                 // (coins[coin_id], feature_engines[coin_id] en core y aquí).
@@ -1113,7 +1204,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // F4.1: features omni REALES (macro FRED/PAXG + sentiment vivos).
                 // Antes: &[0.0; 54] — la NN swing evaluaba ceros en producción.
                 let omni_features_hot = omni_state_hot.get_features();
-                let (new_sc, new_sw, closed_sc, closed_sw) = engine_real.process_event(
+                let (mut new_sc, mut new_sw, closed_sc, closed_sw) = engine_real.process_event(
                     coin_id, is_trade, is_kline_closed, is_depth,
                     current_price, qty, dbp, dap, dbq, daq,
                     depth_obi, depth_micro_div, event_time as u64, latency_panic, &omni_features_hot
@@ -1203,23 +1294,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let live_maker_fee = engine_real.arena.config.live_maker_fee.load(Ordering::Relaxed);
                         let live_taker_fee = engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed);
                         let fee = (qty * current_price) * (live_maker_fee + live_taker_fee);
-                        let net = pnl - fee;
+                        let net = pnl; // pnl devuelto por el core ya es neto de comisiones
+                        let gross = pnl + fee;
                         // F5.1: alimentar el posterior del edge con CADA cierre real.
-                        trade_count_env += 1;
                         if net >= 0.0 {
                             avg_win_abs = if avg_win_abs == 0.0 { net.abs() } else { avg_win_abs * 0.95 + net.abs() * 0.05 };
                         } else {
                             avg_loss_abs = if avg_loss_abs == 0.0 { net.abs() } else { avg_loss_abs * 0.95 + net.abs() * 0.05 };
                         }
                         risk_envelope.record_trade(net > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
-                        scalp_gross_pnl += pnl;
+                        scalp_gross_pnl += gross;
                         scalp_pnl += net;
                         scalp_fees += fee;
                         scalp_trades += 1;
                         if net > 0.0 { scalp_wins += 1; }
 
                         let roi_post_fees = if (qty * current_price) > 0.0 { (net / (qty * current_price)) * 100.0 } else { 0.0 };
-                        telemetry!("🛑 [SCALP CORE] CLOSE HIT! Gross PnL: {:.4} | Net PnL: {:.4} | ROI Post-Fees: {:.4}%", pnl, net, roi_post_fees);
+                        telemetry!("🛑 [SCALP CORE] CLOSE HIT! Gross PnL: {:.4} | Net PnL: {:.4} | ROI Post-Fees: {:.4}%", gross, net, roi_post_fees);
                         let _ = db_tx.try_send((unified_cap, 0.0));
                         let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::CapitalUpdate(unified_cap));
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
@@ -1232,31 +1323,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ml_prob,
                         });
 
-                        let is_long_order = !is_long;
-                        net_qty += if is_long_order { qty } else { -qty };
+                        // FIX #590: Despacho directo de cierre en Binance Hedge Mode sin pasar por execute_raw_qty
+                        let parsed_sym_str = parsed_sym.to_string();
+                        let exec_clone = Arc::clone(&exec);
+                        let is_long_close = is_long;
+                        rt_handle.spawn(async move {
+                            let sym_filter = exec_clone.load().get_symbol_filter(&parsed_sym_str).await;
+                            if let Err(e) = exec_clone.load().execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size).await {
+                                telemetry_engine::telemetry_err!("🚨 [SCALP CLOSE ERROR] Error al cerrar posición {} en Binance: {}", parsed_sym_str, e);
+                            } else {
+                                telemetry_engine::telemetry!("🛡️ [SCALP CLOSE SUCCESS] Posición {} cerrada con éxito en Binance.", parsed_sym_str);
+                            }
+                        });
                     }
 
                     if let Some((is_long, pnl, qty)) = closed_sw {
                         let live_maker_fee = engine_real.arena.config.live_maker_fee.load(Ordering::Relaxed);
                         let live_taker_fee = engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed);
                         let fee = (qty * current_price) * (live_maker_fee + live_taker_fee);
-                        let net = pnl - fee;
+                        let net = pnl; // pnl devuelto por el core ya es neto de comisiones
+                        let gross = pnl + fee;
                         // F5.1: posterior compartido — todo cierre real alimenta el edge.
-                        trade_count_env += 1;
                         if net >= 0.0 {
                             avg_win_abs = if avg_win_abs == 0.0 { net.abs() } else { avg_win_abs * 0.95 + net.abs() * 0.05 };
                         } else {
                             avg_loss_abs = if avg_loss_abs == 0.0 { net.abs() } else { avg_loss_abs * 0.95 + net.abs() * 0.05 };
                         }
                         risk_envelope.record_trade(net > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
-                        swing_gross_pnl += pnl;
+                        swing_gross_pnl += gross;
                         swing_pnl += net;
                         swing_fees += fee;
                         swing_trades += 1;
                         if net > 0.0 { swing_wins += 1; }
 
                         let roi_post_fees = if (qty * current_price) > 0.0 { (net / (qty * current_price)) * 100.0 } else { 0.0 };
-                        telemetry!("🛑 [SWING CORE] CLOSE HIT! Gross PnL: {:.4} | Net PnL: {:.4} | ROI Post-Fees: {:.4}%", pnl, net, roi_post_fees);
+                        telemetry!("🛑 [SWING CORE] CLOSE HIT! Gross PnL: {:.4} | Net PnL: {:.4} | ROI Post-Fees: {:.4}%", gross, net, roi_post_fees);
                         let _ = db_tx.try_send((unified_cap, 0.0));
                         let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::CapitalUpdate(unified_cap));
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
@@ -1269,19 +1370,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ml_prob,
                         });
 
-                        let is_long_order = !is_long;
-                        net_qty += if is_long_order { qty } else { -qty };
+                        // FIX #590: Despacho directo de cierre en Binance Hedge Mode sin pasar por execute_raw_qty
+                        let parsed_sym_str = parsed_sym.to_string();
+                        let exec_clone = Arc::clone(&exec);
+                        let is_long_close = is_long;
+                        rt_handle.spawn(async move {
+                            let sym_filter = exec_clone.load().get_symbol_filter(&parsed_sym_str).await;
+                            if let Err(e) = exec_clone.load().execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size).await {
+                                telemetry_engine::telemetry_err!("🚨 [SWING CLOSE ERROR] Error al cerrar posición {} en Binance: {}", parsed_sym_str, e);
+                            } else {
+                                telemetry_engine::telemetry!("🛡️ [SWING CLOSE SUCCESS] Posición {} cerrada con éxito en Binance.", parsed_sym_str);
+                            }
+                        });
                     }
 
-                    let _scalp_entry_price = 0.0;
+                    // BUG-617: Veto de nuevas entradas por pánico de memoria RAM (>85% en OS-Guardian)
+                    let is_mem_panic = engine_real.arena.panic_memory_dump.load(Ordering::Relaxed);
+                    if is_mem_panic && (new_sc.is_some() || new_sw.is_some()) {
+                        telemetry_engine::telemetry_err!("🚨 [OS-GUARDIAN] Asfixia de RAM (>85%). Nuevas aperturas bloqueadas temporalmente para evitar OOM.");
+                        if new_sc.is_some() {
+                            engine_real.rollback_scalp_position(coin_id);
+                            new_sc = None;
+                        }
+                        if new_sw.is_some() {
+                            engine_real.rollback_swing_position(coin_id);
+                            new_sw = None;
+                        }
+                    }
+
                     let mut scalp_tp_price = 0.0;
                     let mut scalp_sl_price = 0.0;
                     let mut is_high_confidence_scalp = false;
+                    let mut swing_tp_price = 0.0;
+                    let mut swing_sl_price = 0.0;
+
+                    // F5.1 & BUG-598: Margen libre real = equity - margen total retenido en posiciones vivas
+                    let total_margin_used: f64 = engine_real.arena.coins.iter().map(|c| {
+                        let sc_m = if c.positions.scalp_position.is_open() {
+                            c.positions.scalp_position.margin_used.load(Ordering::Relaxed)
+                        } else { 0.0 };
+                        let sw_m = if c.positions.swing_position.is_open() {
+                            c.positions.swing_position.margin_used.load(Ordering::Relaxed)
+                        } else { 0.0 };
+                        sc_m + sw_m
+                    }).sum();
+                    let cap_now = (engine_real.arena.unified_capital.load(Ordering::Relaxed) - total_margin_used).max(0.0);
+
+                    let had_new_scalp = new_sc.is_some();
+                    let had_new_swing = new_sw.is_some();
 
                     if let Some((is_long, entry_price, qty)) = new_sc {
-                        // F5.1: leverage por ENVOLVENTE, no hardcode. El stop del
-                        // scalp (piso ATR) define el sizing: L = f_riesgo / stop.
-                        let cap_now = engine_real.arena.unified_capital.load(Ordering::Relaxed);
                         let scalp_stop_pct = engine_real
                             .arena
                             .config
@@ -1291,10 +1429,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .max(0.0015);
                         let (env_lev, operable) =
                             risk_envelope.max_leverage(cap_now, scalp_stop_pct, 5.0, 1.64, 50.0);
-                        // Deadlock resuelto por EXPLORACIÓN: sin historial la envolvente
-                        // da f=0 ⇒ sin entradas ⇒ sin evidencia ⇒ bucle eterno. Con
-                        // <30 trades cerrados: stakes mínimos (leverage 1) para GENERAR
-                        // evidencia real; el riesgo de exploración es ~stop×capital.
                         if risk_envelope.posterior.n() < 30.0 {
                             max_leverage = 1;
                         } else {
@@ -1308,8 +1442,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             is_high_confidence_scalp = true;
                         }
 
-                        // F1.9b: TP/SL genome-driven para TODA entrada scalp (antes
-                        // solo alta confianza). Bases del genoma con piso ATR.
                         let base_tp = engine_real.arena.config.scalp_tp_base.load(Ordering::Relaxed);
                         let base_sl = engine_real.arena.config.scalp_sl_base.load(Ordering::Relaxed);
                         let atr_pct = engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0);
@@ -1321,9 +1453,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if let Some((is_long, entry_price, qty)) = new_sw {
-                        // F5.1: swing también por envolvente — stop ancho (3×ATR)
-                        // ⇒ leverage menor que scalp, emergente del sizing.
-                        let cap_now = engine_real.arena.unified_capital.load(Ordering::Relaxed);
                         let swing_stop_pct = engine_real
                             .arena
                             .config
@@ -1333,51 +1462,99 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .max(0.003);
                         let (env_lev, operable) =
                             risk_envelope.max_leverage(cap_now, swing_stop_pct, 5.0, 1.64, 50.0);
-                        // Exploración (<30 trades): stakes mínimos; luego la envolvente manda.
                         if risk_envelope.posterior.n() < 30.0 {
-                            max_leverage = 1;
+                            max_leverage = max_leverage.max(1);
                         } else {
-                            max_leverage = if operable { env_lev.floor().max(1.0) as u32 } else { 0 };
+                            let sw_lev = if operable { env_lev.floor().max(1.0) as u32 } else { 0 };
+                            max_leverage = max_leverage.max(sw_lev);
                         }
                         net_qty += if is_long { qty } else { -qty };
                         let _ = tx_log_worker.try_send((false, is_long, coin_id));
 
-                        // F1.9b: swing TAMBIÉN lleva TP/SL genome-driven (gen de
-                        // horizonte mayor). Si scalp y swing coinciden en el tick,
-                        // el swing domina la protección (horizonte más ancho).
                         let base_tp = engine_real.arena.config.swing_tp_base.load(Ordering::Relaxed);
                         let base_sl = engine_real.arena.config.swing_sl_base.load(Ordering::Relaxed);
                         let atr_pct = engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0);
                         let swing_tp = base_tp.max(atr_pct * 4.0);
                         let swing_sl = base_sl.max(atr_pct * 3.0);
 
-                        scalp_tp_price = if is_long { entry_price * (1.0 + swing_tp) } else { entry_price * (1.0 - swing_tp) };
-                        scalp_sl_price = if is_long { entry_price * (1.0 - swing_sl) } else { entry_price * (1.0 + swing_sl) };
+                        swing_tp_price = if is_long { entry_price * (1.0 + swing_tp) } else { entry_price * (1.0 - swing_tp) };
+                        swing_sl_price = if is_long { entry_price * (1.0 - swing_sl) } else { entry_price * (1.0 + swing_sl) };
                     }
 
                     if net_qty.abs() > 0.0 {
                         let parsed_sym_str = parsed_sym.to_string();
                         let exec_clone = Arc::clone(&exec);
+                        let arena_clone = Arc::clone(&engine_real.arena);
                         let final_is_long = net_qty > 0.0;
                         let final_qty = net_qty.abs();
+
+                        // BUG-590: Asignar TP/SL correspondiente a la dirección neta real
+                        let (final_tp_price, final_sl_price) = if final_is_long {
+                            if scalp_tp_price > current_price {
+                                (scalp_tp_price, scalp_sl_price)
+                            } else if swing_tp_price > current_price {
+                                (swing_tp_price, swing_sl_price)
+                            } else {
+                                (0.0, 0.0)
+                            }
+                        } else {
+                            if scalp_tp_price > 0.0 && scalp_tp_price < current_price {
+                                (scalp_tp_price, scalp_sl_price)
+                            } else if swing_tp_price > 0.0 && swing_tp_price < current_price {
+                                (swing_tp_price, swing_sl_price)
+                            } else {
+                                (0.0, 0.0)
+                            }
+                        };
 
                         let iceberg_threshold = engine_real.arena.config.iceberg_volume_threshold.load(Ordering::Relaxed);
                         let iceberg_slices = engine_real.arena.config.iceberg_slice_count.load(Ordering::Relaxed).max(2.0);
                         let notional_volume = final_qty * current_price;
 
+                        let rollback_positions = move |arena: &Arc<quantum_arena::GlobalArena>| {
+                            if had_new_scalp && coin_id < arena.coins.len() {
+                                let coin = &arena.coins[coin_id];
+                                if coin.positions.scalp_position.is_open() {
+                                    let (_, _, _, margin_used, entry_fee) = coin.positions.scalp_position.close_with_fee();
+                                    if margin_used > 0.0 {
+                                        arena.scalp_used_margin.fetch_add(-margin_used, Ordering::Relaxed);
+                                    }
+                                    if entry_fee > 0.0 {
+                                        arena.unified_capital.fetch_add(entry_fee, Ordering::Relaxed);
+                                        coin.scalp.pnl_realized.fetch_add(entry_fee, Ordering::Relaxed);
+                                    }
+                                }
+                            }
+                            if had_new_swing && coin_id < arena.coins.len() {
+                                let coin = &arena.coins[coin_id];
+                                if coin.positions.swing_position.is_open() {
+                                    let (_, _, _, margin_used, entry_fee) = coin.positions.swing_position.close_with_fee();
+                                    if margin_used > 0.0 {
+                                        arena.swing_used_margin.fetch_add(-margin_used, Ordering::Relaxed);
+                                    }
+                                    if entry_fee > 0.0 {
+                                        arena.unified_capital.fetch_add(entry_fee, Ordering::Relaxed);
+                                        coin.swing.pnl_realized.fetch_add(entry_fee, Ordering::Relaxed);
+                                    }
+                                }
+                            }
+                        };
+
                         rt_handle.spawn(async move {
-                            // F5.1: la envolvente (LCB sin evidencia, o capital que
-                            // no sostiene el riesgo mínimo) dijo NO — sin orden.
                             if max_leverage == 0 {
                                 telemetry_engine::telemetry!(
-                                    "🛡️ [ENVOLVENTE] Entrada bloqueada: evidencia insuficiente o capital no sostiene el riesgo mínimo (Kelly bayesiano)"
+                                    "🛡️ [ENVOLVENTE] Entrada bloqueada: evidencia insuficiente o capital no sostiene el riesgo mínimo (Kelly bayesiano). Ejecutando Rollback de estado."
                                 );
+                                rollback_positions(&arena_clone);
                                 return;
                             }
                             if max_leverage > 1 {
                                 let _ = exec_clone.load().set_leverage(&parsed_sym_str, max_leverage).await;
                             }
-                            // F1.9b: capturar resultado de la entrada — jamás tragado.
+                            let sym_filter = exec_clone.load().get_symbol_filter(&parsed_sym_str).await;
+                            let dyn_step_size = sym_filter.step_size;
+                            let dyn_tick_size = sym_filter.tick_size;
+
                             let entry_result: Result<(), String>;
                             if force_maker {
                                 let mut id_buf = [0u8; 32];
@@ -1386,35 +1563,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let mut itoa_buf = itoa::Buffer::new();
                                 let micros_str = itoa_buf.format(micros);
                                 id_buf[3..3 + micros_str.len()].copy_from_slice(micros_str.as_bytes());
-                                let order_id = unsafe { std::str::from_utf8_unchecked(&id_buf[..3 + micros_str.len()]) };
-                                entry_result = exec_clone.load().execute_maker_chase(&parsed_sym_str, final_is_long, final_qty, maker_price, 0.001, 0.0001, &order_id).await;
+                                let order_id = std::str::from_utf8(&id_buf[..3 + micros_str.len()]).unwrap_or("mc_0");
+                                entry_result = exec_clone.load().execute_maker_chase(&parsed_sym_str, final_is_long, final_qty, maker_price, dyn_step_size, dyn_tick_size, order_id).await;
                             } else if notional_volume > iceberg_threshold {
                                 let iceberg_qty = final_qty / iceberg_slices;
                                 telemetry_engine::telemetry!("🧊 [ICEBERG ROUTER] Fragmentando orden institucional ({} USDT) en pedazos de {}...", notional_volume, iceberg_qty);
-                                entry_result = exec_clone.load().execute_iceberg_limit(&parsed_sym_str, final_is_long, final_qty, maker_price, iceberg_qty, 0.001, 0.0001, "iceberg_01").await;
+                                entry_result = exec_clone.load().execute_iceberg_limit(&parsed_sym_str, final_is_long, final_qty, maker_price, iceberg_qty, dyn_step_size, dyn_tick_size, "iceberg_01").await;
                             } else {
-                                entry_result = exec_clone.load().execute_raw_qty(&parsed_sym_str, final_is_long, final_qty, 0.001).await;
+                                entry_result = exec_clone.load().execute_raw_qty(&parsed_sym_str, final_is_long, final_qty, dyn_step_size).await;
                             }
 
                             match entry_result {
                                 Err(e) => {
-                                    // Entrada fallida: SIN OCO (proteger una posición
-                                    // inexistente crearía una posición inversa desnuda).
                                     telemetry_engine::telemetry!(
-                                        "❌ [ENTRY] {} rechazada: {}",
+                                        "❌ [ENTRY] {} rechazada: {} — Ejecutando Rollback de posición local.",
                                         parsed_sym_str, e
                                     );
+                                    rollback_positions(&arena_clone);
                                 }
                                 Ok(()) => {
-                                    // F1.9b: TODA posición lleva TP/SL genome-driven.
-                                    // (antes: solo scalps de alta confianza — el resto naked)
-                                    if scalp_tp_price > 0.0 && scalp_sl_price > 0.0 {
+                                    if final_tp_price > 0.0 && final_sl_price > 0.0 {
                                         let tag = if is_high_confidence_scalp { "🎯 [OCO TENSOR]" } else { "🛡️ [OCO GUARD]" };
                                         telemetry_engine::telemetry!(
                                             "{} Protección para {} (TP: {:.4}, SL: {:.4})",
-                                            tag, parsed_sym_str, scalp_tp_price, scalp_sl_price
+                                            tag, parsed_sym_str, final_tp_price, final_sl_price
                                         );
-                                        let is_long_close = final_is_long; // si entramos LONG, cerramos con SELL
+                                        let is_long_close = final_is_long;
 
                                         let mut id_buf = [0u8; 32];
                                         id_buf[0..4].copy_from_slice(b"oco_");
@@ -1422,14 +1596,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let mut itoa_buf = itoa::Buffer::new();
                                         let micros_str = itoa_buf.format(micros);
                                         id_buf[4..4 + micros_str.len()].copy_from_slice(micros_str.as_bytes());
-                                        let base_id = unsafe { std::str::from_utf8_unchecked(&id_buf[..4 + micros_str.len()]) };
+                                        let base_id = std::str::from_utf8(&id_buf[..4 + micros_str.len()]).unwrap_or("oco_0");
 
-                                        // tick/step 0.001 de fallback; F1.0 traerá el tickSize real por símbolo.
-                                        if let Err(oco_err) = exec_clone.load().execute_oco_order(&parsed_sym_str, is_long_close, final_qty, scalp_tp_price, scalp_sl_price, 0.001, 0.0001, &base_id).await {
+                                        if let Err(oco_err) = exec_clone.load().execute_oco_order(&parsed_sym_str, is_long_close, final_qty, final_tp_price, final_sl_price, dyn_step_size, dyn_tick_size, base_id).await {
                                             telemetry_engine::telemetry!(
                                                 "🚨 [OCO GUARD] {} quedó SIN protección: {} — aplanar manual o alertar",
                                                 parsed_sym_str, oco_err
                                             );
+                                            // FIX #344: Inmediatamente cerramos la orden para no quedar desprotegidos ante flash crashes
+                                            if let Err(flatten_err) = exec_clone.load().execute_reduce_only_market(&parsed_sym_str, is_long_close, final_qty, dyn_step_size).await {
+                                                telemetry_engine::telemetry!(
+                                                    "🔥 [CRITICAL EMERGENCY] Falló aplanamiento de emergencia para {}: {}",
+                                                    parsed_sym_str, flatten_err
+                                                );
+                                            } else {
+                                                telemetry_engine::telemetry!(
+                                                    "🛡️ [OCO GUARD] Posición {} aplanada preventivamente por fallo de protección OCO.",
+                                                    parsed_sym_str
+                                                );
+                                            }
                                         }
                                     }
                                 }

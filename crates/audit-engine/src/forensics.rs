@@ -1,4 +1,9 @@
 
+#[cfg(test)]
+mod tests {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
 #[test]
 pub fn audit_data_consistency() {
     println!("🔍 INICIANDO AUDITORÍA FORENSE DE DATOS: BACKTEST VS PRODUCCIÓN");
@@ -82,8 +87,10 @@ pub fn audit_ml_data_leakage_prevention() {
     }
     
     let numerator = n * xy_sum - x_sum * y_sum;
-    let denominator = ((n * x_sq_sum - x_sum * x_sum) * (n * y_sq_sum - y_sum * y_sum)).sqrt();
-    let r = if denominator != 0.0 { numerator / denominator } else { 0.0 };
+    let term1 = (n * x_sq_sum - x_sum * x_sum).max(0.0);
+    let term2 = (n * y_sq_sum - y_sum * y_sum).max(0.0);
+    let denominator = (term1 * term2).sqrt();
+    let r = if denominator > 1e-12 { numerator / denominator } else { 0.0 };
     
     println!("   Correlación Cruzada (Features_T vs Precio_T+1): R = {:.4}", r);
     
@@ -95,6 +102,7 @@ pub fn audit_ml_data_leakage_prevention() {
     }
     
     println!("✅ FASE 25 ML GOVERNANCE PASSED: Cero fugas de datos (Lookahead Bias = 0.00%)");
+}
 }
 
 

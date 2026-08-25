@@ -18,15 +18,29 @@ pub struct SymbolSpec {
 impl SymbolSpec {
     #[inline]
     pub fn validate_order(&self, raw_qty: f64, price: f64) -> Result<f64, &'static str> {
-        let notional = raw_qty * price;
-        if notional < self.min_notional {
-            return Err("Notional below minNotional");
+        if price <= 0.0 || raw_qty <= 0.0 {
+            return Err("Invalid price or quantity");
         }
-        if raw_qty < self.min_qty {
+        let step = if self.step_size > 0.0 { self.step_size } else { 1.0 };
+        let qty_steps = (raw_qty / step).floor();
+        let mut adjusted_qty = qty_steps * step;
+
+        // Exact decimal rounding based on step_size to eliminate floating point residues (BUG-673)
+        if step < 1.0 && step > 0.0 {
+            let decimals = (-step.log10()).round() as i32;
+            if decimals > 0 && decimals <= 8 {
+                let factor = 10_f64.powi(decimals);
+                adjusted_qty = (adjusted_qty * factor).round() / factor;
+            }
+        }
+
+        if adjusted_qty < self.min_qty {
             return Err("Qty below minQty");
         }
-        let qty_steps = (raw_qty / self.step_size).floor();
-        let adjusted_qty = qty_steps * self.step_size;
+        let final_notional = adjusted_qty * price;
+        if final_notional < self.min_notional {
+            return Err("Notional below minNotional");
+        }
         Ok(adjusted_qty)
     }
 
@@ -42,7 +56,22 @@ lazy_static! {
 }
 
 pub fn update_registry(new_specs: Vec<SymbolSpec>) {
-    DYNAMIC_REGISTRY.store(Arc::new(new_specs));
+    let current = DYNAMIC_REGISTRY.load();
+    if current.is_empty() {
+        DYNAMIC_REGISTRY.store(Arc::new(new_specs));
+        return;
+    }
+
+    // FIX #905: Preservar estabilidad de coin_id para que símbolos existentes mantengan su índice
+    let mut updated = (**current).clone();
+    for spec in new_specs {
+        if let Some(pos) = updated.iter().position(|s| s.symbol.eq_ignore_ascii_case(&spec.symbol)) {
+            updated[pos] = spec;
+        } else {
+            updated.push(spec);
+        }
+    }
+    DYNAMIC_REGISTRY.store(Arc::new(updated));
 }
 
 #[inline(always)]
@@ -51,6 +80,19 @@ pub fn try_spec(coin_id: usize) -> Option<SymbolSpec> {
     // The struct is small enough that cloning is practically free.
     let registry = DYNAMIC_REGISTRY.load();
     registry.get(coin_id).cloned()
+}
+
+#[inline(always)]
+pub fn try_symbol(coin_id: usize) -> Option<String> {
+    let registry = DYNAMIC_REGISTRY.load();
+    registry.get(coin_id).map(|s| s.symbol.clone())
+}
+
+#[inline(always)]
+pub fn try_index(symbol: &str) -> Option<usize> {
+    let registry = DYNAMIC_REGISTRY.load();
+    let sym_upper = symbol.to_uppercase();
+    registry.iter().position(|s| s.symbol.to_uppercase() == sym_upper)
 }
 
 #[inline(always)]

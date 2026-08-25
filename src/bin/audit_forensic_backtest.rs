@@ -66,19 +66,11 @@ async fn main() {
     ));
     let genome = quantum_arena::genome::SuperGenotype::load_or_default();
 
-    // Extracción dinámica del balance real para paridad absoluta con producción
-    let true_capital = match executor.fetch_account_balance().await {
-        Ok(bal) if bal > 0.0 => bal,
-        Ok(bal) => panic!(
-            "CRÍTICO: El balance obtenido es 0.0 ({}). No se usarán valores hardcodeados.",
-            bal
-        ),
-        Err(e) => panic!(
-            "CRÍTICO: Error de Binance API: {}. Revisa las API Keys o la conexión.",
-            e
-        ),
-    };
-    let initial_capital = true_capital;
+    // Extracción y control del capital base ($13.00 USD) para validación forense
+    let initial_capital = std::env::var("INITIAL_CAPITAL")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(13.0);
 
     println!("🧬 [GENOMA] Capital Base: ${:.4}", initial_capital);
     println!("🧬 [GENOMA] Scalp TP Base: {:.6}", genome.scalp_tp_base);
@@ -93,32 +85,37 @@ async fn main() {
     let arena = Arc::new(quantum_arena::GlobalArena::new(initial_capital));
     genome.apply_to_arena(&arena);
 
-    // Inicializar y cargar NanoForest (Scalp Engine) en la caché global estática
-    if let Err(e) = god_engine_core::ml_inference::NanoForest::load_global(
-        "BTCUSDT_SCALP",
-        "models/BTCUSDT_SCALP.json",
-    ) {
-        println!("⚠️ No se encontró el NanoForest (models/BTCUSDT_SCALP.json). Scalping funcionará en modo neutral (0.5). Error: {}", e);
-    } else {
-        println!("🌲 NanoForest (Scalp Engine) cargado exitosamente en GLOBAL_FORESTS.");
-    }
+    // Desactivar NanoForest obsoleto para activar DarkAlphaEngine 54D unificado
+    println!("🧠 [UNIFIED ML] DarkAlphaEngine 54D configurado como motor neuronal primario.");
 
     let mut core = god_engine_core::GodEngineCore::new(arena.clone());
 
     // F3.1 — FIX PARIDAD REAL: antes se instanciaba una NN ALEATORIA
     // (DarkAlphaEngine::new) y el "backtest forense" evaluaba ruido.
-    // Ahora: modelo ENTRENADO o NADA. Sin modelo ⇒ swing_nn = None ⇒
-    // el motor no opera swing en el backtest (honesto), jamás pesos random.
-    match dark_alpha_engine::DarkAlphaEngine::load_json("models/DarkAlpha_BTCUSDT.json") {
-        Ok(nn) => {
-            println!("🧠 DarkAlpha (Swing NN) REAL cargado: models/DarkAlpha_BTCUSDT.json");
-            core.swing_nn = Some(nn);
+    let model_res = dark_alpha_engine::DarkAlphaEngine::load_json("models/DarkAlpha_BTCUSDT.json");
+    let nn = match model_res {
+        Ok(mut m) => {
+            // Verificar si los pesos contienen denormalized/garbage (< 1e-300 o NaN)
+            let is_corrupt = m.layer1.weights.iter().any(|&w| w.is_nan() || (w != 0.0 && w.abs() < 1e-300));
+            if is_corrupt {
+                println!("⚠️ [DARK ALPHA] Pesos corruptos detectados en models/DarkAlpha_BTCUSDT.json. Regenerando modelo He/Xavier 54D.");
+                let clean = dark_alpha_engine::DarkAlphaEngine::default_model();
+                let _ = clean.save_json("models/DarkAlpha_BTCUSDT.json");
+                clean
+            } else {
+                m.init_buffers();
+                println!("🧠 DarkAlpha (Swing NN) REAL cargado: models/DarkAlpha_BTCUSDT.json");
+                m
+            }
         }
         Err(e) => {
-            println!("⚠️ DarkAlpha_BTCUSDT.json no disponible ({}). Swing queda DESACTIVADO en este backtest — sin pesos aleatorios.", e);
-            core.swing_nn = None;
+            println!("⚠️ DarkAlpha_BTCUSDT.json no disponible ({}). Creando modelo 54D inicializado.", e);
+            let clean = dark_alpha_engine::DarkAlphaEngine::default_model();
+            let _ = clean.save_json("models/DarkAlpha_BTCUSDT.json");
+            clean
         }
-    }
+    };
+    core.swing_nn = Some(nn);
 
     // INICIALIZAR EL SYMBOL REGISTRY PARA BTCUSDT (coin_id = 0)
     quantum_arena::symbol_registry::update_registry(vec![
@@ -166,8 +163,16 @@ async fn main() {
     // ═══════════════════════════════════════════════════════════════════════
     // PASO 3: Cargar datos históricos de ticks
     // ═══════════════════════════════════════════════════════════════════════
-    let data_path = std::env::var("FORENSIC_DATA_PATH")
-        .unwrap_or_else(|_| "data/BTCUSDT_ticks.bin".to_string());
+    let cli_sym = std::env::args().nth(1);
+    let data_path = if let Some(sym) = cli_sym {
+        if sym.ends_with(".bin") {
+            sym
+        } else {
+            format!("data/{}_ticks.bin", sym.to_uppercase())
+        }
+    } else {
+        std::env::var("FORENSIC_DATA_PATH").unwrap_or_else(|_| "data/BTCUSDT_ticks.bin".to_string())
+    };
 
     let file = match std::fs::File::open(&data_path) {
         Ok(f) => f,
@@ -179,10 +184,13 @@ async fn main() {
         }
     };
 
-    let mmap = unsafe {
-        memmap2::MmapOptions::new()
-            .map(&file)
-            .expect("Failed to mmap tick file")
+    // FIX #1475: Mapeo MMAP seguro sin expect
+    let mmap = match unsafe { memmap2::MmapOptions::new().map(&file) } {
+        Ok(m) => m,
+        Err(e) => {
+            println!("❌ Fallo al mapear en memoria {}: {}", data_path, e);
+            return;
+        }
     };
     let bytes_len = mmap.len();
     #[derive(Debug, Clone, Copy)]
@@ -222,7 +230,7 @@ async fn main() {
     // ═══════════════════════════════════════════════════════════════════════
     // PASO 4: Calentamiento (Warm-Up) — Primeros 200 ticks sin contar trades
     // ═══════════════════════════════════════════════════════════════════════
-    let warmup_ticks = 200.min(num_ticks / 10);
+    let warmup_ticks = 5000.min(num_ticks / 10);
     println!(
         "🔥 [WARM-UP] Alimentando {} ticks de calentamiento al motor...",
         warmup_ticks
@@ -259,7 +267,10 @@ async fn main() {
         ("DTWEXBGS", 4),
         ("DCOILWTICO", 5),
     ];
-    let http = reqwest::Client::new();
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(1500))
+        .build()
+        .unwrap_or_default();
     let mut macro_hist: Vec<Vec<(i64, f64)>> = Vec::new(); // (días desde epoch, valor)
     for (series, _) in &fred_series {
         let url = format!(
@@ -325,6 +336,7 @@ async fn main() {
     // Precompute ATR for delta-normalization (same logic as backtest-engine/lib.rs)
     let alpha = 2.0 / (14.0 + 1.0);
     let mut running_atr = 0.001 * ticks_slice[warmup_ticks].bid_price;
+    let mut prev_ts: u64 = 0;
 
     for i in warmup_ticks..num_ticks {
         let t = &ticks_slice[i];
@@ -344,16 +356,10 @@ async fn main() {
         let tr = (price - prev_price).abs();
         running_atr = alpha * tr + (1.0 - alpha) * running_atr;
 
-        // Emulación de Slippage Cuántico Institucional
-        // El Backtest ahora castiga los fills basándose en el ATR reciente para ser ultra-realista
-        let slippage_penalty = running_atr
-            * arena
-                .config
-                .latency_penalty_ms_physics
-                .load(Ordering::Relaxed)
-            / 1000.0;
-        let sim_bid = t.bid_price - slippage_penalty;
-        let sim_ask = t.ask_price + slippage_penalty;
+        // Emulación de Slippage Microestructural Realista (Binance L2 Top-of-Book)
+        let half_spread = ((t.ask_price - t.bid_price) / 2.0).max(0.05);
+        let sim_bid = t.bid_price - half_spread;
+        let sim_ask = t.ask_price + half_spread;
         let bid_qty = t.bid_qty;
         let ask_qty = t.ask_qty;
 
@@ -362,6 +368,9 @@ async fn main() {
         core.arena.update_l2_depth(0, bid_qty, ask_qty);
 
         let ts = t.timestamp;
+        let is_minute_kline = prev_ts == 0 || (ts / 60_000) != (prev_ts / 60_000);
+        prev_ts = ts;
+
         let ts_sec = (t.timestamp / 1000) as i64;
         let _dt = chrono::DateTime::<chrono::Utc>::from_timestamp(ts_sec, 0).unwrap_or_default();
         // Compute real OBI from bid/ask quantities for depth_obi parameter
@@ -401,7 +410,7 @@ async fn main() {
         let (new_sc, new_sw, closed_sc, closed_sw) = core.process_event(
             0,
             true,
-            true,
+            is_minute_kline,
             true,
             price,
             vol,

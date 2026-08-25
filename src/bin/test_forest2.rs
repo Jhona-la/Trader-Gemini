@@ -18,7 +18,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reader = BufReader::new(file);
     let data: NanoForestData = serde_json::from_reader(reader)?;
 
-    let n_trees = data.tree_offsets.len() - 1;
+    // FIX #1483: Guarda contra underflow de árboles y división por cero
+    let n_trees = data.tree_offsets.len().saturating_sub(1);
     println!("N Trees: {}", n_trees);
 
     let mut sum_leaf_values = 0.0;
@@ -26,15 +27,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for i in 0..data.children_left.len() {
         if data.children_left[i] == -1 && data.children_right[i] == -1 {
-            sum_leaf_values += data.value[i];
-            num_leaves += 1;
+            if i < data.value.len() {
+                sum_leaf_values += data.value[i];
+                num_leaves += 1;
+            }
         }
     }
+
+    let avg_leaf = if num_leaves > 0 {
+        sum_leaf_values / num_leaves as f32
+    } else {
+        0.0
+    };
 
     println!(
         "Num Leaves: {}, Avg Leaf Value: {}",
         num_leaves,
-        sum_leaf_values / num_leaves as f32
+        avg_leaf
     );
     Ok(())
 }

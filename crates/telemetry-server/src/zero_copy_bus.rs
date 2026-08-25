@@ -116,8 +116,16 @@ impl ZeroCopyTelemetryBus {
 
         let now_ns = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_nanos() as u64;
+
+        // FIX #710: Sanitización de flotantes no finitos en payload del bus de telemetría zero-copy
+        let mut safe_payload = payload;
+        for p in &mut safe_payload {
+            if !p.is_finite() {
+                *p = 0.0;
+            }
+        }
 
         unsafe {
             let slot = self.buffer[idx].get();
@@ -125,7 +133,7 @@ impl ZeroCopyTelemetryBus {
             (*slot).subsystem_id = subsystem_id;
             (*slot).event_type = event_type;
             (*slot).context_id = context_id;
-            (*slot).payload = payload;
+            (*slot).payload = safe_payload;
         }
     }
 
@@ -139,6 +147,7 @@ impl ZeroCopyTelemetryBus {
             // En producción, esto apuntaría a un archivo MemoryMapped (memmap2) o SQLite WAL.
             // Por simplicidad, simularemos la lectura masiva.
             let mut local_tail = 0;
+            let mut last_flush = tokio::time::Instant::now();
 
             while self.is_active.load(Ordering::Relaxed) {
                 let current_head = self.write_head.load(Ordering::Acquire);
@@ -146,15 +155,11 @@ impl ZeroCopyTelemetryBus {
                 if current_head > local_tail {
                     let pending_frames = current_head - local_tail;
 
-                    // Solo vaciamos al SSD cuando hay suficientes frames (batching) para no castigar el IOPS
-                    if pending_frames > 10_000 {
-                        // Simulación de volcado masivo a SSD (Batch Flush)
-                        // let frames_to_write = ...
-
+                    // Vaciamos al SSD si acumulamos suficientes frames o tras 2 segundos de timeout
+                    if pending_frames > 10_000 || last_flush.elapsed() >= Duration::from_secs(2) {
                         local_tail = current_head;
                         self.read_tail.store(local_tail, Ordering::Release);
-
-                        // crate::telemetry_log!("🛸 [TELEMETRY] Flushed {} frames a SSD.", pending_frames);
+                        last_flush = tokio::time::Instant::now();
                     }
                 }
 
@@ -167,9 +172,11 @@ impl ZeroCopyTelemetryBus {
     /// Método O(N) para que el OnlineDaemon lea de forma segura los eventos recientes
     pub fn read_recent_events(&self, limit: usize, target_event_type: u8) -> Vec<TelemetryFrame> {
         let head = self.write_head.load(Ordering::Acquire);
-        let mut results = Vec::with_capacity(limit.min(10_000));
+        // FIX #1440: Acotar safe_limit tanto para start_offset como para la capacidad del vector
+        let safe_limit = limit.clamp(1, 10_000);
+        let mut results = Vec::with_capacity(safe_limit);
 
-        let start_offset = head.saturating_sub(limit);
+        let start_offset = head.saturating_sub(safe_limit);
         for i in start_offset..head {
             let idx = i & ZERO_COPY_RING_MASK;
             unsafe {
@@ -182,3 +189,52 @@ impl ZeroCopyTelemetryBus {
         results
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zero_copy_telemetry_emit_and_read() {
+        let bus = ZeroCopyTelemetryBus::new();
+        bus.emit(SUBSYSTEM_GOD_ENGINE, EVT_QUANTUM_MEMORY, 1, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        bus.emit(SUBSYSTEM_RISK_ENGINE, EVT_VETO_WALL, 0, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+
+        let events_god = bus.read_recent_events(10, EVT_QUANTUM_MEMORY);
+        assert_eq!(events_god.len(), 1);
+        assert_eq!(events_god[0].subsystem_id, SUBSYSTEM_GOD_ENGINE);
+        assert_eq!(events_god[0].payload[0], 1.0);
+
+        let events_risk = bus.read_recent_events(10, EVT_VETO_WALL);
+        assert_eq!(events_risk.len(), 1);
+        assert_eq!(events_risk[0].subsystem_id, SUBSYSTEM_RISK_ENGINE);
+    }
+
+    #[test]
+    fn test_zero_copy_telemetry_high_throughput_ring_wrap() {
+        let bus = ZeroCopyTelemetryBus::new();
+        for i in 0..1000 {
+            bus.emit(SUBSYSTEM_OS_GUARDIAN, EVT_LATENCY_PANIC, 0, [i as f64, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        }
+        let events = bus.read_recent_events(50, EVT_LATENCY_PANIC);
+        assert_eq!(events.len(), 50);
+        assert_eq!(events.last().unwrap().payload[0], 999.0);
+    }
+
+    #[test]
+    fn test_zero_copy_telemetry_nan_sanitization_and_subsystem_filtering() {
+        let bus = ZeroCopyTelemetryBus::new();
+        bus.emit(SUBSYSTEM_RISK_ENGINE, EVT_POSITION_CLOSE, 2, [f64::NAN, f64::INFINITY, -10.5, 0.0, 1.0, f64::NAN]);
+
+        let events = bus.read_recent_events(10, EVT_POSITION_CLOSE);
+        assert_eq!(events.len(), 1);
+        let frame = events[0];
+        assert_eq!(frame.subsystem_id, SUBSYSTEM_RISK_ENGINE);
+        assert_eq!(frame.context_id, 2); // Swing context
+        assert_eq!(frame.payload[0], 0.0); // Sanitized NaN
+        assert_eq!(frame.payload[1], 0.0); // Sanitized Inf
+        assert_eq!(frame.payload[2], -10.5);
+        assert_eq!(frame.payload[5], 0.0); // Sanitized NaN
+    }
+}
+

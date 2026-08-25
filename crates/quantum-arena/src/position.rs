@@ -11,6 +11,7 @@ pub enum PositionHorizon {
 pub struct Position {
     pub is_open: AtomicBool,
     pub is_long: AtomicBool,
+    pub horizon: std::sync::atomic::AtomicU8, // 0 = Scalping, 1 = Swing
     pub entry_price: AtomicF64,
     pub quantity: AtomicF64,
     pub margin_used: AtomicF64,
@@ -23,6 +24,7 @@ pub struct Position {
     pub sl_price: AtomicF64,
     pub ml_prediction: AtomicF64,
     pub confidence: AtomicF64,
+    pub entry_fee: AtomicF64,
 }
 
 impl Default for Position {
@@ -30,6 +32,7 @@ impl Default for Position {
         Self {
             is_open: AtomicBool::new(false),
             is_long: AtomicBool::new(true),
+            horizon: std::sync::atomic::AtomicU8::new(0),
             entry_price: AtomicF64::new(0.0),
             quantity: AtomicF64::new(0.0),
             margin_used: AtomicF64::new(0.0),
@@ -42,6 +45,7 @@ impl Default for Position {
             sl_price: AtomicF64::new(0.0),
             ml_prediction: AtomicF64::new(0.0),
             confidence: AtomicF64::new(0.0),
+            entry_fee: AtomicF64::new(0.0),
         }
     }
 }
@@ -59,26 +63,127 @@ impl Position {
         tp: f64,
         sl: f64,
     ) {
+        self.open_with_horizon(is_long, price, qty, margin, current_time_ms, tp, sl, PositionHorizon::Scalping);
+    }
+
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_with_horizon(
+        &self,
+        is_long: bool,
+        price: f64,
+        qty: f64,
+        margin: f64,
+        current_time_ms: u64,
+        tp: f64,
+        sl: f64,
+        horizon: PositionHorizon,
+    ) {
+        self.open_with_full_meta(is_long, price, qty, margin, current_time_ms, tp, sl, horizon, 0.0, 0.0);
+    }
+
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_with_full_meta(
+        &self,
+        is_long: bool,
+        price: f64,
+        qty: f64,
+        margin: f64,
+        current_time_ms: u64,
+        tp: f64,
+        sl: f64,
+        horizon: PositionHorizon,
+        ml_pred: f64,
+        conf: f64,
+    ) {
+        self.open_with_fee(is_long, price, qty, margin, current_time_ms, tp, sl, horizon, ml_pred, conf, 0.0);
+    }
+
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_with_fee(
+        &self,
+        is_long: bool,
+        price: f64,
+        qty: f64,
+        margin: f64,
+        current_time_ms: u64,
+        tp: f64,
+        sl: f64,
+        horizon: PositionHorizon,
+        ml_pred: f64,
+        conf: f64,
+        entry_fee: f64,
+    ) {
+        let safe_price = if price.is_finite() && price > 0.0 { price } else { 1.0 };
+        let safe_qty = if qty.is_finite() && qty > 0.0 { qty } else { 0.0 };
+        let safe_margin = if margin.is_finite() && margin >= 0.0 { margin } else { 0.0 };
+        let safe_tp = if tp.is_finite() && tp >= 0.0 { tp } else { 0.0 };
+        let safe_sl = if sl.is_finite() && sl >= 0.0 { sl } else { 0.0 };
+        let safe_ml = if ml_pred.is_finite() { ml_pred } else { 0.5 };
+        let safe_conf = if conf.is_finite() { conf.clamp(0.0, 1.0) } else { 0.5 };
+        let safe_fee = if entry_fee.is_finite() && entry_fee >= 0.0 { entry_fee } else { 0.0 };
+
         self.is_long.store(is_long, Ordering::Relaxed);
-        self.entry_price.store(price, Ordering::Relaxed);
-        self.quantity.store(qty, Ordering::Relaxed);
-        self.margin_used.store(margin, Ordering::Relaxed);
+        let h_val = match horizon {
+            PositionHorizon::Scalping => 0,
+            PositionHorizon::Swing => 1,
+        };
+        self.horizon.store(h_val, Ordering::Relaxed);
+        self.entry_price.store(safe_price, Ordering::Relaxed);
+        self.quantity.store(safe_qty, Ordering::Relaxed);
+        self.margin_used.store(safe_margin, Ordering::Relaxed);
         self.entry_time_ms.store(current_time_ms, Ordering::Relaxed);
         self.trailing_phase.store(0, Ordering::Relaxed);
         self.mfe_atr.store(0.0, Ordering::Relaxed);
         self.max_pnl_pct.store(0.0, Ordering::Relaxed);
         self.trail_stop.store(0.0, Ordering::Relaxed);
-        self.tp_price.store(tp, Ordering::Relaxed);
-        self.sl_price.store(sl, Ordering::Relaxed);
+        self.tp_price.store(safe_tp, Ordering::Relaxed);
+        self.sl_price.store(safe_sl, Ordering::Relaxed);
+        self.ml_prediction.store(safe_ml, Ordering::Relaxed);
+        self.confidence.store(safe_conf, Ordering::Relaxed);
+        self.entry_fee.store(safe_fee, Ordering::Relaxed);
         self.is_open.store(true, Ordering::Release);
     }
 
+    #[inline(always)]
+    pub fn horizon(&self) -> PositionHorizon {
+        match self.horizon.load(Ordering::Acquire) {
+            1 => PositionHorizon::Swing,
+            _ => PositionHorizon::Scalping,
+        }
+    }
+
     pub fn close(&self) -> (bool, f64, f64, f64) {
-        self.is_open.store(false, Ordering::Release);
+        let (is_long, price, qty, margin, _fee) = self.close_with_fee();
+        (is_long, price, qty, margin)
+    }
+
+    /// Closes position and returns (is_long, price, qty, margin, entry_fee)
+    /// FIX #902: is_open set to false FIRST with Release to prevent torn reads.
+    /// A concurrent reader checking is_open(Acquire) will see either:
+    ///   (a) is_open=true with all valid fields (pre-close snapshot), or
+    ///   (b) is_open=false (post-close, fields may be zeroed — reader skips).
+    pub fn close_with_fee(&self) -> (bool, f64, f64, f64, f64) {
+        // FIX #902 & #1201: Compare-and-swap atómico para garantizar que solo un hilo cierra la posición.
+        // Si is_open ya era false, evita sobreescribir con ceros una nueva posición que se esté abriendo concurrentemente.
+        if self.is_open.compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire).is_err() {
+            return (false, 0.0, 0.0, 0.0, 0.0);
+        }
+
+        // Step 2: Read all field values BEFORE clearing (order matters for correctness)
         let is_long = self.is_long.load(Ordering::Relaxed);
-        let price = self.entry_price.swap(0.0, Ordering::Relaxed);
-        let qty = self.quantity.swap(0.0, Ordering::Relaxed);
-        let margin = self.margin_used.swap(0.0, Ordering::Relaxed);
+        let price = self.entry_price.load(Ordering::Relaxed);
+        let qty = self.quantity.load(Ordering::Relaxed);
+        let margin = self.margin_used.load(Ordering::Relaxed);
+        let fee = self.entry_fee.load(Ordering::Relaxed);
+
+        // Step 3: Clear all fields (Relaxed is fine — is_open=false already published via CAS)
+        self.entry_price.store(0.0, Ordering::Relaxed);
+        self.quantity.store(0.0, Ordering::Relaxed);
+        self.margin_used.store(0.0, Ordering::Relaxed);
+        self.entry_fee.store(0.0, Ordering::Relaxed);
         self.entry_time_ms.store(0, Ordering::Relaxed);
         self.trailing_phase.store(0, Ordering::Relaxed);
         self.mfe_atr.store(0.0, Ordering::Relaxed);
@@ -86,7 +191,10 @@ impl Position {
         self.trail_stop.store(0.0, Ordering::Relaxed);
         self.tp_price.store(0.0, Ordering::Relaxed);
         self.sl_price.store(0.0, Ordering::Relaxed);
-        (is_long, price, qty, margin)
+        self.ml_prediction.store(0.0, Ordering::Relaxed);
+        self.confidence.store(0.0, Ordering::Relaxed);
+
+        (is_long, price, qty, margin, fee)
     }
 
     #[inline(always)]
@@ -100,4 +208,71 @@ impl Position {
 pub struct PositionManager {
     pub scalp_position: Position,
     pub swing_position: Position,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_position_dual_horizon_open_and_close() {
+        let mgr = PositionManager::default();
+
+        // Scalp Long
+        mgr.scalp_position.open_with_horizon(
+            true,
+            60000.0,
+            0.1,
+            600.0,
+            1000,
+            60500.0,
+            59500.0,
+            PositionHorizon::Scalping,
+        );
+
+        // Swing Short
+        mgr.swing_position.open_with_horizon(
+            false,
+            60000.0,
+            0.5,
+            3000.0,
+            1000,
+            58000.0,
+            61000.0,
+            PositionHorizon::Swing,
+        );
+
+        assert!(mgr.scalp_position.is_open());
+        assert!(mgr.swing_position.is_open());
+        assert_eq!(mgr.scalp_position.horizon(), PositionHorizon::Scalping);
+        assert_eq!(mgr.swing_position.horizon(), PositionHorizon::Swing);
+
+        let (is_long, price, qty, _) = mgr.scalp_position.close();
+        assert!(is_long);
+        assert_eq!(price, 60000.0);
+        assert_eq!(qty, 0.1);
+        assert!(!mgr.scalp_position.is_open());
+        assert!(mgr.swing_position.is_open()); // Swing remains open!
+    }
+
+    #[test]
+    fn test_position_atomic_close_idempotency() {
+        let pos = Position::default();
+        pos.open_with_fee(
+            true, 50000.0, 1.0, 5000.0, 1000, 51000.0, 49000.0,
+            PositionHorizon::Scalping, 0.8, 0.9, 2.5,
+        );
+
+        let (is_long, p, q, m, f) = pos.close_with_fee();
+        assert!(is_long);
+        assert_eq!(p, 50000.0);
+        assert_eq!(q, 1.0);
+        assert_eq!(m, 5000.0);
+        assert_eq!(f, 2.5);
+
+        // Segundo cierre debe retornar zeros (idempotente)
+        let (is_long2, p2, _, _, _) = pos.close_with_fee();
+        assert!(!is_long2);
+        assert_eq!(p2, 0.0);
+    }
 }

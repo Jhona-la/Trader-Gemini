@@ -9,4 +9,5 @@ feature-engine = { path = "../feature-engine" }
 dark-alpha-engine = { path = "../dark-alpha-engine" }
 
 strategy-core = { path = "../strategy-core" }
+omniscient-registry = { path = "../omniscient-registry" }
 telemetry-engine = { version = "0.1.0", path = "../telemetry-engine" }

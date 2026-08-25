@@ -64,3 +64,29 @@ impl Default for WelfordOnline {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_welford_online_mean_variance_and_zscore() {
+        let mut welford = WelfordOnline::new();
+        let samples = [10.0, 20.0, 30.0, 40.0, 50.0];
+        for &s in &samples {
+            welford.update(s);
+        }
+
+        assert_eq!(welford.count, 5.0);
+        assert_eq!(welford.mean(), 30.0);
+        assert_eq!(welford.variance(), 250.0);
+        let std = (250.0f64).sqrt();
+        assert!((welford.std_dev() - std).abs() < 1e-10);
+
+        let z = welford.z_score(30.0);
+        assert_eq!(z, 0.0);
+        let z_high = welford.z_score(30.0 + std);
+        assert!((z_high - 1.0).abs() < 1e-10);
+    }
+}
+

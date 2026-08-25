@@ -31,8 +31,8 @@ impl ScalpState {
             pnl_gross: AtomicF64::new(0.0),
             active_positions: AtomicUsize::new(0),
             win_rate: AtomicF64::new(w_base), // Derived from genome
-            profit_factor: AtomicF64::new(0.0), // Profit factor neutro orgánico
-            kelly_fraction: AtomicF64::new(0.0),
+            profit_factor: AtomicF64::new(1.50), // Prior Bayesiano neutro optimista (R:R >= 1.5:1)
+            kelly_fraction: AtomicF64::new(0.25), // Prior Bayesiano (Quarter-Kelly)
             roi_pre_fee: AtomicF64::new(0.0),
             roi_post_fee: AtomicF64::new(0.0),
             trade_count: AtomicUsize::new(0),
@@ -63,8 +63,8 @@ impl SwingState {
             pnl_gross: AtomicF64::new(0.0),
             active_positions: AtomicUsize::new(0),
             win_rate: AtomicF64::new(w_base),
-            profit_factor: AtomicF64::new(0.0),
-            kelly_fraction: AtomicF64::new(0.0),
+            profit_factor: AtomicF64::new(1.50), // Prior Bayesiano Swing
+            kelly_fraction: AtomicF64::new(0.25), // Prior Bayesiano (Quarter-Kelly)
             roi_pre_fee: AtomicF64::new(0.0),
             roi_post_fee: AtomicF64::new(0.0),
             trade_count: AtomicUsize::new(0),
@@ -121,11 +121,14 @@ impl LockFreeTickRing {
         // Publish the new head with Release ordering so readers acquire the writes
         self.head
             .store(current_head.wrapping_add(1), Ordering::Release);
-        // Track fill level (cap at TICK_RING_SIZE)
-        let current_len = self.len.load(Ordering::Relaxed);
-        if current_len < TICK_RING_SIZE {
-            self.len.store(current_len + 1, Ordering::Relaxed);
-        }
+        // Track fill level atómicamente sin condiciones de carrera (cap at TICK_RING_SIZE)
+        let _ = self.len.fetch_update(Ordering::Release, Ordering::Relaxed, |len| {
+            if len < TICK_RING_SIZE {
+                Some(len + 1)
+            } else {
+                None
+            }
+        });
     }
 
     /// Returns current length of valid data
@@ -220,6 +223,7 @@ pub struct CoinArena {
     /// Lock-free ring buffer: zero contention in hot path
     pub tick_ring: LockFreeTickRing,
     pub tick_head: AtomicUsize,
+    pub last_scalp_close_ts: AtomicU64,
 }
 
 impl CoinArena {
@@ -302,6 +306,7 @@ impl CoinArena {
             l2_ask_wall: AtomicF64::new(0.0),
             tick_ring: LockFreeTickRing::new(),
             tick_head: AtomicUsize::new(0),
+            last_scalp_close_ts: AtomicU64::new(0),
         }
     }
 }

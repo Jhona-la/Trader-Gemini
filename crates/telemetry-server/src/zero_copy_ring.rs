@@ -23,10 +23,8 @@ impl ZeroCopyRing {
     
     pub fn lock_in_ram(&self) {
         #[cfg(windows)]
-        {
-            let ptr = self.buffer.as_ptr() as *const u8;
-            let size = std::mem::size_of_val(&self.buffer);
-            let _ = os_guardian::lock_critical_memory(ptr, size);
+        unsafe {
+            let _ = os_guardian::memory_compaction::lock_critical_memory(&self.buffer);
         }
     }
 
@@ -78,3 +76,46 @@ impl ZeroCopyRing {
 // Implement Sync since it's an SPSC safe structure.
 unsafe impl Sync for ZeroCopyRing {}
 unsafe impl Send for ZeroCopyRing {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zero_copy_ring_push_pop() {
+        let ring = ZeroCopyRing::new();
+        assert!(ring.pop().is_none());
+
+        assert!(ring.push(("latency_ns", 42)).is_ok());
+        assert!(ring.push(("signal_calc", 150)).is_ok());
+
+        let item1 = ring.pop().unwrap();
+        assert_eq!(item1.0, "latency_ns");
+        assert_eq!(item1.1, 42);
+
+        let item2 = ring.pop().unwrap();
+        assert_eq!(item2.0, "signal_calc");
+        assert_eq!(item2.1, 150);
+
+        assert!(ring.pop().is_none());
+    }
+
+    #[test]
+    fn test_zero_copy_ring_fifo_order_and_lock_in_ram() {
+        let ring = ZeroCopyRing::new();
+        ring.lock_in_ram();
+
+        for i in 0..100 {
+            assert!(ring.push(("event", i)).is_ok());
+        }
+
+        for i in 0..100 {
+            let item = ring.pop().unwrap();
+            assert_eq!(item.0, "event");
+            assert_eq!(item.1, i);
+        }
+
+        assert!(ring.pop().is_none());
+    }
+}
+

@@ -41,12 +41,17 @@ impl MarketCorrelationHeatmap {
             let last_price = self.last_prices[i];
             let current_price = current_prices[i];
             
-            if last_price > 0.0 {
+            // FIX #1456: Validación estricta de finitud y positividad de precio
+            if last_price > 0.0 && current_price.is_finite() && current_price > 0.0 {
                 let ret = (current_price - last_price) / last_price;
-                current_returns[i] = ret;
-                market_return += ret;
+                if ret.is_finite() {
+                    current_returns[i] = ret;
+                    market_return += ret;
+                }
             }
-            self.last_prices[i] = current_price;
+            if current_price.is_finite() && current_price > 0.0 {
+                self.last_prices[i] = current_price;
+            }
         }
 
         market_return /= self.num_assets as f64;
@@ -85,3 +90,37 @@ impl MarketCorrelationHeatmap {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_market_correlation_heatmap_perfect_comovement() {
+        let mut heatmap = MarketCorrelationHeatmap::new(3, 10.0);
+        // Initialize prices
+        heatmap.update(&[100.0, 200.0, 300.0]);
+
+        // Feed perfectly correlated returns (+1% each tick)
+        let mut p1 = 100.0;
+        let mut p2 = 200.0;
+        let mut p3 = 300.0;
+        let mut corr = 0.0;
+        for _ in 0..20 {
+            p1 *= 1.01;
+            p2 *= 1.01;
+            p3 *= 1.01;
+            corr = heatmap.update(&[p1, p2, p3]);
+        }
+        assert!(corr > 0.90, "Expected high correlation, got {}", corr);
+    }
+
+    #[test]
+    fn test_market_correlation_heatmap_nan_and_length_immunity() {
+        let mut heatmap = MarketCorrelationHeatmap::new(3, 10.0);
+        assert_eq!(heatmap.update(&[100.0, 200.0]), 0.0); // Mismatched length
+        assert_eq!(heatmap.update(&[f64::NAN, 200.0, 300.0]), 0.0); // NaN immunity
+        assert!(heatmap.update(&[100.0, 200.0, 300.0]).is_finite());
+    }
+}
+

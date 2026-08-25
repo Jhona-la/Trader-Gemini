@@ -964,6 +964,7 @@ name = "data-ingest"
 version = "0.1.0"
 dependencies = [
  "crossbeam",
+ "data-pipeline",
  "memmap2 0.9.11",
  "polars",
  "reqwest 0.13.4",
@@ -976,18 +977,24 @@ name = "data-pipeline"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "bytemuck",
  "csv",
  "fast-float",
  "futures-util",
+ "hex",
  "hickory-resolver",
+ "hmac 0.12.1",
+ "lazy_static",
  "memchr",
  "memmap2 0.9.11",
  "polars",
  "quantum-arena",
+ "rand 0.8.6",
  "reqwest 0.13.4",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "socket2 0.5.10",
  "tokio",
  "tokio-tungstenite 0.21.0",
@@ -1178,7 +1185,10 @@ checksum = "40404c3f5f511ec4da6fe866ddf6a717c309fdbb69fbbad7b0f3edab8f2e835f"
 name = "evolution-engine"
 version = "0.1.0"
 dependencies = [
+ "arc-swap",
  "backtest-engine",
+ "dark-alpha-engine",
+ "data-pipeline",
  "god-engine-core",
  "os-guardian",
  "parking_lot",
@@ -1207,6 +1217,7 @@ dependencies = [
  "hex",
  "hmac 0.12.1",
  "itoa",
+ "quantum-arena",
  "reqwest 0.11.27",
  "risk-engine",
  "ryu",
@@ -2376,6 +2387,7 @@ dependencies = [
  "lazy_static",
  "libloading",
  "memmap2 0.9.11",
+ "os-guardian",
  "proc-macro2",
  "quote",
  "rkyv",
@@ -2736,6 +2748,8 @@ dependencies = [
  "libc",
  "once_cell",
  "quantum-arena",
+ "serde",
+ "serde_json",
  "sysinfo 0.39.6",
  "telemetry-engine",
  "uuid",
@@ -2841,6 +2855,7 @@ dependencies = [
  "chrono",
  "os-guardian",
  "serde",
+ "serde_json",
  "tokio",
 ]
 
@@ -4282,6 +4297,7 @@ version = "0.1.0"
 dependencies = [
  "dark-alpha-engine",
  "feature-engine",
+ "omniscient-registry",
  "quantum-arena",
  "strategy-core",
  "telemetry-engine",

@@ -165,24 +165,36 @@ impl BinanceStreamer {
                 Ok(tcp_stream) => {
                     let _ = tcp_stream.set_nodelay(true);
 
-                    // FASE 19: Configuración Extrema de Latencia Cuántica (Windows OS)
-                    let socket = socket2::Socket::from(tcp_stream.into_std().unwrap());
-                    // Reducir buffers dramáticamente para forzar a Winsock a entregar el frame a user-space
-                    // inmediatamente, sin esperar a llenar buffers grandes. Priorizamos LATENCIA sobre THROUGHPUT.
-                    let _ = socket.set_recv_buffer_size(65536); // 64KB Recv Buffer (Baja latencia)
-                    let _ = socket.set_send_buffer_size(65536); // 64KB Send Buffer
+                    let std_stream = match tcp_stream.into_std() {
+                        Ok(s) => s,
+                        Err(e) => {
+                            println!("⚠️ [WS] Falló conversión a std::net::TcpStream: {}. Reintentando...", e);
+                            tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                            continue;
+                        }
+                    };
+                    let socket = socket2::Socket::from(std_stream);
+                    let _ = socket.set_recv_buffer_size(65536);
+                    let _ = socket.set_send_buffer_size(65536);
 
-                    // FASE 27: TCP Keep-Alive para prevenir desconexiones silenciosas del Firewall/AWS
                     let keepalive = socket2::TcpKeepalive::new()
                         .with_time(std::time::Duration::from_secs(30))
                         .with_interval(std::time::Duration::from_secs(5));
                     let _ = socket.set_tcp_keepalive(&keepalive);
-                    let tcp_stream = tokio::net::TcpStream::from_std(socket.into()).unwrap();
+                    let tcp_stream = match tokio::net::TcpStream::from_std(socket.into()) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            println!("⚠️ [WS] Falló reconversión a tokio::net::TcpStream: {}. Reintentando...", e);
+                            tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                            continue;
+                        }
+                    };
 
                     match client_async_tls(url.clone(), tcp_stream).await {
                         Ok((ws_stream, _)) => {
                             let connected_at = std::time::Instant::now();
-                            // Si logramos conectar, reseteamos el backoff después de probar que es estable
+                            let mut consecutive_anomalies: usize = 0;
+                            let mut reconnect_fast_recovery_ticks: usize = 3; // FIX #1003: Calibrar de inmediato tras reconexión
                             let (_, mut read) = ws_stream.split();
 
                             loop {
@@ -237,48 +249,65 @@ impl BinanceStreamer {
                                                 continue;
                                             }
 
-                                            // FASE 9: Bayesian Anomaly Rejection (Estasis Probabilística)
-                                            // Protege al motor de glitches usando micro-volatilidad histórica real
+                                            // FASE 9: Bayesian Anomaly Rejection (Estasis Probabilística Adaptativa)
+                                            // Protege al motor de glitches aislados sin congelar la ingesta ante breakouts reales
                                             let current_price =
                                                 (event.bid_price + event.ask_price) * 0.5;
-                                            let mut recent_ticks =
-                                                [quantum_arena::state::CompactTick::default(); 10];
-                                            let count_ticks = self.arena.coins[self.coin_id]
-                                                .tick_ring
-                                                .snapshot_recent_into(10, &mut recent_ticks);
-                                            let recent_slice = &recent_ticks[..count_ticks];
 
-                                            if !recent_slice.is_empty() {
-                                                let mut sum = 0.0;
-                                                let mut sum_sq = 0.0;
-                                                let mut count = 0.0;
-                                                let mut last_valid = 0.0;
+                                            // FIX #1003: Durante los primeros ticks de reconexión, aceptar el nuevo nivel de precio de inmediato
+                                            if reconnect_fast_recovery_ticks > 0 {
+                                                reconnect_fast_recovery_ticks -= 1;
+                                                consecutive_anomalies = 0;
+                                            } else {
+                                                let mut recent_ticks =
+                                                    [quantum_arena::state::CompactTick::default(); 10];
+                                                let count_ticks = self.arena.coins[self.coin_id]
+                                                    .tick_ring
+                                                    .snapshot_recent_into(10, &mut recent_ticks);
+                                                let recent_slice = &recent_ticks[..count_ticks];
 
-                                                for t in recent_slice {
-                                                    let p = (t.bid_price + t.ask_price) * 0.5;
-                                                    if p > 0.0 {
-                                                        sum += p;
-                                                        sum_sq += p * p;
-                                                        count += 1.0;
-                                                        last_valid = p;
+                                                if !recent_slice.is_empty() {
+                                                    let mut sum = 0.0;
+                                                    let mut sum_sq = 0.0;
+                                                    let mut count = 0.0;
+                                                    let mut last_valid = 0.0;
+
+                                                    for t in recent_slice {
+                                                        let p = (t.bid_price + t.ask_price) * 0.5;
+                                                        if p > 0.0 {
+                                                            sum += p;
+                                                            sum_sq += p * p;
+                                                            count += 1.0;
+                                                            last_valid = p;
+                                                        }
                                                     }
-                                                }
 
-                                                if count > 2.0 && last_valid > 0.0 {
-                                                    let mean = sum / count;
-                                                    let variance = (sum_sq / count) - (mean * mean);
-                                                    let std_dev = variance.max(0.0).sqrt();
+                                                    if count > 2.0 && last_valid > 0.0 {
+                                                        let mean = sum / count;
+                                                        let variance = (sum_sq / count) - (mean * mean);
+                                                        let std_dev = variance.max(0.0).sqrt();
 
-                                                    // Bayesian Stasis: El precio no debe desviar más de 5 desviaciones estándar en 100ms
-                                                    // Si la volatilidad es muy baja, usamos un límite piso del 0.2% para evitar falsos positivos
-                                                    let dynamic_threshold =
-                                                        (std_dev * 5.0).max(last_valid * 0.002);
+                                                        // Bayesian Stasis: Umbral adaptativo con piso del 0.8% (para permitir volatilidad real)
+                                                        let dynamic_threshold =
+                                                            (std_dev * 6.0).max(last_valid * 0.008);
 
-                                                    if (current_price - last_valid).abs()
-                                                        > dynamic_threshold
-                                                    {
-                                                        println!("🛡️ [BAYESIAN STASIS] Anomalía Cuántica bloqueada en {}: Precio {}, Media {:.4}, Umbral Dinámico {:.4}", self.symbol, current_price, mean, dynamic_threshold);
-                                                        continue; // Corrupt data, do not pollute the tensor
+                                                        let is_outlier = (current_price - last_valid).abs() > dynamic_threshold;
+                                                        // Glitch extremo (> 20% en 1 tick)
+                                                        let is_extreme_glitch = (current_price - last_valid).abs() > (last_valid * 0.20);
+
+                                                        if is_outlier {
+                                                            consecutive_anomalies += 1;
+                                                            // FIX #385: Si llegan 3 ticks consecutivos en el nuevo nivel, es un movimiento de mercado legítimo
+                                                            if consecutive_anomalies < 3 || is_extreme_glitch {
+                                                                println!("🛡️ [BAYESIAN STASIS] Anomalía temporal ({}/3) en {}: Precio {}, Media {:.4}, Umbral {:.4}", consecutive_anomalies, self.symbol, current_price, mean, dynamic_threshold);
+                                                                continue; // Glitch aislado, descartar
+                                                            } else {
+                                                                // Transición de régimen de precio confirmada: resetear contador y aceptar
+                                                                consecutive_anomalies = 0;
+                                                            }
+                                                        } else {
+                                                            consecutive_anomalies = 0;
+                                                        }
                                                     }
                                                 }
                                             }
@@ -298,7 +327,7 @@ impl BinanceStreamer {
                                             if event.event_time > 0 {
                                                 let current_time = std::time::SystemTime::now()
                                                     .duration_since(std::time::UNIX_EPOCH)
-                                                    .unwrap()
+                                                    .unwrap_or_default()
                                                     .as_millis()
                                                     as i64;
 
@@ -306,7 +335,7 @@ impl BinanceStreamer {
                                                     .arena
                                                     .server_time_offset_ms
                                                     .load(Ordering::Relaxed);
-                                                let synced_time = current_time - offset;
+                                                let synced_time = current_time + offset;
 
                                                 if synced_time >= event.event_time as i64 {
                                                     let latency = (synced_time
@@ -329,6 +358,7 @@ impl BinanceStreamer {
                                                 agg_event.is_buyer_maker,
                                                 agg_event.qty,
                                             );
+                                            self.arena.increment_tick();
                                         }
                                         // Finalmente, intentar parsear como DepthEvent
                                         else if let Some(depth_event) =
@@ -339,6 +369,7 @@ impl BinanceStreamer {
                                                 depth_event.bid_wall,
                                                 depth_event.ask_wall,
                                             );
+                                            self.arena.increment_tick();
                                         }
                                     }
                                     Err(_) => {
@@ -383,3 +414,29 @@ impl BinanceStreamer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_binance_streamer_initialization() {
+        let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
+        let streamer = BinanceStreamer::new(0, "BTCUSDT", arena.clone(), true);
+
+        assert_eq!(streamer.coin_id, 0);
+        assert_eq!(streamer.symbol, "btcusdt");
+        assert!(streamer.is_testnet);
+    }
+
+    #[test]
+    fn test_binance_streamer_mainnet_symbol_normalization() {
+        let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
+        let streamer = BinanceStreamer::new(5, "SolUsdt", arena.clone(), false);
+
+        assert_eq!(streamer.coin_id, 5);
+        assert_eq!(streamer.symbol, "solusdt");
+        assert!(!streamer.is_testnet);
+    }
+}
+

@@ -11,6 +11,7 @@ pub mod micro_scalp_trigger;
 pub mod orchestrator;
 pub mod perceptron_gate;
 pub mod quantum_oscillator;
+pub mod renyi_tsallis_entropy;
 pub mod soliton_wave;
 pub mod stochastic_resonance;
 pub mod supersonic_shockwave;
@@ -19,6 +20,7 @@ pub mod trend_runner;
 pub mod turbo_scalper;
 
 pub use maker::{MakerEngine, MakerQuote};
+pub use renyi_tsallis_entropy::RenyiTsallisEntropyEngine;
 pub use scalp::{ScalpEngine, ScalpEngine as ScalpSignalEngine};
 pub use stat_arb::StatArbEngine;
 pub use strategy_core::{SignalIntent, SignalType, TradeHorizon};

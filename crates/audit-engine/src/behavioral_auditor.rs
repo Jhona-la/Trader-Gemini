@@ -22,12 +22,13 @@ impl BehavioralAuditorEngine {
     pub fn new(baseline_mean: f64, tolerance_k: f64, threshold_h: f64) -> Self {
         let alpha: f64 = 0.01; // Probabilidad de Falso Positivo (1%)
         let beta: f64 = 0.01;  // Probabilidad de Falso Negativo (1%)
+        let safe_baseline = if baseline_mean.is_finite() { baseline_mean } else { 0.50 };
 
         Self {
             log_likelihood_ratio: 0.0,
             cusum_pos: 0.0,
             cusum_neg: 0.0,
-            baseline_mean,
+            baseline_mean: safe_baseline,
             slack_k: tolerance_k.max(1e-5),
             threshold_h: threshold_h.max(0.1),
             sprt_bound_a: (beta / (1.0 - alpha)).ln(),
@@ -41,6 +42,11 @@ impl BehavioralAuditorEngine {
     /// Retorna Option<&'static str> indicando la anomalía detectada o None si el comportamiento es nominal
     #[inline(always)]
     pub fn audit_observation(&mut self, current_val: f64) -> Option<&'static str> {
+        // FIX #678: Guarda de finitud estricta en observación
+        if !current_val.is_finite() {
+            return None;
+        }
+
         self.total_audits += 1;
 
         // 1. Algoritmo CUSUM de detección de desvío
@@ -78,5 +84,38 @@ impl BehavioralAuditorEngine {
 impl Default for BehavioralAuditorEngine {
     fn default() -> Self {
         Self::new(0.50, 0.05, 3.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_behavioral_auditor_nominal_and_drift_detection() {
+        let mut auditor = BehavioralAuditorEngine::new(0.50, 0.05, 2.0);
+
+        // Observaciones nominales
+        for _ in 0..20 {
+            assert!(auditor.audit_observation(0.50).is_none());
+        }
+
+        // Fuerte shock positivo persistente para disparar CUSUM
+        let mut anomaly = None;
+        for _ in 0..50 {
+            if let Some(a) = auditor.audit_observation(1.50) {
+                anomaly = Some(a);
+                break;
+            }
+        }
+        assert!(anomaly.is_some());
+        assert!(auditor.anomalies_detected >= 1);
+    }
+
+    #[test]
+    fn test_behavioral_auditor_nan_immunity() {
+        let mut auditor = BehavioralAuditorEngine::default();
+        assert!(auditor.audit_observation(f64::NAN).is_none());
+        assert_eq!(auditor.total_audits, 0);
     }
 }

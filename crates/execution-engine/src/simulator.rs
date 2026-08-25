@@ -1,18 +1,22 @@
-use crate::executor::ExecutionProvider;
+use crate::executor::{ActivePosition, ExecutionProvider};
 use risk_engine::ValidatedOrder;
+use std::collections::HashMap;
+use std::sync::RwLock;
 use std::time::Duration;
 use tokio::time::sleep;
 
 pub struct SimulatedExecutor {
     pub average_latency_ms: u64,
-    pub simulated_capital: f64,
+    pub simulated_capital: RwLock<f64>,
+    pub open_positions: RwLock<HashMap<String, ActivePosition>>,
 }
 
 impl SimulatedExecutor {
     pub fn new(simulated_capital: f64) -> Self {
         Self {
             average_latency_ms: 3, // Binance FAPI Latency (3ms)
-            simulated_capital,
+            simulated_capital: RwLock::new(simulated_capital),
+            open_positions: RwLock::new(HashMap::new()),
         }
     }
 
@@ -29,7 +33,11 @@ impl ExecutionProvider for SimulatedExecutor {
     }
 
     async fn fetch_account_balance(&self) -> Result<f64, String> {
-        Ok(self.simulated_capital)
+        if let Ok(c) = self.simulated_capital.read() {
+            Ok(*c)
+        } else {
+            Ok(0.0)
+        }
     }
 
     async fn set_leverage(&self, _symbol: &str, _leverage: u32) -> Result<(), String> {
@@ -52,6 +60,22 @@ impl ExecutionProvider for SimulatedExecutor {
         self.simulate_network_delay().await;
         let is_long = order.signal == signal_engine::SignalType::Long;
         let side = if is_long { "BUY" } else { "SELL" };
+        if let Ok(mut pos_map) = self.open_positions.write() {
+            let entry = pos_map
+                .entry(symbol.to_string())
+                .or_insert_with(|| ActivePosition {
+                    symbol: symbol.to_string(),
+                    qty: 0.0,
+                    entry_price: current_price,
+                    is_long,
+                });
+            entry.qty += order.volume_usd / current_price.max(1e-6);
+            entry.is_long = is_long;
+        }
+        if let Ok(mut cap) = self.simulated_capital.write() {
+            let fee = order.volume_usd * 0.0004; // 0.04% taker fee
+            *cap -= fee;
+        }
         println!(
             "👻 [SHADOW MODE] Executed {} {} @ {} (Network delay: {}ms)",
             side, symbol, current_price, self.average_latency_ms
@@ -69,6 +93,18 @@ impl ExecutionProvider for SimulatedExecutor {
     ) -> Result<(), String> {
         self.simulate_network_delay().await;
         let side = if is_long { "BUY" } else { "SELL" };
+        if let Ok(mut pos_map) = self.open_positions.write() {
+            let entry = pos_map
+                .entry(symbol.to_string())
+                .or_insert_with(|| ActivePosition {
+                    symbol: symbol.to_string(),
+                    qty: 0.0,
+                    entry_price: 1.0,
+                    is_long,
+                });
+            entry.qty += quantity;
+            entry.is_long = is_long;
+        }
         // Asumimos slippage microscópico en log
         println!(
             "👻 [SHADOW MODE] Executed RAW {} {:.4} {} (Network delay: {}ms)",
@@ -172,6 +208,7 @@ impl ExecutionProvider for SimulatedExecutor {
         _tick_size: f64,
         _base_client_id: &str,
     ) -> Result<(), String> {
+        self.simulate_network_delay().await;
         let side = if is_long_close { "SELL" } else { "BUY" };
         println!(
             "🎮 [SIMULATOR] OCO Order {} {} Qty: {} TP: {} SL: {}",
@@ -189,10 +226,32 @@ impl ExecutionProvider for SimulatedExecutor {
         _step_size: f64,
     ) -> Result<(), String> {
         self.simulate_network_delay().await;
+        let mut pnl = 0.0;
+        let mut fee = 0.0;
+
+        if let Ok(mut pos_map) = self.open_positions.write() {
+            if let Some(pos) = pos_map.remove(symbol) {
+                let exit_price = if is_long_close { pos.entry_price * 1.002 } else { pos.entry_price * 0.998 };
+                if exit_price.is_finite() && pos.entry_price.is_finite() && quantity.is_finite() {
+                    pnl = if pos.is_long {
+                        (exit_price - pos.entry_price) * quantity
+                    } else {
+                        (pos.entry_price - exit_price) * quantity
+                    };
+                    // FIX #699: Comisión en nocional USD (quantity * exit_price * 0.0004)
+                    fee = quantity * exit_price * 0.0004;
+                }
+            }
+        }
+        if let Ok(mut cap) = self.simulated_capital.write() {
+            if pnl.is_finite() && fee.is_finite() {
+                *cap += pnl - fee;
+            }
+        }
         let side = if is_long_close { "SELL" } else { "BUY" };
         println!(
-            "👻 [SHADOW MODE] Reduce-Only {} {:.4} {}",
-            side, quantity, symbol
+            "👻 [SHADOW MODE] Reduce-Only {} {:.4} {} (PnL: {:.4}, Fee: {:.4})",
+            side, quantity, symbol, pnl, fee
         );
         Ok(())
     }
@@ -210,7 +269,11 @@ impl ExecutionProvider for SimulatedExecutor {
     #[inline(always)]
     async fn fetch_open_positions(&self) -> Result<Vec<crate::executor::ActivePosition>, String> {
         self.simulate_network_delay().await;
-        Ok(vec![])
+        if let Ok(pos_map) = self.open_positions.read() {
+            Ok(pos_map.values().cloned().collect())
+        } else {
+            Ok(vec![])
+        }
     }
 
     async fn fetch_server_time(&self) -> Result<i64, String> {
@@ -242,3 +305,68 @@ impl ExecutionProvider for SimulatedExecutor {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use risk_engine::ValidatedOrder;
+    use signal_engine::SignalType;
+
+    #[tokio::test]
+    async fn test_simulated_executor_open_and_reduce_only() {
+        let sim = SimulatedExecutor::new(100.0);
+        let balance = sim.fetch_account_balance().await.unwrap();
+        assert_eq!(balance, 100.0);
+
+        let order = ValidatedOrder {
+            signal: SignalType::Long,
+            volume_usd: 50.0,
+            leverage: 1.0,
+            maker_only: false,
+            tp_target: 52000.0,
+            sl_target: 49000.0,
+            fee_buffer_multiplier: 1.01,
+        };
+
+        // Open Long position on BTCUSDT
+        let res = sim.execute_order(&order, "BTCUSDT", 50000.0, 0.001).await;
+        assert!(res.is_ok());
+
+        let positions = sim.fetch_open_positions().await.unwrap();
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].symbol, "BTCUSDT");
+        assert!(positions[0].is_long);
+        assert!((positions[0].qty - 0.001).abs() < 1e-6);
+
+        // Close position with reduce-only market
+        let res_close = sim.execute_reduce_only_market("BTCUSDT", true, 0.001, 0.001).await;
+        assert!(res_close.is_ok());
+
+        let positions_after = sim.fetch_open_positions().await.unwrap();
+        assert!(positions_after.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_simulated_executor_methods_and_fees() {
+        let sim = SimulatedExecutor::new(50.0);
+        sim.trigger_kill_switch();
+
+        assert!(sim.set_leverage("BTCUSDT", 20).await.is_ok());
+        assert!(sim.fetch_exchange_info("BTCUSDT").await.is_ok());
+        assert!(sim.execute_raw_qty("BTCUSDT", true, 0.002, 0.001).await.is_ok());
+        assert!(sim.execute_limit_order("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "L1").await.is_ok());
+        assert!(sim.execute_maker_chase("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "M1").await.is_ok());
+        assert!(sim.execute_ioc_order("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "I1").await.is_ok());
+        assert!(sim.execute_exchange_trailing_stop("BTCUSDT", true, 0.001, 50000.0, 1.0, 0.001, 0.1, "T1").await.is_ok());
+        assert!(sim.execute_oco_order("BTCUSDT", true, 0.001, 52000.0, 48000.0, 0.001, 0.1, "O1").await.is_ok());
+        assert!(sim.execute_iceberg_limit("BTCUSDT", true, 0.005, 0.001, 50000.0, 0.001, 0.1, "IC1").await.is_ok());
+        assert!(sim.cancel_order("BTCUSDT", "L1").await.is_ok());
+
+        let server_time = sim.fetch_server_time().await.unwrap();
+        assert!(server_time > 0);
+
+        let com = sim.fetch_commission_rate("BTCUSDT").await.unwrap();
+        assert_eq!(com.0, 0.0002);
+    }
+}
+

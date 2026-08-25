@@ -1,8 +1,8 @@
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::fs::OpenOptions;
 use memmap2::MmapMut;
 use bytemuck::{Pod, Zeroable};
-use parking_lot::Mutex;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -55,7 +55,12 @@ impl TeleonomiaState {
         let record_size = std::mem::size_of::<RingBufferRecord>();
         let total_size = capacity * record_size;
         
-        let mmap_file = match OpenOptions::new().read(true).write(true).create(true).open("quantum_ring_buffer.bin") {
+        let path = "data/lakehouse";
+        if std::fs::metadata(path).is_err() {
+            let _ = std::fs::create_dir_all(path);
+        }
+        let ring_file_path = "data/lakehouse/quantum_ring_buffer.bin";
+        let mmap_file = match OpenOptions::new().read(true).write(true).create(true).open(ring_file_path) {
             Ok(file) => {
                 if file.metadata().map(|m| m.len()).unwrap_or(0) < total_size as u64 {
                     if let Err(e) = file.set_len(total_size as u64) {
@@ -71,7 +76,7 @@ impl TeleonomiaState {
                 }
             }
             Err(e) => {
-                eprintln!("⚠️ [TELEONOMIA] No se pudo crear quantum_ring_buffer.bin: {}", e);
+                eprintln!("⚠️ [TELEONOMIA] No se pudo crear {}: {}", ring_file_path, e);
                 None
             }
         };
@@ -89,14 +94,24 @@ impl TeleonomiaState {
     #[inline(always)]
     pub fn write_features(&self, coin_id: usize, features: &[f64; 54], dt: f64, price: f64) {
         if coin_id >= self.omni_features.len() { return; }
+
+        // FIX #695: Sanitizar finitud de los 54 features, dt y precio
+        let mut safe_features = *features;
+        for f in &mut safe_features {
+            if !f.is_finite() {
+                *f = 0.0;
+            }
+        }
+        let safe_dt = if dt.is_finite() && dt >= 0.0 { dt } else { 0.0 };
+        let safe_price = if price.is_finite() && price > 0.0 { price } else { 0.0 };
         
-        for (i, &val) in features.iter().enumerate() {
+        for (i, &val) in safe_features.iter().enumerate() {
             if i < self.omni_features[coin_id].len() {
                 self.omni_features[coin_id][i].store(val.to_bits(), Ordering::Relaxed);
             }
         }
-        self.dt[coin_id].store(dt.to_bits(), Ordering::Relaxed);
-        self.current_price[coin_id].store(price.to_bits(), Ordering::Relaxed);
+        self.dt[coin_id].store(safe_dt.to_bits(), Ordering::Relaxed);
+        self.current_price[coin_id].store(safe_price.to_bits(), Ordering::Relaxed);
         
         // Persist to SSD via Zero-Alloc Ring Buffer
         if let Some(mmap_mutex) = &self.mmap_file {
@@ -104,16 +119,16 @@ impl TeleonomiaState {
             let record = RingBufferRecord {
                 timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
                 coin_id: coin_id as u64,
-                dt,
-                price,
-                features: *features,
+                dt: safe_dt,
+                price: safe_price,
+                features: safe_features,
             };
             
             let bytes = bytemuck::bytes_of(&record);
             let offset = index * std::mem::size_of::<RingBufferRecord>();
             
-            // Try lock for zero latency. If locked, we drop the frame for persistence but keep RAM state up-to-date.
-            if let Some(mut mmap) = mmap_mutex.try_lock() {
+            // Lock to ensure reliable persistence to disk without dropping telemetry frames
+            if let Ok(mut mmap) = mmap_mutex.lock() {
                 let end = offset + bytes.len();
                 if end <= mmap.len() {
                     mmap[offset..end].copy_from_slice(bytes);
@@ -142,4 +157,40 @@ impl TeleonomiaState {
 // Global Singleton access if needed, though passing Arc is better.
 lazy_static::lazy_static! {
     pub static ref GLOBAL_TELEONOMIA: std::sync::Arc<TeleonomiaState> = std::sync::Arc::new(TeleonomiaState::new(30, 54));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_teleonomia_write_and_read() {
+        let state = TeleonomiaState::new(10, 54);
+        let mut feats = [0.0; 54];
+        feats[0] = 1.23;
+        feats[53] = 4.56;
+
+        state.write_features(0, &feats, 0.05, 50000.0);
+        let (read_feats, dt, price) = state.read_features(0);
+
+        assert_eq!(read_feats[0], 1.23);
+        assert_eq!(read_feats[53], 4.56);
+        assert_eq!(dt, 0.05);
+        assert_eq!(price, 50000.0);
+    }
+
+    #[test]
+    fn test_teleonomia_nan_sanitization() {
+        let state = TeleonomiaState::new(10, 54);
+        let mut feats = [f64::NAN; 54];
+        feats[10] = 100.0;
+
+        state.write_features(1, &feats, f64::NAN, f64::NAN);
+        let (read_feats, dt, price) = state.read_features(1);
+
+        assert_eq!(read_feats[0], 0.0);
+        assert_eq!(read_feats[10], 100.0);
+        assert_eq!(dt, 0.0);
+        assert_eq!(price, 0.0);
+    }
 }

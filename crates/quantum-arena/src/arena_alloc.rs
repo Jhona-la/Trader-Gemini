@@ -21,7 +21,7 @@ impl<const N: usize> ZeroHeapArena<N> {
     }
 
     #[inline(always)]
-    pub fn reset(&self) {
+    pub fn reset(&mut self) {
         self.offset.store(0, Ordering::Relaxed);
     }
 
@@ -50,5 +50,29 @@ impl<const N: usize> ZeroHeapArena<N> {
                 Err(actual) => current = actual,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zero_heap_arena_allocation_and_overflow() {
+        let mut arena = ZeroHeapArena::<1024>::new();
+        let slice1 = arena.alloc_slice::<f64>(10);
+        assert!(slice1.is_some());
+        let s1 = slice1.unwrap();
+        assert_eq!(s1.len(), 10);
+        s1[0] = 42.0;
+        assert_eq!(s1[0], 42.0);
+
+        // Intento de alojar más allá de la capacidad (1024 bytes / 8 bytes = 128 f64)
+        let overflow = arena.alloc_slice::<f64>(200);
+        assert!(overflow.is_none());
+
+        arena.reset();
+        let slice2 = arena.alloc_slice::<f64>(10);
+        assert!(slice2.is_some());
     }
 }

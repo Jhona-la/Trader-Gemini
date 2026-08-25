@@ -1,4 +1,5 @@
 pub mod anomaly_detector;
+pub mod crash_dump;
 pub mod ebpf_core;
 pub mod memory_audit;
 pub mod memory_compaction;
@@ -6,6 +7,8 @@ pub mod observability_plane;
 pub mod pmu_sensor;
 pub mod telemetry;
 pub mod zero_latency_telemetry;
+
+pub use crash_dump::{EmergencyCrashDump, PositionDumpEntry};
 use std::sync::atomic::{AtomicBool, Ordering};
 use uuid::Uuid;
 
@@ -13,11 +16,10 @@ use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
     SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_JOB_MEMORY,
 };
-use windows::Win32::System::Threading::SetProcessWorkingSetSize;
 use windows::Win32::System::Threading::{
     GetCurrentProcess, GetCurrentThread, SetPriorityClass, SetProcessAffinityMask,
-    SetThreadIdealProcessor, SetThreadPriority, HIGH_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
-    THREAD_PRIORITY_TIME_CRITICAL,
+    SetProcessWorkingSetSize, SetThreadAffinityMask, SetThreadIdealProcessor,
+    SetThreadPriority, HIGH_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, THREAD_PRIORITY_TIME_CRITICAL,
 };
 
 use std::ffi::c_void;
@@ -89,9 +91,6 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
         }
 
         // 4. Forzar memoria física pura (Lock RAM, Disable Pagefile swapping)
-        // Primero vaciamos el working set para evitar overhead legacy (equivale a EmptyWorkingSet)
-        let _ = SetProcessWorkingSetSize(process, usize::MAX, usize::MAX);
-
         let min_working_set = (max_memory_mb / 2) * 1024 * 1024;
         let max_working_set = max_memory_mb * 1024 * 1024;
         if let Err(e) = SetProcessWorkingSetSize(process, min_working_set, max_working_set) {
@@ -107,13 +106,22 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
     // Iniciar el auditor dinámico
     memory_audit::start_memory_auditor(max_memory_mb, arena);
 
+    #[cfg(windows)]
+    let tid = unsafe { windows::Win32::System::Threading::GetCurrentThreadId() };
+    #[cfg(not(windows))]
+    let tid = std::process::id();
+
     // Iniciar Hardware-Assisted Out-of-Band Observability Plane
     let obs_plane = observability_plane::ObservabilityPlane::new(
         std::process::id(), // process ID
-        std::process::id(), // TODO: Obtener el TID del hot-path real en lugar de PID
+        tid,                // Native Hot-Path Thread ID
     );
-    // Asignar al CPU core 5 (fuera del rango de HFT)
-    obs_plane.spawn_isolated(Some(5));
+    // Asignar al último CPU core lógico disponible (fuera del rango de HFT) según topología de hardware (BUG-678)
+    let total_cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    let obs_core = if total_cpus > 1 { Some(total_cpus - 1) } else { None };
+    obs_plane.spawn_isolated(obs_core);
 
     #[cfg(not(windows))]
     {
@@ -158,3 +166,45 @@ pub fn set_current_thread_time_critical() {
         }
     }
 }
+
+/// FASE 24 & Punto #244: Fija la afinidad estricta del hilo actual a un núcleo físico específico
+pub fn pin_current_thread_to_core(core_id: usize) -> bool {
+    #[cfg(windows)]
+    unsafe {
+        let thread = GetCurrentThread();
+        let _ = SetThreadIdealProcessor(thread, core_id as u32);
+        let mask = 1usize << (core_id % 64);
+        let old_mask = SetThreadAffinityMask(thread, mask);
+        old_mask != 0
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = core_id;
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pin_current_thread_to_core() {
+        let ok = pin_current_thread_to_core(0);
+        #[cfg(windows)]
+        assert!(ok, "On Windows, thread affinity pinning to core 0 should succeed");
+        #[cfg(not(windows))]
+        let _ = ok;
+    }
+
+    #[test]
+    fn test_set_current_thread_time_critical_and_virtual_lock() {
+        set_current_thread_time_critical();
+        
+        let mut buffer = vec![0u8; 4096];
+        let ptr = buffer.as_mut_ptr() as *mut std::ffi::c_void;
+        let _locked = unsafe { lock_memory_region(ptr, buffer.len()) };
+        // Validates safe execution without panics or memory corruption
+    }
+}
+

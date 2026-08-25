@@ -6,14 +6,21 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::time::sleep;
 
+pub mod anti_bias_governor;
 pub mod ast_mutator;
 pub mod cma_es;
+pub mod crossover_cauchy;
 pub mod entropy_fitness;
 pub mod meta;
+pub mod moe_neat_arena;
+pub mod neat;
+pub mod online_daemon;
 pub mod online_random_forest;
 pub mod polars_evolver;
 pub mod random_forest;
 
+pub use crossover_cauchy::EvolutionaryOperators;
+pub use moe_neat_arena::{fast_non_dominated_sort, ParetoCandidate};
 use meta::MetaEvolver;
 use quantum_arena::genome::SuperGenotype as Genotype;
 
@@ -59,8 +66,8 @@ impl EvolutionEngine {
             }
             if valid_coins > 0 {
                 let avg_wr = total_wr / valid_coins as f64;
-                // Certificación Bayesiana/Genómica: Umbral dictado por ML Threshold en el Genoma, no hardcodeado a 0.45
-                let minimum_viable_wr = self.arena.config.ml_threshold_long.load(Ordering::Relaxed);
+                // Umbral de viabilidad de Win Rate estadístico (no confundir con umbral de confianza ML de 70%)
+                let minimum_viable_wr = (self.arena.config.ml_threshold_long.load(Ordering::Relaxed) * 0.70).clamp(0.40, 0.60);
                 if avg_wr < minimum_viable_wr {
                     println!(
                         "🚨 [DEGRADACIÓN DETECTADA] Win Rate Global {:.2}% (Requerido: {:.2}%). Re-activando CMA-ES intenso.",
@@ -81,7 +88,7 @@ impl EvolutionEngine {
                 "🧠 [TRUE EVOLUTION] Extrayendo ventana de memoria a corto plazo (LockFreeRing)..."
             );
 
-            let max_capacity = self.arena.coins.len() * 32768;
+            let max_capacity = self.arena.coins.len() * 4096;
             let mut all_ticks = Vec::with_capacity(max_capacity);
 
             for coin_id in 0..self.arena.coins.len() {
@@ -92,7 +99,7 @@ impl EvolutionEngine {
                     continue;
                 }
 
-                let ticks = self.arena.coins[coin_id].tick_ring.snapshot_recent(32768);
+                let ticks = self.arena.coins[coin_id].tick_ring.snapshot_recent(4096);
 
                 for ct in ticks {
                     if ct.bid_price > 0.0 {
@@ -266,9 +273,10 @@ impl EvolutionEngine {
                     // We use `velocity` instead of live_sharpe to match the old tuple partially, or just velocity for now.
                     // Actually, let's stick to the expected signature!
                     let raw_fitness = if pnl > 0.0 && velocity >= 1.0 {
-                        pnl * sharpe * if total_trades > 0 { 1.0 } else { 0.0 }
+                        pnl * sharpe.max(0.01) * if total_trades > 0 { 1.0 } else { 0.0 }
                     } else {
-                        pnl * (1.0 / sharpe.max(0.01)) // Castigo exponencial a pérdidas
+                        // Castigo monótono a pérdidas: penalización proporcional al drawdown y aversión a la inacción
+                        pnl.min(0.0) * (1.0 + sharpe.abs()) - (if total_trades == 0 { 10.0 } else { 0.0 })
                     };
                     (i, raw_fitness, pnl, total_trades as usize, sharpe, sharpe)
                 })

@@ -68,7 +68,38 @@ pub async fn start_server(
 
                     let mut rx = tx.subscribe();
                     loop {
-                        if let Ok(event) = rx.recv().await {
+                        if let Ok(mut event) = rx.recv().await {
+                            // FIX #1469: Sanitización de flotantes en eventos de telemetría para prevenir caídas de SSE por NaNs
+                            match &mut event {
+                                TelemetryEvent::CapitalUpdate(cap) => {
+                                    if !cap.is_finite() { *cap = 0.0; }
+                                }
+                                TelemetryEvent::OmniUpdate { dark_alpha, scalp_pnl, swing_pnl, gross_pnl, net_pnl, win_rate, trade_duration_avg, .. } => {
+                                    if !dark_alpha.is_finite() { *dark_alpha = 0.0; }
+                                    if !scalp_pnl.is_finite() { *scalp_pnl = 0.0; }
+                                    if !swing_pnl.is_finite() { *swing_pnl = 0.0; }
+                                    if !gross_pnl.is_finite() { *gross_pnl = 0.0; }
+                                    if !net_pnl.is_finite() { *net_pnl = 0.0; }
+                                    if !win_rate.is_finite() { *win_rate = 0.0; }
+                                    if !trade_duration_avg.is_finite() { *trade_duration_avg = 0.0; }
+                                }
+                                TelemetryEvent::TensorUpdate(tensor) => {
+                                    for v in tensor.iter_mut() {
+                                        if !v.is_finite() { *v = 0.0; }
+                                    }
+                                }
+                                TelemetryEvent::SwingTensorUpdate(tensor) => {
+                                    for v in tensor.iter_mut() {
+                                        if !v.is_finite() { *v = 0.0; }
+                                    }
+                                }
+                                TelemetryEvent::ShadowLeaderboard(scores) => {
+                                    for s in scores.iter_mut() {
+                                        if !s.is_finite() { *s = 0.0; }
+                                    }
+                                }
+                                _ => {}
+                            }
                             if let Ok(json) = serde_json::to_string(&event) {
                                 let sse_msg = format!("data: {}\n\n", json);
                                 if socket.write_all(sse_msg.as_bytes()).await.is_err() {
@@ -100,5 +131,36 @@ pub async fn start_server(
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_telemetry_event_enum_serialization() {
+        let ev1 = TelemetryEvent::LatencyUpdate(5000);
+        let s1 = serde_json::to_string(&ev1).unwrap();
+        assert!(s1.contains("5000"));
+
+        let ev2 = TelemetryEvent::CapitalUpdate(13.50);
+        let s2 = serde_json::to_string(&ev2).unwrap();
+        assert!(s2.contains("13.5"));
+
+        let ev3 = TelemetryEvent::OmniUpdate {
+            latency_ms: 12,
+            latency_panic: false,
+            dark_alpha: 0.75,
+            scalp_pnl: 0.50,
+            swing_pnl: 0.0,
+            gross_pnl: 0.50,
+            net_pnl: 0.45,
+            win_rate: 0.80,
+            trade_duration_avg: 120.0,
+        };
+        let s3 = serde_json::to_string(&ev3).unwrap();
+        assert!(s3.contains("0.75"));
+        assert!(s3.contains("0.45"));
     }
 }

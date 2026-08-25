@@ -22,7 +22,8 @@ members = [
     "crates/graph-4d",
     "crates/audit-engine",
     "crates/telemetry-engine",
-    "crates/storage-engine"
+    "crates/storage-engine",
+    "crates/metacortex-engine"
 ]
 
 [package]

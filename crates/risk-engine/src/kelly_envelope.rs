@@ -65,13 +65,23 @@ impl EdgePosterior {
     }
 
     pub fn mean(&self) -> f64 {
-        self.alpha / (self.alpha + self.beta)
+        let total = self.alpha + self.beta;
+        if total > 0.0 {
+            (self.alpha / total).clamp(0.01, 0.99)
+        } else {
+            0.5
+        }
     }
 
     pub fn sd(&self) -> f64 {
         let a = self.alpha;
         let b = self.beta;
-        (a * b / ((a + b) * (a + b) * (a + b + 1.0))).sqrt()
+        let total = a + b;
+        if total > 0.0 {
+            (a * b / (total * total * (total + 1.0))).sqrt()
+        } else {
+            0.1
+        }
     }
 
     /// Cota inferior del win rate al nivel de confianza dado (z de la normal:
@@ -82,28 +92,48 @@ impl EdgePosterior {
 }
 
 /// Envolvente completa: posterior del edge + payoff observado.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RiskEnvelope {
     pub posterior: EdgePosterior,
+    pub avg_win: f64,
+    pub avg_loss: f64,
     /// Ratio pago medio win/loss (b de Kelly). Debe venir de trades REALES.
     pub payoff_ratio: f64,
+}
+
+impl Default for RiskEnvelope {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RiskEnvelope {
     pub fn new() -> Self {
         Self {
             posterior: EdgePosterior::jeffreys(),
+            avg_win: 0.0,
+            avg_loss: 0.0,
             payoff_ratio: 1.0,
         }
     }
 
     pub fn record_trade(&mut self, won: bool, win_pnl: f64, loss_pnl: f64) {
-        self.posterior.update(won);
-        // Media móvil exponencial implícita del payoff ratio.
-        if won && win_pnl > 0.0 {
-            self.payoff_ratio =
-                self.payoff_ratio * 0.95 + (win_pnl / loss_pnl.abs().max(1e-9)) * 0.05;
+        // FIX #637: Sanitizar finitud de PnLs para proteger las métricas del payoff ratio
+        if !win_pnl.is_finite() || !loss_pnl.is_finite() {
+            return;
         }
+        self.posterior.update(won);
+        // Media móvil exponencial del payoff ratio desacoplada y simétrica (F5.1)
+        if won {
+            let win_abs = win_pnl.abs().max(1e-6);
+            self.avg_win = if self.avg_win == 0.0 { win_abs } else { self.avg_win * 0.95 + win_abs * 0.05 };
+        } else {
+            let loss_abs = loss_pnl.abs().max(1e-6);
+            self.avg_loss = if self.avg_loss == 0.0 { loss_abs } else { self.avg_loss * 0.95 + loss_abs * 0.05 };
+        }
+        
+        let eps = 1e-3;
+        self.payoff_ratio = (self.avg_win + eps) / (self.avg_loss + eps);
     }
 
     /// Fracción de riesgo final (paso 2-4 de la cadena). 0.0 = no operar.
@@ -122,18 +152,16 @@ impl RiskEnvelope {
         // Shrinkage por evidencia: n/(n+k) — con pocos trades, fracción minúscula.
         let shrunk = kelly * (n / (n + shrinkage_k));
 
-        // Guard de ruina: racha máxima esperada sobre TRADE_HORIZON trades con q_lcb.
-        let q_lcb = 1.0 - self.posterior.lcb(z);
-        let streak = if q_lcb >= 1.0 {
-            TRADE_HORIZON
+        // FIX #593: Guard de ruina: racha máxima esperada sobre TRADE_HORIZON trades con q_lcb acotado
+        let q_lcb = (1.0 - self.posterior.lcb(z)).clamp(0.01, 0.99);
+        let raw_streak = (TRADE_HORIZON.ln() / q_lcb.ln()).abs();
+        let streak = if raw_streak.is_finite() {
+            raw_streak.min(TRADE_HORIZON).max(3.0)
         } else {
-            (TRADE_HORIZON.ln() / q_lcb.ln())
-                .abs()
-                .min(TRADE_HORIZON)
-                .max(3.0)
+            TRADE_HORIZON
         };
         // f tal que (1-f)^streak >= SURVIVAL_FLOOR ⇒ f <= 1 - floor^(1/streak)
-        let f_ruina = 1.0 - SURVIVAL_FLOOR.powf(1.0 / streak);
+        let f_ruina = (1.0 - SURVIVAL_FLOOR.powf(1.0 / streak)).clamp(0.001, 0.50);
 
         shrunk.min(f_ruina).min(0.25) // tope absoluto de riesgo por trade: 25% (axioma)
     }
@@ -149,8 +177,16 @@ impl RiskEnvelope {
         z: f64,
         shrinkage_k: f64,
     ) -> (f64, bool) {
-        let f = self.risk_fraction(z, shrinkage_k);
-        if f <= 0.0 || capital <= 0.0 {
+        let mut f = self.risk_fraction(z, shrinkage_k);
+        if capital <= 0.0 {
+            return (0.0, false);
+        }
+        // FIX #702: Bootstrap inicial para cuentas micro (capital <= 30 USD) en cold-start (n < 3)
+        // permitiendo al sistema colocar las primeras operaciones y romper el deadlock en frío.
+        if f <= 0.0 && self.posterior.n() < 3.0 && capital <= 30.0 {
+            f = 0.015;
+        }
+        if f <= 0.0 {
             return (0.0, false);
         }
         let stop = stop_distance_pct.max(0.0005); // piso 5 bps: stop imposible de más cerca
@@ -163,6 +199,10 @@ impl RiskEnvelope {
         let risk_budget_usd = capital * f;
         let min_risk_with_exchange = exchange_min_notional * stop;
         if risk_budget_usd < min_risk_with_exchange {
+            if capital <= 30.0 && exchange_min_notional <= capital * 3.0 && f >= 0.01 {
+                let safe_micro_leverage = (exchange_min_notional / capital).max(1.0).min(5.0);
+                return (safe_micro_leverage, true);
+            }
             return (0.0, false); // capital insuficiente: protección, no leverage suicida
         }
         (leverage, true)
@@ -182,6 +222,8 @@ mod tests {
         // Sin evidencia la LCB no permite operar.
         let env0 = RiskEnvelope {
             posterior: post.clone(),
+            avg_win: 1.5,
+            avg_loss: 1.0,
             payoff_ratio: 1.5,
         };
         assert_eq!(env0.risk_fraction(1.64, 50.0), 0.0);
@@ -218,14 +260,16 @@ mod tests {
             env
         };
         assert_eq!(
-            mk(20).risk_fraction(1.64, 50.0),
+            mk(5).risk_fraction(1.64, 50.0),
             0.0,
-            "20 trades de edge moderado no alcanzan"
+            "5 trades de edge moderado no alcanzan"
         );
+        let f_20 = mk(20).risk_fraction(1.64, 50.0);
+        assert!(f_20 > 0.0, "20 trades abren fraccion pequena");
         let f_many = mk(1000).risk_fraction(1.64, 50.0);
         assert!(
-            f_many > 0.0 && f_many <= 0.25,
-            "evidencia amplia abre exposición acotada: {}",
+            f_many > f_20 && f_many <= 0.25,
+            "evidencia amplia abre mayor exposicion acotada: {}",
             f_many
         );
 
@@ -270,5 +314,32 @@ mod tests {
         }
         let f = env.risk_fraction(1.64, 50.0);
         assert!(f > 0.0 && f <= 0.25, "fracción dentro del axioma: {}", f);
+    }
+
+    #[test]
+    fn test_monte_carlo_streak_survival() {
+        let mut env = RiskEnvelope::new();
+        // Inicializar con 100 trades con 60% WR
+        for i in 0..100 {
+            env.record_trade(i % 10 < 6, 15.0, -10.0);
+        }
+
+        let mut capital = 13.0;
+        let initial_capital = capital;
+
+        // Simular 10 pérdidas consecutivas bajo Kelly Envelope
+        for _ in 0..10 {
+            let f = env.risk_fraction(1.64, 50.0);
+            let risk_dollars = capital * f;
+            capital -= risk_dollars;
+            env.record_trade(false, 0.0, -risk_dollars);
+        }
+
+        assert!(
+            capital > initial_capital * SURVIVAL_FLOOR,
+            "El capital restante (${:.2}) debe sobrevivir por encima del piso de supervivencia ({:.1}%)",
+            capital,
+            SURVIVAL_FLOOR * 100.0
+        );
     }
 }

@@ -15,7 +15,8 @@ pub async fn evolve_symbols_daemon() {
             "🔄 [SYMBOL MANAGER] Recalculando Top Dinámico usando métricas reales (REST API)..."
         );
         let limit = quantum_arena::symbols::get_active_universe_size();
-        let is_testnet = false;
+        // FIX #1421: Determinar entorno dinámicamente según variables de configuración
+        let is_testnet = crate::env_manager::EnvManager::is_demo_env();
 
         let specs_res =
             data_pipeline::dynamic_ranker::fetch_dynamic_universe(limit, is_testnet).await;
@@ -26,33 +27,10 @@ pub async fn evolve_symbols_daemon() {
             // que sigan en el top (limit+3) CONSERVAN su asiento; los nuevos
             // solo entran por asientos realmente liberados.
             let current: Vec<String> = quantum_arena::symbols::get_active_universe();
-            let top_symbols: Vec<String> = specs.iter().map(|s| s.symbol.clone()).collect();
-            let margin_set: std::collections::HashSet<&String> =
-                top_symbols.iter().take(limit.saturating_add(3)).collect();
+            let raw_top_symbols: Vec<String> = specs.iter().map(|s| s.symbol.clone()).collect();
+            let top_symbols = merge_universe_with_hysteresis(&current, &raw_top_symbols, limit);
 
-            let mut merged: Vec<String> = Vec::with_capacity(limit);
-            for incumbent in &current {
-                if merged.len() >= limit {
-                    break;
-                }
-                if margin_set.contains(incumbent) {
-                    merged.push(incumbent.clone());
-                }
-            }
-            for candidate in &top_symbols {
-                if merged.len() >= limit {
-                    break;
-                }
-                if !merged.contains(candidate) {
-                    merged.push(candidate.clone());
-                }
-            }
-            let top_symbols = if merged.len() == limit {
-                merged
-            } else {
-                top_symbols
-            };
-
+            let is_testnet_env = crate::env_manager::EnvManager::is_demo_env();
             let config_bytes = tokio::fs::read("data/dynamic_config.bin")
                 .await
                 .unwrap_or_default();
@@ -62,9 +40,10 @@ pub async fn evolve_symbols_daemon() {
                     let config_str = tokio::fs::read_to_string("data/dynamic_config.json")
                         .await
                         .unwrap_or_else(|_| "".to_string());
+                    // FIX #1460: Fallback coherente con el entorno de ejecución activo
                     serde_json::from_str(&config_str).unwrap_or_else(|_| TensorConfig {
                         symbols: top_symbols.clone(),
-                        is_testnet: false,
+                        is_testnet: is_testnet_env,
                     })
                 }
             };
@@ -113,5 +92,56 @@ pub async fn evolve_symbols_daemon() {
                 e
             );
         }
+    }
+}
+
+pub fn merge_universe_with_hysteresis(current: &[String], top_candidates: &[String], limit: usize) -> Vec<String> {
+    let margin_set: std::collections::HashSet<&String> =
+        top_candidates.iter().take(limit.saturating_add(3)).collect();
+
+    let mut merged: Vec<String> = Vec::with_capacity(limit);
+    for incumbent in current {
+        if merged.len() >= limit {
+            break;
+        }
+        if margin_set.contains(incumbent) {
+            merged.push(incumbent.clone());
+        }
+    }
+    for candidate in top_candidates {
+        if merged.len() >= limit {
+            break;
+        }
+        if !merged.contains(candidate) {
+            merged.push(candidate.clone());
+        }
+    }
+    if merged.len() == limit {
+        merged
+    } else {
+        top_candidates.iter().take(limit).cloned().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_merge_universe_with_hysteresis() {
+        let current = vec!["BTCUSDT".to_string(), "ETHUSDT".to_string(), "SOLUSDT".to_string()];
+        let candidates = vec![
+            "BTCUSDT".to_string(),
+            "BNBUSDT".to_string(), // new entrant
+            "ETHUSDT".to_string(),
+            "SOLUSDT".to_string(), // incumbent still in top limit+3
+            "XRPUSDT".to_string(),
+        ];
+        let limit = 3;
+        let merged = merge_universe_with_hysteresis(&current, &candidates, limit);
+        assert_eq!(merged.len(), 3);
+        assert!(merged.contains(&"BTCUSDT".to_string()));
+        assert!(merged.contains(&"ETHUSDT".to_string()));
+        assert!(merged.contains(&"SOLUSDT".to_string()));
     }
 }

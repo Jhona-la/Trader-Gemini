@@ -40,7 +40,10 @@ impl ASTMutator {
         }
 
         let new_content = serde_json::to_string_pretty(&json)?;
-        fs::write(path, new_content)?;
+        let tmp_path = format!("{}.tmp", path.display());
+        fs::write(&tmp_path, new_content)?;
+        let _ = fs::remove_file(path);
+        fs::rename(&tmp_path, path)?;
         println!(
             "🧬 [AST Mutator] Evolved {} at {} to {}",
             path.display(),
@@ -69,7 +72,10 @@ impl ASTMutator {
 
         if regex.is_match(&content) {
             let replaced = regex.replace(&content, format!("${{1}}{}$3", new_value));
-            fs::write(path, replaced.to_string())?;
+            let tmp_path = format!("{}.tmp", path.display());
+            fs::write(&tmp_path, replaced.to_string())?;
+            let _ = fs::remove_file(path);
+            fs::rename(&tmp_path, path)?;
             println!(
                 "🧬 [AST Mutator] Evolved .rs constant {} to {}",
                 const_name, new_value
@@ -81,3 +87,45 @@ impl ASTMutator {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ast_mutator_mutate_json_config() {
+        let temp_dir = std::env::temp_dir();
+        let json_file = temp_dir.join("test_ast_config.json");
+        let initial_json = r#"{"Risk": {"MAX_DRAWDOWN": 0.05, "LEVERAGE": 5}}"#;
+        fs::write(&json_file, initial_json).expect("write initial json");
+
+        let mutator = ASTMutator::new();
+        mutator
+            .mutate_json_config(&json_file, "Risk.MAX_DRAWDOWN", serde_json::json!(0.08))
+            .expect("mutation should succeed");
+
+        let updated_content = fs::read_to_string(&json_file).expect("read updated json");
+        assert!(updated_content.contains("0.08"));
+
+        let _ = fs::remove_file(&json_file);
+    }
+
+    #[test]
+    fn test_ast_mutator_mutate_rs_constant() {
+        let temp_dir = std::env::temp_dir();
+        let rs_file = temp_dir.join("test_ast_constant.rs");
+        let initial_rs = "pub const KELLY_FRACTION: f64 = 0.25;\npub const MAX_SLIPPAGE: f64 = 0.001;\n";
+        fs::write(&rs_file, initial_rs).expect("write initial rs");
+
+        let mutator = ASTMutator::new();
+        mutator
+            .mutate_rs_constant(&rs_file, "KELLY_FRACTION", "0.50")
+            .expect("constant mutation should succeed");
+
+        let updated_content = fs::read_to_string(&rs_file).expect("read updated rs");
+        assert!(updated_content.contains("pub const KELLY_FRACTION: f64 = 0.50;"));
+
+        let _ = fs::remove_file(&rs_file);
+    }
+}
+

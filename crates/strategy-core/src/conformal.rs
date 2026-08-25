@@ -22,6 +22,9 @@ impl ConformalPredictor {
 
     #[inline(always)]
     pub fn update(&mut self, actual_return: f64, predicted_return: f64) {
+        if !actual_return.is_finite() || !predicted_return.is_finite() {
+            return;
+        }
         let residual = (actual_return - predicted_return).abs();
         if self.residual_history.len() >= self.max_history {
             self.residual_history.pop_front();
@@ -29,7 +32,7 @@ impl ConformalPredictor {
         self.residual_history.push_back(residual);
     }
 
-    /// Calcula el valor q-cuantil no paramétrico q_{1-\alpha}
+    /// Calcula el valor q-cuantil no paramétrico q_{1-\alpha} sin alocación en el heap
     #[inline(always)]
     pub fn compute_conformal_quantile(&self) -> f64 {
         let n = self.residual_history.len();
@@ -37,36 +40,49 @@ impl ConformalPredictor {
             return 0.0030; // Fallback inicial dinámico si no hay historial
         }
 
-        let mut sorted: Vec<f64> = self.residual_history.iter().copied().collect();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let mut sorted = [0.0f64; 256];
+        let n_clamped = n.min(256);
+        // FIX #563: Muestrear los 256 residuos MÁS RECIENTES usando .iter().rev()
+        for (i, &v) in self.residual_history.iter().rev().take(n_clamped).enumerate() {
+            sorted[i] = v;
+        }
+        let slice = &mut sorted[..n_clamped];
+        slice.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         // Cuantil ajustado por muestra finita: (1 - alpha) * (1 + 1/n)
-        let q_idx = (((1.0 - self.alpha) * (n as f64 + 1.0)).ceil() as usize).saturating_sub(1);
-        let q_val = sorted[q_idx.min(n - 1)];
-        q_val // Pure prediction sin forzar inflación
+        let q_idx = (((1.0 - self.alpha) * (n_clamped as f64 + 1.0)).ceil() as usize).saturating_sub(1);
+        slice[q_idx.min(n_clamped - 1)]
     }
 
     /// Retorna los objetivos dinámicos (TP, SL) garantizados probabilísticamente
     #[inline(always)]
     pub fn compute_dynamic_tp_sl(&self, atr_pct: f64, maker_fee: f64, taker_fee: f64, is_scalp: bool, config: &quantum_arena::config::QuantumConfig) -> (f64, f64) {
+        let safe_atr = if atr_pct.is_finite() && atr_pct > 0.0 { atr_pct } else { 0.005 };
         let q = self.compute_conformal_quantile();
-        let base_vol = atr_pct.max(q);
+        let base_vol = safe_atr.max(if q.is_finite() && q > 0.0 { q } else { 0.003 });
 
-        let _roundtrip_fee = maker_fee + taker_fee;
+        // FIX #689: Sanitizar comisiones
+        let safe_maker = if maker_fee.is_finite() && maker_fee >= 0.0 { maker_fee } else { 0.0002 };
+        let safe_taker = if taker_fee.is_finite() && taker_fee >= 0.0 { taker_fee } else { 0.0005 };
+        let _roundtrip_fee = safe_maker + safe_taker;
 
         if is_scalp {
             use std::sync::atomic::Ordering;
-            let tp_mult = config.tp_rr_ratio_btc.load(Ordering::Relaxed).max(1.0);
-            let sl_mult = config.sl_atr_multiplier.load(Ordering::Relaxed).max(0.5);
-            let raw_tp = base_vol * tp_mult;
-            let raw_sl = base_vol * sl_mult;
+            let tp_mult = config.tp_rr_ratio_btc.load(Ordering::Relaxed);
+            let safe_tp_mult = if tp_mult.is_finite() && tp_mult > 0.0 { tp_mult.max(1.0) } else { 1.5 };
+            let sl_mult = config.sl_atr_multiplier.load(Ordering::Relaxed);
+            let safe_sl_mult = if sl_mult.is_finite() && sl_mult > 0.0 { sl_mult.max(0.5) } else { 1.0 };
+            let raw_tp = (base_vol * safe_tp_mult).clamp(0.001, 0.50);
+            let raw_sl = (base_vol * safe_sl_mult).clamp(0.001, 0.50);
             (raw_tp, raw_sl)
         } else {
             use std::sync::atomic::Ordering;
-            let tp_mult = config.swing_trail_atr_mult_base.load(Ordering::Relaxed).max(2.0);
-            let sl_mult = config.sl_atr_multiplier.load(Ordering::Relaxed).max(1.0);
-            let raw_tp = base_vol * tp_mult;
-            let raw_sl = base_vol * sl_mult;
+            let tp_mult = config.swing_trail_atr_mult_base.load(Ordering::Relaxed);
+            let safe_tp_mult = if tp_mult.is_finite() && tp_mult > 0.0 { tp_mult.max(2.0) } else { 3.0 };
+            let sl_mult = config.sl_atr_multiplier.load(Ordering::Relaxed);
+            let safe_sl_mult = if sl_mult.is_finite() && sl_mult > 0.0 { sl_mult.max(1.0) } else { 1.5 };
+            let raw_tp = (base_vol * safe_tp_mult).clamp(0.001, 0.50);
+            let raw_sl = (base_vol * safe_sl_mult).clamp(0.001, 0.50);
             (raw_tp, raw_sl)
         }
     }
@@ -77,3 +93,51 @@ impl Default for ConformalPredictor {
         Self::new(0.05, 200)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_conformal_predictor_update_and_quantile() {
+        let mut predictor = ConformalPredictor::new(0.05, 100);
+        assert_eq!(predictor.compute_conformal_quantile(), 0.0030); // fallback under 10 samples
+
+        for i in 1..=20 {
+            predictor.update(i as f64 * 0.001, 0.0);
+        }
+
+        let q = predictor.compute_conformal_quantile();
+        assert!(q > 0.015 && q <= 0.020);
+    }
+
+    #[test]
+    fn test_conformal_predictor_dynamic_tp_sl_scalp_vs_swing() {
+        let mut predictor = ConformalPredictor::new(0.05, 100);
+        for _ in 0..20 {
+            predictor.update(0.005, 0.0);
+        }
+        let config = quantum_arena::config::QuantumConfig::new(13.0);
+
+        let (scalp_tp, scalp_sl) = predictor.compute_dynamic_tp_sl(0.005, 0.0002, 0.0005, true, &config);
+        let (swing_tp, swing_sl) = predictor.compute_dynamic_tp_sl(0.005, 0.0002, 0.0005, false, &config);
+
+        assert!(swing_tp > scalp_tp, "Swing TP must be larger than Scalp TP");
+        assert!(scalp_tp > 0.0 && scalp_sl > 0.0);
+        assert!(swing_tp > 0.0 && swing_sl > 0.0);
+    }
+
+    #[test]
+    fn test_conformal_predictor_nan_and_negative_immunity() {
+        let mut predictor = ConformalPredictor::new(0.05, 100);
+        predictor.update(f64::NAN, 0.0);
+        assert_eq!(predictor.residual_history.len(), 0);
+
+        let config = quantum_arena::config::QuantumConfig::new(13.0);
+        let (tp, sl) = predictor.compute_dynamic_tp_sl(f64::NAN, f64::NAN, f64::NAN, true, &config);
+        assert!(tp.is_finite() && sl.is_finite());
+        assert!(tp > 0.0 && sl > 0.0);
+    }
+}
+
+

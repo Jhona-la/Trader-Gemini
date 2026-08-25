@@ -54,7 +54,13 @@ impl AdnBackupCatalog {
                 if meta_path.exists() {
                     if let Ok(content) = fs::read_to_string(meta_path) {
                         if let Ok(meta) = serde_json::from_str::<GenerationMetadata>(&content) {
-                            list.push(meta);
+                            if meta.teleonomia_score.is_finite()
+                                && meta.sharpe_ratio.is_finite()
+                                && meta.max_drawdown.is_finite()
+                                && meta.win_rate.is_finite()
+                            {
+                                list.push(meta);
+                            }
                         }
                     }
                 }
@@ -94,3 +100,42 @@ impl ReminiscenceModule {
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_adn_backup_catalog_archive_and_list() {
+        let temp_dir = std::env::temp_dir().join(format!("adn_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let catalog = AdnBackupCatalog::new(&temp_dir);
+
+        let meta = GenerationMetadata {
+            gen_id: 1,
+            timestamp_ns: 1000000,
+            teleonomia_score: 0.95,
+            sharpe_ratio: 2.5,
+            max_drawdown: 0.02,
+            win_rate: 0.70,
+            active_regime: "TrendingBull".to_string(),
+            code_hash: 123456789,
+        };
+
+        catalog.archive_generation(&meta, "// source code").unwrap();
+        let list = catalog.list_archived_generations();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].gen_id, 1);
+        assert_eq!(list[0].teleonomia_score, 0.95);
+
+        let reminiscence = ReminiscenceModule::new(catalog);
+        let seed = reminiscence.find_ancestral_seed("TrendingBull", 2.0);
+        assert!(seed.is_some());
+        assert_eq!(seed.unwrap().gen_id, 1);
+
+        let no_seed = reminiscence.find_ancestral_seed("HighVolatilityBear", 2.0);
+        assert!(no_seed.is_none());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+}
+

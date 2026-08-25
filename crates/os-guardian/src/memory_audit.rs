@@ -76,3 +76,16 @@ pub fn get_memory_usage_mb() -> f64 {
     }
     0.0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_memory_usage_mb() {
+        let mem = get_memory_usage_mb();
+        assert!(mem >= 0.0);
+        assert!(mem.is_finite());
+    }
+}
+

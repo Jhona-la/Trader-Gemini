@@ -30,6 +30,10 @@ impl P2Quantile {
 
     #[inline(always)]
     pub fn update(&mut self, x: f64) {
+        if !x.is_finite() {
+            return;
+        }
+
         if !self.initialized {
             if self.count < 5 {
                 self.q[self.count as usize] = x;
@@ -158,16 +162,96 @@ impl AdaptiveQuantileEngine {
 
     #[inline(always)]
     pub fn dynamic_ofi_threshold(&self) -> f64 {
-        self.ofi_p80.value().max(0.15)
+        if self.ofi_p80.initialized {
+            self.ofi_p80.value().max(0.02)
+        } else {
+            0.15
+        }
     }
 
     #[inline(always)]
     pub fn dynamic_obi_threshold(&self) -> f64 {
-        self.obi_p80.value().max(0.15)
+        if self.obi_p80.initialized {
+            self.obi_p80.value().max(0.02)
+        } else {
+            0.15
+        }
     }
 
     #[inline(always)]
     pub fn dynamic_holistic_threshold(&self) -> f64 {
-        self.holistic_p85.value().max(0.40)
+        if self.holistic_p85.initialized {
+            self.holistic_p85.value().max(0.10)
+        } else {
+            0.40
+        }
+    }
+}
+
+impl Default for AdaptiveQuantileEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_p2_quantile_convergence() {
+        let mut p50 = P2Quantile::new(0.50);
+        for i in 1..=100 {
+            p50.update(i as f64);
+        }
+        assert!(p50.initialized);
+        let val = p50.value();
+        // El percentil 50 de 1..100 debe estar en el rango [40, 60]
+        assert!(val >= 40.0 && val <= 60.0, "P50 converge cerca de 50: {}", val);
+    }
+
+    #[test]
+    fn test_p2_quantile_nan_and_uninitialized_value() {
+        let mut p80 = P2Quantile::new(0.80);
+        assert_eq!(p80.value(), 0.0);
+        p80.update(f64::NAN);
+        p80.update(f64::INFINITY);
+        assert!(!p80.initialized);
+        assert_eq!(p80.count, 0);
+
+        // 3 samples (still uninitialized)
+        p80.update(10.0);
+        p80.update(20.0);
+        p80.update(30.0);
+        assert!(!p80.initialized);
+        assert!(p80.value() >= 10.0 && p80.value() <= 30.0);
+    }
+
+    #[test]
+    fn test_adaptive_quantile_engine_initialization_and_update() {
+        let mut engine = AdaptiveQuantileEngine::new();
+        assert_eq!(engine.dynamic_ofi_threshold(), 0.15);
+        assert_eq!(engine.dynamic_obi_threshold(), 0.15);
+        assert_eq!(engine.dynamic_holistic_threshold(), 0.40);
+
+        for i in 0..10 {
+            engine.update(i as f64 * 0.1, 0.2, 0.5, 0.01);
+        }
+
+        assert!(engine.ofi_p80.initialized);
+        assert!(engine.dynamic_ofi_threshold() >= 0.02);
+        assert!(engine.dynamic_obi_threshold() >= 0.02);
+        assert!(engine.dynamic_holistic_threshold() >= 0.10);
+    }
+
+    #[test]
+    fn test_adaptive_quantile_engine_nan_immunity() {
+        let mut engine = AdaptiveQuantileEngine::default();
+        for _ in 0..20 {
+            engine.update(f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::NAN);
+        }
+        assert_eq!(engine.dynamic_ofi_threshold(), 0.15);
+        assert_eq!(engine.dynamic_obi_threshold(), 0.15);
+        assert_eq!(engine.dynamic_holistic_threshold(), 0.40);
     }
 }

@@ -50,9 +50,9 @@ const SYMBOLS: [&str; 40] = [
     "ARBUSDT",
 ];
 
-// Descargar los 6 meses más recientes
+// Descargar histórico consolidado de meses pasados
 const MONTHS: [&str; 6] = [
-    "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05",
+    "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01",
 ];
 
 #[tokio::main]
@@ -137,6 +137,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let close = record[4].parse::<f64>().unwrap_or(0.0);
                     let volume = record[5].parse::<f64>().unwrap_or(0.0);
                     let close_time = record[6].parse::<u64>().unwrap_or(0);
+
+                    // FIX #1527: Validar que los precios y volumenes sean finitos y validos (> 0.0)
+                    if open <= 0.0 || high <= 0.0 || low <= 0.0 || close <= 0.0 || volume < 0.0
+                        || !open.is_finite() || !high.is_finite() || !low.is_finite() || !close.is_finite() || !volume.is_finite() {
+                        continue;
+                    }
 
                     all_klines.push(Kline {
                         open_time,

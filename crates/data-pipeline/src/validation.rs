@@ -179,4 +179,17 @@ mod tests {
         e.event_time = 0;
         assert_eq!(validate_book_ticker(&e), Err(RejectReason::BadEventTime));
     }
+
+    #[test]
+    fn test_reject_snapshot_and_counter_increment() {
+        count_reject(RejectReason::PriceNotFinite);
+        count_reject(RejectReason::CrossedBook);
+
+        let snap = reject_snapshot();
+        let finite_count = snap.iter().find(|(r, _)| *r == RejectReason::PriceNotFinite).unwrap().1;
+        let crossed_count = snap.iter().find(|(r, _)| *r == RejectReason::CrossedBook).unwrap().1;
+
+        assert!(finite_count >= 1);
+        assert!(crossed_count >= 1);
+    }
 }

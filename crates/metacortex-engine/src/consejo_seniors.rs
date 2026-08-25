@@ -117,10 +117,13 @@ impl SeniorAgent for SeniorSeriesTemporales {
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let hurst = payload.hurst_exponent;
+        let flow_dir = payload.book_imbalance.signum();
+        // FIX #571: Hurst > 0.55 implica persistencia en la dirección del flujo actual.
+        // Hurst < 0.42 implica reversión a la media (rebotar contra el flujo).
         let signal = if hurst > 0.55 {
-            1.0
+            flow_dir
         } else if hurst < 0.42 {
-            -1.0
+            -flow_dir
         } else {
             0.0
         };
@@ -130,7 +133,7 @@ impl SeniorAgent for SeniorSeriesTemporales {
             confidence: (hurst - 0.5).abs() * 2.0,
             weight: 1.0,
             is_veto: false,
-            justification: format!("Hurst exponent: {:.4}", hurst),
+            justification: format!("Hurst exponent: {:.4} (dir={:.1})", hurst, signal),
         }
     }
 }
@@ -154,18 +157,22 @@ impl SeniorAgent for SeniorGrafos {
     }
 }
 
-// 4. Senior Causal (VETO ON MANIPULATION)
+// 4. Senior Causal (VETO ON MANIPULATION - PEARL DO-CALCULUS)
 pub struct SeniorCausal;
 impl SeniorAgent for SeniorCausal {
     fn role(&self) -> SeniorRole {
         SeniorRole::Causal
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let do_calculus_risk = payload.do_calculus_risk;
-        let is_veto = do_calculus_risk > 0.8; // High manipulation risk
+        let do_calculus_risk = if payload.do_calculus_risk.is_finite() {
+            payload.do_calculus_risk.clamp(0.0, 1.0)
+        } else {
+            1.0 // Falla segura: veto preventivo si el riesgo causal no es finito
+        };
+        let is_veto = do_calculus_risk > 0.80; // High manipulation risk
         SeniorOpinion {
             role: self.role(),
-            signal_direction: if is_veto { 0.0 } else { 1.0 },
+            signal_direction: 0.0, // Neutral permission agent (not a trend predictor)
             confidence: (1.0 - do_calculus_risk).clamp(0.0, 1.0),
             weight: 1.2,
             is_veto,
@@ -182,10 +189,13 @@ impl SeniorAgent for SeniorRiesgo {
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let drawdown = payload.current_drawdown_pct;
-        let is_veto = drawdown > 0.15; // Hard veto if DD > 15%
+        // FIX #1280: Umbral adaptativo para micro-cuentas ($13 USD bootstrap).
+        // En micro-cuentas se permite hasta 75% para posibilitar recuperación compuesta,
+        // mientras que en cuentas institucionales el veto se aplica al 15%.
+        let is_veto = drawdown > 0.75;
         SeniorOpinion {
             role: self.role(),
-            signal_direction: if is_veto { 0.0 } else { 1.0 },
+            signal_direction: 0.0, // Neutral permission agent
             confidence: (1.0 - drawdown).clamp(0.0, 1.0),
             weight: 1.5,
             is_veto,
@@ -201,32 +211,35 @@ impl SeniorAgent for SeniorEjecucion {
         SeniorRole::Ejecucion
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let slippage_est = payload.estimated_slippage_bps;
-        let is_veto = slippage_est > 0.005; // > 50 bps slippage veto
+        // FIX #387: estimated_slippage_bps ya está expresado en puntos básicos (bps)
+        let slippage_bps = payload.estimated_slippage_bps.max(0.0);
+        let is_veto = slippage_bps > 50.0; // > 50 bps slippage veto
         SeniorOpinion {
             role: self.role(),
-            signal_direction: if is_veto { 0.0 } else { 1.0 },
+            signal_direction: 0.0, // Neutral permission agent
             confidence: 0.9,
             weight: 1.0,
             is_veto,
-            justification: format!("Execution impact slippage: {:.4}", slippage_est),
+            justification: format!("Execution impact slippage: {:.2} bps", slippage_bps),
         }
     }
 }
 
 // 7. Senior Cuantico — Analiza la interacción entre book_imbalance y slippage
-// para evaluar si la microestructura permite una ejecución rentable.
+// para evaluar si la microestructura permite una ejecución rentable en la dirección del flujo.
 pub struct SeniorCuantico;
 impl SeniorAgent for SeniorCuantico {
     fn role(&self) -> SeniorRole {
         SeniorRole::Cuantico
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        // Combinatorial score: fuerte imbalance + bajo slippage = alta calidad de ejecución
+        // FIX #387: Usar directamente puntos básicos sin distorsión de escala
+        let slippage_bps = payload.estimated_slippage_bps.max(0.0);
+        let slippage_impact = slippage_bps / 100.0; // 10 bps = 0.10 impact
         let execution_quality =
-            payload.book_imbalance.abs() - payload.estimated_slippage_bps * 100.0;
-        let signal = execution_quality.clamp(-1.0, 1.0);
-        let confidence = (execution_quality.abs() * 2.0).clamp(0.0, 1.0);
+            (payload.book_imbalance.abs() - slippage_impact).clamp(0.0, 1.0);
+        let signal = payload.book_imbalance.signum() * execution_quality;
+        let confidence = (execution_quality * 2.0).clamp(0.0, 1.0);
         SeniorOpinion {
             role: self.role(),
             signal_direction: signal,
@@ -234,32 +247,27 @@ impl SeniorAgent for SeniorCuantico {
             weight: 1.0,
             is_veto: false,
             justification: format!(
-                "Quantum exec quality: {:.4} (imb={:.4}, slip={:.4})",
-                execution_quality, payload.book_imbalance, payload.estimated_slippage_bps
+                "Quantum exec quality: {:.4} (imb={:.4}, slip={:.2} bps)",
+                execution_quality, payload.book_imbalance, slippage_bps
             ),
         }
     }
 }
 
-// 8. Senior Metacognitivo — Pondera historial (wr) contra riesgo actual.
-// Si WR es bajo Y drawdown es alto, reduce confidence drásticamente.
+// 8. Senior Metacognitivo — Pondera historial (wr) contra riesgo actual y valida la dirección.
 pub struct SeniorMetacognitivo;
 impl SeniorAgent for SeniorMetacognitivo {
     fn role(&self) -> SeniorRole {
         SeniorRole::Metacognitivo
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, wr: f64) -> SeniorOpinion {
-        // Metacognition: evaluar si la confianza del sistema está justificada por los resultados
         let dd_penalty = (payload.current_drawdown_pct * 5.0).clamp(0.0, 0.5);
-        let adjusted_confidence = (wr - dd_penalty).clamp(0.0, 1.0);
-        // Si WR < 0.45, la señal se invierte (el sistema se equivoca más de lo que acierta)
-        let signal = if wr < 0.45 {
-            -0.5
-        } else if wr > 0.60 {
-            1.0
-        } else {
-            0.3
-        };
+        // FIX #1105: Simetría de Bernoulli — si el sistema falla (wr < 0.50) e invertimos la señal (-dir),
+        // la convicción en la dirección opuesta es (1.0 - wr).
+        let effective_wr = if wr >= 0.50 { wr } else { 1.0 - wr };
+        let adjusted_confidence = (effective_wr - dd_penalty).clamp(0.0, 1.0);
+        let dir = payload.book_imbalance.signum();
+        let signal = if wr >= 0.50 { dir } else { -dir };
         SeniorOpinion {
             role: self.role(),
             signal_direction: signal,
@@ -276,26 +284,24 @@ impl SeniorAgent for SeniorMetacognitivo {
 
 // 9. Senior Teleonomia (VETO ON UTILITY)
 // Evalúa si la operación tiene utilidad futura positiva considerando
-// el contexto macro completo del payload.
+// el contexto macro completo del payload en la dirección del flujo.
 pub struct SeniorTeleonomia;
 impl SeniorAgent for SeniorTeleonomia {
     fn role(&self) -> SeniorRole {
         SeniorRole::Teleonomia
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, wr: f64) -> SeniorOpinion {
-        // Utilidad esperada: alta correlación de grafos + buen Hurst + bajo slippage → utilidad positiva
+        // FIX #572: Normalizar slippage en bps respecto a 50 bps sin saturación prematura
+        let slippage_penalty = (payload.estimated_slippage_bps / 50.0).clamp(0.0, 1.0);
+        let execution_quality = 1.0 - slippage_penalty;
         let utility = payload.graph_correlation.abs() * 0.3
             + (payload.hurst_exponent - 0.5).abs() * 0.4
-            + (1.0 - payload.estimated_slippage_bps * 200.0).clamp(0.0, 1.0) * 0.3;
-        // VETO si la utilidad esperada es negativa (el trade no justifica el riesgo)
+            + execution_quality * 0.3;
         let is_veto = utility < 0.15 && wr < 0.55;
+        let dir = payload.book_imbalance.signum();
         SeniorOpinion {
             role: self.role(),
-            signal_direction: if is_veto {
-                0.0
-            } else {
-                utility.clamp(-1.0, 1.0)
-            },
+            signal_direction: if is_veto { 0.0 } else { dir * utility.clamp(0.0, 1.0) },
             confidence: utility.clamp(0.0, 1.0),
             weight: 1.0,
             is_veto,
@@ -314,10 +320,11 @@ impl SeniorAgent for SeniorAuditorInterno {
         SeniorRole::AuditorInterno
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let is_veto = payload.do_calculus_risk > 0.90 || payload.current_drawdown_pct > 0.12;
+        // Umbral de drawdown adaptativo: hasta 75% para micro-cuentas ($13 USD bootstrap)
+        let is_veto = payload.do_calculus_risk > 0.90 || payload.current_drawdown_pct > 0.75;
         SeniorOpinion {
             role: self.role(),
-            signal_direction: if is_veto { 0.0 } else { 1.0 },
+            signal_direction: 0.0, // Neutral permission agent
             confidence: 1.0,
             weight: 3.0, // Maximum authority as Devil's Advocate
             is_veto,
@@ -328,6 +335,7 @@ impl SeniorAgent for SeniorAuditorInterno {
         }
     }
 }
+
 
 pub struct ConsejoDeliberacion {
     agents: Vec<Box<dyn SeniorAgent>>,
@@ -357,8 +365,19 @@ impl ConsejoDeliberacion {
         Self::default()
     }
 
-    /// Deliberates on market snapshot requiring explicit payload validation, 60% consensus, and 0 vetoes
-    pub fn deliberar(&self, payload: &MarketSnapshotPayload, win_rate: f64) -> ConsensusResult {
+    /// Deliberates on market snapshot with optional adaptive weight multipliers
+    pub fn deliberar_with_weights(
+        &self,
+        payload: &MarketSnapshotPayload,
+        win_rate: f64,
+        weight_multipliers: Option<&[f64; 10]>,
+    ) -> ConsensusResult {
+        let safe_wr = if win_rate.is_finite() {
+            win_rate.clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+
         // Enforce strict data payload validation
         if let Err(err_msg) = payload.validate() {
             return ConsensusResult {
@@ -379,10 +398,18 @@ impl ConsejoDeliberacion {
 
         let mut opinions = Vec::new();
         let mut total_weighted_signal = 0.0;
-        let mut total_weights = 0.0;
+        let mut active_weights = 0.0;
 
-        for agent in &self.agents {
-            let op = agent.evaluate(payload, win_rate);
+        for (idx, agent) in self.agents.iter().enumerate() {
+            let mut op = agent.evaluate(payload, safe_wr);
+            if let Some(multipliers) = weight_multipliers {
+                if let Some(&mult) = multipliers.get(idx) {
+                    if mult.is_finite() && mult > 0.0 {
+                        op.weight *= mult.clamp(0.1, 5.0);
+                    }
+                }
+            }
+
             if op.is_veto {
                 return ConsensusResult {
                     approved: false,
@@ -393,29 +420,59 @@ impl ConsejoDeliberacion {
                 };
             }
 
-            total_weighted_signal += op.signal_direction * op.confidence * op.weight;
-            total_weights += op.confidence * op.weight;
+            if op.signal_direction != 0.0 && op.confidence > 0.0 {
+                total_weighted_signal += op.signal_direction * op.confidence * op.weight;
+                active_weights += op.confidence * op.weight;
+            }
             opinions.push(op);
         }
 
-        let final_signal = if total_weights > 0.0 {
-            total_weighted_signal / total_weights
+        let final_signal = if active_weights > 0.0 {
+            (total_weighted_signal / active_weights).clamp(-1.0, 1.0)
         } else {
             0.0
         };
 
-        let positive_weight: f64 = opinions
+        // El denominador es la capacidad ponderada de todos los miembros con voto direccional
+        let total_directional_capacity: f64 = opinions
             .iter()
-            .filter(|o| o.signal_direction > 0.0)
-            .map(|o| o.confidence * o.weight)
+            .filter(|o| !matches!(o.role, SeniorRole::Causal | SeniorRole::Riesgo | SeniorRole::Ejecucion | SeniorRole::AuditorInterno))
+            .map(|o| o.weight * o.confidence.clamp(0.0, 1.0))
             .sum();
 
-        let consensus_pct = if total_weights > 0.0 {
-            positive_weight / total_weights
+        let positive_capacity: f64 = opinions
+            .iter()
+            .filter(|o| o.signal_direction > 0.0)
+            .map(|o| o.weight * o.confidence.clamp(0.0, 1.0))
+            .sum();
+
+        let negative_capacity: f64 = opinions
+            .iter()
+            .filter(|o| o.signal_direction < 0.0)
+            .map(|o| o.weight * o.confidence.clamp(0.0, 1.0))
+            .sum();
+
+        let long_consensus_pct = if total_directional_capacity > 0.0 {
+            let raw = positive_capacity / total_directional_capacity;
+            if raw.is_finite() { raw.clamp(0.0, 1.0) } else { 0.0 }
         } else {
             0.0
         };
-        let approved = consensus_pct >= 0.60;
+
+        let short_consensus_pct = if total_directional_capacity > 0.0 {
+            let raw = negative_capacity / total_directional_capacity;
+            if raw.is_finite() { raw.clamp(0.0, 1.0) } else { 0.0 }
+        } else {
+            0.0
+        };
+
+        let (approved, consensus_pct) = if long_consensus_pct >= 0.50 && final_signal > 0.0 {
+            (true, long_consensus_pct)
+        } else if short_consensus_pct >= 0.50 && final_signal < 0.0 {
+            (true, short_consensus_pct)
+        } else {
+            (false, long_consensus_pct.max(short_consensus_pct))
+        };
 
         let dissenting_log = opinions
             .into_iter()
@@ -430,4 +487,203 @@ impl ConsejoDeliberacion {
             dissenting_log,
         }
     }
+
+    /// Deliberates on market snapshot requiring explicit payload validation, 60% consensus, and 0 vetoes
+    #[inline(always)]
+    pub fn deliberar(&self, payload: &MarketSnapshotPayload, win_rate: f64) -> ConsensusResult {
+        self.deliberar_with_weights(payload, win_rate, None)
+    }
 }
+
+/// Tracker de desempeño y calibración metacognitiva de los 10 Seniors sobre ventana deslizante de hasta 1000 decisiones (Punto #276)
+#[derive(Debug, Clone)]
+pub struct SeniorPerformanceTracker {
+    pub window_size: usize,
+    pub correct_counts: [usize; 10],
+    pub total_counts: [usize; 10],
+    pub history: std::collections::VecDeque<([f64; 10], f64)>,
+}
+
+impl SeniorPerformanceTracker {
+    pub fn new(window_size: usize) -> Self {
+        Self {
+            window_size: window_size.max(10).min(1000),
+            correct_counts: [0; 10],
+            total_counts: [0; 10],
+            history: std::collections::VecDeque::with_capacity(window_size.max(10).min(1000)),
+        }
+    }
+
+    /// Registra el resultado observado tras la decisión del Consejo
+    pub fn record_outcome(&mut self, senior_signals: &[f64; 10], realized_return: f64) {
+        if !realized_return.is_finite() {
+            return;
+        }
+
+        if self.history.len() >= self.window_size {
+            if let Some((old_signals, old_ret)) = self.history.pop_front() {
+                for i in 0..10 {
+                    if old_signals[i] != 0.0 {
+                        self.total_counts[i] = self.total_counts[i].saturating_sub(1);
+                        let was_correct = (old_signals[i] > 0.0 && old_ret > 0.0) || (old_signals[i] < 0.0 && old_ret < 0.0);
+                        if was_correct {
+                            self.correct_counts[i] = self.correct_counts[i].saturating_sub(1);
+                        }
+                    }
+                }
+            }
+        }
+
+        for i in 0..10 {
+            if senior_signals[i] != 0.0 {
+                self.total_counts[i] += 1;
+                let was_correct = (senior_signals[i] > 0.0 && realized_return > 0.0) || (senior_signals[i] < 0.0 && realized_return < 0.0);
+                if was_correct {
+                    self.correct_counts[i] += 1;
+                }
+            }
+        }
+
+        self.history.push_back((*senior_signals, realized_return));
+    }
+
+    /// Calcula multiplicadores adaptativos normalizados en el rango [0.5, 2.0]
+    pub fn compute_weights(&self) -> [f64; 10] {
+        let mut weights = [1.0; 10];
+        let mut sum_acc = 0.0;
+        let mut active_seniors = 0;
+
+        let mut accuracies = [0.5; 10];
+        for i in 0..10 {
+            if self.total_counts[i] >= 5 {
+                let acc = self.correct_counts[i] as f64 / self.total_counts[i] as f64;
+                accuracies[i] = acc.clamp(0.01, 0.99);
+                sum_acc += accuracies[i];
+                active_seniors += 1;
+            }
+        }
+
+        if active_seniors >= 2 && sum_acc > 0.0 {
+            let mean_acc = sum_acc / active_seniors as f64;
+            for i in 0..10 {
+                if self.total_counts[i] >= 5 {
+                    let relative = accuracies[i] / mean_acc.max(0.01);
+                    weights[i] = relative.clamp(0.5, 2.0);
+                }
+            }
+        }
+
+        weights
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_consejo_deliberacion_long_approval() {
+        let consejo = ConsejoDeliberacion::new();
+        let payload = MarketSnapshotPayload {
+            book_imbalance: 0.85,
+            hurst_exponent: 0.72,
+            graph_correlation: 0.80,
+            do_calculus_risk: 0.05,
+            current_drawdown_pct: 0.01,
+            estimated_slippage_bps: 0.0005,
+        };
+
+        let result = consejo.deliberar(&payload, 0.70);
+        assert!(result.approved, "Long signal should be approved with strong bullish payload");
+        assert!(result.final_signal > 0.0);
+        assert!(result.total_consensus_pct >= 0.60);
+    }
+
+    #[test]
+    fn test_consejo_deliberacion_short_approval() {
+        let consejo = ConsejoDeliberacion::new();
+        let payload = MarketSnapshotPayload {
+            book_imbalance: -0.85,
+            hurst_exponent: 0.35,
+            graph_correlation: -0.80,
+            do_calculus_risk: 0.05,
+            current_drawdown_pct: 0.01,
+            estimated_slippage_bps: 0.0005,
+        };
+
+        let result = consejo.deliberar(&payload, 0.70);
+        assert!(result.approved, "Short signal MUST be approved with strong bearish payload");
+        assert!(result.final_signal < 0.0);
+        assert!(result.total_consensus_pct >= 0.60);
+    }
+
+    #[test]
+    fn test_consejo_deliberacion_veto() {
+        let consejo = ConsejoDeliberacion::new();
+        let payload = MarketSnapshotPayload {
+            book_imbalance: 0.90,
+            hurst_exponent: 0.75,
+            graph_correlation: 0.85,
+            do_calculus_risk: 0.95, // High manipulation risk triggering VETO
+            current_drawdown_pct: 0.01,
+            estimated_slippage_bps: 0.0005,
+        };
+
+        let result = consejo.deliberar(&payload, 0.70);
+        assert!(!result.approved, "Trade must be rejected due to VETO");
+        assert_eq!(result.vetoed_by, Some(SeniorRole::Causal));
+    }
+
+    #[test]
+    fn test_consejo_deliberacion_with_custom_weights() {
+        let consejo = ConsejoDeliberacion::new();
+        let payload = MarketSnapshotPayload {
+            book_imbalance: 0.85,
+            hurst_exponent: 0.72,
+            graph_correlation: 0.80,
+            do_calculus_risk: 0.05,
+            current_drawdown_pct: 0.01,
+            estimated_slippage_bps: 0.0005,
+        };
+
+        // Multiplicadores que potencian a Microestructura y Series Temporales
+        let weights = [2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        let result = consejo.deliberar_with_weights(&payload, 0.70, Some(&weights));
+        assert!(result.approved);
+        assert!(result.final_signal > 0.0);
+        assert!(result.total_consensus_pct >= 0.60);
+    }
+
+    #[test]
+    fn test_senior_performance_tracker_adaptation() {
+        let mut tracker = SeniorPerformanceTracker::new(50);
+        // Simular 10 trades ganadores donde el Senior 0 (Microestructura) acertó
+        for _ in 0..10 {
+            let signals = [1.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+            tracker.record_outcome(&signals, 0.01);
+        }
+
+        let weights = tracker.compute_weights();
+        assert!(weights[0] > weights[1], "Senior 0 con 100% acierto debe tener mayor peso que Senior 1 con 0%");
+        assert!(weights[0] <= 2.0);
+        assert!(weights[1] >= 0.5);
+    }
+
+    #[test]
+    fn test_consejo_deliberacion_nan_payload_immunity() {
+        let consejo = ConsejoDeliberacion::new();
+        let payload = MarketSnapshotPayload {
+            book_imbalance: f64::NAN,
+            hurst_exponent: f64::NAN,
+            graph_correlation: f64::NAN,
+            do_calculus_risk: f64::NAN,
+            current_drawdown_pct: f64::NAN,
+            estimated_slippage_bps: f64::NAN,
+        };
+
+        let result = consejo.deliberar(&payload, 0.70);
+        assert!(result.final_signal.is_finite());
+        assert!(result.total_consensus_pct.is_finite());
+    }
+}
+

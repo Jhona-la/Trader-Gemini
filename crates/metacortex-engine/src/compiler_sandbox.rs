@@ -9,7 +9,9 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use os_guardian;
 
 #[derive(Debug, Clone)]
 pub struct CompilationConfig {
@@ -51,6 +53,22 @@ impl CompilerSandbox {
             config,
             workspace_root: workspace_root.as_ref().to_path_buf(),
         }
+    }
+
+    /// Compila de forma asíncrona desacoplada del event loop de Tokio
+    pub async fn compile_package_async(self: Arc<Self>, package_name: String) -> CompilationResult {
+        tokio::task::spawn_blocking(move || {
+            self.compile_package(&package_name)
+        })
+        .await
+        .unwrap_or_else(|e| CompilationResult {
+            success: false,
+            duration: Duration::from_secs(0),
+            stdout: String::new(),
+            stderr: format!("Tokio join error: {}", e),
+            artifact_path: None,
+            error_summary: Some("Sandbox task panicked".to_string()),
+        })
     }
 
     /// Compiles a target package or the whole workspace in a controlled sandbox
@@ -115,14 +133,22 @@ impl CompilerSandbox {
                         } else {
                             "debug"
                         };
-                        let dll_name = format!("{}.dll", package_name.replace('-', "_"));
-                        let p = self
-                            .workspace_root
-                            .join("target")
-                            .join(profile)
-                            .join(dll_name);
-                        if p.exists() {
-                            Some(p)
+                        let normalized_name = package_name.replace('-', "_");
+                        let p_dll = self.workspace_root.join("target").join(profile).join(format!("{}.dll", normalized_name));
+                        let p_so = self.workspace_root.join("target").join(profile).join(format!("lib{}.so", normalized_name));
+                        let p_dylib = self.workspace_root.join("target").join(profile).join(format!("lib{}.dylib", normalized_name));
+                        let p_exe = self.workspace_root.join("target").join(profile).join(format!("{}.exe", normalized_name));
+                        let p_raw = self.workspace_root.join("target").join(profile).join(&normalized_name);
+                        if p_dll.exists() {
+                            Some(p_dll)
+                        } else if p_so.exists() {
+                            Some(p_so)
+                        } else if p_dylib.exists() {
+                            Some(p_dylib)
+                        } else if p_exe.exists() {
+                            Some(p_exe)
+                        } else if p_raw.exists() {
+                            Some(p_raw)
                         } else {
                             None
                         }
@@ -141,7 +167,7 @@ impl CompilerSandbox {
                 }
                 Ok(None) => {
                     if start_time.elapsed() > self.config.timeout {
-                        let _ = child.kill();
+                        kill_child_tree(&mut child);
                         return CompilationResult {
                             success: false,
                             duration: start_time.elapsed(),
@@ -151,10 +177,28 @@ impl CompilerSandbox {
                             error_summary: Some("Compilation timed out".to_string()),
                         };
                     }
+
+                    // FASE 6 & 16GB Host: Monitor host memory to abort if cargo exceeds safety bounds
+                    let sys_telemetry = os_guardian::telemetry::get_system_telemetry();
+                    if sys_telemetry.memory_used_mb > (16.0 * 1024.0 * 0.85) {
+                        kill_child_tree(&mut child);
+                        return CompilationResult {
+                            success: false,
+                            duration: start_time.elapsed(),
+                            stdout: String::new(),
+                            stderr: format!(
+                                "Cargo build aborted: Memory limit exceeded ({:.1} MB used)",
+                                sys_telemetry.memory_used_mb
+                            ),
+                            artifact_path: None,
+                            error_summary: Some("Compilation aborted due to RAM threshold".to_string()),
+                        };
+                    }
+
                     std::thread::sleep(poll_interval);
                 }
                 Err(e) => {
-                    let _ = child.kill();
+                    kill_child_tree(&mut child);
                     return CompilationResult {
                         success: false,
                         duration: start_time.elapsed(),
@@ -167,6 +211,21 @@ impl CompilerSandbox {
             }
         }
     }
+}
+
+/// Termina limpiamente el proceso cargo y todos sus subprocesos rustc.exe en cascada
+fn kill_child_tree(child: &mut std::process::Child) {
+    #[cfg(windows)]
+    {
+        let pid = child.id();
+        let _ = Command::new("taskkill")
+            .arg("/F")
+            .arg("/T")
+            .arg("/PID")
+            .arg(pid.to_string())
+            .output();
+    }
+    let _ = child.kill();
 }
 
 /// Helper to parse compiler stderr for key error lines

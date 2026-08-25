@@ -23,14 +23,26 @@ impl ZeroCopyTelemetryBus {
     pub fn new(file_path: &str) -> Self {
         let file_size = HEADER_SIZE + (EVENT_SIZE * MAX_EVENTS);
         
+        if let Some(parent) = std::path::Path::new(file_path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(file_path)
-            .unwrap_or_else(|_| panic!("🛡️ [ZeroCopyTelemetryBus] Fallo al crear archivo {}", file_path));
+            .unwrap_or_else(|_| {
+                let temp_path = std::env::temp_dir().join("telemetry_bus_fallback.bin");
+                OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .open(&temp_path)
+                    .unwrap_or_else(|_| panic!("🛡️ [ZeroCopyTelemetryBus] Fallo al crear archivo {}", file_path))
+            });
 
-        file.set_len(file_size as u64).unwrap();
+        let _ = file.set_len(file_size as u64);
 
         let mut mmap = unsafe { memmap2::MmapOptions::new().map_mut(&file).unwrap() };
         let base_ptr = mmap.as_mut_ptr();
@@ -50,16 +62,24 @@ impl ZeroCopyTelemetryBus {
     #[inline(always)]
     pub fn record_event(&self, event_type: u8, source_id: u8, payload: &[u8; 48]) {
         let mut head = self.write_head.load(Ordering::Relaxed);
-        let mut offset;
+        let offset;
         loop {
-            if head >= self.file_size {
-                head = HEADER_SIZE;
-            }
-            offset = head;
-            let next_head = head + EVENT_SIZE;
+            let next_head = if head + EVENT_SIZE > self.file_size {
+                HEADER_SIZE + EVENT_SIZE
+            } else {
+                head + EVENT_SIZE
+            };
+            let current_offset = if head + EVENT_SIZE > self.file_size {
+                HEADER_SIZE
+            } else {
+                head
+            };
             
-            match self.write_head.compare_exchange_weak(head, next_head, Ordering::Acquire, Ordering::Relaxed) {
-                Ok(_) => break,
+            match self.write_head.compare_exchange_weak(head, next_head, Ordering::AcqRel, Ordering::Relaxed) {
+                Ok(_) => {
+                    offset = current_offset;
+                    break;
+                }
                 Err(actual) => head = actual,
             }
         }
@@ -69,7 +89,7 @@ impl ZeroCopyTelemetryBus {
             let ptr = self.base_ptr.add(offset);
             
             // TS: 8 bytes
-            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as u64;
+            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
             std::ptr::copy_nonoverlapping(&ts as *const u64 as *const u8, ptr, 8);
             
             // Tipo y origen: 2 bytes
@@ -95,14 +115,12 @@ impl ZeroCopyTelemetryBus {
         dynamic_leverage: f64
     ) {
         let mut payload = [0u8; 48];
-        unsafe {
-            let p_ptr = payload.as_mut_ptr() as *mut f64;
-            *p_ptr.add(0) = gradient_loss;
-            *p_ptr.add(1) = entropy;
-            *p_ptr.add(2) = confidence;
-            *p_ptr.add(3) = volatility_factor;
-            *p_ptr.add(4) = kelly_fraction;
-            *p_ptr.add(5) = dynamic_leverage;
+        let values = [gradient_loss, entropy, confidence, volatility_factor, kelly_fraction, dynamic_leverage];
+        for (i, val) in values.iter().enumerate() {
+            // FIX #1428: Sanitización de flotantes antes de persistir en bus memmap
+            let safe_val = if val.is_finite() { *val } else { 0.0 };
+            let bytes = safe_val.to_bits().to_le_bytes();
+            payload[i * 8..(i + 1) * 8].copy_from_slice(&bytes);
         }
         self.record_event(5, source_id, &payload); // event_type 5 = IA_Tensor
     }
@@ -112,13 +130,46 @@ impl ZeroCopyTelemetryBus {
     #[inline(always)]
     pub fn record_roi_event(&self, source_id: u8, roi_pre_fee: f64, roi_post_fee: f64, win_rate: f64, total_trades: f64) {
         let mut payload = [0u8; 48];
-        unsafe {
-            let p_ptr = payload.as_mut_ptr() as *mut f64;
-            *p_ptr.add(0) = roi_pre_fee;
-            *p_ptr.add(1) = roi_post_fee;
-            *p_ptr.add(2) = win_rate;
-            *p_ptr.add(3) = total_trades;
+        let values = [roi_pre_fee, roi_post_fee, win_rate, total_trades];
+        for (i, val) in values.iter().enumerate() {
+            // FIX #1428: Sanitización de métricas de rendimiento
+            let safe_val = if val.is_finite() { *val } else { 0.0 };
+            let bytes = safe_val.to_bits().to_le_bytes();
+            payload[i * 8..(i + 1) * 8].copy_from_slice(&bytes);
         }
         self.record_event(6, source_id, &payload); // event_type 6 = ROI_Report
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_telemetry_bus_event_recording() {
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_telemetry_bus.bin");
+        let path_str = path.to_str().unwrap();
+
+        let bus = ZeroCopyTelemetryBus::new(path_str);
+        let payload = [7u8; 48];
+        bus.record_event(1, 0, &payload);
+        bus.record_tensor_telemetry(0, 0.05, 0.95, 0.88, 0.01, 0.25, 5.0);
+        bus.record_roi_event(0, 0.02, 0.015, 0.70, 10.0);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_telemetry_bus_nan_sanitization_and_ring_wrap() {
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_telemetry_bus_nan.bin");
+        let path_str = path.to_str().unwrap();
+
+        let bus = ZeroCopyTelemetryBus::new(path_str);
+        bus.record_tensor_telemetry(1, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN);
+        bus.record_roi_event(1, f64::NAN, f64::NAN, f64::NAN, f64::NAN);
+
+        let _ = std::fs::remove_file(path);
     }
 }

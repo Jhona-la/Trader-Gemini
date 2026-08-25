@@ -34,10 +34,11 @@ impl Genotype {
             trend_threshold: rand::rng().random_range(0.3..0.8),
             maker_spread_pct: rand::rng().random_range(0.0001..0.0020),
             maker_obi_threshold: rand::rng().random_range(0.3..0.9),
-            scalp_tp: rand::rng().random_range(0.001..0.010),
-            scalp_sl: rand::rng().random_range(0.001..0.005),
-            swing_tp: rand::rng().random_range(0.002..0.015),
-            swing_sl: rand::rng().random_range(0.001..0.005),
+            // FIX #1505: Rango asimétrico favorable (R:R >= 2:1 a 5:1) en genomas iniciales
+            scalp_tp: rand::rng().random_range(0.003..0.012),
+            scalp_sl: rand::rng().random_range(0.0005..0.0025),
+            swing_tp: rand::rng().random_range(0.006..0.025),
+            swing_sl: rand::rng().random_range(0.0015..0.0060),
             scalp_z_target: rand::rng().random_range(1.0..4.0),
             capital_split_scalp: rand::rng().random_range(0.1..1.0),
             min_confidence: rand::rng().random_range(0.5..0.95),
@@ -66,55 +67,36 @@ impl Genotype {
     }
 
     pub fn apply_to_arena(&self, arena: &GlobalArena) {
-        arena
-            .config
-            .global_leverage
-            .store(self.global_leverage, Ordering::Relaxed);
-        // Kelly fractions are pure math now, removed from Darwin
-        arena
-            .config
-            .trend_threshold
-            .store(self.trend_threshold, Ordering::Relaxed);
-        arena
-            .config
-            .maker_spread_pct
-            .store(self.maker_spread_pct, Ordering::Relaxed);
-        arena
-            .config
-            .maker_obi_threshold
-            .store(self.maker_obi_threshold, Ordering::Relaxed);
-        arena
-            .config
-            .scalp_tp_base
-            .store(self.scalp_tp, Ordering::Relaxed);
-        arena
-            .config
-            .scalp_sl_base
-            .store(self.scalp_sl, Ordering::Relaxed);
-        arena
-            .config
-            .swing_tp_base
-            .store(self.swing_tp, Ordering::Relaxed);
-        arena
-            .config
-            .swing_sl_base
-            .store(self.swing_sl, Ordering::Relaxed);
-        arena
-            .config
-            .scalp_obi_threshold
-            .store(self.scalp_z_target, Ordering::Relaxed);
-        arena
-            .config
-            .capital_split_scalp
-            .store(self.capital_split_scalp, Ordering::Relaxed);
-        arena
-            .config
-            .min_confidence_btc
-            .store(self.min_confidence, Ordering::Relaxed);
-        arena
-            .config
-            .explosive_leverage_multiplier
-            .store(self.explosive_leverage_multiplier, Ordering::Relaxed);
+        // FIX #685: Sanitizar parámetros de genoma antes de almacenar en atómicos
+        let g_lev = if self.global_leverage.is_finite() && self.global_leverage >= 1.0 { self.global_leverage } else { 10.0 };
+        let t_th = if self.trend_threshold.is_finite() { self.trend_threshold } else { 0.5 };
+        let m_sp = if self.maker_spread_pct.is_finite() && self.maker_spread_pct > 0.0 { self.maker_spread_pct } else { 0.0005 };
+        let m_obi = if self.maker_obi_threshold.is_finite() { self.maker_obi_threshold } else { 0.5 };
+        let sc_tp = if self.scalp_tp.is_finite() && self.scalp_tp > 0.0 { self.scalp_tp } else { 0.003 };
+        let sc_sl = if self.scalp_sl.is_finite() && self.scalp_sl > 0.0 { self.scalp_sl } else { 0.002 };
+        let sw_tp = if self.swing_tp.is_finite() && self.swing_tp > 0.0 { self.swing_tp } else { 0.010 };
+        let sw_sl = if self.swing_sl.is_finite() && self.swing_sl > 0.0 { self.swing_sl } else { 0.005 };
+        let sc_z = if self.scalp_z_target.is_finite() { self.scalp_z_target } else { 2.0 };
+        let cap_sp = if self.capital_split_scalp.is_finite() { self.capital_split_scalp } else { 0.5 };
+        let min_conf = if self.min_confidence.is_finite() { self.min_confidence } else { 0.65 };
+        let exp_lev = if self.explosive_leverage_multiplier.is_finite() && self.explosive_leverage_multiplier >= 1.0 { self.explosive_leverage_multiplier } else { 1.5 };
+
+        arena.config.global_leverage.store(g_lev, Ordering::Relaxed);
+        arena.config.trend_threshold.store(t_th, Ordering::Relaxed);
+        arena.config.maker_spread_pct.store(m_sp, Ordering::Relaxed);
+        arena.config.maker_obi_threshold.store(m_obi, Ordering::Relaxed);
+        arena.config.scalp_tp_base.store(sc_tp, Ordering::Relaxed);
+        arena.config.scalp_sl_base.store(sc_sl, Ordering::Relaxed);
+        arena.config.swing_tp_base.store(sw_tp, Ordering::Relaxed);
+        arena.config.swing_sl_base.store(sw_sl, Ordering::Relaxed);
+        arena.config.scalp_obi_threshold.store(sc_z, Ordering::Relaxed);
+        arena.config.capital_split_scalp.store(cap_sp, Ordering::Relaxed);
+        arena.config.min_confidence_btc.store(min_conf, Ordering::Relaxed);
+        let ml_long = (0.50 + (min_conf - 0.50).abs()).clamp(0.51, 0.95);
+        let ml_short = (0.50 - (min_conf - 0.50).abs()).clamp(0.05, 0.49);
+        arena.config.ml_threshold_long.store(ml_long, Ordering::Relaxed);
+        arena.config.ml_threshold_short.store(ml_short, Ordering::Relaxed);
+        arena.config.explosive_leverage_multiplier.store(exp_lev, Ordering::Relaxed);
     }
 }
 
@@ -129,18 +111,19 @@ impl DarwinDaemon {
 
     /// Extacts the recent ticks from the live arena, sorts them, and runs a fast GA
     pub fn evolve_online(&self) {
-        let mut master_stream = Vec::with_capacity(4 * 32768);
+        let active_coins = self.live_arena.coins.len().min(30);
+        let mut master_stream = Vec::with_capacity(active_coins * 4096);
 
-        // 1. Extract memory snapshot (lock-free: snapshot_recent never blocks the writer)
-        for coin_id in 0..4 {
+        // 1. Extract memory snapshot across all active coins (lock-free: snapshot_recent never blocks the writer)
+        for coin_id in 0..active_coins {
             let ticks = self.live_arena.coins[coin_id]
                 .tick_ring
-                .snapshot_recent(32768);
+                .snapshot_recent(4096);
 
             for tick in ticks {
                 master_stream.push(TickEvent {
                     coin_id,
-                    timestamp: 0,
+                    timestamp: tick.timestamp,
                     bid_price: tick.bid_price,
                     ask_price: tick.ask_price,
                     bid_qty: tick.bid_qty,
@@ -152,6 +135,9 @@ impl DarwinDaemon {
         if master_stream.is_empty() {
             return;
         }
+
+        // FASE FORENSE: Preservar ordenamiento cronológico multiactivo estricto
+        master_stream.sort_unstable_by_key(|t| t.timestamp);
 
         println!(
             "[Darwin] Extracted {} recent ticks. Starting online evolution...",
@@ -192,8 +178,14 @@ impl DarwinDaemon {
                             tick.ask_price,
                             tick.bid_qty,
                             tick.ask_qty,
-                            0,
+                            tick.timestamp,
                         );
+                        let mut dynamic_omni = [0.0f64; 54];
+                        let swing_feats = engine.feature_engines[tick.coin_id].get_swing_features();
+                        for (i, &f) in swing_feats.iter().enumerate() {
+                            dynamic_omni[i] = f as f64;
+                        }
+
                         let (_sc, _sw, c_sc, c_sw, _) = engine.process_tick(
                             tick.coin_id,
                             tick.bid_price,
@@ -201,7 +193,7 @@ impl DarwinDaemon {
                             tick.bid_qty,
                             tick.ask_qty,
                             tick.timestamp,
-                            &[0.0; 54],
+                            &dynamic_omni,
                         );
 
                         if c_sc.is_some() || c_sw.is_some() {
@@ -342,7 +334,7 @@ impl DarwinDaemon {
                     child.explosive_leverage_multiplier *= rand::rng().random_range(0.5..2.0);
                 }
 
-                child.global_leverage = child.global_leverage.clamp(25.0, 35.0);
+                child.global_leverage = child.global_leverage.clamp(1.0, 125.0);
                 child.trend_threshold = child.trend_threshold.clamp(0.1, 0.9);
                 child.maker_spread_pct = child.maker_spread_pct.clamp(0.0001, 0.05);
                 child.maker_obi_threshold = child.maker_obi_threshold.clamp(0.1, 0.95);
@@ -352,7 +344,7 @@ impl DarwinDaemon {
                 child.swing_sl = child.swing_sl.clamp(0.0005, 0.01);
                 child.scalp_z_target = child.scalp_z_target.clamp(0.5, 5.0);
                 child.capital_split_scalp = child.capital_split_scalp.clamp(0.1, 1.0);
-                child.min_confidence = child.min_confidence.clamp(0.5, 0.99);
+                child.min_confidence = child.min_confidence.clamp(0.50, 0.95);
                 child.explosive_leverage_multiplier =
                     child.explosive_leverage_multiplier.clamp(1.0, 10.0);
 
@@ -375,8 +367,14 @@ impl DarwinDaemon {
                     tick.ask_price,
                     tick.bid_qty,
                     tick.ask_qty,
-                    0,
+                    tick.timestamp,
                 );
+                let mut dynamic_omni = [0.0f64; 54];
+                let swing_feats = engine.feature_engines[tick.coin_id].get_swing_features();
+                for (i, &f) in swing_feats.iter().enumerate() {
+                    dynamic_omni[i] = f as f64;
+                }
+
                 let (_sc, _sw, c_sc, c_sw, _) = engine.process_tick(
                     tick.coin_id,
                     tick.bid_price,
@@ -384,33 +382,123 @@ impl DarwinDaemon {
                     tick.bid_qty,
                     tick.ask_qty,
                     tick.timestamp,
-                    &[0.0; 54],
+                    &dynamic_omni,
                 );
                 if c_sc.is_some() || c_sw.is_some() {
                     let cap = arena.unified_capital.load(Ordering::Relaxed);
                     if cap > peak_capital {
                         peak_capital = cap;
                     }
-                    let dd = (peak_capital - cap) / peak_capital;
-                    if dd > max_drawdown {
+                    let dd = if peak_capital > 0.0 { (peak_capital - cap) / peak_capital } else { 0.0 };
+                    if dd > max_drawdown && dd.is_finite() {
                         max_drawdown = dd;
                     }
                 }
             }
             let final_cap = arena.unified_capital.load(Ordering::Relaxed);
-            (final_cap - initial_capital) * (1.0 - max_drawdown)
+            let raw_fitness = (final_cap - initial_capital) * (1.0 - max_drawdown);
+            if raw_fitness.is_finite() { raw_fitness } else { -999999.0 }
         };
 
         println!("[Darwin] Online Evolution Complete.");
         println!("         Current Active Fitness: {:.4}", baseline_fitness);
         println!("         Evolved Genome Fitness: {:.4}", best_all_time.1);
 
-        // If the new genome is at least 5% better than the current one on recent data, Hot-Swap!
-        if best_all_time.1 > baseline_fitness * 1.05 {
+        // FIX #412: El nuevo genoma debe ser estrictamente mejor y superar un margen del 5% sin inversión de signo
+        let is_significantly_better = if baseline_fitness >= 0.0 {
+            best_all_time.1 > (baseline_fitness * 1.05).max(baseline_fitness + 1e-4)
+        } else {
+            // Para fitness negativo (ej. -100.0), mejorar un 5% significa acercarse a cero (ej. > -95.0)
+            best_all_time.1 > baseline_fitness && best_all_time.1 > (baseline_fitness * 0.95)
+        };
+
+        if is_significantly_better {
             println!("[Darwin] 🧬 HOT-SWAPPING ACTIVE GENOME! Market regime shift detected.");
             best_all_time.0.apply_to_arena(&self.live_arena);
+
+            let mut full_genotype = quantum_arena::genome::SuperGenotype::current_from_arena(&self.live_arena);
+            full_genotype.global_leverage = best_all_time.0.global_leverage;
+            full_genotype.trend_threshold = best_all_time.0.trend_threshold;
+            full_genotype.maker_spread_pct = best_all_time.0.maker_spread_pct;
+            full_genotype.maker_obi_threshold = best_all_time.0.maker_obi_threshold;
+            full_genotype.scalp_tp_base = best_all_time.0.scalp_tp;
+            full_genotype.scalp_sl_base = best_all_time.0.scalp_sl;
+            full_genotype.swing_tp_base = best_all_time.0.swing_tp;
+            full_genotype.swing_sl_base = best_all_time.0.swing_sl;
+            full_genotype.scalp_obi_threshold = best_all_time.0.scalp_z_target;
+            full_genotype.capital_split_scalp = best_all_time.0.capital_split_scalp;
+            full_genotype.min_confidence_btc = best_all_time.0.min_confidence;
+            full_genotype.explosive_leverage_multiplier = best_all_time.0.explosive_leverage_multiplier;
+
+            match quantum_arena::genome_store::GenomeEnvelope::promote(
+                full_genotype,
+                "darwin_daemon",
+                &format!("fitness {:.4} (baseline {:.4})", best_all_time.1, baseline_fitness),
+            ) {
+                Ok(env) => println!(
+                    "🧬 [DARWIN] Genoma generación {} promovido vía almacén (padre {}).",
+                    env.generation, env.parent_generation
+                ),
+                Err(e) => println!("⚠️ [DARWIN] Fallo al promover genoma al almacén: {}", e),
+            }
         } else {
             println!("[Darwin] 🛡️ Current genome is still optimal for this regime.");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_genotype_random_and_apply_to_arena() {
+        let arena = Arc::new(GlobalArena::new(13.0));
+        let genome = Genotype::new_random();
+
+        assert!(genome.global_leverage >= 10.0 && genome.global_leverage <= 125.0);
+        assert!(genome.scalp_tp > 0.0);
+        assert!(genome.scalp_sl > 0.0);
+
+        genome.apply_to_arena(&arena);
+
+        let roundtrip = Genotype::current_from_arena(&arena);
+        assert_eq!(roundtrip.global_leverage, genome.global_leverage);
+        assert_eq!(roundtrip.scalp_tp, genome.scalp_tp);
+    }
+
+    #[test]
+    fn test_genotype_nan_immunity_when_applying_to_arena() {
+        let arena = Arc::new(GlobalArena::new(13.0));
+        let nan_genome = Genotype {
+            global_leverage: f64::NAN,
+            trend_threshold: f64::NAN,
+            maker_spread_pct: f64::NAN,
+            maker_obi_threshold: f64::NAN,
+            scalp_tp: f64::NAN,
+            scalp_sl: f64::NAN,
+            swing_tp: f64::NAN,
+            swing_sl: f64::NAN,
+            scalp_z_target: f64::NAN,
+            capital_split_scalp: f64::NAN,
+            min_confidence: f64::NAN,
+            explosive_leverage_multiplier: f64::NAN,
+        };
+
+        nan_genome.apply_to_arena(&arena);
+
+        let safe_genome = Genotype::current_from_arena(&arena);
+        assert!(safe_genome.global_leverage.is_finite());
+        assert!(safe_genome.trend_threshold.is_finite());
+        assert!(safe_genome.scalp_tp.is_finite());
+        assert!(safe_genome.scalp_sl.is_finite());
+        assert!(safe_genome.min_confidence.is_finite());
+    }
+
+    #[test]
+    fn test_darwin_daemon_instantiation() {
+        let arena = Arc::new(GlobalArena::new(13.0));
+        let daemon = DarwinDaemon::new(arena);
+        assert!(daemon.live_arena.unified_capital.load(std::sync::atomic::Ordering::Relaxed) > 0.0);
     }
 }

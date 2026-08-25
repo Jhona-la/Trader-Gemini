@@ -56,7 +56,8 @@ impl QuantumRingBuffer {
 
         // LAP DETECTION: Don't overwrite what the reader is currently reading.
         // We drop the tick instead of corrupting the read.
-        if (writer_idx + 1) % RING_CAPACITY == reader_idx {
+        // FIX #1471: Modulo seguro sobre reader_idx
+        if (writer_idx + 1) % RING_CAPACITY == (reader_idx % RING_CAPACITY) {
             self.lap_violation_count.fetch_add(1, Ordering::Relaxed);
             return false; // Drop the tick
         }
@@ -65,7 +66,10 @@ impl QuantumRingBuffer {
         self.seqlock.store(current_seq + 1, Ordering::Release);
 
         // 2. Write data (SIMD mapped in Cython, here standard array copy)
-        self.data[writer_idx].copy_from_slice(payload);
+        // FIX #1471: Sanitización de floats antes de escribir en el ring buffer
+        for (dst, src) in self.data[writer_idx].iter_mut().zip(payload.iter()) {
+            *dst = if src.is_finite() { *src } else { 0.0 };
+        }
 
         // 3. Mark as complete (even)
         self.seqlock.store(current_seq + 2, Ordering::Release);
@@ -74,6 +78,8 @@ impl QuantumRingBuffer {
 
     /// Reads from the ring buffer safely using SeqLock pattern.
     pub fn read_tick(&self, read_idx: usize, out_payload: &mut [f32; FEATURE_SIZE]) -> bool {
+        // FIX #1418: Modulo de capacidad para prevenir pánicos por desbordamiento de índice
+        let safe_idx = read_idx % RING_CAPACITY;
         let mut retries = 0;
         loop {
             let seq1 = self.seqlock.load(Ordering::Acquire);
@@ -88,12 +94,43 @@ impl QuantumRingBuffer {
                 continue;
             }
 
-            out_payload.copy_from_slice(&self.data[read_idx]);
+            out_payload.copy_from_slice(&self.data[safe_idx]);
 
             let seq2 = self.seqlock.load(Ordering::Acquire);
             if seq1 == seq2 {
                 return true; // Safe read
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quantum_ring_buffer_write_and_read() {
+        let mut ring = QuantumRingBuffer::new();
+        let mut payload = [0.0f32; FEATURE_SIZE];
+        payload[0] = 60000.0;
+        payload[1] = 1.5;
+
+        assert!(ring.write_tick(100, &payload));
+
+        let mut read_payload = [0.0f32; FEATURE_SIZE];
+        assert!(ring.read_tick(0, &mut read_payload));
+        assert_eq!(read_payload[0], 60000.0);
+        assert_eq!(read_payload[1], 1.5);
+    }
+
+    #[test]
+    fn test_quantum_ring_buffer_lap_prevention() {
+        let mut ring = QuantumRingBuffer::new();
+        let payload = [1.0f32; FEATURE_SIZE];
+
+        // Reader is at index 1, writer is currently at 0 (writer_idx + 1 == reader_idx)
+        let written = ring.write_tick(1, &payload);
+        assert!(!written); // Dropped tick to prevent lap violation
+        assert_eq!(ring.lap_violation_count.load(Ordering::Relaxed), 1);
     }
 }

@@ -21,8 +21,12 @@ impl WelfordVariance {
 
     #[inline(always)]
     pub fn update(&mut self, new_value: f64) {
+        if !new_value.is_finite() {
+            return;
+        }
         if self.count >= 2000.0 {
-            // Decaimiento exponencial para mantenerlo sensible como una ventana móvil
+            // Decaimiento proporcional de M2 para mantener la ventana móvil estable (#567)
+            self.m2 *= 1999.0 / 2000.0;
             self.count = 1999.0;
         }
         self.count += 1.0;
@@ -37,7 +41,7 @@ impl WelfordVariance {
         if self.count < 2.0 {
             return 0.0;
         }
-        self.m2 / (self.count - 1.0)
+        (self.m2 / (self.count - 1.0)).max(0.0)
     }
 
     #[inline(always)]
@@ -77,6 +81,9 @@ impl KahanSummation {
 
     #[inline(always)]
     pub fn add(&mut self, value: f64) {
+        if !value.is_finite() {
+            return;
+        }
         let y = value - self.c;
         let t = self.sum + y;
         self.c = (t - self.sum) - y;
@@ -110,6 +117,11 @@ impl KylesLambda {
 
     #[inline(always)]
     pub fn update(&mut self, current_price: f64, volume: f64) -> f64 {
+        // FIX #687: Validar finitud de precio y volumen
+        if !current_price.is_finite() || !volume.is_finite() || volume < 0.0 {
+            return 0.0;
+        }
+
         if self.last_price != 0.0 {
             let delta_p = (current_price - self.last_price).abs();
             self.delta_p_kahan.add(delta_p);
@@ -120,7 +132,11 @@ impl KylesLambda {
         let dv = self.delta_v_kahan.get_sum();
         if dv > 0.0 {
             let lambda = self.delta_p_kahan.get_sum() / dv;
-            (1.0 + lambda).ln()
+            if lambda.is_finite() {
+                (1.0 + lambda).ln()
+            } else {
+                0.0
+            }
         } else {
             0.0
         }
@@ -147,6 +163,9 @@ impl ContinuousVPIN {
 
     #[inline(always)]
     pub fn update(&mut self, volume: f64, is_buyer_maker: bool) -> f64 {
+        if !volume.is_finite() || volume < 0.0 {
+            return 0.0;
+        }
         if is_buyer_maker {
             self.sell_volume += volume;
         } else {
@@ -154,15 +173,26 @@ impl ContinuousVPIN {
         }
 
         // Decay to keep within bucket context (EWMA style decay for O(1) rolling VPIN)
-        let total_vol = self.buy_volume + self.sell_volume;
+        let mut total_vol = self.buy_volume + self.sell_volume;
         if total_vol > self.bucket_size {
             let ratio = self.bucket_size / total_vol;
             self.buy_volume *= ratio;
             self.sell_volume *= ratio;
+            total_vol = self.bucket_size; // FIX #568: Denominador exacto tras reescalado
         }
 
         if total_vol > 0.0 {
             (self.buy_volume - self.sell_volume).abs() / total_vol
+        } else {
+            0.0
+        }
+    }
+
+    #[inline(always)]
+    pub fn current_vpin(&self) -> f64 {
+        let total = self.buy_volume + self.sell_volume;
+        if total > 0.0 {
+            (self.buy_volume - self.sell_volume).abs() / total
         } else {
             0.0
         }
@@ -189,6 +219,9 @@ impl RecursiveSMA {
 
     #[inline(always)]
     pub fn update(&mut self, new_val: f64, old_val: f64) -> f64 {
+        if !new_val.is_finite() || !old_val.is_finite() {
+            return if self.count > 0 { self.sum / (self.count as f64) } else { 0.0 };
+        }
         if self.count < self.window {
             self.count += 1;
             self.sum += new_val;
@@ -219,6 +252,9 @@ impl RecursiveEMA {
 
     #[inline(always)]
     pub fn update(&mut self, new_val: f64) -> f64 {
+        if !new_val.is_finite() {
+            return self.ema;
+        }
         if !self.initialized {
             self.ema = new_val;
             self.initialized = true;
@@ -260,9 +296,11 @@ impl DynamicKelly {
 
     #[inline(always)]
     pub fn sizing_fraction(&self) -> f64 {
-        let wr = self.win_rate_welford.mean;
-        let avg_win = self.win_size_welford.mean;
-        let avg_loss = self.loss_size_welford.mean;
+        // FIX #687: Sanitizar parámetros de Kelly
+        let wr = if self.win_rate_welford.mean.is_finite() { self.win_rate_welford.mean.clamp(0.0, 1.0) } else { 0.5 };
+        let avg_win = if self.win_size_welford.mean.is_finite() && self.win_size_welford.mean > 0.0 { self.win_size_welford.mean } else { 0.001 };
+        let avg_loss = if self.loss_size_welford.mean.is_finite() && self.loss_size_welford.mean > 0.0 { self.loss_size_welford.mean } else { 0.001 };
+        let mult = if self.kelly_multiplier.is_finite() && self.kelly_multiplier > 0.0 { self.kelly_multiplier } else { 0.5 };
 
         // If not enough data, return a safe base default
         if self.win_rate_welford.count < 5.0 || avg_loss == 0.0 {
@@ -272,9 +310,13 @@ impl DynamicKelly {
         let r = avg_win / avg_loss;
         // Kelly Formula: K = W - ((1 - W) / R)
         let kelly = wr - ((1.0 - wr) / r);
-        let adjusted_kelly = kelly * self.kelly_multiplier;
+        let adjusted_kelly = kelly * mult;
 
-        adjusted_kelly.clamp(0.01, 1.0)
+        if adjusted_kelly.is_finite() {
+            adjusted_kelly.clamp(0.01, 1.0)
+        } else {
+            0.10
+        }
     }
 }
 
@@ -301,16 +343,42 @@ impl ShannonEntropy {
 
     #[inline(always)]
     pub fn update(&mut self, norm_return: f64) -> f64 {
+        if !norm_return.is_finite() {
+            return 0.0;
+        }
+        // FIX #569: Decaimiento exponencial (0.999) para mantener sensibilidad a regímenes vivos
+        let decay = 0.999;
+        self.total_count *= decay;
+        for b in self.bins.iter_mut() {
+            *b *= decay;
+        }
+
         // Map norm_return (-0.05 to 0.05) to bin 0-9
         let bin_idx = (norm_return * 100.0 + 5.0).clamp(0.0, 9.99) as usize;
         self.bins[bin_idx] += 1.0;
         self.total_count += 1.0;
 
         let mut entropy = 0.0;
-        for &count in self.bins.iter() {
-            if count > 0.0 {
-                let p = count / self.total_count;
-                entropy -= p * p.ln();
+        if self.total_count > 0.0 {
+            for &count in self.bins.iter() {
+                if count > 0.0 {
+                    let p = count / self.total_count;
+                    entropy -= p * p.ln();
+                }
+            }
+        }
+        entropy
+    }
+
+    #[inline(always)]
+    pub fn current(&self) -> f64 {
+        let mut entropy = 0.0;
+        if self.total_count > 0.0 {
+            for &count in self.bins.iter() {
+                if count > 0.0 {
+                    let p = count / self.total_count;
+                    entropy -= p * p.ln();
+                }
             }
         }
         entropy
@@ -345,6 +413,9 @@ impl RecursiveHurst {
 
     #[inline(always)]
     pub fn update(&mut self, price: f64) -> f64 {
+        if price <= 0.0 || !price.is_finite() {
+            return self.current();
+        }
         self.window[self.index] = price;
         self.index = (self.index + 1) & 255; // Fast modulo 256
         if self.count < 256 {
@@ -354,43 +425,48 @@ impl RecursiveHurst {
     }
 
     /// Returns the current Hurst exponent WITHOUT updating state.
+    /// FIX #570: Cálculo exacto del Rango de Desviaciones Acumuladas R(N) de Mandelbrot & Wallis
     #[inline(always)]
     pub fn current(&self) -> f64 {
         if self.count < 10 {
             return 0.5; // Random walk fallback while warming up
         }
 
-        let mut min_p = f64::MAX;
-        let mut max_p = f64::MIN;
+        let n = self.count;
         let mut sum = 0.0;
-
-        // Unroll/vectorize friendly loop
-        for i in 0..self.count {
-            let p = self.window[i];
-            if p < min_p {
-                min_p = p;
-            }
-            if p > max_p {
-                max_p = p;
-            }
-            sum += p;
+        for i in 0..n {
+            sum += self.window[i];
         }
+        let mean = sum / (n as f64);
 
-        let mean = sum / (self.count as f64);
         let mut sq_sum = 0.0;
-        for i in 0..self.count {
-            let diff = self.window[i] - mean;
+        let mut cum_dev = 0.0;
+        let mut max_dev = 0.0f64;
+        let mut min_dev = 0.0f64;
+
+        // Recorrido cronológico circular desde el elemento más antiguo
+        let start_idx = (self.index + 256 - n) & 255;
+        for i in 0..n {
+            let p = self.window[(start_idx + i) & 255];
+            let diff = p - mean;
             sq_sum += diff * diff;
+            cum_dev += diff;
+            if cum_dev > max_dev {
+                max_dev = cum_dev;
+            }
+            if cum_dev < min_dev {
+                min_dev = cum_dev;
+            }
         }
 
-        let variance = sq_sum / (self.count as f64 - 1.0);
+        let variance = sq_sum / (n as f64 - 1.0);
         let std = variance.sqrt();
-        let range = max_p - min_p;
+        let range = max_dev - min_dev;
 
-        if std > 0.0 {
+        if std > 1e-12 && range > 0.0 {
             let rs = (range / std).max(1.0001); // Evitar ln(rs) <= 0
-            let n_f64 = self.count as f64;
-            (rs.ln() / n_f64.ln()).clamp(0.0, 1.0)
+            let n_f64 = n as f64;
+            (rs.ln() / n_f64.ln()).clamp(0.05, 0.95)
         } else {
             0.5
         }
@@ -408,20 +484,20 @@ pub fn compute_kelly_fraction(
     stress_score: f64,
     max_exposure: f64,
 ) -> f64 {
-    if b <= 0.0 {
+    if !p.is_finite() || !b.is_finite() || b <= 0.0 || p < 0.0 || p > 1.0 {
         return 0.0;
     }
     let q = 1.0 - p;
     let kelly = (p * b - q) / b;
     if !apply_mult {
-        return kelly;
+        return if kelly.is_finite() { kelly.max(0.0).min(max_exposure) } else { 0.0 };
     }
-    let mut mult = kelly_mult;
+    let mut mult = if kelly_mult.is_finite() && kelly_mult > 0.0 { kelly_mult } else { 1.0 };
     if stress_score < 90.0 {
         mult = 0.125;
     }
     let mut fractional_kelly = kelly * mult;
-    if fractional_kelly < 0.0 {
+    if !fractional_kelly.is_finite() || fractional_kelly < 0.0 {
         fractional_kelly = 0.0;
     }
     if fractional_kelly > max_exposure {
@@ -937,4 +1013,44 @@ mod tests {
 
         assert!((kahan.get_sum() - 10_000_000.0000000001).abs() < 1e-10);
     }
+
+    #[test]
+    fn test_continuous_vpin_update_and_nan_immunity() {
+        let mut vpin = ContinuousVPIN::new(1000.0);
+        let score1 = vpin.update(500.0, false); // Buy
+        assert!(score1 > 0.0);
+
+        let score2 = vpin.update(500.0, true); // Sell balanced
+        assert_eq!(score2, 0.0);
+
+        // NaN volume ignored
+        let score_nan = vpin.update(f64::NAN, false);
+        assert_eq!(score_nan, 0.0);
+    }
+
+    #[test]
+    fn test_recursive_sma_update_and_nan_immunity() {
+        let mut sma = RecursiveSMA::new(3);
+        assert_eq!(sma.update(10.0, 0.0), 10.0);
+        assert_eq!(sma.update(20.0, 0.0), 15.0);
+        assert_eq!(sma.update(30.0, 0.0), 20.0);
+        // Window full (size 3), old_val 10 removed, new_val 40 added: (20 + 30 + 40) / 3 = 30
+        assert_eq!(sma.update(40.0, 10.0), 30.0);
+
+        // NaN input returns current average safely
+        let safe_avg = sma.update(f64::NAN, 0.0);
+        assert_eq!(safe_avg, 30.0);
+    }
+
+    #[test]
+    fn test_exponential_decay_tensor_event_and_decay() {
+        let mut tensor = ExponentialDecayTensor::new(1000.0); // 1000ms half life
+        tensor.apply_event(100.0, 1000);
+        assert_eq!(tensor.current_severity, 100.0);
+
+        // Decay 1000ms (1 half life) -> severity should be ~50.0
+        let decayed = tensor.decay_to(2000);
+        assert!((decayed - 50.0).abs() < 1e-3);
+    }
 }
+

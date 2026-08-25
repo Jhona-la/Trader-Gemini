@@ -46,10 +46,40 @@ impl WalStorage {
     // Persistencia ultrarrápida
     #[inline(always)]
     pub fn insert_tick(&self, symbol: &str, price: f64, volume: f64, timestamp: u64) -> Result<()> {
+        let safe_price = if price.is_finite() && price > 0.0 { price } else { 0.0 };
+        let safe_volume = if volume.is_finite() && volume >= 0.0 { volume } else { 0.0 };
         let mut stmt = self.conn.prepare_cached(
             "INSERT INTO tick_data (symbol, price, volume, timestamp) VALUES (?1, ?2, ?3, ?4)",
         )?;
-        stmt.execute(rusqlite::params![symbol, price, volume, timestamp as i64])?;
+        stmt.execute(rusqlite::params![symbol, safe_price, safe_volume, timestamp as i64])?;
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wal_storage_creation_and_insertion() {
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_wal_storage.db");
+
+        let storage = WalStorage::new(&path).unwrap();
+        assert!(storage.insert_tick("BTCUSDT", 60000.0, 1.5, 1672531200000).is_ok());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_wal_storage_nan_and_negative_price_sanitization() {
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_wal_storage_nan.db");
+
+        let storage = WalStorage::new(&path).unwrap();
+        assert!(storage.insert_tick("ETHUSDT", f64::NAN, -10.0, 1672531200000).is_ok());
+
+        let _ = std::fs::remove_file(path);
+    }
+}
+

@@ -23,11 +23,22 @@ impl ShannonEntropyEngine {
     /// Registra una nueva observación de flujo (-1.0 a +1.0) y calcula la entropía de Shannon normalizada (0.0 a 1.0)
     #[inline(always)]
     pub fn update(&mut self, val: f64) -> Option<f64> {
-        let clamped = val.clamp(-1.0, 1.0);
+        let safe_val = if val.is_finite() { val } else { 0.0 };
+        let clamped = safe_val.clamp(-1.0, 1.0);
         let bin_idx = (((clamped + 1.0) / 2.0) * (self.num_bins as f64 - 1e-5)) as usize;
 
         self.counts[bin_idx.min(self.num_bins - 1)] += 1;
         self.total_samples += 1;
+
+        // Decaimiento periódico para evitar petrificación de entropía tras horas de trading
+        if self.total_samples > 1000 {
+            let mut new_total = 0;
+            for i in 0..self.num_bins {
+                self.counts[i] = (self.counts[i] + 1) / 2;
+                new_total += self.counts[i];
+            }
+            self.total_samples = new_total;
+        }
 
         if self.total_samples < 20 {
             return None; // Fallo explícito por calentamiento incompleto (previene sesgos)
@@ -54,5 +65,47 @@ impl ShannonEntropyEngine {
 impl Default for ShannonEntropyEngine {
     fn default() -> Self {
         Self::new(10)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shannon_entropy_decay_and_bounds() {
+        let mut engine = ShannonEntropyEngine::new(10);
+        for _ in 0..19 {
+            assert!(engine.update(0.0).is_none());
+        }
+
+        // Flujo idéntico -> baja entropía (orden perfecto)
+        for _ in 0..50 {
+            let e = engine.update(0.0);
+            assert!(e.is_some());
+        }
+        let low_ent = engine.update(0.0).unwrap();
+        assert!(low_ent < 0.30);
+
+        // Dispersión uniforme -> alta entropía
+        let mut uniform_engine = ShannonEntropyEngine::new(10);
+        for i in 0..500 {
+            let val = ((i % 10) as f64 / 4.5) - 1.0;
+            uniform_engine.update(val);
+        }
+        let high_ent = uniform_engine.update(0.5).unwrap();
+        assert!(high_ent > 0.80);
+    }
+
+    #[test]
+    fn test_shannon_entropy_nan_input_immunity() {
+        let mut engine = ShannonEntropyEngine::new(8);
+        for _ in 0..25 {
+            let _ = engine.update(f64::NAN);
+        }
+        let e = engine.update(f64::INFINITY);
+        assert!(e.is_some());
+        let val = e.unwrap();
+        assert!(val.is_finite() && val >= 0.0 && val <= 1.0);
     }
 }

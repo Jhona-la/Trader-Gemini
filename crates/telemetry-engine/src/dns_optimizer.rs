@@ -64,3 +64,29 @@ impl Default for DnsOptimizer {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dns_optimizer_defaults_and_endpoint_resolution() {
+        let optimizer = DnsOptimizer::default();
+        let ep = optimizer.get_optimal_endpoint();
+        assert_eq!(ep, "stream.binance.com");
+        assert_eq!(optimizer.lowest_latency_ms.load(Ordering::Relaxed), 9999);
+    }
+
+    #[test]
+    fn test_dns_optimizer_manual_endpoint_update() {
+        let optimizer = DnsOptimizer::new();
+        optimizer.lowest_latency_ms.store(12, Ordering::Relaxed);
+        if let Ok(mut write_lock) = optimizer.best_endpoint.write() {
+            *write_lock = "fstream.binance.com".to_string();
+        }
+
+        assert_eq!(optimizer.get_optimal_endpoint(), "fstream.binance.com");
+        assert_eq!(optimizer.lowest_latency_ms.load(Ordering::Relaxed), 12);
+    }
+}
+

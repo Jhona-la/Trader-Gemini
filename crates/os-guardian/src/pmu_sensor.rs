@@ -21,6 +21,7 @@ pub struct PmuVector {
 }
 
 pub struct PmuSensor {
+    #[allow(dead_code)]
     target_tid: u32,
 }
 
@@ -61,3 +62,30 @@ impl PmuSensor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pmu_sensor_sample() {
+        let sensor = PmuSensor::new(1234);
+        let sample = sensor.sample();
+        assert!(sample.ipc.is_finite() && sample.ipc > 0.0);
+        assert!(sample.l1_miss_rate.is_finite() && sample.l1_miss_rate >= 0.0);
+        assert!(sample.cycles > 0);
+    }
+
+    #[test]
+    fn test_pmu_sensor_vector_finite_metrics() {
+        let sensor = PmuSensor::new(5678);
+        for _ in 0..5 {
+            let sample = sensor.sample();
+            assert!(sample.llc_miss_rate.is_finite());
+            assert!(sample.branch_mispred.is_finite());
+            assert!(sample.instructions > 0);
+        }
+    }
+}
+
+

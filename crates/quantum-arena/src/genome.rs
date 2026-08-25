@@ -1284,7 +1284,7 @@ impl SuperGenotype {
             (base + change).clamp(min_val, max_val)
         };
 
-        Self {
+        let mut mutated = Self {
             global_max_drawdown: mutate_val(self.global_max_drawdown, 0.5, 0.99),
             global_leverage: mutate_val(self.global_leverage, 25.0, 35.0),
             btc_volatility_multiplier: mutate_val(self.btc_volatility_multiplier, 0.5, 3.0),
@@ -1298,10 +1298,10 @@ impl SuperGenotype {
             scalp_kelly_fraction: mutate_val(self.scalp_kelly_fraction, 0.1, 2.0),
             swing_kelly_fraction: mutate_val(self.swing_kelly_fraction, 0.01, 1.0),
             scalp_obi_threshold: mutate_val(self.scalp_obi_threshold, 0.05, 1.0),
-            scalp_tp_base: mutate_val(self.scalp_tp_base, 0.0005, 0.005),
-            scalp_sl_base: mutate_val(self.scalp_sl_base, 0.0002, 0.002),
-            swing_tp_base: mutate_val(self.swing_tp_base, 0.005, 0.10),
-            swing_sl_base: mutate_val(self.swing_sl_base, 0.001, 0.05),
+            scalp_tp_base: mutate_val(self.scalp_tp_base, 0.0035, 0.0200),
+            scalp_sl_base: mutate_val(self.scalp_sl_base, 0.0018, 0.0080),
+            swing_tp_base: mutate_val(self.swing_tp_base, 0.0150, 0.1000),
+            swing_sl_base: mutate_val(self.swing_sl_base, 0.0060, 0.0300),
             sl_atr_mult_btc: mutate_val(self.sl_atr_mult_btc, 0.5, 5.0),
             tp_rr_ratio_btc: mutate_val(self.tp_rr_ratio_btc, 1.0, 10.0),
             min_confidence_btc: mutate_val(self.min_confidence_btc, 0.5, 0.95),
@@ -1454,7 +1454,17 @@ impl SuperGenotype {
                 100_000.0,
             ),
             iceberg_slice_count: mutate_val(self.iceberg_slice_count, 2.0, 10.0),
+        };
+
+        // INVARIANTE MATEMÁTICO INSTITUCIONAL: Ratio Riesgo/Beneficio asimétrico obligatorio (TP >= 1.8x SL)
+        if mutated.scalp_tp_base < mutated.scalp_sl_base * 1.8 {
+            mutated.scalp_tp_base = mutated.scalp_sl_base * 2.2;
         }
+        if mutated.swing_tp_base < mutated.swing_sl_base * 2.0 {
+            mutated.swing_tp_base = mutated.swing_sl_base * 3.5;
+        }
+
+        mutated
     }
 
     // Generated extensions
@@ -1597,6 +1607,8 @@ impl SuperGenotype {
         vec.push(self.scalp_accel_min_samples);
         vec.push(self.executor_max_orders_10s);
         vec.push(self.executor_max_weight_1m);
+        vec.push(self.iceberg_volume_threshold);
+        vec.push(self.iceberg_slice_count);
         vec
     }
 
@@ -1710,7 +1722,7 @@ impl SuperGenotype {
             kelly_bootstrap_min_exposure: vec[105].clamp(0.01, 0.5),
             ev_fee_multiplier: vec[106].clamp(1.0, 5.0),
             margin_cushion_pct: vec[107].clamp(1.01, 1.20),
-            maker_only_capital_threshold: 50.0,
+            maker_only_capital_threshold: vec[108].clamp(10.0, 500.0),
             hawkes_scalp_threshold: vec[109].clamp(0.1, 1.0),
             obi_zscore_threshold: vec[110].clamp(0.1, 3.0),
             hawkes_volume_norm: vec[111].clamp(100.0, 10000000.0),
@@ -1770,5 +1782,32 @@ impl SuperGenotype {
             25.0, 0.5, 3.0, 0.6, 0.55, 20.0, 500.0, 0.5, 500.0, 2.0, 2.0, 0.8, 1.0, 10.0, 50.0,
             500.0, 5000.0, 100_000.0, 10.0,
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_genome_vector_symmetry_exact_137d() {
+        let genome = SuperGenotype::load_or_baseline(0.0002, 0.0005);
+        let vec = genome.to_vector();
+        assert_eq!(
+            vec.len(),
+            SuperGenotype::DIMENSION,
+            "to_vector length must be exactly 137"
+        );
+        assert_eq!(
+            SuperGenotype::get_lower_bounds().len(),
+            SuperGenotype::DIMENSION
+        );
+        assert_eq!(
+            SuperGenotype::get_upper_bounds().len(),
+            SuperGenotype::DIMENSION
+        );
+        let reconstructed = SuperGenotype::from_vector(&vec);
+        let vec2 = reconstructed.to_vector();
+        assert_eq!(vec.len(), vec2.len());
     }
 }

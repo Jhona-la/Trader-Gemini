@@ -54,3 +54,29 @@ impl<T: Copy + Default, const N: usize> Default for LockFreeRingBuffer<T, N> {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lock_free_ring_buffer_push_and_wrap() {
+        let mut buf = LockFreeRingBuffer::<f64, 4>::new();
+        assert_eq!(buf.latest(), None);
+
+        buf.push(10.0);
+        buf.push(20.0);
+        buf.push(30.0);
+        assert_eq!(buf.latest(), Some(30.0));
+        assert_eq!(buf.count, 3);
+
+        buf.push(40.0);
+        buf.push(50.0); // Wrap around
+        assert_eq!(buf.latest(), Some(50.0));
+        assert_eq!(buf.count, 4);
+
+        buf.clear();
+        assert_eq!(buf.latest(), None);
+        assert_eq!(buf.count, 0);
+    }
+}

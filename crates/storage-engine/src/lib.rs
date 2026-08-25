@@ -5,7 +5,7 @@ pub mod ledger;
 pub mod mmap_bus;
 pub mod temporal_store;
 
-pub use lakehouse::{LakehouseEvent, LakehouseWarehouse};
+pub use lakehouse::{CompressedTickBatch, LakehouseEvent, LakehouseWarehouse};
 
 pub use evolution_ledger::{EvolutionLedger, GenomeUpdateEvent};
 pub use ledger::{LedgerEvent, PositionLedger};
