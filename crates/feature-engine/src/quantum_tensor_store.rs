@@ -48,8 +48,8 @@ impl QuantumTensorStore {
     pub fn extract_feature_vector(&self, coin: usize, tf: usize) -> [f64; NUM_FEATURES] {
         let mut vec = [0.0; NUM_FEATURES];
         let base_idx = self.get_index(coin, tf, 0);
-        for i in 0..NUM_FEATURES {
-            vec[i] = f64::from_bits(self.data[base_idx + i].load(Ordering::Relaxed));
+        for (i, val) in vec.iter_mut().enumerate() {
+            *val = f64::from_bits(self.data[base_idx + i].load(Ordering::Relaxed));
         }
         vec
     }
@@ -63,8 +63,8 @@ impl QuantumTensorStore {
         let tf1 = self.extract_feature_vector(coin, 1);
         
         let mut diff_sum = 0.0;
-        for i in 0..NUM_FEATURES {
-            let diff = tf0[i] - tf1[i];
+        for (t0, t1) in tf0.iter().zip(tf1.iter()) {
+            let diff = t0 - t1;
             diff_sum += diff * diff;
         }
         

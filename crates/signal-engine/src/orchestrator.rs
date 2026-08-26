@@ -129,7 +129,6 @@ impl TensorVoteOrchestrator {
             }
         };
 
-        // FIX #622 & #1403: Mapeo simétrico bayesiano de umbrales probabilísticos a espacio de convicción delta [-1, 1]
         let raw_long = self
             .arena
             .config
@@ -141,11 +140,11 @@ impl TensorVoteOrchestrator {
             .ml_threshold_short
             .load(std::sync::atomic::Ordering::Relaxed);
 
-        let safe_long = if raw_long.is_finite() { raw_long.clamp(0.50, 0.99) } else { 0.55 };
-        let safe_short = if raw_short.is_finite() { raw_short.clamp(0.01, 0.50) } else { 0.45 };
+        let long_dist = if raw_long >= 0.50 { raw_long - 0.50 } else { 0.50 - raw_long };
+        let short_dist = if raw_short >= 0.50 { raw_short - 0.50 } else { 0.50 - raw_short };
 
-        let long_cutoff = ((safe_long - 0.50) * 2.0).clamp(0.01, 0.95);
-        let short_cutoff = ((0.50 - safe_short) * 2.0).clamp(0.01, 0.95);
+        let long_cutoff = (long_dist * 2.0).clamp(0.08, 0.95);
+        let short_cutoff = (short_dist * 2.0).clamp(0.08, 0.95);
 
         if net_confidence > long_cutoff {
             TensorDecision {

@@ -131,7 +131,13 @@ impl TeleonomiaState {
             if let Ok(mut mmap) = mmap_mutex.lock() {
                 let end = offset + bytes.len();
                 if end <= mmap.len() {
-                    mmap[offset..end].copy_from_slice(bytes);
+                    // FIX #911: Prevención de Torn Reads en IPC sin Mutex inter-procesos
+                    // Escribimos primero el payload (offset + 8) y luego el timestamp (primeros 8 bytes)
+                    // con una barrera de memoria (Release) para garantizar causalidad.
+                    let (ts_bytes, data_bytes) = bytes.split_at(8);
+                    mmap[offset + 8..end].copy_from_slice(data_bytes);
+                    std::sync::atomic::fence(Ordering::Release);
+                    mmap[offset..offset + 8].copy_from_slice(ts_bytes);
                 }
             }
         }

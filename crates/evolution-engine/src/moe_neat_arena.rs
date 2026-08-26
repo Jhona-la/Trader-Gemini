@@ -41,7 +41,9 @@ pub fn run_evolution_daemon(
 
         loop {
             let decay = arena.config.temporal_memory_decay.load(Ordering::Relaxed);
-            let sleep_time = (900.0 * (1.0 - decay) * 100.0).clamp(60.0, 3600.0) as u64;
+            // FIX BLOQUEO #6: Reducir sleep de 60-3600s a 30-120s para micro-capital
+            // Con $13, cada minuto cuenta. Evolución agresiva continua.
+            let sleep_time = (120.0 * (1.0 - decay) * 10.0).clamp(30.0, 120.0) as u64;
             sleep(Duration::from_secs(sleep_time)).await;
 
             println!("🧬 [EVOLUTION-ENGINE] Analizando entropía del modelo (Walk-Forward / Online Learning)...");
@@ -88,12 +90,23 @@ pub fn run_evolution_daemon(
             // ═══════════════════════════════════════════════════════
             // EVOLUCIÓN DE SCALP MOE
             // ═══════════════════════════════════════════════════════
-            if drawdown > panic_threshold || should_explore(real_scalp_wr, real_scalp_trades) {
-                println!("🚨 [EVOLUTION-ENGINE] Scalp: Drawdown {:.2}% o WR bajo ({:.1}%). Disparando Hiper-Mutación NEAT.",
-                    drawdown * 100.0, real_scalp_wr * 100.0);
+            // FIX BLOQUEO #6: Evolución PROACTIVA (siempre buscar mejorar)
+            // ANTES: Solo mutaba si drawdown > panic_threshold OR should_explore() → REACTIVO.
+            // AHORA: Siempre intenta mejorar. Si tiene buen rendimiento, usa mutación suave.
+            //        Si tiene mal rendimiento, usa hiper-mutación.
+            let scalp_needs_hyper = drawdown > panic_threshold || should_explore(real_scalp_wr, real_scalp_trades);
+            {
+                let mode = if scalp_needs_hyper { "Hiper-Mutación" } else { "Refinamiento" };
+                println!("🧬 [EVOLUTION-ENGINE] Scalp: {} proactivo. WR: {:.1}%, DD: {:.2}%",
+                    mode, real_scalp_wr * 100.0, drawdown * 100.0);
 
                 let mut new_scalp = (**scalp_moe.load()).clone();
-                new_scalp.force_hyper_mutation(current_cap);
+                if scalp_needs_hyper {
+                    new_scalp.force_hyper_mutation(current_cap);
+                } else {
+                    // Refinamiento suave: mutación menor para no romper lo que funciona
+                    new_scalp.force_hyper_mutation(current_cap * 10.0); // Higher cap = smaller mutations
+                }
 
                 // V9: Calcular estadísticas reales para el AntiBiasGovernor
                 let (real_kurtosis, real_skewness) = estimate_distribution_shape(real_scalp_pf, real_scalp_wr);
@@ -164,12 +177,19 @@ pub fn run_evolution_daemon(
             // ═══════════════════════════════════════════════════════
             // V9 FIX: EVOLUCIÓN DE SWING MOE (Antes completamente ignorado)
             // ═══════════════════════════════════════════════════════
-            if drawdown > (panic_threshold * 1.5) || should_explore(real_swing_wr, real_swing_trades) {
-                println!("🚨 [EVOLUTION-ENGINE] Swing: Drawdown {:.2}% o WR bajo ({:.1}%). Disparando Hiper-Mutación NEAT.", 
-                    drawdown * 100.0, real_swing_wr * 100.0);
+            // FIX BLOQUEO #6: Evolución PROACTIVA para Swing MOE
+            let swing_needs_hyper = drawdown > (panic_threshold * 1.5) || should_explore(real_swing_wr, real_swing_trades);
+            {
+                let mode = if swing_needs_hyper { "Hiper-Mutación" } else { "Refinamiento" };
+                println!("🧬 [EVOLUTION-ENGINE] Swing: {} proactivo. WR: {:.1}%, DD: {:.2}%",
+                    mode, real_swing_wr * 100.0, drawdown * 100.0);
                 
                 let mut new_swing = (**swing_moe.load()).clone();
-                new_swing.force_hyper_mutation(current_cap);
+                if swing_needs_hyper {
+                    new_swing.force_hyper_mutation(current_cap);
+                } else {
+                    new_swing.force_hyper_mutation(current_cap * 10.0);
+                }
                 
                 let (real_kurtosis, real_skewness) = estimate_distribution_shape(real_swing_pf, real_swing_wr);
 

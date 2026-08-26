@@ -46,18 +46,21 @@ impl ValidatedOrder {
 // The engine now strictly relies on mathematical limits derived from Kelly and margin constraints.
 
 pub struct RiskEngine {
-    pub peak_capital: f64, // Memoria histórica del capital más alto
+    pub scalp_peak_capital: f64,
+    pub swing_peak_capital: f64,
 }
 
 impl RiskEngine {
     pub fn new(initial_capital: f64) -> Self {
         Self {
-            peak_capital: initial_capital,
+            scalp_peak_capital: initial_capital * 0.5,
+            swing_peak_capital: initial_capital * 0.5,
         }
     }
 
     pub fn reset(&mut self, initial_capital: f64) {
-        self.peak_capital = initial_capital;
+        self.scalp_peak_capital = initial_capital * 0.5;
+        self.swing_peak_capital = initial_capital * 0.5;
     }
 
     /// Evalúa la intención de señal combinada de Scalp y Swing y retorna la Exposición Neta (Net Delta).
@@ -74,59 +77,87 @@ impl RiskEngine {
 
         let current_capital = arena.unified_capital.load(Ordering::Relaxed);
         if !current_capital.is_finite() || current_capital <= 0.0 {
-            if arena.tick_counter.load(Ordering::Relaxed) % 100_000 == 0 {
-                println!("🔍 [RISK REJECT] evaluate_order: current_capital <= 0 ({:.4})", current_capital);
-            }
             return (ValidatedOrder::rejected(), ValidatedOrder::rejected());
         }
 
-        // 1. Actualizar pico de capital
-        if current_capital > self.peak_capital {
-            self.peak_capital = current_capital;
+        // 0. Calcular partición de capital por horizonte
+        let split = arena
+            .config
+            .capital_split_scalp
+            .load(Ordering::Relaxed)
+            .clamp(0.1, 0.9);
+        let scalp_capital = current_capital * split;
+        let swing_capital = current_capital * (1.0 - split);
+
+        // 1. Actualizar picos de capital independientes
+        if scalp_capital > self.scalp_peak_capital {
+            self.scalp_peak_capital = scalp_capital;
+        }
+        if swing_capital > self.swing_peak_capital {
+            self.swing_peak_capital = swing_capital;
         }
 
-        // 2. Comprobar cortafuegos (Drawdown)
+        // 2. Comprobar cortafuegos (Drawdown) aislados por TradeHorizon
         let max_dd = arena.config.global_max_drawdown.load(Ordering::Relaxed);
-        let current_drawdown = if self.peak_capital > 0.0 {
-            (self.peak_capital - current_capital) / self.peak_capital
+        
+        let scalp_drawdown = if self.scalp_peak_capital > 0.0 {
+            (self.scalp_peak_capital - scalp_capital) / self.scalp_peak_capital
+        } else {
+            0.0
+        };
+        let swing_drawdown = if self.swing_peak_capital > 0.0 {
+            (self.swing_peak_capital - swing_capital) / self.swing_peak_capital
         } else {
             0.0
         };
 
         let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
-        let capital_ratio = self.peak_capital / base_capital.max(1.0);
         let hard_stop_base = arena.config.hard_stop_base_limit.load(Ordering::Relaxed);
         let hard_stop_decay = arena.config.hard_stop_decay_factor.load(Ordering::Relaxed);
-        let hard_stop_limit = if current_capital <= 30.0 {
-            0.92 // Micro-cuenta ($13 USD bootstrap): permitir hasta 92% con auto-scaling para recuperación compuesta
+        
+        let scalp_hard_stop_limit = if scalp_capital <= 30.0 * split {
+            0.92 // Micro-cuenta ($13 USD bootstrap): permitir hasta 92%
         } else {
+            let capital_ratio = self.scalp_peak_capital / (base_capital * split).max(1.0);
             hard_stop_base / (1.0 + capital_ratio.ln().max(0.0) * hard_stop_decay).clamp(1.0, 2.5)
         };
 
-        if current_drawdown >= hard_stop_limit {
-            if arena.tick_counter.load(Ordering::Relaxed) % 100_000 == 0 {
-                println!("🔍 [RISK REJECT] evaluate_order: current_drawdown ({:.4}) >= hard_stop_limit ({:.4})", current_drawdown, hard_stop_limit);
-            }
-            return (ValidatedOrder::rejected(), ValidatedOrder::rejected());
-        }
+        let swing_hard_stop_limit = if swing_capital <= 30.0 * (1.0 - split) {
+            0.92 // Micro-cuenta ($13 USD bootstrap)
+        } else {
+            let capital_ratio = self.swing_peak_capital / (base_capital * (1.0 - split)).max(1.0);
+            hard_stop_base / (1.0 + capital_ratio.ln().max(0.0) * hard_stop_decay).clamp(1.0, 2.5)
+        };
+
+        let mut scalp_valid = scalp_drawdown < scalp_hard_stop_limit;
+        let mut swing_valid = swing_drawdown < swing_hard_stop_limit;
 
         let guard_dd_sigmoid_steepness = arena
             .config
             .guard_dd_sigmoid_steepness
             .load(Ordering::Relaxed);
         let guard_dd_sigmoid_center = arena.config.guard_dd_sigmoid_center.load(Ordering::Relaxed);
-        if !guard::check_drawdown_limit(
-            current_capital,
-            self.peak_capital,
-            max_dd,
-            base_capital,
-            guard_dd_sigmoid_steepness,
-            guard_dd_sigmoid_center,
-        ) {
-            if arena.tick_counter.load(Ordering::Relaxed) % 100_000 == 0 {
-                println!("🔍 [RISK REJECT] evaluate_order: check_drawdown_limit failed!");
-            }
-            return (ValidatedOrder::rejected(), ValidatedOrder::rejected());
+        
+        if scalp_valid {
+            scalp_valid = guard::check_drawdown_limit(
+                scalp_capital,
+                self.scalp_peak_capital,
+                max_dd,
+                base_capital * split,
+                guard_dd_sigmoid_steepness,
+                guard_dd_sigmoid_center,
+            );
+        }
+        
+        if swing_valid {
+            swing_valid = guard::check_drawdown_limit(
+                swing_capital,
+                self.swing_peak_capital,
+                max_dd,
+                base_capital * (1.0 - split),
+                guard_dd_sigmoid_steepness,
+                guard_dd_sigmoid_center,
+            );
         }
 
         let coin = &arena.coins[coin_id];
@@ -141,13 +172,12 @@ impl RiskEngine {
             .load(Ordering::Relaxed);
         let kelly_expansion_mult = arena.config.kelly_expansion_mult.load(Ordering::Relaxed);
 
-        let split = arena
-            .config
-            .capital_split_scalp
-            .load(Ordering::Relaxed)
-            .clamp(0.1, 0.9);
-        let scalp_capital = current_capital * split;
-        let swing_capital = current_capital * (1.0 - split);
+
+
+        let clamp_min = arena.config.kelly_clamp_min.load(Ordering::Relaxed);
+        let clamp_max = arena.config.kelly_clamp_max.load(Ordering::Relaxed);
+        let scalp_base_frac = arena.config.scalp_kelly_fraction.load(Ordering::Relaxed);
+        let swing_base_frac = arena.config.swing_kelly_fraction.load(Ordering::Relaxed);
 
         let mut scalp_kelly = kelly::calculate_kelly_fraction(
             scalp_wr,
@@ -156,6 +186,9 @@ impl RiskEngine {
             base_capital * split,
             kelly_survival_cap_ratio,
             kelly_expansion_mult,
+            clamp_min,
+            clamp_max,
+            scalp_base_frac,
         );
         let mut swing_kelly = kelly::calculate_kelly_fraction(
             swing_wr,
@@ -164,6 +197,9 @@ impl RiskEngine {
             base_capital * (1.0 - split),
             kelly_survival_cap_ratio,
             kelly_expansion_mult,
+            clamp_min,
+            clamp_max,
+            swing_base_frac,
         );
 
         let current_ratio = current_capital / base_capital.max(1.0);
@@ -199,27 +235,35 @@ impl RiskEngine {
             }
         }
 
-        let scalp_order = self.evaluate_single_intent(
-            coin_id,
-            &scalp_intent,
-            scalp_kelly,
-            scalp_capital,
-            base_capital * split,
-            scalp_pf,
-            true,
-            arena,
-        );
+        let scalp_order = if scalp_valid {
+            self.evaluate_single_intent(
+                coin_id,
+                &scalp_intent,
+                scalp_kelly,
+                scalp_capital,
+                base_capital * split,
+                scalp_pf,
+                true,
+                arena,
+            )
+        } else {
+            ValidatedOrder::rejected()
+        };
 
-        let swing_order = self.evaluate_single_intent(
-            coin_id,
-            &swing_intent,
-            swing_kelly,
-            swing_capital,
-            base_capital * (1.0 - split),
-            swing_pf,
-            false,
-            arena,
-        );
+        let swing_order = if swing_valid {
+            self.evaluate_single_intent(
+                coin_id,
+                &swing_intent,
+                swing_kelly,
+                swing_capital,
+                base_capital * (1.0 - split),
+                swing_pf,
+                false,
+                arena,
+            )
+        } else {
+            ValidatedOrder::rejected()
+        };
 
         (scalp_order, swing_order)
     }
@@ -360,15 +404,17 @@ impl RiskEngine {
         let expected_value_pct =
             (confidence * expected_win) - ((1.0 - confidence) * expected_loss);
 
+        let min_ev_mult = if allocated_capital <= 15.0 {
+            1.005 // Micro-cuenta ($13 USD bootstrap): buffer 0.5% sobre comisiones para desbloquear oportunidades legítimas
+        } else {
+            1.02
+        };
         let ev_fee_multiplier = arena
             .config
             .ev_fee_multiplier
             .load(Ordering::Relaxed)
-            .clamp(1.02, 1.30);
+            .clamp(min_ev_mult, 1.30);
         if expected_value_pct <= (roundtrip_fee * ev_fee_multiplier) {
-            if arena.tick_counter.load(Ordering::Relaxed) % 100_000 == 0 {
-                println!("🔍 [RISK REJECT] EV: ev={:.6} <= fee_mult={:.6}", expected_value_pct, roundtrip_fee * ev_fee_multiplier);
-            }
             return ValidatedOrder::rejected();
         }
 
@@ -382,9 +428,17 @@ impl RiskEngine {
 
         let bounded_exposure = raw_exposure.clamp(-allocated_capital, allocated_capital);
         let mut final_margin = bounded_exposure.abs();
+        let margin_cushion_pct = arena.config.margin_cushion_pct.load(Ordering::Relaxed);
+        let safe_cushion = if allocated_capital <= 15.0 {
+            0.98 // Permitir hasta 98% en bootstrap micro-capital ($13 USD) para cumplir con el piso notional de Binance
+        } else if margin_cushion_pct.is_finite() && margin_cushion_pct > 0.0 {
+            margin_cushion_pct
+        } else {
+            0.80
+        };
 
-        if allocated_capital > 0.0 && allocated_capital * dynamic_leverage < dynamic_min_notional {
-            let candidate_leverage = (dynamic_min_notional / allocated_capital) * 1.05;
+        if allocated_capital > 0.0 && allocated_capital * dynamic_leverage * safe_cushion < dynamic_min_notional {
+            let candidate_leverage = (dynamic_min_notional / (allocated_capital * safe_cushion)) * 1.02;
             let max_fee_limit = if allocated_capital <= 15.0 {
                 0.035 // Permitir hasta 3.5% fee impact para bootstrap micro-cuentas ($13 USD) para cumplir con el lote mínimo de Binance
             } else {
@@ -402,35 +456,30 @@ impl RiskEngine {
                 .min(50.0);
         }
 
-        let required_margin_for_min_notional = dynamic_min_notional / dynamic_leverage;
+        // FASE 3 FIX: Micro-Account Notional Safety
+        // Sumamos un centavo de dólar (+0.1) al min notional para evitar rechazos
+        // por pérdida de precisión IEEE-754 en multiplicaciones de apalancamiento
+        let safe_min_notional = dynamic_min_notional + 0.1;
+        let required_margin_for_min_notional = safe_min_notional / dynamic_leverage;
         if final_margin < required_margin_for_min_notional {
             final_margin = required_margin_for_min_notional;
         }
 
         let (meets_min_notional, _) = guard::enforce_minimum_notional(
             final_margin,
-            dynamic_min_notional,
+            safe_min_notional,
             dynamic_leverage,
         );
         if !meets_min_notional {
-            if arena.tick_counter.load(Ordering::Relaxed) % 100_000 == 0 {
-                println!("🔍 [RISK REJECT] MIN_NOTIONAL: final_margin={:.4} notional={:.4} lev={:.2}", final_margin, dynamic_min_notional, dynamic_leverage);
-            }
             return ValidatedOrder::rejected();
         }
 
-        let margin_cushion_pct = arena.config.margin_cushion_pct.load(Ordering::Relaxed);
-        let safe_cushion = if allocated_capital <= 15.0 {
-            0.90 // Permitir hasta 90% en bootstrap micro-capital ($13 USD) para cumplir con el piso notional de Binance
-        } else if margin_cushion_pct.is_finite() && margin_cushion_pct > 0.0 {
-            margin_cushion_pct
+        let safe_limit = if current_cap <= 30.0 {
+            current_cap * 0.90
         } else {
-            0.80
+            allocated_capital * safe_cushion
         };
-        if final_margin > allocated_capital * safe_cushion {
-            if arena.tick_counter.load(Ordering::Relaxed) % 100_000 == 0 {
-                println!("🔍 [RISK REJECT] CUSHION: final_margin={:.4} > alloc={:.4} * safe={:.4}", final_margin, allocated_capital, safe_cushion);
-            }
+        if final_margin > safe_limit {
             return ValidatedOrder::rejected();
         }
 
@@ -439,9 +488,6 @@ impl RiskEngine {
         let regime = crate::regime::MarketRegime::from(raw_regime);
 
         if !orchestrator.allow_trade(bounded_exposure > 0.0, final_margin, regime) {
-            if arena.tick_counter.load(Ordering::Relaxed) % 100_000 == 0 {
-                println!("🔍 [RISK REJECT] ORCHESTRATOR rejected!");
-            }
             return ValidatedOrder::rejected();
         }
 
@@ -495,13 +541,22 @@ impl RiskEngine {
             }
         };
 
+        let safe_tp = if final_tp.is_finite() && final_tp > 0.0 { final_tp } else { 0.0 };
+        let safe_sl = if final_sl.is_finite() && final_sl > 0.0 { final_sl } else { 0.0 };
+        let safe_vol = if final_margin.is_finite() && final_margin > 0.0 { final_margin } else { 0.0 };
+        let safe_lev = if dynamic_leverage.is_finite() && dynamic_leverage >= 1.0 { dynamic_leverage } else { 1.0 };
+
+        if safe_vol <= 0.0 || (intent.signal != SignalType::Flat && (safe_tp <= 0.0 || safe_sl <= 0.0)) {
+            return ValidatedOrder::rejected();
+        }
+
         ValidatedOrder {
             signal: intent.signal,
-            volume_usd: final_margin,
-            leverage: dynamic_leverage,
+            volume_usd: safe_vol,
+            leverage: safe_lev,
             maker_only,
-            tp_target: final_tp,
-            sl_target: final_sl,
+            tp_target: safe_tp,
+            sl_target: safe_sl,
             fee_buffer_multiplier: ev_fee_multiplier,
         }
     }

@@ -3,6 +3,7 @@ pub mod client;
 pub mod dynamic_symbols;
 pub mod executor;
 pub mod hot_swap;
+pub mod ntp;
 pub mod order_registry;
 pub mod order_types;
 pub mod quantum_multiplexer;
@@ -12,9 +13,11 @@ pub mod router;
 pub mod shadow;
 pub mod simulator;
 pub mod user_data_stream;
+pub mod ws_executor;
 
 pub use dynamic_symbols::DynamicSymbolSelector;
 pub use hot_swap::HotSwapController;
+pub use ntp::start_ntp_synchronizer;
 pub use order_registry::{OrderRegistry, OrderStatus, TrackedOrder};
 pub use order_types::{Fill, OrderAck};
 pub use quantum_multiplexer::QuantumMultiplexer;
@@ -32,6 +35,8 @@ pub struct ExecutionPayload {
     pub order_type: String,
     pub time_in_force: String,
     pub position_side: String,
+    pub price: Option<f64>,
+    pub reduce_only: bool,
     /// F1.4: query EXACTA que se firmó. El envío SIEMPRE es base_url + signed_query
     /// + "&signature=" + signature. Invariante: se envía lo que se firma — elimina
     /// la clase completa de bugs "firmar una cosa, enviar otra".

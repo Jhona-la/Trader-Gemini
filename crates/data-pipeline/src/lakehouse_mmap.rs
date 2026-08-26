@@ -32,11 +32,23 @@ impl LakehouseMmap {
         file.set_len(capacity as u64)
             .map_err(|e| format!("Failed to set file size: {}", e))?;
 
-        let mmap = unsafe {
+        let mut mmap = unsafe {
             MmapOptions::new()
                 .map_mut(&file)
                 .map_err(|e| format!("Failed to mmap: {}", e))?
         };
+
+        // FASE 2 FIX: Pre-faulting agresivo de memoria (Zero-Copy lock-in)
+        // El OS normalmente reserva direcciones virtuales pero retrasa la asignación física hasta
+        // que el HFT escribe, lo que causa un page fault bloqueante (milisegundos).
+        // Al recorrer y leer de manera volátil cada página de 4KB, obligamos al SO (Windows/Linux)
+        // a traer la memoria al L1/L2/RAM *ahora*, antes de entrar en producción HFT.
+        for i in (0..capacity).step_by(4096) {
+            unsafe {
+                let ptr = mmap.as_ptr().add(i);
+                let _val = std::ptr::read_volatile(ptr);
+            }
+        }
 
         Ok(Self {
             mmap: Arc::new(mmap),

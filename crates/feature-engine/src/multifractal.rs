@@ -16,7 +16,7 @@ pub struct MultifractalSpectrumEngine {
 
 impl MultifractalSpectrumEngine {
     pub fn new(window_size: usize) -> Self {
-        let size = window_size.min(50).max(10);
+        let size = window_size.clamp(10, 50);
         Self {
             window_size: size,
             returns_history: [0.0; 50],
@@ -129,7 +129,7 @@ impl Default for MultifractalSpectrumEngine {
 /// - Micro-Escala (Scalp, ventana corta de 10 ticks)
 /// - Meso-Escala (Intradía, ventana media de 25 ticks)
 /// - Macro-Escala (Swing, ventana larga de 50 ticks)
-/// y evalúa la confluencia direccional de persistencia (>0.55) o anti-persistencia (<0.45).
+///   y evalúa la confluencia direccional de persistencia (>0.55) o anti-persistencia (<0.45).
 #[derive(Debug, Clone)]
 pub struct MultiScaleHurstConfluence {
     pub engine_micro: MultifractalSpectrumEngine,
@@ -153,7 +153,7 @@ impl MultiScaleHurstConfluence {
     }
 
     #[inline(always)]
-    pub fn update(&mut self, price: f64) -> (f64, f64, f64, f64) {
+    pub fn update(&mut self, price: f64) -> (f64, f64, f64, f64, bool, bool) {
         let (h_micro, _) = self.engine_micro.update(price);
         let (h_meso, _) = self.engine_meso.update(price);
         let (h_macro, _) = self.engine_macro.update(price);
@@ -164,7 +164,11 @@ impl MultiScaleHurstConfluence {
 
         let confluence_score: f64 = (c_micro * 0.4 + c_meso * 0.3 + c_macro * 0.3).clamp(-1.0, 1.0);
 
-        (h_micro, h_meso, h_macro, confluence_score)
+        // O(1) Branchless-like thresholds para determinar la viabilidad atómica del horizonte
+        let is_scalp_viable = h_micro > 0.60 || h_micro < 0.40; // Micro-tendencia fuerte o Micro-reversión fuerte
+        let is_swing_viable = h_macro > 0.65 || h_macro < 0.35; // Macro-tendencia o Macro-rango
+
+        (h_micro, h_meso, h_macro, confluence_score, is_scalp_viable, is_swing_viable)
     }
 }
 
@@ -197,7 +201,7 @@ mod tests {
         let mut p = 50000.0;
         for i in 0..60 {
             p += (i as f64 * 0.2).cos() * 10.0;
-            let (h_micro, h_meso, h_macro, score) = confluence.update(p);
+            let (h_micro, h_meso, h_macro, score, _scalp, _swing) = confluence.update(p);
             assert!(h_micro >= 0.05 && h_micro <= 0.95);
             assert!(h_meso >= 0.05 && h_meso <= 0.95);
             assert!(h_macro >= 0.05 && h_macro <= 0.95);
@@ -217,11 +221,13 @@ mod tests {
         assert_eq!(w_neg, 0.0);
 
         let mut confluence = MultiScaleHurstConfluence::new();
-        let (h1, h2, h3, sc) = confluence.update(f64::NAN);
+        let (h1, h2, h3, sc, scalp, swing) = confluence.update(f64::NAN);
         assert_eq!(h1, 0.50);
         assert_eq!(h2, 0.50);
         assert_eq!(h3, 0.50);
         assert_eq!(sc, 0.0);
+        assert_eq!(scalp, false);
+        assert_eq!(swing, false);
     }
 }
 

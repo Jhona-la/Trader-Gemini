@@ -1,7 +1,6 @@
-/// 🌌 MOTOR DE ANÁLISIS ESPECTRAL DE FOURIER EN TIEMPO REAL (ONLINE FFT SPECTRAL ENGINE)
-/// Descomposición espectral Cooley-Tukey Radix-2 en ventanas fijas de 64 muestras (#249-#265).
-/// Ejecución Zero-Alloc en microsegundos para detectar frecuencias dominantes y ciclos en scalping/swing.
-
+//! 🌌 MOTOR DE ANÁLISIS ESPECTRAL DE FOURIER EN TIEMPO REAL (ONLINE FFT SPECTRAL ENGINE)
+//! Descomposición espectral Cooley-Tukey Radix-2 en ventanas fijas de 64 muestras (#249-#265).
+//! Ejecución Zero-Alloc en microsegundos para detectar frecuencias dominantes y ciclos en scalping/swing.
 const FFT_SIZE: usize = 64;
 
 #[derive(Debug, Clone)]

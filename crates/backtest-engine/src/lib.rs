@@ -101,9 +101,10 @@ pub fn run_backtest_native(
         let bid_qty = current_vol * bid_ratio;
         let ask_qty = current_vol * (1.0 - bid_ratio);
 
-        // Interpolación (modelado): la trayectoria lineal al cierre conocido
-        // permanece como suposición de suavizado — divergencia documentada arriba.
-        let num_ticks = 10;
+        // FIX BLOQUEO #4: Incrementar micro-ticks de 10 a 30 para resolución microestructura
+        // Con 10 ticks/vela, las estrategias de microestructura (Hawkes, OFI, Soliton) 
+        // no pueden detectar patrones reales. 30 ticks proveen 2 por segundo.
+        let num_ticks = 30;
         let vol_step = current_vol / num_ticks as f64;
         let bid_qty_step = bid_qty / num_ticks as f64;
         let ask_qty_step = ask_qty / num_ticks as f64;
@@ -211,6 +212,28 @@ pub fn run_backtest_native(
             let sim_bid_qty = bid_qty_step * (0.5 + vol_noise);
             let sim_ask_qty = ask_qty_step * (1.5 - vol_noise);
 
+            // FIX BLOQUEO #4: Actualizar omni_sim dinámicamente por tick
+            // Antes: omni_sim era estático para toda la vela. Ahora: cada tick 
+            // actualiza las features que cambian (precios, OFI, volumen).
+            let tick_ofi = if sim_bid_qty + sim_ask_qty > 0.0 { 
+                (sim_bid_qty - sim_ask_qty) / (sim_bid_qty + sim_ask_qty) 
+            } else { 0.0 };
+            let tick_ret = if sim_price > 0.0 && prev_close > 0.0 {
+                (sim_price - prev_close) / prev_close
+            } else { 0.0 };
+            // Actualizar features dinámicas por tick
+            omni_sim[0] = sim_price;
+            omni_sim[1] = sim_price * (1.0 + tick_ret * 0.0001);
+            omni_sim[2] = sim_price * (1.0 - tick_ofi * 0.0001);
+            omni_sim[3] = sim_price * (1.0 + tick_ofi * 0.0001);
+            for j in 4..10 { omni_sim[j] = sim_price; }
+            omni_sim[10] = vol_step * tick_ofi.abs();
+            omni_sim[30] = sim_bid_qty - sim_ask_qty;
+            omni_sim[31] = (sim_bid_qty - sim_ask_qty) * 1.2;
+            omni_sim[32] = if sim_ask_qty > 0.0 { (sim_bid_qty / sim_ask_qty).clamp(0.1, 10.0) } else { 1.0 };
+            omni_sim[39] = tick_ofi;
+            omni_sim[49] = tick_ret.abs() * 100.0;
+
             let (_, _, sc, sw) = core.process_event(
                 target_coin_id,
                 true,
@@ -222,9 +245,9 @@ pub fn run_backtest_native(
                 sim_ask,
                 sim_bid_qty,
                 sim_ask_qty,
-                0.5,
+                tick_ofi, // FIX: Propagar OFI real derivado en vez de constante 0.5
                 0.0,
-                (i as u64 * 1000) + (t as u64 * 100),
+                (i as u64 * 1000) + (t as u64 * (60000 / num_ticks as u64)),
                 false,
                 &omni_sim,
             );

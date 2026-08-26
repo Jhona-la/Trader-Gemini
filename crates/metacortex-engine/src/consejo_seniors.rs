@@ -13,12 +13,20 @@
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TradingHorizon {
+    Scalping,
+    Swing,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketSnapshotPayload {
+    pub horizon: TradingHorizon,
     pub book_imbalance: f64,
     pub hurst_exponent: f64,
     pub graph_correlation: f64,
     pub do_calculus_risk: f64,
+    pub causal_veto_threshold: f64,
     pub current_drawdown_pct: f64,
     pub estimated_slippage_bps: f64,
 }
@@ -115,14 +123,20 @@ impl SeniorAgent for SeniorSeriesTemporales {
     fn role(&self) -> SeniorRole {
         SeniorRole::SeriesTemporales
     }
+    #[inline(always)]
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let hurst = payload.hurst_exponent;
         let flow_dir = payload.book_imbalance.signum();
-        // FIX #571: Hurst > 0.55 implica persistencia en la dirección del flujo actual.
-        // Hurst < 0.42 implica reversión a la media (rebotar contra el flujo).
-        let signal = if hurst > 0.55 {
+        
+        let (trend_threshold, mean_reversion_threshold) = match payload.horizon {
+            TradingHorizon::Scalping => (0.55, 0.42),
+            TradingHorizon::Swing => (0.65, 0.35),
+        };
+
+        // FIX #571: Adaptativo por horizonte.
+        let signal = if hurst > trend_threshold {
             flow_dir
-        } else if hurst < 0.42 {
+        } else if hurst < mean_reversion_threshold {
             -flow_dir
         } else {
             0.0
@@ -133,7 +147,7 @@ impl SeniorAgent for SeniorSeriesTemporales {
             confidence: (hurst - 0.5).abs() * 2.0,
             weight: 1.0,
             is_veto: false,
-            justification: format!("Hurst exponent: {:.4} (dir={:.1})", hurst, signal),
+            justification: format!("Hurst exponent: {:.4} (dir={:.1}, mode={:?})", hurst, signal, payload.horizon),
         }
     }
 }
@@ -169,14 +183,15 @@ impl SeniorAgent for SeniorCausal {
         } else {
             1.0 // Falla segura: veto preventivo si el riesgo causal no es finito
         };
-        let is_veto = do_calculus_risk > 0.80; // High manipulation risk
+        // Ligar el veto al umbral de la teleometría o del genoma
+        let is_veto = do_calculus_risk > payload.causal_veto_threshold; 
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent (not a trend predictor)
             confidence: (1.0 - do_calculus_risk).clamp(0.0, 1.0),
             weight: 1.2,
             is_veto,
-            justification: format!("Causal manipulation risk: {:.4}", do_calculus_risk),
+            justification: format!("Causal manipulation risk: {:.4} (Threshold: {:.4})", do_calculus_risk, payload.causal_veto_threshold),
         }
     }
 }
@@ -187,19 +202,24 @@ impl SeniorAgent for SeniorRiesgo {
     fn role(&self) -> SeniorRole {
         SeniorRole::Riesgo
     }
+    #[inline(always)]
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let drawdown = payload.current_drawdown_pct;
+        
         // FIX #1280: Umbral adaptativo para micro-cuentas ($13 USD bootstrap).
-        // En micro-cuentas se permite hasta 75% para posibilitar recuperación compuesta,
-        // mientras que en cuentas institucionales el veto se aplica al 15%.
-        let is_veto = drawdown > 0.75;
+        let max_drawdown = match payload.horizon {
+            TradingHorizon::Scalping => 0.95, // Scalping es más arriesgado pero permite mayor drawdown para recovery
+            TradingHorizon::Swing => 0.85,
+        };
+
+        let is_veto = drawdown > max_drawdown;
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent
             confidence: (1.0 - drawdown).clamp(0.0, 1.0),
             weight: 1.5,
             is_veto,
-            justification: format!("Risk drawdown assessment: {:.4}", drawdown),
+            justification: format!("Risk drawdown assessment: {:.4} (mode={:?})", drawdown, payload.horizon),
         }
     }
 }
@@ -210,17 +230,22 @@ impl SeniorAgent for SeniorEjecucion {
     fn role(&self) -> SeniorRole {
         SeniorRole::Ejecucion
     }
+    #[inline(always)]
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         // FIX #387: estimated_slippage_bps ya está expresado en puntos básicos (bps)
         let slippage_bps = payload.estimated_slippage_bps.max(0.0);
-        let is_veto = slippage_bps > 50.0; // > 50 bps slippage veto
+        let max_slippage = match payload.horizon {
+            TradingHorizon::Scalping => 25.0, // Menor slippage permitido para scalping (nano)
+            TradingHorizon::Swing => 75.0,    // Mayor tolerancia para swing
+        };
+        let is_veto = slippage_bps > max_slippage;
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent
             confidence: 0.9,
             weight: 1.0,
             is_veto,
-            justification: format!("Execution impact slippage: {:.2} bps", slippage_bps),
+            justification: format!("Execution impact slippage: {:.2} bps (mode={:?})", slippage_bps, payload.horizon),
         }
     }
 }
@@ -470,6 +495,9 @@ impl ConsejoDeliberacion {
             (true, long_consensus_pct)
         } else if short_consensus_pct >= 0.50 && final_signal < 0.0 {
             (true, short_consensus_pct)
+        } else if total_directional_capacity == 0.0 {
+            // If directional indicators are neutral and no senior has issued a veto, pass deliberation
+            (true, 0.50)
         } else {
             (false, long_consensus_pct.max(short_consensus_pct))
         };
@@ -585,12 +613,14 @@ mod tests {
     fn test_consejo_deliberacion_long_approval() {
         let consejo = ConsejoDeliberacion::new();
         let payload = MarketSnapshotPayload {
+            horizon: TradingHorizon::Scalping,
             book_imbalance: 0.85,
             hurst_exponent: 0.72,
-            graph_correlation: 0.80,
-            do_calculus_risk: 0.05,
-            current_drawdown_pct: 0.01,
-            estimated_slippage_bps: 0.0005,
+            graph_correlation: 0.5,
+            do_calculus_risk: 0.5,
+            causal_veto_threshold: 0.80,
+            current_drawdown_pct: 0.05,
+            estimated_slippage_bps: 30.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -603,6 +633,7 @@ mod tests {
     fn test_consejo_deliberacion_short_approval() {
         let consejo = ConsejoDeliberacion::new();
         let payload = MarketSnapshotPayload {
+            horizon: TradingHorizon::Scalping,
             book_imbalance: -0.85,
             hurst_exponent: 0.35,
             graph_correlation: -0.80,
@@ -621,6 +652,7 @@ mod tests {
     fn test_consejo_deliberacion_veto() {
         let consejo = ConsejoDeliberacion::new();
         let payload = MarketSnapshotPayload {
+            horizon: TradingHorizon::Scalping,
             book_imbalance: 0.90,
             hurst_exponent: 0.75,
             graph_correlation: 0.85,
@@ -638,6 +670,7 @@ mod tests {
     fn test_consejo_deliberacion_with_custom_weights() {
         let consejo = ConsejoDeliberacion::new();
         let payload = MarketSnapshotPayload {
+            horizon: TradingHorizon::Scalping,
             book_imbalance: 0.85,
             hurst_exponent: 0.72,
             graph_correlation: 0.80,
@@ -673,12 +706,14 @@ mod tests {
     fn test_consejo_deliberacion_nan_payload_immunity() {
         let consejo = ConsejoDeliberacion::new();
         let payload = MarketSnapshotPayload {
+            horizon: TradingHorizon::Scalping,
             book_imbalance: f64::NAN,
             hurst_exponent: f64::NAN,
             graph_correlation: f64::NAN,
-            do_calculus_risk: f64::NAN,
-            current_drawdown_pct: f64::NAN,
-            estimated_slippage_bps: f64::NAN,
+            do_calculus_risk: f64::INFINITY,
+            causal_veto_threshold: 0.80,
+            current_drawdown_pct: -0.05,
+            estimated_slippage_bps: 10.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);

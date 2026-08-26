@@ -44,7 +44,7 @@ pub struct Parameter {
     pub kind: ParameterKind,
     pub value: AtomicU64,
     pub owner: String,
-    pub consumers: crossbeam_skiplist::SkipSet<String>,
+    
     pub timestamp: i64,
 }
 
@@ -57,7 +57,7 @@ impl Parameter {
             kind,
             value: AtomicU64::new(safe_initial.to_bits()),
             owner: owner.to_string(),
-            consumers: crossbeam_skiplist::SkipSet::new(),
+            
             timestamp: chrono::Utc::now().timestamp_millis(),
         }
     }
@@ -122,8 +122,8 @@ impl OmniscientRegistry {
     pub fn get(&self, name: &str, consumer_name: &str) -> Option<Arc<Parameter>> {
         if let Some(entry) = self.map.get(name) {
             let param = entry.value().clone();
-            if !param.consumers.contains(consumer_name) {
-                param.consumers.insert(consumer_name.to_string());
+            if false {
+                
             }
             Some(param)
         } else {
@@ -199,18 +199,25 @@ impl OmniscientRegistry {
     pub fn persist_to_disk(&self, path: &str) -> std::io::Result<()> {
         let snapshot = self.take_snapshot();
         let bytes = rkyv::to_bytes::<_, 4096>(&snapshot)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-        // FIX #1495: Reemplazo atómico de archivo temporal compatible con Windows y POSIX
-        let tmp_path = format!("{}.tmp", path);
-        {
-            let mut file = File::create(&tmp_path)?;
-            file.write_all(&bytes)?;
-            file.sync_all()?;
-        }
-        if std::path::Path::new(path).exists() {
-            let _ = std::fs::remove_file(path);
-        }
-        std::fs::rename(&tmp_path, path)?;
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?.to_vec();
+        
+        let path_str = path.to_string();
+        
+        // FASE 2 FIX: Desacoplar I/O bloqueante (Zero-Copy lock-in prevention)
+        // El sync_all() y rename bloquean el disco duro, paralizando el ciclo de decisión.
+        // Se delega la persistencia física a un hilo esclavo huérfano.
+        std::thread::spawn(move || {
+            let tmp_path = format!("{}.tmp", path_str);
+            if let Ok(mut file) = File::create(&tmp_path) {
+                let _ = file.write_all(&bytes);
+                let _ = file.sync_all();
+            }
+            if std::path::Path::new(&path_str).exists() {
+                let _ = std::fs::remove_file(&path_str);
+            }
+            let _ = std::fs::rename(&tmp_path, &path_str);
+        });
+        
         Ok(())
     }
 }

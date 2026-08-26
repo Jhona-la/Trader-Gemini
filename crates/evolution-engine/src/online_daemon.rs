@@ -140,8 +140,9 @@ impl LiveEvolutionDaemon {
 
             self.iteration_count += 1;
             
-            // Cada 15 minutos (simulado con iteraciones) validamos si el entorno cambió
-            if self.last_evolution.elapsed() > Duration::from_secs(900) {
+            // Cada 3 minutos (o 60s en Demo) validamos si el entorno cambió
+            let eval_interval = if self.is_demo { 60 } else { 180 };
+            if self.last_evolution.elapsed() > Duration::from_secs(eval_interval) {
                 self.evaluate_shadow_strategy().await;
                 self.last_evolution = Instant::now();
             }
@@ -181,12 +182,13 @@ impl LiveEvolutionDaemon {
         
         self.sample_realized_returns();
 
-        // Requiere al menos 10 observaciones históricas
-        if self.returns_history.len() < 10 {
+        // FIX BLOQUEO #3: Reducir umbral de 10 a 3 para micro-capital ($13)
+        // Con $13 y scalping, cada trade cuenta. 3 observaciones bastan para arrancar.
+        if self.returns_history.len() < 3 {
             return;
         }
 
-        // Si el Sharpe Cuántico RANSAC > 2.0 y supera a la estrategia de producción...
+        // Si el Sharpe Cuántico RANSAC > 1.2 y supera a la estrategia de producción...
         let current_shadow_sharpe = Self::calculate_ransac_sharpe(&self.returns_history);
         
         let elapsed_warmup = self.daemon_start_time.elapsed().as_secs();
@@ -197,7 +199,7 @@ impl LiveEvolutionDaemon {
 
         println!("🧠 [ONLINE EVOLUTION] Evaluando Shadow Strategy con {} trades reales acumulados... Sharpe Estimado (RANSAC): {:.2}", self.returns_history.len(), current_shadow_sharpe);
         
-        if current_shadow_sharpe > 2.0 {
+        if current_shadow_sharpe > 1.2 {
             {
                 let mut sr = self.state.shadow_sharpe_ratio.write();
                 *sr = current_shadow_sharpe;
@@ -218,6 +220,9 @@ impl LiveEvolutionDaemon {
             let variance = self.returns_history.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / self.returns_history.len() as f64;
             let volatility = variance.sqrt().max(0.0001);
             
+            // FIX BLOQUEO #2: Capturar snapshot de retornos reales para walk-forward en el closure
+            let returns_snapshot: Vec<f64> = self.returns_history.clone();
+            
             let best_genome = tokio::task::spawn_blocking(move || {
                 let mut best = current_genome.clone();
                 let mut best_score = -999.0;
@@ -227,7 +232,9 @@ impl LiveEvolutionDaemon {
                 let dynamic_mutation_rate = (volatility * 50.0).clamp(0.01, 0.25);
                 
                 let mut rng = rand::rng();
-                for _i in 0..10_000 {
+                // FIX BLOQUEO #2: Reducir de 10,000 a 2,000 candidatos para micro-capital
+                // Con CPU limitada (16GB RAM, no GPU), 2K iteraciones son suficientes.
+                for _i in 0..2_000 {
                     let mut candidate = current_genome.clone();
                     use rand::RngExt;
                     
@@ -256,32 +263,65 @@ impl LiveEvolutionDaemon {
                     }
 
                     // Clamping automático delegando a la estructura cuántica central (SuperGenotype)
-                    // FASE 9: Deshardcoding total. Los límites están en `get_lower_bounds` / `get_upper_bounds`.
                     let vec = candidate.to_vector();
                     candidate = SuperGenotype::from_vector(&vec);
                     
-                    // Función de Fitness basada en Expectativa Matemática Real
-                    // CORRECCIÓN CRÍTICA: La ecuación anterior era puramente algebraica
-                    // y premiaba TP/SL alto sin simular. Esto causaba que el evolver
-                    // empujara SL al mínimo y TP al máximo sin validación de mercado.
-                    // 
-                    // Nueva fórmula: EV = WR * TP - (1-WR) * SL - 2*Fee
-                    // FIX #583: WR se estima a partir de la selectividad diferencial sobre el azar (50%)
-                    let avg_threshold = (candidate.ml_threshold_long + candidate.ml_threshold_short) / 2.0;
-                    let selectivity = (avg_threshold - 0.50).max(0.0);
-                    let est_wr = (0.50 + selectivity * 0.70).clamp(0.51, 0.85);
-                    let rr_ratio = candidate.scalp_tp_base / candidate.scalp_sl_base.max(0.0001);
-                    // Kelly criterion: f = W - (1-W)/R  
-                    let kelly_f = est_wr - ((1.0 - est_wr) / rr_ratio.max(0.1));
-                    // Expected value per trade (net of fees)
-                    let ev_per_trade = (est_wr * candidate.scalp_tp_base) 
-                        - ((1.0 - est_wr) * candidate.scalp_sl_base)
-                        - roundtrip_fee; // Penalizar con fees reales
-                    // Fitness combina: Sharpe actual * expectativa neta * Kelly positivo
-                    let fitness = if ev_per_trade > 0.0 && kelly_f > 0.0 {
-                        current_shadow_sharpe * ev_per_trade * 1000.0 * kelly_f
+                    // FIX BLOQUEO #2: Función de Fitness basada en RETORNOS REALES observados
+                    // ANTES: Usaba fórmula algebraica cerrada EV = WR_estimado * TP - (1-WR_estimado) * SL
+                    //        donde WR_estimado = 0.50 + selectivity * 0.70 — PURAMENTE TEÓRICA.
+                    // AHORA: Walk-forward sobre returns_history real. Simula las decisiones
+                    //        del genoma candidato contra los retornos REALES observados.
+                    let tp = candidate.scalp_tp_base.max(0.0001);
+                    let sl = candidate.scalp_sl_base.max(0.0001);
+                    let ml_thr_long = candidate.ml_threshold_long;
+                    let ml_thr_short = candidate.ml_threshold_short;
+
+                    // Simulación walk-forward sobre retornos reales
+                    let mut wf_wins = 0usize;
+                    let mut wf_losses = 0usize;
+                    let mut wf_pnl = 0.0f64;
+                    let mut wf_capital = 13.0; // Starting capital
+
+                    // Dividir returns_history: 60% train, 40% OOS
+                    let n_returns = returns_snapshot.len();
+                    let train_end = (n_returns * 6) / 10;
+
+                    // Solo evaluar en la porción OOS (walk-forward)
+                    for i in train_end..n_returns {
+                        let r = returns_snapshot[i];
+                        let prev_r = if i > 0 { returns_snapshot[i - 1] } else { 0.0 };
+                        
+                        // FIX: Erradicación del Lookahead Bias. 
+                        // Decisión: el genoma entra long/short basándose en el momentum previo (prev_r),
+                        // NO en el retorno actual (r). Se prohíbe leer el futuro.
+                        let entry_bias = if prev_r > (ml_thr_long - 0.5).max(0.0005) {
+                            1.0
+                        } else if prev_r < -(0.5 - ml_thr_short).max(0.0005) {
+                            -1.0
+                        } else {
+                            0.0
+                        };
+                        if entry_bias == 0.0 { continue; } // Skip: no signal
+                        
+                        let trade_ret = r * entry_bias; // positive = correct direction
+                        let clamped_ret = trade_ret.clamp(-sl, tp);
+                        let net_ret = clamped_ret - roundtrip_fee;
+                        
+                        wf_pnl += net_ret * wf_capital * candidate.scalp_kelly_fraction.clamp(0.05, 0.50);
+                        wf_capital += net_ret * wf_capital * candidate.scalp_kelly_fraction.clamp(0.05, 0.50);
+                        if net_ret > 0.0 { wf_wins += 1; } else { wf_losses += 1; }
+                    }
+
+                    let wf_trades = wf_wins + wf_losses;
+                    let wf_wr = if wf_trades > 0 { wf_wins as f64 / wf_trades as f64 } else { 0.0 };
+                    
+                    // Fitness = PnL walk-forward * sqrt(trades) * penalización OOS
+                    let fitness = if wf_trades >= 2 && wf_pnl > 0.0 {
+                        wf_pnl * (wf_trades as f64).sqrt() * wf_wr
+                    } else if wf_pnl < 0.0 {
+                        wf_pnl * 2.0 // Penalizar pérdidas extra
                     } else {
-                        -1.0 // Penalización: genomas con EV negativa o Kelly negativa
+                        -0.5 // Sin trades = ligeramente negativo
                     };
                     
                     if fitness > best_score {
@@ -292,17 +332,15 @@ impl LiveEvolutionDaemon {
                 best
             }).await.unwrap_or(fallback_genome);
             
-            // FASE 6: Estasis de Probabilidad (Confidence Bayesiano > 95%)
-            // Utilizamos el inlier_count (tamaño de la muestra válida de RANSAC) y la volatilidad (Sharpe)
-            // para estimar la confianza. Si no estamos al 95% seguros de que es una mejora, mutamos pero NO aplicamos.
-            // FIX #669: Sanitizar Sharpe y tamaño de muestra para evitar divisiones espurias o NaNs
+            // FASE 6: Estasis de Probabilidad Adaptativa por Tamaño Muestral
             let safe_sharpe = if current_shadow_sharpe.is_finite() && current_shadow_sharpe > 0.0 { current_shadow_sharpe } else { 0.1 };
             let safe_len = (self.returns_history.len().max(1)) as f64;
             let std_error = 1.0 / safe_len.sqrt();
             let bayesian_confidence = (1.0 - (std_error / safe_sharpe)).clamp(0.0, 1.0);
+            let target_confidence = if self.is_demo { 0.70 } else { 0.80 };
             
-            if bayesian_confidence < 0.95 {
-                println!("⚠️ [PROBABILITY STASIS] Sharpe {:.2} superó base, pero Confianza Bayesiana es {:.1}%. Requiere > 95%. Se descarta mutación.", current_shadow_sharpe, bayesian_confidence * 100.0);
+            if bayesian_confidence < target_confidence {
+                println!("⚠️ [PROBABILITY STASIS] Sharpe {:.2} superó base, pero Confianza Bayesiana es {:.1}%. Requiere > {:.0}%. Se descarta mutación.", current_shadow_sharpe, bayesian_confidence * 100.0, target_confidence * 100.0);
                 return;
             }
             

@@ -55,6 +55,16 @@ impl KalmanFilter1D {
         }
         self.update(measurement)
     }
+
+    /// Modula el ruido de medición R en función de la volatilidad instantánea (ej. ATR o Garman-Klass)
+    /// para evitar sobreajuste a ruidos de microestructura.
+    #[inline(always)]
+    pub fn update_with_instantaneous_volatility(&mut self, measurement: f64, inst_vol: f64, base_r: f64) -> f64 {
+        let safe_vol = if inst_vol.is_finite() && inst_vol > 0.0 { inst_vol } else { 0.001 };
+        let safe_base = if base_r.is_finite() && base_r > 0.0 { base_r } else { self.r };
+        let modulated_r = safe_base * (1.0 + (safe_vol * 100.0).clamp(0.0, 100.0));
+        self.update_with_dynamic_r(measurement, modulated_r)
+    }
 }
 
 #[cfg(test)]
@@ -82,5 +92,18 @@ mod tests {
         let est_dyn_nan = kf.update_with_dynamic_r(52.0, f64::NAN);
         assert!(est_dyn_nan.is_finite());
         assert!((est_dyn_nan - 50.0).abs() < 2.0);
+    }
+
+    #[test]
+    fn test_kalman_filter_instantaneous_volatility_modulation() {
+        let mut kf = KalmanFilter1D::new(100.0, 1.0, 1e-4, 0.1);
+        let est_calm = kf.update_with_instantaneous_volatility(105.0, 0.001, 0.1);
+
+        let mut kf_noisy = KalmanFilter1D::new(100.0, 1.0, 1e-4, 0.1);
+        let est_noisy = kf_noisy.update_with_instantaneous_volatility(105.0, 0.50, 0.1);
+
+        // In high volatility, R is larger, so the update towards 105.0 is dampened
+        assert!((est_noisy - 100.0) < (est_calm - 100.0));
+        assert!(est_noisy > 100.0);
     }
 }

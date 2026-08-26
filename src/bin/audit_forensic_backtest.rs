@@ -62,7 +62,7 @@ async fn main() {
     .to_string();
 
     let executor = Arc::new(execution_engine::executor::OrderExecutor::new(
-        api_key, api_secret, is_testnet,
+        api_key.clone(), api_secret.clone(), is_testnet,
     ));
     let genome = quantum_arena::genome::SuperGenotype::load_or_default();
 
@@ -95,10 +95,10 @@ async fn main() {
     let model_res = dark_alpha_engine::DarkAlphaEngine::load_json("models/DarkAlpha_BTCUSDT.json");
     let nn = match model_res {
         Ok(mut m) => {
-            // Verificar si los pesos contienen denormalized/garbage (< 1e-300 o NaN)
-            let is_corrupt = m.layer1.weights.iter().any(|&w| w.is_nan() || (w != 0.0 && w.abs() < 1e-300));
+            // Verificar si los pesos contienen NaN o Infinito
+            let is_corrupt = m.layer1.weights.iter().any(|&w| w.is_nan() || w.is_infinite());
             if is_corrupt {
-                println!("⚠️ [DARK ALPHA] Pesos corruptos detectados en models/DarkAlpha_BTCUSDT.json. Regenerando modelo He/Xavier 54D.");
+                println!("⚠️ [DARK ALPHA] Pesos no finitos detectados en models/DarkAlpha_BTCUSDT.json. Regenerando modelo Xavier 54D.");
                 let clean = dark_alpha_engine::DarkAlphaEngine::default_model();
                 let _ = clean.save_json("models/DarkAlpha_BTCUSDT.json");
                 clean
@@ -135,21 +135,24 @@ async fn main() {
     println!("⚛️  [ARENA] QuantumConfig y GodEngineCore instanciados (Paridad Producción)");
 
     // Configurar fees dinámicamente desde API real o baseline VIP0
-    let (maker_fee, taker_fee) = match executor.fetch_commission_rate("BTCUSDT").await {
-        Ok((m, t)) if m > 0.0 && t > 0.0 => {
-            println!(
-                "🌍 [API] Comisiones Reales de Binance Extraídas: Maker {:.4}%, Taker {:.4}%",
-                m * 100.0,
-                t * 100.0
-            );
-            (m, t)
+    let (maker_fee, taker_fee) = if !api_key.is_empty() && !api_secret.is_empty() {
+        match executor.fetch_commission_rate("BTCUSDT").await {
+            Ok((m, t)) if m > 0.0 && t > 0.0 => {
+                println!(
+                    "🌍 [API] Comisiones Reales de Binance Extraídas: Maker {:.4}%, Taker {:.4}%",
+                    m * 100.0,
+                    t * 100.0
+                );
+                (m, t)
+            }
+            _ => {
+                println!("🌍 [API] Usando comisiones estándar VIP0 de Binance (Maker 0.02%, Taker 0.05%)");
+                (0.0002, 0.0005)
+            }
         }
-        _ => {
-            println!(
-                "🌍 [API] Usando comisiones estándar VIP0 de Binance (Maker 0.02%, Taker 0.05%)"
-            );
-            (0.0002, 0.0005)
-        }
+    } else {
+        println!("🌍 [API] Modo Offline / Sin claves API: Usando comisiones estándar VIP0 (Maker 0.02%, Taker 0.05%)");
+        (0.0002, 0.0005)
     };
     arena
         .config
@@ -230,9 +233,9 @@ async fn main() {
     // ═══════════════════════════════════════════════════════════════════════
     // PASO 4: Calentamiento (Warm-Up) — Primeros 200 ticks sin contar trades
     // ═══════════════════════════════════════════════════════════════════════
-    let warmup_ticks = 5000.min(num_ticks / 10);
+    let warmup_ticks = 15000.min(num_ticks / 10);
     println!(
-        "🔥 [WARM-UP] Alimentando {} ticks de calentamiento al motor...",
+        "🔥 [WARM-UP] Alimentando {} ticks de calentamiento profundo al motor...",
         warmup_ticks
     );
 
@@ -240,10 +243,17 @@ async fn main() {
         let t = &ticks_slice[i];
         let price = (t.bid_price + t.ask_price) / 2.0;
         let vol = t.bid_qty + t.ask_qty;
+        let is_buyer_maker = t.ask_qty > t.bid_qty;
+        core.arena.update_market_data(0, t.bid_price, t.ask_price, t.bid_qty, t.ask_qty, t.timestamp);
+        core.arena.update_agg_trade(0, is_buyer_maker, vol);
+        core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);
         core.feature_engines[0].process_tick(price, vol, t.timestamp);
+        core.feature_engines[0].update_trade_flow(vol, is_buyer_maker);
+        core.feature_engines[0].update_ofi(t.bid_price, t.ask_price, t.bid_qty, t.ask_qty);
     }
+    arena.unified_capital.store(initial_capital, Ordering::Relaxed);
 
-    println!("✅ [WARM-UP] Completado. Los tensores están calibrados.");
+    println!("✅ [WARM-UP] Completado. Los tensores y EMAs están 100% calibrados.");
     println!();
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -409,21 +419,43 @@ async fn main() {
 
         let (new_sc, new_sw, closed_sc, closed_sw) = core.process_event(
             0,
-            true,
+            false, // is_trade = false for Depth event
             is_minute_kline,
-            true,
+            true, // is_depth = true
             price,
             vol,
             sim_bid,
             sim_ask,
             bid_qty,
             ask_qty,
-            real_obi, // FASE 17: Use real OBI instead of static 0.5
+            real_obi,
             0.0,
             ts,
             false,
             &omni_features,
         );
+        let (new_sc_2, new_sw_2, closed_sc_2, closed_sw_2) = core.process_event(
+            0,
+            true, // is_trade = true for Trade event
+            false, // is_kline_closed = false (already processed)
+            false, // is_depth = false
+            price,
+            vol,
+            sim_bid,
+            sim_ask,
+            bid_qty,
+            ask_qty,
+            real_obi,
+            0.0,
+            ts,
+            false,
+            &omni_features,
+        );
+
+        let new_sc = new_sc.or(new_sc_2);
+        let new_sw = new_sw.or(new_sw_2);
+        let closed_sc = closed_sc.or(closed_sc_2);
+        let closed_sw = closed_sw.or(closed_sw_2);
 
         // DEEP DIAGNOSTIC: Log ML predictions, features, and signal flow every 100k ticks
         if i < warmup_ticks + 5 || (i % 100_000 == 0) {
@@ -434,7 +466,7 @@ async fn main() {
             let scalp_intent = core.last_scalp_intent[0];
             let swing_intent = core.last_swing_intent[0];
             let current_cap = arena.unified_capital.load(Ordering::Relaxed);
-            let ml_threshold = arena.config.scalp_obi_threshold.load(Ordering::Relaxed);
+            let ml_threshold = arena.config.ml_threshold_long.load(Ordering::Relaxed);
 
             println!("🔍 [DEEP TRACE] i={}: atr={:.8} ml_prob={:.4} ml_thresh={:.4} regime={:?} scalp_sig={:?} swing_sig={:?} cap={:.2} obi={:.4} hurst={:.4}", 
                 i, atr_pct, ml_prob, ml_threshold, regime, scalp_intent.signal, swing_intent.signal, current_cap, real_obi, features[1]);

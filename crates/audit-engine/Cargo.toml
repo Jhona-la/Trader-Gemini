@@ -13,3 +13,5 @@ graph-4d = { path = "../graph-4d" }
 crossbeam-channel = "0.5.16"
 once_cell = "1.21.4"
 quantum-arena = { path = "../quantum-arena" }
+regex = "1.13.1"
+walkdir = "2.5.0"

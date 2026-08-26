@@ -9,9 +9,12 @@ pub fn calculate_kelly_fraction(
     base_capital: f64,
     kelly_survival_cap_ratio: f64,
     kelly_expansion_mult: f64,
+    clamp_min: f64,
+    clamp_max: f64,
+    strategy_base_fraction: f64,
 ) -> f64 {
     // FIX #653: Guarda de finitud estricta previa
-    if !win_rate.is_finite() || !profit_factor.is_finite() || !current_capital.is_finite() || !base_capital.is_finite() || !kelly_survival_cap_ratio.is_finite() || !kelly_expansion_mult.is_finite() {
+    if !win_rate.is_finite() || !profit_factor.is_finite() || !current_capital.is_finite() || !base_capital.is_finite() || !kelly_survival_cap_ratio.is_finite() || !kelly_expansion_mult.is_finite() || !clamp_min.is_finite() || !clamp_max.is_finite() || !strategy_base_fraction.is_finite() {
         return 0.0;
     }
 
@@ -33,7 +36,7 @@ pub fn calculate_kelly_fraction(
     let micro_account_threshold = base_capital.max(1.0) * 2.30;
     let capital_scale = if current_capital < micro_account_threshold {
         // FIX #378: Half-to-fractional Kelly dinámico modulado por la calidad del edge
-        (0.50 * (win_rate / 0.60).clamp(0.7, 1.3)).clamp(0.25, 0.75)
+        (strategy_base_fraction * (win_rate / 0.60).clamp(0.7, 1.3)).clamp(0.25, 0.75)
     } else if capital_ratio < kelly_survival_cap_ratio {
         // Modo Supervivencia Adaptativa
         (0.35 * win_rate * capital_ratio.sqrt()).clamp(0.20, 0.60)
@@ -44,5 +47,5 @@ pub fn calculate_kelly_fraction(
     };
 
     // Retornamos el Kelly ajustado asimétricamente acotado al tope seguro
-    (kelly * capital_scale).clamp(0.0, 0.75)
+    (kelly * capital_scale).clamp(clamp_min, clamp_max)
 }

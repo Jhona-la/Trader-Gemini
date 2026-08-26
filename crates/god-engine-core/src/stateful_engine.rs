@@ -36,8 +36,9 @@ pub struct StatefulEngine {
     pub ema_slow: f64,
     pub omni: feature_engine::OmniStrategyEngine,
     pub spectral: feature_engine::SpectralCycleEngine,
-    pub multifractal: feature_engine::MultifractalSpectrumEngine,
+    pub multifractal: feature_engine::MultiScaleHurstConfluence,
     pub lead_lag: feature_engine::LeadLagAlphaEngine,
+    pub regime: MarketRegime,
     // Native Kline Aggregator
     pub kline_start_ms: u64,
     pub kline_open: f64,
@@ -46,6 +47,10 @@ pub struct StatefulEngine {
     pub kline_volume: f64,
     pub kline_ema_fast: f64,
     pub kline_ema_slow: f64,
+    pub ml_prob_ewma: f64,
+    pub ml_prob_var: f64,
+    pub last_scalp_exit_tick: u64,
+    pub last_scalp_was_loss: bool,
 }
 
 impl Default for StatefulEngine {
@@ -76,8 +81,9 @@ impl StatefulEngine {
             ema_slow: 0.0,
             omni: feature_engine::OmniStrategyEngine::new(),
             spectral: feature_engine::SpectralCycleEngine::new(),
-            multifractal: feature_engine::MultifractalSpectrumEngine::new(50),
+            multifractal: feature_engine::MultiScaleHurstConfluence::new(),
             lead_lag: feature_engine::LeadLagAlphaEngine::new(50),
+            regime: MarketRegime::Neutral,
             kline_start_ms: 0,
             kline_open: 0.0,
             kline_high: 0.0,
@@ -85,7 +91,31 @@ impl StatefulEngine {
             kline_volume: 0.0,
             kline_ema_fast: 0.0,
             kline_ema_slow: 0.0,
+            ml_prob_ewma: 0.0,
+            ml_prob_var: 0.01,
+            last_scalp_exit_tick: 0,
+            last_scalp_was_loss: false,
         }
+    }
+
+    /// Smart cooldown per asset: evita sobre-operar niveles fallidos
+    #[inline(always)]
+    pub fn can_open_scalp(&self, min_cooldown: u64) -> bool {
+        let required = if self.last_scalp_was_loss {
+            min_cooldown * 2
+        } else {
+            min_cooldown
+        };
+        self.tick_count >= self.last_scalp_exit_tick + required
+    }
+
+    /// Normaliza adaptativamente las predicciones ML en O(1) centradas en 0.50 con rango [-1.0, 1.0]
+    #[inline(always)]
+    pub fn update_ml_prediction(&mut self, ml_prob: f64) -> f64 {
+        if !ml_prob.is_finite() || ml_prob <= 0.0 {
+            return 0.0;
+        }
+        ((ml_prob - 0.50) * 2.0).clamp(-1.0, 1.0)
     }
 
     /// Flushes all internal buffers. Used to auto-heal time-series glitches after network disconnects.
@@ -108,8 +138,9 @@ impl StatefulEngine {
         self.ema_slow = 0.0;
         self.omni = feature_engine::OmniStrategyEngine::new();
         self.spectral = feature_engine::SpectralCycleEngine::new();
-        self.multifractal = feature_engine::MultifractalSpectrumEngine::new(50);
+        self.multifractal = feature_engine::MultiScaleHurstConfluence::new();
         self.lead_lag = feature_engine::LeadLagAlphaEngine::new(50);
+        self.regime = MarketRegime::Neutral;
         self.kline_start_ms = 0;
         self.kline_open = 0.0;
         self.kline_high = 0.0;
@@ -128,8 +159,8 @@ impl StatefulEngine {
             self.ema_fast = price;
             self.ema_slow = price;
         } else {
-            let alpha_fast = 2.0 / (12.0 + 1.0);
-            let alpha_slow = 2.0 / (26.0 + 1.0);
+            let alpha_fast = 2.0 / (20.0 + 1.0);
+            let alpha_slow = 2.0 / (200.0 + 1.0);
 
             self.ema_fast = (price - self.ema_fast) * alpha_fast + self.ema_fast;
             self.ema_slow = (price - self.ema_slow) * alpha_slow + self.ema_slow;
@@ -138,7 +169,16 @@ impl StatefulEngine {
             let norm_return = (price - self.last_price) / self.last_price;
             self.last_entropy = self.entropy.update(norm_return);
             self.spectral.push(norm_return);
-            self.multifractal.update(price);
+            let (_h_mic, _h_mes, _h_mac, _score, scalp, swing) = self.multifractal.update(price);
+            
+            // Lógica Branchless-like O(1) para discriminar atómicamente el régimen
+            self.regime = if scalp {
+                MarketRegime::Scalping
+            } else if swing {
+                MarketRegime::Swing
+            } else {
+                MarketRegime::Neutral
+            };
 
             // Tick-level instantaneous velocity & acceleration
             let inst_v = diff;
@@ -218,16 +258,29 @@ impl StatefulEngine {
 
     pub fn process_kline(&mut self, _open: f64, high: f64, low: f64, close: f64, _volume: f64) {
         // FIX #665: Descarte preventivo de klines con precios corruptos o no finitos
-        if !close.is_finite() || close <= 0.0 || !high.is_finite() || !low.is_finite() {
-            return;
-        }
-
-        self.omni.update(close, high, low);
+        // FIX: Erradicación del Feature Leakage (Ceguera Causal)
+        // Usar los altos y bajos de la vela ANTERIOR para el cálculo actual de features de IA.
+        // Si el modelo ve el high/low de esta misma vela, el backtest hace trampa leyendo el futuro.
+        let prev_high = if self.kline_high > 0.0 { self.kline_high } else { high };
+        let prev_low = if self.kline_low > 0.0 { self.kline_low } else { low };
+        
+        self.omni.update(close, prev_high, prev_low);
+        
+        // Guardar estado futuro para la próxima evaluación causal
+        self.kline_high = high;
+        self.kline_low = low;
         self.hurst.update(close);
         if self.last_price > 0.0 {
             self.spectral.push((close - self.last_price) / self.last_price);
         }
-        self.multifractal.update(close);
+        let (_h_mic, _h_mes, _h_mac, _score, scalp, swing) = self.multifractal.update(close);
+        self.regime = if scalp {
+            MarketRegime::Scalping
+        } else if swing {
+            MarketRegime::Swing
+        } else {
+            MarketRegime::Neutral
+        };
         self.last_price = close;
 
         if self.ema_fast == 0.0 {

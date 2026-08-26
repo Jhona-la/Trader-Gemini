@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use crate::binance_api::{
     sign_payload_to_buffer, ORDER_TYPE_LIMIT, ORDER_TYPE_MARKET, SIDE_BUY, SIDE_SELL,
     TIME_IN_FORCE_IOC,
@@ -24,6 +26,16 @@ pub fn current_timestamp_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+#[inline(always)]
+pub fn current_synced_timestamp_ms(arena: Option<&quantum_arena::GlobalArena>) -> u64 {
+    let base = current_timestamp_ms() as i64;
+    if let Some(a) = arena {
+        (base + a.server_time_offset_ms.load(Ordering::Relaxed)) as u64
+    } else {
+        base as u64
+    }
 }
 
 impl Default for SymbolFilter {
@@ -188,7 +200,7 @@ pub trait ExecutionProvider: Send + Sync {
 }
 
 pub struct OrderExecutor {
-    api_secret: std::sync::RwLock<String>,
+    api_secret: ArcSwap<String>,
     client: BinanceClient,
     rate_limit_counter: AtomicUsize,
     last_reset_timestamp: AtomicU64,
@@ -199,7 +211,7 @@ pub struct OrderExecutor {
     max_orders_10s: AtomicUsize,
     max_orders_1m: AtomicUsize,
     kill_switch: AtomicBool,
-    active_leverage: std::sync::RwLock<std::collections::HashMap<String, u32>>,
+    active_leverage: ArcSwap<std::collections::HashMap<String, u32>>,
     is_paper_trading: bool,
     /// F1.5: memoria del ciclo de vida de órdenes — compartida con el
     /// user-data stream (F1.6) y la reconciliación (F1.7).
@@ -209,14 +221,16 @@ pub struct OrderExecutor {
     /// F1.8: 429s consecutivos — >=3 sugiere ban inminente → kill-switch real.
     consecutive_429: AtomicUsize,
     /// Cache en RAM de filtros de símbolos (tickSize, stepSize, minNotional) O(1) < 5ns
-    symbol_filters: std::sync::RwLock<std::collections::HashMap<String, SymbolFilter>>,
+    symbol_filters: ArcSwap<std::collections::HashMap<String, SymbolFilter>>,
+    pub arena: ArcSwapOption<quantum_arena::GlobalArena>,
+    pub ws: std::sync::Arc<crate::ws_executor::WsExecutor>,
 }
 
 impl OrderExecutor {
     pub fn new(api_key: String, api_secret: String, is_testnet: bool) -> Self {
         Self {
-            api_secret: std::sync::RwLock::new(api_secret),
-            client: BinanceClient::new(api_key, is_testnet),
+            api_secret: ArcSwap::from_pointee(api_secret.clone()),
+            client: BinanceClient::new(api_key.clone(), is_testnet),
             rate_limit_counter: AtomicUsize::new(0),
             last_reset_timestamp: AtomicU64::new(0),
             binance_weight_1m: AtomicUsize::new(0),
@@ -226,12 +240,18 @@ impl OrderExecutor {
             max_orders_10s: AtomicUsize::new(280),
             max_orders_1m: AtomicUsize::new(1100),
             kill_switch: AtomicBool::new(false),
-            active_leverage: std::sync::RwLock::new(std::collections::HashMap::new()),
+            active_leverage: ArcSwap::from_pointee(std::collections::HashMap::new()),
             is_paper_trading: false, // Desacoplado: false por defecto para permitir órdenes reales en Testnet/Mainnet; activar con set_paper_trading(true) si se desea simular
             order_registry: std::sync::Arc::new(crate::order_registry::OrderRegistry::new()),
             cooldown_until_ms: AtomicU64::new(0),
             consecutive_429: AtomicUsize::new(0),
-            symbol_filters: std::sync::RwLock::new(std::collections::HashMap::new()),
+            symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
+            arena: ArcSwapOption::empty(),
+            ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
+                api_key,
+                api_secret,
+                is_testnet,
+            )),
         }
     }
 
@@ -244,6 +264,18 @@ impl OrderExecutor {
         &self.client
     }
 
+    #[inline(always)]
+    pub fn get_synced_timestamp(&self) -> u64 {
+        if let Some(guard) = self.arena.load_full() {
+            current_synced_timestamp_ms(Some(guard.as_ref()))
+        } else {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64
+        }
+    }
+
     /// F1.11: verifica que la cuenta esté en modo HEDGE (dualSidePosition).
     /// El motor SIEMPRE envía positionSide=LONG/SHORT: con la cuenta en modo
     /// one-way TODA orden falla con -4061 (hallazgo real del ciclo testnet).
@@ -252,8 +284,8 @@ impl OrderExecutor {
         if self.is_paper_trading {
             return Ok(true);
         }
-        let timestamp = current_timestamp_ms();
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let timestamp = self.get_synced_timestamp();
+        let api_secret = self.api_secret.load().to_string();
 
         // 1) Modo actual (GET firmado)
         let mut buf = ZeroAllocBuffer::new();
@@ -280,7 +312,7 @@ impl OrderExecutor {
         }
 
         // 2) Activar hedge (POST firmado dualSidePosition=true)
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
         buf.push_str("/fapi/v1/positionSide/dual?");
@@ -313,8 +345,8 @@ impl OrderExecutor {
         if self.is_paper_trading {
             return Ok((0, 0));
         }
-        let timestamp = current_timestamp_ms();
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let timestamp = self.get_synced_timestamp();
+        let api_secret = self.api_secret.load().to_string();
 
         // Modo de la cuenta (dual=hedge) — determina si se envía positionSide.
         let mut buf = ZeroAllocBuffer::new();
@@ -346,7 +378,7 @@ impl OrderExecutor {
             .collect();
         let mut cancelled = 0usize;
         for sym in &symbols {
-            let ts = current_timestamp_ms();
+            let ts = self.get_synced_timestamp();
             let mut buf = ZeroAllocBuffer::new();
             buf.push_str(self.client.get_base_url());
             buf.push_str("/fapi/v1/allOpenOrders?");
@@ -368,7 +400,7 @@ impl OrderExecutor {
         let mut closed = 0usize;
         for p in entries.iter().filter(|p| p.is_open()) {
             let is_long = p.is_long();
-            let ts = current_timestamp_ms();
+            let ts = self.get_synced_timestamp();
             let coid = uuid::Uuid::now_v7().simple().to_string();
             let mut buf = ZeroAllocBuffer::new();
             buf.push_str(self.client.get_base_url());
@@ -391,6 +423,32 @@ impl OrderExecutor {
             buf.push_str("&timestamp=");
             buf.push_u64(ts);
             let mut sig_buf = [0u8; 64];
+            
+            // WS Execution Routing (Zero-TLS overhead)
+            if self.ws.is_connected() {
+                let api_key = self.client.api_key.load().to_str().unwrap_or("").to_string();
+                if let Err(e) = self.ws.send_order_payload(
+                    &api_key,
+                    &api_secret,
+                    &p.symbol,
+                    if is_long { "SELL" } else { "BUY" },
+                    if dual { Some(if is_long { "LONG" } else { "SHORT" }) } else { None },
+                    ORDER_TYPE_MARKET,
+                    p.position_amt.abs(),
+                    None,
+                    None,
+                    !dual, // reduceOnly is true when NOT dual (One-Way Mode)
+                    &coid,
+                    ts,
+                ) {
+                    println!("⚠️ [WS-EXECUTOR] Failed to send close position order, falling back to REST: {}", e);
+                } else {
+                    println!("🧹 [FLATTEN] {} close request via WS dispatched", p.symbol);
+                    closed += 1;
+                    continue; // Skip REST fallback since WS sent successfully
+                }
+            }
+
             sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
             buf.push_str("&signature=");
             buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
@@ -398,7 +456,7 @@ impl OrderExecutor {
             match self.client.execute_order_payload_typed(buf.as_str()).await {
                 Ok((limits, ack)) => {
                     self.update_limits(&limits);
-                    let now = current_timestamp_ms();
+                    let now = self.get_synced_timestamp();
                     self.order_registry.apply_ack(&ack, now);
                     closed += 1;
                     println!(
@@ -423,7 +481,7 @@ impl OrderExecutor {
         if self.is_paper_trading {
             return Ok(Vec::new());
         }
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
 
         self.check_rate_limits(timestamp)?;
 
@@ -436,7 +494,7 @@ impl OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -469,8 +527,8 @@ impl OrderExecutor {
     }
 
     pub fn hot_swap_credentials(&self, new_key: String, new_secret: String, is_testnet: bool) {
-        if let Ok(mut secret) = self.api_secret.write() {
-            *secret = new_secret;
+        self.api_secret.store(Arc::new(new_secret));
+        if true {
         }
         self.client.hot_swap_credentials(new_key, is_testnet);
     }
@@ -503,7 +561,9 @@ impl OrderExecutor {
                 .nth(1)
                 .and_then(|s| s.trim().parse().ok())
                 .unwrap_or(60);
-            let now = current_timestamp_ms();
+            let arena_guard = self.arena.load_full();
+            let now = current_synced_timestamp_ms(arena_guard.as_deref());
+            drop(arena_guard);
             let until = now.saturating_add(retry_after_s.saturating_mul(1000));
             // Máximo atómico: conservar cooldown mayor si ya existía.
             let mut cur = self.cooldown_until_ms.load(Ordering::Relaxed);
@@ -648,7 +708,9 @@ impl OrderExecutor {
             SignalType::Flat => return None,
         };
 
-        let timestamp = current_timestamp_ms();
+        let arena_guard = self.arena.load_full();
+        let timestamp = current_synced_timestamp_ms(arena_guard.as_deref());
+        drop(arena_guard);
 
         // F1.2: identificador idempotente — toda orden lleva newClientOrderId.
         let client_order_id = uuid::Uuid::now_v7().simple().to_string();
@@ -684,7 +746,7 @@ impl OrderExecutor {
 
         // Firmar
         let mut sig_buf = [0u8; 64];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
         sign_payload_to_buffer(&signed_query, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) }.to_string();
 
@@ -699,6 +761,13 @@ impl OrderExecutor {
             } else {
                 "SHORT".to_string()
             },
+            price: if order.maker_only {
+                let is_sell = side == SIDE_SELL;
+                Some(Self::round_price_to_tick(current_price, tick_size, is_sell))
+            } else {
+                None
+            },
+            reduce_only: false,
             signed_query,
             client_order_id,
             signature,
@@ -763,7 +832,8 @@ impl OrderExecutor {
 
     pub async fn get_symbol_filter(&self, symbol: &str) -> SymbolFilter {
         {
-            if let Ok(cache) = self.symbol_filters.read() {
+            let cache = self.symbol_filters.load();
+if true {
                 if let Some(f) = cache.get(symbol) {
                     return *f;
                 }
@@ -771,9 +841,7 @@ impl OrderExecutor {
         }
         if let Ok(filters) = self.fetch_all_symbol_filters().await {
             let res = filters.get(symbol).copied();
-            if let Ok(mut cache) = self.symbol_filters.write() {
-                *cache = filters;
-            }
+            self.symbol_filters.store(Arc::new(filters));
             if let Some(f) = res {
                 return f;
             }
@@ -819,7 +887,7 @@ impl ExecutionProvider for OrderExecutor {
         // Parametrizar dinámicamente el Leverage (Kelly Criterion)
         let target_leverage = order.leverage as u32;
         let needs_update = {
-            let cache = self.active_leverage.read().unwrap();
+            let cache = self.active_leverage.load();
             cache.get(symbol).copied().unwrap_or(0) != target_leverage
         };
 
@@ -830,8 +898,9 @@ impl ExecutionProvider for OrderExecutor {
                     symbol, e
                 );
             } else {
-                let mut cache = self.active_leverage.write().unwrap();
+                let mut cache = (**self.active_leverage.load()).clone();
                 cache.insert(symbol.to_string(), target_leverage);
+                self.active_leverage.store(Arc::new(cache));
             }
         }
 
@@ -856,7 +925,34 @@ impl ExecutionProvider for OrderExecutor {
                 payload.quantity,
                 payload.timestamp,
             );
-            // F1.4: se envía EXACTAMENTE la query firmada. Sin reconstrucción.
+            // WS Execution Routing (Zero-TLS overhead)
+            if self.ws.is_connected() {
+                let api_key = self.client.api_key.load().to_str().unwrap_or("").to_string();
+                let api_secret = self.api_secret.load().to_string();
+                let time_in_force_opt = if payload.time_in_force.is_empty() { None } else { Some(payload.time_in_force.as_str()) };
+                
+                if let Err(e) = self.ws.send_order_payload(
+                    &api_key,
+                    &api_secret,
+                    &payload.symbol,
+                    &payload.side,
+                    Some(&payload.position_side),
+                    &payload.order_type,
+                    payload.quantity,
+                    payload.price,
+                    time_in_force_opt,
+                    payload.reduce_only,
+                    &payload.client_order_id,
+                    payload.timestamp,
+                ) {
+                    println!("⚠️ [WS-EXECUTOR] Failed to send order, falling back to REST: {}", e);
+                } else {
+                    // Orden disparada con éxito vía WS. El UserDataStream procesará el ACK real.
+                    return Ok(());
+                }
+            }
+
+            // F1.4: se envía EXACTAMENTE la query firmada. Sin reconstrucción (REST Fallback).
             let mut buf = ZeroAllocBuffer::new();
             buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
                 "https://testnet.binancefuture.com/fapi/v1/order?"
@@ -1007,7 +1103,31 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
+
+        // WS Execution Routing (Zero-TLS overhead)
+        if self.ws.is_connected() {
+            let api_key = self.client.api_key.load().to_str().unwrap_or("").to_string();
+            if let Err(e) = self.ws.send_order_payload(
+                &api_key,
+                &api_secret,
+                symbol,
+                side,
+                Some(if is_long { "LONG" } else { "SHORT" }),
+                ORDER_TYPE_MARKET,
+                final_quantity,
+                None,
+                None,
+                false,
+                &client_order_id,
+                timestamp,
+            ) {
+                println!("⚠️ [WS-EXECUTOR] Failed to send raw qty order, falling back to REST: {}", e);
+            } else {
+                return Ok(());
+            }
+        }
+
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1092,7 +1212,31 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
+
+        // WS Execution Routing (Zero-TLS overhead)
+        if self.ws.is_connected() {
+            let api_key = self.client.api_key.load().to_str().unwrap_or("").to_string();
+            if let Err(e) = self.ws.send_order_payload(
+                &api_key,
+                &api_secret,
+                symbol,
+                side,
+                Some(if is_long { "LONG" } else { "SHORT" }),
+                ORDER_TYPE_LIMIT,
+                final_quantity,
+                Some(final_price),
+                Some(crate::binance_api::TIME_IN_FORCE_GTX),
+                false,
+                client_order_id,
+                timestamp,
+            ) {
+                println!("⚠️ [WS-EXECUTOR] Failed to send limit order, falling back to REST: {}", e);
+            } else {
+                return Ok(());
+            }
+        }
+
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1248,7 +1392,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1326,7 +1470,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1388,7 +1532,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1462,7 +1606,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1551,7 +1695,7 @@ impl ExecutionProvider for OrderExecutor {
         tp_buf.push_str("&timestamp=");
         tp_buf.push_u64(timestamp);
 
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
 
         let mut sig_buf_sl = [0u8; 64];
         let sl_payload = &sl_buf.as_str()[sl_payload_start..];
@@ -1654,7 +1798,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1703,7 +1847,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1755,7 +1899,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1816,7 +1960,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1871,7 +2015,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.read().unwrap().clone();
+        let api_secret = self.api_secret.load().to_string();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1907,7 +2051,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        sign_payload_to_buffer(payload, &*self.api_secret.read().unwrap(), &mut sig_buf);
+        sign_payload_to_buffer(payload, &self.api_secret.load().to_string(), &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
         buf.push_str(signature);

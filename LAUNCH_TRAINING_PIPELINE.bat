@@ -4,9 +4,9 @@ echo 🧠 DARK ALPHA TRAINING PIPELINE (RUST EDITION)
 echo ========================================================
 echo.
 echo [1/3] Downloading latest historical data...
-cargo run --release --bin data_loader
+cargo run --release --bin download_history
 if %errorlevel% neq 0 (
-    echo [ERROR] data_loader failed!
+    echo [ERROR] download_history failed!
     pause
     exit /b %errorlevel%
 )
@@ -20,7 +20,7 @@ if %errorlevel% neq 0 (
 )
 
 echo [3/3] Running Quantum Evolution (Threshold Optimization)...
-cargo run --release --bin evolution_engine
+cargo run --release --bin evolver
 if %errorlevel% neq 0 (
     echo [ERROR] evolution_engine failed!
     pause

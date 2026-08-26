@@ -34,7 +34,7 @@ impl ShannonEntropyEngine {
         if self.total_samples > 1000 {
             let mut new_total = 0;
             for i in 0..self.num_bins {
-                self.counts[i] = (self.counts[i] + 1) / 2;
+                self.counts[i] = self.counts[i].div_ceil(2);
                 new_total += self.counts[i];
             }
             self.total_samples = new_total;

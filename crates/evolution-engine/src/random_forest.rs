@@ -43,7 +43,7 @@ impl ShadowForest {
             engine
                 .arena
                 .config
-                .latency_penalty_ms_physics
+                .latency_penalty_ms
                 .store(25.0, std::sync::atomic::Ordering::Relaxed);
 
             engines.push(engine);

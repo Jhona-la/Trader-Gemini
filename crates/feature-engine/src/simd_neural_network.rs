@@ -22,14 +22,14 @@ impl Default for SimdNeuralNet {
         let mut w2 = [[0.0; 2]; 16];
 
         // Inicialización He/Xavier ortogonal determinista para romper la simetría neuronal (BUG-680)
-        for i in 0..34 {
-            for j in 0..16 {
-                w1[i][j] = ((i * 17 + j * 31 + 7) as f64).sin() * 0.2425;
+        for (i, row) in w1.iter_mut().enumerate() {
+            for (j, w) in row.iter_mut().enumerate() {
+                *w = ((i * 17 + j * 31 + 7) as f64).sin() * 0.2425;
             }
         }
-        for j in 0..16 {
-            for k in 0..2 {
-                w2[j][k] = ((j * 13 + k * 29 + 11) as f64).sin() * 0.3333;
+        for (j, row) in w2.iter_mut().enumerate() {
+            for (k, w) in row.iter_mut().enumerate() {
+                *w = ((j * 13 + k * 29 + 11) as f64).sin() * 0.3333;
             }
         }
 
@@ -48,32 +48,31 @@ impl SimdNeuralNet {
     #[inline(always)]
     pub fn infer(&self, inputs: &[f64; 34]) -> [f64; 2] {
         let mut clean_inputs = [0.0; 34];
-        for i in 0..34 {
-            clean_inputs[i] = if inputs[i].is_finite() { inputs[i].clamp(-100.0, 100.0) } else { 0.0 };
+        for (clean, &raw) in clean_inputs.iter_mut().zip(inputs.iter()) {
+            *clean = if raw.is_finite() { raw.clamp(-100.0, 100.0) } else { 0.0 };
         }
 
         let mut hidden = [0.0; 16];
         
-        // Multiplicación de Matrices Capa 1 (El compilador usa AVX/SIMD automáticamente aquí)
-        for i in 0..34 {
-            let in_val = clean_inputs[i];
-            for j in 0..16 {
-                hidden[j] += in_val * self.w1[i][j];
+        // Multiplicación de Matrices Capa 1 (Vectorización SIMD 256-bit Pura vía Iteradores)
+        for (&in_val, w1_row) in clean_inputs.iter().zip(self.w1.iter()) {
+            for (h, &w) in hidden.iter_mut().zip(w1_row.iter()) {
+                *h += in_val * w;
             }
         }
         
-        // Aplicar Sesgo y Activación ReLU (Capa Oculta)
-        for j in 0..16 {
-            hidden[j] = (hidden[j] + self.b1[j]).max(0.0);
+        // Aplicar Sesgo y Activación Leaky ReLU (Capa Oculta) para evitar Fugas de Gradiente (Dying ReLU)
+        for (h, &b) in hidden.iter_mut().zip(self.b1.iter()) {
+            let raw_h = *h + b;
+            *h = if raw_h > 0.0 { raw_h } else { raw_h * 0.01 };
         }
 
         let mut outputs = [0.0; 2];
         
         // Multiplicación Capa 2
-        for j in 0..16 {
-            let h_val = hidden[j];
-            for k in 0..2 {
-                outputs[k] += h_val * self.w2[j][k];
+        for (&h_val, w2_row) in hidden.iter().zip(self.w2.iter()) {
+            for (out, &w) in outputs.iter_mut().zip(w2_row.iter()) {
+                *out += h_val * w;
             }
         }
 
@@ -100,56 +99,65 @@ impl SimdNeuralNet {
     #[inline(always)]
     pub fn train_step(&mut self, inputs: &[f64; 34], target_idx: usize, learning_rate: f64) {
         let mut clean_inputs = [0.0; 34];
-        for i in 0..34 {
-            clean_inputs[i] = if inputs[i].is_finite() { inputs[i].clamp(-100.0, 100.0) } else { 0.0 };
+        for (clean, &raw) in clean_inputs.iter_mut().zip(inputs.iter()) {
+            *clean = if raw.is_finite() { raw.clamp(-100.0, 100.0) } else { 0.0 };
         }
         let lr = if learning_rate.is_finite() { learning_rate.clamp(1e-5, 0.1) } else { 0.001 };
         let probs = self.infer(&clean_inputs);
 
         // Error de salida con Cross-Entropy
         let target = if target_idx == 0 { [1.0, 0.0] } else { [0.0, 1.0] };
-        let d_out = [
-            (probs[0] - target[0]).clamp(-2.0, 2.0),
-            (probs[1] - target[1]).clamp(-2.0, 2.0),
-        ];
+        let mut d_out = [0.0; 2];
+        for (d, (&p, &t)) in d_out.iter_mut().zip(probs.iter().zip(target.iter())) {
+            *d = (p - t).clamp(-2.0, 2.0);
+        }
 
         // Forward activations para backprop
         let mut hidden = [0.0; 16];
-        for i in 0..34 {
-            let in_val = clean_inputs[i];
-            for j in 0..16 {
-                hidden[j] += in_val * self.w1[i][j];
+        for (&in_val, w1_row) in clean_inputs.iter().zip(self.w1.iter()) {
+            for (h, &w) in hidden.iter_mut().zip(w1_row.iter()) {
+                *h += in_val * w;
             }
         }
+        
+        // FIX #391: Aislando la derivada transitoria antes de mutar la capa profunda (Fuga de Gradientes)
         let mut d_hidden = [0.0; 16];
-        for j in 0..16 {
-            let h_val = (hidden[j] + self.b1[j]).max(0.0);
-            let relu_grad = if h_val > 0.0 { 1.0 } else { 0.0 };
+        
+        // Fase 1: Computar el error que fluye hacia la capa oculta sin mutar pesos (Matemáticamente puro)
+        for ((&h_val, &b1), (d_h, w2_row)) in hidden.iter().zip(self.b1.iter()).zip(d_hidden.iter_mut().zip(self.w2.iter())) {
+            let raw_h = h_val + b1;
+            let relu_grad = if raw_h > 0.0 { 1.0 } else { 0.01 };
 
-            for k in 0..2 {
-                let w2_current = self.w2[j][k];
-                // FIX #391: Propagar el error a la capa oculta usando el peso original antes de la mutación
-                d_hidden[j] += d_out[k] * w2_current * relu_grad;
+            // ⚡ MOTOR CUÁNTICO AVX2: Zipping estricto purga bounds-checking
+            for (&w2_val, &d_out_val) in w2_row.iter().zip(d_out.iter()) {
+                *d_h += d_out_val * w2_val * relu_grad;
+            }
+        }
 
-                let grad_w2 = (d_out[k] * h_val).clamp(-5.0, 5.0);
-                self.w2[j][k] = (w2_current * 0.9999 - lr * grad_w2).clamp(-10.0, 10.0);
+        // Fase 2: Aplicar mutaciones L2 a w2 y b2 (Después de propagar gradientes)
+        for ((&h_val, &b1), w2_row) in hidden.iter().zip(self.b1.iter()).zip(self.w2.iter_mut()) {
+            let raw_h = h_val + b1;
+            let h_act = if raw_h > 0.0 { raw_h } else { raw_h * 0.01 };
+            for (w2_current, &d_out_val) in w2_row.iter_mut().zip(d_out.iter()) {
+                let grad_w2 = (d_out_val * h_act).clamp(-5.0, 5.0);
+                *w2_current = (*w2_current * 0.9999 - lr * grad_w2).clamp(-10.0, 10.0);
             }
         }
 
         // Actualizar sesgos capa 2
-        self.b2[0] = (self.b2[0] - lr * d_out[0]).clamp(-5.0, 5.0);
-        self.b2[1] = (self.b2[1] - lr * d_out[1]).clamp(-5.0, 5.0);
+        for (b, &d) in self.b2.iter_mut().zip(d_out.iter()) {
+            *b = (*b - lr * d).clamp(-5.0, 5.0);
+        }
 
         // Actualizar capa 1
-        for i in 0..34 {
-            let in_val = clean_inputs[i];
-            for j in 0..16 {
-                let grad_w1 = (d_hidden[j] * in_val).clamp(-5.0, 5.0);
-                self.w1[i][j] = (self.w1[i][j] * 0.9999 - lr * grad_w1).clamp(-10.0, 10.0);
+        for (&in_val, w1_row) in clean_inputs.iter().zip(self.w1.iter_mut()) {
+            for (w1_val, &d_h) in w1_row.iter_mut().zip(d_hidden.iter()) {
+                let grad_w1 = (d_h * in_val).clamp(-5.0, 5.0);
+                *w1_val = (*w1_val * 0.9999 - lr * grad_w1).clamp(-10.0, 10.0);
             }
         }
-        for j in 0..16 {
-            self.b1[j] = (self.b1[j] - lr * d_hidden[j]).clamp(-5.0, 5.0);
+        for (b, &d) in self.b1.iter_mut().zip(d_hidden.iter()) {
+            *b = (*b - lr * d).clamp(-5.0, 5.0);
         }
     }
 
@@ -159,33 +167,32 @@ impl SimdNeuralNet {
     #[inline(always)]
     pub fn infer_quantized_i8(&self, inputs: &[f64; 34]) -> [f64; 2] {
         let mut clean_inputs = [0i32; 34];
-        for i in 0..34 {
-            let val = if inputs[i].is_finite() { inputs[i].clamp(-10.0, 10.0) } else { 0.0 };
-            clean_inputs[i] = (val * 12.7) as i32; // Escala fija Q7
+        for (clean, &raw) in clean_inputs.iter_mut().zip(inputs.iter()) {
+            let val = if raw.is_finite() { raw.clamp(-10.0, 10.0) } else { 0.0 };
+            *clean = (val * 12.7) as i32; // Escala fija Q7
         }
 
         let mut hidden = [0i32; 16];
-        for i in 0..34 {
-            let in_val = clean_inputs[i];
-            for j in 0..16 {
-                let w_i8 = (self.w1[i][j] * 12.7).clamp(-127.0, 127.0) as i32;
-                hidden[j] += in_val * w_i8;
+        for (&in_val, w1_row) in clean_inputs.iter().zip(self.w1.iter()) {
+            for (h, &w) in hidden.iter_mut().zip(w1_row.iter()) {
+                let w_i8 = (w * 12.7).clamp(-127.0, 127.0) as i32;
+                *h += in_val * w_i8;
             }
         }
 
-        // Activación ReLU con sesgo cuantizado
+        // Activación Leaky ReLU con sesgo cuantizado
         let mut hidden_act = [0f64; 16];
-        for j in 0..16 {
-            let b_scaled = (self.b1[j] * 161.29) as i32;
-            let val = (hidden[j] + b_scaled).max(0);
-            hidden_act[j] = val as f64 / 161.29;
+        for (h_act, (&h, &b)) in hidden_act.iter_mut().zip(hidden.iter().zip(self.b1.iter())) {
+            let b_scaled = (b * 161.29) as i32;
+            let raw_h = h + b_scaled;
+            let val = if raw_h > 0 { raw_h as f64 } else { raw_h as f64 * 0.01 };
+            *h_act = val / 161.29;
         }
 
         let mut outputs = [self.b2[0], self.b2[1]];
-        for j in 0..16 {
-            let h_val = hidden_act[j];
-            for k in 0..2 {
-                outputs[k] += h_val * self.w2[j][k];
+        for (&h_val, w2_row) in hidden_act.iter().zip(self.w2.iter()) {
+            for (out, &w) in outputs.iter_mut().zip(w2_row.iter()) {
+                *out += h_val * w;
             }
         }
 

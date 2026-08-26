@@ -274,7 +274,7 @@ impl SuperGenotype {
             kelly_bootstrap_cold: arena.config.kelly_bootstrap_cold.load(Ordering::Relaxed),
             latency_penalty_ms: arena
                 .config
-                .latency_penalty_ms_physics
+                .latency_penalty_ms
                 .load(Ordering::Relaxed),
             base_slippage_floor: arena.config.base_slippage_floor.load(Ordering::Relaxed),
             spot_spread_threshold: arena.config.spot_spread_threshold.load(Ordering::Relaxed),
@@ -631,10 +631,10 @@ impl SuperGenotype {
             scalp_kelly_fraction: rand::rng().random_range(0.1..2.0),
             swing_kelly_fraction: rand::rng().random_range(0.01..1.0),
             scalp_obi_threshold: rand::rng().random_range(0.05..1.0),
-            scalp_tp_base: rand::rng().random_range(0.0005..0.005),
-            scalp_sl_base: rand::rng().random_range(0.0002..0.002),
-            swing_tp_base: rand::rng().random_range(0.005..0.10),
-            swing_sl_base: rand::rng().random_range(0.001..0.05),
+            scalp_tp_base: rand::rng().random_range(0.0060..0.0250),
+            scalp_sl_base: rand::rng().random_range(0.0025..0.0080),
+            swing_tp_base: rand::rng().random_range(0.0300..0.1200),
+            swing_sl_base: rand::rng().random_range(0.0100..0.0350),
             sl_atr_mult_btc: rand::rng().random_range(0.5..5.0),
             tp_rr_ratio_btc: rand::rng().random_range(1.0..10.0),
             min_confidence_btc: rand::rng().random_range(0.5..0.95),
@@ -1041,7 +1041,7 @@ impl SuperGenotype {
             .store(self.kelly_bootstrap_cold, Ordering::Relaxed);
         arena
             .config
-            .latency_penalty_ms_physics
+            .latency_penalty_ms
             .store(self.latency_penalty_ms, Ordering::Relaxed);
         arena
             .config
@@ -1298,10 +1298,10 @@ impl SuperGenotype {
             scalp_kelly_fraction: mutate_val(self.scalp_kelly_fraction, 0.1, 2.0),
             swing_kelly_fraction: mutate_val(self.swing_kelly_fraction, 0.01, 1.0),
             scalp_obi_threshold: mutate_val(self.scalp_obi_threshold, 0.05, 1.0),
-            scalp_tp_base: mutate_val(self.scalp_tp_base, 0.0035, 0.0200),
-            scalp_sl_base: mutate_val(self.scalp_sl_base, 0.0018, 0.0080),
-            swing_tp_base: mutate_val(self.swing_tp_base, 0.0150, 0.1000),
-            swing_sl_base: mutate_val(self.swing_sl_base, 0.0060, 0.0300),
+            scalp_tp_base: mutate_val(self.scalp_tp_base, 0.0060, 0.0350),
+            scalp_sl_base: mutate_val(self.scalp_sl_base, 0.0025, 0.0120),
+            swing_tp_base: mutate_val(self.swing_tp_base, 0.0300, 0.1500),
+            swing_sl_base: mutate_val(self.swing_sl_base, 0.0100, 0.0450),
             sl_atr_mult_btc: mutate_val(self.sl_atr_mult_btc, 0.5, 5.0),
             tp_rr_ratio_btc: mutate_val(self.tp_rr_ratio_btc, 1.0, 10.0),
             min_confidence_btc: mutate_val(self.min_confidence_btc, 0.5, 0.95),
@@ -1627,10 +1627,10 @@ impl SuperGenotype {
             scalp_kelly_fraction: vec[10].clamp(0.1, 2.0),
             swing_kelly_fraction: vec[11].clamp(0.01, 1.0),
             scalp_obi_threshold: vec[12].clamp(0.05, 1.0),
-            scalp_tp_base: vec[13].clamp(0.0005, 0.005),
-            scalp_sl_base: vec[14].clamp(0.0002, 0.002),
-            swing_tp_base: vec[15].clamp(0.005, 0.10),
-            swing_sl_base: vec[16].clamp(0.001, 0.05),
+            scalp_tp_base: vec[13].clamp(0.0060, 0.0350),
+            scalp_sl_base: vec[14].clamp(0.0025, 0.0120),
+            swing_tp_base: vec[15].clamp(0.0300, 0.1500),
+            swing_sl_base: vec[16].clamp(0.0100, 0.0450),
             sl_atr_mult_btc: vec[17].clamp(0.5, 5.0),
             tp_rr_ratio_btc: vec[18].clamp(1.0, 10.0),
             min_confidence_btc: vec[19].clamp(0.5, 0.95),

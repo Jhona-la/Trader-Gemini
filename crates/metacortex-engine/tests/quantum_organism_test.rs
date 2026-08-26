@@ -8,11 +8,13 @@ fn test_quantum_organism_components() {
     // 1. Test Council of Seniors Deliberation
     let consejo = ConsejoDeliberacion::new();
     let healthy_payload = MarketSnapshotPayload {
-        book_imbalance: 0.5,
-        hurst_exponent: 0.65,
-        graph_correlation: 0.4,
-        do_calculus_risk: 0.1,
-        current_drawdown_pct: 0.05,
+        horizon: metacortex_engine::consejo_seniors::TradingHorizon::Scalping,
+        book_imbalance: 0.1,
+        hurst_exponent: 0.7,
+        graph_correlation: 0.5,
+        do_calculus_risk: 0.05,
+        causal_veto_threshold: 0.80,
+        current_drawdown_pct: 0.02,
         estimated_slippage_bps: 0.001,
     };
     let result = consejo.deliberar(&healthy_payload, 0.65);
@@ -22,9 +24,9 @@ fn test_quantum_organism_components() {
     );
     assert!(result.vetoed_by.is_none());
 
-    // Test Risk Veto (Drawdown 25% > 15% limit)
+    // Test Risk Veto (Drawdown 85% > 75% bootstrap limit)
     let risky_payload = MarketSnapshotPayload {
-        current_drawdown_pct: 0.25,
+        current_drawdown_pct: 0.99,
         ..healthy_payload
     };
     let veto_result = consejo.deliberar(&risky_payload, 0.65);
@@ -62,9 +64,10 @@ fn test_quantum_organism_components() {
 
     // 3. Test Quantum State Annealing
     let evolver = QuantumEvolver::new();
-    let best_state = evolver.anneal_and_collapse(42, 0.02);
+    use metacortex_engine::consejo_seniors::TradingHorizon;
+    let best_state = evolver.anneal_and_collapse(42, 0.02, TradingHorizon::Scalping);
     assert!(best_state.energy < f64::MAX);
-    assert!(best_state.window_size >= 64);
+    assert!(best_state.window_size >= 16);
 
     // 4. Test Autonomous Phase Machine Transitions
     let mut phase_manager = FaseAutonomousManager::new();

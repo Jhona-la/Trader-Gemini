@@ -43,9 +43,12 @@ impl EvolutionEngine {
             .quantum_mutation_rate
             .load(Ordering::Relaxed);
         let meta_evolver = MetaEvolver::new(self.arena.clone());
+        let quantum_evolver = metacortex_engine::QuantumEvolver::new();
 
         loop {
-            sleep(Duration::from_secs(15)).await;
+            // FIX BLOQUEO #1: Reducir sleep de 15s a 5s para micro-capital ($13)
+            // La velocidad de iteración evolutiva es crítica con capital bajo.
+            sleep(Duration::from_secs(5)).await;
 
             // FASE 9: Auto-Evolución y Detección de Degradación
             let mut total_wr = 0.0;
@@ -161,9 +164,9 @@ impl EvolutionEngine {
             for vec in &cma_samples {
                 population.push(Genotype::from_vector(vec));
             }
-            // Always keep the exact alpha to prevent catastrophic forgetting
-            population[0] = current_alpha.clone();
-            cma_samples[0] = current_alpha.to_vector();
+            // FIX BLOQUEO #1: El Alpha ya es el centroide del CMA-ES (mean).
+            // NO sobrescribimos la población manualmente para no destruir la matriz de covarianza
+            // y permitir una exploración y explotación matemáticamente puras.
 
             let initial_capital = self.arena.unified_capital.load(Ordering::Relaxed);
 
@@ -195,7 +198,13 @@ impl EvolutionEngine {
                     let mut equity_curve = Vec::with_capacity(100);
                     let mut last_trades = 0;
 
-                    for tick in &all_ticks {
+                    // FIX BLOQUEO #1: Walk-Forward Split 70/30 para evitar sobreajuste
+                    let train_end = (all_ticks.len() * 7) / 10;
+                    let train_ticks = &all_ticks[..train_end];
+                    let oos_ticks = &all_ticks[train_end..];
+
+                    // FASE TRAIN: Evaluar sobre 70% de los ticks
+                    for tick in train_ticks {
                         test_arena.update_market_data(
                             tick.coin_id,
                             tick.bid_price,
@@ -204,25 +213,39 @@ impl EvolutionEngine {
                             tick.ask_qty,
                             tick.timestamp,
                         );
-                        let ml_prob = self.arena.coins[tick.coin_id]
+                        let _ml_prob = self.arena.coins[tick.coin_id]
                             .ml_prob
                             .load(Ordering::Relaxed);
+
+                        // FIX BLOQUEO #8: Purgar Falsa Omnisciencia (Data Leakage)
+                        // Alinear omni_features con buffers incrementales causales locales. 
+                        // Prohibido leer de GLOBAL_TELEONOMIA en simulaciones, contiene datos vivos.
+                        let mut omni_live = [0.0f64; 54];
+                        let live_vol = tick.bid_qty + tick.ask_qty;
+                        let live_ofi = if live_vol > 0.0 { (tick.bid_qty - tick.ask_qty) / live_vol } else { 0.0 };
+                        
+                        // Inyectamos el flujo micro-estructural ultra rápido en las primeras dimensiones
+                        omni_live[0] = tick.bid_price;
+                        omni_live[10] = live_vol * live_ofi.abs();
+                        omni_live[30] = tick.bid_qty - tick.ask_qty;
+                        omni_live[39] = live_ofi;
+
                         let (new_sc, new_sw, closed_sc, closed_sw) = engine.process_event(
                             tick.coin_id,
+                            true,  // is_trade = true para evaluar scalp
                             false,
-                            false,
-                            true,
+                            true,  // is_depth = true para actualizar features
                             tick.bid_price,
-                            0.0,
+                            live_vol,
                             tick.bid_price,
                             tick.ask_price,
                             tick.bid_qty,
                             tick.ask_qty,
-                            ml_prob,
+                            live_ofi,
                             0.0,
                             tick.timestamp,
                             false,
-                            &[0.0; 54],
+                            &omni_live,
                         );
                         if new_sc.is_some()
                             || new_sw.is_some()
@@ -235,6 +258,49 @@ impl EvolutionEngine {
                         if total_trades > last_trades {
                             equity_curve.push(test_arena.unified_capital.load(Ordering::Relaxed));
                             last_trades = total_trades;
+                        }
+                    }
+
+                    // FASE OOS: Validar sobre 30% restante (walk-forward)
+                    let oos_capital_start = test_arena.unified_capital.load(Ordering::Relaxed);
+                    for tick in oos_ticks {
+                        test_arena.update_market_data(
+                            tick.coin_id,
+                            tick.bid_price,
+                            tick.ask_price,
+                            tick.bid_qty,
+                            tick.ask_qty,
+                            tick.timestamp,
+                        );
+                        let _ml_prob = self.arena.coins[tick.coin_id]
+                            .ml_prob
+                            .load(Ordering::Relaxed);
+                        let live_vol = tick.bid_qty + tick.ask_qty;
+                        let live_ofi = if live_vol > 0.0 { (tick.bid_qty - tick.ask_qty) / live_vol } else { 0.0 };
+                        let mut omni_oos = [0.0f64; 54];
+                        omni_oos[0] = tick.bid_price;
+                        omni_oos[39] = live_ofi;
+                        omni_oos[30] = tick.bid_qty - tick.ask_qty;
+
+                        let (_, _, closed_sc, closed_sw) = engine.process_event(
+                            tick.coin_id,
+                            true,
+                            false,
+                            true,
+                            tick.bid_price,
+                            live_vol,
+                            tick.bid_price,
+                            tick.ask_price,
+                            tick.bid_qty,
+                            tick.ask_qty,
+                            live_ofi,
+                            0.0,
+                            tick.timestamp,
+                            false,
+                            &omni_oos,
+                        );
+                        if closed_sc.is_some() || closed_sw.is_some() {
+                            total_trades += 1;
                         }
                     }
 
@@ -269,16 +335,23 @@ impl EvolutionEngine {
 
                     let velocity = final_cap / initial_capital;
 
-                    // Return: (index, raw_fitness, gross_pnl, num_trades, backtest_sharpe, live_sharpe)
-                    // We use `velocity` instead of live_sharpe to match the old tuple partially, or just velocity for now.
-                    // Actually, let's stick to the expected signature!
+                    // FIX BLOQUEO #1: OOS Walk-Forward Penalty (Matemática continua sin asimetrías abruptas)
+                    // Multiplicador simétrico de castigo.
+                    let oos_capital_end = test_arena.unified_capital.load(Ordering::Relaxed);
+                    let oos_pnl = oos_capital_end - oos_capital_start;
+                    let oos_penalty = if oos_pnl < 0.0 { 1.5 } else { 1.0 }; // Penalización del 50% extra en pérdidas
+                    
                     let raw_fitness = if pnl > 0.0 && velocity >= 1.0 {
-                        pnl * sharpe.max(0.01) * if total_trades > 0 { 1.0 } else { 0.0 }
+                        (pnl * sharpe.max(0.01) * if total_trades > 0 { 1.0 } else { 0.0 }) / oos_penalty
                     } else {
-                        // Castigo monótono a pérdidas: penalización proporcional al drawdown y aversión a la inacción
-                        pnl.min(0.0) * (1.0 + sharpe.abs()) - (if total_trades == 0 { 10.0 } else { 0.0 })
+                        // Castigo monótono, sin división que corrompa la convexidad
+                        (pnl.min(0.0) * (1.0 + sharpe.abs()) * oos_penalty) - (if total_trades == 0 { 1.0 } else { 0.0 })
                     };
-                    (i, raw_fitness, pnl, total_trades as usize, sharpe, sharpe)
+
+                    // Normalización logarítmica simétrica para estabilizar matriz de covarianza CMA-ES
+                    let normalized_fitness = raw_fitness.signum() * (1.0 + raw_fitness.abs()).ln();
+
+                    (i, normalized_fitness, pnl, total_trades as usize, sharpe, sharpe)
                 })
                 .collect();
 
@@ -328,6 +401,21 @@ impl EvolutionEngine {
                 println!("💀 [ESTANCO] Ningún genoma superó el umbral. Alpha actual se mantiene.");
                 // Si el Sharpe decae, aumentamos la tasa de mutación (exploración)
                 mutation_rate = (mutation_rate * 1.5).min(0.5);
+
+                // FIX BLOQUEO #7: Colapso cuántico para salir del pozo de estancamiento local
+                let latest_ts = all_ticks.last().map(|t| t.timestamp).unwrap_or(42);
+                use metacortex_engine::consejo_seniors::TradingHorizon;
+                // Add mode depending on the context, defaulting to Scalping if not specified.
+                let mode = TradingHorizon::Scalping; // Or extract from context if available
+                let q_state = quantum_evolver.anneal_and_collapse(latest_ts, 0.25, mode);
+                println!(
+                    "⚛️ [QUANTUM-EVOLVER] Recocido cuántico activado. Energy: {:.4} | Window: {} | Thresh: {:.2} | VolMult: {:.2}",
+                    q_state.energy, q_state.window_size, q_state.threshold, q_state.volume_multiplier
+                );
+                current_alpha.dynamic_atr_min = (q_state.threshold * 0.0005).clamp(0.0001, 0.005);
+                current_alpha.target_volatility = (q_state.volume_multiplier * 0.01).clamp(0.005, 0.08);
+                current_alpha.funding_rate_sensitivity = q_state.funding_weight.clamp(0.0, 3.0);
+                current_alpha.apply_to_arena(&self.arena);
             }
 
             // Reflexión Arquitectónica de Fase 9

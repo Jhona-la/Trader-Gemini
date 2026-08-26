@@ -138,6 +138,10 @@ name = "evolution"
 path = "src/bin/evolution.rs"
 
 [[bin]]
+name = "continuous_evolution_backtest"
+path = "crates/backtest-engine/src/bin/continuous_evolution_backtest.rs"
+
+[[bin]]
 name = "feature_exporter"
 path = "src/bin/feature_exporter.rs"
 

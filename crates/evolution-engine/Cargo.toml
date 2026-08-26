@@ -25,3 +25,4 @@ smartcore = { version = "0.3.2", features = ["serde"] }
 dark-alpha-engine = { path = "../dark-alpha-engine" }
 data-pipeline = { path = "../data-pipeline" }
 arc-swap = "1.9.2"
+metacortex-engine = { path = "../metacortex-engine" }

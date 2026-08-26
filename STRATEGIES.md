@@ -55,3 +55,32 @@ Invocado asincrónicamente por el motor de inferencia principal y auditado por e
 ## 4. OMNISCORE (Consensus Filter)
 Ambas estrategias alimentan al `ConsensusFilter`. 
 Si ML grita "SHORT" con 80% de confianza, pero Technical grita "LONG" con 90% (Divergencia Severa), el sistema penaliza la señal y exige protección adicional (Stop Loss más corto o cancelación total de la orden). El objetivo no es tener la razón siempre, es **garantizar la supervivencia matemática (Crecimiento Compuesto del 100% cada 3 días)** limitando las entradas a escenarios de altísima confluencia.
+
+---
+
+## 5. ESTRATEGIAS CUÁNTICAS NATIVAS EN RUST (`signal-engine` & `strategy-core`)
+
+En la arquitectura moderna en Rust, las estrategias se organizan en dos motores de alta fidelidad sin retrasos de intérprete:
+
+### 5.1 Ensamble Cuántico Tensorial (`crates/signal-engine`)
+1. **`CoaxialBreakout`:** Detección de rupturas de volatilidad multicanal con bandas elásticas en micro-segundos.
+2. **`QuantumOscillator`:** Superposición de probabilidades y fuerza restaurativa armónica para reversiones medias.
+3. **`SolitonWave`:** Modelado no lineal de paquetes de energía en el libro de órdenes (ondas solitónicas).
+4. **`SupersonicShockwave`:** Detección de discontinuidades de Mach en la propagación de órdenes en el libro L2.
+5. **`StochasticResonance`:** Amplificación de señales débiles sumergidas en el ruido blanco del mercado.
+6. **`HawkesBessel`:** Procesos puntuales auto-excitados para cuantificar la intensidad de clusters de trades.
+7. **`RenyiTsallisEntropy`:** Medición de entropía no extensiva para detectar transiciones de fase y regímenes caóticos.
+8. **`GameTheoreticNash`:** Equilibrio Minimax contra algoritmos predadores institucionales y bots de arbitraje.
+9. **`PerceptronGate`:** Puerta perceptrónica hebbiana con actualización adaptativa de pesos por trade.
+10. **`TurboScalper`:** Señalador HFT basado en desbalance de volumen delta e intensidad direccional de ticks.
+11. **`MicroScalpTrigger`:** Inferencia conforme para entradas de alta probabilidad en ventanas de segundos.
+12. **`SwingConformalFilter`:** Filtrado de ruido intradiario para posiciones multihour/multiday en tendencias macro.
+13. **`TrendRunner`:** Expansión dinámica del Take Profit en regímenes de persistencia de Hurst ($H > 0.65$).
+
+### 5.2 Arbitraje Estadístico y Modelos Macro (`crates/strategy-core`)
+1. **`MultivariateCointegration`:** Detección de cointegración multiactivo con ajuste de reversión Ornstein-Uhlenbeck.
+2. **`JohansenVecm`:** Modelo de Corrección de Error Vectorial con beta dinámico adaptativo para pares líderes/rezagados.
+3. **`StatArbEngine`:** Arbitraje de divergencias con reversión rápida a la media en ventanas O(1).
+4. **`ScalpEngine`:** Microestructura pura con filtro de toxicidad VPIN y aceleración OBI.
+5. **`SwingEngine`:** Cruces EWMA y bandas de desviación estándar con filtros bayesianos de confluencia.
+

@@ -41,6 +41,8 @@ impl RealityPhysics {
         is_long: bool,
         nominal_usd_size: f64,
         tick_volatility: f64,
+        base_slippage_floor: f64,
+        latency_penalty_ms: f64,
     ) -> (f64, f64) {
         if base_price <= 0.0 || !base_price.is_finite() {
             return (0.0, 0.0);
@@ -61,11 +63,11 @@ impl RealityPhysics {
         let impact_multiplier = (safe_nominal / 1_000_000.0).powf(1.2);
         let slippage_impact_pct = impact_multiplier * 0.0005;
 
-        // 2. Latency slippage: Durante 15ms el precio pudo haberse movido a nuestro favor o en contra.
-        // Asumiremos el peor caso (movimiento adverso igual a la volatilidad del tick * 10%).
-        let latency_slippage = safe_vol * 0.10;
+        // 2. Latency slippage: Durante latency_penalty_ms el precio pudo haberse movido a nuestro favor o en contra.
+        // Asumiremos el peor caso (movimiento adverso igual a la volatilidad del tick proporcional a la latencia).
+        let latency_slippage = safe_vol * (latency_penalty_ms / 150.0);
 
-        let total_slippage_pct = (slippage_impact_pct + latency_slippage).clamp(0.0, 0.05);
+        let total_slippage_pct = (slippage_impact_pct + latency_slippage).max(base_slippage_floor).clamp(0.0, 0.05);
 
         let executed_price = if is_long {
             base_price * (1.0 + total_slippage_pct) // Compramos más caro
@@ -86,6 +88,8 @@ impl RealityPhysics {
         nominal_usd_size: f64,
         is_maker: bool,
         tick_volatility: f64,
+        base_slippage_floor: f64,
+        latency_penalty_ms: f64,
     ) -> (f64, f64) {
         if base_price <= 0.0 || !base_price.is_finite() {
             return (0.0, 0.0);
@@ -120,8 +124,8 @@ impl RealityPhysics {
         // Si somos Taker, cruzamos el libro al salir.
         let impact_multiplier = (safe_nominal / 1_000_000.0).powf(1.2);
         let slippage_impact_pct = impact_multiplier * 0.0005;
-        let latency_slippage = safe_vol * 0.10;
-        let total_slippage_pct = (slippage_impact_pct + latency_slippage).clamp(0.0, 0.05);
+        let latency_slippage = safe_vol * (latency_penalty_ms / 150.0);
+        let total_slippage_pct = (slippage_impact_pct + latency_slippage).max(base_slippage_floor).clamp(0.0, 0.05);
 
         let executed_price = if is_long {
             // Cerramos LONG vendiendo al BID (cruzando hacia abajo)
@@ -142,11 +146,11 @@ mod tests {
     #[test]
     fn test_reality_physics_optimistic_entry_and_exit() {
         let phys = RealityPhysics::new(EngineMode::Optimistic);
-        let (entry_price, fee) = phys.calculate_market_entry(60000.0, true, 13.0, 0.001);
+        let (entry_price, fee) = phys.calculate_market_entry(60000.0, true, 13.0, 0.001, 0.0005, 15.0);
         assert_eq!(entry_price, 60000.0);
         assert_eq!(fee, 13.0 * 0.0005);
 
-        let (exit_price, exit_fee) = phys.calculate_exit(60000.0, true, 13.0, true, 0.001);
+        let (exit_price, exit_fee) = phys.calculate_exit(60000.0, true, 13.0, true, 0.001, 0.0005, 15.0);
         assert_eq!(exit_price, 60000.0);
         assert_eq!(exit_fee, 13.0 * 0.0002);
     }
@@ -154,27 +158,27 @@ mod tests {
     #[test]
     fn test_reality_physics_hyper_realistic_long_and_short_slippage() {
         let phys = RealityPhysics::default();
-        let (entry_long_price, _) = phys.calculate_market_entry(60000.0, true, 100.0, 0.002);
+        let (entry_long_price, _) = phys.calculate_market_entry(60000.0, true, 100.0, 0.002, 0.0005, 15.0);
         assert!(entry_long_price > 60000.0); // Slippage increases long buy price
 
-        let (entry_short_price, _) = phys.calculate_market_entry(60000.0, false, 100.0, 0.002);
+        let (entry_short_price, _) = phys.calculate_market_entry(60000.0, false, 100.0, 0.002, 0.0005, 15.0);
         assert!(entry_short_price < 60000.0); // Slippage decreases short sell price
 
-        let (exit_long_price, _) = phys.calculate_exit(60000.0, true, 100.0, false, 0.002);
+        let (exit_long_price, _) = phys.calculate_exit(60000.0, true, 100.0, false, 0.002, 0.0005, 15.0);
         assert!(exit_long_price < 60000.0); // Taker exit long sells lower
 
-        let (exit_short_price, _) = phys.calculate_exit(60000.0, false, 100.0, false, 0.002);
+        let (exit_short_price, _) = phys.calculate_exit(60000.0, false, 100.0, false, 0.002, 0.0005, 15.0);
         assert!(exit_short_price > 60000.0); // Taker exit short buys higher
     }
 
     #[test]
     fn test_reality_physics_nan_and_negative_immunity() {
         let phys = RealityPhysics::default();
-        let (p1, f1) = phys.calculate_market_entry(f64::NAN, true, -10.0, f64::NAN);
+        let (p1, f1) = phys.calculate_market_entry(f64::NAN, true, -10.0, f64::NAN, 0.0005, 15.0);
         assert_eq!(p1, 0.0);
         assert_eq!(f1, 0.0);
 
-        let (p2, f2) = phys.calculate_exit(-50.0, false, f64::NAN, true, f64::NAN);
+        let (p2, f2) = phys.calculate_exit(-50.0, false, f64::NAN, true, f64::NAN, 0.0005, 15.0);
         assert_eq!(p2, 0.0);
         assert_eq!(f2, 0.0);
     }

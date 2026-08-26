@@ -22,7 +22,7 @@ echo =======================================================
 set SHADOW_MODE=true
 set USE_TESTNET=false
 set BINANCE_USE_DEMO=false
-cargo run --release --bin live_trader
+cargo run --release --bin god_engine
 if %errorlevel% neq 0 (
     echo El bot crasheó o se cerró con error. Reiniciando SHADOW en 5 segundos...
     timeout /t 5

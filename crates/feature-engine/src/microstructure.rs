@@ -402,8 +402,8 @@ impl AdaptiveResonanceClustering {
         // Test de Vigilancia: ¿Resuena con la categoría ganadora?
         if best_match >= self.vigilance && self.active_categories > 0 {
             // Actualización del prototipo (Regla de aprendizaje ART-2)
-            for j in 0..4 {
-                self.prototypes[best_category][j] = (1.0 - self.learning_rate) * self.prototypes[best_category][j] + self.learning_rate * normalized[j];
+            for (p_val, &n_val) in self.prototypes[best_category].iter_mut().zip(normalized.iter()) {
+                *p_val = (1.0 - self.learning_rate) * (*p_val) + self.learning_rate * n_val;
             }
             // Re-normalizar prototipo
             self.prototypes[best_category] = Self::normalize(&self.prototypes[best_category]);
@@ -441,13 +441,13 @@ impl AdaptiveResonanceClustering {
         let learning_rate = lines.next()?.parse::<f64>().ok()?;
         let active_categories = lines.next()?.parse::<usize>().ok()?;
         let mut prototypes = [[0.0; 4]; 8];
-        for i in 0..8 {
+        for row in prototypes.iter_mut() {
             if let Some(l) = lines.next() {
                 let mut parts = l.split(',');
-                prototypes[i][0] = parts.next()?.parse::<f64>().ok()?;
-                prototypes[i][1] = parts.next()?.parse::<f64>().ok()?;
-                prototypes[i][2] = parts.next()?.parse::<f64>().ok()?;
-                prototypes[i][3] = parts.next()?.parse::<f64>().ok()?;
+                row[0] = parts.next()?.parse::<f64>().ok()?;
+                row[1] = parts.next()?.parse::<f64>().ok()?;
+                row[2] = parts.next()?.parse::<f64>().ok()?;
+                row[3] = parts.next()?.parse::<f64>().ok()?;
             }
         }
         Some(Self {

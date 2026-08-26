@@ -79,7 +79,7 @@ impl SwingEngine {
             let macd_diff = (fast_val - slow_val) / slow_val;
 
             // FASE 3: Generación de Señales de Alta Confianza (Axioma II)
-            let z_thresh = arena.config.turbo_z_score_stdev.load(Ordering::Relaxed);
+            let z_thresh = arena.config.turbo_z_score_stdev.load(Ordering::Relaxed).clamp(1.2, 3.0);
 
             // ML Integration (DarkAlpha)
             let ml_long = arena.config.ml_threshold_long.load(Ordering::Relaxed);
@@ -99,28 +99,28 @@ impl SwingEngine {
                     .explosive_confidence_threshold
                     .load(Ordering::Relaxed);
 
-                // Confluencia estricta: No vender si ML es fuertemente alcista; no comprar si ML es fuertemente bajista
-                if z_score > z_thresh && ml_pred <= (0.5 + ml_long) {
-                    let conf = if ml_pred < (0.5 - ml_short) {
+                // Mean Reversion en Rango (Hurst < threshold):
+                if z_score > z_thresh && price > fast_val && macd_diff <= 0.0005 && ml_pred <= ml_long {
+                    let conf = if ml_pred <= ml_short {
                         ((z_score / z_thresh) * 0.5 + (0.5 - ml_pred) * 2.0 * 0.5).clamp(0.1, 1.0)
                     } else {
                         conf_fallback
                     };
                     return SignalIntent {
-                        signal: SignalType::Short, // Sobrecomprado, vender con confluencia
+                        signal: SignalType::Short, // Sobrecomprado en rango, venta a media
                         confidence: conf,
                         expected_duration_ms: swing_duration_ms,
                         horizon: crate::TradeHorizon::Swing,
                         ..Default::default()
                     };
-                } else if z_score < -z_thresh && ml_pred >= (0.5 - ml_short) {
-                    let conf = if ml_pred > (0.5 + ml_long) {
+                } else if z_score < -z_thresh && price >= slow_val && macd_diff >= -0.0005 && ml_pred >= ml_short {
+                    let conf = if ml_pred >= ml_long {
                         ((z_score.abs() / z_thresh) * 0.5 + (ml_pred - 0.5) * 2.0 * 0.5).clamp(0.1, 1.0)
                     } else {
                         conf_fallback
                     };
                     return SignalIntent {
-                        signal: SignalType::Long, // Sobrevendido, comprar con confluencia
+                        signal: SignalType::Long, // Sobrevendido en rango, compra a media
                         confidence: conf,
                         expected_duration_ms: swing_duration_ms,
                         horizon: crate::TradeHorizon::Swing,
@@ -128,13 +128,13 @@ impl SwingEngine {
                     };
                 }
             } else {
-                // Si hay tendencia fuerte (hurst >= threshold), confluencia en dirección de tendencia
+                // Tendencia Fuerte (Hurst >= threshold):
                 let swing_tp = arena.config.swing_tp_base.load(Ordering::Relaxed);
-                let threshold = (swing_tp * 0.25) * (1.0 / hurst.max(0.1));
+                let threshold = (swing_tp * 0.003).max(0.0001) * (1.0 / hurst.max(0.1));
 
-                // FIX #609: Escalar convicción MACD de forma continua y suave (10.0x) para evitar saturación prematura
-                if macd_diff > threshold && ml_pred >= (0.5 - ml_short) {
-                    let raw_conf = (macd_diff.abs() * hurst * 10.0).max((ml_pred - 0.5).max(0.0) * 2.0);
+                // Escalar convicción MACD de forma continua y suave
+                if macd_diff > threshold && ml_pred >= ml_short {
+                    let raw_conf = (macd_diff.abs() * hurst * 50.0).max((ml_pred - 0.5).max(0.0) * 2.0);
                     let confidence = if raw_conf.is_finite() { raw_conf.tanh().clamp(0.1, 1.0) } else { 0.5 };
                     return SignalIntent {
                         signal: SignalType::Long,
@@ -143,8 +143,8 @@ impl SwingEngine {
                         horizon: crate::TradeHorizon::Swing,
                         ..Default::default()
                     };
-                } else if macd_diff < -threshold && ml_pred <= (0.5 + ml_long) {
-                    let raw_conf = (macd_diff.abs() * hurst * 10.0).max((0.5 - ml_pred).max(0.0) * 2.0);
+                } else if macd_diff < -threshold && ml_pred <= ml_long {
+                    let raw_conf = (macd_diff.abs() * hurst * 50.0).max((0.5 - ml_pred).max(0.0) * 2.0);
                     let confidence = if raw_conf.is_finite() { raw_conf.tanh().clamp(0.1, 1.0) } else { 0.5 };
                     return SignalIntent {
                         signal: SignalType::Short,
@@ -156,7 +156,11 @@ impl SwingEngine {
                 }
             }
 
-            SignalIntent::flat()
+            SignalIntent {
+                signal: SignalType::Flat,
+                horizon: crate::TradeHorizon::Swing,
+                ..Default::default()
+            }
         })
     }
 }
