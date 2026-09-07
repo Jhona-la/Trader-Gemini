@@ -428,6 +428,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             day_idx + 1, current_capital, day_final_cap, open_unrealized, day_pnl, pnl_pct, day_trades);
         
         println!("🔬 [SIGNAL-PATH] rejects: {}", risk_engine::reject_report());
+        {
+            let e = &engine;
+            let wr = if e.diag_close_total > 0 { e.diag_close_wins as f64 / e.diag_close_total as f64 } else { 0.0 };
+            let avg_not = if e.diag_close_total > 0 { e.diag_notional_sum / e.diag_close_total as f64 } else { 0.0 };
+            let cap = e.arena.unified_capital.load(Ordering::Relaxed);
+            println!("🔬 [FILL-MODEL] closes={} WR={:.3} avg_notional=${:.2} max_notional=${:.2} capital=${:.2} avg_pnl={:.4}",
+                e.diag_close_total, wr, avg_not, e.diag_notional_max, cap, if e.diag_close_total > 0 { e.diag_pnl_sum / e.diag_close_total as f64 } else { 0.0 });
+        }
         println!("🔬 [SIGNAL-PATH] council_vetoes={} opened={} swing_vetoes={} swing_opened={} | intents={} (scalp={} swing={}) orders={} max_intent_conf={:.4} max_obi={:.4} tech_thr={:.6} max_micro_trend={:.6}",
             engine.diag_council_vetoes, engine.diag_opened, engine.diag_swing_vetoes, engine.diag_swing_opened, diag.intents, diag.intents_scalp, diag.intents_swing, diag.orders, diag.max_intent_conf, diag.max_obi, diag.tech_thr, diag.max_micro_trend);
         // diag removed

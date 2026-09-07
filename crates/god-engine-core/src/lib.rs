@@ -61,6 +61,11 @@ pub struct GodEngineCore {
     pub diag_opened: u64,
     pub diag_swing_vetoes: u64,
     pub diag_swing_opened: u64,
+    pub diag_close_wins: u64,
+    pub diag_close_total: u64,
+    pub diag_notional_sum: f64,
+    pub diag_notional_max: f64,
+    pub diag_pnl_sum: f64,
 }
 
 impl GodEngineCore {
@@ -156,6 +161,11 @@ impl GodEngineCore {
             diag_opened: 0,
             diag_swing_vetoes: 0,
             diag_swing_opened: 0,
+            diag_close_wins: 0,
+            diag_close_total: 0,
+            diag_notional_sum: 0.0,
+            diag_notional_max: 0.0,
+            diag_pnl_sum: 0.0,
         }
     }
 
@@ -832,6 +842,11 @@ impl GodEngineCore {
                     self.feature_engines[coin_id].last_scalp_was_loss = net_trade_pnl <= 0.0;
 
                     let is_win = net_trade_pnl > 0.0;
+                    self.diag_close_wins += is_win as u64;
+                    self.diag_close_total += 1;
+                    self.diag_notional_sum += qty * exit_price;
+                    self.diag_notional_max = self.diag_notional_max.max(qty * exit_price);
+                    self.diag_pnl_sum += net_trade_pnl;
                     // R4.3 — cierre swing también calibra.
                     let ml_at_entry = coin.positions.swing_position
                         .ml_prediction

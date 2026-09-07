@@ -61,3 +61,17 @@ Instrumentación por etapa (contadores de rechazo por compuerta + conteo scalp/s
 
 ### Próximo paso único y acotado
 Reparar el VPIN degenerado con ticks sintéticos: agregar los sub-ticks en buckets volumétricos reales (como hace `historical.rs` para aggTrades) antes de alimentar el CVPIN, o marcar el VPIN como no-confiable cuando los buckets no tienen mezcla bid/ask. Con eso, el Consejo deja de vetar sobre un fantasma y la certificación puede volver a correrse — esa será la PRIMERA medición del sistema operando.
+
+---
+
+## 📌 ADENDA 2: FORENSE DEL PnL FANTASÍA (post VPIN-fix)
+
+**Contabilidad verificada single-credit**: cada cierre acredita `unified_capital` UNA vez (sites 829/1092); qty/entry se leen de UNA posición. NO es doble conteo del espejo.
+
+**Causas reales identificadas del PnL explosivo (+25.861% → +646.841% según corrida):**
+1. **NO-DETERMINISMO entre corridas**: mismas condiciones, resultados 25x distintos — consistente con los normalizadores Welford mutando durante `predict()` (auditoría A8: DarkAlpha train-serve skew) y/o semillas no fijadas.
+2. **Geometría notional/capital extrema**: avg_notional $1.932 con capital inicial $13 (ratio ~148x en la fase temprana) — el piso de min-notional $5.05 con capital de $13 fuerza exposure mínima del 39% y el clamp de leverage (1-50) permite ~17-50x sobre el 85% del capital libre.
+3. **Fills sin fricción**: TP llenado exacto al toque con fee maker asumido; SL exacto; sin liquidación modelada en esta ruta (con 50x de leverage, el maintenance margin debería matar la cuenta en la primera racha).
+4. **El edge medido es momentum de vela previa sobre datos sintéticos**: la coreografía post-fix (dirección de la vela PREVIA) deja autocorrelación minuto-a-minuto explotable por el stack swing — 1590 trades/día con WR alto compuesto 150x.
+
+**Próximos pasos (en orden):** (a) instrumentar el cierre swing (dominante: ~1589 de 1590); (b) fijar semilla y congelar normalizadores en inferencia para determinismo; (c) modelar maintenance margin/liquidación en la ruta nativa; (d) limitar notional/capital a un múltiplo genómico; (e) re-certificar sobre aggTrades reales (R2.2) donde el momentum sintético no existe.
