@@ -149,15 +149,27 @@ pub struct ContinuousVPIN {
     pub buy_volume: f64,
     pub sell_volume: f64,
     pub bucket_size: f64,
+    /// VPIN-FIX: EWMA del notional por tick, para calibrar el bucket al
+    /// reloj de volumen (N trades por bucket) en vez de un dólar fijo.
+    pub ewma_tick_notional: f64,
 }
 
 impl ContinuousVPIN {
     #[inline(always)]
+    /// Trades objetivo por bucket — práctica estándar del VPIN de
+    /// Easley/López de Prado: el bucket debe agregar decenas de trades para
+    /// que |buy−sell|/total tenga significado. Con un dólar fijo y ticks de
+    /// nocional grande, cada bucket contiene UN trade y el VPIN satura a 1.0
+    /// permanente — exactamente el veto fantasma del Senior Causal que
+    /// bloqueaba el 100% de las señales (diag 2026-09-07).
+    const TICKS_PER_BUCKET: f64 = 100.0;
+
     pub fn new(bucket_size: f64) -> Self {
         Self {
             buy_volume: 0.0,
             sell_volume: 0.0,
             bucket_size,
+            ewma_tick_notional: 0.0,
         }
     }
 
@@ -165,6 +177,21 @@ impl ContinuousVPIN {
     pub fn update(&mut self, volume: f64, is_buyer_maker: bool) -> f64 {
         if !volume.is_finite() || volume < 0.0 {
             return 0.0;
+        }
+        // VPIN-FIX — reloj de volumen auto-calibrado: el bucket sigue al
+        // tamaño típico del tick (EWMA) para contener ~TICKS_PER_BUCKET
+        // trades, con el dólar original como piso. Mecánica:
+        // con el bucket fijo de $10k y ticks de $9k-$450k (BTC), cada bucket
+        // = 1 trade => vpin = 1.0 constante => Senior Causal veta todo.
+        if self.ewma_tick_notional <= 0.0 {
+            self.ewma_tick_notional = volume.max(1.0);
+        } else {
+            self.ewma_tick_notional =
+                0.98 * self.ewma_tick_notional + 0.02 * volume;
+        }
+        let calibrated = self.ewma_tick_notional * Self::TICKS_PER_BUCKET;
+        if calibrated > self.bucket_size {
+            self.bucket_size = calibrated;
         }
         if is_buyer_maker {
             self.sell_volume += volume;
@@ -394,6 +421,7 @@ pub struct RecursiveHurst {
     pub window: [f64; 256], // Power of 2 for fast masking
     pub index: usize,
     pub count: usize,
+    pub prev_price: f64,
 }
 
 impl Default for RecursiveHurst {
@@ -408,6 +436,7 @@ impl RecursiveHurst {
             window: [0.0; 256],
             index: 0,
             count: 0,
+            prev_price: 0.0,
         }
     }
 
@@ -416,7 +445,13 @@ impl RecursiveHurst {
         if price <= 0.0 || !price.is_finite() {
             return self.current();
         }
-        self.window[self.index] = price;
+        if self.prev_price <= 0.0 {
+            self.prev_price = price;
+            return 0.5;
+        }
+        let ret = (price / self.prev_price).ln();
+        self.prev_price = price;
+        self.window[self.index] = ret;
         self.index = (self.index + 1) & 255; // Fast modulo 256
         if self.count < 256 {
             self.count += 1;
