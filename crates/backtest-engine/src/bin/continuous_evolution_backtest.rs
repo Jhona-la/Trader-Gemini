@@ -64,6 +64,10 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline) -> Vec<TickEvent> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // E3 — ENTORNO DE GENOMA AISLADO: las promociones de este backtest van a
+    // config_dir/genomes/backtest/ y NUNCA contaminan el active.json de demo
+    // o producción. La promoción cross-entorno es explícita.
+    unsafe { std::env::set_var("TG_GENOME_ENV", "backtest"); }
     println!("============================================================");
     println!("🌌 TRADER GEMINI V5 - CONTINUOUS EVOLUTION BACKTESTER");
     println!("🛡️ Meta-Engine: Walk-Forward (Train 3 Days -> Trade 1 Day)");

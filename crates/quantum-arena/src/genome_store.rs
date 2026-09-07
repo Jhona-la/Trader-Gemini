@@ -19,10 +19,43 @@ use std::io;
 use crate::genome::SuperGenotype;
 
 pub const SCHEMA_VERSION: u32 = 1;
-const ACTIVE_PATH: &str = "config_dir/genomes/active.json";
-const HISTORY_DIR: &str = "config_dir/genomes/history";
-/// Espejo legacy: el loader viejo y el watcher leen esta ruta.
-const LEGACY_MIRROR: &str = "config_dir/genotypes/active_genome.json";
+
+/// E3 — SEPARACIÓN DE ENTORNOS DEL ALMACÉN DE GENOMAS. Sin esto, un backtest
+/// que termina promueve su overfit al MISMO active.json del que bootea
+/// producción (contaminación bidireccional silenciosa).
+///
+/// Variable TG_GENOME_ENV: "backtest" | "demo" | "prod". Por defecto (ausente
+/// o vacía) se conserva la ruta compartida histórica para no romper estados
+/// existentes — los lanzadores DEBEN fijarla.
+///
+/// Promoción cruzada deliberada (p.ej. promover el campeón de backtest a
+/// producción): exportar TG_GENOME_ENV=prod en el proceso promotor, o copiar
+/// el envelope con `promote` desde el entorno destino — nunca implícitamente.
+fn env_root() -> String {
+    match std::env::var("TG_GENOME_ENV").ok().filter(|v| !v.trim().is_empty()) {
+        Some(env) => format!("config_dir/genomes/{}", env.trim().to_lowercase()),
+        None => "config_dir/genomes".to_string(),
+    }
+}
+
+fn active_path() -> String {
+    format!("{}/active.json", env_root())
+}
+
+fn history_dir() -> String {
+    format!("{}/history", env_root())
+}
+
+/// Espejo legacy: el loader viejo y el watcher leen esta ruta. Solo se
+/// escribe/lee en el entorno compartido (sin TG_GENOME_ENV) para no cruzar
+/// linajes entre entornos.
+fn legacy_mirror() -> Option<String> {
+    if std::env::var("TG_GENOME_ENV").ok().filter(|v| !v.trim().is_empty()).is_some() {
+        None
+    } else {
+        Some("config_dir/genotypes/active_genome.json".to_string())
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenomeEnvelope {
@@ -53,13 +86,13 @@ impl GenomeEnvelope {
     /// 3. config_dir/genotypes/quantum_champion.json (Genoma campeón guardado)
     pub fn load_active() -> Option<GenomeEnvelope> {
         // 1. Intentar cargar desde el envelope oficial
-        if let Ok(data) = std::fs::read_to_string(ACTIVE_PATH) {
+        if let Ok(data) = std::fs::read_to_string(active_path()) {
             if let Ok(env) = serde_json::from_str::<GenomeEnvelope>(&data) {
                 return Some(env);
             }
         }
         // 2. Fallback resiliente: cargar genoma raw de LEGACY_MIRROR
-        if let Ok(data) = std::fs::read_to_string(LEGACY_MIRROR) {
+        if let Some(data) = legacy_mirror().and_then(|p| std::fs::read_to_string(p).ok()) {
             if let Ok(g) = serde_json::from_str::<SuperGenotype>(&data) {
                 if let Ok(env) = Self::promote(g, "legacy_bootstrap", "Migración automática desde active_genome.json") {
                     return Some(env);
@@ -144,7 +177,7 @@ impl GenomeEnvelope {
                 format!("[GENOME-GATE] promoción de '{}' rechazada: {}", source, violation),
             ));
         }
-        let parent = if let Ok(data) = std::fs::read_to_string(ACTIVE_PATH) {
+        let parent = if let Ok(data) = std::fs::read_to_string(active_path()) {
             serde_json::from_str::<GenomeEnvelope>(&data).map(|e| e.generation).unwrap_or(0)
         } else {
             0
@@ -159,10 +192,10 @@ impl GenomeEnvelope {
             genome,
         };
 
-        std::fs::create_dir_all(HISTORY_DIR)?;
+        std::fs::create_dir_all(history_dir())?;
 
         // 1) Historia inmutable (append-only por nombre de generación).
-        let hist_path = format!("{}/gen_{:06}.json", HISTORY_DIR, envelope.generation);
+        let hist_path = format!("{}/gen_{:06}.json", history_dir(), envelope.generation);
         let hist_json = serde_json::to_string_pretty(&envelope)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         atomic_write(&hist_path, &hist_json)?;
@@ -170,12 +203,17 @@ impl GenomeEnvelope {
         // 2) Active atómico (tmp + rename — jamás un active a medias).
         let active_json = serde_json::to_string_pretty(&envelope)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        atomic_write(ACTIVE_PATH, &active_json)?;
+        atomic_write(&active_path(), &active_json)?;
 
         // 3) Espejo legacy: solo el genoma crudo (compat con loaders/watchers viejos).
         let legacy_json = serde_json::to_string_pretty(&envelope.genome)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        atomic_write(LEGACY_MIRROR, &legacy_json)?;
+        {
+            // Espejo legacy solo en entorno compartido (ver legacy_mirror).
+            if let Some(mirror) = legacy_mirror() {
+                atomic_write(&mirror, &legacy_json)?;
+            }
+        }
 
         Ok(envelope)
     }
@@ -183,7 +221,7 @@ impl GenomeEnvelope {
     /// Rollback: re-promociona la generación `target` como nueva generación
     /// (la historia es append-only; revertir también queda auditado).
     pub fn rollback(target_generation: u64) -> io::Result<GenomeEnvelope> {
-        let hist_path = format!("{}/gen_{:06}.json", HISTORY_DIR, target_generation);
+        let hist_path = format!("{}/gen_{:06}.json", history_dir(), target_generation);
         let data = std::fs::read_to_string(&hist_path)?;
         let previous: GenomeEnvelope = serde_json::from_str(&data)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -200,14 +238,14 @@ impl GenomeEnvelope {
     /// Últimas N generaciones para inspección/telemetría.
     pub fn recent_history(n: usize) -> Vec<(u64, String, String)> {
         let mut out = Vec::new();
-        let active_gen = if let Ok(data) = std::fs::read_to_string(ACTIVE_PATH) {
+        let active_gen = if let Ok(data) = std::fs::read_to_string(active_path()) {
             serde_json::from_str::<GenomeEnvelope>(&data).map(|e| e.generation).unwrap_or(0)
         } else {
             0
         };
         let mut g = active_gen;
         while g > 0 && out.len() < n {
-            let hist_path = format!("{}/gen_{:06}.json", HISTORY_DIR, g);
+            let hist_path = format!("{}/gen_{:06}.json", history_dir(), g);
             if let Ok(data) = std::fs::read_to_string(&hist_path) {
                 if let Ok(e) = serde_json::from_str::<GenomeEnvelope>(&data) {
                     out.push((e.generation, e.source, e.promotion_reason));

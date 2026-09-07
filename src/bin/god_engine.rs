@@ -81,6 +81,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         true
     };
 
+    // E3 — ENTORNO DE GENOMA por modo de operación: demo y producción
+    // mantienen linajes SEPARADOS (y separados del backtest). Sin esto, el
+    // active.json compartido cruzaba overfits de backtest hacia dinero real.
+    unsafe {
+        std::env::set_var("TG_GENOME_ENV", if is_demo_mode { "demo" } else { "prod" });
+    }
+
     let darwin_approved = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let orchestrator = Arc::new(std::sync::RwLock::new(PhaseOrchestrator::new(
         120,
@@ -627,7 +634,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .with_sink(std::sync::Arc::new(CapitalBridgeSink {
             unified_capital: Arc::clone(&unified_capital),
-        }));
+        }))
+        .with_api_secret(exec.load().api_secret());
         tokio::spawn(async move {
             streamer.start().await;
         });
@@ -1014,6 +1022,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
+        // R3.5 — RECONCILIACIÓN PERIÓDICA OMNISCIENTE (cada 60s)
+        // Detecta y corrige discrepancias entre el Exchange y el estado local:
+        // - Adopta posiciones abiertas en OrderRegistry y GlobalArena (Swing)
+        // - Cierra posiciones fantasma en GlobalArena si Binance está FLAT
+        // - Corrige drift en cantidades por fills parciales
+        // - Purga órdenes terminadas mayores a 10 min (600_000 ms)
+        {
+            let exec_reconcile = Arc::clone(&exec);
+            let arena_reconcile = Arc::clone(&arena_real);
+            rt_handle.spawn(async move {
+                telemetry_server::telemetry_log!("🔄 [RECONCILIATION-LOOP] Iniciando bucle periódico de reconciliación (60s)...");
+                let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    interval.tick().await;
+                    let executor = exec_reconcile.load_full();
+                    match executor.fetch_position_risk().await {
+                        Ok(positions) => {
+                            let registry = executor.registry();
+                            let report = execution_engine::reconciliation::reconcile(&positions, &registry);
+                            let adopted = report.apply_to_registry(&registry);
+                            let now_ms = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
+                            let arena_adj = execution_engine::reconciliation::reconcile_arena(&positions, &arena_reconcile, now_ms);
+                            let pruned = registry.prune_terminated(600_000);
+                            if !report.suspicious_active_orders.is_empty() || adopted > 0 || arena_adj > 0 {
+                                telemetry_server::telemetry_log!(
+                                    "🔄 [RECONCILIATION] {} | Adopted Reg: {}, Adj Arena: {}, Pruned Reg: {}",
+                                    report.summary,
+                                    adopted,
+                                    arena_adj,
+                                    pruned
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            telemetry_server::telemetry_log!("⚠️ [RECONCILIATION] Error consultando positionRisk: {}", e);
+                        }
+                    }
+                }
+            });
+        }
+
         // The PhaseOrchestrator is injected into the execution context
         let _msg_count: u64 = 0;
         let mut has_transitioned = false;
@@ -1143,6 +1196,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     event_time = e;
                     parsed_sym_opt = Some(sym);
                     dbp = bp; dap = ap; dbq = bq; daq = aq;
+                    current_price = (bp + ap) * 0.5;
+                    qty = (bq + aq) * 0.5;
                     if let Some(sym_id) = symbol_to_id.get(&sym.to_lowercase()).copied() {
                         if let Some(ob) = local_orderbooks.get_mut(sym_id) {
                             ob.update_bid(bp, bq);
@@ -1269,13 +1324,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             (mainnet_key.clone(), mainnet_secret.clone(), false)
                         };
 
-                        let mut mainnet_executor = execution_engine::executor::OrderExecutor::new(target_key, target_secret, target_is_testnet);
+                        // R3.2 / K-06: Hot-swap preservando el registry y la arena viva
+                        let old_registry = exec.load().registry();
+                        let mut mainnet_executor = execution_engine::executor::OrderExecutor::new_with_shared(
+                            target_key,
+                            target_secret,
+                            target_is_testnet,
+                            old_registry,
+                            Some(Arc::clone(&arena_real)),
+                        );
                         if is_env_testnet {
                             mainnet_executor.set_paper_trading(false);
                         } else {
                             mainnet_executor.set_paper_trading(is_paper_trading);
                         }
-                        exec.store(Arc::new(mainnet_executor));
+                        let new_exec_arc = Arc::new(mainnet_executor);
+                        exec.store(Arc::clone(&new_exec_arc));
+
+                        // Re-spawn NTP synchronizer con el nuevo cliente para mantener sincronizado el reloj en mainnet
+                        tokio::spawn(execution_engine::ntp::start_ntp_synchronizer(
+                            Arc::new(new_exec_arc.client().clone()),
+                            Arc::clone(&arena_real),
+                        ));
 
                         let base_ws_url = if is_env_testnet { "wss://stream.binancefuture.com/stream" } else { "wss://fstream.binance.com/stream" };
                         loop_ws_url.store(Arc::new(format!("{}?streams={}", base_ws_url, loop_streams_str)));
@@ -1305,9 +1375,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let unified_cap = f64::from_bits(unified_capital.load(Ordering::Relaxed));
 
-                    // FASE 15: Internal Netting Engine
-                    let mut net_qty: f64 = 0.0;
-                    let mut max_leverage = 1;
+                    // FASE 15: Independent Execution Engine (Scalp & Swing Decoupled)
+                    let mut scalp_leverage = 1;
+                    let mut swing_leverage = 1;
                     let force_maker = false;
                     let maker_price = current_price;
 
@@ -1437,10 +1507,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }).sum();
                     let cap_now = (engine_real.arena.unified_capital.load(Ordering::Relaxed) - total_margin_used).max(0.0);
 
-                    let had_new_scalp = new_sc.is_some();
-                    let had_new_swing = new_sw.is_some();
-
-                    if let Some((is_long, entry_price, qty)) = new_sc {
+                    if let Some((is_long, entry_price, _qty)) = new_sc {
                         let scalp_stop_pct = engine_real
                             .arena
                             .config
@@ -1454,14 +1521,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             risk_envelope.max_leverage(cap_now, scalp_stop_pct, 5.0, 1.64, 50.0)
                         };
-                        max_leverage = if operable {
+                        scalp_leverage = if operable {
                             env_lev.floor().clamp(1.0, 10.0) as u32
                         } else if cap_now <= 50.0 && cap_now > 0.0 {
                             ((5.05 / cap_now).ceil().clamp(1.0, 5.0)) as u32
                         } else {
                             0
                         };
-                        net_qty += if is_long { qty } else { -qty };
                         let _ = tx_log_worker.try_send((true, is_long, coin_id));
 
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
@@ -1479,7 +1545,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         scalp_sl_price = if is_long { entry_price * (1.0 - scalp_sl) } else { entry_price * (1.0 + scalp_sl) };
                     }
 
-                    if let Some((is_long, entry_price, qty)) = new_sw {
+                    if let Some((is_long, entry_price, _qty)) = new_sw {
                         let swing_stop_pct = engine_real
                             .arena
                             .config
@@ -1492,15 +1558,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             risk_envelope.max_leverage(cap_now, swing_stop_pct, 5.0, 1.64, 50.0)
                         };
-                        let sw_lev = if operable {
+                        swing_leverage = if operable {
                             env_lev.floor().clamp(1.0, 10.0) as u32
                         } else if cap_now <= 50.0 && cap_now > 0.0 {
                             ((5.05 / cap_now).ceil().clamp(1.0, 5.0)) as u32
                         } else {
                             0
                         };
-                        max_leverage = max_leverage.max(sw_lev);
-                        net_qty += if is_long { qty } else { -qty };
                         let _ = tx_log_worker.try_send((false, is_long, coin_id));
 
                         let base_tp = engine_real.arena.config.swing_tp_base.load(Ordering::Relaxed);
@@ -1516,10 +1580,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // FASE 3 FIX: Ejecutar Scalping y Swing de forma INDEPENDIENTE sin netting para evitar colisiones
                     let mut executions = Vec::new();
                     if let Some((is_long, _, qty)) = new_sc {
-                        executions.push((is_long, qty.abs(), scalp_tp_price, scalp_sl_price, is_high_confidence_scalp, max_leverage, true));
+                        executions.push((is_long, qty.abs(), scalp_tp_price, scalp_sl_price, is_high_confidence_scalp, scalp_leverage, true));
                     }
                     if let Some((is_long, _, qty)) = new_sw {
-                        executions.push((is_long, qty.abs(), swing_tp_price, swing_sl_price, false, max_leverage, false));
+                        executions.push((is_long, qty.abs(), swing_tp_price, swing_sl_price, false, swing_leverage, false));
                     }
 
                     for (final_is_long, final_qty, final_tp_price, final_sl_price, is_high_conf, exec_leverage, is_scalp) in executions {

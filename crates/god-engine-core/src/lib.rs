@@ -40,11 +40,19 @@ pub struct GodEngineCore {
     pub reality: reality_physics::RealityPhysics,
     pub last_scalp_intent: Vec<SignalIntent>,
     pub last_swing_intent: Vec<SignalIntent>,
+    pub last_scalp_senior_signals: Vec<[f64; 10]>,
+    pub last_swing_senior_signals: Vec<[f64; 10]>,
     pub lakehouse: Option<Arc<storage_engine::LakehouseWarehouse>>,
     pub consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion,
     pub lead_lag_engine: feature_engine::LeadLagAlphaEngine,
     pub ppo_engine: dark_alpha_engine::online_ppo::OnlinePpoPolicyEngine,
     pub online_learner: metacortex_engine::online_learning::OnlineLearningModule,
+    /// Cache de generación del genoma aplicado: refresh_models solo
+    /// re-aplica el envelope de disco si su generación es MÁS NUEVA que la
+    /// última aplicada. Antes re-aplicaba ciegamente cada 1000 ticks y PISABA
+    /// todo hot-swap no promovido (cosecha del shadow forest, mutaciones de
+    /// exploración) — el bloqueo #2 del genoma bt/prod.
+    pub applied_generation: std::sync::atomic::AtomicU64,
 }
 
 impl GodEngineCore {
@@ -127,11 +135,14 @@ impl GodEngineCore {
             reality: reality_physics::RealityPhysics::default(),
             last_scalp_intent: vec![SignalIntent::flat(); 30],
             last_swing_intent: vec![SignalIntent::flat(); 30],
+            last_scalp_senior_signals: vec![[0.0; 10]; 30],
+            last_swing_senior_signals: vec![[0.0; 10]; 30],
             lakehouse: None,
             consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion::new(),
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
             ppo_engine,
             online_learner,
+            applied_generation: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -343,7 +354,13 @@ impl GodEngineCore {
     pub fn refresh_models(&mut self) {
         self.scalp_forest = crate::ml_inference::NanoForest::get_global("BTCUSDT_SCALP");
         if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
-            env.genome.apply_to_arena(&self.arena);
+            let last = self.applied_generation.load(Ordering::Relaxed);
+            if env.generation > last {
+                env.genome.apply_to_arena(&self.arena);
+                self.applied_generation.store(env.generation, Ordering::Relaxed);
+            }
+            // Generación <= ya aplicada: los hot-swaps en vivo permanecen
+            // hasta que el almacén sancione una generación superior.
         }
     }
 
@@ -838,6 +855,13 @@ impl GodEngineCore {
                     coin.last_scalp_close_ts.store(event_time_ms, Ordering::Relaxed);
 
                     closed_scalp = Some((is_long, net_realized_pnl, qty));
+
+                    // N-12: Retroalimentación causal al Consejo de Seniors tras cierre de Scalp
+                    let notional = (qty * entry).max(1.0);
+                    let realized_ret = net_realized_pnl / notional;
+                    if coin_id < self.last_scalp_senior_signals.len() {
+                        self.consejo_deliberacion.record_outcome(&self.last_scalp_senior_signals[coin_id], realized_ret);
+                    }
                 } else {
                     let notional = qty * entry;
                     let unrealized = pnl_pct * notional;
@@ -1055,6 +1079,13 @@ impl GodEngineCore {
                     coin.last_swing_close_ts.store(event_time_ms, Ordering::Relaxed);
 
                     closed_swing = Some((is_long, net_realized_pnl, qty));
+
+                    // N-12: Retroalimentación causal al Consejo de Seniors tras cierre de Swing
+                    let notional = (qty * entry).max(1.0);
+                    let realized_ret = net_realized_pnl / notional;
+                    if coin_id < self.last_swing_senior_signals.len() {
+                        self.consejo_deliberacion.record_outcome(&self.last_swing_senior_signals[coin_id], realized_ret);
+                    }
                 } else {
                     let notional = qty * entry;
                     let unrealized = pnl_pct * notional;
@@ -1415,6 +1446,10 @@ impl GodEngineCore {
                         estimated_slippage_bps: 1.5,
                     };
                     let wr = coin.scalp.win_rate.load(Ordering::Relaxed);
+                    let senior_sigs = self.consejo_deliberacion.extract_senior_signals(&council_snapshot, wr);
+                    if coin_id < self.last_scalp_senior_signals.len() {
+                        self.last_scalp_senior_signals[coin_id] = senior_sigs;
+                    }
                     let deliberation = self.consejo_deliberacion.deliberar_with_weights(&council_snapshot, wr, None);
 
                     if deliberation.approved {
@@ -1512,6 +1547,10 @@ impl GodEngineCore {
                         estimated_slippage_bps: 3.0,
                     };
                     let wr = coin.swing.win_rate.load(Ordering::Relaxed);
+                    let senior_sigs = self.consejo_deliberacion.extract_senior_signals(&council_snapshot, wr);
+                    if coin_id < self.last_swing_senior_signals.len() {
+                        self.last_swing_senior_signals[coin_id] = senior_sigs;
+                    }
                     let deliberation = self.consejo_deliberacion.deliberar_with_weights(&council_snapshot, wr, None);
 
                     if deliberation.approved {
