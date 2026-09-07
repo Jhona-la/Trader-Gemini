@@ -48,6 +48,11 @@ impl ValidatedOrder {
 pub struct RiskEngine {
     pub scalp_peak_capital: f64,
     pub swing_peak_capital: f64,
+    /// R1.3 — split de capital suavizado (Robbins-Monro). El objetivo
+    /// bayesiano se recalcula por evaluación, pero el split EFECTIVO
+    /// converge con paso 1/√n para no desestabilizar picos de drawdown,
+    /// hard-stops y capital_ratio que dependen de él.
+    pub smoothed_split: Option<f64>,
 }
 
 impl RiskEngine {
@@ -55,12 +60,14 @@ impl RiskEngine {
         Self {
             scalp_peak_capital: initial_capital * 0.5,
             swing_peak_capital: initial_capital * 0.5,
+            smoothed_split: None,
         }
     }
 
     pub fn reset(&mut self, initial_capital: f64) {
         self.scalp_peak_capital = initial_capital * 0.5;
         self.swing_peak_capital = initial_capital * 0.5;
+        self.smoothed_split = None;
     }
 
     /// Evalúa la intención de señal combinada de Scalp y Swing y retorna la Exposición Neta (Net Delta).
@@ -80,12 +87,17 @@ impl RiskEngine {
             return (ValidatedOrder::rejected(), ValidatedOrder::rejected());
         }
 
-        // 0. Partición de capital por horizonte — FASE 3: adaptativa por edge
-        // realizado, no un valor fijo. El gen capital_split_scalp actúa como
-        // PRIOR bayesiano (una observación pseudo-contada) y la evidencia
-        // observada (win_rate x kelly por bucket, ponderada por sus trades)
-        // lo desplaza hacia el horizonte que demuestra edge. Con poca
-        // evidencia manda el gen; con evidencia, la realidad.
+        // 0. Partición de capital por horizonte — R1.3: posterior bayesiano
+        // con crecimiento de evidencia en √n (la información estadística
+        // sobre "qué bucket tiene edge" crece con la raíz del número de
+        // trades, como todo estadístico). El gen capital_split_scalp actúa
+        // como prior de peso 1 (una pseudo-observación): manda hasta que la
+        // evidencia lo desplace. A diferencia de la versión lineal en n
+        // (que saturaba al clamp con n≥10 y mataba el otro horizonte al
+        // piso 0.1), con √n el límite asintótico es el COCIENTE de edges
+        // — un bucket sin edge colapsa suyo, no por acumulación de muestras.
+        // El split efectivo se suaviza además con paso 1/√n (Robbins-Monro)
+        // para que hard-stops y picos de drawdown no respiren con cada tick.
         let genome_split = arena
             .config
             .capital_split_scalp
@@ -100,13 +112,22 @@ impl RiskEngine {
         .max(0.0);
         let scalp_n = coin.scalp.trade_count.load(Ordering::Relaxed) as f64;
         let swing_n = coin.swing.trade_count.load(Ordering::Relaxed) as f64;
-        let posterior_scalp = scalp_edge * scalp_n + genome_split;
-        let posterior_swing = swing_edge * swing_n + (1.0 - genome_split);
-        let split = if posterior_scalp + posterior_swing > 1e-12 {
+        let posterior_scalp = scalp_edge * scalp_n.sqrt() + genome_split;
+        let posterior_swing = swing_edge * swing_n.sqrt() + (1.0 - genome_split);
+        let target_split = if posterior_scalp + posterior_swing > 1e-12 {
             (posterior_scalp / (posterior_scalp + posterior_swing)).clamp(0.1, 0.9)
         } else {
             genome_split
         };
+        // Suavizado con tasa decreciente 1/√(n_total): cambio grande con
+        // poca evidencia, refinamiento fino con mucha — sin constantes.
+        let n_total = scalp_n + swing_n;
+        let alpha = 1.0 / (n_total + 1.0).sqrt();
+        let split = match self.smoothed_split {
+            Some(prev) => prev + (target_split - prev) * alpha,
+            None => target_split,
+        };
+        self.smoothed_split = Some(split);
         let scalp_capital = current_capital * split;
         let swing_capital = current_capital * (1.0 - split);
 
@@ -293,11 +314,12 @@ impl RiskEngine {
         (scalp_order, swing_order)
     }
 
-    /// Evalúa la intención unificada de señal cuántica continua sobre el 100% del capital disponible.
-    pub fn evaluate_quantum_order(
+    /// Evalúa la intención cuántica diferenciada por horizonte (Scalping vs Swing)
+    pub fn evaluate_quantum_order_by_horizon(
         &mut self,
         coin_id: usize,
         intent: &SignalIntent,
+        is_scalp: bool,
         arena: &GlobalArena,
     ) -> ValidatedOrder {
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
@@ -309,13 +331,27 @@ impl RiskEngine {
             return ValidatedOrder::rejected();
         }
 
-        if current_capital > self.scalp_peak_capital {
-            self.scalp_peak_capital = current_capital;
+        if is_scalp {
+            if current_capital > self.scalp_peak_capital {
+                self.scalp_peak_capital = current_capital;
+            }
+        } else {
+            if current_capital > self.swing_peak_capital {
+                self.swing_peak_capital = current_capital;
+            }
         }
 
         let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
-        let pf = arena.coins[coin_id].metrics.profit_factor.load(Ordering::Relaxed);
-        let kelly_frac = arena.coins[coin_id].metrics.kelly_fraction.load(Ordering::Relaxed).clamp(0.05, 1.0);
+        let pf = if is_scalp {
+            arena.coins[coin_id].metrics.profit_factor.load(Ordering::Relaxed)
+        } else {
+            arena.coins[coin_id].swing.profit_factor.load(Ordering::Relaxed)
+        };
+        let kelly_frac = if is_scalp {
+            arena.coins[coin_id].metrics.kelly_fraction.load(Ordering::Relaxed).clamp(0.05, 1.0)
+        } else {
+            arena.coins[coin_id].swing.kelly_fraction.load(Ordering::Relaxed).clamp(0.05, 1.0)
+        };
 
         self.evaluate_single_intent(
             coin_id,
@@ -324,9 +360,19 @@ impl RiskEngine {
             current_capital,
             base_capital,
             pf,
-            true,
+            is_scalp,
             arena,
         )
+    }
+
+    /// Evalúa la intención unificada de señal cuántica continua sobre el 100% del capital disponible.
+    pub fn evaluate_quantum_order(
+        &mut self,
+        coin_id: usize,
+        intent: &SignalIntent,
+        arena: &GlobalArena,
+    ) -> ValidatedOrder {
+        self.evaluate_quantum_order_by_horizon(coin_id, intent, true, arena)
     }
 
     fn evaluate_single_intent(
@@ -359,12 +405,18 @@ impl RiskEngine {
         let is_long = intent.signal == SignalType::Long;
         let mut same_dir_count = 0;
         for c in arena.coins.iter() {
-            let pos = if c.positions.position.is_open() {
-                &c.positions.position
-            } else if is_scalp {
-                &c.positions.scalp_position
+            let pos = if is_scalp {
+                if c.positions.scalp_position.is_open() {
+                    &c.positions.scalp_position
+                } else {
+                    &c.positions.position
+                }
             } else {
-                &c.positions.swing_position
+                if c.positions.swing_position.is_open() {
+                    &c.positions.swing_position
+                } else {
+                    &c.positions.position
+                }
             };
             if pos.is_open() && (pos.is_long.load(Ordering::Relaxed) == is_long) {
                 same_dir_count += 1;

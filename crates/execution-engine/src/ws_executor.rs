@@ -1,16 +1,28 @@
-//! WebSocket-based order execution engine for Binance Futures.
+//! Ejecución de órdenes por WebSocket API — STUB EXPLÍCITO (R1.5).
 //!
-//! Provides ultra-low latency order routing directly over persistent WebSocket connections,
-//! bypassing TLS renegotiation and HTTP connection pools.
+//! ESTADO HONESTO: la ruta WS de ejecución NO está implementada. `is_connected()`
+//! devuelve siempre `false`, por lo que `OrderExecutor` cae de forma inmediata y
+//! determinista a la ruta REST (QuantumSocketPool HFT), que es la única ruta
+//! sancionada para tocar dinero real.
+//!
+//! Historial: el archivo original se perdió sin commit; una reconstrucción y una
+//! fachada posterior coexistieron sin firma HMAC real — cualquier activación
+//! habría producido rechazos `-1022 Signature` en cada orden. Este stub elimina
+//! esa trampa de activación: para implementar la vía WS se requiere (en este
+//! orden) firma HMAC-SHA256 con params en orden canónico alfabético, canal
+//! ACOTADO (no unbounded), sesión con heartbeat/reconnect, y ACK/resolución de
+//! ambigüedad por clientOrderId ANTES de que `send_order_payload` devuelva Ok.
+//!
+//! R1.5: el secreto de firma NUNCA viaja en el mensaje — la firma se materializa
+//! en el writer de la sesión (cuando exista), nunca en structs encolables.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::mpsc;
 
+/// Mensaje de orden para la futura vía WS — SIN credenciales: la firma
+/// HMAC se calcula en el punto de envío, no se propaga por canales.
 #[derive(Debug, Clone)]
 pub struct WsOrderMessage {
-    pub api_key: String,
-    pub api_secret: String,
     pub symbol: String,
     pub side: String,
     pub position_side: Option<String>,
@@ -25,75 +37,47 @@ pub struct WsOrderMessage {
 
 pub struct WsExecutor {
     connected: Arc<AtomicBool>,
-    sender: Option<mpsc::UnboundedSender<WsOrderMessage>>,
-    _api_key: String,
-    _api_secret: String,
-    _is_testnet: bool,
 }
 
 impl WsExecutor {
-    pub fn new(api_key: String, api_secret: String, is_testnet: bool) -> Self {
-        // By default, WS execution falls back to hyper-fast REST/QuantumSocketPool
-        // unless an active persistent WS execution session is maintained.
-        let connected = Arc::new(AtomicBool::new(false));
-
+    pub fn new(_api_key: String, _api_secret: String, _is_testnet: bool) -> Self {
+        // Credenciales deliberadamente NO almacenadas: un stub no necesita
+        // material secreto en memoria.
         Self {
-            connected,
-            sender: None,
-            _api_key: api_key,
-            _api_secret: api_secret,
-            _is_testnet: is_testnet,
+            connected: Arc::new(AtomicBool::new(false)),
         }
     }
 
+    /// Siempre `false` mientras la vía WS no esté implementada: garantiza
+    /// el fallback REST determinista de todos los call-sites del executor.
     #[inline(always)]
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Relaxed)
     }
 
-    pub fn set_connected(&self, val: bool) {
-        self.connected.store(val, Ordering::Relaxed);
-    }
-
+    /// Contrato preservado para `OrderExecutor`. Con el stub, todo envío
+    /// devuelve Err y el caller cae a REST — nunca éxito ficticio.
+    #[allow(clippy::too_many_arguments)]
     pub fn send_order_payload(
         &self,
-        api_key: &str,
-        api_secret: &str,
-        symbol: &str,
-        side: &str,
-        position_side: Option<&str>,
-        order_type: &str,
-        quantity: f64,
-        price: Option<f64>,
-        time_in_force: Option<&str>,
-        reduce_only: bool,
-        client_order_id: &str,
-        timestamp: u64,
+        _api_key: &str,
+        _api_secret: &str,
+        _symbol: &str,
+        _side: &str,
+        _position_side: Option<&str>,
+        _order_type: &str,
+        _quantity: f64,
+        _price: Option<f64>,
+        _time_in_force: Option<&str>,
+        _reduce_only: bool,
+        _client_order_id: &str,
+        _timestamp: u64,
     ) -> Result<(), String> {
         if !self.is_connected() {
-            return Err("WS_DISCONNECTED: WebSocket execution pipeline not connected".to_string());
+            return Err(
+                "WS_STUB: vía WS no implementada — usando fallback REST".to_string(),
+            );
         }
-
-        if let Some(ref sender) = self.sender {
-            let msg = WsOrderMessage {
-                api_key: api_key.to_string(),
-                api_secret: api_secret.to_string(),
-                symbol: symbol.to_string(),
-                side: side.to_string(),
-                position_side: position_side.map(|s| s.to_string()),
-                order_type: order_type.to_string(),
-                quantity,
-                price,
-                time_in_force: time_in_force.map(|s| s.to_string()),
-                reduce_only,
-                client_order_id: client_order_id.to_string(),
-                timestamp,
-            };
-
-            sender.send(msg).map_err(|e| format!("WS_SEND_ERROR: {}", e))?;
-            Ok(())
-        } else {
-            Err("WS_NO_SENDER: WebSocket sender channel not initialized".to_string())
-        }
+        Err("WS_STUB: conectado pero sin transporte implementado".to_string())
     }
 }

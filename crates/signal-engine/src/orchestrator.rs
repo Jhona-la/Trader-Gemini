@@ -100,7 +100,25 @@ impl TensorVoteOrchestrator {
         // FIX #592: Blindaje de finitud numérica para evitar propagación de NaN
         let raw_confidence = (prob_long - prob_short) * effective_conviction;
         let net_confidence = if raw_confidence.is_finite() { raw_confidence } else { 0.0 };
-        let expected_volatility = if max_volatility.is_finite() { max_volatility.max(0.0) } else { 0.0 };
+        // R1.6 — `expected_volatility` vuelve a ser lo que su nombre promete:
+        // VOLATILIDAD DE PRECIO ESPERADA (ATR% del feature engine), no el
+        // máximo |peso| de las salidas de estrategia (adimensional 0..1).
+        // El consumidor crítico es el gate breakout del router, que la compara
+        // contra scalp_sl_base/2 (una fracción de precio): con la versión
+        // anterior el gate era SIEMPRE verdadero y la defensa anti-slippage
+        // por volatilidad no existía. `max_volatility` queda como valor de
+        // colas (clamp acotado) solo si el ATR no está disponible.
+        let atr_pct = self
+            .arena
+            .registry
+            .get_value_or("atr_pct", f64::NAN);
+        let expected_volatility = if atr_pct.is_finite() && atr_pct > 0.0 {
+            atr_pct
+        } else if max_volatility.is_finite() {
+            max_volatility.max(0.0).min(0.10)
+        } else {
+            0.0
+        };
 
         let confidence_cutoff = self
             .arena

@@ -105,19 +105,25 @@ impl GenomeEnvelope {
                 ));
             }
         }
-        // INVARIANTE DE RIESGO (mismo axioma que mutate_cmaes): asimetría
-        // ganadora obligatoria — un genoma con SL >= TP matemáticamente
-        // pierde ante fees.
-        if genome.scalp_tp_base < genome.scalp_sl_base * 1.5 {
+        // R1.2 — INVARIANTE RR UNIFICADA: misma constante que mutate_cmaes
+        // (SuperGenotype::MIN_RR_GATE), derivada de fees y del peor WR
+        // tolerado — ver la documentación de la constante en genome.rs.
+        // Antes convivían cuatro estándares (1.5x gate / 1.8x-2.0x mutación /
+        // 2.2x-3.5x reparación).
+        if genome.scalp_tp_base < genome.scalp_sl_base * SuperGenotype::MIN_RR_GATE {
             return Err(format!(
-                "invariante RR violada: scalp_tp_base {} < 1.5 x scalp_sl_base {}",
-                genome.scalp_tp_base, genome.scalp_sl_base
+                "invariante RR violada: scalp_tp_base {} < {:.2} x scalp_sl_base {}",
+                genome.scalp_tp_base,
+                SuperGenotype::MIN_RR_GATE,
+                genome.scalp_sl_base
             ));
         }
-        if genome.swing_tp_base < genome.swing_sl_base * 1.5 {
+        if genome.swing_tp_base < genome.swing_sl_base * SuperGenotype::MIN_RR_GATE {
             return Err(format!(
-                "invariante RR violada: swing_tp_base {} < 1.5 x swing_sl_base {}",
-                genome.swing_tp_base, genome.swing_sl_base
+                "invariante RR violada: swing_tp_base {} < {:.2} x swing_sl_base {}",
+                genome.swing_tp_base,
+                SuperGenotype::MIN_RR_GATE,
+                genome.swing_sl_base
             ));
         }
         Ok(())
@@ -248,5 +254,56 @@ mod tests {
         assert_eq!(back.schema_version, SCHEMA_VERSION);
         assert_eq!(back.parent_generation, 6);
         assert!(back.promotion_reason.contains("val_bce"));
+    }
+
+    #[test]
+    fn test_r11_evolution_pipeline_never_blocked_by_gate() {
+        // R1.1 — certificación extremo a extremo: la cadena completa de la
+        // evolución versionada (mutate -> to_vector -> from_vector -> gate)
+        // debe tener éxito de forma sistemática. Antes de R1.1, los clamps
+        // inline de from_vector eran disjuntos de los bounds de validate()
+        // en 4 genes de TP/SL y TODA mutación CMA-ES era rechazada.
+        let base = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let mut rejected = 0usize;
+        for i in 0..1000 {
+            let rate = 0.05 + (i % 10) as f64 * 0.05; // 0.05..0.50
+            let mutant = base.mutate_cmaes(rate);
+            let roundtrip = SuperGenotype::from_vector(&mutant.to_vector());
+            if GenomeEnvelope::validate(&roundtrip).is_err() {
+                rejected += 1;
+            }
+        }
+        assert_eq!(
+            rejected, 0,
+            "ningún mutante round-trip debe ser rechazado por el gate de promoción"
+        );
+    }
+
+    #[test]
+    fn test_r11_bounds_are_structurally_sound() {
+        // R1.1 — invariantes de la fuente única de verdad, agnósticos al
+        // calibrado fino de cada gen (que evoluciona con el desarrollo):
+        // (a) todo bound inferior es estrictamente menor que su superior;
+        // (b) from_vector clampa activamente contra los bounds (extremos
+        //     del vector aplanan exactamente en las cotas);
+        // (c) la caja de TP/SL admite genomas que cumplen la invariante RR
+        //     >= 1.5 exigida por el gate (hi_tp >= 1.5 * lo_sl).
+        let lo = SuperGenotype::get_lower_bounds();
+        let hi = SuperGenotype::get_upper_bounds();
+        for i in 0..SuperGenotype::DIMENSION {
+            assert!(lo[i] < hi[i], "bounds degenerados en gen {}: {} >= {}", i, lo[i], hi[i]);
+        }
+        let n = SuperGenotype::DIMENSION;
+        let floor_g = SuperGenotype::from_vector(&vec![f64::NEG_INFINITY; n]);
+        let ceil_g = SuperGenotype::from_vector(&vec![f64::INFINITY; n]);
+        let v_floor = floor_g.to_vector();
+        let v_ceil = ceil_g.to_vector();
+        for i in 0..n {
+            assert!((v_floor[i] - lo[i]).abs() < 1e-12, "gen {} no clampa al floor", i);
+            assert!((v_ceil[i] - hi[i]).abs() < 1e-12, "gen {} no clampa al techo", i);
+        }
+        // Caja RR factible (indices: 13=scalp_tp, 14=scalp_sl, 15=swing_tp, 16=swing_sl)
+        assert!(hi[13] >= 1.5 * lo[14], "caja scalp RR infactible");
+        assert!(hi[15] >= 1.5 * lo[16], "caja swing RR infactible");
     }
 }
