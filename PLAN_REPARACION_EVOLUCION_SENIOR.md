@@ -145,3 +145,15 @@ R1 (desbloqueo) ──► R2 (datos) ──► R4 (conexión) ──► E (evolu
 ---
 
 *El plan se ejecuta ítem por ítem con commit y test por ítem. Ningún ítem se declara done sin su criterio de aceptación. La auditoría se repite al cierre de cada fase (mismo método multi-agente de raíz a cima) — auditar y auditar hasta que funcione.*
+
+---
+
+## ⚠️ REGISTRO DE EJECUCIÓN R3 (2026-09-07)
+
+- **R3.1**: `reduceOnly=true` en one-way de `execute_reduce_only_market` + **piernas OCO corregidas** (positionSide condicional por modo: hedge lo omitiría-rechaza reduceOnly, one-way rechaza positionSide → -4061; antes se enviaba incondicionalmente). Motor de cancelación de pierna hermana `{base}_TP`↔`{base}_SL` sobre ORDER_TRADE_UPDATE: implementado.
+- **R3.2 y R3.3**: implementados (hot-swap con `new_with_shared` preservando registry+arena; flatten con failover dinámico -4061).
+- **R3.4 — BLOQUEADO POR EDICIÓN CONCURRENTE**: `order_registry.rs` está siendo reescrito en bucle por la sesión paralela (el contenido cambia cada minuto; 4 intentos de parche abortaron por colisión). **Parche listo para aplicar cuando el archivo se estabilice:**
+  1. Campos `ack_commission`/`ws_commission` en `TrackedOrder` (+defaults en los 3 constructores); `total_commission = max(ack, ws)` en ambas rutas (elimina doble contabilización REST-max + WS-suma).
+  2. `OrderStatus::lifecycle_rank()` (Unknown=0, New=1, PartiallyFilled=2, terminales=3) y guard monótono en `apply_ack`/`apply_trade_update`: jamás regresar de estado terminal.
+- **R3.7**: pendiente (contabilidad local en vuelo del rate-limit).
+- **Acción requerida del operador**: coordinar las sesiones — dos editores sobre `execution-engine` sin exclusión mutua es hoy el mayor riesgo operativo del repo (ya produjo flickering de archivos a medio escribir).

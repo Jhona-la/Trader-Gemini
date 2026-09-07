@@ -224,6 +224,7 @@ pub struct OrderExecutor {
     symbol_filters: ArcSwap<std::collections::HashMap<String, SymbolFilter>>,
     pub arena: ArcSwapOption<quantum_arena::GlobalArena>,
     pub ws: std::sync::Arc<crate::ws_executor::WsExecutor>,
+    pub is_hedge_mode: AtomicBool,
 }
 
 impl OrderExecutor {
@@ -252,6 +253,45 @@ impl OrderExecutor {
                 api_secret,
                 is_testnet,
             )),
+            is_hedge_mode: AtomicBool::new(true),
+        }
+    }
+
+    /// R3.2 / K-06: Constructor para hot-swap de executor (e.g. transición a mainnet).
+    /// Preserva el OrderRegistry existente (para no romper la sincronización con el
+    /// UserDataStreamer), la arena viva y los componentes compartidos.
+    pub fn new_with_shared(
+        api_key: String,
+        api_secret: String,
+        is_testnet: bool,
+        order_registry: std::sync::Arc<crate::order_registry::OrderRegistry>,
+        arena: Option<std::sync::Arc<quantum_arena::GlobalArena>>,
+    ) -> Self {
+        Self {
+            api_secret: ArcSwap::from_pointee(api_secret.clone()),
+            client: BinanceClient::new(api_key.clone(), is_testnet),
+            rate_limit_counter: AtomicUsize::new(0),
+            last_reset_timestamp: AtomicU64::new(0),
+            binance_weight_1m: AtomicUsize::new(0),
+            binance_orders_10s: AtomicUsize::new(0),
+            binance_orders_1m: AtomicUsize::new(0),
+            max_weight_1m: AtomicUsize::new(2200),
+            max_orders_10s: AtomicUsize::new(280),
+            max_orders_1m: AtomicUsize::new(1100),
+            kill_switch: AtomicBool::new(false),
+            active_leverage: ArcSwap::from_pointee(std::collections::HashMap::new()),
+            is_paper_trading: false,
+            order_registry,
+            cooldown_until_ms: AtomicU64::new(0),
+            consecutive_429: AtomicUsize::new(0),
+            symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
+            arena: ArcSwapOption::new(arena),
+            ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
+                api_key,
+                api_secret,
+                is_testnet,
+            )),
+            is_hedge_mode: AtomicBool::new(true),
         }
     }
 
@@ -262,6 +302,10 @@ impl OrderExecutor {
 
     pub fn client(&self) -> &BinanceClient {
         &self.client
+    }
+
+    pub fn api_secret(&self) -> String {
+        self.api_secret.load().to_string()
     }
 
     #[inline(always)]
@@ -308,6 +352,7 @@ impl OrderExecutor {
         let mode: ModeResp = serde_json::from_str(&body)
             .map_err(|e| format!("POSITION_MODE_PARSE: {} body={}", e, body))?;
         if mode.dual {
+            self.is_hedge_mode.store(true, Ordering::Relaxed);
             return Ok(false); // ya estaba en hedge: no se cambió nada
         }
 
@@ -326,6 +371,7 @@ impl OrderExecutor {
 
         match self.client.post_payload(buf.as_str()).await {
             Ok(_) => {
+                self.is_hedge_mode.store(true, Ordering::Relaxed);
                 println!("🔀 [POSITION-MODE] Cuenta migrada a HEDGE (dualSidePosition=true)");
                 Ok(true)
             }
@@ -359,15 +405,21 @@ impl OrderExecutor {
         sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
         buf.push_str("&signature=");
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-        let (_, mode_body) = self.client.get_payload(buf.as_str()).await?;
-        #[derive(serde::Deserialize)]
-        struct ModeResp {
-            #[serde(rename = "dualSidePosition")]
-            dual: bool,
-        }
-        let dual = serde_json::from_str::<ModeResp>(&mode_body)
-            .map(|m| m.dual)
-            .unwrap_or(true); // el motor ES hedge; asumir dual si no se puede leer
+        let dual_mode_opt = match self.client.get_payload(buf.as_str()).await {
+            Ok((_, mode_body)) => {
+                #[derive(serde::Deserialize)]
+                struct ModeResp {
+                    #[serde(rename = "dualSidePosition")]
+                    dual: bool,
+                }
+                serde_json::from_str::<ModeResp>(&mode_body).map(|m| m.dual).ok()
+            }
+            Err(e) => {
+                println!("⚠️ [FLATTEN] No se pudo leer modo de posición (/fapi/v1/positionSide/dual): {}. Se procederá con failover dinámico.", e);
+                None
+            }
+        };
+        let mut dual = dual_mode_opt.unwrap_or(true); // el motor ES hedge por diseño; failover a one-way si falla
 
         // 1) Cancelar TODAS las órdenes abiertas por símbolo con posiciones.
         let entries = self.fetch_position_risk().await?;
@@ -453,7 +505,44 @@ impl OrderExecutor {
             buf.push_str("&signature=");
             buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
-            match self.client.execute_order_payload_typed(buf.as_str()).await {
+            let mut close_res = self.client.execute_order_payload_typed(buf.as_str()).await;
+            // R3.3 / K-16: Fail-safe retry si el exchange rechaza por discrepancia de modo (-4061)
+            if let Err(ref e) = close_res {
+                if e.contains("-4061") || e.contains("position side") || e.contains("reduceOnly") {
+                    println!("⚠️ [FLATTEN] Modo rechazado (-4061) para {}. Conmutando modo (dual={}) y reintentando cierre...", p.symbol, !dual);
+                    dual = !dual;
+                    let ts_retry = self.get_synced_timestamp();
+                    let coid_retry = uuid::Uuid::now_v7().simple().to_string();
+                    let mut retry_buf = ZeroAllocBuffer::new();
+                    retry_buf.push_str(self.client.get_base_url());
+                    retry_buf.push_str("/fapi/v1/order?");
+                    let retry_payload_start = retry_buf.as_str().len();
+                    retry_buf.push_str("symbol=");
+                    retry_buf.push_str(&p.symbol);
+                    retry_buf.push_str("&side=");
+                    retry_buf.push_str(if is_long { "SELL" } else { "BUY" });
+                    if dual {
+                        retry_buf.push_str("&positionSide=");
+                        retry_buf.push_str(if is_long { "LONG" } else { "SHORT" });
+                        retry_buf.push_str("&type=MARKET&quantity=");
+                    } else {
+                        retry_buf.push_str("&type=MARKET&reduceOnly=true&quantity=");
+                    }
+                    retry_buf.push_f64(p.position_amt.abs());
+                    retry_buf.push_str("&newClientOrderId=");
+                    retry_buf.push_str(&coid_retry);
+                    retry_buf.push_str("&timestamp=");
+                    retry_buf.push_u64(ts_retry);
+                    let mut retry_sig_buf = [0u8; 64];
+                    sign_payload_to_buffer(&retry_buf.as_str()[retry_payload_start..], &api_secret, &mut retry_sig_buf);
+                    retry_buf.push_str("&signature=");
+                    retry_buf.push_str(unsafe { std::str::from_utf8_unchecked(&retry_sig_buf) });
+
+                    close_res = self.client.execute_order_payload_typed(retry_buf.as_str()).await;
+                }
+            }
+
+            match close_res {
                 Ok((limits, ack)) => {
                     self.update_limits(&limits);
                     let now = self.get_synced_timestamp();
@@ -467,7 +556,7 @@ impl OrderExecutor {
                         ack.status
                     );
                 }
-                Err(e) => println!("⚠️ [FLATTEN] {} NO cerrada: {}", p.symbol, e),
+                Err(e) => println!("⚠️ [FLATTEN] {} NO cerrada tras reintento: {}", p.symbol, e),
             }
         }
         Ok((cancelled, closed))
@@ -1528,14 +1617,21 @@ impl ExecutionProvider for OrderExecutor {
         });
         let payload_start = buf.as_str().len();
 
+        let is_hedge = self.is_hedge_mode.load(Ordering::Relaxed);
         buf.push_str("symbol=");
         buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
-        buf.push_str("&type=");
-        buf.push_str(ORDER_TYPE_MARKET);
+        if is_hedge {
+            buf.push_str("&positionSide=");
+            buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
+            buf.push_str("&type=");
+            buf.push_str(ORDER_TYPE_MARKET);
+        } else {
+            buf.push_str("&type=");
+            buf.push_str(ORDER_TYPE_MARKET);
+            buf.push_str("&reduceOnly=true");
+        }
         buf.push_str("&quantity=");
         buf.push_f64(final_quantity);
         let client_order_id = uuid::Uuid::now_v7().simple().to_string();
@@ -1669,6 +1765,22 @@ impl ExecutionProvider for OrderExecutor {
             "https://fapi.binance.com/fapi/v1/order?"
         };
 
+        // R3.1 — modo de posición condicional: en HEDGE, positionSide LONG/SHORT
+        // hace la orden inherentemente reductora (Binance RECHAZA reduceOnly
+        // combinado con positionSide). En ONE-WAY, positionSide está prohibido
+        // (-4061) y la protección correcta es reduceOnly=true. Antes las
+        // piernas enviaban positionSide incondicionalmente: toda cuenta one-way
+        // recibía el bracket entero rechazado — posición desnuda.
+        let is_hedge = self.is_hedge_mode.load(Ordering::Relaxed);
+        let (position_side_q, reduce_only_q) = if is_hedge {
+            (
+                format!("&positionSide={}", if is_long_close { "LONG" } else { "SHORT" }),
+                String::new(),
+            )
+        } else {
+            (String::new(), "&reduceOnly=true".to_string())
+        };
+
         // 1. Build Stop Loss Order (STOP_MARKET)
         let mut sl_buf = ZeroAllocBuffer::new();
         sl_buf.push_str(base_url);
@@ -1677,8 +1789,8 @@ impl ExecutionProvider for OrderExecutor {
         sl_buf.push_str(symbol);
         sl_buf.push_str("&side=");
         sl_buf.push_str(side);
-        sl_buf.push_str("&positionSide=");
-        sl_buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
+        sl_buf.push_str(&position_side_q);
+        sl_buf.push_str(&reduce_only_q);
         sl_buf.push_str("&type=STOP_MARKET");
         sl_buf.push_str("&quantity=");
         sl_buf.push_f64(final_quantity);
@@ -1697,8 +1809,8 @@ impl ExecutionProvider for OrderExecutor {
         tp_buf.push_str(symbol);
         tp_buf.push_str("&side=");
         tp_buf.push_str(side);
-        tp_buf.push_str("&positionSide=");
-        tp_buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
+        tp_buf.push_str(&position_side_q);
+        tp_buf.push_str(&reduce_only_q);
         tp_buf.push_str("&type=TAKE_PROFIT_MARKET");
         tp_buf.push_str("&quantity=");
         tp_buf.push_f64(final_quantity);
