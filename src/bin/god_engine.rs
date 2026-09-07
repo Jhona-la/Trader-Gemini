@@ -793,7 +793,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         0.0
                     };
                     let max_dd = arena_imm.config.global_max_drawdown.load(Ordering::Relaxed);
-                    let dd_breach = cap > 0.0 && max_dd > 0.0 && dd >= max_dd;
+                    // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
+                    // inmune, no desarmarlo: el guard `cap > 0.0` anterior
+                    // dejaba todos los frenos apagados exactamente en el único
+                    // escenario donde son críticos.
+                    let insolvent = cap <= 0.0;
+                    let dd_breach = max_dd > 0.0 && dd >= max_dd;
 
                     // (3) Latencia: 3 muestras consecutivas por encima del umbral.
                     let lat = arena_imm.last_ws_latency_ms.load(Ordering::Relaxed);
@@ -809,9 +814,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let lat_breach = latency_strikes >= 3;
 
-                    if operator_lock || dd_breach || lat_breach {
+                    if operator_lock || insolvent || dd_breach || lat_breach {
                         let reason = if operator_lock {
                             "STOP_TRADING.LOCK del operador".to_string()
+                        } else if insolvent {
+                            format!(
+                                "cuenta INSOLVENTE/LIQUIDADA (capital {:.4} <= 0) — recuperación sobre cuenta sin fondos deshabilitada",
+                                cap
+                            )
                         } else if dd_breach {
                             format!(
                                 "drawdown {:.1}% >= límite {:.1}%",

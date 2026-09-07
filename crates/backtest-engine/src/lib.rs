@@ -1,8 +1,10 @@
 pub mod network_jitter;
 pub mod vectorized;
+pub mod tick_replayer;
 
 pub use network_jitter::NetworkJitterSimulator;
 pub use vectorized::{run_vectorized_hybrid, OrderBookL2DepthSlippageModel};
+pub use tick_replayer::*;
 use quantum_arena::genome::SuperGenotype;
 
 /// F3.3: contrato de tamaño del buffer out_stats. El código anterior escribía

@@ -197,9 +197,12 @@ impl LiveEvolutionDaemon {
             return;
         }
 
-        println!("🧠 [ONLINE EVOLUTION] Evaluando Shadow Strategy con {} trades reales acumulados... Sharpe Estimado (RANSAC): {:.2}", self.returns_history.len(), current_shadow_sharpe);
-        
-        if current_shadow_sharpe > 1.2 {
+        println!("🧜 [ONLINE EVOLUTION] Evaluando Shadow Strategy con {} trades reales acumulados... t-stat RANSAC: {:.2}", self.returns_history.len(), current_shadow_sharpe);
+
+        // t-stat >= 2.0: el edge es estadísticamente distinguible de ruido
+        // (confianza ~95%). El antiguo umbral 1.2 sobre un "Sharpe" mal
+        // anualizado (×724) promovía mutaciones sobre ruido.
+        if current_shadow_sharpe >= 2.0 {
             {
                 let mut sr = self.state.shadow_sharpe_ratio.write();
                 *sr = current_shadow_sharpe;
@@ -226,7 +229,10 @@ impl LiveEvolutionDaemon {
             let best_genome = tokio::task::spawn_blocking(move || {
                 let mut best = current_genome.clone();
                 let mut best_score = -999.0;
-                let roundtrip_fee = 0.0004;
+                // FASE 2: roundtrip completo a taker (0.04% x 2 piernas),
+                // consistente con el simulador y con el costo real de una
+                // entrada de mercado + salida no-maker.
+                let roundtrip_fee = 0.0008;
                 
                 // Mutation scales dynamically based on real-time market entropy
                 let dynamic_mutation_rate = (volatility * 50.0).clamp(0.01, 0.25);
@@ -291,12 +297,24 @@ impl LiveEvolutionDaemon {
                         let r = returns_snapshot[i];
                         let prev_r = if i > 0 { returns_snapshot[i - 1] } else { 0.0 };
                         
-                        // FIX: Erradicación del Lookahead Bias. 
+                        // FIX: Erradicación del Lookahead Bias.
                         // Decisión: el genoma entra long/short basándose en el momentum previo (prev_r),
                         // NO en el retorno actual (r). Se prohíbe leer el futuro.
-                        let entry_bias = if prev_r > (ml_thr_long - 0.5).max(0.0005) {
+                        //
+                        // FASE 2 (unidades coherentes): ANTES se comparaba
+                        // `prev_r` (un retorno, ~1e-4) contra `thr - 0.5` (una
+                        // distancia de probabilidad, ~0.1-0.45) — desajuste
+                        // semántico que hacía el filtro degenerado. Ahora el
+                        // momentum se expresa en sigmas de la ventana real
+                        // (`volatility`, calculada sobre returns_history) y el
+                        // umbral del genoma (0.5..0.95) se mapea a 0..0.9
+                        // sigmas de momentum mínimo exigido.
+                        let prev_sigma = if volatility > 1e-12 { prev_r / volatility } else { 0.0 };
+                        let mom_long = (ml_thr_long - 0.5).max(0.0) * 2.0;
+                        let mom_short = (ml_thr_short - 0.5).max(0.0) * 2.0;
+                        let entry_bias = if prev_sigma > mom_long {
                             1.0
-                        } else if prev_r < -(0.5 - ml_thr_short).max(0.0005) {
+                        } else if prev_sigma < -mom_short {
                             -1.0
                         } else {
                             0.0
@@ -441,11 +459,17 @@ impl LiveEvolutionDaemon {
         let inlier_std = (inlier_variance / inlier_count as f64).sqrt();
         
         if inlier_std <= 1e-12 || !inlier_std.is_finite() { return 0.0; }
-        
-        // Multiplicador dinámico basado en la frecuencia real de los datos HFT/Crypto (365 días * 1440 min/día)
-        let observations_per_year: f64 = 365.0 * 1440.0;
-        let annualization = observations_per_year.sqrt();
-        let raw_sharpe = (inlier_mean / inlier_std) * annualization;
-        if raw_sharpe.is_finite() { raw_sharpe } else { 0.0 }
+
+        // FASE 2 (verdad estadística): ANTES se anualizaba con sqrt(365*1440)
+        // asumiendo retornos por minuto, pero `returns_history` se muestrea
+        // por TRADE (deltas de pnl_realized cada 500ms). Eso inflaba el
+        // "Sharpe" ~724x y disparaba hot-swaps sobre ruido puro.
+        // Ahora devolvemos un t-statístico (media/std × sqrt(N)): mide la
+        // significancia estadística del edge SIN asumir frecuencia alguna.
+        // Umbral de comparación: t >= 2.0 (confianza ~95%, estándar
+        // estadístico, no un tuning arbitrario).
+        let n = inlier_count as f64;
+        let t_stat = (inlier_mean / inlier_std) * n.sqrt();
+        if t_stat.is_finite() { t_stat } else { 0.0 }
     }
 }

@@ -47,10 +47,35 @@ fn now_ms() -> u64 {
 }
 
 impl GenomeEnvelope {
-    /// Carga el genoma activo desde el envelope versionado.
+    /// Carga el genoma activo desde el envelope versionado con resolución resiliente multi-ruta:
+    /// 1. config_dir/genomes/active.json (Envelope oficial versionado)
+    /// 2. config_dir/genotypes/active_genome.json (Genoma activo legacy)
+    /// 3. config_dir/genotypes/quantum_champion.json (Genoma campeón guardado)
     pub fn load_active() -> Option<GenomeEnvelope> {
-        let data = std::fs::read_to_string(ACTIVE_PATH).ok()?;
-        serde_json::from_str(&data).ok()
+        // 1. Intentar cargar desde el envelope oficial
+        if let Ok(data) = std::fs::read_to_string(ACTIVE_PATH) {
+            if let Ok(env) = serde_json::from_str::<GenomeEnvelope>(&data) {
+                return Some(env);
+            }
+        }
+        // 2. Fallback resiliente: cargar genoma raw de LEGACY_MIRROR
+        if let Ok(data) = std::fs::read_to_string(LEGACY_MIRROR) {
+            if let Ok(g) = serde_json::from_str::<SuperGenotype>(&data) {
+                if let Ok(env) = Self::promote(g, "legacy_bootstrap", "Migración automática desde active_genome.json") {
+                    return Some(env);
+                }
+            }
+        }
+        // 3. Fallback resiliente: quantum_champion.json
+        let champ_path = "config_dir/genotypes/quantum_champion.json";
+        if let Ok(data) = std::fs::read_to_string(champ_path) {
+            if let Ok(g) = serde_json::from_str::<SuperGenotype>(&data) {
+                if let Ok(env) = Self::promote(g, "champion_bootstrap", "Migración automática desde quantum_champion.json") {
+                    return Some(env);
+                }
+            }
+        }
+        None
     }
 
     /// Promueve un genoma: escribe historia inmutable + active atómico +
@@ -60,7 +85,11 @@ impl GenomeEnvelope {
         source: &str,
         reason: &str,
     ) -> io::Result<GenomeEnvelope> {
-        let parent = Self::load_active().map(|e| e.generation).unwrap_or(0);
+        let parent = if let Ok(data) = std::fs::read_to_string(ACTIVE_PATH) {
+            serde_json::from_str::<GenomeEnvelope>(&data).map(|e| e.generation).unwrap_or(0)
+        } else {
+            0
+        };
         let envelope = GenomeEnvelope {
             schema_version: SCHEMA_VERSION,
             generation: parent + 1,
@@ -112,7 +141,11 @@ impl GenomeEnvelope {
     /// Últimas N generaciones para inspección/telemetría.
     pub fn recent_history(n: usize) -> Vec<(u64, String, String)> {
         let mut out = Vec::new();
-        let active_gen = Self::load_active().map(|e| e.generation).unwrap_or(0);
+        let active_gen = if let Ok(data) = std::fs::read_to_string(ACTIVE_PATH) {
+            serde_json::from_str::<GenomeEnvelope>(&data).map(|e| e.generation).unwrap_or(0)
+        } else {
+            0
+        };
         let mut g = active_gen;
         while g > 0 && out.len() < n {
             let hist_path = format!("{}/gen_{:06}.json", HISTORY_DIR, g);
@@ -133,6 +166,9 @@ fn atomic_write(path: &str, contents: &str) -> io::Result<()> {
     }
     let tmp = format!("{}.tmp", path);
     std::fs::write(&tmp, contents)?;
+    if std::path::Path::new(path).exists() {
+        let _ = std::fs::remove_file(path);
+    }
     std::fs::rename(&tmp, path)?;
     Ok(())
 }

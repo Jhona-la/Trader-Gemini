@@ -4,8 +4,8 @@
 **DOCUMENTO MAESTRO DE ARQUITECTURA Y REGLAS INAMOVIBLES**
 
 **Capital Inicial:** ~$13 USD  
-**Objetivo Maestro:** +100% neto cada 3 días (Crecimiento Exponencial Compuesto)  
-**Modalidades Simultáneas:** Microscalping, Scalping, Swing  
+**Objetivo Maestro:** Crecimiento Exponencial Compuesto (Interés Compuesto Acelerado)  
+**Modalidad Operativa:** Horizonte Continuo Cuántico Adaptativo (Erradicación Total de Dualidad Scalp/Swing)  
 **Dirección:** Long & Short (Hedging Controlado)
 
 ---
@@ -36,8 +36,8 @@ Toda decisión de diseño o configuración se evalúa exclusivamente contra esta
 ### Capa 1 — Gestión Individual de Estrategia
 Cada estrategia tiene su propio sistema de configuración, control de riesgo, métricas y estado **completamente aislados**. Ninguna estrategia puede leer ni modificar el estado de otra directamente.
 
-### Capa 2 — Registro Omnisciente y Sistema de No-Colisión (`omniscient_registry.py`)
-Núcleo de integridad absoluta. Bloquea conflictos antes de la ejecución. Posee dos categorías:
+### Capa 2 — Registro Omnisciente y Sistema de No-Colisión (`omniscient-registry`)
+Núcleo de integridad absoluta en Rust. Bloquea conflictos antes de la ejecución. Posee dos categorías:
 - **Valores fijos:** Límites inamovibles de identidad y seguridad. (Prioridad Absoluta).
 - **Valores adaptativos:** Parámetros ajustables dinámicamente dentro de rangos fijos.
 
@@ -160,3 +160,14 @@ Modo supervivencia-compounding:
 - **Pruebas Unitarias:** 258/258 tests unitarios pasando en verde (100%).
 - **Compilación Release:** 0 advertencias, 0 errores en los 23 crates y 20 binarios.
 
+## 6.3 Paradigma Cuántico Continuo Unificado (Erradicación Total Scalp/Swing)
+
+En lugar de imponer una división rígida y artificial entre órdenes "Scalping" y "Swing", el kernel de Trader Gemini opera bajo un **Motor Cuántico Continuo Unificado**:
+
+- **QUÉ:** Unificación total del motor de decisión, riesgo y ejecución en un flujo continuo donde el holding time, el trailing stop y los objetivos de ganancia/pérdida se adaptan dinámicamente según la microestructura L2, el régimen de mercado y la volatilidad local (ATR).
+- **POR QUÉ:** La división artificial en dos mitades (50/50) causaba inanición de margen crítico en cuentas de $13 USD frente al requisito notional mínimo de Binance ($5.05 USD). Asimismo, la exclusión mutua generaba bloqueos innecesarios. Al unificar el 100% del capital disponible en una sola posición adaptativa por activo, se aprovecha al máximo el margen y se evita la fragmentación de liquidez.
+- **PARA QUÉ:** Multiplicar el capital de $13 USD con la máxima velocidad, asignando el 100% del margen disponible de forma óptima a la mejor oportunidad predictiva, logrando crecimiento exponencial compuesto sin rechazos de margen.
+- **CÓMO:** El bucle de ejecución de `GodEngineCore::process_tick` sintetiza Dark Alpha, microestructura de libro de órdenes y consenso tensorial en un único `SignalIntent` continuo. `RiskEngine::evaluate_quantum_order` valida el notional contra el capital unificado, calculando SL y TP calibrados dinámicamente mediante múltiplos de ATR sanitizados. El trailing stop cuántico continuo protege los beneficios conforme se expande el movimiento del precio sin cortar prematuramente tendencias macro.
+- **CUÁNDO:** En cada micro-tick L1/L2 recibido por WebSocket en tiempo real o procesado en backtesting determinista.
+- **DÓNDE:** En el kernel de ejecución (`crates/god-engine-core/src/lib.rs`), el orquestador de riesgo (`crates/risk-engine/src/lib.rs`) y la memoria de estado compartida (`crates/quantum-arena/src/position.rs`).
+- **QUIÉN:** Arquitectura Cuántica continua ejecutada por `GodEngineCore`, auditada por `RiskEngine` y monitorizada por `OmniscientRegistry`.

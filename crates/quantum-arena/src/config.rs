@@ -154,6 +154,10 @@ pub struct QuantumConfig {
     // --- FASE 6: Iceberg & IOC Limits ---
     pub iceberg_volume_threshold: AtomicF64,
     pub iceberg_slice_count: AtomicF64,
+
+    // --- Swing OBI & Aceleración ---
+    pub swing_obi_threshold: AtomicF64,
+    pub swing_accel_min_samples: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -304,6 +308,8 @@ impl QuantumConfig {
             executor_max_weight_1m: AtomicF64::new(genome.executor_max_weight_1m),
             iceberg_volume_threshold: AtomicF64::new(genome.iceberg_volume_threshold),
             iceberg_slice_count: AtomicF64::new(genome.iceberg_slice_count),
+            swing_obi_threshold: AtomicF64::new(genome.swing_obi_threshold),
+            swing_accel_min_samples: AtomicF64::new(genome.swing_accel_min_samples),
         }
     }
 }

@@ -314,7 +314,7 @@ async fn main() -> Result<(), String> {
                         omni[31] = (tick.bid_qty - tick.ask_qty) * 1.2;
                         omni[39] = (tick.bid_qty - tick.ask_qty) / total_qty;
                     }
-                    let (_new_sc, _new_sw, closed_sc, closed_sw, _) = engine.process_tick(
+                    let (_new_pos, closed_pos, _) = engine.process_tick(
                         tick.coin_id,
                         tick.bid_price,
                         tick.ask_price,
@@ -324,20 +324,12 @@ async fn main() -> Result<(), String> {
                         &omni,
                     );
 
-                    if let Some((_, pnl, _qty)) = closed_sc {
+                    if let Some((_, pnl, _qty)) = closed_pos {
                         total_trades += 1;
                         if pnl > 0.0 {
                             wins += 1;
                         }
-                    }
-                    if let Some((_, pnl, _qty)) = closed_sw {
-                        total_trades += 1;
-                        if pnl > 0.0 {
-                            wins += 1;
-                        }
-                    }
 
-                    if closed_sc.is_some() || closed_sw.is_some() {
                         let current_cap = arena.unified_capital.load(Ordering::Relaxed);
                         if current_cap > peak_capital {
                             peak_capital = current_cap;

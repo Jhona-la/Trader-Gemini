@@ -87,9 +87,13 @@ impl TensorVoteOrchestrator {
 
         let avg_conviction = active_weight / horizon_strategies.len().max(1) as f64;
         let ensemble_boost = 1.0 + (horizon_strategies.len().min(5) as f64 - 1.0) * 0.1;
-        // FIX #1511: Sanitización estricta de convicción y volatilidad de ensamble
-        let effective_conviction = if max_volatility.is_finite() && avg_conviction.is_finite() {
-            max_volatility.max(avg_conviction * ensemble_boost).clamp(0.0, 1.0)
+        // FASE 2 (calibración): la convicción efectiva ya NO toma
+        // `max_volatility` como término — mezclar volatilidad con convicción
+        // inflaba la confianza de forma estructural (toda señal "sonaba" a
+        // >0.9 sin relación con su frecuencia empírica de acierto). La
+        // convicción es acuerdo del ensamble, no ruido del mercado.
+        let effective_conviction = if avg_conviction.is_finite() {
+            (avg_conviction * ensemble_boost).clamp(0.0, 1.0)
         } else {
             0.5
         };
@@ -127,6 +131,15 @@ impl TensorVoteOrchestrator {
                 // Swing horizon operates on multi-hour time-in-force (minimum 1 hour)
                 (base_duration * 10).max(3_600_000)
             }
+            TradeHorizon::Continuous => {
+                // Sistema continuo universal: la vida esperada de la posición
+                // se interpola por confianza entre el horizonte corto (scalp,
+                // 1x base) y el extendido (swing, 10x base), en vez de fijarse
+                // por modo.
+                let conf = net_confidence.abs().clamp(0.0, 1.0);
+                let scale = 1.0 + 9.0 * conf;
+                ((base_duration as f64) * scale).max(30_000.0) as u64
+            }
         };
 
         let raw_long = self
@@ -143,8 +156,19 @@ impl TensorVoteOrchestrator {
         let long_dist = if raw_long >= 0.50 { raw_long - 0.50 } else { 0.50 - raw_long };
         let short_dist = if raw_short >= 0.50 { raw_short - 0.50 } else { 0.50 - raw_short };
 
-        let long_cutoff = (long_dist * 2.0).clamp(0.08, 0.95);
-        let short_cutoff = (short_dist * 2.0).clamp(0.08, 0.95);
+        // FASE 2: el piso del cutoff ya no es el literal 0.08 (que dejaba
+        // pasar casi cualquier señal cuando el umbral del genoma rondaba
+        // 0.5). Se deriva del gen propio de confianza mínima
+        // (`min_confidence_btc`): el edge mínimo operable es coherente con la
+        // confianza mínima que el genoma exige en su gen más conservador.
+        let min_conf_gene = self
+            .arena
+            .config
+            .min_confidence_btc
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let cutoff_floor = ((min_conf_gene - 0.50) * 2.0).clamp(0.0, 0.90);
+        let long_cutoff = (long_dist * 2.0).clamp(cutoff_floor, 0.95);
+        let short_cutoff = (short_dist * 2.0).clamp(cutoff_floor, 0.95);
 
         if net_confidence > long_cutoff {
             TensorDecision {

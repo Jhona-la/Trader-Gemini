@@ -186,7 +186,7 @@ impl DarwinDaemon {
                             dynamic_omni[i] = f as f64;
                         }
 
-                        let (_sc, _sw, c_sc, c_sw, _) = engine.process_tick(
+                        let (_new_pos, closed_pos, _) = engine.process_tick(
                             tick.coin_id,
                             tick.bid_price,
                             tick.ask_price,
@@ -196,7 +196,7 @@ impl DarwinDaemon {
                             &dynamic_omni,
                         );
 
-                        if c_sc.is_some() || c_sw.is_some() {
+                        if closed_pos.is_some() {
                             let current_cap = arena.unified_capital.load(Ordering::Relaxed);
                             if current_cap > peak_capital {
                                 peak_capital = current_cap;
@@ -375,7 +375,7 @@ impl DarwinDaemon {
                     dynamic_omni[i] = f as f64;
                 }
 
-                let (_sc, _sw, c_sc, c_sw, _) = engine.process_tick(
+                let (_new_pos, closed_pos, _) = engine.process_tick(
                     tick.coin_id,
                     tick.bid_price,
                     tick.ask_price,
@@ -384,7 +384,7 @@ impl DarwinDaemon {
                     tick.timestamp,
                     &dynamic_omni,
                 );
-                if c_sc.is_some() || c_sw.is_some() {
+                if closed_pos.is_some() {
                     let cap = arena.unified_capital.load(Ordering::Relaxed);
                     if cap > peak_capital {
                         peak_capital = cap;

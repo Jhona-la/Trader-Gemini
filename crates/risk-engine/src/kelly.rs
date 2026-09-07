@@ -18,9 +18,18 @@ pub fn calculate_kelly_fraction(
         return 0.0;
     }
 
-    // Si no hay edge estadístico (PF <= 1.0) o el Win Rate es insuficiente, no se arriesga capital.
+    // Sin edge estadístico (PF <= 1.0): NO se congela el sistema a 0.0 para
+    // siempre. El PF es una estadística con memoria; un régimen adverso
+    // temprano dejaría el backtest/producción plano de forma permanente.
+    // En su lugar, una rampa de exploración continua — derivada del piso
+    // fraccional del genoma (clamp_min), no de un literal — permite
+    // redescubrir edge a medida que el PF se acerca al break-even:
+    // PF 0.5 -> 0% de la fracción base; PF 1.0 -> 100% de la fracción base.
     if profit_factor <= 1.0 || win_rate < 0.05 {
-        return 0.0;
+        let pf_ramp = ((profit_factor - 0.5).clamp(0.0, 0.5)) / 0.5;
+        let wr_ramp = if win_rate < 0.05 { win_rate / 0.05 } else { 1.0 };
+        let exploration = clamp_min.max(0.0) * 0.25 * pf_ramp * wr_ramp;
+        return exploration.clamp(0.0, clamp_max.max(clamp_min));
     }
 
     // FIX #374: Fórmula exacta de Kelly a partir de Profit Factor: f* = W * (1 - 1/PF)
@@ -29,15 +38,15 @@ pub fn calculate_kelly_fraction(
         return 0.0;
     }
 
-    // Asimetría Matemática: Para micro-cuentas ($13 USD), dimensionar con Half-Kelly adaptativo
-    // asegurando crecimiento geométrico sin asfixia de escala ni riesgo de ruina.
-    // FIX #740: Escala de micro-cuenta dinámica derivada de base_capital
+    // Escala de capital: regímenes continuos parametrizados por el GENOMA
+    // (kelly_survival_cap_ratio / kelly_expansion_mult), sin la antigua rama
+    // de micro-cuenta `base_capital × 2.30`: ese umbral fijo creaba una
+    // meseta donde el capital quedaba atrapado en media-Kelly hasta superar
+    // 2.3× la base (~$30-40 con base de $13) — el "techo de $40". El modo
+    // supervivencia (clamp 0.20-0.60 modulado por win rate y raíz del ratio
+    // de capital) ya protege cuentas pequeñas de forma continua.
     let capital_ratio = (current_capital / base_capital.max(1.0)).max(0.01);
-    let micro_account_threshold = base_capital.max(1.0) * 2.30;
-    let capital_scale = if current_capital < micro_account_threshold {
-        // FIX #378: Half-to-fractional Kelly dinámico modulado por la calidad del edge
-        (strategy_base_fraction * (win_rate / 0.60).clamp(0.7, 1.3)).clamp(0.25, 0.75)
-    } else if capital_ratio < kelly_survival_cap_ratio {
+    let capital_scale = if capital_ratio < kelly_survival_cap_ratio {
         // Modo Supervivencia Adaptativa
         (0.35 * win_rate * capital_ratio.sqrt()).clamp(0.20, 0.60)
     } else {

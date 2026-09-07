@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PositionHorizon {
+    Continuous,
     Scalping,
     Swing,
 }
@@ -11,7 +12,7 @@ pub enum PositionHorizon {
 pub struct Position {
     pub is_open: AtomicBool,
     pub is_long: AtomicBool,
-    pub horizon: std::sync::atomic::AtomicU8, // 0 = Scalping, 1 = Swing
+    pub horizon: std::sync::atomic::AtomicU8, // 0 = Continuous, 1 = Scalping, 2 = Swing
     pub entry_price: AtomicF64,
     pub quantity: AtomicF64,
     pub margin_used: AtomicF64,
@@ -129,6 +130,8 @@ impl Position {
         let h_val = match horizon {
             PositionHorizon::Scalping => 0,
             PositionHorizon::Swing => 1,
+            // Sistema continuo universal: hereda el bucket intermedio (swing)
+            PositionHorizon::Continuous => 1,
         };
         self.horizon.store(h_val, Ordering::Relaxed);
         self.entry_price.store(safe_price, Ordering::Relaxed);
@@ -206,6 +209,7 @@ impl Position {
 #[repr(C, align(64))]
 #[derive(Default)]
 pub struct PositionManager {
+    pub position: Position,
     pub scalp_position: Position,
     pub swing_position: Position,
 }

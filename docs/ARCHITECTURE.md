@@ -777,3 +777,8 @@ La posición física en Binance es el NETO de ambas. El `RiskManager.check_stops
 * `risk/risk_manager.py` (Validación de propiedad en órdenes).
 
 **QUIÉN:** `SignalEvent` (inmutabilidad y namespace), `Engine` (event loop y reconciliación), `Portfolio` (control de estados y neteo virtual), `RiskManager` (stops y stops-ownership).
+
+
+## Exclusión Mutua de Capital (Micro-Capital)
+
+El sistema cuenta con una exclusión mutua de nivel atómico diseñada específicamente para escenarios de micro-capital (ej. 13 USD). Cuando el capital total es insuficiente para sostener simultáneamente una posición Scalp y una Swing (capital menor a 3 veces el margen mínimo requerido por Binance), el motor GodEngineCore evalúa ambos SignalIntents y ejecuta EXCLUSIVAMENTE el que posea el confidence_score más alto. Esta resolución ocurre en picosegundos, evitando el bloqueo en la API de Binance (Margin is insufficient) y permitiendo que la cuenta pequeña crezca sin interrupciones.

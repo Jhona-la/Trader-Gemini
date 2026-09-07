@@ -235,6 +235,39 @@ impl BinanceClient {
         }
     }
 
+    /// Fetches server time directly from Binance endpoint GET /fapi/v1/time
+    pub async fn fetch_server_time(&self) -> Result<u64, String> {
+        let url = format!("{}/fapi/v1/time", self.get_base_url());
+        let response = self
+            .http
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Network Error: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(crate::order_types::parse_reject_body(
+                &body,
+                status.as_u16(),
+            ));
+        }
+
+        #[derive(serde::Deserialize)]
+        struct ServerTimeResp {
+            #[serde(rename = "serverTime")]
+            server_time: u64,
+        }
+
+        let resp: ServerTimeResp = response
+            .json()
+            .await
+            .map_err(|e| format!("JSON Parse Error: {}", e))?;
+
+        Ok(resp.server_time)
+    }
+
     /// Ejecuta una orden firmada enviando el payload HTTP de forma asíncrona O(1).
     #[inline(always)]
     pub async fn execute_order_payload(&self, full_url: &str) -> Result<BinanceRateLimits, String> {

@@ -163,6 +163,8 @@ pub struct SuperGenotype {
     // --- FASE 6: Iceberg & IOC Limits ---
     pub iceberg_volume_threshold: f64,
     pub iceberg_slice_count: f64,
+    pub swing_obi_threshold: f64,
+    pub swing_accel_min_samples: f64,
 }
 
 impl Default for SuperGenotype {
@@ -409,6 +411,11 @@ impl SuperGenotype {
                 .iceberg_volume_threshold
                 .load(Ordering::Relaxed),
             iceberg_slice_count: arena.config.iceberg_slice_count.load(Ordering::Relaxed),
+            swing_obi_threshold: arena.config.swing_obi_threshold.load(Ordering::Relaxed),
+            swing_accel_min_samples: arena
+                .config
+                .swing_accel_min_samples
+                .load(Ordering::Relaxed),
         }
     }
 
@@ -613,6 +620,8 @@ impl SuperGenotype {
             executor_max_weight_1m: 2200.0,
             iceberg_volume_threshold: 500.0,
             iceberg_slice_count: 5.0,
+            swing_obi_threshold: 0.5,
+            swing_accel_min_samples: 30.0,
         }
     }
 
@@ -759,6 +768,8 @@ impl SuperGenotype {
             executor_max_weight_1m: rand::rng().random_range(1000.0..5000.0),
             iceberg_volume_threshold: rand::rng().random_range(100.0..2000.0),
             iceberg_slice_count: rand::rng().random_range(3.0..10.0),
+            swing_obi_threshold: rand::rng().random_range(0.05..1.0),
+            swing_accel_min_samples: rand::rng().random_range(10.0..50.0),
         }
     }
 
@@ -1259,6 +1270,8 @@ impl SuperGenotype {
             .config
             .scalp_accel_min_samples
             .store(self.scalp_accel_min_samples, Ordering::Relaxed);
+        arena.config.swing_obi_threshold.store(self.swing_obi_threshold, Ordering::Relaxed);
+        arena.config.swing_accel_min_samples.store(self.swing_accel_min_samples, Ordering::Relaxed);
         arena
             .config
             .executor_max_orders_10s
@@ -1454,6 +1467,8 @@ impl SuperGenotype {
                 100_000.0,
             ),
             iceberg_slice_count: mutate_val(self.iceberg_slice_count, 2.0, 10.0),
+            swing_obi_threshold: mutate_val(self.swing_obi_threshold, 0.05, 1.0),
+            swing_accel_min_samples: mutate_val(self.swing_accel_min_samples, 10.0, 50.0),
         };
 
         // INVARIANTE MATEMÁTICO INSTITUCIONAL: Ratio Riesgo/Beneficio asimétrico obligatorio (TP >= 1.8x SL)
@@ -1468,7 +1483,7 @@ impl SuperGenotype {
     }
 
     // Generated extensions
-    pub const DIMENSION: usize = 137;
+    pub const DIMENSION: usize = 139;
 
     pub fn to_vector(&self) -> Vec<f64> {
         let mut vec = Vec::with_capacity(Self::DIMENSION);
@@ -1609,6 +1624,8 @@ impl SuperGenotype {
         vec.push(self.executor_max_weight_1m);
         vec.push(self.iceberg_volume_threshold);
         vec.push(self.iceberg_slice_count);
+        vec.push(self.swing_obi_threshold);
+        vec.push(self.swing_accel_min_samples);
         vec
     }
 
@@ -1751,6 +1768,8 @@ impl SuperGenotype {
             executor_max_weight_1m: vec[134].clamp(1000.0, 5000.0),
             iceberg_volume_threshold: vec[135].clamp(10_000.0, 100_000.0),
             iceberg_slice_count: vec[136].clamp(2.0, 10.0),
+            swing_obi_threshold: vec[137].clamp(0.05, 1.0),
+            swing_accel_min_samples: vec[138].clamp(10.0, 50.0),
         }
     }
 
@@ -1765,7 +1784,7 @@ impl SuperGenotype {
             0.1, 0.1, 0.01, 0.0, 0.01, 0.01, 0.01, 0.01, 0.01, 0.0001, 0.5, 0.001, 0.001, 0.01,
             0.05, 0.01, 0.1, 0.10, 0.05, 0.01, 1.0, 1.01, 50.0, 0.1, 0.1, 100.0, 10000.0, 1.0, 1.0,
             1.0, 1.0, 3.0, 5.0, 0.1, 1.1, 0.4, 0.35, 1.0, 10.0, 0.05, 10.0, 0.1, 0.1, 0.1, 0.1,
-            3.0, 10.0, 100.0, 1000.0, 10_000.0, 2.0,
+            3.0, 10.0, 100.0, 1000.0, 10_000.0, 2.0, 0.05, 10.0,
         ]
     }
 
@@ -1780,7 +1799,7 @@ impl SuperGenotype {
             0.5, 1000.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.05, 0.99, 0.1, 0.1, 0.2, 0.40, 0.10, 1.0, 0.80,
             0.30, 0.5, 5.0, 1.20, 50.0, 1.0, 3.0, 10000000.0, 120000.0, 3.0, 3.0, 5.0, 5.0, 15.0,
             25.0, 0.5, 3.0, 0.6, 0.55, 20.0, 500.0, 0.5, 500.0, 2.0, 2.0, 0.8, 1.0, 10.0, 50.0,
-            500.0, 5000.0, 100_000.0, 10.0,
+            500.0, 5000.0, 100_000.0, 10.0, 1.0, 50.0,
         ]
     }
 }
@@ -1790,13 +1809,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_genome_vector_symmetry_exact_137d() {
+    fn test_genome_vector_symmetry_exact_139d() {
         let genome = SuperGenotype::load_or_baseline(0.0002, 0.0005);
         let vec = genome.to_vector();
         assert_eq!(
             vec.len(),
             SuperGenotype::DIMENSION,
-            "to_vector length must be exactly 137"
+            "to_vector length must be exactly 139"
         );
         assert_eq!(
             SuperGenotype::get_lower_bounds().len(),

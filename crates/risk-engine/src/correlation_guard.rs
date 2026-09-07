@@ -68,6 +68,24 @@ impl CorrelationGuardEngine {
         };
         same_horizon_same_dir_count >= limit
     }
+
+    /// Determina si vetar una orden cuántica continua unificada
+    pub fn is_continuous_correlation_vetoed(
+        same_dir_count: usize,
+        current_capital: f64,
+        max_allowed_cluster: usize,
+    ) -> bool {
+        if same_dir_count == 0 {
+            return false;
+        }
+        let safe_capital = if current_capital.is_finite() && current_capital > 0.0 { current_capital } else { 13.0 };
+        let limit = if safe_capital < 30.0 {
+            2.min(max_allowed_cluster.max(2))
+        } else {
+            max_allowed_cluster.max(2)
+        };
+        same_dir_count >= limit
+    }
 }
 
 #[cfg(test)]

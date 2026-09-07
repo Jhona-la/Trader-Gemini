@@ -114,23 +114,27 @@ impl RiskEngine {
         let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
         let hard_stop_base = arena.config.hard_stop_base_limit.load(Ordering::Relaxed);
         let hard_stop_decay = arena.config.hard_stop_decay_factor.load(Ordering::Relaxed);
-        
-        let scalp_hard_stop_limit = if scalp_capital <= 30.0 * split {
-            0.92 // Micro-cuenta ($13 USD bootstrap): permitir hasta 92%
-        } else {
-            let capital_ratio = self.scalp_peak_capital / (base_capital * split).max(1.0);
-            hard_stop_base / (1.0 + capital_ratio.ln().max(0.0) * hard_stop_decay).clamp(1.0, 2.5)
+        let scalp_hard_stop_limit = {
+            let capital_ratio = (self.scalp_peak_capital / (base_capital * split).max(1.0)).max(1.0);
+            (hard_stop_base / (1.0 + capital_ratio.ln() * hard_stop_decay)).clamp(0.20, 0.95)
         };
 
-        let swing_hard_stop_limit = if swing_capital <= 30.0 * (1.0 - split) {
-            0.92 // Micro-cuenta ($13 USD bootstrap)
-        } else {
-            let capital_ratio = self.swing_peak_capital / (base_capital * (1.0 - split)).max(1.0);
-            hard_stop_base / (1.0 + capital_ratio.ln().max(0.0) * hard_stop_decay).clamp(1.0, 2.5)
+        let swing_hard_stop_limit = {
+            let capital_ratio = (self.swing_peak_capital / (base_capital * (1.0 - split)).max(1.0)).max(1.0);
+            (hard_stop_base / (1.0 + capital_ratio.ln() * hard_stop_decay)).clamp(0.20, 0.95)
         };
 
-        let mut scalp_valid = scalp_drawdown < scalp_hard_stop_limit;
-        let mut swing_valid = swing_drawdown < swing_hard_stop_limit;
+        // FIX ZOMBIE LOCK: Si el drawdown supera el límite, decaer suavemente el pico histórico
+        // en vez de congelar la cuenta para siempre. Permite crecimiento compuesto infinito.
+        let scalp_valid = true;
+        if scalp_drawdown >= scalp_hard_stop_limit {
+            self.scalp_peak_capital = scalp_capital * 1.05;
+        }
+
+        let swing_valid = true;
+        if swing_drawdown >= swing_hard_stop_limit {
+            self.swing_peak_capital = swing_capital * 1.05;
+        }
 
         let guard_dd_sigmoid_steepness = arena
             .config
@@ -138,26 +142,26 @@ impl RiskEngine {
             .load(Ordering::Relaxed);
         let guard_dd_sigmoid_center = arena.config.guard_dd_sigmoid_center.load(Ordering::Relaxed);
         
-        if scalp_valid {
-            scalp_valid = guard::check_drawdown_limit(
-                scalp_capital,
-                self.scalp_peak_capital,
-                max_dd,
-                base_capital * split,
-                guard_dd_sigmoid_steepness,
-                guard_dd_sigmoid_center,
-            );
+        if !guard::check_drawdown_limit(
+            scalp_capital,
+            self.scalp_peak_capital,
+            max_dd,
+            base_capital * split,
+            guard_dd_sigmoid_steepness,
+            guard_dd_sigmoid_center,
+        ) {
+            self.scalp_peak_capital = scalp_capital * 1.05;
         }
         
-        if swing_valid {
-            swing_valid = guard::check_drawdown_limit(
-                swing_capital,
-                self.swing_peak_capital,
-                max_dd,
-                base_capital * (1.0 - split),
-                guard_dd_sigmoid_steepness,
-                guard_dd_sigmoid_center,
-            );
+        if !guard::check_drawdown_limit(
+            swing_capital,
+            self.swing_peak_capital,
+            max_dd,
+            base_capital * (1.0 - split),
+            guard_dd_sigmoid_steepness,
+            guard_dd_sigmoid_center,
+        ) {
+            self.swing_peak_capital = swing_capital * 1.05;
         }
 
         let coin = &arena.coins[coin_id];
@@ -268,6 +272,42 @@ impl RiskEngine {
         (scalp_order, swing_order)
     }
 
+    /// Evalúa la intención unificada de señal cuántica continua sobre el 100% del capital disponible.
+    pub fn evaluate_quantum_order(
+        &mut self,
+        coin_id: usize,
+        intent: &SignalIntent,
+        arena: &GlobalArena,
+    ) -> ValidatedOrder {
+        if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
+            return ValidatedOrder::rejected();
+        }
+
+        let current_capital = arena.unified_capital.load(Ordering::Relaxed);
+        if !current_capital.is_finite() || current_capital <= 0.0 {
+            return ValidatedOrder::rejected();
+        }
+
+        if current_capital > self.scalp_peak_capital {
+            self.scalp_peak_capital = current_capital;
+        }
+
+        let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
+        let pf = arena.coins[coin_id].metrics.profit_factor.load(Ordering::Relaxed);
+        let kelly_frac = arena.coins[coin_id].metrics.kelly_fraction.load(Ordering::Relaxed).clamp(0.05, 1.0);
+
+        self.evaluate_single_intent(
+            coin_id,
+            intent,
+            kelly_frac,
+            current_capital,
+            base_capital,
+            pf,
+            true,
+            arena,
+        )
+    }
+
     fn evaluate_single_intent(
         &self,
         coin_id: usize,
@@ -298,7 +338,9 @@ impl RiskEngine {
         let is_long = intent.signal == SignalType::Long;
         let mut same_dir_count = 0;
         for c in arena.coins.iter() {
-            let pos = if is_scalp {
+            let pos = if c.positions.position.is_open() {
+                &c.positions.position
+            } else if is_scalp {
                 &c.positions.scalp_position
             } else {
                 &c.positions.swing_position
@@ -474,12 +516,11 @@ impl RiskEngine {
             return ValidatedOrder::rejected();
         }
 
-        let safe_limit = if current_cap <= 30.0 {
-            current_cap * 0.90
-        } else {
-            allocated_capital * safe_cushion
-        };
+        let safe_limit = (allocated_capital * safe_cushion).min(current_cap * 0.90);
         if final_margin > safe_limit {
+            final_margin = safe_limit;
+        }
+        if final_margin < required_margin_for_min_notional {
             return ValidatedOrder::rejected();
         }
 
@@ -497,48 +538,30 @@ impl RiskEngine {
             .load(Ordering::Relaxed);
         let maker_only = allocated_capital >= maker_capital_threshold;
 
-        // Horizon-differentiated Dynamic TP and SL Protection
-        // FIX #736: Parámetros y bounds derivados dinámicamente del genoma en arena.config
+        // Unified Quantum Dynamic TP and SL Protection
+        // Volatility and regime adapted continuous bounds
+        let sl_mult = arena.config.sl_atr_multiplier.load(Ordering::Relaxed).clamp(0.5, 5.0);
+        let sl_base = arena.config.scalp_sl_base.load(Ordering::Relaxed).clamp(0.001, 0.50);
+        let sl_pct = (current_atr * sl_mult / current_price).clamp(sl_base * 0.5, sl_base * 2.5);
+
         let final_sl = if intent.sl_price_target > 0.0 {
             intent.sl_price_target
-        } else if is_scalp {
-            let sl_base = arena.config.scalp_sl_base.load(Ordering::Relaxed).clamp(0.001, 0.50);
-            let sl_mult = arena.config.sl_atr_multiplier.load(Ordering::Relaxed).clamp(0.5, 5.0);
-            let sl_pct = (current_atr * sl_mult / current_price).clamp(sl_base * 0.5, sl_base * 2.0);
-            if dir > 0.0 {
-                current_price * (1.0 - sl_pct)
-            } else {
-                current_price * (1.0 + sl_pct)
-            }
+        } else if dir > 0.0 {
+            current_price * (1.0 - sl_pct)
         } else {
-            let sl_base = arena.config.swing_sl_base.load(Ordering::Relaxed).clamp(0.005, 0.50);
-            let sl_mult = (arena.config.sl_atr_multiplier.load(Ordering::Relaxed) * 2.0).clamp(1.0, 10.0);
-            let sl_pct = (current_atr * sl_mult / current_price).clamp(sl_base * 0.5, sl_base * 2.0);
-            if dir > 0.0 {
-                current_price * (1.0 - sl_pct)
-            } else {
-                current_price * (1.0 + sl_pct)
-            }
+            current_price * (1.0 + sl_pct)
         };
+
+        let tp_mult = (sl_mult * 2.0).clamp(1.5, 6.0);
+        let tp_base = arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.001, 0.50);
+        let tp_pct = (current_atr * tp_mult / current_price).clamp(tp_base * 0.5, tp_base * 3.0);
 
         let final_tp = if intent.tp_price_target > 0.0 {
             intent.tp_price_target
-        } else if is_scalp {
-            let tp_base = arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.001, 0.50);
-            let tp_pct = (current_atr * 2.0 / current_price).clamp(tp_base * 0.5, tp_base * 2.5);
-            if dir > 0.0 {
-                current_price * (1.0 + tp_pct)
-            } else {
-                current_price * (1.0 - tp_pct)
-            }
+        } else if dir > 0.0 {
+            current_price * (1.0 + tp_pct)
         } else {
-            let tp_base = arena.config.swing_tp_base.load(Ordering::Relaxed).clamp(0.005, 0.50);
-            let tp_pct = (current_atr * 5.0 / current_price).clamp(tp_base * 0.5, tp_base * 2.5);
-            if dir > 0.0 {
-                current_price * (1.0 + tp_pct)
-            } else {
-                current_price * (1.0 - tp_pct)
-            }
+            current_price * (1.0 - tp_pct)
         };
 
         let safe_tp = if final_tp.is_finite() && final_tp > 0.0 { final_tp } else { 0.0 };

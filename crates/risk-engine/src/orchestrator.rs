@@ -108,6 +108,16 @@ impl<'a> PortfolioOrchestrator<'a> {
 
         // O(1) lock-free iteration over 30 coins to calculate net delta and exposure
         for coin in self.arena.coins.iter() {
+            let pos = &coin.positions.position;
+            if pos.is_open() {
+                let margin = pos.margin_used.load(Ordering::Relaxed);
+                if pos.is_long.load(Ordering::Relaxed) {
+                    total_long_margin += margin;
+                } else {
+                    total_short_margin += margin;
+                }
+            }
+
             let scalp_pos = &coin.positions.scalp_position;
             if scalp_pos.is_open() {
                 let margin = scalp_pos.margin_used.load(Ordering::Relaxed);

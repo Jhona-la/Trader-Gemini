@@ -199,6 +199,7 @@ impl Default for LockFreeTickRing {
 /// Estado aislado por moneda
 #[repr(C, align(64))]
 pub struct CoinArena {
+    pub metrics: ScalpState,
     pub scalp: ScalpState,
     pub swing: SwingState,
     pub positions: crate::position::PositionManager,
@@ -223,6 +224,7 @@ pub struct CoinArena {
     /// Lock-free ring buffer: zero contention in hot path
     pub tick_ring: LockFreeTickRing,
     pub tick_head: AtomicUsize,
+    pub last_close_ts: AtomicU64,
     pub last_scalp_close_ts: AtomicU64,
 }
 
@@ -287,6 +289,7 @@ impl CoinArena {
 impl CoinArena {
     pub fn new(w_base: f64) -> Self {
         Self {
+            metrics: ScalpState::new(w_base),
             scalp: ScalpState::new(w_base),
             swing: SwingState::new(w_base),
             positions: crate::position::PositionManager::default(),
@@ -306,6 +309,7 @@ impl CoinArena {
             l2_ask_wall: AtomicF64::new(0.0),
             tick_ring: LockFreeTickRing::new(),
             tick_head: AtomicUsize::new(0),
+            last_close_ts: AtomicU64::new(0),
             last_scalp_close_ts: AtomicU64::new(0),
         }
     }
@@ -322,6 +326,7 @@ pub struct GlobalArena {
 
     // Portfolio & Risk
     pub unified_capital: AtomicF64,
+    pub used_margin: AtomicF64,
     pub scalp_used_margin: AtomicF64,
     pub swing_used_margin: AtomicF64,
     pub tick_counter: AtomicU64,
@@ -352,6 +357,7 @@ impl GlobalArena {
             config,
             coins,
             unified_capital: AtomicF64::new(initial_capital),
+            used_margin: AtomicF64::new(0.0),
             scalp_used_margin: AtomicF64::new(0.0),
             swing_used_margin: AtomicF64::new(0.0),
             tick_counter: AtomicU64::new(0),

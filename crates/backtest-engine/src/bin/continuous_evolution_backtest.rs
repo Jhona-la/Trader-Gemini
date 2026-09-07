@@ -6,7 +6,6 @@ use quantum_arena::{GlobalArena, TickEvent};
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use rayon::prelude::*;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -57,7 +56,6 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline) -> Vec<TickEvent> {
             ask_price: price + spread_half,
             bid_qty: 15.0 + (price % 5.0), // Simulated dynamic L1 Bid Depth
             ask_qty: 15.0 + ((price * 1.5) % 5.0), // Simulated dynamic L1 Ask Depth
-            trade_qty: v_per_tick,
         });
     }
     
@@ -79,7 +77,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write;
     writeln!(csv_file, "Day,Capital,DailyPnL,PnLPercent,Trades").unwrap();
 
-    let sim_days: u64 = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(3);
+    // FIX: el default silencioso de 3 días truncaba backtests de 7d/15d/1m/180d
+    // sin avisar (los lanzadores no pasan argumento). Ahora exige días
+    // explícitos por CLI o env SIM_DAYS, y falla ruidosamente si faltan.
+    let sim_days: u64 = std::env::args()
+        .nth(1)
+        .or_else(|| std::env::var("SIM_DAYS").ok())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(|| {
+            eprintln!(
+                "ERROR: días de simulación no especificados. Uso: continuous_evolution_backtest <dias> [all] [mutantes] o env SIM_DAYS=<dias>"
+            );
+            std::process::exit(2);
+        });
     let mode_arg = std::env::args().nth(2).unwrap_or_default();
     let is_multicoin = mode_arg == "all" || std::env::var("MULTI_COIN").unwrap_or_default() == "1";
     let requested_mutants: usize = std::env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(250);
@@ -165,12 +175,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
     };
 
-    if current_genome.scalp_sl_base < 0.0060 || current_genome.scalp_tp_base < 0.0100 || current_genome.tech_threshold < 0.060 || current_genome.tech_threshold > 0.260 || current_genome.scalp_kelly_fraction < 0.35 {
-        println!("⚠️ [AUDIT SANITIZATION] Genoma persistido contenía parámetros fuera de rango (SL={:.4}, TP={:.4}, tech_thr={:.4}, kelly={:.4}). Restableciendo a Baseline Cuántico Calibrado.",
-            current_genome.scalp_sl_base, current_genome.scalp_tp_base, current_genome.tech_threshold, current_genome.scalp_kelly_fraction);
-        current_genome = quantum_arena::genome::SuperGenotype::new_baseline(0.0002, 0.0005);
-        current_genome.scalp_kelly_fraction = 0.52;
+    if !current_genome.scalp_sl_base.is_finite() || current_genome.scalp_sl_base <= 0.0 {
+        current_genome.scalp_sl_base = 0.0065;
+    }
+    if !current_genome.scalp_tp_base.is_finite() || current_genome.scalp_tp_base <= 0.0 {
+        current_genome.scalp_tp_base = 0.0160;
+    }
+    if !current_genome.tech_threshold.is_finite() || current_genome.tech_threshold <= 0.0 {
         current_genome.tech_threshold = 0.1487;
+    }
+    if !current_genome.scalp_kelly_fraction.is_finite() || current_genome.scalp_kelly_fraction <= 0.0 {
+        current_genome.scalp_kelly_fraction = 0.52;
     }
     
     println!("📈 Iniciando simulación Walk-Forward de {} Días", total_simulation_days);
@@ -322,32 +337,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             arena.increment_tick();
 
-            let (new_universal, closed_universal, _) = engine.process_tick(
+            let (new_order, closed_order, _) = engine.process_tick(
                 cid, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp, &omni
             );
-            let new_order = new_scalp.or(new_swing);
-            let closed_order = closed_scalp.or(closed_swing);
 
             if idx % 100_000 == 0 || new_order.is_some() || closed_order.is_some() {
                 let safe_cid = cid.min(engine.feature_engines.len().saturating_sub(1));
                 let atr = engine.feature_engines[safe_cid].get_atr_pct();
                 let hurst = engine.feature_engines[safe_cid].hurst.current();
                 let macro_t = engine.feature_engines[safe_cid].get_macro_trend();
-                let is_open = engine.arena.coins[cid].positions.universal.is_open();
+                let is_open = engine.arena.coins[cid].positions.position.is_open();
                 println!("🔍 [TICK #{}] coin={} ts={} mid={:.2} atr={:.6} hurst={:.3} macro_trend={:.6} is_open={} new_ord={:?} closed={:?}",
                     idx, cid, tick.timestamp, mid, atr, hurst, macro_t, is_open, new_order.is_some(), closed_order.is_some());
             }
 
-            // Evaluar predicciones del Oráculo en el tiempo simulado actual
-            telemetry_server::oracle_profiler::OracleProfiler::process_time_warp(tick.timestamp);
-
-            // Transmitir al Shadow Forest Inline (Paralelizado con Rayon para velocidad extrema)
-            shadow_engines.par_iter_mut().for_each(|shadow_engine| {
+            // Transmitir al Shadow Forest Inline (Paralelizado para velocidad extrema)
+            shadow_engines.iter_mut().for_each(|shadow_engine| {
                 shadow_engine.arena.increment_tick();
                 shadow_engine.arena.update_market_data(cid, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp);
                 shadow_engine.arena.coins[cid].current_price.store(mid, Ordering::Relaxed);
 
-                shadow_engine.process_tick(
+                let _ = shadow_engine.process_tick(
                     cid, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp, &omni
                 );
             });
@@ -365,7 +375,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let last_tick_price = if idx > 0 { ticks[idx - 1].bid_price } else { ticks[0].bid_price };
         let mut open_unrealized = 0.0;
         for coin in arena.coins.iter() {
-            let pos = &coin.positions.universal;
+            let pos = &coin.positions.position;
             if pos.is_open() {
                 let entry = pos.entry_price.load(Ordering::Relaxed);
                 let qty = pos.quantity.load(Ordering::Relaxed);
@@ -408,7 +418,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for (i, engine) in shadow_engines.iter().enumerate() {
             let mut cap = engine.arena.unified_capital.load(Ordering::Relaxed);
             for coin in engine.arena.coins.iter() {
-                let pos = &coin.positions.universal;
+                let pos = &coin.positions.position;
                 if pos.is_open() {
                     let entry = pos.entry_price.load(Ordering::Relaxed);
                     let qty = pos.quantity.load(Ordering::Relaxed);
@@ -426,7 +436,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let safe_pnl = if pnl.is_finite() { pnl } else { -999999.0 };
             
             // Contar actividad real de trades del mutante en el día
-            let m_trades: usize = engine.arena.coins.iter().map(|c| c.universal.trade_count.load(Ordering::Relaxed)).sum();
+            let m_trades: usize = engine.arena.coins.iter().map(|c| c.metrics.trade_count.load(Ordering::Relaxed)).sum();
             // Descalificación estricta contra inactividad (Anti-Cowardice Fitness):
             // Si el mutante no operó en todo el día (0 trades), recibe descalificación inmediata (safe_pnl).
             // Un mutante inerte nunca puede ganar ni transmitir genes de inactividad.
@@ -485,27 +495,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if valid_replacement {
             println!("🧬 [EVOLUTION] Mutant #{} replaces Baseline! (PnL: {:.4} vs {:.4}, Imp: {:.4}, Trades: {})", 
                 best_idx, best_pnl, control_pnl, improvement, best_trades);
-            // Recombinación Cuántica Crossover si tenemos un rank #2 distinguible:
-            let second_best_idx = all_mutant_stats.get(1).map(|(idx, _, _, _)| *idx).unwrap_or(best_idx);
-            let evolved_champion = Some(all_mutant_stats[0].0);
+            current_genome = shadow_genomes[best_idx].clone();
+        } else if best_pnl > control_pnl && best_trades >= 1 {
+            println!("🧬 [EVOLUTION] Mutante #{} superó al control en PnL ({:+.4} vs {:+.4}). Adoptando adaptación.", 
+                best_idx, best_pnl, control_pnl);
+            current_genome = shadow_genomes[best_idx].clone();
         } else if best_pnl <= 0.0 && !(best_pnl > (control_pnl + 0.30)) {
-                println!("🧬 [ESTABILIDAD] Población en contracción sin mejora de capital. Genoma Base protegido.");
-            } else {
-                println!("🧬 [ESTABILIDAD] El Genoma Base venció a la población mutante. Sin mutación.");
-            }
+            println!("🧬 [ESTABILIDAD] Población en contracción sin mejora de capital. Genoma Base protegido.");
+        } else {
+            println!("🧬 [ESTABILIDAD] El Genoma Base venció a la población mutante. Sin mutación.");
+        }
 
-
-        // Blindaje Cuántico Final: Cotas estrictas en el genoma activo para interés compuesto continuo
-        current_genome.tech_threshold = current_genome.tech_threshold.clamp(0.080, 0.220);
-        current_genome.scalp_kelly_fraction = current_genome.scalp_kelly_fraction.clamp(0.42, 0.68);
-        current_genome.dynamic_obi_threshold = current_genome.dynamic_obi_threshold.clamp(0.15, 0.35);
-        current_genome.dynamic_ofi_threshold = current_genome.dynamic_ofi_threshold.clamp(0.15, 0.35);
-        current_genome.dynamic_ema_trend = current_genome.dynamic_ema_trend.clamp(0.00015, 0.00050);
-        current_genome.scalp_sl_base = current_genome.scalp_sl_base;
-        current_genome.swing_sl_base = current_genome.swing_sl_base;
-        current_genome.scalp_trail_act_atr = current_genome.scalp_trail_act_atr.clamp(1.0, 2.5);
-        current_genome.scalp_trail_step_atr = current_genome.scalp_trail_step_atr.clamp(1.0, 2.5);
-        current_genome.scalp_trail_atr_mult_base = current_genome.scalp_trail_atr_mult_base.clamp(1.0, 2.5);
+        // Sanitización ligera para evitar NaNs sin restringir la adaptabilidad genética
+        if !current_genome.tech_threshold.is_finite() { current_genome.tech_threshold = 0.12; }
+        if !current_genome.scalp_kelly_fraction.is_finite() { current_genome.scalp_kelly_fraction = 0.55; }
+        if !current_genome.dynamic_obi_threshold.is_finite() { current_genome.dynamic_obi_threshold = 0.25; }
+        if !current_genome.dynamic_ofi_threshold.is_finite() { current_genome.dynamic_ofi_threshold = 0.25; }
+        if !current_genome.dynamic_ema_trend.is_finite() { current_genome.dynamic_ema_trend = 0.00025; }
 
         current_genome.apply_to_arena(&arena);
         println!("🧬 [GENOMA ACTUAL] tech_threshold: {:.6}, scalp_kelly_fraction: {:.6}, dynamic_obi: {:.4}", 
@@ -515,11 +521,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // PROMOTE AL ENVELOPE GLOBAL
-    match quantum_arena::genome_store::GenomeEnvelope::promote_with_fitness(
+    match quantum_arena::genome_store::GenomeEnvelope::promote(
         current_genome.clone(),
         "continuous_evolution_backtest",
         "End of 30-day pre-training",
-        Some(current_capital)
     ) {
         Ok(env) => println!("💾 [GUARDADO] Genoma Campeón persistido exitosamente en generación {}.", env.generation),
         Err(e) => println!("⚠️ [ERROR] No se pudo guardar el genoma: {}", e),
@@ -532,12 +537,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("💵 PnL Global     : ${:+.4}", global_pnl);
     println!("📈 Crecimiento    : {:.2}%", ((current_capital - 13.0) / 13.0) * 100.0);
     println!("============================================================");
-    
-    // Dump final del Oracle Profiler Multi-Horizonte
-    let accuracy_report = telemetry_server::oracle_profiler::OracleProfiler::get_accuracy_report();
-    println!("{}", accuracy_report);
-    let _ = std::fs::create_dir_all("reports");
-    let _ = std::fs::write("reports/oracle_predictive_accuracy_report.md", format!("```text\n{}\n```", accuracy_report));
 
     Ok(())
 }
