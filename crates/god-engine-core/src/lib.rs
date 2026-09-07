@@ -270,43 +270,71 @@ impl GodEngineCore {
         combined[38] = (combined[34] * 10.0).tanh();
         combined[39] = (combined[35] * 100.0).min(5.0);
         combined[40] = 0.50;
-        combined[41] = if omni_features.len() > 4 && omni_features[4] > 0.0 {
-            (omni_features[4] / 100.0).clamp(0.5, 2.0)
+        combined[41] = if omni_features.len() > 21 && omni_features[21] > 0.0 {
+            (omni_features[21] / 100.0).clamp(0.5, 2.0)
         } else {
             1.04
         };
-        combined[42] = if omni_features.len() > 0 && omni_features[0] > 0.0 {
-            (omni_features[0] / 5000.0).clamp(0.5, 2.0)
+        combined[42] = if omni_features.len() > 22 && omni_features[22] > 0.0 {
+            (omni_features[22] / 5000.0).clamp(0.5, 2.0)
         } else {
             1.02
         };
-        combined[43] = if omni_features.len() > 1 && omni_features[1] > 0.0 {
-            (omni_features[1] / 18000.0).clamp(0.5, 2.0)
+        combined[43] = if omni_features.len() > 23 && omni_features[23] > 0.0 {
+            (omni_features[23] / 18000.0).clamp(0.5, 2.0)
         } else {
             1.00
         };
-        combined[44] = if omni_features.len() > 2 && omni_features[2] > 0.0 {
-            (omni_features[2] / 20.0).clamp(0.1, 5.0)
+        combined[44] = if omni_features.len() > 24 && omni_features[24] > 0.0 {
+            (omni_features[24] / 20.0).clamp(0.1, 5.0)
         } else {
             0.75
         };
-        combined[45] = if omni_features.len() > 3 && omni_features[3] > 0.0 {
-            (omni_features[3] / 4.0).clamp(0.1, 5.0)
+        combined[45] = if omni_features.len() > 25 && omni_features[25] > 0.0 {
+            (omni_features[25] / 4.0).clamp(0.1, 5.0)
         } else {
             1.05
         };
-        combined[46] = 1.0;
-        combined[47] = if omni_features.len() > 5 && omni_features[5] > 0.0 {
-            (omni_features[5] / 80.0).clamp(0.2, 3.0)
+        combined[46] = if omni_features.len() > 26 && omni_features[26] > 0.0 {
+            (omni_features[26] / 2500.0).clamp(0.5, 2.0)
+        } else {
+            1.0
+        };
+        combined[47] = if omni_features.len() > 27 && omni_features[27] > 0.0 {
+            (omni_features[27] / 80.0).clamp(0.2, 3.0)
         } else {
             1.00
         };
-        combined[48] = 0.0;
-        combined[49] = 5.25;
-        combined[50] = 1.0;
-        combined[51] = 0.0;
-        combined[52] = 0.0;
-        combined[53] = 0.0;
+        combined[48] = if omni_features.len() > 11 {
+            (omni_features[11] * 1000.0).clamp(-5.0, 5.0)
+        } else {
+            0.0
+        };
+        combined[49] = if omni_features.len() > 29 && omni_features[29] > 0.0 {
+            (omni_features[29] / 5.25).clamp(0.0, 3.0)
+        } else {
+            1.0
+        };
+        combined[50] = if omni_features.len() > 14 && omni_features[14] > 0.0 {
+            (omni_features[14] / 50.0).clamp(0.0, 2.0)
+        } else {
+            1.0
+        };
+        combined[51] = if omni_features.len() > 30 {
+            (omni_features[30] / 100.0).tanh()
+        } else {
+            0.0
+        };
+        combined[52] = if omni_features.len() > 31 {
+            (omni_features[31] / 100.0).tanh()
+        } else {
+            0.0
+        };
+        combined[53] = if omni_features.len() > 33 {
+            (omni_features[33] * 100.0).clamp(-5.0, 5.0)
+        } else {
+            0.0
+        };
 
         combined
     }
@@ -395,7 +423,7 @@ impl GodEngineCore {
                 self.arena.update_market_data(coin_id, eff_bid, eff_ask, eff_bid_qty, eff_ask_qty, 0);
             }
 
-            let (new_order, closed_order, _maker) = self.process_tick(
+            let (new_sc, new_sw, closed_sc, closed_sw, _maker) = self.process_tick_dual(
                 coin_id,
                 eff_bid,
                 eff_ask,
@@ -405,7 +433,7 @@ impl GodEngineCore {
                 omni_features,
             );
 
-            (new_order, None, closed_order, None)
+            (new_sc, new_sw, closed_sc, closed_sw)
         })
     }
 
@@ -479,11 +507,10 @@ impl GodEngineCore {
         }
     }
 
-    /// Procesa un tick y devuelve las órdenes generadas (si hay).
-    /// Retorna: (NuevaPosicion, PosicionCerrada, MakerQuote)
-    /// Donde cada Option de posición es (is_long, entry/exit_price, qty)
+    /// Procesa un tick con bifurcación cuántica real e independiente para Scalping y Swing.
+    /// Retorna: (new_scalp, new_swing, closed_scalp, closed_swing, maker_quote)
     #[inline(always)]
-    pub fn process_tick(
+    pub fn process_tick_dual(
         &mut self,
         coin_id: usize,
         bid: f64,
@@ -495,12 +522,14 @@ impl GodEngineCore {
     ) -> (
         Option<(bool, f64, f64)>,
         Option<(bool, f64, f64)>,
+        Option<(bool, f64, f64)>,
+        Option<(bool, f64, f64)>,
         Option<MakerQuote>,
     ) {
-        telemetry_server::profile_node!("GodEngineCore::process_tick", {
+        telemetry_server::profile_node!("GodEngineCore::process_tick_dual", {
             // 1. Quantum Kill-Switch Check
             if self.arena.kill_switch_active.load(Ordering::Relaxed) {
-                return (None, None, None);
+                return (None, None, None, None, None);
             }
 
             // 2. Latency Interlock (Fase 6/7: Cisne Negro / HFT Spoofing)
@@ -531,7 +560,7 @@ impl GodEngineCore {
                         latency_threshold_ms
                     );
                 }
-                return (None, None, None);
+                return (None, None, None, None, None);
             }
 
             self.arena.increment_tick();
@@ -566,23 +595,38 @@ impl GodEngineCore {
             coin.current_atr.store(raw_atr_pct * mid_price, Ordering::Relaxed);
             coin.hurst_exponent.store(hurst_val, Ordering::Relaxed);
 
-            let mut closed_position = None;
-
-            // --- 1. GESTIÓN DE POSICIÓN CONTINUA TEMPORAL (TP/SL/TRAILING) ---
-            let continuous_sl_base = self.arena.config.scalp_sl_base.load(Ordering::Relaxed);
-            let continuous_tp_base = self.arena.config.scalp_tp_base.load(Ordering::Relaxed);
+            let mut closed_scalp = None;
+            let mut closed_swing = None;
 
             let coin = &self.arena.coins[coin_id];
             let atr_pct = self.feature_engines[coin_id].get_atr_pct();
+            let min_atr_pct = self
+                .arena
+                .config
+                .dynamic_atr_min
+                .load(Ordering::Relaxed)
+                .max(0.001);
+            let atr_pct_live = atr_pct.max(min_atr_pct);
 
-            // Asimetría Matemática: TP dinámico adaptativo (TP >= 2.5x SL) para garantizar edge positivo
-            let continuous_sl = continuous_sl_base.max(atr_pct * 1.25).max(0.0030);
-            let continuous_tp = continuous_tp_base.max(continuous_sl * 2.5).max(0.0080);
+            // --- 1A. GESTIÓN DE POSICIÓN SCALPING (TIGHT STOPS, R:R >= 2:1, HIGH-FREQUENCY COMPOUNDING) ---
+            let scalp_sl_base = self.arena.config.scalp_sl_base.load(Ordering::Relaxed);
+            let scalp_tp_base = self.arena.config.scalp_tp_base.load(Ordering::Relaxed);
+            let scalp_sl = scalp_sl_base.max(atr_pct * 1.25).clamp(0.0015, 0.0050);
+            let scalp_tp = scalp_tp_base.max(scalp_sl * 2.0).clamp(0.0030, 0.0150);
 
-            if coin.positions.position.is_open() {
-                let is_long = coin.positions.position.is_long.load(Ordering::Relaxed);
-                let entry = coin.positions.position.entry_price.load(Ordering::Relaxed);
-                let qty = coin.positions.position.quantity.load(Ordering::Relaxed);
+            let scalp_is_open = coin.positions.scalp_position.is_open()
+                || (coin.positions.position.is_open() && coin.positions.position.horizon() == quantum_arena::position::PositionHorizon::Scalping);
+
+            if scalp_is_open {
+                let pos = if coin.positions.scalp_position.is_open() {
+                    &coin.positions.scalp_position
+                } else {
+                    &coin.positions.position
+                };
+                let is_long = pos.is_long.load(Ordering::Relaxed);
+                let entry = pos.entry_price.load(Ordering::Relaxed);
+                let qty = pos.quantity.load(Ordering::Relaxed);
+                let entry_time = pos.entry_time_ms.load(Ordering::Relaxed);
 
                 let pnl_pct = if is_long {
                     (mid_price - entry) / entry
@@ -590,30 +634,16 @@ impl GodEngineCore {
                     (entry - mid_price) / entry
                 };
 
-                let min_atr_pct = self
-                    .arena
-                    .config
-                    .dynamic_atr_min
-                    .load(Ordering::Relaxed)
-                    .max(0.001);
-                let atr_pct_live = atr_pct.max(min_atr_pct);
                 let pseudo_atr = atr_pct_live * entry;
-
                 let side_int = if is_long { 1 } else { -1 };
-
-                let entry_time = coin
-                    .positions
-                    .position
-                    .entry_time_ms
-                    .load(Ordering::Relaxed);
                 let position_age_ms = if event_time_ms > 0 {
                     event_time_ms.saturating_sub(entry_time)
                 } else {
                     0
                 };
 
-                // Gate trailing: Activar trailing dinámico cuando el PnL supera 0.6x TP o 1.5x ATR
-                let trail_activation_pnl = (continuous_tp * 0.60).max(pseudo_atr / entry.max(1.0) * 1.5).clamp(0.0020, 0.0080);
+                // Trailing Scalping: Activación temprana para asegurar ganancias rápidas
+                let trail_activation_pnl = (scalp_tp * 0.50).max(pseudo_atr / entry.max(1.0) * 1.5).clamp(0.0020, 0.0080);
                 let trail_active = position_age_ms > 8_000 && pnl_pct >= trail_activation_pnl;
 
                 let mut trail_hit = false;
@@ -626,22 +656,10 @@ impl GodEngineCore {
                         entry,
                         mid_price,
                         pseudo_atr,
-                        coin.positions
-                            .position
-                            .trailing_phase
-                            .load(Ordering::Relaxed) as i32,
-                        coin.positions
-                            .position
-                            .mfe_atr
-                            .load(Ordering::Relaxed),
-                        coin.positions
-                            .position
-                            .max_pnl_pct
-                            .load(Ordering::Relaxed),
-                        coin.positions
-                            .position
-                            .trail_stop
-                            .load(Ordering::Relaxed),
+                        pos.trailing_phase.load(Ordering::Relaxed) as i32,
+                        pos.mfe_atr.load(Ordering::Relaxed),
+                        pos.max_pnl_pct.load(Ordering::Relaxed),
+                        pos.trail_stop.load(Ordering::Relaxed),
                         self.arena.config.scalp_trail_atr_mult_base.load(Ordering::Relaxed).clamp(0.5, 3.0),
                         self.arena.config.scalp_trail_act_atr.load(Ordering::Relaxed).clamp(0.5, 3.0),
                         self.arena.config.scalp_trail_step_atr.load(Ordering::Relaxed).clamp(0.5, 4.0),
@@ -651,9 +669,9 @@ impl GodEngineCore {
                     );
 
                     let sl_floor = if is_long {
-                        entry * (1.0 - continuous_sl)
+                        entry * (1.0 - scalp_sl)
                     } else {
-                        entry * (1.0 + continuous_sl)
+                        entry * (1.0 + scalp_sl)
                     };
                     let safe_stop = if is_long {
                         trail_res.stop_price.max(sl_floor)
@@ -665,11 +683,7 @@ impl GodEngineCore {
                         }
                     };
 
-                    let current_stored = coin
-                        .positions
-                        .position
-                        .trail_stop
-                        .load(Ordering::Relaxed);
+                    let current_stored = pos.trail_stop.load(Ordering::Relaxed);
                     let final_stop = if is_long {
                         if current_stored > 0.0 {
                             safe_stop.max(current_stored)
@@ -684,72 +698,59 @@ impl GodEngineCore {
                         }
                     };
 
-                    coin.positions
-                        .position
-                        .trail_stop
-                        .store(final_stop, Ordering::Relaxed);
-                    coin.positions
-                        .position
-                        .trailing_phase
-                        .store(trail_res.new_phase as u8, Ordering::Relaxed);
-                    coin.positions
-                        .position
-                        .mfe_atr
-                        .store(trail_res.mfe_atr, Ordering::Relaxed);
-                    coin.positions
-                        .position
-                        .max_pnl_pct
-                        .store(trail_res.max_pnl_pct, Ordering::Relaxed);
+                    pos.trail_stop.store(final_stop, Ordering::Relaxed);
+                    pos.trailing_phase.store(trail_res.new_phase as u8, Ordering::Relaxed);
+                    pos.mfe_atr.store(trail_res.mfe_atr, Ordering::Relaxed);
+                    pos.max_pnl_pct.store(trail_res.max_pnl_pct, Ordering::Relaxed);
 
                     trail_hit = (is_long && mid_price <= final_stop)
                         || (!is_long && mid_price >= final_stop && final_stop > 0.0);
                     force_close_trail = trail_res.force_close;
                 }
 
-                let _notional = qty * entry;
                 let macro_t = self.feature_engines[coin_id].get_macro_trend();
                 let trend_reversed = (is_long && macro_t < -0.0015) || (!is_long && macro_t > 0.0015);
-                let hard_timeout = position_age_ms > 14_400_000; // 4h hard limit
-                let is_zombie = event_time_ms > 0 && position_age_ms > 1_800_000 && ((trend_reversed && pnl_pct <= -0.0030) || hard_timeout);
+                let hard_timeout = position_age_ms > 7_200_000; // 2h hard limit para scalp
+                let is_zombie = event_time_ms > 0 && position_age_ms > 1_800_000 && ((trend_reversed && pnl_pct <= -0.0020) || hard_timeout);
 
-                if pnl_pct >= continuous_tp
-                    || pnl_pct <= -continuous_sl
+                if pnl_pct >= scalp_tp
+                    || pnl_pct <= -scalp_sl
                     || trail_hit
                     || force_close_trail
                     || is_zombie
                 {
                     let sl_price = if is_long {
-                        entry * (1.0 - continuous_sl)
+                        entry * (1.0 - scalp_sl)
                     } else {
-                        entry * (1.0 + continuous_sl)
+                        entry * (1.0 + scalp_sl)
                     };
                     let tp_price = if is_long {
-                        entry * (1.0 + continuous_tp)
+                        entry * (1.0 + scalp_tp)
                     } else {
-                        entry * (1.0 - continuous_tp)
+                        entry * (1.0 - scalp_tp)
                     };
 
                     let mut exit_price = mid_price;
                     if is_long {
-                        if pnl_pct <= -continuous_sl {
+                        if pnl_pct <= -scalp_sl {
                             exit_price = exit_price.min(sl_price);
                         }
                         if trail_hit {
-                            let ts = coin.positions.position.trail_stop.load(Ordering::Relaxed);
+                            let ts = pos.trail_stop.load(Ordering::Relaxed);
                             if ts > 0.0 { exit_price = exit_price.max(ts); }
                         }
-                        if pnl_pct >= continuous_tp {
+                        if pnl_pct >= scalp_tp {
                             exit_price = tp_price;
                         }
                     } else {
-                        if pnl_pct <= -continuous_sl {
+                        if pnl_pct <= -scalp_sl {
                             exit_price = exit_price.max(sl_price);
                         }
                         if trail_hit {
-                            let ts = coin.positions.position.trail_stop.load(Ordering::Relaxed);
+                            let ts = pos.trail_stop.load(Ordering::Relaxed);
                             if ts > 0.0 { exit_price = exit_price.min(ts); }
                         }
-                        if pnl_pct >= continuous_tp {
+                        if pnl_pct >= scalp_tp {
                             exit_price = tp_price;
                         }
                     }
@@ -760,19 +761,25 @@ impl GodEngineCore {
                         (entry - exit_price) * qty
                     };
 
-                    // Comisión real de salida Binance (Maker si TP, Taker en caso contrario)
                     let live_maker = self.arena.config.live_maker_fee.load(Ordering::Relaxed).max(0.0002);
                     let live_taker = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0004);
-                    let close_fee_rate = if pnl_pct >= continuous_tp { live_maker } else { live_taker };
+                    let close_fee_rate = if pnl_pct >= scalp_tp { live_maker } else { live_taker };
                     let close_fee = (qty * exit_price) * close_fee_rate;
+                    let (_, _, _, sc_margin, sc_entry_fee) = coin.positions.scalp_position.close_with_fee();
+                    // N-04: No cerrar coin.positions.position si actualmente espeja una posición de Swing viva
+                    let (gen_margin, gen_entry_fee) = if coin.positions.position.is_open()
+                        && (coin.positions.position.horizon.load(Ordering::Relaxed) != 2)
+                    {
+                        let (_, _, _, gm, gef) = coin.positions.position.close_with_fee();
+                        (gm, gef)
+                    } else {
+                        (0.0, 0.0)
+                    };
+                    let margin_used = sc_margin.max(gen_margin);
+                    let entry_fee_paid = sc_entry_fee.max(gen_entry_fee);
 
-                    // PnL NETO REAL: gross_pnl - close_fee (entry_fee ya fue descontado al abrir!)
                     let net_realized_pnl = gross_pnl - close_fee;
-
-                    // Cierre atómico
-                    let (_, _, _, margin_used, _) = coin.positions.position.close_with_fee();
-                    let _ = coin.positions.scalp_position.close_with_fee();
-                    let _ = coin.positions.swing_position.close_with_fee();
+                    let net_trade_pnl = net_realized_pnl - entry_fee_paid;
 
                     let current_used = self.arena.used_margin.load(Ordering::Relaxed);
                     if current_used >= margin_used {
@@ -780,22 +787,21 @@ impl GodEngineCore {
                     } else {
                         self.arena.used_margin.store(0.0, Ordering::Relaxed);
                     }
-                    self.arena.scalp_used_margin.store(0.0, Ordering::Relaxed);
+                    let current_sc_used = self.arena.scalp_used_margin.load(Ordering::Relaxed);
+                    if current_sc_used >= margin_used {
+                        self.arena.scalp_used_margin.fetch_add(-margin_used, Ordering::Relaxed);
+                    } else {
+                        self.arena.scalp_used_margin.store(0.0, Ordering::Relaxed);
+                    }
 
-                    // Acreditar PnL neto al capital unificado (sin doble fee!)
-                    coin.metrics.pnl_realized.fetch_add(net_realized_pnl, Ordering::Relaxed);
-                    coin.scalp.pnl_realized.fetch_add(net_realized_pnl, Ordering::Relaxed);
+                    coin.metrics.pnl_realized.fetch_add(net_trade_pnl, Ordering::Relaxed);
+                    coin.scalp.pnl_realized.fetch_add(net_trade_pnl, Ordering::Relaxed);
                     self.arena.unified_capital.fetch_add(net_realized_pnl, Ordering::Relaxed);
 
                     self.feature_engines[coin_id].last_scalp_exit_tick = self.feature_engines[coin_id].tick_count;
-                    // FASE 2 (verdad estadística): mismo criterio que el WR —
-                    // la marca de pérdida es NETA de fees. Antes usaba
-                    // gross_pnl, así que una operación podía contar como "win"
-                    // para el WR y como "loss" para los features de cooldown.
-                    self.feature_engines[coin_id].last_scalp_was_loss = net_realized_pnl <= 0.0;
+                    self.feature_engines[coin_id].last_scalp_was_loss = net_trade_pnl <= 0.0;
 
-                    // Feedback Cuántico de Kelly
-                    let is_win = net_realized_pnl > 0.0;
+                    let is_win = net_trade_pnl > 0.0;
                     let n = coin.metrics.trade_count.fetch_add(1, Ordering::Relaxed) as f64 + 1.0;
                     let old_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
@@ -804,9 +810,9 @@ impl GodEngineCore {
                     let old_pf = coin.metrics.profit_factor.load(Ordering::Relaxed).max(0.1);
                     let decay = (1.0 / n.min(50.0)).clamp(0.02, 0.20);
                     let new_pf = if is_win {
-                        (old_pf * (1.0 - decay) + (pnl_pct.abs() / 0.0030) * decay).clamp(0.1, 10.0)
+                        (old_pf * (1.0 - decay) + (1.0 + (pnl_pct.abs() / 0.0030)) * decay).clamp(0.1, 10.0)
                     } else {
-                        (old_pf * (1.0 - decay) + (0.0030 / pnl_pct.abs().max(1e-4)) * decay).clamp(0.1, 10.0)
+                        (old_pf * (1.0 - decay) + (0.50 / (1.0 + (pnl_pct.abs() / 0.0030))) * decay).clamp(0.1, 10.0)
                     };
                     coin.metrics.profit_factor.store(new_pf, Ordering::Relaxed);
 
@@ -831,7 +837,7 @@ impl GodEngineCore {
                     coin.metrics.kelly_fraction.store(kelly_f, Ordering::Relaxed);
                     coin.last_scalp_close_ts.store(event_time_ms, Ordering::Relaxed);
 
-                    closed_position = Some((is_long, net_realized_pnl, qty));
+                    closed_scalp = Some((is_long, net_realized_pnl, qty));
                 } else {
                     let notional = qty * entry;
                     let unrealized = pnl_pct * notional;
@@ -840,7 +846,221 @@ impl GodEngineCore {
                 }
             }
 
-            let mut new_position = None;
+            // --- 1B. GESTIÓN DE POSICIÓN SWING (WIDE STOPS, MULTI-HOUR / MULTI-DAY TRENDS) ---
+            let swing_sl_base = self.arena.config.swing_sl_base.load(Ordering::Relaxed);
+            let swing_tp_base = self.arena.config.swing_tp_base.load(Ordering::Relaxed);
+            let swing_sl = swing_sl_base.max(atr_pct * 3.0).clamp(0.0080, 0.0350);
+            let swing_tp = swing_tp_base.max(swing_sl * 2.5).clamp(0.0200, 0.0900);
+
+            let swing_is_open = coin.positions.swing_position.is_open()
+                || (!scalp_is_open && coin.positions.position.is_open() && coin.positions.position.horizon() == quantum_arena::position::PositionHorizon::Swing);
+
+            if swing_is_open {
+                let pos = if coin.positions.swing_position.is_open() {
+                    &coin.positions.swing_position
+                } else {
+                    &coin.positions.position
+                };
+                let is_long = pos.is_long.load(Ordering::Relaxed);
+                let entry = pos.entry_price.load(Ordering::Relaxed);
+                let qty = pos.quantity.load(Ordering::Relaxed);
+                let entry_time = pos.entry_time_ms.load(Ordering::Relaxed);
+
+                let pnl_pct = if is_long {
+                    (mid_price - entry) / entry
+                } else {
+                    (entry - mid_price) / entry
+                };
+
+                let pseudo_atr = atr_pct_live * entry;
+                let side_int = if is_long { 1 } else { -1 };
+                let position_age_ms = if event_time_ms > 0 {
+                    event_time_ms.saturating_sub(entry_time)
+                } else {
+                    0
+                };
+
+                // Trailing Swing: Activación tras 60s y PnL >= 50% TP
+                let trail_activation_pnl = (swing_tp * 0.50).max(pseudo_atr / entry.max(1.0) * 2.5).clamp(0.0080, 0.0300);
+                let trail_active = position_age_ms > 60_000 && pnl_pct >= trail_activation_pnl;
+
+                let mut trail_hit = false;
+                let mut force_close_trail = false;
+
+                if trail_active {
+                    let live_fee = self.arena.config.live_maker_fee.load(Ordering::Relaxed) + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
+                    let trail_res = crate::trailing::evaluate_quantum_trailing_with_fee(
+                        side_int,
+                        entry,
+                        mid_price,
+                        pseudo_atr,
+                        pos.trailing_phase.load(Ordering::Relaxed) as i32,
+                        pos.mfe_atr.load(Ordering::Relaxed),
+                        pos.max_pnl_pct.load(Ordering::Relaxed),
+                        pos.trail_stop.load(Ordering::Relaxed),
+                        (self.arena.config.scalp_trail_atr_mult_base.load(Ordering::Relaxed) * 1.5).clamp(0.8, 4.0),
+                        (self.arena.config.scalp_trail_act_atr.load(Ordering::Relaxed) * 1.5).clamp(0.8, 4.0),
+                        (self.arena.config.scalp_trail_step_atr.load(Ordering::Relaxed) * 1.5).clamp(0.8, 5.0),
+                        (self.arena.config.scalp_trail_max_atr.load(Ordering::Relaxed) * 1.5).clamp(0.8, 6.0),
+                        (self.arena.config.scalp_trail_atr_mult_base.load(Ordering::Relaxed) * 1.5).clamp(0.8, 5.0),
+                        live_fee,
+                    );
+
+                    let sl_floor = if is_long {
+                        entry * (1.0 - swing_sl)
+                    } else {
+                        entry * (1.0 + swing_sl)
+                    };
+                    let safe_stop = if is_long {
+                        trail_res.stop_price.max(sl_floor)
+                    } else {
+                        if trail_res.stop_price > 0.0 {
+                            trail_res.stop_price.min(sl_floor)
+                        } else {
+                            sl_floor
+                        }
+                    };
+
+                    let current_stored = pos.trail_stop.load(Ordering::Relaxed);
+                    let final_stop = if is_long {
+                        if current_stored > 0.0 {
+                            safe_stop.max(current_stored)
+                        } else {
+                            safe_stop
+                        }
+                    } else {
+                        if current_stored > 0.0 {
+                            safe_stop.min(current_stored)
+                        } else {
+                            safe_stop
+                        }
+                    };
+
+                    pos.trail_stop.store(final_stop, Ordering::Relaxed);
+                    pos.trailing_phase.store(trail_res.new_phase as u8, Ordering::Relaxed);
+                    pos.mfe_atr.store(trail_res.mfe_atr, Ordering::Relaxed);
+                    pos.max_pnl_pct.store(trail_res.max_pnl_pct, Ordering::Relaxed);
+
+                    trail_hit = (is_long && mid_price <= final_stop)
+                        || (!is_long && mid_price >= final_stop && final_stop > 0.0);
+                    force_close_trail = trail_res.force_close;
+                }
+
+                let macro_t = self.feature_engines[coin_id].get_macro_trend();
+                let macro_reversal = (is_long && macro_t < -0.0030) || (!is_long && macro_t > 0.0030);
+                let swing_hard_timeout = position_age_ms > 259_200_000; // 72h max swing duration
+                let is_swing_zombie = event_time_ms > 0 && position_age_ms > 14_400_000 && ((macro_reversal && pnl_pct <= -swing_sl * 0.70) || swing_hard_timeout);
+
+                if pnl_pct >= swing_tp
+                    || pnl_pct <= -swing_sl
+                    || trail_hit
+                    || force_close_trail
+                    || is_swing_zombie
+                {
+                    let sl_price = if is_long {
+                        entry * (1.0 - swing_sl)
+                    } else {
+                        entry * (1.0 + swing_sl)
+                    };
+                    let tp_price = if is_long {
+                        entry * (1.0 + swing_tp)
+                    } else {
+                        entry * (1.0 - swing_tp)
+                    };
+
+                    let mut exit_price = mid_price;
+                    if is_long {
+                        if pnl_pct <= -swing_sl {
+                            exit_price = exit_price.min(sl_price);
+                        }
+                        if trail_hit {
+                            let ts = pos.trail_stop.load(Ordering::Relaxed);
+                            if ts > 0.0 { exit_price = exit_price.max(ts); }
+                        }
+                        if pnl_pct >= swing_tp {
+                            exit_price = tp_price;
+                        }
+                    } else {
+                        if pnl_pct <= -swing_sl {
+                            exit_price = exit_price.max(sl_price);
+                        }
+                        if trail_hit {
+                            let ts = pos.trail_stop.load(Ordering::Relaxed);
+                            if ts > 0.0 { exit_price = exit_price.min(ts); }
+                        }
+                        if pnl_pct >= swing_tp {
+                            exit_price = tp_price;
+                        }
+                    }
+
+                    let gross_pnl = if is_long {
+                        (exit_price - entry) * qty
+                    } else {
+                        (entry - exit_price) * qty
+                    };
+
+                    let live_maker = self.arena.config.live_maker_fee.load(Ordering::Relaxed).max(0.0002);
+                    let live_taker = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0004);
+                    let close_fee_rate = if pnl_pct >= swing_tp { live_maker } else { live_taker };
+                    let close_fee = (qty * exit_price) * close_fee_rate;
+
+                    let (_, _, _, sw_margin, sw_entry_fee) = coin.positions.swing_position.close_with_fee();
+                    // N-04: No cerrar coin.positions.position si actualmente espeja una posición de Scalp viva
+                    let (gen_margin, gen_entry_fee) = if coin.positions.position.is_open()
+                        && (coin.positions.position.horizon.load(Ordering::Relaxed) != 1)
+                    {
+                        let (_, _, _, gm, gef) = coin.positions.position.close_with_fee();
+                        (gm, gef)
+                    } else {
+                        (0.0, 0.0)
+                    };
+                    let margin_used = sw_margin.max(gen_margin);
+                    let entry_fee_paid = sw_entry_fee.max(gen_entry_fee);
+
+                    let net_realized_pnl = gross_pnl - close_fee;
+                    let net_trade_pnl = net_realized_pnl - entry_fee_paid;
+
+                    let current_used = self.arena.used_margin.load(Ordering::Relaxed);
+                    if current_used >= margin_used {
+                        self.arena.used_margin.fetch_add(-margin_used, Ordering::Relaxed);
+                    } else {
+                        self.arena.used_margin.store(0.0, Ordering::Relaxed);
+                    }
+                    let current_sw_used = self.arena.swing_used_margin.load(Ordering::Relaxed);
+                    if current_sw_used >= margin_used {
+                        self.arena.swing_used_margin.fetch_add(-margin_used, Ordering::Relaxed);
+                    } else {
+                        self.arena.swing_used_margin.store(0.0, Ordering::Relaxed);
+                    }
+
+                    coin.metrics.pnl_realized.fetch_add(net_trade_pnl, Ordering::Relaxed);
+                    coin.swing.pnl_realized.fetch_add(net_trade_pnl, Ordering::Relaxed);
+                    self.arena.unified_capital.fetch_add(net_realized_pnl, Ordering::Relaxed);
+
+                    let is_win = net_trade_pnl > 0.0;
+                    let n = coin.swing.trade_count.fetch_add(1, Ordering::Relaxed) as f64 + 1.0;
+                    let old_wr = coin.swing.win_rate.load(Ordering::Relaxed);
+                    let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
+                    coin.swing.win_rate.store(new_wr, Ordering::Relaxed);
+
+                    let old_pf = coin.swing.profit_factor.load(Ordering::Relaxed).max(0.1);
+                    let decay = (1.0 / n.min(50.0)).clamp(0.02, 0.20);
+                    let new_pf = if is_win {
+                        (old_pf * (1.0 - decay) + (1.0 + (pnl_pct.abs() / 0.0050)) * decay).clamp(0.1, 10.0)
+                    } else {
+                        (old_pf * (1.0 - decay) + (0.50 / (1.0 + (pnl_pct.abs() / 0.0050))) * decay).clamp(0.1, 10.0)
+                    };
+                    coin.swing.profit_factor.store(new_pf, Ordering::Relaxed);
+
+                    coin.last_swing_close_ts.store(event_time_ms, Ordering::Relaxed);
+
+                    closed_swing = Some((is_long, net_realized_pnl, qty));
+                } else {
+                    let notional = qty * entry;
+                    let unrealized = pnl_pct * notional;
+                    coin.swing.pnl_unrealized.store(unrealized, Ordering::Relaxed);
+                }
+            }
 
             // --- 2. EVALUAR ENTRADAS ---
             let tick = self.arena.tick_counter.load(Ordering::Relaxed);
@@ -872,7 +1092,8 @@ impl GodEngineCore {
             let p_ask = (ask_qty / total_vol).clamp(0.0001, 0.9999);
             let tsallis_ent = ((1.0 - (p_bid.powf(1.5) + p_ask.powf(1.5))) / 0.5).clamp(0.0, 1.0);
 
-            self.arena.registry.set("atr_1s", (atr_pct * mid_price).max(0.0001));
+            let micro_v = (v_t.abs() / mid_price.max(1e-8)).clamp(atr_pct * 0.1, atr_pct * 5.0);
+            self.arena.registry.set("atr_1s", (micro_v * mid_price).max(0.0001));
             self.arena.registry.set("atr_5s", (atr_pct * mid_price * 2.236).max(0.0005));
             self.arena.registry.set("atr_1m", (atr_pct * mid_price * 7.746).max(0.0020));
             self.arena.registry.set("order_flow_direction", flow_dir);
@@ -956,7 +1177,8 @@ impl GodEngineCore {
 
             let mut scalp_intent = SignalIntent::flat();
             let spread_pct = if mid_price > 0.0 { (ask - bid) / mid_price } else { 0.0 };
-            let spread_ok = spread_pct <= 0.0008;
+            let dynamic_max_spread = (atr_pct * 0.25).clamp(0.0006, 0.0025);
+            let spread_ok = spread_pct <= dynamic_max_spread;
 
             if atr_pct > dynamic_atr_min && spread_ok && self.feature_engines[coin_id].can_open_scalp(30) {
                 let is_mean_reverting = hurst_val < 0.45;
@@ -1006,6 +1228,22 @@ impl GodEngineCore {
                             ..Default::default()
                         };
                     }
+                } else {
+                    // Zona Neutra de Hurst (0.45 <= H < 0.50): Seguimiento de momentum por confluencia de flujo L2
+                    let dynamic_tech_thr = self.arena.config.tech_threshold.load(Ordering::Relaxed);
+                    if composite_score > dynamic_tech_thr * 1.15 && current_obi > dynamic_obi_thr * 0.7 && not_overextended_long {
+                        scalp_intent = SignalIntent {
+                            signal: SignalType::Long,
+                            confidence: (0.65f64 + composite_score.max(0.0) * 0.30f64).min(1.0f64),
+                            ..Default::default()
+                        };
+                    } else if composite_score < -dynamic_tech_thr * 1.15 && current_obi < -dynamic_obi_thr * 0.7 && not_overextended_short {
+                        scalp_intent = SignalIntent {
+                            signal: SignalType::Short,
+                            confidence: (0.65f64 + composite_score.min(0.0).abs() * 0.30f64).min(1.0f64),
+                            ..Default::default()
+                        };
+                    }
                 }
 
                 if scalp_intent.signal == SignalType::Flat && tensor_scalp.signal != SignalType::Flat && tensor_scalp.net_confidence.abs() > 0.65 {
@@ -1016,9 +1254,9 @@ impl GodEngineCore {
                     };
                 }
 
-                // Cooldown: 10s post-close to prevent churn on false micro-breakouts
+                // Cooldown: 5s post-close para agilidad en micro-scalping
                 let last_close = coin.last_scalp_close_ts.load(Ordering::Relaxed);
-                if event_time_ms.saturating_sub(last_close) < 10_000 {
+                if event_time_ms.saturating_sub(last_close) < 5_000 {
                     scalp_intent = SignalIntent::flat();
                 }
             }
@@ -1079,7 +1317,7 @@ impl GodEngineCore {
 
             let hurst_exponent = features[1] as f64; // [1] = Hurst
             let mut swing_nn_pred = coin.ml_prob.load(Ordering::Relaxed);
-            if (swing_nn_pred <= 0.0001 || swing_nn_pred >= 0.9999 || swing_nn_pred == 0.5) && atr_pct > 0.0001 {
+            if atr_pct > 0.0001 {
                 let combined = self.build_54d_tensor(coin_id, bid_qty, ask_qty, mid_price, omni_features);
                 let sf = self.feature_engines[coin_id].get_swing_features();
                 if let Some(nn) = &mut self.swing_nn {
@@ -1105,109 +1343,245 @@ impl GodEngineCore {
                 }
             }
 
-            // --- QUANTUM UNIFIED CONTINUOUS EXECUTION ---
-            // Unificamos la señal: Microestructura L2 (OBI/OFI/CVD) + Dark Alpha ML + Tensor Consensus
-            let mut quantum_intent = scalp_intent;
-
-            if quantum_intent.signal == SignalType::Flat {
-                let trend_threshold = self.arena.config.trend_threshold.load(Ordering::Relaxed);
-                let trend_intent = self.swing_engines[coin_id].evaluate_trend(
-                    mid_price,
-                    hurst_exponent,
-                    trend_threshold,
-                    swing_nn_pred,
-                    &self.arena,
-                );
-                if trend_intent.signal != SignalType::Flat {
-                    quantum_intent = trend_intent;
-                } else if tensor_swing.signal != SignalType::Flat && tensor_swing.net_confidence.abs() > 0.60 {
-                    quantum_intent = SignalIntent {
-                        signal: tensor_swing.signal,
-                        confidence: tensor_swing.net_confidence.abs().clamp(0.60, 1.0),
-                        ..Default::default()
-                    };
-                }
+            // --- EVALUACIÓN DE SEÑAL SWING INDEPENDIENTE ---
+            let mut swing_intent = SignalIntent::flat();
+            let trend_threshold = self.arena.config.trend_threshold.load(Ordering::Relaxed);
+            let trend_intent = self.swing_engines[coin_id].evaluate_trend(
+                mid_price,
+                hurst_exponent,
+                trend_threshold,
+                swing_nn_pred,
+                &self.arena,
+            );
+            if trend_intent.signal != SignalType::Flat {
+                swing_intent = trend_intent;
+            } else if tensor_swing.signal != SignalType::Flat && tensor_swing.net_confidence.abs() > 0.60 {
+                swing_intent = SignalIntent {
+                    signal: tensor_swing.signal,
+                    confidence: tensor_swing.net_confidence.abs().clamp(0.60, 1.0),
+                    ..Default::default()
+                };
             }
 
-            // Evaluación de Riesgo Cuántica sobre el 100% del Capital Unificado (sin split artificial)
-            let order = self.risk_engine.evaluate_quantum_order(coin_id, &quantum_intent, &self.arena);
+            // Swing Cooldown: 30s
+            let last_sw_close = coin.last_swing_close_ts.load(Ordering::Relaxed);
+            if event_time_ms.saturating_sub(last_sw_close) < 30_000 {
+                swing_intent = SignalIntent::flat();
+            }
 
-            if order.signal != SignalType::Flat && !coin.positions.position.is_open() {
-                let is_long = order.signal == SignalType::Long;
-                let current_cap = self.arena.unified_capital.load(Ordering::Relaxed);
-                let leverage = self.arena.config.global_leverage.load(Ordering::Relaxed).clamp(1.0, 50.0);
+            if coin_id < self.last_scalp_intent.len() {
+                self.last_scalp_intent[coin_id] = scalp_intent;
+            }
+            if coin_id < self.last_swing_intent.len() {
+                self.last_swing_intent[coin_id] = swing_intent;
+            }
 
-                // Zero phantom equity check: si el capital fue liquidado, detener inmediatamente
-                if current_cap <= 0.0 {
-                    self.arena.kill_switch_active.store(true, Ordering::SeqCst);
-                    return (None, closed_position, None);
-                }
+            let current_cap = self.arena.unified_capital.load(Ordering::Relaxed);
+            let _global_leverage = self.arena.config.global_leverage.load(Ordering::Relaxed).clamp(1.0, 50.0);
 
-                // Sizing Continuo Orgánico (Compounding Infinito sin Techo de $30-$40):
-                let dynamic_kelly = coin.metrics.kelly_fraction.load(Ordering::Relaxed).clamp(0.20, 0.85);
-                let confidence_scaling = quantum_intent.confidence.clamp(0.50, 1.0);
-                let alloc_pct = (dynamic_kelly * confidence_scaling).clamp(0.35, 0.90);
-                let min_margin_for_binance = 5.05 / leverage;
-                let max_margin_allowed = (current_cap * 0.95).max(0.0);
-                let mut margin_required = (current_cap * alloc_pct).clamp(min_margin_for_binance, max_margin_allowed);
-                let max_position_size = 50000.0; // Límite prudente de $50k notional
-                if margin_required * leverage > max_position_size {
-                    margin_required = max_position_size / leverage;
-                }
+            // Zero phantom equity check: si el capital fue liquidado, detener inmediatamente
+            if current_cap <= 0.0 {
+                self.arena.kill_switch_active.store(true, Ordering::SeqCst);
+                return (None, None, closed_scalp, closed_swing, None);
+            }
 
-                let current_used = self.arena.used_margin.load(Ordering::Relaxed);
+            let mut new_scalp = None;
+            let mut new_swing = None;
 
-                // Apertura Atómica Unificada (100% del capital compuesto disponible)
-                if margin_required * leverage >= 5.0 && current_used + margin_required <= current_cap * 0.95 {
-                    self.arena.used_margin.fetch_add(margin_required, Ordering::Relaxed);
-                    self.arena.scalp_used_margin.store(self.arena.used_margin.load(Ordering::Relaxed), Ordering::Relaxed);
-
-                    let base_price = if is_long { ask } else { bid };
-                    let nominal_size = margin_required * leverage;
-                    let slippage_impact = (nominal_size / 1_000_000.0) * 0.0005;
-                    let real_entry_price = if is_long {
-                        base_price * (1.0 + slippage_impact)
+            // --- APERTURA SCALPING (INDEPENDIENTE) ---
+            if scalp_intent.signal != SignalType::Flat && !coin.positions.scalp_position.is_open() {
+                let order = self.risk_engine.evaluate_quantum_order_by_horizon(coin_id, &scalp_intent, true, &self.arena);
+                if order.signal != SignalType::Flat {
+                    // R4.1: Inputs dinámicos reales para deliberación del Consejo de Seniors
+                    let scalp_drawdown = if self.risk_engine.scalp_peak_capital > 0.0 {
+                        let split = self.risk_engine.smoothed_split.unwrap_or(0.5);
+                        let scalp_cap = current_cap * split;
+                        ((self.risk_engine.scalp_peak_capital - scalp_cap) / self.risk_engine.scalp_peak_capital).clamp(0.0, 1.0)
                     } else {
-                        base_price * (1.0 - slippage_impact)
+                        0.0
                     };
+                    let vpin_risk = self.feature_engines[coin_id].cvpin.current_vpin().clamp(0.0, 1.0);
+                    let (impulse_mom, _) = self.feature_engines[coin_id].lead_lag.predict_altcoin_impulse(obi);
+                    let graph_corr = impulse_mom.clamp(-1.0, 1.0);
 
-                    let entry_fee_rate = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0002);
-                    let fee_paid = nominal_size * entry_fee_rate;
-                    self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
+                    let council_snapshot = metacortex_engine::consejo_seniors::MarketSnapshotPayload {
+                        horizon: metacortex_engine::consejo_seniors::TradingHorizon::Scalping,
+                        book_imbalance: obi,
+                        hurst_exponent: hurst_val.clamp(0.0, 1.0),
+                        graph_correlation: graph_corr,
+                        do_calculus_risk: vpin_risk,
+                        causal_veto_threshold: 0.60,
+                        current_drawdown_pct: scalp_drawdown,
+                        estimated_slippage_bps: 1.5,
+                    };
+                    let wr = coin.scalp.win_rate.load(Ordering::Relaxed);
+                    let deliberation = self.consejo_deliberacion.deliberar_with_weights(&council_snapshot, wr, None);
 
-                    let qty = nominal_size / real_entry_price;
+                    if deliberation.approved {
+                        let is_long = order.signal == SignalType::Long;
+                        let total_used = self.arena.used_margin.load(Ordering::Relaxed);
+                        let free_cap = (current_cap - total_used).max(0.0);
 
-                    // Registrar en la memoria cuántica continua unificada
-                    coin.positions.position.open_with_fee(
-                        is_long,
-                        real_entry_price,
-                        qty,
-                        margin_required,
-                        event_time_ms,
-                        0.0,
-                        0.0,
-                        quantum_arena::position::PositionHorizon::Continuous,
-                        ml_prob,
-                        quantum_intent.confidence,
-                        fee_paid,
-                    );
-                    coin.positions.scalp_position.open_with_fee(
-                        is_long,
-                        real_entry_price,
-                        qty,
-                        margin_required,
-                        event_time_ms,
-                        0.0,
-                        0.0,
-                        quantum_arena::position::PositionHorizon::Continuous,
-                        ml_prob,
-                        quantum_intent.confidence,
-                        fee_paid,
-                    );
+                        let eff_leverage = order.leverage.clamp(1.0, 50.0);
+                        let min_margin = 5.05 / eff_leverage;
+                        let max_margin = (free_cap * 0.85).max(0.0);
+                        let mut margin_req = order.volume_usd.clamp(min_margin, max_margin);
+                        let max_pos = 50000.0;
+                        if margin_req * eff_leverage > max_pos {
+                            margin_req = max_pos / eff_leverage;
+                        }
 
-                    new_position = Some((is_long, real_entry_price, qty));
+                        if margin_req * eff_leverage >= 5.0 && total_used + margin_req <= current_cap * 0.95 {
+                            self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
+                            self.arena.scalp_used_margin.fetch_add(margin_req, Ordering::Relaxed);
+
+                            let base_price = if is_long { ask } else { bid };
+                            let nominal_size = margin_req * eff_leverage;
+                            let slippage_impact = (nominal_size / 1_000_000.0) * 0.0005;
+                            let real_entry_price = if is_long {
+                                base_price * (1.0 + slippage_impact)
+                            } else {
+                                base_price * (1.0 - slippage_impact)
+                            };
+
+                            let entry_fee_rate = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0002);
+                            let fee_paid = nominal_size * entry_fee_rate;
+                            self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
+
+                            let qty = nominal_size / real_entry_price;
+
+                            coin.positions.scalp_position.open_with_fee(
+                                is_long,
+                                real_entry_price,
+                                qty,
+                                margin_req,
+                                event_time_ms,
+                                order.tp_target,
+                                order.sl_target,
+                                quantum_arena::position::PositionHorizon::Scalping,
+                                ml_prob,
+                                scalp_intent.confidence,
+                                fee_paid,
+                            );
+                            if !coin.positions.position.is_open() {
+                                coin.positions.position.open_with_fee(
+                                    is_long,
+                                    real_entry_price,
+                                    qty,
+                                    margin_req,
+                                    event_time_ms,
+                                    order.tp_target,
+                                    order.sl_target,
+                                    quantum_arena::position::PositionHorizon::Scalping,
+                                    ml_prob,
+                                    scalp_intent.confidence,
+                                    fee_paid,
+                                );
+                            }
+
+                            new_scalp = Some((is_long, real_entry_price, qty));
+                        }
+                    }
                 }
             }
+
+            // --- APERTURA SWING (INDEPENDIENTE) ---
+            if swing_intent.signal != SignalType::Flat && !coin.positions.swing_position.is_open() {
+                let order = self.risk_engine.evaluate_quantum_order_by_horizon(coin_id, &swing_intent, false, &self.arena);
+                if order.signal != SignalType::Flat {
+                    // R4.1: Inputs dinámicos reales para deliberación del Consejo de Seniors
+                    let swing_drawdown = if self.risk_engine.swing_peak_capital > 0.0 {
+                        let split = self.risk_engine.smoothed_split.unwrap_or(0.5);
+                        let swing_cap = current_cap * (1.0 - split);
+                        ((self.risk_engine.swing_peak_capital - swing_cap) / self.risk_engine.swing_peak_capital).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let vpin_risk = self.feature_engines[coin_id].cvpin.current_vpin().clamp(0.0, 1.0);
+                    let (impulse_mom, _) = self.feature_engines[coin_id].lead_lag.predict_altcoin_impulse(obi);
+                    let graph_corr = impulse_mom.clamp(-1.0, 1.0);
+
+                    let council_snapshot = metacortex_engine::consejo_seniors::MarketSnapshotPayload {
+                        horizon: metacortex_engine::consejo_seniors::TradingHorizon::Swing,
+                        book_imbalance: obi,
+                        hurst_exponent: hurst_val.clamp(0.0, 1.0),
+                        graph_correlation: graph_corr,
+                        do_calculus_risk: vpin_risk,
+                        causal_veto_threshold: 0.60,
+                        current_drawdown_pct: swing_drawdown,
+                        estimated_slippage_bps: 3.0,
+                    };
+                    let wr = coin.swing.win_rate.load(Ordering::Relaxed);
+                    let deliberation = self.consejo_deliberacion.deliberar_with_weights(&council_snapshot, wr, None);
+
+                    if deliberation.approved {
+                        let is_long = order.signal == SignalType::Long;
+                        let total_used = self.arena.used_margin.load(Ordering::Relaxed);
+                        let free_cap = (current_cap - total_used).max(0.0);
+
+                        let eff_leverage = order.leverage.clamp(1.0, 50.0);
+                        let min_margin = 5.05 / eff_leverage;
+                        let max_margin = (free_cap * 0.85).max(0.0);
+                        let mut margin_req = order.volume_usd.clamp(min_margin, max_margin);
+                        let max_pos = 50000.0;
+                        if margin_req * eff_leverage > max_pos {
+                            margin_req = max_pos / eff_leverage;
+                        }
+
+                        if margin_req * eff_leverage >= 5.0 && total_used + margin_req <= current_cap * 0.95 {
+                            self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
+                            self.arena.swing_used_margin.fetch_add(margin_req, Ordering::Relaxed);
+
+                            let base_price = if is_long { ask } else { bid };
+                            let nominal_size = margin_req * eff_leverage;
+                            let slippage_impact = (nominal_size / 1_000_000.0) * 0.0005;
+                            let real_entry_price = if is_long {
+                                base_price * (1.0 + slippage_impact)
+                            } else {
+                                base_price * (1.0 - slippage_impact)
+                            };
+
+                            let entry_fee_rate = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0002);
+                            let fee_paid = nominal_size * entry_fee_rate;
+                            self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
+
+                            let qty = nominal_size / real_entry_price;
+
+                            coin.positions.swing_position.open_with_fee(
+                                is_long,
+                                real_entry_price,
+                                qty,
+                                margin_req,
+                                event_time_ms,
+                                order.tp_target,
+                                order.sl_target,
+                                quantum_arena::position::PositionHorizon::Swing,
+                                swing_nn_pred,
+                                swing_intent.confidence,
+                                fee_paid,
+                            );
+                            if !coin.positions.position.is_open() {
+                                coin.positions.position.open_with_fee(
+                                    is_long,
+                                    real_entry_price,
+                                    qty,
+                                    margin_req,
+                                    event_time_ms,
+                                    order.tp_target,
+                                    order.sl_target,
+                                    quantum_arena::position::PositionHorizon::Swing,
+                                    swing_nn_pred,
+                                    swing_intent.confidence,
+                                    fee_paid,
+                                );
+                            }
+
+                            new_swing = Some((is_long, real_entry_price, qty));
+                        }
+                    }
+                }
+            }
+
             // --- 3. MARKET MAKING ---
             let mut final_maker_quote = None;
             let latency_ms = self.arena.last_ws_latency_ms.load(Ordering::Relaxed);
@@ -1217,18 +1591,14 @@ impl GodEngineCore {
                 let volatility = self.feature_engines[coin_id].get_features()[3] as f64; // [3] = v_t (volatility), NOT Hurst
 
                 let mut inventory_delta_usd = 0.0;
-                if coin.positions.position.is_open() {
-                    let is_long = coin
-                        .positions
-                        .position
-                        .is_long
-                        .load(Ordering::Relaxed);
-                    let notional = coin
-                        .positions
-                        .position
-                        .quantity
-                        .load(Ordering::Relaxed)
-                        * mid_price;
+                if coin.positions.scalp_position.is_open() {
+                    let is_long = coin.positions.scalp_position.is_long.load(Ordering::Relaxed);
+                    let notional = coin.positions.scalp_position.quantity.load(Ordering::Relaxed) * mid_price;
+                    inventory_delta_usd += if is_long { notional } else { -notional };
+                }
+                if coin.positions.swing_position.is_open() {
+                    let is_long = coin.positions.swing_position.is_long.load(Ordering::Relaxed);
+                    let notional = coin.positions.swing_position.quantity.load(Ordering::Relaxed) * mid_price;
                     inventory_delta_usd += if is_long { notional } else { -notional };
                 }
 
@@ -1257,10 +1627,42 @@ impl GodEngineCore {
             }
 
             (
-                new_position,
-                closed_position,
+                new_scalp,
+                new_swing,
+                closed_scalp,
+                closed_swing,
                 final_maker_quote,
             )
         })
+    }
+
+    /// Procesa un tick y devuelve las órdenes generadas (si hay).
+    /// Mantiene compatibilidad 100% con tests y llamadores legados.
+    /// Retorna: (NuevaPosicion, PosicionCerrada, MakerQuote)
+    #[inline(always)]
+    pub fn process_tick(
+        &mut self,
+        coin_id: usize,
+        bid: f64,
+        ask: f64,
+        bid_qty: f64,
+        ask_qty: f64,
+        event_time_ms: u64,
+        omni_features: &[f64; 54],
+    ) -> (
+        Option<(bool, f64, f64)>,
+        Option<(bool, f64, f64)>,
+        Option<MakerQuote>,
+    ) {
+        let (new_sc, new_sw, closed_sc, closed_sw, maker) = self.process_tick_dual(
+            coin_id,
+            bid,
+            ask,
+            bid_qty,
+            ask_qty,
+            event_time_ms,
+            omni_features,
+        );
+        (new_sc.or(new_sw), closed_sc.or(closed_sw), maker)
     }
 }

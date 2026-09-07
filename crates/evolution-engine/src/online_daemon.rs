@@ -115,9 +115,10 @@ impl LiveEvolutionDaemon {
             }
 
             // Reentrenar periódicamente el Shadow Forest cuando hay suficientes observaciones
-            if pending_new_obs >= 10 || (self.iteration_count % 60 == 0 && self.forest.observations.read().unwrap().len() >= 50) {
+            let obs_count = self.forest.observations.read().map(|o| o.len()).unwrap_or(0);
+            if (obs_count >= 10 && self.iteration_count % 20 == 0) || pending_new_obs >= 10 {
                 if let Ok((acc, mse)) = self.forest.retrain_models() {
-                    println!("🌲 [SHADOW RANDOM FOREST] Reentrenado con éxito! Accuracy: {:.2}%, MSE: {:.6}", acc * 100.0, mse);
+                    println!("🌲 [SHADOW RANDOM FOREST] Reentrenado con éxito sobre {} observaciones! Accuracy: {:.2}%, MSE: {:.6}", obs_count, acc * 100.0, mse);
                     pending_new_obs = 0;
                 }
             }
@@ -177,6 +178,12 @@ impl LiveEvolutionDaemon {
                         if self.promoted_generation.is_some() {
                             self.post_promo_returns.push(ret);
                         }
+
+                        // FIX #794: Alimentar el Shadow Random Forest directamente con observaciones reales
+                        // en lugar de depender de un frame mmap que nunca se emitía.
+                        let ml_prob = coin.ml_prob.load(std::sync::atomic::Ordering::Relaxed);
+                        let is_long = delta > 0.0;
+                        self.forest.shadow_evaluate(ml_prob as f32, ret as f32, 0.0, is_long);
                     }
                 }
             }
@@ -256,21 +263,45 @@ impl LiveEvolutionDaemon {
 
         println!("🧜 [ONLINE EVOLUTION] Evaluando Shadow Strategy con {} trades reales acumulados... t-stat RANSAC: {:.2}", self.returns_history.len(), current_shadow_sharpe);
 
-        // t-stat >= 2.0: el edge es estadísticamente distinguible de ruido
-        // (confianza ~95%). El antiguo umbral 1.2 sobre un "Sharpe" mal
-        // anualizado (×724) promovía mutaciones sobre ruido.
-        if current_shadow_sharpe >= 2.0 {
-            {
-                let mut sr = self.state.shadow_sharpe_ratio.write();
-                *sr = current_shadow_sharpe;
+        {
+            let mut sr = self.state.shadow_sharpe_ratio.write();
+            *sr = current_shadow_sharpe;
+        }
+
+        // --- FASE 9 / HC-08: DRIFT DETECTION & KILL SWITCH (EWMA ADAPTIVE) ---
+        // N-01: Se evalúa siempre sobre muestra representativa (>= 25 trades) sin importar el Sharpe puntual
+        if self.returns_history.len() >= 25 {
+            if self.ewma_sharpe == 0.0 {
+                self.ewma_sharpe = current_shadow_sharpe;
+            } else {
+                self.ewma_sharpe = 0.1 * current_shadow_sharpe + 0.9 * self.ewma_sharpe;
             }
+
+            if self.ewma_sharpe < 0.5 && !self.is_demo && !self.arena.kill_switch_active.load(Ordering::Relaxed) {
+                println!("⚠️ [DRIFT DETECTION] Sharpe EWMA desplomado a {:.2} sobre {} trades. Activando Kill Switch para detener ejecuciones hasta reentrenar.", self.ewma_sharpe, self.returns_history.len());
+                self.arena.kill_switch_active.store(true, Ordering::Relaxed);
+                return;
+            }
+        }
+
+        println!(
+            "🔄 [ADAPTIVE SEARCH] Evaluando mutaciones walk-forward (Sharpe actual: {:.2})...",
+            current_shadow_sharpe
+        );
             
             // FASE I: Random Forest / Thousands of Universes Evaluation (Estasis de Probabilidad)
-            let current_genome = match std::fs::read(&self.champion_path) {
-                Ok(bytes) => serde_json::from_slice::<quantum_arena::genome::SuperGenotype>(&bytes)
-                    .unwrap_or_else(|_| quantum_arena::genome::SuperGenotype::default()),
-                Err(_) => quantum_arena::genome::SuperGenotype::default(),
-            };
+            // E2/HERENCIA: la semilla de la mutación es el GENOMA ACTIVO del
+            // almacén versionado (champion real), no un champion_path que
+            // nadie escribe. Antes: cada ciclo clonaba SuperGenotype::default()
+            // y las promociones destruían el linaje evolutivo acumulado.
+            let current_genome = quantum_arena::genome_store::GenomeEnvelope::load_active()
+                .map(|env| env.genome)
+                .or_else(|| {
+                    std::fs::read(&self.champion_path).ok().and_then(|bytes| {
+                        serde_json::from_slice::<quantum_arena::genome::SuperGenotype>(&bytes).ok()
+                    })
+                })
+                .unwrap_or_else(quantum_arena::genome::SuperGenotype::default);
             
             let _iteration = self.iteration_count;
             let fallback_genome = current_genome.clone();
@@ -451,26 +482,6 @@ impl LiveEvolutionDaemon {
                 ),
             }
             let _ = &self.champion_path; // conservado para compat de la struct
-        } else {
-            // --- FASE 9 / HC-08: DRIFT DETECTION & KILL SWITCH (EWMA ADAPTIVE) ---
-            // FIX #792: Exigir muestra estadísticamente representativa (mínimo 25 trades).
-            // Con N < 25 micro-operaciones, el t-stat es matemáticamente < 0.5 casi siempre,
-            // disparando falsos positivos que mataban el bot tras apenas 3 trades en producción.
-            if self.returns_history.len() >= 25 {
-                // Inicializar EWMA la primera vez
-                if self.ewma_sharpe == 0.0 {
-                    self.ewma_sharpe = current_shadow_sharpe;
-                } else {
-                    // EWMA smoothing factor alpha = 0.1
-                    self.ewma_sharpe = 0.1 * current_shadow_sharpe + 0.9 * self.ewma_sharpe;
-                }
-
-                if self.ewma_sharpe < 0.5 && !self.is_demo && !self.arena.kill_switch_active.load(Ordering::Relaxed) {
-                    println!("⚠️ [DRIFT DETECTION] Sharpe EWMA desplomado a {:.2} sobre {} trades. Activando Kill Switch para detener ejecuciones hasta reentrenar.", self.ewma_sharpe, self.returns_history.len());
-                    self.arena.kill_switch_active.store(true, Ordering::Relaxed);
-                }
-            }
-        }
     }
 
     /// RANSAC (Random Sample Consensus) para el cálculo robusto de Sharpe Ratio.

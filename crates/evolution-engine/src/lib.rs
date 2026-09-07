@@ -392,9 +392,33 @@ impl EvolutionEngine {
                 );
 
                 // Actualizar Alpha y reducir mutación (explotación)
-                current_alpha = next_alpha.clone();
-                current_alpha.apply_to_arena(&self.arena);
-                current_alpha.save();
+                // N-02 — EMBUDO ÚNICO: el hot-swap pasa ANTES por
+                // GenomeEnvelope::promote (gate de dimensionalidad/bounds/RR);
+                // solo si el almacén lo sanciona se aplica al arena. El viejo
+                // apply+save() directo era un BYPASS del gate que podía
+                // instalar un genoma inválido en vivo y escribía la ruta
+                // paralela genesis_genome.json sin auditoría ni rollback.
+                match quantum_arena::genome_store::GenomeEnvelope::promote(
+                    next_alpha.clone(),
+                    "evolution_engine",
+                    &format!(
+                        "alpha hot-swap: sharpe {:.2}, fitness {:.2}, pnl +${:.2} ({} trades)",
+                        alpha.4, alpha.1, alpha.2, alpha.3
+                    ),
+                ) {
+                    Ok(env) => {
+                        current_alpha = env.genome.clone();
+                        env.genome.apply_to_arena(&self.arena);
+                        println!(
+                            "✅ [TRUE EVOLUTION] Generación {} sancionada y propagada.",
+                            env.generation
+                        );
+                    }
+                    Err(e) => println!(
+                        "🚫 [N-02] Promoción rechazada por el gate — arena queda intacto: {}",
+                        e
+                    ),
+                }
 
                 println!("✅ [TRUE EVOLUTION] Nueva semilla cuántica Alpha propagada globalmente.");
             } else {
@@ -415,7 +439,22 @@ impl EvolutionEngine {
                 current_alpha.dynamic_atr_min = (q_state.threshold * 0.0005).clamp(0.0001, 0.005);
                 current_alpha.target_volatility = (q_state.volume_multiplier * 0.01).clamp(0.005, 0.08);
                 current_alpha.funding_rate_sensitivity = q_state.funding_weight.clamp(0.0, 3.0);
-                current_alpha.apply_to_arena(&self.arena);
+                // N-02: la micro-mutación del recocido también pasa por el
+                // embudo — nada toca el arena sin sanción del almacén.
+                match quantum_arena::genome_store::GenomeEnvelope::promote(
+                    current_alpha.clone(),
+                    "quantum_evolver_collapse",
+                    "recocido cuántico anti-estancamiento (3 genes)",
+                ) {
+                    Ok(env) => {
+                        current_alpha = env.genome.clone();
+                        env.genome.apply_to_arena(&self.arena);
+                    }
+                    Err(e) => println!(
+                        "🚫 [N-02] Recocido rechazado por el gate — sin cambio: {}",
+                        e
+                    ),
+                }
             }
 
             // Reflexión Arquitectónica de Fase 9

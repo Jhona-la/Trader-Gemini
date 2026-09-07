@@ -298,12 +298,72 @@ mod tests {
         let ceil_g = SuperGenotype::from_vector(&vec![f64::INFINITY; n]);
         let v_floor = floor_g.to_vector();
         let v_ceil = ceil_g.to_vector();
+        // N-02: los genes de TP (13, 15) tienen un floor efectivo mayor que
+        // su bound — la reparación RR obliga tp >= sl_floor * MIN_RR_MUTATION
+        // (con sl en su floor). El resto clampa exacto.
+        // La reparación dispara solo si el TP-floor viola MIN_RR_MUTATION;
+        // en ese caso el valor es sl_floor * MIN_RR_REPAIR (clamped al box).
+        let tp_floor_13 = if lo[13] < lo[14] * SuperGenotype::MIN_RR_MUTATION {
+            (lo[14] * SuperGenotype::MIN_RR_REPAIR).clamp(lo[13], hi[13])
+        } else {
+            lo[13]
+        };
+        let tp_floor_15 = if lo[15] < lo[16] * SuperGenotype::MIN_RR_MUTATION {
+            (lo[16] * SuperGenotype::MIN_RR_REPAIR).clamp(lo[15], hi[15])
+        } else {
+            lo[15]
+        };
         for i in 0..n {
-            assert!((v_floor[i] - lo[i]).abs() < 1e-12, "gen {} no clampa al floor", i);
+            let expected_floor = match i {
+                13 => tp_floor_13,
+                15 => tp_floor_15,
+                _ => lo[i],
+            };
+            assert!(
+                (v_floor[i] - expected_floor).abs() < 1e-9,
+                "gen {} no clampa al floor esperado",
+                i
+            );
             assert!((v_ceil[i] - hi[i]).abs() < 1e-12, "gen {} no clampa al techo", i);
         }
+        // La invariante RR se preserva incluso en los extremos del box.
+        assert!(v_floor[13] >= v_floor[14] * SuperGenotype::MIN_RR_GATE);
+        assert!(v_floor[15] >= v_floor[16] * SuperGenotype::MIN_RR_GATE);
         // Caja RR factible (indices: 13=scalp_tp, 14=scalp_sl, 15=swing_tp, 16=swing_sl)
+        // N-06 — el baseline génesis debe ser ESTABLE bajo round-trip:
+        // cualquier gen fuera de bounds se reescribe silenciosamente x2-x100.
+        let baseline = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let v1 = baseline.to_vector();
+        let v2 = SuperGenotype::from_vector(&v1).to_vector();
+        for i in 0..SuperGenotype::DIMENSION {
+            assert!(
+                (v1[i] - v2[i]).abs() <= v1[i].abs() * 1e-9,
+                "gen {} inestable bajo round-trip: {} -> {}",
+                i,
+                v1[i],
+                v2[i]
+            );
+        }
         assert!(hi[13] >= 1.5 * lo[14], "caja scalp RR infactible");
         assert!(hi[15] >= 1.5 * lo[16], "caja swing RR infactible");
     }
+
+    #[test]
+    fn test_n06_baseline_passes_promotion_gate() {
+        let base = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let validation = GenomeEnvelope::validate(&base);
+        assert!(
+            validation.is_ok(),
+            "new_baseline debe pasar el gate de promoción: {:?}",
+            validation.err()
+        );
+        let roundtrip = SuperGenotype::from_vector(&base.to_vector());
+        let roundtrip_val = GenomeEnvelope::validate(&roundtrip);
+        assert!(
+            roundtrip_val.is_ok(),
+            "roundtrip de baseline debe pasar el gate: {:?}",
+            roundtrip_val.err()
+        );
+    }
 }
+

@@ -347,10 +347,18 @@ impl RiskEngine {
         } else {
             arena.coins[coin_id].swing.profit_factor.load(Ordering::Relaxed)
         };
-        let kelly_frac = if is_scalp {
-            arena.coins[coin_id].metrics.kelly_fraction.load(Ordering::Relaxed).clamp(0.05, 1.0)
+        let clamp_min = arena.config.kelly_clamp_min.load(Ordering::Relaxed).max(0.0);
+        let clamp_max = arena.config.kelly_clamp_max.load(Ordering::Relaxed).clamp(clamp_min, 1.0);
+        let raw_kelly = if is_scalp {
+            arena.coins[coin_id].metrics.kelly_fraction.load(Ordering::Relaxed)
         } else {
-            arena.coins[coin_id].swing.kelly_fraction.load(Ordering::Relaxed).clamp(0.05, 1.0)
+            arena.coins[coin_id].swing.kelly_fraction.load(Ordering::Relaxed)
+        };
+        // N-03: Si Kelly es <= 0.0 (esperanza no positiva o ruinosa), NO forzar piso artificial del 5%
+        let kelly_frac = if raw_kelly <= 0.0 {
+            0.0
+        } else {
+            raw_kelly.clamp(clamp_min, clamp_max)
         };
 
         self.evaluate_single_intent(
@@ -613,10 +621,13 @@ impl RiskEngine {
         // En cuentas micro, forzar Post-Only en el precio actual causa rechazos -5022 de Binance y paraliza el bot al llegar a $50.
         let maker_only = allocated_capital >= maker_capital_threshold && maker_capital_threshold >= 1000.0;
 
-        // Unified Quantum Dynamic TP and SL Protection
-        // Volatility and regime adapted continuous bounds
+        // R4.6 / H9: Bases TP y SL desacopladas por horizonte (Scalping vs Swing)
         let sl_mult = arena.config.sl_atr_multiplier.load(Ordering::Relaxed).clamp(0.5, 5.0);
-        let sl_base = arena.config.scalp_sl_base.load(Ordering::Relaxed).clamp(0.001, 0.50);
+        let sl_base = if is_scalp {
+            arena.config.scalp_sl_base.load(Ordering::Relaxed).clamp(0.001, 0.50)
+        } else {
+            arena.config.swing_sl_base.load(Ordering::Relaxed).clamp(0.001, 0.50)
+        };
         let sl_pct = (current_atr * sl_mult / current_price).clamp(sl_base * 0.5, sl_base * 2.5);
 
         let final_sl = if intent.sl_price_target > 0.0 {
@@ -637,7 +648,11 @@ impl RiskEngine {
             .load(Ordering::Relaxed)
             .clamp(1.0, 10.0);
         let tp_mult = (sl_mult * rr_ratio).clamp(1.5, 6.0);
-        let tp_base = arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.001, 0.50);
+        let tp_base = if is_scalp {
+            arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.001, 0.50)
+        } else {
+            arena.config.swing_tp_base.load(Ordering::Relaxed).clamp(0.001, 0.50)
+        };
         let tp_pct = (current_atr * tp_mult / current_price).clamp(tp_base * 0.5, tp_base * 3.0);
 
         let final_tp = if intent.tp_price_target > 0.0 {

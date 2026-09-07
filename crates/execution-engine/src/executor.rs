@@ -375,10 +375,14 @@ impl OrderExecutor {
                 println!("🔀 [POSITION-MODE] Cuenta migrada a HEDGE (dualSidePosition=true)");
                 Ok(true)
             }
-            Err(e) => Err(format!(
-                "No se pudo activar modo hedge: {}. Sin hedge, TODA orden falla (-4061).",
-                e
-            )),
+            Err(e) => {
+                // N-05: Si falla activar hedge (ej. posiciones abiertas en one-way), reflejar la verdad local
+                self.is_hedge_mode.store(false, Ordering::Relaxed);
+                Err(format!(
+                    "No se pudo activar modo hedge: {}. Cuenta permanece en ONE-WAY mode.",
+                    e
+                ))
+            }
         }
     }
 
@@ -511,6 +515,7 @@ impl OrderExecutor {
                 if e.contains("-4061") || e.contains("position side") || e.contains("reduceOnly") {
                     println!("⚠️ [FLATTEN] Modo rechazado (-4061) para {}. Conmutando modo (dual={}) y reintentando cierre...", p.symbol, !dual);
                     dual = !dual;
+                    self.is_hedge_mode.store(dual, Ordering::SeqCst);
                     let ts_retry = self.get_synced_timestamp();
                     let coid_retry = uuid::Uuid::now_v7().simple().to_string();
                     let mut retry_buf = ZeroAllocBuffer::new();
