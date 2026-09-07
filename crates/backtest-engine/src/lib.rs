@@ -90,7 +90,16 @@ pub fn run_backtest_native(
         let current_vol = volumes[i];
 
         let prev_close = if i > 0 { closes[i - 1] } else { current_close };
+        let prev_prev_close = if i > 1 { closes[i - 2] } else { prev_close };
         let delta = current_close - prev_close;
+        // R2.1a — retorno y dirección de la vela PREVIA: lo único disponible
+        // en t=0 de la vela actual. El retorno contemporáneo (`delta`) se
+        // reserva EXCLUSIVAMENTE para el bridge del precio; toda feature del
+        // tensor usa `prev_rel_ret` (causal). Antes, 14+ campos del tensor 54D
+        // (funding, fear&greed, long/short, VIX, basis, skew...) derivaban del
+        // retorno de la vela que aún no había cerrado.
+        let prev_rel_ret = ((prev_close - prev_prev_close) / prev_prev_close.max(1e-9))
+            .clamp(-1.0, 1.0);
 
         // OFI NO anticipado: señal de la vela PREVIA (disponible en t=0 de esta).
         let mut bid_ratio = 0.5;
@@ -113,7 +122,7 @@ pub fn run_backtest_native(
 
         let mut sim_price = prev_close;
         let mut omni_sim = [0.0; 54];
-        let rel_ret = (delta / prev_close.max(1.0)).clamp(-1.0, 1.0);
+        let rel_ret = prev_rel_ret; // R2.1a: features del tensor = vela PREVIA
         let ofi_proxy = if bid_qty + ask_qty > 0.0 { (bid_qty - ask_qty) / (bid_qty + ask_qty) } else { 0.0 };
         // 1. Cotizaciones Cross-Exchange y Microestructura (0..10)
         omni_sim[0] = current_close; // binance_spot
@@ -211,7 +220,14 @@ pub fn run_backtest_native(
             // Simulación física de trayectoria intra-vela:
             // Vela alcista: exploración inicial de la mecha inferior, luego impulso a la mecha superior, convergiendo a close.
             // Vela bajista: exploración inicial de la mecha superior, luego caída a la mecha inferior, convergiendo a close.
-            let is_bullish = current_close >= prev_close;
+            // R2.1a — SIN LOOKAHEAD: la dirección que ordena la coreografía es
+            // la de la vela PREVIA (disponible en t=0). Antes usaba el close
+            // de la vela ACTUAL: ver "baja-then-alza" intra-bar equivalía a
+            // saber que cerraría alcista. Limitación residual documentada: el
+            // bridge converge al close y el clamp usa los extremos OHLC —
+            // inherente a sintetizar ticks desde OHLC; la certificación corre
+            // sobre aggTrades reales (R2.2).
+            let is_bullish = prev_close >= prev_prev_close;
             let target_phase_price = if t < num_ticks / 3 {
                 if is_bullish { bar_low } else { bar_high }
             } else if t < (2 * num_ticks) / 3 {
@@ -247,12 +263,10 @@ pub fn run_backtest_native(
             let tick_ret = if sim_price > 0.0 && prev_close > 0.0 {
                 (sim_price - prev_close) / prev_close
             } else { 0.0 };
-            // Actualizar features dinámicas por tick
+            // Actualizar features dinámicas por tick (Alineado 1:1 con Producción)
             omni_sim[0] = sim_price;
             omni_sim[1] = sim_price * (1.0 + tick_ret * 0.0001);
-            omni_sim[2] = sim_price * (1.0 - tick_ofi * 0.0001);
-            omni_sim[3] = sim_price * (1.0 + tick_ofi * 0.0001);
-            for j in 4..10 { omni_sim[j] = sim_price; }
+            for j in 2..10 { omni_sim[j] = 0.0; } // Matches production offline secondary WS feeds
             omni_sim[10] = vol_step * tick_ofi.abs();
             omni_sim[30] = sim_bid_qty - sim_ask_qty;
             omni_sim[31] = (sim_bid_qty - sim_ask_qty) * 1.2;

@@ -59,7 +59,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let volume = if raw_vol.is_finite() && raw_vol >= 0.0 { raw_vol } else { 1.0 };
             let ts = open_times.get(i).unwrap_or(0);
 
-            let is_bullish = close >= open;
+            // Causalidad estricta: determinar la tendencia inicial a partir del paso previo, no del cierre futuro
+            let prev_open = if i > 0 { opens.as_ref().and_then(|o| o.get(i - 1)).unwrap_or(open) } else { open };
+            let initial_trend_up = open >= prev_open;
             let spread = (high - low).max(close * 0.0001);
             let quarter_vol = (volume * 0.25).max(0.001);
 
@@ -74,14 +76,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ask_qty: quarter_vol,
             });
 
-            // Sub-tick 2: Extremo 1 (t + 15s)
-            let p2 = if is_bullish { high } else { low };
+            // Sub-tick 2: Extremo 1 (t + 15s) - Explora extremo inicial guiado causalmente
+            let p2 = if initial_trend_up { high } else { low };
             let bid2 = (p2 - spread * 0.5).max(1e-6);
             let ask2 = (p2 + spread * 0.5).max(bid2 + 1e-6);
-            let (b_qty2, a_qty2) = if is_bullish {
-                (quarter_vol * 1.5, quarter_vol * 0.5) // Imbalance comprador
+            let p2_up = p2 >= open;
+            let (b_qty2, a_qty2) = if p2_up {
+                (quarter_vol * 1.15, quarter_vol * 0.85) // Imbalance causal local
             } else {
-                (quarter_vol * 0.5, quarter_vol * 1.5) // Imbalance vendedor
+                (quarter_vol * 0.85, quarter_vol * 1.15)
             };
             ticks.push(BinTick {
                 timestamp: ts + 15_000,
@@ -91,25 +94,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ask_qty: a_qty2,
             });
 
-            // Sub-tick 3: Extremo 2 (t + 35s)
-            let p3 = if is_bullish { low } else { high };
+            // Sub-tick 3: Extremo 2 (t + 35s) - Explora el extremo opuesto
+            let p3 = if initial_trend_up { low } else { high };
             let bid3 = (p3 - spread * 0.5).max(1e-6);
             let ask3 = (p3 + spread * 0.5).max(bid3 + 1e-6);
+            let p3_up = p3 >= p2;
+            let (b_qty3, a_qty3) = if p3_up {
+                (quarter_vol * 1.15, quarter_vol * 0.85)
+            } else {
+                (quarter_vol * 0.85, quarter_vol * 1.15)
+            };
             ticks.push(BinTick {
                 timestamp: ts + 35_000,
                 bid_price: bid3,
                 ask_price: ask3,
-                bid_qty: quarter_vol,
-                ask_qty: quarter_vol,
+                bid_qty: b_qty3,
+                ask_qty: a_qty3,
             });
 
-            // Sub-tick 4: Cierre (t + 55s)
+            // Sub-tick 4: Cierre (t + 55s) - Convergencia al cierre de la vela
             let bid4 = (close - spread * 0.5).max(1e-6);
             let ask4 = (close + spread * 0.5).max(bid4 + 1e-6);
-            let (b_qty4, a_qty4) = if is_bullish {
-                (quarter_vol * 1.3, quarter_vol * 0.7)
+            let p4_up = close >= p3;
+            let (b_qty4, a_qty4) = if p4_up {
+                (quarter_vol * 1.15, quarter_vol * 0.85)
             } else {
-                (quarter_vol * 0.7, quarter_vol * 1.3)
+                (quarter_vol * 0.85, quarter_vol * 1.15)
             };
             ticks.push(BinTick {
                 timestamp: ts + 55_000,
@@ -121,6 +131,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let mut bin_file = File::create(&out_path)?;
+        // R2.4 — header magic+version: permite al lector validar formato y
+        // rechazar ruidosamente archivos de otra versión (antes: basura
+        // deserializada en silencio).
+        bin_file.write_all(backtest_engine::tick_replayer::TICK_MAGIC)?;
         let byte_len = ticks.len() * std::mem::size_of::<BinTick>();
         let bytes = unsafe { std::slice::from_raw_parts(ticks.as_ptr() as *const u8, byte_len) };
         bin_file.write_all(bytes)?;

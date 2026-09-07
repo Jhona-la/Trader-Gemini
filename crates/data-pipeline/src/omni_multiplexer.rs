@@ -546,7 +546,11 @@ pub async fn run_world_bank_poller(state: Arc<OmniState>) {
     let client = reqwest::Client::new();
 
     let cpi_url = "https://api.worldbank.org/v2/country/USA/indicator/FP.CPI.TOTL.ZG?format=json";
-    let m2_url = "https://api.worldbank.org/v2/country/USA/indicator/FM.LBL.BMNY.GD.ZS?format=json";
+    // R2.3 — indicador CORRECTO: FM.LBL.BMNY.CD es "Broad money (current LCU)"
+    // (= M2 en USD para USA, ~21e12). El anterior (FM.LBL.BMNY.GD.ZS) es
+    // "Broad money, % of GDP" (~90): tras el primer poll, wb_us_m2_supply
+    // saltaba 2 órdenes de magnitud rompiendo la normalización del tensor.
+    let m2_url = "https://api.worldbank.org/v2/country/USA/indicator/FM.LBL.BMNY.CD?format=json&per_page=10";
 
     loop {
         ticker.tick().await;
@@ -575,9 +579,14 @@ pub async fn run_world_bank_poller(state: Arc<OmniState>) {
                         if let Some(data) = arr[1].as_array() {
                             for item in data {
                                 if let Some(val) = item.get("value").and_then(|v| v.as_f64()) {
+                                    // R2.3: FM.LBL.BMNY.CD llega en USD corrientes
+                                    // (~21.4e12); la escala canónica de la feature es
+                                    // MILES DE MILLONES (~20800, igual que el tensor de
+                                    // backtest y el default de arranque).
+                                    let billions = (val / 1e9).max(0.0);
                                     state
                                         .wb_us_m2_supply
-                                        .store(val.to_bits(), Ordering::Relaxed);
+                                        .store(billions.to_bits(), Ordering::Relaxed);
                                     break;
                                 }
                             }

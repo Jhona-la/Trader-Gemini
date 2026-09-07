@@ -47,8 +47,12 @@ const COINS: [&str; 30] = [
     "FTMUSDT",
 ];
 
-// Convertir 1 Kline en 4 ticks determinísticos con spread institucional realista (1.5 bps) y desequilibrio de volumen direccional
-fn simple_kline_to_ticks(coin_id: usize, kline: &Kline) -> [TickEvent; 4] {
+// Convertir 1 Kline en 4 ticks determinísticos con spread institucional realista (1.5 bps).
+// R2.1c — SIN LOOKAHEAD: el desequilibrio de volumen (OBI) de los 4 ticks se
+// deriva de la dirección de la vela PREVIA (`prev_bullish`), no de `c >= o` de
+// la vela en curso. Antes, observar el OBI del primer tick equivalía a conocer
+// el cierre 45 segundos antes — el "edge" del backtest forense era el sesgo.
+fn simple_kline_to_ticks(coin_id: usize, kline: &Kline, prev_bullish: bool) -> [TickEvent; 4] {
     let step = kline.close_time.saturating_sub(kline.open_time) / 4;
     // FIX #1480: Sanitización de precios y volúmenes en generación de ticks
     let o = if kline.open.is_finite() && kline.open > 0.0 { kline.open } else { 1.0 };
@@ -58,8 +62,7 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline) -> [TickEvent; 4] {
     let v = if kline.volume.is_finite() && kline.volume > 0.0 { kline.volume / 4.0 } else { 0.25 };
 
     let spread_half = (o * 0.000075).max(0.00001); // 0.75 bps = 1.5 bps total spread
-    let is_bullish = c >= o;
-    let (bid_v, ask_v) = if is_bullish {
+    let (bid_v, ask_v) = if prev_bullish {
         (v * 0.58, v * 0.42)
     } else {
         (v * 0.42, v * 0.58)
@@ -222,8 +225,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let mut ticks = Vec::with_capacity(klines.len() * 4);
-        for k in klines.iter() {
-            ticks.extend(simple_kline_to_ticks(id, k));
+        // R2.1c: dirección causal por pares consecutivos (vela previa -> actual).
+        for (i, k) in klines.iter().enumerate() {
+            let prev_bullish = if i > 0 {
+                klines[i - 1].close >= klines[i - 1].open
+            } else {
+                k.close >= k.open // primera vela: sin historia previa disponible
+            };
+            ticks.extend(simple_kline_to_ticks(id, k, prev_bullish));
         }
         println!("{} ticks generated.", ticks.len());
         coin_ticks.push(ticks);

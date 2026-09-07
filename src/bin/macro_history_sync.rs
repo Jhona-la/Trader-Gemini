@@ -26,7 +26,11 @@ fn main() {
     ];
 
     let period1 = 1420070400; // Jan 1 2015
-    let period2 = 1751328000; // 2025/2026
+    // R2.3: fin de ventana = HOY (antes 1751328000, congelado en jul-2025).
+    let period2 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(1751328000);
 
     for (ticker, name, base_val) in symbols {
         println!("🚀 Descargando historial macro para: {}", name);
@@ -54,8 +58,18 @@ fn main() {
         }
 
         if !downloaded {
-            println!("   ⚠️ Endpoint remoto no disponible. Generando fallback histórico sintético continuo en {:?}", out_path);
-            if let Ok(mut file) = File::create(&out_path) {
+            // R2.3 — DATO SINTÉTICO MARCADO: el fallback se escribe con sufijo
+            // .SYNTHETIC.csv y cabecera marcada, NUNCA como el archivo real.
+            // Un random-walk etiquetado como historia de VIX/SP500/DXY
+            // contaminaría cualquier feature macro que lo ingiriera.
+            let synthetic_path = data_dir.join(format!("{}.SYNTHETIC.csv", name));
+            println!(
+                "   🚨 [R2.3] Endpoint remoto NO disponible para {}. Fallback SINTÉTICO en {:?} — NO es historia real y no debe ingerirse como tal.",
+                ticker,
+                synthetic_path
+            );
+            if let Ok(mut file) = File::create(&synthetic_path) {
+                let _ = writeln!(file, "# SYNTHETIC RANDOM-WALK — NOT REAL MARKET DATA — DO NOT INGEST");
                 let _ = writeln!(file, "Date,Open,High,Low,Close,Adj Close,Volume");
                 let mut price = base_val;
                 for i in 0..1000 {
@@ -73,7 +87,7 @@ fn main() {
                         price
                     );
                 }
-                println!("   ✅ Fallback sintético generado con éxito.");
+                println!("   ⚠️ Fallback sintético generado (marcado). El archivo real {}.csv NO fue creado.", name);
             }
         }
     }
