@@ -93,6 +93,21 @@ impl DenseLayer {
         }
     }
 
+    /// Sanitiza los pesos eliminando números subnormales (denormals < 1e-7) y NaNs
+    /// para evitar microcode exception traps en hardware x86_64 que degradan la latencia a 200x.
+    pub fn sanitize_denormals(&mut self) {
+        for w in self.weights.iter_mut() {
+            if !w.is_finite() || w.abs() < 1e-7 {
+                *w = 0.0;
+            }
+        }
+        for b in self.biases.iter_mut() {
+            if !b.is_finite() || b.abs() < 1e-7 {
+                *b = 0.0;
+            }
+        }
+    }
+
     /// Forward pass con ReLU activation
     #[inline(always)]
     pub fn forward_relu(&self, input: &[f64], output: &mut [f64]) {
@@ -462,9 +477,11 @@ impl DarkAlphaEngine {
         Self::new(34, 64, 32)
     }
 
-    /// Garantiza que los buffers pre-alocados para inferencia tengan el tamaño correcto.
+    /// Garantiza que los buffers pre-alocados para inferencia tengan el tamaño correcto
+    /// y sanitiza pesos denormales / subnormales.
     /// Indispensable tras deserialización con serde / bincode.
     pub fn init_buffers(&mut self) {
+        self.sanitize_denormals();
         let in_dim = self.layer1.in_features;
         if self.channel_normalizers.len() != in_dim {
             self.channel_normalizers.resize(in_dim, ChannelWelfordStats::new());
@@ -481,6 +498,13 @@ impl DarkAlphaEngine {
         if self.buf_out.len() != self.layer3.out_features {
             self.buf_out = vec![0.0; self.layer3.out_features];
         }
+    }
+
+    /// Sanitiza los pesos de todas las capas eliminando valores subnormales (< 1e-7)
+    pub fn sanitize_denormals(&mut self) {
+        self.layer1.sanitize_denormals();
+        self.layer2.sanitize_denormals();
+        self.layer3.sanitize_denormals();
     }
 
     /// Forward pass completo — ~50-100ns en CPU moderna

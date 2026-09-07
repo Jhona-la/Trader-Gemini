@@ -285,9 +285,21 @@ mod tests {
 
         let temp_dir = std::env::temp_dir();
         let snap_path = temp_dir.join("omni_snap_test.bin");
+        let _ = std::fs::remove_file(&snap_path);
         registry.persist_to_disk(snap_path.to_str().unwrap()).expect("persist snapshot");
 
-        assert!(snap_path.exists());
+        // persist_to_disk delega la escritura física a un hilo esclavo
+        // (I/O desacoplado): sondear con timeout en vez de asumir escritura
+        // síncrona — el assert inmediato era una carrera.
+        let mut existed = false;
+        for _ in 0..200 {
+            if snap_path.exists() {
+                existed = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(existed, "el snapshot debe materializarse en disco tras el persist (2s max)");
         let _ = std::fs::remove_file(snap_path);
     }
 

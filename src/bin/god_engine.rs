@@ -1448,13 +1448,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .load(Ordering::Relaxed)
                             .max(engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0) * 1.5)
                             .max(0.0015);
-                        let (env_lev, operable) =
-                            risk_envelope.max_leverage(cap_now, scalp_stop_pct, 5.0, 1.64, 50.0);
-                        if risk_envelope.posterior.n() < 30.0 {
-                            max_leverage = 1;
+                        let (env_lev, operable) = if cap_now <= 50.0 {
+                            // Calibración adaptativa micro-cuenta: z = 0.85, k = 10.0
+                            risk_envelope.max_leverage(cap_now, scalp_stop_pct, 5.0, 0.85, 10.0)
                         } else {
-                            max_leverage = if operable { env_lev.floor().max(1.0) as u32 } else { 0 };
-                        }
+                            risk_envelope.max_leverage(cap_now, scalp_stop_pct, 5.0, 1.64, 50.0)
+                        };
+                        max_leverage = if operable {
+                            env_lev.floor().clamp(1.0, 10.0) as u32
+                        } else if cap_now <= 50.0 && cap_now > 0.0 {
+                            ((5.05 / cap_now).ceil().clamp(1.0, 5.0)) as u32
+                        } else {
+                            0
+                        };
                         net_qty += if is_long { qty } else { -qty };
                         let _ = tx_log_worker.try_send((true, is_long, coin_id));
 
@@ -1481,14 +1487,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .load(Ordering::Relaxed)
                             .max(engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0) * 3.0)
                             .max(0.003);
-                        let (env_lev, operable) =
-                            risk_envelope.max_leverage(cap_now, swing_stop_pct, 5.0, 1.64, 50.0);
-                        if risk_envelope.posterior.n() < 30.0 {
-                            max_leverage = max_leverage.max(1);
+                        let (env_lev, operable) = if cap_now <= 50.0 {
+                            risk_envelope.max_leverage(cap_now, swing_stop_pct, 5.0, 0.85, 10.0)
                         } else {
-                            let sw_lev = if operable { env_lev.floor().max(1.0) as u32 } else { 0 };
-                            max_leverage = max_leverage.max(sw_lev);
-                        }
+                            risk_envelope.max_leverage(cap_now, swing_stop_pct, 5.0, 1.64, 50.0)
+                        };
+                        let sw_lev = if operable {
+                            env_lev.floor().clamp(1.0, 10.0) as u32
+                        } else if cap_now <= 50.0 && cap_now > 0.0 {
+                            ((5.05 / cap_now).ceil().clamp(1.0, 5.0)) as u32
+                        } else {
+                            0
+                        };
+                        max_leverage = max_leverage.max(sw_lev);
                         net_qty += if is_long { qty } else { -qty };
                         let _ = tx_log_worker.try_send((false, is_long, coin_id));
 

@@ -72,7 +72,24 @@ impl QuantumOrderRouter {
         }
 
             // 2. Extrema Convicción / Breakout (Volatilidad Esperada Alta)
-        if decision.net_confidence > 0.85 && decision.expected_volatility > 0.015 {
+            // FASE 3: umbrales leídos del GENOMA vía el arena del executor —
+            // antes eran los literales 0.85/0.015. La confianza mínima usa el
+            // gen min_confidence_btc; el gate de volatilidad se deriva de
+            // scalp_sl_base: si el movimiento esperado supera la mitad del
+            // stop, un limit arriesga quedarse fuera Y que el stop vuele.
+            let (conf_gate, vol_gate) = {
+                let exec = self.executor.load();
+                match exec.arena.load_full() {
+                    Some(arena) => (
+                        arena.config.min_confidence_btc.load(std::sync::atomic::Ordering::Relaxed),
+                        arena.config.scalp_sl_base.load(std::sync::atomic::Ordering::Relaxed) * 0.5,
+                    ),
+                    // Sin arena inyectada (tests/boot temprano): conserva el
+                    // umbral conservador histórico hasta que el engine lo provea.
+                    None => (0.85, 0.015),
+                }
+            };
+        if decision.net_confidence > conf_gate && decision.expected_volatility > vol_gate {
             // El mercado se va a mover rapidísimo. Un Limit no se llenará.
             // Usar IOC (Immediate-Or-Cancel) a un precio ligeramente peor para garantizar la entrada
             // pero con un techo (Slippage protection).

@@ -721,7 +721,16 @@ impl OrderExecutor {
         // (nunca un {:.4} fijo que viola el filtro PRICE_FILTER).
         let (order_type, time_in_force, extra_params) = if order.maker_only {
             let is_sell = side == SIDE_SELL;
-            let final_price = Self::round_price_to_tick(current_price, tick_size, is_sell);
+            // FIX #791: Offset pasivo seguro para Post-Only (GTX).
+            // Si colocamos una orden al precio actual exacto, Binance la rechaza con -5022.
+            // Para ser Maker pasivo: BUY debe estar al menos 1 tick por debajo del ask actual,
+            // y SELL debe estar al menos 1 tick por encima del bid actual.
+            let passive_price = if is_sell {
+                current_price + tick_size
+            } else {
+                (current_price - tick_size).max(tick_size)
+            };
+            let final_price = Self::round_price_to_tick(passive_price, tick_size, is_sell);
             (
                 ORDER_TYPE_LIMIT,
                 crate::binance_api::TIME_IN_FORCE_GTX,
@@ -763,7 +772,12 @@ impl OrderExecutor {
             },
             price: if order.maker_only {
                 let is_sell = side == SIDE_SELL;
-                Some(Self::round_price_to_tick(current_price, tick_size, is_sell))
+                let passive_price = if is_sell {
+                    current_price + tick_size
+                } else {
+                    (current_price - tick_size).max(tick_size)
+                };
+                Some(Self::round_price_to_tick(passive_price, tick_size, is_sell))
             } else {
                 None
             },

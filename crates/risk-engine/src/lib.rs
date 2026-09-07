@@ -80,12 +80,33 @@ impl RiskEngine {
             return (ValidatedOrder::rejected(), ValidatedOrder::rejected());
         }
 
-        // 0. Calcular partición de capital por horizonte
-        let split = arena
+        // 0. Partición de capital por horizonte — FASE 3: adaptativa por edge
+        // realizado, no un valor fijo. El gen capital_split_scalp actúa como
+        // PRIOR bayesiano (una observación pseudo-contada) y la evidencia
+        // observada (win_rate x kelly por bucket, ponderada por sus trades)
+        // lo desplaza hacia el horizonte que demuestra edge. Con poca
+        // evidencia manda el gen; con evidencia, la realidad.
+        let genome_split = arena
             .config
             .capital_split_scalp
             .load(Ordering::Relaxed)
             .clamp(0.1, 0.9);
+        let coin = &arena.coins[coin_id];
+        let scalp_edge = (coin.scalp.win_rate.load(Ordering::Relaxed)
+            * coin.scalp.kelly_fraction.load(Ordering::Relaxed))
+        .max(0.0);
+        let swing_edge = (coin.swing.win_rate.load(Ordering::Relaxed)
+            * coin.swing.kelly_fraction.load(Ordering::Relaxed))
+        .max(0.0);
+        let scalp_n = coin.scalp.trade_count.load(Ordering::Relaxed) as f64;
+        let swing_n = coin.swing.trade_count.load(Ordering::Relaxed) as f64;
+        let posterior_scalp = scalp_edge * scalp_n + genome_split;
+        let posterior_swing = swing_edge * swing_n + (1.0 - genome_split);
+        let split = if posterior_scalp + posterior_swing > 1e-12 {
+            (posterior_scalp / (posterior_scalp + posterior_swing)).clamp(0.1, 0.9)
+        } else {
+            genome_split
+        };
         let scalp_capital = current_capital * split;
         let swing_capital = current_capital * (1.0 - split);
 
@@ -536,7 +557,9 @@ impl RiskEngine {
             .config
             .maker_only_capital_threshold
             .load(Ordering::Relaxed);
-        let maker_only = allocated_capital >= maker_capital_threshold;
+        // FIX #790: Evitar forzar maker_only en cuentas micro (< $1000 USD).
+        // En cuentas micro, forzar Post-Only en el precio actual causa rechazos -5022 de Binance y paraliza el bot al llegar a $50.
+        let maker_only = allocated_capital >= maker_capital_threshold && maker_capital_threshold >= 1000.0;
 
         // Unified Quantum Dynamic TP and SL Protection
         // Volatility and regime adapted continuous bounds
@@ -552,7 +575,16 @@ impl RiskEngine {
             current_price * (1.0 + sl_pct)
         };
 
-        let tp_mult = (sl_mult * 2.0).clamp(1.5, 6.0);
+        // FASE 3: el ratio TP/SL ya no es el literal 2.0 — usa el gen RR
+        // evolucionable del genoma (tp_rr_ratio_btc, bounds 1.0-10.0; el
+        // nombre es histórico, gobierna el RR global). El clamp 1.5-6.0
+        // permanece como riel de seguridad.
+        let rr_ratio = arena
+            .config
+            .tp_rr_ratio_btc
+            .load(Ordering::Relaxed)
+            .clamp(1.0, 10.0);
+        let tp_mult = (sl_mult * rr_ratio).clamp(1.5, 6.0);
         let tp_base = arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.001, 0.50);
         let tp_pct = (current_atr * tp_mult / current_price).clamp(tp_base * 0.5, tp_base * 3.0);
 

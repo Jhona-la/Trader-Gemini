@@ -78,6 +78,51 @@ impl GenomeEnvelope {
         None
     }
 
+    /// FASE 3 — Gate de validación pre-promoción. Rechaza genomas que no
+    /// podrían operar: dimensionalidad rota, genes no finitos o fuera de los
+    /// bounds evolutivos, o invariantes de riesgo violados (TP/SL asimétrico).
+    /// Es un filtro de sanidad, no de desempeño: la promoción destruye el
+    /// genoma activo en disco y ningún caller debe poder escribir basura.
+    fn validate(genome: &SuperGenotype) -> Result<(), String> {
+        let vec = genome.to_vector();
+        if vec.len() != SuperGenotype::DIMENSION {
+            return Err(format!(
+                "dimensionalidad rota: to_vector dio {} genes, se esperaban {}",
+                vec.len(),
+                SuperGenotype::DIMENSION
+            ));
+        }
+        let lower = SuperGenotype::get_lower_bounds();
+        let upper = SuperGenotype::get_upper_bounds();
+        for (i, &gene) in vec.iter().enumerate() {
+            if !gene.is_finite() {
+                return Err(format!("gen {} no finito ({})", i, gene));
+            }
+            if gene < lower[i] || gene > upper[i] {
+                return Err(format!(
+                    "gen {} fuera de bounds evolutivos: {} no está en [{}, {}]",
+                    i, gene, lower[i], upper[i]
+                ));
+            }
+        }
+        // INVARIANTE DE RIESGO (mismo axioma que mutate_cmaes): asimetría
+        // ganadora obligatoria — un genoma con SL >= TP matemáticamente
+        // pierde ante fees.
+        if genome.scalp_tp_base < genome.scalp_sl_base * 1.5 {
+            return Err(format!(
+                "invariante RR violada: scalp_tp_base {} < 1.5 x scalp_sl_base {}",
+                genome.scalp_tp_base, genome.scalp_sl_base
+            ));
+        }
+        if genome.swing_tp_base < genome.swing_sl_base * 1.5 {
+            return Err(format!(
+                "invariante RR violada: swing_tp_base {} < 1.5 x swing_sl_base {}",
+                genome.swing_tp_base, genome.swing_sl_base
+            ));
+        }
+        Ok(())
+    }
+
     /// Promueve un genoma: escribe historia inmutable + active atómico +
     /// espejo legacy. Único embudo de promoción del sistema.
     pub fn promote(
@@ -85,6 +130,14 @@ impl GenomeEnvelope {
         source: &str,
         reason: &str,
     ) -> io::Result<GenomeEnvelope> {
+        // FASE 3: todo genoma pasa por el gate ANTES de tocar disco. Un error
+        // aquí es promoción rechazada, nunca promoción parcial.
+        if let Err(violation) = Self::validate(&genome) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("[GENOME-GATE] promoción de '{}' rechazada: {}", source, violation),
+            ));
+        }
         let parent = if let Ok(data) = std::fs::read_to_string(ACTIVE_PATH) {
             serde_json::from_str::<GenomeEnvelope>(&data).map(|e| e.generation).unwrap_or(0)
         } else {

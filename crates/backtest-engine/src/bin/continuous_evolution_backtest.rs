@@ -26,7 +26,7 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline) -> Vec<TickEvent> {
     let total_v = if kline.volume.is_finite() && kline.volume > 0.0 { kline.volume } else { 1.0 };
     
     let is_bullish = c >= o;
-    let v_per_tick = total_v / 4.0;
+    let _v_per_tick = total_v / 4.0;
     
     let step = duration / 4;
     
@@ -155,7 +155,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let ms_per_day = 86_400_000;
     let first_ts = ticks.first().unwrap().timestamp;
-    let total_simulation_days = ((ticks.last().unwrap().timestamp - first_ts) / ms_per_day).min(sim_days);
+    let last_ts = ticks.last().unwrap().timestamp;
+    let total_days_in_data = (((last_ts.saturating_sub(first_ts)) as f64 / ms_per_day as f64).ceil() as u64).max(1);
+    let total_simulation_days = total_days_in_data.min(sim_days);
 
     let force_fresh = std::env::var("FORCE_FRESH_BASELINE").map(|v| v == "1" || v == "true").unwrap_or(false);
     let mut current_genome = if force_fresh {
@@ -225,18 +227,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Nicho 1: Afinamiento Fino CMA-ES (0.05) - Explotación pura
                 current_genome.mutate_cmaes(0.05)
             } else if i < (num_mutants * 20 / 100).max(2) {
-                // Nicho 2: Especialista en Scalping L2 y OFI (TP corto, SL ceñido, Kelly alto)
+                // Nicho 2: Especialista en Scalping L2 y OFI (TP corto, SL ceñido, Kelly controlado)
                 let mut g = current_genome.mutate_cmaes(0.15);
-                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0150, 0.0280);
-                g.scalp_sl_base = g.scalp_sl_base;
-                g.scalp_kelly_fraction = g.scalp_kelly_fraction.clamp(0.35, 0.55);
+                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0120, 0.0240);
+                g.scalp_sl_base = (g.scalp_sl_base * 0.85).clamp(0.0030, 0.0075);
+                g.scalp_kelly_fraction = g.scalp_kelly_fraction.clamp(0.15, 0.35);
                 g.base_duration_ms = 10_000.0;
                 g
             } else if i < (num_mutants * 30 / 100).max(3) {
                 // Nicho 3: Soliton Wavelet & Multiscale Trend (TP amplio, Trailing ATR)
                 let mut g = current_genome.mutate_cmaes(0.20);
-                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0200, 0.0450);
-                g.scalp_sl_base = g.scalp_sl_base;
+                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0180, 0.0400);
+                g.scalp_sl_base = (g.scalp_sl_base * 1.15).clamp(0.0050, 0.0120);
                 g.scalp_trail_act_atr = g.scalp_trail_act_atr.clamp(0.8, 1.8);
                 g
             } else if i < (num_mutants * 40 / 100).max(4) {
@@ -248,8 +250,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Nicho 5: Mean-Reversion & Wall Bounce (Absorción en muros L2)
                 let mut g = current_genome.mutate_cmaes(0.20);
                 g.weight_obi = (g.weight_obi * 1.8).clamp(0.5, 2.5);
-                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0140, 0.0260);
-                g.scalp_sl_base = g.scalp_sl_base;
+                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0120, 0.0250);
+                g.scalp_sl_base = (g.scalp_sl_base * 0.90).clamp(0.0035, 0.0085);
                 g
             } else if i < (num_mutants * 60 / 100).max(6) {
                 // Nicho 6: Volatility Squeeze Breakout (Compresión y explosión ATR/Bollinger)
@@ -274,19 +276,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut g = current_genome.mutate_cmaes(0.25);
                 g.trend_threshold = g.trend_threshold.clamp(0.55, 0.85);
                 g.swing_tp_base = g.swing_tp_base.clamp(0.020, 0.060);
-                g.swing_kelly_fraction = g.swing_kelly_fraction.clamp(0.20, 0.45);
+                g.swing_kelly_fraction = g.swing_kelly_fraction.clamp(0.15, 0.35);
                 g
             } else {
                 // Nicho 10: Saltos de Lévy / Mutaciones Cuánticas Globales (0.55 caótico)
                 current_genome.mutate_cmaes(0.55)
             };
-            // Blindaje Cuántico: cotas estrictas para todos los mutantes (impedir que nazcan mutantes cobardes)
+            // Blindaje Cuántico: cotas estrictas para todos los mutantes (impedir que nazcan mutantes cobardes o suicidas)
             mutant_genome.tech_threshold = mutant_genome.tech_threshold.clamp(0.080, 0.220);
-            mutant_genome.scalp_kelly_fraction = mutant_genome.scalp_kelly_fraction.clamp(0.42, 0.68);
+            mutant_genome.scalp_kelly_fraction = mutant_genome.scalp_kelly_fraction.clamp(0.12, 0.38);
             mutant_genome.dynamic_obi_threshold = mutant_genome.dynamic_obi_threshold.clamp(0.15, 0.35);
             mutant_genome.dynamic_ofi_threshold = mutant_genome.dynamic_ofi_threshold.clamp(0.15, 0.35);
-            mutant_genome.scalp_sl_base = mutant_genome.scalp_sl_base;
-            mutant_genome.swing_sl_base = mutant_genome.swing_sl_base;
+            mutant_genome.scalp_sl_base = mutant_genome.scalp_sl_base.clamp(0.0030, 0.0150);
+            mutant_genome.swing_sl_base = mutant_genome.swing_sl_base.clamp(0.0080, 0.0350);
             mutant_genome.scalp_trail_act_atr = mutant_genome.scalp_trail_act_atr.clamp(1.0, 2.5);
             mutant_genome.scalp_trail_step_atr = mutant_genome.scalp_trail_step_atr.clamp(1.0, 2.5);
             mutant_genome.scalp_trail_atr_mult_base = mutant_genome.scalp_trail_atr_mult_base.clamp(1.0, 2.5);

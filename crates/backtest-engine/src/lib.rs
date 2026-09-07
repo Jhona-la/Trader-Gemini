@@ -15,8 +15,8 @@ pub const STATS_LEN: usize = 8;
 
 pub fn run_backtest_native(
     closes: &[f64],
-    _highs: &[f64],
-    _lows: &[f64],
+    highs: &[f64],
+    lows: &[f64],
     volumes: &[f64],
     cfg: &SuperGenotype,
     out_pnl: &mut [f64],
@@ -196,14 +196,38 @@ pub fn run_backtest_native(
 
             let is_kline = t == num_ticks - 1; // Solo el último tick cierra la vela
 
-            // FASE 33 & BUG-586: Brownian bridge con reversión determinista hacia current_close
+            // FASE 33 & BUG-586 & REHABILITACIÓN: Brownian bridge multi-fase con exploración de mechas (highs/lows)
+            let bar_high = if i < highs.len() && highs[i].is_finite() && highs[i] > 0.0 {
+                highs[i].max(current_close).max(prev_close)
+            } else {
+                current_close.max(prev_close)
+            };
+            let bar_low = if i < lows.len() && lows[i].is_finite() && lows[i] > 0.0 {
+                lows[i].min(current_close).min(prev_close)
+            } else {
+                current_close.min(prev_close)
+            };
+
+            // Simulación física de trayectoria intra-vela:
+            // Vela alcista: exploración inicial de la mecha inferior, luego impulso a la mecha superior, convergiendo a close.
+            // Vela bajista: exploración inicial de la mecha superior, luego caída a la mecha inferior, convergiendo a close.
+            let is_bullish = current_close >= prev_close;
+            let target_phase_price = if t < num_ticks / 3 {
+                if is_bullish { bar_low } else { bar_high }
+            } else if t < (2 * num_ticks) / 3 {
+                if is_bullish { bar_high } else { bar_low }
+            } else {
+                current_close
+            };
+
             let remaining_ticks = (num_ticks - t) as f64;
-            let bridge_drift = (current_close - sim_price) / remaining_ticks;
-            let volatility = prev_close * cfg.base_slippage_floor * ((num_ticks - 1 - t) as f64 / num_ticks as f64).sqrt();
+            let bridge_drift = (target_phase_price - sim_price) / remaining_ticks.max(1.0);
+            let volatility = prev_close * cfg.base_slippage_floor.max(0.0001) * ((num_ticks - 1 - t) as f64 / num_ticks as f64).sqrt();
             sim_price = if is_kline {
                 current_close
             } else {
-                sim_price + bridge_drift + (noise_fract * volatility)
+                let next_p = sim_price + bridge_drift + (noise_fract * volatility);
+                next_p.clamp(bar_low, bar_high)
             };
 
             // Simulate spread using genome-derived maker_spread_pct
@@ -249,7 +273,7 @@ pub fn run_backtest_native(
                 sim_ask_qty,
                 tick_ofi, // FIX: Propagar OFI real derivado en vez de constante 0.5
                 0.0,
-                (i as u64 * 1000) + (t as u64 * (60000 / num_ticks as u64)),
+                (i as u64 * 60_000) + (t as u64 * (60_000 / num_ticks.max(1) as u64)),
                 false,
                 &omni_sim,
             );

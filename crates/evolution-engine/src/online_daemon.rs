@@ -47,6 +47,11 @@ pub struct LiveEvolutionDaemon {
     pub last_realized_by_coin: std::collections::HashMap<usize, f64>,
     /// FIX #1600: Acumulación histórica persistente de retornos de estrategia sobre ventana deslizante
     pub returns_history: Vec<f64>,
+    /// FASE 3 — watchdog de rollback: retornos posteriores a la última
+    /// promoción y la generación promovida. Si el genoma nuevo demuestra edge
+    /// NEGATIVO estadísticamente significativo, se revierte al padre.
+    pub post_promo_returns: Vec<f64>,
+    pub promoted_generation: Option<(u64, u64)>, // (generación, padre)
 }
 
 impl LiveEvolutionDaemon {
@@ -74,6 +79,8 @@ impl LiveEvolutionDaemon {
             forest: crate::online_random_forest::TrueOnlineRandomForest::new(5000),
             last_realized_by_coin: std::collections::HashMap::new(),
             returns_history: Vec::with_capacity(1024),
+            post_promo_returns: Vec::with_capacity(256),
+            promoted_generation: None,
         }
     }
 
@@ -138,6 +145,9 @@ impl LiveEvolutionDaemon {
             // Muestrear retornos realizados en tiempo real tras cada tick de 500ms
             self.sample_realized_returns();
 
+            // FASE 3: watchdog de rollback post-promoción
+            self.check_post_promotion_degradation();
+
             self.iteration_count += 1;
             
             // Cada 3 minutos (o 60s en Demo) validamos si el entorno cambió
@@ -163,6 +173,10 @@ impl LiveEvolutionDaemon {
                     let ret = delta / capital;
                     if ret.is_finite() {
                         self.returns_history.push(ret);
+                        // FASE 3: evidencia post-promoción para el watchdog.
+                        if self.promoted_generation.is_some() {
+                            self.post_promo_returns.push(ret);
+                        }
                     }
                 }
             }
@@ -173,6 +187,49 @@ impl LiveEvolutionDaemon {
         if self.returns_history.len() > 1000 {
             let drain_count = self.returns_history.len() - 1000;
             self.returns_history.drain(0..drain_count);
+        }
+        if self.post_promo_returns.len() > 500 {
+            let drain_count = self.post_promo_returns.len() - 500;
+            self.post_promo_returns.drain(0..drain_count);
+        }
+    }
+
+    /// FASE 3 — Watchdog de rollback automático: si el genoma recién
+    /// promovido acumula evidencia de edge NEGATIVO estadísticamente
+    /// significativo (t-stat <= -2.0 con >= 20 observaciones post-promoción),
+    /// revierte al padre vía el embudo versionado y lo reaplica al arena.
+    /// Es el complemento operativo del gate de `promote`: sanidad antes,
+    /// rendición de cuentas después.
+    fn check_post_promotion_degradation(&mut self) {
+        let Some((generation_id, parent)) = self.promoted_generation else { return };
+        if self.post_promo_returns.len() < 20 {
+            return;
+        }
+        let t_stat = Self::calculate_ransac_sharpe(&self.post_promo_returns);
+        if t_stat <= -2.0 {
+            println!(
+                "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {:.2} sobre {} obs post-promoción. Revirtiendo al padre {}.",
+                generation_id,
+                t_stat,
+                self.post_promo_returns.len(),
+                parent
+            );
+            match quantum_arena::genome_store::GenomeEnvelope::rollback(parent) {
+                Ok(env) => {
+                    env.genome.apply_to_arena(&self.arena);
+                    println!(
+                        "✅ [ROLLBACK WATCHDOG] Padre {} restaurado y aplicado al arena (nueva generación {}).",
+                        parent, env.generation
+                    );
+                }
+                Err(e) => println!(
+                    "⚠️ [ROLLBACK WATCHDOG] Rollback al padre {} falló: {}. El genoma degradado sigue activo — INTERVENCIÓN MANUAL.",
+                    parent, e
+                ),
+            }
+            // Watchdog consumido: no re-revertir en cada ciclo sobre la misma evidencia.
+            self.promoted_generation = None;
+            self.post_promo_returns.clear();
         }
     }
     
@@ -363,53 +420,55 @@ impl LiveEvolutionDaemon {
             }
             
             // 🔥 ACTUALIZACIÓN EN VIVO (HOT-SWAP) AL GOD ENGINE
-            best_genome.apply_to_arena(&self.arena);
-
-            self.state.active_genome_id.fetch_add(1, Ordering::SeqCst);
-            self.state.has_new_genome.store(true, Ordering::Release);
-            
-            println!("⚡ [HOT-SWAP TRIGGERED] Shadow Strategy superó métricas base tras iterar 1000 universos. Desplegando.");
-
-            // F4.5 — ELIMINADO: este bloque DESACTIVABA el kill-switch porque un
-            // sharpe de sombra se veía bien. Ninguna métrica automatizada puede
-            // desarmar la protección: el kill-switch es LATCH (F5.2) y su rearme
-            // es humano (reiniciar el proceso, con STOP_TRADING.LOCK verificado).
-
-            // F4.3: persistencia por el EMBUDO ÚNICO — envelope versionado con
-            // linaje + historia + espejo legacy (antes: write directo sin
-            // auditoría ni rollback).
+            // FASE 3: primero el EMBUDO (promote con gate de validación), y
+            // solo si el almacén acepta se aplica al arena. Antes el orden
+            // era inverso: un promote rechazado dejaba el arena mutado con
+            // un genoma que el disco nunca sancionó.
             match quantum_arena::genome_store::GenomeEnvelope::promote(
                 best_genome.clone(),
                 "online_daemon",
                 &format!(
-                    "sharpe estrategia {:.2} (confianza bayesiana >95%), {} observaciones acumuladas",
+                    "t-stat estrategia {:.2} (confianza bayesiana >95%), {} observaciones acumuladas",
                     current_shadow_sharpe,
                     self.returns_history.len()
                 ),
             ) {
-                Ok(env) => println!(
-                    "🧬 [ONLINE] Genoma generación {} promovida vía almacén (padre {}).",
-                    env.generation, env.parent_generation
+                Ok(env) => {
+                    env.genome.apply_to_arena(&self.arena);
+                    self.state.active_genome_id.fetch_add(1, Ordering::SeqCst);
+                    self.state.has_new_genome.store(true, Ordering::Release);
+                    // FASE 3: armar watchdog de rollback sobre el padre.
+                    self.post_promo_returns.clear();
+                    self.promoted_generation = Some((env.generation, env.parent_generation));
+                    println!(
+                        "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado.",
+                        env.generation, env.parent_generation
+                    );
+                }
+                Err(e) => println!(
+                    "⚠️ [ONLINE] Promoción RECHAZADA por el gate del almacén (arena queda intacto): {}",
+                    e
                 ),
-                Err(e) => println!("⚠️ [ONLINE] Promo al almacén falló: {}", e),
             }
             let _ = &self.champion_path; // conservado para compat de la struct
         } else {
             // --- FASE 9 / HC-08: DRIFT DETECTION & KILL SWITCH (EWMA ADAPTIVE) ---
-            // Si el Sharpe cae repetidamente usando una media móvil exponencial,
-            // asumimos que el modelo ha sufrido Drift (concept drift) y detenemos el trading.
-            
-            // Inicializar EWMA la primera vez
-            if self.ewma_sharpe == 0.0 {
-                self.ewma_sharpe = current_shadow_sharpe;
-            } else {
-                // EWMA smoothing factor alpha = 0.1
-                self.ewma_sharpe = 0.1 * current_shadow_sharpe + 0.9 * self.ewma_sharpe;
-            }
+            // FIX #792: Exigir muestra estadísticamente representativa (mínimo 25 trades).
+            // Con N < 25 micro-operaciones, el t-stat es matemáticamente < 0.5 casi siempre,
+            // disparando falsos positivos que mataban el bot tras apenas 3 trades en producción.
+            if self.returns_history.len() >= 25 {
+                // Inicializar EWMA la primera vez
+                if self.ewma_sharpe == 0.0 {
+                    self.ewma_sharpe = current_shadow_sharpe;
+                } else {
+                    // EWMA smoothing factor alpha = 0.1
+                    self.ewma_sharpe = 0.1 * current_shadow_sharpe + 0.9 * self.ewma_sharpe;
+                }
 
-            if self.ewma_sharpe < 0.5 && !self.is_demo && !self.arena.kill_switch_active.load(Ordering::Relaxed) {
-                println!("⚠️ [DRIFT DETECTION] Sharpe EWMA desplomado a {:.2}. Activando Kill Switch para detener ejecuciones hasta reentrenar.", self.ewma_sharpe);
-                self.arena.kill_switch_active.store(true, Ordering::Relaxed);
+                if self.ewma_sharpe < 0.5 && !self.is_demo && !self.arena.kill_switch_active.load(Ordering::Relaxed) {
+                    println!("⚠️ [DRIFT DETECTION] Sharpe EWMA desplomado a {:.2} sobre {} trades. Activando Kill Switch para detener ejecuciones hasta reentrenar.", self.ewma_sharpe, self.returns_history.len());
+                    self.arena.kill_switch_active.store(true, Ordering::Relaxed);
+                }
             }
         }
     }

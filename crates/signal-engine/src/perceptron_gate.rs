@@ -30,7 +30,8 @@ impl PerceptronGateEngine {
         }
         let abs_score = signal_score.abs();
         let activation = abs_score * weight;
-        let gate_strength = ((activation - 0.5) * 5.0).tanh().clamp(0.0, 1.0);
+        // Exploración mínima (0.15) para evitar bloqueo cognitivo permanente tras pérdidas
+        let gate_strength = ((activation - 0.5) * 5.0).tanh().clamp(0.15, 1.0);
         signal_score.signum() * gate_strength
     }
 
@@ -52,11 +53,11 @@ impl PerceptronGateEngine {
 
         if recent_pnl.is_finite() {
             if recent_pnl > 0.0 {
-                *weight = (current_w + learning_rate).clamp(0.1, 2.0);
+                *weight = (current_w + learning_rate).clamp(0.25, 2.0);
             } else if recent_pnl < 0.0 {
-                *weight = (current_w - learning_rate).clamp(0.1, 2.0);
+                *weight = (current_w - learning_rate).clamp(0.25, 2.0);
             } else {
-                *weight = current_w.clamp(0.1, 2.0);
+                *weight = current_w.clamp(0.25, 2.0);
             }
         }
     }

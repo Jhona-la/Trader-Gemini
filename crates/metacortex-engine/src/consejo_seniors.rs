@@ -322,7 +322,8 @@ impl SeniorAgent for SeniorTeleonomia {
         let utility = payload.graph_correlation.abs() * 0.3
             + (payload.hurst_exponent - 0.5).abs() * 0.4
             + execution_quality * 0.3;
-        let is_veto = utility < 0.15 && wr < 0.55;
+        // Solo vetar si la utilidad teleonómica es prácticamente nula y el WR colapsó por debajo del umbral crítico (35%)
+        let is_veto = utility < 0.05 && wr < 0.35;
         let dir = payload.book_imbalance.signum();
         SeniorOpinion {
             role: self.role(),
@@ -620,7 +621,10 @@ mod tests {
             do_calculus_risk: 0.5,
             causal_veto_threshold: 0.80,
             current_drawdown_pct: 0.05,
-            estimated_slippage_bps: 30.0,
+            // 20 bps: bajo el límite de 25 bps de SeniorEjecucion para
+            // Scalping (30 disparaba el veto y contradecía la intención
+            // del caso: payload alcista fuerte DEBE aprobarse).
+            estimated_slippage_bps: 20.0,
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -638,6 +642,7 @@ mod tests {
             hurst_exponent: 0.35,
             graph_correlation: -0.80,
             do_calculus_risk: 0.05,
+            causal_veto_threshold: 0.80,
             current_drawdown_pct: 0.01,
             estimated_slippage_bps: 0.0005,
         };
@@ -657,6 +662,7 @@ mod tests {
             hurst_exponent: 0.75,
             graph_correlation: 0.85,
             do_calculus_risk: 0.95, // High manipulation risk triggering VETO
+            causal_veto_threshold: 0.80,
             current_drawdown_pct: 0.01,
             estimated_slippage_bps: 0.0005,
         };
@@ -675,6 +681,7 @@ mod tests {
             hurst_exponent: 0.72,
             graph_correlation: 0.80,
             do_calculus_risk: 0.05,
+            causal_veto_threshold: 0.80,
             current_drawdown_pct: 0.01,
             estimated_slippage_bps: 0.0005,
         };

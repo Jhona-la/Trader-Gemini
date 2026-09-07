@@ -181,9 +181,9 @@ impl RiskEnvelope {
         if capital <= 0.0 {
             return (0.0, false);
         }
-        // FIX #702: Bootstrap inicial para cuentas micro (capital <= 30 USD) en cold-start (n < 3)
-        // permitiendo al sistema colocar las primeras operaciones y romper el deadlock en frío.
-        if f <= 0.0 && self.posterior.n() < 3.0 && capital <= 30.0 {
+        // FIX #702 / #793: Bootstrap inicial para cuentas micro (capital <= 50 USD).
+        // Evita el deadlock bayesiano donde LCB produce f <= 0 por muestras pequeñas y bloquea la operativa.
+        if f <= 0.0 && capital <= 50.0 {
             f = 0.015;
         }
         if f <= 0.0 {
@@ -199,7 +199,7 @@ impl RiskEnvelope {
         let risk_budget_usd = capital * f;
         let min_risk_with_exchange = exchange_min_notional * stop;
         if risk_budget_usd < min_risk_with_exchange {
-            if capital <= 30.0 && exchange_min_notional <= capital * 3.0 && f >= 0.01 {
+            if capital <= 50.0 && exchange_min_notional <= capital * 5.0 && f >= 0.005 {
                 let safe_micro_leverage = (exchange_min_notional / capital).max(1.0).min(5.0);
                 return (safe_micro_leverage, true);
             }
