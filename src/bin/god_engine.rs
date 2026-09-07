@@ -1586,11 +1586,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let (_, _, _, margin_used, entry_fee) = coin.positions.scalp_position.close_with_fee();
                                     if margin_used > 0.0 {
                                         arena.scalp_used_margin.fetch_add(-margin_used, Ordering::Relaxed);
+                                        arena.used_margin.fetch_add(-margin_used, Ordering::Relaxed);
                                     }
                                     if entry_fee > 0.0 {
                                         arena.unified_capital.fetch_add(entry_fee, Ordering::Relaxed);
                                         coin.scalp.pnl_realized.fetch_add(entry_fee, Ordering::Relaxed);
                                     }
+                                }
+                                if coin.positions.position.is_open() && coin.positions.position.horizon.load(Ordering::Relaxed) == 0 {
+                                    coin.positions.position.close_with_fee();
                                 }
                             }
                             if !is_scalp && coin_id < arena.coins.len() {
@@ -1599,11 +1603,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let (_, _, _, margin_used, entry_fee) = coin.positions.swing_position.close_with_fee();
                                     if margin_used > 0.0 {
                                         arena.swing_used_margin.fetch_add(-margin_used, Ordering::Relaxed);
+                                        arena.used_margin.fetch_add(-margin_used, Ordering::Relaxed);
                                     }
                                     if entry_fee > 0.0 {
                                         arena.unified_capital.fetch_add(entry_fee, Ordering::Relaxed);
                                         coin.swing.pnl_realized.fetch_add(entry_fee, Ordering::Relaxed);
                                     }
+                                }
+                                if coin.positions.position.is_open() && coin.positions.position.horizon.load(Ordering::Relaxed) == 1 {
+                                    coin.positions.position.close_with_fee();
                                 }
                             }
                         };
@@ -1616,8 +1624,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 rollback_positions(&arena_clone);
                                 return;
                             }
-                            if exec_leverage > 1 {
-                                let _ = exec_clone.load().set_leverage(&parsed_sym_str, exec_leverage).await;
+
+                            // Sincronización Binance Leverage con Core Sizing y protección -2019
+                            let cap_current = arena_clone.unified_capital.load(Ordering::Relaxed);
+                            let required_margin = notional_volume / exec_leverage as f64;
+                            let mut effective_leverage = exec_leverage;
+
+                            if required_margin > cap_current * 0.85 && cap_current > 0.0 {
+                                let needed_leverage = (notional_volume / (cap_current * 0.80)).ceil().clamp(1.0, 20.0) as u32;
+                                if needed_leverage > effective_leverage {
+                                    telemetry_engine::telemetry!(
+                                        "⚡ [LEVERAGE-ADAPT] Ajustando apalancamiento para {} de {}x a {}x para evitar rechazo -2019 (notional: {:.2} USDT, capital: {:.2} USDT)",
+                                        parsed_sym_str, effective_leverage, needed_leverage, notional_volume, cap_current
+                                    );
+                                    effective_leverage = needed_leverage;
+                                }
+                            }
+
+                            let final_required_margin = notional_volume / effective_leverage as f64;
+                            if final_required_margin > cap_current * 0.95 {
+                                telemetry_engine::telemetry!(
+                                    "🚨 [MARGIN-GUARD] Orden abortada para {}: margen requerido {:.2} USDT excede 95% del capital ({:.2} USDT). Ejecutando Rollback.",
+                                    parsed_sym_str, final_required_margin, cap_current
+                                );
+                                rollback_positions(&arena_clone);
+                                return;
+                            }
+
+                            if effective_leverage > 1 {
+                                let _ = exec_clone.load().set_leverage(&parsed_sym_str, effective_leverage).await;
                             }
                             let sym_filter = exec_clone.load().get_symbol_filter(&parsed_sym_str).await;
                             let dyn_step_size = sym_filter.step_size;
@@ -1757,8 +1792,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if let Some((new_alpha, pnl_gained)) = winner {
                     telemetry!("🧬 [SHADOW FOREST] ¡Cosecha Exitosa! Universo Mutante generó +${:.2} extra. Aplicando Hot-Swap...", pnl_gained);
-                    new_alpha.apply_to_arena(&engine_real.arena);
-                    shadow_forest.replant(new_alpha.clone());
+                    // T-03 — EMBUDO ÚNICO: la cosecha pasa ANTES por
+                    // GenomeEnvelope::promote (gate de bounds/RR). El viejo
+                    // apply directo sin promote sobrevivía al cache de
+                    // refresh_models y hacía que el arena de producción
+                    // divergiera del disco indefinidamente — sin linaje, sin
+                    // rollback, perdido al reiniciar.
+                    match quantum_arena::genome_store::GenomeEnvelope::promote(
+                        new_alpha.clone(),
+                        "shadow_forest_harvest",
+                        &format!("cosecha shadow forest: +${:.2} vs control", pnl_gained),
+                    ) {
+                        Ok(env) => {
+                            env.genome.apply_to_arena(&engine_real.arena);
+                            shadow_forest.replant(env.genome.clone());
+                        }
+                        Err(e) => telemetry!(
+                            "🚫 [T-03] Cosecha rechazada por el gate del almacén — arena intacto: {}",
+                            e
+                        ),
+                    }
 
                     let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::GenomeUpdate(Box::new(new_alpha)));
                 } else {

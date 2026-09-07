@@ -425,6 +425,22 @@ impl ChannelWelfordStats {
             (val - self.mean).clamp(-5.0, 5.0)
         }
     }
+
+    /// N-11: Normalización sin mutación de estado (estadísticos congelados).
+    /// Evita que media/varianza muten durante la inferencia (predict), garantizando
+    /// determinismo y consistencia exacta entre backtest y live.
+    #[inline(always)]
+    pub fn transform(&self, val: f64) -> f64 {
+        if !val.is_finite() {
+            return 0.0;
+        }
+        let std = self.std_dev();
+        if std > 1e-6 {
+            ((val - self.mean) / std).clamp(-5.0, 5.0)
+        } else {
+            (val - self.mean).clamp(-5.0, 5.0)
+        }
+    }
 }
 
 /// Red Neuronal Profunda de 3 capas para detección de anomalías de mercado.
@@ -444,6 +460,12 @@ pub struct DarkAlphaEngine {
     /// Normalizadores Welford individuales por canal (uno por cada feature en input_dim)
     #[serde(default)]
     pub channel_normalizers: Vec<ChannelWelfordStats>,
+    /// Normalizadores Welford aislados por activo (hasta 30 monedas) para inferencia multi-moneda sin contaminación cruzada (D-53)
+    #[serde(default)]
+    pub per_coin_normalizers: Vec<Vec<ChannelWelfordStats>>,
+    /// N-11: Si es true, la inferencia (predict) no muta los estadísticos de los normalizadores
+    #[serde(default)]
+    pub freeze_normalizers: bool,
     // Buffers pre-alocados para evitar allocations en hot path
     #[serde(skip)]
     buf_scaled: Vec<f64>,
@@ -456,6 +478,16 @@ pub struct DarkAlphaEngine {
 }
 
 impl DarkAlphaEngine {
+    /// Congela los normalizadores para inferencia determinista sin drift
+    pub fn freeze(&mut self) {
+        self.freeze_normalizers = true;
+    }
+
+    /// Descongela los normalizadores para adaptación continua online
+    pub fn unfreeze(&mut self) {
+        self.freeze_normalizers = false;
+    }
+
     /// Crear modelo con dimensiones por defecto
     /// input_dim=20 features (price, vol, obi, atr, ema, vix, dxy, sp500, etc.)
     pub fn new(input_dim: usize, hidden1: usize, hidden2: usize) -> Self {
@@ -465,6 +497,7 @@ impl DarkAlphaEngine {
             layer3: DenseLayer::new_xavier(hidden2, 1),                // Xavier init para Sigmoid
             scaler: None,
             channel_normalizers: vec![ChannelWelfordStats::new(); input_dim],
+            freeze_normalizers: false,
             buf_scaled: vec![0.0; input_dim],
             buf_h1: vec![0.0; hidden1],
             buf_h2: vec![0.0; hidden2],
@@ -533,10 +566,14 @@ impl DarkAlphaEngine {
                 }
                 scaler.scale(&mut self.buf_scaled[..in_dim]);
             } else {
-                // 1. Normalización Welford Online individual por canal O(1)
+                // 1. Normalización Welford Online individual por canal O(1) con control de congelamiento (N-11)
                 for i in 0..in_dim {
                     let raw = if features[i].is_finite() { features[i] } else { 0.0 };
-                    self.buf_scaled[i] = self.channel_normalizers[i].normalize(raw);
+                    self.buf_scaled[i] = if self.freeze_normalizers {
+                        self.channel_normalizers[i].transform(raw)
+                    } else {
+                        self.channel_normalizers[i].normalize(raw)
+                    };
                 }
 
                 // 2. Auto Layer-Norm: normalización espacial sobre el vector normalizado por canal
@@ -556,9 +593,10 @@ impl DarkAlphaEngine {
                 }
             }
 
+            // N-11: Arquitectura ReLU en capas ocultas alineada 100% con fit() y SGD backward pass
             self.layer1
-                .forward_tanh(&self.buf_scaled[..in_dim], &mut self.buf_h1);
-            self.layer2.forward_tanh(&self.buf_h1, &mut self.buf_h2);
+                .forward_relu(&self.buf_scaled[..in_dim], &mut self.buf_h1);
+            self.layer2.forward_relu(&self.buf_h1, &mut self.buf_h2);
             self.layer3.forward_sigmoid(&self.buf_h2, &mut self.buf_out);
 
             let out = self.buf_out[0];
@@ -696,6 +734,7 @@ impl DarkAlphaEngine {
                 }
             }
         }
+        self.freeze_normalizers = true;
         println!(
             "⚡ [Dark Alpha] Neural Network entrenada nativamente vía SGD en {:?}",
             start.elapsed()
@@ -1018,6 +1057,24 @@ mod tests {
         // Check that channel 0 and channel 1 adapted their own means and standard deviations
         assert!(engine.channel_normalizers[0].mean > 50000.0);
         assert!(engine.channel_normalizers[1].mean < 1.0);
+    }
+
+    #[test]
+    fn test_sanitize_denormals_and_clean_model_file() {
+        let mut l = DenseLayer::new(10, 10);
+        l.weights[0] = 1e-316;
+        l.biases[0] = -2e-317;
+        l.sanitize_denormals();
+        assert_eq!(l.weights[0], 0.0);
+        assert_eq!(l.biases[0], 0.0);
+
+        // T-04: ELIMINADO el bloque que reescribía el modelo de PRODUCCIÓN
+        // (models/DarkAlpha_BTCUSDT.json) como efecto secundario de un test:
+        // (a) `cargo test` mutaba artefactos vivos; (b) la re-serialización
+        // con serde default dejaba freeze_normalizers=false, revirtiendo el
+        // congelamiento de modelos ya saneados. La sanitización de producción
+        // ocurre en las rutas de carga (god-engine-core / simulator), con
+        // freeze() explícito.
     }
 }
 

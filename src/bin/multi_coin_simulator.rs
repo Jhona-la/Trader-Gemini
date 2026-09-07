@@ -63,10 +63,16 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline, prev_bullish: bool) -> [
 
     let spread_half = (o * 0.000075).max(0.00001); // 0.75 bps = 1.5 bps total spread
     let (bid_v, ask_v) = if prev_bullish {
-        (v * 0.58, v * 0.42)
+        (v * 0.54, v * 0.46)
     } else {
-        (v * 0.42, v * 0.58)
+        (v * 0.46, v * 0.54)
     };
+
+    // R2.1: Trayectoria intra-vela sin coreografía rígida (50% high-first / 50% low-first)
+    let high_first = ((kline.open_time.wrapping_mul(0x9E3779B97F4A7C15) ^ (coin_id as u64)) & 1) == 0;
+    let (p2, p3) = if high_first { (h, l) } else { (l, h) };
+    let (b2, a2) = if high_first { (bid_v * 1.05, ask_v * 0.95) } else { (bid_v * 0.95, ask_v * 1.05) };
+    let (b3, a3) = if high_first { (bid_v * 0.95, ask_v * 1.05) } else { (bid_v * 1.05, ask_v * 0.95) };
 
     [
         TickEvent {
@@ -80,18 +86,18 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline, prev_bullish: bool) -> [
         TickEvent {
             coin_id,
             timestamp: kline.open_time + step,
-            bid_price: (h - spread_half).max(1e-6),
-            ask_price: h + spread_half,
-            bid_qty: (bid_v * 1.1).max(0.001),
-            ask_qty: (ask_v * 0.9).max(0.001),
+            bid_price: (p2 - spread_half).max(1e-6),
+            ask_price: p2 + spread_half,
+            bid_qty: b2.max(0.001),
+            ask_qty: a2.max(0.001),
         },
         TickEvent {
             coin_id,
             timestamp: kline.open_time + step * 2,
-            bid_price: (l - spread_half).max(1e-6),
-            ask_price: l + spread_half,
-            bid_qty: (bid_v * 0.9).max(0.001),
-            ask_qty: (ask_v * 1.1).max(0.001),
+            bid_price: (p3 - spread_half).max(1e-6),
+            ask_price: p3 + spread_half,
+            bid_qty: b3.max(0.001),
+            ask_qty: a3.max(0.001),
         },
         TickEvent {
             coin_id,
@@ -275,11 +281,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let is_corrupt = m.layer1.weights.iter().any(|&w| w.is_nan() || w.is_infinite());
                     if is_corrupt {
                         println!("⚠️ [DARK ALPHA] Pesos no finitos detectados en models/DarkAlpha_BTCUSDT.json. Regenerando modelo Xavier 54D.");
-                        let clean = dark_alpha_engine::DarkAlphaEngine::default_model();
+                        let mut clean = dark_alpha_engine::DarkAlphaEngine::default_model();
+                        clean.freeze(); // T-04: sin estadísticos mutantes
                         let _ = clean.save_json("models/DarkAlpha_BTCUSDT.json");
                         clean
                     } else {
                         m.init_buffers();
+                        // T-04: inferencia con normalizadores congelados
+                        m.freeze();
                         println!("🧠 [DARK ALPHA] 54D Neural Model cargado exitosamente: models/DarkAlpha_BTCUSDT.json (in_features: {})", m.layer1.in_features);
                         m
                     }
