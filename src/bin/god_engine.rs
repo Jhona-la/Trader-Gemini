@@ -450,30 +450,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize Redb Zero-Copy Persistence and Real Balance
 
-    let ic_clone = initial_capital;
-    tokio::spawn(async move {
-        telemetry_server::telemetry_log!(
-            "⏰ [EVOLUTION-TASK] Scheduled to run genetic algorithm every 6 hours."
-        );
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
-            telemetry_server::telemetry_log!(
-                "🧬 [EVOLUTION-TASK] Waking up to evolve genetic config..."
-            );
-            let _ = std::process::Command::new("cargo")
-                .args([
-                    "run",
-                    "--release",
-                    "--bin",
-                    "evolution",
-                    "--",
-                    &ic_clone.to_string(),
-                ])
-                .current_dir(".")
-                .spawn()
-                .and_then(|mut child| child.wait());
-        }
-    });
+    // E4b — GHOST TASK ELIMINADA: cada 6h esta tarea lanzaba
+    // `cargo run --bin evolution` que (a) compilaba en el host MIENTRAS el
+    // HFT operaba (jitter de CPU/disco en el camino crítico), (b) bloqueaba
+    // su task tokio con child.wait() y (c) su salida (dynamic_config.json)
+    // no la recargaba nadie en runtime — CPU pura, impacto cero. La
+    // evolución en vivo ya la realizan LiveEvolutionDaemon y DarwinDaemon
+    // a través del embudo versionado del almacén de genomas.
+    let _ = initial_capital;
 
     std::fs::create_dir_all("data").unwrap_or_default();
 

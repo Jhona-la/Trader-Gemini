@@ -179,11 +179,29 @@ impl LiveEvolutionDaemon {
                             self.post_promo_returns.push(ret);
                         }
 
-                        // FIX #794: Alimentar el Shadow Random Forest directamente con observaciones reales
-                        // en lugar de depender de un frame mmap que nunca se emitía.
-                        let ml_prob = coin.ml_prob.load(std::sync::atomic::Ordering::Relaxed);
-                        let is_long = delta > 0.0;
-                        self.forest.shadow_evaluate(ml_prob as f32, ret as f32, 0.0, is_long);
+                        // E4a — FEATURES REALES para el Shadow Forest (antes:
+                        // shadow_evaluate con 5/6 constantes — el clasificador
+                        // solo aprendía long-vs-short). Se lee el estado vivo
+                        // del registry/coin en el instante del cierre:
+                        // obi, aceleración de precio, spread bps (spot),
+                        // atr_pct, hurst y momentum como proxy macro.
+                        let reg = &self.arena.registry;
+                        let spot_bid = coin.spot_bid.load(std::sync::atomic::Ordering::Relaxed);
+                        let spot_ask = coin.spot_ask.load(std::sync::atomic::Ordering::Relaxed);
+                        let spread_bps = if spot_bid > 0.0 && spot_ask > spot_bid {
+                            ((spot_ask - spot_bid) / spot_bid * 10_000.0).clamp(0.0, 500.0)
+                        } else {
+                            1.0
+                        };
+                        let features = [
+                            reg.get_value_or("orderbook_imbalance", 0.0).clamp(-1.0, 1.0),
+                            reg.get_value_or("price_acceleration", 0.0).clamp(-10.0, 10.0),
+                            spread_bps,
+                            reg.get_value_or("atr_pct", 0.002).clamp(0.0, 1.0),
+                            coin.hurst_exponent.load(std::sync::atomic::Ordering::Relaxed).clamp(0.0, 1.0),
+                            reg.get_value_or("price_velocity", 0.0).clamp(-10.0, 10.0),
+                        ];
+                        self.forest.shadow_evaluate_with_features(features, ret);
                     }
                 }
             }
@@ -345,6 +363,29 @@ impl LiveEvolutionDaemon {
                     
                     candidate.ml_threshold_long += (rng.random::<f64>() - 0.5) * (dynamic_mutation_rate * 0.5);
                     candidate.ml_threshold_short += (rng.random::<f64>() - 0.5) * (dynamic_mutation_rate * 0.5);
+
+                    // E4c — ESPACIO DE MUTACIÓN UNIFICADO: antes el daemon
+                    // solo mutaba 10 genes mientras el backtest evoluciona
+                    // 139 vía nichos — los genes con los que el backtest gana
+                    // (filtros, maker, explosividad, régimen) JAMÁS mutaban en
+                    // producción. Se añaden los genes de nicho del backtest
+                    // con la misma tasa dinámica; el clamp canónico via
+                    // to_vector/from_vector al final del loop los mantiene en
+                    // bounds (fuente única R1.1).
+                    candidate.tech_threshold += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.001;
+                    candidate.weight_obi += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.1;
+                    candidate.maker_spread_pct *= 1.0 + (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
+                    candidate.maker_obi_threshold += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.1;
+                    candidate.explosive_confidence_threshold += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
+                    candidate.explosive_leverage_multiplier += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
+                    candidate.trend_threshold += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.1;
+                    candidate.swing_tp_base *= 1.0 + (rng.random::<f64>() - 0.5) * 0.1;
+                    candidate.swing_sl_base *= 1.0 + (rng.random::<f64>() - 0.5) * 0.1;
+                    candidate.sl_atr_multiplier += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.2;
+                    candidate.tp_rr_ratio_btc += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.2;
+                    candidate.target_volatility += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.01;
+                    candidate.global_correlation_threshold += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
+                    candidate.scalp_trail_act_atr += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
 
                     // Evolución de genes Topológicos (Red Neuronal)
                     candidate.topo_layer_1_activation += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
