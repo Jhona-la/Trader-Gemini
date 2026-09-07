@@ -1,6 +1,7 @@
 #![feature(portable_simd)]
 
 pub mod bootloader;
+pub mod conformal;
 pub mod darwin;
 pub mod latency_accelerator;
 pub mod math_kernels;
@@ -53,6 +54,8 @@ pub struct GodEngineCore {
     /// todo hot-swap no promovido (cosecha del shadow forest, mutaciones de
     /// exploración) — el bloqueo #2 del genoma bt/prod.
     pub applied_generation: std::sync::atomic::AtomicU64,
+    /// R4.3 — calibrador conformal real (antes: constante 0.95).
+    pub conformal: conformal::ConformalCalibrator,
 }
 
 impl GodEngineCore {
@@ -143,6 +146,7 @@ impl GodEngineCore {
             ppo_engine,
             online_learner,
             applied_generation: std::sync::atomic::AtomicU64::new(0),
+            conformal: conformal::ConformalCalibrator::new(),
         }
     }
 
@@ -819,6 +823,23 @@ impl GodEngineCore {
                     self.feature_engines[coin_id].last_scalp_was_loss = net_trade_pnl <= 0.0;
 
                     let is_win = net_trade_pnl > 0.0;
+                    // R4.3 — cierre swing también calibra.
+                    let ml_at_entry = coin.positions.swing_position
+                        .ml_prediction
+                        .load(Ordering::Relaxed);
+                    if ml_at_entry > 0.0 {
+                        self.conformal.update(ml_at_entry, is_win);
+                    }
+                    // R4.3 — el cierre alimenta el calibrador conformal con
+                    // la predicción almacenada al abrir y el resultado neto.
+                    // (Si el close ya reseteó el atomic, degenera a 0.5 —
+                    // observación no-informativa pero válida.)
+                    let ml_at_entry = coin.positions.scalp_position
+                        .ml_prediction
+                        .load(Ordering::Relaxed);
+                    if ml_at_entry > 0.0 {
+                        self.conformal.update(ml_at_entry, is_win);
+                    }
                     let n = coin.metrics.trade_count.fetch_add(1, Ordering::Relaxed) as f64 + 1.0;
                     let old_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
@@ -1181,8 +1202,14 @@ impl GodEngineCore {
             self.arena.registry.set("ema_trend", micro_trend);
             self.arena.registry.set("ema_trend_swing", macro_trend);
             self.arena.registry.set("trend_direction", if macro_trend > 0.0 { 1.0 } else if macro_trend < 0.0 { -1.0 } else { 0.0 });
-            self.arena.registry.set("conformal_p_value", 0.95);
-            self.arena.registry.set("conformal_alpha", 0.10);
+            // R4.3 — p-valor CONFORMAL CALCULADO (antes constante 0.95 —
+            // tautología). El filtro swing/escalp now rechaza de verdad.
+            let conf_alpha = self.arena.config.conformal_alpha.load(Ordering::Relaxed).clamp(0.01, 0.30);
+            let conformal_p = self.conformal.p_value(
+                coin.ml_prob.load(Ordering::Relaxed),
+            );
+            self.arena.registry.set("conformal_p_value", conformal_p);
+            self.arena.registry.set("conformal_alpha", conf_alpha);
             let buy_vol = coin.agg_buy_vol.load(Ordering::Relaxed);
             let sell_vol = coin.agg_sell_vol.load(Ordering::Relaxed);
             let total_vol_cvd = buy_vol + sell_vol;
