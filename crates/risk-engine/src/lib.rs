@@ -45,6 +45,30 @@ impl ValidatedOrder {
 // Symbol constraints and size limits have been removed to allow purely dynamic and infinite asset discovery.
 // The engine now strictly relies on mathematical limits derived from Kelly and margin constraints.
 
+/// DIAGNÓSTICO SIGNAL-PATH: contadores de rechazo por compuerta de
+/// evaluate_single_intent. Índices:
+/// 0=flat/coin 1=exposure0 2=correlación 3=spec 4=EV 5=fee_impact
+/// 6=min_notional 7=margen_insuf 8=orchestrator 9=otros
+use std::sync::atomic::AtomicU64;
+pub static REJECT_COUNTERS: [std::sync::atomic::AtomicU64; 10] =
+    [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+
+fn rej(i: usize) -> ValidatedOrder {
+    REJECT_COUNTERS[i].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    ValidatedOrder::rejected()
+}
+
+pub fn reject_report() -> String {
+    let names = ["flat/coin", "exposure0", "correlacion", "spec", "EV", "fee_impact", "min_notional", "margen_insuf", "orchestrator", "otros"];
+    let v: Vec<String> = REJECT_COUNTERS
+        .iter()
+        .enumerate()
+        .filter(|(i, c)| c.load(std::sync::atomic::Ordering::Relaxed) > 0)
+        .map(|(i, c)| format!("{}={}", names[i], c.load(std::sync::atomic::Ordering::Relaxed)))
+        .collect();
+    if v.is_empty() { "sin rechazos".into() } else { v.join(" ") }
+}
+
 pub struct RiskEngine {
     pub scalp_peak_capital: f64,
     pub swing_peak_capital: f64,
@@ -323,7 +347,7 @@ impl RiskEngine {
         arena: &GlobalArena,
     ) -> ValidatedOrder {
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
-            return ValidatedOrder::rejected();
+            return rej(0);
         }
 
         let current_capital = arena.unified_capital.load(Ordering::Relaxed);
@@ -406,7 +430,7 @@ impl RiskEngine {
 
         let raw_exposure = dir * intent.confidence * kelly_fraction * allocated_capital;
         if raw_exposure == 0.0 {
-            return ValidatedOrder::rejected();
+            return rej(1);
         }
 
         // FASE 16 & BUG-578: Correlation Guard by Horizon
@@ -439,13 +463,13 @@ impl RiskEngine {
             current_cap,
             max_allowed_cluster.max(2),
         ) {
-            return ValidatedOrder::rejected();
+            return rej(2);
         }
 
         let coin = &arena.coins[coin_id];
         let spec = match quantum_arena::symbol_registry::try_spec(coin_id) {
             Some(s) => s,
-            None => return ValidatedOrder::rejected(),
+            None => return rej(3),
         };
         let max_exchange_leverage = spec.max_leverage as f64;
 
@@ -538,7 +562,7 @@ impl RiskEngine {
             .load(Ordering::Relaxed)
             .clamp(min_ev_mult, 1.30);
         if expected_value_pct <= (roundtrip_fee * ev_fee_multiplier) {
-            return ValidatedOrder::rejected();
+            return rej(4);
         }
 
         let max_acceptable_fee_pct = arena.config.max_fee_pct.load(Ordering::Relaxed);
@@ -561,7 +585,15 @@ impl RiskEngine {
         };
 
         if allocated_capital > 0.0 && allocated_capital * dynamic_leverage * safe_cushion < dynamic_min_notional {
-            let candidate_leverage = (dynamic_min_notional / (allocated_capital * safe_cushion)) * 1.02;
+            // FIX min_notional (diag R4): el leverage necesario para alcanzar
+            // el notional mínimo se calcula sobre el MARGEN DEL TRADE, no
+            // sobre el capital total. La fórmula anterior
+            // (min_notional/(allocated*cushion)) producía leverage < 1 en
+            // micro-cuenta y garantizaba el rechazo posterior: era la causa
+            // de 0 trades en la certificación 30d (min_notional ~500-640
+            // rechazos/día con señales sanas de conf 0.7+). El fee_impact
+            // check de abajo sigue limitando el costo.
+            let candidate_leverage = (dynamic_min_notional / final_margin.max(0.01)) * 1.02;
             let max_fee_limit = if allocated_capital <= 15.0 {
                 0.035 // Permitir hasta 3.5% fee impact para bootstrap micro-cuentas ($13 USD) para cumplir con el lote mínimo de Binance
             } else {
@@ -572,7 +604,7 @@ impl RiskEngine {
                 if arena.tick_counter.load(Ordering::Relaxed) % 100_000 == 0 {
                     println!("🔍 [RISK REJECT] FEE_IMPACT: fee_impact={:.6} > limit={:.6}", fee_impact_pct, max_fee_limit);
                 }
-                return ValidatedOrder::rejected();
+                return rej(5);
             }
             dynamic_leverage = candidate_leverage
                 .min(max_exchange_leverage)
@@ -585,7 +617,11 @@ impl RiskEngine {
         let safe_min_notional = dynamic_min_notional + 0.1;
         let required_margin_for_min_notional = safe_min_notional / dynamic_leverage;
         if final_margin < required_margin_for_min_notional {
-            final_margin = required_margin_for_min_notional;
+            // FIX FP (diag R4): lev x (min_notional/lev) puede dar
+            // 5.0999... < 5.1 en punto flotante y rechazar la orden en el
+            // borde EXACTO — la causa terminal de los 0 trades. Épsilon
+            // relativo de 5 bps de margen cierra la frontera.
+            final_margin = required_margin_for_min_notional * 1.0005;
         }
 
         let (meets_min_notional, _) = guard::enforce_minimum_notional(
@@ -594,7 +630,13 @@ impl RiskEngine {
             dynamic_leverage,
         );
         if !meets_min_notional {
-            return ValidatedOrder::rejected();
+            if REJECT_COUNTERS[6].load(std::sync::atomic::Ordering::Relaxed) % 200 == 0 {
+                println!(
+                    "🔍 [REJ6] margin={:.4} lev={:.4} min_notional={:.4} allocated={:.4} kelly={:.4}",
+                    final_margin, dynamic_leverage, safe_min_notional, allocated_capital, kelly_fraction
+                );
+            }
+            return rej(6);
         }
 
         let safe_limit = (allocated_capital * safe_cushion).min(current_cap * 0.90);
@@ -602,7 +644,7 @@ impl RiskEngine {
             final_margin = safe_limit;
         }
         if final_margin < required_margin_for_min_notional {
-            return ValidatedOrder::rejected();
+            return rej(7);
         }
 
         let orchestrator = orchestrator::PortfolioOrchestrator::new(arena);
@@ -610,7 +652,7 @@ impl RiskEngine {
         let regime = crate::regime::MarketRegime::from(raw_regime);
 
         if !orchestrator.allow_trade(bounded_exposure > 0.0, final_margin, regime) {
-            return ValidatedOrder::rejected();
+            return rej(8);
         }
 
         let maker_capital_threshold = arena

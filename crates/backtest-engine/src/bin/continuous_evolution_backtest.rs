@@ -317,6 +317,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _synthetic_macro = [0.0f64; 54];
         let _pseudo_rng = 42u64;
 
+        // DIAGNÓSTICO SIGNAL-PATH: contar en cada etapa del pipeline para
+        // localizar dónde mueren las señales. Imprime al cierre del día.
+        let mut diag = SignalPathDiag::default();
+
         while idx < ticks.len() && ticks[idx].timestamp < day_end_ts {
             if current_capital <= 1.0 { break; }
             let tick = &ticks[idx];
@@ -346,6 +350,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (new_order, closed_order, _) = engine.process_tick(
                 cid, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp, &omni
             );
+
+            // DIAGNÓSTICO SIGNAL-PATH: post-engine.
+            {
+                use strategy_core::types::SignalType;
+                let si = &engine.last_scalp_intent[cid];
+                let wi = &engine.last_swing_intent[cid];
+                if si.signal != SignalType::Flat { diag.intents_scalp += 1; }
+                if wi.signal != SignalType::Flat { diag.intents_swing += 1; }
+                if si.signal != SignalType::Flat || wi.signal != SignalType::Flat {
+                    diag.intents += 1;
+                    let c = si.confidence.max(wi.confidence);
+                    diag.max_intent_conf = diag.max_intent_conf.max(c);
+                }
+                let reg = &engine.arena.registry;
+                diag.max_obi = diag.max_obi.max(reg.get_value_or("orderbook_imbalance", 0.0).abs());
+                diag.tech_thr = reg.get_value_or("tech_threshold", 0.0);
+                diag.max_micro_trend = diag.max_micro_trend.max(reg.get_value_or("ema_trend", 0.0).abs());
+                if new_order.is_some() { diag.orders += 1; }
+            }
 
             if idx % 100_000 == 0 || new_order.is_some() || closed_order.is_some() {
                 let safe_cid = cid.min(engine.feature_engines.len().saturating_sub(1));
@@ -404,8 +427,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("📅 DÍA {}: Capital: ${:.4} (Efectivo: ${:.4}, Flotante: ${:+.4}) | PnL Día: {:+.4} ({:+.2}%) | Trades: {}", 
             day_idx + 1, current_capital, day_final_cap, open_unrealized, day_pnl, pnl_pct, day_trades);
         
+        println!("🔬 [SIGNAL-PATH] rejects: {}", risk_engine::reject_report());
+        println!("🔬 [SIGNAL-PATH] council_vetoes={} opened={} swing_vetoes={} swing_opened={} | intents={} (scalp={} swing={}) orders={} max_intent_conf={:.4} max_obi={:.4} tech_thr={:.6} max_micro_trend={:.6}",
+            engine.diag_council_vetoes, engine.diag_opened, engine.diag_swing_vetoes, engine.diag_swing_opened, diag.intents, diag.intents_scalp, diag.intents_swing, diag.orders, diag.max_intent_conf, diag.max_obi, diag.tech_thr, diag.max_micro_trend);
         // diag removed
-            
+             
         // Escribir Telemetría Plotly
         writeln!(csv_file, "{},{:.4},{:.4},{:.2},{}", day_idx + 1, current_capital, day_pnl, pnl_pct, day_trades).unwrap();
 
@@ -545,4 +571,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
 
     Ok(())
+}
+
+/// DIAGNÓSTICO SIGNAL-PATH (R4-diag): contadores por etapa del pipeline.
+#[derive(Default)]
+struct SignalPathDiag {
+    intents: u64,
+    intents_scalp: u64,
+    intents_swing: u64,
+    orders: u64,
+    max_intent_conf: f64,
+    max_obi: f64,
+    tech_thr: f64,
+    max_micro_trend: f64,
 }

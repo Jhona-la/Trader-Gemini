@@ -56,6 +56,11 @@ pub struct GodEngineCore {
     pub applied_generation: std::sync::atomic::AtomicU64,
     /// R4.3 — calibrador conformal real (antes: constante 0.95).
     pub conformal: conformal::ConformalCalibrator,
+    /// DIAG R4 (transitorio): cuello post-orden.
+    pub diag_council_vetoes: u64,
+    pub diag_opened: u64,
+    pub diag_swing_vetoes: u64,
+    pub diag_swing_opened: u64,
 }
 
 impl GodEngineCore {
@@ -147,6 +152,10 @@ impl GodEngineCore {
             online_learner,
             applied_generation: std::sync::atomic::AtomicU64::new(0),
             conformal: conformal::ConformalCalibrator::new(),
+            diag_council_vetoes: 0,
+            diag_opened: 0,
+            diag_swing_vetoes: 0,
+            diag_swing_opened: 0,
         }
     }
 
@@ -1478,6 +1487,9 @@ impl GodEngineCore {
                         self.last_scalp_senior_signals[coin_id] = senior_sigs;
                     }
                     let deliberation = self.consejo_deliberacion.deliberar_with_weights(&council_snapshot, wr, None);
+                    if !deliberation.approved {
+                        self.diag_council_vetoes += 1;
+                    }
 
                     if deliberation.approved {
                         let is_long = order.signal == SignalType::Long;
@@ -1494,6 +1506,7 @@ impl GodEngineCore {
                         }
 
                         if margin_req * eff_leverage >= 5.0 && total_used + margin_req <= current_cap * 0.95 {
+                            self.diag_opened += 1;
                             self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
                             self.arena.scalp_used_margin.fetch_add(margin_req, Ordering::Relaxed);
 
@@ -1579,6 +1592,17 @@ impl GodEngineCore {
                         self.last_swing_senior_signals[coin_id] = senior_sigs;
                     }
                     let deliberation = self.consejo_deliberacion.deliberar_with_weights(&council_snapshot, wr, None);
+                    if !deliberation.approved {
+                        self.diag_swing_vetoes += 1;
+                        if self.diag_swing_vetoes <= 3 || self.diag_swing_vetoes % 500 == 0 {
+                            println!(
+                                "🔍 [VETO-SWING] #{} por {:?} | obi={:.3} hurst={:.3} vpin={:.3} graph={:.3} consensus={:.3} final_sig={:.3}",
+                                self.diag_swing_vetoes, deliberation.vetoed_by, obi,
+                                hurst_val, vpin_risk, graph_corr,
+                                deliberation.total_consensus_pct, deliberation.final_signal
+                            );
+                        }
+                    }
 
                     if deliberation.approved {
                         let is_long = order.signal == SignalType::Long;
@@ -1595,6 +1619,7 @@ impl GodEngineCore {
                         }
 
                         if margin_req * eff_leverage >= 5.0 && total_used + margin_req <= current_cap * 0.95 {
+                            self.diag_swing_opened += 1;
                             self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
                             self.arena.swing_used_margin.fetch_add(margin_req, Ordering::Relaxed);
 

@@ -44,3 +44,20 @@ Esto explica de un golpe los misterios históricos del operador:
 **Ningún cambio futuro al stack de señales se acepta sin este backtest de certificación antes/después.** Este resultado ($13 → $13, 0 trades) es el denominador honesto contra el que se mide todo lo que venga.
 
 *Se agrega a la serie forense sin sustraer contenido.*
+
+---
+
+## 📌 ADENDA: DIAGNÓSTICO DEL SIGNAL PATH (misma fecha, cierre de la pregunta "¿dónde mueren las señales?")
+
+Instrumentación por etapa (contadores de rechazo por compuerta + conteo scalp/swing + vetos del Consejo). Cadena causal completa de los 0 trades:
+
+1. **Las señales EXISTEN**: ~1.300 intenciones/día no-flat, todas SWING (scalp: 0 — el stack scalp no dispara con este tensor), confianza máx 0.78.
+2. **El risk-engine NO rechaza** (tras dos fixes de esta sesión, ver abajo): "sin rechazos".
+3. **El Consejo de Seniors veta el 100%** (`swing_vetoes = 1323/1323`): **Senior Causal**, porque `vpin_risk = 1.000 > causal_veto_threshold = 0.60`. VPIN = 1.0 constante es un valor DEGENERADO (100% toxicidad de flujo sostenida es imposible en datos reales): es un artefacto de los 4 sub-ticks sintéticos por minuto con qty concentrada en un solo lado del book — el CVPIN ve buckets de volumen sin mezcla y satura.
+
+### Fixes aplicados en esta sesión (encontrados por la instrumentación)
+- **Bug matemático en `candidate_leverage`** (risk-engine): calculaba el leverage para alcanzar el min-notional sobre el capital TOTAL en vez del MARGEN del trade → leverage < 1 en micro-cuenta → rechazo garantizado (~500-640/día).
+- **Error de punto flotante en la frontera del min-notional**: `lev × (min_notional/lev) = 5.0999… < 5.1` rechazaba la orden en el borde EXACTO — épsilon relativo de 5 bps en el bump del margen.
+
+### Próximo paso único y acotado
+Reparar el VPIN degenerado con ticks sintéticos: agregar los sub-ticks en buckets volumétricos reales (como hace `historical.rs` para aggTrades) antes de alimentar el CVPIN, o marcar el VPIN como no-confiable cuando los buckets no tienen mezcla bid/ask. Con eso, el Consejo deja de vetar sobre un fantasma y la certificación puede volver a correrse — esa será la PRIMERA medición del sistema operando.
