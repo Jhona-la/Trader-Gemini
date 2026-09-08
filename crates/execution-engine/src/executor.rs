@@ -1012,7 +1012,7 @@ impl ExecutionProvider for OrderExecutor {
             }
         }
 
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
         self.check_rate_limits(timestamp)?;
 
         // F1.4: tickSize real del símbolo consultado en cache O(1) (< 5 ns)
@@ -1161,7 +1161,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
 
         self.check_rate_limits(timestamp)?;
 
@@ -1283,7 +1283,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
 
         self.check_rate_limits(timestamp)?;
 
@@ -1468,7 +1468,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
@@ -1544,7 +1544,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long { SIDE_BUY } else { SIDE_SELL };
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
@@ -1611,7 +1611,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long_close { SIDE_SELL } else { SIDE_BUY };
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
@@ -1690,7 +1690,7 @@ impl ExecutionProvider for OrderExecutor {
         // Para cerrar LONG: side = SELL, positionSide = LONG
         // Para cerrar SHORT: side = BUY, positionSide = SHORT
         let side = if is_long { SIDE_SELL } else { SIDE_BUY };
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
         self.check_rate_limits(timestamp)?;
 
         let mut buf = ZeroAllocBuffer::new();
@@ -1761,7 +1761,7 @@ impl ExecutionProvider for OrderExecutor {
         }
 
         let side = if is_long_close { SIDE_SELL } else { SIDE_BUY };
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
         self.check_rate_limits(timestamp)?;
 
         let base_url = if self.client.is_testnet.load(Ordering::Relaxed) {
@@ -1908,7 +1908,7 @@ impl ExecutionProvider for OrderExecutor {
             return Ok(());
         }
 
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
 
         self.check_rate_limits(timestamp)?;
 
@@ -1957,7 +1957,7 @@ impl ExecutionProvider for OrderExecutor {
             });
         }
 
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
 
         self.check_rate_limits(timestamp)?;
 
@@ -2013,7 +2013,7 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn fetch_open_positions(&self) -> Result<Vec<ActivePosition>, String> {
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
 
         self.check_rate_limits(timestamp)?;
 
@@ -2074,7 +2074,7 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn fetch_account_balance(&self) -> Result<f64, String> {
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
 
         self.check_rate_limits(timestamp)?;
 
@@ -2125,7 +2125,7 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn set_leverage(&self, symbol: &str, leverage: u32) -> Result<(), String> {
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
 
         self.check_rate_limits(timestamp)?;
 
@@ -2163,7 +2163,7 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn fetch_commission_rate(&self, symbol: &str) -> Result<(f64, f64), String> {
-        let timestamp = current_timestamp_ms();
+        let timestamp = self.get_synced_timestamp();
 
         self.check_rate_limits(timestamp)?;
 

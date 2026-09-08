@@ -355,17 +355,60 @@ impl RiskEngine {
             return ValidatedOrder::rejected();
         }
 
+        let genome_split = arena
+            .config
+            .capital_split_scalp
+            .load(Ordering::Relaxed)
+            .clamp(0.1, 0.9);
+        let coin = &arena.coins[coin_id];
+        let scalp_edge = (coin.scalp.win_rate.load(Ordering::Relaxed)
+            * coin.scalp.kelly_fraction.load(Ordering::Relaxed))
+        .max(0.0);
+        let swing_edge = (coin.swing.win_rate.load(Ordering::Relaxed)
+            * coin.swing.kelly_fraction.load(Ordering::Relaxed))
+        .max(0.0);
+        let scalp_n = coin.scalp.trade_count.load(Ordering::Relaxed) as f64;
+        let swing_n = coin.swing.trade_count.load(Ordering::Relaxed) as f64;
+        let posterior_scalp = scalp_edge * scalp_n.sqrt() + genome_split;
+        let posterior_swing = swing_edge * swing_n.sqrt() + (1.0 - genome_split);
+        let target_split = if posterior_scalp + posterior_swing > 1e-12 {
+            (posterior_scalp / (posterior_scalp + posterior_swing)).clamp(0.1, 0.9)
+        } else {
+            genome_split
+        };
+
+        // Robbins-Monro con tasa 1/√(n_total + 1)
+        let n_total = scalp_n + swing_n;
+        let alpha = 1.0 / (n_total + 1.0).sqrt();
+        let split = match self.smoothed_split {
+            Some(prev) => prev + (target_split - prev) * alpha,
+            None => target_split,
+        };
+        self.smoothed_split = Some(split);
+
+        let allocated_capital = if is_scalp {
+            current_capital * split
+        } else {
+            current_capital * (1.0 - split)
+        };
+
         if is_scalp {
-            if current_capital > self.scalp_peak_capital {
-                self.scalp_peak_capital = current_capital;
+            if allocated_capital > self.scalp_peak_capital {
+                self.scalp_peak_capital = allocated_capital;
             }
         } else {
-            if current_capital > self.swing_peak_capital {
-                self.swing_peak_capital = current_capital;
+            if allocated_capital > self.swing_peak_capital {
+                self.swing_peak_capital = allocated_capital;
             }
         }
 
         let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
+        let base_allocated = if is_scalp {
+            base_capital * split
+        } else {
+            base_capital * (1.0 - split)
+        };
+
         let pf = if is_scalp {
             arena.coins[coin_id].metrics.profit_factor.load(Ordering::Relaxed)
         } else {
@@ -389,8 +432,8 @@ impl RiskEngine {
             coin_id,
             intent,
             kelly_frac,
-            current_capital,
-            base_capital,
+            allocated_capital,
+            base_allocated,
             pf,
             is_scalp,
             arena,

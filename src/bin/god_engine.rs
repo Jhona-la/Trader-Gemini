@@ -1673,7 +1673,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 telemetry_engine::telemetry!("🧊 [ICEBERG ROUTER] Fragmentando orden institucional ({:.2} USDT) en pedazos de {:.2}...", notional_volume, iceberg_qty);
                                 entry_result = exec_clone.load().execute_iceberg_limit(&parsed_sym_str, final_is_long, final_qty, maker_price, iceberg_qty, dyn_step_size, dyn_tick_size, "iceberg_01").await;
                             } else {
-                                entry_result = exec_clone.load().execute_raw_qty(&parsed_sym_str, final_is_long, final_qty, dyn_step_size).await;
+                                let horizon_tag = if is_scalp { "SCALP" } else { "SWING" };
+                                let side_tag = if final_is_long { "L" } else { "S" };
+                                let client_id = format!("{}_{}_{}", horizon_tag, side_tag, uuid::Uuid::now_v7().simple());
+                                entry_result = exec_clone.load().execute_raw_qty_with_client_id(&parsed_sym_str, final_is_long, final_qty, dyn_step_size, &client_id).await;
                             }
 
                             match entry_result {
@@ -1691,7 +1694,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             "{} Protección para {} (TP: {:.4}, SL: {:.4})",
                                             tag, parsed_sym_str, final_tp_price, final_sl_price
                                         );
-                                        let base_id = format!("oco_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_micros());
+                                        let horizon_prefix = if is_scalp { "SCALP" } else { "SWING" };
+                                        let base_id = format!("{}_oco_{}", horizon_prefix, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_micros());
                                         if let Err(e) = exec_clone.load().execute_oco_order(&parsed_sym_str, final_is_long, final_qty, final_tp_price, final_sl_price, dyn_step_size, dyn_tick_size, &base_id).await {
                                             telemetry_engine::telemetry_err!("⚠️ [OCO TENSOR] No se pudo enviar bracket protector para {}: {}", parsed_sym_str, e);
                                         }
