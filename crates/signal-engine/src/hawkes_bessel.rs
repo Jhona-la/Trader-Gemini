@@ -47,26 +47,41 @@ impl QuantumStrategy for HawkesBesselEngine {
     }
 
     fn evaluate(&self) -> f64 {
-        let base_lambda = self.registry.as_ref()
-            .and_then(|r| r.get("hawkes_intensity", "HawkesBesselEngine").or_else(|| r.get("base_hawkes_intensity", "HawkesBesselEngine")))
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return 0.0,
+        };
+
+        let base_lambda = r
+            .get_scoped_parameter(sym_opt, cid_opt, "hawkes_intensity", "HawkesBesselEngine")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "base_hawkes_intensity", "HawkesBesselEngine"))
             .map(|p| p.get_value())
             .unwrap_or(1.0);
 
-        let alpha = self.registry.as_ref()
-            .and_then(|r| r.get("bessel_alpha", "HawkesBesselEngine"))
+        let alpha = r
+            .get_scoped_parameter(sym_opt, cid_opt, "bessel_alpha", "HawkesBesselEngine")
             .map(|p| p.get_value())
             .unwrap_or(0.5);
 
-        let dt = self.registry.as_ref()
-            .and_then(|r| r.get("hawkes_dt", "HawkesBesselEngine"))
+        let dt = r
+            .get_scoped_parameter(sym_opt, cid_opt, "hawkes_dt", "HawkesBesselEngine")
             .map(|p| p.get_value())
             .unwrap_or(0.1);
 
-        let direction = self.registry.as_ref()
-            .and_then(|r| r.get("order_flow_direction", "HawkesBesselEngine"))
+        let direction = r
+            .get_scoped_parameter(sym_opt, cid_opt, "order_flow_direction", "HawkesBesselEngine")
             .map(|p| p.get_value())
             .unwrap_or(0.0);
 
+        if direction.abs() <= 1e-6 || !direction.is_finite() {
+            return 0.0;
+        }
         let intensity = Self::compute_bessel_hawkes_intensity(base_lambda, alpha, dt);
         direction.signum() * (intensity - 1.0).tanh()
     }

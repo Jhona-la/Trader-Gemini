@@ -133,17 +133,31 @@ impl OmniState {
     }
 
     pub fn get_features(&self) -> [f64; 54] {
+        let b_spot = f64::from_bits(self.binance_spot.load(Ordering::Relaxed));
+        let ref_p = if b_spot.is_finite() && b_spot > 0.0 { b_spot } else { 1.0 };
+
+        // L-0: Normalizar precios nominales cross-exchange a spreads porcentuales [-5.0, 5.0]
+        // para erradicar la saturación del scaler Z-Score en DarkAlphaEngine (Causa Forense #D96).
+        let norm_spread = |val_bits: u64| -> f64 {
+            let p = f64::from_bits(val_bits);
+            if p.is_finite() && p > 0.0 {
+                (((p - ref_p) / ref_p) * 100.0).clamp(-5.0, 5.0)
+            } else {
+                0.0
+            }
+        };
+
         let mut feats = [
-            f64::from_bits(self.binance_spot.load(Ordering::Relaxed)),
-            f64::from_bits(self.binance_futures.load(Ordering::Relaxed)),
-            f64::from_bits(self.bybit_linear.load(Ordering::Relaxed)),
-            f64::from_bits(self.okx_swap.load(Ordering::Relaxed)),
-            f64::from_bits(self.bitget_futures.load(Ordering::Relaxed)),
-            f64::from_bits(self.coinbase_spot.load(Ordering::Relaxed)),
-            f64::from_bits(self.kraken_spot.load(Ordering::Relaxed)),
-            f64::from_bits(self.htx_spot.load(Ordering::Relaxed)),
-            f64::from_bits(self.deribit_options.load(Ordering::Relaxed)),
-            f64::from_bits(self.bitfinex_spot.load(Ordering::Relaxed)),
+            0.0, // Referencia base Binance Spot (retorno relativo = 0.0)
+            norm_spread(self.binance_futures.load(Ordering::Relaxed)),
+            norm_spread(self.bybit_linear.load(Ordering::Relaxed)),
+            norm_spread(self.okx_swap.load(Ordering::Relaxed)),
+            norm_spread(self.bitget_futures.load(Ordering::Relaxed)),
+            norm_spread(self.coinbase_spot.load(Ordering::Relaxed)),
+            norm_spread(self.kraken_spot.load(Ordering::Relaxed)),
+            norm_spread(self.htx_spot.load(Ordering::Relaxed)),
+            norm_spread(self.deribit_options.load(Ordering::Relaxed)),
+            norm_spread(self.bitfinex_spot.load(Ordering::Relaxed)),
             f64::from_bits(self.binance_liquidations.load(Ordering::Relaxed)),
             f64::from_bits(self.agg_funding_rate.load(Ordering::Relaxed)),
             f64::from_bits(self.agg_open_interest.load(Ordering::Relaxed)),

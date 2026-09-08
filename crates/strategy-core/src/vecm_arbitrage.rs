@@ -115,10 +115,20 @@ impl QuantumStrategy for JohansenVecmEngine {
     }
 
     fn evaluate(&self) -> f64 {
-        let z = self.registry.as_ref()
-            .and_then(|r| r.get("vecm_zscore", "JohansenVecmEngine").or_else(|| r.get("cointegration_zscore", "JohansenVecmEngine")))
-            .map(|p| p.get_value())
-            .unwrap_or(0.0);
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let z = match self.registry.as_ref() {
+            Some(r) => r
+                .get_scoped_parameter(sym_opt, cid_opt, "vecm_zscore", "JohansenVecmEngine")
+                .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "cointegration_zscore", "JohansenVecmEngine"))
+                .map(|p| p.get_value())
+                .unwrap_or(0.0),
+            None => 0.0,
+        };
 
         if !z.is_finite() {
             return 0.0;

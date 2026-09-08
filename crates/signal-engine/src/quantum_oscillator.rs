@@ -61,20 +61,28 @@ impl QuantumStrategy for QuantumOscillatorEngine {
     }
 
     fn evaluate(&self) -> f64 {
-        let pos = self.registry.as_ref()
-            .and_then(|r| {
-                r.get("quantum_position_deviation", "QuantumOscillatorEngine")
-                    .or_else(|| r.get("order_book_imbalance", "QuantumOscillatorEngine"))
-                    .or_else(|| r.get("order_flow_imbalance", "QuantumOscillatorEngine"))
-            })
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return 0.0,
+        };
+        let pos = r
+            .get_scoped_parameter(sym_opt, cid_opt, "quantum_position_deviation", "QuantumOscillatorEngine")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "order_book_imbalance", "QuantumOscillatorEngine"))
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "QuantumOscillatorEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.0);
-        let k_spring = self.registry.as_ref()
-            .and_then(|r| r.get("quantum_k_spring", "QuantumOscillatorEngine"))
+        let k_spring = r
+            .get_scoped_parameter(sym_opt, cid_opt, "quantum_k_spring", "QuantumOscillatorEngine")
             .map(|p| p.get_value())
             .unwrap_or(1.0);
-        let lambda = self.registry.as_ref()
-            .and_then(|r| r.get("quantum_lambda_anharmonic", "QuantumOscillatorEngine"))
+        let lambda = r
+            .get_scoped_parameter(sym_opt, cid_opt, "quantum_lambda_anharmonic", "QuantumOscillatorEngine")
             .map(|p| p.get_value())
             .unwrap_or(0.1);
 

@@ -69,28 +69,32 @@ impl QuantumStrategy for SwingConformalFilterEngine {
     }
 
     fn evaluate(&self) -> f64 {
-        let vecm_zscore = self
-            .registry
-            .as_ref()
-            .and_then(|r| r.get("vecm_zscore", "SwingConformalFilterEngine").or_else(|| r.get("cointegration_zscore", "SwingConformalFilterEngine")))
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return 0.0,
+        };
+        let vecm_zscore = r
+            .get_scoped_parameter(sym_opt, cid_opt, "vecm_zscore", "SwingConformalFilterEngine")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "cointegration_zscore", "SwingConformalFilterEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.0);
-        let ema_trend = self
-            .registry
-            .as_ref()
-            .and_then(|r| r.get("ema_trend_swing", "SwingConformalFilterEngine").or_else(|| r.get("trend_direction", "SwingConformalFilterEngine")))
+        let ema_trend = r
+            .get_scoped_parameter(sym_opt, cid_opt, "ema_trend_swing", "SwingConformalFilterEngine")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "trend_direction", "SwingConformalFilterEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.0);
-        let conformal_p = self
-            .registry
-            .as_ref()
-            .and_then(|r| r.get("conformal_p_value", "SwingConformalFilterEngine"))
+        let conformal_p = r
+            .get_scoped_parameter(sym_opt, cid_opt, "conformal_p_value", "SwingConformalFilterEngine")
             .map(|p| p.get_value())
             .unwrap_or(0.95);
-        let conformal_alpha = self
-            .registry
-            .as_ref()
-            .and_then(|r| r.get("conformal_alpha", "SwingConformalFilterEngine"))
+        let conformal_alpha = r
+            .get_scoped_parameter(sym_opt, cid_opt, "conformal_alpha", "SwingConformalFilterEngine")
             .map(|p| p.get_value())
             .unwrap_or(0.10);
         let safe_p = if conformal_p.is_finite() { conformal_p } else { 0.95 };

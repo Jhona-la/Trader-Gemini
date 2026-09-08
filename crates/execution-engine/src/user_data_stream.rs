@@ -54,6 +54,7 @@ pub struct UserDataStreamer {
     cached_positions: Mutex<HashMap<(String, String), f64>>,
     api_secret: Option<String>,
     expired_flag: Arc<AtomicBool>,
+    arena: Option<Arc<quantum_arena::GlobalArena>>,
 }
 
 impl UserDataStreamer {
@@ -65,6 +66,7 @@ impl UserDataStreamer {
             cached_positions: Mutex::new(HashMap::new()),
             api_secret: None,
             expired_flag: Arc::new(AtomicBool::new(false)),
+            arena: None,
         }
     }
 
@@ -75,6 +77,11 @@ impl UserDataStreamer {
 
     pub fn with_sink(mut self, sink: Arc<dyn AccountSink>) -> Self {
         self.sink = sink;
+        self
+    }
+
+    pub fn with_arena(mut self, arena: Arc<quantum_arena::GlobalArena>) -> Self {
+        self.arena = Some(arena);
         self
     }
 
@@ -234,6 +241,9 @@ impl UserDataStreamer {
             #[serde(rename = "L")]
             #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
             last_filled_price: f64,
+            #[serde(rename = "ap", default)]
+            #[serde(deserialize_with = "crate::order_types::string_or_f64")]
+            avg_price: f64,
             #[serde(rename = "n")]
             #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
             commission: f64,
@@ -271,7 +281,7 @@ impl UserDataStreamer {
             cumulative_filled_qty: o.cumulative_filled_qty,
             last_filled_qty: o.last_filled_qty,
             last_filled_price: o.last_filled_price,
-            avg_price: o.last_filled_price,
+            avg_price: if o.avg_price > 0.0 { o.avg_price } else { o.last_filled_price },
             commission: o.commission,
             commission_asset: o.commission_asset.unwrap_or_default(),
             trade_time_ms: o.trade_time_ms,
@@ -311,11 +321,9 @@ impl UserDataStreamer {
                 let symbol = update.symbol.clone();
                 let secret = secret.clone();
                 let filled_id = update.client_order_id.clone();
+                let arena_clone = self.arena.clone();
                 tokio::spawn(async move {
-                    let ts = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64;
+                    let ts = crate::executor::current_synced_timestamp_ms(arena_clone.as_deref());
                     let mut buf = crate::client::ZeroAllocBuffer::new();
                     buf.push_str(if client.is_testnet.load(std::sync::atomic::Ordering::Relaxed) {
                         "https://testnet.binancefuture.com/fapi/v1/order?"

@@ -223,6 +223,16 @@ impl TensorVoteOrchestrator {
         self.evaluate_continuous_consensus()
     }
 
+    /// D-117: Consenso de Scalp escopado por activo real
+    pub fn evaluate_scalp_consensus_for_coin(&self, coin_id: usize, symbol: &str) -> TensorDecision {
+        self.evaluate_continuous_consensus_for_coin(coin_id, symbol)
+    }
+
+    /// D-117: Consenso de Swing escopado por activo real
+    pub fn evaluate_swing_consensus_for_coin(&self, coin_id: usize, symbol: &str) -> TensorDecision {
+        self.evaluate_continuous_consensus_for_coin(coin_id, symbol)
+    }
+
     /// U-F2 — CONSENSO DEL MOTOR TEMPORAL UNIVERSAL: TODO el ensamble
     /// participa (sin particiones por etiqueta) y el lifetime resultante es
     /// el del continuo (interpolado por confianza, ya existente en la rama
@@ -230,14 +240,12 @@ impl TensorVoteOrchestrator {
     /// UNA opinión del mercado por tick; las etiquetas de estrategia son
     /// herencia de las fuentes, no del consenso.
     pub fn evaluate_continuous_consensus(&self) -> TensorDecision {
-        // Reutilizar la maquinaria completa con un filtro que acepta todo:
-        // el consenso continuo es la unión de todos los votantes.
-        self.evaluate_horizon_consensus_all()
+        self.evaluate_continuous_consensus_for_coin(0, "BTCUSDT")
     }
 
-    fn evaluate_horizon_consensus_all(&self) -> TensorDecision {
-        // Copia estructural de evaluate_horizon_consensus(Continuous) sin el
-        // filtro por horizonte: TODO el ensamble vota.
+    /// D-101 & D-111: Consenso continuo multiactivo escopado por símbolo y moneda.
+    /// Evita contaminación cruzada y colisiones de estado en el ensamble cuántico.
+    pub fn evaluate_continuous_consensus_for_coin(&self, coin_id: usize, symbol: &str) -> TensorDecision {
         let all: Vec<&Box<dyn QuantumStrategy>> = self.strategies.iter().collect();
         if all.is_empty() {
             return TensorDecision {
@@ -248,15 +256,15 @@ impl TensorVoteOrchestrator {
                 horizon: TradeHorizon::Continuous,
             };
         }
-        // Delegar en la implementación canónica vía un truco de composición:
-        // clonar self no es posible (estrategias box); en su lugar iteramos
-        // manualmente replicando la fusión (votos ponderados + boost).
         let mut long_votes = 0.0;
         let mut short_votes = 0.0;
         let mut active_weight = 0.0;
         let mut max_volatility = 0.0f64;
         for s in &all {
-            let output = s.evaluate();
+            let output = s.evaluate_for_coin(coin_id, symbol);
+            if !output.is_finite() {
+                continue;
+            }
             let abs_w = output.abs();
             if output > 0.0 {
                 long_votes += abs_w;
@@ -286,9 +294,18 @@ impl TensorVoteOrchestrator {
         } else {
             0.5
         };
-        let raw_confidence = (prob_long - prob_short) * effective_conviction;
-        let net_confidence = if raw_confidence.is_finite() { raw_confidence } else { 0.0 };
-        let atr_pct = self.arena.registry.get_value_or("atr_pct", f64::NAN);
+        // D-101: Normalización continua sin double-squashing cuadrático
+        let raw_net = prob_long - prob_short;
+        let net_confidence = raw_net * (0.60 + 0.40 * effective_conviction);
+        let net_confidence = if net_confidence.is_finite() { net_confidence } else { 0.0 };
+
+        let coin_atr_key = format!("{}_atr_pct", symbol);
+        let atr_pct = self.arena.registry.get_value_or(&coin_atr_key, f64::NAN);
+        let atr_pct = if atr_pct.is_finite() && atr_pct > 0.0 {
+            atr_pct
+        } else {
+            self.arena.registry.get_value_or("atr_pct", f64::NAN)
+        };
         let expected_volatility = if atr_pct.is_finite() && atr_pct > 0.0 {
             atr_pct
         } else if max_volatility.is_finite() {
@@ -296,11 +313,15 @@ impl TensorVoteOrchestrator {
         } else {
             0.0
         };
-        let min_conf_gene = self
+        let base_min_conf = self
             .arena
             .config
             .min_confidence_btc
             .load(std::sync::atomic::Ordering::Relaxed);
+        let min_conf_gene = self
+            .arena
+            .registry
+            .get_value_or(&format!("{}_min_confidence", symbol), base_min_conf);
         let cutoff_floor = ((min_conf_gene - 0.50) * 2.0).clamp(0.0, 0.90);
         let raw_base = self
             .arena
@@ -343,6 +364,8 @@ impl TensorVoteOrchestrator {
             }
         }
     }
+
+
 
     /// Evalúa de forma desacoplada ambos horizontes simultáneamente (Scalp y Swing) sin supresión mutua (BUG-643)
     pub fn evaluate_dual_consensus(&self) -> (TensorDecision, TensorDecision) {

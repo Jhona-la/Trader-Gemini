@@ -99,6 +99,17 @@ pub trait SeniorAgent: Send + Sync {
     fn evaluate(&self, payload: &MarketSnapshotPayload, win_rate: f64) -> SeniorOpinion;
 }
 
+#[inline(always)]
+pub fn safe_signum(val: f64) -> f64 {
+    if val > 1e-6 {
+        1.0
+    } else if val < -1e-6 {
+        -1.0
+    } else {
+        0.0
+    }
+}
+
 // 1. Senior Microestructura
 pub struct SeniorMicroestructura;
 impl SeniorAgent for SeniorMicroestructura {
@@ -109,7 +120,7 @@ impl SeniorAgent for SeniorMicroestructura {
         let imbalance = payload.book_imbalance;
         SeniorOpinion {
             role: self.role(),
-            signal_direction: imbalance.signum(),
+            signal_direction: safe_signum(imbalance),
             confidence: imbalance.abs().clamp(0.0, 1.0),
             weight: 1.0,
             is_veto: false,
@@ -127,7 +138,7 @@ impl SeniorAgent for SeniorSeriesTemporales {
     #[inline(always)]
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let hurst = payload.hurst_exponent;
-        let flow_dir = payload.book_imbalance.signum();
+        let flow_dir = safe_signum(payload.book_imbalance);
         
         let (trend_threshold, mean_reversion_threshold) = match payload.horizon {
             TradingHorizon::Continuous => (0.52, 0.45),
@@ -164,7 +175,7 @@ impl SeniorAgent for SeniorGrafos {
         let correlation = payload.graph_correlation;
         SeniorOpinion {
             role: self.role(),
-            signal_direction: correlation.signum(),
+            signal_direction: safe_signum(correlation),
             confidence: correlation.abs().clamp(0.0, 1.0),
             weight: 0.9,
             is_veto: false,
@@ -185,15 +196,18 @@ impl SeniorAgent for SeniorCausal {
         } else {
             1.0 // Falla segura: veto preventivo si el riesgo causal no es finito
         };
-        // Ligar el veto al umbral de la teleometría o del genoma
-        let is_veto = do_calculus_risk > payload.causal_veto_threshold; 
+        // D-112: El umbral causal protege contra toxicidad extrema (>0.85) sin asfixiar
+        // los breakouts institucionales legítimos (VPIN entre 0.60 y 0.80).
+        let effective_threshold = payload.causal_veto_threshold.clamp(0.60, 0.90);
+        let is_aligned_breakout = payload.book_imbalance.abs() > 0.40 && do_calculus_risk < 0.85;
+        let is_veto = do_calculus_risk > effective_threshold && !is_aligned_breakout; 
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent (not a trend predictor)
             confidence: (1.0 - do_calculus_risk).clamp(0.0, 1.0),
             weight: 1.2,
             is_veto,
-            justification: format!("Causal manipulation risk: {:.4} (Threshold: {:.4})", do_calculus_risk, payload.causal_veto_threshold),
+            justification: format!("Causal manipulation risk: {:.4} (Threshold: {:.4}, aligned={})", do_calculus_risk, effective_threshold, is_aligned_breakout),
         }
     }
 }
@@ -237,10 +251,11 @@ impl SeniorAgent for SeniorEjecucion {
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         // FIX #387: estimated_slippage_bps ya está expresado en puntos básicos (bps)
         let slippage_bps = payload.estimated_slippage_bps.max(0.0);
+        // D-113: Umbral dinámico adaptado a la volatilidad de altcoins
         let max_slippage = match payload.horizon {
-            TradingHorizon::Continuous => 35.0,
-            TradingHorizon::Scalping => 25.0, // Menor slippage permitido para scalping (nano)
-            TradingHorizon::Swing => 75.0,    // Mayor tolerancia para swing
+            TradingHorizon::Continuous => 65.0, // Altcoins con spread normal de 10-35 bps no son vetadas
+            TradingHorizon::Scalping => 35.0,
+            TradingHorizon::Swing => 100.0,
         };
         let is_veto = slippage_bps > max_slippage;
         SeniorOpinion {
@@ -267,7 +282,7 @@ impl SeniorAgent for SeniorCuantico {
         let slippage_impact = slippage_bps / 100.0; // 10 bps = 0.10 impact
         let execution_quality =
             (payload.book_imbalance.abs() - slippage_impact).clamp(0.0, 1.0);
-        let signal = payload.book_imbalance.signum() * execution_quality;
+        let signal = safe_signum(payload.book_imbalance) * execution_quality;
         let confidence = (execution_quality * 2.0).clamp(0.0, 1.0);
         SeniorOpinion {
             role: self.role(),
@@ -291,21 +306,21 @@ impl SeniorAgent for SeniorMetacognitivo {
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, wr: f64) -> SeniorOpinion {
         let dd_penalty = (payload.current_drawdown_pct * 5.0).clamp(0.0, 0.5);
-        // FIX #1105: Simetría de Bernoulli — si el sistema falla (wr < 0.50) e invertimos la señal (-dir),
-        // la convicción en la dirección opuesta es (1.0 - wr).
-        let effective_wr = if wr >= 0.50 { wr } else { 1.0 - wr };
-        let adjusted_confidence = (effective_wr - dd_penalty).clamp(0.0, 1.0);
-        let dir = payload.book_imbalance.signum();
-        let signal = if wr >= 0.50 { dir } else { -dir };
+        // D-122: Respetar RULE[growth_over_wr]. Nunca invertir la dirección (-dir) de la microestructura por WR temporal.
+        // Se modula la convicción y el peso proporcionalmente al rendimiento, protegiendo las rachas iniciales.
+        let effective_wr = if wr > 0.0 { wr.clamp(0.20, 1.0) } else { 0.50 };
+        let adjusted_confidence = (effective_wr - dd_penalty).clamp(0.05, 1.0);
+        let dir = safe_signum(payload.book_imbalance);
+        let weight = if wr >= 0.50 { 2.0 } else { 1.0 };
         SeniorOpinion {
             role: self.role(),
-            signal_direction: signal,
+            signal_direction: dir,
             confidence: adjusted_confidence,
-            weight: 2.0,
+            weight,
             is_veto: false,
             justification: format!(
-                "Metacognitive WR={:.4}, DD_penalty={:.4}, adj_conf={:.4}",
-                wr, dd_penalty, adjusted_confidence
+                "Metacognitive WR={:.4}, DD_penalty={:.4}, adj_conf={:.4}, weight={:.1}",
+                wr, dd_penalty, adjusted_confidence, weight
             ),
         }
     }
@@ -328,7 +343,7 @@ impl SeniorAgent for SeniorTeleonomia {
             + execution_quality * 0.3;
         // Solo vetar si la utilidad teleonómica es prácticamente nula y el WR colapsó por debajo del umbral crítico (35%)
         let is_veto = utility < 0.05 && wr < 0.35;
-        let dir = payload.book_imbalance.signum();
+        let dir = safe_signum(payload.book_imbalance);
         SeniorOpinion {
             role: self.role(),
             signal_direction: if is_veto { 0.0 } else { dir * utility.clamp(0.0, 1.0) },
@@ -526,15 +541,15 @@ impl ConsejoDeliberacion {
         } else if short_consensus_pct >= 0.50 && final_signal < 0.0 {
             (true, short_consensus_pct)
         } else if total_directional_capacity == 0.0 {
-            // If directional indicators are neutral and no senior has issued a veto, pass deliberation
-            (true, 0.50)
+            // D-165: Con cero capacidad direccional de los seniors, rechazar para evitar operaciones a ciegas
+            (false, 0.0)
         } else {
             (false, long_consensus_pct.max(short_consensus_pct))
         };
 
         let dissenting_log = opinions
             .into_iter()
-            .filter(|o| o.signal_direction.signum() != final_signal.signum())
+            .filter(|o| o.signal_direction != 0.0 && final_signal != 0.0 && o.signal_direction.signum() != final_signal.signum())
             .collect();
 
         ConsensusResult {

@@ -53,6 +53,7 @@ pub struct StatefulEngine {
     pub ml_prob_var: f64,
     pub last_scalp_exit_tick: u64,
     pub last_scalp_was_loss: bool,
+    pub last_trade_is_sell: bool,
 }
 
 impl Default for StatefulEngine {
@@ -99,6 +100,7 @@ impl StatefulEngine {
             ml_prob_var: 0.01,
             last_scalp_exit_tick: 0,
             last_scalp_was_loss: false,
+            last_trade_is_sell: false,
         }
     }
 
@@ -200,7 +202,22 @@ impl StatefulEngine {
         } else {
             _volume
         };
-        self.cvpin.update(notional_usd, price < self.last_price); // Nocional USD para invariancia multimoneda
+        // D-110: Regla canónica Lee-Ready (1991): en ticks planos (price == last_price),
+        // propagar la dirección del tick previo en lugar de falsear hacia compra sistemática
+        let is_sell = if self.last_price > 0.0 {
+            if price < self.last_price {
+                self.last_trade_is_sell = true;
+                true
+            } else if price > self.last_price {
+                self.last_trade_is_sell = false;
+                false
+            } else {
+                self.last_trade_is_sell
+            }
+        } else {
+            false
+        };
+        self.cvpin.update(notional_usd, is_sell);
 
         if self.kline_start_ms == 0 {
             self.kline_start_ms = event_time_ms;

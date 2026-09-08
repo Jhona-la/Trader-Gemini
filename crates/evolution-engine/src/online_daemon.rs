@@ -171,8 +171,7 @@ impl LiveEvolutionDaemon {
 
         for coin_id in 0..self.arena.coins.len() {
             let coin = &self.arena.coins[coin_id];
-            let realized = coin.scalp.pnl_realized.load(std::sync::atomic::Ordering::Relaxed)
-                + coin.swing.pnl_realized.load(std::sync::atomic::Ordering::Relaxed);
+            let realized = coin.metrics.pnl_realized.load(std::sync::atomic::Ordering::Relaxed);
 
             if let Some(&prev) = self.last_realized_by_coin.get(&coin_id) {
                 let delta = realized - prev;
@@ -509,15 +508,29 @@ impl LiveEvolutionDaemon {
                 best
             }).await.unwrap_or(fallback_genome);
             
-            // FASE 6: Estasis de Probabilidad Adaptativa por Tamaño Muestral
+            // FASE 6 / L-0: Estasis de Probabilidad Adaptativa por Tamaño Muestral con Prior Bayesiano Bootstrap.
+            // Para cuentas micro ($13 USD) en fase de arranque (N < 15), incorpora un prior exploratorio suave
+            // para evitar que el bot descarte el 100% de las mutaciones al inicio de su ciclo de vida (Causa Forense #D101).
             let safe_sharpe = if current_shadow_sharpe.is_finite() && current_shadow_sharpe > 0.0 { current_shadow_sharpe } else { 0.1 };
             let safe_len = (self.returns_history.len().max(1)) as f64;
             let std_error = 1.0 / safe_len.sqrt();
-            let bayesian_confidence = (1.0 - (std_error / safe_sharpe)).clamp(0.0, 1.0);
-            let target_confidence = if self.is_demo { 0.70 } else { 0.80 };
+            let raw_confidence = (1.0 - (std_error / safe_sharpe)).clamp(0.0, 1.0);
+
+            let bootstrap_weight = (15.0 - safe_len).max(0.0) / 15.0;
+            let bayesian_confidence = (1.0 - bootstrap_weight) * raw_confidence + bootstrap_weight * 0.60;
+
+            let target_confidence = if self.is_demo {
+                0.55
+            } else if safe_len < 10.0 {
+                0.50
+            } else if safe_len < 30.0 {
+                0.60
+            } else {
+                0.75
+            };
             
             if bayesian_confidence < target_confidence {
-                println!("⚠️ [PROBABILITY STASIS] Sharpe {:.2} superó base, pero Confianza Bayesiana es {:.1}%. Requiere > {:.0}%. Se descarta mutación.", current_shadow_sharpe, bayesian_confidence * 100.0, target_confidence * 100.0);
+                println!("⚠️ [PROBABILITY STASIS] Sharpe {:.2} superó base, pero Confianza Bayesiana es {:.1}%. Requiere > {:.0}% (N={}). Se descarta mutación.", current_shadow_sharpe, bayesian_confidence * 100.0, target_confidence * 100.0, safe_len as usize);
                 return;
             }
             

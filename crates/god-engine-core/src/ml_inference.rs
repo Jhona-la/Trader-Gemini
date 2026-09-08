@@ -32,11 +32,32 @@ impl NanoForest {
 
     pub fn load_model(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let bin_path = path.replace(".json", ".bin");
-        let data: NanoForestData = if let Ok(bin_data) = std::fs::read(&bin_path) {
-            match bincode::deserialize(&bin_data) {
-                Ok(parsed) => parsed,
+        
+        // Verificar frescura: si el JSON es más nuevo que el BIN, el BIN es obsoleto
+        let is_stale = match (std::fs::metadata(path), std::fs::metadata(&bin_path)) {
+            (Ok(m_json), Ok(m_bin)) => {
+                let t_json = m_json.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                let t_bin = m_bin.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                t_json > t_bin
+            }
+            _ => false,
+        };
+
+        let data: NanoForestData = if !is_stale && std::path::Path::new(&bin_path).exists() {
+            match std::fs::read(&bin_path) {
+                Ok(bin_data) => match bincode::deserialize(&bin_data) {
+                    Ok(parsed) => parsed,
+                    Err(_) => {
+                        let file = File::open(path)?;
+                        let reader = BufReader::new(file);
+                        let parsed: NanoForestData = serde_json::from_reader(reader)?;
+                        if let Ok(encoded) = bincode::serialize(&parsed) {
+                            let _ = std::fs::write(&bin_path, encoded);
+                        }
+                        parsed
+                    }
+                },
                 Err(_) => {
-                    // Si el binario está corrupto, re-parseamos el JSON de origen
                     let file = File::open(path)?;
                     let reader = BufReader::new(file);
                     let parsed: NanoForestData = serde_json::from_reader(reader)?;
@@ -47,7 +68,7 @@ impl NanoForest {
                 }
             }
         } else {
-            // Fallback to JSON and auto-compile to bin!
+            // Fallback to JSON and auto-compile fresh BIN!
             let file = File::open(path)?;
             let reader = BufReader::new(file);
             let parsed: NanoForestData = serde_json::from_reader(reader)?;
@@ -143,6 +164,18 @@ impl NanoForest {
         let clamped_sum = (-safe_sum).clamp(-50.0, 50.0);
         let prob = 1.0 / (1.0 + clamped_sum.exp());
         Some(if prob.is_finite() { prob.clamp(0.0, 1.0) } else { 0.5 })
+    }
+
+    pub fn predict_raw(&self, features: &[f32]) -> (f32, f32) {
+        let n_trees = self.data.tree_offsets.len().saturating_sub(1);
+        let mut sum = self.data.init_score;
+        for i in 0..n_trees {
+            sum += self.evaluate_tree(features, i);
+        }
+        let safe_sum = if sum.is_finite() { sum } else { 0.0 };
+        let clamped_sum = (-safe_sum).clamp(-50.0, 50.0);
+        let prob = 1.0 / (1.0 + clamped_sum.exp());
+        (sum, prob)
     }
 }
 

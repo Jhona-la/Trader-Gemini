@@ -212,13 +212,34 @@ impl Position {
 #[repr(C, align(64))]
 #[derive(Default)]
 pub struct PositionManager {
+    pub scalp: Position,
+    pub swing: Position,
     pub position: Position,
 }
 
 impl PositionManager {
     #[inline(always)]
     pub fn is_any_open(&self) -> bool {
-        self.position.is_open()
+        self.scalp.is_open() || self.swing.is_open() || self.position.is_open()
+    }
+
+    #[inline(always)]
+    pub fn is_scalp_open(&self) -> bool {
+        self.scalp.is_open()
+    }
+
+    #[inline(always)]
+    pub fn is_swing_open(&self) -> bool {
+        self.swing.is_open()
+    }
+
+    #[inline(always)]
+    pub fn get_position(&self, horizon: PositionHorizon) -> &Position {
+        match horizon {
+            PositionHorizon::Scalping => &self.scalp,
+            PositionHorizon::Swing => &self.swing,
+            PositionHorizon::Continuous => &self.position,
+        }
     }
 }
 
@@ -273,6 +294,44 @@ mod tests {
         let (is_long2, p2, _, _, _) = pos.close_with_fee();
         assert!(!is_long2);
         assert_eq!(p2, 0.0);
+    }
+
+    #[test]
+    fn test_position_dual_scalp_swing_independence() {
+        let mgr = PositionManager::default();
+
+        // 1. Open Swing Long
+        mgr.swing.open_with_horizon(
+            true, 90000.0, 0.1, 900.0, 1000, 91500.0, 89300.0, PositionHorizon::Swing,
+        );
+        assert!(mgr.is_swing_open());
+        assert!(!mgr.is_scalp_open());
+        assert!(mgr.is_any_open());
+
+        // 2. Open Scalp Short simultaneously without interfering
+        mgr.scalp.open_with_horizon(
+            false, 90200.0, 0.05, 450.0, 1050, 89900.0, 90350.0, PositionHorizon::Scalping,
+        );
+        assert!(mgr.is_swing_open());
+        assert!(mgr.is_scalp_open());
+        assert!(mgr.is_any_open());
+
+        // 3. Scalp exits on TP
+        let (is_long_sc, p_sc, q_sc, _) = mgr.scalp.close();
+        assert!(!is_long_sc);
+        assert_eq!(p_sc, 90200.0);
+        assert_eq!(q_sc, 0.05);
+        assert!(!mgr.is_scalp_open());
+        // Swing remains OPEN!
+        assert!(mgr.is_swing_open());
+
+        // 4. Swing exits
+        let (is_long_sw, p_sw, q_sw, _) = mgr.swing.close();
+        assert!(is_long_sw);
+        assert_eq!(p_sw, 90000.0);
+        assert_eq!(q_sw, 0.1);
+        assert!(!mgr.is_swing_open());
+        assert!(!mgr.is_any_open());
     }
 
     fn qty_or_eq(a: f64, b: f64) -> bool {

@@ -81,36 +81,42 @@ impl QuantumStrategy for HighPayoffTrendRunner {
     }
 
     fn evaluate(&self) -> f64 {
-        let hurst = self.registry.as_ref()
-            .and_then(|r| {
-                r.get("hurst_exponent", "HighPayoffTrendRunner")
-                    .or_else(|| r.get("global_hurst", "HighPayoffTrendRunner"))
-                    .or_else(|| r.get("hurst", "HighPayoffTrendRunner"))
-            })
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return 0.0,
+        };
+
+        let hurst = r
+            .get_scoped_parameter(sym_opt, cid_opt, "hurst_exponent", "HighPayoffTrendRunner")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "global_hurst", "HighPayoffTrendRunner"))
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "hurst", "HighPayoffTrendRunner"))
             .map(|p| p.get_value())
             .unwrap_or(0.50);
 
-        let vpin = self.registry.as_ref()
-            .and_then(|r| {
-                r.get("cvpin", "HighPayoffTrendRunner")
-                    .or_else(|| r.get("order_flow_vpin", "HighPayoffTrendRunner"))
-                    .or_else(|| r.get("vpin", "HighPayoffTrendRunner"))
-            })
+        let vpin = r
+            .get_scoped_parameter(sym_opt, cid_opt, "cvpin", "HighPayoffTrendRunner")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "order_flow_vpin", "HighPayoffTrendRunner"))
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "vpin", "HighPayoffTrendRunner"))
             .map(|p| p.get_value())
             .unwrap_or(0.50);
 
-        let atr_pct = self.registry.as_ref()
-            .and_then(|r| r.get("atr_pct", "HighPayoffTrendRunner").or_else(|| r.get("relative_atr_pct", "HighPayoffTrendRunner")))
+        let atr_pct = r
+            .get_scoped_parameter(sym_opt, cid_opt, "atr_pct", "HighPayoffTrendRunner")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "relative_atr_pct", "HighPayoffTrendRunner"))
             .map(|p| p.get_value())
             .unwrap_or(0.01);
 
-        let trend_direction = self.registry.as_ref()
-            .and_then(|r| {
-                r.get("trend_direction", "HighPayoffTrendRunner")
-                    .or_else(|| r.get("ema_trend_swing", "HighPayoffTrendRunner"))
-                    .or_else(|| r.get("ema_trend", "HighPayoffTrendRunner"))
-                    .or_else(|| r.get("price_velocity", "HighPayoffTrendRunner"))
-            })
+        let trend_direction = r
+            .get_scoped_parameter(sym_opt, cid_opt, "trend_direction", "HighPayoffTrendRunner")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "ema_trend_swing", "HighPayoffTrendRunner"))
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "ema_trend", "HighPayoffTrendRunner"))
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "price_velocity", "HighPayoffTrendRunner"))
             .map(|p| p.get_value())
             .unwrap_or(0.0);
 

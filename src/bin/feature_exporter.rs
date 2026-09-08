@@ -91,28 +91,43 @@ fn main() {
             let short_sl = mid_price * (1.0 + sl_pct);
 
             let mut barrier_label: f64 = 0.5; // 0.5 = Neutral
+            let mut long_alive = true;
+            let mut short_alive = true;
+
             for f in 1..=500 {
                 let fut_mid = (ticks[i + f].bid_price + ticks[i + f].ask_price) / 2.0;
-                if fut_mid >= long_tp {
-                    barrier_label = 1.0; // Long TP alcanzado primero
+
+                // 1) Verificar si tocan Stop Loss primero (invalida la pierna correspondiente)
+                if fut_mid <= long_sl {
+                    long_alive = false;
+                }
+                if fut_mid >= short_sl {
+                    short_alive = false;
+                }
+
+                // 2) Si ambas piernas fueron liquidadas/stopeadas por volatilidad, abortar
+                if !long_alive && !short_alive {
                     break;
                 }
-                if fut_mid <= short_tp {
-                    barrier_label = 0.0; // Short TP alcanzado primero
+
+                // 3) Solo premiar con TP si la pierna no ha tocado su Stop Loss
+                if long_alive && fut_mid >= long_tp {
+                    barrier_label = 1.0; // Long TP limpio alcanzado sin tocar SL
                     break;
                 }
-                if fut_mid <= long_sl && fut_mid >= short_sl {
-                    // Ambos SL en rango, continuar explorando
+                if short_alive && fut_mid <= short_tp {
+                    barrier_label = 0.0; // Short TP limpio alcanzado sin tocar SL
+                    break;
                 }
             }
 
-            // Si ninguna barrera tocó en 500 ticks, usar signo de retorno terminal si es significativo
+            // Si ninguna barrera tocó en 500 ticks, usar signo de retorno terminal si la pierna sobrevivió
             if barrier_label == 0.5 {
                 let end_mid = (ticks[i + 500].bid_price + ticks[i + 500].ask_price) / 2.0;
                 let end_ret = (end_mid - mid_price) / mid_price;
-                if end_ret > 0.0010 {
+                if end_ret > 0.0010 && long_alive {
                     barrier_label = 1.0;
-                } else if end_ret < -0.0010 {
+                } else if end_ret < -0.0010 && short_alive {
                     barrier_label = 0.0;
                 }
             }
@@ -148,7 +163,7 @@ fn main() {
             features[46] = 1.00; // Gold Baseline (~2300.0 / 2300.0)
             features[47] = 1.00; // Oil Baseline (~80.0 / 80.0)
             features[48] = 0.0; // Econ Impact
-            features[49] = 5.25; // Fed Rate
+            features[49] = 1.00; // Fed Rate Normalized (~5.25 / 5.25 baseline)
             features[50] = 1.0; // Taker buy/sell
             features[51] = 0.0; // Basis premium
             features[52] = 0.0; // Liq cluster short

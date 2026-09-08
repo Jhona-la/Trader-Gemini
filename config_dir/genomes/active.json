@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "generation": 1,
-  "created_ms": 1788908269319,
-  "source": "shared_migration",
+  "created_ms": 1788899955022,
+  "source": "champion_bootstrap",
   "parent_generation": 0,
-  "promotion_reason": "migración del linaje compartido al entorno backtest",
+  "promotion_reason": "bootstrap resiliente desde quantum_champion.json para default",
   "genome": {
     "global_max_drawdown": 0.8173034993815746,
     "global_leverage": 25.0,

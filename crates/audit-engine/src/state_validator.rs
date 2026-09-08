@@ -17,15 +17,19 @@ impl StateValidator {
 
         let mut total_realized_pnl = 0.0;
         let mut active_positions = 0;
+        let mut open_entry_fees = 0.0;
 
         for coin in arena.coins.iter() {
-            let s_pnl = coin.scalp.pnl_realized.load(Ordering::Relaxed);
-            let w_pnl = coin.swing.pnl_realized.load(Ordering::Relaxed);
-            if s_pnl.is_finite() { total_realized_pnl += s_pnl; }
-            if w_pnl.is_finite() { total_realized_pnl += w_pnl; }
+            let m_pnl = coin.metrics.pnl_realized.load(Ordering::Relaxed);
+            if m_pnl.is_finite() { total_realized_pnl += m_pnl; }
 
-            active_positions += coin.scalp.active_positions.load(Ordering::Relaxed);
-            active_positions += coin.swing.active_positions.load(Ordering::Relaxed);
+            if coin.positions.position.is_open() {
+                active_positions += 1;
+                let fee = coin.positions.position.entry_fee.load(Ordering::Relaxed);
+                if fee.is_finite() && fee > 0.0 {
+                    open_entry_fees += fee;
+                }
+            }
         }
 
         let current_capital = arena.unified_capital.load(Ordering::Relaxed);
@@ -33,7 +37,9 @@ impl StateValidator {
             return;
         }
 
-        let expected_capital = safe_initial + total_realized_pnl;
+        // D-225: Deducir open_entry_fees del capital esperado puesto que las comisiones de apertura
+        // se descuentan inmediatamente de unified_capital pero no entran a pnl_realized hasta el cierre
+        let expected_capital = safe_initial + total_realized_pnl - open_entry_fees;
 
         // El margen de error debe ser minúsculo (errores de flotante).
         // Si hay discrepancia mayor a 1 USD (o micro-centavos), hay código fantasma.

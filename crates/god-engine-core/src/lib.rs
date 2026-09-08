@@ -771,6 +771,28 @@ impl GodEngineCore {
                         }
                     }
 
+                    // N-02 — FÍSICA DE SALIDA CONECTADA: calculate_exit
+                    // modela maker (precio límite exacto) vs taker (cruce
+                    // adverso del book + latency-slippage + floor del genoma).
+                    // El TP con trade-through califica como maker; el resto
+                    // (SL, trailing, zombie, timeout) son taker. Antes: TODO
+                    // exit llenaba a precio perfecto — asimetría que inflaba
+                    // el edge de scalps con TP estrecho.
+                    let exit_is_maker = pnl_pct >= tp;
+                    let exit_nominal = qty * exit_price;
+                    let (phys_exit_price, _phys_exit_fee) = self.reality.calculate_exit(
+                        exit_price,
+                        is_long,
+                        exit_nominal,
+                        exit_is_maker,
+                        atr_pct, // fracción (N-01)
+                        self.arena.config.base_slippage_floor.load(Ordering::Relaxed).max(0.00001),
+                        self.arena.config.latency_penalty_ms.load(Ordering::Relaxed).max(0.0),
+                    );
+                    if phys_exit_price > 0.0 {
+                        exit_price = phys_exit_price;
+                    }
+
                     let gross_pnl = if is_long {
                         (exit_price - entry) * qty
                     } else {
@@ -1516,7 +1538,13 @@ impl GodEngineCore {
                                 // precio se mueve durante la latencia) +
                                 // base_slippage_floor del GENOMA. Puede volcar
                                 // el signo del PnL certificado — es el punto.
-                                let tick_vol = atr_pct * mid_price;
+                                // N-01 — FIX UNIDADES: atr_pct YA es la
+                                // fracción que calculate_market_entry espera
+                                // (sus tests usan 0.001-0.002). Multiplicar
+                                // por mid_price producía unidades ABSOLUTAS
+                                // (BTC ~60) que saturaban el latency-slippage
+                                // al clamp del 5% en TODO trade.
+                                let tick_vol = atr_pct;
                                 let slip_floor = self
                                     .arena
                                     .config

@@ -392,7 +392,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     prev_kline_ts[tick.coin_id] = tick.timestamp;
                 }
 
-                // Pipeline Completo process_event (Trade + Kline + Depth + Microestructura + VIP0 Fees)
+                let is_buyer_maker = real_obi < 0.0;
                 let (new_order, closed_order) = engine.process_event(
                     tick.coin_id,
                     true,            // is_trade: true para evaluar flujo de trades
@@ -409,6 +409,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     tick.timestamp,
                     false, // latency_panic
                     &omni,
+                    is_buyer_maker,
                 );
 
                 if new_order.is_some() {

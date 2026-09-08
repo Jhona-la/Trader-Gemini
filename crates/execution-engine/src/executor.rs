@@ -176,6 +176,12 @@ pub trait ExecutionProvider: Send + Sync {
 
     async fn cancel_order(&self, symbol: &str, client_order_id: &str) -> Result<(), String>;
 
+    /// Cancela todas las órdenes activas para un símbolo en Binance (ej: OCO TP/SL huérfanos)
+    async fn cancel_all_symbol_orders(&self, symbol: &str) -> Result<(), String> {
+        let _ = symbol;
+        Ok(())
+    }
+
     /// F1.2/F1.3: consulta el estado REAL de una orden por su clientOrderId.
     /// Fuente de verdad para: resolver timeouts ambiguos, calcular el remanente
     /// tras un cancel en maker-chase, y reconciliación.
@@ -834,12 +840,19 @@ impl OrderExecutor {
             (ORDER_TYPE_MARKET, TIME_IN_FORCE_IOC, String::new())
         };
 
+        // D-171: Respetar is_hedge_mode. En One-Way mode, positionSide NO debe enviarse.
+        let is_hedge = self.is_hedge_mode.load(Ordering::Relaxed);
+        let pos_side_param = if is_hedge {
+            if side == SIDE_BUY { "&positionSide=LONG" } else { "&positionSide=SHORT" }
+        } else {
+            ""
+        };
         // F1.4: query EXACTA que se firma = query EXACTA que se envía.
         let signed_query = format!(
-            "symbol={}&side={}&positionSide={}&type={}&quantity={}{}&newClientOrderId={}&timestamp={}",
+            "symbol={}&side={}{}&type={}&quantity={}{}&newClientOrderId={}&timestamp={}",
             symbol,
             side,
-            if side == SIDE_BUY { "LONG" } else { "SHORT" },
+            pos_side_param,
             order_type,
             final_quantity,
             extra_params,
@@ -859,10 +872,14 @@ impl OrderExecutor {
             quantity: final_quantity,
             order_type: order_type.to_string(),
             time_in_force: time_in_force.to_string(),
-            position_side: if side == SIDE_BUY {
-                "LONG".to_string()
+            position_side: if is_hedge {
+                if side == SIDE_BUY {
+                    "LONG".to_string()
+                } else {
+                    "SHORT".to_string()
+                }
             } else {
-                "SHORT".to_string()
+                "BOTH".to_string()
             },
             price: if order.maker_only {
                 let is_sell = side == SIDE_SELL;
@@ -964,6 +981,11 @@ if true {
             }
         }
         SymbolFilter::default()
+    }
+
+    #[inline(always)]
+    pub async fn cancel_all_symbol_orders(&self, symbol: &str) -> Result<(), String> {
+        <Self as ExecutionProvider>::cancel_all_symbol_orders(self, symbol).await
     }
 }
 
@@ -1194,8 +1216,10 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        if self.is_hedge_mode.load(Ordering::Relaxed) {
+            buf.push_str("&positionSide=");
+            buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        }
         buf.push_str("&type=");
         buf.push_str(ORDER_TYPE_MARKET);
         buf.push_str("&quantity=");
@@ -1221,7 +1245,11 @@ impl ExecutionProvider for OrderExecutor {
                 &api_secret,
                 symbol,
                 side,
-                Some(if is_long { "LONG" } else { "SHORT" }),
+                if self.is_hedge_mode.load(Ordering::Relaxed) {
+                    Some(if is_long { "LONG" } else { "SHORT" })
+                } else {
+                    None
+                },
                 ORDER_TYPE_MARKET,
                 final_quantity,
                 None,
@@ -1299,8 +1327,10 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        if self.is_hedge_mode.load(Ordering::Relaxed) {
+            buf.push_str("&positionSide=");
+            buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        }
         buf.push_str("&type=");
         buf.push_str(ORDER_TYPE_LIMIT);
         buf.push_str("&timeInForce=");
@@ -1330,7 +1360,11 @@ impl ExecutionProvider for OrderExecutor {
                 &api_secret,
                 symbol,
                 side,
-                Some(if is_long { "LONG" } else { "SHORT" }),
+                if self.is_hedge_mode.load(Ordering::Relaxed) {
+                    Some(if is_long { "LONG" } else { "SHORT" })
+                } else {
+                    None
+                },
                 ORDER_TYPE_LIMIT,
                 final_quantity,
                 Some(final_price),
@@ -1483,8 +1517,10 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        if self.is_hedge_mode.load(Ordering::Relaxed) {
+            buf.push_str("&positionSide=");
+            buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        }
         buf.push_str("&type=");
         buf.push_str(ORDER_TYPE_LIMIT);
         buf.push_str("&timeInForce=");
@@ -1536,7 +1572,7 @@ impl ExecutionProvider for OrderExecutor {
             return Err("Iceberg Volumen 0".to_string());
         }
 
-        let final_price = Self::round_to_step_size(price, tick_size);
+        let final_price = Self::round_price_to_tick(price, tick_size, !is_long);
 
         if self.is_paper_trading {
             println!("📝 [PAPER TRADING LOCAL] Ejecutando orden ICEBERG_LIMIT de {} (Iceberg: {}) para {} @ {}. Cero latencia simulada.", final_quantity, final_iceberg_qty, symbol, final_price);
@@ -1559,8 +1595,10 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        if self.is_hedge_mode.load(Ordering::Relaxed) {
+            buf.push_str("&positionSide=");
+            buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        }
         buf.push_str("&type=");
         buf.push_str(ORDER_TYPE_LIMIT);
         buf.push_str("&timeInForce=");
@@ -1677,7 +1715,7 @@ impl ExecutionProvider for OrderExecutor {
         if final_quantity == 0.0 {
             return Err("Volumen 0".to_string());
         }
-        let final_price = Self::round_to_step_size(activation_price, tick_size);
+        let final_price = Self::round_price_to_tick(activation_price, tick_size, is_long);
 
         // El callbackRate en binance futures debe ser entre 0.1 y 5.
         let safe_callback = callback_rate.clamp(0.1, 5.0);
@@ -1705,8 +1743,10 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
-        buf.push_str("&positionSide=");
-        buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        if self.is_hedge_mode.load(Ordering::Relaxed) {
+            buf.push_str("&positionSide=");
+            buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        }
         buf.push_str("&type=TRAILING_STOP_MARKET");
         buf.push_str("&quantity=");
         buf.push_f64(final_quantity);
@@ -1752,8 +1792,8 @@ impl ExecutionProvider for OrderExecutor {
             return Err("Volumen 0".to_string());
         }
 
-        let final_tp = Self::round_to_step_size(take_profit_price, tick_size);
-        let final_sl = Self::round_to_step_size(stop_loss_price, tick_size);
+        let final_tp = Self::round_price_to_tick(take_profit_price, tick_size, is_long_close);
+        let final_sl = Self::round_price_to_tick(stop_loss_price, tick_size, is_long_close);
 
         if self.is_paper_trading {
             println!("📝 [PAPER TRADING LOCAL] OCO Limit/Stop interceptada para {} @ TP: {} / SL: {}. Se maneja localmente.", symbol, final_tp, final_sl);
@@ -1924,6 +1964,48 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(symbol);
         buf.push_str("&origClientOrderId=");
         buf.push_str(client_order_id);
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
+
+        let mut sig_buf = [0u8; 64];
+        let payload = &buf.as_str()[payload_start..];
+        let api_secret = self.api_secret.load().to_string();
+        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
+        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+        buf.push_str("&signature=");
+        buf.push_str(signature);
+
+        let res = self.client.cancel_order_payload(buf.as_str()).await;
+        if let Ok(limits) = &res {
+            self.update_limits(limits);
+        }
+        res.map(|_| ())
+    }
+
+    /// Cancela todas las órdenes activas en Binance para un símbolo específico
+    #[inline(always)]
+    async fn cancel_all_symbol_orders(&self, symbol: &str) -> Result<(), String> {
+        if self.is_paper_trading {
+            println!(
+                "📝 [PAPER TRADING LOCAL] Todas las órdenes canceladas en {}",
+                symbol
+            );
+            return Ok(());
+        }
+
+        let timestamp = self.get_synced_timestamp();
+        self.check_rate_limits(timestamp)?;
+
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/allOpenOrders?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/allOpenOrders?"
+        });
+        let payload_start = buf.as_str().len();
+
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
         buf.push_str("&timestamp=");
         buf.push_u64(timestamp);
 

@@ -21,8 +21,8 @@ impl<'a> PortfolioOrchestrator<'a> {
         }
         let coin = &self.arena.coins[coin_id];
 
-        let win_rate = coin.scalp.win_rate.load(Ordering::Relaxed);
-        let profit_factor = coin.scalp.profit_factor.load(Ordering::Relaxed);
+        let win_rate = coin.metrics.win_rate.load(Ordering::Relaxed);
+        let profit_factor = coin.metrics.profit_factor.load(Ordering::Relaxed);
 
         // CONTINUOUS Performance Multiplier (sigmoid-based, no step functions)
         // Maps WR×PF product into a smooth [0.3, 2.0] range via generalized logistic

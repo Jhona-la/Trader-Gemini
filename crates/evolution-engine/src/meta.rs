@@ -21,9 +21,9 @@ impl MetaEvolver {
         let mut stagnant_coins = 0;
 
         for coin in self.arena.coins.iter() {
-            let pnl = coin.scalp.pnl_realized.load(Ordering::Relaxed);
-            let wr = coin.scalp.win_rate.load(Ordering::Relaxed);
-            total_trades += coin.scalp.trade_count.load(Ordering::Relaxed);
+            let pnl = coin.metrics.pnl_realized.load(Ordering::Relaxed);
+            let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
+            total_trades += coin.metrics.trade_count.load(Ordering::Relaxed);
 
             if pnl < 0.0 && wr < 0.35 {
                 stagnant_coins += 1;

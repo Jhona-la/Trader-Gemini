@@ -422,7 +422,8 @@ impl ChannelWelfordStats {
         if std > 1e-6 {
             ((val - self.mean) / std).clamp(-5.0, 5.0)
         } else {
-            (val - self.mean).clamp(-5.0, 5.0)
+            // D-252: Si no hay varianza suficiente (cold start), retornar 0.0 neutral en vez de saturar en +/-5.0
+            0.0
         }
     }
 
@@ -438,7 +439,8 @@ impl ChannelWelfordStats {
         if std > 1e-6 {
             ((val - self.mean) / std).clamp(-5.0, 5.0)
         } else {
-            (val - self.mean).clamp(-5.0, 5.0)
+            // D-252: Si no hay varianza suficiente (cold start), retornar 0.0 neutral en vez de saturar en +/-5.0
+            0.0
         }
     }
 }
@@ -575,11 +577,15 @@ impl DarkAlphaEngine {
                 }
                 scaler.scale(&mut self.buf_scaled[..in_dim]);
             } else {
-                // 1. Normalización Welford Online individual por canal O(1) con control de congelamiento (N-11)
+                // 1. Normalización Welford Online individual por canal O(1) con control de congelamiento (N-11 / D-138)
                 for i in 0..in_dim {
                     let raw = if features[i].is_finite() { features[i] } else { 0.0 };
                     self.buf_scaled[i] = if self.freeze_normalizers {
-                        self.channel_normalizers[i].transform(raw)
+                        if self.channel_normalizers[i].count < 500.0 {
+                            self.channel_normalizers[i].normalize(raw)
+                        } else {
+                            self.channel_normalizers[i].transform(raw)
+                        }
                     } else {
                         self.channel_normalizers[i].normalize(raw)
                     };
@@ -652,10 +658,20 @@ impl DarkAlphaEngine {
             let normalizers = &mut self.per_coin_normalizers[coin_id];
             for i in 0..in_dim {
                 let raw = if features[i].is_finite() { features[i] } else { 0.0 };
-                // D-109: Warmup estadístico de Welford (count < 200.0) para que el normalizador
-                // aprenda la media y varianza real del activo antes de congelarse, evitando la saturación a +-5.0
-                self.buf_scaled[i] = if self.freeze_normalizers && normalizers[i].count >= 200.0 {
-                    normalizers[i].transform(raw)
+                // D-124 & D-138: Warmup adaptativo de 500 ticks en Welford antes del freeze estricto.
+                // Si el normalizador per-coin aún no acumuló 500 observaciones:
+                // - Si el canal global entrenado está disponible (count >= 20), usar transform del canal global mientras se actualiza el local.
+                // - Si no hay canal global disponible, usar normalize() en el normalizador local hasta completar 500 ticks.
+                // Una vez alcanzado count >= 500, se congela estrictamente con transform() garantizando cero drift.
+                self.buf_scaled[i] = if self.freeze_normalizers {
+                    if normalizers[i].count >= 500.0 {
+                        normalizers[i].transform(raw)
+                    } else if i < self.channel_normalizers.len() && self.channel_normalizers[i].count >= 20.0 {
+                        normalizers[i].update(raw);
+                        self.channel_normalizers[i].transform(raw)
+                    } else {
+                        normalizers[i].normalize(raw)
+                    }
                 } else {
                     normalizers[i].normalize(raw)
                 };

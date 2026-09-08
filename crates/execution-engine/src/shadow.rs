@@ -153,6 +153,11 @@ impl ExecutionProvider for ShadowExecutor {
         Ok(())
     }
 
+    async fn cancel_all_symbol_orders(&self, symbol: &str) -> Result<(), String> {
+        println!("👻 [SHADOW MODE] Cancelled all orders on {} [Simulated]", symbol);
+        Ok(())
+    }
+
     async fn fetch_open_positions(&self) -> Result<Vec<crate::executor::ActivePosition>, String> {
         println!("👻 [SHADOW MODE] Fetch open positions called [Simulated]");
         Ok(vec![])

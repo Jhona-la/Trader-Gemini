@@ -83,26 +83,29 @@ impl QuantumStrategy for MicroScalpTriggerEngine {
     }
 
     fn evaluate(&self) -> f64 {
-        let hawkes = self
-            .registry
-            .as_ref()
-            .and_then(|r| r.get("hawkes_intensity", "MicroScalpTriggerEngine"))
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return 0.0,
+        };
+
+        let hawkes = r
+            .get_scoped_parameter(sym_opt, cid_opt, "hawkes_intensity", "MicroScalpTriggerEngine")
             .map(|p| p.get_value())
             .unwrap_or(1.0);
-        let obi = self
-            .registry
-            .as_ref()
-            .and_then(|r| {
-                r.get("order_book_imbalance", "MicroScalpTriggerEngine")
-                    .or_else(|| r.get("orderbook_imbalance", "MicroScalpTriggerEngine"))
-                    .or_else(|| r.get("order_flow_imbalance", "MicroScalpTriggerEngine"))
-            })
+        let obi = r
+            .get_scoped_parameter(sym_opt, cid_opt, "order_book_imbalance", "MicroScalpTriggerEngine")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "orderbook_imbalance", "MicroScalpTriggerEngine"))
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "MicroScalpTriggerEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.0);
-        let ml_prob = self
-            .registry
-            .as_ref()
-            .and_then(|r| r.get("ml_prob_scalp", "MicroScalpTriggerEngine"))
+        let ml_prob = r
+            .get_scoped_parameter(sym_opt, cid_opt, "ml_prob_scalp", "MicroScalpTriggerEngine")
             .map(|p| p.get_value())
             .unwrap_or(0.5);
 

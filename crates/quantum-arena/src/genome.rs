@@ -8,6 +8,12 @@ use std::sync::atomic::Ordering;
 fn default_temporal_scale() -> f64 {
     0.5
 }
+fn default_swing_obi_threshold() -> f64 {
+    0.5
+}
+fn default_swing_accel_min_samples() -> f64 {
+    30.0
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuperGenotype {
@@ -167,7 +173,9 @@ pub struct SuperGenotype {
     // --- FASE 6: Iceberg & IOC Limits ---
     pub iceberg_volume_threshold: f64,
     pub iceberg_slice_count: f64,
+    #[serde(default = "default_swing_obi_threshold")]
     pub swing_obi_threshold: f64,
+    #[serde(default = "default_swing_accel_min_samples")]
     pub swing_accel_min_samples: f64,
     /// F3-2 — EJE TEMPORAL CONTINUO: s ∈ [0,1] posiciona el ciclo de vida
     /// de la posición en el continuo temporal: s=0 extremo corto (scalp
@@ -508,7 +516,7 @@ impl SuperGenotype {
             survival_capital_threshold: golden_ratio / 2.0, // ~0.809
             funding_rate_sensitivity: w_base,
             global_correlation_threshold: golden_ratio - 1.0, // 0.618
-            trend_threshold: pi / 10.0,                       // ~0.314
+            trend_threshold: 0.55,
             range_threshold: e_const / 6.0,                   // ~0.453
             scalp_kelly_fraction: k_scalp,
             swing_kelly_fraction: k_swing,
@@ -521,9 +529,9 @@ impl SuperGenotype {
             tp_rr_ratio_btc: r_scalp,
             min_confidence_btc: w_base * 1.018, // Ligeramente mayor que base
             veto_threshold_btc: w_base * 1.09,
-            tech_threshold: taker_base * 5.0,
+            tech_threshold: 0.15,
             ml_threshold_long: w_base * 1.036,
-            ml_threshold_short: w_base * 1.036,
+            ml_threshold_short: 1.0 - (w_base * 1.036),
             maker_spread_pct: maker_base,
             maker_obi_threshold: w_base,
             target_volatility: taker_base * 40.0,
@@ -657,7 +665,7 @@ impl SuperGenotype {
             survival_capital_threshold: rand::rng().random_range(0.5..0.95),
             funding_rate_sensitivity: rand::rng().random_range(0.1..2.0),
             global_correlation_threshold: rand::rng().random_range(0.2..0.9),
-            trend_threshold: rand::rng().random_range(0.1..0.9),
+            trend_threshold: rand::rng().random_range(0.52..0.85),
             range_threshold: rand::rng().random_range(0.1..0.9),
             scalp_kelly_fraction: rand::rng().random_range(0.1..2.0),
             swing_kelly_fraction: rand::rng().random_range(0.01..1.0),
@@ -672,7 +680,7 @@ impl SuperGenotype {
             veto_threshold_btc: rand::rng().random_range(0.5..0.99),
             tech_threshold: rand::rng().random_range(0.001..0.30),
             ml_threshold_long: rand::rng().random_range(0.5..0.95),
-            ml_threshold_short: rand::rng().random_range(0.5..0.95),
+            ml_threshold_short: rand::rng().random_range(0.05..0.49),
             maker_spread_pct: rand::rng().random_range(0.0001..0.01),
             maker_obi_threshold: rand::rng().random_range(0.1..0.95),
             target_volatility: rand::rng().random_range(0.005..0.1),
@@ -1331,9 +1339,9 @@ impl SuperGenotype {
     }
 
     fn mutate_with_rng<R: rand::Rng>(&self, rate: f64, rng: &mut R) -> Self {
-        let mut rng = rng;
         let mut mutate_val = |base: f64, min_val: f64, max_val: f64| -> f64 {
-            let change = base * rate * rng.random_range(-1.0..1.0);
+            let range = max_val - min_val;
+            let change = range * rate * rng.random_range(-0.5..0.5);
             (base + change).clamp(min_val, max_val)
         };
 
@@ -1346,7 +1354,7 @@ impl SuperGenotype {
             survival_capital_threshold: mutate_val(self.survival_capital_threshold, 0.5, 0.95),
             funding_rate_sensitivity: mutate_val(self.funding_rate_sensitivity, 0.1, 2.0),
             global_correlation_threshold: mutate_val(self.global_correlation_threshold, 0.2, 0.9),
-            trend_threshold: mutate_val(self.trend_threshold, 0.1, 0.9),
+            trend_threshold: mutate_val(self.trend_threshold, 0.52, 0.85),
             range_threshold: mutate_val(self.range_threshold, 0.1, 0.9),
             scalp_kelly_fraction: mutate_val(self.scalp_kelly_fraction, 0.1, 2.0),
             swing_kelly_fraction: mutate_val(self.swing_kelly_fraction, 0.01, 1.0),
@@ -1359,9 +1367,9 @@ impl SuperGenotype {
             tp_rr_ratio_btc: mutate_val(self.tp_rr_ratio_btc, 1.0, 10.0),
             min_confidence_btc: mutate_val(self.min_confidence_btc, 0.5, 0.95),
             veto_threshold_btc: mutate_val(self.veto_threshold_btc, 0.5, 0.99),
-            tech_threshold: mutate_val(self.tech_threshold, 0.001, 0.30),
+            tech_threshold: mutate_val(self.tech_threshold, 0.05, 0.35),
             ml_threshold_long: mutate_val(self.ml_threshold_long, 0.5, 0.95),
-            ml_threshold_short: mutate_val(self.ml_threshold_short, 0.5, 0.95),
+            ml_threshold_short: mutate_val(self.ml_threshold_short, 0.05, 0.49),
             maker_spread_pct: mutate_val(self.maker_spread_pct, 0.0001, 0.01),
             maker_obi_threshold: mutate_val(self.maker_obi_threshold, 0.1, 0.95),
             target_volatility: mutate_val(self.target_volatility, 0.005, 0.1),
@@ -1858,8 +1866,8 @@ impl SuperGenotype {
 
     pub fn get_lower_bounds() -> Vec<f64> {
         vec![
-            0.5, 25.0, 0.5, 0.5, 1.0, 0.5, 0.1, 0.2, 0.1, 0.1, 0.1, 0.01, 0.01, 0.0010, 0.0010,
-            0.0100, 0.0050, 0.5, 1.0, 0.5, 0.5, 0.001, 0.5, 0.5, 0.0001, 0.1, 0.005, 0.0000001, 0.05,
+            0.5, 25.0, 0.5, 0.5, 1.0, 0.5, 0.1, 0.2, 0.52, 0.1, 0.1, 0.01, 0.01, 0.0010, 0.0010,
+            0.0100, 0.0050, 0.5, 1.0, 0.5, 0.5, 0.05, 0.5, 0.05, 0.0001, 0.1, 0.005, 0.0000001, 0.05,
             0.0000001, 0.05, 0.1, 0.001, 0.1, 1.0, 0.01, 0.8, 10.0, 0.7, 0.1, 0.1, 0.1, 30000.0, 0.5,
             0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 10000.0, 0.4,
             0.1, 5.0, 0.05, 500.0, 5.0, 15.0, 0.30, 0.50, 1.0, 1.0, 0.005, 0.1, 5.0, 0.00005, 0.5,
@@ -1874,7 +1882,7 @@ impl SuperGenotype {
     pub fn get_upper_bounds() -> Vec<f64> {
         vec![
             0.99, 35.0, 3.0, 3.0, 50.0, 0.95, 2.0, 0.9, 0.9, 0.9, 2.0, 1.0, 1.0, 0.0500, 0.0200,
-            0.2000, 0.0600, 5.0, 10.0, 0.95, 0.99, 0.30, 0.95, 0.95, 0.01, 0.95, 0.1, 0.01, 0.95, 0.01,
+            0.2000, 0.0600, 5.0, 10.0, 0.95, 0.99, 0.30, 0.95, 0.49, 0.01, 0.95, 0.1, 0.01, 0.95, 0.01,
             0.95, 1.0, 0.1, 1.0, 10.0, 0.5, 0.9999, 125.0, 0.9999, 1.0, 1.0, 1.0, 600000.0, 5.0,
             20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 3600000.0, 0.8, 2.0, 50.0,
             0.50, 10000.0, 30.0, 60.0, 0.50, 0.70, 3.0, 2.0, 0.05, 1.0, 100.0, 0.0005, 3.0, 0.30,

@@ -69,21 +69,34 @@ impl QuantumStrategy for GameTheoreticNashEngine {
     }
 
     fn evaluate(&self) -> f64 {
-        let ofi = self.registry.as_ref()
-            .and_then(|r| r.get("order_book_imbalance", "GameTheoreticNashEngine").or_else(|| r.get("order_flow_imbalance", "GameTheoreticNashEngine")))
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return 0.0,
+        };
+
+        let ofi = r
+            .get_scoped_parameter(sym_opt, cid_opt, "order_book_imbalance", "GameTheoreticNashEngine")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "GameTheoreticNashEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.0);
 
-        let long_payoff = self.registry.as_ref()
-            .and_then(|r| r.get("game_theory_long_payoff", "GameTheoreticNashEngine"))
+        let long_payoff = r
+            .get_scoped_parameter(sym_opt, cid_opt, "game_theory_long_payoff", "GameTheoreticNashEngine")
             .map(|p| p.get_value())
             .unwrap_or_else(|| ofi.max(0.0));
-        let short_payoff = self.registry.as_ref()
-            .and_then(|r| r.get("game_theory_short_payoff", "GameTheoreticNashEngine"))
+        let short_payoff = r
+            .get_scoped_parameter(sym_opt, cid_opt, "game_theory_short_payoff", "GameTheoreticNashEngine")
             .map(|p| p.get_value())
             .unwrap_or_else(|| (-ofi).max(0.0));
-        let adversarial = self.registry.as_ref()
-            .and_then(|r| r.get("game_theory_adversarial_pressure", "GameTheoreticNashEngine").or_else(|| r.get("cvpin", "GameTheoreticNashEngine")))
+        let adversarial = r
+            .get_scoped_parameter(sym_opt, cid_opt, "game_theory_adversarial_pressure", "GameTheoreticNashEngine")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "cvpin", "GameTheoreticNashEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.1);
 

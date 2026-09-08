@@ -32,7 +32,7 @@ impl LakehouseMmap {
         file.set_len(capacity as u64)
             .map_err(|e| format!("Failed to set file size: {}", e))?;
 
-        let mut mmap = unsafe {
+        let mmap = unsafe {
             MmapOptions::new()
                 .map_mut(&file)
                 .map_err(|e| format!("Failed to mmap: {}", e))?

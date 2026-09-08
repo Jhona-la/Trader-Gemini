@@ -48,19 +48,27 @@ impl QuantumStrategy for StochasticResonanceEngine {
     }
 
     fn evaluate(&self) -> f64 {
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
         let registry = match self.registry.as_ref() {
             Some(r) => r,
             None => return 0.0,
         };
-        let weak_signal = registry.get("weak_alpha_signal", "StochasticResonanceEngine")
-            .or_else(|| registry.get("order_flow_imbalance", "StochasticResonanceEngine"))
-            .or_else(|| registry.get("alpha_signal", "StochasticResonanceEngine"))
+        let weak_signal = registry
+            .get_scoped_parameter(sym_opt, cid_opt, "weak_alpha_signal", "StochasticResonanceEngine")
+            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "StochasticResonanceEngine"))
+            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "alpha_signal", "StochasticResonanceEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.0);
 
-        let noise_variance = registry.get("microstructure_noise_variance", "StochasticResonanceEngine")
-            .or_else(|| registry.get("tick_variance", "StochasticResonanceEngine"))
-            .or_else(|| registry.get("atr_pct", "StochasticResonanceEngine"))
+        let noise_variance = registry
+            .get_scoped_parameter(sym_opt, cid_opt, "microstructure_noise_variance", "StochasticResonanceEngine")
+            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "tick_variance", "StochasticResonanceEngine"))
+            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "atr_pct", "StochasticResonanceEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.0001);
 

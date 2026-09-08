@@ -25,7 +25,7 @@ impl PerceptronGateEngine {
     /// Inferencia del tensor sin actualizar el peso (para el Engine Core), simétrica para Long y Short
     #[inline(always)]
     pub fn infer(signal_score: f64, weight: f64) -> f64 {
-        if !signal_score.is_finite() || !weight.is_finite() {
+        if !signal_score.is_finite() || !weight.is_finite() || signal_score == 0.0 {
             return 0.0;
         }
         let abs_score = signal_score.abs();
@@ -75,16 +75,24 @@ impl QuantumStrategy for PerceptronGateEngine {
     }
 
     fn evaluate(&self) -> f64 {
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
         let registry = match self.registry.as_ref() {
             Some(r) => r,
             None => return 0.0,
         };
-        let signal_score = registry.get("perceptron_candidate_signal", "PerceptronGateEngine")
-            .or_else(|| registry.get("order_flow_imbalance", "PerceptronGateEngine"))
-            .or_else(|| registry.get("alpha_signal", "PerceptronGateEngine"))
+        let signal_score = registry
+            .get_scoped_parameter(sym_opt, cid_opt, "perceptron_candidate_signal", "PerceptronGateEngine")
+            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "PerceptronGateEngine"))
+            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "alpha_signal", "PerceptronGateEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.0);
-        let weight = registry.get("perceptron_hebbian_weight", "PerceptronGateEngine")
+        let weight = registry
+            .get_scoped_parameter(sym_opt, cid_opt, "perceptron_hebbian_weight", "PerceptronGateEngine")
             .map(|p| p.get_value())
             .unwrap_or(1.0);
         if !signal_score.is_finite() || !weight.is_finite() {

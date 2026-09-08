@@ -106,22 +106,27 @@ impl GenomeEnvelope {
                 );
             }
         }
-        // T-09 — MIGRACIÓN ONE-TIME del linaje de la era compartida: si este
-        // entorno ({env}) está vacío pero la era compartida dejó un campeón,
-        // se hereda UNA vez por promote explícito (con linaje auditado). Sin
-        // esto, el primer arranque de prod/demo arrancaba en baseline y el
-        // campeón acumulado quedaba huérfano.
-        if let Some(env_tag) = std::env::var("TG_GENOME_ENV").ok().filter(|v| !v.trim().is_empty()) {
-            let shared = "config_dir/genomes/active.json";
-            if let Ok(data) = std::fs::read_to_string(shared) {
-                if let Ok(shared_env) = serde_json::from_str::<GenomeEnvelope>(&data) {
+        // T-09 / L-0 — MIGRACIÓN RESILIENTE Y HERENCIA DEL CAMPEÓN:
+        // Si el entorno ({env}) no tiene active.json, buscar en orden de prioridad:
+        // 1. config_dir/genomes/backtest/active.json (campeón de backtest)
+        // 2. config_dir/genomes/active.json (linaje compartido)
+        // 3. config_dir/genotypes/quantum_champion.json (campeón guardado)
+        // 4. config_dir/genotypes/active_genome.json (legacy activo)
+        let env_tag = std::env::var("TG_GENOME_ENV").unwrap_or_else(|_| "default".to_string());
+
+        // 1. Intentar campeón de backtest si estamos en demo/prod
+        if env_tag.trim().to_lowercase() != "backtest" {
+            let bt_path = "config_dir/genomes/backtest/active.json";
+            if let Ok(data) = std::fs::read_to_string(bt_path) {
+                if let Ok(bt_env) = serde_json::from_str::<GenomeEnvelope>(&data) {
+                    let sanitized = SuperGenotype::from_vector(&bt_env.genome.to_vector());
                     if let Ok(env) = Self::promote(
-                        shared_env.genome,
-                        "env_migration",
-                        &format!("migración one-time del linaje de la era compartida al entorno {}", env_tag.trim()),
+                        sanitized,
+                        "backtest_heritage",
+                        &format!("herencia automática del campeón de backtest al entorno {}", env_tag.trim()),
                     ) {
                         eprintln!(
-                            "🧬 [T-09] Linaje de la era compartida migrado al entorno '{}' (generación {}).",
+                            "🧬 [L-0] Campeón de backtest heredado exitosamente al entorno '{}' (generación {}).",
                             env_tag.trim(),
                             env.generation
                         );
@@ -130,27 +135,67 @@ impl GenomeEnvelope {
                 }
             }
         }
-        // 2. Fallback resiliente: cargar genoma raw de LEGACY_MIRROR
-        if let Some(data) = legacy_mirror().and_then(|p| std::fs::read_to_string(p).ok()) {
-            if let Ok(g) = serde_json::from_str::<SuperGenotype>(&data) {
-                if let Ok(env) = Self::promote(g, "legacy_bootstrap", "Migración automática desde active_genome.json") {
+
+        // 2. Intentar linaje compartido
+        let shared = "config_dir/genomes/active.json";
+        if let Ok(data) = std::fs::read_to_string(shared) {
+            if let Ok(shared_env) = serde_json::from_str::<GenomeEnvelope>(&data) {
+                let sanitized = SuperGenotype::from_vector(&shared_env.genome.to_vector());
+                if let Ok(env) = Self::promote(
+                    sanitized,
+                    "shared_migration",
+                    &format!("migración del linaje compartido al entorno {}", env_tag.trim()),
+                ) {
+                    eprintln!(
+                        "🧬 [L-0] Linaje de la era compartida migrado al entorno '{}' (generación {}).",
+                        env_tag.trim(),
+                        env.generation
+                    );
                     return Some(env);
                 }
             }
         }
-        // 3. Fallback resiliente: quantum_champion.json (solo en entorno
-        // compartido — en env aislado sería un leak cross-env, T-09)
-        if std::env::var("TG_GENOME_ENV").ok().filter(|v| !v.trim().is_empty()).is_some() {
-            return None;
-        }
+
+        // 3. Fallback: quantum_champion.json
         let champ_path = "config_dir/genotypes/quantum_champion.json";
         if let Ok(data) = std::fs::read_to_string(champ_path) {
             if let Ok(g) = serde_json::from_str::<SuperGenotype>(&data) {
-                if let Ok(env) = Self::promote(g, "champion_bootstrap", "Migración automática desde quantum_champion.json") {
+                let sanitized = SuperGenotype::from_vector(&g.to_vector());
+                if let Ok(env) = Self::promote(
+                    sanitized,
+                    "champion_bootstrap",
+                    &format!("bootstrap resiliente desde quantum_champion.json para {}", env_tag.trim()),
+                ) {
+                    eprintln!(
+                        "🧬 [L-0] Genoma campeón (quantum_champion.json) promovido al entorno '{}' (generación {}).",
+                        env_tag.trim(),
+                        env.generation
+                    );
                     return Some(env);
                 }
             }
         }
+
+        // 4. Fallback: active_genome.json
+        let legacy_path = "config_dir/genotypes/active_genome.json";
+        if let Ok(data) = std::fs::read_to_string(legacy_path) {
+            if let Ok(g) = serde_json::from_str::<SuperGenotype>(&data) {
+                let sanitized = SuperGenotype::from_vector(&g.to_vector());
+                if let Ok(env) = Self::promote(
+                    sanitized,
+                    "legacy_bootstrap",
+                    &format!("bootstrap resiliente desde active_genome.json para {}", env_tag.trim()),
+                ) {
+                    eprintln!(
+                        "🧬 [L-0] Genoma activo legacy promovido al entorno '{}' (generación {}).",
+                        env_tag.trim(),
+                        env.generation
+                    );
+                    return Some(env);
+                }
+            }
+        }
+
         None
     }
 

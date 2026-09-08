@@ -23,6 +23,20 @@ pub trait QuantumStrategy: Send + Sync {
     /// Main entry point to evaluate the strategy state on a new tick/bar
     fn evaluate(&self) -> f64; // returns signal strength or alpha
 
+    /// D-101 & D-111: Entrada multiactivo escopada por moneda y símbolo
+    fn evaluate_for_coin(&self, _coin_id: usize, _symbol: &str) -> f64 {
+        self.evaluate()
+    }
+
+    /// Evaluación escopada opcional por coin_id y símbolo
+    fn evaluate_scoped(&self, coin_id: Option<usize>, symbol: Option<&str>) -> f64 {
+        if let (Some(cid), Some(sym)) = (coin_id, symbol) {
+            self.evaluate_for_coin(cid, sym)
+        } else {
+            self.evaluate()
+        }
+    }
+
     /// Target operational trading horizon (Scalp vs Swing)
     fn horizon(&self) -> TradeHorizon {
         TradeHorizon::Scalp

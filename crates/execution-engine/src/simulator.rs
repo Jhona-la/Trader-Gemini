@@ -267,6 +267,16 @@ impl ExecutionProvider for SimulatedExecutor {
     }
 
     #[inline(always)]
+    async fn cancel_all_symbol_orders(&self, symbol: &str) -> Result<(), String> {
+        self.simulate_network_delay().await;
+        println!(
+            "👻 [SHADOW MODE] Cancelled all orders on {}",
+            symbol
+        );
+        Ok(())
+    }
+
+    #[inline(always)]
     async fn fetch_open_positions(&self) -> Result<Vec<crate::executor::ActivePosition>, String> {
         self.simulate_network_delay().await;
         if let Ok(pos_map) = self.open_positions.read() {

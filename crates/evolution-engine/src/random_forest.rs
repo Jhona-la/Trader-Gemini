@@ -75,6 +75,8 @@ impl ShadowForest {
         depth_micro_div: f64,
         event_time: u64,
         main_arena: &Arc<GlobalArena>,
+        omni_features: &[f64; 54],
+        is_buyer_maker: bool,
     ) {
         // FASE 14: Suspensión Cuántica por OS Guardian.
         // Si Windows está asfixiado en RAM, no malgastamos ciclos en los clones de sombra.
@@ -108,7 +110,8 @@ impl ShadowForest {
                 depth_micro_div,
                 event_time,
                 false, // No panic latency in shadow
-                &[0.0; 54],
+                omni_features,
+                is_buyer_maker,
             );
         }
     }
@@ -201,7 +204,7 @@ mod tests {
         let main_arena = Arc::new(GlobalArena::new(13.0));
 
         forest.broadcast_tick(
-            0, true, false, false, 50000.0, 1.0, 49999.0, 50001.0, 10.0, 10.0, 0.1, 0.0, 1600000000, &main_arena
+            0, true, false, false, 50000.0, 1.0, 49999.0, 50001.0, 10.0, 10.0, 0.1, 0.0, 1600000000, &main_arena, &[0.0; 54], false
         );
 
         forest.replant(base_genome);

@@ -178,6 +178,58 @@ impl OmniscientRegistry {
         self.get_value_fast(&key).or_else(|| self.get_value_fast(name)).unwrap_or(default)
     }
 
+    /// D-219: Lectura polimórfica escopada por activo (símbolo + coin_id) con fallback transparente al global
+    #[inline(always)]
+    pub fn get_scoped_parameter(
+        &self,
+        symbol: Option<&str>,
+        coin_id: Option<usize>,
+        name: &str,
+        consumer_name: &str,
+    ) -> Option<Arc<Parameter>> {
+        if let Some(sym) = symbol {
+            if !sym.is_empty() {
+                let scoped_name = format!("{}_{}", sym, name);
+                if let Some(p) = self.get(&scoped_name, consumer_name) {
+                    return Some(p);
+                }
+            }
+        }
+        if let Some(cid) = coin_id {
+            let scoped_cid = format!("c{}:{}", cid, name);
+            if let Some(p) = self.get(&scoped_cid, consumer_name) {
+                return Some(p);
+            }
+        }
+        self.get(name, consumer_name)
+    }
+
+    /// D-219: Lectura rápida O(1) de valor numérico escopado por activo (símbolo + coin_id)
+    #[inline(always)]
+    pub fn get_scoped_val_or(
+        &self,
+        symbol: Option<&str>,
+        coin_id: Option<usize>,
+        name: &str,
+        default: f64,
+    ) -> f64 {
+        if let Some(sym) = symbol {
+            if !sym.is_empty() {
+                let scoped_name = format!("{}_{}", sym, name);
+                if let Some(val) = self.get_value_fast(&scoped_name) {
+                    return val;
+                }
+            }
+        }
+        if let Some(cid) = coin_id {
+            let scoped_cid = format!("c{}:{}", cid, name);
+            if let Some(val) = self.get_value_fast(&scoped_cid) {
+                return val;
+            }
+        }
+        self.get_value_fast(name).unwrap_or(default)
+    }
+
     pub fn detect_collisions(&self) -> Vec<String> {
         // Since we prevent duplicates on register, collisions in a strict map sense are avoided.
         // However, if strategies attempt to register the same name, the `register` returns Err.

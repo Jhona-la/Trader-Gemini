@@ -30,17 +30,26 @@ impl TelegramBot {
         })
     }
 
-    /// Envía un mensaje de texto al chat configurado.
+    /// Envía un mensaje de texto al chat configurado con fallback automático a texto plano (D-207).
     pub async fn send_message(&self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
         let url = format!("https://api.telegram.org/bot{}/sendMessage", self.token);
 
+        // D-207: Intentar enviar con MarkdownV2. Si falla por caracteres especiales no escapados (HTTP 400),
+        // reenviar automáticamente en texto plano para asegurar entrega de alertas y telemetría.
         let payload = json!({
             "chat_id": self.chat_id,
             "text": text,
             "parse_mode": "MarkdownV2"
         });
 
-        self.client.post(&url).json(&payload).send().await?.error_for_status()?;
+        let resp = self.client.post(&url).json(&payload).send().await?;
+        if !resp.status().is_success() {
+            let fallback_payload = json!({
+                "chat_id": self.chat_id,
+                "text": text,
+            });
+            self.client.post(&url).json(&fallback_payload).send().await?.error_for_status()?;
+        }
 
         Ok(())
     }

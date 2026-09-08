@@ -431,7 +431,9 @@ async fn main() {
             ts,
             false,
             &omni_features,
+            false,
         );
+        let sim_trade_buyer_maker = price <= sim_bid;
         let (new_ord_2, closed_ord_2) = core.process_event(
             0,
             true, // is_trade = true for Trade event
@@ -448,6 +450,7 @@ async fn main() {
             ts,
             false,
             &omni_features,
+            sim_trade_buyer_maker,
         );
 
         let new_ord = new_ord_1.or(new_ord_2);

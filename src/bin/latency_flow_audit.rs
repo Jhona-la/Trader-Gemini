@@ -44,6 +44,7 @@ fn main() {
             i as u64, // event_time_ms
             false,    // latency_panic
             &omni_features,
+            false,    // is_buyer_maker
         );
         bid += 0.01;
         ask += 0.01;
@@ -69,6 +70,7 @@ fn main() {
             (i as u64) + 10000, // event_time_ms
             false,              // latency_panic
             &omni_features,
+            false,              // is_buyer_maker
         );
 
         latencies_ns.push(start.elapsed().as_nanos());

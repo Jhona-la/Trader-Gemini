@@ -125,16 +125,19 @@ pub fn run_backtest_native(
         let rel_ret = prev_rel_ret; // R2.1a: features del tensor = vela PREVIA
         let ofi_proxy = if bid_qty + ask_qty > 0.0 { (bid_qty - ask_qty) / (bid_qty + ask_qty) } else { 0.0 };
         // 1. Cotizaciones Cross-Exchange y Microestructura (0..10)
-        omni_sim[0] = current_close; // binance_spot
-        omni_sim[1] = current_close * (1.0 + rel_ret * 0.0001); // binance_futures
-        omni_sim[2] = current_close * (1.0 - ofi_proxy * 0.0001); // bybit_linear
-        omni_sim[3] = current_close * (1.0 + ofi_proxy * 0.0001); // okx_swap
-        omni_sim[4] = current_close; // bitget_futures
-        omni_sim[5] = current_close; // coinbase_spot
-        omni_sim[6] = current_close; // kraken_spot
-        omni_sim[7] = current_close; // htx_spot
-        omni_sim[8] = current_close; // deribit_options
-        omni_sim[9] = current_close; // bitfinex_spot
+        // Paridad 1:1 con producción (omni_multiplexer.rs):
+        // feats[0] = 0.0 (referencia base spot)
+        // feats[1..10] = porcentaje de spread relativo en [-5.0, 5.0]
+        omni_sim[0] = 0.0; // binance_spot (referencia base)
+        omni_sim[1] = (rel_ret * 10.0).clamp(-5.0, 5.0); // binance_futures spread
+        omni_sim[2] = (-ofi_proxy * 10.0).clamp(-5.0, 5.0); // bybit_linear spread
+        omni_sim[3] = (ofi_proxy * 10.0).clamp(-5.0, 5.0); // okx_swap spread
+        omni_sim[4] = 0.0; // bitget_futures
+        omni_sim[5] = 0.0; // coinbase_spot
+        omni_sim[6] = 0.0; // kraken_spot
+        omni_sim[7] = 0.0; // htx_spot
+        omni_sim[8] = 0.0; // deribit_options
+        omni_sim[9] = 0.0; // bitfinex_spot
         omni_sim[10] = current_vol * ofi_proxy.abs(); // binance_liquidations
 
         // 2. Sentimiento, Tasas y Macro TradFi dinámicos (11..30) (FIX #940)
@@ -264,8 +267,8 @@ pub fn run_backtest_native(
                 (sim_price - prev_close) / prev_close
             } else { 0.0 };
             // Actualizar features dinámicas por tick (Alineado 1:1 con Producción)
-            omni_sim[0] = sim_price;
-            omni_sim[1] = sim_price * (1.0 + tick_ret * 0.0001);
+            omni_sim[0] = 0.0;
+            omni_sim[1] = (tick_ret * 10.0).clamp(-5.0, 5.0);
             for j in 2..10 { omni_sim[j] = 0.0; } // Matches production offline secondary WS feeds
             omni_sim[10] = vol_step * tick_ofi.abs();
             omni_sim[30] = sim_bid_qty - sim_ask_qty;

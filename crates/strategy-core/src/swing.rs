@@ -71,19 +71,18 @@ impl SwingEngine {
             // FASE 2.5: Welford-like variance (simplified EWMA)
             // FIX #661: Sanitizar varianza para evitar raíces cuadradas negativas o NaNs
             let safe_var = if variance.is_finite() && variance > 0.0 { variance } else { 0.0 };
-            let std_dev = safe_var.sqrt().max(price * 0.0002); // 2 bps floor
-            let z_score = if std_dev > 0.0 { diff / std_dev } else { 0.0 };
-            if !z_score.is_finite() {
-                return SignalIntent::flat();
-            }
+            let _std_dev = safe_var.sqrt().max(price * 0.0002); // 2 bps floor
+            let _z_score = if _std_dev > 0.0 { diff / _std_dev } else { 0.0 };
             let macd_diff = (fast_val - slow_val) / slow_val;
 
             // FASE 3: Generación de Señales de Alta Confianza (Axioma II)
-            let z_thresh = arena.config.turbo_z_score_stdev.load(Ordering::Relaxed).clamp(1.2, 3.0);
+            let _z_thresh = arena.config.turbo_z_score_stdev.load(Ordering::Relaxed).clamp(1.2, 3.0);
 
-            // ML Integration (DarkAlpha)
+            // ML Integration (DarkAlpha / Conformal ML)
             let ml_long = arena.config.ml_threshold_long.load(Ordering::Relaxed);
             let ml_short = arena.config.ml_threshold_short.load(Ordering::Relaxed);
+            let effective_ml_long = if ml_long <= 0.50 { 1.0 - ml_long } else { ml_long }.clamp(0.51, 0.95);
+            let effective_ml_short = if ml_short >= 0.50 { 1.0 - ml_short } else { ml_short }.clamp(0.05, 0.49);
 
             // FIX #1512: Sanitización de duración de señal de Swing (mínimo 30 minutos)
             let raw_base = arena.config.base_duration_ms.load(Ordering::Relaxed);
@@ -93,49 +92,27 @@ impl SwingEngine {
                 3_600_000
             }.max(1_800_000);
 
-            if hurst < trend_threshold {
-                let conf_fallback = arena
-                    .config
-                    .explosive_confidence_threshold
-                    .load(Ordering::Relaxed);
-
-                // Mean Reversion en Rango (Hurst < threshold):
-                if z_score > z_thresh && price > fast_val && macd_diff <= 0.0005 && ml_pred <= ml_long {
-                    let conf = if ml_pred <= ml_short {
-                        ((z_score / z_thresh) * 0.5 + (0.5 - ml_pred) * 2.0 * 0.5).clamp(0.1, 1.0)
-                    } else {
-                        conf_fallback
-                    };
-                    return SignalIntent {
-                        signal: SignalType::Short, // Sobrecomprado en rango, venta a media
-                        confidence: conf,
-                        expected_duration_ms: swing_duration_ms,
-                        horizon: crate::TradeHorizon::Swing,
-                        ..Default::default()
-                    };
-                } else if z_score < -z_thresh && price >= slow_val && macd_diff >= -0.0005 && ml_pred >= ml_short {
-                    let conf = if ml_pred >= ml_long {
-                        ((z_score.abs() / z_thresh) * 0.5 + (ml_pred - 0.5) * 2.0 * 0.5).clamp(0.1, 1.0)
-                    } else {
-                        conf_fallback
-                    };
-                    return SignalIntent {
-                        signal: SignalType::Long, // Sobrevendido en rango, compra a media
-                        confidence: conf,
-                        expected_duration_ms: swing_duration_ms,
-                        horizon: crate::TradeHorizon::Swing,
-                        ..Default::default()
-                    };
-                }
+            let effective_trend_threshold = trend_threshold.max(0.52);
+            if hurst < effective_trend_threshold {
+                // Especialización por Horizonte (Axioma V):
+                // En régimen de rango o ruido (Hurst < effective_trend_threshold >= 0.52), SwingEngine permanece FLAT.
+                // La reversión a la media microestructural pertenece exclusivamente al ScalpEngine con stops de 15 bps.
+                // Entrar en swing con stops de 75 bps en oscilaciones de rango de 1m provoca sobre-operación y churn destructor.
+                return SignalIntent {
+                    signal: SignalType::Flat,
+                    horizon: crate::TradeHorizon::Swing,
+                    ..Default::default()
+                };
             } else {
                 // Tendencia Fuerte (Hurst >= threshold):
                 let swing_tp = arena.config.swing_tp_base.load(Ordering::Relaxed);
                 let threshold = (swing_tp * 0.003).max(0.0001) * (1.0 / hurst.max(0.1));
 
-                // Escalar convicción MACD de forma continua y suave
-                if macd_diff > threshold && ml_pred >= ml_short {
+                // D-121: En tendencia fuerte, Long exige confirmación alcista (ml_pred >= effective_ml_long)
+                // y Short exige confirmación bajista (ml_pred <= effective_ml_short)
+                if macd_diff > threshold && ml_pred >= effective_ml_long {
                     let raw_conf = (macd_diff.abs() * hurst * 50.0).max((ml_pred - 0.5).max(0.0) * 2.0);
-                    let confidence = if raw_conf.is_finite() { raw_conf.tanh().clamp(0.1, 1.0) } else { 0.5 };
+                    let confidence = if raw_conf.is_finite() { raw_conf.tanh().clamp(0.55, 0.95) } else { 0.55 };
                     return SignalIntent {
                         signal: SignalType::Long,
                         confidence,
@@ -143,9 +120,9 @@ impl SwingEngine {
                         horizon: crate::TradeHorizon::Swing,
                         ..Default::default()
                     };
-                } else if macd_diff < -threshold && ml_pred <= ml_long {
+                } else if macd_diff < -threshold && ml_pred <= effective_ml_short {
                     let raw_conf = (macd_diff.abs() * hurst * 50.0).max((0.5 - ml_pred).max(0.0) * 2.0);
-                    let confidence = if raw_conf.is_finite() { raw_conf.tanh().clamp(0.1, 1.0) } else { 0.5 };
+                    let confidence = if raw_conf.is_finite() { raw_conf.tanh().clamp(0.55, 0.95) } else { 0.55 };
                     return SignalIntent {
                         signal: SignalType::Short,
                         confidence,
@@ -180,14 +157,31 @@ mod tests {
     fn test_swing_engine_trend_evaluation() {
         let mut engine = SwingEngine::default();
         let arena = quantum_arena::GlobalArena::new(13.0);
+        arena.config.ml_threshold_long.store(0.55, std::sync::atomic::Ordering::Relaxed);
 
         let mut p = 100.0;
         for i in 0..40 {
             p += 0.5;
-            let intent = engine.evaluate_trend(p, 0.75, 0.60, 0.50, &arena);
+            let intent = engine.evaluate_trend(p, 0.75, 0.60, 0.65, &arena);
             if i >= 35 {
                 assert_eq!(intent.horizon, crate::TradeHorizon::Swing);
+                assert_eq!(intent.signal, SignalType::Long);
             }
+        }
+    }
+
+    #[test]
+    fn test_swing_engine_range_regime_stays_flat() {
+        let mut engine = SwingEngine::default();
+        let arena = quantum_arena::GlobalArena::new(13.0);
+
+        // In range regime (hurst 0.40 < trend_threshold 0.60), swing must stay Flat
+        let mut p = 100.0;
+        for _ in 0..40 {
+            p += 0.5;
+            let intent = engine.evaluate_trend(p, 0.40, 0.60, 0.50, &arena);
+            assert_eq!(intent.signal, SignalType::Flat);
+            assert_eq!(intent.horizon, crate::TradeHorizon::Swing);
         }
     }
 }

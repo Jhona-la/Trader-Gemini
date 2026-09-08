@@ -313,7 +313,8 @@ impl QuantumConfig {
             iceberg_slice_count: AtomicF64::new(genome.iceberg_slice_count),
             swing_obi_threshold: AtomicF64::new(genome.swing_obi_threshold),
             swing_accel_min_samples: AtomicF64::new(genome.swing_accel_min_samples),
-            temporal_scale: AtomicF64::new(1.0),
+            // D-144: temporal_scale derivado del genoma (split scalp vs swing) en vez de hardcode 1.0
+            temporal_scale: AtomicF64::new((1.0 - genome.capital_split_scalp).clamp(0.05, 0.95)),
         }
     }
 }

@@ -262,7 +262,7 @@ pub fn run_evolution_daemon(
 }
 
 /// Agrega estadísticas REALES de PnL, Trades, WR, PF de todas las monedas en la Arena.
-fn aggregate_real_stats(arena: &GlobalArena, is_scalp: bool) -> (f64, usize, f64, f64) {
+fn aggregate_real_stats(arena: &GlobalArena, _is_scalp: bool) -> (f64, usize, f64, f64) {
     let mut total_pnl = 0.0_f64;
     let mut total_trades = 0_usize;
     let mut total_wins = 0_usize;
@@ -270,21 +270,12 @@ fn aggregate_real_stats(arena: &GlobalArena, is_scalp: bool) -> (f64, usize, f64
     let mut pf_weight = 0.0_f64;
 
     for coin in arena.coins.iter() {
-        let (trades, wr, pf, pnl) = if is_scalp {
-            (
-                coin.scalp.trade_count.load(Ordering::Relaxed),
-                coin.scalp.win_rate.load(Ordering::Relaxed),
-                coin.scalp.profit_factor.load(Ordering::Relaxed),
-                coin.scalp.pnl_realized.load(Ordering::Relaxed),
-            )
-        } else {
-            (
-                coin.swing.trade_count.load(Ordering::Relaxed),
-                coin.swing.win_rate.load(Ordering::Relaxed),
-                coin.swing.profit_factor.load(Ordering::Relaxed),
-                coin.swing.pnl_realized.load(Ordering::Relaxed),
-            )
-        };
+        let (trades, wr, pf, pnl) = (
+            coin.metrics.trade_count.load(Ordering::Relaxed),
+            coin.metrics.win_rate.load(Ordering::Relaxed),
+            coin.metrics.profit_factor.load(Ordering::Relaxed),
+            coin.metrics.pnl_realized.load(Ordering::Relaxed),
+        );
         
         total_trades += trades;
         total_pnl += pnl;

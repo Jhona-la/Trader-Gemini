@@ -94,18 +94,30 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
     }
 
     fn evaluate(&self) -> f64 {
-        let atr_1s = self.registry.as_ref()
-            .and_then(|r| r.get("atr_1s", "CoaxialBreakoutEngine").or_else(|| r.get("atr_pct", "CoaxialBreakoutEngine")))
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return 0.0,
+        };
+
+        let atr_1s = r
+            .get_scoped_parameter(sym_opt, cid_opt, "atr_1s", "CoaxialBreakoutEngine")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "atr_pct", "CoaxialBreakoutEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.001);
 
-        let atr_5s = self.registry.as_ref()
-            .and_then(|r| r.get("atr_5s", "CoaxialBreakoutEngine"))
+        let atr_5s = r
+            .get_scoped_parameter(sym_opt, cid_opt, "atr_5s", "CoaxialBreakoutEngine")
             .map(|p| p.get_value())
             .unwrap_or_else(|| atr_1s * 1.5);
 
-        let atr_1m = self.registry.as_ref()
-            .and_then(|r| r.get("atr_1m", "CoaxialBreakoutEngine"))
+        let atr_1m = r
+            .get_scoped_parameter(sym_opt, cid_opt, "atr_1m", "CoaxialBreakoutEngine")
             .map(|p| p.get_value())
             .unwrap_or_else(|| atr_1s * 3.0);
 
@@ -120,18 +132,19 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
         let comp_1s = (1.0_f64 - (norm_atr_1s / norm_atr_5s.max(1e-8))).max(0.0);
         let comp_5s = (1.0_f64 - (norm_atr_5s / norm_atr_1m.max(1e-8))).max(0.0);
 
-        let direction = self.registry.as_ref()
-            .and_then(|r| {
-                r.get("order_flow_direction", "CoaxialBreakoutEngine")
-                    .or_else(|| r.get("order_flow_imbalance", "CoaxialBreakoutEngine"))
-                    .or_else(|| r.get("order_flow_delta", "CoaxialBreakoutEngine"))
-                    .or_else(|| r.get("price_velocity", "CoaxialBreakoutEngine"))
-                    .or_else(|| r.get("vol_delta", "CoaxialBreakoutEngine"))
-            })
+        let direction = r
+            .get_scoped_parameter(sym_opt, cid_opt, "order_flow_direction", "CoaxialBreakoutEngine")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "CoaxialBreakoutEngine"))
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "order_flow_delta", "CoaxialBreakoutEngine"))
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "price_velocity", "CoaxialBreakoutEngine"))
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "vol_delta", "CoaxialBreakoutEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.0);
 
         let safe_dir = if direction.is_finite() { direction } else { 0.0 };
+        if safe_dir.abs() <= 1e-6 {
+            return 0.0;
+        }
         let squeeze = (comp_1s * comp_5s * 4.0).tanh();
         safe_dir.signum() * squeeze
     }

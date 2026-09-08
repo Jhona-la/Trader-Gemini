@@ -1,4 +1,4 @@
-use crossbeam_queue::SegQueue;
+use crossbeam_queue::ArrayQueue;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::OnceLock;
@@ -30,34 +30,34 @@ impl fmt::Write for StackBuffer {
 }
 
 /// Global Lock-Free Ring Buffer for Binary Telemetry Events
-static BINARY_QUEUE: OnceLock<SegQueue<([u8; 512], usize)>> = OnceLock::new();
+static BINARY_QUEUE: OnceLock<ArrayQueue<([u8; 512], usize)>> = OnceLock::new();
 
 pub fn init_binary_telemetry(capacity: usize) {
-    // FIX #1447: Clamping defensivo de capacidad para no sobrecargar RAM
-    let safe_capacity = capacity.clamp(16, 500_000);
-    let _ = BINARY_QUEUE.set(SegQueue::new());
+    // FIX #1447 / D-213: Clamping defensivo de capacidad para no sobrecargar RAM (max 64K)
+    let safe_capacity = capacity.clamp(16, 65_536);
+    let _ = BINARY_QUEUE.set(ArrayQueue::new(safe_capacity));
 }
 
 pub fn push_binary_telemetry(data: &[u8]) {
-    let queue = BINARY_QUEUE.get_or_init(|| SegQueue::new());
+    let queue = BINARY_QUEUE.get_or_init(|| ArrayQueue::new(16_384));
     let mut fixed_buf = [0u8; 512];
     let len = std::cmp::min(data.len(), 512);
     fixed_buf[..len].copy_from_slice(&data[..len]);
-    let _ = queue.push((fixed_buf, len)); // O(1) wait-free push
+    let _ = queue.force_push((fixed_buf, len)); // O(1) wait-free push with oldest drop on full
 }
 
 pub fn pop_binary_telemetry() -> Option<([u8; 512], usize)> {
-    let queue = BINARY_QUEUE.get_or_init(|| SegQueue::new());
+    let queue = BINARY_QUEUE.get_or_init(|| ArrayQueue::new(16_384));
     queue.pop()
 }
 
 /// Global Lock-Free Queue for Structured Trade Stats
-static STATS_QUEUE: OnceLock<SegQueue<TradeStats>> = OnceLock::new();
+static STATS_QUEUE: OnceLock<ArrayQueue<TradeStats>> = OnceLock::new();
 
 pub fn init_stats_telemetry(capacity: usize) {
-    // FIX #1447: Clamping defensivo de capacidad
-    let safe_capacity = capacity.clamp(16, 500_000);
-    let _ = STATS_QUEUE.set(SegQueue::new());
+    // FIX #1447 / D-213: Clamping defensivo de capacidad (max 64K)
+    let safe_capacity = capacity.clamp(16, 65_536);
+    let _ = STATS_QUEUE.set(ArrayQueue::new(safe_capacity));
 }
 
 pub fn push_trade_stats(mut stats: TradeStats) {
@@ -68,12 +68,12 @@ pub fn push_trade_stats(mut stats: TradeStats) {
     if !stats.roi_pct.is_finite() { stats.roi_pct = 0.0; }
     if !stats.active_leverage.is_finite() || stats.active_leverage < 1.0 { stats.active_leverage = 1.0; }
 
-    let queue = STATS_QUEUE.get_or_init(|| SegQueue::new());
-    let _ = queue.push(stats);
+    let queue = STATS_QUEUE.get_or_init(|| ArrayQueue::new(16_384));
+    let _ = queue.force_push(stats);
 }
 
 pub fn pop_trade_stats() -> Option<TradeStats> {
-    let queue = STATS_QUEUE.get_or_init(|| SegQueue::new());
+    let queue = STATS_QUEUE.get_or_init(|| ArrayQueue::new(16_384));
     queue.pop()
 }
 

@@ -48,8 +48,10 @@ impl ScalpEngine {
             let alpha = 2.0 / ((min_samples * 10.0).clamp(50.0, 500.0) + 1.0);
             self.accel_stats.update_decay(accel, alpha);
 
-            // Si no hay suficientes datos para desviación estándar, no operamos
-            if self.accel_stats.count < min_samples {
+            // D-226: Clampear min_samples check al 80% del límite asintótico (1.0 / alpha)
+            // para evitar bloqueo permanente si min_samples > 1.0 / alpha en Welford decay
+            let eff_min_samples = min_samples.min((1.0 / alpha) * 0.8).max(3.0);
+            if self.accel_stats.count < eff_min_samples {
                 return SignalIntent::flat();
             }
 
