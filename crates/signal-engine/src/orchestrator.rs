@@ -223,6 +223,127 @@ impl TensorVoteOrchestrator {
         self.evaluate_horizon_consensus(TradeHorizon::Swing)
     }
 
+    /// U-F2 — CONSENSO DEL MOTOR TEMPORAL UNIVERSAL: TODO el ensamble
+    /// participa (sin particiones por etiqueta) y el lifetime resultante es
+    /// el del continuo (interpolado por confianza, ya existente en la rama
+    /// Continuous de evaluate_horizon_consensus). El motor universal tiene
+    /// UNA opinión del mercado por tick; las etiquetas de estrategia son
+    /// herencia de las fuentes, no del consenso.
+    pub fn evaluate_continuous_consensus(&self) -> TensorDecision {
+        // Reutilizar la maquinaria completa con un filtro que acepta todo:
+        // el consenso continuo es la unión de todos los votantes.
+        self.evaluate_horizon_consensus_all()
+    }
+
+    fn evaluate_horizon_consensus_all(&self) -> TensorDecision {
+        // Copia estructural de evaluate_horizon_consensus(Continuous) sin el
+        // filtro por horizonte: TODO el ensamble vota.
+        let all: Vec<&Box<dyn QuantumStrategy>> = self.strategies.iter().collect();
+        if all.is_empty() {
+            return TensorDecision {
+                signal: SignalType::Flat,
+                net_confidence: 0.0,
+                expected_volatility: 0.0,
+                expected_lifetime_ms: 0,
+                horizon: TradeHorizon::Continuous,
+            };
+        }
+        // Delegar en la implementación canónica vía un truco de composición:
+        // clonar self no es posible (estrategias box); en su lugar iteramos
+        // manualmente replicando la fusión (votos ponderados + boost).
+        let mut long_votes = 0.0;
+        let mut short_votes = 0.0;
+        let mut active_weight = 0.0;
+        let mut max_volatility = 0.0f64;
+        for s in &all {
+            let output = s.evaluate();
+            let abs_w = output.abs();
+            if output > 0.0 {
+                long_votes += abs_w;
+            } else if output < 0.0 {
+                short_votes += abs_w;
+            }
+            active_weight += abs_w;
+            if abs_w > max_volatility {
+                max_volatility = abs_w;
+            }
+        }
+        if active_weight == 0.0 {
+            return TensorDecision {
+                signal: SignalType::Flat,
+                net_confidence: 0.0,
+                expected_volatility: 0.0,
+                expected_lifetime_ms: 0,
+                horizon: TradeHorizon::Continuous,
+            };
+        }
+        let prob_long = long_votes / active_weight;
+        let prob_short = short_votes / active_weight;
+        let avg_conviction = active_weight / all.len().max(1) as f64;
+        let ensemble_boost = 1.0 + (all.len().min(5) as f64 - 1.0) * 0.1;
+        let effective_conviction = if avg_conviction.is_finite() {
+            (avg_conviction * ensemble_boost).clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+        let raw_confidence = (prob_long - prob_short) * effective_conviction;
+        let net_confidence = if raw_confidence.is_finite() { raw_confidence } else { 0.0 };
+        let atr_pct = self.arena.registry.get_value_or("atr_pct", f64::NAN);
+        let expected_volatility = if atr_pct.is_finite() && atr_pct > 0.0 {
+            atr_pct
+        } else if max_volatility.is_finite() {
+            max_volatility.max(0.0).min(0.10)
+        } else {
+            0.0
+        };
+        let min_conf_gene = self
+            .arena
+            .config
+            .min_confidence_btc
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let cutoff_floor = ((min_conf_gene - 0.50) * 2.0).clamp(0.0, 0.90);
+        let raw_base = self
+            .arena
+            .config
+            .base_duration_ms
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let base_duration = if raw_base.is_finite() && raw_base > 0.0 {
+            raw_base as u64
+        } else {
+            30_000
+        };
+        let conf = net_confidence.abs().clamp(0.0, 1.0);
+        let scale = 1.0 + 9.0 * conf;
+        let expected_lifetime_ms = ((base_duration as f64) * scale).max(30_000.0) as u64;
+        if net_confidence.abs() > cutoff_floor {
+            if net_confidence > 0.0 {
+                TensorDecision {
+                    signal: SignalType::Long,
+                    net_confidence: net_confidence.abs(),
+                    expected_volatility,
+                    expected_lifetime_ms,
+                    horizon: TradeHorizon::Continuous,
+                }
+            } else {
+                TensorDecision {
+                    signal: SignalType::Short,
+                    net_confidence: net_confidence.abs(),
+                    expected_volatility,
+                    expected_lifetime_ms,
+                    horizon: TradeHorizon::Continuous,
+                }
+            }
+        } else {
+            TensorDecision {
+                signal: SignalType::Flat,
+                net_confidence: 0.0,
+                expected_volatility,
+                expected_lifetime_ms,
+                horizon: TradeHorizon::Continuous,
+            }
+        }
+    }
+
     /// Evalúa de forma desacoplada ambos horizontes simultáneamente (Scalp y Swing) sin supresión mutua (BUG-643)
     pub fn evaluate_dual_consensus(&self) -> (TensorDecision, TensorDecision) {
         let scalp_decision = self.evaluate_scalp_consensus();

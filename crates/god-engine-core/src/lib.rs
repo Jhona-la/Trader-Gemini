@@ -1495,7 +1495,16 @@ impl GodEngineCore {
             let ppo_score = self.ppo_engine.evaluate_policy(&ppo_state);
             let micro_score: f64 = (ppo_score * 0.70 + rolling_cvd * 0.30).clamp(-1.0, 1.0);
 
+            // U-F2 (revertido el cableado tras certificación): el consenso
+            // continuo de TODO el ensamble DILUYÓ la señal swing (d2/d3:
+            // -0.19/-0.22% -> -0.78/-1.97%) porque 11 estrategias scalp
+            // colineales en OBI (hallazgo F-05/colinealidad) votan ruido
+            // dentro del consenso unificado. El API evaluate_continuous_consensus
+            // queda disponible; se cableará cuando la des-colinearización del
+            // ensamble elimine la correlación artificial. El denominador manda.
             let (tensor_scalp, tensor_swing) = self.tensor_orchestrator.evaluate_dual_consensus();
+            let tensor_cont = tensor_swing.clone();
+
             let tensor_boost = match tensor_scalp.signal {
                 SignalType::Long => tensor_scalp.net_confidence.clamp(0.0, 1.0),
                 SignalType::Short => -tensor_scalp.net_confidence.clamp(0.0, 1.0),
@@ -1719,10 +1728,10 @@ impl GodEngineCore {
             );
             if trend_intent.signal != SignalType::Flat {
                 swing_intent = trend_intent;
-            } else if tensor_swing.signal != SignalType::Flat && tensor_swing.net_confidence.abs() > 0.60 {
+            } else if tensor_cont.signal != SignalType::Flat && tensor_cont.net_confidence.abs() > 0.60 {
                 swing_intent = SignalIntent {
-                    signal: tensor_swing.signal,
-                    confidence: tensor_swing.net_confidence.abs().clamp(0.60, 1.0),
+                    signal: tensor_cont.signal,
+                    confidence: tensor_cont.net_confidence.abs().clamp(0.60, 1.0),
                     ..Default::default()
                 };
             }
