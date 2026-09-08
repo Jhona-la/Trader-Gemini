@@ -693,7 +693,17 @@ impl GodEngineCore {
                 let pos_tp = coin.positions.scalp_position.tp_price.load(Ordering::Relaxed);
                 let pos_sl = coin.positions.scalp_position.sl_price.load(Ordering::Relaxed);
                 let fallback_sl = scalp_sl_base.max(atr_pct * 1.25).clamp(0.0015, 0.0050);
-                let fallback_tp = scalp_tp_base.max(fallback_sl * 2.0).clamp(0.0030, 0.0150);
+                // F3-1: RR desde el GEN (tp_rr_ratio_btc, evolucionable
+                // 1.0-10.0) — antes el literal 2.0 pisaba la evolución.
+                let rr_ratio = self
+                    .arena
+                    .config
+                    .tp_rr_ratio_btc
+                    .load(Ordering::Relaxed)
+                    .clamp(1.0, 10.0);
+                let fallback_tp = scalp_tp_base
+                    .max(fallback_sl * rr_ratio)
+                    .clamp(0.0030, 0.0150);
                 if pos_tp > 0.0 && pos_sl > 0.0 && coin.positions.scalp_position.is_open() {
                     let entry_p = coin.positions.scalp_position.entry_price.load(Ordering::Relaxed);
                     if entry_p > 0.0 {
@@ -1041,7 +1051,16 @@ impl GodEngineCore {
                 let pos_tp = coin.positions.swing_position.tp_price.load(Ordering::Relaxed);
                 let pos_sl = coin.positions.swing_position.sl_price.load(Ordering::Relaxed);
                 let fallback_sl = swing_sl_base.max(atr_pct * 3.0).clamp(0.0080, 0.0350);
-                let fallback_tp = swing_tp_base.max(fallback_sl * 2.5).clamp(0.0200, 0.0900);
+                // F3-1: mismo gen de RR — un solo estándar temporal continuo.
+                let rr_ratio_w = self
+                    .arena
+                    .config
+                    .tp_rr_ratio_btc
+                    .load(Ordering::Relaxed)
+                    .clamp(1.0, 10.0);
+                let fallback_tp = swing_tp_base
+                    .max(fallback_sl * rr_ratio_w)
+                    .clamp(0.0200, 0.0900);
                 if pos_tp > 0.0 && pos_sl > 0.0 && coin.positions.swing_position.is_open() {
                     let entry_p = coin.positions.swing_position.entry_price.load(Ordering::Relaxed);
                     if entry_p > 0.0 {
