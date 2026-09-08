@@ -211,8 +211,12 @@ fn aggtrades_main() {
                 for line in content.lines().skip(1) {
                     let cols: Vec<&str> = line.split(',').collect();
                     if cols.len() < 7 { continue; }
+                    // S-01 — FIX COLUMNA TIMESTAMP: cols[4] es last_trade_id,
+                    // NO transact_time (que es cols[5]). Antes: trade-ID
+                    // monótono como tiempo — sort disfrazaba el bug y toda
+                    // duración/interpolación temporal quedaba corrupta.
                     let (Ok(price), Ok(qty), Ok(ts), Ok(is_maker)) =
-                        (cols[1].parse::<f64>(), cols[2].parse::<f64>(), cols[4].parse::<u64>(), cols[6].parse::<bool>())
+                        (cols[1].parse::<f64>(), cols[2].parse::<f64>(), cols[5].parse::<u64>(), cols[6].parse::<bool>())
                     else { continue };
                     if !price.is_finite() || price <= 0.0 || !qty.is_finite() || qty <= 0.0 { continue; }
 

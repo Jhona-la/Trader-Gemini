@@ -185,10 +185,12 @@ pub fn reconcile_arena(
 
     let mut remote_map: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     let mut remote_price_map: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let mut remote_lev_map: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     for p in remote {
         if p.is_open() {
             *remote_map.entry(p.symbol.to_uppercase()).or_insert(0.0) += p.position_amt;
             remote_price_map.insert(p.symbol.to_uppercase(), p.entry_price);
+            remote_lev_map.insert(p.symbol.to_uppercase(), p.leverage);
         }
     }
 
@@ -215,10 +217,61 @@ pub fn reconcile_arena(
         if remote_net_qty.abs() < 1e-8 {
             // Exchange está plano pero la Arena cree que tiene posiciones abiertas: phantom cleanup
             if cont_open {
-                let (_, _, _, m, _) = coin.positions.position.close_with_fee();
+                let exit_price = if remote_price > 0.0 {
+                    remote_price
+                } else {
+                    coin.current_price.load(std::sync::atomic::Ordering::Relaxed)
+                };
+                let pos_horizon = coin.positions.position.horizon();
+                let is_pos_swing = pos_horizon == quantum_arena::position::PositionHorizon::Swing;
+                let (was_long, entry_p, qty, m, entry_fee_paid) = coin.positions.position.close_with_fee();
                 if m > 0.0 {
                     let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
                     arena.used_margin.store((cur_u - m).max(0.0), std::sync::atomic::Ordering::Relaxed);
+                }
+
+                if qty > 0.0 && exit_price > 0.0 && entry_p > 0.0 {
+                    let gross_pnl = if was_long {
+                        (exit_price - entry_p) * qty
+                    } else {
+                        (entry_p - exit_price) * qty
+                    };
+                    let live_taker = arena.config.live_taker_fee.load(std::sync::atomic::Ordering::Relaxed).max(0.0004);
+                    let close_fee = (qty * exit_price) * live_taker;
+                    let net_realized_pnl = gross_pnl - close_fee;
+                    let net_trade_pnl = net_realized_pnl - entry_fee_paid;
+
+                    coin.metrics.pnl_realized.fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                    if is_pos_swing {
+                        coin.swing.pnl_realized.fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                    } else {
+                        coin.scalp.pnl_realized.fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    arena.unified_capital.fetch_add(net_realized_pnl, std::sync::atomic::Ordering::Relaxed);
+
+                    let is_win = net_trade_pnl > 0.0;
+                    let n = coin.metrics.trade_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as f64 + 1.0;
+                    let old_wr = coin.metrics.win_rate.load(std::sync::atomic::Ordering::Relaxed);
+                    let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
+                    coin.metrics.win_rate.store(new_wr, std::sync::atomic::Ordering::Relaxed);
+
+                    if is_pos_swing {
+                        let n_sw = coin.swing.trade_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as f64 + 1.0;
+                        let old_sw_wr = coin.swing.win_rate.load(std::sync::atomic::Ordering::Relaxed);
+                        let new_sw_wr = old_sw_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sw_wr) / n_sw);
+                        coin.swing.win_rate.store(new_sw_wr, std::sync::atomic::Ordering::Relaxed);
+                    } else {
+                        let n_sc = coin.scalp.trade_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as f64 + 1.0;
+                        let old_sc_wr = coin.scalp.win_rate.load(std::sync::atomic::Ordering::Relaxed);
+                        let new_sc_wr = old_sc_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sc_wr) / n_sc);
+                        coin.scalp.win_rate.store(new_sc_wr, std::sync::atomic::Ordering::Relaxed);
+                    }
+
+                    if is_win {
+                        coin.metrics.gross_wins.fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                    } else {
+                        coin.metrics.gross_losses.fetch_add(net_trade_pnl.abs(), std::sync::atomic::Ordering::Relaxed);
+                    }
                 }
                 adjustments += 1;
             }
@@ -234,7 +287,12 @@ pub fn reconcile_arena(
                     coin.current_price.load(std::sync::atomic::Ordering::Relaxed)
                 };
                 let notional = abs_qty * price;
-                let margin = notional / 10.0; // 10x de margen estimado
+                // S-06: usar el LEVERAGE REAL de la posición reportada por el
+                // exchange (antes: /10.0 hardcoded — inflaba used_margin 2-5x
+                // en cuentas 20x/50x → falsa escasez de margen).
+                let lev = remote_lev_map.get(&sym).copied().unwrap_or(10.0);
+                let lev = if lev.is_finite() && lev >= 1.0 { lev } else { 10.0 };
+                let margin = notional / lev;
                 coin.positions.position.open_with_horizon(
                     is_long,
                     price,

@@ -274,6 +274,7 @@ pub fn run_backtest_native(
             omni_sim[39] = tick_ofi;
             omni_sim[49] = tick_ret.abs() * 100.0;
 
+            let sim_is_buyer_maker = tick_ret < 0.0;
             let (_new_order, closed_order) = core.process_event(
                 target_coin_id,
                 true,
@@ -290,6 +291,7 @@ pub fn run_backtest_native(
                 (i as u64 * 60_000) + (t as u64 * (60_000 / num_ticks.max(1) as u64)),
                 false,
                 &omni_sim,
+                sim_is_buyer_maker,
             );
 
             if let Some((_is_long, net_pnl, qty)) = closed_order {

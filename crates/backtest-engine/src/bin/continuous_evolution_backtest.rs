@@ -382,8 +382,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let is_kline_closed = prev_kline_ts == 0 || (tick.timestamp / 60_000) != (prev_kline_ts / 60_000);
             if is_kline_closed { prev_kline_ts = tick.timestamp; }
 
-            arena.increment_tick();
-
+            // S-07: increment_tick eliminado — process_tick_dual ya lo hace
+            // internamente (el doble conteo hacia que la lógica temporal
+            // corriera a 2x).
             let (new_ord, closed_ord, _) = engine.process_tick_dual(
                 cid, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp, &omni
             );
@@ -429,7 +430,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Transmitir al Shadow Forest Inline (Paralelizado para velocidad extrema)
             shadow_engines.iter_mut().for_each(|shadow_engine| {
-                shadow_engine.arena.increment_tick();
                 shadow_engine.arena.update_market_data(cid, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp);
                 shadow_engine.arena.coins[cid].current_price.store(mid, Ordering::Relaxed);
 

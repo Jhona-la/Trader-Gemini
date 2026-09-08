@@ -55,7 +55,7 @@ impl EvolutionEngine {
             let mut valid_coins = 0;
             for coin_id in 0..self.arena.coins.len() {
                 let coin_wr = self.arena.coins[coin_id]
-                    .scalp
+                    .metrics
                     .win_rate
                     .load(Ordering::Relaxed);
                 if self.arena.coins[coin_id]
@@ -157,7 +157,7 @@ impl EvolutionEngine {
                 .global_learning_rate
                 .load(Ordering::Relaxed)
                 * 2.0; // social
-            let mut cma_samples = cma_es_optimizer.sample_population(w, c1, c2);
+            let cma_samples = cma_es_optimizer.sample_population(w, c1, c2);
             let mut population: Vec<Genotype> = Vec::with_capacity(pop_size);
 
             // Generate genotypes from CMA-ES vectors
@@ -246,6 +246,7 @@ impl EvolutionEngine {
                             tick.timestamp,
                             false,
                             &omni_live,
+                            false, // is_buyer_maker desconocido en replay
                         );
                         if new_order.is_some() || closed_order.is_some() {
                             total_trades += 1;
@@ -294,6 +295,7 @@ impl EvolutionEngine {
                             tick.timestamp,
                             false,
                             &omni_oos,
+                            false, // is_buyer_maker desconocido en replay
                         );
                         if closed_order.is_some() {
                             total_trades += 1;
@@ -347,7 +349,8 @@ impl EvolutionEngine {
                     // Normalización logarítmica simétrica para estabilizar matriz de covarianza CMA-ES
                     let normalized_fitness = raw_fitness.signum() * (1.0 + raw_fitness.abs()).ln();
 
-                    (i, normalized_fitness, pnl, total_trades as usize, sharpe, sharpe)
+                    // D-136: Empaquetar velocity real en el índice 5 en lugar de duplicar sharpe
+                    (i, normalized_fitness, pnl, total_trades as usize, sharpe, velocity)
                 })
                 .collect();
 
@@ -362,17 +365,18 @@ impl EvolutionEngine {
             let alpha = &results[0];
             let next_alpha = population[best_idx].clone();
 
-            // Evolución de los umbrales de seguridad meta-arquitectónicos
-            meta_evolver.audit_system_architecture(alpha.3 as f64);
+            // D-140: Pasar el Sharpe real (alpha.4) a la auditoría meta-arquitectónica
+            meta_evolver.audit_system_architecture(alpha.4);
 
             // FASE 38: Ajuste Dinámico de la Población.
             // Si el motor encontró un pozo óptimo, aumentamos la entropía reduciendo población
             // Si el motor está estancado, aumentamos la población para buscar en más frentes.
 
-            // FASE 37: Requisito de mantener Velocity de 2.0x (o al menos un buen PnL en la muestra actual si es corta)
-            let is_high_velocity = alpha.4 >= 1.5; // Relajado para backtests cortos, meta = 2.0x en 3 días.
+            // D-136: Evaluar velocidad de capital real desde alpha.5
+            let is_high_velocity = alpha.5 >= 1.5; // Relajado para backtests cortos, meta = 2.0x en 3 días.
 
-            if alpha.3 > 0 {
+            // D-129: Exigir trades >= 1 Y PnL estrictamente positivo Y fitness positivo antes de hacer hot-swap
+            if alpha.3 > 0 && alpha.2 > 0.0 && alpha.1 > 0.0 {
                 println!(
                     "🧬 [ALPHA HOT-SWAP] Nuevo Genoma! Sharpe: {:.2} | Fitness: {:.2} | PnL: +${:.2} ({} trades)",
                     alpha.4, alpha.1, alpha.2, alpha.3
