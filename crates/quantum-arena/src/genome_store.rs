@@ -80,6 +80,12 @@ fn now_ms() -> u64 {
 }
 
 impl GenomeEnvelope {
+    /// Aplica el genoma a la arena y registra atómicamente la generación aplicada (checkpointing de linaje)
+    pub fn apply_to_arena(&self, arena: &crate::GlobalArena) {
+        self.genome.apply_to_arena(arena);
+        arena.applied_generation.store(self.generation, std::sync::atomic::Ordering::Release);
+    }
+
     /// Carga el genoma activo desde el envelope versionado con resolución resiliente multi-ruta:
     /// 1. config_dir/genomes/active.json (Envelope oficial versionado)
     /// 2. config_dir/genotypes/active_genome.json (Genoma activo legacy)
@@ -91,6 +97,30 @@ impl GenomeEnvelope {
                 return Some(env);
             }
         }
+        // T-09 — MIGRACIÓN ONE-TIME del linaje de la era compartida: si este
+        // entorno ({env}) está vacío pero la era compartida dejó un campeón,
+        // se hereda UNA vez por promote explícito (con linaje auditado). Sin
+        // esto, el primer arranque de prod/demo arrancaba en baseline y el
+        // campeón acumulado quedaba huérfano.
+        if let Some(env_tag) = std::env::var("TG_GENOME_ENV").ok().filter(|v| !v.trim().is_empty()) {
+            let shared = "config_dir/genomes/active.json";
+            if let Ok(data) = std::fs::read_to_string(shared) {
+                if let Ok(shared_env) = serde_json::from_str::<GenomeEnvelope>(&data) {
+                    if let Ok(env) = Self::promote(
+                        shared_env.genome,
+                        "env_migration",
+                        &format!("migración one-time del linaje de la era compartida al entorno {}", env_tag.trim()),
+                    ) {
+                        eprintln!(
+                            "🧬 [T-09] Linaje de la era compartida migrado al entorno '{}' (generación {}).",
+                            env_tag.trim(),
+                            env.generation
+                        );
+                        return Some(env);
+                    }
+                }
+            }
+        }
         // 2. Fallback resiliente: cargar genoma raw de LEGACY_MIRROR
         if let Some(data) = legacy_mirror().and_then(|p| std::fs::read_to_string(p).ok()) {
             if let Ok(g) = serde_json::from_str::<SuperGenotype>(&data) {
@@ -99,7 +129,11 @@ impl GenomeEnvelope {
                 }
             }
         }
-        // 3. Fallback resiliente: quantum_champion.json
+        // 3. Fallback resiliente: quantum_champion.json (solo en entorno
+        // compartido — en env aislado sería un leak cross-env, T-09)
+        if std::env::var("TG_GENOME_ENV").ok().filter(|v| !v.trim().is_empty()).is_some() {
+            return None;
+        }
         let champ_path = "config_dir/genotypes/quantum_champion.json";
         if let Ok(data) = std::fs::read_to_string(champ_path) {
             if let Ok(g) = serde_json::from_str::<SuperGenotype>(&data) {

@@ -653,6 +653,8 @@ impl GodEngineCore {
             } else if sym.starts_with("ETH") {
                 self.lead_lag_engine.update_leader(false, ofi_value);
             }
+            // D-36: Predict altcoin cross-asset impulse from real BTC/ETH leaders
+            let (leader_mom, lead_lag_div) = self.lead_lag_engine.predict_altcoin_impulse(ofi_value);
 
             let obi = if total_vol > 0.0 {
                 (bid_qty - ask_qty) / total_vol
@@ -784,12 +786,26 @@ impl GodEngineCore {
                 let trend_reversed = (is_long && macro_t < -0.0015) || (!is_long && macro_t > 0.0015);
                 let hard_timeout = position_age_ms > 7_200_000; // 2h hard limit para scalp
                 let is_zombie = event_time_ms > 0 && position_age_ms > 1_800_000 && ((trend_reversed && pnl_pct <= -0.0020) || hard_timeout);
+                // D-38: Salida temprana por toxicidad de microestructura (VPIN > 0.70 + OFI adverso) para proteger micro-capital
+                let cur_vpin = self.feature_engines[coin_id].cvpin.current_vpin();
+                let ofi_adverse = (is_long && ofi_value < -0.45) || (!is_long && ofi_value > 0.45);
+                let toxic_flow_exit = ofi_adverse && cur_vpin > 0.70 && pnl_pct < -0.0005;
 
-                if pnl_pct >= scalp_tp
+                // T-06 — el TP limit SOLO se llena con trade-through: un long
+                // cierra cuando el BID alcanza el tp_price (no el mid — el mid
+                // cruza media-spread antes que el precio ejecutable). El SL se
+                // mantiene por mid (conservador, ya maneja gaps con min/max).
+                let tp_traded_through = if is_long {
+                    bid >= entry * (1.0 + scalp_tp)
+                } else {
+                    ask <= entry * (1.0 - scalp_tp)
+                };
+                if tp_traded_through
                     || pnl_pct <= -scalp_sl
                     || trail_hit
                     || force_close_trail
                     || is_zombie
+                    || toxic_flow_exit
                 {
                     let sl_price = if is_long {
                         entry * (1.0 - scalp_sl)
@@ -960,6 +976,37 @@ impl GodEngineCore {
                     if coin_id < self.last_scalp_senior_signals.len() {
                         self.consejo_deliberacion.record_outcome(&self.last_scalp_senior_signals[coin_id], realized_ret);
                     }
+
+                    // D-34: Retroalimentación PPO continuo y Online Learning tras cierre de Scalp
+                    let hawkes_r = self.feature_engines[coin_id].cvpin.current_vpin();
+                    let ppo_close_features = [
+                        (ofi_value / 0.35).clamp(-1.5, 1.5),
+                        (obi / 0.35).clamp(-1.5, 1.5),
+                        hawkes_r.clamp(0.0, 1.0),
+                        lead_lag_div.clamp(-1.5, 1.5),
+                        ((hurst_val - 0.50) * 2.0).clamp(-1.0, 1.0),
+                    ];
+                    self.ppo_engine.update_policy(
+                        realized_ret,
+                        &ppo_close_features,
+                        if is_long { 1.0 } else { -1.0 },
+                        1.0,
+                        0.05,
+                        0.01,
+                        0.20,
+                        0.01,
+                    );
+                    let cur_features = self.feature_engines[coin_id].get_features();
+                    let mut online_feat = [0.0f32; 64];
+                    for (idx, &f) in cur_features.iter().enumerate().take(64) {
+                        online_feat[idx] = f;
+                    }
+                    self.online_learner.update_weights_with_kalman_adaptive_vol(
+                        &online_feat,
+                        (realized_ret - ml_at_entry) as f32,
+                        (hurst_val as f32 - 0.5).abs(),
+                        raw_atr_pct as f32,
+                    );
                 } else {
                     let notional = qty * entry;
                     let unrealized = pnl_pct * notional;
@@ -1072,12 +1119,22 @@ impl GodEngineCore {
                 let macro_reversal = (is_long && macro_t < -0.0030) || (!is_long && macro_t > 0.0030);
                 let swing_hard_timeout = position_age_ms > 259_200_000; // 72h max swing duration
                 let is_swing_zombie = event_time_ms > 0 && position_age_ms > 14_400_000 && ((macro_reversal && pnl_pct <= -swing_sl * 0.70) || swing_hard_timeout);
+                // D-38: Salida temprana en Swing por toxicidad de flujo microestructural sostenido
+                let cur_vpin_sw = self.feature_engines[coin_id].cvpin.current_vpin();
+                let ofi_adverse_sw = (is_long && ofi_value < -0.55) || (!is_long && ofi_value > 0.55);
+                let toxic_flow_exit_sw = ofi_adverse_sw && cur_vpin_sw > 0.75 && pnl_pct < -0.0020;
 
-                if pnl_pct >= swing_tp
+                let tp_traded_through = if is_long {
+                    bid >= entry * (1.0 + swing_tp)
+                } else {
+                    ask <= entry * (1.0 - swing_tp)
+                };
+                if tp_traded_through
                     || pnl_pct <= -swing_sl
                     || trail_hit
                     || force_close_trail
                     || is_swing_zombie
+                    || toxic_flow_exit_sw
                 {
                     let sl_price = if is_long {
                         entry * (1.0 - swing_sl)
@@ -1229,6 +1286,26 @@ impl GodEngineCore {
                     if coin_id < self.last_swing_senior_signals.len() {
                         self.consejo_deliberacion.record_outcome(&self.last_swing_senior_signals[coin_id], realized_ret);
                     }
+
+                    // D-34: Retroalimentación PPO continuo tras cierre de Swing
+                    let hawkes_r_sw = self.feature_engines[coin_id].cvpin.current_vpin();
+                    let ppo_features_sw = [
+                        (ofi_value / 0.35).clamp(-1.5, 1.5),
+                        (obi / 0.35).clamp(-1.5, 1.5),
+                        hawkes_r_sw.clamp(0.0, 1.0),
+                        lead_lag_div.clamp(-1.5, 1.5),
+                        ((hurst_val - 0.50) * 2.0).clamp(-1.0, 1.0),
+                    ];
+                    self.ppo_engine.update_policy(
+                        realized_ret,
+                        &ppo_features_sw,
+                        if is_long { 1.0 } else { -1.0 },
+                        1.0,
+                        0.05,
+                        0.01,
+                        0.20,
+                        0.01,
+                    );
                 } else {
                     let notional = qty * entry;
                     let unrealized = pnl_pct * notional;
@@ -1258,7 +1335,6 @@ impl GodEngineCore {
             let obi_val = if bid_qty + ask_qty > 0.0 { (bid_qty - ask_qty) / (bid_qty + ask_qty) } else { 0.0 };
             let flow_dir = if bid_qty > ask_qty { 1.0 } else if ask_qty > bid_qty { -1.0 } else { 0.0 };
             let v_t = self.feature_engines[coin_id].v_t;
-            let a_t = self.feature_engines[coin_id].a_t;
             let shannon_ent = self.feature_engines[coin_id].entropy.current();
             let vpin_val = self.feature_engines[coin_id].cvpin.current_vpin();
             let total_vol = (bid_qty + ask_qty).max(1e-8);
@@ -1290,7 +1366,12 @@ impl GodEngineCore {
             set_reg("order_flow_direction", flow_dir);
             set_reg("order_book_imbalance", obi_val);
             set_reg("orderbook_imbalance", obi_val);
-            set_reg("order_flow_imbalance", obi_val);
+            set_reg("order_flow_imbalance", ofi_value);
+            // D-40: Señal sub-umbral para StochasticResonanceEngine
+            set_reg("weak_alpha_signal", (ofi_value * 0.5 + obi_val * 0.5).clamp(-1.0, 1.0));
+            // D-36: Alpha de liderazgo Macro Lead-Lag
+            set_reg("lead_lag_divergence", lead_lag_div);
+            set_reg("leader_momentum", leader_mom);
             set_reg("shannon_entropy", shannon_ent);
             set_reg("tsallis_q_entropy", tsallis_ent);
             set_reg("hurst_exponent", hurst_val);
@@ -1368,7 +1449,18 @@ impl GodEngineCore {
             let ema_macro = if self.feature_engines[coin_id].kline_ema_slow > 0.0 { self.feature_engines[coin_id].kline_ema_slow } else { mid_price };
             let pos_dev = ((mid_price - ema_macro) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0);
             set_reg("quantum_position_deviation", pos_dev);
-            let micro_score: f64 = (obi_norm * 0.40 + ofi_norm * 0.40 + rolling_cvd * 0.20).clamp(-1.0, 1.0);
+            // D-34: PPO Policy Engine adaptativo continuo ponderando microestructura
+            let hawkes_intensity = (1.0 + current_obi.abs() * 2.0).clamp(0.1, 5.0) / 5.0;
+            let regime_code = ((hurst_val - 0.50) * 2.0).clamp(-1.0, 1.0);
+            let ppo_state = [
+                ofi_norm,
+                obi_norm,
+                hawkes_intensity,
+                lead_lag_div.clamp(-1.5, 1.5),
+                regime_code,
+            ];
+            let ppo_score = self.ppo_engine.evaluate_policy(&ppo_state);
+            let micro_score: f64 = (ppo_score * 0.70 + rolling_cvd * 0.30).clamp(-1.0, 1.0);
 
             let (tensor_scalp, tensor_swing) = self.tensor_orchestrator.evaluate_dual_consensus();
             let tensor_boost = match tensor_scalp.signal {
@@ -1547,15 +1639,15 @@ impl GodEngineCore {
                         for idx in 0..34 {
                             swing_feats_f64[idx] = sf[idx] as f64;
                         }
-                        nn.predict(&swing_feats_f64)
+                        nn.predict_for_coin(coin_id, &swing_feats_f64)
                     } else if in_dim == 12 {
                         let mut micro_f64 = [0.0; 12];
                         for idx in 0..12 {
                             micro_f64[idx] = features[idx] as f64;
                         }
-                        nn.predict(&micro_f64)
+                        nn.predict_for_coin(coin_id, &micro_f64)
                     } else {
-                        nn.predict(&combined)
+                        nn.predict_for_coin(coin_id, &combined)
                     };
                     if let Some(p) = p_opt {
                         swing_nn_pred = p.clamp(0.01, 0.99);
@@ -1621,7 +1713,8 @@ impl GodEngineCore {
                         0.0
                     };
                     let vpin_risk = self.feature_engines[coin_id].cvpin.current_vpin().clamp(0.0, 1.0);
-                    let (impulse_mom, _) = self.feature_engines[coin_id].lead_lag.predict_altcoin_impulse(obi);
+                    // D-36: Usar el LeadLagAlphaEngine centralizado actualizado con BTC/ETH
+                    let (impulse_mom, _) = self.lead_lag_engine.predict_altcoin_impulse(obi);
                     let graph_corr = impulse_mom.clamp(-1.0, 1.0);
 
                     let current_spread_bps = if mid_price > 1e-8 && ask >= bid {
@@ -1733,7 +1826,8 @@ impl GodEngineCore {
                         0.0
                     };
                     let vpin_risk = self.feature_engines[coin_id].cvpin.current_vpin().clamp(0.0, 1.0);
-                    let (impulse_mom, _) = self.feature_engines[coin_id].lead_lag.predict_altcoin_impulse(obi);
+                    // D-36: Usar el LeadLagAlphaEngine centralizado actualizado con BTC/ETH
+                    let (impulse_mom, _) = self.lead_lag_engine.predict_altcoin_impulse(obi);
                     let graph_corr = impulse_mom.clamp(-1.0, 1.0);
 
                     let current_spread_bps = if mid_price > 1e-8 && ask >= bid {

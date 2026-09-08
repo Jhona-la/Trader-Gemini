@@ -436,7 +436,15 @@ impl SuperGenotype {
             );
             return envelope.genome;
         }
-        if let Ok(data) = std::fs::read_to_string("config_dir/genotypes/active_genome.json") {
+        // T-09: el fallback legacy SOLO aplica en entorno compartido — leer
+        // el mirror desde un env aislado (TG_GENOME_ENV seteado) sería un
+        // bypass de la separación de linajes que E3 existe para garantizar.
+        let legacy_data = if std::env::var("TG_GENOME_ENV").ok().filter(|v| !v.trim().is_empty()).is_none() {
+            std::fs::read_to_string("config_dir/genotypes/active_genome.json").ok()
+        } else {
+            None
+        };
+        if let Some(data) = legacy_data {
             if let Ok(genome) = serde_json::from_str::<Self>(&data) {
                 telemetry_engine::telemetry!("🧬 [GENOMA] Loaded evolved SuperGenotype from config_dir/genotypes/active_genome.json");
                 return genome;
