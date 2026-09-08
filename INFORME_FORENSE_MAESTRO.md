@@ -691,3 +691,39 @@ Además: interpolación temporal_scale revertida a lerp sin documentación y sie
 Ranking de gaps de realismo del fill-model y top-3 mejoras de edge medible propuestas por cada rol senior.
 
 *Esta adenda se agrega sin modificar el contenido histórico.*
+
+---
+
+## 20. 🆕 NOVENA ADENDA: RESOLUCIÓN Y CERTIFICACIÓN QUIRÚRGICA DE LA SEXTA OLA (D-219 A D-253)
+
+### Paradigma de Grafo Vivo · Pure Rust · Portátil 16GB RAM · Cuenta $13 USD · Sub-Microsegundo
+
+En esta intervención se ejecutó la remediación de raíz de las 35 patologías de la Sexta Ola:
+
+1. **[D-222] Genoma 140D**: `#[serde(default)]` implementado en `crates/quantum-arena/src/genome.rs`. Se regeneraron `active_genome.json` y `quantum_champion.json` con los 140 genes completos, desbloqueando la carga del genoma óptimo sin caídas al baseline.
+2. **[D-220 & D-247] Microestructura Real**: Firma de `process_event` actualizada con `is_buyer_maker: bool` real. Erradicada la inyección sintética de trades en `@depth5` (`pseudo_maker = bid_qty > ask_qty`). El CVD y Order Flow reflejan fielmente la agresión institucional en Binance.
+3. **[D-219] Scoping Multimoneda**: Inclusión de `get_scoped_parameter` y `get_scoped_val_or` en `crates/omniscient-registry/src/lib.rs`. Implementación de `evaluate_for_coin` en las 12 estrategias cuánticas, eliminando la colisión y sobreescritura de parámetros entre activos.
+4. **[D-246 & D-223] Brackets OCO y Rollback Atómico**: Incorporado `cancel_all_symbol_orders` invocando `DELETE /fapi/v1/allOpenOrders` en `crates/execution-engine/src/executor.rs`. Activado antes de cada cierre a mercado en `god_engine.rs:1407`. Rollback de posiciones en la arena ejecutado de inmediato ante fallos OCO de emergencia (`god_engine.rs:1603`).
+5. **[D-221] Neutralidad del Consejo de Seniors**: Función `safe_signum` con banda muerta $\pm 10^{-6}$ en `crates/metacortex-engine/src/consejo_seniors.rs`. Eliminado el sesgo alcista espurio de `0.0_f64.signum() == 1.0` en mercados planos.
+6. **[D-226] Scalp Welford Asymptote**: Clampeo de `min_samples` al 80% del límite asintótico en `crates/strategy-core/src/scalp.rs`, garantizando la emisión fluida de señales en microestructura.
+7. **[D-249] TP/SL Continuo**: Eliminada la bifurcación condicional en `TradeHorizon::Continuous` en `crates/risk-engine/src/lib.rs`, logrando interpolación lineal suave entre scalp y swing a través de `temporal_s_eval`.
+8. **[D-224] Contabilidad de Reconciliación**: Actualización atómica de `coin.metrics.pnl_realized`, win-rate, trade count y `arena.unified_capital` en `crates/execution-engine/src/reconciliation.rs` ante cierres de Binance.
+9. **[D-225] Paridad Patrimonial sin Falsos Positivos**: Deducción de `open_entry_fees` en `crates/audit-engine/src/state_validator.rs`, erradicando falsas alertas de discrepancia.
+10. **[D-252] Protección en Frío de Redes Neuronales**: Retorno de `0.0` neutral cuando `std <= 1e-6` en `crates/dark-alpha-engine/src/lib.rs`, previniendo saturación a $\pm 5.0$.
+
+### Certificación Final:
+- `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+- `cargo test --workspace --lib`: **445+ pruebas unitarias aprobadas al 100%**.
+
+
+---
+
+## 20. 🆕 OCTAVA ADENDA DE ASEGURAMIENTO (2026-09-08, tres roles senior post s-fixes)
+
+➡️ **[INFORME_ASEGURAMIENTO_OCTAVO.md](INFORME_ASEGURAMIENTO_OCTAVO.md)** — Quant + Infra + ML/Architect.
+
+**Los gaps ya no son de estructura sino de FÍSICA**: el fill-model certifica PnL sin fricción temporal (latencia cero — decisión y ejecución en el mismo tick) ni de tamaño (liquidez infinita a 0.5bps). RealityPhysics con impacto cuadrático y NetworkJitterSimulator lognormal existen COMPLETOS y son CÓDIGO MUERTO. Kelly sigue neutralizado por min-notional en micro-cuentas Y no se escala por riesgo del stop (swing arriesga 8× más bps con la misma fracción). El gen global_max_drawdown está funcionalmente muerto (convertido en cap de margen constante). OCO retry sin re-firma persiste.
+
+Certificados nuevos: timestamp REAL.bin correcto byte a byte, ensamble 14/tick confirmado, D-171 hedge-mode (crítico para producción), D-249 stops lerp consistente, D-122 Metacognitivo sin inversión, Lee-Ready tick-direction, D-252 cold-start neutral. Working tree (56 archivos) evaluado COMPLETO en su alcance (consistencia) pero NO toca fill-model.
+
+*Esta adenda se agrega sin modificar el contenido histórico.*
