@@ -1370,6 +1370,13 @@ impl GodEngineCore {
                         self.consejo_deliberacion.record_outcome(&self.last_swing_senior_signals[coin_id], realized_ret);
                     }
 
+                    // Aprendizaje Hebbiano Adaptativo para compuerta perceptrónica (Fase 21 / #96)
+                    let mut cur_hebbian = self.arena.registry.get("perceptron_hebbian_weight", "GodEngineCore")
+                        .map(|p| p.get_value())
+                        .unwrap_or(1.0);
+                    signal_engine::perceptron_gate::PerceptronGateEngine::update_weight(&mut cur_hebbian, net_trade_pnl, atr_pct);
+                    self.arena.registry.set("perceptron_hebbian_weight", cur_hebbian);
+
                     // D-34: Retroalimentación PPO continuo tras cierre de Swing
                     let hawkes_r_sw = self.feature_engines[coin_id].cvpin.current_vpin();
                     let ppo_features_sw = [
@@ -1567,8 +1574,8 @@ impl GodEngineCore {
             // colinearización) diluyó la señal swing y se revirtió; esta vez
             // la certificación decide con el denominador.
             let tensor_cont = self.tensor_orchestrator.evaluate_continuous_consensus();
-            let tensor_scalp = tensor_cont.clone();
-            let tensor_swing = tensor_cont.clone();
+            let tensor_scalp = self.tensor_orchestrator.evaluate_scalp_consensus();
+            let tensor_swing = self.tensor_orchestrator.evaluate_swing_consensus();
 
             let tensor_boost = match tensor_scalp.signal {
                 SignalType::Long => tensor_scalp.net_confidence.clamp(0.0, 1.0),
@@ -1793,10 +1800,16 @@ impl GodEngineCore {
             );
             if trend_intent.signal != SignalType::Flat {
                 swing_intent = trend_intent;
-            } else if tensor_cont.signal != SignalType::Flat && tensor_cont.net_confidence.abs() > 0.60 {
+            } else if tensor_swing.signal != SignalType::Flat && tensor_swing.net_confidence.abs() > 0.60 {
+                swing_intent = SignalIntent {
+                    signal: tensor_swing.signal,
+                    confidence: tensor_swing.net_confidence.abs().clamp(0.60, 1.0),
+                    ..Default::default()
+                };
+            } else if tensor_cont.signal != SignalType::Flat && tensor_cont.net_confidence.abs() > 0.65 {
                 swing_intent = SignalIntent {
                     signal: tensor_cont.signal,
-                    confidence: tensor_cont.net_confidence.abs().clamp(0.60, 1.0),
+                    confidence: tensor_cont.net_confidence.abs().clamp(0.65, 1.0),
                     ..Default::default()
                 };
             }
