@@ -5,6 +5,10 @@ use std::sync::atomic::Ordering;
 
 /// Axioma X: SuperGenotype (El ADN de Trader Gemini)
 /// Integra todos los 50+ parámetros del God Engine en un solo vector.
+fn default_temporal_scale() -> f64 {
+    0.5
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuperGenotype {
     pub global_max_drawdown: f64,
@@ -171,6 +175,7 @@ pub struct SuperGenotype {
     /// largo se derivan del corto por span exponencial: span = 10^(2s) —
     /// s=0.5 da ×10 (el ratio histórico scalp↔swing). UN dial evolutivo
     /// reemplaza la dicotomía de genes duplicados por horizonte.
+    #[serde(default = "default_temporal_scale")]
     pub temporal_scale: f64,
 }
 

@@ -95,6 +95,15 @@ impl GenomeEnvelope {
         if let Ok(data) = std::fs::read_to_string(active_path()) {
             if let Ok(env) = serde_json::from_str::<GenomeEnvelope>(&data) {
                 return Some(env);
+            } else {
+                // R-05: un genoma activo que existe pero NO parsea (p.ej.
+                // schema viejo sin genes nuevos) es un evento crítico de
+                // linaje — antes se descartaba EN SILENCIO y el sistema
+                // reiniciaba en baseline sin que nadie lo supiera.
+                eprintln!(
+                    "🚨 [GENOME-STORE] {} EXISTE pero falla el parseo — se descarta y cae al fallback. Migra el genoma o regenéralo.",
+                    active_path()
+                );
             }
         }
         // T-09 — MIGRACIÓN ONE-TIME del linaje de la era compartida: si este

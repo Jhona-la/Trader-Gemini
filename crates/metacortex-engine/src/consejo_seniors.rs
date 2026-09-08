@@ -404,11 +404,26 @@ impl ConsejoDeliberacion {
         win_rate: f64,
         weight_multipliers: Option<&[f64; 10]>,
     ) -> ConsensusResult {
-        let safe_wr = if win_rate.is_finite() {
+        // R-06 — SHRINKAGE BAYESIANO del win rate: wr=0 con n=0 significa
+        // "sin datos", NO "sistema fallando". Mezcla con prior Beta(1,1)
+        // (uniforme) ponderada por la evidencia disponible: sin trades el
+        // prior 0.5 domina (neutral); con n grande el wr empírico manda.
+        // El caller pasa n implícito vía el propio wr — usamos el shrinkage
+        // estándar wr' = (wr*n + 0.5*k)/(n + k) con k=8 pseudo-observaciones
+        // y n estimado del tracker del Consejo cuando existe.
+        let raw_wr = if win_rate.is_finite() {
             win_rate.clamp(0.0, 1.0)
         } else {
             0.5
         };
+        let n_obs = self
+            .tracker
+            .read()
+            .ok()
+            .map(|t| t.total_outcomes())
+            .unwrap_or(0) as f64;
+        let k_prior = 8.0;
+        let safe_wr = (raw_wr * n_obs + 0.5 * k_prior) / (n_obs + k_prior);
 
         // N-12: Si no se proporcionan multiplicadores externos, usar pesos adaptativos empíricos del tracker
         let dynamic_weights = if weight_multipliers.is_none() {
@@ -565,6 +580,11 @@ pub struct SeniorPerformanceTracker {
 }
 
 impl SeniorPerformanceTracker {
+    /// R-06: total de resultados observados (para el shrinkage del wr).
+    pub fn total_outcomes(&self) -> usize {
+        self.history.len()
+    }
+
     pub fn new(window_size: usize) -> Self {
         Self {
             window_size: window_size.max(10).min(1000),

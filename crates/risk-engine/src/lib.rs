@@ -490,11 +490,12 @@ impl RiskEngine {
             .load(Ordering::Relaxed)
             .min(max_exchange_leverage);
 
-        let real_win_rate = if is_scalp {
-            coin.scalp.win_rate.load(Ordering::Relaxed)
-        } else {
-            coin.swing.win_rate.load(Ordering::Relaxed)
-        };
+        // U-C — FIX ZOMBIE: coin.scalp/swing ya nadie los escribe (motor
+        // unificado -> coin.metrics). Antes el leverage leía un win-rate
+        // congelado en el valor inicial para SIEMPRE: el sizing dinámico
+        // jamás aprendía de resultados (never-start). Ahora lee la fuente
+        // viva única.
+        let real_win_rate = coin.metrics.win_rate.load(Ordering::Relaxed);
 
         let mut dynamic_leverage =
             leverage_matrix::QuantumLeverageMatrix::calculate_dynamic_leverage(

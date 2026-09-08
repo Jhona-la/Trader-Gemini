@@ -569,7 +569,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 2. Superó al control en fitness (mejora real > capital * 0.0002).
         // 3. O bien generó Alpha positivo (best_pnl > 0.0), o bien en un día de contracción general
         //    protegió el capital sustancialmente mejor que el control (best_pnl > control_pnl + 0.30).
-        let valid_replacement = best_pnl > (control_pnl + 0.30) || (best_pnl > 0.0 && control_pnl <= 0.0); // AUTOEVOLUCIÓN FORZADA
+        let valid_replacement = (best_trades >= 1 && best_pnl > (control_pnl + 0.30)) || (best_trades >= 1 && best_pnl > 0.0 && control_pnl <= 0.0); // R-04: sin actividad REAL mínima no hay reemplazo — ni la rama forzada promueve mutantes sin trades
 
         if valid_replacement {
             println!("🧬 [EVOLUTION] Mutant #{} replaces Baseline! (PnL: {:.4} vs {:.4}, Imp: {:.4}, Trades: {})", 
