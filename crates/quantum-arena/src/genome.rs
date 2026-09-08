@@ -1300,6 +1300,22 @@ impl SuperGenotype {
 
     pub fn mutate_cmaes(&self, rate: f64) -> Self {
         let mut rng = rand::rng();
+        self.mutate_with_rng(rate, &mut rng)
+    }
+
+    /// DETERMINISMO MULTI-DÍA: variante sembrada — la certificación de
+    /// backtests multi-día requiere que el enjambre mutante produzca la
+    /// MISMA población en cada corrida (antes: rand::rng() sin semilla hacía
+    /// que cada día de evolución promoviera un genoma distinto por corrida
+    /// y el día siguiente heredara la lotería).
+    pub fn mutate_cmaes_seeded(&self, rate: f64, seed: u64) -> Self {
+        use rand::SeedableRng;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        self.mutate_with_rng(rate, &mut rng)
+    }
+
+    fn mutate_with_rng<R: rand::Rng>(&self, rate: f64, rng: &mut R) -> Self {
+        let mut rng = rng;
         let mut mutate_val = |base: f64, min_val: f64, max_val: f64| -> f64 {
             let change = base * rate * rng.random_range(-1.0..1.0);
             (base + change).clamp(min_val, max_val)

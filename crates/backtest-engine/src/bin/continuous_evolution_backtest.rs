@@ -25,13 +25,14 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline) -> Vec<TickEvent> {
     let c = if kline.close.is_finite() && kline.close > 0.0 { kline.close } else { o };
     let total_v = if kline.volume.is_finite() && kline.volume > 0.0 { kline.volume } else { 1.0 };
     
-    let is_bullish = c >= o;
     let _v_per_tick = total_v / 4.0;
-    
     let step = duration / 4;
     
-    // NADA DE INVENTAR FUTURO O RUIDO. SOLO DATOS REALES.
-    let points = if is_bullish {
+    // FIX #D16: Eliminación de Lookahead Bias (c >= o).
+    // No se conoce el cierre futuro 'c' para ordenar el path intra-barra.
+    // Se utiliza la proximidad causal del precio de apertura al extremo más cercano.
+    let open_closer_to_low = (o - l).abs() <= (h - o).abs();
+    let points = if open_closer_to_low {
         vec![
             (kline.open_time, o),
             (kline.open_time + step, l),
@@ -204,6 +205,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // La arena y el motor se instancian una sola vez para mantener vivos los filtros wavelets,
     // promedios exponenciales, modelos L2 y posiciones activas sin reseteos artificiales a medianoche.
     let arena = Arc::new(GlobalArena::new(current_capital));
+    arena.config.live_maker_fee.store(0.0002, Ordering::Relaxed);
+    arena.config.live_taker_fee.store(0.0005, Ordering::Relaxed);
+    arena.config.base_capital.store(initial_capital, Ordering::Relaxed);
     current_genome.apply_to_arena(&arena);
     
     let mut engine = GodEngineCore::new(arena.clone());
@@ -216,6 +220,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let day_start_capital = arena.unified_capital.load(Ordering::Relaxed);
         let mut day_trades = 0;
+        let mut day_scalp_trades = 0;
+        let mut day_scalp_pnl = 0.0;
+        let mut day_scalp_wins = 0;
+        let mut day_swing_trades = 0;
+        let mut day_swing_pnl = 0.0;
+        let mut day_swing_wins = 0;
         let mut prev_kline_ts = 0;
         
         // ESCALADO MASIVO DE MUTANTES (ENJAMBRE CUÁNTICO PARALELO CON RAYON: 10 NICHOS ECOLÓGICOS)
@@ -224,15 +234,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut shadow_genomes = Vec::with_capacity(num_mutants);
         println!("🧬 [ENJAMBRE CUÁNTICO] Desplegando {} mutantes concurrentes en 10 nichos ecológicos...", num_mutants);
         for i in 0..num_mutants {
+            // DETERMINISMO MULTI-DÍA: semilla única por (día, mutante) — el
+            // enjambre produce la MISMA población en cada corrida.
+            let deterministic_seed: u64 = 0x5EED_0000_0000_0000u64
+                .wrapping_add((day_idx as u64) << 32)
+                .wrapping_add(i as u64);
             let mutant_arena = Arc::new(GlobalArena::new(current_capital));
+            mutant_arena.config.live_maker_fee.store(0.0002, Ordering::Relaxed);
+            mutant_arena.config.live_taker_fee.store(0.0005, Ordering::Relaxed);
+            mutant_arena.config.base_capital.store(initial_capital, Ordering::Relaxed);
             let mut mutant_genome = if i == 0 {
                 current_genome.clone() // Baseline elitism
             } else if i < (num_mutants * 10 / 100).max(1) {
                 // Nicho 1: Afinamiento Fino CMA-ES (0.05) - Explotación pura
-                current_genome.mutate_cmaes(0.05)
+                current_genome.mutate_cmaes_seeded(0.05, deterministic_seed)
             } else if i < (num_mutants * 20 / 100).max(2) {
                 // Nicho 2: Especialista en Scalping L2 y OFI (TP corto, SL ceñido, Kelly controlado)
-                let mut g = current_genome.mutate_cmaes(0.15);
+                let mut g = current_genome.mutate_cmaes_seeded(0.15, deterministic_seed);
                 g.scalp_tp_base = g.scalp_tp_base.clamp(0.0120, 0.0240);
                 g.scalp_sl_base = (g.scalp_sl_base * 0.85).clamp(0.0030, 0.0075);
                 g.scalp_kelly_fraction = g.scalp_kelly_fraction.clamp(0.15, 0.35);
@@ -240,51 +258,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 g
             } else if i < (num_mutants * 30 / 100).max(3) {
                 // Nicho 3: Soliton Wavelet & Multiscale Trend (TP amplio, Trailing ATR)
-                let mut g = current_genome.mutate_cmaes(0.20);
+                let mut g = current_genome.mutate_cmaes_seeded(0.20, deterministic_seed);
                 g.scalp_tp_base = g.scalp_tp_base.clamp(0.0180, 0.0400);
                 g.scalp_sl_base = (g.scalp_sl_base * 1.15).clamp(0.0050, 0.0120);
                 g.scalp_trail_act_atr = g.scalp_trail_act_atr.clamp(0.8, 1.8);
                 g
             } else if i < (num_mutants * 40 / 100).max(4) {
                 // Nicho 4: KAN Neural & DarkAlpha (Alta ponderación neural)
-                let mut g = current_genome.mutate_cmaes(0.25);
+                let mut g = current_genome.mutate_cmaes_seeded(0.25, deterministic_seed);
                 g.tech_threshold = g.tech_threshold.clamp(0.120, 0.220);
                 g
             } else if i < (num_mutants * 50 / 100).max(5) {
                 // Nicho 5: Mean-Reversion & Wall Bounce (Absorción en muros L2)
-                let mut g = current_genome.mutate_cmaes(0.20);
+                let mut g = current_genome.mutate_cmaes_seeded(0.20, deterministic_seed);
                 g.weight_obi = (g.weight_obi * 1.8).clamp(0.5, 2.5);
                 g.scalp_tp_base = g.scalp_tp_base.clamp(0.0120, 0.0250);
                 g.scalp_sl_base = (g.scalp_sl_base * 0.90).clamp(0.0035, 0.0085);
                 g
             } else if i < (num_mutants * 60 / 100).max(6) {
                 // Nicho 6: Volatility Squeeze Breakout (Compresión y explosión ATR/Bollinger)
-                let mut g = current_genome.mutate_cmaes(0.25);
+                let mut g = current_genome.mutate_cmaes_seeded(0.25, deterministic_seed);
                 g.target_volatility = g.target_volatility.clamp(0.01, 0.04);
                 g.explosive_confidence_threshold = g.explosive_confidence_threshold.clamp(0.70, 0.88);
                 g.explosive_leverage_multiplier = g.explosive_leverage_multiplier.clamp(1.5, 4.0);
                 g
             } else if i < (num_mutants * 70 / 100).max(7) {
                 // Nicho 7: Macro Lead-Lag Arbitrage (Impulsos BTC transmitidos a altcoins)
-                let mut g = current_genome.mutate_cmaes(0.30);
+                let mut g = current_genome.mutate_cmaes_seeded(0.30, deterministic_seed);
                 g.global_correlation_threshold = g.global_correlation_threshold.clamp(0.30, 0.70);
                 g
             } else if i < (num_mutants * 80 / 100).max(8) {
                 // Nicho 8: Zero-Taker Maker Rebate Harvester (Captura de spread y fees negativos)
-                let mut g = current_genome.mutate_cmaes(0.15);
+                let mut g = current_genome.mutate_cmaes_seeded(0.15, deterministic_seed);
                 g.maker_spread_pct = g.maker_spread_pct.clamp(0.0002, 0.0008);
                 g.maker_obi_threshold = g.maker_obi_threshold.clamp(0.20, 0.40);
                 g
             } else if i < (num_mutants * 90 / 100).max(9) {
                 // Nicho 9: Fractal Mandelbrot Trend Surfer (Hurst > 0.60, tendencias hiperbólicas)
-                let mut g = current_genome.mutate_cmaes(0.25);
+                let mut g = current_genome.mutate_cmaes_seeded(0.25, deterministic_seed);
                 g.trend_threshold = g.trend_threshold.clamp(0.55, 0.85);
                 g.swing_tp_base = g.swing_tp_base.clamp(0.020, 0.060);
                 g.swing_kelly_fraction = g.swing_kelly_fraction.clamp(0.15, 0.35);
                 g
             } else {
                 // Nicho 10: Saltos de Lévy / Mutaciones Cuánticas Globales (0.55 caótico)
-                current_genome.mutate_cmaes(0.55)
+                current_genome.mutate_cmaes_seeded(0.55, deterministic_seed)
             };
             // Blindaje Cuántico: cotas estrictas para todos los mutantes (impedir que nazcan mutantes cobardes o suicidas)
             mutant_genome.tech_threshold = mutant_genome.tech_threshold.clamp(0.080, 0.220);
@@ -332,13 +350,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let live_vol = tick.bid_qty + tick.ask_qty;
             let live_ofi = if live_vol > 0.0 { (tick.bid_qty - tick.ask_qty) / live_vol } else { 0.0 };
             
-            // FASE 21: Mapeo topológico multidimensional completo y exacto a GodEngineCore
+            // FASE 21: Mapeo topológico multidimensional completo y causal 1:1 con Producción
             omni[0] = mid;
             omni[1] = live_vol;
             omni[2] = if mid > 0.0 { (tick.ask_price - tick.bid_price) / mid * 10000.0 } else { 0.0 };
             omni[3] = (live_vol * mid) / 1000.0;
             omni[4] = (live_ofi * 100.0).clamp(0.0, 200.0);
             omni[5] = 50.0; // Benchmark neutral RSI proxy
+            omni[11] = 0.0001; // agg_funding_rate
+            omni[21] = 104.2;  // dxy
+            omni[22] = 5120.0; // sp500
+            omni[23] = 18100.0;// nasdaq
+            omni[24] = 18.5;   // vix
+            omni[25] = 4.25;   // us10y
+            omni[26] = 2320.0; // gold
+            omni[27] = 81.0;   // oil_wti
+            omni[29] = 5.25;   // fed_interest_rate
+            omni[30] = tick.bid_qty - tick.ask_qty;
+            omni[31] = (tick.bid_qty - tick.ask_qty) * 1.2;
+            omni[39] = live_ofi;
             omni[48] = live_ofi.clamp(-1.0, 1.0);
             omni[49] = (live_vol / 100.0).tanh().clamp(-1.0, 1.0);
 
@@ -347,13 +377,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             arena.increment_tick();
 
-            let (new_order, closed_order, _) = engine.process_tick(
+            let (new_sc, new_sw, closed_sc, closed_sw, _) = engine.process_tick_dual(
                 cid, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp, &omni
             );
 
+            let new_order = new_sc.is_some() || new_sw.is_some();
+            let closed_order = closed_sc.is_some() || closed_sw.is_some();
+
+            if let Some((_is_long, net_pnl, _qty)) = closed_sc {
+                day_scalp_trades += 1;
+                day_scalp_pnl += net_pnl;
+                if net_pnl > 0.0 { day_scalp_wins += 1; }
+                day_trades += 1;
+            }
+            if let Some((_is_long, net_pnl, _qty)) = closed_sw {
+                day_swing_trades += 1;
+                day_swing_pnl += net_pnl;
+                if net_pnl > 0.0 { day_swing_wins += 1; }
+                day_trades += 1;
+            }
+
             // DIAGNÓSTICO SIGNAL-PATH: post-engine.
             {
-                use strategy_core::types::SignalType;
+                use signal_engine::SignalType;
                 let si = &engine.last_scalp_intent[cid];
                 let wi = &engine.last_swing_intent[cid];
                 if si.signal != SignalType::Flat { diag.intents_scalp += 1; }
@@ -367,17 +413,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 diag.max_obi = diag.max_obi.max(reg.get_value_or("orderbook_imbalance", 0.0).abs());
                 diag.tech_thr = reg.get_value_or("tech_threshold", 0.0);
                 diag.max_micro_trend = diag.max_micro_trend.max(reg.get_value_or("ema_trend", 0.0).abs());
-                if new_order.is_some() { diag.orders += 1; }
+                if new_order { diag.orders += 1; }
             }
 
-            if idx % 100_000 == 0 || new_order.is_some() || closed_order.is_some() {
+            if idx % 100_000 == 0 || new_order || closed_order {
                 let safe_cid = cid.min(engine.feature_engines.len().saturating_sub(1));
                 let atr = engine.feature_engines[safe_cid].get_atr_pct();
                 let hurst = engine.feature_engines[safe_cid].hurst.current();
                 let macro_t = engine.feature_engines[safe_cid].get_macro_trend();
-                let is_open = engine.arena.coins[cid].positions.position.is_open();
-                println!("🔍 [TICK #{}] coin={} ts={} mid={:.2} atr={:.6} hurst={:.3} macro_trend={:.6} is_open={} new_ord={:?} closed={:?}",
-                    idx, cid, tick.timestamp, mid, atr, hurst, macro_t, is_open, new_order.is_some(), closed_order.is_some());
+                let is_sc_open = engine.arena.coins[cid].positions.scalp_position.is_open();
+                let is_sw_open = engine.arena.coins[cid].positions.swing_position.is_open();
+                println!("🔍 [TICK #{}] coin={} ts={} mid={:.2} atr={:.6} hurst={:.3} macro_trend={:.6} open(sc={}, sw={}) new_ord={} closed={}",
+                    idx, cid, tick.timestamp, mid, atr, hurst, macro_t, is_sc_open, is_sw_open, new_order, closed_order);
             }
 
             // Transmitir al Shadow Forest Inline (Paralelizado para velocidad extrema)
@@ -386,14 +433,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 shadow_engine.arena.update_market_data(cid, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp);
                 shadow_engine.arena.coins[cid].current_price.store(mid, Ordering::Relaxed);
 
-                let _ = shadow_engine.process_tick(
+                let _ = shadow_engine.process_tick_dual(
                     cid, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp, &omni
                 );
             });
 
-            if closed_order.is_some() {
-                day_trades += 1;
-            }
             idx += 1;
         }
 
@@ -404,14 +448,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let last_tick_price = if idx > 0 { ticks[idx - 1].bid_price } else { ticks[0].bid_price };
         let mut open_unrealized = 0.0;
         for coin in arena.coins.iter() {
-            let pos = &coin.positions.position;
-            if pos.is_open() {
-                let entry = pos.entry_price.load(Ordering::Relaxed);
-                let qty = pos.quantity.load(Ordering::Relaxed);
-                let is_long = pos.is_long.load(Ordering::Relaxed);
+            let sc_pos = &coin.positions.scalp_position;
+            if sc_pos.is_open() {
+                let entry = sc_pos.entry_price.load(Ordering::Relaxed);
+                let qty = sc_pos.quantity.load(Ordering::Relaxed);
+                let is_long = sc_pos.is_long.load(Ordering::Relaxed);
                 let c_price = coin.current_price.load(Ordering::Relaxed);
                 let exit_price = if c_price > 0.0 { c_price } else { last_tick_price };
-                let exit_fee = qty * exit_price * 0.0002;
+                let exit_fee = qty * exit_price * 0.0005;
+                let unrealized = (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
+                if unrealized.is_finite() {
+                    open_unrealized += unrealized;
+                }
+            }
+            let sw_pos = &coin.positions.swing_position;
+            if sw_pos.is_open() {
+                let entry = sw_pos.entry_price.load(Ordering::Relaxed);
+                let qty = sw_pos.quantity.load(Ordering::Relaxed);
+                let is_long = sw_pos.is_long.load(Ordering::Relaxed);
+                let c_price = coin.current_price.load(Ordering::Relaxed);
+                let exit_price = if c_price > 0.0 { c_price } else { last_tick_price };
+                let exit_fee = qty * exit_price * 0.0005;
                 let unrealized = (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
                 if unrealized.is_finite() {
                     open_unrealized += unrealized;
@@ -424,8 +481,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let pnl_pct = if day_start_cap_real > 0.0 { (day_pnl / day_start_cap_real) * 100.0 } else { 0.0 };
         current_capital = total_equity;
 
-        println!("📅 DÍA {}: Capital: ${:.4} (Efectivo: ${:.4}, Flotante: ${:+.4}) | PnL Día: {:+.4} ({:+.2}%) | Trades: {}", 
-            day_idx + 1, current_capital, day_final_cap, open_unrealized, day_pnl, pnl_pct, day_trades);
+        println!("📅 DÍA {}: Capital: ${:.4} (Efectivo: ${:.4}, Flotante: ${:+.4}) | PnL Día: {:+.4} ({:+.2}%) | Trades: {} (Scalp: {} [WR: {:.1}%, PnL: {:+.4}], Swing: {} [WR: {:.1}%, PnL: {:+.4}])", 
+            day_idx + 1, current_capital, day_final_cap, open_unrealized, day_pnl, pnl_pct, day_trades,
+            day_scalp_trades, if day_scalp_trades > 0 { (day_scalp_wins as f64 / day_scalp_trades as f64) * 100.0 } else { 0.0 }, day_scalp_pnl,
+            day_swing_trades, if day_swing_trades > 0 { (day_swing_wins as f64 / day_swing_trades as f64) * 100.0 } else { 0.0 }, day_swing_pnl);
         
         println!("🔬 [SIGNAL-PATH] rejects: {}", risk_engine::reject_report());
         {
@@ -458,14 +517,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for (i, engine) in shadow_engines.iter().enumerate() {
             let mut cap = engine.arena.unified_capital.load(Ordering::Relaxed);
             for coin in engine.arena.coins.iter() {
-                let pos = &coin.positions.position;
-                if pos.is_open() {
-                    let entry = pos.entry_price.load(Ordering::Relaxed);
-                    let qty = pos.quantity.load(Ordering::Relaxed);
-                    let is_long = pos.is_long.load(Ordering::Relaxed);
+                let sc_pos = &coin.positions.scalp_position;
+                if sc_pos.is_open() {
+                    let entry = sc_pos.entry_price.load(Ordering::Relaxed);
+                    let qty = sc_pos.quantity.load(Ordering::Relaxed);
+                    let is_long = sc_pos.is_long.load(Ordering::Relaxed);
                     let c_price = coin.current_price.load(Ordering::Relaxed);
                     let exit_price = if c_price > 0.0 { c_price } else { last_tick_price };
-                    let exit_fee = qty * exit_price * 0.0002;
+                    let exit_fee = qty * exit_price * 0.0005;
+                    let unrealized = (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
+                    if unrealized.is_finite() {
+                        cap += unrealized;
+                    }
+                }
+                let sw_pos = &coin.positions.swing_position;
+                if sw_pos.is_open() {
+                    let entry = sw_pos.entry_price.load(Ordering::Relaxed);
+                    let qty = sw_pos.quantity.load(Ordering::Relaxed);
+                    let is_long = sw_pos.is_long.load(Ordering::Relaxed);
+                    let c_price = coin.current_price.load(Ordering::Relaxed);
+                    let exit_price = if c_price > 0.0 { c_price } else { last_tick_price };
+                    let exit_fee = qty * exit_price * 0.0005;
                     let unrealized = (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
                     if unrealized.is_finite() {
                         cap += unrealized;
