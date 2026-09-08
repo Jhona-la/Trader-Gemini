@@ -644,10 +644,17 @@ impl DarkAlphaEngine {
             }
             scaler.scale(&mut self.buf_scaled[..in_dim]);
         } else {
+            // R-03 — FALLBACK A NORMALIZADORES ENTRENADOS: si el per-coin
+            // está FRÍO (sin observaciones), usar el canal ENTRENADO en vez
+            // de stats vacíos (mean=0/std=0 -> features crudas saturadas ->
+            // salida ≈ sigmoid(bias) ≈ constante: el ML medía bias). El
+            // per-coin toma el control cuando acumula evidencia propia.
             let normalizers = &mut self.per_coin_normalizers[coin_id];
             for i in 0..in_dim {
                 let raw = if features[i].is_finite() { features[i] } else { 0.0 };
-                self.buf_scaled[i] = if self.freeze_normalizers {
+                // D-109: Warmup estadístico de Welford (count < 200.0) para que el normalizador
+                // aprenda la media y varianza real del activo antes de congelarse, evitando la saturación a +-5.0
+                self.buf_scaled[i] = if self.freeze_normalizers && normalizers[i].count >= 200.0 {
                     normalizers[i].transform(raw)
                 } else {
                     normalizers[i].normalize(raw)

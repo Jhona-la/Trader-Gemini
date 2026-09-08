@@ -368,7 +368,7 @@ impl GodEngineCore {
         _latency_panic: bool,
         omni_features: &[f64; 54],
     ) -> (
-        Option<(bool, f64, f64)>,
+        Option<(bool, f64, f64, f64, f64)>,
         Option<(bool, f64, f64)>,
     ) {
         telemetry_server::profile_node!("GodEngineCore::process_event", {
@@ -473,7 +473,7 @@ impl GodEngineCore {
         event_time_ms: u64,
         omni_features: &[f64; 54],
     ) -> (
-        Option<(bool, f64, f64)>,
+        Option<(bool, f64, f64, f64, f64)>,
         Option<(bool, f64, f64)>,
         Option<MakerQuote>,
     ) {
@@ -576,8 +576,25 @@ impl GodEngineCore {
                 let (sl, tp) = {
                     let pos_tp = pos.tp_price.load(Ordering::Relaxed);
                     let pos_sl = pos.sl_price.load(Ordering::Relaxed);
-                    let sl_base = self.arena.config.scalp_sl_base.load(Ordering::Relaxed);
-                    let tp_base = self.arena.config.scalp_tp_base.load(Ordering::Relaxed);
+                    // U-A — FENOTIPO DEL GEN temporal_scale: el span del
+                    // ciclo de vida interpola entre el extremo corto
+                    // (scalp_sl_base) y el largo: span = 10^(2s), s=0.5 da
+                    // x10 (ratio histórico scalp<->swing). El gen DEJA de ser
+                    // decorativo: mutarlo cambia los stops de TODO trade sin
+                    // niveles almacenados.
+                    let temporal_s = self
+                        .arena
+                        .config
+                        .temporal_scale
+                        .load(Ordering::Relaxed)
+                        .clamp(0.05, 0.95);
+                    let span = 10f64.powf(2.0 * temporal_s);
+                    let sl_base =
+                        (self.arena.config.scalp_sl_base.load(Ordering::Relaxed) * span)
+                            .clamp(0.0015, 0.0500);
+                    let tp_base =
+                        (self.arena.config.scalp_tp_base.load(Ordering::Relaxed) * span)
+                            .clamp(0.0030, 0.1200);
                     let fallback_sl = sl_base.max(atr_pct * 1.5).clamp(0.0015, 0.0150);
                     let rr_ratio = self
                         .arena
@@ -600,14 +617,14 @@ impl GodEngineCore {
                 };
 
                 // Trailing Stop Continuo
+                let live_fee = self.arena.config.live_maker_fee.load(Ordering::Relaxed) + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
                 let trail_activation_pnl = (tp * 0.40).max(pseudo_atr / entry.max(1.0) * 1.5).clamp(0.0020, 0.0150);
-                let trail_active = position_age_ms > 8_000 && pnl_pct >= trail_activation_pnl;
+                let trail_active = (position_age_ms > 8_000 || pnl_pct > (live_fee * 2.0).max(0.0015)) && pnl_pct >= trail_activation_pnl;
 
                 let mut trail_hit = false;
                 let mut force_close_trail = false;
 
                 if trail_active {
-                    let live_fee = self.arena.config.live_maker_fee.load(Ordering::Relaxed) + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
                     let trail_res = crate::trailing::evaluate_quantum_trailing_with_fee(
                         side_int,
                         entry,
@@ -667,8 +684,11 @@ impl GodEngineCore {
 
                 let macro_t = self.feature_engines[coin_id].get_macro_trend();
                 let trend_reversed = (is_long && macro_t < -0.0020) || (!is_long && macro_t > 0.0020);
-                let hard_timeout = position_age_ms > 14_400_000; // 4h hard limit
-                let is_zombie = event_time_ms > 0 && position_age_ms > 1_800_000 && ((trend_reversed && pnl_pct <= -0.0020) || hard_timeout);
+                let temporal_s = self.arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
+                let dynamic_hard_timeout_ms = 1_800_000 + (temporal_s * 12_600_000.0) as u64; // 30m en micro-scalp hasta 4h en swing
+                let dynamic_zombie_debounce_ms = 900_000 + (temporal_s * 900_000.0) as u64; // 15m en micro-scalp hasta 30m en swing
+                let hard_timeout = position_age_ms > dynamic_hard_timeout_ms;
+                let is_zombie = event_time_ms > 0 && position_age_ms > dynamic_zombie_debounce_ms && ((trend_reversed && pnl_pct <= -0.0020) || hard_timeout);
                 let cur_vpin = self.feature_engines[coin_id].cvpin.current_vpin();
                 let ofi_adverse = (is_long && ofi_value < -0.45) || (!is_long && ofi_value > 0.45);
                 let toxic_flow_exit = ofi_adverse && cur_vpin > 0.70 && pnl_pct < -0.0005;
@@ -747,6 +767,7 @@ impl GodEngineCore {
                     }
 
                     coin.metrics.pnl_realized.fetch_add(net_trade_pnl, Ordering::Relaxed);
+                    coin.scalp.pnl_realized.fetch_add(net_trade_pnl, Ordering::Relaxed);
                     self.arena.unified_capital.fetch_add(net_realized_pnl, Ordering::Relaxed);
 
                     self.feature_engines[coin_id].last_scalp_exit_tick = self.feature_engines[coin_id].tick_count;
@@ -764,9 +785,11 @@ impl GodEngineCore {
                     }
 
                     let n = coin.metrics.trade_count.fetch_add(1, Ordering::Relaxed) as f64 + 1.0;
+                    coin.scalp.trade_count.fetch_add(1, Ordering::Relaxed);
                     let old_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
                     coin.metrics.win_rate.store(new_wr, Ordering::Relaxed);
+                    coin.scalp.win_rate.store(new_wr, Ordering::Relaxed);
 
                     if is_win {
                         coin.metrics.gross_wins.fetch_add(net_trade_pnl, Ordering::Relaxed);
@@ -783,6 +806,7 @@ impl GodEngineCore {
                         1.50
                     };
                     coin.metrics.profit_factor.store(new_pf, Ordering::Relaxed);
+                    coin.scalp.profit_factor.store(new_pf, Ordering::Relaxed);
 
                     let curr_cap = self.arena.unified_capital.load(Ordering::Relaxed);
                     let base_cap = self.arena.config.base_capital.load(Ordering::Relaxed);
@@ -1360,7 +1384,7 @@ impl GodEngineCore {
                                     fee_paid,
                                 );
 
-                                new_order = Some((is_long, real_entry_price, qty));
+                                new_order = Some((is_long, real_entry_price, qty, order.tp_target, order.sl_target));
                             }
                         }
                     }
@@ -1426,7 +1450,7 @@ impl GodEngineCore {
         event_time_ms: u64,
         omni_features: &[f64; 54],
     ) -> (
-        Option<(bool, f64, f64)>,
+        Option<(bool, f64, f64, f64, f64)>,
         Option<(bool, f64, f64)>,
         Option<MakerQuote>,
     ) {

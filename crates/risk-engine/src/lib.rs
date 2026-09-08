@@ -231,10 +231,10 @@ impl RiskEngine {
         }
 
         let coin = &arena.coins[coin_id];
-        let scalp_wr = coin.scalp.win_rate.load(Ordering::Relaxed);
-        let scalp_pf = coin.scalp.profit_factor.load(Ordering::Relaxed);
-        let swing_wr = coin.swing.win_rate.load(Ordering::Relaxed);
-        let swing_pf = coin.swing.profit_factor.load(Ordering::Relaxed);
+        let scalp_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
+        let scalp_pf = coin.metrics.profit_factor.load(Ordering::Relaxed);
+        let swing_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
+        let swing_pf = coin.metrics.profit_factor.load(Ordering::Relaxed);
 
         let kelly_survival_cap_ratio = arena
             .config
@@ -376,6 +376,13 @@ impl RiskEngine {
             raw_kelly.clamp(clamp_min, clamp_max)
         };
 
+        let temporal_scale = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
+        let is_scalp = match intent.horizon {
+            strategy_core::TradeHorizon::Scalp => true,
+            strategy_core::TradeHorizon::Swing => false,
+            strategy_core::TradeHorizon::Continuous => temporal_scale < 0.5,
+        };
+
         self.evaluate_single_intent(
             coin_id,
             intent,
@@ -383,7 +390,7 @@ impl RiskEngine {
             current_capital,
             base_capital,
             pf,
-            true,
+            is_scalp,
             arena,
         )
     }
@@ -516,16 +523,25 @@ impl RiskEngine {
         let taker_fee = arena.config.live_taker_fee.load(Ordering::Relaxed);
         let roundtrip_fee = maker_fee + taker_fee;
 
-        let expected_win = if is_scalp {
-            arena.config.scalp_tp_base.load(Ordering::Relaxed).max(0.0010).max(atr_pct * 1.5)
+        let temp_scale = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
+        let scalp_win = arena.config.scalp_tp_base.load(Ordering::Relaxed).max(0.0010).max(atr_pct * 1.5);
+        let swing_win = arena.config.swing_tp_base.load(Ordering::Relaxed).max(0.0050).max(atr_pct * 3.0);
+        let expected_win = if is_scalp && intent.horizon == strategy_core::TradeHorizon::Scalp {
+            scalp_win
+        } else if !is_scalp && intent.horizon == strategy_core::TradeHorizon::Swing {
+            swing_win
         } else {
-            arena.config.swing_tp_base.load(Ordering::Relaxed).max(0.0050).max(atr_pct * 3.0)
+            scalp_win * (1.0 - temp_scale) + swing_win * temp_scale
         };
 
-        let expected_loss = if is_scalp {
-            arena.config.scalp_sl_base.load(Ordering::Relaxed).max(0.0005).max(atr_pct * 0.8)
+        let scalp_loss = arena.config.scalp_sl_base.load(Ordering::Relaxed).max(0.0005).max(atr_pct * 0.8);
+        let swing_loss = arena.config.swing_sl_base.load(Ordering::Relaxed).max(0.0020).max(atr_pct * 1.5);
+        let expected_loss = if is_scalp && intent.horizon == strategy_core::TradeHorizon::Scalp {
+            scalp_loss
+        } else if !is_scalp && intent.horizon == strategy_core::TradeHorizon::Swing {
+            swing_loss
         } else {
-            arena.config.swing_sl_base.load(Ordering::Relaxed).max(0.0020).max(atr_pct * 1.5)
+            scalp_loss * (1.0 - temp_scale) + swing_loss * temp_scale
         };
 
         let confidence = intent.confidence.max(0.51);
@@ -646,11 +662,18 @@ impl RiskEngine {
 
         // R4.6 / H9: Bases TP y SL desacopladas por horizonte (Scalping vs Swing)
         let sl_mult = arena.config.sl_atr_multiplier.load(Ordering::Relaxed).clamp(0.5, 5.0);
-        let sl_base = if is_scalp {
-            arena.config.scalp_sl_base.load(Ordering::Relaxed).clamp(0.001, 0.50)
-        } else {
-            arena.config.swing_sl_base.load(Ordering::Relaxed).clamp(0.001, 0.50)
-        };
+        // U-B — STOPS INTERPOLADOS POR EL EJE TEMPORAL: en vez del if is_scalp
+        // (stops de 15bps a señales de tendencia — swing funcional muerto),
+        // el SL deriva del extremo corto escalado por el gen temporal_scale
+        // (span 10^(2s)). El evaluador continuo ahora ES continuo.
+        let temporal_s_eval = arena
+            .config
+            .temporal_scale
+            .load(Ordering::Relaxed)
+            .clamp(0.05, 0.95);
+        let span_eval = 10f64.powf(2.0 * temporal_s_eval);
+        let sl_base =
+            (arena.config.scalp_sl_base.load(Ordering::Relaxed) * span_eval).clamp(0.001, 0.50);
         let sl_pct = (current_atr * sl_mult / current_price).clamp(sl_base * 0.5, sl_base * 2.5);
 
         let final_sl = if intent.sl_price_target > 0.0 {
@@ -671,11 +694,8 @@ impl RiskEngine {
             .load(Ordering::Relaxed)
             .clamp(1.0, 10.0);
         let tp_mult = (sl_mult * rr_ratio).clamp(1.5, 6.0);
-        let tp_base = if is_scalp {
-            arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.001, 0.50)
-        } else {
-            arena.config.swing_tp_base.load(Ordering::Relaxed).clamp(0.001, 0.50)
-        };
+        let tp_base =
+            (arena.config.scalp_tp_base.load(Ordering::Relaxed) * span_eval).clamp(0.001, 0.50);
         let tp_pct = (current_atr * tp_mult / current_price).clamp(tp_base * 0.5, tp_base * 3.0);
 
         let final_tp = if intent.tp_price_target > 0.0 {
