@@ -158,6 +158,9 @@ pub struct QuantumConfig {
     // --- Swing OBI & Aceleración ---
     pub swing_obi_threshold: AtomicF64,
     pub swing_accel_min_samples: AtomicF64,
+
+    /// F3-2 — eje temporal continuo (ver genome.rs).
+    pub temporal_scale: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -310,6 +313,7 @@ impl QuantumConfig {
             iceberg_slice_count: AtomicF64::new(genome.iceberg_slice_count),
             swing_obi_threshold: AtomicF64::new(genome.swing_obi_threshold),
             swing_accel_min_samples: AtomicF64::new(genome.swing_accel_min_samples),
+            temporal_scale: AtomicF64::new(1.0),
         }
     }
 }

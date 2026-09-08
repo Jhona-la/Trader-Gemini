@@ -165,6 +165,13 @@ pub struct SuperGenotype {
     pub iceberg_slice_count: f64,
     pub swing_obi_threshold: f64,
     pub swing_accel_min_samples: f64,
+    /// F3-2 — EJE TEMPORAL CONTINUO: s ∈ [0,1] posiciona el ciclo de vida
+    /// de la posición en el continuo temporal: s=0 extremo corto (scalp
+    /// puro), s=1 extremo largo (swing puro). Los parámetros del extremo
+    /// largo se derivan del corto por span exponencial: span = 10^(2s) —
+    /// s=0.5 da ×10 (el ratio histórico scalp↔swing). UN dial evolutivo
+    /// reemplaza la dicotomía de genes duplicados por horizonte.
+    pub temporal_scale: f64,
 }
 
 impl Default for SuperGenotype {
@@ -416,6 +423,7 @@ impl SuperGenotype {
                 .config
                 .swing_accel_min_samples
                 .load(Ordering::Relaxed),
+            temporal_scale: arena.config.temporal_scale.load(Ordering::Relaxed),
         }
     }
 
@@ -630,6 +638,7 @@ impl SuperGenotype {
             iceberg_slice_count: 5.0,
             swing_obi_threshold: 0.5,
             swing_accel_min_samples: 30.0,
+            temporal_scale: 0.5,
         }
     }
 
@@ -778,6 +787,7 @@ impl SuperGenotype {
             iceberg_slice_count: rand::rng().random_range(3.0..10.0),
             swing_obi_threshold: rand::rng().random_range(0.05..1.0),
             swing_accel_min_samples: rand::rng().random_range(10.0..50.0),
+            temporal_scale: rand::rng().random_range(0.05..0.95),
         }
     }
 
@@ -1280,6 +1290,7 @@ impl SuperGenotype {
             .store(self.scalp_accel_min_samples, Ordering::Relaxed);
         arena.config.swing_obi_threshold.store(self.swing_obi_threshold, Ordering::Relaxed);
         arena.config.swing_accel_min_samples.store(self.swing_accel_min_samples, Ordering::Relaxed);
+        arena.config.temporal_scale.store(self.temporal_scale, Ordering::Relaxed);
         arena
             .config
             .executor_max_orders_10s
@@ -1493,6 +1504,7 @@ impl SuperGenotype {
             iceberg_slice_count: mutate_val(self.iceberg_slice_count, 2.0, 10.0),
             swing_obi_threshold: mutate_val(self.swing_obi_threshold, 0.05, 1.0),
             swing_accel_min_samples: mutate_val(self.swing_accel_min_samples, 10.0, 50.0),
+            temporal_scale: mutate_val(self.temporal_scale, 0.05, 0.95),
         };
 
         // R1.2 — INVARIANTE RR UNIFICADA (una sola definición en el sistema):
@@ -1509,7 +1521,7 @@ impl SuperGenotype {
     }
 
     // Generated extensions
-    pub const DIMENSION: usize = 139;
+    pub const DIMENSION: usize = 140;
 
     /// R1.2 — RR mínimo que el GATE de promoción exige (GenomeStore::validate).
     /// Derivación: para que una operación sea EV-positiva tras fees se
@@ -1666,6 +1678,7 @@ impl SuperGenotype {
         vec.push(self.iceberg_slice_count);
         vec.push(self.swing_obi_threshold);
         vec.push(self.swing_accel_min_samples);
+        vec.push(self.temporal_scale);
         vec
     }
 
@@ -1818,6 +1831,7 @@ impl SuperGenotype {
             iceberg_slice_count: vec[136].clamp(lo[136], hi[136]),
             swing_obi_threshold: vec[137].clamp(lo[137], hi[137]),
             swing_accel_min_samples: vec[138].clamp(lo[138], hi[138]),
+            temporal_scale: vec[139].clamp(lo[139], hi[139]),
         };
 
         // N-02 — INVARIANTE RR TAMBIÉN EN LA RECONSTRUCCIÓN POR VECTOR: el
@@ -1848,7 +1862,7 @@ impl SuperGenotype {
             0.1, 0.1, 0.01, 0.0, 0.01, 0.01, 0.01, 0.01, 0.01, 0.0001, 0.5, 0.001, 0.001, 0.01,
             0.05, 0.01, 0.1, 0.10, 0.05, 0.01, 1.0, 1.01, 10.0, 0.1, 0.1, 10.0, 10000.0, 1.0, 1.0,
             1.0, 1.0, 3.0, 5.0, 0.1, 1.1, 0.4, 0.35, 1.0, 10.0, 0.05, 10.0, 0.1, 0.1, 0.1, 0.1,
-            3.0, 10.0, 100.0, 1000.0, 100.0, 2.0, 0.05, 10.0,
+            3.0, 10.0, 100.0, 1000.0, 100.0, 2.0, 0.05, 10.0, 0.05,
         ]
     }
 
@@ -1863,7 +1877,7 @@ impl SuperGenotype {
             0.5, 1000.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.05, 0.99, 0.1, 0.1, 0.2, 0.40, 0.10, 1.0, 0.80,
             0.30, 0.5, 5.0, 1.20, 5000.0, 1.0, 3.0, 10000000.0, 120000.0, 3.0, 3.0, 5.0, 5.0, 15.0,
             25.0, 0.5, 3.0, 0.6, 0.55, 20.0, 500.0, 0.5, 500.0, 2.0, 2.0, 0.8, 1.0, 10.0, 50.0,
-            500.0, 5000.0, 100_000.0, 10.0, 1.0, 50.0,
+            500.0, 5000.0, 100_000.0, 10.0, 1.0, 50.0, 0.95,
         ]
     }
 }
