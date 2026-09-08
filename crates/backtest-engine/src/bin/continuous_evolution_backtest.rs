@@ -99,7 +99,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let is_multicoin = mode_arg == "all" || std::env::var("MULTI_COIN").unwrap_or_default() == "1";
     let requested_mutants: usize = std::env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(250);
 
-    let btc_path = Path::new("data/BTCUSDT_ticks.bin");
+    // R2.2 — PRIORIDAD AL DATO REAL: si existe el bin de aggTrades reales
+    // (magic TGMTICK1), se usa; el sintético queda como fallback.
+    let btc_path = {
+        let real = Path::new("data/BTCUSDT_ticks_REAL.bin");
+        if real.exists() {
+            println!("📡 R2.2: usando AGGTRADES REALES (certificación sin artefactos de síntesis).");
+            real
+        } else {
+            Path::new("data/BTCUSDT_ticks.bin")
+        }
+    };
     let eth_path = Path::new("data/ETHUSDT_ticks.bin");
     let sol_path = Path::new("data/SOLUSDT_ticks.bin");
     let bnb_path = Path::new("data/BNBUSDT_ticks.bin");
@@ -223,9 +233,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut day_scalp_trades = 0;
         let mut day_scalp_pnl = 0.0;
         let mut day_scalp_wins = 0;
-        let mut day_swing_trades = 0;
-        let mut day_swing_pnl = 0.0;
-        let mut day_swing_wins = 0;
         let mut prev_kline_ts = 0;
         
         // ESCALADO MASIVO DE MUTANTES (ENJAMBRE CUÁNTICO PARALELO CON RAYON: 10 NICHOS ECOLÓGICOS)
@@ -461,10 +468,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let pnl_pct = if day_start_cap_real > 0.0 { (day_pnl / day_start_cap_real) * 100.0 } else { 0.0 };
         current_capital = total_equity;
 
-        println!("📅 DÍA {}: Capital: ${:.4} (Efectivo: ${:.4}, Flotante: ${:+.4}) | PnL Día: {:+.4} ({:+.2}%) | Trades: {} (Scalp: {} [WR: {:.1}%, PnL: {:+.4}], Swing: {} [WR: {:.1}%, PnL: {:+.4}])", 
+        println!("📅 DÍA {}: Capital: ${:.4} (Efectivo: ${:.4}, Flotante: ${:+.4}) | PnL Día: {:+.4} ({:+.2}%) | Trades: {} (Continuous: {} [WR: {:.1}%, PnL: {:+.4}])", 
             day_idx + 1, current_capital, day_final_cap, open_unrealized, day_pnl, pnl_pct, day_trades,
-            day_scalp_trades, if day_scalp_trades > 0 { (day_scalp_wins as f64 / day_scalp_trades as f64) * 100.0 } else { 0.0 }, day_scalp_pnl,
-            day_swing_trades, if day_swing_trades > 0 { (day_swing_wins as f64 / day_swing_trades as f64) * 100.0 } else { 0.0 }, day_swing_pnl);
+            day_scalp_trades, if day_scalp_trades > 0 { (day_scalp_wins as f64 / day_scalp_trades as f64) * 100.0 } else { 0.0 }, day_scalp_pnl);
         
         println!("🔬 [SIGNAL-PATH] rejects: {}", risk_engine::reject_report());
         {
