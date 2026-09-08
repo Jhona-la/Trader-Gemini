@@ -1415,7 +1415,17 @@ impl GodEngineCore {
             set_reg("vpin_toxicity", vpin_val);
             set_reg("cvpin", vpin_val);
             set_reg("order_flow_vpin", vpin_val);
-            set_reg("hawkes_intensity", (1.0 + obi_val.abs() * 2.0).clamp(0.1, 5.0));
+            // DES-COLINEARIZACIÓN: hawkes_intensity era 1+|obi|*2 — función
+            // pura del OBI (el gate `hawkes >= 1.2` de turbo_scalper
+            // equivalía a |obi| >= 0.1, votando el mismo escalar ~8 veces en
+            // el ensamble). Ahora mide ráfagas de ACTIVIDAD de precio
+            // (aceleración normalizada por ATR): un proceso auto-excitante
+            // genuino, fuente independiente del desbalance de libro.
+            let atr_abs = (atr_pct * mid_price).max(1e-8);
+            set_reg(
+                "hawkes_intensity",
+                (1.0 + (a_t.abs() / atr_abs).clamp(0.0, 4.0)).clamp(0.1, 5.0),
+            );
             set_reg("bessel_alpha", 1.5);
             set_reg("hawkes_dt", 0.05);
             set_reg("microstructure_noise_variance", (atr_pct * 0.1).max(0.00001));
@@ -1478,7 +1488,11 @@ impl GodEngineCore {
                 0.0
             };
             set_reg("vecm_zscore", vecm_basis_z);
-            set_reg("cointegration_zscore", vecm_basis_z);
+            // DES-COLINEARIZACIÓN: cointegration_zscore era una COPIA
+            // exacta de vecm_zscore (la misma señal contada dos veces en el
+            // ensamble). Ahora mide el desvío de cointegración CROSS-ASSET
+            // (impulso líder BTC→altcoin) — fuente genuinamente distinta.
+            set_reg("cointegration_zscore", leader_mom.clamp(-3.0, 3.0));
             let ema_macro = if self.feature_engines[coin_id].kline_ema_slow > 0.0 { self.feature_engines[coin_id].kline_ema_slow } else { mid_price };
             let pos_dev = ((mid_price - ema_macro) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0);
             set_reg("quantum_position_deviation", pos_dev);
@@ -1821,47 +1835,34 @@ impl GodEngineCore {
                         let eff_leverage = order.leverage.clamp(1.0, 50.0);
                         let min_margin = 5.05 / eff_leverage;
                         let max_margin = (free_cap * 0.85).max(0.0);
-                        let mut margin_req = order.volume_usd.clamp(min_margin, max_margin);
-                        let max_pos = 50000.0;
-                        if margin_req * eff_leverage > max_pos {
-                            margin_req = max_pos / eff_leverage;
-                        }
+                        if min_margin <= max_margin {
+                            let mut margin_req = order.volume_usd.clamp(min_margin, max_margin);
+                            let max_pos = 50000.0;
+                            if margin_req * eff_leverage > max_pos {
+                                margin_req = max_pos / eff_leverage;
+                            }
 
-                        if margin_req * eff_leverage >= 5.0 && total_used + margin_req <= current_cap * 0.95 {
-                            self.diag_opened += 1;
-                            self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
-                            self.arena.scalp_used_margin.fetch_add(margin_req, Ordering::Relaxed);
+                            if margin_req * eff_leverage >= 5.0 && total_used + margin_req <= current_cap * 0.95 {
+                                self.diag_opened += 1;
+                                self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
+                                self.arena.scalp_used_margin.fetch_add(margin_req, Ordering::Relaxed);
 
-                            let base_price = if is_long { ask } else { bid };
-                            let nominal_size = margin_req * eff_leverage;
-                            let slippage_impact = (nominal_size / 1_000_000.0) * 0.0005;
-                            let real_entry_price = if is_long {
-                                base_price * (1.0 + slippage_impact)
-                            } else {
-                                base_price * (1.0 - slippage_impact)
-                            };
+                                let base_price = if is_long { ask } else { bid };
+                                let nominal_size = margin_req * eff_leverage;
+                                let slippage_impact = (nominal_size / 1_000_000.0) * 0.0005;
+                                let real_entry_price = if is_long {
+                                    base_price * (1.0 + slippage_impact)
+                                } else {
+                                    base_price * (1.0 - slippage_impact)
+                                };
 
-                            let entry_fee_rate = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0002);
-                            let fee_paid = nominal_size * entry_fee_rate;
-                            self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
+                                let entry_fee_rate = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0002);
+                                let fee_paid = nominal_size * entry_fee_rate;
+                                self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
 
-                            let qty = nominal_size / real_entry_price;
+                                let qty = nominal_size / real_entry_price;
 
-                            coin.positions.scalp_position.open_with_fee(
-                                is_long,
-                                real_entry_price,
-                                qty,
-                                margin_req,
-                                event_time_ms,
-                                order.tp_target,
-                                order.sl_target,
-                                quantum_arena::position::PositionHorizon::Scalping,
-                                ml_prob,
-                                scalp_intent.confidence,
-                                fee_paid,
-                            );
-                            if !coin.positions.position.is_open() {
-                                coin.positions.position.open_with_fee(
+                                coin.positions.scalp_position.open_with_fee(
                                     is_long,
                                     real_entry_price,
                                     qty,
@@ -1874,9 +1875,24 @@ impl GodEngineCore {
                                     scalp_intent.confidence,
                                     fee_paid,
                                 );
-                            }
+                                if !coin.positions.position.is_open() {
+                                    coin.positions.position.open_with_fee(
+                                        is_long,
+                                        real_entry_price,
+                                        qty,
+                                        margin_req,
+                                        event_time_ms,
+                                        order.tp_target,
+                                        order.sl_target,
+                                        quantum_arena::position::PositionHorizon::Scalping,
+                                        ml_prob,
+                                        scalp_intent.confidence,
+                                        fee_paid,
+                                    );
+                                }
 
-                            new_scalp = Some((is_long, real_entry_price, qty));
+                                new_scalp = Some((is_long, real_entry_price, qty));
+                            }
                         }
                     }
                 }
@@ -1945,47 +1961,34 @@ impl GodEngineCore {
                         let eff_leverage = order.leverage.clamp(1.0, 50.0);
                         let min_margin = 5.05 / eff_leverage;
                         let max_margin = (free_cap * 0.85).max(0.0);
-                        let mut margin_req = order.volume_usd.clamp(min_margin, max_margin);
-                        let max_pos = 50000.0;
-                        if margin_req * eff_leverage > max_pos {
-                            margin_req = max_pos / eff_leverage;
-                        }
+                        if min_margin <= max_margin {
+                            let mut margin_req = order.volume_usd.clamp(min_margin, max_margin);
+                            let max_pos = 50000.0;
+                            if margin_req * eff_leverage > max_pos {
+                                margin_req = max_pos / eff_leverage;
+                            }
 
-                        if margin_req * eff_leverage >= 5.0 && total_used + margin_req <= current_cap * 0.95 {
-                            self.diag_swing_opened += 1;
-                            self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
-                            self.arena.swing_used_margin.fetch_add(margin_req, Ordering::Relaxed);
+                            if margin_req * eff_leverage >= 5.0 && total_used + margin_req <= current_cap * 0.95 {
+                                self.diag_swing_opened += 1;
+                                self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
+                                self.arena.swing_used_margin.fetch_add(margin_req, Ordering::Relaxed);
 
-                            let base_price = if is_long { ask } else { bid };
-                            let nominal_size = margin_req * eff_leverage;
-                            let slippage_impact = (nominal_size / 1_000_000.0) * 0.0005;
-                            let real_entry_price = if is_long {
-                                base_price * (1.0 + slippage_impact)
-                            } else {
-                                base_price * (1.0 - slippage_impact)
-                            };
+                                let base_price = if is_long { ask } else { bid };
+                                let nominal_size = margin_req * eff_leverage;
+                                let slippage_impact = (nominal_size / 1_000_000.0) * 0.0005;
+                                let real_entry_price = if is_long {
+                                    base_price * (1.0 + slippage_impact)
+                                } else {
+                                    base_price * (1.0 - slippage_impact)
+                                };
 
-                            let entry_fee_rate = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0002);
-                            let fee_paid = nominal_size * entry_fee_rate;
-                            self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
+                                let entry_fee_rate = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0002);
+                                let fee_paid = nominal_size * entry_fee_rate;
+                                self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
 
-                            let qty = nominal_size / real_entry_price;
+                                let qty = nominal_size / real_entry_price;
 
-                            coin.positions.swing_position.open_with_fee(
-                                is_long,
-                                real_entry_price,
-                                qty,
-                                margin_req,
-                                event_time_ms,
-                                order.tp_target,
-                                order.sl_target,
-                                quantum_arena::position::PositionHorizon::Swing,
-                                swing_nn_pred,
-                                swing_intent.confidence,
-                                fee_paid,
-                            );
-                            if !coin.positions.position.is_open() {
-                                coin.positions.position.open_with_fee(
+                                coin.positions.swing_position.open_with_fee(
                                     is_long,
                                     real_entry_price,
                                     qty,
@@ -1998,9 +2001,24 @@ impl GodEngineCore {
                                     swing_intent.confidence,
                                     fee_paid,
                                 );
-                            }
+                                if !coin.positions.position.is_open() {
+                                    coin.positions.position.open_with_fee(
+                                        is_long,
+                                        real_entry_price,
+                                        qty,
+                                        margin_req,
+                                        event_time_ms,
+                                        order.tp_target,
+                                        order.sl_target,
+                                        quantum_arena::position::PositionHorizon::Swing,
+                                        swing_nn_pred,
+                                        swing_intent.confidence,
+                                        fee_paid,
+                                    );
+                                }
 
-                            new_swing = Some((is_long, real_entry_price, qty));
+                                new_swing = Some((is_long, real_entry_price, qty));
+                            }
                         }
                     }
                 }
