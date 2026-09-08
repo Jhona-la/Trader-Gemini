@@ -333,10 +333,8 @@ async fn main() {
     let mut total_trades = 0u64;
     let mut total_gross_wins = 0u64;
     let mut total_net_wins = 0u64;
-    let mut total_scalp_opens = 0u64;
-    let mut total_swing_opens = 0u64;
-    let mut total_scalp_closes = 0u64;
-    let mut total_swing_closes = 0u64;
+    let mut total_opens = 0u64;
+    let mut total_closes = 0u64;
     let mut total_pnl_dollars = 0.0f64;
     let mut total_gross_pnl_dollars = 0.0f64;
     let mut peak_capital = initial_capital;
@@ -417,7 +415,7 @@ async fn main() {
         }
         let omni_features = omni_state.get_features();
 
-        let (new_sc, new_sw, closed_sc, closed_sw) = core.process_event(
+        let (new_ord_1, closed_ord_1) = core.process_event(
             0,
             false, // is_trade = false for Depth event
             is_minute_kline,
@@ -434,7 +432,7 @@ async fn main() {
             false,
             &omni_features,
         );
-        let (new_sc_2, new_sw_2, closed_sc_2, closed_sw_2) = core.process_event(
+        let (new_ord_2, closed_ord_2) = core.process_event(
             0,
             true, // is_trade = true for Trade event
             false, // is_kline_closed = false (already processed)
@@ -452,10 +450,8 @@ async fn main() {
             &omni_features,
         );
 
-        let new_sc = new_sc.or(new_sc_2);
-        let new_sw = new_sw.or(new_sw_2);
-        let closed_sc = closed_sc.or(closed_sc_2);
-        let closed_sw = closed_sw.or(closed_sw_2);
+        let new_ord = new_ord_1.or(new_ord_2);
+        let closed_ord = closed_ord_1.or(closed_ord_2);
 
         // DEEP DIAGNOSTIC: Log ML predictions, features, and signal flow every 100k ticks
         if i < warmup_ticks + 5 || (i % 100_000 == 0) {
@@ -464,62 +460,35 @@ async fn main() {
             let ml_prob = core.last_ml_prob;
             let regime = core.feature_engines[0].get_market_regime();
             let scalp_intent = core.last_scalp_intent[0];
-            let swing_intent = core.last_swing_intent[0];
             let current_cap = arena.unified_capital.load(Ordering::Relaxed);
             let ml_threshold = arena.config.ml_threshold_long.load(Ordering::Relaxed);
 
-            println!("🔍 [DEEP TRACE] i={}: atr={:.8} ml_prob={:.4} ml_thresh={:.4} regime={:?} scalp_sig={:?} swing_sig={:?} cap={:.2} obi={:.4} hurst={:.4}", 
-                i, atr_pct, ml_prob, ml_threshold, regime, scalp_intent.signal, swing_intent.signal, current_cap, real_obi, features[1]);
+            println!("🔍 [DEEP TRACE] i={}: atr={:.8} ml_prob={:.4} ml_thresh={:.4} regime={:?} scalp_sig={:?} cap={:.2} obi={:.4} hurst={:.4}", 
+                i, atr_pct, ml_prob, ml_threshold, regime, scalp_intent.signal, current_cap, real_obi, features[1]);
         }
 
         // Count opens
-        if new_sc.is_some() {
-            if total_scalp_opens < 5 {
+        if new_ord.is_some() {
+            if total_opens < 5 {
                 let atr_pct = core.feature_engines[0].get_atr_pct();
                 let dyn_atr = arena.config.dynamic_atr_min.load(Ordering::Relaxed);
                 let live_maker = arena.config.live_maker_fee.load(Ordering::Relaxed);
                 let live_taker = arena.config.live_taker_fee.load(Ordering::Relaxed);
                 println!(
                     "🔍 [OPEN TRACE] Trade {}: ATR={:.6}, dyn_atr={:.6}, maker={:.6}, taker={:.6}",
-                    total_scalp_opens, atr_pct, dyn_atr, live_maker, live_taker
+                    total_opens, atr_pct, dyn_atr, live_maker, live_taker
                 );
             }
-            total_scalp_opens += 1;
-        }
-        if new_sw.is_some() {
-            total_swing_opens += 1;
+            total_opens += 1;
         }
 
         // Count closes and PnL
-        // TRAZADO FORENSE DEL FLUJO DE FEES EN GODENGINE:
-        //   ENTRY: commit_scalp_open() descuenta entry_fee del unified_capital (línea 1327)
-        //   CLOSE: process_tick() calcula unrealized = pnl_pct * notional - (notional * close_fee) (línea 357+377)
-        //   RETURN: closed_sc = Some((is_long, unrealized, qty)) donde unrealized = Gross - ExitFee
-        //   CONCLUSIÓN: net_close_pnl ya es el PnL neto de exit_fee.
-        //              El entry_fee ya fue descontado del capital al abrir.
-        if let Some((_is_long, net_close_pnl, qty)) = closed_sc {
-            total_scalp_closes += 1;
+        if let Some((_is_long, net_close_pnl, qty)) = closed_ord {
+            total_closes += 1;
             total_trades += 1;
 
-            // Reconstruir Gross PnL asumiendo Maker fee de 0.0002
-            let exit_fee_est = qty * price * 0.0002;
-            let gross_pnl = net_close_pnl + exit_fee_est;
-            let true_net_pnl = net_close_pnl;
-
-            total_pnl_dollars += true_net_pnl;
-            total_gross_pnl_dollars += gross_pnl;
-            if gross_pnl > 0.0 {
-                total_gross_wins += 1;
-            }
-            if true_net_pnl > 0.0 {
-                total_net_wins += 1;
-            }
-        }
-        if let Some((_is_long, net_close_pnl, qty)) = closed_sw {
-            total_swing_closes += 1;
-            total_trades += 1;
-
-            let exit_fee_est = qty * price * 0.0005;
+            let live_maker = arena.config.live_maker_fee.load(Ordering::Relaxed);
+            let exit_fee_est = qty * price * live_maker;
             let gross_pnl = net_close_pnl + exit_fee_est;
             let true_net_pnl = net_close_pnl;
 
@@ -666,10 +635,8 @@ async fn main() {
     println!("  ❌ NET Losses:        {}", total_trades - total_net_wins);
     println!("  📉 Max Drawdown:      {:.2}%", max_drawdown * 100.0);
     println!("  📐 Sharpe Ratio:      {:.4}", sharpe);
-    println!("  🚀 Scalp Opens:       {}", total_scalp_opens);
-    println!("  🦅 Swing Opens:       {}", total_swing_opens);
-    println!("  🔴 Scalp Closes:      {}", total_scalp_closes);
-    println!("  🔴 Swing Closes:      {}", total_swing_closes);
+    println!("  🚀 Continuous Opens:  {}", total_opens);
+    println!("  🔴 Continuous Closes: {}", total_closes);
     println!("  ⏱️  Tiempo Simulación: {:?}", sim_elapsed);
     println!("  ⏱️  Tiempo Total:      {:?}", t0.elapsed());
     println!("  🔢 Ticks Procesados:  {}", num_ticks - warmup_ticks);

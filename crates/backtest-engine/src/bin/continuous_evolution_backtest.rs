@@ -377,23 +377,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             arena.increment_tick();
 
-            let (new_sc, new_sw, closed_sc, closed_sw, _) = engine.process_tick_dual(
+            let (new_ord, closed_ord, _) = engine.process_tick_dual(
                 cid, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty, tick.timestamp, &omni
             );
 
-            let new_order = new_sc.is_some() || new_sw.is_some();
-            let closed_order = closed_sc.is_some() || closed_sw.is_some();
+            let new_order = new_ord.is_some();
+            let closed_order = closed_ord.is_some();
 
-            if let Some((_is_long, net_pnl, _qty)) = closed_sc {
+            if let Some((_is_long, net_pnl, _qty)) = closed_ord {
                 day_scalp_trades += 1;
                 day_scalp_pnl += net_pnl;
                 if net_pnl > 0.0 { day_scalp_wins += 1; }
-                day_trades += 1;
-            }
-            if let Some((_is_long, net_pnl, _qty)) = closed_sw {
-                day_swing_trades += 1;
-                day_swing_pnl += net_pnl;
-                if net_pnl > 0.0 { day_swing_wins += 1; }
                 day_trades += 1;
             }
 
@@ -421,10 +415,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let atr = engine.feature_engines[safe_cid].get_atr_pct();
                 let hurst = engine.feature_engines[safe_cid].hurst.current();
                 let macro_t = engine.feature_engines[safe_cid].get_macro_trend();
-                let is_sc_open = engine.arena.coins[cid].positions.scalp_position.is_open();
-                let is_sw_open = engine.arena.coins[cid].positions.swing_position.is_open();
-                println!("🔍 [TICK #{}] coin={} ts={} mid={:.2} atr={:.6} hurst={:.3} macro_trend={:.6} open(sc={}, sw={}) new_ord={} closed={}",
-                    idx, cid, tick.timestamp, mid, atr, hurst, macro_t, is_sc_open, is_sw_open, new_order, closed_order);
+                let is_open = engine.arena.coins[cid].positions.position.is_open();
+                println!("🔍 [TICK #{}] coin={} ts={} mid={:.2} atr={:.6} hurst={:.3} macro_trend={:.6} open={} new_ord={} closed={}",
+                    idx, cid, tick.timestamp, mid, atr, hurst, macro_t, is_open, new_order, closed_order);
             }
 
             // Transmitir al Shadow Forest Inline (Paralelizado para velocidad extrema)
@@ -448,24 +441,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let last_tick_price = if idx > 0 { ticks[idx - 1].bid_price } else { ticks[0].bid_price };
         let mut open_unrealized = 0.0;
         for coin in arena.coins.iter() {
-            let sc_pos = &coin.positions.scalp_position;
-            if sc_pos.is_open() {
-                let entry = sc_pos.entry_price.load(Ordering::Relaxed);
-                let qty = sc_pos.quantity.load(Ordering::Relaxed);
-                let is_long = sc_pos.is_long.load(Ordering::Relaxed);
-                let c_price = coin.current_price.load(Ordering::Relaxed);
-                let exit_price = if c_price > 0.0 { c_price } else { last_tick_price };
-                let exit_fee = qty * exit_price * 0.0005;
-                let unrealized = (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
-                if unrealized.is_finite() {
-                    open_unrealized += unrealized;
-                }
-            }
-            let sw_pos = &coin.positions.swing_position;
-            if sw_pos.is_open() {
-                let entry = sw_pos.entry_price.load(Ordering::Relaxed);
-                let qty = sw_pos.quantity.load(Ordering::Relaxed);
-                let is_long = sw_pos.is_long.load(Ordering::Relaxed);
+            let pos = &coin.positions.position;
+            if pos.is_open() {
+                let entry = pos.entry_price.load(Ordering::Relaxed);
+                let qty = pos.quantity.load(Ordering::Relaxed);
+                let is_long = pos.is_long.load(Ordering::Relaxed);
                 let c_price = coin.current_price.load(Ordering::Relaxed);
                 let exit_price = if c_price > 0.0 { c_price } else { last_tick_price };
                 let exit_fee = qty * exit_price * 0.0005;
@@ -517,24 +497,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for (i, engine) in shadow_engines.iter().enumerate() {
             let mut cap = engine.arena.unified_capital.load(Ordering::Relaxed);
             for coin in engine.arena.coins.iter() {
-                let sc_pos = &coin.positions.scalp_position;
-                if sc_pos.is_open() {
-                    let entry = sc_pos.entry_price.load(Ordering::Relaxed);
-                    let qty = sc_pos.quantity.load(Ordering::Relaxed);
-                    let is_long = sc_pos.is_long.load(Ordering::Relaxed);
-                    let c_price = coin.current_price.load(Ordering::Relaxed);
-                    let exit_price = if c_price > 0.0 { c_price } else { last_tick_price };
-                    let exit_fee = qty * exit_price * 0.0005;
-                    let unrealized = (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
-                    if unrealized.is_finite() {
-                        cap += unrealized;
-                    }
-                }
-                let sw_pos = &coin.positions.swing_position;
-                if sw_pos.is_open() {
-                    let entry = sw_pos.entry_price.load(Ordering::Relaxed);
-                    let qty = sw_pos.quantity.load(Ordering::Relaxed);
-                    let is_long = sw_pos.is_long.load(Ordering::Relaxed);
+                let pos = &coin.positions.position;
+                if pos.is_open() {
+                    let entry = pos.entry_price.load(Ordering::Relaxed);
+                    let qty = pos.quantity.load(Ordering::Relaxed);
+                    let is_long = pos.is_long.load(Ordering::Relaxed);
                     let c_price = coin.current_price.load(Ordering::Relaxed);
                     let exit_price = if c_price > 0.0 { c_price } else { last_tick_price };
                     let exit_fee = qty * exit_price * 0.0005;

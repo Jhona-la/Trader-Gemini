@@ -311,14 +311,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut losses_count = 0;
             let mut gross_profit = 0.0;
             let mut gross_loss = 0.0;
-            let mut scalp_opens = 0;
-            let mut swing_opens = 0;
-            let mut scalp_closes = 0;
-            let mut swing_closes = 0;
-            let mut scalp_wins = 0;
-            let mut scalp_losses = 0;
-            let mut swing_wins = 0;
-            let mut swing_losses = 0;
+            let mut total_opens = 0;
+            let mut total_closes = 0;
             let mut long_trades = 0;
             let mut short_trades = 0;
             let mut peak_capital = initial_capital;
@@ -399,10 +393,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 // Pipeline Completo process_event (Trade + Kline + Depth + Microestructura + VIP0 Fees)
-                let (new_sc, new_sw, closed_sc, closed_sw) = engine.process_event(
+                let (new_order, closed_order) = engine.process_event(
                     tick.coin_id,
-                    true,            // is_trade: true para evaluar flujo de trades y señales scalping
-                    is_kline_closed, // is_kline_closed: true al cerrar vela de 1m para evaluar swing
+                    true,            // is_trade: true para evaluar flujo de trades
+                    is_kline_closed, // is_kline_closed: true al cerrar vela de 1m
                     true,            // is_depth: true para actualizar orderflow, OFI, ATR y market data
                     mid_price,
                     total_qty,
@@ -417,41 +411,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &omni,
                 );
 
-                if new_sc.is_some() {
-                    scalp_opens += 1;
-                }
-                if new_sw.is_some() {
-                    swing_opens += 1;
+                if new_order.is_some() {
+                    total_opens += 1;
                 }
 
-                // Registro de cierres Scalping (net_pnl ya deduce atómicamente entry fee y exit fee VIP0)
-                if let Some((is_long, net_pnl, _qty)) = closed_sc {
+                // Registro de cierres continuos (net_pnl ya deduce atómicamente entry fee y exit fee VIP0)
+                if let Some((is_long, net_pnl, _qty)) = closed_order {
                     total_trades += 1;
-                    scalp_closes += 1;
+                    total_closes += 1;
                     if is_long { long_trades += 1; } else { short_trades += 1; }
                     if net_pnl > 0.0 {
                         wins_count += 1;
-                        scalp_wins += 1;
                         gross_profit += net_pnl;
                     } else {
                         losses_count += 1;
-                        scalp_losses += 1;
-                        gross_loss += net_pnl.abs();
-                    }
-                }
-
-                // Registro de cierres Swing (net_pnl ya deduce atómicamente entry fee y exit fee VIP0)
-                if let Some((is_long, net_pnl, _qty)) = closed_sw {
-                    total_trades += 1;
-                    swing_closes += 1;
-                    if is_long { long_trades += 1; } else { short_trades += 1; }
-                    if net_pnl > 0.0 {
-                        wins_count += 1;
-                        swing_wins += 1;
-                        gross_profit += net_pnl;
-                    } else {
-                        losses_count += 1;
-                        swing_losses += 1;
                         gross_loss += net_pnl.abs();
                     }
                 }
@@ -486,8 +459,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let final_capital = arena.unified_capital.load(Ordering::Relaxed);
             let net_growth_pct = ((final_capital - initial_capital) / initial_capital) * 100.0;
             let win_rate = if total_trades > 0 { (wins_count as f64 / total_trades as f64) * 100.0 } else { 0.0 };
-            let scalp_wr = if scalp_closes > 0 { (scalp_wins as f64 / scalp_closes as f64) * 100.0 } else { 0.0 };
-            let swing_wr = if swing_closes > 0 { (swing_wins as f64 / swing_closes as f64) * 100.0 } else { 0.0 };
             let profit_factor = if gross_loss > 0.0 { gross_profit / gross_loss } else if gross_profit > 0.0 { 999.0 } else { 0.0 };
 
             let start_dt = DateTime::<Utc>::from_timestamp((first_ts / 1000) as i64, 0).unwrap_or_default();
@@ -503,8 +474,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("🎯 Global Win Rate      : {:.2}% ({} Wins / {} Losses)", win_rate, wins_count, losses_count);
             println!("⚖️ Profit Factor        : {:.3} (Gross Profit: ${:.2} / Gross Loss: ${:.2})", profit_factor, gross_profit, gross_loss);
             println!("🌊 Max Drawdown         : {:.2}% (${:.2})", max_drawdown_pct, max_drawdown_dollars);
-            println!("⚡ Scalping Engine      : {} Opens | {} Closes | WR: {:.2}% ({}W / {}L)", scalp_opens, scalp_closes, scalp_wr, scalp_wins, scalp_losses);
-            println!("🌊 Swing Engine         : {} Opens | {} Closes | WR: {:.2}% ({}W / {}L)", swing_opens, swing_closes, swing_wr, swing_wins, swing_losses);
+            println!("⚡ Continuous Engine    : {} Opens | {} Closes", total_opens, total_closes);
             println!("📈 Directional Breakdown: {} Longs | {} Shorts", long_trades, short_trades);
             println!("💰 Initial Capital      : ${:.4} USD", initial_capital);
             println!("💵 Final Capital        : ${:.4} USD", final_capital);

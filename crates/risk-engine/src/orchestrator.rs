@@ -62,8 +62,7 @@ impl<'a> PortfolioOrchestrator<'a> {
         // CONTINUOUS Drawdown Penalty (exponential decay, no step functions)
         let mut global_unrealized: f64 = 0.0;
         for c in self.arena.coins.iter() {
-            global_unrealized += c.scalp.pnl_unrealized.load(Ordering::Relaxed);
-            global_unrealized += c.swing.pnl_unrealized.load(Ordering::Relaxed);
+            global_unrealized += c.metrics.pnl_unrealized.load(Ordering::Relaxed);
         }
 
         let capital = self.arena.unified_capital.load(Ordering::Relaxed);
@@ -112,26 +111,6 @@ impl<'a> PortfolioOrchestrator<'a> {
             if pos.is_open() {
                 let margin = pos.margin_used.load(Ordering::Relaxed);
                 if pos.is_long.load(Ordering::Relaxed) {
-                    total_long_margin += margin;
-                } else {
-                    total_short_margin += margin;
-                }
-            }
-
-            let scalp_pos = &coin.positions.scalp_position;
-            if scalp_pos.is_open() {
-                let margin = scalp_pos.margin_used.load(Ordering::Relaxed);
-                if scalp_pos.is_long.load(Ordering::Relaxed) {
-                    total_long_margin += margin;
-                } else {
-                    total_short_margin += margin;
-                }
-            }
-
-            let swing_pos = &coin.positions.swing_position;
-            if swing_pos.is_open() {
-                let margin = swing_pos.margin_used.load(Ordering::Relaxed);
-                if swing_pos.is_long.load(Ordering::Relaxed) {
                     total_long_margin += margin;
                 } else {
                     total_short_margin += margin;

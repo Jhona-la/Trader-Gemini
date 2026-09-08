@@ -64,7 +64,7 @@ impl Position {
         tp: f64,
         sl: f64,
     ) {
-        self.open_with_horizon(is_long, price, qty, margin, current_time_ms, tp, sl, PositionHorizon::Scalping);
+        self.open_with_horizon(is_long, price, qty, margin, current_time_ms, tp, sl, PositionHorizon::Continuous);
     }
 
     #[inline(always)]
@@ -213,8 +213,13 @@ impl Position {
 #[derive(Default)]
 pub struct PositionManager {
     pub position: Position,
-    pub scalp_position: Position,
-    pub swing_position: Position,
+}
+
+impl PositionManager {
+    #[inline(always)]
+    pub fn is_any_open(&self) -> bool {
+        self.position.is_open()
+    }
 }
 
 #[cfg(test)]
@@ -222,11 +227,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_position_dual_horizon_open_and_close() {
+    fn test_position_continuous_open_and_close() {
         let mgr = PositionManager::default();
 
-        // Scalp Long
-        mgr.scalp_position.open_with_horizon(
+        // Continuous Long
+        mgr.position.open_with_horizon(
             true,
             60000.0,
             0.1,
@@ -234,32 +239,19 @@ mod tests {
             1000,
             60500.0,
             59500.0,
-            PositionHorizon::Scalping,
+            PositionHorizon::Continuous,
         );
 
-        // Swing Short
-        mgr.swing_position.open_with_horizon(
-            false,
-            60000.0,
-            0.5,
-            3000.0,
-            1000,
-            58000.0,
-            61000.0,
-            PositionHorizon::Swing,
-        );
+        assert!(mgr.position.is_open());
+        assert!(mgr.is_any_open());
+        assert_eq!(mgr.position.horizon(), PositionHorizon::Continuous);
 
-        assert!(mgr.scalp_position.is_open());
-        assert!(mgr.swing_position.is_open());
-        assert_eq!(mgr.scalp_position.horizon(), PositionHorizon::Scalping);
-        assert_eq!(mgr.swing_position.horizon(), PositionHorizon::Swing);
-
-        let (is_long, price, qty, _) = mgr.scalp_position.close();
+        let (is_long, price, qty, _) = mgr.position.close();
         assert!(is_long);
         assert_eq!(price, 60000.0);
         assert_eq!(qty, 0.1);
-        assert!(!mgr.scalp_position.is_open());
-        assert!(mgr.swing_position.is_open()); // Swing remains open!
+        assert!(!mgr.position.is_open());
+        assert!(!mgr.is_any_open());
     }
 
     #[test]
@@ -267,13 +259,13 @@ mod tests {
         let pos = Position::default();
         pos.open_with_fee(
             true, 50000.0, 1.0, 5000.0, 1000, 51000.0, 49000.0,
-            PositionHorizon::Scalping, 0.8, 0.9, 2.5,
+            PositionHorizon::Continuous, 0.8, 0.9, 2.5,
         );
 
         let (is_long, p, q, m, f) = pos.close_with_fee();
         assert!(is_long);
         assert_eq!(p, 50000.0);
-        assert_eq!(q, 1.0);
+        assert_eq!(qty_or_eq(q, 1.0), true);
         assert_eq!(m, 5000.0);
         assert_eq!(f, 2.5);
 
@@ -281,5 +273,9 @@ mod tests {
         let (is_long2, p2, _, _, _) = pos.close_with_fee();
         assert!(!is_long2);
         assert_eq!(p2, 0.0);
+    }
+
+    fn qty_or_eq(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-9
     }
 }

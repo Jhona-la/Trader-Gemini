@@ -216,11 +216,11 @@ impl TensorVoteOrchestrator {
     }
 
     pub fn evaluate_scalp_consensus(&self) -> TensorDecision {
-        self.evaluate_horizon_consensus(TradeHorizon::Scalp)
+        self.evaluate_continuous_consensus()
     }
 
     pub fn evaluate_swing_consensus(&self) -> TensorDecision {
-        self.evaluate_horizon_consensus(TradeHorizon::Swing)
+        self.evaluate_continuous_consensus()
     }
 
     /// U-F2 — CONSENSO DEL MOTOR TEMPORAL UNIVERSAL: TODO el ensamble
@@ -454,18 +454,16 @@ mod tests {
     }
 
     #[test]
-    fn test_tensor_vote_orchestrator_dual_horizon_consensus() {
+    fn test_tensor_vote_orchestrator_continuous_consensus() {
         let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
-        arena.config.ml_threshold_long.store(0.2, std::sync::atomic::Ordering::Relaxed);
-        arena.config.ml_threshold_short.store(0.2, std::sync::atomic::Ordering::Relaxed);
+        arena.config.min_confidence_btc.store(0.51, std::sync::atomic::Ordering::Relaxed);
 
         let mut orch = TensorVoteOrchestrator::new(arena);
-        // Scalp es Bullish (+0.8), Swing es Bearish (-0.8)
-        orch.add_strategy(Box::new(HorizonMockStrategy { name: "ScalpBull", value: 0.8, horizon: TradeHorizon::Scalp }));
-        orch.add_strategy(Box::new(HorizonMockStrategy { name: "SwingBear", value: -0.8, horizon: TradeHorizon::Swing }));
+        orch.add_strategy(Box::new(HorizonMockStrategy { name: "Bull1", value: 0.8, horizon: TradeHorizon::Continuous }));
+        orch.add_strategy(Box::new(HorizonMockStrategy { name: "Bull2", value: 0.6, horizon: TradeHorizon::Continuous }));
 
-        let (scalp_dec, swing_dec) = orch.evaluate_dual_consensus();
-        assert_eq!(scalp_dec.signal, SignalType::Long, "Scalp debe resolver Long");
-        assert_eq!(swing_dec.signal, SignalType::Short, "Swing debe resolver Short simultáneamente");
+        let dec = orch.evaluate_continuous_consensus();
+        assert_eq!(dec.signal, SignalType::Long, "Continuous debe resolver Long");
+        assert_eq!(dec.horizon, TradeHorizon::Continuous);
     }
 }

@@ -630,18 +630,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rx_events = rx_events;
 
-    // FASE 15: GLOBAL ROI & PnL TRACKERS (Bifurcación Cuántica)
-    let mut scalp_gross_pnl = 0.0;
-    let mut scalp_pnl = 0.0;
-    let mut scalp_fees = 0.0;
-    let mut scalp_trades = 0;
-    let mut scalp_wins = 0;
-
-    let mut swing_gross_pnl = 0.0;
-    let mut swing_pnl = 0.0;
-    let mut swing_fees = 0.0;
-    let mut swing_trades = 0;
-    let mut swing_wins = 0;
+    // FASE 15: GLOBAL ROI & PnL TRACKERS (Motor Universal Continuo)
+    let mut total_gross_pnl = 0.0;
+    let mut total_net_pnl = 0.0;
+    let mut total_fees = 0.0;
+    let mut total_trades = 0;
+    let mut total_wins = 0;
 
     let rt_handle = tokio::runtime::Handle::current();
 
@@ -885,7 +879,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(&coin_idx) = symbol_to_id.get(&pos.symbol.to_lowercase()) {
                     let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
                     let calculated_margin = (pos.qty.abs() * pos.entry_price) / 10.0;
-                    arena_real.coins[coin_idx].positions.swing_position.open_with_horizon(
+                    arena_real.coins[coin_idx].positions.position.open_with_horizon(
                         pos.is_long,
                         pos.entry_price,
                         pos.qty,
@@ -893,7 +887,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         now_ms,
                         0.0,
                         0.0,
-                        quantum_arena::position::PositionHorizon::Swing,
+                        quantum_arena::position::PositionHorizon::Continuous,
                     );
                     telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (Margen: ${:.2})", pos.symbol, calculated_margin);
 
@@ -1264,7 +1258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // F4.1: features omni REALES (macro FRED/PAXG + sentiment vivos).
                 // Antes: &[0.0; 54] — la NN swing evaluaba ceros en producción.
                 let omni_features_hot = omni_state_hot.get_features();
-                let (mut new_sc, mut new_sw, closed_sc, closed_sw) = engine_real.process_event(
+                let (mut new_order, closed_order) = engine_real.process_event(
                     coin_id, is_trade, is_kline_closed, is_depth,
                     current_price, qty, dbp, dap, dbq, daq,
                     depth_obi, depth_micro_div, event_time as u64, latency_panic, &omni_features_hot
@@ -1359,13 +1353,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let unified_cap = f64::from_bits(unified_capital.load(Ordering::Relaxed));
 
-                    // FASE 15: Independent Execution Engine (Scalp & Swing Decoupled)
-                    let mut scalp_leverage = 1;
-                    let mut swing_leverage = 1;
-                    let force_maker = false;
-                    let maker_price = current_price;
-
-                    if let Some((is_long, pnl, qty)) = closed_sc {
+                    if let Some((is_long, pnl, qty)) = closed_order {
                         let live_maker_fee = engine_real.arena.config.live_maker_fee.load(Ordering::Relaxed);
                         let live_taker_fee = engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed);
                         let fee = (qty * current_price) * (live_maker_fee + live_taker_fee);
@@ -1378,20 +1366,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             avg_loss_abs = if avg_loss_abs == 0.0 { net.abs() } else { avg_loss_abs * 0.95 + net.abs() * 0.05 };
                         }
                         risk_envelope.record_trade(net > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
-                        scalp_gross_pnl += gross;
-                        scalp_pnl += net;
-                        scalp_fees += fee;
-                        scalp_trades += 1;
-                        if net > 0.0 { scalp_wins += 1; }
+                        total_gross_pnl += gross;
+                        total_net_pnl += net;
+                        total_fees += fee;
+                        total_trades += 1;
+                        if net > 0.0 { total_wins += 1; }
 
                         let roi_post_fees = if (qty * current_price) > 0.0 { (net / (qty * current_price)) * 100.0 } else { 0.0 };
-                        telemetry!("🛑 [SCALP CORE] CLOSE HIT! Gross PnL: {:.4} | Net PnL: {:.4} | ROI Post-Fees: {:.4}%", gross, net, roi_post_fees);
+                        telemetry!("🛑 [CONTINUOUS CORE] CLOSE HIT! Gross PnL: {:.4} | Net PnL: {:.4} | ROI Post-Fees: {:.4}%", gross, net, roi_post_fees);
                         let _ = db_tx.try_send((unified_cap, 0.0));
                         let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::CapitalUpdate(unified_cap));
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
                         let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::TradeClosed {
                             coin_id,
-                            trade_type: "SCALP".to_string(),
+                            trade_type: "CONTINUOUS".to_string(),
                             pnl: net,
                             roi_pct: roi_post_fees,
                             duration_ms: 0,
@@ -1405,94 +1393,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         rt_handle.spawn(async move {
                             let sym_filter = exec_clone.load().get_symbol_filter(&parsed_sym_str).await;
                             if let Err(e) = exec_clone.load().execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size).await {
-                                telemetry_engine::telemetry_err!("🚨 [SCALP CLOSE ERROR] Error al cerrar posición {} en Binance: {}", parsed_sym_str, e);
+                                telemetry_engine::telemetry_err!("🚨 [CLOSE ERROR] Error al cerrar posición {} en Binance: {}", parsed_sym_str, e);
                             } else {
-                                telemetry_engine::telemetry!("🛡️ [SCALP CLOSE SUCCESS] Posición {} cerrada con éxito en Binance.", parsed_sym_str);
-                            }
-                        });
-                    }
-
-                    if let Some((is_long, pnl, qty)) = closed_sw {
-                        let live_maker_fee = engine_real.arena.config.live_maker_fee.load(Ordering::Relaxed);
-                        let live_taker_fee = engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed);
-                        let fee = (qty * current_price) * (live_maker_fee + live_taker_fee);
-                        let net = pnl; // pnl devuelto por el core ya es neto de comisiones
-                        let gross = pnl + fee;
-                        // F5.1: posterior compartido — todo cierre real alimenta el edge.
-                        if net >= 0.0 {
-                            avg_win_abs = if avg_win_abs == 0.0 { net.abs() } else { avg_win_abs * 0.95 + net.abs() * 0.05 };
-                        } else {
-                            avg_loss_abs = if avg_loss_abs == 0.0 { net.abs() } else { avg_loss_abs * 0.95 + net.abs() * 0.05 };
-                        }
-                        risk_envelope.record_trade(net > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
-                        swing_gross_pnl += gross;
-                        swing_pnl += net;
-                        swing_fees += fee;
-                        swing_trades += 1;
-                        if net > 0.0 { swing_wins += 1; }
-
-                        let roi_post_fees = if (qty * current_price) > 0.0 { (net / (qty * current_price)) * 100.0 } else { 0.0 };
-                        telemetry!("🛑 [SWING CORE] CLOSE HIT! Gross PnL: {:.4} | Net PnL: {:.4} | ROI Post-Fees: {:.4}%", gross, net, roi_post_fees);
-                        let _ = db_tx.try_send((unified_cap, 0.0));
-                        let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::CapitalUpdate(unified_cap));
-                        let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
-                        let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::TradeClosed {
-                            coin_id,
-                            trade_type: "SWING".to_string(),
-                            pnl: net,
-                            roi_pct: roi_post_fees,
-                            duration_ms: 0,
-                            ml_prob,
-                        });
-
-                        // FIX #590: Despacho directo de cierre en Binance Hedge Mode sin pasar por execute_raw_qty
-                        let parsed_sym_str = parsed_sym.to_string();
-                        let exec_clone = Arc::clone(&exec);
-                        let is_long_close = is_long;
-                        rt_handle.spawn(async move {
-                            let sym_filter = exec_clone.load().get_symbol_filter(&parsed_sym_str).await;
-                            if let Err(e) = exec_clone.load().execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size).await {
-                                telemetry_engine::telemetry_err!("🚨 [SWING CLOSE ERROR] Error al cerrar posición {} en Binance: {}", parsed_sym_str, e);
-                            } else {
-                                telemetry_engine::telemetry!("🛡️ [SWING CLOSE SUCCESS] Posición {} cerrada con éxito en Binance.", parsed_sym_str);
+                                telemetry_engine::telemetry!("🛡️ [CLOSE SUCCESS] Posición {} cerrada con éxito en Binance.", parsed_sym_str);
                             }
                         });
                     }
 
                     // BUG-617: Veto de nuevas entradas por pánico de memoria RAM (>85% en OS-Guardian)
                     let is_mem_panic = engine_real.arena.panic_memory_dump.load(Ordering::Relaxed);
-                    if is_mem_panic && (new_sc.is_some() || new_sw.is_some()) {
+                    if is_mem_panic && new_order.is_some() {
                         telemetry_engine::telemetry_err!("🚨 [OS-GUARDIAN] Asfixia de RAM (>85%). Nuevas aperturas bloqueadas temporalmente para evitar OOM.");
-                        if new_sc.is_some() {
-                            engine_real.rollback_scalp_position(coin_id);
-                            new_sc = None;
-                        }
-                        if new_sw.is_some() {
-                            engine_real.rollback_swing_position(coin_id);
-                            new_sw = None;
-                        }
+                        engine_real.rollback_position(coin_id);
+                        new_order = None;
                     }
 
-                    let mut scalp_tp_price = 0.0;
-                    let mut scalp_sl_price = 0.0;
-                    let mut is_high_confidence_scalp = false;
-                    let mut swing_tp_price = 0.0;
-                    let mut swing_sl_price = 0.0;
+                    let mut order_tp_price = 0.0;
+                    let mut order_sl_price = 0.0;
+                    let mut is_high_confidence = false;
+                    let mut exec_leverage = 1;
 
                     // F5.1 & BUG-598: Margen libre real = equity - margen total retenido en posiciones vivas
                     let total_margin_used: f64 = engine_real.arena.coins.iter().map(|c| {
-                        let sc_m = if c.positions.scalp_position.is_open() {
-                            c.positions.scalp_position.margin_used.load(Ordering::Relaxed)
-                        } else { 0.0 };
-                        let sw_m = if c.positions.swing_position.is_open() {
-                            c.positions.swing_position.margin_used.load(Ordering::Relaxed)
-                        } else { 0.0 };
-                        sc_m + sw_m
+                        if c.positions.position.is_open() {
+                            c.positions.position.margin_used.load(Ordering::Relaxed)
+                        } else { 0.0 }
                     }).sum();
                     let cap_now = (engine_real.arena.unified_capital.load(Ordering::Relaxed) - total_margin_used).max(0.0);
 
-                    if let Some((is_long, entry_price, _qty)) = new_sc {
-                        let scalp_stop_pct = engine_real
+                    if let Some((is_long, entry_price, _qty)) = new_order {
+                        let stop_pct = engine_real
                             .arena
                             .config
                             .scalp_sl_base
@@ -1500,12 +1430,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .max(engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0) * 1.5)
                             .max(0.0015);
                         let (env_lev, operable) = if cap_now <= 50.0 {
-                            // Calibración adaptativa micro-cuenta: z = 0.85, k = 10.0
-                            risk_envelope.max_leverage(cap_now, scalp_stop_pct, 5.0, 0.85, 10.0)
+                            // Calibración adaptativa micro-cuenta ($13 USD bootstrap): z = 0.85, k = 10.0
+                            risk_envelope.max_leverage(cap_now, stop_pct, 5.0, 0.85, 10.0)
                         } else {
-                            risk_envelope.max_leverage(cap_now, scalp_stop_pct, 5.0, 1.64, 50.0)
+                            risk_envelope.max_leverage(cap_now, stop_pct, 5.0, 1.64, 50.0)
                         };
-                        scalp_leverage = if operable {
+                        exec_leverage = if operable {
                             env_lev.floor().clamp(1.0, 10.0) as u32
                         } else if cap_now <= 50.0 && cap_now > 0.0 {
                             ((5.05 / cap_now).ceil().clamp(1.0, 5.0)) as u32
@@ -1516,102 +1446,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
                         if ml_prob > 0.80 || ml_prob < 0.20 {
-                            is_high_confidence_scalp = true;
+                            is_high_confidence = true;
                         }
 
                         let base_tp = engine_real.arena.config.scalp_tp_base.load(Ordering::Relaxed);
                         let base_sl = engine_real.arena.config.scalp_sl_base.load(Ordering::Relaxed);
                         let atr_pct = engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0);
-                        let scalp_tp = base_tp.max(atr_pct * 2.0).max(0.002);
-                        let scalp_sl = base_sl.max(atr_pct * 1.5).max(0.0015);
+                        let tp_pct = base_tp.max(atr_pct * 2.0).max(0.002);
+                        let sl_pct = base_sl.max(atr_pct * 1.5).max(0.0015);
 
-                        scalp_tp_price = if is_long { entry_price * (1.0 + scalp_tp) } else { entry_price * (1.0 - scalp_tp) };
-                        scalp_sl_price = if is_long { entry_price * (1.0 - scalp_sl) } else { entry_price * (1.0 + scalp_sl) };
+                        order_tp_price = if is_long { entry_price * (1.0 + tp_pct) } else { entry_price * (1.0 - tp_pct) };
+                        order_sl_price = if is_long { entry_price * (1.0 - sl_pct) } else { entry_price * (1.0 + sl_pct) };
                     }
 
-                    if let Some((is_long, entry_price, _qty)) = new_sw {
-                        let swing_stop_pct = engine_real
-                            .arena
-                            .config
-                            .swing_sl_base
-                            .load(Ordering::Relaxed)
-                            .max(engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0) * 3.0)
-                            .max(0.003);
-                        let (env_lev, operable) = if cap_now <= 50.0 {
-                            risk_envelope.max_leverage(cap_now, swing_stop_pct, 5.0, 0.85, 10.0)
-                        } else {
-                            risk_envelope.max_leverage(cap_now, swing_stop_pct, 5.0, 1.64, 50.0)
-                        };
-                        swing_leverage = if operable {
-                            env_lev.floor().clamp(1.0, 10.0) as u32
-                        } else if cap_now <= 50.0 && cap_now > 0.0 {
-                            ((5.05 / cap_now).ceil().clamp(1.0, 5.0)) as u32
-                        } else {
-                            0
-                        };
-                        let _ = tx_log_worker.try_send((false, is_long, coin_id));
-
-                        let base_tp = engine_real.arena.config.swing_tp_base.load(Ordering::Relaxed);
-                        let base_sl = engine_real.arena.config.swing_sl_base.load(Ordering::Relaxed);
-                        let atr_pct = engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0);
-                        let swing_tp = base_tp.max(atr_pct * 4.0);
-                        let swing_sl = base_sl.max(atr_pct * 3.0);
-
-                        swing_tp_price = if is_long { entry_price * (1.0 + swing_tp) } else { entry_price * (1.0 - swing_tp) };
-                        swing_sl_price = if is_long { entry_price * (1.0 - swing_sl) } else { entry_price * (1.0 + swing_sl) };
-                    }
-
-                    // FASE 3 FIX: Ejecutar Scalping y Swing de forma INDEPENDIENTE sin netting para evitar colisiones
-                    let mut executions = Vec::new();
-                    if let Some((is_long, _, qty)) = new_sc {
-                        executions.push((is_long, qty.abs(), scalp_tp_price, scalp_sl_price, is_high_confidence_scalp, scalp_leverage, true));
-                    }
-                    if let Some((is_long, _, qty)) = new_sw {
-                        executions.push((is_long, qty.abs(), swing_tp_price, swing_sl_price, false, swing_leverage, false));
-                    }
-
-                    for (final_is_long, final_qty, final_tp_price, final_sl_price, is_high_conf, exec_leverage, is_scalp) in executions {
+                    if let Some((final_is_long, _entry_price, final_qty)) = new_order {
                         let parsed_sym_str = parsed_sym.to_string();
                         let exec_clone = Arc::clone(&exec);
                         let arena_clone = Arc::clone(&engine_real.arena);
 
+                        let force_maker = false;
+                        let maker_price = current_price;
                         let iceberg_threshold = engine_real.arena.config.iceberg_volume_threshold.load(Ordering::Relaxed);
                         let iceberg_slices = engine_real.arena.config.iceberg_slice_count.load(Ordering::Relaxed).max(2.0);
-                        let notional_volume = final_qty * current_price;
+                        let notional_volume = final_qty.abs() * current_price;
+                        let final_qty = final_qty.abs();
 
                         let rollback_positions = move |arena: &Arc<quantum_arena::GlobalArena>| {
-                            if is_scalp && coin_id < arena.coins.len() {
+                            if coin_id < arena.coins.len() {
                                 let coin = &arena.coins[coin_id];
-                                if coin.positions.scalp_position.is_open() {
-                                    let (_, _, _, margin_used, entry_fee) = coin.positions.scalp_position.close_with_fee();
+                                if coin.positions.position.is_open() {
+                                    let (_, _, _, margin_used, entry_fee) = coin.positions.position.close_with_fee();
                                     if margin_used > 0.0 {
-                                        arena.scalp_used_margin.fetch_add(-margin_used, Ordering::Relaxed);
                                         arena.used_margin.fetch_add(-margin_used, Ordering::Relaxed);
                                     }
                                     if entry_fee > 0.0 {
                                         arena.unified_capital.fetch_add(entry_fee, Ordering::Relaxed);
                                         coin.scalp.pnl_realized.fetch_add(entry_fee, Ordering::Relaxed);
                                     }
-                                }
-                                if coin.positions.position.is_open() && coin.positions.position.horizon.load(Ordering::Relaxed) == 0 {
-                                    coin.positions.position.close_with_fee();
-                                }
-                            }
-                            if !is_scalp && coin_id < arena.coins.len() {
-                                let coin = &arena.coins[coin_id];
-                                if coin.positions.swing_position.is_open() {
-                                    let (_, _, _, margin_used, entry_fee) = coin.positions.swing_position.close_with_fee();
-                                    if margin_used > 0.0 {
-                                        arena.swing_used_margin.fetch_add(-margin_used, Ordering::Relaxed);
-                                        arena.used_margin.fetch_add(-margin_used, Ordering::Relaxed);
-                                    }
-                                    if entry_fee > 0.0 {
-                                        arena.unified_capital.fetch_add(entry_fee, Ordering::Relaxed);
-                                        coin.swing.pnl_realized.fetch_add(entry_fee, Ordering::Relaxed);
-                                    }
-                                }
-                                if coin.positions.position.is_open() && coin.positions.position.horizon.load(Ordering::Relaxed) == 1 {
-                                    coin.positions.position.close_with_fee();
                                 }
                             }
                         };
@@ -1673,9 +1544,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 telemetry_engine::telemetry!("🧊 [ICEBERG ROUTER] Fragmentando orden institucional ({:.2} USDT) en pedazos de {:.2}...", notional_volume, iceberg_qty);
                                 entry_result = exec_clone.load().execute_iceberg_limit(&parsed_sym_str, final_is_long, final_qty, maker_price, iceberg_qty, dyn_step_size, dyn_tick_size, "iceberg_01").await;
                             } else {
-                                let horizon_tag = if is_scalp { "SCALP" } else { "SWING" };
                                 let side_tag = if final_is_long { "L" } else { "S" };
-                                let client_id = format!("{}_{}_{}", horizon_tag, side_tag, uuid::Uuid::now_v7().simple());
+                                let client_id = format!("CONT_{}_{}", side_tag, uuid::Uuid::now_v7().simple());
                                 entry_result = exec_clone.load().execute_raw_qty_with_client_id(&parsed_sym_str, final_is_long, final_qty, dyn_step_size, &client_id).await;
                             }
 
@@ -1688,15 +1558,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     rollback_positions(&arena_clone);
                                 }
                                 Ok(()) => {
-                                    if final_tp_price > 0.0 && final_sl_price > 0.0 {
-                                        let tag = if is_high_conf { "🎯 [OCO TENSOR]" } else { "🛡️ [OCO GUARD]" };
+                                    if order_tp_price > 0.0 && order_sl_price > 0.0 {
+                                        let tag = if is_high_confidence { "🎯 [OCO TENSOR]" } else { "🛡️ [OCO GUARD]" };
                                         telemetry_engine::telemetry!(
                                             "{} Protección para {} (TP: {:.4}, SL: {:.4})",
-                                            tag, parsed_sym_str, final_tp_price, final_sl_price
+                                            tag, parsed_sym_str, order_tp_price, order_sl_price
                                         );
-                                        let horizon_prefix = if is_scalp { "SCALP" } else { "SWING" };
-                                        let base_id = format!("{}_oco_{}", horizon_prefix, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_micros());
-                                        if let Err(e) = exec_clone.load().execute_oco_order(&parsed_sym_str, final_is_long, final_qty, final_tp_price, final_sl_price, dyn_step_size, dyn_tick_size, &base_id).await {
+                                        let base_id = format!("CONT_oco_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_micros());
+                                        if let Err(e) = exec_clone.load().execute_oco_order(&parsed_sym_str, final_is_long, final_qty, order_tp_price, order_sl_price, dyn_step_size, dyn_tick_size, &base_id).await {
                                             telemetry_engine::telemetry_err!("⚠️ [OCO TENSOR] No se pudo enviar bracket protector para {}: {}", parsed_sym_str, e);
                                         }
                                     }
@@ -1715,28 +1584,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let lat = start.elapsed().as_nanos();
 
-                let mut scalp_unrealized_pnl = 0.0;
-                let mut swing_unrealized_pnl = 0.0;
+                let mut total_unrealized_pnl = 0.0;
 
                 for coin in engine_real.arena.coins.iter() {
-                    if coin.positions.scalp_position.is_open() {
-                        scalp_unrealized_pnl += coin.scalp.pnl_unrealized.load(Ordering::Relaxed);
-                    }
-                    if coin.positions.swing_position.is_open() {
-                        swing_unrealized_pnl += coin.swing.pnl_unrealized.load(Ordering::Relaxed);
+                    if coin.positions.position.is_open() {
+                        total_unrealized_pnl += coin.scalp.pnl_unrealized.load(Ordering::Relaxed);
                     }
                 }
 
-                let total_trades = scalp_trades + swing_trades;
-                let total_wins = scalp_wins + swing_wins;
-                let scalp_wr = if scalp_trades > 0 { (scalp_wins as f64 / scalp_trades as f64) * 100.0 } else { 0.0 };
-                let swing_wr = if swing_trades > 0 { (swing_wins as f64 / swing_trades as f64) * 100.0 } else { 0.0 };
                 let win_rate = if total_trades > 0 { (total_wins as f64 / total_trades as f64) * 100.0 } else { 0.0 };
 
                 // Update Central Profiler for Financial Dashboarding (Zero-Allocation Atomic)
                 telemetry_server::profiler::update_financials_atomic(
-                    scalp_gross_pnl + swing_gross_pnl,
-                    scalp_pnl + swing_pnl,
+                    total_gross_pnl,
+                    total_net_pnl,
                     win_rate,
                     f64::from_bits(unified_capital.load(std::sync::atomic::Ordering::Relaxed))
                 );
@@ -1744,13 +1605,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // FASE 18: Emitir al Zero-Copy Bus (Ring Buffer pre-allocado)
                 // Cero locks, cero allocations. 3-5ns delay en lugar de milisegundos.
                 let mut payload = [0.0; 6];
-                // FASE 19: Métricas Institucionales (Net ROI & Split WR)
-                payload[0] = scalp_pnl; // NET PnL Scalp
-                payload[1] = swing_pnl; // NET PnL Swing
-                payload[2] = scalp_unrealized_pnl;
-                payload[3] = swing_unrealized_pnl;
-                payload[4] = scalp_wr;
-                payload[5] = swing_wr;
+                payload[0] = total_net_pnl; // NET PnL
+                payload[1] = 0.0;
+                payload[2] = total_unrealized_pnl;
+                payload[3] = 0.0;
+                payload[4] = win_rate;
+                payload[5] = 0.0;
 
                 if latency_panic {
                     telemetry_server::zero_copy_bus::GLOBAL_TELEMETRY.emit(
@@ -1775,10 +1635,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     latency_ms: if event_time > 0 { latency_ms as u64 } else { 0 },
                     latency_panic,
                     dark_alpha: dark_router_unified.get_liquidation_cascade_risk(),
-                    scalp_pnl: scalp_unrealized_pnl,
-                    swing_pnl: swing_unrealized_pnl,
-                    gross_pnl: scalp_gross_pnl + swing_gross_pnl,
-                    net_pnl: scalp_pnl + swing_pnl,
+                    scalp_pnl: total_unrealized_pnl,
+                    swing_pnl: 0.0,
+                    gross_pnl: total_gross_pnl,
+                    net_pnl: total_net_pnl,
                     win_rate,
                     trade_duration_avg: 0.0,
                 });
@@ -1788,7 +1648,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // FASE 8: Legacy process respawn removed in favor of in-memory Hot-Swap via PhaseOrchestrator.
             }
             if msg_count.is_multiple_of(5000) {
-                telemetry_server::telemetry_log!("⏱️ [TELEMETRY] Processed 5000 ticks/klines. Cumulative Fees (Scalp: ${:.4}, Swing: ${:.4}). Last tick: {} ns", scalp_fees, swing_fees, start.elapsed().as_nanos());
+                telemetry_server::telemetry_log!("⏱️ [TELEMETRY] Processed 5000 ticks/klines. Cumulative Fees: ${:.4}. Last tick: {} ns", total_fees, start.elapsed().as_nanos());
 
                 // FASE 12: Cosecha Cuántica en vivo (ShadowForest)
                 let (winner, leaderboard) = shadow_forest.harvest_best_genome();

@@ -230,7 +230,7 @@ impl EvolutionEngine {
                         omni_live[30] = tick.bid_qty - tick.ask_qty;
                         omni_live[39] = live_ofi;
 
-                        let (new_sc, new_sw, closed_sc, closed_sw) = engine.process_event(
+                        let (new_order, closed_order) = engine.process_event(
                             tick.coin_id,
                             true,  // is_trade = true para evaluar scalp
                             false,
@@ -247,11 +247,7 @@ impl EvolutionEngine {
                             false,
                             &omni_live,
                         );
-                        if new_sc.is_some()
-                            || new_sw.is_some()
-                            || closed_sc.is_some()
-                            || closed_sw.is_some()
-                        {
+                        if new_order.is_some() || closed_order.is_some() {
                             total_trades += 1;
                         }
 
@@ -282,7 +278,7 @@ impl EvolutionEngine {
                         omni_oos[39] = live_ofi;
                         omni_oos[30] = tick.bid_qty - tick.ask_qty;
 
-                        let (_, _, closed_sc, closed_sw) = engine.process_event(
+                        let (_, closed_order) = engine.process_event(
                             tick.coin_id,
                             true,
                             false,
@@ -299,7 +295,7 @@ impl EvolutionEngine {
                             false,
                             &omni_oos,
                         );
-                        if closed_sc.is_some() || closed_sw.is_some() {
+                        if closed_order.is_some() {
                             total_trades += 1;
                         }
                     }

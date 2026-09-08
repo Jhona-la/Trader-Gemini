@@ -155,7 +155,6 @@ pub struct ContinuousVPIN {
 }
 
 impl ContinuousVPIN {
-    #[inline(always)]
     /// Trades objetivo por bucket — práctica estándar del VPIN de
     /// Easley/López de Prado: el bucket debe agregar decenas de trades para
     /// que |buy−sell|/total tenga significado. Con un dólar fijo y ticks de

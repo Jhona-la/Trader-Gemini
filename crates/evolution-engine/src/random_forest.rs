@@ -163,8 +163,7 @@ impl ShadowForest {
                 .store(self.initial_capital, Ordering::Relaxed);
             // Cerramos todas las posiciones virtuales
             for coin in engine.arena.coins.iter() {
-                coin.positions.scalp_position.close();
-                coin.positions.swing_position.close();
+                coin.positions.position.close();
             }
 
             let mutation = if i == 0 {

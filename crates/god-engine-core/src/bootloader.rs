@@ -173,33 +173,22 @@ impl SystemBootloader {
         _engine: &mut GodEngineCore,
     ) -> Result<(), Box<dyn std::error::Error>> {
         println!("💾 [FASE 4] Recuperando y verificando continuidad de estado (State Continuity Engine)...");
-        let mut total_open_scalp = 0;
-        let mut total_open_swing = 0;
+        let mut total_open = 0;
 
         for (id, coin) in self.arena.coins.iter().enumerate() {
-            let scalp_pos = &coin.positions.scalp_position;
-            let swing_pos = &coin.positions.swing_position;
+            let pos = &coin.positions.position;
 
-            if scalp_pos.is_open() {
-                total_open_scalp += 1;
+            if pos.is_open() {
+                total_open += 1;
                 let chk = quantum_arena::state_continuity::StateContinuityEngine::compute_state_checksum(
                     id,
-                    scalp_pos.quantity.load(std::sync::atomic::Ordering::Relaxed),
-                    scalp_pos.entry_price.load(std::sync::atomic::Ordering::Relaxed),
+                    pos.quantity.load(std::sync::atomic::Ordering::Relaxed),
+                    pos.entry_price.load(std::sync::atomic::Ordering::Relaxed),
                 );
-                println!("   -> [SCALP] Posición abierta en ID {} detectada (Checksum: {:016X})", id, chk);
-            }
-            if swing_pos.is_open() {
-                total_open_swing += 1;
-                let chk = quantum_arena::state_continuity::StateContinuityEngine::compute_state_checksum(
-                    id,
-                    swing_pos.quantity.load(std::sync::atomic::Ordering::Relaxed),
-                    swing_pos.entry_price.load(std::sync::atomic::Ordering::Relaxed),
-                );
-                println!("   -> [SWING] Posición abierta en ID {} detectada (Checksum: {:016X})", id, chk);
+                println!("   -> [UNIVERSAL] Posición abierta en ID {} detectada (Checksum: {:016X})", id, chk);
             }
         }
-        println!("   -> Continuidad verificada: {} posiciones Scalp, {} posiciones Swing vivas.", total_open_scalp, total_open_swing);
+        println!("   -> Continuidad verificada: {} posiciones universales continuas vivas.", total_open);
         Ok(())
     }
 

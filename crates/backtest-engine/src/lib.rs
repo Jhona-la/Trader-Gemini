@@ -274,7 +274,7 @@ pub fn run_backtest_native(
             omni_sim[39] = tick_ofi;
             omni_sim[49] = tick_ret.abs() * 100.0;
 
-            let (_, _, sc, sw) = core.process_event(
+            let (_new_order, closed_order) = core.process_event(
                 target_coin_id,
                 true,
                 is_kline,
@@ -292,24 +292,7 @@ pub fn run_backtest_native(
                 &omni_sim,
             );
 
-            if let Some((_is_long, net_pnl, qty)) = sc {
-                if trades < out_pnl.len() {
-                    out_pnl[trades] = net_pnl;
-                }
-                let fees_est = qty * current_close * avg_fee_est;
-                fees_est_sum += fees_est;
-                gross_pnl_sum += net_pnl + fees_est;
-                net_pnl_sum += net_pnl;
-                if net_pnl + fees_est > 0.0 {
-                    gross_wins += 1;
-                }
-                if net_pnl > 0.0 {
-                    net_wins += 1;
-                }
-                trades += 1;
-            }
-
-            if let Some((_is_long, net_pnl, qty)) = sw {
+            if let Some((_is_long, net_pnl, qty)) = closed_order {
                 if trades < out_pnl.len() {
                     out_pnl[trades] = net_pnl;
                 }
@@ -356,22 +339,11 @@ pub fn run_backtest_native(
     // FIX #1485 & #1517: Usar target_coin_id y proteger suma de unrealized PnL
     let last_price = closes.last().copied().unwrap_or(0.0);
     let safe_coin_idx = target_coin_id.min(core.arena.coins.len().saturating_sub(1));
-    let scalp_pos = &core.arena.coins[safe_coin_idx].positions.scalp_position;
-    if scalp_pos.is_open() {
-        let entry = scalp_pos.entry_price.load(Ordering::Relaxed);
-        let qty = scalp_pos.quantity.load(Ordering::Relaxed);
-        let is_long = scalp_pos.is_long.load(Ordering::Relaxed);
-        let exit_fee = qty * last_price * avg_fee_est;
-        let unrealized = (last_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
-        if unrealized.is_finite() {
-            final_cap += unrealized;
-        }
-    }
-    let swing_pos = &core.arena.coins[safe_coin_idx].positions.swing_position;
-    if swing_pos.is_open() {
-        let entry = swing_pos.entry_price.load(Ordering::Relaxed);
-        let qty = swing_pos.quantity.load(Ordering::Relaxed);
-        let is_long = swing_pos.is_long.load(Ordering::Relaxed);
+    let pos = &core.arena.coins[safe_coin_idx].positions.position;
+    if pos.is_open() {
+        let entry = pos.entry_price.load(Ordering::Relaxed);
+        let qty = pos.quantity.load(Ordering::Relaxed);
+        let is_long = pos.is_long.load(Ordering::Relaxed);
         let exit_fee = qty * last_price * avg_fee_est;
         let unrealized = (last_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
         if unrealized.is_finite() {

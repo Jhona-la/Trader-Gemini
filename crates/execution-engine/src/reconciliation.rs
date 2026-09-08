@@ -201,25 +201,11 @@ pub fn reconcile_arena(
         let remote_price = remote_price_map.get(&sym).copied().unwrap_or(0.0);
         let coin = &arena.coins[coin_idx];
 
-        #[allow(deprecated)]
-        let scalp_open = coin.positions.scalp_position.is_open();
-        #[allow(deprecated)]
-        let swing_open = coin.positions.swing_position.is_open();
         let cont_open = coin.positions.position.is_open();
 
         let cont_qty = if cont_open {
             let q = coin.positions.position.quantity.load(std::sync::atomic::Ordering::Relaxed);
             if coin.positions.position.is_long.load(std::sync::atomic::Ordering::Relaxed) { q } else { -q }
-        } else if scalp_open {
-            #[allow(deprecated)]
-            let q = coin.positions.scalp_position.quantity.load(std::sync::atomic::Ordering::Relaxed);
-            #[allow(deprecated)]
-            if coin.positions.scalp_position.is_long.load(std::sync::atomic::Ordering::Relaxed) { q } else { -q }
-        } else if swing_open {
-            #[allow(deprecated)]
-            let q = coin.positions.swing_position.quantity.load(std::sync::atomic::Ordering::Relaxed);
-            #[allow(deprecated)]
-            if coin.positions.swing_position.is_long.load(std::sync::atomic::Ordering::Relaxed) { q } else { -q }
         } else {
             0.0
         };
@@ -228,35 +214,17 @@ pub fn reconcile_arena(
 
         if remote_net_qty.abs() < 1e-8 {
             // Exchange está plano pero la Arena cree que tiene posiciones abiertas: phantom cleanup
-            let mut freed_margin = 0.0_f64;
             if cont_open {
                 let (_, _, _, m, _) = coin.positions.position.close_with_fee();
-                freed_margin = freed_margin.max(m);
+                if m > 0.0 {
+                    let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
+                    arena.used_margin.store((cur_u - m).max(0.0), std::sync::atomic::Ordering::Relaxed);
+                }
                 adjustments += 1;
-            }
-            #[allow(deprecated)]
-            if scalp_open {
-                let (_, _, _, m, _) = coin.positions.scalp_position.close_with_fee();
-                freed_margin = freed_margin.max(m);
-                let cur = arena.scalp_used_margin.load(std::sync::atomic::Ordering::Relaxed);
-                arena.scalp_used_margin.store((cur - m).max(0.0), std::sync::atomic::Ordering::Relaxed);
-                adjustments += 1;
-            }
-            #[allow(deprecated)]
-            if swing_open {
-                let (_, _, _, m, _) = coin.positions.swing_position.close_with_fee();
-                freed_margin = freed_margin.max(m);
-                let cur = arena.swing_used_margin.load(std::sync::atomic::Ordering::Relaxed);
-                arena.swing_used_margin.store((cur - m).max(0.0), std::sync::atomic::Ordering::Relaxed);
-                adjustments += 1;
-            }
-            if freed_margin > 0.0 {
-                let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
-                arena.used_margin.store((cur_u - freed_margin).max(0.0), std::sync::atomic::Ordering::Relaxed);
             }
         } else {
             // Exchange tiene posición abierta
-            if !cont_open && !scalp_open && !swing_open {
+            if !cont_open {
                 // Posición huérfana en exchange: adoptar en Horizonte Continuo
                 let is_long = remote_net_qty > 0.0;
                 let abs_qty = remote_net_qty.abs();
@@ -277,19 +245,7 @@ pub fn reconcile_arena(
                     0.0,
                     quantum_arena::position::PositionHorizon::Continuous,
                 );
-                #[allow(deprecated)]
-                coin.positions.swing_position.open_with_horizon(
-                    is_long,
-                    price,
-                    abs_qty,
-                    margin,
-                    now_ms,
-                    0.0,
-                    0.0,
-                    quantum_arena::position::PositionHorizon::Continuous,
-                );
                 arena.used_margin.fetch_add(margin, std::sync::atomic::Ordering::Relaxed);
-                arena.swing_used_margin.fetch_add(margin, std::sync::atomic::Ordering::Relaxed);
                 adjustments += 1;
             } else if (arena_net_qty - remote_net_qty).abs() > 1e-6 {
                 // Drift en cantidad: actualizar posición continua para reflejar el tamaño real
@@ -299,14 +255,6 @@ pub fn reconcile_arena(
                     if old_margin > 0.0 {
                         let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
                         arena.used_margin.store((cur_u - old_margin).max(0.0), std::sync::atomic::Ordering::Relaxed);
-                    }
-                    #[allow(deprecated)]
-                    if coin.positions.scalp_position.is_open() {
-                        coin.positions.scalp_position.close_with_fee();
-                    }
-                    #[allow(deprecated)]
-                    if coin.positions.swing_position.is_open() {
-                        coin.positions.swing_position.close_with_fee();
                     }
                 } else {
                     let price = coin.positions.position.entry_price.load(std::sync::atomic::Ordering::Relaxed);
@@ -318,17 +266,6 @@ pub fn reconcile_arena(
                     coin.positions.position.quantity.store(target_abs, std::sync::atomic::Ordering::Relaxed);
                     coin.positions.position.margin_used.store(new_margin, std::sync::atomic::Ordering::Relaxed);
                     arena.used_margin.fetch_add(margin_diff, std::sync::atomic::Ordering::Relaxed);
-
-                    #[allow(deprecated)]
-                    if coin.positions.scalp_position.is_open() {
-                        coin.positions.scalp_position.quantity.store(target_abs, std::sync::atomic::Ordering::Relaxed);
-                        coin.positions.scalp_position.margin_used.store(new_margin, std::sync::atomic::Ordering::Relaxed);
-                    }
-                    #[allow(deprecated)]
-                    if coin.positions.swing_position.is_open() {
-                        coin.positions.swing_position.quantity.store(target_abs, std::sync::atomic::Ordering::Relaxed);
-                        coin.positions.swing_position.margin_used.store(new_margin, std::sync::atomic::Ordering::Relaxed);
-                    }
                 }
                 adjustments += 1;
             }

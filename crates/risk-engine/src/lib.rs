@@ -63,34 +63,34 @@ pub fn reject_report() -> String {
     let v: Vec<String> = REJECT_COUNTERS
         .iter()
         .enumerate()
-        .filter(|(i, c)| c.load(std::sync::atomic::Ordering::Relaxed) > 0)
+        .filter(|(_i, c)| c.load(std::sync::atomic::Ordering::Relaxed) > 0)
         .map(|(i, c)| format!("{}={}", names[i], c.load(std::sync::atomic::Ordering::Relaxed)))
         .collect();
     if v.is_empty() { "sin rechazos".into() } else { v.join(" ") }
 }
 
 pub struct RiskEngine {
+    pub peak_capital: f64,
     pub scalp_peak_capital: f64,
     pub swing_peak_capital: f64,
-    /// R1.3 — split de capital suavizado (Robbins-Monro). El objetivo
-    /// bayesiano se recalcula por evaluación, pero el split EFECTIVO
-    /// converge con paso 1/√n para no desestabilizar picos de drawdown,
-    /// hard-stops y capital_ratio que dependen de él.
+    /// R1.3 — split de capital suavizado (Robbins-Monro).
     pub smoothed_split: Option<f64>,
 }
 
 impl RiskEngine {
     pub fn new(initial_capital: f64) -> Self {
         Self {
-            scalp_peak_capital: initial_capital * 0.5,
-            swing_peak_capital: initial_capital * 0.5,
+            peak_capital: initial_capital,
+            scalp_peak_capital: initial_capital,
+            swing_peak_capital: initial_capital,
             smoothed_split: None,
         }
     }
 
     pub fn reset(&mut self, initial_capital: f64) {
-        self.scalp_peak_capital = initial_capital * 0.5;
-        self.swing_peak_capital = initial_capital * 0.5;
+        self.peak_capital = initial_capital;
+        self.scalp_peak_capital = initial_capital;
+        self.swing_peak_capital = initial_capital;
         self.smoothed_split = None;
     }
 
@@ -338,12 +338,11 @@ impl RiskEngine {
         (scalp_order, swing_order)
     }
 
-    /// Evalúa la intención cuántica diferenciada por horizonte (Scalping vs Swing)
-    pub fn evaluate_quantum_order_by_horizon(
+    /// Evalúa la intención unificada de señal cuántica continua sobre el 100% del capital disponible.
+    pub fn evaluate_quantum_order(
         &mut self,
         coin_id: usize,
         intent: &SignalIntent,
-        is_scalp: bool,
         arena: &GlobalArena,
     ) -> ValidatedOrder {
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
@@ -355,73 +354,22 @@ impl RiskEngine {
             return ValidatedOrder::rejected();
         }
 
-        let genome_split = arena
-            .config
-            .capital_split_scalp
-            .load(Ordering::Relaxed)
-            .clamp(0.1, 0.9);
-        let coin = &arena.coins[coin_id];
-        let scalp_edge = (coin.scalp.win_rate.load(Ordering::Relaxed)
-            * coin.scalp.kelly_fraction.load(Ordering::Relaxed))
-        .max(0.0);
-        let swing_edge = (coin.swing.win_rate.load(Ordering::Relaxed)
-            * coin.swing.kelly_fraction.load(Ordering::Relaxed))
-        .max(0.0);
-        let scalp_n = coin.scalp.trade_count.load(Ordering::Relaxed) as f64;
-        let swing_n = coin.swing.trade_count.load(Ordering::Relaxed) as f64;
-        let posterior_scalp = scalp_edge * scalp_n.sqrt() + genome_split;
-        let posterior_swing = swing_edge * swing_n.sqrt() + (1.0 - genome_split);
-        let target_split = if posterior_scalp + posterior_swing > 1e-12 {
-            (posterior_scalp / (posterior_scalp + posterior_swing)).clamp(0.1, 0.9)
-        } else {
-            genome_split
-        };
-
-        // Robbins-Monro con tasa 1/√(n_total + 1)
-        let n_total = scalp_n + swing_n;
-        let alpha = 1.0 / (n_total + 1.0).sqrt();
-        let split = match self.smoothed_split {
-            Some(prev) => prev + (target_split - prev) * alpha,
-            None => target_split,
-        };
-        self.smoothed_split = Some(split);
-
-        let allocated_capital = if is_scalp {
-            current_capital * split
-        } else {
-            current_capital * (1.0 - split)
-        };
-
-        if is_scalp {
-            if allocated_capital > self.scalp_peak_capital {
-                self.scalp_peak_capital = allocated_capital;
-            }
-        } else {
-            if allocated_capital > self.swing_peak_capital {
-                self.swing_peak_capital = allocated_capital;
-            }
+        if current_capital > self.peak_capital {
+            self.peak_capital = current_capital;
+        }
+        if current_capital > self.scalp_peak_capital {
+            self.scalp_peak_capital = current_capital;
+        }
+        if current_capital > self.swing_peak_capital {
+            self.swing_peak_capital = current_capital;
         }
 
         let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
-        let base_allocated = if is_scalp {
-            base_capital * split
-        } else {
-            base_capital * (1.0 - split)
-        };
-
-        let pf = if is_scalp {
-            arena.coins[coin_id].metrics.profit_factor.load(Ordering::Relaxed)
-        } else {
-            arena.coins[coin_id].swing.profit_factor.load(Ordering::Relaxed)
-        };
+        let pf = arena.coins[coin_id].metrics.profit_factor.load(Ordering::Relaxed);
         let clamp_min = arena.config.kelly_clamp_min.load(Ordering::Relaxed).max(0.0);
         let clamp_max = arena.config.kelly_clamp_max.load(Ordering::Relaxed).clamp(clamp_min, 1.0);
-        let raw_kelly = if is_scalp {
-            arena.coins[coin_id].metrics.kelly_fraction.load(Ordering::Relaxed)
-        } else {
-            arena.coins[coin_id].swing.kelly_fraction.load(Ordering::Relaxed)
-        };
-        // N-03: Si Kelly es <= 0.0 (esperanza no positiva o ruinosa), NO forzar piso artificial del 5%
+        let raw_kelly = arena.coins[coin_id].metrics.kelly_fraction.load(Ordering::Relaxed);
+
         let kelly_frac = if raw_kelly <= 0.0 {
             0.0
         } else {
@@ -432,22 +380,23 @@ impl RiskEngine {
             coin_id,
             intent,
             kelly_frac,
-            allocated_capital,
-            base_allocated,
+            current_capital,
+            base_capital,
             pf,
-            is_scalp,
+            true,
             arena,
         )
     }
 
-    /// Evalúa la intención unificada de señal cuántica continua sobre el 100% del capital disponible.
-    pub fn evaluate_quantum_order(
+    /// Evalúa la intención cuántica continua (alias para compatibilidad)
+    pub fn evaluate_quantum_order_by_horizon(
         &mut self,
         coin_id: usize,
         intent: &SignalIntent,
+        _is_scalp: bool,
         arena: &GlobalArena,
     ) -> ValidatedOrder {
-        self.evaluate_quantum_order_by_horizon(coin_id, intent, true, arena)
+        self.evaluate_quantum_order(coin_id, intent, arena)
     }
 
     fn evaluate_single_intent(
@@ -476,23 +425,11 @@ impl RiskEngine {
             return rej(1);
         }
 
-        // FASE 16 & BUG-578: Correlation Guard by Horizon
+        // FASE 16 & BUG-578: Correlation Guard (Continuous Universal)
         let is_long = intent.signal == SignalType::Long;
         let mut same_dir_count = 0;
         for c in arena.coins.iter() {
-            let pos = if is_scalp {
-                if c.positions.scalp_position.is_open() {
-                    &c.positions.scalp_position
-                } else {
-                    &c.positions.position
-                }
-            } else {
-                if c.positions.swing_position.is_open() {
-                    &c.positions.swing_position
-                } else {
-                    &c.positions.position
-                }
-            };
+            let pos = &c.positions.position;
             if pos.is_open() && (pos.is_long.load(Ordering::Relaxed) == is_long) {
                 same_dir_count += 1;
             }
