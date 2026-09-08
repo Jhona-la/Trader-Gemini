@@ -14,7 +14,7 @@ pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORI
 
 use quantum_arena::GlobalArena;
 
-use signal_engine::{SignalIntent, SignalType};
+use signal_engine::{SignalIntent, SignalType, TradeHorizon};
 use std::sync::atomic::Ordering;
 
 #[derive(Debug, Clone, Copy)]
@@ -190,17 +190,12 @@ impl RiskEngine {
             (hard_stop_base / (1.0 + capital_ratio.ln() * hard_stop_decay)).clamp(0.20, 0.95)
         };
 
-        // FIX ZOMBIE LOCK: Si el drawdown supera el límite, decaer suavemente el pico histórico
-        // en vez de congelar la cuenta para siempre. Permite crecimiento compuesto infinito.
-        let scalp_valid = true;
-        if scalp_drawdown >= scalp_hard_stop_limit {
-            self.scalp_peak_capital = scalp_capital * 1.05;
-        }
+        // D-126: Seguimiento real del peak capital y validación de drawdown
+        self.scalp_peak_capital = self.scalp_peak_capital.max(scalp_capital);
+        self.swing_peak_capital = self.swing_peak_capital.max(swing_capital);
 
-        let swing_valid = true;
-        if swing_drawdown >= swing_hard_stop_limit {
-            self.swing_peak_capital = swing_capital * 1.05;
-        }
+        let mut scalp_valid = scalp_drawdown < scalp_hard_stop_limit;
+        let mut swing_valid = swing_drawdown < swing_hard_stop_limit;
 
         let guard_dd_sigmoid_steepness = arena
             .config
@@ -216,7 +211,7 @@ impl RiskEngine {
             guard_dd_sigmoid_steepness,
             guard_dd_sigmoid_center,
         ) {
-            self.scalp_peak_capital = scalp_capital * 1.05;
+            scalp_valid = false;
         }
         
         if !guard::check_drawdown_limit(
@@ -227,7 +222,7 @@ impl RiskEngine {
             guard_dd_sigmoid_steepness,
             guard_dd_sigmoid_center,
         ) {
-            self.swing_peak_capital = swing_capital * 1.05;
+            swing_valid = false;
         }
 
         let coin = &arena.coins[coin_id];
@@ -364,23 +359,36 @@ impl RiskEngine {
             self.swing_peak_capital = current_capital;
         }
 
+        // O-04 — CIRCUIT BREAKER DE DRAWDOWN en el path cuántico: el gen
+        // global_max_drawdown era funcionalmente MUERTO (se convertía en cap
+        // de margen constante). Ahora es un VETO REAL: si el drawdown desde
+        // el pico supera el gen, no se abre nueva posición hasta recuperación.
+        let max_dd = arena.config.global_max_drawdown.load(Ordering::Relaxed);
+        if self.peak_capital > 0.0 && max_dd > 0.0 && max_dd < 1.0 {
+            let dd = (self.peak_capital - current_capital) / self.peak_capital;
+            if dd >= max_dd {
+                return rej(2); // correlación bucket para no crear índice nuevo
+            }
+        }
+
         let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
         let pf = arena.coins[coin_id].metrics.profit_factor.load(Ordering::Relaxed);
         let clamp_min = arena.config.kelly_clamp_min.load(Ordering::Relaxed).max(0.0);
         let clamp_max = arena.config.kelly_clamp_max.load(Ordering::Relaxed).clamp(clamp_min, 1.0);
         let raw_kelly = arena.coins[coin_id].metrics.kelly_fraction.load(Ordering::Relaxed);
 
+        let kelly_cold = arena.config.kelly_bootstrap_cold.load(Ordering::Relaxed).clamp(0.05, 0.35);
         let kelly_frac = if raw_kelly <= 0.0 {
-            0.0
+            kelly_cold
         } else {
             raw_kelly.clamp(clamp_min, clamp_max)
         };
 
         let temporal_scale = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
         let is_scalp = match intent.horizon {
-            strategy_core::TradeHorizon::Scalp => true,
-            strategy_core::TradeHorizon::Swing => false,
-            strategy_core::TradeHorizon::Continuous => temporal_scale < 0.5,
+            TradeHorizon::Scalp => true,
+            TradeHorizon::Swing => false,
+            TradeHorizon::Continuous => temporal_scale < 0.5,
         };
 
         self.evaluate_single_intent(
@@ -427,7 +435,20 @@ impl RiskEngine {
             _ => 0.0,
         };
 
-        let raw_exposure = dir * intent.confidence * kelly_fraction * allocated_capital;
+        // O-03 — KELLY ESCALADO POR RIESGO DEL STOP: la fracción Kelly es
+        // asintóticamente proporcional al edge/riesgo; si el stop es K× más
+        // ancho que el extremo corto, la MISMA fracción arriesga K× más
+        // capital por trade. Escalamos por temporal_scale para que el RIESGO
+        // POR TRADE sea constante en el continuo (sin el salto invisible
+        // de 4-8x en riesgo entre extremos).
+        let scalp_sl_ref = arena.config.scalp_sl_base.load(Ordering::Relaxed).max(1e-6);
+        let swing_sl_ref = arena.config.swing_sl_base.load(Ordering::Relaxed).max(1e-6);
+        let ts = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.05, 0.95);
+        let sl_interp_est = scalp_sl_ref * (1.0 - ts) + swing_sl_ref * ts;
+        let risk_normalizer = (scalp_sl_ref / sl_interp_est).clamp(0.15, 1.0);
+        let kelly_adjusted = kelly_fraction * risk_normalizer;
+
+        let raw_exposure = dir * intent.confidence * kelly_adjusted * allocated_capital;
         if raw_exposure == 0.0 {
             return rej(1);
         }
@@ -526,9 +547,9 @@ impl RiskEngine {
         let temp_scale = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
         let scalp_win = arena.config.scalp_tp_base.load(Ordering::Relaxed).max(0.0010).max(atr_pct * 1.5);
         let swing_win = arena.config.swing_tp_base.load(Ordering::Relaxed).max(0.0050).max(atr_pct * 3.0);
-        let expected_win = if is_scalp && intent.horizon == strategy_core::TradeHorizon::Scalp {
+        let expected_win = if is_scalp && intent.horizon == TradeHorizon::Scalp {
             scalp_win
-        } else if !is_scalp && intent.horizon == strategy_core::TradeHorizon::Swing {
+        } else if !is_scalp && intent.horizon == TradeHorizon::Swing {
             swing_win
         } else {
             scalp_win * (1.0 - temp_scale) + swing_win * temp_scale
@@ -536,15 +557,18 @@ impl RiskEngine {
 
         let scalp_loss = arena.config.scalp_sl_base.load(Ordering::Relaxed).max(0.0005).max(atr_pct * 0.8);
         let swing_loss = arena.config.swing_sl_base.load(Ordering::Relaxed).max(0.0020).max(atr_pct * 1.5);
-        let expected_loss = if is_scalp && intent.horizon == strategy_core::TradeHorizon::Scalp {
+        let expected_loss = if is_scalp && intent.horizon == TradeHorizon::Scalp {
             scalp_loss
-        } else if !is_scalp && intent.horizon == strategy_core::TradeHorizon::Swing {
+        } else if !is_scalp && intent.horizon == TradeHorizon::Swing {
             swing_loss
         } else {
             scalp_loss * (1.0 - temp_scale) + swing_loss * temp_scale
         };
 
         let confidence = intent.confidence.max(0.51);
+        if allocated_capital <= 15.0 && confidence < 0.58 {
+            return rej(4);
+        }
         let expected_value_pct =
             (confidence * expected_win) - ((1.0 - confidence) * expected_loss);
 
@@ -581,7 +605,8 @@ impl RiskEngine {
             0.80
         };
 
-        if allocated_capital > 0.0 && allocated_capital * dynamic_leverage * safe_cushion < dynamic_min_notional {
+        // D-130: Evaluar si el notional real de la orden (final_margin * dynamic_leverage) cumple con el mínimo
+        if final_margin > 0.0 && final_margin * dynamic_leverage < dynamic_min_notional {
             // FIX min_notional (diag R4): el leverage necesario para alcanzar
             // el notional mínimo se calcula sobre el MARGEN DEL TRADE, no
             // sobre el capital total. La fórmula anterior
@@ -660,20 +685,38 @@ impl RiskEngine {
         // En cuentas micro, forzar Post-Only en el precio actual causa rechazos -5022 de Binance y paraliza el bot al llegar a $50.
         let maker_only = allocated_capital >= maker_capital_threshold && maker_capital_threshold >= 1000.0;
 
-        // R4.6 / H9: Bases TP y SL desacopladas por horizonte (Scalping vs Swing)
+        // R4.6 / H9: Bases TP y SL desacopladas por horizonte (Scalping vs Swing vs Continuous)
         let sl_mult = arena.config.sl_atr_multiplier.load(Ordering::Relaxed).clamp(0.5, 5.0);
-        // U-B — STOPS INTERPOLADOS POR EL EJE TEMPORAL: en vez del if is_scalp
-        // (stops de 15bps a señales de tendencia — swing funcional muerto),
-        // el SL deriva del extremo corto escalado por el gen temporal_scale
-        // (span 10^(2s)). El evaluador continuo ahora ES continuo.
         let temporal_s_eval = arena
             .config
             .temporal_scale
             .load(Ordering::Relaxed)
             .clamp(0.05, 0.95);
-        let span_eval = 10f64.powf(2.0 * temporal_s_eval);
-        let sl_base =
-            (arena.config.scalp_sl_base.load(Ordering::Relaxed) * span_eval).clamp(0.001, 0.50);
+
+        let (sl_base, tp_base) = match intent.horizon {
+            TradeHorizon::Scalp => {
+                let sl = arena.config.scalp_sl_base.load(Ordering::Relaxed).clamp(0.0005, 0.0100);
+                let tp = arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.0010, 0.0300);
+                (sl, tp)
+            }
+            TradeHorizon::Swing => {
+                let sl = arena.config.swing_sl_base.load(Ordering::Relaxed).clamp(0.0020, 0.0500);
+                let tp = arena.config.swing_tp_base.load(Ordering::Relaxed).clamp(0.0050, 0.1000);
+                (sl, tp)
+            }
+            TradeHorizon::Continuous => {
+                // D-249: Interpolación lineal continua pura entre scalp y swing según temporal_s_eval
+                let scalp_sl = arena.config.scalp_sl_base.load(Ordering::Relaxed).clamp(0.0005, 0.0100);
+                let swing_sl = arena.config.swing_sl_base.load(Ordering::Relaxed).clamp(0.0020, 0.0500);
+                let scalp_tp = arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.0010, 0.0300);
+                let swing_tp = arena.config.swing_tp_base.load(Ordering::Relaxed).clamp(0.0050, 0.1000);
+                (
+                    scalp_sl * (1.0 - temporal_s_eval) + swing_sl * temporal_s_eval,
+                    scalp_tp * (1.0 - temporal_s_eval) + swing_tp * temporal_s_eval,
+                )
+            }
+        };
+
         let sl_pct = (current_atr * sl_mult / current_price).clamp(sl_base * 0.5, sl_base * 2.5);
 
         let final_sl = if intent.sl_price_target > 0.0 {
@@ -684,18 +727,13 @@ impl RiskEngine {
             current_price * (1.0 + sl_pct)
         };
 
-        // FASE 3: el ratio TP/SL ya no es el literal 2.0 — usa el gen RR
-        // evolucionable del genoma (tp_rr_ratio_btc, bounds 1.0-10.0; el
-        // nombre es histórico, gobierna el RR global). El clamp 1.5-6.0
-        // permanece como riel de seguridad.
+        // FASE 3: el ratio TP/SL usa el gen RR evolucionable del genoma
         let rr_ratio = arena
             .config
             .tp_rr_ratio_btc
             .load(Ordering::Relaxed)
             .clamp(1.0, 10.0);
         let tp_mult = (sl_mult * rr_ratio).clamp(1.5, 6.0);
-        let tp_base =
-            (arena.config.scalp_tp_base.load(Ordering::Relaxed) * span_eval).clamp(0.001, 0.50);
         let tp_pct = (current_atr * tp_mult / current_price).clamp(tp_base * 0.5, tp_base * 3.0);
 
         let final_tp = if intent.tp_price_target > 0.0 {

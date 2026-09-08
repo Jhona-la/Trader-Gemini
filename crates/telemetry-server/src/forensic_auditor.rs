@@ -79,7 +79,16 @@ impl ForensicAuditor {
         println!("🔍 [FORENSIC] Auditoría en base de datos WAL iniciada en hilo independiente.");
 
         // Bucle asíncrono pasivo, no bloquea al motor HFT
-        while let Ok(event) = rx.recv().await {
+        // A-2 infra: Lagged es RECUPERABLE (consumer lento) — continuar, no morir.
+        loop {
+            let event = match rx.recv().await {
+                Ok(e) => e,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    eprintln!("[FORENSIC-AUDITOR] Lagged: {} eventos perdidos — continuando", n);
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            };
             match event {
                 TelemetryEvent::OmniUpdate {
                     latency_ms,

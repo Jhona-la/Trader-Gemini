@@ -1507,12 +1507,39 @@ impl GodEngineCore {
 
                                 let base_price = if is_long { ask } else { bid };
                                 let nominal_size = margin_req * eff_leverage;
-                                let slippage_impact = (nominal_size / 1_000_000.0) * 0.0005;
-                                let real_entry_price = if is_long {
-                                    base_price * (1.0 + slippage_impact)
-                                } else {
-                                    base_price * (1.0 - slippage_impact)
-                                };
+                                // O-01/O-02 — REALITY PHYSICS CONECTADO: el
+                                // fill lineal 0.5bps/$1M daba impacto ≈0 a
+                                // escala operativa (un edge de pocos bps era
+                                // "certificado" sin fricción). Ahora:
+                                // impacto CUADRÁTICO (powf 1.2) que castiga
+                                // tamaños grandes + latency-slippage (el
+                                // precio se mueve durante la latencia) +
+                                // base_slippage_floor del GENOMA. Puede volcar
+                                // el signo del PnL certificado — es el punto.
+                                let tick_vol = atr_pct * mid_price;
+                                let slip_floor = self
+                                    .arena
+                                    .config
+                                    .base_slippage_floor
+                                    .load(Ordering::Relaxed)
+                                    .max(0.00001);
+                                let lat_ms = self
+                                    .arena
+                                    .config
+                                    .latency_penalty_ms
+                                    .load(Ordering::Relaxed)
+                                    .max(0.0);
+                                let (real_entry_price, _phys_fee) = self
+                                    .reality
+                                    .calculate_market_entry(
+                                        base_price,
+                                        is_long,
+                                        nominal_size,
+                                        tick_vol,
+                                        slip_floor,
+                                        lat_ms,
+                                    );
+                                let real_entry_price = if real_entry_price <= 0.0 { base_price } else { real_entry_price };
 
                                 let entry_fee_rate = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0002);
                                 let fee_paid = nominal_size * entry_fee_rate;

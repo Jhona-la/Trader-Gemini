@@ -233,7 +233,15 @@ async fn ws_handler(
 
 async fn handle_socket(mut socket: WebSocket, tx: tokio::sync::broadcast::Sender<TelemetryEvent>) {
     let mut rx = tx.subscribe();
-    while let Ok(event) = rx.recv().await {
+    loop {
+            let event = match rx.recv().await {
+                Ok(e) => e,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    eprintln!("[WS-HANDLER] Lagged: {} eventos perdidos — continuando", n);
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            };
         #[allow(clippy::collapsible_if)]
         if let Ok(json) = serde_json::to_string(&event) {
             if socket.send(Message::Text(json)).await.is_err() {

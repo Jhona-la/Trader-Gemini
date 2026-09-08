@@ -585,48 +585,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ORDER_TRADE_UPDATE → OrderRegistry; ACCOUNT_UPDATE → puente de capital.
     // La adopción de posiciones al arena es dueño el mapa de estado (F4.9);
     // aquí garantizamos que el capital dinámico refleje la verdad del exchange.
-    {
-        struct CapitalBridgeSink {
-            unified_capital: Arc<AtomicU64>,
-        }
-        impl execution_engine::user_data_stream::AccountSink for CapitalBridgeSink {
-            fn on_capital(&self, usdt: f64) {
-                audit_engine::telemetry::update_dynamic_capital(usdt);
-                if usdt > 0.0 && usdt.is_finite() {
-                    self.unified_capital.store(usdt.to_bits(), Ordering::Relaxed);
-                }
-            }
-            fn on_positions(
-                &self,
-                positions: &[execution_engine::user_data_stream::RemotePosition],
-            ) {
-                if !positions.is_empty() {
-                    let summary: Vec<String> = positions
-                        .iter()
-                        .map(|p| format!("{} {}", p.symbol, p.position_amt))
-                        .collect();
-                    telemetry_server::telemetry_log!(
-                        "📡 [USER-DATA] Posiciones vivas: {}",
-                        summary.join(", ")
-                    );
-                }
-            }
-        }
-        let streamer = execution_engine::user_data_stream::UserDataStreamer::new(
-            exec.load().client().clone(),
-            exec.load().registry(),
-        )
-        .with_sink(std::sync::Arc::new(CapitalBridgeSink {
-            unified_capital: Arc::clone(&unified_capital),
-        }))
-        .with_api_secret(exec.load().api_secret());
-        tokio::spawn(async move {
-            streamer.start().await;
-        });
-        telemetry_server::telemetry_log!(
-            "🔌 [USER-DATA] Stream privado spawned (fills en tiempo real + capital vivo)"
-        );
+    struct CapitalBridgeSink {
+        unified_capital: Arc<AtomicU64>,
     }
+    impl execution_engine::user_data_stream::AccountSink for CapitalBridgeSink {
+        fn on_capital(&self, usdt: f64) {
+            audit_engine::telemetry::update_dynamic_capital(usdt);
+            if usdt > 0.0 && usdt.is_finite() {
+                self.unified_capital.store(usdt.to_bits(), Ordering::Relaxed);
+            }
+        }
+        fn on_positions(
+            &self,
+            positions: &[execution_engine::user_data_stream::RemotePosition],
+        ) {
+            if !positions.is_empty() {
+                let summary: Vec<String> = positions
+                    .iter()
+                    .map(|p| format!("{} {}", p.symbol, p.position_amt))
+                    .collect();
+                telemetry_server::telemetry_log!(
+                    "📡 [USER-DATA] Posiciones vivas: {}",
+                    summary.join(", ")
+                );
+            }
+        }
+    }
+    let streamer = execution_engine::user_data_stream::UserDataStreamer::new(
+        exec.load().client().clone(),
+        exec.load().registry(),
+    )
+    .with_sink(std::sync::Arc::new(CapitalBridgeSink {
+        unified_capital: Arc::clone(&unified_capital),
+    }))
+    .with_api_secret(exec.load().api_secret());
+    tokio::spawn(async move {
+        streamer.start().await;
+    });
+    telemetry_server::telemetry_log!(
+        "🔌 [USER-DATA] Stream privado spawned (fills en tiempo real + capital vivo)"
+    );
 
     let rx_events = rx_events;
 
@@ -1026,7 +1024,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .unwrap_or_default()
                                 .as_millis() as u64;
                             let arena_adj = execution_engine::reconciliation::reconcile_arena(&positions, &arena_reconcile, now_ms);
-                            let pruned = registry.prune_terminated(600_000);
+                            let pruned = registry.prune_terminated(now_ms.saturating_sub(600_000));
                             if !report.suspicious_active_orders.is_empty() || adopted > 0 || arena_adj > 0 {
                                 telemetry_server::telemetry_log!(
                                     "🔄 [RECONCILIATION] {} | Adopted Reg: {}, Adj Arena: {}, Pruned Reg: {}",
@@ -1154,12 +1152,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let msg_str = unsafe { std::str::from_utf8_unchecked_mut(&mut msg_bytes) };
 
+            let mut is_buyer_maker = false;
             if is_trade {
-                if let Some((e, _, p, q, _, sym)) = parsers::parse_binance_trade(msg_str) {
+                if let Some((e, _, p, q, m, sym)) = parsers::parse_binance_trade(msg_str) {
                     event_time = e;
                     parsed_sym_opt = Some(sym);
                     current_price = p;
                     qty = q;
+                    is_buyer_maker = m;
                 }
             } else if is_kline {
                 if let Some((e, sym, _, _, _, p, v, c)) = parsers::parse_binance_kline(msg_str) {
@@ -1236,6 +1236,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
 
+                // L-1: Ingesta de Microestructura Física en la Arena Viva (CVD y Muros L2)
+                // Corrige la ceguera de volumen agresivo y profundidad del libro en vivo (Causa Forense #D117).
+                if is_trade {
+                    engine_real.arena.update_agg_trade(coin_id, is_buyer_maker, qty);
+                } else if is_depth {
+                    engine_real.arena.update_l2_depth(coin_id, dbq, daq);
+                }
+
                 // --- SANITY CHECKS (DATA INTEGRITY & NORMALIZATION) ---
                 if current_price <= 0.0 || qty < 0.0 || current_price.is_nan() || qty.is_nan() {
                     continue; // Drop corrupt data
@@ -1261,14 +1269,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (mut new_order, closed_order) = engine_real.process_event(
                     coin_id, is_trade, is_kline_closed, is_depth,
                     current_price, qty, dbp, dap, dbq, daq,
-                    depth_obi, depth_micro_div, event_time as u64, latency_panic, &omni_features_hot
+                    depth_obi, depth_micro_div, event_time as u64, latency_panic, &omni_features_hot,
+                    is_buyer_maker,
                 );
 
+                // L-0: Pasar omni_features_hot reales a los 10 universos sombra (Causa Forense #D100)
                 shadow_forest.broadcast_tick(
                     coin_id, is_trade, is_kline_closed, is_depth,
                     current_price, qty, dbp, dap, dbq, daq,
                     depth_obi, depth_micro_div, event_time as u64,
-                    &engine_real.arena
+                    &engine_real.arena,
+                    &omni_features_hot,
+                    is_buyer_maker,
                 );
 
                 // --- 2. EXECUTE ORDERS ---
@@ -1317,7 +1329,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             mainnet_executor.set_paper_trading(is_paper_trading);
                         }
                         let new_exec_arc = Arc::new(mainnet_executor);
+
+                        // D-177: Asegurar modo hedge en Mainnet antes de almacenar executor
+                        // (spawn async — el closure del thread no es async)
+                        if !target_is_testnet && !is_paper_trading {
+                            let exec_for_hedge = Arc::clone(&new_exec_arc);
+                            tokio::spawn(async move {
+                                match exec_for_hedge.ensure_hedge_mode().await {
+                                    Ok(true) => telemetry_server::telemetry_log!("🔀 [TRANSITION] Cuenta Mainnet migrada a modo HEDGE exitosamente"),
+                                    Ok(false) => telemetry_server::telemetry_log!("🔀 [TRANSITION] Cuenta Mainnet ya se encuentra en modo HEDGE"),
+                                    Err(e) => telemetry_server::telemetry_log!("🚨 [TRANSITION] No se pudo garantizar modo HEDGE en Mainnet: {}", e),
+                                }
+                            });
+                        }
+
                         exec.store(Arc::clone(&new_exec_arc));
+
+                        // D-178: Re-spawn UserDataStreamer con las credenciales y cliente de Mainnet
+                        let mainnet_streamer = execution_engine::user_data_stream::UserDataStreamer::new(
+                            new_exec_arc.client().clone(),
+                            new_exec_arc.registry(),
+                        )
+                        .with_sink(std::sync::Arc::new(CapitalBridgeSink {
+                            unified_capital: Arc::clone(&unified_capital),
+                        }))
+                        .with_api_secret(new_exec_arc.api_secret());
+                        tokio::spawn(async move {
+                            mainnet_streamer.start().await;
+                        });
+                        telemetry_server::telemetry_log!(
+                            "🔌 [USER-DATA] Stream privado Mainnet spawned (fills en tiempo real + capital vivo)"
+                        );
 
                         // Re-spawn NTP synchronizer con el nuevo cliente para mantener sincronizado el reloj en mainnet
                         tokio::spawn(execution_engine::ntp::start_ntp_synchronizer(
@@ -1391,6 +1433,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let exec_clone = Arc::clone(&exec);
                         let is_long_close = is_long;
                         rt_handle.spawn(async move {
+                            // D-246: Purgar brackets OCO (TP/SL) huérfanos antes de cerrar a mercado
+                            if let Err(e) = exec_clone.load().cancel_all_symbol_orders(&parsed_sym_str).await {
+                                telemetry_engine::telemetry_err!("⚠️ [CANCEL ALL ERROR] Fallo al cancelar órdenes OCO previas en {}: {}", parsed_sym_str, e);
+                            }
                             let sym_filter = exec_clone.load().get_symbol_filter(&parsed_sym_str).await;
                             if let Err(e) = exec_clone.load().execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size).await {
                                 telemetry_engine::telemetry_err!("🚨 [CLOSE ERROR] Error al cerrar posición {} en Binance: {}", parsed_sym_str, e);
@@ -1421,7 +1467,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }).sum();
                     let cap_now = (engine_real.arena.unified_capital.load(Ordering::Relaxed) - total_margin_used).max(0.0);
 
-                    if let Some((is_long, entry_price, _qty)) = new_order {
+                    if let Some((is_long, entry_price, _qty, core_tp, core_sl)) = new_order {
                         let stop_pct = engine_real
                             .arena
                             .config
@@ -1435,12 +1481,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             risk_envelope.max_leverage(cap_now, stop_pct, 5.0, 1.64, 50.0)
                         };
-                        exec_leverage = if operable {
-                            env_lev.floor().clamp(1.0, 10.0) as u32
-                        } else if cap_now <= 50.0 && cap_now > 0.0 {
-                            ((5.05 / cap_now).ceil().clamp(1.0, 5.0)) as u32
+                        // D-116: Unificación de apalancamiento Core <-> Producción.
+                        // El Core (RiskEngine) ya validó el riesgo y dimensionó la orden; usamos su apalancamiento como piso.
+                        let notional_ord = _qty.abs() * entry_price;
+                        let pos_margin = engine_real.arena.coins[coin_id].positions.position.margin_used.load(Ordering::Relaxed);
+                        let core_leverage = if pos_margin > 0.0 && notional_ord > 0.0 {
+                            (notional_ord / pos_margin).round().clamp(1.0, 50.0) as u32
                         } else {
-                            0
+                            (5.05 / cap_now.max(1.0)).ceil().clamp(1.0, 20.0) as u32
+                        };
+                        exec_leverage = if operable {
+                            (env_lev.floor().clamp(1.0, 20.0) as u32).max(core_leverage.clamp(1, 20))
+                        } else {
+                            core_leverage.clamp(1, 20)
                         };
                         let _ = tx_log_worker.try_send((true, is_long, coin_id));
 
@@ -1449,17 +1502,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             is_high_confidence = true;
                         }
 
-                        let base_tp = engine_real.arena.config.scalp_tp_base.load(Ordering::Relaxed);
-                        let base_sl = engine_real.arena.config.scalp_sl_base.load(Ordering::Relaxed);
-                        let atr_pct = engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0);
-                        let tp_pct = base_tp.max(atr_pct * 2.0).max(0.002);
-                        let sl_pct = base_sl.max(atr_pct * 1.5).max(0.0015);
-
-                        order_tp_price = if is_long { entry_price * (1.0 + tp_pct) } else { entry_price * (1.0 - tp_pct) };
-                        order_sl_price = if is_long { entry_price * (1.0 - sl_pct) } else { entry_price * (1.0 + sl_pct) };
+                        // D-108: Sincronización 1:1 OCO — Consumir directamente los targets calculados por RiskEngine
+                        order_tp_price = if core_tp > 0.0 { core_tp } else if is_long { entry_price * 1.004 } else { entry_price * 0.996 };
+                        order_sl_price = if core_sl > 0.0 { core_sl } else if is_long { entry_price * 0.997 } else { entry_price * 1.003 };
                     }
 
-                    if let Some((final_is_long, _entry_price, final_qty)) = new_order {
+                    if let Some((final_is_long, _entry_price, final_qty, _, _)) = new_order {
                         let parsed_sym_str = parsed_sym.to_string();
                         let exec_clone = Arc::clone(&exec);
                         let arena_clone = Arc::clone(&engine_real.arena);
@@ -1481,7 +1529,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     if entry_fee > 0.0 {
                                         arena.unified_capital.fetch_add(entry_fee, Ordering::Relaxed);
-                                        coin.scalp.pnl_realized.fetch_add(entry_fee, Ordering::Relaxed);
+                                        // D-180: No sumar entry_fee a pnl_realized en rollback (nunca fue ganancia)
                                     }
                                 }
                             }
@@ -1564,9 +1612,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             "{} Protección para {} (TP: {:.4}, SL: {:.4})",
                                             tag, parsed_sym_str, order_tp_price, order_sl_price
                                         );
-                                        let base_id = format!("CONT_oco_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_micros());
-                                        if let Err(e) = exec_clone.load().execute_oco_order(&parsed_sym_str, final_is_long, final_qty, order_tp_price, order_sl_price, dyn_step_size, dyn_tick_size, &base_id).await {
-                                            telemetry_engine::telemetry_err!("⚠️ [OCO TENSOR] No se pudo enviar bracket protector para {}: {}", parsed_sym_str, e);
+                                        // D-125: Resiliencia OCO con 3 retries y cierre de emergencia si falla
+                                        let mut oco_success = false;
+                                        for retry in 1..=3 {
+                                            let base_id = format!("CONT_oco_{}_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_micros(), retry);
+                                            match exec_clone.load().execute_oco_order(&parsed_sym_str, final_is_long, final_qty, order_tp_price, order_sl_price, dyn_step_size, dyn_tick_size, &base_id).await {
+                                                Ok(_) => {
+                                                    oco_success = true;
+                                                    break;
+                                                }
+                                                Err(e) => {
+                                                    telemetry_engine::telemetry_err!("⚠️ [OCO RETRY {}/3] Falló bracket para {}: {}", retry, parsed_sym_str, e);
+                                                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                                                }
+                                            }
+                                        }
+                                        if !oco_success {
+                                            telemetry_engine::telemetry_err!("🚨 [EMERGENCY CLOSE] Fallaron 3 intentos OCO para {}. Cerrando posición a mercado para proteger micro-capital ($13 USD).", parsed_sym_str);
+                                            let is_long_close = final_is_long;
+                                            let _ = exec_clone.load().execute_reduce_only_market(&parsed_sym_str, is_long_close, final_qty, dyn_step_size).await;
+                                            rollback_positions(&arena_clone);
                                         }
                                     }
                                 }
@@ -1588,7 +1653,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 for coin in engine_real.arena.coins.iter() {
                     if coin.positions.position.is_open() {
-                        total_unrealized_pnl += coin.scalp.pnl_unrealized.load(Ordering::Relaxed);
+                        // D-183: Leer de coin.metrics.pnl_unrealized
+                        total_unrealized_pnl += coin.metrics.pnl_unrealized.load(Ordering::Relaxed);
                     }
                 }
 

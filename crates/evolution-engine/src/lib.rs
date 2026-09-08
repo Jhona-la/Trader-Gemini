@@ -44,6 +44,7 @@ impl EvolutionEngine {
             .load(Ordering::Relaxed);
         let meta_evolver = MetaEvolver::new(self.arena.clone());
         let quantum_evolver = metacortex_engine::QuantumEvolver::new();
+        let mut cma_es_optimizer: Option<crate::cma_es::CmaEsOptimizer> = None;
 
         loop {
             // FIX BLOQUEO #1: Reducir sleep de 15s a 5s para micro-capital ($13)
@@ -135,14 +136,18 @@ impl EvolutionEngine {
                 .max((self.arena.config.min_trades_per_day.load(Ordering::Relaxed) * 2.0) as usize)
                 .min(100);
 
-            // FASE 3: Instanciar el verdadero Optimizador CMA-ES + PSO
-            let mut cma_es_optimizer = crate::cma_es::CmaEsOptimizer::new(
-                Genotype::DIMENSION,
-                mutation_rate,
-                Some(pop_size),
-            );
-            cma_es_optimizer.mean = current_alpha.to_vector(); // Center around current alpha
-            cma_es_optimizer.global_best = cma_es_optimizer.mean.clone();
+            // FASE 3: Persistir el verdadero Optimizador CMA-ES + PSO sin destruir la matriz de covarianza (D-140)
+            let optimizer = cma_es_optimizer.get_or_insert_with(|| {
+                let mut opt = crate::cma_es::CmaEsOptimizer::new(
+                    Genotype::DIMENSION,
+                    mutation_rate,
+                    Some(pop_size),
+                );
+                opt.mean = current_alpha.to_vector(); // Center around current alpha
+                opt.global_best = opt.mean.clone();
+                opt
+            });
+            optimizer.sigma = mutation_rate;
 
             let w = self.arena.config.global_momentum.load(Ordering::Relaxed);
             let c1 = self
@@ -157,7 +162,7 @@ impl EvolutionEngine {
                 .global_learning_rate
                 .load(Ordering::Relaxed)
                 * 2.0; // social
-            let cma_samples = cma_es_optimizer.sample_population(w, c1, c2);
+            let cma_samples = optimizer.sample_population(w, c1, c2);
             let mut population: Vec<Genotype> = Vec::with_capacity(pop_size);
 
             // Generate genotypes from CMA-ES vectors
@@ -204,6 +209,7 @@ impl EvolutionEngine {
                     let oos_ticks = &all_ticks[train_end..];
 
                     // FASE TRAIN: Evaluar sobre 70% de los ticks
+                    let mut last_train_minute = 0u64;
                     for tick in train_ticks {
                         test_arena.update_market_data(
                             tick.coin_id,
@@ -218,22 +224,30 @@ impl EvolutionEngine {
                             .load(Ordering::Relaxed);
 
                         // FIX BLOQUEO #8: Purgar Falsa Omnisciencia (Data Leakage)
-                        // Alinear omni_features con buffers incrementales causales locales. 
-                        // Prohibido leer de GLOBAL_TELEONOMIA en simulaciones, contiene datos vivos.
                         let mut omni_live = [0.0f64; 54];
                         let live_vol = tick.bid_qty + tick.ask_qty;
                         let live_ofi = if live_vol > 0.0 { (tick.bid_qty - tick.ask_qty) / live_vol } else { 0.0 };
                         
-                        // Inyectamos el flujo micro-estructural ultra rápido en las primeras dimensiones
-                        omni_live[0] = tick.bid_price;
+                        // Inyectamos el flujo micro-estructural (omni_live[0] = 0.0 referencia base spot normalizada)
+                        omni_live[0] = 0.0;
                         omni_live[10] = live_vol * live_ofi.abs();
                         omni_live[30] = tick.bid_qty - tick.ask_qty;
                         omni_live[39] = live_ofi;
 
+                        // D-142: Activar is_kline_closed en fronteras de 1 minuto para evaluar genes de swing
+                        let cur_minute = tick.timestamp / 60_000;
+                        let is_kline_closed = if last_train_minute > 0 && cur_minute > last_train_minute {
+                            last_train_minute = cur_minute;
+                            true
+                        } else {
+                            if last_train_minute == 0 { last_train_minute = cur_minute; }
+                            false
+                        };
+
                         let (new_order, closed_order) = engine.process_event(
                             tick.coin_id,
                             true,  // is_trade = true para evaluar scalp
-                            false,
+                            is_kline_closed,
                             true,  // is_depth = true para actualizar features
                             tick.bid_price,
                             live_vol,
@@ -260,6 +274,7 @@ impl EvolutionEngine {
 
                     // FASE OOS: Validar sobre 30% restante (walk-forward)
                     let oos_capital_start = test_arena.unified_capital.load(Ordering::Relaxed);
+                    let mut last_oos_minute = 0u64;
                     for tick in oos_ticks {
                         test_arena.update_market_data(
                             tick.coin_id,
@@ -275,14 +290,24 @@ impl EvolutionEngine {
                         let live_vol = tick.bid_qty + tick.ask_qty;
                         let live_ofi = if live_vol > 0.0 { (tick.bid_qty - tick.ask_qty) / live_vol } else { 0.0 };
                         let mut omni_oos = [0.0f64; 54];
-                        omni_oos[0] = tick.bid_price;
+                        omni_oos[0] = 0.0;
                         omni_oos[39] = live_ofi;
                         omni_oos[30] = tick.bid_qty - tick.ask_qty;
+
+                        // D-142: Activar is_kline_closed en fronteras de 1 minuto OOS
+                        let cur_minute = tick.timestamp / 60_000;
+                        let is_kline_closed = if last_oos_minute > 0 && cur_minute > last_oos_minute {
+                            last_oos_minute = cur_minute;
+                            true
+                        } else {
+                            if last_oos_minute == 0 { last_oos_minute = cur_minute; }
+                            false
+                        };
 
                         let (_, closed_order) = engine.process_event(
                             tick.coin_id,
                             true,
-                            false,
+                            is_kline_closed,
                             true,
                             tick.bid_price,
                             live_vol,
@@ -354,9 +379,11 @@ impl EvolutionEngine {
                 })
                 .collect();
 
-            // Apply CMA-ES Update
+            // Apply CMA-ES Update (D-140: Preservar matriz de covarianza viva)
             let actual_fee_rate = self.arena.config.max_fee_pct.load(Ordering::Relaxed);
-            cma_es_optimizer.update(&cma_samples, &mut results, actual_fee_rate);
+            if let Some(opt) = cma_es_optimizer.as_mut() {
+                opt.update(&cma_samples, &mut results, actual_fee_rate);
+            }
 
             // Re-sort to find the absolute best
             results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
