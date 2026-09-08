@@ -433,3 +433,11 @@ Tras completar la primera fase de remediación de 50 puntos, una auditoría prof
 ➡️ **[INFORME_ASEGURAMIENTO_CUARTO.md](INFORME_ASEGURAMIENTO_CUARTO.md)** — la anatomía completa del −100.87%: la refactorización V7 de la sesión concurrente certificada estando incompleta (sus propias FASES D/E/F unchecked). Matriz Q-01..Q-06: alias is_scalp=true para toda entrada (stops de scalp a leverage 29.7x), fallback Kelly que INVIERTEN N-03 (re-arma máx sizing en rachas perdedoras), bootstrap de leverage 7-8x equity, trailing sin retardo, genomas stale 139-dim que resetean al baseline en silencio, encoding U-1 revertido. Recomendación del forense: REVERT con cherry-picks de las piezas completas. Mis commits verificados correctos (140D, determinismo, des-colinearización) con 4 menores documentados.
 
 *Esta adenda se agrega sin modificar el contenido histórico.*
+
+---
+
+## 17. 🆕 QUINTA ADENDA DE ASEGURAMIENTO (2026-09-08, post-estabilización)
+
+➡️ **[INFORME_ASEGURAMIENTO_QUINTO.md](INFORME_ASEGURAMIENTO_QUINTO.md)** — la mezcla main+V7 auditada: la estabilización no fue puramente aditiva (R-01: D-98 eliminó U-2 sin declararlo), los pesos adaptativos del Consejo cambiaron la semántica del path certificado (R-02, causa #1 del 16→1 trades), DarkAlpha con normalizadores fríos mide bias (R-03). Y por primera vez: el INVENTARIO DEL EDGE — contribución positiva medida: ninguna; sangrado por fees estructurales, ML-ruido y cold-start invertido (R-06). Las 3 mejoras de mayor palanca rankeadas. Certificados nuevos: reconcile_arena wired, retry -4061 re-firma, orden ambigua consulta-antes-de-duplicar.
+
+*Esta adenda se agrega sin modificar el contenido histórico.*
