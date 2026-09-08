@@ -685,8 +685,26 @@ impl GodEngineCore {
             // --- 1A. GESTIÓN DE POSICIÓN SCALPING (TIGHT STOPS, R:R >= 2:1, HIGH-FREQUENCY COMPOUNDING) ---
             let scalp_sl_base = self.arena.config.scalp_sl_base.load(Ordering::Relaxed);
             let scalp_tp_base = self.arena.config.scalp_tp_base.load(Ordering::Relaxed);
-            let scalp_sl = scalp_sl_base.max(atr_pct * 1.25).clamp(0.0015, 0.0050);
-            let scalp_tp = scalp_tp_base.max(scalp_sl * 2.0).clamp(0.0030, 0.0150);
+            let (scalp_sl, scalp_tp) = {
+                // U-3 — UNA SOLA VERDAD TEMPORAL: si el risk-engine fijó
+                // tp/sl al abrir (precios reales), la gestión los respeta —
+                // antes se recalculaban cada tick con bases distintas y la
+                // posición vivía un plan que nunca fue el aprobado.
+                let pos_tp = coin.positions.scalp_position.tp_price.load(Ordering::Relaxed);
+                let pos_sl = coin.positions.scalp_position.sl_price.load(Ordering::Relaxed);
+                let fallback_sl = scalp_sl_base.max(atr_pct * 1.25).clamp(0.0015, 0.0050);
+                let fallback_tp = scalp_tp_base.max(fallback_sl * 2.0).clamp(0.0030, 0.0150);
+                if pos_tp > 0.0 && pos_sl > 0.0 && coin.positions.scalp_position.is_open() {
+                    let entry_p = coin.positions.scalp_position.entry_price.load(Ordering::Relaxed);
+                    if entry_p > 0.0 {
+                        (((entry_p - pos_sl) / entry_p).abs(), ((pos_tp - entry_p) / entry_p).abs())
+                    } else {
+                        (fallback_sl, fallback_tp)
+                    }
+                } else {
+                    (fallback_sl, fallback_tp)
+                }
+            };
 
             let scalp_is_open = coin.positions.scalp_position.is_open()
                 || (coin.positions.position.is_open() && coin.positions.position.horizon() == quantum_arena::position::PositionHorizon::Scalping);
@@ -1018,8 +1036,23 @@ impl GodEngineCore {
             // --- 1B. GESTIÓN DE POSICIÓN SWING (WIDE STOPS, MULTI-HOUR / MULTI-DAY TRENDS) ---
             let swing_sl_base = self.arena.config.swing_sl_base.load(Ordering::Relaxed);
             let swing_tp_base = self.arena.config.swing_tp_base.load(Ordering::Relaxed);
-            let swing_sl = swing_sl_base.max(atr_pct * 3.0).clamp(0.0080, 0.0350);
-            let swing_tp = swing_tp_base.max(swing_sl * 2.5).clamp(0.0200, 0.0900);
+            let (swing_sl, swing_tp) = {
+                // U-3 — misma regla para el lado swing.
+                let pos_tp = coin.positions.swing_position.tp_price.load(Ordering::Relaxed);
+                let pos_sl = coin.positions.swing_position.sl_price.load(Ordering::Relaxed);
+                let fallback_sl = swing_sl_base.max(atr_pct * 3.0).clamp(0.0080, 0.0350);
+                let fallback_tp = swing_tp_base.max(fallback_sl * 2.5).clamp(0.0200, 0.0900);
+                if pos_tp > 0.0 && pos_sl > 0.0 && coin.positions.swing_position.is_open() {
+                    let entry_p = coin.positions.swing_position.entry_price.load(Ordering::Relaxed);
+                    if entry_p > 0.0 {
+                        (((entry_p - pos_sl) / entry_p).abs(), ((pos_tp - entry_p) / entry_p).abs())
+                    } else {
+                        (fallback_sl, fallback_tp)
+                    }
+                } else {
+                    (fallback_sl, fallback_tp)
+                }
+            };
 
             let swing_is_open = coin.positions.swing_position.is_open()
                 || (!scalp_is_open && coin.positions.position.is_open() && coin.positions.position.horizon() == quantum_arena::position::PositionHorizon::Swing);
@@ -1720,7 +1753,15 @@ impl GodEngineCore {
             let mut new_swing = None;
 
             // --- APERTURA SCALPING (INDEPENDIENTE) ---
-            if scalp_intent.signal != SignalType::Flat && !coin.positions.scalp_position.is_open() {
+            // U-2 — MOTOR TEMPORAL ÚNICO: una sola posición viva por moneda.
+            // Un trade abierto en CUALQUIER punto del continuo temporal
+            // bloquea nuevas entradas: las fuentes de señal (microestructura,
+            // tendencia, tensor) compiten por LA posición; dejan de existir
+            // particiones de cuenta por etiqueta.
+            if scalp_intent.signal != SignalType::Flat
+                && !coin.positions.scalp_position.is_open()
+                && !coin.positions.swing_position.is_open()
+            {
                 let order = self.risk_engine.evaluate_quantum_order_by_horizon(coin_id, &scalp_intent, true, &self.arena);
                 if order.signal != SignalType::Flat {
                     // R4.1: Inputs dinámicos reales para deliberación del Consejo de Seniors
@@ -1833,7 +1874,10 @@ impl GodEngineCore {
             }
 
             // --- APERTURA SWING (INDEPENDIENTE) ---
-            if swing_intent.signal != SignalType::Flat && !coin.positions.swing_position.is_open() {
+            if swing_intent.signal != SignalType::Flat
+                && !coin.positions.swing_position.is_open()
+                && !coin.positions.scalp_position.is_open()
+            {
                 let order = self.risk_engine.evaluate_quantum_order_by_horizon(coin_id, &swing_intent, false, &self.arena);
                 if order.signal != SignalType::Flat {
                     // R4.1: Inputs dinámicos reales para deliberación del Consejo de Seniors
