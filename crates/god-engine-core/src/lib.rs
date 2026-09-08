@@ -265,6 +265,9 @@ impl GodEngineCore {
                 coin.positions.scalp_position.close_with_fee();
             if margin_used > 0.0 {
                 self.arena
+                    .used_margin
+                    .fetch_add(-margin_used, Ordering::Relaxed);
+                self.arena
                     .scalp_used_margin
                     .fetch_add(-margin_used, Ordering::Relaxed);
             }
@@ -275,6 +278,15 @@ impl GodEngineCore {
                 coin.scalp
                     .pnl_realized
                     .fetch_add(entry_fee, Ordering::Relaxed);
+                coin.metrics
+                    .pnl_realized
+                    .fetch_add(entry_fee, Ordering::Relaxed);
+            }
+            // Cerrar mirror en position solo si pertenecía a Scalp (horizon == 0)
+            if coin.positions.position.is_open()
+                && coin.positions.position.horizon.load(Ordering::Relaxed) == 0
+            {
+                let _ = coin.positions.position.close_with_fee();
             }
         }
     }
@@ -290,6 +302,9 @@ impl GodEngineCore {
                 coin.positions.swing_position.close_with_fee();
             if margin_used > 0.0 {
                 self.arena
+                    .used_margin
+                    .fetch_add(-margin_used, Ordering::Relaxed);
+                self.arena
                     .swing_used_margin
                     .fetch_add(-margin_used, Ordering::Relaxed);
             }
@@ -300,6 +315,15 @@ impl GodEngineCore {
                 coin.swing
                     .pnl_realized
                     .fetch_add(entry_fee, Ordering::Relaxed);
+                coin.metrics
+                    .pnl_realized
+                    .fetch_add(entry_fee, Ordering::Relaxed);
+            }
+            // Cerrar mirror en position solo si pertenecía a Swing (horizon == 1)
+            if coin.positions.position.is_open()
+                && coin.positions.position.horizon.load(Ordering::Relaxed) == 1
+            {
+                let _ = coin.positions.position.close_with_fee();
             }
         }
     }
@@ -1004,6 +1028,13 @@ impl GodEngineCore {
                     if coin_id < self.last_scalp_senior_signals.len() {
                         self.consejo_deliberacion.record_outcome(&self.last_scalp_senior_signals[coin_id], realized_ret);
                     }
+
+                    // Aprendizaje Hebbiano Adaptativo para compuerta perceptrónica (Fase 21 / #96)
+                    let mut cur_hebbian = self.arena.registry.get("perceptron_hebbian_weight", "GodEngineCore")
+                        .map(|p| p.get_value())
+                        .unwrap_or(1.0);
+                    signal_engine::perceptron_gate::PerceptronGateEngine::update_weight(&mut cur_hebbian, net_trade_pnl, atr_pct);
+                    self.arena.registry.set("perceptron_hebbian_weight", cur_hebbian);
 
                     // D-34: Retroalimentación PPO continuo y Online Learning tras cierre de Scalp
                     let hawkes_r = self.feature_engines[coin_id].cvpin.current_vpin();
@@ -1796,14 +1827,9 @@ impl GodEngineCore {
             let mut new_swing = None;
 
             // --- APERTURA SCALPING (INDEPENDIENTE) ---
-            // U-2 — MOTOR TEMPORAL ÚNICO: una sola posición viva por moneda.
-            // Un trade abierto en CUALQUIER punto del continuo temporal
-            // bloquea nuevas entradas: las fuentes de señal (microestructura,
-            // tendencia, tensor) compiten por LA posición; dejan de existir
-            // particiones de cuenta por etiqueta.
+            // D-98: Scalp opera de forma 100% independiente de Swing sin exclusión mutua
             if scalp_intent.signal != SignalType::Flat
                 && !coin.positions.scalp_position.is_open()
-                && !coin.positions.swing_position.is_open()
             {
                 let order = self.risk_engine.evaluate_quantum_order_by_horizon(coin_id, &scalp_intent, true, &self.arena);
                 if order.signal != SignalType::Flat {
@@ -1919,9 +1945,9 @@ impl GodEngineCore {
             }
 
             // --- APERTURA SWING (INDEPENDIENTE) ---
+            // D-98: Swing opera de forma 100% independiente de Scalp sin exclusión mutua
             if swing_intent.signal != SignalType::Flat
                 && !coin.positions.swing_position.is_open()
-                && !coin.positions.scalp_position.is_open()
             {
                 let order = self.risk_engine.evaluate_quantum_order_by_horizon(coin_id, &swing_intent, false, &self.arena);
                 if order.signal != SignalType::Flat {

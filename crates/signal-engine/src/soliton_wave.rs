@@ -84,8 +84,15 @@ impl QuantumStrategy for SolitonWaveEngine {
             .map(|p| p.get_value())
             .unwrap_or(0.0);
         let pos = registry.get("soliton_pos", "SolitonWaveEngine")
+            .or_else(|| registry.get("quantum_position_deviation", "SolitonWaveEngine"))
+            .or_else(|| registry.get("order_book_imbalance", "SolitonWaveEngine"))
             .map(|p| p.get_value())
             .unwrap_or(0.0);
+        let t_time = registry.get("soliton_time", "SolitonWaveEngine")
+            .or_else(|| registry.get("hawkes_dt", "SolitonWaveEngine"))
+            .map(|p| p.get_value())
+            .unwrap_or(0.05)
+            .clamp(0.001, 1.0);
 
         if !amp.is_finite() || !vel.is_finite() || !pos.is_finite() {
             return 0.0;
@@ -94,7 +101,7 @@ impl QuantumStrategy for SolitonWaveEngine {
             return 0.0;
         }
 
-        let amp_val = Self::compute_soliton_amplitude(amp, vel, pos, 0.0).clamp(0.0, 1.0);
+        let amp_val = Self::compute_soliton_amplitude(amp, vel, pos, t_time).clamp(0.0, 1.0);
         vel.signum() * amp_val
     }
 }

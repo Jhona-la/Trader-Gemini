@@ -246,7 +246,7 @@ pub fn spawn_telemetry_consumer(
                             let ml_prob = frame.payload[5] as f32;
 
                             match horizon {
-                                TradingHorizon::Scalping => {
+                                TradingHorizon::Continuous | TradingHorizon::Scalping => {
                                     last_features_scalping[coin_id][0] = hawkes;
                                     last_features_scalping[coin_id][1] = entropy;
                                     last_features_scalping[coin_id][2] = ml_prob;
@@ -266,7 +266,7 @@ pub fn spawn_telemetry_consumer(
                             let net_pnl = frame.payload[2] as f32;
 
                             match horizon {
-                                TradingHorizon::Scalping => {
+                                TradingHorizon::Continuous | TradingHorizon::Scalping => {
                                     let prior_pred = s_mod.predict(&last_features_scalping[coin_id]);
                                     let td_error = net_pnl - prior_pred;
                                     s_mod.update_weights_with_kalman(

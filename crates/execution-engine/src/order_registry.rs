@@ -27,7 +27,7 @@ pub enum OrderStatus {
 
 impl OrderStatus {
     pub fn parse(s: &str) -> OrderStatus {
-        match s {
+        match s.trim().to_ascii_uppercase().as_str() {
             "NEW" => OrderStatus::New,
             "PARTIALLY_FILLED" => OrderStatus::PartiallyFilled,
             "FILLED" => OrderStatus::Filled,
@@ -41,6 +41,21 @@ impl OrderStatus {
     /// La orden puede seguir ejecutándose (decisiones de chase/cancel dependen de esto).
     pub fn is_active(self) -> bool {
         matches!(self, OrderStatus::New | OrderStatus::PartiallyFilled)
+    }
+
+    /// R3.4: Jerarquía monotónica del ciclo de vida de la orden.
+    /// Impide que acks desordenados o eventos WS tardíos degraden un estado terminal o más avanzado.
+    #[inline(always)]
+    pub fn lifecycle_rank(self) -> u8 {
+        match self {
+            OrderStatus::Unknown => 0,
+            OrderStatus::New => 1,
+            OrderStatus::PartiallyFilled => 2,
+            OrderStatus::Filled
+            | OrderStatus::Canceled
+            | OrderStatus::Expired
+            | OrderStatus::Rejected => 3,
+        }
     }
 }
 
@@ -56,6 +71,8 @@ pub struct TrackedOrder {
     pub avg_price: f64,
     pub cum_quote: f64,
     pub total_commission: f64,
+    pub ack_commission: f64,
+    pub ws_commission: f64,
     pub status: OrderStatus,
     pub order_id: u64,
     pub created_ms: u64,
@@ -101,8 +118,12 @@ pub fn infer_position_side(client_order_id: &str, side: &str) -> String {
     let is_close_order = upper.contains("CLOSE")
         || upper.contains("_TP_")
         || upper.contains("_SL_")
+        || upper.ends_with("_TP")
+        || upper.ends_with("_SL")
         || upper.contains("EXIT")
-        || upper.contains("TRAIL");
+        || upper.contains("TRAIL")
+        || upper.starts_with("RED_")
+        || upper.contains("RED_");
 
     if is_close_order {
         if side.eq_ignore_ascii_case("BUY") {
@@ -130,6 +151,7 @@ pub struct TradeUpdate {
     pub side: String,
     pub position_side: String,
     pub order_type: String,
+    pub execution_type: String,
     pub order_id: u64,
     pub status: OrderStatus,
     pub orig_qty: f64,
@@ -197,6 +219,8 @@ impl OrderRegistry {
                 avg_price: 0.0,
                 cum_quote: 0.0,
                 total_commission: 0.0,
+                ack_commission: 0.0,
+                ws_commission: 0.0,
                 status: OrderStatus::New,
                 order_id: 0,
                 created_ms: now_ms,
@@ -223,6 +247,8 @@ impl OrderRegistry {
                 avg_price: 0.0,
                 cum_quote: 0.0,
                 total_commission: 0.0,
+                ack_commission: 0.0,
+                ws_commission: 0.0,
                 status: OrderStatus::New,
                 order_id: 0,
                 created_ms: now_ms,
@@ -246,16 +272,23 @@ impl OrderRegistry {
         if ack.order_id > 0 {
             entry.order_id = ack.order_id;
         }
+        // R3.4: Deduplicación REST vs WS — un ack REST trae la comisión acumulada en fills.
         let fills_commission: f64 = ack.fills.iter().map(|f| f.commission).sum();
-        if fills_commission > entry.total_commission {
-            entry.total_commission = fills_commission;
+        if fills_commission > entry.ack_commission {
+            entry.ack_commission = fills_commission;
         }
-        entry.status = OrderStatus::parse(&ack.status);
+        entry.total_commission = entry.ack_commission.max(entry.ws_commission);
+
+        // R3.4: Monotonic status guard — impedir que acks tardíos o de retries degraden estados terminales
+        let new_status = OrderStatus::parse(&ack.status);
+        if new_status.lifecycle_rank() >= entry.status.lifecycle_rank() {
+            entry.status = new_status;
+        }
         entry.updated_ms = now_ms;
     }
 
     /// Aplica un ORDER_TRADE_UPDATE del user-data stream.
-    /// Los eventos WS llegan por fill: acumular comisión, no sobrescriberla.
+    /// Los eventos WS llegan por fill: acumular comisión, no sobrescribirla.
     pub fn apply_trade_update(&self, u: &TradeUpdate, now_ms: u64) {
         let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
         // FIX #1303: Priorizar posición explícita del Exchange si está disponible
@@ -277,6 +310,8 @@ impl OrderRegistry {
                 avg_price: 0.0,
                 cum_quote: 0.0,
                 total_commission: 0.0,
+                ack_commission: 0.0,
+                ws_commission: 0.0,
                 status: OrderStatus::New,
                 order_id: u.order_id,
                 created_ms: now_ms,
@@ -302,13 +337,21 @@ impl OrderRegistry {
         if u.avg_price > 0.0 {
             entry.avg_price = u.avg_price;
         }
-        // Comisión acumulativa por fill (cada evento trae SOLO la del fill actual).
+        // R3.4: Comisión acumulativa por fill WS + deduplicación con ACK REST
         if u.last_filled_qty > 0.0 && u.commission > 0.0 {
-            entry.total_commission += u.commission;
+            entry.ws_commission += u.commission;
         }
-        entry.last_fill_qty = u.last_filled_qty;
-        entry.last_fill_price = u.last_filled_price;
-        entry.status = u.status;
+        entry.total_commission = entry.ack_commission.max(entry.ws_commission);
+
+        if u.execution_type.is_empty() || u.execution_type == "TRADE" || u.last_filled_qty > 0.0 {
+            entry.last_fill_qty = u.last_filled_qty;
+            entry.last_fill_price = u.last_filled_price;
+        }
+
+        // R3.4: Monotonic status guard — impedir que actualizaciones WS desordenadas degraden estados terminales
+        if u.status.lifecycle_rank() >= entry.status.lifecycle_rank() {
+            entry.status = u.status;
+        }
         entry.updated_ms = now_ms;
     }
 
@@ -437,6 +480,7 @@ mod tests {
                 side: "BUY".into(),
                 position_side: "LONG".into(),
                 order_type: "LIMIT".into(),
+                execution_type: "TRADE".into(),
                 order_id: 42,
                 status: OrderStatus::Filled,
                 orig_qty: 2.0,
@@ -467,6 +511,7 @@ mod tests {
                 side: "SELL".into(),
                 position_side: "SHORT".into(),
                 order_type: "STOP_MARKET".into(),
+                execution_type: "TRADE".into(),
                 order_id: 7,
                 status: OrderStatus::Filled,
                 orig_qty: 1.0,
@@ -523,5 +568,122 @@ mod tests {
         assert_eq!(stale.len(), 2);
         assert_eq!(reg.get("o_stale").unwrap().status, OrderStatus::Expired);
         assert_eq!(reg.get("o_active").unwrap().status, OrderStatus::Expired);
+    }
+
+    #[test]
+    fn test_r34_monotonic_lifecycle_guard() {
+        let reg = OrderRegistry::new();
+        reg.register_intent("m1", "BTCUSDT", "BUY", "LONG", "LIMIT", 1.0, 100);
+
+        // Advance to FILLED via WS
+        reg.apply_trade_update(
+            &TradeUpdate {
+                client_order_id: "m1".into(),
+                symbol: "BTCUSDT".into(),
+                side: "BUY".into(),
+                position_side: "LONG".into(),
+                order_type: "LIMIT".into(),
+                execution_type: "TRADE".into(),
+                order_id: 99,
+                status: OrderStatus::Filled,
+                orig_qty: 1.0,
+                cumulative_filled_qty: 1.0,
+                last_filled_qty: 1.0,
+                last_filled_price: 65000.0,
+                avg_price: 65000.0,
+                commission: 0.05,
+                commission_asset: "USDT".into(),
+                trade_time_ms: 200,
+            },
+            200,
+        );
+        let o = reg.get("m1").unwrap();
+        assert_eq!(o.status, OrderStatus::Filled);
+
+        // A delayed REST ack arrives with status NEW or PARTIALLY_FILLED: must NOT regress
+        reg.apply_ack(&ack("m1", "PARTIALLY_FILLED", 0.5, 65000.0), 300);
+        let o = reg.get("m1").unwrap();
+        assert_eq!(o.status, OrderStatus::Filled, "Status FILLED must not regress to PARTIALLY_FILLED");
+
+        reg.apply_ack(&ack("m1", "NEW", 0.0, 0.0), 350);
+        let o = reg.get("m1").unwrap();
+        assert_eq!(o.status, OrderStatus::Filled, "Status FILLED must not regress to NEW");
+    }
+
+    #[test]
+    fn test_r34_fee_deduplication() {
+        let reg = OrderRegistry::new();
+        reg.register_intent("f1", "BTCUSDT", "BUY", "LONG", "LIMIT", 2.0, 100);
+
+        // REST ack arrives with fills totaling 0.04 commission
+        let mut ack_msg = ack("f1", "PARTIALLY_FILLED", 1.0, 60000.0);
+        ack_msg.fills = vec![crate::order_types::Fill {
+            price: 60000.0,
+            qty: 1.0,
+            commission: 0.04,
+            commission_asset: "USDT".into(),
+            trade_id: 1,
+        }];
+        reg.apply_ack(&ack_msg, 200);
+
+        let o = reg.get("f1").unwrap();
+        assert!((o.ack_commission - 0.04).abs() < 1e-12);
+        assert!((o.ws_commission - 0.0).abs() < 1e-12);
+        assert!((o.total_commission - 0.04).abs() < 1e-12);
+
+        // WS stream sends individual fill with 0.04 commission for the same fill: total should remain 0.04 (max), NOT 0.08
+        reg.apply_trade_update(
+            &TradeUpdate {
+                client_order_id: "f1".into(),
+                symbol: "BTCUSDT".into(),
+                side: "BUY".into(),
+                position_side: "LONG".into(),
+                order_type: "LIMIT".into(),
+                execution_type: "TRADE".into(),
+                order_id: 101,
+                status: OrderStatus::PartiallyFilled,
+                orig_qty: 2.0,
+                cumulative_filled_qty: 1.0,
+                last_filled_qty: 1.0,
+                last_filled_price: 60000.0,
+                avg_price: 60000.0,
+                commission: 0.04,
+                commission_asset: "USDT".into(),
+                trade_time_ms: 205,
+            },
+            205,
+        );
+
+        let o = reg.get("f1").unwrap();
+        assert!((o.ack_commission - 0.04).abs() < 1e-12);
+        assert!((o.ws_commission - 0.04).abs() < 1e-12);
+        assert!((o.total_commission - 0.04).abs() < 1e-12, "Double counting prevented via max(ack, ws)");
+
+        // A second fill arrives on WS with additional 0.03 commission
+        reg.apply_trade_update(
+            &TradeUpdate {
+                client_order_id: "f1".into(),
+                symbol: "BTCUSDT".into(),
+                side: "BUY".into(),
+                position_side: "LONG".into(),
+                order_type: "LIMIT".into(),
+                execution_type: "TRADE".into(),
+                order_id: 101,
+                status: OrderStatus::Filled,
+                orig_qty: 2.0,
+                cumulative_filled_qty: 2.0,
+                last_filled_qty: 1.0,
+                last_filled_price: 60100.0,
+                avg_price: 60050.0,
+                commission: 0.03,
+                commission_asset: "USDT".into(),
+                trade_time_ms: 210,
+            },
+            210,
+        );
+
+        let o = reg.get("f1").unwrap();
+        assert!((o.ws_commission - 0.07).abs() < 1e-12);
+        assert!((o.total_commission - 0.07).abs() < 1e-12);
     }
 }

@@ -13,6 +13,8 @@ pub struct ScalpState {
     pub pnl_realized: AtomicF64,
     pub pnl_unrealized: AtomicF64,
     pub pnl_gross: AtomicF64,
+    pub gross_wins: AtomicF64,
+    pub gross_losses: AtomicF64,
     pub active_positions: AtomicUsize,
     pub win_rate: AtomicF64,
     pub profit_factor: AtomicF64,
@@ -29,6 +31,8 @@ impl ScalpState {
             pnl_realized: AtomicF64::new(0.0),
             pnl_unrealized: AtomicF64::new(0.0),
             pnl_gross: AtomicF64::new(0.0),
+            gross_wins: AtomicF64::new(0.0),
+            gross_losses: AtomicF64::new(0.0),
             active_positions: AtomicUsize::new(0),
             win_rate: AtomicF64::new(w_base), // Derived from genome
             profit_factor: AtomicF64::new(1.50), // Prior Bayesiano neutro optimista (R:R >= 1.5:1)
@@ -46,6 +50,8 @@ pub struct SwingState {
     pub pnl_realized: AtomicF64,
     pub pnl_unrealized: AtomicF64,
     pub pnl_gross: AtomicF64,
+    pub gross_wins: AtomicF64,
+    pub gross_losses: AtomicF64,
     pub active_positions: AtomicUsize,
     pub win_rate: AtomicF64,
     pub profit_factor: AtomicF64,
@@ -61,6 +67,8 @@ impl SwingState {
             pnl_realized: AtomicF64::new(0.0),
             pnl_unrealized: AtomicF64::new(0.0),
             pnl_gross: AtomicF64::new(0.0),
+            gross_wins: AtomicF64::new(0.0),
+            gross_losses: AtomicF64::new(0.0),
             active_positions: AtomicUsize::new(0),
             win_rate: AtomicF64::new(w_base),
             profit_factor: AtomicF64::new(1.50), // Prior Bayesiano Swing
@@ -226,6 +234,7 @@ pub struct CoinArena {
     pub tick_head: AtomicUsize,
     pub last_close_ts: AtomicU64,
     pub last_scalp_close_ts: AtomicU64,
+    pub last_swing_close_ts: AtomicU64,
 }
 
 impl CoinArena {
@@ -311,6 +320,7 @@ impl CoinArena {
             tick_head: AtomicUsize::new(0),
             last_close_ts: AtomicU64::new(0),
             last_scalp_close_ts: AtomicU64::new(0),
+            last_swing_close_ts: AtomicU64::new(0),
         }
     }
 }
@@ -338,6 +348,8 @@ pub struct GlobalArena {
     pub registry: Arc<OmniscientRegistry>,
     pub global_covariance_tensor: AtomicF64,
     pub global_momentum_vector: AtomicF64,
+    /// Generación monotónica del genoma actualmente aplicado en la arena viva (0 = baseline)
+    pub applied_generation: AtomicU64,
 }
 
 impl GlobalArena {
@@ -369,6 +381,7 @@ impl GlobalArena {
             registry: Arc::new(OmniscientRegistry::new()),
             global_covariance_tensor: AtomicF64::new(1.0), // Base variance multiplier
             global_momentum_vector: AtomicF64::new(0.0),   // Neutral momentum
+            applied_generation: AtomicU64::new(0),
             tensor_arena: Some(Box::new(CoinTensorArena::new())), // FASE 8 Tensor Allocation
         }
     }

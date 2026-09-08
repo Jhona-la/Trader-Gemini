@@ -23,6 +23,8 @@ pub struct StatefulEngine {
     pub last_price: f64,
     pub v_t: f64,
     pub a_t: f64,
+    pub last_inst_v: f64,
+    pub dir_velocity: f64,
     pub tick_count: u64,
     pub hurst: RecursiveHurst,
     pub obi_accel: ObiAcceleration,
@@ -69,6 +71,8 @@ impl StatefulEngine {
             last_price: 0.0,
             v_t: 0.0,
             a_t: 0.0,
+            last_inst_v: 0.0,
+            dir_velocity: 0.0,
             tick_count: 0,
             hurst: RecursiveHurst::new(),
             obi_accel: ObiAcceleration::new(),
@@ -182,8 +186,12 @@ impl StatefulEngine {
 
             // Tick-level instantaneous velocity & acceleration
             let inst_v = diff;
-            let new_a = inst_v - self.a_t;
-            self.a_t = new_a;
+            // FIX D-52: Aceleración cinemática dimensionalmente correcta a = (v_t - v_{t-1}) / dt con filtro EMA
+            let raw_a = inst_v - self.last_inst_v;
+            self.a_t = self.a_t * 0.70 + raw_a * 0.30;
+            self.last_inst_v = inst_v;
+            // Velocidad direccional suavizada (EMA de 10 ticks)
+            self.dir_velocity = self.dir_velocity * 0.85 + inst_v * 0.15;
         }
 
         self.hurst.update(price);

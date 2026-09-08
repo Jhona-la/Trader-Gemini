@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TradingHorizon {
+    Continuous,
     Scalping,
     Swing,
 }
@@ -129,6 +130,7 @@ impl SeniorAgent for SeniorSeriesTemporales {
         let flow_dir = payload.book_imbalance.signum();
         
         let (trend_threshold, mean_reversion_threshold) = match payload.horizon {
+            TradingHorizon::Continuous => (0.52, 0.45),
             TradingHorizon::Scalping => (0.55, 0.42),
             TradingHorizon::Swing => (0.65, 0.35),
         };
@@ -208,6 +210,7 @@ impl SeniorAgent for SeniorRiesgo {
         
         // FIX #1280: Umbral adaptativo para micro-cuentas ($13 USD bootstrap).
         let max_drawdown = match payload.horizon {
+            TradingHorizon::Continuous => 0.90,
             TradingHorizon::Scalping => 0.95, // Scalping es más arriesgado pero permite mayor drawdown para recovery
             TradingHorizon::Swing => 0.85,
         };
@@ -235,6 +238,7 @@ impl SeniorAgent for SeniorEjecucion {
         // FIX #387: estimated_slippage_bps ya está expresado en puntos básicos (bps)
         let slippage_bps = payload.estimated_slippage_bps.max(0.0);
         let max_slippage = match payload.horizon {
+            TradingHorizon::Continuous => 35.0,
             TradingHorizon::Scalping => 25.0, // Menor slippage permitido para scalping (nano)
             TradingHorizon::Swing => 75.0,    // Mayor tolerancia para swing
         };
@@ -364,7 +368,8 @@ impl SeniorAgent for SeniorAuditorInterno {
 
 
 pub struct ConsejoDeliberacion {
-    agents: Vec<Box<dyn SeniorAgent>>,
+    pub agents: Vec<Box<dyn SeniorAgent>>,
+    pub tracker: std::sync::RwLock<SeniorPerformanceTracker>,
 }
 
 impl Default for ConsejoDeliberacion {
@@ -382,6 +387,7 @@ impl Default for ConsejoDeliberacion {
                 Box::new(SeniorTeleonomia),
                 Box::new(SeniorAuditorInterno),
             ],
+            tracker: std::sync::RwLock::new(SeniorPerformanceTracker::new(500)),
         }
     }
 }
@@ -403,6 +409,14 @@ impl ConsejoDeliberacion {
         } else {
             0.5
         };
+
+        // N-12: Si no se proporcionan multiplicadores externos, usar pesos adaptativos empíricos del tracker
+        let dynamic_weights = if weight_multipliers.is_none() {
+            self.tracker.read().ok().map(|t| t.compute_weights())
+        } else {
+            None
+        };
+        let active_mults = weight_multipliers.or(dynamic_weights.as_ref());
 
         // Enforce strict data payload validation
         if let Err(err_msg) = payload.validate() {
@@ -428,7 +442,7 @@ impl ConsejoDeliberacion {
 
         for (idx, agent) in self.agents.iter().enumerate() {
             let mut op = agent.evaluate(payload, safe_wr);
-            if let Some(multipliers) = weight_multipliers {
+            if let Some(multipliers) = active_mults {
                 if let Some(&mult) = multipliers.get(idx) {
                     if mult.is_finite() && mult > 0.0 {
                         op.weight *= mult.clamp(0.1, 5.0);
@@ -521,6 +535,23 @@ impl ConsejoDeliberacion {
     #[inline(always)]
     pub fn deliberar(&self, payload: &MarketSnapshotPayload, win_rate: f64) -> ConsensusResult {
         self.deliberar_with_weights(payload, win_rate, None)
+    }
+
+    /// N-12: Extrae las señales direccionales de los 10 Seniors para correlacionar con el resultado posterior
+    pub fn extract_senior_signals(&self, payload: &MarketSnapshotPayload, win_rate: f64) -> [f64; 10] {
+        let safe_wr = if win_rate.is_finite() { win_rate.clamp(0.0, 1.0) } else { 0.5 };
+        let mut signals = [0.0; 10];
+        for (idx, agent) in self.agents.iter().enumerate() {
+            signals[idx] = agent.evaluate(payload, safe_wr).signal_direction;
+        }
+        signals
+    }
+
+    /// N-12: Registra el retorno realizado de una operación para actualizar los pesos adaptativos
+    pub fn record_outcome(&self, senior_signals: &[f64; 10], realized_return: f64) {
+        if let Ok(mut tracker) = self.tracker.write() {
+            tracker.record_outcome(senior_signals, realized_return);
+        }
     }
 }
 

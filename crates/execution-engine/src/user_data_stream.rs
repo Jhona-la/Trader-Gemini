@@ -43,6 +43,7 @@ impl AccountSink for NoopSink {
 }
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 /// F1.6: stream privado. `start()` es infinito (diseñado para tokio::spawn).
@@ -51,6 +52,8 @@ pub struct UserDataStreamer {
     registry: Arc<OrderRegistry>,
     sink: Arc<dyn AccountSink>,
     cached_positions: Mutex<HashMap<(String, String), f64>>,
+    api_secret: Option<String>,
+    expired_flag: Arc<AtomicBool>,
 }
 
 impl UserDataStreamer {
@@ -60,7 +63,14 @@ impl UserDataStreamer {
             registry,
             sink: Arc::new(NoopSink),
             cached_positions: Mutex::new(HashMap::new()),
+            api_secret: None,
+            expired_flag: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub fn with_api_secret(mut self, api_secret: impl Into<String>) -> Self {
+        self.api_secret = Some(api_secret.into());
+        self
     }
 
     pub fn with_sink(mut self, sink: Arc<dyn AccountSink>) -> Self {
@@ -86,14 +96,16 @@ impl UserDataStreamer {
                     k
                 }
                 Ok(_) => {
-                    println!("⚠️ [USER-STREAM] listenKey vacío; reintentando en {}ms...", backoff_ms);
-                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms)).await;
+                    let jitter_ms = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos() as u64).unwrap_or(42) % 200) + 50;
+                    println!("⚠️ [USER-STREAM] listenKey vacío; reintentando en {}ms...", backoff_ms + jitter_ms);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms + jitter_ms)).await;
                     backoff_ms = (backoff_ms * 2).min(30_000);
                     continue;
                 }
                 Err(e) => {
-                    println!("⚠️ [USER-STREAM] create_listen_key falló: {}; reintentando en {}ms...", e, backoff_ms);
-                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms)).await;
+                    let jitter_ms = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos() as u64).unwrap_or(42) % 200) + 50;
+                    println!("⚠️ [USER-STREAM] create_listen_key falló: {}; reintentando en {}ms...", e, backoff_ms + jitter_ms);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms + jitter_ms)).await;
                     backoff_ms = (backoff_ms * 2).min(30_000);
                     continue;
                 }
@@ -138,6 +150,10 @@ impl UserDataStreamer {
             });
 
             while let Some(msg) = read.next().await {
+                if self.expired_flag.swap(false, Ordering::Relaxed) {
+                    println!("🔄 [USER-STREAM] listenKeyExpired: cerrando sesión para renovación inmediata.");
+                    break;
+                }
                 match msg {
                     Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                         self.route_event(&text);
@@ -182,8 +198,14 @@ impl UserDataStreamer {
         match ev.e.as_str() {
             "ORDER_TRADE_UPDATE" => self.on_order_trade_update(text),
             "ACCOUNT_UPDATE" => self.on_account_update(text),
+            "listenKeyExpired" => self.on_listen_key_expired(),
             _ => {}
         }
+    }
+
+    fn on_listen_key_expired(&self) {
+        println!("🚨 [USER-STREAM] listenKeyExpired recibido de Binance! Forzando renovación inmediata.");
+        self.expired_flag.store(true, Ordering::Relaxed);
     }
 
     fn on_order_trade_update(&self, text: &str) {
@@ -199,6 +221,8 @@ impl UserDataStreamer {
             order_type: String,
             #[serde(rename = "X")]
             order_status: String,
+            #[serde(rename = "x", default)]
+            execution_type: String,
             #[serde(rename = "i")]
             order_id: u64,
             #[serde(rename = "l")]
@@ -240,6 +264,7 @@ impl UserDataStreamer {
             side: o.side,
             position_side: o.position_side,
             order_type: o.order_type,
+            execution_type: o.execution_type,
             order_id: o.order_id,
             status: OrderStatus::parse(&o.order_status),
             orig_qty: o.orig_qty,
@@ -268,6 +293,57 @@ impl UserDataStreamer {
             );
         }
         self.registry.apply_trade_update(&update, now);
+
+        // K-04 / R3.1: Motor de cancelación automática de pierna hermana OCO
+        // Cuando una pierna de OCO ({base}_TP o {base}_SL) alcanza estado FILLED,
+        // cancela de inmediato la pierna hermana para no dejar órdenes huérfanas en el exchange.
+        if update.status == OrderStatus::Filled {
+            let sister_id_opt = if let Some(base) = update.client_order_id.strip_suffix("_TP") {
+                Some(format!("{}_SL", base))
+            } else if let Some(base) = update.client_order_id.strip_suffix("_SL") {
+                Some(format!("{}_TP", base))
+            } else {
+                None
+            };
+
+            if let (Some(sister_id), Some(ref secret)) = (sister_id_opt, &self.api_secret) {
+                let client = self.client.clone();
+                let symbol = update.symbol.clone();
+                let secret = secret.clone();
+                let filled_id = update.client_order_id.clone();
+                tokio::spawn(async move {
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let mut buf = crate::client::ZeroAllocBuffer::new();
+                    buf.push_str(if client.is_testnet.load(std::sync::atomic::Ordering::Relaxed) {
+                        "https://testnet.binancefuture.com/fapi/v1/order?"
+                    } else {
+                        "https://fapi.binance.com/fapi/v1/order?"
+                    });
+                    let payload_start = buf.as_str().len();
+                    buf.push_str("symbol=");
+                    buf.push_str(&symbol);
+                    buf.push_str("&origClientOrderId=");
+                    buf.push_str(&sister_id);
+                    buf.push_str("&timestamp=");
+                    buf.push_u64(ts);
+
+                    let mut sig_buf = [0u8; 64];
+                    let payload = &buf.as_str()[payload_start..];
+                    crate::binance_api::sign_payload_to_buffer(payload, &secret, &mut sig_buf);
+                    let sig = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+                    buf.push_str("&signature=");
+                    buf.push_str(sig);
+
+                    match client.cancel_order_payload(buf.as_str()).await {
+                        Ok(_) => println!("🎯 [OCO MOTOR] Pierna hermana {} cancelada exitosamente tras fill de {}.", sister_id, filled_id),
+                        Err(e) => println!("ℹ️ [OCO MOTOR] Pierna hermana {} ya resuelta o cancelada: {}", sister_id, e),
+                    }
+                });
+            }
+        }
     }
 
     fn on_account_update(&self, text: &str) {
@@ -452,6 +528,19 @@ mod tests {
 
         let order = registry.get("ORD_101");
         assert_eq!(order.map(|o| o.status), Some(OrderStatus::Filled));
+    }
+
+    #[test]
+    fn test_listen_key_expired_triggers_flag() {
+        let registry = Arc::new(OrderRegistry::new());
+        let streamer = UserDataStreamer::new(
+            BinanceClient::new("key".into(), true),
+            registry,
+        );
+        assert!(!streamer.expired_flag.load(Ordering::Relaxed));
+        let expired_event = r#"{"e":"listenKeyExpired","E":1700000000000}"#;
+        streamer.dispatch(expired_event.as_bytes());
+        assert!(streamer.expired_flag.load(Ordering::Relaxed));
     }
 }
 

@@ -497,6 +497,7 @@ impl DarkAlphaEngine {
             layer3: DenseLayer::new_xavier(hidden2, 1),                // Xavier init para Sigmoid
             scaler: None,
             channel_normalizers: vec![ChannelWelfordStats::new(); input_dim],
+            per_coin_normalizers: vec![vec![ChannelWelfordStats::new(); input_dim]; 30],
             freeze_normalizers: false,
             buf_scaled: vec![0.0; input_dim],
             buf_h1: vec![0.0; hidden1],
@@ -518,6 +519,14 @@ impl DarkAlphaEngine {
         let in_dim = self.layer1.in_features;
         if self.channel_normalizers.len() != in_dim {
             self.channel_normalizers.resize(in_dim, ChannelWelfordStats::new());
+        }
+        if self.per_coin_normalizers.len() < 30 {
+            self.per_coin_normalizers.resize(30, vec![ChannelWelfordStats::new(); in_dim]);
+        }
+        for coin_norms in self.per_coin_normalizers.iter_mut() {
+            if coin_norms.len() != in_dim {
+                coin_norms.resize(in_dim, ChannelWelfordStats::new());
+            }
         }
         if self.buf_scaled.len() != in_dim {
             self.buf_scaled = vec![0.0; in_dim];
@@ -606,6 +615,71 @@ impl DarkAlphaEngine {
                 None
             }
         })
+    }
+
+    /// FIX D-53: Forward pass aislado por activo para eliminar contaminación cruzada de Welford entre activos
+    #[inline(always)]
+    pub fn predict_for_coin(&mut self, coin_id: usize, features: &[f64]) -> Option<f64> {
+        let in_dim = self.layer1.in_features;
+        if features.len() < in_dim {
+            return None;
+        }
+
+        if self.per_coin_normalizers.len() <= coin_id {
+            self.per_coin_normalizers.resize_with(coin_id + 1, || vec![ChannelWelfordStats::new(); in_dim]);
+        }
+        if self.per_coin_normalizers[coin_id].len() < in_dim {
+            self.per_coin_normalizers[coin_id].resize(in_dim, ChannelWelfordStats::new());
+        }
+
+        if self.buf_scaled.len() < in_dim
+            || self.buf_h1.len() < self.layer1.out_features
+        {
+            self.init_buffers();
+        }
+
+        if let Some(scaler) = &self.scaler {
+            for (dest, &src) in self.buf_scaled[..in_dim].iter_mut().zip(&features[..in_dim]) {
+                *dest = if src.is_finite() { src } else { 0.0 };
+            }
+            scaler.scale(&mut self.buf_scaled[..in_dim]);
+        } else {
+            let normalizers = &mut self.per_coin_normalizers[coin_id];
+            for i in 0..in_dim {
+                let raw = if features[i].is_finite() { features[i] } else { 0.0 };
+                self.buf_scaled[i] = if self.freeze_normalizers {
+                    normalizers[i].transform(raw)
+                } else {
+                    normalizers[i].normalize(raw)
+                };
+            }
+
+            let mut sum = 0.0;
+            for &v in &self.buf_scaled[..in_dim] {
+                sum += v;
+            }
+            let mean = sum / (in_dim as f64);
+            let mut var = 0.0;
+            for &v in &self.buf_scaled[..in_dim] {
+                let diff = v - mean;
+                var += diff * diff;
+            }
+            let std = (var / (in_dim as f64)).sqrt().max(1e-4);
+            for v in self.buf_scaled[..in_dim].iter_mut() {
+                *v = ((*v - mean) / std).clamp(-3.0, 3.0);
+            }
+        }
+
+        self.layer1.forward_relu(&self.buf_scaled[..in_dim], &mut self.buf_h1);
+        self.layer2.forward_relu(&self.buf_h1, &mut self.buf_h2);
+        self.layer3.forward_sigmoid(&self.buf_h2, &mut self.buf_out);
+
+        let out = self.buf_out[0];
+        if out.is_finite() {
+            Some(out.clamp(0.0, 1.0))
+        } else {
+            None
+        }
     }
 
     /// Forward pass con plasticidad sináptica continua (Oja Hebbian Learning)

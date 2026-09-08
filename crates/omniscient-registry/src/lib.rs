@@ -119,7 +119,7 @@ impl OmniscientRegistry {
         }
     }
 
-    pub fn get(&self, name: &str, consumer_name: &str) -> Option<Arc<Parameter>> {
+    pub fn get(&self, name: &str, _consumer_name: &str) -> Option<Arc<Parameter>> {
         if let Some(entry) = self.map.get(name) {
             let param = entry.value().clone();
             if false {
@@ -141,6 +141,41 @@ impl OmniscientRegistry {
     #[inline(always)]
     pub fn get_value_or(&self, name: &str, default: f64) -> f64 {
         self.get_value_fast(name).unwrap_or(default)
+    }
+
+    /// D-07: Namespacing por activo: registra o actualiza un parámetro prefijado por símbolo.
+    #[inline(always)]
+    pub fn set_scoped(&self, symbol: &str, name: &str, val: f64) {
+        let scoped_name = format!("{}_{}", symbol, name);
+        self.set(&scoped_name, val);
+    }
+
+    /// D-07: Lectura con resolución de ámbito: busca `{symbol}_{name}` y si no existe busca `{name}`.
+    #[inline(always)]
+    pub fn get_scoped(&self, symbol: &str, name: &str, consumer_name: &str) -> Option<Arc<Parameter>> {
+        let scoped_name = format!("{}_{}", symbol, name);
+        self.get(&scoped_name, consumer_name).or_else(|| self.get(name, consumer_name))
+    }
+
+    /// D-07: Lectura rápida O(1) con resolución de ámbito y fallback por defecto.
+    #[inline(always)]
+    pub fn get_scoped_value_or(&self, symbol: &str, name: &str, default: f64) -> f64 {
+        let scoped_name = format!("{}_{}", symbol, name);
+        self.get_value_fast(&scoped_name).or_else(|| self.get_value_fast(name)).unwrap_or(default)
+    }
+
+    /// D38: Namespacing por índice numérico de activo (Zero Allocation lookup friendly)
+    #[inline(always)]
+    pub fn set_for_coin(&self, coin_id: usize, name: &str, val: f64) {
+        let key = format!("c{}:{}", coin_id, name);
+        self.set(&key, val);
+    }
+
+    /// D38: Lectura por índice numérico de activo con fallback al parámetro global
+    #[inline(always)]
+    pub fn get_for_coin_or(&self, coin_id: usize, name: &str, default: f64) -> f64 {
+        let key = format!("c{}:{}", coin_id, name);
+        self.get_value_fast(&key).or_else(|| self.get_value_fast(name)).unwrap_or(default)
     }
 
     pub fn detect_collisions(&self) -> Vec<String> {
