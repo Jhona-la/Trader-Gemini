@@ -1469,6 +1469,14 @@ impl GodEngineCore {
                 SignalType::Flat => 0.0,
             };
 
+            // T-02 — MOTOR DE MICROESTRUCTURA CONECTADO: 30 instancias de
+            // ScalpEngine (aceleración OBI con z-score EW-Welford) vivían
+            // SIN evaluarse — la mitad del espectro temporal estaba muerta.
+            // Se evalúa cada tick y actúa como ruta de intención propia
+            // cuando el composite de régimen no dispara.
+            let micro_accel_intent = self.scalp_engines[coin_id]
+                .evaluate_microstructure_with_vpin(bid_qty, ask_qty, vpin_val, 1.5, &self.arena);
+
             // Unified Bayesian Fusion: 40% Microstructure L2 (OBI/OFI/CVD) + 35% DarkAlpha ML + 25% Tensor Consensus
             let raw_composite = micro_score * 0.40 + nn_score * 0.35 + tensor_boost * 0.25;
             let composite_score: f64 = (raw_composite * hebbian_mult).clamp(-1.0, 1.0);
@@ -1550,6 +1558,17 @@ impl GodEngineCore {
                         confidence: tensor_scalp.net_confidence.abs().clamp(0.65, 1.0),
                         ..Default::default()
                     };
+                }
+
+                // T-02 — fallback de microestructura pura: el z-score de
+                // aceleración OBI con confianza suficiente genera la
+                // intención aunque el composite de régimen no dispare.
+                if scalp_intent.signal == SignalType::Flat
+                    && micro_accel_intent.signal != SignalType::Flat
+                    && micro_accel_intent.confidence >= 0.60
+                    && atr_pct > dynamic_atr_min
+                {
+                    scalp_intent = micro_accel_intent;
                 }
 
                 // FIX D-59: Conectar TurboScalpEngine cuando el ensamble primario está en Flat

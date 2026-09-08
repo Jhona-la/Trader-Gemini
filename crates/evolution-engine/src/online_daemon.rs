@@ -47,6 +47,11 @@ pub struct LiveEvolutionDaemon {
     pub last_realized_by_coin: std::collections::HashMap<usize, f64>,
     /// FIX #1600: Acumulación histórica persistente de retornos de estrategia sobre ventana deslizante
     pub returns_history: Vec<f64>,
+    /// T-10 — retornos ETIQUETADOS por moneda: el walk-forward requiere que
+    /// el momentum decida sobre el retorno de LA MISMA moneda (antes: el
+    /// momentum de BTC decidía entradas sobre retornos de ETH — fitness
+    /// cross-asset inválido).
+    pub returns_by_coin: std::collections::HashMap<usize, Vec<f64>>,
     /// FASE 3 — watchdog de rollback: retornos posteriores a la última
     /// promoción y la generación promovida. Si el genoma nuevo demuestra edge
     /// NEGATIVO estadísticamente significativo, se revierte al padre.
@@ -79,6 +84,7 @@ impl LiveEvolutionDaemon {
             forest: crate::online_random_forest::TrueOnlineRandomForest::new(5000),
             last_realized_by_coin: std::collections::HashMap::new(),
             returns_history: Vec::with_capacity(1024),
+            returns_by_coin: std::collections::HashMap::new(),
             post_promo_returns: Vec::with_capacity(256),
             promoted_generation: None,
         }
@@ -174,6 +180,11 @@ impl LiveEvolutionDaemon {
                     let ret = delta / capital;
                     if ret.is_finite() {
                         self.returns_history.push(ret);
+                        let coin_window = self.returns_by_coin.entry(coin_id).or_default();
+                        coin_window.push(ret);
+                        if coin_window.len() > 400 {
+                            coin_window.drain(0..coin_window.len() - 400);
+                        }
                         // FASE 3: evidencia post-promoción para el watchdog.
                         if self.promoted_generation.is_some() {
                             self.post_promo_returns.push(ret);
@@ -331,6 +342,13 @@ impl LiveEvolutionDaemon {
             
             // FIX BLOQUEO #2: Capturar snapshot de retornos reales para walk-forward en el closure
             let returns_snapshot: Vec<f64> = self.returns_history.clone();
+            // T-10: series POR MONEDA (mínimo 40 obs) para el walk-forward.
+            let per_coin_series: Vec<Vec<f64>> = self
+                .returns_by_coin
+                .values()
+                .filter(|v| v.len() >= 40)
+                .cloned()
+                .collect();
             
             let best_genome = tokio::task::spawn_blocking(move || {
                 let mut best = current_genome.clone();
@@ -417,14 +435,25 @@ impl LiveEvolutionDaemon {
                     let mut wf_pnl = 0.0f64;
                     let mut wf_capital = 13.0; // Starting capital
 
-                    // Dividir returns_history: 60% train, 40% OOS
-                    let n_returns = returns_snapshot.len();
-                    let train_end = (n_returns * 6) / 10;
+                    // T-10 — WALK-FORWARD POR MONEDA: cada serie conserva su
+                    // propio momentum (el retorno previo de LA MISMA moneda
+                    // decide la entrada sobre su propio retorno siguiente).
+                    // Antes: la serie global mezclaba monedas y el momentum
+                    // de una decidía trades de otra. Se itera la porción OOS
+                    // de cada serie por moneda; si no hay series suficientes
+                    // (arranque frío) se cae a la serie global (compat).
+                    let series: Vec<Vec<f64>> = if !per_coin_series.is_empty() {
+                        per_coin_series.clone()
+                    } else {
+                        vec![returns_snapshot.clone()]
+                    };
 
-                    // Solo evaluar en la porción OOS (walk-forward)
-                    for i in train_end..n_returns {
-                        let r = returns_snapshot[i];
-                        let prev_r = if i > 0 { returns_snapshot[i - 1] } else { 0.0 };
+                    for coin_ret in &series {
+                        let n_returns = coin_ret.len();
+                        let train_end = (n_returns * 6) / 10;
+                        for i in train_end..n_returns {
+                            let r = coin_ret[i];
+                            let prev_r = if i > 0 { coin_ret[i - 1] } else { 0.0 };
                         
                         // FIX: Erradicación del Lookahead Bias.
                         // Decisión: el genoma entra long/short basándose en el momentum previo (prev_r),
@@ -457,6 +486,7 @@ impl LiveEvolutionDaemon {
                         wf_pnl += net_ret * wf_capital * candidate.scalp_kelly_fraction.clamp(0.05, 0.50);
                         wf_capital += net_ret * wf_capital * candidate.scalp_kelly_fraction.clamp(0.05, 0.50);
                         if net_ret > 0.0 { wf_wins += 1; } else { wf_losses += 1; }
+                        }
                     }
 
                     let wf_trades = wf_wins + wf_losses;
@@ -506,7 +536,7 @@ impl LiveEvolutionDaemon {
                 ),
             ) {
                 Ok(env) => {
-                    env.genome.apply_to_arena(&self.arena);
+                    env.apply_to_arena(&self.arena);
                     self.state.active_genome_id.fetch_add(1, Ordering::SeqCst);
                     self.state.has_new_genome.store(true, Ordering::Release);
                     // FASE 3: armar watchdog de rollback sobre el padre.
