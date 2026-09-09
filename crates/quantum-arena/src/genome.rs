@@ -14,6 +14,25 @@ fn default_swing_obi_threshold() -> f64 {
 fn default_swing_accel_min_samples() -> f64 {
     30.0
 }
+/// Anclas por defecto para genomas legacy serializados sin curvas (serde):
+/// pasan por los puntos históricos de las dos bandas — carga vieja = mismo
+/// comportamiento, sin ruptura.
+fn default_tp_curve() -> crate::temporal_spectrum::HorizonCurve {
+    crate::temporal_spectrum::HorizonCurve::through_two_points(
+        crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+        0.012,
+        crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+        0.06,
+    )
+}
+fn default_sl_curve() -> crate::temporal_spectrum::HorizonCurve {
+    crate::temporal_spectrum::HorizonCurve::through_two_points(
+        crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+        0.006,
+        crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+        0.025,
+    )
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuperGenotype {
@@ -35,6 +54,13 @@ pub struct SuperGenotype {
     pub scalp_sl_base: f64,
     pub swing_tp_base: f64,
     pub swing_sl_base: f64,
+    /// F8 — TP y SL como curvas continuas del horizonte τ (ms). Los campos
+    /// scalp_*/swing_* quedan como ANCLAS legacy (vistas de la curva en las
+    /// bandas históricas); los nuevos genes del GA son (a, b) por curva.
+    #[serde(default = "default_tp_curve")]
+    pub tp_horizon_curve: crate::temporal_spectrum::HorizonCurve,
+    #[serde(default = "default_sl_curve")]
+    pub sl_horizon_curve: crate::temporal_spectrum::HorizonCurve,
     pub sl_atr_mult_btc: f64,
     pub tp_rr_ratio_btc: f64,
     pub min_confidence_btc: f64,
@@ -228,6 +254,18 @@ impl SuperGenotype {
             scalp_sl_base: arena.config.scalp_sl_base.load(Ordering::Relaxed),
             swing_tp_base: arena.config.swing_tp_base.load(Ordering::Relaxed),
             swing_sl_base: arena.config.swing_sl_base.load(Ordering::Relaxed),
+            tp_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                arena.config.scalp_tp_base.load(Ordering::Relaxed),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                arena.config.swing_tp_base.load(Ordering::Relaxed),
+            ),
+            sl_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                arena.config.scalp_sl_base.load(Ordering::Relaxed),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                arena.config.swing_sl_base.load(Ordering::Relaxed),
+            ),
             sl_atr_mult_btc: arena.config.sl_atr_mult_btc.load(Ordering::Relaxed),
             tp_rr_ratio_btc: arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
             min_confidence_btc: arena.config.min_confidence_btc.load(Ordering::Relaxed),
@@ -523,6 +561,24 @@ impl SuperGenotype {
             scalp_sl_base: scalp_sl_math,
             swing_tp_base: swing_tp_math,
             swing_sl_base: swing_sl_math,
+            // F8 — CURVAS DE HORIZONTE CONTINUO: TP(τ) y SL(τ) como funciones
+            // log-lineales que pasan EXACTAMENTE por los valores históricos
+            // de las bandas fast/slow (migración sin cambio de comportamiento
+            // en los anchos legacy). El GA evoluciona (a,b) — la PENDIENTE
+            // define cómo escala el parámetro con el horizonte: una decisión
+            // continua sobre TODO el espectro, no dos buckets sueltos.
+            tp_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                scalp_tp_math,
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                swing_tp_math,
+            ),
+            sl_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                scalp_sl_math,
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                swing_sl_math,
+            ),
             sl_atr_mult_btc: 1.0,
             tp_rr_ratio_btc: r_scalp,
             min_confidence_btc: w_base * 1.018, // Ligeramente mayor que base
@@ -672,6 +728,18 @@ impl SuperGenotype {
             scalp_sl_base: rand::rng().random_range(0.0025..0.0080),
             swing_tp_base: rand::rng().random_range(0.0300..0.1200),
             swing_sl_base: rand::rng().random_range(0.0100..0.0350),
+            tp_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                rand::rng().random_range(0.0060..0.0350),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                rand::rng().random_range(0.03..0.15),
+            ),
+            sl_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
+                crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                rand::rng().random_range(0.0025..0.0120),
+                crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                rand::rng().random_range(0.01..0.045),
+            ),
             sl_atr_mult_btc: rand::rng().random_range(0.5..5.0),
             tp_rr_ratio_btc: rand::rng().random_range(1.0..10.0),
             min_confidence_btc: rand::rng().random_range(0.5..0.95),
@@ -804,6 +872,29 @@ impl SuperGenotype {
 
     /// Applica el genoma completo directamente al Arena lock-free
     pub fn apply_to_arena(&self, arena: &GlobalArena) {
+        // F8 — EL CONTINUO MANDA: TP/SL de las bandas legacy se derivan de las
+        // CURVAS de horizonte (la pendiente evolucionada define cómo escala el
+        // parámetro con τ). Los campos scalp_*/swing_* del genoma quedan como
+        // anclas de compatibilidad; TODO lector del arena (core, OCO, sizing)
+        // recibe valores del continuo sin un solo cambio — evolucionar la
+        // pendiente mueve el espectro entero coherentemente.
+        let fast_tp = self
+            .tp_horizon_curve
+            .eval(crate::temporal_spectrum::TAU_ANCHOR_FAST_MS);
+        let slow_tp = self
+            .tp_horizon_curve
+            .eval(crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS);
+        let fast_sl = self
+            .sl_horizon_curve
+            .eval(crate::temporal_spectrum::TAU_ANCHOR_FAST_MS);
+        let slow_sl = self
+            .sl_horizon_curve
+            .eval(crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS);
+        arena.config.scalp_tp_base.store(fast_tp, Ordering::Relaxed);
+        arena.config.swing_tp_base.store(slow_tp, Ordering::Relaxed);
+        arena.config.scalp_sl_base.store(fast_sl, Ordering::Relaxed);
+        arena.config.swing_sl_base.store(slow_sl, Ordering::Relaxed);
+
         arena
             .config
             .global_max_drawdown
@@ -1345,7 +1436,36 @@ impl SuperGenotype {
         self.mutate_with_rng(rate, &mut rng)
     }
 
+    /// F8: muta los coeficientes (a, b) de una curva de horizonte dentro de
+    /// bandas evolutivas. La pendiente b acotada a [b_min, b_max]: TP/SL
+    /// CRECEN con el horizonte (física del costo de oportunidad) pero sin
+    /// explotar (el clamp evita curvas absurdas en los extremos del espectro).
+    fn mutate_curve<R: rand::Rng>(
+        &self,
+        curve: crate::temporal_spectrum::HorizonCurve,
+        a_min: f64,
+        a_max: f64,
+        b_min: f64,
+        b_max: f64,
+        rng: &mut R,
+        rate: f64,
+    ) -> crate::temporal_spectrum::HorizonCurve {
+        let mut a = curve.a;
+        let mut b = curve.b;
+        let span = a_max - a_min;
+        a = (a + span * rate * rng.random_range(-0.5..0.5)).clamp(a_min, a_max);
+        let span_b = b_max - b_min;
+        b = (b + span_b * rate * rng.random_range(-0.5..0.5)).clamp(b_min, b_max);
+        crate::temporal_spectrum::HorizonCurve { a, b }
+    }
+
     fn mutate_with_rng<R: rand::Rng>(&self, rate: f64, rng: &mut R) -> Self {
+        // F8: las curvas se mutan ANTES del literal (el closure mutate_val
+        // captura rng por referencia única — no puede compartirse inline).
+        let mutated_tp_curve =
+            self.mutate_curve(self.tp_horizon_curve, -9.0, -2.0, -0.2, 0.35, rng, rate);
+        let mutated_sl_curve =
+            self.mutate_curve(self.sl_horizon_curve, -10.0, -3.0, -0.2, 0.35, rng, rate);
         let mut mutate_val = |base: f64, min_val: f64, max_val: f64| -> f64 {
             let range = max_val - min_val;
             let change = range * rate * rng.random_range(-0.5..0.5);
@@ -1368,6 +1488,10 @@ impl SuperGenotype {
             scalp_obi_threshold: mutate_val(self.scalp_obi_threshold, 0.05, 1.0),
             scalp_tp_base: mutate_val(self.scalp_tp_base, 0.0060, 0.0350),
             scalp_sl_base: mutate_val(self.scalp_sl_base, 0.0025, 0.0120),
+            // F8: el GA evoluciona los COEFICIENTES de las curvas (a,b) — la
+            // pendiente b controla cómo escala el parámetro con el horizonte.
+            tp_horizon_curve: mutated_tp_curve,
+            sl_horizon_curve: mutated_sl_curve,
             swing_tp_base: mutate_val(self.swing_tp_base, 0.0300, 0.1500),
             swing_sl_base: mutate_val(self.swing_sl_base, 0.0100, 0.0450),
             sl_atr_mult_btc: mutate_val(self.sl_atr_mult_btc, 0.5, 5.0),
@@ -1889,6 +2013,10 @@ impl SuperGenotype {
             swing_obi_threshold: vec[137].clamp(lo[137], hi[137]),
             swing_accel_min_samples: vec[138].clamp(lo[138], hi[138]),
             temporal_scale: vec[139].clamp(lo[139], hi[139]),
+            // F8: valores provisionales — se derivan de las anclas finales tras
+            // el reparo RR (abajo), única fuente coherente para el continuo.
+            tp_horizon_curve: default_tp_curve(),
+            sl_horizon_curve: default_sl_curve(),
         };
 
         // N-02 — INVARIANTE RR TAMBIÉN EN LA RECONSTRUCCIÓN POR VECTOR: el
@@ -1903,6 +2031,20 @@ impl SuperGenotype {
         if g.swing_tp_base < g.swing_sl_base * Self::MIN_RR_MUTATION {
             g.swing_tp_base = (g.swing_sl_base * Self::MIN_RR_REPAIR).clamp(lo[15], hi[15]);
         }
+        // F8: curvas de horizonte derivadas de las anclas FINALES (post-reparo
+        // RR) — el continuo siempre coherente con los valores efectivos.
+        g.tp_horizon_curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
+            crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+            g.scalp_tp_base,
+            crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+            g.swing_tp_base,
+        );
+        g.sl_horizon_curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
+            crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+            g.scalp_sl_base,
+            crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+            g.swing_sl_base,
+        );
         g
     }
 

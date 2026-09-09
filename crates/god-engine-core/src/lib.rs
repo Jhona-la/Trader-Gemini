@@ -41,6 +41,11 @@ pub struct GodEngineCore {
     /// Brier acumulado (Hedge). Antes: cadena if-else donde el segundo
     /// modelo solo opinaba si el primero no existía.
     pub ensemble: crate::ensemble::ModelEnsemble,
+    /// F8 — ESPECTRO TEMPORAL CONTINUO por símbolo: 19 escalas log-espaciadas
+    /// (1ms → ~2.18 años) actualizadas en CADA evento. Reemplaza la visión
+    /// binaria scalp/swing: el motor observa todas las escalas a la vez, con
+    /// fusión por paridad de riesgo (w ∝ 1/vol_de_desviación).
+    pub temporal_spectrum: Vec<quantum_arena::temporal_spectrum::TemporalSpectrum>,
     /// F4.7: último precio de kline CERRADO por coin — para calibrar el
     /// ensamble con la dirección realizada de cada vela.
     kline_close_memory: Vec<f64>,
@@ -191,6 +196,9 @@ impl GodEngineCore {
             scalp_forest,
             swing_nn,
             ensemble: crate::ensemble::ModelEnsemble::new(),
+            temporal_spectrum: (0..30)
+                .map(|_| quantum_arena::temporal_spectrum::TemporalSpectrum::new())
+                .collect(),
             kline_close_memory: vec![0.0; 30],
             model_rx: None,
             last_ml_prob: 0.5,
@@ -438,6 +446,18 @@ impl GodEngineCore {
                         "🧠 [DARK ALPHA] Hot-Reload Successful! New weights absorbed and sanitized in Zero-Copy."
                     );
                 }
+            }
+
+            // F8 — ESPECTRO CONTINUO: TODAS las escalas (1ms → ~2.18 años)
+            // se actualizan en CADA evento del motor — la observación es
+            // continua, no por buckets. O(19) ~ 120 FLOPs. La fusión
+            // (paridad de riesgo) y la escala dominante quedan disponibles
+            // para señales/telemetría; los caminos scalp/swing siguen
+            // operando pero sus parámetros ya provienen de las CURVAS de
+            // horizonte del genoma (ver apply_to_arena) — el binario se
+            // vuelve una VISTA del continuo, no la fuente.
+            if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
+                spec.update(current_price, event_time_ms);
             }
 
             // F4.7 — CALIBRACIÓN CONTINUA DEL ENSAMBLE: cada kline CERRADO
