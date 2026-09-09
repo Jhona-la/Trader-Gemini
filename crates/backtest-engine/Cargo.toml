@@ -8,6 +8,7 @@ god-engine-core = { path = "../god-engine-core" }
 data-pipeline = { path = "../data-pipeline" }
 quantum-arena = { path = "../quantum-arena" }
 signal-engine = { path = "../signal-engine" }
+reqwest = { version = "0.11", features = ["blocking", "json", "rustls-tls"], default-features = false }
 risk-engine = { path = "../risk-engine" }
 execution-engine = { path = "../execution-engine" }
 tokio = { version = "1.37", features = ["full"] }

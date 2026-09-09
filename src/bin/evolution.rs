@@ -1,4 +1,3 @@
-use backtest_engine::run_backtest_native;
 use chrono::{DateTime, Utc};
 use god_engine_core::ml_inference::NanoForest;
 use quantum_arena::genome::SuperGenotype as Genotype;
@@ -154,6 +153,55 @@ fn main() {
     }
 
     let train_len = (len as f64 * 0.7) as usize;
+
+    // ── X-006 (REHAB-2b): preparación ÚNICA del motor honesto ──────────────
+    // Ticks reales → ReplayTick (repr del disco), omni FRED histórico, config.
+    let train_replay: Vec<backtest_engine::booktick_replay::ReplayTick> = ticks[..train_len]
+        .iter()
+        .map(|t| backtest_engine::booktick_replay::ReplayTick {
+            ts_ms: t.timestamp,
+            bid: t.bid_price,
+            ask: t.ask_price,
+            bid_qty: t.bid_qty,
+            ask_qty: t.ask_qty,
+        })
+        .collect();
+    let oos_replay: Vec<backtest_engine::booktick_replay::ReplayTick> = ticks[train_len..]
+        .iter()
+        .map(|t| backtest_engine::booktick_replay::ReplayTick {
+            ts_ms: t.timestamp,
+            bid: t.bid_price,
+            ask: t.ask_price,
+            bid_qty: t.bid_qty,
+            ask_qty: t.ask_qty,
+        })
+        .collect();
+    println!("🌐 [X-006] Cargando historia macro FRED para el replay...");
+    let omni_hist = backtest_engine::booktick_replay::OmniHistory::fetch();
+    match &omni_hist {
+        Some(_) => println!("   ✅ 6 series FRED cargadas — omni REAL por fecha en cada tick."),
+        None => println!("   ⚠️ Sin red: omni NEUTRO documentado (stats.omni_neutral=true)."),
+    }
+    let replay_cfg = backtest_engine::booktick_replay::ReplayConfig {
+        initial_capital,
+        warmup_ticks: 200,
+    };
+    // El LLAMADOR registra specs del símbolo bajo evaluación (la función de
+    // biblioteca no muta globals — lección de la carrera con el golden test).
+    quantum_arena::symbol_registry::update_registry(vec![
+        quantum_arena::symbol_registry::SymbolSpec {
+            symbol: symbol.clone(),
+            step_size: 0.001,
+            tick_size: 0.01,
+            min_qty: 0.001,
+            min_notional: 5.0,
+            max_leverage: 20,
+            maker_fee: 0.0002,
+            taker_fee: 0.0005,
+            is_shadow: false,
+        },
+    ]);
+    // ──────────────────────────────────────────────────────────────────────
     let test_len = len - train_len;
 
     println!(
@@ -243,28 +291,34 @@ fn main() {
         // viven en un mundo sin costos y mueren al primer fill real.
         test_cfg.ev_fee_multiplier = 1.0;
 
-        let mut out_pnl = vec![0.0; train_len];
         let mut out_stats = [0.0; 10];
 
-        // F3.6 — SIN CONTAMINACIÓN OOS: antes se optimizaba sobre `closes`
-        // COMPLETO (train+test) y luego se "validaba" sobre el test — que ya
-        // había sido parte de la selección. Solo la ventana TRAIN se usa aquí.
-        let train_closes = &closes[..train_len];
-        let train_highs = &highs[..train_len];
-        let train_lows = &lows[..train_len];
-        let train_volumes = &volumes[..train_len];
-
-        run_backtest_native(
-            train_closes,
-            train_highs,
-            train_lows,
-            train_volumes,
+        // X-006 (REHAB-2b) — EVALUACIÓN HONESTA: el candidato se puntúa
+        // contra los BOOK-TICKS REALES del disco mediante el MISMO camino de
+        // entrada que producción (GodEngineCore::process_event, doble evento
+        // depth+trade, slippage ATR real, omni FRED histórico) — no contra
+        // micro-ticks sintéticos. El motor sintético queda solo para
+        // exploración rápida de otros bins; el SA QUE PROMUEVE evalúa honesto.
+        // (train_replay/omni_hist/replay_cfg se preparan UNA vez antes del bucle.)
+        let rep = backtest_engine::booktick_replay::run_booktick_replay(
+            &train_replay,
             &test_cfg,
-            &mut out_pnl,
-            &mut out_stats,
-            &symbol,
-            initial_capital,
+            omni_hist.as_ref(),
+            &replay_cfg,
         );
+        let _out_pnl: Vec<f64> = Vec::new();
+        out_stats[0] = rep.wr_net();
+        out_stats[1] = rep.trades as f64;
+        out_stats[2] = rep.final_capital;
+        out_stats[3] = rep.max_dd;
+        out_stats[4] = rep.sharpe;
+        out_stats[5] = rep.gross_pnl;
+        out_stats[6] = rep.net_pnl;
+        out_stats[7] = if rep.trades > 0 {
+            rep.wins_gross as f64 / rep.trades as f64
+        } else {
+            0.0
+        };
 
         let _net_win_rate = out_stats[0];
         let trades = out_stats[1];
@@ -371,19 +425,27 @@ fn main() {
         }
     }
 
-    let mut best_out_pnl = vec![0.0; train_len];
+    let _best_out_pnl = vec![0.0; train_len];
     let mut best_out_stats = [0.0; 10];
-    run_backtest_native(
-        &closes,
-        &highs,
-        &lows,
-        &volumes,
+    // X-006: reporte IS del campeón sobre el MOTOR HONESTO (ticks reales).
+    let best_rep = backtest_engine::booktick_replay::run_booktick_replay(
+        &train_replay,
         &best_config,
-        &mut best_out_pnl,
-        &mut best_out_stats,
-        &symbol,
-        initial_capital,
+        omni_hist.as_ref(),
+        &replay_cfg,
     );
+    best_out_stats[0] = best_rep.wr_net();
+    best_out_stats[1] = best_rep.trades as f64;
+    best_out_stats[2] = best_rep.final_capital;
+    best_out_stats[3] = best_rep.max_dd;
+    best_out_stats[4] = best_rep.sharpe;
+    best_out_stats[5] = best_rep.gross_pnl;
+    best_out_stats[6] = best_rep.net_pnl;
+    best_out_stats[7] = if best_rep.trades > 0 {
+        best_rep.wins_gross as f64 / best_rep.trades as f64
+    } else {
+        0.0
+    };
     let best_is_net_win_rate = best_out_stats[0];
     let best_is_trades = best_out_stats[1];
     let best_is_capital = best_out_stats[2];
@@ -443,26 +505,29 @@ fn main() {
     println!("============================================================");
     println!("🧪 RUNNING OUT-OF-SAMPLE TEST (Walk-Forward Validation)");
 
-    let mut out_pnl_test = vec![0.0; test_len];
+    let _out_pnl_test = vec![0.0; test_len];
     let mut out_stats_test = [0.0; 10];
 
-    // CRITICAL FIX: Use correct OOS slices from each array (closes, highs, lows, volumes)
-    let oos_closes = &closes[train_len..];
-    let oos_highs = &highs[train_len..];
-    let oos_lows = &lows[train_len..];
-    let oos_volumes = &volumes[train_len..];
-
-    run_backtest_native(
-        oos_closes,
-        oos_highs,
-        oos_lows,
-        oos_volumes,
+    // X-006 (REHAB-2b): OOS sobre el MOTOR HONESTO — los ticks reales
+    // posteriores al corte temporal, jamás tocados por la selección.
+    let oos_rep = backtest_engine::booktick_replay::run_booktick_replay(
+        &oos_replay,
         &best_config,
-        &mut out_pnl_test,
-        &mut out_stats_test,
-        &symbol,
-        initial_capital,
+        omni_hist.as_ref(),
+        &replay_cfg,
     );
+    out_stats_test[0] = oos_rep.wr_net();
+    out_stats_test[1] = oos_rep.trades as f64;
+    out_stats_test[2] = oos_rep.final_capital;
+    out_stats_test[3] = oos_rep.max_dd;
+    out_stats_test[4] = oos_rep.sharpe;
+    out_stats_test[5] = oos_rep.gross_pnl;
+    out_stats_test[6] = oos_rep.net_pnl;
+    out_stats_test[7] = if oos_rep.trades > 0 {
+        oos_rep.wins_gross as f64 / oos_rep.trades as f64
+    } else {
+        0.0
+    };
 
     let oos_net_win_rate = out_stats_test[0];
     let oos_trades = out_stats_test[1];

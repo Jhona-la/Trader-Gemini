@@ -1,3 +1,4 @@
+pub mod booktick_replay;
 pub mod network_jitter;
 pub mod tick_replayer;
 pub mod vectorized;
@@ -830,6 +831,12 @@ mod tests {
     /// forense y las evidencias no mutan entre corridas.
     #[test]
     fn golden_backtest_determinism() {
+        // Tests corren en PARALELO en el mismo proceso: el registro global de
+        // símbolos es estado compartido (otros tests — p.ej. booktick_replay —
+        // lo pueblan). El golden PINA su entorno: determinista sin importar el
+        // orden de ejecución de la suite.
+        quantum_arena::symbol_registry::update_registry(Vec::new());
+
         let n = 500;
         let mut closes = Vec::with_capacity(n);
         let mut highs = Vec::with_capacity(n);

@@ -306,6 +306,7 @@ dependencies = [
  "mimalloc",
  "polars",
  "quantum-arena",
+ "reqwest 0.11.27",
  "risk-engine",
  "serde",
  "serde_json",
