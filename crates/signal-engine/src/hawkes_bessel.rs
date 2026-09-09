@@ -83,7 +83,9 @@ impl QuantumStrategy for HawkesBesselEngine {
             return 0.0;
         }
         let intensity = Self::compute_bessel_hawkes_intensity(base_lambda, alpha, dt);
-        direction.signum() * (intensity - 1.0).tanh()
+        // D-346: Modular la intensidad con tanh sin invertir espuriamente el signo del flujo direccional
+        let norm_intensity = (intensity / base_lambda.max(0.1)).max(0.0);
+        direction.signum() * norm_intensity.tanh()
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {

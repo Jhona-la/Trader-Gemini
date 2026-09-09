@@ -81,27 +81,42 @@ impl ExecutionProvider for SimulatedExecutor {
         _step_size: f64,
     ) -> Result<(), String> {
         self.simulate_network_delay().await;
+        // G-02 — INYECTAR MID: el fill probabilístico dependía de last_mids
+        // que nadie escribía → fill_probability() devolvía 0.5 constante.
+        // Ahora cada execute_order actualiza el mid del símbolo.
+        if current_price.is_finite() && current_price > 0.0 {
+            self.last_mids
+                .write()
+                .unwrap()
+                .insert(symbol.to_string(), current_price);
+        }
         let is_long = order.signal == signal_engine::SignalType::Long;
         let side = if is_long { "BUY" } else { "SELL" };
+        let slippage = self.market_slippage(order.volume_usd);
+        let exec_price = if is_long {
+            current_price * (1.0 + slippage)
+        } else {
+            current_price * (1.0 - slippage)
+        };
         if let Ok(mut pos_map) = self.open_positions.write() {
             let entry = pos_map
                 .entry(symbol.to_string())
                 .or_insert_with(|| ActivePosition {
                     symbol: symbol.to_string(),
                     qty: 0.0,
-                    entry_price: current_price,
+                    entry_price: exec_price,
                     is_long,
                 });
-            entry.qty += order.volume_usd / current_price.max(1e-6);
+            entry.qty += order.volume_usd / exec_price.max(1e-6);
             entry.is_long = is_long;
         }
         if let Ok(mut cap) = self.simulated_capital.write() {
-            let fee = order.volume_usd * 0.0004; // 0.04% taker fee
+            let fee = order.volume_usd * 0.0005; // 0.05% VIP0 taker fee
             *cap -= fee;
         }
         println!(
-            "👻 [SHADOW MODE] Executed {} {} @ {} (Network delay: {}ms)",
-            side, symbol, current_price, self.average_latency_ms
+            "👻 [SHADOW MODE] Executed {} {} @ {:.4} (slip: {:.4}%, delay: {}ms)",
+            side, symbol, exec_price, slippage * 100.0, self.average_latency_ms
         );
         Ok(())
     }

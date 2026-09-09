@@ -416,11 +416,11 @@ impl OrderRegistry {
         s
     }
 
-    /// Purga órdenes terminadas más viejas que `older_than_ms` (higiene de memoria).
-    pub fn prune_terminated(&self, older_than_ms: u64) -> usize {
+    /// Purga órdenes terminadas con `updated_ms` estrictamente anterior al timestamp de corte `cutoff_timestamp_ms`.
+    pub fn prune_terminated(&self, cutoff_timestamp_ms: u64) -> usize {
         let mut map = self.orders.write().unwrap_or_else(|p| p.into_inner());
         let before = map.len();
-        map.retain(|_, o| o.status.is_active() || o.updated_ms >= older_than_ms);
+        map.retain(|_, o| o.status.is_active() || o.updated_ms >= cutoff_timestamp_ms);
         before - map.len()
     }
 

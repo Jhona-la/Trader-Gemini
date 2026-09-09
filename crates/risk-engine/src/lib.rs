@@ -564,25 +564,18 @@ impl RiskEngine {
         let roundtrip_fee = (maker_fee + taker_fee) + 2.0 * per_side_slip;
 
         let temp_scale = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
+        let s_eval = match intent.horizon {
+            TradeHorizon::Scalp => 0.0,
+            TradeHorizon::Swing => 1.0,
+            TradeHorizon::Continuous => temp_scale,
+        };
         let scalp_win = arena.config.scalp_tp_base.load(Ordering::Relaxed).max(0.0010).max(atr_pct * 1.5);
         let swing_win = arena.config.swing_tp_base.load(Ordering::Relaxed).max(0.0050).max(atr_pct * 3.0);
-        let expected_win = if is_scalp && intent.horizon == TradeHorizon::Scalp {
-            scalp_win
-        } else if !is_scalp && intent.horizon == TradeHorizon::Swing {
-            swing_win
-        } else {
-            scalp_win * (1.0 - temp_scale) + swing_win * temp_scale
-        };
+        let expected_win = scalp_win * (1.0 - s_eval) + swing_win * s_eval;
 
         let scalp_loss = arena.config.scalp_sl_base.load(Ordering::Relaxed).max(0.0005).max(atr_pct * 0.8);
         let swing_loss = arena.config.swing_sl_base.load(Ordering::Relaxed).max(0.0020).max(atr_pct * 1.5);
-        let expected_loss = if is_scalp && intent.horizon == TradeHorizon::Scalp {
-            scalp_loss
-        } else if !is_scalp && intent.horizon == TradeHorizon::Swing {
-            swing_loss
-        } else {
-            scalp_loss * (1.0 - temp_scale) + swing_loss * temp_scale
-        };
+        let expected_loss = scalp_loss * (1.0 - s_eval) + swing_loss * s_eval;
 
         let confidence = intent.confidence.max(0.51);
         let min_required_confidence = if allocated_capital <= 15.0 {
@@ -758,7 +751,11 @@ impl RiskEngine {
 
         // Inmunidad contra ruido browniano: el stop loss nunca debe descender por debajo de 35 bps
         // en crypto para evitar ser detenido por el micro-spread y oscilaciones top-of-book.
-        let min_safe_sl = if intent.horizon == TradeHorizon::Scalp { 0.0035 } else { 0.0060 };
+        let min_safe_sl = match intent.horizon {
+            TradeHorizon::Scalp => 0.0035,
+            TradeHorizon::Swing => 0.0060,
+            TradeHorizon::Continuous => 0.0035 * (1.0 - temporal_s_eval) + 0.0060 * temporal_s_eval,
+        };
         let sl_pct = (current_atr * sl_mult / current_price).clamp(sl_base.max(min_safe_sl), sl_base * 2.5);
 
         let final_sl = if intent.sl_price_target > 0.0 {

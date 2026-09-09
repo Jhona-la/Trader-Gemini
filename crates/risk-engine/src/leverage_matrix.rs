@@ -24,7 +24,7 @@ impl QuantumLeverageMatrix {
     /// Fórmula: L = T1(kelly) × T2(conviction) × T3(vol_brake) × T4(growth) × T5(hurst)
     pub fn calculate_dynamic_leverage(
         signal: &SignalIntent,
-        is_scalp: bool,
+        _is_scalp: bool,
         current_capital: f64,
         base_capital: f64, // Capital base real (extraído de API)
         tick_volatility: f64,
@@ -126,18 +126,21 @@ impl QuantumLeverageMatrix {
             .load(Ordering::Relaxed);
         let vol_clamp_min = if raw_vol_clamp.is_finite() { raw_vol_clamp.clamp(0.0, 1.0) } else { 0.1 };
 
-        let (final_vol_factor, final_dynamic_kelly) = if is_scalp {
-            // SCALP (Milisegundos/Segundos): Extreme Volatility Dependency
-            // Requires huge predictability to lever up safely.
-            (
-                vol_brake.max(vol_clamp_min),
-                kelly * fraction_multiplier.max(1.0),
-            )
-        } else {
-            // SWING (Horas/Días): Macro Trend Dependency
-            // Volatility is smoothed; max leverage is strictly constrained by base risk.
-            (vol_brake.max(vol_clamp_min + 0.2), dynamic_kelly * 0.7) // Swing has a natural 30% reduction in base leverage capability
+        let temporal_scale = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
+        let s = match signal.horizon {
+            signal_engine::TradeHorizon::Scalp => 0.0,
+            signal_engine::TradeHorizon::Swing => 1.0,
+            signal_engine::TradeHorizon::Continuous => temporal_scale,
         };
+
+        // D-338: Homotopía continua y diferenciable s in [0, 1].
+        // Elimina el salto abrupto del 30% en Kelly y +0.20 en freno de volatilidad.
+        let effective_vol_clamp = vol_clamp_min * (1.0 - s) + (vol_clamp_min + 0.20) * s;
+        let final_vol_factor = vol_brake.max(effective_vol_clamp);
+
+        let scalp_dynamic_kelly = kelly * fraction_multiplier.max(1.0);
+        let swing_dynamic_kelly = dynamic_kelly * 0.70;
+        let final_dynamic_kelly = scalp_dynamic_kelly * (1.0 - s) + swing_dynamic_kelly * s;
 
         // Capital factor: Kelly escala el leverage. Sqrt para suavizar.
         let safe_dyn_kelly = if final_dynamic_kelly.is_finite() && final_dynamic_kelly >= 0.0 { final_dynamic_kelly } else { 0.0 };

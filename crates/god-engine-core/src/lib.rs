@@ -645,20 +645,20 @@ impl GodEngineCore {
                 let mut force_close_trail = false;
 
                 if trail_active {
-                    let (trail_atr_mult, trail_act, trail_step, trail_max) = match pos.horizon.load(Ordering::Relaxed) {
-                        1 => ( // Scalping
+                    let (trail_atr_mult, trail_act, trail_step, trail_max) = match pos.horizon() {
+                        quantum_arena::position::PositionHorizon::Scalping => (
                             self.arena.config.scalp_trail_atr_mult_base.load(Ordering::Relaxed).clamp(0.5, 4.0),
                             self.arena.config.scalp_trail_act_atr.load(Ordering::Relaxed).clamp(0.5, 4.0),
                             self.arena.config.scalp_trail_step_atr.load(Ordering::Relaxed).clamp(0.5, 4.0),
                             self.arena.config.scalp_trail_max_atr.load(Ordering::Relaxed).clamp(0.5, 6.0),
                         ),
-                        2 => ( // Swing
+                        quantum_arena::position::PositionHorizon::Swing => (
                             self.arena.config.swing_trail_atr_mult_base.load(Ordering::Relaxed).clamp(0.5, 4.0),
                             self.arena.config.swing_trail_act_atr.load(Ordering::Relaxed).clamp(0.5, 4.0),
                             self.arena.config.swing_trail_step_atr.load(Ordering::Relaxed).clamp(0.5, 4.0),
                             self.arena.config.swing_trail_max_atr.load(Ordering::Relaxed).clamp(0.5, 6.0),
                         ),
-                        _ => { // Continuous
+                        quantum_arena::position::PositionHorizon::Continuous => {
                             let s = self.arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.05, 0.95);
                             let sc_mult = self.arena.config.scalp_trail_atr_mult_base.load(Ordering::Relaxed).clamp(0.5, 4.0);
                             let sw_mult = self.arena.config.swing_trail_atr_mult_base.load(Ordering::Relaxed).clamp(0.5, 4.0);
@@ -1109,9 +1109,7 @@ impl GodEngineCore {
             set_reg("hawkes_dt", 0.05);
             set_reg("microstructure_noise_variance", (atr_pct * 0.1).max(0.00001));
 
-            let hebbian_mult = self.arena.registry.get("perceptron_hebbian_weight", "GodEngineCore")
-                .map(|p| p.get_value())
-                .unwrap_or(1.0)
+            let hebbian_mult = self.arena.registry.get_scoped_value_or(&sym, "perceptron_hebbian_weight", 1.0)
                 .clamp(0.5, 2.0);
 
             // 34D Macro+Micro Features for NanoForest (Indices 0..24 used by trained trees)
@@ -1462,7 +1460,10 @@ impl GodEngineCore {
                     let swing_tp = self.arena.config.swing_tp_base.load(Ordering::Relaxed);
                     let threshold = (swing_tp * 0.003).max(0.0001) * (1.0 / hurst_exponent.max(0.1));
 
-                    if macd_diff > threshold && swing_nn_pred >= effective_ml_long {
+                    let is_bull_trend = ema_fast > ema_slow;
+                    let is_bear_trend = ema_fast < ema_slow;
+
+                    if macd_diff > threshold && swing_nn_pred >= effective_ml_long && is_bull_trend {
                         let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0).max((swing_nn_pred - 0.5).max(0.0) * 2.0);
                         let confidence = if raw_conf.is_finite() { raw_conf.tanh().clamp(0.55, 0.95) } else { 0.55 };
                         swing_intent = SignalIntent {
@@ -1472,7 +1473,7 @@ impl GodEngineCore {
                             horizon: strategy_core::TradeHorizon::Swing,
                             ..Default::default()
                         };
-                    } else if macd_diff < -threshold && swing_nn_pred <= effective_ml_short {
+                    } else if macd_diff < -threshold && swing_nn_pred <= effective_ml_short && is_bear_trend {
                         let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0).max((0.5 - swing_nn_pred).max(0.0) * 2.0);
                         let confidence = if raw_conf.is_finite() { raw_conf.tanh().clamp(0.55, 0.95) } else { 0.55 };
                         swing_intent = SignalIntent {
@@ -1487,14 +1488,41 @@ impl GodEngineCore {
             }
 
             if swing_intent.signal == SignalType::Flat {
-                if hurst_exponent >= 0.50 && tensor_swing.signal != SignalType::Flat && tensor_swing.net_confidence.abs() > 0.60 {
+                let ema_fast = if self.feature_engines[coin_id].kline_ema_fast > 0.0 {
+                    self.feature_engines[coin_id].kline_ema_fast
+                } else {
+                    self.feature_engines[coin_id].ema_fast
+                };
+                let ema_slow = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
+                    self.feature_engines[coin_id].kline_ema_slow
+                } else {
+                    self.feature_engines[coin_id].ema_slow
+                };
+                let is_bull = ema_fast > ema_slow;
+                let is_bear = ema_fast < ema_slow;
+
+                if hurst_exponent >= 0.50 && tensor_swing.signal == SignalType::Long && is_bull && tensor_swing.net_confidence.abs() > 0.60 {
                     swing_intent = SignalIntent {
                         signal: tensor_swing.signal,
                         confidence: tensor_swing.net_confidence.abs().clamp(0.60, 1.0),
                         horizon: strategy_core::TradeHorizon::Swing,
                         ..Default::default()
                     };
-                } else if hurst_exponent >= 0.50 && tensor_cont.signal != SignalType::Flat && tensor_cont.net_confidence.abs() > 0.65 {
+                } else if hurst_exponent >= 0.50 && tensor_swing.signal == SignalType::Short && is_bear && tensor_swing.net_confidence.abs() > 0.60 {
+                    swing_intent = SignalIntent {
+                        signal: tensor_swing.signal,
+                        confidence: tensor_swing.net_confidence.abs().clamp(0.60, 1.0),
+                        horizon: strategy_core::TradeHorizon::Swing,
+                        ..Default::default()
+                    };
+                } else if hurst_exponent >= 0.50 && tensor_cont.signal == SignalType::Long && is_bull && tensor_cont.net_confidence.abs() > 0.65 {
+                    swing_intent = SignalIntent {
+                        signal: tensor_cont.signal,
+                        confidence: tensor_cont.net_confidence.abs().clamp(0.65, 1.0),
+                        horizon: strategy_core::TradeHorizon::Continuous,
+                        ..Default::default()
+                    };
+                } else if hurst_exponent >= 0.50 && tensor_cont.signal == SignalType::Short && is_bear && tensor_cont.net_confidence.abs() > 0.65 {
                     swing_intent = SignalIntent {
                         signal: tensor_cont.signal,
                         confidence: tensor_cont.net_confidence.abs().clamp(0.65, 1.0),
@@ -1529,7 +1557,7 @@ impl GodEngineCore {
                     unified_intent = SignalIntent {
                         signal: scalp_intent.signal,
                         confidence: scalp_intent.confidence.max(swing_intent.confidence),
-                        horizon: strategy_core::TradeHorizon::Scalp,
+                        horizon: strategy_core::TradeHorizon::Continuous,
                         ..scalp_intent
                     };
                 } else if scalp_intent.confidence >= swing_intent.confidence {

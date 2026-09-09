@@ -115,7 +115,11 @@ impl LiveEvolutionDaemon {
                             let ml_prob = f.payload[0];
                             let net_pnl_pct = f.payload[3];
                             // If we are evaluating a long or short based on the prob:
-                            let is_long = ml_prob > 0.5;
+                            // G-03: leer is_long del payload[1] donde el
+                            // productor lo escribe — antes se derivaba de
+                            // ml_prob>0.5, etiquetando todos los trades de
+                            // prob alta como "long" y sesgando las features.
+                            let is_long = f.payload[1] > 0.5;
                             self.forest.shadow_evaluate(ml_prob as f32, net_pnl_pct as f32, 0.0, is_long);
                             pending_new_obs += 1;
                         }

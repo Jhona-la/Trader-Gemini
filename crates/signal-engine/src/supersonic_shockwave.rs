@@ -79,7 +79,24 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
             return 0.0;
         }
 
-        let mach = Self::compute_mach_number(speed.abs(), sound);
+        let mid_price = registry
+            .get_scoped_parameter(sym_opt, cid_opt, "mid_price", "SupersonicShockwaveEngine")
+            .map(|p| p.get_value())
+            .unwrap_or(0.0);
+
+        // D-349: Homogeneizar dimensionalmente velocidad y velocidad del sonido respecto al precio nominal
+        let speed_norm = if mid_price > 1.0 && speed.abs() > 1.0 {
+            speed / mid_price
+        } else {
+            speed
+        };
+        let sound_norm = if mid_price > 1.0 && sound > 1.0 {
+            sound / mid_price
+        } else {
+            sound
+        };
+
+        let mach = Self::compute_mach_number(speed_norm.abs(), sound_norm);
         let jump = Self::compute_shockwave_jump(mach);
         speed.signum() * jump
     }

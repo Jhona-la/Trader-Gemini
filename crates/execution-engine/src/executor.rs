@@ -182,6 +182,12 @@ pub trait ExecutionProvider: Send + Sync {
         Ok(())
     }
 
+    /// D-371: Cancela únicamente órdenes OCO de la posición específica (LONG/SHORT)
+    async fn cancel_position_oco_orders(&self, symbol: &str, is_long: bool) -> Result<usize, String> {
+        let _ = (symbol, is_long);
+        Ok(0)
+    }
+
     /// F1.2/F1.3: consulta el estado REAL de una orden por su clientOrderId.
     /// Fuente de verdad para: resolver timeouts ambiguos, calcular el remanente
     /// tras un cancel en maker-chase, y reconciliación.
@@ -987,6 +993,11 @@ if true {
     pub async fn cancel_all_symbol_orders(&self, symbol: &str) -> Result<(), String> {
         <Self as ExecutionProvider>::cancel_all_symbol_orders(self, symbol).await
     }
+
+    #[inline(always)]
+    pub async fn cancel_position_oco_orders(&self, symbol: &str, is_long: bool) -> Result<usize, String> {
+        <Self as ExecutionProvider>::cancel_position_oco_orders(self, symbol, is_long).await
+    }
 }
 
 impl ExecutionProvider for OrderExecutor {
@@ -1439,8 +1450,15 @@ impl ExecutionProvider for OrderExecutor {
                 .await;
         }
 
-        // 2. Esperar 50ms (Tolerancia de Latencia Cuántica)
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        // 2. Espera adaptativa de baja latencia con sondeo de order_registry (D-361)
+        for _ in 0..5 {
+            tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+            if let Some(order) = self.order_registry.get(client_order_id) {
+                if !order.status.is_active() {
+                    break;
+                }
+            }
+        }
 
         // 3. Cancelar la orden límite. Si ya se llenó, Binance responde con
         //    error benigno — el fill YA ocurrió y no se puede deshacer.
@@ -2074,6 +2092,24 @@ impl ExecutionProvider for OrderExecutor {
             self.update_limits(limits);
         }
         res.map(|_| ())
+    }
+
+    /// D-371: Cancela quirúrgicamente únicamente las órdenes OCO asociadas a la posición especificada
+    #[inline(always)]
+    async fn cancel_position_oco_orders(&self, symbol: &str, is_long: bool) -> Result<usize, String> {
+        let pos_side = if is_long { "LONG" } else { "SHORT" };
+        let active = self.order_registry.active_for_symbol(symbol);
+        let mut canceled = 0;
+        for o in active {
+            let is_oco_bracket = o.client_order_id.contains("_SL") || o.client_order_id.contains("_TP") || o.client_order_id.contains("oco_");
+            let matches_side = o.position_side == pos_side || o.position_side == "BOTH" || o.position_side.is_empty();
+            if is_oco_bracket && matches_side {
+                if self.cancel_order(symbol, &o.client_order_id).await.is_ok() {
+                    canceled += 1;
+                }
+            }
+        }
+        Ok(canceled)
     }
 
     /// F1.2/F1.3: GET /fapi/v1/order por origClientOrderId — estado REAL de la orden.

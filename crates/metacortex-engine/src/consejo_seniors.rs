@@ -365,9 +365,9 @@ impl SeniorAgent for SeniorAuditorInterno {
         SeniorRole::AuditorInterno
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        // Umbral de drawdown adaptativo alineado con SeniorRiesgo para evitar vetos contradictorios
+        // Umbral de drawdown adaptativo alineado con SeniorRiesgo para evitar vetos contradictorios (D-343)
         let max_dd = match payload.horizon {
-            TradingHorizon::Continuous => 0.90,
+            TradingHorizon::Continuous => 0.95,
             TradingHorizon::Scalping => 0.95,
             TradingHorizon::Swing => 0.85,
         };
@@ -474,6 +474,7 @@ impl ConsejoDeliberacion {
         let mut opinions = Vec::new();
         let mut total_weighted_signal = 0.0;
         let mut active_weights = 0.0;
+        let mut vetoes = Vec::new();
 
         for (idx, agent) in self.agents.iter().enumerate() {
             let mut op = agent.evaluate(payload, safe_wr);
@@ -486,13 +487,7 @@ impl ConsejoDeliberacion {
             }
 
             if op.is_veto {
-                return ConsensusResult {
-                    approved: false,
-                    final_signal: 0.0,
-                    total_consensus_pct: 0.0,
-                    vetoed_by: Some(op.role),
-                    dissenting_log: vec![op],
-                };
+                vetoes.push(op.clone());
             }
 
             if op.signal_direction != 0.0 && op.confidence > 0.0 {
@@ -502,7 +497,7 @@ impl ConsejoDeliberacion {
             opinions.push(op);
         }
 
-        let final_signal = if active_weights > 0.0 {
+        let mut final_signal = if active_weights > 0.0 {
             (total_weighted_signal / active_weights).clamp(-1.0, 1.0)
         } else {
             0.0
@@ -541,7 +536,24 @@ impl ConsejoDeliberacion {
             0.0
         };
 
-        let (approved, consensus_pct) = if long_consensus_pct >= 0.50 && final_signal > 0.0 {
+        // D-342: Quórum Bayesiano ponderado contra Veto Deadlock.
+        // Si hay vetoes:
+        // - Si >= 2 seniors vetan: veto absoluto e irrevocable.
+        // - Si 1 senior veta pero los otros 9 seniors tienen supermayoría (> 80% consenso) y señal fuerte (>= 0.35),
+        //   se aprueba aplicando penalización bayesiana del 25% al final_signal en lugar de un bloqueo irreversible.
+        let mut vetoed_by = None;
+        if !vetoes.is_empty() {
+            let top_consensus = long_consensus_pct.max(short_consensus_pct);
+            if vetoes.len() == 1 && top_consensus >= 0.80 && final_signal.abs() >= 0.35 {
+                final_signal *= 0.75; // Penalización del 25% por disenso de 1 senior
+            } else {
+                vetoed_by = Some(vetoes[0].role);
+            }
+        }
+
+        let (approved, consensus_pct) = if vetoed_by.is_some() {
+            (false, 0.0)
+        } else if long_consensus_pct >= 0.50 && final_signal > 0.0 {
             (true, long_consensus_pct)
         } else if short_consensus_pct >= 0.50 && final_signal < 0.0 {
             (true, short_consensus_pct)
@@ -552,16 +564,25 @@ impl ConsejoDeliberacion {
             (false, long_consensus_pct.max(short_consensus_pct))
         };
 
-        let dissenting_log = opinions
-            .into_iter()
-            .filter(|o| o.signal_direction != 0.0 && final_signal != 0.0 && o.signal_direction.signum() != final_signal.signum())
-            .collect();
+        let dissenting_log = if approved {
+            opinions
+                .into_iter()
+                .filter(|o| o.is_veto || (o.signal_direction != 0.0 && final_signal != 0.0 && o.signal_direction.signum() != final_signal.signum()))
+                .collect()
+        } else if !vetoes.is_empty() {
+            vetoes
+        } else {
+            opinions
+                .into_iter()
+                .filter(|o| o.signal_direction != 0.0 && final_signal != 0.0 && o.signal_direction.signum() != final_signal.signum())
+                .collect()
+        };
 
         ConsensusResult {
             approved,
-            final_signal,
+            final_signal: if approved { final_signal } else { 0.0 },
             total_consensus_pct: consensus_pct,
-            vetoed_by: None,
+            vetoed_by,
             dissenting_log,
         }
     }
@@ -623,24 +644,32 @@ impl SeniorPerformanceTracker {
         if self.history.len() >= self.window_size {
             if let Some((old_signals, old_ret)) = self.history.pop_front() {
                 for i in 0..10 {
-                    if old_signals[i] != 0.0 {
-                        self.total_counts[i] = self.total_counts[i].saturating_sub(1);
-                        let was_correct = (old_signals[i] > 0.0 && old_ret > 0.0) || (old_signals[i] < 0.0 && old_ret < 0.0);
-                        if was_correct {
-                            self.correct_counts[i] = self.correct_counts[i].saturating_sub(1);
-                        }
+                    let old_sig = old_signals[i];
+                    self.total_counts[i] = self.total_counts[i].saturating_sub(1);
+                    let was_correct = if old_sig != 0.0 {
+                        (old_sig > 0.0 && old_ret > 0.0) || (old_sig < 0.0 && old_ret < 0.0)
+                    } else {
+                        old_ret > 0.0
+                    };
+                    if was_correct {
+                        self.correct_counts[i] = self.correct_counts[i].saturating_sub(1);
                     }
                 }
             }
         }
 
         for i in 0..10 {
-            if senior_signals[i] != 0.0 {
-                self.total_counts[i] += 1;
-                let was_correct = (senior_signals[i] > 0.0 && realized_return > 0.0) || (senior_signals[i] < 0.0 && realized_return < 0.0);
-                if was_correct {
-                    self.correct_counts[i] += 1;
-                }
+            let sig = senior_signals[i];
+            self.total_counts[i] += 1;
+            let was_correct = if sig != 0.0 {
+                (sig > 0.0 && realized_return > 0.0) || (sig < 0.0 && realized_return < 0.0)
+            } else {
+                // D-345: Para los 4 seniors de veto/permiso (signal == 0.0), el permiso implícito
+                // es evaluado por el éxito del trade ejecutado: si ganó, el permiso fue acertado.
+                realized_return > 0.0
+            };
+            if was_correct {
+                self.correct_counts[i] += 1;
             }
         }
 

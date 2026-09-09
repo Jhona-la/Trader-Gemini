@@ -176,9 +176,9 @@ impl CmaEsOptimizer {
                 let safe_vel = if vel.is_finite() { vel.clamp(-100000.0, 100000.0) } else { 0.0 };
                 self.velocities[i][d] = safe_vel;
 
-                // Hybridize: Base CMA sample + PSO momentum con clamping de seguridad numérica
-                let hybrid_val = (safe_cma + safe_vel * 0.1).clamp(-1000.0, 1000.0);
-                ind.push(if hybrid_val.is_finite() { hybrid_val } else { 0.0 });
+                // Hybridize: Base CMA sample + PSO momentum con barrera reflectiva [0.0, 1.0] (D-386 / D-387)
+                let hybrid_val = reflective_boundary(safe_cma + safe_vel * 0.1, 0.0, 1.0);
+                ind.push(hybrid_val);
             }
             population.push(ind);
         }
@@ -244,13 +244,14 @@ impl CmaEsOptimizer {
 
         let old_mean = self.mean.clone();
 
-        // 1. Update Mean
+        // 1. Update Mean con proyección de barrera reflectiva (D-387)
         for d in 0..self.dimension {
-            self.mean[d] = 0.0;
+            let mut sum_mean = 0.0;
             for i in 0..self.mu {
                 let pop_idx = fitness_scores[i].0;
-                self.mean[d] += self.weights[i] * population[pop_idx][d];
+                sum_mean += self.weights[i] * population[pop_idx][d];
             }
+            self.mean[d] = reflective_boundary(sum_mean, 0.0, 1.0);
         }
 
         // 2. Update Evolution Paths (Simplified for diagonal/independent variables)

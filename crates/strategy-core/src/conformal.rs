@@ -66,25 +66,30 @@ impl ConformalPredictor {
         let safe_taker = if taker_fee.is_finite() && taker_fee >= 0.0 { taker_fee } else { 0.0005 };
         let _roundtrip_fee = safe_maker + safe_taker;
 
-        if is_scalp {
-            use std::sync::atomic::Ordering;
-            let tp_mult = config.tp_rr_ratio_btc.load(Ordering::Relaxed);
-            let safe_tp_mult = if tp_mult.is_finite() && tp_mult > 0.0 { tp_mult.max(1.0) } else { 1.5 };
-            let sl_mult = config.sl_atr_multiplier.load(Ordering::Relaxed);
-            let safe_sl_mult = if sl_mult.is_finite() && sl_mult > 0.0 { sl_mult.max(0.5) } else { 1.0 };
-            let raw_tp = (base_vol * safe_tp_mult).clamp(0.001, 0.50);
-            let raw_sl = (base_vol * safe_sl_mult).clamp(0.001, 0.50);
-            (raw_tp, raw_sl)
+        use std::sync::atomic::Ordering;
+        let temporal_scale = config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
+        let s = if is_scalp {
+            0.0
         } else {
-            use std::sync::atomic::Ordering;
-            let tp_mult = config.swing_trail_atr_mult_base.load(Ordering::Relaxed);
-            let safe_tp_mult = if tp_mult.is_finite() && tp_mult > 0.0 { tp_mult.max(2.0) } else { 3.0 };
-            let sl_mult = config.sl_atr_multiplier.load(Ordering::Relaxed);
-            let safe_sl_mult = if sl_mult.is_finite() && sl_mult > 0.0 { sl_mult.max(1.0) } else { 1.5 };
-            let raw_tp = (base_vol * safe_tp_mult).clamp(0.001, 0.50);
-            let raw_sl = (base_vol * safe_sl_mult).clamp(0.001, 0.50);
-            (raw_tp, raw_sl)
-        }
+            temporal_scale.max(0.5)
+        };
+
+        let scalp_tp_mult = config.tp_rr_ratio_btc.load(Ordering::Relaxed);
+        let safe_scalp_tp = if scalp_tp_mult.is_finite() && scalp_tp_mult > 0.0 { scalp_tp_mult.max(1.0) } else { 1.5 };
+        let swing_tp_mult = config.swing_trail_atr_mult_base.load(Ordering::Relaxed);
+        let safe_swing_tp = if swing_tp_mult.is_finite() && swing_tp_mult > 0.0 { swing_tp_mult.max(2.0) } else { 3.0 };
+
+        let sl_mult = config.sl_atr_multiplier.load(Ordering::Relaxed);
+        let safe_scalp_sl = if sl_mult.is_finite() && sl_mult > 0.0 { sl_mult.max(0.5) } else { 1.0 };
+        let safe_swing_sl = if sl_mult.is_finite() && sl_mult > 0.0 { sl_mult.max(1.0) } else { 1.5 };
+
+        // D-337: Interpolación continua suave en homotopía s in [0, 1]
+        let eff_tp_mult = safe_scalp_tp * (1.0 - s) + safe_swing_tp * s;
+        let eff_sl_mult = safe_scalp_sl * (1.0 - s) + safe_swing_sl * s;
+
+        let raw_tp = (base_vol * eff_tp_mult).clamp(0.001, 0.50);
+        let raw_sl = (base_vol * eff_sl_mult).clamp(0.001, 0.50);
+        (raw_tp, raw_sl)
     }
 }
 

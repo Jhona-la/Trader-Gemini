@@ -104,15 +104,31 @@ impl QuantumStrategy for SolitonWaveEngine {
             .unwrap_or(0.05)
             .clamp(0.001, 1.0);
 
-        if !amp.is_finite() || !vel.is_finite() || !pos.is_finite() {
-            return 0.0;
-        }
-        if vel.abs() < 1e-6 {
-            return 0.0;
-        }
+        let mid_price = registry
+            .get_scoped_parameter(sym_opt, cid_opt, "mid_price", "SolitonWaveEngine")
+            .map(|p| p.get_value())
+            .unwrap_or(0.0);
+        // D-348: Adimensionalizar velocidad respecto al precio nominal para evitar colapso de sech(x) en BTC/ETH
+        // G-04 — GUARDS NaN RESTAURADOS: la adimensionalización D-348
+        // eliminó los checks de finitud — un NaN en vel/amp/pos propagaba
+        // a la señal. Los guards internos de compute_soliton_amplitude
+        // protegen los parámetros, pero vel.signum() y la división
+        // necesitan protección explícita aquí.
+        let vel = if vel.is_finite() { vel } else { return 0.0 };
+        let amp = if amp.is_finite() { amp } else { return 0.0 };
+        let pos = if pos.is_finite() { pos } else { return 0.0 };
+        let norm_vel = if mid_price > 1.0 && vel.abs() > 1e-6 {
+            (vel / mid_price) * 10.0
+        } else {
+            vel
+        };
 
-        let amp_val = Self::compute_soliton_amplitude(amp, vel, pos, t_time).clamp(0.0, 1.0);
-        vel.signum() * amp_val
+        let amp_val = Self::compute_soliton_amplitude(amp, norm_vel, pos, t_time).clamp(0.0, 1.0);
+        if amp_val.is_finite() {
+            vel.signum() * amp_val
+        } else {
+            0.0
+        }
     }
 }
 
