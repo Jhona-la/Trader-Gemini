@@ -1788,3 +1788,11 @@ El equipo de 10 Roles Senior ejecutó la intervención de raíz sobre los 89 def
 ➡️ **[INFORME_ASEGURAMIENTO_DECIMOTERCERO.md](INFORME_ASEGURAMIENTO_DECIMOTERCERO.md)** — Verificación final: los 8 circuitos FUNCIONAN. Sistema CERTIFICABLE para overnight, LISTO para demo. TOP-5 endurecimientos no-bloqueantes (drift sin acción, MAINNET_ARMED CWD-relativo, RNG débil del fill, fee duplicado, DriftAuditor duplicado).
 
 *Esta adenda se agrega sin modificar el contenido histórico.*
+
+---
+
+## 26. 🆕 CERTIFICADO DE SISTEMA — AUDITORÍA #14 (2026-09-08)
+
+➡️ **[CERTIFICADO_SISTEMA_v1.md](CERTIFICADO_SISTEMA_v1.md)** — Tras 13 auditorías y ~80 fixes: **APTO PARA OVERNIGHT Y DEMO**. Los últimos 6 fixes (H-4..H-9) verificados. Los 8 circuitos funcionando. 78/78 suites de tests. 0 bloqueantes. Trayectoria completa de rehabilitación documentada: de zombie-total (WR 0%, cuenta liquidada, edge fantasma) a sistema completo (física real, EV honesto, riesgo proporcional, motor continuo, autoevolución cerrada, ejecución honesta, fill-model realista, drift detection activo).
+
+*Este certificado se agrega sin modificar el contenido histórico.*
