@@ -1,7 +1,9 @@
 // H-7: forensics disponible en builds de producción (antes: cfg(test)
 // — la auditoría forense de datos solo existía bajo cargo test)
 pub mod tests {
+    #[allow(unused_imports)]
     use std::fs::File;
+    #[allow(unused_imports)]
     use std::io::{BufRead, BufReader};
 
     #[test]

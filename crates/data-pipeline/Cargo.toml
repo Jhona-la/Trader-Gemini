@@ -22,6 +22,7 @@ yahoo_finance_api = "4.1.1"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 socket2 = "0.5"
 hickory-resolver = "0.24.1"
+storage-engine = { path = "../storage-engine" }
 memmap2 = "0.9.11"
 hmac = "0.12"
 sha2 = "0.10"

@@ -600,6 +600,65 @@ impl OrderExecutor {
         Ok((cancelled, closed))
     }
 
+    /// F3.5: GET /fapi/v1/income — la VERDAD contable del exchange (PnL
+    /// realizado, comisiones, funding). Base de los informes pre/post fees:
+    /// sin esto, "cuánto pagamos" es una estimación; con esto, es un hecho.
+    /// `income_types`: filtro opcional (ej. ["COMMISSION","FUNDING_FEE"]).
+    /// `start_ms`: ventana desde; `limit` ≤ 1000 (paginar hacia atrás si hace falta).
+    pub async fn fetch_income(
+        &self,
+        income_types: &[&str],
+        start_ms: u64,
+        limit: u32,
+    ) -> Result<Vec<crate::order_types::IncomeEntry>, String> {
+        if self.is_paper_trading {
+            return Ok(Vec::new());
+        }
+        let timestamp = self.get_synced_timestamp();
+        self.check_rate_limits(timestamp)?;
+
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/income?");
+        let payload_start = buf.as_str().len();
+        if !income_types.is_empty() {
+            let joined = income_types.join("%2C");
+            buf.push_str("incomeType=");
+            buf.push_str(&joined);
+            buf.push_str("&");
+        }
+        buf.push_str("startTime=");
+        buf.push_u64(start_ms);
+        buf.push_str("&limit=");
+        let mut itoa_buf = itoa::Buffer::new();
+        buf.push_str(itoa_buf.format(limit.clamp(1, 1000)));
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
+
+        let mut sig_buf = [0u8; 64];
+        sign_payload_to_buffer(
+            &buf.as_str()[payload_start..],
+            &self.api_secret.load(),
+            &mut sig_buf,
+        );
+        buf.push_str("&signature=");
+        buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
+
+        match self.client.get_payload(buf.as_str()).await {
+            Ok((limits, body)) => {
+                self.update_limits(&limits);
+                serde_json::from_str(&body).map_err(|e| {
+                    format!(
+                        "INCOME_PARSE: {} body={}",
+                        e,
+                        crate::order_types::truncate(&body, 200)
+                    )
+                })
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// F1.7: GET /fapi/v2/positionRisk — posiciones abiertas según el EXCHANGE.
     /// Fuente de verdad para reconciliación al arranque y periódica.
     pub async fn fetch_position_risk(

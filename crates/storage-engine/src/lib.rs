@@ -3,6 +3,7 @@ pub mod history_store;
 pub mod lakehouse;
 pub mod ledger;
 pub mod mmap_bus;
+pub mod raw_zone;
 pub mod temporal_store;
 
 pub use lakehouse::{CompressedTickBatch, LakehouseEvent, LakehouseWarehouse};

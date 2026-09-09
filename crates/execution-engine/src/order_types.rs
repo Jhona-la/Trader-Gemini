@@ -125,6 +125,27 @@ pub struct BinanceApiError {
     pub msg: String,
 }
 
+/// F3.5 — Entrada de /fapi/v1/income: la VERDAD contable del exchange.
+/// incomeType: REALIZED_PNL | COMMISSION | FUNDING_FEE | ...
+/// `income` es un string CON SIGNO (positivo = a favor nuestro).
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct IncomeEntry {
+    #[serde(default)]
+    pub symbol: String,
+    #[serde(rename = "incomeType", default)]
+    pub income_type: String,
+    #[serde(deserialize_with = "string_or_f64", default)]
+    pub income: f64,
+    #[serde(default)]
+    pub asset: String,
+    #[serde(default)]
+    pub time: u64,
+    #[serde(rename = "tranId", default)]
+    pub tran_id: u64,
+    #[serde(rename = "tradeId", default)]
+    pub trade_id: String,
+}
+
 pub fn truncate(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }

@@ -430,7 +430,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let is_buyer_maker = real_obi < 0.0;
                 // D-420: Desacoplamiento estricto de eventos @depth y @trade con paridad WebSocket en vivo
                 // 1) Actualización de L2 Depth & OFI en el order book
-                let _ = engine.process_event(
+                let (_, closed_1) = engine.process_event(
                     tick.coin_id,
                     false,           // is_trade: false en frame de profundidad
                     is_kline_closed, // is_kline_closed
@@ -450,7 +450,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
 
                 // 2) Procesamiento de transacción agresiva y evaluación de estrategias
-                let (new_order, closed_order) = engine.process_event(
+                let (new_order, closed_2) = engine.process_event(
                     tick.coin_id,
                     true,  // is_trade: true para evaluar estrategias y ejecución
                     false, // is_kline_closed: ya consumido
@@ -468,6 +468,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &omni,
                     is_buyer_maker,
                 );
+
+                let closed_order = closed_1.or(closed_2);
 
                 if new_order.is_some() {
                     total_opens += 1;

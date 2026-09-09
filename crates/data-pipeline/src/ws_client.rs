@@ -76,6 +76,33 @@ impl BinanceStreamer {
             best_host, best_latency, self.symbol
         );
 
+        // F2.5 — ZONA RAW (opt-in TG_RAW_ARCHIVE=1): archivo append-only de
+        // ticks validados con checksum por segmento. Fuente de verdad para
+        // re-derivación de features/backtests; sin impacto en hot-path.
+        let mut raw_archive = if std::env::var("TG_RAW_ARCHIVE")
+            .map(|v| v == "1")
+            .unwrap_or(false)
+        {
+            match storage_engine::raw_zone::RawTickArchive::open("data/raw_ticks", &self.symbol) {
+                Ok(a) => {
+                    println!(
+                        "🗄️  [RAW-ZONE] Archivo vivo para {} en data/raw_ticks/",
+                        self.symbol
+                    );
+                    Some(a)
+                }
+                Err(e) => {
+                    println!(
+                        "⚠️ [RAW-ZONE] Archivo NO disponible ({}): continuando sin él",
+                        e
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         // Multiplexing stream: bookTicker + aggTrade + depth10
         let stream_url = format!(
             "wss://{}/stream?streams={}@bookTicker/{}@aggTrade/{}@depth10@100ms",
@@ -329,6 +356,23 @@ impl BinanceStreamer {
                                             }
 
                                             event.coin_id = self.coin_id;
+                                            // F2.5 — ZONA RAW: tick VALIDADO (aduana
+                                            // F2.1 superada) al archivo append-only
+                                            // con checksum. BufWriter 1MB: un syscall
+                                            // cada ~26k ticks; el append es copy de
+                                            // 40 bytes en RAM — sin impacto medible
+                                            // en el hot-path de lectura.
+                                            if let Some(archive) = raw_archive.as_mut() {
+                                                let _ = archive.append(
+                                                    storage_engine::raw_zone::RawTick {
+                                                        ts_ms: event.event_time,
+                                                        bid: event.bid_price,
+                                                        ask: event.ask_price,
+                                                        bid_qty: event.bid_qty,
+                                                        ask_qty: event.ask_qty,
+                                                    },
+                                                );
+                                            }
                                             self.arena.update_market_data(
                                                 self.coin_id,
                                                 event.bid_price,
