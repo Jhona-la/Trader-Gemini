@@ -34,6 +34,9 @@ pub struct ModelEnsemble {
     /// Regularización hacia uniforme (regresión a la media del peso).
     shrink: f64,
     predictions: [Option<f64>; 2],
+    /// X-023: primera opinión de cada modelo dentro del bar — la calificada
+    /// al cierre (lead real sobre el desenlace).
+    bar_open_predictions: [Option<f64>; 2],
 }
 
 impl Default for ModelEnsemble {
@@ -49,14 +52,29 @@ impl ModelEnsemble {
             eta: 0.05,
             shrink: 0.995,
             predictions: [None, None],
+            // X-023: primera opinión de cada modelo DENTRO del bar actual —
+            // la que se califica al cierre (lead real), no la del último tick.
+            bar_open_predictions: [None, None],
         }
     }
 
     /// Registra la predicción de un modelo para el evento actual.
+    /// X-037: guard de degeneración — un modelo saturado (p≥0.9999 o
+    /// ≤0.0001) aporta señal degenerada; se neutraliza a 0.5 (antes este
+    /// guard existía en el camino viejo y se perdió en la migración F4.7).
     #[inline(always)]
     pub fn submit(&mut self, id: ModelId, prob: f64) {
-        let p = prob.clamp(0.0, 1.0);
-        self.predictions[id as usize] = Some(p);
+        let mut p = prob.clamp(0.0, 1.0);
+        if p >= 0.9999 || p <= 0.0001 {
+            p = 0.5; // degenerado ⇒ neutral, no extremo
+        }
+        let slot = id as usize;
+        self.predictions[slot] = Some(p);
+        // X-023: si es la PRIMERA opinión del bar, es la del arranque — la
+        // única con lead real sobre el desenlace del bar.
+        if self.bar_open_predictions[slot].is_none() {
+            self.bar_open_predictions[slot] = Some(p);
+        }
     }
 
     /// Probabilidad combinada de los modelos que opinaron (None si ninguno).
@@ -87,9 +105,13 @@ impl ModelEnsemble {
     }
 
     /// Aprende del resultado REAL (y ∈ {0.0, 1.0} — dirección efectiva).
-    /// Debe llamarse tras conocer el desenlace del evento predicho.
+    /// X-023: califica la opinión del ARRANQUE del bar (bar_open_predictions)
+    /// — la predicción que tenía lead real sobre el desenlace. Antes se
+    /// calificaba la del tick inmediatamente previo al cierre (lead ~0): los
+    /// pesos Hedge aprendían la cantidad equivocada.
     pub fn update_with_outcome(&mut self, y: f64) {
-        for (i, pred) in self.predictions.iter().enumerate() {
+        let graded = self.bar_open_predictions;
+        for (i, pred) in graded.iter().enumerate() {
             if let Some(p) = pred.as_ref() {
                 let p = *p;
                 let brier = (p - y) * (p - y);
@@ -97,8 +119,9 @@ impl ModelEnsemble {
                 self.log_weights[i] = self.log_weights[i] * self.shrink - self.eta * brier;
             }
         }
-        // Reset: las predicciones eran de ESTE evento — no contaminar el siguiente.
+        // Reset: nuevo bar — nueva primera opinión por aprender.
         self.predictions = [None, None];
+        self.bar_open_predictions = [None, None];
     }
 
     /// Pesos normalizados actuales (para telemetría/calibración F6).

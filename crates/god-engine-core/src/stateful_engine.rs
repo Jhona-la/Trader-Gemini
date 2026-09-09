@@ -49,6 +49,8 @@ pub struct StatefulEngine {
     pub kline_volume: f64,
     pub kline_ema_fast: f64,
     pub kline_ema_slow: f64,
+    pub kline_ema_trend: f64,
+    pub kline_ema_macro: f64,
     pub ml_prob_ewma: f64,
     pub ml_prob_var: f64,
     pub last_scalp_exit_tick: u64,
@@ -96,6 +98,8 @@ impl StatefulEngine {
             kline_volume: 0.0,
             kline_ema_fast: 0.0,
             kline_ema_slow: 0.0,
+            kline_ema_trend: 0.0,
+            kline_ema_macro: 0.0,
             ml_prob_ewma: 0.0,
             ml_prob_var: 0.01,
             last_scalp_exit_tick: 0,
@@ -154,6 +158,8 @@ impl StatefulEngine {
         self.kline_volume = 0.0;
         self.kline_ema_fast = 0.0;
         self.kline_ema_slow = 0.0;
+        self.kline_ema_trend = 0.0;
+        self.kline_ema_macro = 0.0;
     }
 
     /// Processes a new tick internally in f64
@@ -259,17 +265,25 @@ impl StatefulEngine {
                     (self.v_t * 0.85 + tr * 0.15).max(price * 0.0010)
                 };
 
-                // Actualizar EMAs de tendencia macro de 1 minuto (EMA 9 y EMA 21)
+                // Actualizar EMAs de tendencia macro de 1 minuto (EMA 9 y EMA 21), tendencia intermedia (EMA 120 ~ 2 horas) y tendencia secular (EMA 720 ~ 12 horas)
                 let alpha_k_fast = 2.0 / (9.0 + 1.0);
                 let alpha_k_slow = 2.0 / (21.0 + 1.0);
+                let alpha_k_trend = 2.0 / (120.0 + 1.0);
+                let alpha_k_macro = 2.0 / (720.0 + 1.0);
                 if self.kline_ema_fast == 0.0 {
                     self.kline_ema_fast = price;
                     self.kline_ema_slow = price;
+                    self.kline_ema_trend = price;
+                    self.kline_ema_macro = price;
                 } else {
                     self.kline_ema_fast =
                         (price - self.kline_ema_fast) * alpha_k_fast + self.kline_ema_fast;
                     self.kline_ema_slow =
                         (price - self.kline_ema_slow) * alpha_k_slow + self.kline_ema_slow;
+                    self.kline_ema_trend =
+                        (price - self.kline_ema_trend) * alpha_k_trend + self.kline_ema_trend;
+                    self.kline_ema_macro =
+                        (price - self.kline_ema_macro) * alpha_k_macro + self.kline_ema_macro;
                 }
 
                 self.kline_start_ms = event_time_ms;
@@ -495,6 +509,63 @@ impl StatefulEngine {
             (self.ema_fast - self.ema_slow) / self.ema_slow
         } else {
             0.0
+        }
+    }
+
+    /// Retorna la pendiente del macro-trend de orden superior (Price vs 2-Hour EMA 120)
+    #[inline(always)]
+    pub fn get_higher_trend(&self) -> f64 {
+        if self.kline_ema_trend > 0.0 {
+            (self.last_price - self.kline_ema_trend) / self.kline_ema_trend
+        } else if self.kline_ema_slow > 0.0 {
+            (self.last_price - self.kline_ema_slow) / self.kline_ema_slow
+        } else {
+            0.0
+        }
+    }
+
+    /// Retorna la pendiente del macro-trend secular (Price vs 12-Hour EMA 720)
+    #[inline(always)]
+    pub fn get_secular_trend(&self) -> f64 {
+        if self.kline_ema_macro > 0.0 {
+            (self.last_price - self.kline_ema_macro) / self.kline_ema_macro
+        } else if self.kline_ema_trend > 0.0 {
+            (self.last_price - self.kline_ema_trend) / self.kline_ema_trend
+        } else {
+            0.0
+        }
+    }
+
+    /// Determina si la estructura de mercado es inequívocamente bajista (Secular Bear o Death Cross de orden superior)
+    #[inline(always)]
+    pub fn is_macro_bear(&self) -> bool {
+        if self.kline_ema_macro > 0.0 && self.kline_ema_trend > 0.0 {
+            self.last_price < self.kline_ema_macro
+                || self.kline_ema_trend < self.kline_ema_macro
+                || (self.last_price < self.kline_ema_trend
+                    && self.kline_ema_slow < self.kline_ema_trend)
+        } else if self.kline_ema_trend > 0.0 && self.kline_ema_slow > 0.0 {
+            self.last_price < self.kline_ema_trend || self.kline_ema_slow < self.kline_ema_trend
+        } else if self.kline_ema_slow > 0.0 {
+            self.last_price < self.kline_ema_slow
+        } else {
+            false
+        }
+    }
+
+    /// Determina si la estructura de mercado es inequívocamente alcista (Golden Cross y Precio sobre EMA 120 y 720)
+    #[inline(always)]
+    pub fn is_macro_bull(&self) -> bool {
+        if self.kline_ema_macro > 0.0 && self.kline_ema_trend > 0.0 {
+            self.last_price > self.kline_ema_macro
+                && self.kline_ema_trend > self.kline_ema_macro
+                && self.last_price > self.kline_ema_trend
+        } else if self.kline_ema_trend > 0.0 && self.kline_ema_slow > 0.0 {
+            self.last_price > self.kline_ema_trend && self.kline_ema_slow > self.kline_ema_trend
+        } else if self.kline_ema_slow > 0.0 {
+            self.last_price > self.kline_ema_slow
+        } else {
+            false
         }
     }
 

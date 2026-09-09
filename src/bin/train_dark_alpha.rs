@@ -169,7 +169,7 @@ fn main() {
     let mut adam2 = AdamState::new(64, 32);
     let mut adam3 = AdamState::new(32, 1);
 
-    let epochs = 30;
+    let epochs = 8;
     let batch_size = 1024;
     let learning_rate = 0.001;
     let beta1 = 0.9;

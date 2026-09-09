@@ -394,7 +394,11 @@ impl RiskEngine {
         // global_max_drawdown era funcionalmente MUERTO (se convertía en cap
         // de margen constante). Ahora es un VETO REAL: si el drawdown desde
         // el pico supera el gen, no se abre nueva posición hasta recuperación.
-        let max_dd = arena.config.global_max_drawdown.load(Ordering::Relaxed);
+        let max_dd = if current_capital <= 15.0 {
+            0.85 // Micro-cuenta ($13 USD): permitir drawdown de hasta 85% para recuperación de crecimiento compuesto
+        } else {
+            arena.config.global_max_drawdown.load(Ordering::Relaxed)
+        };
         if self.peak_capital > 0.0 && max_dd > 0.0 && max_dd < 1.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
             if dd >= max_dd {
@@ -871,25 +875,68 @@ impl RiskEngine {
             }
         };
 
-        // Inmunidad contra ruido browniano: el stop loss se ubica fuera del cono de difusión estocástica
-        // (75 bps en scalp, 150 bps en swing) para evitar liquidación por micro-spread y ruido intra-vela.
-        let min_safe_sl = match intent.horizon {
-            TradeHorizon::Scalp => 0.0075,
-            TradeHorizon::Swing => 0.0150,
-            TradeHorizon::Continuous => 0.0075 * (1.0 - temporal_s_eval) + 0.0150 * temporal_s_eval,
-        };
-        // D-437: Invarianza de Escala y Resiliencia Browniana
-        // El Stop Loss se ubica estrictamente fuera de la envoltura de difusión estocástica intra-vela (>= 2.0 * ATR / price)
-        // evitando que el micro-ruido aleatorio de Bitcoin liquide el 65% de las órdenes sobre los $13 USD.
         let atr_ratio = if current_price > 0.0 {
             current_atr / current_price
         } else {
             0.005
         };
-        let min_diffusive_sl = (atr_ratio * 2.0).max(min_safe_sl);
+
+        // Inmunidad contra ruido browniano calibrada por horizonte real (Scalp vs Swing vs Continuous)
+        let (min_safe_sl, min_safe_tp, min_tp_clamp, max_tp_clamp) = match intent.horizon {
+            TradeHorizon::Scalp => {
+                let sl_b = arena
+                    .config
+                    .scalp_sl_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0020, 0.0060);
+                let tp_b = arena
+                    .config
+                    .scalp_tp_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0080, 0.0200);
+                let rr = arena
+                    .config
+                    .tp_rr_ratio_btc
+                    .load(Ordering::Relaxed)
+                    .clamp(2.0, 10.0);
+                let s = sl_b.max(atr_ratio * 1.5).clamp(0.0040, 0.0070);
+                let t = tp_b.max(s * rr).clamp(0.0090, 0.0220);
+                (s, t, 0.0090, 0.0250)
+            }
+            TradeHorizon::Swing => {
+                let sl_b = arena
+                    .config
+                    .swing_sl_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0050, 0.0150);
+                let tp_b = arena
+                    .config
+                    .swing_tp_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0150, 0.0450);
+                let rr = arena
+                    .config
+                    .tp_rr_ratio_btc
+                    .load(Ordering::Relaxed)
+                    .clamp(2.0, 10.0);
+                let s = sl_b.max(atr_ratio * 1.8).clamp(0.0060, 0.0120);
+                let t = tp_b.max(s * rr).clamp(0.0150, 0.0450);
+                (s, t, 0.0150, 0.0600)
+            }
+            TradeHorizon::Continuous => {
+                let ts = temporal_s_eval;
+                let s = 0.0040 * (1.0 - ts) + 0.0080 * ts;
+                let t = 0.0100 * (1.0 - ts) + 0.0250 * ts;
+                let s_eff = s.max(atr_ratio * 1.5).clamp(0.0040, 0.0090);
+                (s_eff, t, 0.0090, 0.0450)
+            }
+        };
+
+        // D-437: Invarianza de Escala y Resiliencia Browniana
+        let min_diffusive_sl = (atr_ratio * 1.5).max(min_safe_sl);
         let sl_pct = (atr_ratio * sl_mult)
             .max(min_diffusive_sl)
-            .clamp(min_safe_sl, 0.0500);
+            .clamp(min_safe_sl, 0.0180);
 
         let final_sl = if intent.sl_price_target > 0.0 {
             intent.sl_price_target
@@ -906,12 +953,11 @@ impl RiskEngine {
             .load(Ordering::Relaxed)
             .clamp(2.0, 10.0);
         let tp_mult = (sl_mult * rr_ratio).clamp(2.0, 8.0);
-        let min_safe_tp = min_safe_sl * rr_ratio;
         let tp_pct = (sl_pct * rr_ratio)
             .max(atr_ratio * tp_mult)
             .max(tp_base)
             .max(min_safe_tp)
-            .clamp(0.0150, 0.1500);
+            .clamp(min_tp_clamp, max_tp_clamp);
 
         let final_tp = if intent.tp_price_target > 0.0 {
             intent.tp_price_target

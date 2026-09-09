@@ -591,7 +591,7 @@ impl SuperGenotype {
             target_volatility: taker_base * 40.0,
             dynamic_atr_min: 0.000001, // Scaled down to match tick-level ATR ~ 0.000002
             dynamic_obi_threshold: taker_base * 300.0,
-            dynamic_ema_trend: 0.00001, // Scaled down to match tick-level EMA diff ~ 0.000015
+            dynamic_ema_trend: 0.0012, // Calibrado a 12 bps para filtrar micro-ruido de velas 1m
             dynamic_ofi_threshold: taker_base * 200.0,
             capital_split_scalp: 0.5,
             kelly_clamp_min: k_scalp / 10.0,
@@ -752,7 +752,7 @@ impl SuperGenotype {
             target_volatility: rand::rng().random_range(0.005..0.1),
             dynamic_atr_min: rand::rng().random_range(0.0000001..0.0000050),
             dynamic_obi_threshold: rand::rng().random_range(0.05..0.95),
-            dynamic_ema_trend: rand::rng().random_range(0.000001..0.000050),
+            dynamic_ema_trend: rand::rng().random_range(0.0008..0.0035),
             dynamic_ofi_threshold: rand::rng().random_range(0.05..0.95),
             capital_split_scalp: rand::rng().random_range(0.1..1.0),
             kelly_clamp_min: rand::rng().random_range(0.001..0.1),

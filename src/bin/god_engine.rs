@@ -2014,19 +2014,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // X-016/X-044 (REHAB-1): el espectro respira en telemetría —
                 // fusión y τ dominante por símbolo. Primera visibilidad del
                 // continuo en operación (antes: cero consumidores visibles).
-                if let Some(last_sym) = symbols_clone.last() {
-                    let _ = last_sym;
-                }
+                // X-044 (REHAB-5): y los PESOS del ensamble (Hedge/Brier) junto a
+                // él — la calibración viva deja de ser invisible.
                 for (ci, sym) in symbols_clone.iter().enumerate() {
                     if let Some(spec) = engine_real.temporal_spectrum.get(ci) {
+                        let ens_w = engine_real
+                            .ensembles
+                            .get(ci)
+                            .map(|e| e.weights())
+                            .unwrap_or([0.5, 0.5]);
                         if ci < 3 || spec.fused_score.abs() > 0.5 {
                             telemetry_engine::telemetry!(
-                                "🌈 [ESPECTRO] {} fusión {:+.3} τ_dom {}ms pers[{:.2},{:.2}] (escalas 1ms→2.18a)",
+                                "🌈 [ESPECTRO] {} fusión {:+.3} τ_dom {}ms pers[{:.2},{:.2}] ensamble[F:{:.2} NN:{:.2}]",
                                 sym,
                                 spec.fused_score,
                                 format_tau(spec.dominant_tau_ms),
                                 spec.scales[8].persistence,
-                                spec.scales[14].persistence
+                                spec.scales[14].persistence,
+                                ens_w[0],
+                                ens_w[1]
                             );
                         }
                     }

@@ -110,7 +110,9 @@ async fn main() {
                 clean
             } else {
                 m.init_buffers();
-                println!("🧠 DarkAlpha (Swing NN) REAL cargado: models/DarkAlpha_BTCUSDT.json");
+                m.sanitize_denormals();
+                m.freeze(); // T-04: inferencia siempre congelada para paridad 1:1 con producción
+                println!("🧠 DarkAlpha (Swing NN) REAL cargado y congelado: models/DarkAlpha_BTCUSDT.json");
                 m
             }
         }
@@ -363,6 +365,17 @@ async fn main() {
     let mut peak_capital = initial_capital;
     let mut max_drawdown = 0.0f64;
     let mut pnl_series: Vec<f64> = Vec::with_capacity((num_ticks - warmup_ticks) / 100);
+    let mut long_trades = 0u64;
+    let mut long_net_wins = 0u64;
+    let mut long_pnl = 0.0f64;
+    let mut short_trades = 0u64;
+    let mut short_net_wins = 0u64;
+    let mut short_pnl = 0.0f64;
+    let mut reason_tp = 0u64;
+    let mut reason_sl = 0u64;
+    let mut reason_trail = 0u64;
+    let mut reason_zombie = 0u64;
+    let mut reason_toxic = 0u64;
 
     // Precompute ATR for delta-normalization (same logic as backtest-engine/lib.rs)
     let alpha = 2.0 / (14.0 + 1.0);
@@ -509,7 +522,7 @@ async fn main() {
         }
 
         // Count closes and PnL
-        if let Some((_is_long, net_close_pnl, qty)) = closed_ord {
+        if let Some((is_long, net_close_pnl, qty)) = closed_ord {
             total_closes += 1;
             total_trades += 1;
 
@@ -525,6 +538,28 @@ async fn main() {
             }
             if true_net_pnl > 0.0 {
                 total_net_wins += 1;
+            }
+
+            let r_code = arena.coins[0].last_close_reason.load(Ordering::Relaxed);
+            match r_code {
+                1 => reason_tp += 1,
+                2 => reason_sl += 1,
+                3 | 4 => reason_trail += 1,
+                5 => reason_zombie += 1,
+                _ => reason_toxic += 1,
+            }
+            if is_long {
+                long_trades += 1;
+                long_pnl += true_net_pnl;
+                if true_net_pnl > 0.0 {
+                    long_net_wins += 1;
+                }
+            } else {
+                short_trades += 1;
+                short_pnl += true_net_pnl;
+                if true_net_pnl > 0.0 {
+                    short_net_wins += 1;
+                }
             }
         }
 
@@ -659,6 +694,32 @@ async fn main() {
         net_win_rate * 100.0
     );
     println!("  ❌ NET Losses:        {}", total_trades - total_net_wins);
+    println!(
+        "  📈 LONG Trades:       {} | NET Wins: {} ({:.1}%) | Net PnL: ${:.4}",
+        long_trades,
+        long_net_wins,
+        if long_trades > 0 {
+            long_net_wins as f64 / long_trades as f64 * 100.0
+        } else {
+            0.0
+        },
+        long_pnl
+    );
+    println!(
+        "  📉 SHORT Trades:      {} | NET Wins: {} ({:.1}%) | Net PnL: ${:.4}",
+        short_trades,
+        short_net_wins,
+        if short_trades > 0 {
+            short_net_wins as f64 / short_trades as f64 * 100.0
+        } else {
+            0.0
+        },
+        short_pnl
+    );
+    println!(
+        "  🎯 Exit Reasons:      TP: {} | SL: {} | TRAIL: {} | ZOMBIE: {} | TOXIC: {}",
+        reason_tp, reason_sl, reason_trail, reason_zombie, reason_toxic
+    );
     println!("  📉 Max Drawdown:      {:.2}%", max_drawdown * 100.0);
     println!("  📐 Sharpe Ratio:      {:.4}", sharpe);
     println!("  🚀 Continuous Opens:  {}", total_opens);
