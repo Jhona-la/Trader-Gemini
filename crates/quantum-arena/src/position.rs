@@ -26,6 +26,10 @@ pub struct Position {
     pub ml_prediction: AtomicF64,
     pub confidence: AtomicF64,
     pub entry_fee: AtomicF64,
+    /// REHAB-1b: τ DOMINANTE del espectro temporal en el instante de la
+    /// entrada (horizonte continuo VIVO — el atributo real de la posición,
+    /// no una etiqueta binaria). 0 = espectro sin opinión aún.
+    pub entry_tau_ms: AtomicU64,
 }
 
 impl Default for Position {
@@ -47,6 +51,7 @@ impl Default for Position {
             ml_prediction: AtomicF64::new(0.0),
             confidence: AtomicF64::new(0.0),
             entry_fee: AtomicF64::new(0.0),
+            entry_tau_ms: AtomicU64::new(0),
         }
     }
 }

@@ -209,6 +209,21 @@ impl TemporalSpectrum {
         s0 * (1.0 - frac) + s1 * frac
     }
 
+    /// Persistencia interpolada log-linealmente a τ (como signal_at — el
+    /// espectro es función continua en TODAS sus observables).
+    pub fn persistence_at(&self, tau_ms: f64) -> f64 {
+        if tau_ms <= 0.0 {
+            return 0.0;
+        }
+        let ln_tau = tau_ms.ln();
+        let step = 4f64.ln();
+        let idx_f = ln_tau / step;
+        let i0 = idx_f.floor().clamp(0.0, 18.0) as usize;
+        let i1 = (i0 + 1).min(18);
+        let frac = idx_f - i0 as f64;
+        self.scales[i0].persistence * (1.0 - frac) + self.scales[i1].persistence * frac
+    }
+
     /// Snapshot compacto para modelos/telemetría: 19 señales + fusión.
     pub fn signals_vector(&self) -> ([f32; 19], f32) {
         let mut v = [0.0f32; 19];

@@ -552,11 +552,30 @@ impl GodEngineCore {
                         0.0
                     };
                     let btc_hurst = btc_fe.hurst.current();
-                    let new_regime = if btc_trend > 0.015 && btc_hurst > 0.52 {
+                    // X-029 (REHAB-1b): cortes de Hurst desde el GENOMA — los
+                    // genes existían y estaban huérfanos mientras el código
+                    // usaba 0.52/0.42 congelados. Umbrales evolucionables:
+                    // tendencia exige H > hurst_trend_threshold; caos/reversión
+                    // bajo hurst_scalp_threshold (la banda rápida). El 0.5 de
+                    // otras fórmulas es la frontera browniana TEÓRICA — física,
+                    // no arbitrariedad — y se queda.
+                    let h_trend = self
+                        .arena
+                        .config
+                        .hurst_trend_threshold
+                        .load(Ordering::Relaxed)
+                        .clamp(0.50, 0.90);
+                    let h_chaos = self
+                        .arena
+                        .config
+                        .hurst_scalp_threshold
+                        .load(Ordering::Relaxed)
+                        .clamp(0.30, h_trend - 0.02);
+                    let new_regime = if btc_trend > 0.015 && btc_hurst > h_trend {
                         1u8 // BullRun
-                    } else if btc_trend < -0.015 && btc_hurst > 0.52 {
+                    } else if btc_trend < -0.015 && btc_hurst > h_trend {
                         2u8 // Crash
-                    } else if btc_hurst < 0.42 {
+                    } else if btc_hurst < h_chaos {
                         3u8 // Chaotic / Mean Reverting
                     } else {
                         0u8 // Range
@@ -794,12 +813,26 @@ impl GodEngineCore {
                             (sl, tp)
                         }
                         quantum_arena::position::PositionHorizon::Continuous => {
-                            let temporal_s = self
-                                .arena
-                                .config
-                                .temporal_scale
-                                .load(Ordering::Relaxed)
-                                .clamp(0.05, 0.95);
+                            // REHAB-1b: temporal_s derivado de la τ REAL de la
+                            // posición (entry_tau_ms del espectro), no del gen
+                            // adivinado. Las anclas fast/slow son evaluaciones
+                            // de la CURVA (post X-003) ⇒ este lerp en log-τ ES
+                            // evaluar la curva de horizonte en τ. Sin espectro
+                            // aún (τ=0) ⇒ fallback al gen temporal_scale.
+                            let tau_entry = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
+                            let temporal_s = if tau_entry > 0.0 {
+                                let l_fast =
+                                    quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.ln();
+                                let l_slow =
+                                    quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS.ln();
+                                ((tau_entry.ln() - l_fast) / (l_slow - l_fast)).clamp(0.05, 0.95)
+                            } else {
+                                self.arena
+                                    .config
+                                    .temporal_scale
+                                    .load(Ordering::Relaxed)
+                                    .clamp(0.05, 0.95)
+                            };
                             let scalp_sl = self
                                 .arena
                                 .config
@@ -852,16 +885,41 @@ impl GodEngineCore {
                     }
                 };
 
-                // Trailing Stop Continuo
+                // D-464: Arquitectura Integrada de Breakeven & Trailing Ratchet
+                let current_max_pnl = pos.max_pnl_pct.load(Ordering::Relaxed);
+                if pnl_pct > current_max_pnl {
+                    pos.max_pnl_pct.store(pnl_pct, Ordering::Relaxed);
+                }
+                let peak_pnl = pos.max_pnl_pct.load(Ordering::Relaxed);
+
                 let live_fee = self.arena.config.live_maker_fee.load(Ordering::Relaxed)
                     + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
-                // D-461: Trailing stop desasfixiado con ratio de captura asimétrico.
-                // No activar el trailing hasta que la posición alcance al menos el 55% del Take Profit (o mínimo 110 bps),
-                // evitando truncar artificialmente los beneficios a +0.55% cuando el SL arriesga -0.80% a -1.20%.
-                let trail_activation_pnl = (tp * 0.55).clamp(0.0110, 0.0350);
-                let trail_active = pnl_pct >= trail_activation_pnl;
 
-                let mut trail_hit = false;
+                // 1. Escudo Breakeven Progresivo: activa cuando el pico superó 40-60 bps a favor
+                let be_activation = (live_fee * 5.0).clamp(0.0040, 0.0080);
+                if peak_pnl >= be_activation {
+                    let be_buffer = (live_fee * 1.5).clamp(0.0010, 0.0020);
+                    let be_stop = if is_long {
+                        entry * (1.0 + be_buffer)
+                    } else {
+                        entry * (1.0 - be_buffer)
+                    };
+                    let cur_stop = pos.trail_stop.load(Ordering::Relaxed);
+                    if is_long {
+                        if cur_stop == 0.0 || be_stop > cur_stop {
+                            pos.trail_stop.store(be_stop, Ordering::Relaxed);
+                        }
+                    } else {
+                        if cur_stop == 0.0 || be_stop < cur_stop {
+                            pos.trail_stop.store(be_stop, Ordering::Relaxed);
+                        }
+                    }
+                }
+
+                // 2. Trailing Stop Ratchet Dinámico: activa cuando el pico alcanza >= 50% de TP (o mínimo 90 bps)
+                let trail_activation_pnl = (tp * 0.50).clamp(0.0090, 0.0300);
+                let trail_active = peak_pnl >= trail_activation_pnl;
+
                 let mut force_close_trail = false;
 
                 if trail_active {
@@ -981,7 +1039,7 @@ impl GodEngineCore {
                         pseudo_atr,
                         pos.trailing_phase.load(Ordering::Relaxed) as i32,
                         pos.mfe_atr.load(Ordering::Relaxed),
-                        pos.max_pnl_pct.load(Ordering::Relaxed),
+                        peak_pnl,
                         pos.trail_stop.load(Ordering::Relaxed),
                         trail_atr_mult,
                         trail_act,
@@ -1025,24 +1083,37 @@ impl GodEngineCore {
                     pos.trailing_phase
                         .store(trail_res.new_phase as u8, Ordering::Relaxed);
                     pos.mfe_atr.store(trail_res.mfe_atr, Ordering::Relaxed);
-                    pos.max_pnl_pct
-                        .store(trail_res.max_pnl_pct, Ordering::Relaxed);
-
-                    trail_hit = (is_long && mid_price <= final_stop)
-                        || (!is_long && mid_price >= final_stop && final_stop > 0.0);
                     force_close_trail = trail_res.force_close;
                 }
+
+                // 3. Verificación Universal de Stop Ejecutado (Breakeven / Trailing)
+                let active_trail_stop = pos.trail_stop.load(Ordering::Relaxed);
+                let trail_hit = if active_trail_stop > 0.0 {
+                    (is_long && mid_price <= active_trail_stop)
+                        || (!is_long && mid_price >= active_trail_stop)
+                } else {
+                    false
+                };
 
                 let macro_t = self.feature_engines[coin_id].get_macro_trend();
                 // D-455: Inversión de tendencia genuina (60 bps de pendiente EMA) en lugar de ruido browniano de 20 bps
                 let trend_reversed =
                     (is_long && macro_t < -0.0060) || (!is_long && macro_t > 0.0060);
-                let temporal_s = self
-                    .arena
-                    .config
-                    .temporal_scale
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0, 1.0);
+                // REHAB-1b: timeouts/zombie escalados por la τ REAL de la
+                // posición (espectro) — posición larga-horizonte vive más;
+                // fallback al gen si el espectro aún no opinó (τ=0).
+                let tau_exit = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
+                let temporal_s = if tau_exit > 0.0 {
+                    let l_fast = quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.ln();
+                    let l_slow = quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS.ln();
+                    ((tau_exit.ln() - l_fast) / (l_slow - l_fast)).clamp(0.0, 1.0)
+                } else {
+                    self.arena
+                        .config
+                        .temporal_scale
+                        .load(Ordering::Relaxed)
+                        .clamp(0.0, 1.0)
+                };
                 let dynamic_hard_timeout_ms = 43_200_000 + (temporal_s * 43_200_000.0) as u64; // 12h en scalp hasta 24h en swing continuo
                 let dynamic_zombie_debounce_ms = 7_200_000 + (temporal_s * 14_400_000.0) as u64; // 2h a 6h
                 // D-452 & D-459: Erradicación de liquidaciones zombies en consolidación.
@@ -1156,14 +1227,15 @@ impl GodEngineCore {
 
                     if self.diag_close_total < 10 {
                         println!(
-                            "🚪 [CLOSE TRACE] #{} reason={} pnl_pct={:.4}% gross_pnl=${:.4} exit={:.2} entry={:.2} h={:?}",
+                            "🚪 [CLOSE TRACE] #{} reason={} pnl_pct={:.4}% gross_pnl=${:.4} exit={:.2} entry={:.2} h={:?} ts={}",
                             self.diag_close_total,
                             reason,
                             pnl_pct * 100.0,
                             gross_pnl,
                             exit_price,
                             entry,
-                            pos.horizon()
+                            pos.horizon(),
+                            event_time_ms
                         );
                     }
 
@@ -2251,6 +2323,25 @@ impl GodEngineCore {
                 };
             }
 
+            // X-016 plenitud (REHAB-1b): ACONDICIONAMIENTO ESPECTRAL de la
+            // entrada unificada. La persistencia de la escala dominante
+            // (medida: autocorrelación de sorpresas — tendencia +1, reversión
+            // −1, ruido 0) modula la confianza: tendencia confirmada la
+            // preserva (×1), ruido la halva (×0.5), reversión la anula (×0).
+            // Continua, derivada de datos, sin umbrales nuevos; los gates de
+            // confianza DEL GENOMA (min_confidence_*) deciden el corte final.
+            if unified_intent.signal != SignalType::Flat {
+                if let Some(spec) = self.temporal_spectrum.get(coin_id) {
+                    let tau_dom = spec.dominant_tau_ms;
+                    let persist = spec.persistence_at(tau_dom);
+                    // factor: persist=+1 (tendencia) ⇒ ×1.0; 0 (ruido) ⇒ ×0.5;
+                    // −1 (reversión) ⇒ ×0. Continuo y medido — sin umbrales.
+                    let factor = ((1.0 + persist) / 2.0).clamp(0.0, 1.0);
+                    unified_intent.confidence =
+                        (unified_intent.confidence * factor).clamp(0.0, 1.0);
+                }
+            }
+
             let current_cap = self.arena.unified_capital.load(Ordering::Relaxed);
             let _global_leverage = self
                 .arena
@@ -2500,6 +2591,19 @@ impl GodEngineCore {
                                     unified_intent.confidence,
                                     fee_paid,
                                 );
+                                // REHAB-1b: la posición NACE con su τ dominante
+                                // VIVA del espectro — horizonte continuo real,
+                                // no etiqueta. Los cierres (temporal_s lerp)
+                                // podrán leerla directamente.
+                                let tau_entry = self
+                                    .temporal_spectrum
+                                    .get(coin_id)
+                                    .map(|s| s.dominant_tau_ms as u64)
+                                    .unwrap_or(0);
+                                coin.positions
+                                    .position
+                                    .entry_tau_ms
+                                    .store(tau_entry, Ordering::Relaxed);
 
                                 new_order = Some((
                                     is_long,
@@ -2511,7 +2615,7 @@ impl GodEngineCore {
 
                                 if self.diag_opened <= 10 {
                                     println!(
-                                        "🚀 [OPEN TRACE] #{} dir={} h={:?} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sl_target={:.2} tp_target={:.2}",
+                                        "🚀 [OPEN TRACE] #{} dir={} h={:?} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sl_target={:.2} tp_target={:.2} ts={}",
                                         self.diag_opened,
                                         if is_long { "LONG" } else { "SHORT" },
                                         unified_intent.horizon,
@@ -2520,7 +2624,8 @@ impl GodEngineCore {
                                         margin_req,
                                         nominal_size,
                                         order.sl_target,
-                                        order.tp_target
+                                        order.tp_target,
+                                        event_time_ms
                                     );
                                 }
                             }
