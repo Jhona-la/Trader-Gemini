@@ -122,7 +122,7 @@ impl StatefulEngine {
     /// Normaliza adaptativamente las predicciones ML en O(1) centradas en 0.50 con rango [-1.0, 1.0]
     #[inline(always)]
     pub fn update_ml_prediction(&mut self, ml_prob: f64) -> f64 {
-        if !ml_prob.is_finite() || ml_prob <= 0.0 {
+        if !ml_prob.is_finite() || ml_prob < 0.0 || ml_prob > 1.0 {
             return 0.0;
         }
         ((ml_prob - 0.50) * 2.0).clamp(-1.0, 1.0)

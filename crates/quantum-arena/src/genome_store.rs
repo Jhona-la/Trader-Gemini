@@ -48,6 +48,10 @@ fn env_root() -> String {
     }
 }
 
+pub fn active_json_path() -> String {
+    active_path()
+}
+
 fn active_path() -> String {
     format!("{}/active.json", env_root())
 }

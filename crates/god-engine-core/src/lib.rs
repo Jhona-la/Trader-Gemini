@@ -71,6 +71,9 @@ pub struct GodEngineCore {
     /// todo hot-swap no promovido (cosecha del shadow forest, mutaciones de
     /// exploración) — el bloqueo #2 del genoma bt/prod.
     pub applied_generation: std::sync::atomic::AtomicU64,
+    /// X-019: mtime del último sobre de genomas visto — evita disco+parse
+    /// en el hot loop cuando no hay evolución nueva.
+    genomes_mtime: Option<std::time::SystemTime>,
     /// R4.3 — calibrador conformal real (antes: constante 0.95).
     pub conformal: conformal::ConformalCalibrator,
     /// DIAG R4 (transitorio): cuello post-orden.
@@ -220,6 +223,7 @@ impl GodEngineCore {
             ppo_engine,
             online_learner,
             applied_generation: std::sync::atomic::AtomicU64::new(0),
+            genomes_mtime: None,
             conformal: conformal::ConformalCalibrator::new(),
             diag_council_vetoes: 0,
             diag_opened: 0,
@@ -390,18 +394,32 @@ impl GodEngineCore {
         combined
     }
 
-    /// Actualiza los modelos y genomas cargados en caliente si hubieron reentrenamientos asíncronos o evolución genética
+    /// Actualiza los modelos y genomas cargados en caliente si hubieron reentrenamientos asíncronos o evolución genética.
+    /// X-019 (REHAB-6): cache de mtime — antes CADA llamada (cada 1000 ticks)
+    /// hacía fs::read + parse JSON del sobre en el hilo TIME_CRITICAL; ahora
+    /// un stat() barato y parse solo si el archivo cambió.
     pub fn refresh_models(&mut self) {
         self.scalp_forest = crate::ml_inference::NanoForest::get_global("BTCUSDT_SCALP");
-        if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
-            let last = self.applied_generation.load(Ordering::Relaxed);
-            if env.generation > last {
-                env.genome.apply_to_arena(&self.arena);
-                self.applied_generation
-                    .store(env.generation, Ordering::Relaxed);
+        let mtime_now = std::fs::metadata(quantum_arena::genome_store::active_json_path())
+            .and_then(|m| m.modified())
+            .ok();
+        let changed = match (mtime_now, self.genomes_mtime) {
+            (Some(a), Some(b)) => a != b,
+            (Some(_), None) => true,
+            _ => false,
+        };
+        if changed {
+            self.genomes_mtime = mtime_now;
+            if let Some(env) = quantum_arena::genome_store::GenomeEnvelope::load_active() {
+                let last = self.applied_generation.load(Ordering::Relaxed);
+                if env.generation > last {
+                    env.genome.apply_to_arena(&self.arena);
+                    self.applied_generation
+                        .store(env.generation, Ordering::Relaxed);
+                }
+                // Generación <= ya aplicada: los hot-swaps en vivo permanecen
+                // hasta que el almacén sancione una generación superior.
             }
-            // Generación <= ya aplicada: los hot-swaps en vivo permanecen
-            // hasta que el almacén sancione una generación superior.
         }
     }
 
@@ -895,14 +913,13 @@ impl GodEngineCore {
                 let live_fee = self.arena.config.live_maker_fee.load(Ordering::Relaxed)
                     + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
 
-                // D-465 & D-472: Escudo Breakeven Progresivo Calibrado Antiasfixia.
-                // Activa cuando el trade ha alcanzado al menos 2.0 ATR (mínimo 65 bps en scalp, hasta 160 bps en swing)
-                // O al menos el 35% de su TP objetivo.
-                // En cuanto el trade demuestra que la hipótesis direccional es válida,
-                // el stop se ajusta a Entry + comisiones + buffer (+20 a +35 bps), asegurando beneficio neto positivo post-fees.
-                let be_activation = (tp * 0.35).max(atr_pct_live * 2.0).clamp(0.0065, 0.0180);
+                // D-465, D-472, D-474 & D-475: Escudo Breakeven Progresivo Calibrado Antiasfixia.
+                // Activa cuando el trade ha alcanzado al menos 2.0 ATR o el 55% de su TP objetivo (mínimo 70 bps).
+                // Proporciona un colchón de >= 50 bps sobre el ruido estocástico de velas de 1m, permitiendo correr al TP.
+                // En cuanto el trade demuestra inercia direccional probada, el stop se ajusta a Entry + buffer (+18 a +30 bps).
+                let be_activation = (tp * 0.55).max(atr_pct_live * 2.0).clamp(0.0070, 0.0200);
                 if peak_pnl >= be_activation {
-                    let be_buffer = (live_fee * 2.5).clamp(0.0020, 0.0035);
+                    let be_buffer = (live_fee * 2.5).clamp(0.0018, 0.0030);
                     let be_stop = if is_long {
                         entry * (1.0 + be_buffer)
                     } else {
@@ -920,9 +937,9 @@ impl GodEngineCore {
                     }
                 }
 
-                // 2. Trailing Stop Ratchet Dinámico: activa cuando el pico alcanza >= 50% de TP (o mínimo 95 bps)
+                // 2. Trailing Stop Ratchet Dinámico: activa cuando el pico alcanza >= 75% de TP (o mínimo 90 bps)
                 let trail_activation_pnl =
-                    (tp * 0.50).max(be_activation * 1.30).clamp(0.0095, 0.0280);
+                    (tp * 0.75).max(be_activation * 1.25).clamp(0.0090, 0.0280);
                 let trail_active = peak_pnl >= trail_activation_pnl;
 
                 let mut force_close_trail = false;
@@ -1100,13 +1117,6 @@ impl GodEngineCore {
                     false
                 };
 
-                let macro_t = self.feature_engines[coin_id].get_macro_trend();
-                // D-455: Inversión de tendencia genuina (60 bps de pendiente EMA) en lugar de ruido browniano de 20 bps
-                let trend_reversed =
-                    (is_long && macro_t < -0.0060) || (!is_long && macro_t > 0.0060);
-                // REHAB-1b: timeouts/zombie escalados por la τ REAL de la
-                // posición (espectro) — posición larga-horizonte vive más;
-                // fallback al gen si el espectro aún no opinó (τ=0).
                 let tau_exit = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
                 let temporal_s = if tau_exit > 0.0 {
                     let l_fast = quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS.ln();
@@ -1119,6 +1129,12 @@ impl GodEngineCore {
                         .load(Ordering::Relaxed)
                         .clamp(0.0, 1.0)
                 };
+
+                let macro_t = self.feature_engines[coin_id].get_macro_trend();
+                // D-455: Inversión de tendencia genuina (45 bps de pendiente EMA) en lugar de ruido browniano
+                let trend_reversed =
+                    (is_long && macro_t < -0.0045) || (!is_long && macro_t > 0.0045);
+
                 let dynamic_hard_timeout_ms = 43_200_000 + (temporal_s * 43_200_000.0) as u64; // 12h en scalp hasta 24h en swing continuo
                 let dynamic_zombie_debounce_ms = 14_400_000 + (temporal_s * 14_400_000.0) as u64; // 4h a 8h
                 // D-452 & D-459: Erradicación de liquidaciones zombies en consolidación.
@@ -1126,7 +1142,7 @@ impl GodEngineCore {
                 let hard_timeout = position_age_ms > dynamic_hard_timeout_ms && pnl_pct <= -0.0050;
                 let is_zombie = event_time_ms > 0
                     && position_age_ms > dynamic_zombie_debounce_ms
-                    && ((trend_reversed && pnl_pct <= -0.0080) || hard_timeout);
+                    && ((trend_reversed && pnl_pct <= -0.0060) || hard_timeout);
                 let cur_vpin = self.feature_engines[coin_id].cvpin.current_vpin();
                 let ofi_adverse = (is_long && ofi_value < -0.45) || (!is_long && ofi_value > 0.45);
                 let toxic_flow_exit = ofi_adverse && cur_vpin > 0.70 && pnl_pct < -0.0005;
@@ -1859,8 +1875,18 @@ impl GodEngineCore {
                 } else {
                     0.0
                 };
-                let not_overextended_long = price_stretch <= 0.65;
-                let not_overextended_short = price_stretch >= -0.65;
+                // D-472, D-474 & D-478: Disciplina Antiextensión y Cero Persecución (No Chasing Law)
+                // Prohibido vender por debajo de la media (price_stretch < 0.0) o comprar por encima (price_stretch > 0.0).
+                // En tendencia, entrar exclusivamente en o por encima de la EMA slow para cortos (y en o por debajo para largos).
+                let (min_stretch_short, max_stretch_long) = if is_mean_reverting {
+                    (0.05, -0.05)
+                } else {
+                    (0.00, 0.00)
+                };
+                let not_overextended_long =
+                    price_stretch <= max_stretch_long && price_stretch >= -1.50;
+                let not_overextended_short =
+                    price_stretch >= min_stretch_short && price_stretch <= 1.50;
 
                 // D-105: Mapeo de convicción Bayesiana calibrada para Kelly sizing realista
                 let sig_conf = |score: f64| -> f64 {
@@ -1878,8 +1904,11 @@ impl GodEngineCore {
                 // Confluencia de triple escala temporal: Micro (1m ticks), Intermedio (EMA 9 vs 21), y Macro Superior (2-Hour EMA 120).
                 if is_confirmed_downtrend {
                     // RÉGIMEN BAJISTA CONFIRMADO (MULTISCALE DOWNTREND)
-                    // 1. Tendencial Short: Flujo institucional y ML apuntan a la baja con margen de movimiento
-                    if composite_score < -dynamic_tech_thr && not_overextended_short {
+                    // 1. Tendencial Short: Flujo institucional, confluencia L2 y ML apuntan a la baja
+                    if composite_score < -dynamic_tech_thr
+                        && not_overextended_short
+                        && current_obi < -0.10
+                    {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score),
@@ -1887,10 +1916,10 @@ impl GodEngineCore {
                             ..Default::default()
                         };
                     // 2. Pullback Short: Rebote hacia ema_slow vendido con confluencia estricta de flujo L2 Y composite score
-                    } else if price_stretch >= 0.10
+                    } else if price_stretch >= 0.15
                         && price_stretch <= 1.20
-                        && current_obi < -0.10
-                        && composite_score < -0.05
+                        && current_obi < -0.18
+                        && composite_score < -0.12
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
@@ -1912,8 +1941,11 @@ impl GodEngineCore {
                     }
                 } else if is_confirmed_uptrend {
                     // RÉGIMEN ALCISTA CONFIRMADO (MULTISCALE UPTREND)
-                    // 1. Tendencial Long: Flujo institucional y ML apuntan al alza con margen de movimiento
-                    if composite_score > dynamic_tech_thr && not_overextended_long {
+                    // 1. Tendencial Long: Flujo institucional, confluencia L2 y ML apuntan al alza
+                    if composite_score > dynamic_tech_thr
+                        && not_overextended_long
+                        && current_obi > 0.10
+                    {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
@@ -1921,10 +1953,10 @@ impl GodEngineCore {
                             ..Default::default()
                         };
                     // 2. Dip Long: Corrección hacia ema_slow comprada con confluencia estricta de flujo L2 Y composite score
-                    } else if price_stretch <= -0.10
+                    } else if price_stretch <= -0.15
                         && price_stretch >= -1.20
-                        && current_obi > 0.10
-                        && composite_score > 0.05
+                        && current_obi > 0.18
+                        && composite_score > 0.12
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
@@ -2043,6 +2075,22 @@ impl GodEngineCore {
                 if scalp_intent.signal == SignalType::Long && composite_score < 0.0 {
                     scalp_intent = SignalIntent::flat();
                 } else if scalp_intent.signal == SignalType::Short && composite_score > 0.0 {
+                    scalp_intent = SignalIntent::flat();
+                }
+
+                // D-473 & D-477: Escudo Invariante Neuronal DarkAlpha Calibrado (ML Directional Filter)
+                // Prohibir compras Long si la red neuronal tiene convicción bajista (ml_prob < 0.495),
+                // y ventas Short si la red neuronal tiene convicción alcista (ml_prob > 0.505),
+                // salvo capitulación/euforia estadística extrema (price_stretch < -2.5 o > 2.5).
+                if scalp_intent.signal == SignalType::Long
+                    && ml_prob < 0.495
+                    && price_stretch >= -2.5
+                {
+                    scalp_intent = SignalIntent::flat();
+                } else if scalp_intent.signal == SignalType::Short
+                    && ml_prob > 0.505
+                    && price_stretch <= 2.5
+                {
                     scalp_intent = SignalIntent::flat();
                 }
 
@@ -2174,15 +2222,15 @@ impl GodEngineCore {
             } else {
                 0.0
             };
-            let is_trend_candidate =
-                hurst_exponent >= trend_threshold || ma_trend_strength > 0.0015;
+            let is_trend_candidate = hurst_exponent >= 0.48
+                && (hurst_exponent >= trend_threshold || ma_trend_strength > 0.0020);
 
             if is_trend_candidate {
                 if ema_slow > 0.0 {
                     let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                     let price_stretch = (mid_price - ema_slow) / cur_atr;
-                    let not_chasing_swing_long = price_stretch <= 0.75;
-                    let not_chasing_swing_short = price_stretch >= -0.75;
+                    let not_chasing_swing_long = price_stretch <= 0.20 && price_stretch >= -1.50;
+                    let not_chasing_swing_short = price_stretch >= -0.20 && price_stretch <= 1.50;
 
                     let macd_diff = (ema_fast - ema_slow) / ema_slow;
                     let swing_tp = self.arena.config.swing_tp_base.load(Ordering::Relaxed);
@@ -2254,8 +2302,8 @@ impl GodEngineCore {
                 } else {
                     0.0
                 };
-                let not_chasing_long = price_stretch <= 1.0;
-                let not_chasing_short = price_stretch >= -1.0;
+                let not_chasing_long = price_stretch <= 0.20 && price_stretch >= -1.50;
+                let not_chasing_short = price_stretch >= -0.20 && price_stretch <= 1.50;
 
                 // D-458 & D-462: Desbloquear consenso continuo evitando la persecución tardía (anti-chase guard)
                 if tensor_swing.signal == SignalType::Long
@@ -2386,9 +2434,20 @@ impl GodEngineCore {
                 };
             }
 
-            // D-467: Escudo Invariante Macro (Anti-Countertrend Shield).
+            // D-474: Invariante Fractal Universal de Horizonte (Persistencia Browniana Hurst)
+            // Si el régimen es anti-persistente (Hurst < 0.48), las operaciones de Swing multi-hora
+            // con stops anchos de 140 bps quedan estrictamente mapeadas a Scalping táctico (stops 50 bps, TP 80-120 bps).
+            // En régimen trending (Hurst >= 0.52), conservan su horizonte Swing para correr la tendencia completa.
+            if hurst_exponent < 0.48 && unified_intent.horizon == strategy_core::TradeHorizon::Swing
+            {
+                unified_intent.horizon = strategy_core::TradeHorizon::Scalp;
+            }
+
+            // D-467 & D-472: Escudo Invariante Macro (Anti-Countertrend Shield con Estructura Secular 12h).
             // Erradica operaciones a contratendencia del régimen mayor (e.g. comprar Longs en un mercado bajista secular)
-            if is_confirmed_downtrend && unified_intent.signal == SignalType::Long {
+            if (is_confirmed_downtrend || secular_trend < -0.0003)
+                && unified_intent.signal == SignalType::Long
+            {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
@@ -2412,7 +2471,9 @@ impl GodEngineCore {
                 if !extreme_capitulation {
                     unified_intent = SignalIntent::flat();
                 }
-            } else if is_confirmed_uptrend && unified_intent.signal == SignalType::Short {
+            } else if (is_confirmed_uptrend || secular_trend > 0.0003)
+                && unified_intent.signal == SignalType::Short
+            {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
@@ -2528,6 +2589,83 @@ impl GodEngineCore {
                     if whiplash_veto {
                         unified_intent = SignalIntent::flat();
                     }
+                }
+            }
+
+            // D-472: Invariante Bayesiano Absoluto Universal (Cross-Horizon)
+            // Ninguna orden unificada puede entrar si contradice la convicción Bayesiana (composite_score)
+            if unified_intent.signal == SignalType::Long && composite_score < 0.0 {
+                unified_intent = SignalIntent::flat();
+            } else if unified_intent.signal == SignalType::Short && composite_score > 0.0 {
+                unified_intent = SignalIntent::flat();
+            }
+
+            // D-475: Escudo Invariante de Microestructura L2 Universal (Cross-Horizon OBI Veto)
+            // Prohibido abrir Long si el libro L2 muestra presión vendedora pasiva (current_obi < -0.10)
+            // y prohibido abrir Short si el libro muestra soporte comprador pasivo (current_obi > 0.10),
+            // salvo capitulación/euforia estadística extrema (|Z| > 2.5).
+            if unified_intent.signal == SignalType::Long && current_obi < -0.10 {
+                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
+                    self.feature_engines[coin_id].kline_ema_slow
+                } else {
+                    self.feature_engines[coin_id].ema_slow
+                };
+                let p_stretch = if ema_ref > 0.0 {
+                    (mid_price - ema_ref) / cur_atr
+                } else {
+                    0.0
+                };
+                if p_stretch >= -2.5 {
+                    unified_intent = SignalIntent::flat();
+                }
+            } else if unified_intent.signal == SignalType::Short && current_obi > 0.10 {
+                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
+                    self.feature_engines[coin_id].kline_ema_slow
+                } else {
+                    self.feature_engines[coin_id].ema_slow
+                };
+                let p_stretch = if ema_ref > 0.0 {
+                    (mid_price - ema_ref) / cur_atr
+                } else {
+                    0.0
+                };
+                if p_stretch <= 2.5 {
+                    unified_intent = SignalIntent::flat();
+                }
+            }
+
+            // D-473 & D-477: Escudo Invariante Neuronal DarkAlpha Universal (Cross-Horizon ML Filter)
+            if unified_intent.signal == SignalType::Long && ml_prob < 0.495 {
+                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
+                    self.feature_engines[coin_id].kline_ema_slow
+                } else {
+                    self.feature_engines[coin_id].ema_slow
+                };
+                let p_stretch = if ema_ref > 0.0 {
+                    (mid_price - ema_ref) / cur_atr
+                } else {
+                    0.0
+                };
+                if p_stretch >= -2.5 {
+                    unified_intent = SignalIntent::flat();
+                }
+            } else if unified_intent.signal == SignalType::Short && ml_prob > 0.505 {
+                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
+                    self.feature_engines[coin_id].kline_ema_slow
+                } else {
+                    self.feature_engines[coin_id].ema_slow
+                };
+                let p_stretch = if ema_ref > 0.0 {
+                    (mid_price - ema_ref) / cur_atr
+                } else {
+                    0.0
+                };
+                if p_stretch <= 2.5 {
+                    unified_intent = SignalIntent::flat();
                 }
             }
 

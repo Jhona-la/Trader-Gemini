@@ -882,61 +882,57 @@ impl RiskEngine {
         };
 
         // Inmunidad contra ruido browniano calibrada por horizonte real (Scalp vs Swing vs Continuous)
-        let (min_safe_sl, min_safe_tp, min_tp_clamp, max_tp_clamp) = match intent.horizon {
-            TradeHorizon::Scalp => {
-                let sl_b = arena
-                    .config
-                    .scalp_sl_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0020, 0.0060);
-                let tp_b = arena
-                    .config
-                    .scalp_tp_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0080, 0.0200);
-                let rr = arena
-                    .config
-                    .tp_rr_ratio_btc
-                    .load(Ordering::Relaxed)
-                    .clamp(2.0, 10.0);
-                let s = sl_b.max(atr_ratio * 1.5).clamp(0.0040, 0.0070);
-                let t = tp_b.max(s * rr).clamp(0.0090, 0.0220);
-                (s, t, 0.0090, 0.0250)
-            }
-            TradeHorizon::Swing => {
-                let sl_b = arena
-                    .config
-                    .swing_sl_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0050, 0.0150);
-                let tp_b = arena
-                    .config
-                    .swing_tp_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0150, 0.0450);
-                let rr = arena
-                    .config
-                    .tp_rr_ratio_btc
-                    .load(Ordering::Relaxed)
-                    .clamp(2.0, 10.0);
-                let s = sl_b.max(atr_ratio * 1.8).clamp(0.0060, 0.0120);
-                let t = tp_b.max(s * rr).clamp(0.0150, 0.0450);
-                (s, t, 0.0150, 0.0600)
-            }
-            TradeHorizon::Continuous => {
-                let ts = temporal_s_eval;
-                let s = 0.0040 * (1.0 - ts) + 0.0080 * ts;
-                let t = 0.0100 * (1.0 - ts) + 0.0250 * ts;
-                let s_eff = s.max(atr_ratio * 1.5).clamp(0.0040, 0.0090);
-                (s_eff, t, 0.0090, 0.0450)
-            }
-        };
+        let (min_safe_sl, max_safe_sl, min_safe_tp, min_tp_clamp, max_tp_clamp) =
+            match intent.horizon {
+                TradeHorizon::Scalp => {
+                    let sl_b = arena
+                        .config
+                        .scalp_sl_base
+                        .load(Ordering::Relaxed)
+                        .clamp(0.0030, 0.0065);
+                    let _rr = arena
+                        .config
+                        .tp_rr_ratio_btc
+                        .load(Ordering::Relaxed)
+                        .clamp(2.0, 10.0);
+                    let s = sl_b.max(atr_ratio * 1.5).clamp(0.0045, 0.0065);
+                    let t = (s * 2.0).clamp(0.0100, 0.0160);
+                    (s, 0.0068, t, 0.0100, 0.0160)
+                }
+                TradeHorizon::Swing => {
+                    let sl_b = arena
+                        .config
+                        .swing_sl_base
+                        .load(Ordering::Relaxed)
+                        .clamp(0.0050, 0.0150);
+                    let tp_b = arena
+                        .config
+                        .swing_tp_base
+                        .load(Ordering::Relaxed)
+                        .clamp(0.0150, 0.0450);
+                    let rr = arena
+                        .config
+                        .tp_rr_ratio_btc
+                        .load(Ordering::Relaxed)
+                        .clamp(2.0, 10.0);
+                    let s = sl_b.max(atr_ratio * 1.8).clamp(0.0060, 0.0120);
+                    let t = tp_b.max(s * rr).clamp(0.0150, 0.0450);
+                    (s, 0.0180, t, 0.0150, 0.0600)
+                }
+                TradeHorizon::Continuous => {
+                    let ts = temporal_s_eval;
+                    let s = 0.0040 * (1.0 - ts) + 0.0080 * ts;
+                    let t = 0.0100 * (1.0 - ts) + 0.0250 * ts;
+                    let s_eff = s.max(atr_ratio * 1.5).clamp(0.0040, 0.0090);
+                    (s_eff, 0.0120, t, 0.0090, 0.0450)
+                }
+            };
 
-        // D-437: Invarianza de Escala y Resiliencia Browniana
+        // D-437 & D-474: Invarianza de Escala y Techo de Riesgo Asimétrico por Horizonte
         let min_diffusive_sl = (atr_ratio * 1.5).max(min_safe_sl);
         let sl_pct = (atr_ratio * sl_mult)
             .max(min_diffusive_sl)
-            .clamp(min_safe_sl, 0.0180);
+            .clamp(min_safe_sl, max_safe_sl);
 
         let final_sl = if intent.sl_price_target > 0.0 {
             intent.sl_price_target
@@ -953,11 +949,18 @@ impl RiskEngine {
             .load(Ordering::Relaxed)
             .clamp(2.0, 10.0);
         let tp_mult = (sl_mult * rr_ratio).clamp(2.0, 8.0);
-        let tp_pct = (sl_pct * rr_ratio)
-            .max(atr_ratio * tp_mult)
-            .max(tp_base)
-            .max(min_safe_tp)
-            .clamp(min_tp_clamp, max_tp_clamp);
+        let tp_pct = match intent.horizon {
+            TradeHorizon::Scalp => {
+                // Scalp: objetivo táctico directo (100-160 bps) con RR >= 2.0:1 estricto sobre SL
+                // para captura Maker ágil con fee rebate y asimetría matemática positiva sobre ruido browniano.
+                (sl_pct * 2.0).clamp(min_tp_clamp, max_tp_clamp)
+            }
+            TradeHorizon::Swing | TradeHorizon::Continuous => (sl_pct * rr_ratio)
+                .max(atr_ratio * tp_mult)
+                .max(tp_base)
+                .max(min_safe_tp)
+                .clamp(min_tp_clamp, max_tp_clamp),
+        };
 
         let final_tp = if intent.tp_price_target > 0.0 {
             intent.tp_price_target

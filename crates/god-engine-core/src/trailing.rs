@@ -192,15 +192,17 @@ pub fn evaluate_quantum_trailing_with_fee(
             current_price + (dist_atr * current_atr)
         };
 
-        // Escudo Cuántico (Breakeven Lock adaptativo para Scalp y Swing - D-472)
+        // Escudo Cuántico (Breakeven Lock adaptativo para Scalp y Swing - D-472 & D-474)
+        // El breakeven debe garantizar beneficio NETO post-fees (+20 a +35 bps) para erradicar pérdidas por fricción.
         let effective_fee = fee_rate.max(0.0004);
         let be_trigger = (effective_fee * 8.0).clamp(0.0065, 0.0180);
+        let be_buffer = (effective_fee * 3.5).clamp(0.0020, 0.0035);
         let profit_lock_trigger = (effective_fee * 15.0).clamp(0.0100, 0.0250);
         let profit_lock_gain = (effective_fee * 8.0).clamp(0.0050, 0.0120);
 
         if max_pnl_pct >= be_trigger {
             if pos_side == 1 {
-                let breakeven_price = entry_price * (1.0 + effective_fee);
+                let breakeven_price = entry_price * (1.0 + be_buffer);
                 if t1_stop < breakeven_price {
                     t1_stop = breakeven_price;
                 }
@@ -211,7 +213,7 @@ pub fn evaluate_quantum_trailing_with_fee(
                     }
                 }
             } else {
-                let breakeven_price = entry_price * (1.0 - effective_fee);
+                let breakeven_price = entry_price * (1.0 - be_buffer);
                 if (t1_stop == 0.0 || t1_stop > breakeven_price) && breakeven_price > current_price
                 {
                     t1_stop = breakeven_price;
@@ -250,9 +252,9 @@ pub fn evaluate_quantum_trailing_with_fee(
         prop_count += 1;
     }
 
-    // T5: Volatility Contraction (activado en fases avanzadas para no neutralizar trail_f1 en Fase 1)
-    if current_phase >= 2 {
-        let dist_vol = 1.5 * current_atr;
+    // T5: Volatility Contraction (activado en Fase 3+ de aceleración terminal para no asfixiar el runner)
+    if current_phase >= 3 {
+        let dist_vol = (2.2 * current_atr).max(current_price * 0.0035);
         let t5_stop = if pos_side == 1 {
             current_price - dist_vol
         } else {

@@ -284,10 +284,14 @@ impl SystemDiagnostics {
         Ok((0, syms))
     }
 
+    /// X-017 (REHAB-6): OHLCV COMPLETO por kline — antes solo closes con
+    /// banda sintética ±0.05% y volumen fijo 10: v_t (volatilidad de rango)
+    /// quedaba clavado en ~0.1% y el ATR vivo des-calibraba los stops por
+    /// horas (get_atr_pct alimenta el sizing en vivo).
     pub async fn execute_phase_3_warmup(
         _is_demo: bool,
         symbols: &[String],
-    ) -> std::collections::HashMap<String, Vec<f64>> {
+    ) -> std::collections::HashMap<String, Vec<[f64; 5]>> {
         let mut map = std::collections::HashMap::new();
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -309,14 +313,25 @@ impl SystemDiagnostics {
                     if let serde_json::Value::Array(klines) = json {
                         for k in &klines {
                             if let serde_json::Value::Array(kline_arr) = k {
+                                // [openTime, open, high, low, close, volume, ...]
                                 if kline_arr.len() >= 6 {
-                                    let close = kline_arr[4]
-                                        .as_str()
-                                        .unwrap_or("0")
-                                        .parse::<f64>()
-                                        .unwrap_or(0.0);
-                                    if close > 0.0 && close.is_finite() {
-                                        klines_vec.push(close);
+                                    let parse = |idx: usize| {
+                                        kline_arr[idx]
+                                            .as_str()
+                                            .unwrap_or("0")
+                                            .parse::<f64>()
+                                            .unwrap_or(0.0)
+                                    };
+                                    let (o, h, l, c, v) =
+                                        (parse(1), parse(2), parse(3), parse(4), parse(5));
+                                    if c > 0.0
+                                        && c.is_finite()
+                                        && h >= l
+                                        && h >= c
+                                        && l <= c
+                                        && o > 0.0
+                                    {
+                                        klines_vec.push([o, h, l, c, v]);
                                     }
                                 }
                             }
@@ -332,7 +347,7 @@ impl SystemDiagnostics {
 
     pub async fn execute_phase_4_training(
         _symbols: &[String],
-        _historical_klines: &std::collections::HashMap<String, Vec<f64>>,
+        _historical_klines: &std::collections::HashMap<String, Vec<[f64; 5]>>,
         _lr: f64,
         _epochs: usize,
     ) -> Option<()> {

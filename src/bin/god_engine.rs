@@ -721,7 +721,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Axiom XIV: Superposición Cuántica - Mentes Aisladas (Scalp vs Swing)
         let arena_real = Arc::new(quantum_arena::GlobalArena::new(initial_capital));
-        let arena_shadow = Arc::new(quantum_arena::GlobalArena::new(initial_capital));
+        // X-020 (REHAB-6): arena_shadow ELIMINADA — 40+MB VirtualLock muertos. Jamás procesó un tick (todas sus referencias eran init-only) y su canal tx_shadow encolaba modelos NN eternamente. La "mente sombra" real vive en shadow_forest + ShadowForest del online_daemon.
 
         // E-01 — INICIALIZAR BUS DE TELEMETRÍA MMAP: sin esto, el writer
         // global es no-op perpetuo y el daemon lee un archivo que nadie
@@ -732,8 +732,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         arena_real.config.live_maker_fee.store(live_maker, Ordering::Relaxed);
         arena_real.config.live_taker_fee.store(live_taker, Ordering::Relaxed);
-        arena_shadow.config.live_maker_fee.store(live_maker, Ordering::Relaxed);
-        arena_shadow.config.live_taker_fee.store(live_taker, Ordering::Relaxed);
 
         // FASE 38 & 14: Guardian Activo (Memory Panic)
         // F5.3 — FIX AFINIDAD: 0xFFFF asumía 16 cores — en una máquina de 8 el
@@ -756,12 +754,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if os_guardian::memory_compaction::lock_critical_memory_slice(&*arena_real.coins) {
                 telemetry_server::telemetry_log!("🔒 [OS-GUARDIAN] arena_real.coins (TickRings) asegurados en RAM física");
-            }
-            if os_guardian::memory_compaction::lock_critical_memory(&*arena_shadow) {
-                telemetry_server::telemetry_log!("🔒 [OS-GUARDIAN] arena_shadow asegurada en RAM física (Zero Swapping)");
-            }
-            if os_guardian::memory_compaction::lock_critical_memory_slice(&*arena_shadow.coins) {
-                telemetry_server::telemetry_log!("🔒 [OS-GUARDIAN] arena_shadow.coins (TickRings) asegurados en RAM física");
             }
         }
 
@@ -895,14 +887,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
 
         // Reality Physics: Shadow Simulator uses identical dynamic fees extracted from exchange
-        arena_shadow.config.live_maker_fee.store(live_maker, Ordering::Relaxed);
-        arena_shadow.config.live_taker_fee.store(live_taker, Ordering::Relaxed);
-        arena_shadow.server_time_offset_ms.store(ntp_offset_ms, Ordering::Relaxed);
 
         // Phase 17: Apply Genotype Object Directly
         telemetry_server::telemetry_log!("🧬 [GENOMA] Applying Active Genome to Unified Core...");
         initial_genome.apply_to_arena(&arena_real);
-        initial_genome.apply_to_arena(&arena_shadow);
 
         // FASE 5 (ADOPCIÓN DE ESTADO: Recuperar posiciones abiertas tras caída)
         telemetry_server::telemetry_log!("========================================================");
@@ -962,7 +950,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
         let (tx_real, rx_real) = std::sync::mpsc::channel();
-        let (tx_shadow, _rx_shadow) = std::sync::mpsc::channel();
+        // X-020 (REHAB-6): canal tx_shadow ELIMINADO — su receptor jamás se
+        // drenaba: cada re-entrenamiento encolaba una NN completa (54→64→32)
+        // para siempre, leak de heap ilimitado en la máquina de 16GB.
 
         let rt_for_darwin = rt_handle.clone();
 
@@ -980,8 +970,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             last_mtime = mtime;
                             if let Ok(model) = dark_alpha_engine::DarkAlphaEngine::load_json("models/DarkAlpha_BTCUSDT.json") {
                                 telemetry_server::telemetry_log!("🧬 [MODEL WATCHER] Nueva genetica detectada. Desplegando en Zero-Copy...");
-                                let _ = tx_real.send(model.clone());
-                                let _ = tx_shadow.send(model);
+                                let _ = tx_real.send(model);
                             }
                         }
                     }
@@ -1122,14 +1111,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
             if let Some(klines) = historical_klines.get(sym) {
-                for &k in klines.iter() {
-                    if k > 0.0 {
-                        let high = k * 1.0005;
-                        let low = k * 0.9995;
-                        engine_real.feature_engines[_i].process_kline(k, high, low, k, 10.0);
+                // X-017 (REHAB-6): OHLCV REAL del REST — antes: closes con
+                // banda sintética ±0.05% y volumen fijo 10 ⇒ v_t/ATR plano,
+                // stops des-calibrados por horas. Ahora el rango y volumen
+                // históricos verdaderos calibran hurst/spectral/omni Y v_t.
+                for k in klines.iter() {
+                    let [o, h, l, c, v] = *k;
+                    if c > 0.0 {
+                        engine_real.feature_engines[_i].process_kline(o, h, l, c, v);
                     }
                 }
-                telemetry_server::telemetry_log!("   ✅ Inyectadas {} K-lines (1h) para {}", klines.len(), sym);
+                telemetry_server::telemetry_log!(
+                    "   ✅ Inyectadas {} K-lines 1m OHLCV real para {}",
+                    klines.len(),
+                    sym
+                );
             }
         }
         // --------------------------------
@@ -1326,9 +1322,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 // --- OUTLIER REJECTION (> 15% FLASH CRASH FILTER) ---
-                let recent_ticks = engine_real.arena.coins[coin_id].tick_ring.snapshot_recent(1);
-                if !recent_ticks.is_empty() {
-                    let prev_price = recent_ticks[0].bid_price;
+                // X-039 (REHAB-6): snapshot a buffer ESTÁTICO — el Vec por
+                // tick era heap alloc/free en el hilo TIME_CRITICAL.
+                let mut tick_buf = [quantum_arena::state::CompactTick::default(); 1];
+                let n_recent = engine_real.arena.coins[coin_id]
+                    .tick_ring
+                    .snapshot_recent_into(1, &mut tick_buf);
+                if n_recent > 0 {
+                    let prev_price = tick_buf[0].bid_price;
                     if prev_price > 0.0 {
                         let jump_pct = (current_price - prev_price).abs() / prev_price;
                         let max_jump = engine_real.arena.config.flash_crash_jump_pct.load(std::sync::atomic::Ordering::Relaxed);
@@ -1349,15 +1350,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     is_buyer_maker,
                 );
 
-                // L-0: Pasar omni_features_hot reales a los 10 universos sombra (Causa Forense #D100)
-                shadow_forest.broadcast_tick(
-                    coin_id, is_trade, is_kline_closed, is_depth,
-                    current_price, qty, dbp, dap, dbq, daq,
-                    depth_obi, depth_micro_div, event_time as u64,
-                    &engine_real.arena,
-                    &omni_features_hot,
-                    is_buyer_maker,
-                );
+                // L-0 + X-018 (REHAB-6): los 10 universos sombra con omni real
+                // (D100) pero MUESTREADOS 1-in-10 — antes: 11 evaluaciones
+                // completas por evento en el hilo TIME_CRITICAL (la sombra
+                // costaba 10× el motor). El shadow-forest aprende umbrales
+                // estadísticos: muestreo uniforme preserva la señal, divide
+                // el costo por 10.
+                if msg_count % 10 == 0 {
+                    shadow_forest.broadcast_tick(
+                        coin_id, is_trade, is_kline_closed, is_depth,
+                        current_price, qty, dbp, dap, dbq, daq,
+                        depth_obi, depth_micro_div, event_time as u64,
+                        &engine_real.arena,
+                        &omni_features_hot,
+                        is_buyer_maker,
+                    );
+                }
 
                 // F4.8 — TRAYECTORIA VIVA: mientras la posición está abierta,
                 // cada tick evalúa coherencia esperado-vs-real. Divergencia =
