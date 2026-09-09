@@ -660,20 +660,28 @@ impl GodEngineCore {
                 .load(Ordering::Relaxed)
                 .max(50.0);
             let latency_ms = self.arena.last_ws_latency_ms.load(Ordering::Relaxed);
-            if latency_ms > latency_threshold_ms as u64 {
-                if self
+            // X-012 (REHAB-4): el interlock NUNCA bloquea salidas. Antes este
+            // `return` saltaba la gestión de posición completa (SL/trailing/
+            // zombie/toxic) justo durante picos de latencia — exactamente
+            // cuando las salidas defensivas son vitales. Ahora: bandera; la
+            // gestión corre; solo la GENERACIÓN de entradas se bloquea (abajo,
+            // frontera de EVALUAR ENTRADAS).
+            // X-010: stalled (watchdog del WS sin datos 5s) también bloquea
+            // entradas — la muerte silenciosa del feed ya no es invisible.
+            let entries_blocked = quantum_arena::feed_health::is_stalled()
+                || latency_ms > latency_threshold_ms as u64;
+            if entries_blocked
+                && self
                     .arena
                     .tick_counter
                     .load(Ordering::Relaxed)
                     .is_multiple_of(1000)
-                {
-                    telemetry_server::telemetry_log!(
-                        "🚨 [LATENCY PANIC] Latencia {}ms > umbral {:.0}ms! Tick descartado — sin señales con datos obsoletos.",
-                        latency_ms,
-                        latency_threshold_ms
-                    );
-                }
-                return (None, None, None);
+            {
+                telemetry_server::telemetry_log!(
+                    "🚨 [LATENCY PANIC] Latencia {}ms > umbral {:.0}ms! ENTRADAS bloqueadas — salidas defensivas siguen activas.",
+                    latency_ms,
+                    latency_threshold_ms
+                );
             }
 
             self.arena.increment_tick();
@@ -1407,6 +1415,13 @@ impl GodEngineCore {
             }
 
             // --- 2. EVALUAR ENTRADAS ---
+            // X-012: frontera exacta del bloqueo por latencia — la gestión de
+            // posiciones (sección 1, arriba) corrió COMPLETA antes de llegar
+            // aquí. Con datos obsoletos no se abren posiciones nuevas; las
+            // abiertas ya fueron gestionadas con este mismo tick.
+            if entries_blocked {
+                return (None, None, None);
+            }
             let tick = self.arena.tick_counter.load(Ordering::Relaxed);
 
             // --- Inteligencia On-Chain (Spot vs Futures Correlation) ---
@@ -2090,44 +2105,57 @@ impl GodEngineCore {
                 let is_bull = ema_fast > ema_slow;
                 let is_bear = ema_fast < ema_slow;
 
-                // D-458: Desbloquear consenso continuo y swing alineado a la tendencia real
+                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                let price_stretch = if ema_slow > 0.0 {
+                    (mid_price - ema_slow) / cur_atr
+                } else {
+                    0.0
+                };
+                let not_chasing_long = price_stretch <= 1.0;
+                let not_chasing_short = price_stretch >= -1.0;
+
+                // D-458 & D-462: Desbloquear consenso continuo evitando la persecución tardía (anti-chase guard)
                 if tensor_swing.signal == SignalType::Long
                     && is_bull
-                    && tensor_swing.net_confidence.abs() > 0.60
+                    && not_chasing_long
+                    && tensor_swing.net_confidence.abs() > 0.65
                 {
                     swing_intent = SignalIntent {
                         signal: tensor_swing.signal,
-                        confidence: tensor_swing.net_confidence.abs().clamp(0.60, 1.0),
+                        confidence: tensor_swing.net_confidence.abs().clamp(0.65, 1.0),
                         horizon: strategy_core::TradeHorizon::Swing,
                         ..Default::default()
                     };
                 } else if tensor_swing.signal == SignalType::Short
                     && is_bear
-                    && tensor_swing.net_confidence.abs() > 0.60
+                    && not_chasing_short
+                    && tensor_swing.net_confidence.abs() > 0.65
                 {
                     swing_intent = SignalIntent {
                         signal: tensor_swing.signal,
-                        confidence: tensor_swing.net_confidence.abs().clamp(0.60, 1.0),
+                        confidence: tensor_swing.net_confidence.abs().clamp(0.65, 1.0),
                         horizon: strategy_core::TradeHorizon::Swing,
                         ..Default::default()
                     };
                 } else if tensor_cont.signal == SignalType::Long
                     && is_bull
-                    && tensor_cont.net_confidence.abs() > 0.60
+                    && not_chasing_long
+                    && tensor_cont.net_confidence.abs() > 0.65
                 {
                     swing_intent = SignalIntent {
                         signal: tensor_cont.signal,
-                        confidence: tensor_cont.net_confidence.abs().clamp(0.60, 1.0),
+                        confidence: tensor_cont.net_confidence.abs().clamp(0.65, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
                         ..Default::default()
                     };
                 } else if tensor_cont.signal == SignalType::Short
                     && is_bear
-                    && tensor_cont.net_confidence.abs() > 0.60
+                    && not_chasing_short
+                    && tensor_cont.net_confidence.abs() > 0.65
                 {
                     swing_intent = SignalIntent {
                         signal: tensor_cont.signal,
-                        confidence: tensor_cont.net_confidence.abs().clamp(0.60, 1.0),
+                        confidence: tensor_cont.net_confidence.abs().clamp(0.65, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
                         ..Default::default()
                     };

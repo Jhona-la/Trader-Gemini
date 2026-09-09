@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .exists()
         || std::path::Path::new("config_dir/MAINNET_ARMED").exists();
-    let emergency_lock = std::path::Path::new("STOP_TRADING.LOCK").exists();
+    let emergency_lock = operator_lock_exists();
     let is_demo_mode = if requested_live && mainnet_armed && !emergency_lock {
         telemetry_server::telemetry_log!(
             "🔴 [MODO PRODUCCION ARMADO] MAINNET_ARMED presente — fuego real AUTORIZADO por el operador."
@@ -621,6 +621,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+    // X-011 (REHAB-4): bandera de apagado del streamer de la era inicial —
+    // la transición demo→mainnet la activará antes de spawnear el nuevo
+    // (antes: DOS streamers vivos; el de testnet pisaba el capital mainnet).
+    let demo_streamer_abort = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let streamer = execution_engine::user_data_stream::UserDataStreamer::new(
         exec.load().client().clone(),
         exec.load().registry(),
@@ -628,7 +632,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_sink(std::sync::Arc::new(CapitalBridgeSink {
         unified_capital: Arc::clone(&unified_capital),
     }))
-    .with_api_secret(exec.load().api_secret());
+    .with_api_secret(exec.load().api_secret())
+    .with_shutdown(Arc::clone(&demo_streamer_abort));
     tokio::spawn(async move {
         streamer.start().await;
     });
@@ -771,6 +776,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let arena_imm = Arc::clone(&arena_real);
             let exec_imm = Arc::clone(&exec);
+            // X-013 (REHAB-4): plano de capital del EXCHANGE (CapitalBridgeSink
+            // lo escribe desde ACCOUNT_UPDATE). El inmune mide el drawdown
+            // sobre el MÁS CONSERVADOR de los planos (arena simulado vs
+            // exchange real) — antes solo leía el arena: en live el funding/
+            // slippage real invisibilizaban el drawdown contable verdadero.
+            let exchange_capital_imm = Arc::clone(&unified_capital);
             rt_handle.spawn(async move {
                 let mut latched = false;
                 let mut peak_capital = arena_imm.unified_capital.load(Ordering::Relaxed);
@@ -782,10 +793,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     // (1) El operador manda: el archivo existe ⇒ parar TODO.
-                    let operator_lock = std::path::Path::new("STOP_TRADING.LOCK").exists();
+                    let operator_lock = operator_lock_exists();
 
                     // (2) Drawdown sobre pico observado (muestreo 5s).
-                    let cap = arena_imm.unified_capital.load(Ordering::Relaxed);
+                    // X-013: mínimo entre plano arena y plano exchange — el
+                    // más conservador gobierna la defensa.
+                    let cap_arena = arena_imm.unified_capital.load(Ordering::Relaxed);
+                    let cap_exchange =
+                        f64::from_bits(exchange_capital_imm.load(Ordering::Relaxed));
+                    let cap = if cap_exchange > 0.0 {
+                        cap_arena.min(cap_exchange)
+                    } else {
+                        cap_arena
+                    };
                     if cap > peak_capital {
                         peak_capital = cap;
                     }
@@ -809,7 +829,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .latency_ms_panic_threshold
                         .load(Ordering::Relaxed)
                         .max(50.0) as u64;
-                    if lat > lat_thresh {
+                    // X-010: la rama incluye el flag global del watchdog —
+                    // muerte silenciosa del feed (5s sin datos) cuenta como
+                    // strike aunque la última latencia medida estuviera sana.
+                    if lat > lat_thresh || quantum_arena::feed_health::is_stalled() {
                         latency_strikes += 1;
                     } else {
                         latency_strikes = 0;
@@ -1236,6 +1259,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let latency_ms = now_ms - event_time;
             let mut latency_panic = false;
 
+            // X-010 (REHAB-4): WRITER de latencia en el feed real. La métrica
+            // arena.last_ws_latency_ms estaba SIEMPRE en 0 (sus writers vivían
+            // solo en código muerto) ⇒ el interlock del core y la rama de
+            // latencia del sistema inmune jamás disparaban — ni ante muerte
+            // silenciosa del feed. Ahora: cada evento vivo escribe la latencia
+            // real y LIMPIA el flag de stall del watchdog (puente global).
+            if event_time > 0 {
+                engine_real
+                    .arena
+                    .last_ws_latency_ms
+                    .store(latency_ms.max(0) as u64, Ordering::Relaxed);
+                quantum_arena::feed_health::clear();
+            }
+
             let panic_threshold = engine_real.arena.config.latency_ms_panic_threshold.load(std::sync::atomic::Ordering::Relaxed) as i64;
 
             // Phase 4: Synthetic Volatility Kill Switch
@@ -1419,6 +1456,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             unified_capital: Arc::clone(&unified_capital),
                         }))
                         .with_api_secret(new_exec_arc.api_secret());
+                        // X-011: matar el streamer de la era demo ANTES de
+                        // spawnear el de mainnet — su ACCOUNT_UPDATE de testnet
+                        // pisaría el capital real en el plano compartido.
+                        demo_streamer_abort.store(true, std::sync::atomic::Ordering::Release);
+                        telemetry_server::telemetry_log!(
+                            "🔌 [USER-DATA] Streamer de era demo marcado para apagado"
+                        );
                         tokio::spawn(async move {
                             mainnet_streamer.start().await;
                         });
@@ -1612,8 +1656,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             risk_envelope.max_leverage(cap_now, stop_pct, 5.0, 1.64, 50.0)
                         };
-                        // D-116: Unificación de apalancamiento Core <-> Producción.
-                        // El Core (RiskEngine) ya validó el riesgo y dimensionó la orden; usamos su apalancamiento como piso.
+                        // D-116 (evolucionado por X-022/REHAB-4): la ENVOLVENTE
+                        // es AUTORITATIVA. Antes: `.max(core_leverage)` pisaba
+                        // el cap bayesiano y `operable=false` ejecutaba igual
+                        // (el bloqueo `== 0` era inalcanzable) — la envolvente
+                        // era consultiva, violando el axioma F5.1. Ahora: el
+                        // apalancamiento del core puede BAJAR del cap, jamás
+                        // subirlo; y operable=false BLOQUEA la orden (0).
                         let notional_ord = _qty.abs() * entry_price;
                         let pos_margin = engine_real.arena.coins[coin_id].positions.position.margin_used.load(Ordering::Relaxed);
                         let core_leverage = if pos_margin > 0.0 && notional_ord > 0.0 {
@@ -1622,9 +1671,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             (5.05 / cap_now.max(1.0)).ceil().clamp(1.0, 20.0) as u32
                         };
                         exec_leverage = if operable {
-                            (env_lev.floor().clamp(1.0, 20.0) as u32).max(core_leverage.clamp(1, 20))
+                            let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
+                            core_leverage.clamp(1, 20).min(cap)
                         } else {
-                            core_leverage.clamp(1, 20)
+                            0 // SIN ORDEN: la matemática dijo NO OPERAR
                         };
                         let _ = tx_log_worker.try_send((true, is_long, coin_id));
 
@@ -2091,6 +2141,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                     Err(_) => {
                                         telemetry_server::telemetry_log!("🚨 [WS] Watchdog Timeout: No data received for 5 seconds! Forcing reconnect to prevent Zombie Stream.");
+                                        // X-010: el inmune y el interlock SABEN que el
+                                        // feed murió (antes la latencia quedaba
+                                        // congelada en el último latido sano).
+                                        quantum_arena::feed_health::stall();
                                         break;
                                     }
                                 }
@@ -2120,6 +2174,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = unified_handle.join();
 
     Ok(())
+}
+
+/// X-040 (REHAB-4): STOP_TRADING.LOCK por RUTA ABSOLUTA. Antes: relativo al
+/// CWD — lanzando el motor desde otro directorio, el bloqueo de emergencia
+/// del operador era INVISIBLE. Ahora: se busca en CWD y junto al ejecutable.
+fn operator_lock_exists() -> bool {
+    if std::path::Path::new("STOP_TRADING.LOCK").exists() {
+        return true;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            return dir.join("STOP_TRADING.LOCK").exists();
+        }
+    }
+    false
 }
 
 /// X-016: tau legible para telemetría (ms → s/min/h/d legible).

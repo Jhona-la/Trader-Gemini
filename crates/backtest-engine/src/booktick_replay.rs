@@ -189,7 +189,7 @@ pub fn run_booktick_replay(
         .max(0.0004);
     let roundtrip_fee = maker_fee + taker_fee;
 
-    let mut omni_state = data_pipeline::omni_multiplexer::OmniState::new();
+    let omni_state = data_pipeline::omni_multiplexer::OmniState::new();
     let mut last_day = i64::MIN;
     let mut running_atr = 0.001 * ticks[0].mid();
     const ATR_ALPHA: f64 = 0.02;

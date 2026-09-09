@@ -3,6 +3,7 @@ pub mod adaptive_quantiles;
 pub mod arena_alloc;
 pub mod atomic_float;
 pub mod config;
+pub mod feed_health;
 pub mod genome;
 pub mod genome_store;
 pub mod paths;

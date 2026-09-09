@@ -55,6 +55,10 @@ pub struct UserDataStreamer {
     api_secret: Option<String>,
     expired_flag: Arc<AtomicBool>,
     arena: Option<Arc<quantum_arena::GlobalArena>>,
+    /// X-011 (REHAB-4): bandera de apagado — sin ella, el streamer de la era
+    /// demo seguía vivo tras la transición a mainnet y sus ACCOUNT_UPDATE de
+    /// TESTNET pisaban el capital real del plano compartido.
+    shutdown: Option<Arc<AtomicBool>>,
 }
 
 impl UserDataStreamer {
@@ -67,7 +71,15 @@ impl UserDataStreamer {
             api_secret: None,
             expired_flag: Arc::new(AtomicBool::new(false)),
             arena: None,
+            shutdown: None,
         }
+    }
+
+    /// X-011: registra la bandera de apagado (el spawn devuelve control; el
+    /// llamador conserva el Arc y lo activa al reemplazar este streamer).
+    pub fn with_shutdown(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.shutdown = Some(flag);
+        self
     }
 
     pub fn with_api_secret(mut self, api_secret: impl Into<String>) -> Self {
@@ -100,6 +112,14 @@ impl UserDataStreamer {
 
         let mut backoff_ms = 500u64;
         loop {
+            // X-011: apagado cooperativo — el streamer reemplazado muere en la
+            // PRÓXIMA iteración (nunca spawnea listenKeys de credenciales viejas).
+            if let Some(flag) = &self.shutdown {
+                if flag.load(std::sync::atomic::Ordering::Acquire) {
+                    println!("🔌 [USER-STREAM] Apagado cooperativo (reemplazado por transición).");
+                    return;
+                }
+            }
             let listen_key = match self.client.create_listen_key().await {
                 Ok(k) if !k.is_empty() => {
                     backoff_ms = 500;
@@ -182,6 +202,15 @@ impl UserDataStreamer {
             });
 
             while let Some(msg) = read.next().await {
+                // X-011: muerte inmediata (no en la próxima reconexión) — un
+                // frame del streamer viejo puede pisar el capital del nuevo.
+                if let Some(flag) = &self.shutdown {
+                    if flag.load(Ordering::Acquire) {
+                        println!("🔌 [USER-STREAM] Apagado inmediato por reemplazo.");
+                        let _ = keepalive_handle.abort();
+                        return;
+                    }
+                }
                 if self.expired_flag.swap(false, Ordering::Relaxed) {
                     println!("🔄 [USER-STREAM] listenKeyExpired: cerrando sesión para renovación inmediata.");
                     break;
