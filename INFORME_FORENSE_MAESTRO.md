@@ -1780,3 +1780,11 @@ El equipo de 10 Roles Senior ejecutó la intervención de raíz sobre los 89 def
 [+] micro-capital-compliance: Sizing acotado a piso de $5.00 USD sobre $13.00 USD
 ======================================================================
 ```
+
+---
+
+## 25. 🆕 DECIMOTERCERA ADENDA DE ASEGURAMIENTO (2026-09-08)
+
+➡️ **[INFORME_ASEGURAMIENTO_DECIMOTERCERO.md](INFORME_ASEGURAMIENTO_DECIMOTERCERO.md)** — Verificación final: los 8 circuitos FUNCIONAN. Sistema CERTIFICABLE para overnight, LISTO para demo. TOP-5 endurecimientos no-bloqueantes (drift sin acción, MAINNET_ARMED CWD-relativo, RNG débil del fill, fee duplicado, DriftAuditor duplicado).
+
+*Esta adenda se agrega sin modificar el contenido histórico.*
