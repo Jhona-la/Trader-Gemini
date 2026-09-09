@@ -1719,3 +1719,13 @@ Con los 399 defectos censados de forma exhaustiva y lógica, la dirección de ar
 
 ---
 *Fin del Anexo — Novena Ola Forense Consolidada (D-311 a D-399).*
+
+---
+
+## 24. 🆕 DUODÉCIMA ADENDA DE ASEGURAMIENTO (2026-09-08)
+
+➡️ **[INFORME_ASEGURAMIENTO_DUODECIMO.md](INFORME_ASEGURAMIENTO_DUODECIMO.md)** — G-01..G-07.
+
+Circuito de autoevolución físicamente cerrado pero semánticamente abierto (daemon deriva is_long). DriftAuditor sigue cosmético (let _ =). Fill-model degenerado (last_mids vacío = 50/50 constante). Working tree: 12ª ola de sesión concurrente (homotopía continua, dirección correcta, 2 puntos calientes: NaN soliton + horizon flip). Certificación: equity_curve vacío, ICE de rustc hoy.
+
+*Esta adenda se agrega sin modificar el contenido histórico.*
