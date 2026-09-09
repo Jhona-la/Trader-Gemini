@@ -34,16 +34,34 @@ impl SystemBootloader {
     }
 
     fn phase_1_integrity_check(&self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🔍 [FASE 1] Verificando integridad de configuración, topología de memoria y llaves...");
-        let base_cap = self.arena.config.base_capital.load(std::sync::atomic::Ordering::Relaxed);
+        println!(
+            "🔍 [FASE 1] Verificando integridad de configuración, topología de memoria y llaves..."
+        );
+        let base_cap = self
+            .arena
+            .config
+            .base_capital
+            .load(std::sync::atomic::Ordering::Relaxed);
         if base_cap < 5.0 {
-            return Err(format!("Capital base inválido: ${:.2} (mínimo requerido: $5.00)", base_cap).into());
+            return Err(format!(
+                "Capital base inválido: ${:.2} (mínimo requerido: $5.00)",
+                base_cap
+            )
+            .into());
         }
-        if self.arena.kill_switch_active.load(std::sync::atomic::Ordering::Relaxed) {
+        if self
+            .arena
+            .kill_switch_active
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             return Err("Kill switch activo al arranque. Abortando inicio por seguridad.".into());
         }
         if self.arena.coins.len() != 30 {
-            return Err(format!("Topología de memoria corrupta: {} slots en lugar de 30", self.arena.coins.len()).into());
+            return Err(format!(
+                "Topología de memoria corrupta: {} slots en lugar de 30",
+                self.arena.coins.len()
+            )
+            .into());
         }
         println!("   -> Capital base validado: ${:.2} USD", base_cap);
         println!("   -> Memoria contigua: 30 CoinArenas L1/L2 alineadas.");
@@ -61,9 +79,15 @@ impl SystemBootloader {
                 }
             }
         }
-        let cap = self.arena.unified_capital.load(std::sync::atomic::Ordering::Relaxed);
+        let cap = self
+            .arena
+            .unified_capital
+            .load(std::sync::atomic::Ordering::Relaxed);
         println!("   -> {} activos registrados en memoria.", active_count);
-        println!("   -> Universo calibrado para capital actual: ${:.2} USD.", cap);
+        println!(
+            "   -> Universo calibrado para capital actual: ${:.2} USD.",
+            cap
+        );
         Ok(())
     }
 
@@ -86,7 +110,11 @@ impl SystemBootloader {
             };
 
             // FIX #1504: Endpoint adaptativo para Testnet vs Producción
-            let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
+            let is_testnet = std::env::var("USE_TESTNET")
+                .unwrap_or_default()
+                .trim()
+                .to_lowercase()
+                == "true";
             let base_url = if is_testnet {
                 "https://testnet.binancefuture.com"
             } else {
@@ -172,7 +200,9 @@ impl SystemBootloader {
         &self,
         _engine: &mut GodEngineCore,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        println!("💾 [FASE 4] Recuperando y verificando continuidad de estado (State Continuity Engine)...");
+        println!(
+            "💾 [FASE 4] Recuperando y verificando continuidad de estado (State Continuity Engine)..."
+        );
         let mut total_open = 0;
 
         for (id, coin) in self.arena.coins.iter().enumerate() {
@@ -180,22 +210,32 @@ impl SystemBootloader {
 
             if pos.is_open() {
                 total_open += 1;
-                let chk = quantum_arena::state_continuity::StateContinuityEngine::compute_state_checksum(
-                    id,
-                    pos.quantity.load(std::sync::atomic::Ordering::Relaxed),
-                    pos.entry_price.load(std::sync::atomic::Ordering::Relaxed),
+                let chk =
+                    quantum_arena::state_continuity::StateContinuityEngine::compute_state_checksum(
+                        id,
+                        pos.quantity.load(std::sync::atomic::Ordering::Relaxed),
+                        pos.entry_price.load(std::sync::atomic::Ordering::Relaxed),
+                    );
+                println!(
+                    "   -> [UNIVERSAL] Posición abierta en ID {} detectada (Checksum: {:016X})",
+                    id, chk
                 );
-                println!("   -> [UNIVERSAL] Posición abierta en ID {} detectada (Checksum: {:016X})", id, chk);
             }
         }
-        println!("   -> Continuidad verificada: {} posiciones universales continuas vivas.", total_open);
+        println!(
+            "   -> Continuidad verificada: {} posiciones universales continuas vivas.",
+            total_open
+        );
         Ok(())
     }
 
     fn phase_5_ml_preload(&self) -> Result<(), Box<dyn std::error::Error>> {
         println!("🧠 [FASE 5] Verificando modelos ML cargados...");
         let count = crate::ml_inference::GLOBAL_FORESTS.load().len();
-        println!("   -> Modelos NanoForest globales listos en ArcSwap: {} cargados.", count);
+        println!(
+            "   -> Modelos NanoForest globales listos en ArcSwap: {} cargados.",
+            count
+        );
         Ok(())
     }
 

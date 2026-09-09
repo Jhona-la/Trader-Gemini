@@ -30,7 +30,8 @@ impl TurboScalpEngine {
         _event_time_ms: u64,
     ) -> Option<SignalIntent> {
         // FIX #683: Validar finitud de parámetros entrantes
-        if !obi.is_finite() || !ofi.is_finite() || !hawkes_ratio.is_finite() || !entropy.is_finite() {
+        if !obi.is_finite() || !ofi.is_finite() || !hawkes_ratio.is_finite() || !entropy.is_finite()
+        {
             return None;
         }
 
@@ -62,11 +63,16 @@ impl TurboScalpEngine {
         let dynamic_z_score_threshold = 1.0 + (entropy * (poly_b * 100.0));
 
         // Z-Score proxy basado en el tensor de excitación (Hawkes process) con protección contra división por cero
-        let turbo_z_score_stdev = arena.config.turbo_z_score_stdev.load(Ordering::Relaxed).max(1e-6);
+        let turbo_z_score_stdev = arena
+            .config
+            .turbo_z_score_stdev
+            .load(Ordering::Relaxed)
+            .max(1e-6);
         let z_score = excitement_tensor.abs() / turbo_z_score_stdev;
         // FIX #405: hawkes_ratio es no-negativo (intensidad >= 0). La alineación direccional depende de la magnitud del flujo.
         let is_directionally_aligned = flow_tensor.abs() > 1e-6;
-        let is_statistically_significant = z_score > dynamic_z_score_threshold && is_directionally_aligned;
+        let is_statistically_significant =
+            z_score > dynamic_z_score_threshold && is_directionally_aligned;
 
         let turbo_coherence_threshold = arena
             .config
@@ -83,10 +89,7 @@ impl TurboScalpEngine {
             };
 
             // FIX #1509: Sanitización de duración de señal de turbo-scalping
-            let raw_base = arena
-                .config
-                .base_duration_ms
-                .load(Ordering::Relaxed);
+            let raw_base = arena.config.base_duration_ms.load(Ordering::Relaxed);
             let base_duration = if raw_base.is_finite() && raw_base > 0.0 {
                 raw_base as u64
             } else {
@@ -110,7 +113,10 @@ impl strategy_core::QuantumStrategy for TurboScalpEngine {
         "TurboScalpEngine"
     }
 
-    fn init(&mut self, registry: std::sync::Arc<omniscient_registry::OmniscientRegistry>) -> Result<(), String> {
+    fn init(
+        &mut self,
+        registry: std::sync::Arc<omniscient_registry::OmniscientRegistry>,
+    ) -> Result<(), String> {
         self.registry = Some(registry);
         Ok(())
     }
@@ -119,7 +125,10 @@ impl strategy_core::QuantumStrategy for TurboScalpEngine {
         let obi = self
             .registry
             .as_ref()
-            .and_then(|r| r.get("order_book_imbalance", "TurboScalpEngine").or_else(|| r.get("orderbook_imbalance", "TurboScalpEngine")))
+            .and_then(|r| {
+                r.get("order_book_imbalance", "TurboScalpEngine")
+                    .or_else(|| r.get("orderbook_imbalance", "TurboScalpEngine"))
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
         let ofi = self
@@ -138,7 +147,11 @@ impl strategy_core::QuantumStrategy for TurboScalpEngine {
         // FIX #683: Sanitizar lecturas de registros
         let safe_obi = if obi.is_finite() { obi } else { 0.0 };
         let safe_ofi = if ofi.is_finite() { ofi } else { 0.0 };
-        let safe_hawkes = if hawkes.is_finite() && hawkes >= 0.0 { hawkes } else { 1.0 };
+        let safe_hawkes = if hawkes.is_finite() && hawkes >= 0.0 {
+            hawkes
+        } else {
+            1.0
+        };
 
         if safe_hawkes >= 1.2 && (safe_obi.abs() >= 0.2 || safe_ofi.abs() >= 0.2) {
             let flow = safe_obi * 0.6 + safe_ofi * 0.4;
@@ -158,9 +171,12 @@ mod tests {
         let arena = quantum_arena::GlobalArena::new(13.0);
         // Flujo neutro (obi = 0, ofi = 0) debe retornar None (no forzar Long)
         let signal = TurboScalpEngine::evaluate_turbo_scalp(
-            &arena, 0.0, 0.0, 1.0, 0.1, 60000.0, 0.005, 1000
+            &arena, 0.0, 0.0, 1.0, 0.1, 60000.0, 0.005, 1000,
         );
-        assert!(signal.is_none(), "Flujo plano debe retornar None y no forzar Long");
+        assert!(
+            signal.is_none(),
+            "Flujo plano debe retornar None y no forzar Long"
+        );
     }
 
     #[test]
@@ -168,17 +184,31 @@ mod tests {
         let arena = quantum_arena::GlobalArena::new(13.0);
         // Flujo fuertemente vendedor con excitación hawkes bajista de alta intensidad
         let signal = TurboScalpEngine::evaluate_turbo_scalp(
-            &arena, -0.9, -0.9, -3.0, 0.01, 60000.0, 0.005, 1000
+            &arena, -0.9, -0.9, -3.0, 0.01, 60000.0, 0.005, 1000,
         );
-        assert!(signal.is_some(), "Flujo bajista extremo con excitación debe emitir señal");
-        assert_eq!(signal.unwrap().signal, SignalType::Short, "Debe ser señal Short");
+        assert!(
+            signal.is_some(),
+            "Flujo bajista extremo con excitación debe emitir señal"
+        );
+        assert_eq!(
+            signal.unwrap().signal,
+            SignalType::Short,
+            "Debe ser señal Short"
+        );
     }
 
     #[test]
     fn test_turbo_scalper_nan_immunity() {
         let arena = quantum_arena::GlobalArena::new(13.0);
         let signal = TurboScalpEngine::evaluate_turbo_scalp(
-            &arena, f64::NAN, 0.0, 1.0, 0.1, 60000.0, 0.005, 1000
+            &arena,
+            f64::NAN,
+            0.0,
+            1.0,
+            0.1,
+            60000.0,
+            0.005,
+            1000,
         );
         assert!(signal.is_none());
     }
@@ -194,9 +224,10 @@ mod tests {
         assert!(strategy_core::QuantumStrategy::init(&mut engine, registry).is_ok());
 
         let eval = strategy_core::QuantumStrategy::evaluate(&engine);
-        assert!(eval > 0.0, "Flujo e intensidad alcista deben generar señal positiva");
+        assert!(
+            eval > 0.0,
+            "Flujo e intensidad alcista deben generar señal positiva"
+        );
         assert!(eval <= 1.0);
     }
 }
-
-

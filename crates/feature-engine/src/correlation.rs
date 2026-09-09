@@ -38,7 +38,11 @@ impl MarketCorrelationHeatmap {
 
         let mut market_return = 0.0;
 
-        for (i, (&current_price, last_price)) in current_prices.iter().zip(self.last_prices.iter_mut()).enumerate() {
+        for (i, (&current_price, last_price)) in current_prices
+            .iter()
+            .zip(self.last_prices.iter_mut())
+            .enumerate()
+        {
             if *last_price > 0.0 {
                 let ret = (current_price - *last_price) / *last_price;
                 self.returns_buffer[i] = ret;

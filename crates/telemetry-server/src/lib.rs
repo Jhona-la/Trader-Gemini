@@ -150,7 +150,7 @@ pub async fn start_telemetry_server(
     // FIX #1416: Bind resiliente con fallback de puertos para evitar pánicos por colisión
     let port_str = std::env::var("TELEMETRY_PORT").unwrap_or_else(|_| "3000".to_string());
     let base_port: u16 = port_str.parse().unwrap_or(3000);
-    
+
     let mut bound_listener = None;
     let mut final_port = base_port;
     for offset in 0..10 {
@@ -163,18 +163,28 @@ pub async fn start_telemetry_server(
                 break;
             }
             Err(e) => {
-                eprintln!("⚠️ [TELEMETRY] No se pudo vincular en {} ({}). Intentando puerto alternativo...", addr, e);
+                eprintln!(
+                    "⚠️ [TELEMETRY] No se pudo vincular en {} ({}). Intentando puerto alternativo...",
+                    addr, e
+                );
             }
         }
     }
 
     if let Some(listener) = bound_listener {
-        println!("📡 [TELEMETRY] Servidor Táctico iniciado en http://127.0.0.1:{}", final_port);
+        println!(
+            "📡 [TELEMETRY] Servidor Táctico iniciado en http://127.0.0.1:{}",
+            final_port
+        );
         if let Err(e) = axum::serve(listener, app).await {
             eprintln!("⚠️ [TELEMETRY] Error en servidor Axum: {}", e);
         }
     } else {
-        eprintln!("🛑 [TELEMETRY] No se pudo iniciar el servidor HTTP en ningún puerto del rango {}-{}. Continuando sin servidor web.", base_port, base_port + 9);
+        eprintln!(
+            "🛑 [TELEMETRY] No se pudo iniciar el servidor HTTP en ningún puerto del rango {}-{}. Continuando sin servidor web.",
+            base_port,
+            base_port + 9
+        );
     }
 }
 
@@ -234,14 +244,14 @@ async fn ws_handler(
 async fn handle_socket(mut socket: WebSocket, tx: tokio::sync::broadcast::Sender<TelemetryEvent>) {
     let mut rx = tx.subscribe();
     loop {
-            let event = match rx.recv().await {
-                Ok(e) => e,
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    eprintln!("[WS-HANDLER] Lagged: {} eventos perdidos — continuando", n);
-                    continue;
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-            };
+        let event = match rx.recv().await {
+            Ok(e) => e,
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                eprintln!("[WS-HANDLER] Lagged: {} eventos perdidos — continuando", n);
+                continue;
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+        };
         #[allow(clippy::collapsible_if)]
         if let Ok(json) = serde_json::to_string(&event) {
             if socket.send(Message::Text(json)).await.is_err() {
@@ -1020,4 +1030,3 @@ mod tests {
         assert!(coin_json.contains("active_scalp"));
     }
 }
-

@@ -27,7 +27,11 @@ impl CorrelationGuardEngine {
             return false;
         }
         // FIX #704: Sanitización defensiva de capital a micro-cuenta ($13 USD) ante NaN
-        let safe_capital = if current_capital.is_finite() && current_capital > 0.0 { current_capital } else { 13.0 };
+        let safe_capital = if current_capital.is_finite() && current_capital > 0.0 {
+            current_capital
+        } else {
+            13.0
+        };
         // Micro cuentas (< $30 USD) no deben abrir más de 2 posiciones en la misma dirección
         // para prevenir aniquilación correlacionada ante un Flash Crash de Bitcoin
         let limit = if safe_capital < 30.0 {
@@ -49,7 +53,11 @@ impl CorrelationGuardEngine {
             return false;
         }
         // FIX #704: Sanitización defensiva de capital a micro-cuenta ($13 USD) ante NaN
-        let safe_capital = if current_capital.is_finite() && current_capital > 0.0 { current_capital } else { 13.0 };
+        let safe_capital = if current_capital.is_finite() && current_capital > 0.0 {
+            current_capital
+        } else {
+            13.0
+        };
         // Scalping tiene un turnover ultra-rápido (< 60s) por lo que el cluster permitido es independiente de Swing
         let limit = if is_scalp {
             if safe_capital < 30.0 {
@@ -78,7 +86,11 @@ impl CorrelationGuardEngine {
         if same_dir_count == 0 {
             return false;
         }
-        let safe_capital = if current_capital.is_finite() && current_capital > 0.0 { current_capital } else { 13.0 };
+        let safe_capital = if current_capital.is_finite() && current_capital > 0.0 {
+            current_capital
+        } else {
+            13.0
+        };
         let limit = if safe_capital < 30.0 {
             2.min(max_allowed_cluster.max(2))
         } else {
@@ -95,35 +107,61 @@ mod tests {
     #[test]
     fn test_micro_account_correlation_veto() {
         // Con $13 USD, el límite es 2 posiciones.
-        assert!(!CorrelationGuardEngine::is_correlation_vetoed_dynamic(0, 13.0, 5));
-        assert!(!CorrelationGuardEngine::is_correlation_vetoed_dynamic(1, 13.0, 5));
+        assert!(!CorrelationGuardEngine::is_correlation_vetoed_dynamic(
+            0, 13.0, 5
+        ));
+        assert!(!CorrelationGuardEngine::is_correlation_vetoed_dynamic(
+            1, 13.0, 5
+        ));
         // Al intentar la 2da/3ra en la misma dirección -> VETO activado
-        assert!(CorrelationGuardEngine::is_correlation_vetoed_dynamic(2, 13.0, 5));
+        assert!(CorrelationGuardEngine::is_correlation_vetoed_dynamic(
+            2, 13.0, 5
+        ));
     }
 
     #[test]
     fn test_large_account_correlation_veto() {
         // Con $1000 USD, se respeta max_allowed_cluster
-        assert!(!CorrelationGuardEngine::is_correlation_vetoed_dynamic(2, 1000.0, 4));
-        assert!(!CorrelationGuardEngine::is_correlation_vetoed_dynamic(3, 1000.0, 4));
-        assert!(CorrelationGuardEngine::is_correlation_vetoed_dynamic(4, 1000.0, 4));
+        assert!(!CorrelationGuardEngine::is_correlation_vetoed_dynamic(
+            2, 1000.0, 4
+        ));
+        assert!(!CorrelationGuardEngine::is_correlation_vetoed_dynamic(
+            3, 1000.0, 4
+        ));
+        assert!(CorrelationGuardEngine::is_correlation_vetoed_dynamic(
+            4, 1000.0, 4
+        ));
     }
 
     #[test]
     fn test_horizon_decoupled_correlation_veto() {
         // Micro cuenta ($13 USD): Scalp permite hasta 2 micro-scalps
-        assert!(!CorrelationGuardEngine::is_correlation_vetoed_by_horizon(true, 1, 13.0, 5));
-        assert!(CorrelationGuardEngine::is_correlation_vetoed_by_horizon(true, 2, 13.0, 5));
+        assert!(!CorrelationGuardEngine::is_correlation_vetoed_by_horizon(
+            true, 1, 13.0, 5
+        ));
+        assert!(CorrelationGuardEngine::is_correlation_vetoed_by_horizon(
+            true, 2, 13.0, 5
+        ));
 
         // Swing permite 1 en micro-cuenta
-        assert!(!CorrelationGuardEngine::is_correlation_vetoed_by_horizon(false, 0, 13.0, 5));
-        assert!(CorrelationGuardEngine::is_correlation_vetoed_by_horizon(false, 1, 13.0, 5));
+        assert!(!CorrelationGuardEngine::is_correlation_vetoed_by_horizon(
+            false, 0, 13.0, 5
+        ));
+        assert!(CorrelationGuardEngine::is_correlation_vetoed_by_horizon(
+            false, 1, 13.0, 5
+        ));
     }
 
     #[test]
     fn test_correlation_guard_zero_and_nan_capital_immunity() {
         // Zero o NaN capital debe comportarse defensivamente como micro cuenta (falla seguro)
-        assert!(CorrelationGuardEngine::is_correlation_vetoed_dynamic(2, 0.0, 10));
-        assert!(CorrelationGuardEngine::is_correlation_vetoed_dynamic(2, f64::NAN, 10));
+        assert!(CorrelationGuardEngine::is_correlation_vetoed_dynamic(
+            2, 0.0, 10
+        ));
+        assert!(CorrelationGuardEngine::is_correlation_vetoed_dynamic(
+            2,
+            f64::NAN,
+            10
+        ));
     }
 }

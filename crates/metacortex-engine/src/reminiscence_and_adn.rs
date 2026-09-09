@@ -107,7 +107,13 @@ mod tests {
 
     #[test]
     fn test_adn_backup_catalog_archive_and_list() {
-        let temp_dir = std::env::temp_dir().join(format!("adn_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "adn_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         let catalog = AdnBackupCatalog::new(&temp_dir);
 
         let meta = GenerationMetadata {
@@ -138,4 +144,3 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
     }
 }
-

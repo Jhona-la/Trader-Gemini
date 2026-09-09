@@ -41,7 +41,15 @@ impl MultiAssetOrchestrator {
         ask_qty: f64,
     ) -> (Option<MakerQuote>, Option<SignalIntent>) {
         // FIX #1459: Validación estricta de finitud y positividad de precios de tick
-        if !bid.is_finite() || !ask.is_finite() || !bid_qty.is_finite() || !ask_qty.is_finite() || bid <= 0.0 || ask <= 0.0 || bid_qty < 0.0 || ask_qty < 0.0 {
+        if !bid.is_finite()
+            || !ask.is_finite()
+            || !bid_qty.is_finite()
+            || !ask_qty.is_finite()
+            || bid <= 0.0
+            || ask <= 0.0
+            || bid_qty < 0.0
+            || ask_qty < 0.0
+        {
             return (None, None);
         }
 
@@ -61,10 +69,30 @@ impl MultiAssetOrchestrator {
             } else {
                 0.0001
             };
-            let maker_spread_pct = self.arena.config.maker_spread_pct.load(Ordering::Relaxed).clamp(0.00005, 0.01);
-            let maker_obi_threshold = self.arena.config.dynamic_ofi_threshold.load(Ordering::Relaxed).clamp(0.1, 0.99);
-            let tensor_poly_a = self.arena.config.tensor_poly_a.load(Ordering::Relaxed).clamp(0.001, 1.0);
-            let tensor_poly_b = self.arena.config.tensor_poly_b.load(Ordering::Relaxed).clamp(0.0001, 0.1);
+            let maker_spread_pct = self
+                .arena
+                .config
+                .maker_spread_pct
+                .load(Ordering::Relaxed)
+                .clamp(0.00005, 0.01);
+            let maker_obi_threshold = self
+                .arena
+                .config
+                .dynamic_ofi_threshold
+                .load(Ordering::Relaxed)
+                .clamp(0.1, 0.99);
+            let tensor_poly_a = self
+                .arena
+                .config
+                .tensor_poly_a
+                .load(Ordering::Relaxed)
+                .clamp(0.001, 1.0);
+            let tensor_poly_b = self
+                .arena
+                .config
+                .tensor_poly_b
+                .load(Ordering::Relaxed)
+                .clamp(0.0001, 0.1);
 
             let new_quote = self.maker_engine.generate_quote(
                 bid,

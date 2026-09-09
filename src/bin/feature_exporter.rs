@@ -148,7 +148,11 @@ fn main() {
             features[34] = (delta / mid_price).clamp(-0.1, 0.1); // Log return
             features[35] = feature_engine.get_atr_pct(); // Volatility ATR
             features[36] = (total_vol / 1000.0).tanh(); // Relative Volume
-            features[37] = if total_vol > 0.0 { (t.bid_qty - t.ask_qty) / total_vol } else { 0.0 }; // Realized OBI
+            features[37] = if total_vol > 0.0 {
+                (t.bid_qty - t.ask_qty) / total_vol
+            } else {
+                0.0
+            }; // Realized OBI
             features[38] = (features[34] * 10.0).tanh(); // Momentum Proxy
             features[39] = (features[35] * 100.0).min(5.0); // Parkinson Vol Proxy
             features[40] = 0.50; // Fear & Greed Proxy

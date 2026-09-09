@@ -14,7 +14,10 @@ impl Default for ChaosMonkey {
 
 impl ChaosMonkey {
     pub fn new() -> Self {
-        let val = std::env::var("BINANCE_CHAOS_MODE").unwrap_or_default().trim().to_lowercase();
+        let val = std::env::var("BINANCE_CHAOS_MODE")
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase();
         let enabled = val == "true" || val == "1";
         Self {
             enabled,
@@ -29,7 +32,7 @@ impl ChaosMonkey {
         if !self.enabled {
             return false;
         }
-        
+
         // FIX #696: SplitMix64 $O(1)$ lock-free sin locks ni TLS en hot path
         let prev = self.seed.fetch_add(0x9E3779B97F4A7C15, Ordering::Relaxed);
         let mut x = prev ^ (prev >> 30);

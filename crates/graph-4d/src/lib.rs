@@ -59,7 +59,12 @@ impl SystemGraph {
                 }
                 Item::Impl(i) => {
                     let type_name = match &*i.self_ty {
-                        syn::Type::Path(tp) => tp.path.segments.last().map(|s| s.ident.to_string()).unwrap_or_else(|| "Unknown".to_string()),
+                        syn::Type::Path(tp) => tp
+                            .path
+                            .segments
+                            .last()
+                            .map(|s| s.ident.to_string())
+                            .unwrap_or_else(|| "Unknown".to_string()),
                         _ => "Type".to_string(),
                     };
                     let impl_name = format!("{}::impl::{}", module_name, type_name);
@@ -68,9 +73,11 @@ impl SystemGraph {
                         .add_edge(module_idx, impl_idx, "contains".to_string());
                     for impl_item in i.items {
                         if let syn::ImplItem::Fn(m) = impl_item {
-                            let method_name = format!("{}::{}::{}", module_name, type_name, m.sig.ident);
+                            let method_name =
+                                format!("{}::{}::{}", module_name, type_name, m.sig.ident);
                             let method_idx = self.get_or_add_node(&method_name, "Method");
-                            self.graph.add_edge(impl_idx, method_idx, "implements".to_string());
+                            self.graph
+                                .add_edge(impl_idx, method_idx, "implements".to_string());
                         }
                     }
                 }
@@ -165,5 +172,3 @@ mod tests {
         let _ = std::fs::remove_file(file_path);
     }
 }
-
-

@@ -32,12 +32,16 @@ impl NanoForest {
 
     pub fn load_model(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let bin_path = path.replace(".json", ".bin");
-        
+
         // Verificar frescura: si el JSON es más nuevo que el BIN, el BIN es obsoleto
         let is_stale = match (std::fs::metadata(path), std::fs::metadata(&bin_path)) {
             (Ok(m_json), Ok(m_bin)) => {
-                let t_json = m_json.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                let t_bin = m_bin.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                let t_json = m_json
+                    .modified()
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                let t_bin = m_bin
+                    .modified()
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                 t_json > t_bin
             }
             _ => false,
@@ -115,8 +119,18 @@ impl NanoForest {
         let mut current_node = start_node;
 
         loop {
-            let left_child = self.data.children_left.get(current_node).copied().unwrap_or(-1);
-            let right_child = self.data.children_right.get(current_node).copied().unwrap_or(-1);
+            let left_child = self
+                .data
+                .children_left
+                .get(current_node)
+                .copied()
+                .unwrap_or(-1);
+            let right_child = self
+                .data
+                .children_right
+                .get(current_node)
+                .copied()
+                .unwrap_or(-1);
 
             if left_child == -1 && right_child == -1 {
                 // Leaf node
@@ -128,13 +142,22 @@ impl NanoForest {
                 // Out of bounds feature protection: fallback to left leaf or 0.0
                 return 0.0;
             }
-            let threshold = self.data.threshold.get(current_node).copied().unwrap_or(0.0);
+            let threshold = self
+                .data
+                .threshold
+                .get(current_node)
+                .copied()
+                .unwrap_or(0.0);
 
             if features[feat_idx as usize] <= threshold {
-                if left_child < 0 { return 0.0; }
+                if left_child < 0 {
+                    return 0.0;
+                }
                 current_node = left_child as usize;
             } else {
-                if right_child < 0 { return 0.0; }
+                if right_child < 0 {
+                    return 0.0;
+                }
                 current_node = right_child as usize;
             }
         }
@@ -163,7 +186,11 @@ impl NanoForest {
         let safe_sum = if sum.is_finite() { sum } else { 0.0 };
         let clamped_sum = (-safe_sum).clamp(-50.0, 50.0);
         let prob = 1.0 / (1.0 + clamped_sum.exp());
-        Some(if prob.is_finite() { prob.clamp(0.0, 1.0) } else { 0.5 })
+        Some(if prob.is_finite() {
+            prob.clamp(0.0, 1.0)
+        } else {
+            0.5
+        })
     }
 
     pub fn predict_raw(&self, features: &[f32]) -> (f32, f32) {
@@ -259,4 +286,3 @@ mod tests {
         assert!(non_existent.is_none());
     }
 }
-

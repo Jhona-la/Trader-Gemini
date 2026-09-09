@@ -36,7 +36,11 @@ fn fnv1a_hash(key: &str) -> u64 {
         hash ^= *byte as u64;
         hash = hash.wrapping_mul(0x100000001b3);
     }
-    if hash == 0 { 1 } else { hash }
+    if hash == 0 {
+        1
+    } else {
+        hash
+    }
 }
 
 #[inline(always)]
@@ -94,8 +98,12 @@ pub fn set_epigenoma_gene(key: &str, value: f64) {
     }
     // FIX #868: Solo escribir si se encontró o reclamó un slot exclusivo para key
     if let Some(slot) = find_slot_write(key) {
-        EPIGENOMA_TABLE[slot].value.store(value.to_bits(), Ordering::Release);
-        EPIGENOMA_TABLE[slot].initialized.store(true, Ordering::Release);
+        EPIGENOMA_TABLE[slot]
+            .value
+            .store(value.to_bits(), Ordering::Release);
+        EPIGENOMA_TABLE[slot]
+            .initialized
+            .store(true, Ordering::Release);
     }
 }
 
@@ -118,8 +126,12 @@ pub fn init_epigenoma_gene(key: &str, default_val: f64) {
     }
     if let Some(slot) = find_slot_write(key) {
         if !EPIGENOMA_TABLE[slot].initialized.load(Ordering::Acquire) {
-            EPIGENOMA_TABLE[slot].value.store(default_val.to_bits(), Ordering::Release);
-            EPIGENOMA_TABLE[slot].initialized.store(true, Ordering::Release);
+            EPIGENOMA_TABLE[slot]
+                .value
+                .store(default_val.to_bits(), Ordering::Release);
+            EPIGENOMA_TABLE[slot]
+                .initialized
+                .store(true, Ordering::Release);
         }
     }
 }
@@ -154,7 +166,9 @@ mod tests {
         set_epigenoma_gene(key, 10.0);
         set_epigenoma_gene(key, f64::NAN);
         let read = read_epigenoma_gene(key, 999.0);
-        assert_eq!(read, 10.0, "Setting NaN must be rejected, preserving existing valid value");
+        assert_eq!(
+            read, 10.0,
+            "Setting NaN must be rejected, preserving existing valid value"
+        );
     }
 }
-

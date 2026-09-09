@@ -1,5 +1,5 @@
-use std::f64;
 use std::collections::VecDeque;
+use std::f64;
 
 /// ⚡ MOTOR DE LIDERAZGO MACRO MICROESTRUCTURAL LEAD-LAG (CROSS-ASSET ALPHA MATRIX)
 /// Rastra la velocidad de propagación de ráfagas institucionales desde BTC/ETH hacia altcoins.
@@ -30,13 +30,21 @@ impl LeadLagAlphaEngine {
             return;
         }
         if is_btc {
-            self.btc_ewma = if self.btc_ofi_buffer.is_empty() { ofi } else { self.btc_ewma * 0.70 + ofi * 0.30 };
+            self.btc_ewma = if self.btc_ofi_buffer.is_empty() {
+                ofi
+            } else {
+                self.btc_ewma * 0.70 + ofi * 0.30
+            };
             if self.btc_ofi_buffer.len() >= self.max_window {
                 self.btc_ofi_buffer.pop_front();
             }
             self.btc_ofi_buffer.push_back(ofi);
         } else {
-            self.eth_ewma = if self.eth_ofi_buffer.is_empty() { ofi } else { self.eth_ewma * 0.70 + ofi * 0.30 };
+            self.eth_ewma = if self.eth_ofi_buffer.is_empty() {
+                ofi
+            } else {
+                self.eth_ewma * 0.70 + ofi * 0.30
+            };
             if self.eth_ofi_buffer.len() >= self.max_window {
                 self.eth_ofi_buffer.pop_front();
             }
@@ -83,7 +91,7 @@ mod tests {
     #[test]
     fn test_lead_lag_divergence_prediction() {
         let mut engine = LeadLagAlphaEngine::new(30);
-        engine.update_leader(true, 0.80);  // Fuerte impulso BTC
+        engine.update_leader(true, 0.80); // Fuerte impulso BTC
         engine.update_leader(false, 0.70); // Fuerte impulso ETH
 
         // Altcoin con OFI plano (0.05) -> debe detectar lead-lag divergence

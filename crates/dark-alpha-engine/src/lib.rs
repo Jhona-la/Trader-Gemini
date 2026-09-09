@@ -75,8 +75,8 @@ impl DenseLayer {
         let scale = (2.0 / (in_features + out_features) as f64).sqrt();
         let mut weights = Vec::with_capacity(out_features * in_features);
 
-        let mut seed: u64 =
-            (in_features as u64).wrapping_mul(179424673) ^ (out_features as u64).wrapping_mul(275604341);
+        let mut seed: u64 = (in_features as u64).wrapping_mul(179424673)
+            ^ (out_features as u64).wrapping_mul(275604341);
         for _ in 0..(out_features * in_features) {
             seed = seed
                 .wrapping_mul(6364136223846793005)
@@ -112,8 +112,16 @@ impl DenseLayer {
     #[inline(always)]
     pub fn forward_relu(&self, input: &[f64], output: &mut [f64]) {
         // FIX #355: Active bounds check for --release safety
-        assert_eq!(input.len(), self.in_features, "DarkAlpha Layer: input dimension mismatch");
-        assert_eq!(output.len(), self.out_features, "DarkAlpha Layer: output dimension mismatch");
+        assert_eq!(
+            input.len(),
+            self.in_features,
+            "DarkAlpha Layer: input dimension mismatch"
+        );
+        assert_eq!(
+            output.len(),
+            self.out_features,
+            "DarkAlpha Layer: output dimension mismatch"
+        );
 
         for i in 0..self.out_features {
             let row_offset = i * self.in_features;
@@ -154,8 +162,16 @@ impl DenseLayer {
     /// Forward pass con Tanh activation (óptimo para señales simétricas y bidireccionales Long/Short)
     #[inline(always)]
     pub fn forward_tanh(&self, input: &[f64], output: &mut [f64]) {
-        assert_eq!(input.len(), self.in_features, "DarkAlpha Layer: input dimension mismatch");
-        assert_eq!(output.len(), self.out_features, "DarkAlpha Layer: output dimension mismatch");
+        assert_eq!(
+            input.len(),
+            self.in_features,
+            "DarkAlpha Layer: input dimension mismatch"
+        );
+        assert_eq!(
+            output.len(),
+            self.out_features,
+            "DarkAlpha Layer: output dimension mismatch"
+        );
 
         for i in 0..self.out_features {
             let row_offset = i * self.in_features;
@@ -166,9 +182,12 @@ impl DenseLayer {
             while j + 4 <= len {
                 unsafe {
                     sum += *self.weights.get_unchecked(row_offset + j) * *input.get_unchecked(j)
-                        + *self.weights.get_unchecked(row_offset + j + 1) * *input.get_unchecked(j + 1)
-                        + *self.weights.get_unchecked(row_offset + j + 2) * *input.get_unchecked(j + 2)
-                        + *self.weights.get_unchecked(row_offset + j + 3) * *input.get_unchecked(j + 3);
+                        + *self.weights.get_unchecked(row_offset + j + 1)
+                            * *input.get_unchecked(j + 1)
+                        + *self.weights.get_unchecked(row_offset + j + 2)
+                            * *input.get_unchecked(j + 2)
+                        + *self.weights.get_unchecked(row_offset + j + 3)
+                            * *input.get_unchecked(j + 3);
                 }
                 j += 4;
             }
@@ -189,8 +208,16 @@ impl DenseLayer {
     #[inline(always)]
     pub fn forward_sigmoid(&self, input: &[f64], output: &mut [f64]) {
         // FIX #355: Active bounds check for --release safety
-        assert_eq!(input.len(), self.in_features, "DarkAlpha Layer: input dimension mismatch");
-        assert_eq!(output.len(), self.out_features, "DarkAlpha Layer: output dimension mismatch");
+        assert_eq!(
+            input.len(),
+            self.in_features,
+            "DarkAlpha Layer: input dimension mismatch"
+        );
+        assert_eq!(
+            output.len(),
+            self.out_features,
+            "DarkAlpha Layer: output dimension mismatch"
+        );
 
         for i in 0..self.out_features {
             let row_offset = i * self.in_features;
@@ -228,7 +255,11 @@ impl DenseLayer {
 
     /// Cuantiza los pesos de la capa a Int8 simétrico para aceleración en CPU y L1 Cache (Punto #072)
     pub fn quantize_int8(&self) -> QuantizedDenseLayer {
-        let max_abs = self.weights.iter().fold(0.0_f64, |acc, &w| acc.max(w.abs())).max(1e-8);
+        let max_abs = self
+            .weights
+            .iter()
+            .fold(0.0_f64, |acc, &w| acc.max(w.abs()))
+            .max(1e-8);
         let scale_w = max_abs / 127.0;
         let inv_scale = 127.0 / max_abs;
 
@@ -261,8 +292,16 @@ pub struct QuantizedDenseLayer {
 impl QuantizedDenseLayer {
     #[inline(always)]
     pub fn forward_relu(&self, input: &[f64], output: &mut [f64]) {
-        assert_eq!(input.len(), self.in_features, "QuantizedDarkAlpha Layer: input dimension mismatch");
-        assert_eq!(output.len(), self.out_features, "QuantizedDarkAlpha Layer: output dimension mismatch");
+        assert_eq!(
+            input.len(),
+            self.in_features,
+            "QuantizedDarkAlpha Layer: input dimension mismatch"
+        );
+        assert_eq!(
+            output.len(),
+            self.out_features,
+            "QuantizedDarkAlpha Layer: output dimension mismatch"
+        );
 
         let scale = self.scale_w;
         for i in 0..self.out_features {
@@ -290,8 +329,16 @@ impl QuantizedDenseLayer {
 
     #[inline(always)]
     pub fn forward_sigmoid(&self, input: &[f64], output: &mut [f64]) {
-        assert_eq!(input.len(), self.in_features, "QuantizedDarkAlpha Layer: input dimension mismatch");
-        assert_eq!(output.len(), self.out_features, "QuantizedDarkAlpha Layer: output dimension mismatch");
+        assert_eq!(
+            input.len(),
+            self.in_features,
+            "QuantizedDarkAlpha Layer: input dimension mismatch"
+        );
+        assert_eq!(
+            output.len(),
+            self.out_features,
+            "QuantizedDarkAlpha Layer: output dimension mismatch"
+        );
 
         let scale = self.scale_w;
         for i in 0..self.out_features {
@@ -333,21 +380,32 @@ impl Scaler {
     pub fn scale(&self, features: &mut [f64]) {
         for i in 0..features.len() {
             if i < self.mean.len() && i < self.std_dev.len() {
-                let m = if self.mean[i].is_finite() { self.mean[i] } else { 0.0 };
-                let s = if self.std_dev[i].is_finite() { self.std_dev[i] } else { 0.0 };
-                let feat = if features[i].is_finite() { features[i] } else { 0.0 };
-                let scaled = if s > 1e-8 {
-                    (feat - m) / s
+                let m = if self.mean[i].is_finite() {
+                    self.mean[i]
                 } else {
-                    feat - m
+                    0.0
                 };
+                let s = if self.std_dev[i].is_finite() {
+                    self.std_dev[i]
+                } else {
+                    0.0
+                };
+                let feat = if features[i].is_finite() {
+                    features[i]
+                } else {
+                    0.0
+                };
+                let scaled = if s > 1e-8 { (feat - m) / s } else { feat - m };
                 // Limitar sólo por seguridad matemática (f64 exp overflow) no heurística
-                features[i] = if scaled.is_finite() { scaled.clamp(-700.0, 700.0) } else { 0.0 };
+                features[i] = if scaled.is_finite() {
+                    scaled.clamp(-700.0, 700.0)
+                } else {
+                    0.0
+                };
             }
         }
     }
 }
-
 
 /// Estadísticas de Welford Online por canal para normalización streaming O(1)
 /// Permite mantener la media móvil y varianza de cada feature sin cancelación catastrófica.
@@ -494,9 +552,9 @@ impl DarkAlphaEngine {
     /// input_dim=20 features (price, vol, obi, atr, ema, vix, dxy, sp500, etc.)
     pub fn new(input_dim: usize, hidden1: usize, hidden2: usize) -> Self {
         Self {
-            layer1: DenseLayer::new_xavier(input_dim, hidden1),        // Xavier init para Tanh
-            layer2: DenseLayer::new_xavier(hidden1, hidden2),          // Xavier init para Tanh
-            layer3: DenseLayer::new_xavier(hidden2, 1),                // Xavier init para Sigmoid
+            layer1: DenseLayer::new_xavier(input_dim, hidden1), // Xavier init para Tanh
+            layer2: DenseLayer::new_xavier(hidden1, hidden2),   // Xavier init para Tanh
+            layer3: DenseLayer::new_xavier(hidden2, 1),         // Xavier init para Sigmoid
             scaler: None,
             channel_normalizers: vec![ChannelWelfordStats::new(); input_dim],
             per_coin_normalizers: vec![vec![ChannelWelfordStats::new(); input_dim]; 30],
@@ -520,10 +578,12 @@ impl DarkAlphaEngine {
         self.sanitize_denormals();
         let in_dim = self.layer1.in_features;
         if self.channel_normalizers.len() != in_dim {
-            self.channel_normalizers.resize(in_dim, ChannelWelfordStats::new());
+            self.channel_normalizers
+                .resize(in_dim, ChannelWelfordStats::new());
         }
         if self.per_coin_normalizers.len() < 30 {
-            self.per_coin_normalizers.resize(30, vec![ChannelWelfordStats::new(); in_dim]);
+            self.per_coin_normalizers
+                .resize(30, vec![ChannelWelfordStats::new(); in_dim]);
         }
         for coin_norms in self.per_coin_normalizers.iter_mut() {
             if coin_norms.len() != in_dim {
@@ -572,14 +632,21 @@ impl DarkAlphaEngine {
 
             if let Some(scaler) = &self.scaler {
                 // Adaptabilidad dimensional y sanitización defensiva ante no-finitos (reemplazo por 0.0)
-                for (dest, &src) in self.buf_scaled[..in_dim].iter_mut().zip(&features[..in_dim]) {
+                for (dest, &src) in self.buf_scaled[..in_dim]
+                    .iter_mut()
+                    .zip(&features[..in_dim])
+                {
                     *dest = if src.is_finite() { src } else { 0.0 };
                 }
                 scaler.scale(&mut self.buf_scaled[..in_dim]);
             } else {
                 // 1. Normalización Welford Online individual por canal O(1) con control de congelamiento (N-11 / D-138)
                 for i in 0..in_dim {
-                    let raw = if features[i].is_finite() { features[i] } else { 0.0 };
+                    let raw = if features[i].is_finite() {
+                        features[i]
+                    } else {
+                        0.0
+                    };
                     self.buf_scaled[i] = if self.freeze_normalizers {
                         if self.channel_normalizers[i].count < 500.0 {
                             self.channel_normalizers[i].normalize(raw)
@@ -632,20 +699,22 @@ impl DarkAlphaEngine {
         }
 
         if self.per_coin_normalizers.len() <= coin_id {
-            self.per_coin_normalizers.resize_with(coin_id + 1, || vec![ChannelWelfordStats::new(); in_dim]);
+            self.per_coin_normalizers
+                .resize_with(coin_id + 1, || vec![ChannelWelfordStats::new(); in_dim]);
         }
         if self.per_coin_normalizers[coin_id].len() < in_dim {
             self.per_coin_normalizers[coin_id].resize(in_dim, ChannelWelfordStats::new());
         }
 
-        if self.buf_scaled.len() < in_dim
-            || self.buf_h1.len() < self.layer1.out_features
-        {
+        if self.buf_scaled.len() < in_dim || self.buf_h1.len() < self.layer1.out_features {
             self.init_buffers();
         }
 
         if let Some(scaler) = &self.scaler {
-            for (dest, &src) in self.buf_scaled[..in_dim].iter_mut().zip(&features[..in_dim]) {
+            for (dest, &src) in self.buf_scaled[..in_dim]
+                .iter_mut()
+                .zip(&features[..in_dim])
+            {
                 *dest = if src.is_finite() { src } else { 0.0 };
             }
             scaler.scale(&mut self.buf_scaled[..in_dim]);
@@ -657,7 +726,11 @@ impl DarkAlphaEngine {
             // per-coin toma el control cuando acumula evidencia propia.
             let normalizers = &mut self.per_coin_normalizers[coin_id];
             for i in 0..in_dim {
-                let raw = if features[i].is_finite() { features[i] } else { 0.0 };
+                let raw = if features[i].is_finite() {
+                    features[i]
+                } else {
+                    0.0
+                };
                 // D-124 & D-138: Warmup adaptativo de 500 ticks en Welford antes del freeze estricto.
                 // Si el normalizador per-coin aún no acumuló 500 observaciones:
                 // - Si el canal global entrenado está disponible (count >= 20), usar transform del canal global mientras se actualiza el local.
@@ -666,7 +739,9 @@ impl DarkAlphaEngine {
                 self.buf_scaled[i] = if self.freeze_normalizers {
                     if normalizers[i].count >= 500.0 {
                         normalizers[i].transform(raw)
-                    } else if i < self.channel_normalizers.len() && self.channel_normalizers[i].count >= 20.0 {
+                    } else if i < self.channel_normalizers.len()
+                        && self.channel_normalizers[i].count >= 20.0
+                    {
                         normalizers[i].update(raw);
                         self.channel_normalizers[i].transform(raw)
                     } else {
@@ -693,7 +768,8 @@ impl DarkAlphaEngine {
             }
         }
 
-        self.layer1.forward_relu(&self.buf_scaled[..in_dim], &mut self.buf_h1);
+        self.layer1
+            .forward_relu(&self.buf_scaled[..in_dim], &mut self.buf_h1);
         self.layer2.forward_relu(&self.buf_h1, &mut self.buf_h2);
         self.layer3.forward_sigmoid(&self.buf_h2, &mut self.buf_out);
 
@@ -707,7 +783,11 @@ impl DarkAlphaEngine {
 
     /// Forward pass con plasticidad sináptica continua (Oja Hebbian Learning)
     #[inline(always)]
-    pub fn predict_with_plasticity(&mut self, features: &[f64], plasticity_rate: f64) -> Option<f64> {
+    pub fn predict_with_plasticity(
+        &mut self,
+        features: &[f64],
+        plasticity_rate: f64,
+    ) -> Option<f64> {
         let prob = self.predict(features)?;
         if plasticity_rate > 1e-9 && plasticity_rate.is_finite() {
             let lr = (plasticity_rate * 1e-5).clamp(1e-7, 1e-3);
@@ -761,7 +841,11 @@ impl DarkAlphaEngine {
                 } else {
                     let in_dim = self.layer1.in_features;
                     for i in 0..in_dim {
-                        let raw = if features[i].is_finite() { features[i] } else { 0.0 };
+                        let raw = if features[i].is_finite() {
+                            features[i]
+                        } else {
+                            0.0
+                        };
                         scaled_features[i] = self.channel_normalizers[i].normalize(raw);
                     }
                     let mut sum = 0.0;
@@ -824,7 +908,11 @@ impl DarkAlphaEngine {
                     let delta_h1 = grad_h1[i] * d_relu_h1;
 
                     let row_offset = i * self.layer1.in_features;
-                    for (j, &feat) in scaled_features.iter().enumerate().take(self.layer1.in_features) {
+                    for (j, &feat) in scaled_features
+                        .iter()
+                        .enumerate()
+                        .take(self.layer1.in_features)
+                    {
                         self.layer1.weights[row_offset + j] -= learning_rate * delta_h1 * feat;
                     }
                     self.layer1.biases[i] -= learning_rate * delta_h1;
@@ -882,24 +970,38 @@ impl DarkAlphaEngine {
             .unwrap_or(42);
 
         let mut next_rand = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (seed >> 33) as f64 / (1u64 << 31) as f64 - 0.5
         };
 
         for w in self.layer1.weights.iter_mut() {
             let delta = next_rand() * 0.05;
             let new_w = *w + delta;
-            *w = if new_w.is_finite() { new_w.clamp(-100.0, 100.0) } else { 0.0 };
+            *w = if new_w.is_finite() {
+                new_w.clamp(-100.0, 100.0)
+            } else {
+                0.0
+            };
         }
         for w in self.layer2.weights.iter_mut() {
             let delta = next_rand() * 0.05;
             let new_w = *w + delta;
-            *w = if new_w.is_finite() { new_w.clamp(-100.0, 100.0) } else { 0.0 };
+            *w = if new_w.is_finite() {
+                new_w.clamp(-100.0, 100.0)
+            } else {
+                0.0
+            };
         }
         for w in self.layer3.weights.iter_mut() {
             let delta = next_rand() * 0.05;
             let new_w = *w + delta;
-            *w = if new_w.is_finite() { new_w.clamp(-100.0, 100.0) } else { 0.0 };
+            *w = if new_w.is_finite() {
+                new_w.clamp(-100.0, 100.0)
+            } else {
+                0.0
+            };
         }
     }
 }
@@ -950,7 +1052,12 @@ mod tests {
         let per_call_ns = elapsed.as_nanos() / iterations as u128;
         println!("⚡ Inferencia por llamada: {} ns", per_call_ns);
         let max_allowed_ns = 25_000;
-        assert!(per_call_ns < max_allowed_ns, "Demasiado lento: {} ns (límite: {} ns)", per_call_ns, max_allowed_ns);
+        assert!(
+            per_call_ns < max_allowed_ns,
+            "Demasiado lento: {} ns (límite: {} ns)",
+            per_call_ns,
+            max_allowed_ns
+        );
     }
 
     #[test]
@@ -965,7 +1072,12 @@ mod tests {
         q_layer.forward_relu(&input, &mut out_q);
 
         for (f, q) in out_f64.iter().zip(&out_q) {
-            assert!((f - q).abs() < 0.20, "Int8 quantization error should be bounded: f64={}, int8={}", f, q);
+            assert!(
+                (f - q).abs() < 0.20,
+                "Int8 quantization error should be bounded: f64={}, int8={}",
+                f,
+                q
+            );
         }
     }
 
@@ -973,7 +1085,8 @@ mod tests {
     fn test_load_json_roundtrip() {
         let model = DarkAlphaEngine::default_model();
         let json_str = serde_json::to_string(&model).expect("serialization to JSON should succeed");
-        let restored: DarkAlphaEngine = serde_json::from_str(&json_str).expect("deserialization from JSON should succeed");
+        let restored: DarkAlphaEngine =
+            serde_json::from_str(&json_str).expect("deserialization from JSON should succeed");
         assert_eq!(restored.layer1.in_features, 34);
         assert_eq!(restored.layer1.out_features, 64);
     }
@@ -1005,7 +1118,9 @@ mod tests {
         let mut engine = DarkAlphaEngine::default_model();
         engine.force_hyper_mutation(13.0);
         let features = vec![0.1; 34];
-        let result = engine.predict(&features).expect("mutated engine should predict");
+        let result = engine
+            .predict(&features)
+            .expect("mutated engine should predict");
         assert!((0.0..=1.0).contains(&result));
     }
 
@@ -1018,7 +1133,10 @@ mod tests {
         features[10] = -f64::INFINITY;
 
         let result = engine.predict(&features);
-        assert!(result.is_some(), "Sanitizer must handle NaN/Inf by mapping to 0.0");
+        assert!(
+            result.is_some(),
+            "Sanitizer must handle NaN/Inf by mapping to 0.0"
+        );
         let prob = result.unwrap();
         assert!(prob.is_finite());
         assert!((0.0..=1.0).contains(&prob));
@@ -1056,7 +1174,10 @@ mod tests {
     fn test_dark_alpha_engine_mismatched_features_dimension_rejection() {
         let mut engine = DarkAlphaEngine::default_model();
         let short_features = vec![0.1; 30]; // 50 instead of 34
-        assert!(engine.predict(&short_features).is_none(), "Should reject mismatched dimension");
+        assert!(
+            engine.predict(&short_features).is_none(),
+            "Should reject mismatched dimension"
+        );
     }
 
     #[test]
@@ -1145,7 +1266,10 @@ mod tests {
             }
 
             let pred = engine.predict(&feats);
-            assert!(pred.is_some(), "Predict must succeed with multi-scale features");
+            assert!(
+                pred.is_some(),
+                "Predict must succeed with multi-scale features"
+            );
             let p = pred.unwrap();
             assert!(p.is_finite());
             assert!((0.0..=1.0).contains(&p));
@@ -1174,10 +1298,3 @@ mod tests {
         // freeze() explícito.
     }
 }
-
-
-
-
-
-
-

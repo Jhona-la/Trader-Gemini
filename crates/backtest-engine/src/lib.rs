@@ -1,11 +1,11 @@
 pub mod network_jitter;
-pub mod vectorized;
 pub mod tick_replayer;
+pub mod vectorized;
 
 pub use network_jitter::NetworkJitterSimulator;
-pub use vectorized::{run_vectorized_hybrid, OrderBookL2DepthSlippageModel};
-pub use tick_replayer::*;
 use quantum_arena::genome::SuperGenotype;
+pub use tick_replayer::*;
+pub use vectorized::{OrderBookL2DepthSlippageModel, run_vectorized_hybrid};
 
 /// F3.3: contrato de tamaño del buffer out_stats. El código anterior escribía
 /// 8 floats en buffers de 4 creados por los wrappers FFI → corrupción de heap
@@ -98,8 +98,8 @@ pub fn run_backtest_native(
         // tensor usa `prev_rel_ret` (causal). Antes, 14+ campos del tensor 54D
         // (funding, fear&greed, long/short, VIX, basis, skew...) derivaban del
         // retorno de la vela que aún no había cerrado.
-        let prev_rel_ret = ((prev_close - prev_prev_close) / prev_prev_close.max(1e-9))
-            .clamp(-1.0, 1.0);
+        let prev_rel_ret =
+            ((prev_close - prev_prev_close) / prev_prev_close.max(1e-9)).clamp(-1.0, 1.0);
 
         // OFI NO anticipado: señal de la vela PREVIA (disponible en t=0 de esta).
         let mut bid_ratio = 0.5;
@@ -113,7 +113,7 @@ pub fn run_backtest_native(
         let ask_qty = current_vol * (1.0 - bid_ratio);
 
         // FIX BLOQUEO #4: Incrementar micro-ticks de 10 a 30 para resolución microestructura
-        // Con 10 ticks/vela, las estrategias de microestructura (Hawkes, OFI, Soliton) 
+        // Con 10 ticks/vela, las estrategias de microestructura (Hawkes, OFI, Soliton)
         // no pueden detectar patrones reales. 30 ticks proveen 2 por segundo.
         let num_ticks = 30;
         let vol_step = current_vol / num_ticks as f64;
@@ -123,7 +123,11 @@ pub fn run_backtest_native(
         let mut sim_price = prev_close;
         let mut omni_sim = [0.0; 54];
         let rel_ret = prev_rel_ret; // R2.1a: features del tensor = vela PREVIA
-        let ofi_proxy = if bid_qty + ask_qty > 0.0 { (bid_qty - ask_qty) / (bid_qty + ask_qty) } else { 0.0 };
+        let ofi_proxy = if bid_qty + ask_qty > 0.0 {
+            (bid_qty - ask_qty) / (bid_qty + ask_qty)
+        } else {
+            0.0
+        };
         // 1. Cotizaciones Cross-Exchange y Microestructura (0..10)
         // Paridad 1:1 con producción (omni_multiplexer.rs):
         // feats[0] = 0.0 (referencia base spot)
@@ -154,7 +158,7 @@ pub fn run_backtest_native(
         omni_sim[14] = dyn_fear_greed; // fear_greed_index
         omni_sim[15] = 12.5; // altcoin_dominance
         omni_sim[16] = 25.0; // mempool_congestion
-        omni_sim[17] = 0.0;  // usdt_mint_alert
+        omni_sim[17] = 0.0; // usdt_mint_alert
         omni_sim[18] = current_vol * 0.2; // exchange_inflows
         omni_sim[19] = current_vol * 0.2; // exchange_outflows
         omni_sim[20] = 0.0; // whale_alert_proxy
@@ -171,7 +175,11 @@ pub fn run_backtest_native(
 
         // 3. Derivados, Clusters y Métricas de Flujo (31..54)
         omni_sim[31] = (bid_qty - ask_qty) * 1.2; // futures_cvd
-        omni_sim[32] = if ask_qty > 0.0 { (bid_qty / ask_qty).clamp(0.1, 10.0) } else { 1.0 }; // taker_buy_sell_ratio
+        omni_sim[32] = if ask_qty > 0.0 {
+            (bid_qty / ask_qty).clamp(0.1, 10.0)
+        } else {
+            1.0
+        }; // taker_buy_sell_ratio
         omni_sim[33] = rel_ret * current_close * 0.001; // futures_basis_premium
         omni_sim[34] = current_close * 1.01; // liq_cluster_shorts
         omni_sim[35] = current_close * 0.99; // liq_cluster_longs
@@ -194,7 +202,9 @@ pub fn run_backtest_native(
         omni_sim[52] = 2.2; // wb_us_real_interest
         omni_sim[53] = 2.6; // wb_global_gdp_growth
         // FIX #943: SplitMix64 PRNG (passes BigCrush) replacing weak glibc LCG
-        let mut noise_seed = (i as u64).wrapping_mul(0x9E3779B97F4A7C15).wrapping_add(0x6A09E667F3BCC908);
+        let mut noise_seed = (i as u64)
+            .wrapping_mul(0x9E3779B97F4A7C15)
+            .wrapping_add(0x6A09E667F3BCC908);
 
         for t in 0..num_ticks {
             // SplitMix64 step: full 64-bit period, statistically robust
@@ -241,7 +251,9 @@ pub fn run_backtest_native(
 
             let remaining_ticks = (num_ticks - t) as f64;
             let bridge_drift = (target_phase_price - sim_price) / remaining_ticks.max(1.0);
-            let volatility = prev_close * cfg.base_slippage_floor.max(0.0001) * ((num_ticks - 1 - t) as f64 / num_ticks as f64).sqrt();
+            let volatility = prev_close
+                * cfg.base_slippage_floor.max(0.0001)
+                * ((num_ticks - 1 - t) as f64 / num_ticks as f64).sqrt();
             sim_price = if is_kline {
                 current_close
             } else {
@@ -258,22 +270,32 @@ pub fn run_backtest_native(
             let sim_ask_qty = ask_qty_step * (1.5 - vol_noise);
 
             // FIX BLOQUEO #4: Actualizar omni_sim dinámicamente por tick
-            // Antes: omni_sim era estático para toda la vela. Ahora: cada tick 
+            // Antes: omni_sim era estático para toda la vela. Ahora: cada tick
             // actualiza las features que cambian (precios, OFI, volumen).
-            let tick_ofi = if sim_bid_qty + sim_ask_qty > 0.0 { 
-                (sim_bid_qty - sim_ask_qty) / (sim_bid_qty + sim_ask_qty) 
-            } else { 0.0 };
+            let tick_ofi = if sim_bid_qty + sim_ask_qty > 0.0 {
+                (sim_bid_qty - sim_ask_qty) / (sim_bid_qty + sim_ask_qty)
+            } else {
+                0.0
+            };
             let tick_ret = if sim_price > 0.0 && prev_close > 0.0 {
                 (sim_price - prev_close) / prev_close
-            } else { 0.0 };
+            } else {
+                0.0
+            };
             // Actualizar features dinámicas por tick (Alineado 1:1 con Producción)
             omni_sim[0] = 0.0;
             omni_sim[1] = (tick_ret * 10.0).clamp(-5.0, 5.0);
-            for j in 2..10 { omni_sim[j] = 0.0; } // Matches production offline secondary WS feeds
+            for j in 2..10 {
+                omni_sim[j] = 0.0;
+            } // Matches production offline secondary WS feeds
             omni_sim[10] = vol_step * tick_ofi.abs();
             omni_sim[30] = sim_bid_qty - sim_ask_qty;
             omni_sim[31] = (sim_bid_qty - sim_ask_qty) * 1.2;
-            omni_sim[32] = if sim_ask_qty > 0.0 { (sim_bid_qty / sim_ask_qty).clamp(0.1, 10.0) } else { 1.0 };
+            omni_sim[32] = if sim_ask_qty > 0.0 {
+                (sim_bid_qty / sim_ask_qty).clamp(0.1, 10.0)
+            } else {
+                1.0
+            };
             omni_sim[39] = tick_ofi;
             omni_sim[49] = tick_ret.abs() * 100.0;
 
@@ -384,19 +406,43 @@ pub fn run_backtest_native(
     let std_dev = variance.max(0.0).sqrt();
     let sharpe = if std_dev > 0.0 {
         let raw_sharpe = mean_pnl / std_dev;
-        if raw_sharpe.is_finite() { raw_sharpe } else { 0.0 }
+        if raw_sharpe.is_finite() {
+            raw_sharpe
+        } else {
+            0.0
+        }
     } else {
         0.0
     };
 
-    out_stats[0] = if net_win_rate.is_finite() { net_win_rate } else { 0.0 };
+    out_stats[0] = if net_win_rate.is_finite() {
+        net_win_rate
+    } else {
+        0.0
+    };
     out_stats[1] = trades as f64;
-    out_stats[2] = if final_cap.is_finite() { final_cap } else { initial_capital };
+    out_stats[2] = if final_cap.is_finite() {
+        final_cap
+    } else {
+        initial_capital
+    };
     out_stats[3] = if max_dd.is_finite() { max_dd } else { 0.0 };
     out_stats[4] = if sharpe.is_finite() { sharpe } else { 0.0 };
-    out_stats[5] = if gross_pnl_sum.is_finite() { gross_pnl_sum } else { 0.0 };
-    out_stats[6] = if net_pnl_sum.is_finite() { net_pnl_sum } else { 0.0 };
-    out_stats[7] = if gross_win_rate.is_finite() { gross_win_rate } else { 0.0 };
+    out_stats[5] = if gross_pnl_sum.is_finite() {
+        gross_pnl_sum
+    } else {
+        0.0
+    };
+    out_stats[6] = if net_pnl_sum.is_finite() {
+        net_pnl_sum
+    } else {
+        0.0
+    };
+    out_stats[7] = if gross_win_rate.is_finite() {
+        gross_win_rate
+    } else {
+        0.0
+    };
 
     trades
 }
@@ -479,7 +525,10 @@ pub unsafe extern "C" fn ffi_run_unified_backtest_mmap(
     let file = match std::fs::File::open(filepath) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("⚠️ [BACKTEST MMAP ERROR] Failed to open file '{}': {}", filepath, e);
+            eprintln!(
+                "⚠️ [BACKTEST MMAP ERROR] Failed to open file '{}': {}",
+                filepath, e
+            );
             return 0;
         }
     };
@@ -487,7 +536,10 @@ pub unsafe extern "C" fn ffi_run_unified_backtest_mmap(
     let mmap = match unsafe { memmap2::MmapOptions::new().map(&file) } {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("⚠️ [BACKTEST MMAP ERROR] Failed to mmap file '{}': {}", filepath, e);
+            eprintln!(
+                "⚠️ [BACKTEST MMAP ERROR] Failed to mmap file '{}': {}",
+                filepath, e
+            );
             return 0;
         }
     };
@@ -553,7 +605,10 @@ pub unsafe extern "C" fn ffi_run_polars_backtest_mmap(
     let file = match std::fs::File::open(filepath) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("⚠️ [POLARS MMAP ERROR] Failed to open file '{}': {}", filepath, e);
+            eprintln!(
+                "⚠️ [POLARS MMAP ERROR] Failed to open file '{}': {}",
+                filepath, e
+            );
             return 0;
         }
     };
@@ -561,7 +616,10 @@ pub unsafe extern "C" fn ffi_run_polars_backtest_mmap(
     let mmap = match unsafe { memmap2::MmapOptions::new().map(&file) } {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("⚠️ [POLARS MMAP ERROR] Failed to mmap file '{}': {}", filepath, e);
+            eprintln!(
+                "⚠️ [POLARS MMAP ERROR] Failed to mmap file '{}': {}",
+                filepath, e
+            );
             return 0;
         }
     };
@@ -708,7 +766,10 @@ mod tests {
             "BTCUSDT",
             13.0,
         );
-        assert_eq!(res, 0, "Buffer too short must fail safe without memory corruption");
+        assert_eq!(
+            res, 0,
+            "Buffer too short must fail safe without memory corruption"
+        );
     }
 
     #[test]
@@ -761,4 +822,3 @@ mod tests {
         assert!(out_stats[3].is_finite());
     }
 }
-

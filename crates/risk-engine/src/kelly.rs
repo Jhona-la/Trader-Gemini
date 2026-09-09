@@ -14,7 +14,16 @@ pub fn calculate_kelly_fraction(
     strategy_base_fraction: f64,
 ) -> f64 {
     // FIX #653: Guarda de finitud estricta previa
-    if !win_rate.is_finite() || !profit_factor.is_finite() || !current_capital.is_finite() || !base_capital.is_finite() || !kelly_survival_cap_ratio.is_finite() || !kelly_expansion_mult.is_finite() || !clamp_min.is_finite() || !clamp_max.is_finite() || !strategy_base_fraction.is_finite() {
+    if !win_rate.is_finite()
+        || !profit_factor.is_finite()
+        || !current_capital.is_finite()
+        || !base_capital.is_finite()
+        || !kelly_survival_cap_ratio.is_finite()
+        || !kelly_expansion_mult.is_finite()
+        || !clamp_min.is_finite()
+        || !clamp_max.is_finite()
+        || !strategy_base_fraction.is_finite()
+    {
         return 0.0;
     }
 
@@ -111,7 +120,10 @@ mod tests {
         let low = call(0.4, 0.7, 13.0, base, surv, exp, cmin, cmax, sbase);
         let high = call(0.4, 0.99, 13.0, base, surv, exp, cmin, cmax, sbase);
         assert!(high > low, "más cerca del break-even -> más exploración");
-        assert!(high <= cmin * 0.25 + 1e-12, "exploración acotada a quarter del piso");
+        assert!(
+            high <= cmin * 0.25 + 1e-12,
+            "exploración acotada a quarter del piso"
+        );
     }
 
     #[test]
@@ -121,7 +133,10 @@ mod tests {
         let f = call(0.03, 2.0, 100.0, base, surv, exp, cmin, cmax, sbase);
         // El resultado ya no es la rampa de exploración: con PF>1 fluye a la
         // fórmula exacta y su piso clamp_min.
-        assert!(f >= cmin - 1e-12, "Kelly exacto con piso genómico, no rampa");
+        assert!(
+            f >= cmin - 1e-12,
+            "Kelly exacto con piso genómico, no rampa"
+        );
     }
 
     #[test]
@@ -137,6 +152,9 @@ mod tests {
         let (base, surv, exp, cmin, cmax, _sbase) = base_args();
         let low_base = call(0.6, 2.0, 13.0, base, surv, exp, cmin, cmax, 0.20);
         let high_base = call(0.6, 2.0, 13.0, base, surv, exp, cmin, cmax, 0.75);
-        assert!(high_base > low_base, "strategy_base_fraction revive como coeficiente");
+        assert!(
+            high_base > low_base,
+            "strategy_base_fraction revive como coeficiente"
+        );
     }
 }

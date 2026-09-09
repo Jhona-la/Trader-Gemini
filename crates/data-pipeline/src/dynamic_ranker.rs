@@ -93,7 +93,14 @@ pub async fn fetch_dynamic_universe(
 
     let min_vol = if is_testnet { 0.0 } else { 1_000_000.0 };
     let stablecoins = [
-        "USDCUSDT", "FDUSDUSDT", "TUSDUSDT", "BUSDUSDT", "USDPUSDT", "EURUSDT", "DAIUSDT", "AEURUSDT",
+        "USDCUSDT",
+        "FDUSDUSDT",
+        "TUSDUSDT",
+        "BUSDUSDT",
+        "USDPUSDT",
+        "EURUSDT",
+        "DAIUSDT",
+        "AEURUSDT",
     ];
 
     let mut valid_assets: Vec<SelectedAsset> = tickers
@@ -123,10 +130,22 @@ pub async fn fetch_dynamic_universe(
     //   máximo en 15% diario, decae exponencialmente después.
     let score = |a: &SelectedAsset| -> f64 {
         // FIX #676: Sanitizar volatilidad y volumen para ranking
-        let pct = if a.volatility.is_finite() && a.volatility >= 0.0 { a.volatility } else { 0.0 };
-        let vol = if a.volume.is_finite() && a.volume >= 0.0 { a.volume } else { 0.0 };
+        let pct = if a.volatility.is_finite() && a.volatility >= 0.0 {
+            a.volatility
+        } else {
+            0.0
+        };
+        let vol = if a.volume.is_finite() && a.volume >= 0.0 {
+            a.volume
+        } else {
+            0.0
+        };
         let s = (1.0 + vol).ln() * pct * (-pct / 15.0_f64).exp();
-        if s.is_finite() { s } else { 0.0 }
+        if s.is_finite() {
+            s
+        } else {
+            0.0
+        }
     };
     valid_assets.sort_by(|a, b| {
         score(b)
@@ -229,26 +248,53 @@ mod tests {
         };
 
         let score_fn = |a: &SelectedAsset| -> f64 {
-            let pct = if a.volatility.is_finite() && a.volatility >= 0.0 { a.volatility } else { 0.0 };
-            let vol = if a.volume.is_finite() && a.volume >= 0.0 { a.volume } else { 0.0 };
+            let pct = if a.volatility.is_finite() && a.volatility >= 0.0 {
+                a.volatility
+            } else {
+                0.0
+            };
+            let vol = if a.volume.is_finite() && a.volume >= 0.0 {
+                a.volume
+            } else {
+                0.0
+            };
             let s = (1.0 + vol).ln() * pct * (-pct / 15.0_f64).exp();
-            if s.is_finite() { s } else { 0.0 }
+            if s.is_finite() {
+                s
+            } else {
+                0.0
+            }
         };
 
         let score_15 = score_fn(&asset15);
         let score_50 = score_fn(&asset50);
 
         // Volatilidad moderada (15%) debe tener mayor puntaje que extrema (50%)
-        assert!(score_15 > score_50, "15% vol debe puntuar más alto que 50% vol");
+        assert!(
+            score_15 > score_50,
+            "15% vol debe puntuar más alto que 50% vol"
+        );
     }
 
     #[test]
     fn test_dynamic_ranker_nan_immunity() {
         let score_fn = |vol: f64, pct: f64| -> f64 {
-            let pct = if pct.is_finite() && pct >= 0.0 { pct } else { 0.0 };
-            let vol = if vol.is_finite() && vol >= 0.0 { vol } else { 0.0 };
+            let pct = if pct.is_finite() && pct >= 0.0 {
+                pct
+            } else {
+                0.0
+            };
+            let vol = if vol.is_finite() && vol >= 0.0 {
+                vol
+            } else {
+                0.0
+            };
             let s = (1.0 + vol).ln() * pct * (-pct / 15.0_f64).exp();
-            if s.is_finite() { s } else { 0.0 }
+            if s.is_finite() {
+                s
+            } else {
+                0.0
+            }
         };
 
         assert_eq!(score_fn(f64::NAN, 15.0), 0.0);

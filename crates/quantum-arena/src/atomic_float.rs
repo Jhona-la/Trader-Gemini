@@ -178,4 +178,3 @@ mod tests {
         assert_eq!(atomic.load(Ordering::SeqCst), 60.0);
     }
 }
-

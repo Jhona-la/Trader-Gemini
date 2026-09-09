@@ -1,4 +1,3 @@
-
 use std::time::Duration;
 
 /// Simulador de Caos para el ApiCircuitBreaker
@@ -22,7 +21,7 @@ impl ChaosMonkey {
         if self.rate_limit_hit {
             return Err("HTTP 429 Too Many Requests (Simulado)".to_string());
         }
-        
+
         // FIX #1493: Entropía determinista y multi-arquitectura (x86_64 / ARM / WASM)
         #[cfg(target_arch = "x86_64")]
         let r = unsafe { core::arch::x86_64::_rdtsc() };
@@ -52,7 +51,7 @@ mod tests {
     fn test_chaos_injection() {
         let mut monkey = ChaosMonkey::new();
         monkey.rate_limit_hit = true;
-        
+
         let res = monkey.inject_chaos();
         assert!(res.is_err());
         assert_eq!(res.unwrap_err(), "HTTP 429 Too Many Requests (Simulado)");

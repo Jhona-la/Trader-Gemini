@@ -68,35 +68,106 @@ impl Genotype {
 
     pub fn apply_to_arena(&self, arena: &GlobalArena) {
         // FIX #685: Sanitizar parámetros de genoma antes de almacenar en atómicos
-        let g_lev = if self.global_leverage.is_finite() && self.global_leverage >= 1.0 { self.global_leverage } else { 10.0 };
-        let t_th = if self.trend_threshold.is_finite() { self.trend_threshold } else { 0.5 };
-        let m_sp = if self.maker_spread_pct.is_finite() && self.maker_spread_pct > 0.0 { self.maker_spread_pct } else { 0.0005 };
-        let m_obi = if self.maker_obi_threshold.is_finite() { self.maker_obi_threshold } else { 0.5 };
-        let sc_tp = if self.scalp_tp.is_finite() && self.scalp_tp > 0.0 { self.scalp_tp } else { 0.003 };
-        let sc_sl = if self.scalp_sl.is_finite() && self.scalp_sl > 0.0 { self.scalp_sl } else { 0.002 };
-        let sw_tp = if self.swing_tp.is_finite() && self.swing_tp > 0.0 { self.swing_tp } else { 0.010 };
-        let sw_sl = if self.swing_sl.is_finite() && self.swing_sl > 0.0 { self.swing_sl } else { 0.005 };
-        let sc_z = if self.scalp_z_target.is_finite() { self.scalp_z_target } else { 2.0 };
-        let cap_sp = if self.capital_split_scalp.is_finite() { self.capital_split_scalp } else { 0.5 };
-        let min_conf = if self.min_confidence.is_finite() { self.min_confidence } else { 0.65 };
-        let exp_lev = if self.explosive_leverage_multiplier.is_finite() && self.explosive_leverage_multiplier >= 1.0 { self.explosive_leverage_multiplier } else { 1.5 };
+        let g_lev = if self.global_leverage.is_finite() && self.global_leverage >= 1.0 {
+            self.global_leverage
+        } else {
+            10.0
+        };
+        let t_th = if self.trend_threshold.is_finite() {
+            self.trend_threshold
+        } else {
+            0.5
+        };
+        let m_sp = if self.maker_spread_pct.is_finite() && self.maker_spread_pct > 0.0 {
+            self.maker_spread_pct
+        } else {
+            0.0005
+        };
+        let m_obi = if self.maker_obi_threshold.is_finite() {
+            self.maker_obi_threshold
+        } else {
+            0.5
+        };
+        let sc_tp = if self.scalp_tp.is_finite() && self.scalp_tp > 0.0 {
+            self.scalp_tp
+        } else {
+            0.003
+        };
+        let sc_sl = if self.scalp_sl.is_finite() && self.scalp_sl > 0.0 {
+            self.scalp_sl
+        } else {
+            0.002
+        };
+        let sw_tp = if self.swing_tp.is_finite() && self.swing_tp > 0.0 {
+            self.swing_tp
+        } else {
+            0.010
+        };
+        let sw_sl = if self.swing_sl.is_finite() && self.swing_sl > 0.0 {
+            self.swing_sl
+        } else {
+            0.005
+        };
+        let sc_z = if self.scalp_z_target.is_finite() {
+            self.scalp_z_target
+        } else {
+            2.0
+        };
+        let cap_sp = if self.capital_split_scalp.is_finite() {
+            self.capital_split_scalp
+        } else {
+            0.5
+        };
+        let min_conf = if self.min_confidence.is_finite() {
+            self.min_confidence
+        } else {
+            0.65
+        };
+        let exp_lev = if self.explosive_leverage_multiplier.is_finite()
+            && self.explosive_leverage_multiplier >= 1.0
+        {
+            self.explosive_leverage_multiplier
+        } else {
+            1.5
+        };
 
         arena.config.global_leverage.store(g_lev, Ordering::Relaxed);
         arena.config.trend_threshold.store(t_th, Ordering::Relaxed);
         arena.config.maker_spread_pct.store(m_sp, Ordering::Relaxed);
-        arena.config.maker_obi_threshold.store(m_obi, Ordering::Relaxed);
+        arena
+            .config
+            .maker_obi_threshold
+            .store(m_obi, Ordering::Relaxed);
         arena.config.scalp_tp_base.store(sc_tp, Ordering::Relaxed);
         arena.config.scalp_sl_base.store(sc_sl, Ordering::Relaxed);
         arena.config.swing_tp_base.store(sw_tp, Ordering::Relaxed);
         arena.config.swing_sl_base.store(sw_sl, Ordering::Relaxed);
-        arena.config.scalp_obi_threshold.store(sc_z, Ordering::Relaxed);
-        arena.config.capital_split_scalp.store(cap_sp, Ordering::Relaxed);
-        arena.config.min_confidence_btc.store(min_conf, Ordering::Relaxed);
+        arena
+            .config
+            .scalp_obi_threshold
+            .store(sc_z, Ordering::Relaxed);
+        arena
+            .config
+            .capital_split_scalp
+            .store(cap_sp, Ordering::Relaxed);
+        arena
+            .config
+            .min_confidence_btc
+            .store(min_conf, Ordering::Relaxed);
         let ml_long = (0.50 + (min_conf - 0.50).abs()).clamp(0.51, 0.95);
         let ml_short = (0.50 - (min_conf - 0.50).abs()).clamp(0.05, 0.49);
-        arena.config.ml_threshold_long.store(ml_long, Ordering::Relaxed);
-        arena.config.ml_threshold_short.store(ml_short, Ordering::Relaxed);
-        arena.config.explosive_leverage_multiplier.store(exp_lev, Ordering::Relaxed);
+        arena
+            .config
+            .ml_threshold_long
+            .store(ml_long, Ordering::Relaxed);
+        arena
+            .config
+            .ml_threshold_short
+            .store(ml_short, Ordering::Relaxed);
+        arena
+            .config
+            .explosive_leverage_multiplier
+            .store(exp_lev, Ordering::Relaxed);
     }
 }
 
@@ -389,7 +460,11 @@ impl DarwinDaemon {
                     if cap > peak_capital {
                         peak_capital = cap;
                     }
-                    let dd = if peak_capital > 0.0 { (peak_capital - cap) / peak_capital } else { 0.0 };
+                    let dd = if peak_capital > 0.0 {
+                        (peak_capital - cap) / peak_capital
+                    } else {
+                        0.0
+                    };
                     if dd > max_drawdown && dd.is_finite() {
                         max_drawdown = dd;
                     }
@@ -397,7 +472,11 @@ impl DarwinDaemon {
             }
             let final_cap = arena.unified_capital.load(Ordering::Relaxed);
             let raw_fitness = (final_cap - initial_capital) * (1.0 - max_drawdown);
-            if raw_fitness.is_finite() { raw_fitness } else { -999999.0 }
+            if raw_fitness.is_finite() {
+                raw_fitness
+            } else {
+                -999999.0
+            }
         };
 
         println!("[Darwin] Online Evolution Complete.");
@@ -412,12 +491,15 @@ impl DarwinDaemon {
             best_all_time.1 > baseline_fitness && best_all_time.1 > (baseline_fitness * 0.95)
         };
 
-        let allow_hotswap = std::env::var("ENABLE_ONLINE_DARWIN_MUTATION").map(|v| v == "true" || v == "1").unwrap_or(false);
+        let allow_hotswap = std::env::var("ENABLE_ONLINE_DARWIN_MUTATION")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
         if is_significantly_better && allow_hotswap {
             println!("[Darwin] 🧬 HOT-SWAPPING ACTIVE GENOME! Market regime shift detected.");
             best_all_time.0.apply_to_arena(&self.live_arena);
 
-            let mut full_genotype = quantum_arena::genome::SuperGenotype::current_from_arena(&self.live_arena);
+            let mut full_genotype =
+                quantum_arena::genome::SuperGenotype::current_from_arena(&self.live_arena);
             full_genotype.global_leverage = best_all_time.0.global_leverage;
             full_genotype.trend_threshold = best_all_time.0.trend_threshold;
             full_genotype.maker_spread_pct = best_all_time.0.maker_spread_pct;
@@ -429,12 +511,16 @@ impl DarwinDaemon {
             full_genotype.scalp_obi_threshold = best_all_time.0.scalp_z_target;
             full_genotype.capital_split_scalp = best_all_time.0.capital_split_scalp;
             full_genotype.min_confidence_btc = best_all_time.0.min_confidence;
-            full_genotype.explosive_leverage_multiplier = best_all_time.0.explosive_leverage_multiplier;
+            full_genotype.explosive_leverage_multiplier =
+                best_all_time.0.explosive_leverage_multiplier;
 
             match quantum_arena::genome_store::GenomeEnvelope::promote(
                 full_genotype,
                 "darwin_daemon",
-                &format!("fitness {:.4} (baseline {:.4})", best_all_time.1, baseline_fitness),
+                &format!(
+                    "fitness {:.4} (baseline {:.4})",
+                    best_all_time.1, baseline_fitness
+                ),
             ) {
                 Ok(env) => println!(
                     "🧬 [DARWIN] Genoma generación {} promovido vía almacén (padre {}).",
@@ -500,6 +586,12 @@ mod tests {
     fn test_darwin_daemon_instantiation() {
         let arena = Arc::new(GlobalArena::new(13.0));
         let daemon = DarwinDaemon::new(arena);
-        assert!(daemon.live_arena.unified_capital.load(std::sync::atomic::Ordering::Relaxed) > 0.0);
+        assert!(
+            daemon
+                .live_arena
+                .unified_capital
+                .load(std::sync::atomic::Ordering::Relaxed)
+                > 0.0
+        );
     }
 }

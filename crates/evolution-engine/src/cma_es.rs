@@ -140,7 +140,11 @@ impl CmaEsOptimizer {
                     let raw_cov = self.cov_matrix[i][j];
                     let cov_val = if raw_cov.is_finite() { raw_cov } else { 0.0 };
                     let l_val = (cov_val - sum) / diag;
-                    l_mat[i][j] = if l_val.is_finite() { l_val.clamp(-100.0, 100.0) } else { 0.0 };
+                    l_mat[i][j] = if l_val.is_finite() {
+                        l_val.clamp(-100.0, 100.0)
+                    } else {
+                        0.0
+                    };
                 }
             }
         }
@@ -153,7 +157,11 @@ impl CmaEsOptimizer {
                 let r2 = rng.random::<f64>();
                 let val = -2.0_f64 * r1.max(1e-10).ln();
                 let z = (r2 * 2.0 * PI).cos() * val.sqrt();
-                z_vec.push(if z.is_finite() { z.clamp(-5.0, 5.0) } else { 0.0 });
+                z_vec.push(if z.is_finite() {
+                    z.clamp(-5.0, 5.0)
+                } else {
+                    0.0
+                });
             }
 
             let mut ind = Vec::with_capacity(self.dimension);
@@ -163,9 +171,17 @@ impl CmaEsOptimizer {
                 for k in 0..=d {
                     cov_step += l_mat[d][k] * z_vec[k];
                 }
-                let safe_cov_step = if cov_step.is_finite() { cov_step.clamp(-10.0, 10.0) } else { 0.0 };
+                let safe_cov_step = if cov_step.is_finite() {
+                    cov_step.clamp(-10.0, 10.0)
+                } else {
+                    0.0
+                };
                 let raw_cma = self.mean[d] + self.sigma * safe_cov_step;
-                let safe_cma = if raw_cma.is_finite() { raw_cma } else { self.mean[d] };
+                let safe_cma = if raw_cma.is_finite() {
+                    raw_cma
+                } else {
+                    self.mean[d]
+                };
 
                 // PSO Velocity Update
                 let r1_pso: f64 = rng.random();
@@ -173,7 +189,11 @@ impl CmaEsOptimizer {
                 let vel = w * self.velocities[i][d]
                     + c1 * r1_pso * (self.personal_bests[i][d] - safe_cma)
                     + c2 * r2_pso * (self.global_best[d] - safe_cma);
-                let safe_vel = if vel.is_finite() { vel.clamp(-100000.0, 100000.0) } else { 0.0 };
+                let safe_vel = if vel.is_finite() {
+                    vel.clamp(-100000.0, 100000.0)
+                } else {
+                    0.0
+                };
                 self.velocities[i][d] = safe_vel;
 
                 // Hybridize: Base CMA sample + PSO momentum con barrera reflectiva [0.0, 1.0] (D-386 / D-387)
@@ -270,7 +290,11 @@ impl CmaEsOptimizer {
         let mut ps_norm = 0.0;
         for d in 0..self.dimension {
             let raw_step = (self.mean[d] - old_mean[d]) / safe_sigma;
-            let step = if raw_step.is_finite() { raw_step.clamp(-10.0, 10.0) } else { 0.0 };
+            let step = if raw_step.is_finite() {
+                raw_step.clamp(-10.0, 10.0)
+            } else {
+                0.0
+            };
             let std_dev = self.cov_matrix[d][d].sqrt().max(1e-6);
 
             self.p_sigma[d] = (1.0 - c_sigma) * self.p_sigma[d]
@@ -282,9 +306,7 @@ impl CmaEsOptimizer {
         self.generation += 1;
         let gen_exp = (2 * self.generation) as i32;
         let denom_sq = ((1.0 - (1.0 - c_sigma).powi(gen_exp)) * self.dimension as f64).max(1e-12);
-        let h_sigma = if ps_norm / denom_sq.sqrt()
-            < 1.4 + 2.0 / (self.dimension as f64 + 1.0)
-        {
+        let h_sigma = if ps_norm / denom_sq.sqrt() < 1.4 + 2.0 / (self.dimension as f64 + 1.0) {
             1.0
         } else {
             0.0
@@ -292,7 +314,11 @@ impl CmaEsOptimizer {
 
         for d in 0..self.dimension {
             let raw_step = (self.mean[d] - old_mean[d]) / safe_sigma;
-            let step = if raw_step.is_finite() { raw_step.clamp(-10.0, 10.0) } else { 0.0 };
+            let step = if raw_step.is_finite() {
+                raw_step.clamp(-10.0, 10.0)
+            } else {
+                0.0
+            };
             self.p_c[d] = (1.0 - self.c_c) * self.p_c[d]
                 + h_sigma * (self.c_c * (2.0 - self.c_c) * self.mueff).sqrt() * step;
         }
@@ -305,21 +331,36 @@ impl CmaEsOptimizer {
                     let pop_idx = fitness_scores[k].0;
                     let raw_zi = (population[pop_idx][i] - old_mean[i]) / safe_sigma;
                     let raw_zj = (population[pop_idx][j] - old_mean[j]) / safe_sigma;
-                    let z_i = if raw_zi.is_finite() { raw_zi.clamp(-50.0, 50.0) } else { 0.0 };
-                    let z_j = if raw_zj.is_finite() { raw_zj.clamp(-50.0, 50.0) } else { 0.0 };
+                    let z_i = if raw_zi.is_finite() {
+                        raw_zi.clamp(-50.0, 50.0)
+                    } else {
+                        0.0
+                    };
+                    let z_j = if raw_zj.is_finite() {
+                        raw_zj.clamp(-50.0, 50.0)
+                    } else {
+                        0.0
+                    };
                     artmp += self.weights[k] * z_i * z_j;
                 }
                 let old_c = self.cov_matrix[i][j];
                 let rank1 = self.p_c[i] * self.p_c[j]
                     + (1.0 - h_sigma) * self.c_c * (2.0 - self.c_c) * old_c;
-                let new_c = (1.0 - self.c_1 - self.c_mu) * old_c
-                    + self.c_1 * rank1
-                    + self.c_mu * artmp;
+                let new_c =
+                    (1.0 - self.c_1 - self.c_mu) * old_c + self.c_1 * rank1 + self.c_mu * artmp;
 
                 let final_c = if i == j {
-                    if new_c.is_finite() && new_c > 1e-8 { new_c.clamp(1e-8, 1000.0) } else { 1e-8 }
+                    if new_c.is_finite() && new_c > 1e-8 {
+                        new_c.clamp(1e-8, 1000.0)
+                    } else {
+                        1e-8
+                    }
                 } else {
-                    if new_c.is_finite() { new_c.clamp(-1000.0, 1000.0) } else { 0.0 }
+                    if new_c.is_finite() {
+                        new_c.clamp(-1000.0, 1000.0)
+                    } else {
+                        0.0
+                    }
                 };
                 self.cov_matrix[i][j] = final_c;
                 self.cov_matrix[j][i] = final_c;
@@ -327,7 +368,8 @@ impl CmaEsOptimizer {
         }
 
         // 4. Update Step Size con clamping numérico seguro en el exponente
-        let exp_term = ((c_sigma / self.d_sigma) * (ps_norm / expected_norm - 1.0)).clamp(-20.0, 20.0);
+        let exp_term =
+            ((c_sigma / self.d_sigma) * (ps_norm / expected_norm - 1.0)).clamp(-20.0, 20.0);
         self.sigma *= exp_term.exp();
 
         // FASE 3: Permitir expansión evolutiva libre. Solo proteger el límite bajo computacional (división por 0).
@@ -372,7 +414,10 @@ mod tests {
         assert_eq!(pop.len(), 6);
         for ind in &pop {
             for &val in ind {
-                assert!(val.is_finite(), "Sampled value must be finite even with singular cov matrix");
+                assert!(
+                    val.is_finite(),
+                    "Sampled value must be finite even with singular cov matrix"
+                );
             }
         }
     }

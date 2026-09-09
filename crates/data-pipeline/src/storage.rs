@@ -1,8 +1,8 @@
 use memmap2::MmapMut;
+use std::cell::UnsafeCell;
 use std::fs::OpenOptions;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::cell::UnsafeCell;
 
 /// Binary struct for raw storage representation.
 /// Extremely fast serialization with zero-copy potential.
@@ -42,7 +42,7 @@ pub struct TelemetryStorage {
 }
 
 // Safety: We guarantee that no two threads will ever write to the same byte offset concurrently
-// because `write_cursor.fetch_add` yields strictly unique, monotonically increasing indices, 
+// because `write_cursor.fetch_add` yields strictly unique, monotonically increasing indices,
 // ensuring disjoint memory access within the Mmap array bounds.
 unsafe impl Sync for TelemetryStorage {}
 unsafe impl Send for TelemetryStorage {}
@@ -50,20 +50,20 @@ unsafe impl Send for TelemetryStorage {}
 impl TelemetryStorage {
     pub fn new<P: AsRef<Path>>(path: P, max_ticks: usize) -> std::io::Result<Self> {
         let file_size = (max_ticks * std::mem::size_of::<TelemetryTick>()) as u64;
-        
+
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(path)?;
-            
+
         // Pre-allocate the file size to prevent fragmentation and page faults on Windows.
         // If the OS cannot allocate this contiguous space, it safely returns an error here
         // instead of crashing later.
         file.set_len(file_size)?;
-        
+
         let mmap = unsafe { MmapMut::map_mut(&file)? };
-        
+
         Ok(Self {
             mmap: UnsafeCell::new(mmap),
             write_cursor: AtomicUsize::new(0),
@@ -76,11 +76,14 @@ impl TelemetryStorage {
     pub fn append_tick(&self, tick: &TelemetryTick) {
         // [FASE 12] PRE-FLIGHT CHECK: Estasis de Probabilidad Cuántica
         // Nunca guardar basura en disco. Los modelos de IA colapsan si ingieren NaNs o precios en 0.
-        if tick.bid_price.is_nan() || tick.ask_price.is_nan() || 
-           tick.bid_price <= 0.0 || tick.ask_price <= 0.0 {
+        if tick.bid_price.is_nan()
+            || tick.ask_price.is_nan()
+            || tick.bid_price <= 0.0
+            || tick.ask_price <= 0.0
+        {
             return; // Descartar tick silenciosamente para no atascar el motor HFT
         }
-        
+
         // Anti-Corrupción Cuántica
         let calculated_checksum = tick.calculate_checksum();
         if tick.checksum != 0 && tick.checksum != calculated_checksum {
@@ -91,7 +94,7 @@ impl TelemetryStorage {
         let index = self.write_cursor.fetch_add(1, Ordering::Relaxed);
         let wrapped_index = index % self.max_capacity;
         let offset = wrapped_index * std::mem::size_of::<TelemetryTick>();
-        
+
         // Strict boundary validation to prevent memory corruption (Pantallazo Azul / Segfault).
         // While mathematical modulo ensures it theoretically never exceeds capacity,
         // hardware bit flips or struct size changes could cause catastrophic failure.
@@ -103,19 +106,17 @@ impl TelemetryStorage {
                 eprintln!("CRITICAL STORAGE ERROR: Attempted to write outside memory map boundaries. Dropping telemetry safely.");
                 return;
             }
-            
+
             let src = tick as *const TelemetryTick as *const u8;
             let dst = (&mut *mmap_ptr).as_mut_ptr().add(offset);
             std::ptr::copy_nonoverlapping(src, dst, std::mem::size_of::<TelemetryTick>());
         }
     }
-    
+
     /// Flushes the memory mapped file to SSD asychronously.
     /// In Windows, the OS manages dirty pages automatically, but this forces it.
     pub fn flush_to_disk(&self) -> std::io::Result<()> {
-        unsafe {
-            (&*self.mmap.get()).flush_async()
-        }
+        unsafe { (&*self.mmap.get()).flush_async() }
     }
 }
 

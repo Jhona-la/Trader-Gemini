@@ -86,31 +86,38 @@ impl HistoricalLoader {
         let mut klines = Vec::with_capacity(data.len());
         for row in data {
             if let Some(arr) = row.as_array() {
-                    let open_time = arr[0].as_u64().unwrap_or(0);
-                    let open: f64 = arr[1].as_str().unwrap_or("0").parse().unwrap_or(0.0);
-                    let high: f64 = arr[2].as_str().unwrap_or("0").parse().unwrap_or(0.0);
-                    let low: f64 = arr[3].as_str().unwrap_or("0").parse().unwrap_or(0.0);
-                    let close: f64 = arr[4].as_str().unwrap_or("0").parse().unwrap_or(0.0);
-                    let volume: f64 = arr[5].as_str().unwrap_or("0").parse().unwrap_or(0.0);
-                    let close_time = arr[6].as_u64().unwrap_or(0);
+                let open_time = arr[0].as_u64().unwrap_or(0);
+                let open: f64 = arr[1].as_str().unwrap_or("0").parse().unwrap_or(0.0);
+                let high: f64 = arr[2].as_str().unwrap_or("0").parse().unwrap_or(0.0);
+                let low: f64 = arr[3].as_str().unwrap_or("0").parse().unwrap_or(0.0);
+                let close: f64 = arr[4].as_str().unwrap_or("0").parse().unwrap_or(0.0);
+                let volume: f64 = arr[5].as_str().unwrap_or("0").parse().unwrap_or(0.0);
+                let close_time = arr[6].as_u64().unwrap_or(0);
 
-                    if open > 0.0 && high > 0.0 && low > 0.0 && close > 0.0
-                        && open.is_finite() && high.is_finite() && low.is_finite() && close.is_finite()
-                        && volume.is_finite() && volume >= 0.0
-                    {
-                        let kline = Kline {
-                            open_time,
-                            open,
-                            high,
-                            low,
-                            close,
-                            volume,
-                            close_time,
-                        };
-                        klines.push(kline);
-                    }
+                if open > 0.0
+                    && high > 0.0
+                    && low > 0.0
+                    && close > 0.0
+                    && open.is_finite()
+                    && high.is_finite()
+                    && low.is_finite()
+                    && close.is_finite()
+                    && volume.is_finite()
+                    && volume >= 0.0
+                {
+                    let kline = Kline {
+                        open_time,
+                        open,
+                        high,
+                        low,
+                        close,
+                        volume,
+                        close_time,
+                    };
+                    klines.push(kline);
                 }
             }
+        }
 
         Ok(klines)
     }
@@ -127,7 +134,7 @@ impl HistoricalLoader {
         let mut current_start = start_time;
 
         let max_time_span = 7 * 24 * 60 * 60 * 1000; // Max 7 days
-        // FIX #691: Prevenir underflow si start_time > end_time
+                                                     // FIX #691: Prevenir underflow si start_time > end_time
         let end_time = if end_time.saturating_sub(start_time) > max_time_span {
             start_time.saturating_add(max_time_span)
         } else {
@@ -174,9 +181,15 @@ impl HistoricalLoader {
                                 Err(e) => {
                                     retries += 1;
                                     if retries >= 3 {
-                                        return Err(format!("JSON decode error for {}: {}", symbol, e));
+                                        return Err(format!(
+                                            "JSON decode error for {}: {}",
+                                            symbol, e
+                                        ));
                                     }
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(500 * retries)).await;
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(
+                                        500 * retries,
+                                    ))
+                                    .await;
                                 }
                             }
                         } else if status.as_u16() == 429 || status.is_server_error() {
@@ -187,9 +200,15 @@ impl HistoricalLoader {
                                     status, symbol
                                 ));
                             }
-                            tokio::time::sleep(tokio::time::Duration::from_millis(500 * (1 << retries))).await;
+                            tokio::time::sleep(tokio::time::Duration::from_millis(
+                                500 * (1 << retries),
+                            ))
+                            .await;
                         } else {
-                            return Err(format!("Binance API client error: {} for {}", status, symbol));
+                            return Err(format!(
+                                "Binance API client error: {} for {}",
+                                status, symbol
+                            ));
                         }
                     }
                     Err(e) => {

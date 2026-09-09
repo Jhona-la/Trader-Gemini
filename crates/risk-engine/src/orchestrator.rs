@@ -27,8 +27,16 @@ impl<'a> PortfolioOrchestrator<'a> {
         // CONTINUOUS Performance Multiplier (sigmoid-based, no step functions)
         // Maps WR×PF product into a smooth [0.3, 2.0] range via generalized logistic
         // Center at WR=0.50, PF=1.0 (breakeven point)
-        let safe_wr = if win_rate.is_finite() && win_rate >= 0.0 { win_rate.clamp(0.0, 1.0) } else { 0.5 };
-        let safe_pf = if profit_factor.is_finite() && profit_factor > 0.0 { profit_factor.max(0.1) } else { 1.0 };
+        let safe_wr = if win_rate.is_finite() && win_rate >= 0.0 {
+            win_rate.clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+        let safe_pf = if profit_factor.is_finite() && profit_factor > 0.0 {
+            profit_factor.max(0.1)
+        } else {
+            1.0
+        };
         let performance_score = safe_wr * safe_pf;
         let portfolio_perf_mult_steepness = self
             .arena
@@ -80,7 +88,11 @@ impl<'a> PortfolioOrchestrator<'a> {
         };
 
         let raw_alloc = base_leverage * performance_multiplier * drawdown_penalty;
-        if raw_alloc.is_finite() && raw_alloc > 0.0 { raw_alloc } else { 1.0 }
+        if raw_alloc.is_finite() && raw_alloc > 0.0 {
+            raw_alloc
+        } else {
+            1.0
+        }
     }
 
     /// Evalúa si el portafolio permite la apertura de una nueva posición direccional
@@ -126,7 +138,14 @@ impl<'a> PortfolioOrchestrator<'a> {
         let total_exposure = total_long_margin + total_short_margin + required_margin;
 
         // Max Margin Allocation limit: Allow up to 95% of unified capital to be allocated as collateral
-        let exposure_limit = (1.0 - self.arena.config.global_max_drawdown.load(Ordering::Relaxed).min(0.20)).clamp(0.80, 1.0);
+        let exposure_limit = (1.0
+            - self
+                .arena
+                .config
+                .global_max_drawdown
+                .load(Ordering::Relaxed)
+                .min(0.20))
+        .clamp(0.80, 1.0);
 
         if total_exposure > capital * exposure_limit {
             return false;

@@ -41,11 +41,7 @@ pub struct StateContinuityEngine;
 impl StateContinuityEngine {
     /// Genera un hash atómico de suma de comprobación del estado de posición
     #[inline(always)]
-    pub fn compute_state_checksum(
-        coin_id: usize,
-        position_size: f64,
-        entry_price: f64,
-    ) -> u64 {
+    pub fn compute_state_checksum(coin_id: usize, position_size: f64, entry_price: f64) -> u64 {
         let raw_bits = position_size.to_bits() ^ entry_price.to_bits();
         raw_bits.rotate_left(coin_id as u32 % 64)
     }
@@ -85,12 +81,16 @@ impl StateContinuityEngine {
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
 
-        let checkpoint: ArenaCheckpoint = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+        let checkpoint: ArenaCheckpoint =
+            serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
 
         // Validar integridad de cada posición
         for pos in &checkpoint.positions {
             if !Self::validate_snapshot(pos) {
-                return Err(format!("Corrupt position snapshot detected for coin_id {}", pos.coin_id));
+                return Err(format!(
+                    "Corrupt position snapshot detected for coin_id {}",
+                    pos.coin_id
+                ));
             }
         }
 

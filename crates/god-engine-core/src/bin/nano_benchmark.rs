@@ -11,7 +11,9 @@ fn rdtsc() -> u64 {
 }
 
 fn main() {
-    println!("[NANO-PROFILER] Iniciando Profiling de Latencia Cuántica (Motor Universal Continuo)...");
+    println!(
+        "[NANO-PROFILER] Iniciando Profiling de Latencia Cuántica (Motor Universal Continuo)..."
+    );
 
     let arena = Arc::new(GlobalArena::new(13.0));
     let mut core = GodEngineCore::new(Arc::clone(&arena));
@@ -23,7 +25,15 @@ fn main() {
     // Warm-up de la caché L1 (llenando pipelining del CPU)
     for i in 0..1_000 {
         let price = 90000.0 + (i as f64) * 0.1;
-        let _ = black_box(core.process_tick_dual(0, price - 0.5, price + 0.5, 1.0, 1.0, 1000 + i * 100, &features_54));
+        let _ = black_box(core.process_tick_dual(
+            0,
+            price - 0.5,
+            price + 0.5,
+            1.0,
+            1.0,
+            1000 + i * 100,
+            &features_54,
+        ));
     }
 
     println!(
@@ -33,7 +43,15 @@ fn main() {
     let start_cycles = rdtsc();
     for i in 0..iterations {
         let price = 90000.0 + ((i % 100) as f64) * 0.1;
-        let _ = black_box(core.process_tick_dual(0, price - 0.5, price + 0.5, 1.0, 1.0, 10_000 + i * 100, &features_54));
+        let _ = black_box(core.process_tick_dual(
+            0,
+            price - 0.5,
+            price + 0.5,
+            1.0,
+            1.0,
+            10_000 + i * 100,
+            &features_54,
+        ));
     }
     let end_cycles = rdtsc();
 

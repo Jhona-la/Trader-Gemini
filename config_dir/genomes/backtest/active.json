@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "generation": 1,
-  "created_ms": 1788908269319,
+  "created_ms": 1788928698887,
   "source": "shared_migration",
   "parent_generation": 0,
   "promotion_reason": "migración del linaje compartido al entorno backtest",

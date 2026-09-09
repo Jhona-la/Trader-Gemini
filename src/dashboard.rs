@@ -72,30 +72,61 @@ pub async fn start_server(
                             // FIX #1469: Sanitización de flotantes en eventos de telemetría para prevenir caídas de SSE por NaNs
                             match &mut event {
                                 TelemetryEvent::CapitalUpdate(cap) => {
-                                    if !cap.is_finite() { *cap = 0.0; }
+                                    if !cap.is_finite() {
+                                        *cap = 0.0;
+                                    }
                                 }
-                                TelemetryEvent::OmniUpdate { dark_alpha, scalp_pnl, swing_pnl, gross_pnl, net_pnl, win_rate, trade_duration_avg, .. } => {
-                                    if !dark_alpha.is_finite() { *dark_alpha = 0.0; }
-                                    if !scalp_pnl.is_finite() { *scalp_pnl = 0.0; }
-                                    if !swing_pnl.is_finite() { *swing_pnl = 0.0; }
-                                    if !gross_pnl.is_finite() { *gross_pnl = 0.0; }
-                                    if !net_pnl.is_finite() { *net_pnl = 0.0; }
-                                    if !win_rate.is_finite() { *win_rate = 0.0; }
-                                    if !trade_duration_avg.is_finite() { *trade_duration_avg = 0.0; }
+                                TelemetryEvent::OmniUpdate {
+                                    dark_alpha,
+                                    scalp_pnl,
+                                    swing_pnl,
+                                    gross_pnl,
+                                    net_pnl,
+                                    win_rate,
+                                    trade_duration_avg,
+                                    ..
+                                } => {
+                                    if !dark_alpha.is_finite() {
+                                        *dark_alpha = 0.0;
+                                    }
+                                    if !scalp_pnl.is_finite() {
+                                        *scalp_pnl = 0.0;
+                                    }
+                                    if !swing_pnl.is_finite() {
+                                        *swing_pnl = 0.0;
+                                    }
+                                    if !gross_pnl.is_finite() {
+                                        *gross_pnl = 0.0;
+                                    }
+                                    if !net_pnl.is_finite() {
+                                        *net_pnl = 0.0;
+                                    }
+                                    if !win_rate.is_finite() {
+                                        *win_rate = 0.0;
+                                    }
+                                    if !trade_duration_avg.is_finite() {
+                                        *trade_duration_avg = 0.0;
+                                    }
                                 }
                                 TelemetryEvent::TensorUpdate(tensor) => {
                                     for v in tensor.iter_mut() {
-                                        if !v.is_finite() { *v = 0.0; }
+                                        if !v.is_finite() {
+                                            *v = 0.0;
+                                        }
                                     }
                                 }
                                 TelemetryEvent::SwingTensorUpdate(tensor) => {
                                     for v in tensor.iter_mut() {
-                                        if !v.is_finite() { *v = 0.0; }
+                                        if !v.is_finite() {
+                                            *v = 0.0;
+                                        }
                                     }
                                 }
                                 TelemetryEvent::ShadowLeaderboard(scores) => {
                                     for s in scores.iter_mut() {
-                                        if !s.is_finite() { *s = 0.0; }
+                                        if !s.is_finite() {
+                                            *s = 0.0;
+                                        }
                                     }
                                 }
                                 _ => {}

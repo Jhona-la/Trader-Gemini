@@ -7,9 +7,9 @@ pub mod strategy_telemetry;
 pub mod types;
 pub mod vecm_arbitrage;
 
+pub use multivariate_coint::MultivariateCointegrationEngine;
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
-pub use multivariate_coint::MultivariateCointegrationEngine;
 pub use types::*;
 
 pub trait QuantumStrategy: Send + Sync {

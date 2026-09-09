@@ -17,7 +17,12 @@ pub mod atomic_compat {
         pub fn store(&self, val: f64, order: Ordering) {
             self.0.store(val.to_bits(), order)
         }
-        pub fn fetch_update<F>(&self, set_order: Ordering, fetch_order: Ordering, mut f: F) -> Result<f64, f64>
+        pub fn fetch_update<F>(
+            &self,
+            set_order: Ordering,
+            fetch_order: Ordering,
+            mut f: F,
+        ) -> Result<f64, f64>
         where
             F: FnMut(f64) -> Option<f64>,
         {
@@ -88,11 +93,21 @@ impl OnlinePpoPolicyEngine {
         }
 
         // FIX #581: Actualizamos EMA de la recompensa usando el valor previo atómico garantizado por el CAS
-        let safe_alpha = if alpha_ema.is_finite() { alpha_ema.clamp(0.001, 1.0) } else { 0.05 };
-        let _ = self.reward_ema.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |prev| {
-            let next = prev + safe_alpha * (reward - prev);
-            if next.is_finite() { Some(next) } else { Some(prev) }
-        });
+        let safe_alpha = if alpha_ema.is_finite() {
+            alpha_ema.clamp(0.001, 1.0)
+        } else {
+            0.05
+        };
+        let _ = self
+            .reward_ema
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |prev| {
+                let next = prev + safe_alpha * (reward - prev);
+                if next.is_finite() {
+                    Some(next)
+                } else {
+                    Some(prev)
+                }
+            });
         let new_ema = self.reward_ema.load(Ordering::Relaxed);
 
         // Ventaja normalizada con tanh para evitar saturaciones instantáneas de ratios
@@ -101,11 +116,28 @@ impl OnlinePpoPolicyEngine {
 
         // Actualización de pesos por gradiente PPO recortado, modulado por la plasticidad y la dirección
         // FIX #1433: Sanitización de plasticidad, learning rate y features individuales
-        let safe_plasticity = if plasticity_multiplier.is_finite() && plasticity_multiplier > 0.0 { plasticity_multiplier.clamp(0.1, 5.0) } else { 1.0 };
-        let safe_lr = if dynamic_learning_rate.is_finite() && dynamic_learning_rate > 0.0 { dynamic_learning_rate.clamp(0.0001, 1.0) } else { 0.01 };
+        let safe_plasticity = if plasticity_multiplier.is_finite() && plasticity_multiplier > 0.0 {
+            plasticity_multiplier.clamp(0.1, 5.0)
+        } else {
+            1.0
+        };
+        let safe_lr = if dynamic_learning_rate.is_finite() && dynamic_learning_rate > 0.0 {
+            dynamic_learning_rate.clamp(0.0001, 1.0)
+        } else {
+            0.01
+        };
         let effective_learning_rate = safe_lr * safe_plasticity;
-        let safe_clip_eps = if dynamic_clip_eps.is_finite() && dynamic_clip_eps > 0.0 { dynamic_clip_eps.clamp(0.01, 0.50) } else { 0.20 };
-        let safe_min_clip = if dynamic_weight_min_clip.is_finite() && dynamic_weight_min_clip > 0.0 { dynamic_weight_min_clip.clamp(0.0001, 1.0) } else { 0.01 };
+        let safe_clip_eps = if dynamic_clip_eps.is_finite() && dynamic_clip_eps > 0.0 {
+            dynamic_clip_eps.clamp(0.01, 0.50)
+        } else {
+            0.20
+        };
+        let safe_min_clip = if dynamic_weight_min_clip.is_finite() && dynamic_weight_min_clip > 0.0
+        {
+            dynamic_weight_min_clip.clamp(0.0001, 1.0)
+        } else {
+            0.01
+        };
 
         let sign = if action_sign >= 0.0 { 1.0 } else { -1.0 };
         for (i, &feat) in state_features.iter().enumerate().take(5) {
@@ -135,16 +167,44 @@ impl OnlinePpoPolicyEngine {
         let w3 = self.weights[3].load(Ordering::Relaxed);
         let w4 = self.weights[4].load(Ordering::Relaxed);
         let sum_w = w0 + w1 + w2 + w3 + w4;
-        let inv_sum = if sum_w > 1e-12 && sum_w.is_finite() { 1.0 / sum_w } else { 0.20 };
+        let inv_sum = if sum_w > 1e-12 && sum_w.is_finite() {
+            1.0 / sum_w
+        } else {
+            0.20
+        };
 
-        let f0 = if state_features[0].is_finite() { state_features[0] } else { 0.0 };
-        let f1 = if state_features[1].is_finite() { state_features[1] } else { 0.0 };
-        let f2 = if state_features[2].is_finite() { state_features[2] } else { 0.0 };
-        let f3 = if state_features[3].is_finite() { state_features[3] } else { 0.0 };
-        let f4 = if state_features[4].is_finite() { state_features[4] } else { 0.0 };
+        let f0 = if state_features[0].is_finite() {
+            state_features[0]
+        } else {
+            0.0
+        };
+        let f1 = if state_features[1].is_finite() {
+            state_features[1]
+        } else {
+            0.0
+        };
+        let f2 = if state_features[2].is_finite() {
+            state_features[2]
+        } else {
+            0.0
+        };
+        let f3 = if state_features[3].is_finite() {
+            state_features[3]
+        } else {
+            0.0
+        };
+        let f4 = if state_features[4].is_finite() {
+            state_features[4]
+        } else {
+            0.0
+        };
 
         let res = (f0 * w0 + f1 * w1 + f2 * w2 + f3 * w3 + f4 * w4) * inv_sum;
-        if res.is_finite() { res } else { 0.0 }
+        if res.is_finite() {
+            res
+        } else {
+            0.0
+        }
     }
 
     /// Calcula el clipping ratio dinámico modulado por la volatilidad no lineal (#47-#58)
@@ -156,7 +216,11 @@ impl OnlinePpoPolicyEngine {
         mean_volatility: f64,
     ) -> f64 {
         let safe_base = if base_eps.is_finite() { base_eps } else { 0.20 };
-        if !mean_volatility.is_finite() || mean_volatility <= 1e-6 || !current_volatility.is_finite() || current_volatility < 0.0 {
+        if !mean_volatility.is_finite()
+            || mean_volatility <= 1e-6
+            || !current_volatility.is_finite()
+            || current_volatility < 0.0
+        {
             return safe_base.clamp(0.05, 0.30);
         }
         let vol_ratio = (current_volatility - mean_volatility) / mean_volatility;
@@ -189,13 +253,11 @@ mod tests {
 
         engine.update_policy(
             0.05, // reward
-            &features,
-            1.0, // Long
-            1.0, // plasticity
-            0.1, // alpha_ema
+            &features, 1.0,  // Long
+            1.0,  // plasticity
+            0.1,  // alpha_ema
             0.01, // lr
-            eps,
-            0.01, // min_clip
+            eps, 0.01, // min_clip
         );
 
         let score_after = engine.evaluate_policy(&features);
@@ -235,14 +297,8 @@ mod tests {
 
         // Update policy on successful short
         engine.update_policy(
-            0.10,
-            &features,
-            -1.0, // Short
-            1.5,
-            0.05,
-            0.02,
-            0.2,
-            0.01,
+            0.10, &features, -1.0, // Short
+            1.5, 0.05, 0.02, 0.2, 0.01,
         );
 
         let eval = engine.evaluate_policy(&features);
@@ -254,20 +310,24 @@ mod tests {
         atomic.store(20.0, Ordering::Relaxed);
         assert_eq!(atomic.load(Ordering::Relaxed), 20.0);
 
-        let updated = atomic.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |prev| Some(prev + 5.0));
+        let updated = atomic.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |prev| {
+            Some(prev + 5.0)
+        });
         assert_eq!(updated, Ok(20.0));
         assert_eq!(atomic.load(Ordering::Relaxed), 25.0);
     }
 
     #[test]
     fn test_online_ppo_dynamic_clipping_nan_and_negative_volatility() {
-        let eps_nan_mean = OnlinePpoPolicyEngine::compute_dynamic_clipping_ratio(0.2, 0.05, f64::NAN);
+        let eps_nan_mean =
+            OnlinePpoPolicyEngine::compute_dynamic_clipping_ratio(0.2, 0.05, f64::NAN);
         assert!((0.05..=0.35).contains(&eps_nan_mean));
 
         let eps_neg_cur = OnlinePpoPolicyEngine::compute_dynamic_clipping_ratio(0.2, -0.05, 0.02);
         assert!((0.05..=0.35).contains(&eps_neg_cur));
 
-        let eps_nan_base = OnlinePpoPolicyEngine::compute_dynamic_clipping_ratio(f64::NAN, 0.05, 0.02);
+        let eps_nan_base =
+            OnlinePpoPolicyEngine::compute_dynamic_clipping_ratio(f64::NAN, 0.05, 0.02);
         assert!((0.05..=0.35).contains(&eps_nan_base));
     }
 
@@ -294,4 +354,3 @@ mod tests {
         assert!(score_after.is_finite());
     }
 }
-

@@ -55,7 +55,8 @@ impl NetworkJitterSimulator {
         let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
 
         // FIX #1484: Lognormal: $L = L_0 \cdot \exp(\sigma z - \sigma^2 / 2)$ con clamping de exponente
-        let exponent = (self.sigma_jitter * z - 0.5 * self.sigma_jitter * self.sigma_jitter).clamp(-50.0, 50.0);
+        let exponent = (self.sigma_jitter * z - 0.5 * self.sigma_jitter * self.sigma_jitter)
+            .clamp(-50.0, 50.0);
         let latency = self.base_latency_ms * exponent.exp();
 
         (latency.clamp(2.0, 500.0), is_dropped)
@@ -79,7 +80,11 @@ impl NetworkJitterSimulator {
 
         let delta_t_sec = (latency_ms / 1000.0).max(0.001);
         let raw_drift = volatility_per_sec * delta_t_sec.sqrt();
-        let drift_pct = if raw_drift.is_finite() { raw_drift.clamp(0.0, 0.02) } else { 0.0 };
+        let drift_pct = if raw_drift.is_finite() {
+            raw_drift.clamp(0.0, 0.02)
+        } else {
+            0.0
+        };
 
         if is_long {
             // Comprador sufre precio más alto

@@ -12,7 +12,11 @@ pub struct StatArbEngine {
 impl StatArbEngine {
     pub fn new(window_size: usize, z_score_threshold: f64) -> Self {
         let safe_window = window_size.max(2);
-        let safe_thresh = if z_score_threshold.is_finite() && z_score_threshold > 0.0 { z_score_threshold } else { 1.5 };
+        let safe_thresh = if z_score_threshold.is_finite() && z_score_threshold > 0.0 {
+            z_score_threshold
+        } else {
+            1.5
+        };
         Self {
             window_size: safe_window,
             history: vec![0.0; safe_window],
@@ -65,7 +69,11 @@ impl StatArbEngine {
             1e-6
         };
 
-        let z_score = if stdev > 0.0 { (spread - mean) / stdev } else { 0.0 };
+        let z_score = if stdev > 0.0 {
+            (spread - mean) / stdev
+        } else {
+            0.0
+        };
         // FIX #664: Guarda de finitud estricta en Z-Score
         if !z_score.is_finite() {
             return SignalIntent::flat();
@@ -84,7 +92,8 @@ impl StatArbEngine {
                 horizon: crate::TradeHorizon::Swing,
                 ..Default::default()
             };
-        } else if z_score < -self.z_score_threshold && expected_spread_edge > min_spread_profit_bps {
+        } else if z_score < -self.z_score_threshold && expected_spread_edge > min_spread_profit_bps
+        {
             let norm_conf = (z_score.abs() / self.z_score_threshold.max(0.1)).tanh();
             return SignalIntent {
                 signal: SignalType::Long,

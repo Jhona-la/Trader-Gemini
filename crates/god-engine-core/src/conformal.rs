@@ -41,12 +41,12 @@ impl ConformalCalibrator {
 
     #[inline]
     fn nonconformity(p_hat: f64, won: bool) -> f64 {
-        let p = if p_hat.is_finite() { p_hat.clamp(0.0, 1.0) } else { 0.5 };
-        if won {
-            1.0 - p
+        let p = if p_hat.is_finite() {
+            p_hat.clamp(0.0, 1.0)
         } else {
-            p
-        }
+            0.5
+        };
+        if won { 1.0 - p } else { p }
     }
 
     /// Alimenta la ventana de calibración con un par predicción/realización.
@@ -106,11 +106,17 @@ mod tests {
         assert!(p_high > 0.0 && p_high <= 1.0);
         // Predicción poco confiable (score alto 0.7) vs ventana dominada por
         // scores 0.1: pocos scores >= 0.7 -> p-valor BAJO (el filtro rechaza).
-        assert!(p_low < p_high, "menos confianza -> p-valor menor (más rechazo)");
+        assert!(
+            p_low < p_high,
+            "menos confianza -> p-valor menor (más rechazo)"
+        );
         // Cobertura aproximada: p(0.9) ~ (1 + #{s>=0.1})/51 ~ 1.0 (todos),
         // p(0.3) ~ (1 + 0)/51 ~ 0.02.
         assert!(p_high > 0.9, "confianza calibrada debe pasar el filtro");
-        assert!(p_low < 0.25, "desconfianza debe ser rechazada (p ~ 0.216 = 11/51)");
+        assert!(
+            p_low < 0.25,
+            "desconfianza debe ser rechazada (p ~ 0.216 = 11/51)"
+        );
     }
 
     #[test]

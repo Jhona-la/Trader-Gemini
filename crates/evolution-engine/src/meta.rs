@@ -96,4 +96,3 @@ mod tests {
         evolver.audit_system_architecture(f64::NAN);
     }
 }
-

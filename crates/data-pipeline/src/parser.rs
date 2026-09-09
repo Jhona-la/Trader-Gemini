@@ -273,8 +273,10 @@ mod tests {
     #[test]
     fn test_book_ticker_event_parse_from_json_reordered_keys() {
         // Claves en orden inverso
-        let json = br#"{"E":1672531200000,"A":"10.0","a":"100.5","B":"5.0","b":"100.0","s":"BTCUSDT"}"#;
-        let event = BookTickerEvent::parse_from_json(json).expect("Debe parsear sin importar el orden");
+        let json =
+            br#"{"E":1672531200000,"A":"10.0","a":"100.5","B":"5.0","b":"100.0","s":"BTCUSDT"}"#;
+        let event =
+            BookTickerEvent::parse_from_json(json).expect("Debe parsear sin importar el orden");
         assert_eq!(event.bid_price, 100.0);
         assert_eq!(event.ask_price, 100.5);
         assert_eq!(event.bid_qty, 5.0);
@@ -304,13 +306,15 @@ mod tests {
     fn test_agg_trade_event_parse_from_json_with_whitespace() {
         // Formato Binance con espacios estándar
         let json_true = br#"{"e":"aggTrade","E":123456789,"s":"BTCUSDT","a":99,"p":"60000.5","q":"0.25","f":1,"l":2,"T":12345,"m": true}"#;
-        let event_true = AggTradeEvent::parse_from_json(json_true).expect("Debe parsear con espacios");
+        let event_true =
+            AggTradeEvent::parse_from_json(json_true).expect("Debe parsear con espacios");
         assert_eq!(event_true.price, 60000.5);
         assert_eq!(event_true.qty, 0.25);
         assert!(event_true.is_buyer_maker);
 
         let json_false = br#"{"e":"aggTrade","E":123456789,"s":"BTCUSDT","a":100,"p":"60001.0","q":"1.5","f":3,"l":4,"T":12346,"m":  false}"#;
-        let event_false = AggTradeEvent::parse_from_json(json_false).expect("Debe parsear con tabs/espacios");
+        let event_false =
+            AggTradeEvent::parse_from_json(json_false).expect("Debe parsear con tabs/espacios");
         assert_eq!(event_false.price, 60001.0);
         assert_eq!(event_false.qty, 1.5);
         assert!(!event_false.is_buyer_maker);
@@ -343,4 +347,3 @@ mod tests {
         assert_eq!(normalizer.min_max(20.0), 0.5);
     }
 }
-

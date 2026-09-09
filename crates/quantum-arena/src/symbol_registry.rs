@@ -21,7 +21,11 @@ impl SymbolSpec {
         if price <= 0.0 || raw_qty <= 0.0 {
             return Err("Invalid price or quantity");
         }
-        let step = if self.step_size > 0.0 { self.step_size } else { 1.0 };
+        let step = if self.step_size > 0.0 {
+            self.step_size
+        } else {
+            1.0
+        };
         let qty_steps = (raw_qty / step).floor();
         let mut adjusted_qty = qty_steps * step;
 
@@ -65,7 +69,10 @@ pub fn update_registry(new_specs: Vec<SymbolSpec>) {
     // FIX #905: Preservar estabilidad de coin_id para que símbolos existentes mantengan su índice
     let mut updated = (**current).clone();
     for spec in new_specs {
-        if let Some(pos) = updated.iter().position(|s| s.symbol.eq_ignore_ascii_case(&spec.symbol)) {
+        if let Some(pos) = updated
+            .iter()
+            .position(|s| s.symbol.eq_ignore_ascii_case(&spec.symbol))
+        {
             updated[pos] = spec;
         } else {
             updated.push(spec);
@@ -92,7 +99,9 @@ pub fn try_symbol(coin_id: usize) -> Option<String> {
 pub fn try_index(symbol: &str) -> Option<usize> {
     let registry = DYNAMIC_REGISTRY.load();
     let sym_upper = symbol.to_uppercase();
-    registry.iter().position(|s| s.symbol.to_uppercase() == sym_upper)
+    registry
+        .iter()
+        .position(|s| s.symbol.to_uppercase() == sym_upper)
 }
 
 #[inline(always)]

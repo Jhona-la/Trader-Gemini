@@ -74,9 +74,7 @@ impl WsExecutor {
         _timestamp: u64,
     ) -> Result<(), String> {
         if !self.is_connected() {
-            return Err(
-                "WS_STUB: vía WS no implementada — usando fallback REST".to_string(),
-            );
+            return Err("WS_STUB: vía WS no implementada — usando fallback REST".to_string());
         }
         Err("WS_STUB: conectado pero sin transporte implementado".to_string())
     }

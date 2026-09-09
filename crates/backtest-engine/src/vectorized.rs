@@ -28,15 +28,31 @@ pub fn run_vectorized_hybrid(
     let mut ema_fast = vec![0.0; len];
     let mut ema_slow = vec![0.0; len];
 
-    let first_valid = closes.iter().copied().find(|c| c.is_finite() && *c > 0.0).unwrap_or(1.0);
+    let first_valid = closes
+        .iter()
+        .copied()
+        .find(|c| c.is_finite() && *c > 0.0)
+        .unwrap_or(1.0);
     let mut cur_fast = first_valid;
     let mut cur_slow = first_valid;
     for i in 0..len {
-        let c = if closes[i].is_finite() && closes[i] > 0.0 { closes[i] } else { cur_fast };
+        let c = if closes[i].is_finite() && closes[i] > 0.0 {
+            closes[i]
+        } else {
+            cur_fast
+        };
         cur_fast = (alpha_fast * c + (1.0 - alpha_fast) * cur_fast).max(1e-6);
         cur_slow = (alpha_slow * c + (1.0 - alpha_slow) * cur_slow).max(1e-6);
-        ema_fast[i] = if cur_fast.is_finite() { cur_fast } else { first_valid };
-        ema_slow[i] = if cur_slow.is_finite() { cur_slow } else { first_valid };
+        ema_fast[i] = if cur_fast.is_finite() {
+            cur_fast
+        } else {
+            first_valid
+        };
+        ema_slow[i] = if cur_slow.is_finite() {
+            cur_slow
+        } else {
+            first_valid
+        };
     }
 
     // 1. Cargar datos en memoria columnar Polars
@@ -78,7 +94,11 @@ pub fn run_vectorized_hybrid(
     let sig_short_ca = result_df.column("signal_short")?.bool()?;
 
     // 3. Ejecución Híbrida Path-Dependent (SL/TP) en O(N) nativo
-    let mut capital = if initial_capital.is_finite() && initial_capital > 0.0 { initial_capital } else { 13.0 };
+    let mut capital = if initial_capital.is_finite() && initial_capital > 0.0 {
+        initial_capital
+    } else {
+        13.0
+    };
     let mut position = 0; // 0 = flat, 1 = long, -1 = short
     let mut entry_price = 0.0;
     let mut position_size = 0.0; // in coins
@@ -122,8 +142,16 @@ pub fn run_vectorized_hybrid(
 
         // FIX #1301: Eliminar Look-Ahead Bias leyendo la señal cerrada en la vela anterior (i-1)
         // La señal generada en close[i-1] se ejecuta en la vela actual [i]
-        let sl_long = if i > 0 { sig_long_ca.get(i - 1).unwrap_or(false) } else { false };
-        let sl_short = if i > 0 { sig_short_ca.get(i - 1).unwrap_or(false) } else { false };
+        let sl_long = if i > 0 {
+            sig_long_ca.get(i - 1).unwrap_or(false)
+        } else {
+            false
+        };
+        let sl_short = if i > 0 {
+            sig_short_ca.get(i - 1).unwrap_or(false)
+        } else {
+            false
+        };
 
         // Simulación de Funding Rates cada 480 velas (≈8h en TF 1m).
         // F4.5: sensibilidad del genoma acotada a banda REALISTA [0.5, 2.0]×
@@ -235,7 +263,8 @@ pub fn run_vectorized_hybrid(
             if sl_long {
                 let usable_capital = (capital * 0.99).max(0.0);
                 let notional = usable_capital * cfg.global_leverage;
-                if notional >= 5.0 && c > 0.0 && c.is_finite() { // Enforce Binance Futures $5.00 MIN_NOTIONAL
+                if notional >= 5.0 && c > 0.0 && c.is_finite() {
+                    // Enforce Binance Futures $5.00 MIN_NOTIONAL
                     position = 1;
                     // FIX #942: Apply slippage to entry price (long buys into ask, price worsens upward)
                     let slip_pct = slippage_model.compute_slippage_pct(notional);
@@ -248,7 +277,8 @@ pub fn run_vectorized_hybrid(
             } else if sl_short {
                 let usable_capital = (capital * 0.99).max(0.0);
                 let notional = usable_capital * cfg.global_leverage;
-                if notional >= 5.0 && c > 0.0 && c.is_finite() { // Enforce Binance Futures $5.00 MIN_NOTIONAL
+                if notional >= 5.0 && c > 0.0 && c.is_finite() {
+                    // Enforce Binance Futures $5.00 MIN_NOTIONAL
                     position = -1;
                     // FIX #942: Apply slippage to entry price (short sells into bid, price worsens downward)
                     let slip_pct = slippage_model.compute_slippage_pct(notional);
@@ -376,7 +406,10 @@ mod tests {
         let t = 1700000000000000000;
         let p_stop = compute_multi_coin_event_priority(t, true);
         let p_normal = compute_multi_coin_event_priority(t, false);
-        assert!(p_stop < p_normal, "Stop loss/liquidación debe tener mayor prioridad (menor valor)");
+        assert!(
+            p_stop < p_normal,
+            "Stop loss/liquidación debe tener mayor prioridad (menor valor)"
+        );
     }
 
     #[test]
@@ -388,7 +421,10 @@ mod tests {
         let p_t2_stop = compute_multi_coin_event_priority(t2, true);
 
         // Eventos anteriores en el tiempo siempre preceden a eventos futuros sin importar el tipo
-        assert!(p_t1_normal < p_t2_stop, "Causalidad temporal estricta garantizada");
+        assert!(
+            p_t1_normal < p_t2_stop,
+            "Causalidad temporal estricta garantizada"
+        );
     }
 
     #[test]
@@ -397,8 +433,14 @@ mod tests {
         let slip_100k = slip_model.compute_slippage_pct(100_000.0);
         let slip_micro = slip_model.compute_slippage_pct(13.0);
 
-        assert!(slip_100k > slip_micro, "Órdenes grandes deben sufrir mayor slippage por impacto de mercado");
-        assert!(slip_100k <= 0.05, "Slippage debe permanecer acotado al hardcap");
+        assert!(
+            slip_100k > slip_micro,
+            "Órdenes grandes deben sufrir mayor slippage por impacto de mercado"
+        );
+        assert!(
+            slip_100k <= 0.05,
+            "Slippage debe permanecer acotado al hardcap"
+        );
     }
 
     #[test]
@@ -409,7 +451,8 @@ mod tests {
         let empty_lows: Vec<f64> = vec![];
         let empty_vols: Vec<f64> = vec![];
 
-        let res_empty = run_vectorized_hybrid(&empty_closes, &empty_highs, &empty_lows, &empty_vols, &cfg);
+        let res_empty =
+            run_vectorized_hybrid(&empty_closes, &empty_highs, &empty_lows, &empty_vols, &cfg);
         assert!(res_empty.is_ok());
         let (cap, max_dd, wins, trades) = res_empty.unwrap();
         assert_eq!(trades, 0);
@@ -443,8 +486,6 @@ mod tests {
         assert!(max_dd >= 0.0, "Max drawdown no puede ser negativo");
     }
 }
-
-
 
 /// Cola de prioridad de eventos temporales multi-moneda (Puntos #301 y #305)
 #[inline(always)]

@@ -197,8 +197,18 @@ mod tests {
     #[test]
     fn test_zero_copy_telemetry_emit_and_read() {
         let bus = ZeroCopyTelemetryBus::new();
-        bus.emit(SUBSYSTEM_GOD_ENGINE, EVT_QUANTUM_MEMORY, 1, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-        bus.emit(SUBSYSTEM_RISK_ENGINE, EVT_VETO_WALL, 0, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+        bus.emit(
+            SUBSYSTEM_GOD_ENGINE,
+            EVT_QUANTUM_MEMORY,
+            1,
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        );
+        bus.emit(
+            SUBSYSTEM_RISK_ENGINE,
+            EVT_VETO_WALL,
+            0,
+            [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+        );
 
         let events_god = bus.read_recent_events(10, EVT_QUANTUM_MEMORY);
         assert_eq!(events_god.len(), 1);
@@ -214,7 +224,12 @@ mod tests {
     fn test_zero_copy_telemetry_high_throughput_ring_wrap() {
         let bus = ZeroCopyTelemetryBus::new();
         for i in 0..1000 {
-            bus.emit(SUBSYSTEM_OS_GUARDIAN, EVT_LATENCY_PANIC, 0, [i as f64, 0.0, 0.0, 0.0, 0.0, 0.0]);
+            bus.emit(
+                SUBSYSTEM_OS_GUARDIAN,
+                EVT_LATENCY_PANIC,
+                0,
+                [i as f64, 0.0, 0.0, 0.0, 0.0, 0.0],
+            );
         }
         let events = bus.read_recent_events(50, EVT_LATENCY_PANIC);
         assert_eq!(events.len(), 50);
@@ -224,7 +239,12 @@ mod tests {
     #[test]
     fn test_zero_copy_telemetry_nan_sanitization_and_subsystem_filtering() {
         let bus = ZeroCopyTelemetryBus::new();
-        bus.emit(SUBSYSTEM_RISK_ENGINE, EVT_POSITION_CLOSE, 2, [f64::NAN, f64::INFINITY, -10.5, 0.0, 1.0, f64::NAN]);
+        bus.emit(
+            SUBSYSTEM_RISK_ENGINE,
+            EVT_POSITION_CLOSE,
+            2,
+            [f64::NAN, f64::INFINITY, -10.5, 0.0, 1.0, f64::NAN],
+        );
 
         let events = bus.read_recent_events(10, EVT_POSITION_CLOSE);
         assert_eq!(events.len(), 1);
@@ -237,4 +257,3 @@ mod tests {
         assert_eq!(frame.payload[5], 0.0); // Sanitized NaN
     }
 }
-

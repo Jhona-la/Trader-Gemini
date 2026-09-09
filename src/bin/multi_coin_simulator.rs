@@ -55,11 +55,31 @@ const COINS: [&str; 30] = [
 fn simple_kline_to_ticks(coin_id: usize, kline: &Kline, prev_bullish: bool) -> [TickEvent; 4] {
     let step = kline.close_time.saturating_sub(kline.open_time) / 4;
     // FIX #1480: Sanitización de precios y volúmenes en generación de ticks
-    let o = if kline.open.is_finite() && kline.open > 0.0 { kline.open } else { 1.0 };
-    let h = if kline.high.is_finite() && kline.high > 0.0 { kline.high.max(o) } else { o };
-    let l = if kline.low.is_finite() && kline.low > 0.0 { kline.low.min(o).max(1e-6) } else { o * 0.999 };
-    let c = if kline.close.is_finite() && kline.close > 0.0 { kline.close } else { o };
-    let v = if kline.volume.is_finite() && kline.volume > 0.0 { kline.volume / 4.0 } else { 0.25 };
+    let o = if kline.open.is_finite() && kline.open > 0.0 {
+        kline.open
+    } else {
+        1.0
+    };
+    let h = if kline.high.is_finite() && kline.high > 0.0 {
+        kline.high.max(o)
+    } else {
+        o
+    };
+    let l = if kline.low.is_finite() && kline.low > 0.0 {
+        kline.low.min(o).max(1e-6)
+    } else {
+        o * 0.999
+    };
+    let c = if kline.close.is_finite() && kline.close > 0.0 {
+        kline.close
+    } else {
+        o
+    };
+    let v = if kline.volume.is_finite() && kline.volume > 0.0 {
+        kline.volume / 4.0
+    } else {
+        0.25
+    };
 
     let spread_half = (o * 0.000075).max(0.00001); // 0.75 bps = 1.5 bps total spread
     let (bid_v, ask_v) = if prev_bullish {
@@ -69,10 +89,19 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline, prev_bullish: bool) -> [
     };
 
     // R2.1: Trayectoria intra-vela sin coreografía rígida (50% high-first / 50% low-first)
-    let high_first = ((kline.open_time.wrapping_mul(0x9E3779B97F4A7C15) ^ (coin_id as u64)) & 1) == 0;
+    let high_first =
+        ((kline.open_time.wrapping_mul(0x9E3779B97F4A7C15) ^ (coin_id as u64)) & 1) == 0;
     let (p2, p3) = if high_first { (h, l) } else { (l, h) };
-    let (b2, a2) = if high_first { (bid_v * 1.05, ask_v * 0.95) } else { (bid_v * 0.95, ask_v * 1.05) };
-    let (b3, a3) = if high_first { (bid_v * 0.95, ask_v * 1.05) } else { (bid_v * 1.05, ask_v * 0.95) };
+    let (b2, a2) = if high_first {
+        (bid_v * 1.05, ask_v * 0.95)
+    } else {
+        (bid_v * 0.95, ask_v * 1.05)
+    };
+    let (b3, a3) = if high_first {
+        (bid_v * 0.95, ask_v * 1.05)
+    } else {
+        (bid_v * 1.05, ask_v * 0.95)
+    };
 
     [
         TickEvent {
@@ -120,15 +149,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Inicialización de especificaciones oficiales de símbolos Binance VIP0 (D-391 paridad estricta 1:1)
     let mut specs = Vec::with_capacity(COINS.len());
     for symbol in COINS.iter() {
-        specs.push(quantum_arena::symbol_registry::get_official_binance_spec(symbol));
+        specs.push(quantum_arena::symbol_registry::get_official_binance_spec(
+            symbol,
+        ));
     }
     quantum_arena::symbol_registry::update_registry(specs);
 
     // 2. Default de capital $13.0 USD sin pánico y prevención de contaminación de balance
-    let initial_capital_str = std::env::var("INITIAL_CAPITAL").unwrap_or_else(|_| "13.0".to_string());
-    let mut initial_capital: f64 = initial_capital_str
-        .parse()
-        .unwrap_or(13.0);
+    let initial_capital_str =
+        std::env::var("INITIAL_CAPITAL").unwrap_or_else(|_| "13.0".to_string());
+    let mut initial_capital: f64 = initial_capital_str.parse().unwrap_or(13.0);
     if initial_capital <= 0.0 || !initial_capital.is_finite() {
         println!("⚠️ INITIAL_CAPITAL no válido detectado. Asignando $13.00 USD nominales.");
         initial_capital = 13.0;
@@ -155,7 +185,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         genome.global_leverage, genome.scalp_tp_base, genome.scalp_sl_base, genome.swing_tp_base, genome.swing_sl_base
     );
     genome.apply_to_arena(&arena);
-    arena.config.global_max_drawdown.store(0.90, Ordering::Relaxed);
+    arena
+        .config
+        .global_max_drawdown
+        .store(0.90, Ordering::Relaxed);
 
     let sim_days: u64 = std::env::args()
         .nth(1)
@@ -165,7 +198,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let requested_rows = (sim_days * 24 * 60) as usize;
 
-    println!("📥 Loading Klines (1m resolution) from Parquet for the last {} days ({} bars)...", sim_days, requested_rows);
+    println!(
+        "📥 Loading Klines (1m resolution) from Parquet for the last {} days ({} bars)...",
+        sim_days, requested_rows
+    );
 
     let mut coin_ticks: Vec<Vec<TickEvent>> = Vec::with_capacity(30);
 
@@ -478,4 +514,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-

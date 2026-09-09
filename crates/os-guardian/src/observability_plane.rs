@@ -75,4 +75,3 @@ mod tests {
         assert!(pmu.ipc.is_finite());
     }
 }
-

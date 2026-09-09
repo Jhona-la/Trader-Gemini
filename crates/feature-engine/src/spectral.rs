@@ -79,8 +79,16 @@ impl SpectralCycleEngine {
             0.0
         };
 
-        let safe_centroid = if spectral_centroid.is_finite() { spectral_centroid } else { 0.0 };
-        let safe_max_power = if max_power.is_finite() { max_power } else { 0.0 };
+        let safe_centroid = if spectral_centroid.is_finite() {
+            spectral_centroid
+        } else {
+            0.0
+        };
+        let safe_max_power = if max_power.is_finite() {
+            max_power
+        } else {
+            0.0
+        };
 
         (dominant_bin, safe_max_power, safe_centroid)
     }

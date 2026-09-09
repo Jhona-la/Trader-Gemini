@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Operaciones disponibles para Auto-Feature Engineering
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
@@ -41,18 +41,26 @@ impl CompiledFeature {
                 OpCode::PushInput(idx) => {
                     if sp < 16 {
                         // FIX #626: Evitar bounds check panic y sanitizar finitud
-                        let val = if (*idx as usize) < 54 { base_features[*idx as usize] } else { 0.0 };
+                        let val = if (*idx as usize) < 54 {
+                            base_features[*idx as usize]
+                        } else {
+                            0.0
+                        };
                         let safe_val = if val.is_finite() { val } else { 0.0 };
                         stack[sp] = safe_val;
                         sp += 1;
-                    } else { return 0.0; } // Phenotypic Shield: Stack Overflow
+                    } else {
+                        return 0.0;
+                    } // Phenotypic Shield: Stack Overflow
                 }
                 OpCode::PushConst(val) => {
                     if sp < 16 {
                         let safe_val = if val.is_finite() { *val } else { 0.0 };
                         stack[sp] = safe_val;
                         sp += 1;
-                    } else { return 0.0; } // Phenotypic Shield
+                    } else {
+                        return 0.0;
+                    } // Phenotypic Shield
                 }
                 OpCode::Add => {
                     if sp >= 2 {
@@ -61,7 +69,9 @@ impl CompiledFeature {
                         let b = stack[sp - 1];
                         let res = b + a;
                         stack[sp - 1] = if res.is_finite() { res } else { 0.0 };
-                    } else { return 0.0; } // Phenotypic Shield: Stack Underflow
+                    } else {
+                        return 0.0;
+                    } // Phenotypic Shield: Stack Underflow
                 }
                 OpCode::Sub => {
                     if sp >= 2 {
@@ -70,7 +80,9 @@ impl CompiledFeature {
                         let b = stack[sp - 1];
                         let res = b - a;
                         stack[sp - 1] = if res.is_finite() { res } else { 0.0 };
-                    } else { return 0.0; }
+                    } else {
+                        return 0.0;
+                    }
                 }
                 OpCode::Mul => {
                     if sp >= 2 {
@@ -79,7 +91,9 @@ impl CompiledFeature {
                         let b = stack[sp - 1];
                         let res = b * a;
                         stack[sp - 1] = if res.is_finite() { res } else { 0.0 };
-                    } else { return 0.0; }
+                    } else {
+                        return 0.0;
+                    }
                 }
                 OpCode::Div => {
                     if sp >= 2 {
@@ -87,28 +101,48 @@ impl CompiledFeature {
                         let a = stack[sp];
                         let b = stack[sp - 1];
                         let res = if a.abs() > 1e-9 { b / a } else { 0.0 };
-                        stack[sp - 1] = if res.is_nan() || res.is_infinite() { 0.0 } else { res };
-                    } else { return 0.0; }
+                        stack[sp - 1] = if res.is_nan() || res.is_infinite() {
+                            0.0
+                        } else {
+                            res
+                        };
+                    } else {
+                        return 0.0;
+                    }
                 }
                 OpCode::Log => {
                     if sp >= 1 {
                         let a = stack[sp - 1];
                         let res = if a > 1e-9 { a.ln() } else { 0.0 };
-                        stack[sp - 1] = if res.is_nan() || res.is_infinite() { 0.0 } else { res };
-                    } else { return 0.0; }
+                        stack[sp - 1] = if res.is_nan() || res.is_infinite() {
+                            0.0
+                        } else {
+                            res
+                        };
+                    } else {
+                        return 0.0;
+                    }
                 }
                 OpCode::Sqrt => {
                     if sp >= 1 {
                         let a = stack[sp - 1];
                         let res = if a > 0.0 { a.sqrt() } else { 0.0 };
-                        stack[sp - 1] = if res.is_nan() || res.is_infinite() { 0.0 } else { res };
-                    } else { return 0.0; }
+                        stack[sp - 1] = if res.is_nan() || res.is_infinite() {
+                            0.0
+                        } else {
+                            res
+                        };
+                    } else {
+                        return 0.0;
+                    }
                 }
                 OpCode::Abs => {
                     if sp >= 1 {
                         let a = stack[sp - 1];
                         stack[sp - 1] = a.abs();
-                    } else { return 0.0; }
+                    } else {
+                        return 0.0;
+                    }
                 }
                 OpCode::Max => {
                     if sp >= 2 {
@@ -116,7 +150,9 @@ impl CompiledFeature {
                         let a = stack[sp];
                         let b = stack[sp - 1];
                         stack[sp - 1] = b.max(a);
-                    } else { return 0.0; }
+                    } else {
+                        return 0.0;
+                    }
                 }
                 OpCode::Min => {
                     if sp >= 2 {
@@ -124,14 +160,20 @@ impl CompiledFeature {
                         let a = stack[sp];
                         let b = stack[sp - 1];
                         stack[sp - 1] = b.min(a);
-                    } else { return 0.0; }
+                    } else {
+                        return 0.0;
+                    }
                 }
             }
         }
 
         if sp > 0 {
             let res = stack[sp - 1];
-            if res.is_nan() || res.is_infinite() { 0.0 } else { res }
+            if res.is_nan() || res.is_infinite() {
+                0.0
+            } else {
+                res
+            }
         } else {
             0.0
         }
@@ -196,11 +238,7 @@ impl AutoFeatureSet {
             OpCode::Max,
             OpCode::Min,
         ];
-        let unary_ops = [
-            OpCode::Abs,
-            OpCode::Sqrt,
-            OpCode::Log,
-        ];
+        let unary_ops = [OpCode::Abs, OpCode::Sqrt, OpCode::Log];
 
         let mut next_seed = rng_seed ^ 0x5DEECE66D;
         let rand_idx = ((next_seed >> 16) % 54) as u8;
@@ -225,7 +263,9 @@ impl AutoFeatureSet {
                     self.features[feat_idx].ops.push(unary_ops[un_op_idx]);
                 } else {
                     // Mutación binaria: empuja 1 nuevo input y aplica operador binario
-                    self.features[feat_idx].ops.push(OpCode::PushInput(rand_idx));
+                    self.features[feat_idx]
+                        .ops
+                        .push(OpCode::PushInput(rand_idx));
                     self.features[feat_idx].ops.push(binary_ops[bin_op_idx]);
                 }
             }
@@ -249,9 +289,9 @@ mod tests {
         let mut base_features = [0.0f32; 54];
         base_features[0] = 105.0; // Fast
         base_features[1] = 100.0; // Slow
-        base_features[2] = 0.8;   // OFI
-        base_features[3] = 0.02;  // ATR
-        base_features[6] = 1.5;   // Hawkes
+        base_features[2] = 0.8; // OFI
+        base_features[3] = 0.02; // ATR
+        base_features[6] = 1.5; // Hawkes
 
         let mut output = [0.0f32; 8];
         feature_set.evaluate_all(&base_features, &mut output);
@@ -349,5 +389,3 @@ mod tests {
         assert_eq!(compiled_oob.execute(&base), 0.0);
     }
 }
-
-

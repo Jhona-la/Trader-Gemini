@@ -44,12 +44,11 @@ impl ZeroAllocArenaPoolEngine {
             }
             let slot = free_mask.trailing_zeros() as usize;
             let bit = 1u64 << slot;
-            if self.occupancy_bitmap.compare_exchange_weak(
-                current,
-                current | bit,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .occupancy_bitmap
+                .compare_exchange_weak(current, current | bit, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
                 self.total_allocations.fetch_add(1, Ordering::Relaxed);
                 return Some(slot);
             }
@@ -68,12 +67,11 @@ impl ZeroAllocArenaPoolEngine {
             if current & bit == 0 {
                 return false; // Slot already free
             }
-            if self.occupancy_bitmap.compare_exchange_weak(
-                current,
-                current & !bit,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .occupancy_bitmap
+                .compare_exchange_weak(current, current & !bit, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
                 self.total_deallocations.fetch_add(1, Ordering::Relaxed);
                 return true;
             }
@@ -138,4 +136,3 @@ mod tests {
         assert!(!pool.is_slot_occupied(64));
     }
 }
-

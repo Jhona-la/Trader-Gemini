@@ -93,7 +93,10 @@ impl CazadorConstantes {
     }
 
     /// Scans a Rust source code string and replaces numeric literals with file-namespaced Epigenoma lookups
-    pub fn strip_constants_with_tag(rust_code: &str, file_tag: &str) -> Result<(String, usize), String> {
+    pub fn strip_constants_with_tag(
+        rust_code: &str,
+        file_tag: &str,
+    ) -> Result<(String, usize), String> {
         let mut file_ast = parse_file(rust_code).map_err(|e| format!("AST parse error: {}", e))?;
         let mut visitor = CazadorConstantesVisitor::with_file_tag(file_tag);
         visitor.visit_file_mut(&mut file_ast);
@@ -117,7 +120,8 @@ mod tests {
             }
         "#;
 
-        let (transformed, count) = CazadorConstantes::strip_constants(code).expect("Failed to transform code");
+        let (transformed, count) =
+            CazadorConstantes::strip_constants(code).expect("Failed to transform code");
         assert_eq!(count, 1, "Only non-trivial float 0.0543 should be replaced");
         assert!(transformed.contains("read_epigenoma_gene"));
     }
@@ -129,9 +133,12 @@ mod tests {
             static BASE_FEE: f64 = 0.0005;
         "#;
 
-        let (transformed, count) = CazadorConstantes::strip_constants(code).expect("Failed to transform code");
-        assert_eq!(count, 0, "Const and static items must not be replaced to avoid E0015");
+        let (transformed, count) =
+            CazadorConstantes::strip_constants(code).expect("Failed to transform code");
+        assert_eq!(
+            count, 0,
+            "Const and static items must not be replaced to avoid E0015"
+        );
         assert!(!transformed.contains("read_epigenoma_gene"));
     }
 }
-

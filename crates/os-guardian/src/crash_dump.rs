@@ -1,6 +1,5 @@
 /// 🛡️ VOLCADO ATÓMICO DE EMERGENCIA Y RECUPERACIÓN DE ESTADO (CRASH DUMP RECOVERY)
 /// Permite capturar y persistir el snapshot del estado del bot en JSON ante excepciones críticas (#226-#235).
-
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
@@ -104,7 +103,13 @@ mod tests {
     #[test]
     fn test_emergency_crash_dump_atomic_file_write() {
         let temp_dir = std::env::temp_dir();
-        let dump_path = temp_dir.join(format!("crash_dump_test_{}.json", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let dump_path = temp_dir.join(format!(
+            "crash_dump_test_{}.json",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
 
         let mut dump = EmergencyCrashDump::new("uuid-test-5678", "OOM_PREEMPTION", 26.0);
         dump.add_position(PositionDumpEntry {

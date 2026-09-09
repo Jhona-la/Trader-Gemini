@@ -88,4 +88,3 @@ mod tests {
         assert!(mem.is_finite());
     }
 }
-

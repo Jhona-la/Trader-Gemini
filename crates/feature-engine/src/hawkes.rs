@@ -5,12 +5,12 @@ use std::f64;
 /// Detecta aceleraciones auto-excitadas del mercado en nanosegundos.
 #[derive(Debug, Clone)]
 pub struct HawkesProcessEngine {
-    pub mu: f64,               // Tasa base de fondo (baseline arrival rate)
-    pub alpha: f64,            // Coeficiente de excitación por impulso
-    pub beta: f64,             // Tasa de decaimiento temporal (decay rate)
-    pub intensity_bull: f64,   // Intensidad acumulada alcista λ_bull(t)
-    pub intensity_bear: f64,   // Intensidad acumulada bajista λ_bear(t)
-    pub last_update_ms: u64,   // Timestamp del último tick procesado
+    pub mu: f64,             // Tasa base de fondo (baseline arrival rate)
+    pub alpha: f64,          // Coeficiente de excitación por impulso
+    pub beta: f64,           // Tasa de decaimiento temporal (decay rate)
+    pub intensity_bull: f64, // Intensidad acumulada alcista λ_bull(t)
+    pub intensity_bear: f64, // Intensidad acumulada bajista λ_bear(t)
+    pub last_update_ms: u64, // Timestamp del último tick procesado
 }
 
 impl HawkesProcessEngine {
@@ -26,17 +26,27 @@ impl HawkesProcessEngine {
     }
 
     #[inline(always)]
-    pub fn update(&mut self, timestamp_ms: u64, delta_ofi: f64, volume_usd: f64, volume_norm: f64) -> (f64, f64, f64) {
+    pub fn update(
+        &mut self,
+        timestamp_ms: u64,
+        delta_ofi: f64,
+        volume_usd: f64,
+        volume_norm: f64,
+    ) -> (f64, f64, f64) {
         if !delta_ofi.is_finite() || !volume_usd.is_finite() || !volume_norm.is_finite() {
             let total = self.intensity_bull + self.intensity_bear;
-            let ratio = if total > 0.0 { (self.intensity_bull - self.intensity_bear) / total } else { 0.0 };
+            let ratio = if total > 0.0 {
+                (self.intensity_bull - self.intensity_bear) / total
+            } else {
+                0.0
+            };
             return (self.intensity_bull, self.intensity_bear, ratio);
         }
 
         if self.last_update_ms > 0 && timestamp_ms > self.last_update_ms {
             let dt_sec = ((timestamp_ms - self.last_update_ms) as f64 / 1000.0).min(300.0);
             let decay = (-self.beta * dt_sec).exp();
-            
+
             // Decaimiento exponencial del estado anterior acotado a tasa base mu
             self.intensity_bull = (self.mu + (self.intensity_bull - self.mu) * decay).max(self.mu);
             self.intensity_bear = (self.mu + (self.intensity_bear - self.mu) * decay).max(self.mu);

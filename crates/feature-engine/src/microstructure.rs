@@ -31,12 +31,12 @@ impl OrderFlowTracker {
     pub fn update(&mut self, volume: f64, is_buyer_maker: bool) -> f64 {
         // En Binance: buyer_maker = true significa que el trade fue ejecutado contra el BID (Taker Sell)
         // buyer_maker = false significa que el trade fue ejecutado contra el ASK (Taker Buy)
-        let v = if volume.is_finite() && volume > 0.0 { volume } else { 0.0 };
-        let (buy_v, sell_v) = if is_buyer_maker {
-            (0.0, v)
+        let v = if volume.is_finite() && volume > 0.0 {
+            volume
         } else {
-            (v, 0.0)
+            0.0
         };
+        let (buy_v, sell_v) = if is_buyer_maker { (0.0, v) } else { (v, 0.0) };
 
         self.cumulative_buy_vol += buy_v;
         self.cumulative_sell_vol += sell_v;
@@ -64,8 +64,16 @@ impl OrderFlowTracker {
 
     #[inline(always)]
     pub fn get_volume_delta_ratio(&self) -> f64 {
-        let b = if self.cumulative_buy_vol.is_finite() && self.cumulative_buy_vol > 0.0 { self.cumulative_buy_vol } else { 0.0 };
-        let s = if self.cumulative_sell_vol.is_finite() && self.cumulative_sell_vol > 0.0 { self.cumulative_sell_vol } else { 0.0 };
+        let b = if self.cumulative_buy_vol.is_finite() && self.cumulative_buy_vol > 0.0 {
+            self.cumulative_buy_vol
+        } else {
+            0.0
+        };
+        let s = if self.cumulative_sell_vol.is_finite() && self.cumulative_sell_vol > 0.0 {
+            self.cumulative_sell_vol
+        } else {
+            0.0
+        };
         let total = b + s;
         if total < 1e-12 {
             0.0
@@ -108,10 +116,26 @@ impl OFIModel {
 
     #[inline(always)]
     pub fn update(&mut self, bid_price: f64, ask_price: f64, bid_qty: f64, ask_qty: f64) -> f64 {
-        let b_p = if bid_price.is_finite() && bid_price > 0.0 { bid_price } else { self.prev_bid_price };
-        let a_p = if ask_price.is_finite() && ask_price > 0.0 { ask_price } else { self.prev_ask_price };
-        let b_qty = if bid_qty.is_finite() && bid_qty >= 0.0 { bid_qty } else { 0.0 };
-        let a_qty = if ask_qty.is_finite() && ask_qty >= 0.0 { ask_qty } else { 0.0 };
+        let b_p = if bid_price.is_finite() && bid_price > 0.0 {
+            bid_price
+        } else {
+            self.prev_bid_price
+        };
+        let a_p = if ask_price.is_finite() && ask_price > 0.0 {
+            ask_price
+        } else {
+            self.prev_ask_price
+        };
+        let b_qty = if bid_qty.is_finite() && bid_qty >= 0.0 {
+            bid_qty
+        } else {
+            0.0
+        };
+        let a_qty = if ask_qty.is_finite() && ask_qty >= 0.0 {
+            ask_qty
+        } else {
+            0.0
+        };
 
         if self.prev_bid_price == 0.0 {
             self.prev_bid_price = b_p;
@@ -233,7 +257,7 @@ mod tests {
     fn test_order_flow_tracker() {
         let mut tracker = OrderFlowTracker::new();
         tracker.update(10.0, false); // Buy
-        tracker.update(5.0, true);   // Sell
+        tracker.update(5.0, true); // Sell
         let delta = tracker.get_volume_delta_ratio();
         assert!((delta - (10.0 - 5.0) / 15.0).abs() < 1e-6);
     }
@@ -277,7 +301,10 @@ mod tests {
         let (z, accel, is_burst) = tracker.update(100.0);
         assert!(z > 2.0, "Z-Score should detect massive volume spike");
         assert!(accel > 50.0, "Acceleration should be positive and large");
-        assert!(is_burst, "Burst flag must be triggered for large institutional volume");
+        assert!(
+            is_burst,
+            "Burst flag must be triggered for large institutional volume"
+        );
     }
 
     #[test]
@@ -307,7 +334,10 @@ mod tests {
         let bids = vec![(60000.0, 1.0), (59990.0, 2.0)]; // 60k + 119.98k = 179.98k USD
         let asks = vec![(60010.0, 0.5), (60020.0, 0.5)]; // 30.005k + 30.01k = 60.015k USD
         let imb = ob.update_from_raw_depth(&bids, &asks);
-        assert!(imb > 0.40, "Heavy bid side notional should yield strong positive imbalance");
+        assert!(
+            imb > 0.40,
+            "Heavy bid side notional should yield strong positive imbalance"
+        );
         assert!(ob.total_bid_usd > ob.total_ask_usd);
     }
 
@@ -319,7 +349,10 @@ mod tests {
 
         // Cancelación abrupta del muro de 100 en 100ms
         let risk1 = sp.evaluate_wall_decay(20.0, 10.0, 1100);
-        assert!(risk1 >= 0.50, "Sudden 80% bid wall drop in 100ms must trigger spoofing alert");
+        assert!(
+            risk1 >= 0.50,
+            "Sudden 80% bid wall drop in 100ms must trigger spoofing alert"
+        );
     }
 
     #[test]
@@ -343,8 +376,8 @@ mod tests {
 /// en prototipos de categorías resonantes estables sin olvido catastrófico.
 #[derive(Debug, Clone)]
 pub struct AdaptiveResonanceClustering {
-    pub vigilance: f64,              // Parámetro de vigilancia $\rho \in [0.70, 0.99]$
-    pub prototypes: [[f64; 4]; 8],   // Hasta 8 prototipos de categorías de microestructura
+    pub vigilance: f64,            // Parámetro de vigilancia $\rho \in [0.70, 0.99]$
+    pub prototypes: [[f64; 4]; 8], // Hasta 8 prototipos de categorías de microestructura
     pub active_categories: usize,
     pub learning_rate: f64,
 }
@@ -392,7 +425,10 @@ impl AdaptiveResonanceClustering {
         for i in 0..self.active_categories {
             // Similitud de coseno (producto punto entre vectores unitarios)
             let proto = &self.prototypes[i];
-            let match_score = normalized[0] * proto[0] + normalized[1] * proto[1] + normalized[2] * proto[2] + normalized[3] * proto[3];
+            let match_score = normalized[0] * proto[0]
+                + normalized[1] * proto[1]
+                + normalized[2] * proto[2]
+                + normalized[3] * proto[3];
             if match_score > best_match {
                 best_match = match_score;
                 best_category = i;
@@ -402,7 +438,10 @@ impl AdaptiveResonanceClustering {
         // Test de Vigilancia: ¿Resuena con la categoría ganadora?
         if best_match >= self.vigilance && self.active_categories > 0 {
             // Actualización del prototipo (Regla de aprendizaje ART-2)
-            for (p_val, &n_val) in self.prototypes[best_category].iter_mut().zip(normalized.iter()) {
+            for (p_val, &n_val) in self.prototypes[best_category]
+                .iter_mut()
+                .zip(normalized.iter())
+            {
                 *p_val = (1.0 - self.learning_rate) * (*p_val) + self.learning_rate * n_val;
             }
             // Re-normalizar prototipo
@@ -427,9 +466,18 @@ impl AdaptiveResonanceClustering {
     }
 
     pub fn save_to_disk<P: AsRef<std::path::Path>>(&self, path: P) -> std::io::Result<()> {
-        let mut content = format!("{}\n{}\n{}\n", self.vigilance, self.learning_rate, self.active_categories);
+        let mut content = format!(
+            "{}\n{}\n{}\n",
+            self.vigilance, self.learning_rate, self.active_categories
+        );
         for i in 0..8 {
-            content.push_str(&format!("{},{},{},{}\n", self.prototypes[i][0], self.prototypes[i][1], self.prototypes[i][2], self.prototypes[i][3]));
+            content.push_str(&format!(
+                "{},{},{},{}\n",
+                self.prototypes[i][0],
+                self.prototypes[i][1],
+                self.prototypes[i][2],
+                self.prototypes[i][3]
+            ));
         }
         std::fs::write(path, content)
     }
@@ -526,7 +574,11 @@ impl NormalizedOrderBookL2 {
 
     /// Actualiza el libro L2 con validación defensiva de spread no invertido (Punto #020)
     #[inline(always)]
-    pub fn validate_and_update(&mut self, bids: &[(f64, f64)], asks: &[(f64, f64)]) -> Result<f64, &'static str> {
+    pub fn validate_and_update(
+        &mut self,
+        bids: &[(f64, f64)],
+        asks: &[(f64, f64)],
+    ) -> Result<f64, &'static str> {
         if bids.is_empty() || asks.is_empty() {
             return Err("EMPTY_DEPTH");
         }
@@ -576,7 +628,12 @@ impl SpoofingDetector {
     }
 
     #[inline(always)]
-    pub fn evaluate_wall_decay(&mut self, current_max_bid: f64, current_max_ask: f64, timestamp_ms: u64) -> f64 {
+    pub fn evaluate_wall_decay(
+        &mut self,
+        current_max_bid: f64,
+        current_max_ask: f64,
+        timestamp_ms: u64,
+    ) -> f64 {
         if !current_max_bid.is_finite() || !current_max_ask.is_finite() {
             return self.spoofing_risk_score;
         }
@@ -606,4 +663,3 @@ impl SpoofingDetector {
         self.spoofing_risk_score
     }
 }
-

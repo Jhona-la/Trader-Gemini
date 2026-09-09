@@ -268,7 +268,15 @@ mod tests {
 
         assert!(visitor.graph.nodes.contains_key("test_mod::compute_alpha"));
         assert!(visitor.graph.nodes.contains_key("test_mod::update_ofi"));
-        assert_eq!(visitor.graph.nodes.get("test_mod::update_ofi").unwrap().node_type, "feature");
+        assert_eq!(
+            visitor
+                .graph
+                .nodes
+                .get("test_mod::update_ofi")
+                .unwrap()
+                .node_type,
+            "feature"
+        );
     }
 
     #[test]
@@ -305,24 +313,30 @@ mod tests {
     #[test]
     fn test_graph4d_multiple_nodes_and_edges() {
         let mut graph = Graph4D::default();
-        graph.nodes.insert("Engine".to_string(), Node {
-            id: "Engine".to_string(),
-            label: "Engine".to_string(),
-            node_type: "module".to_string(),
-            file_path: "engine.rs".to_string(),
-            line_number: 10,
-            is_orphan: false,
-            average_latency_ns: 150,
-        });
-        graph.nodes.insert("OrderBook".to_string(), Node {
-            id: "OrderBook".to_string(),
-            label: "OrderBook".to_string(),
-            node_type: "struct".to_string(),
-            file_path: "orderbook.rs".to_string(),
-            line_number: 20,
-            is_orphan: false,
-            average_latency_ns: 25,
-        });
+        graph.nodes.insert(
+            "Engine".to_string(),
+            Node {
+                id: "Engine".to_string(),
+                label: "Engine".to_string(),
+                node_type: "module".to_string(),
+                file_path: "engine.rs".to_string(),
+                line_number: 10,
+                is_orphan: false,
+                average_latency_ns: 150,
+            },
+        );
+        graph.nodes.insert(
+            "OrderBook".to_string(),
+            Node {
+                id: "OrderBook".to_string(),
+                label: "OrderBook".to_string(),
+                node_type: "struct".to_string(),
+                file_path: "orderbook.rs".to_string(),
+                line_number: 20,
+                is_orphan: false,
+                average_latency_ns: 25,
+            },
+        );
         graph.edges.push(Edge {
             source: "Engine".to_string(),
             target: "OrderBook".to_string(),
@@ -353,9 +367,19 @@ mod tests {
         visitor.visit_file(&syntax);
 
         assert!(visitor.graph.nodes.contains_key("signal_mod::SignalMatrix"));
-        assert_eq!(visitor.graph.nodes.get("signal_mod::SignalMatrix").unwrap().node_type, "struct");
-        assert!(visitor.graph.edges.iter().any(|e| e.edge_type == "calls" && e.target.contains("normalize")));
+        assert_eq!(
+            visitor
+                .graph
+                .nodes
+                .get("signal_mod::SignalMatrix")
+                .unwrap()
+                .node_type,
+            "struct"
+        );
+        assert!(visitor
+            .graph
+            .edges
+            .iter()
+            .any(|e| e.edge_type == "calls" && e.target.contains("normalize")));
     }
 }
-
-

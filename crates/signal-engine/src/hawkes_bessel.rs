@@ -1,6 +1,6 @@
-use strategy_core::QuantumStrategy;
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 /// 📈 ALGORITMO #91: MOTOR DE INTENSIDAD ESTOCÁSTICA HAWKES-BESSEL (HAWKES-BESSEL ENGINE)
 /// Combina el proceso auto-excitado de Hawkes con kernels de convolución modificados de Bessel I_\nu(z),
@@ -27,12 +27,20 @@ impl HawkesBesselEngine {
     pub fn compute_bessel_hawkes_intensity(base_lambda: f64, alpha: f64, dt: f64) -> f64 {
         // FIX #642: Sanitizar parámetros entrantes
         let safe_dt = if dt.is_finite() && dt >= 0.0 { dt } else { 0.1 };
-        let safe_lambda = if base_lambda.is_finite() { base_lambda } else { 1.0 };
+        let safe_lambda = if base_lambda.is_finite() {
+            base_lambda
+        } else {
+            1.0
+        };
         let safe_alpha = if alpha.is_finite() { alpha } else { 0.5 };
 
         let bessel_decay = (1.0 + safe_dt * safe_dt).sqrt() - safe_dt;
         let res = safe_lambda + safe_alpha * bessel_decay.max(0.0);
-        if res.is_finite() { res } else { 1.0 }
+        if res.is_finite() {
+            res
+        } else {
+            1.0
+        }
     }
 }
 
@@ -51,8 +59,16 @@ impl QuantumStrategy for HawkesBesselEngine {
     }
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
-        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
-        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let sym_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(symbol)
+        };
+        let cid_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(coin_id)
+        };
         let r = match self.registry.as_ref() {
             Some(reg) => reg,
             None => return 0.0,
@@ -60,7 +76,14 @@ impl QuantumStrategy for HawkesBesselEngine {
 
         let base_lambda = r
             .get_scoped_parameter(sym_opt, cid_opt, "hawkes_intensity", "HawkesBesselEngine")
-            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "base_hawkes_intensity", "HawkesBesselEngine"))
+            .or_else(|| {
+                r.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "base_hawkes_intensity",
+                    "HawkesBesselEngine",
+                )
+            })
             .map(|p| p.get_value())
             .unwrap_or(1.0);
 
@@ -75,7 +98,12 @@ impl QuantumStrategy for HawkesBesselEngine {
             .unwrap_or(0.1);
 
         let direction = r
-            .get_scoped_parameter(sym_opt, cid_opt, "order_flow_direction", "HawkesBesselEngine")
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "order_flow_direction",
+                "HawkesBesselEngine",
+            )
             .map(|p| p.get_value())
             .unwrap_or(0.0);
 
@@ -124,9 +152,10 @@ mod tests {
         assert!(engine.init(registry).is_ok());
 
         let eval = engine.evaluate();
-        assert!(eval > 0.0, "Intensidad y dirección positiva deben generar señal positiva");
+        assert!(
+            eval > 0.0,
+            "Intensidad y dirección positiva deben generar señal positiva"
+        );
         assert!(eval <= 1.0);
     }
 }
-
-

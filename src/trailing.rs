@@ -34,7 +34,13 @@ pub fn evaluate_quantum_trailing(
     trail_runner: f64,
 ) -> TrailingResult {
     // FIX #1453: Sanitización de inputs contra NaNs o valores no finitos
-    if current_atr <= 0.0 || !current_atr.is_finite() || entry_price <= 0.0 || !entry_price.is_finite() || !current_price.is_finite() || current_price <= 0.0 {
+    if current_atr <= 0.0
+        || !current_atr.is_finite()
+        || entry_price <= 0.0
+        || !entry_price.is_finite()
+        || !current_price.is_finite()
+        || current_price <= 0.0
+    {
         return TrailingResult {
             stop_price: current_trail_stop,
             force_close: false,
@@ -194,7 +200,19 @@ mod tests {
     #[test]
     fn test_evaluate_quantum_trailing_nan_immunity() {
         let res_nan = evaluate_quantum_trailing(
-            1, f64::NAN, 60500.0, f64::NAN, 0, 0.0, 0.0, 59000.0, 1.0, 1.5, 2.0, 2.5, 3.0,
+            1,
+            f64::NAN,
+            60500.0,
+            f64::NAN,
+            0,
+            0.0,
+            0.0,
+            59000.0,
+            1.0,
+            1.5,
+            2.0,
+            2.5,
+            3.0,
         );
         assert_eq!(res_nan.stop_price, 59000.0);
         assert!(!res_nan.force_close);

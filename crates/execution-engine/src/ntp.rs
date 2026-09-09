@@ -6,10 +6,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub async fn start_ntp_synchronizer(
-    client: Arc<BinanceClient>,
-    arena: Arc<GlobalArena>,
-) {
+pub async fn start_ntp_synchronizer(client: Arc<BinanceClient>, arena: Arc<GlobalArena>) {
     let mut interval = tokio::time::interval(Duration::from_secs(15));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -33,7 +30,9 @@ pub async fn start_ntp_synchronizer(
                 let local_estimate = (t0 as i64) + rtt_half;
                 let offset_ms = (server_time as i64) - local_estimate;
 
-                arena.server_time_offset_ms.store(offset_ms, Ordering::Relaxed);
+                arena
+                    .server_time_offset_ms
+                    .store(offset_ms, Ordering::Relaxed);
             }
             Err(e) => {
                 eprintln!("⚠️ [NTP-SYNC] Server time fetch failed: {}", e);

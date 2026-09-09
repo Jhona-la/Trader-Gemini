@@ -43,7 +43,9 @@ impl FlightRecorder {
             .open(path)
             .expect("Fallo al crear archivo de Flight Recorder");
 
-        let meta = file.metadata().expect("Fallo al leer metadatos de Flight Recorder");
+        let meta = file
+            .metadata()
+            .expect("Fallo al leer metadatos de Flight Recorder");
         if meta.len() < file_size as u64 {
             file.set_len(file_size as u64)
                 .expect("Fallo al reservar espacio de Flight Recorder");
@@ -127,4 +129,3 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 }
-

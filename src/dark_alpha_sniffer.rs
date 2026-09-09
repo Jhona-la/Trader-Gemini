@@ -31,12 +31,17 @@ pub fn spawn_hyperliquid_sniffer(router: Arc<DarkAlphaRouter>) {
                             // FIX #1420: Parseo real de niveles L2 de Hyperliquid DEX
                             if let Ok(parsed) = simd_json::to_borrowed_value(&mut bytes) {
                                 if let Some(data) = parsed.get("data") {
-                                    if let Some(levels) = data.get("levels").and_then(|l| l.as_array()) {
+                                    if let Some(levels) =
+                                        data.get("levels").and_then(|l| l.as_array())
+                                    {
                                         let mut bid_vol = 0.0f64;
                                         let mut ask_vol = 0.0f64;
-                                        if let Some(bids) = levels.get(0).and_then(|b| b.as_array()) {
+                                        if let Some(bids) = levels.get(0).and_then(|b| b.as_array())
+                                        {
                                             for b in bids.iter().take(5) {
-                                                if let Some(sz_str) = b.get("sz").and_then(|s| s.as_str()) {
+                                                if let Some(sz_str) =
+                                                    b.get("sz").and_then(|s| s.as_str())
+                                                {
                                                     // FIX #1468: Parseo seguro y validación de finitud
                                                     if let Ok(v) = sz_str.parse::<f64>() {
                                                         if v.is_finite() && v > 0.0 {
@@ -46,9 +51,12 @@ pub fn spawn_hyperliquid_sniffer(router: Arc<DarkAlphaRouter>) {
                                                 }
                                             }
                                         }
-                                        if let Some(asks) = levels.get(1).and_then(|a| a.as_array()) {
+                                        if let Some(asks) = levels.get(1).and_then(|a| a.as_array())
+                                        {
                                             for a in asks.iter().take(5) {
-                                                if let Some(sz_str) = a.get("sz").and_then(|s| s.as_str()) {
+                                                if let Some(sz_str) =
+                                                    a.get("sz").and_then(|s| s.as_str())
+                                                {
                                                     // FIX #1468: Parseo seguro y validación de finitud
                                                     if let Ok(v) = sz_str.parse::<f64>() {
                                                         if v.is_finite() && v > 0.0 {
@@ -60,13 +68,15 @@ pub fn spawn_hyperliquid_sniffer(router: Arc<DarkAlphaRouter>) {
                                         }
 
                                         let total_vol = (bid_vol + ask_vol).max(1.0);
-                                        let impact = ((bid_vol - ask_vol) / total_vol).clamp(-1.0, 1.0);
+                                        let impact =
+                                            ((bid_vol - ask_vol) / total_vol).clamp(-1.0, 1.0);
                                         let qty = total_vol.clamp(0.1, 1000.0);
 
                                         let ts = SystemTime::now()
                                             .duration_since(UNIX_EPOCH)
                                             .unwrap_or_default()
-                                            .as_millis() as u64;
+                                            .as_millis()
+                                            as u64;
 
                                         router.ingest_dex_liquidation(qty, impact, ts);
                                     }

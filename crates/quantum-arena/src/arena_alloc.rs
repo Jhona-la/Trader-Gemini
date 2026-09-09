@@ -40,13 +40,16 @@ impl<const N: usize> ZeroHeapArena<N> {
                 return None;
             }
 
-            match self.offset.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
-                Ok(_) => {
-                    unsafe {
-                        let ptr = (self.buffer.get() as *mut u8).add(aligned) as *mut T;
-                        return Some(std::slice::from_raw_parts_mut(ptr, len));
-                    }
-                }
+            match self.offset.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => unsafe {
+                    let ptr = (self.buffer.get() as *mut u8).add(aligned) as *mut T;
+                    return Some(std::slice::from_raw_parts_mut(ptr, len));
+                },
                 Err(actual) => current = actual,
             }
         }

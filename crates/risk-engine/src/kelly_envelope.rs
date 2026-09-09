@@ -126,12 +126,20 @@ impl RiskEnvelope {
         // Media móvil exponencial del payoff ratio desacoplada y simétrica (F5.1)
         if won {
             let win_abs = win_pnl.abs().max(1e-6);
-            self.avg_win = if self.avg_win == 0.0 { win_abs } else { self.avg_win * 0.95 + win_abs * 0.05 };
+            self.avg_win = if self.avg_win == 0.0 {
+                win_abs
+            } else {
+                self.avg_win * 0.95 + win_abs * 0.05
+            };
         } else {
             let loss_abs = loss_pnl.abs().max(1e-6);
-            self.avg_loss = if self.avg_loss == 0.0 { loss_abs } else { self.avg_loss * 0.95 + loss_abs * 0.05 };
+            self.avg_loss = if self.avg_loss == 0.0 {
+                loss_abs
+            } else {
+                self.avg_loss * 0.95 + loss_abs * 0.05
+            };
         }
-        
+
         let eps = 1e-3;
         self.payoff_ratio = (self.avg_win + eps) / (self.avg_loss + eps);
     }

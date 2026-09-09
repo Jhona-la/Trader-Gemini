@@ -185,8 +185,7 @@ impl ContinuousVPIN {
         if self.ewma_tick_notional <= 0.0 {
             self.ewma_tick_notional = volume.max(1.0);
         } else {
-            self.ewma_tick_notional =
-                0.98 * self.ewma_tick_notional + 0.02 * volume;
+            self.ewma_tick_notional = 0.98 * self.ewma_tick_notional + 0.02 * volume;
         }
         let calibrated = self.ewma_tick_notional * Self::TICKS_PER_BUCKET;
         if calibrated > self.bucket_size {
@@ -246,7 +245,11 @@ impl RecursiveSMA {
     #[inline(always)]
     pub fn update(&mut self, new_val: f64, old_val: f64) -> f64 {
         if !new_val.is_finite() || !old_val.is_finite() {
-            return if self.count > 0 { self.sum / (self.count as f64) } else { 0.0 };
+            return if self.count > 0 {
+                self.sum / (self.count as f64)
+            } else {
+                0.0
+            };
         }
         if self.count < self.window {
             self.count += 1;
@@ -323,10 +326,28 @@ impl DynamicKelly {
     #[inline(always)]
     pub fn sizing_fraction(&self) -> f64 {
         // FIX #687: Sanitizar parámetros de Kelly
-        let wr = if self.win_rate_welford.mean.is_finite() { self.win_rate_welford.mean.clamp(0.0, 1.0) } else { 0.5 };
-        let avg_win = if self.win_size_welford.mean.is_finite() && self.win_size_welford.mean > 0.0 { self.win_size_welford.mean } else { 0.001 };
-        let avg_loss = if self.loss_size_welford.mean.is_finite() && self.loss_size_welford.mean > 0.0 { self.loss_size_welford.mean } else { 0.001 };
-        let mult = if self.kelly_multiplier.is_finite() && self.kelly_multiplier > 0.0 { self.kelly_multiplier } else { 0.5 };
+        let wr = if self.win_rate_welford.mean.is_finite() {
+            self.win_rate_welford.mean.clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+        let avg_win = if self.win_size_welford.mean.is_finite() && self.win_size_welford.mean > 0.0
+        {
+            self.win_size_welford.mean
+        } else {
+            0.001
+        };
+        let avg_loss =
+            if self.loss_size_welford.mean.is_finite() && self.loss_size_welford.mean > 0.0 {
+                self.loss_size_welford.mean
+            } else {
+                0.001
+            };
+        let mult = if self.kelly_multiplier.is_finite() && self.kelly_multiplier > 0.0 {
+            self.kelly_multiplier
+        } else {
+            0.5
+        };
 
         // If not enough data, return a safe base default
         if self.win_rate_welford.count < 5.0 || avg_loss == 0.0 {
@@ -524,9 +545,17 @@ pub fn compute_kelly_fraction(
     let q = 1.0 - p;
     let kelly = (p * b - q) / b;
     if !apply_mult {
-        return if kelly.is_finite() { kelly.max(0.0).min(max_exposure) } else { 0.0 };
+        return if kelly.is_finite() {
+            kelly.max(0.0).min(max_exposure)
+        } else {
+            0.0
+        };
     }
-    let mut mult = if kelly_mult.is_finite() && kelly_mult > 0.0 { kelly_mult } else { 1.0 };
+    let mut mult = if kelly_mult.is_finite() && kelly_mult > 0.0 {
+        kelly_mult
+    } else {
+        1.0
+    };
     if stress_score < 90.0 {
         mult = 0.125;
     }
@@ -1087,4 +1116,3 @@ mod tests {
         assert!((decayed - 50.0).abs() < 1e-3);
     }
 }
-

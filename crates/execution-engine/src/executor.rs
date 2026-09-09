@@ -1,14 +1,14 @@
-use std::sync::Arc;
-use arc_swap::{ArcSwap, ArcSwapOption};
 use crate::binance_api::{
     sign_payload_to_buffer, ORDER_TYPE_LIMIT, ORDER_TYPE_MARKET, SIDE_BUY, SIDE_SELL,
     TIME_IN_FORCE_IOC,
 };
 use crate::order_types::OrderAck;
 use crate::ExecutionPayload;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use risk_engine::ValidatedOrder;
 use signal_engine::SignalType;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::client::{BinanceClient, ZeroAllocBuffer};
@@ -73,7 +73,8 @@ pub trait ExecutionProvider: Send + Sync {
         quantity: f64,
         step_size: f64,
     ) -> Result<(), String> {
-        self.execute_raw_qty_with_client_id(symbol, is_long, quantity, step_size, "").await
+        self.execute_raw_qty_with_client_id(symbol, is_long, quantity, step_size, "")
+            .await
     }
 
     async fn execute_raw_qty_with_client_id(
@@ -85,7 +86,8 @@ pub trait ExecutionProvider: Send + Sync {
         client_order_id: &str,
     ) -> Result<(), String> {
         let _ = client_order_id;
-        self.execute_raw_qty(symbol, is_long, quantity, step_size).await
+        self.execute_raw_qty(symbol, is_long, quantity, step_size)
+            .await
     }
 
     async fn execute_limit_order(
@@ -183,7 +185,11 @@ pub trait ExecutionProvider: Send + Sync {
     }
 
     /// D-371: Cancela únicamente órdenes OCO de la posición específica (LONG/SHORT)
-    async fn cancel_position_oco_orders(&self, symbol: &str, is_long: bool) -> Result<usize, String> {
+    async fn cancel_position_oco_orders(
+        &self,
+        symbol: &str,
+        is_long: bool,
+    ) -> Result<usize, String> {
         let _ = (symbol, is_long);
         Ok(0)
     }
@@ -261,9 +267,7 @@ impl OrderExecutor {
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
             arena: ArcSwapOption::empty(),
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
-                api_key,
-                api_secret,
-                is_testnet,
+                api_key, api_secret, is_testnet,
             )),
             is_hedge_mode: AtomicBool::new(true),
         }
@@ -299,9 +303,7 @@ impl OrderExecutor {
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
             arena: ArcSwapOption::new(arena),
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
-                api_key,
-                api_secret,
-                is_testnet,
+                api_key, api_secret, is_testnet,
             )),
             is_hedge_mode: AtomicBool::new(true),
         }
@@ -428,7 +430,9 @@ impl OrderExecutor {
                     #[serde(rename = "dualSidePosition")]
                     dual: bool,
                 }
-                serde_json::from_str::<ModeResp>(&mode_body).map(|m| m.dual).ok()
+                serde_json::from_str::<ModeResp>(&mode_body)
+                    .map(|m| m.dual)
+                    .ok()
             }
             Err(e) => {
                 println!("⚠️ [FLATTEN] No se pudo leer modo de posición (/fapi/v1/positionSide/dual): {}. Se procederá con failover dinámico.", e);
@@ -491,16 +495,26 @@ impl OrderExecutor {
             buf.push_str("&timestamp=");
             buf.push_u64(ts);
             let mut sig_buf = [0u8; 64];
-            
+
             // WS Execution Routing (Zero-TLS overhead)
             if self.ws.is_connected() {
-                let api_key = self.client.api_key.load().to_str().unwrap_or("").to_string();
+                let api_key = self
+                    .client
+                    .api_key
+                    .load()
+                    .to_str()
+                    .unwrap_or("")
+                    .to_string();
                 if let Err(e) = self.ws.send_order_payload(
                     &api_key,
                     &api_secret,
                     &p.symbol,
                     if is_long { "SELL" } else { "BUY" },
-                    if dual { Some(if is_long { "LONG" } else { "SHORT" }) } else { None },
+                    if dual {
+                        Some(if is_long { "LONG" } else { "SHORT" })
+                    } else {
+                        None
+                    },
                     ORDER_TYPE_MARKET,
                     p.position_amt.abs(),
                     None,
@@ -551,11 +565,18 @@ impl OrderExecutor {
                     retry_buf.push_str("&timestamp=");
                     retry_buf.push_u64(ts_retry);
                     let mut retry_sig_buf = [0u8; 64];
-                    sign_payload_to_buffer(&retry_buf.as_str()[retry_payload_start..], &api_secret, &mut retry_sig_buf);
+                    sign_payload_to_buffer(
+                        &retry_buf.as_str()[retry_payload_start..],
+                        &api_secret,
+                        &mut retry_sig_buf,
+                    );
                     retry_buf.push_str("&signature=");
                     retry_buf.push_str(unsafe { std::str::from_utf8_unchecked(&retry_sig_buf) });
 
-                    close_res = self.client.execute_order_payload_typed(retry_buf.as_str()).await;
+                    close_res = self
+                        .client
+                        .execute_order_payload_typed(retry_buf.as_str())
+                        .await;
                 }
             }
 
@@ -634,8 +655,7 @@ impl OrderExecutor {
 
     pub fn hot_swap_credentials(&self, new_key: String, new_secret: String, is_testnet: bool) {
         self.api_secret.store(Arc::new(new_secret));
-        if true {
-        }
+        if true {}
         self.client.hot_swap_credentials(new_key, is_testnet);
     }
 
@@ -849,7 +869,11 @@ impl OrderExecutor {
         // D-171: Respetar is_hedge_mode. En One-Way mode, positionSide NO debe enviarse.
         let is_hedge = self.is_hedge_mode.load(Ordering::Relaxed);
         let pos_side_param = if is_hedge {
-            if side == SIDE_BUY { "&positionSide=LONG" } else { "&positionSide=SHORT" }
+            if side == SIDE_BUY {
+                "&positionSide=LONG"
+            } else {
+                "&positionSide=SHORT"
+            }
         } else {
             ""
         };
@@ -964,7 +988,7 @@ impl OrderExecutor {
     pub async fn get_symbol_filter(&self, symbol: &str) -> SymbolFilter {
         {
             let cache = self.symbol_filters.load();
-if true {
+            if true {
                 if let Some(f) = cache.get(symbol) {
                     return *f;
                 }
@@ -995,7 +1019,11 @@ if true {
     }
 
     #[inline(always)]
-    pub async fn cancel_position_oco_orders(&self, symbol: &str, is_long: bool) -> Result<usize, String> {
+    pub async fn cancel_position_oco_orders(
+        &self,
+        symbol: &str,
+        is_long: bool,
+    ) -> Result<usize, String> {
         <Self as ExecutionProvider>::cancel_position_oco_orders(self, symbol, is_long).await
     }
 }
@@ -1068,10 +1096,20 @@ impl ExecutionProvider for OrderExecutor {
             );
             // WS Execution Routing (Zero-TLS overhead)
             if self.ws.is_connected() {
-                let api_key = self.client.api_key.load().to_str().unwrap_or("").to_string();
+                let api_key = self
+                    .client
+                    .api_key
+                    .load()
+                    .to_str()
+                    .unwrap_or("")
+                    .to_string();
                 let api_secret = self.api_secret.load().to_string();
-                let time_in_force_opt = if payload.time_in_force.is_empty() { None } else { Some(payload.time_in_force.as_str()) };
-                
+                let time_in_force_opt = if payload.time_in_force.is_empty() {
+                    None
+                } else {
+                    Some(payload.time_in_force.as_str())
+                };
+
                 if let Err(e) = self.ws.send_order_payload(
                     &api_key,
                     &api_secret,
@@ -1086,7 +1124,10 @@ impl ExecutionProvider for OrderExecutor {
                     &payload.client_order_id,
                     payload.timestamp,
                 ) {
-                    println!("⚠️ [WS-EXECUTOR] Failed to send order, falling back to REST: {}", e);
+                    println!(
+                        "⚠️ [WS-EXECUTOR] Failed to send order, falling back to REST: {}",
+                        e
+                    );
                 } else {
                     // Orden disparada con éxito vía WS. El UserDataStream procesará el ACK real.
                     return Ok(());
@@ -1162,7 +1203,8 @@ impl ExecutionProvider for OrderExecutor {
         quantity: f64,
         step_size: f64,
     ) -> Result<(), String> {
-        self.execute_raw_qty_with_client_id(symbol, is_long, quantity, step_size, "").await
+        self.execute_raw_qty_with_client_id(symbol, is_long, quantity, step_size, "")
+            .await
     }
 
     #[inline(always)]
@@ -1250,7 +1292,13 @@ impl ExecutionProvider for OrderExecutor {
 
         // WS Execution Routing (Zero-TLS overhead)
         if self.ws.is_connected() {
-            let api_key = self.client.api_key.load().to_str().unwrap_or("").to_string();
+            let api_key = self
+                .client
+                .api_key
+                .load()
+                .to_str()
+                .unwrap_or("")
+                .to_string();
             if let Err(e) = self.ws.send_order_payload(
                 &api_key,
                 &api_secret,
@@ -1269,7 +1317,10 @@ impl ExecutionProvider for OrderExecutor {
                 &client_order_id,
                 timestamp,
             ) {
-                println!("⚠️ [WS-EXECUTOR] Failed to send raw qty order, falling back to REST: {}", e);
+                println!(
+                    "⚠️ [WS-EXECUTOR] Failed to send raw qty order, falling back to REST: {}",
+                    e
+                );
             } else {
                 return Ok(());
             }
@@ -1365,7 +1416,13 @@ impl ExecutionProvider for OrderExecutor {
 
         // WS Execution Routing (Zero-TLS overhead)
         if self.ws.is_connected() {
-            let api_key = self.client.api_key.load().to_str().unwrap_or("").to_string();
+            let api_key = self
+                .client
+                .api_key
+                .load()
+                .to_str()
+                .unwrap_or("")
+                .to_string();
             if let Err(e) = self.ws.send_order_payload(
                 &api_key,
                 &api_secret,
@@ -1384,7 +1441,10 @@ impl ExecutionProvider for OrderExecutor {
                 client_order_id,
                 timestamp,
             ) {
-                println!("⚠️ [WS-EXECUTOR] Failed to send limit order, falling back to REST: {}", e);
+                println!(
+                    "⚠️ [WS-EXECUTOR] Failed to send limit order, falling back to REST: {}",
+                    e
+                );
             } else {
                 return Ok(());
             }
@@ -1837,7 +1897,10 @@ impl ExecutionProvider for OrderExecutor {
         let is_hedge = self.is_hedge_mode.load(Ordering::Relaxed);
         let (position_side_q, reduce_only_q) = if is_hedge {
             (
-                format!("&positionSide={}", if is_long_close { "LONG" } else { "SHORT" }),
+                format!(
+                    "&positionSide={}",
+                    if is_long_close { "LONG" } else { "SHORT" }
+                ),
                 String::new(),
             )
         } else {
@@ -2096,13 +2159,21 @@ impl ExecutionProvider for OrderExecutor {
 
     /// D-371: Cancela quirúrgicamente únicamente las órdenes OCO asociadas a la posición especificada
     #[inline(always)]
-    async fn cancel_position_oco_orders(&self, symbol: &str, is_long: bool) -> Result<usize, String> {
+    async fn cancel_position_oco_orders(
+        &self,
+        symbol: &str,
+        is_long: bool,
+    ) -> Result<usize, String> {
         let pos_side = if is_long { "LONG" } else { "SHORT" };
         let active = self.order_registry.active_for_symbol(symbol);
         let mut canceled = 0;
         for o in active {
-            let is_oco_bracket = o.client_order_id.contains("_SL") || o.client_order_id.contains("_TP") || o.client_order_id.contains("oco_");
-            let matches_side = o.position_side == pos_side || o.position_side == "BOTH" || o.position_side.is_empty();
+            let is_oco_bracket = o.client_order_id.contains("_SL")
+                || o.client_order_id.contains("_TP")
+                || o.client_order_id.contains("oco_");
+            let matches_side = o.position_side == pos_side
+                || o.position_side == "BOTH"
+                || o.position_side.is_empty();
             if is_oco_bracket && matches_side {
                 if self.cancel_order(symbol, &o.client_order_id).await.is_ok() {
                     canceled += 1;

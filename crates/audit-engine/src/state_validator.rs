@@ -13,7 +13,11 @@ impl StateValidator {
     #[inline(always)]
     pub fn validate_parity(arena: &GlobalArena, initial_capital: f64) {
         // FIX #680: Sanitizar capital inicial
-        let safe_initial = if initial_capital.is_finite() && initial_capital > 0.0 { initial_capital } else { 13.0 };
+        let safe_initial = if initial_capital.is_finite() && initial_capital > 0.0 {
+            initial_capital
+        } else {
+            13.0
+        };
 
         let mut total_realized_pnl = 0.0;
         let mut active_positions = 0;
@@ -21,7 +25,9 @@ impl StateValidator {
 
         for coin in arena.coins.iter() {
             let m_pnl = coin.metrics.pnl_realized.load(Ordering::Relaxed);
-            if m_pnl.is_finite() { total_realized_pnl += m_pnl; }
+            if m_pnl.is_finite() {
+                total_realized_pnl += m_pnl;
+            }
 
             if coin.positions.position.is_open() {
                 active_positions += 1;
@@ -84,8 +90,14 @@ mod tests {
     fn test_state_validator_with_realized_pnl_and_divergence() {
         let arena = GlobalArena::new(13.0);
         // Simulate realized profits in coin 0 (BTC)
-        arena.coins[0].scalp.pnl_realized.store(2.5, Ordering::Relaxed);
-        arena.coins[0].swing.pnl_realized.store(1.5, Ordering::Relaxed);
+        arena.coins[0]
+            .scalp
+            .pnl_realized
+            .store(2.5, Ordering::Relaxed);
+        arena.coins[0]
+            .swing
+            .pnl_realized
+            .store(1.5, Ordering::Relaxed);
 
         // Set unified capital correctly to 13.0 + 4.0 = 17.0
         arena.unified_capital.store(17.0, Ordering::Relaxed);
@@ -96,4 +108,3 @@ mod tests {
         StateValidator::validate_parity(&arena, 13.0);
     }
 }
-

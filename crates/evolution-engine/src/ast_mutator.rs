@@ -114,7 +114,8 @@ mod tests {
     fn test_ast_mutator_mutate_rs_constant() {
         let temp_dir = std::env::temp_dir();
         let rs_file = temp_dir.join("test_ast_constant.rs");
-        let initial_rs = "pub const KELLY_FRACTION: f64 = 0.25;\npub const MAX_SLIPPAGE: f64 = 0.001;\n";
+        let initial_rs =
+            "pub const KELLY_FRACTION: f64 = 0.25;\npub const MAX_SLIPPAGE: f64 = 0.001;\n";
         fs::write(&rs_file, initial_rs).expect("write initial rs");
 
         let mutator = ASTMutator::new();
@@ -128,4 +129,3 @@ mod tests {
         let _ = fs::remove_file(&rs_file);
     }
 }
-

@@ -130,13 +130,15 @@ impl LockFreeTickRing {
         self.head
             .store(current_head.wrapping_add(1), Ordering::Release);
         // Track fill level atómicamente sin condiciones de carrera (cap at TICK_RING_SIZE)
-        let _ = self.len.fetch_update(Ordering::Release, Ordering::Relaxed, |len| {
-            if len < TICK_RING_SIZE {
-                Some(len + 1)
-            } else {
-                None
-            }
-        });
+        let _ = self
+            .len
+            .fetch_update(Ordering::Release, Ordering::Relaxed, |len| {
+                if len < TICK_RING_SIZE {
+                    Some(len + 1)
+                } else {
+                    None
+                }
+            });
     }
 
     /// Returns current length of valid data

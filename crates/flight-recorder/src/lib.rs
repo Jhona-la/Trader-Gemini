@@ -21,10 +21,10 @@ pub const EVENT_ARBITRAGE_FIRED: u16 = 7;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FlightRecord {
     pub timestamp_ns: u64, // 8 bytes
-    pub event_type: u16,    // 2 bytes
-    pub coin_id: u16,       // 2 bytes
-    pub flags: u32,         // 4 bytes (Total 16)
-    pub payload: [f64; 6],  // 48 bytes (Total 64)
+    pub event_type: u16,   // 2 bytes
+    pub coin_id: u16,      // 2 bytes
+    pub flags: u32,        // 4 bytes (Total 16)
+    pub payload: [f64; 6], // 48 bytes (Total 64)
 }
 
 const DEFAULT_CAPACITY: usize = 65536; // 64K records = 4 MB contiguos en RAM
@@ -181,10 +181,21 @@ mod tests {
     #[test]
     fn test_flight_recorder_file_dump_and_reload() {
         let temp_dir = std::env::temp_dir();
-        let dump_path = temp_dir.join(format!("flight_dump_{}.bin", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let dump_path = temp_dir.join(format!(
+            "flight_dump_{}.bin",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
 
         let recorder = FlightRecorder::new(8);
-        recorder.record(EVENT_ARBITRAGE_FIRED, 1, 0xAA, [100.0, 200.0, 0.0, 0.0, 0.0, 0.0]);
+        recorder.record(
+            EVENT_ARBITRAGE_FIRED,
+            1,
+            0xAA,
+            [100.0, 200.0, 0.0, 0.0, 0.0, 0.0],
+        );
         recorder.dump_to_file(&dump_path).unwrap();
 
         assert!(dump_path.exists());
@@ -245,5 +256,3 @@ mod tests {
         assert_eq!(records[0].payload[0], 92.0);
     }
 }
-
-

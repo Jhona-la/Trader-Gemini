@@ -48,7 +48,12 @@ impl TelegramBot {
                 "chat_id": self.chat_id,
                 "text": text,
             });
-            self.client.post(&url).json(&fallback_payload).send().await?.error_for_status()?;
+            self.client
+                .post(&url)
+                .json(&fallback_payload)
+                .send()
+                .await?
+                .error_for_status()?;
         }
 
         Ok(())

@@ -44,20 +44,24 @@ pub struct Parameter {
     pub kind: ParameterKind,
     pub value: AtomicU64,
     pub owner: String,
-    
+
     pub timestamp: i64,
 }
 
 impl Parameter {
     pub fn new(name: &str, kind: ParameterKind, initial_value: f64, owner: &str) -> Self {
-        let safe_initial = if initial_value.is_finite() { initial_value } else { 0.0 };
+        let safe_initial = if initial_value.is_finite() {
+            initial_value
+        } else {
+            0.0
+        };
         Self {
             id: Uuid::now_v7(),
             name: name.to_string(),
             kind,
             value: AtomicU64::new(safe_initial.to_bits()),
             owner: owner.to_string(),
-            
+
             timestamp: chrono::Utc::now().timestamp_millis(),
         }
     }
@@ -122,9 +126,7 @@ impl OmniscientRegistry {
     pub fn get(&self, name: &str, _consumer_name: &str) -> Option<Arc<Parameter>> {
         if let Some(entry) = self.map.get(name) {
             let param = entry.value().clone();
-            if false {
-                
-            }
+            if false {}
             Some(param)
         } else {
             None
@@ -152,16 +154,24 @@ impl OmniscientRegistry {
 
     /// D-07: Lectura con resolución de ámbito: busca `{symbol}_{name}` y si no existe busca `{name}`.
     #[inline(always)]
-    pub fn get_scoped(&self, symbol: &str, name: &str, consumer_name: &str) -> Option<Arc<Parameter>> {
+    pub fn get_scoped(
+        &self,
+        symbol: &str,
+        name: &str,
+        consumer_name: &str,
+    ) -> Option<Arc<Parameter>> {
         let scoped_name = format!("{}_{}", symbol, name);
-        self.get(&scoped_name, consumer_name).or_else(|| self.get(name, consumer_name))
+        self.get(&scoped_name, consumer_name)
+            .or_else(|| self.get(name, consumer_name))
     }
 
     /// D-07: Lectura rápida O(1) con resolución de ámbito y fallback por defecto.
     #[inline(always)]
     pub fn get_scoped_value_or(&self, symbol: &str, name: &str, default: f64) -> f64 {
         let scoped_name = format!("{}_{}", symbol, name);
-        self.get_value_fast(&scoped_name).or_else(|| self.get_value_fast(name)).unwrap_or(default)
+        self.get_value_fast(&scoped_name)
+            .or_else(|| self.get_value_fast(name))
+            .unwrap_or(default)
     }
 
     /// D38: Namespacing por índice numérico de activo (Zero Allocation lookup friendly)
@@ -175,7 +185,9 @@ impl OmniscientRegistry {
     #[inline(always)]
     pub fn get_for_coin_or(&self, coin_id: usize, name: &str, default: f64) -> f64 {
         let key = format!("c{}:{}", coin_id, name);
-        self.get_value_fast(&key).or_else(|| self.get_value_fast(name)).unwrap_or(default)
+        self.get_value_fast(&key)
+            .or_else(|| self.get_value_fast(name))
+            .unwrap_or(default)
     }
 
     /// D-219: Lectura polimórfica escopada por activo (símbolo + coin_id) con fallback transparente al global
@@ -286,10 +298,11 @@ impl OmniscientRegistry {
     pub fn persist_to_disk(&self, path: &str) -> std::io::Result<()> {
         let snapshot = self.take_snapshot();
         let bytes = rkyv::to_bytes::<_, 4096>(&snapshot)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?.to_vec();
-        
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+            .to_vec();
+
         let path_str = path.to_string();
-        
+
         // FASE 2 FIX: Desacoplar I/O bloqueante (Zero-Copy lock-in prevention)
         // El sync_all() y rename bloquean el disco duro, paralizando el ciclo de decisión.
         // Se delega la persistencia física a un hilo esclavo huérfano.
@@ -304,7 +317,7 @@ impl OmniscientRegistry {
             }
             let _ = std::fs::rename(&tmp_path, &path_str);
         });
-        
+
         Ok(())
     }
 }
@@ -333,7 +346,12 @@ mod tests {
     #[test]
     fn test_reconciliation_and_snapshot_restore() {
         let registry = OmniscientRegistry::new();
-        registry.register_or_update("active_margin", ParameterKind::Adaptive, 13.0, "risk_engine");
+        registry.register_or_update(
+            "active_margin",
+            ParameterKind::Adaptive,
+            13.0,
+            "risk_engine",
+        );
         registry.register_or_update("leverage", ParameterKind::Fixed, 5.0, "risk_engine");
 
         let snap = registry.take_snapshot();
@@ -373,7 +391,9 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let snap_path = temp_dir.join("omni_snap_test.bin");
         let _ = std::fs::remove_file(&snap_path);
-        registry.persist_to_disk(snap_path.to_str().unwrap()).expect("persist snapshot");
+        registry
+            .persist_to_disk(snap_path.to_str().unwrap())
+            .expect("persist snapshot");
 
         // persist_to_disk delega la escritura física a un hilo esclavo
         // (I/O desacoplado): sondear con timeout en vez de asumir escritura
@@ -386,7 +406,10 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        assert!(existed, "el snapshot debe materializarse en disco tras el persist (2s max)");
+        assert!(
+            existed,
+            "el snapshot debe materializarse en disco tras el persist (2s max)"
+        );
         let _ = std::fs::remove_file(snap_path);
     }
 
@@ -406,6 +429,3 @@ mod tests {
         assert_eq!(all[0].get_value(), 1.23);
     }
 }
-
-
-

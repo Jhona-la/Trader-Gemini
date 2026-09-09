@@ -10,8 +10,16 @@ pub struct EvolutionaryOperators {
 impl EvolutionaryOperators {
     pub fn new(alpha_blx: f64, cauchy_scale: f64) -> Self {
         Self {
-            alpha_blx: if alpha_blx.is_finite() && alpha_blx >= 0.0 { alpha_blx } else { 0.5 },
-            cauchy_scale: if cauchy_scale.is_finite() && cauchy_scale > 0.0 { cauchy_scale } else { 0.05 },
+            alpha_blx: if alpha_blx.is_finite() && alpha_blx >= 0.0 {
+                alpha_blx
+            } else {
+                0.5
+            },
+            cauchy_scale: if cauchy_scale.is_finite() && cauchy_scale > 0.0 {
+                cauchy_scale
+            } else {
+                0.05
+            },
         }
     }
 
@@ -24,8 +32,16 @@ impl EvolutionaryOperators {
 
         for i in 0..len {
             // FIX #640: Sanitizar finitud de valores de los padres
-            let p1 = if parent1[i].is_finite() { parent1[i] } else { 0.0 };
-            let p2 = if parent2[i].is_finite() { parent2[i] } else { 0.0 };
+            let p1 = if parent1[i].is_finite() {
+                parent1[i]
+            } else {
+                0.0
+            };
+            let p2 = if parent2[i].is_finite() {
+                parent2[i]
+            } else {
+                0.0
+            };
 
             let min_val = p1.min(p2);
             let max_val = p1.max(p2);
@@ -80,10 +96,15 @@ impl EvolutionaryOperators {
                 let u2 = ((z2 as f64) / (u64::MAX as f64)).clamp(0.02, 0.98);
 
                 let raw_cauchy_step = self.cauchy_scale * (std::f64::consts::PI * (u2 - 0.5)).tan();
-                let cauchy_step = raw_cauchy_step.clamp(-5.0 * self.cauchy_scale, 5.0 * self.cauchy_scale);
+                let cauchy_step =
+                    raw_cauchy_step.clamp(-5.0 * self.cauchy_scale, 5.0 * self.cauchy_scale);
                 if cauchy_step.is_finite() {
                     let new_val = *val + cauchy_step;
-                    *val = if new_val.is_finite() { new_val.clamp(-10.0, 10.0) } else { *val };
+                    *val = if new_val.is_finite() {
+                        new_val.clamp(-10.0, 10.0)
+                    } else {
+                        *val
+                    };
                 }
             }
         }

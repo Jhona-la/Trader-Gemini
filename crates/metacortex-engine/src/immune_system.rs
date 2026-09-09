@@ -189,17 +189,21 @@ mod tests {
             inputs_snapshot: vec![0.5, -0.2, 0.8, 0.1],
         };
 
-        let recorded = immune.record_trauma(&trauma).expect("Failed to record trauma");
+        let recorded = immune
+            .record_trauma(&trauma)
+            .expect("Failed to record trauma");
         assert!(recorded.exists());
 
-        let generated = immune.generate_immune_tests().expect("Failed to generate tests");
+        let generated = immune
+            .generate_immune_tests()
+            .expect("Failed to generate tests");
         assert_eq!(generated.len(), 1);
         assert!(generated[0].exists());
-        let code = std::fs::read_to_string(&generated[0]).expect("Failed to read generated test code");
+        let code =
+            std::fs::read_to_string(&generated[0]).expect("Failed to read generated test code");
         assert!(code.contains("test_immune_antibody_trauma_001"));
         assert!(code.contains("ETHUSDT"));
 
         let _ = std::fs::remove_dir_all(base_path);
     }
 }
-

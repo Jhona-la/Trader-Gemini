@@ -74,8 +74,16 @@ impl DarkAlphaRouter {
     #[inline(always)]
     pub fn ingest_dex_liquidation(&self, qty: f64, impact: f64, ts_ms: u64) {
         // FIX #1452: Sanitización estricta de inputs antes del decaimiento y CAS loop
-        let safe_qty = if qty.is_finite() && qty >= 0.0 { qty } else { 0.0 };
-        let safe_impact = if impact.is_finite() { impact.clamp(-1.0, 1.0) } else { 0.0 };
+        let safe_qty = if qty.is_finite() && qty >= 0.0 {
+            qty
+        } else {
+            0.0
+        };
+        let safe_impact = if impact.is_finite() {
+            impact.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
 
         let last_ts = self.last_update_ts.load(Ordering::Acquire);
         let dt = if ts_ms > last_ts {
@@ -110,7 +118,11 @@ impl DarkAlphaRouter {
         loop {
             let curr_press = f64::from_bits(curr_press_bits);
             let new_press = (curr_press * decay_factor) + (safe_qty * safe_impact);
-            let safe_new_press = if new_press.is_finite() { new_press } else { 0.0 };
+            let safe_new_press = if new_press.is_finite() {
+                new_press
+            } else {
+                0.0
+            };
             match self.net_liq_pressure.compare_exchange_weak(
                 curr_press_bits,
                 safe_new_press.to_bits(),

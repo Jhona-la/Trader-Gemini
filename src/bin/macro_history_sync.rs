@@ -26,7 +26,7 @@ fn main() {
     ];
 
     let period1 = 1420070400; // Jan 1 2015
-    // R2.3: fin de ventana = HOY (antes 1751328000, congelado en jul-2025).
+                              // R2.3: fin de ventana = HOY (antes 1751328000, congelado en jul-2025).
     let period2 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -69,7 +69,10 @@ fn main() {
                 synthetic_path
             );
             if let Ok(mut file) = File::create(&synthetic_path) {
-                let _ = writeln!(file, "# SYNTHETIC RANDOM-WALK — NOT REAL MARKET DATA — DO NOT INGEST");
+                let _ = writeln!(
+                    file,
+                    "# SYNTHETIC RANDOM-WALK — NOT REAL MARKET DATA — DO NOT INGEST"
+                );
                 let _ = writeln!(file, "Date,Open,High,Low,Close,Adj Close,Volume");
                 let mut price = base_val;
                 for i in 0..1000 {

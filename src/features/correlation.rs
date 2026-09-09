@@ -9,7 +9,7 @@ pub struct MarketCorrelationHeatmap {
     market_return_ewma: Ewma,
     market_variance_ewma: Ewma,
     covariances: Vec<Ewma>,
-    
+
     last_prices: Vec<f64>,
 }
 
@@ -40,7 +40,7 @@ impl MarketCorrelationHeatmap {
         for i in 0..self.num_assets {
             let last_price = self.last_prices[i];
             let current_price = current_prices[i];
-            
+
             // FIX #1456: Validación estricta de finitud y positividad de precio
             if last_price > 0.0 && current_price.is_finite() && current_price > 0.0 {
                 let ret = (current_price - last_price) / last_price;
@@ -56,7 +56,7 @@ impl MarketCorrelationHeatmap {
 
         market_return /= self.num_assets as f64;
         let market_mean = self.market_return_ewma.update(market_return);
-        
+
         let market_dev = market_return - market_mean;
         let market_var = self.market_variance_ewma.update(market_dev * market_dev);
 
@@ -72,7 +72,7 @@ impl MarketCorrelationHeatmap {
             let mean_i = self.returns_ewma[i].update(ret);
             let dev_i = ret - mean_i;
             let var_i = self.variance_ewma[i].update(dev_i * dev_i);
-            
+
             let cov_i = self.covariances[i].update(dev_i * market_dev);
 
             if var_i > 0.0 && market_var > 0.0 {
@@ -123,4 +123,3 @@ mod tests {
         assert!(heatmap.update(&[100.0, 200.0, 300.0]).is_finite());
     }
 }
-

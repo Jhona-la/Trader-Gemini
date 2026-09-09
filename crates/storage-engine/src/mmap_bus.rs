@@ -53,7 +53,14 @@ pub fn write_prediction_vs_reality(ml_prob: f64, is_long: bool, net_pnl_pct: f64
         bus.write_trace(
             SUBSYSTEM_TENSOR_PREDICTOR,
             FRAME_PREDICTION_VS_REALITY,
-            [ml_prob, if is_long { 1.0 } else { 0.0 }, 0.0, net_pnl_pct, atr_pct, 0.0],
+            [
+                ml_prob,
+                if is_long { 1.0 } else { 0.0 },
+                0.0,
+                net_pnl_pct,
+                atr_pct,
+                0.0,
+            ],
         );
     }
 }
@@ -153,13 +160,22 @@ impl MmapTelemetryBus {
 
                 // Chunk 2, 3, 4: payload [f64; 6] (Preservar bits IEEE-754 exactos sin truncamiento a entero)
                 // FIX #1002: Escribir el payload PRIMERO para evitar lecturas sucias (tearing) si el lector ve timestamp != 0
-                let chunk2 = _mm_set_epi64x(payload_ptr.add(1).read().to_bits() as i64, payload_ptr.read().to_bits() as i64);
+                let chunk2 = _mm_set_epi64x(
+                    payload_ptr.add(1).read().to_bits() as i64,
+                    payload_ptr.read().to_bits() as i64,
+                );
                 _mm_stream_si128(ptr.add(1), chunk2);
 
-                let chunk3 = _mm_set_epi64x(payload_ptr.add(3).read().to_bits() as i64, payload_ptr.add(2).read().to_bits() as i64);
+                let chunk3 = _mm_set_epi64x(
+                    payload_ptr.add(3).read().to_bits() as i64,
+                    payload_ptr.add(2).read().to_bits() as i64,
+                );
                 _mm_stream_si128(ptr.add(2), chunk3);
 
-                let chunk4 = _mm_set_epi64x(payload_ptr.add(5).read().to_bits() as i64, payload_ptr.add(4).read().to_bits() as i64);
+                let chunk4 = _mm_set_epi64x(
+                    payload_ptr.add(5).read().to_bits() as i64,
+                    payload_ptr.add(4).read().to_bits() as i64,
+                );
                 _mm_stream_si128(ptr.add(3), chunk4);
 
                 // Chunk 1: timestamp (u64) + metadata (u64) - Escribir al final como commit del frame
@@ -271,11 +287,19 @@ mod tests {
             .map(|d| d.as_nanos())
             .unwrap_or(12345);
         let path = temp_dir.join(format!("test_mmap_bus_{}.dat", unique_id));
-        
+
         {
             let bus = MmapTelemetryBus::new(&path).expect("Failed to create mmap bus");
-            bus.write_trace(SUBSYSTEM_RISK_KELLY, FRAME_TYPE_BAYESIAN_PROB, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-            bus.write_trace(SUBSYSTEM_TENSOR_ML, FRAME_TYPE_TENSOR_ENTROPY, [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]);
+            bus.write_trace(
+                SUBSYSTEM_RISK_KELLY,
+                FRAME_TYPE_BAYESIAN_PROB,
+                [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            );
+            bus.write_trace(
+                SUBSYSTEM_TENSOR_ML,
+                FRAME_TYPE_TENSOR_ENTROPY,
+                [0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+            );
         }
 
         {
@@ -324,4 +348,3 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 }
-

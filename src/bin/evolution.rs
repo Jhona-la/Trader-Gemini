@@ -65,7 +65,10 @@ fn main() {
         } else {
             13.0
         };
-        println!("ℹ️ Capital inicial no especificado o inválido. Usando base autónoma de ${:.2} USD.", initial_capital);
+        println!(
+            "ℹ️ Capital inicial no especificado o inválido. Usando base autónoma de ${:.2} USD.",
+            initial_capital
+        );
     }
 
     println!("============================================================");

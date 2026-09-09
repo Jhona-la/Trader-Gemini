@@ -32,7 +32,10 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// producción): exportar TG_GENOME_ENV=prod en el proceso promotor, o copiar
 /// el envelope con `promote` desde el entorno destino — nunca implícitamente.
 fn env_root() -> String {
-    match std::env::var("TG_GENOME_ENV").ok().filter(|v| !v.trim().is_empty()) {
+    match std::env::var("TG_GENOME_ENV")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
         Some(env) => format!("config_dir/genomes/{}", env.trim().to_lowercase()),
         None => "config_dir/genomes".to_string(),
     }
@@ -50,7 +53,11 @@ fn history_dir() -> String {
 /// escribe/lee en el entorno compartido (sin TG_GENOME_ENV) para no cruzar
 /// linajes entre entornos.
 fn legacy_mirror() -> Option<String> {
-    if std::env::var("TG_GENOME_ENV").ok().filter(|v| !v.trim().is_empty()).is_some() {
+    if std::env::var("TG_GENOME_ENV")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .is_some()
+    {
         None
     } else {
         Some("config_dir/genotypes/active_genome.json".to_string())
@@ -83,7 +90,9 @@ impl GenomeEnvelope {
     /// Aplica el genoma a la arena y registra atómicamente la generación aplicada (checkpointing de linaje)
     pub fn apply_to_arena(&self, arena: &crate::GlobalArena) {
         self.genome.apply_to_arena(arena);
-        arena.applied_generation.store(self.generation, std::sync::atomic::Ordering::Release);
+        arena
+            .applied_generation
+            .store(self.generation, std::sync::atomic::Ordering::Release);
     }
 
     /// Carga el genoma activo desde el envelope versionado con resolución resiliente multi-ruta:
@@ -123,7 +132,10 @@ impl GenomeEnvelope {
                     if let Ok(env) = Self::promote(
                         sanitized,
                         "backtest_heritage",
-                        &format!("herencia automática del campeón de backtest al entorno {}", env_tag.trim()),
+                        &format!(
+                            "herencia automática del campeón de backtest al entorno {}",
+                            env_tag.trim()
+                        ),
                     ) {
                         eprintln!(
                             "🧬 [L-0] Campeón de backtest heredado exitosamente al entorno '{}' (generación {}).",
@@ -144,7 +156,10 @@ impl GenomeEnvelope {
                 if let Ok(env) = Self::promote(
                     sanitized,
                     "shared_migration",
-                    &format!("migración del linaje compartido al entorno {}", env_tag.trim()),
+                    &format!(
+                        "migración del linaje compartido al entorno {}",
+                        env_tag.trim()
+                    ),
                 ) {
                     eprintln!(
                         "🧬 [L-0] Linaje de la era compartida migrado al entorno '{}' (generación {}).",
@@ -164,7 +179,10 @@ impl GenomeEnvelope {
                 if let Ok(env) = Self::promote(
                     sanitized,
                     "champion_bootstrap",
-                    &format!("bootstrap resiliente desde quantum_champion.json para {}", env_tag.trim()),
+                    &format!(
+                        "bootstrap resiliente desde quantum_champion.json para {}",
+                        env_tag.trim()
+                    ),
                 ) {
                     eprintln!(
                         "🧬 [L-0] Genoma campeón (quantum_champion.json) promovido al entorno '{}' (generación {}).",
@@ -184,7 +202,10 @@ impl GenomeEnvelope {
                 if let Ok(env) = Self::promote(
                     sanitized,
                     "legacy_bootstrap",
-                    &format!("bootstrap resiliente desde active_genome.json para {}", env_tag.trim()),
+                    &format!(
+                        "bootstrap resiliente desde active_genome.json para {}",
+                        env_tag.trim()
+                    ),
                 ) {
                     eprintln!(
                         "🧬 [L-0] Genoma activo legacy promovido al entorno '{}' (generación {}).",
@@ -262,11 +283,16 @@ impl GenomeEnvelope {
         if let Err(violation) = Self::validate(&genome) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("[GENOME-GATE] promoción de '{}' rechazada: {}", source, violation),
+                format!(
+                    "[GENOME-GATE] promoción de '{}' rechazada: {}",
+                    source, violation
+                ),
             ));
         }
         let parent = if let Ok(data) = std::fs::read_to_string(active_path()) {
-            serde_json::from_str::<GenomeEnvelope>(&data).map(|e| e.generation).unwrap_or(0)
+            serde_json::from_str::<GenomeEnvelope>(&data)
+                .map(|e| e.generation)
+                .unwrap_or(0)
         } else {
             0
         };
@@ -327,7 +353,9 @@ impl GenomeEnvelope {
     pub fn recent_history(n: usize) -> Vec<(u64, String, String)> {
         let mut out = Vec::new();
         let active_gen = if let Ok(data) = std::fs::read_to_string(active_path()) {
-            serde_json::from_str::<GenomeEnvelope>(&data).map(|e| e.generation).unwrap_or(0)
+            serde_json::from_str::<GenomeEnvelope>(&data)
+                .map(|e| e.generation)
+                .unwrap_or(0)
         } else {
             0
         };
@@ -417,7 +445,13 @@ mod tests {
         let lo = SuperGenotype::get_lower_bounds();
         let hi = SuperGenotype::get_upper_bounds();
         for i in 0..SuperGenotype::DIMENSION {
-            assert!(lo[i] < hi[i], "bounds degenerados en gen {}: {} >= {}", i, lo[i], hi[i]);
+            assert!(
+                lo[i] < hi[i],
+                "bounds degenerados en gen {}: {} >= {}",
+                i,
+                lo[i],
+                hi[i]
+            );
         }
         let n = SuperGenotype::DIMENSION;
         let floor_g = SuperGenotype::from_vector(&vec![f64::NEG_INFINITY; n]);
@@ -450,7 +484,11 @@ mod tests {
                 "gen {} no clampa al floor esperado",
                 i
             );
-            assert!((v_ceil[i] - hi[i]).abs() < 1e-12, "gen {} no clampa al techo", i);
+            assert!(
+                (v_ceil[i] - hi[i]).abs() < 1e-12,
+                "gen {} no clampa al techo",
+                i
+            );
         }
         // La invariante RR se preserva incluso en los extremos del box.
         assert!(v_floor[13] >= v_floor[14] * SuperGenotype::MIN_RR_GATE);
@@ -492,4 +530,3 @@ mod tests {
         );
     }
 }
-

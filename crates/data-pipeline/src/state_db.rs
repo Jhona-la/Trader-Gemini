@@ -201,13 +201,19 @@ mod tests {
         )
         .unwrap();
 
-        let scalp = db.get_position_intent_by_horizon(0, HorizonIntent::Scalp).unwrap().unwrap();
+        let scalp = db
+            .get_position_intent_by_horizon(0, HorizonIntent::Scalp)
+            .unwrap()
+            .unwrap();
         assert_eq!(scalp.0, HorizonIntent::Scalp);
         assert!(scalp.1); // Long
         assert_eq!(scalp.2, 60000.0);
         assert_eq!(scalp.3, 0.1);
 
-        let swing = db.get_position_intent_by_horizon(0, HorizonIntent::Swing).unwrap().unwrap();
+        let swing = db
+            .get_position_intent_by_horizon(0, HorizonIntent::Swing)
+            .unwrap()
+            .unwrap();
         assert_eq!(swing.0, HorizonIntent::Swing);
         assert!(!swing.1); // Short
         assert_eq!(swing.2, 60000.0);
@@ -215,12 +221,21 @@ mod tests {
 
         // Clear Scalp only
         db.clear_position_horizon(0, HorizonIntent::Scalp).unwrap();
-        assert!(db.get_position_intent_by_horizon(0, HorizonIntent::Scalp).unwrap().is_none());
-        assert!(db.get_position_intent_by_horizon(0, HorizonIntent::Swing).unwrap().is_some());
+        assert!(db
+            .get_position_intent_by_horizon(0, HorizonIntent::Scalp)
+            .unwrap()
+            .is_none());
+        assert!(db
+            .get_position_intent_by_horizon(0, HorizonIntent::Swing)
+            .unwrap()
+            .is_some());
 
         // Clear all
         db.clear_position(0).unwrap();
-        assert!(db.get_position_intent_by_horizon(0, HorizonIntent::Swing).unwrap().is_none());
+        assert!(db
+            .get_position_intent_by_horizon(0, HorizonIntent::Swing)
+            .unwrap()
+            .is_none());
 
         let _ = std::fs::remove_file(db_path);
     }
@@ -231,9 +246,24 @@ mod tests {
         let db_path = temp_dir.join("test_state_db_nan.db");
 
         let db = StateDb::new(&db_path).unwrap();
-        assert!(db.save_position_intent(1, "ETHUSDT", HorizonIntent::Scalp, true, f64::NAN, 1.0, 1000).is_ok());
-        assert!(db.save_position_intent(1, "ETHUSDT", HorizonIntent::Scalp, true, 2000.0, -1.0, 1000).is_ok());
-        assert!(db.get_position_intent_by_horizon(1, HorizonIntent::Scalp).unwrap().is_none());
+        assert!(db
+            .save_position_intent(
+                1,
+                "ETHUSDT",
+                HorizonIntent::Scalp,
+                true,
+                f64::NAN,
+                1.0,
+                1000
+            )
+            .is_ok());
+        assert!(db
+            .save_position_intent(1, "ETHUSDT", HorizonIntent::Scalp, true, 2000.0, -1.0, 1000)
+            .is_ok());
+        assert!(db
+            .get_position_intent_by_horizon(1, HorizonIntent::Scalp)
+            .unwrap()
+            .is_none());
 
         let _ = std::fs::remove_file(db_path);
     }

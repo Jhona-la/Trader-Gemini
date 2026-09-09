@@ -56,8 +56,16 @@ impl NeuroPlasticityEngine {
     #[inline(always)]
     pub fn compute_plasticity_multiplier(entropy: f64, capital: f64) -> f64 {
         // FIX #708: Sanitización de finitud en entropía y capital para evitar modulación indeterminada
-        let safe_entropy = if entropy.is_finite() { entropy.clamp(0.0, 1.0) } else { 0.5 };
-        let safe_capital = if capital.is_finite() && capital > 0.0 { capital } else { 13.0 };
+        let safe_entropy = if entropy.is_finite() {
+            entropy.clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+        let safe_capital = if capital.is_finite() && capital > 0.0 {
+            capital
+        } else {
+            13.0
+        };
 
         let base_mult = if safe_entropy > 0.85 {
             2.0
@@ -100,7 +108,10 @@ impl NeuroPlasticityEngine {
             return;
         }
         // FIX #631: Guardas O(1) de longitud de slices (inputs, outputs y weights)
-        if inputs.len() < in_features || outputs.len() < out_features || weights.len() < out_features * in_features {
+        if inputs.len() < in_features
+            || outputs.len() < out_features
+            || weights.len() < out_features * in_features
+        {
             return;
         }
 
@@ -110,8 +121,16 @@ impl NeuroPlasticityEngine {
             let rate_y = learning_rate * safe_y;
 
             for j in 0..in_features {
-                let x_i = if inputs[j].is_finite() { inputs[j] } else { 0.0 };
-                let w = if weights[row_offset + j].is_finite() { weights[row_offset + j] } else { 0.0 };
+                let x_i = if inputs[j].is_finite() {
+                    inputs[j]
+                } else {
+                    0.0
+                };
+                let w = if weights[row_offset + j].is_finite() {
+                    weights[row_offset + j]
+                } else {
+                    0.0
+                };
                 // Regla de Oja: w += lr * y * (x - y * w)
                 let dw = rate_y * (x_i - safe_y * w);
                 if dw.is_finite() {
@@ -131,10 +150,16 @@ mod tests {
     #[test]
     fn test_compute_plasticity_multiplier() {
         let mult_high = NeuroPlasticityEngine::compute_plasticity_multiplier(0.90, 13.0);
-        assert!(mult_high > 1.5, "High entropy should boost plasticity multiplier");
+        assert!(
+            mult_high > 1.5,
+            "High entropy should boost plasticity multiplier"
+        );
 
         let mult_low = NeuroPlasticityEngine::compute_plasticity_multiplier(0.10, 13.0);
-        assert!(mult_low < 1.0, "Low entropy should suppress plasticity multiplier");
+        assert!(
+            mult_low < 1.0,
+            "Low entropy should suppress plasticity multiplier"
+        );
 
         let mult_nan = NeuroPlasticityEngine::compute_plasticity_multiplier(f64::NAN, f64::NAN);
         assert!(mult_nan.is_finite());
@@ -165,22 +190,41 @@ mod tests {
         let short_inputs = vec![1.0]; // shorter than in_features=2
         let outputs = vec![0.5, 0.5];
 
-        NeuroPlasticityEngine::apply_oja_plasticity(&mut weights, &short_inputs, &outputs, 2, 2, 0.01);
+        NeuroPlasticityEngine::apply_oja_plasticity(
+            &mut weights,
+            &short_inputs,
+            &outputs,
+            2,
+            2,
+            0.01,
+        );
         assert_eq!(weights[0], 0.5, "Mismatched dimensions must return early");
 
         let nan_inputs = vec![f64::NAN, 1.0];
-        NeuroPlasticityEngine::apply_oja_plasticity(&mut weights, &nan_inputs, &outputs, 2, 2, 0.01);
+        NeuroPlasticityEngine::apply_oja_plasticity(
+            &mut weights,
+            &nan_inputs,
+            &outputs,
+            2,
+            2,
+            0.01,
+        );
         assert!(weights[0].is_finite());
     }
 
     #[test]
     fn test_rewires_synapses_no_drift_and_nan_learning_rate() {
         let mut weights = vec![0.001, 0.5, -0.002, 0.8];
-        let rewired_no_anomaly = NeuroPlasticityEngine::rewires_synapses_if_drift(&mut weights, false, 0.05);
-        assert_eq!(rewired_no_anomaly, 0, "No rewiring when anomaly_detected is false");
+        let rewired_no_anomaly =
+            NeuroPlasticityEngine::rewires_synapses_if_drift(&mut weights, false, 0.05);
+        assert_eq!(
+            rewired_no_anomaly, 0,
+            "No rewiring when anomaly_detected is false"
+        );
 
         // NaN learning rate falls back to safe default (0.01) without crashing
-        let rewired_nan_lr = NeuroPlasticityEngine::rewires_synapses_if_drift(&mut weights, true, f64::NAN);
+        let rewired_nan_lr =
+            NeuroPlasticityEngine::rewires_synapses_if_drift(&mut weights, true, f64::NAN);
         assert_eq!(rewired_nan_lr, 2);
         assert!(weights[0].is_finite());
         assert!(weights[2].is_finite());
@@ -198,4 +242,3 @@ mod tests {
         }
     }
 }
-

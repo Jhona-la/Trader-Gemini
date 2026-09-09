@@ -52,7 +52,11 @@ mod tests {
     #[test]
     fn test_dynamic_universe_update_and_lookup() {
         let _guard = UNIVERSE_TEST_MUTEX.lock().unwrap();
-        let universe = vec!["BTCUSDT".to_string(), "ETHUSDT".to_string(), "SOLUSDT".to_string()];
+        let universe = vec![
+            "BTCUSDT".to_string(),
+            "ETHUSDT".to_string(),
+            "SOLUSDT".to_string(),
+        ];
         update_dynamic_universe(universe.clone());
 
         assert_eq!(get_active_universe_size(), 3);

@@ -62,11 +62,21 @@ pub fn init_stats_telemetry(capacity: usize) {
 
 pub fn push_trade_stats(mut stats: TradeStats) {
     // FIX #1447: Sanitización estricta de métricas estadísticas
-    if !stats.gross_pnl.is_finite() { stats.gross_pnl = 0.0; }
-    if !stats.net_pnl.is_finite() { stats.net_pnl = 0.0; }
-    if !stats.fees_paid.is_finite() { stats.fees_paid = 0.0; }
-    if !stats.roi_pct.is_finite() { stats.roi_pct = 0.0; }
-    if !stats.active_leverage.is_finite() || stats.active_leverage < 1.0 { stats.active_leverage = 1.0; }
+    if !stats.gross_pnl.is_finite() {
+        stats.gross_pnl = 0.0;
+    }
+    if !stats.net_pnl.is_finite() {
+        stats.net_pnl = 0.0;
+    }
+    if !stats.fees_paid.is_finite() {
+        stats.fees_paid = 0.0;
+    }
+    if !stats.roi_pct.is_finite() {
+        stats.roi_pct = 0.0;
+    }
+    if !stats.active_leverage.is_finite() || stats.active_leverage < 1.0 {
+        stats.active_leverage = 1.0;
+    }
 
     let queue = STATS_QUEUE.get_or_init(|| ArrayQueue::new(16_384));
     let _ = queue.force_push(stats);
@@ -77,7 +87,6 @@ pub fn pop_trade_stats() -> Option<TradeStats> {
     queue.pop()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,7 +94,10 @@ mod tests {
 
     #[test]
     fn test_stack_buffer_formatting() {
-        let mut buf = StackBuffer { buf: [0u8; 512], len: 0 };
+        let mut buf = StackBuffer {
+            buf: [0u8; 512],
+            len: 0,
+        };
         write!(buf, "PING: {}", 123).unwrap();
         assert_eq!(buf.len, 9);
         assert_eq!(&buf.buf[..9], b"PING: 123");
@@ -141,4 +153,3 @@ mod tests {
         assert_eq!(p_nan.active_leverage, 1.0);
     }
 }
-

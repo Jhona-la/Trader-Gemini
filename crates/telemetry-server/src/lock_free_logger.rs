@@ -1,7 +1,7 @@
-use crossbeam::channel::{bounded, Sender, Receiver};
-use std::thread;
+use crossbeam::channel::{Receiver, Sender, bounded};
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::thread;
 
 /// Métrica asíncrona de telemetría de ultra baja latencia.
 pub struct TelemetryPayload {
@@ -15,7 +15,7 @@ pub struct TelemetryPayload {
     pub wr_post_fees: f64,
     pub current_drawdown: f64,
     pub timeframe_ms: u64, // Período temporal de los datos evaluados
-    pub meta: [f32; 4], // Tensors/Probs
+    pub meta: [f32; 4],    // Tensors/Probs
     pub is_demo: bool,
 }
 
@@ -30,9 +30,10 @@ impl LockFreeLogger {
     pub fn new(buffer_size: usize, log_path: &str) -> Self {
         // FIX #1444: Clamping defensivo de capacidad para proteger memoria de 16GB
         let safe_capacity = buffer_size.clamp(1024, 500_000);
-        let (tx, rx): (Sender<TelemetryPayload>, Receiver<TelemetryPayload>) = bounded(safe_capacity);
+        let (tx, rx): (Sender<TelemetryPayload>, Receiver<TelemetryPayload>) =
+            bounded(safe_capacity);
         let path = log_path.to_string();
-        
+
         // FIX #1491: Spawn resiliente de hilo de logging sin unwrap
         let _ = thread::Builder::new()
             .name("Telemetry_IO_Thread".to_string())
@@ -40,30 +41,69 @@ impl LockFreeLogger {
                 if let Some(parent) = std::path::Path::new(&path).parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
-                let mut file = match OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&path) {
+                let mut file = match OpenOptions::new().create(true).append(true).open(&path) {
                     Ok(f) => f,
                     Err(e) => {
                         eprintln!("⚠️ [LockFreeLogger] No se pudo abrir {}: {}", path, e);
                         return;
                     }
                 };
-                
+
                 while let Ok(msg) = rx.recv() {
                     let env_mode = if msg.is_demo { "DEMO" } else { "PROD" };
                     // FIX #1531: Sanitización de flotantes en registro de log
-                    let safe_pnl_gross = if msg.pnl_gross.is_finite() { msg.pnl_gross } else { 0.0 };
-                    let safe_pnl_post = if msg.pnl_post_fees.is_finite() { msg.pnl_post_fees } else { 0.0 };
-                    let safe_roi_gross = if msg.roi_gross.is_finite() { msg.roi_gross } else { 0.0 };
-                    let safe_roi_post = if msg.roi_post_fees.is_finite() { msg.roi_post_fees } else { 0.0 };
-                    let safe_wr_gross = if msg.wr_gross.is_finite() { msg.wr_gross } else { 0.0 };
-                    let safe_wr_post = if msg.wr_post_fees.is_finite() { msg.wr_post_fees } else { 0.0 };
-                    let safe_dd = if msg.current_drawdown.is_finite() { msg.current_drawdown } else { 0.0 };
+                    let safe_pnl_gross = if msg.pnl_gross.is_finite() {
+                        msg.pnl_gross
+                    } else {
+                        0.0
+                    };
+                    let safe_pnl_post = if msg.pnl_post_fees.is_finite() {
+                        msg.pnl_post_fees
+                    } else {
+                        0.0
+                    };
+                    let safe_roi_gross = if msg.roi_gross.is_finite() {
+                        msg.roi_gross
+                    } else {
+                        0.0
+                    };
+                    let safe_roi_post = if msg.roi_post_fees.is_finite() {
+                        msg.roi_post_fees
+                    } else {
+                        0.0
+                    };
+                    let safe_wr_gross = if msg.wr_gross.is_finite() {
+                        msg.wr_gross
+                    } else {
+                        0.0
+                    };
+                    let safe_wr_post = if msg.wr_post_fees.is_finite() {
+                        msg.wr_post_fees
+                    } else {
+                        0.0
+                    };
+                    let safe_dd = if msg.current_drawdown.is_finite() {
+                        msg.current_drawdown
+                    } else {
+                        0.0
+                    };
 
-                    let _ = writeln!(file, "{},{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{:?}", 
-                        msg.timestamp_ns, env_mode, msg.module_id, safe_pnl_gross, safe_pnl_post, safe_roi_gross, safe_roi_post, safe_wr_gross, safe_wr_post, safe_dd, msg.timeframe_ms, msg.meta);
+                    let _ = writeln!(
+                        file,
+                        "{},{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{:?}",
+                        msg.timestamp_ns,
+                        env_mode,
+                        msg.module_id,
+                        safe_pnl_gross,
+                        safe_pnl_post,
+                        safe_roi_gross,
+                        safe_roi_post,
+                        safe_wr_gross,
+                        safe_wr_post,
+                        safe_dd,
+                        msg.timeframe_ms,
+                        msg.meta
+                    );
                     let _ = file.flush();
                 }
             });
@@ -123,7 +163,6 @@ mod tests {
         let _ = std::fs::remove_file(log_path);
     }
 
-
     #[test]
     fn test_lock_free_logger_nan_sanitization_and_prod_mode() {
         let temp_dir = std::env::temp_dir();
@@ -162,10 +201,12 @@ mod tests {
                 }
             }
         }
-        assert!(found, "Log file should contain sanitized PROD telemetry record");
+        assert!(
+            found,
+            "Log file should contain sanitized PROD telemetry record"
+        );
         drop(logger);
         std::thread::sleep(std::time::Duration::from_millis(50));
         let _ = std::fs::remove_file(log_path);
     }
 }
-

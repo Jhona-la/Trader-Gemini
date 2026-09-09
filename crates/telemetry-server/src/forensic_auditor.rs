@@ -84,7 +84,10 @@ impl ForensicAuditor {
             let event = match rx.recv().await {
                 Ok(e) => e,
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    eprintln!("[FORENSIC-AUDITOR] Lagged: {} eventos perdidos — continuando", n);
+                    eprintln!(
+                        "[FORENSIC-AUDITOR] Lagged: {} eventos perdidos — continuando",
+                        n
+                    );
                     continue;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
@@ -101,13 +104,33 @@ impl ForensicAuditor {
                     win_rate,
                     trade_duration_avg,
                 } => {
-                    let safe_dark = if dark_alpha.is_finite() { dark_alpha } else { 0.0 };
-                    let safe_scalp = if scalp_pnl.is_finite() { scalp_pnl } else { 0.0 };
-                    let safe_swing = if swing_pnl.is_finite() { swing_pnl } else { 0.0 };
-                    let safe_gross = if gross_pnl.is_finite() { gross_pnl } else { 0.0 };
+                    let safe_dark = if dark_alpha.is_finite() {
+                        dark_alpha
+                    } else {
+                        0.0
+                    };
+                    let safe_scalp = if scalp_pnl.is_finite() {
+                        scalp_pnl
+                    } else {
+                        0.0
+                    };
+                    let safe_swing = if swing_pnl.is_finite() {
+                        swing_pnl
+                    } else {
+                        0.0
+                    };
+                    let safe_gross = if gross_pnl.is_finite() {
+                        gross_pnl
+                    } else {
+                        0.0
+                    };
                     let safe_net = if net_pnl.is_finite() { net_pnl } else { 0.0 };
                     let safe_wr = if win_rate.is_finite() { win_rate } else { 0.0 };
-                    let safe_avg = if trade_duration_avg.is_finite() { trade_duration_avg } else { 0.0 };
+                    let safe_avg = if trade_duration_avg.is_finite() {
+                        trade_duration_avg
+                    } else {
+                        0.0
+                    };
 
                     let _ = self.conn.execute(
                         "INSERT INTO global_metrics (
@@ -186,7 +209,10 @@ mod tests {
     #[tokio::test]
     async fn test_forensic_auditor_event_processing_and_nan_immunity() {
         let temp_dir = std::env::temp_dir();
-        let unique_id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let db_path = temp_dir.join(format!("test_forensic_{}.db", unique_id));
         let db_path_str = db_path.to_string_lossy().to_string();
 
@@ -223,8 +249,12 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         let conn = Connection::open(&db_path_str).expect("open audit db");
-        let count_metrics: i64 = conn.query_row("SELECT count(*) FROM global_metrics", [], |r| r.get(0)).unwrap();
-        let count_trades: i64 = conn.query_row("SELECT count(*) FROM trade_events", [], |r| r.get(0)).unwrap();
+        let count_metrics: i64 = conn
+            .query_row("SELECT count(*) FROM global_metrics", [], |r| r.get(0))
+            .unwrap();
+        let count_trades: i64 = conn
+            .query_row("SELECT count(*) FROM trade_events", [], |r| r.get(0))
+            .unwrap();
 
         assert_eq!(count_metrics, 1);
         assert_eq!(count_trades, 1);
@@ -232,4 +262,3 @@ mod tests {
         let _ = std::fs::remove_file(db_path);
     }
 }
-

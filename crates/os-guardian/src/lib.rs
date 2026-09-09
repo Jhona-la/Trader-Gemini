@@ -18,8 +18,8 @@ use windows::Win32::System::JobObjects::{
 };
 use windows::Win32::System::Threading::{
     GetCurrentProcess, GetCurrentThread, SetPriorityClass, SetProcessAffinityMask,
-    SetProcessWorkingSetSize, SetThreadAffinityMask, SetThreadIdealProcessor,
-    SetThreadPriority, HIGH_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, THREAD_PRIORITY_TIME_CRITICAL,
+    SetProcessWorkingSetSize, SetThreadAffinityMask, SetThreadIdealProcessor, SetThreadPriority,
+    HIGH_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, THREAD_PRIORITY_TIME_CRITICAL,
 };
 
 use std::ffi::c_void;
@@ -120,7 +120,11 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
     let total_cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
-    let obs_core = if total_cpus > 1 { Some(total_cpus - 1) } else { None };
+    let obs_core = if total_cpus > 1 {
+        Some(total_cpus - 1)
+    } else {
+        None
+    };
     obs_plane.spawn_isolated(obs_core);
 
     #[cfg(not(windows))]
@@ -192,7 +196,10 @@ mod tests {
     fn test_pin_current_thread_to_core() {
         let ok = pin_current_thread_to_core(0);
         #[cfg(windows)]
-        assert!(ok, "On Windows, thread affinity pinning to core 0 should succeed");
+        assert!(
+            ok,
+            "On Windows, thread affinity pinning to core 0 should succeed"
+        );
         #[cfg(not(windows))]
         let _ = ok;
     }
@@ -200,11 +207,10 @@ mod tests {
     #[test]
     fn test_set_current_thread_time_critical_and_virtual_lock() {
         set_current_thread_time_critical();
-        
+
         let mut buffer = vec![0u8; 4096];
         let ptr = buffer.as_mut_ptr() as *mut std::ffi::c_void;
         let _locked = unsafe { lock_memory_region(ptr, buffer.len()) };
         // Validates safe execution without panics or memory corruption
     }
 }
-

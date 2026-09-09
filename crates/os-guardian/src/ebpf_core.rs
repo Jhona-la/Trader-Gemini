@@ -54,7 +54,9 @@ impl EbpfSensor {
                 handle,
                 &mut counters,
                 std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
-            ).is_ok() {
+            )
+            .is_ok()
+            {
                 page_faults = counters.PageFaultCount as u64;
             }
         }

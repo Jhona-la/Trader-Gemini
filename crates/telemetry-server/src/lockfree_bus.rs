@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 const RING_SIZE: usize = 1024;
 const INDEX_MASK: usize = RING_SIZE - 1;
@@ -32,20 +32,24 @@ impl<T: Copy + Default> LockFreeBus<T> {
     pub fn push(&self, event: T) {
         let current_head = self.head.fetch_add(1, Ordering::Relaxed);
         let idx = (current_head as usize) & INDEX_MASK;
-        
+
         unsafe {
             *self.buffer[idx].get() = event;
         }
-        
+
         // Advance tail if we are overwriting
         let mut current_tail = self.tail.load(Ordering::Relaxed);
         while current_head.saturating_sub(current_tail) >= RING_SIZE as u64 {
-            if self.tail.compare_exchange_weak(
-                current_tail,
-                current_tail + 1,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .tail
+                .compare_exchange_weak(
+                    current_tail,
+                    current_tail + 1,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 break;
             }
             current_tail = self.tail.load(Ordering::Relaxed);
@@ -56,14 +60,18 @@ impl<T: Copy + Default> LockFreeBus<T> {
     pub fn try_pop(&self) -> Option<T> {
         let current_tail = self.tail.load(Ordering::Relaxed);
         let current_head = self.head.load(Ordering::Relaxed);
-        
+
         if current_tail < current_head {
-            if self.tail.compare_exchange_weak(
-                current_tail,
-                current_tail + 1,
-                Ordering::Acquire,
-                Ordering::Relaxed
-            ).is_ok() {
+            if self
+                .tail
+                .compare_exchange_weak(
+                    current_tail,
+                    current_tail + 1,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 let idx = (current_tail as usize) & INDEX_MASK;
                 let data = unsafe { *self.buffer[idx].get() };
                 return Some(data);
@@ -113,4 +121,3 @@ mod tests {
         assert!(count <= 1024);
     }
 }
-

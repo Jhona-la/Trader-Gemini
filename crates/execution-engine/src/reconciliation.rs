@@ -80,14 +80,21 @@ pub fn reconcile(remote: &[PositionRiskEntry], registry: &OrderRegistry) -> Reco
     let mut report = ReconciliationReport::default();
     report.open_positions = remote.iter().filter(|p| p.is_open()).cloned().collect();
 
-    let remote_map: std::collections::HashMap<(&str, &str), &PositionRiskEntry> =
-        remote.iter().map(|p| ((p.symbol.as_str(), p.position_side.as_str()), p)).collect();
+    let remote_map: std::collections::HashMap<(&str, &str), &PositionRiskEntry> = remote
+        .iter()
+        .map(|p| ((p.symbol.as_str(), p.position_side.as_str()), p))
+        .collect();
 
     // Auditar TODAS las órdenes locales activas contra la realidad del exchange
     for o in registry.active_orders() {
         let sym = o.symbol.as_str();
-        let side_key = if o.position_side.is_empty() { "BOTH" } else { o.position_side.as_str() };
-        let matching_p = remote_map.get(&(sym, side_key))
+        let side_key = if o.position_side.is_empty() {
+            "BOTH"
+        } else {
+            o.position_side.as_str()
+        };
+        let matching_p = remote_map
+            .get(&(sym, side_key))
             .copied()
             .or_else(|| remote_map.get(&(sym, "BOTH")).copied())
             .or_else(|| remote_map.get(&(sym, "")).copied())
@@ -107,8 +114,7 @@ pub fn reconcile(remote: &[PositionRiskEntry], registry: &OrderRegistry) -> Reco
             // Símbolo no presente en el exchange report
             report.suspicious_active_orders.push(format!(
                 "{} orden {} activa sin entrada remota",
-                sym,
-                o.client_order_id
+                sym, o.client_order_id
             ));
         }
     }
@@ -184,8 +190,10 @@ pub fn reconcile_arena(
     let universe_size = quantum_arena::symbols::get_active_universe_size();
 
     let mut remote_map: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-    let mut remote_price_map: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-    let mut remote_lev_map: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let mut remote_price_map: std::collections::HashMap<String, f64> =
+        std::collections::HashMap::new();
+    let mut remote_lev_map: std::collections::HashMap<String, f64> =
+        std::collections::HashMap::new();
     for p in remote {
         if p.is_open() {
             *remote_map.entry(p.symbol.to_uppercase()).or_insert(0.0) += p.position_amt;
@@ -206,8 +214,21 @@ pub fn reconcile_arena(
         let cont_open = coin.positions.position.is_open();
 
         let cont_qty = if cont_open {
-            let q = coin.positions.position.quantity.load(std::sync::atomic::Ordering::Relaxed);
-            if coin.positions.position.is_long.load(std::sync::atomic::Ordering::Relaxed) { q } else { -q }
+            let q = coin
+                .positions
+                .position
+                .quantity
+                .load(std::sync::atomic::Ordering::Relaxed);
+            if coin
+                .positions
+                .position
+                .is_long
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                q
+            } else {
+                -q
+            }
         } else {
             0.0
         };
@@ -220,14 +241,18 @@ pub fn reconcile_arena(
                 let exit_price = if remote_price > 0.0 {
                     remote_price
                 } else {
-                    coin.current_price.load(std::sync::atomic::Ordering::Relaxed)
+                    coin.current_price
+                        .load(std::sync::atomic::Ordering::Relaxed)
                 };
                 let pos_horizon = coin.positions.position.horizon();
                 let is_pos_swing = pos_horizon == quantum_arena::position::PositionHorizon::Swing;
-                let (was_long, entry_p, qty, m, entry_fee_paid) = coin.positions.position.close_with_fee();
+                let (was_long, entry_p, qty, m, entry_fee_paid) =
+                    coin.positions.position.close_with_fee();
                 if m > 0.0 {
                     let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
-                    arena.used_margin.store((cur_u - m).max(0.0), std::sync::atomic::Ordering::Relaxed);
+                    arena
+                        .used_margin
+                        .store((cur_u - m).max(0.0), std::sync::atomic::Ordering::Relaxed);
                 }
 
                 if qty > 0.0 && exit_price > 0.0 && entry_p > 0.0 {
@@ -236,41 +261,89 @@ pub fn reconcile_arena(
                     } else {
                         (entry_p - exit_price) * qty
                     };
-                    let live_taker = arena.config.live_taker_fee.load(std::sync::atomic::Ordering::Relaxed).max(0.0004);
+                    let live_taker = arena
+                        .config
+                        .live_taker_fee
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        .max(0.0004);
                     let close_fee = (qty * exit_price) * live_taker;
                     let net_realized_pnl = gross_pnl - close_fee;
                     let net_trade_pnl = net_realized_pnl - entry_fee_paid;
 
-                    coin.metrics.pnl_realized.fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                    coin.metrics
+                        .pnl_realized
+                        .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
                     if is_pos_swing {
-                        coin.swing.pnl_realized.fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                        coin.swing
+                            .pnl_realized
+                            .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
                     } else {
-                        coin.scalp.pnl_realized.fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                        coin.scalp
+                            .pnl_realized
+                            .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
                     }
-                    arena.unified_capital.fetch_add(net_realized_pnl, std::sync::atomic::Ordering::Relaxed);
+                    arena
+                        .unified_capital
+                        .fetch_add(net_realized_pnl, std::sync::atomic::Ordering::Relaxed);
 
                     let is_win = net_trade_pnl > 0.0;
-                    let n = coin.metrics.trade_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as f64 + 1.0;
-                    let old_wr = coin.metrics.win_rate.load(std::sync::atomic::Ordering::Relaxed);
+                    let n = coin
+                        .metrics
+                        .trade_count
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                        as f64
+                        + 1.0;
+                    let old_wr = coin
+                        .metrics
+                        .win_rate
+                        .load(std::sync::atomic::Ordering::Relaxed);
                     let new_wr = old_wr + (((if is_win { 1.0 } else { 0.0 }) - old_wr) / n);
-                    coin.metrics.win_rate.store(new_wr, std::sync::atomic::Ordering::Relaxed);
+                    coin.metrics
+                        .win_rate
+                        .store(new_wr, std::sync::atomic::Ordering::Relaxed);
 
                     if is_pos_swing {
-                        let n_sw = coin.swing.trade_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as f64 + 1.0;
-                        let old_sw_wr = coin.swing.win_rate.load(std::sync::atomic::Ordering::Relaxed);
-                        let new_sw_wr = old_sw_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sw_wr) / n_sw);
-                        coin.swing.win_rate.store(new_sw_wr, std::sync::atomic::Ordering::Relaxed);
+                        let n_sw = coin
+                            .swing
+                            .trade_count
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                            as f64
+                            + 1.0;
+                        let old_sw_wr = coin
+                            .swing
+                            .win_rate
+                            .load(std::sync::atomic::Ordering::Relaxed);
+                        let new_sw_wr =
+                            old_sw_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sw_wr) / n_sw);
+                        coin.swing
+                            .win_rate
+                            .store(new_sw_wr, std::sync::atomic::Ordering::Relaxed);
                     } else {
-                        let n_sc = coin.scalp.trade_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as f64 + 1.0;
-                        let old_sc_wr = coin.scalp.win_rate.load(std::sync::atomic::Ordering::Relaxed);
-                        let new_sc_wr = old_sc_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sc_wr) / n_sc);
-                        coin.scalp.win_rate.store(new_sc_wr, std::sync::atomic::Ordering::Relaxed);
+                        let n_sc = coin
+                            .scalp
+                            .trade_count
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                            as f64
+                            + 1.0;
+                        let old_sc_wr = coin
+                            .scalp
+                            .win_rate
+                            .load(std::sync::atomic::Ordering::Relaxed);
+                        let new_sc_wr =
+                            old_sc_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sc_wr) / n_sc);
+                        coin.scalp
+                            .win_rate
+                            .store(new_sc_wr, std::sync::atomic::Ordering::Relaxed);
                     }
 
                     if is_win {
-                        coin.metrics.gross_wins.fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
+                        coin.metrics
+                            .gross_wins
+                            .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
                     } else {
-                        coin.metrics.gross_losses.fetch_add(net_trade_pnl.abs(), std::sync::atomic::Ordering::Relaxed);
+                        coin.metrics
+                            .gross_losses
+                            .fetch_add(net_trade_pnl.abs(), std::sync::atomic::Ordering::Relaxed);
                     }
                 }
                 adjustments += 1;
@@ -284,14 +357,19 @@ pub fn reconcile_arena(
                 let price = if remote_price > 0.0 {
                     remote_price
                 } else {
-                    coin.current_price.load(std::sync::atomic::Ordering::Relaxed)
+                    coin.current_price
+                        .load(std::sync::atomic::Ordering::Relaxed)
                 };
                 let notional = abs_qty * price;
                 // S-06: usar el LEVERAGE REAL de la posición reportada por el
                 // exchange (antes: /10.0 hardcoded — inflaba used_margin 2-5x
                 // en cuentas 20x/50x → falsa escasez de margen).
                 let lev = remote_lev_map.get(&sym).copied().unwrap_or(10.0);
-                let lev = if lev.is_finite() && lev >= 1.0 { lev } else { 10.0 };
+                let lev = if lev.is_finite() && lev >= 1.0 {
+                    lev
+                } else {
+                    10.0
+                };
                 let margin = notional / lev;
                 coin.positions.position.open_with_horizon(
                     is_long,
@@ -303,7 +381,9 @@ pub fn reconcile_arena(
                     0.0,
                     quantum_arena::position::PositionHorizon::Continuous,
                 );
-                arena.used_margin.fetch_add(margin, std::sync::atomic::Ordering::Relaxed);
+                arena
+                    .used_margin
+                    .fetch_add(margin, std::sync::atomic::Ordering::Relaxed);
                 adjustments += 1;
             } else if (arena_net_qty - remote_net_qty).abs() > 1e-6 {
                 // Drift en cantidad: actualizar posición continua para reflejar el tamaño real
@@ -312,18 +392,46 @@ pub fn reconcile_arena(
                     let (_, _, _, old_margin, _) = coin.positions.position.close_with_fee();
                     if old_margin > 0.0 {
                         let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
-                        arena.used_margin.store((cur_u - old_margin).max(0.0), std::sync::atomic::Ordering::Relaxed);
+                        arena.used_margin.store(
+                            (cur_u - old_margin).max(0.0),
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
                     }
                 } else {
-                    let price = coin.positions.position.entry_price.load(std::sync::atomic::Ordering::Relaxed);
-                    let safe_price = if price > 0.0 { price } else { coin.current_price.load(std::sync::atomic::Ordering::Relaxed) };
-                    let old_margin = coin.positions.position.margin_used.load(std::sync::atomic::Ordering::Relaxed);
-                    let new_margin = if safe_price > 0.0 { (target_abs * safe_price) / 10.0 } else { old_margin };
+                    let price = coin
+                        .positions
+                        .position
+                        .entry_price
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    let safe_price = if price > 0.0 {
+                        price
+                    } else {
+                        coin.current_price
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                    };
+                    let old_margin = coin
+                        .positions
+                        .position
+                        .margin_used
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    let new_margin = if safe_price > 0.0 {
+                        (target_abs * safe_price) / 10.0
+                    } else {
+                        old_margin
+                    };
                     let margin_diff = new_margin - old_margin;
 
-                    coin.positions.position.quantity.store(target_abs, std::sync::atomic::Ordering::Relaxed);
-                    coin.positions.position.margin_used.store(new_margin, std::sync::atomic::Ordering::Relaxed);
-                    arena.used_margin.fetch_add(margin_diff, std::sync::atomic::Ordering::Relaxed);
+                    coin.positions
+                        .position
+                        .quantity
+                        .store(target_abs, std::sync::atomic::Ordering::Relaxed);
+                    coin.positions
+                        .position
+                        .margin_used
+                        .store(new_margin, std::sync::atomic::Ordering::Relaxed);
+                    arena
+                        .used_margin
+                        .fetch_add(margin_diff, std::sync::atomic::Ordering::Relaxed);
                 }
                 adjustments += 1;
             }
@@ -352,13 +460,24 @@ mod tests {
         let registry = OrderRegistry::new();
         registry.register_intent("live1", "BTCUSDT", "BUY", "LONG", "LIMIT", 2.0, 1000);
         registry.register_intent("live2", "ETHUSDT", "BUY", "LONG", "LIMIT", 1.0, 1000);
-        
+
         // BTCUSDT tiene posición abierta (0.5), ETHUSDT está FLAT (0.0)
         let remote = vec![entry("BTCUSDT", 0.5), entry("ETHUSDT", 0.0)];
         let report = reconcile(&remote, &registry);
-        assert_eq!(report.open_positions.len(), 1, "ETH flat no cuenta en open_positions");
-        assert_eq!(report.suspicious_active_orders.len(), 1, "Solo la orden de ETH con posición plana es sospechosa");
-        assert!(report.suspicious_active_orders.iter().any(|s| s.contains("ETHUSDT") && s.contains("plana")));
+        assert_eq!(
+            report.open_positions.len(),
+            1,
+            "ETH flat no cuenta en open_positions"
+        );
+        assert_eq!(
+            report.suspicious_active_orders.len(),
+            1,
+            "Solo la orden de ETH con posición plana es sospechosa"
+        );
+        assert!(report
+            .suspicious_active_orders
+            .iter()
+            .any(|s| s.contains("ETHUSDT") && s.contains("plana")));
         assert!(report.summary.contains("BTCUSDT"));
 
         let adopted = report.apply_to_registry(&registry);
@@ -448,7 +567,9 @@ mod tests {
             59000.0,
             quantum_arena::position::PositionHorizon::Continuous,
         );
-        arena.used_margin.store(12.0, std::sync::atomic::Ordering::Relaxed);
+        arena
+            .used_margin
+            .store(12.0, std::sync::atomic::Ordering::Relaxed);
 
         // Remote has BTC flat (0.0), ETH open with 0.5 LONG
         let remote = vec![
@@ -463,14 +584,23 @@ mod tests {
         ];
 
         let adjs = reconcile_arena(&remote, &arena, 2000);
-        assert!(adjs >= 2, "Must adjust phantom BTC position and adopt orphan ETH position");
+        assert!(
+            adjs >= 2,
+            "Must adjust phantom BTC position and adopt orphan ETH position"
+        );
 
         // BTC phantom position must be closed and margin reclaimed
         assert!(!arena.coins[0].positions.position.is_open());
 
         // ETH position must be adopted in Continuous position
         assert!(arena.coins[1].positions.position.is_open());
-        assert_eq!(arena.coins[1].positions.position.quantity.load(std::sync::atomic::Ordering::Relaxed), 0.5);
+        assert_eq!(
+            arena.coins[1]
+                .positions
+                .position
+                .quantity
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0.5
+        );
     }
 }
-

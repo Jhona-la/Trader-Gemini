@@ -260,7 +260,8 @@ impl BinanceStreamer {
                                                 consecutive_anomalies = 0;
                                             } else {
                                                 let mut recent_ticks =
-                                                    [quantum_arena::state::CompactTick::default(); 10];
+                                                    [quantum_arena::state::CompactTick::default();
+                                                        10];
                                                 let count_ticks = self.arena.coins[self.coin_id]
                                                     .tick_ring
                                                     .snapshot_recent_into(10, &mut recent_ticks);
@@ -284,21 +285,28 @@ impl BinanceStreamer {
 
                                                     if count > 2.0 && last_valid > 0.0 {
                                                         let mean = sum / count;
-                                                        let variance = (sum_sq / count) - (mean * mean);
+                                                        let variance =
+                                                            (sum_sq / count) - (mean * mean);
                                                         let std_dev = variance.max(0.0).sqrt();
 
                                                         // Bayesian Stasis: Umbral adaptativo con piso del 0.8% (para permitir volatilidad real)
                                                         let dynamic_threshold =
                                                             (std_dev * 6.0).max(last_valid * 0.008);
 
-                                                        let is_outlier = (current_price - last_valid).abs() > dynamic_threshold;
+                                                        let is_outlier =
+                                                            (current_price - last_valid).abs()
+                                                                > dynamic_threshold;
                                                         // Glitch extremo (> 20% en 1 tick)
-                                                        let is_extreme_glitch = (current_price - last_valid).abs() > (last_valid * 0.20);
+                                                        let is_extreme_glitch =
+                                                            (current_price - last_valid).abs()
+                                                                > (last_valid * 0.20);
 
                                                         if is_outlier {
                                                             consecutive_anomalies += 1;
                                                             // FIX #385: Si llegan 3 ticks consecutivos en el nuevo nivel, es un movimiento de mercado legítimo
-                                                            if consecutive_anomalies < 3 || is_extreme_glitch {
+                                                            if consecutive_anomalies < 3
+                                                                || is_extreme_glitch
+                                                            {
                                                                 println!("🛡️ [BAYESIAN STASIS] Anomalía temporal ({}/3) en {}: Precio {}, Media {:.4}, Umbral {:.4}", consecutive_anomalies, self.symbol, current_price, mean, dynamic_threshold);
                                                                 continue; // Glitch aislado, descartar
                                                             } else {
@@ -439,4 +447,3 @@ mod tests {
         assert!(!streamer.is_testnet);
     }
 }
-

@@ -356,11 +356,19 @@ impl OrderRegistry {
     }
 
     pub fn get(&self, client_order_id: &str) -> Option<TrackedOrder> {
-        self.orders.read().unwrap_or_else(|p| p.into_inner()).get(client_order_id).cloned()
+        self.orders
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(client_order_id)
+            .cloned()
     }
 
     pub fn get_status(&self, client_order_id: &str) -> Option<OrderStatus> {
-        self.orders.read().unwrap_or_else(|p| p.into_inner()).get(client_order_id).map(|o| o.status)
+        self.orders
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(client_order_id)
+            .map(|o| o.status)
     }
 
     /// Órdenes vivas por símbolo (para chase/cancel masivo).
@@ -603,11 +611,19 @@ mod tests {
         // A delayed REST ack arrives with status NEW or PARTIALLY_FILLED: must NOT regress
         reg.apply_ack(&ack("m1", "PARTIALLY_FILLED", 0.5, 65000.0), 300);
         let o = reg.get("m1").unwrap();
-        assert_eq!(o.status, OrderStatus::Filled, "Status FILLED must not regress to PARTIALLY_FILLED");
+        assert_eq!(
+            o.status,
+            OrderStatus::Filled,
+            "Status FILLED must not regress to PARTIALLY_FILLED"
+        );
 
         reg.apply_ack(&ack("m1", "NEW", 0.0, 0.0), 350);
         let o = reg.get("m1").unwrap();
-        assert_eq!(o.status, OrderStatus::Filled, "Status FILLED must not regress to NEW");
+        assert_eq!(
+            o.status,
+            OrderStatus::Filled,
+            "Status FILLED must not regress to NEW"
+        );
     }
 
     #[test]
@@ -657,7 +673,10 @@ mod tests {
         let o = reg.get("f1").unwrap();
         assert!((o.ack_commission - 0.04).abs() < 1e-12);
         assert!((o.ws_commission - 0.04).abs() < 1e-12);
-        assert!((o.total_commission - 0.04).abs() < 1e-12, "Double counting prevented via max(ack, ws)");
+        assert!(
+            (o.total_commission - 0.04).abs() < 1e-12,
+            "Double counting prevented via max(ack, ws)"
+        );
 
         // A second fill arrives on WS with additional 0.03 commission
         reg.apply_trade_update(

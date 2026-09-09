@@ -45,7 +45,11 @@ impl TensorParser {
 
         // FIX #636: Retorno estrictamente finito
         let res = sign * (int_part + frac_part / frac_scale);
-        if res.is_finite() { res } else { 0.0 }
+        if res.is_finite() {
+            res
+        } else {
+            0.0
+        }
     }
 
     /// Busca la llave `"p":` (Precio) o `"q":` (Cantidad) en un flujo crudo de Binance
@@ -69,7 +73,12 @@ impl TensorParser {
                     return Some(Self::fast_parse_f64(&payload[val_start..i]));
                 } else {
                     let val_start = i;
-                    while i < len && payload[i] != b',' && payload[i] != b'}' && payload[i] != b']' && payload[i] != b' ' {
+                    while i < len
+                        && payload[i] != b','
+                        && payload[i] != b'}'
+                        && payload[i] != b']'
+                        && payload[i] != b' '
+                    {
                         i += 1;
                     }
                     return Some(Self::fast_parse_f64(&payload[val_start..i]));
@@ -85,7 +94,7 @@ impl TensorParser {
     pub fn decode_binance_trade_to_tensor(payload: &[u8]) -> [f64; 2] {
         let price = Self::extract_tensor_feature(payload, b"\"p\":").unwrap_or(0.0);
         let qty = Self::extract_tensor_feature(payload, b"\"q\":").unwrap_or(0.0);
-        
+
         [price, qty]
     }
 }
@@ -138,5 +147,3 @@ mod tests {
         assert_eq!(price, Some(1234.56));
     }
 }
-
-

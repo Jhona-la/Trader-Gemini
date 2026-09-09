@@ -2,15 +2,20 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum TrajectoryDivergenceReason {
-    VolumeStarvation,            // Volumen insuficiente en el tiempo transcurrido
-    MomentumReversal,            // Inversión rápida de tendencia en contra
-    TimeExhaustionWithoutProgress,// El tiempo pasó sin generar avance en el precio
+    VolumeStarvation,              // Volumen insuficiente en el tiempo transcurrido
+    MomentumReversal,              // Inversión rápida de tendencia en contra
+    TimeExhaustionWithoutProgress, // El tiempo pasó sin generar avance en el precio
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum TrajectoryStatus {
-    Aligned { coherence_score: f64 },
-    Divergent { reason: TrajectoryDivergenceReason, score: f64 },
+    Aligned {
+        coherence_score: f64,
+    },
+    Divergent {
+        reason: TrajectoryDivergenceReason,
+        score: f64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,7 +28,7 @@ pub struct ActiveTrajectoryTrack {
     pub expected_magnitude: f64,   // Delta precio % esperado
     pub expected_volume_usd: f64,  // Volumencapital base esperado en la ola
     pub expected_duration_ms: u64, // Duración esperada en ms
-    
+
     // Métricas en tiempo real de seguimiento
     pub accumulated_volume_usd: f64,
     pub max_favorable_price: f64,
@@ -43,9 +48,21 @@ impl ActiveTrajectoryTrack {
         expected_duration_ms: u64,
     ) -> Self {
         // FIX #723: Sanitizar magnitud y volumen esperados
-        let safe_magnitude = if expected_magnitude.is_finite() && expected_magnitude > 0.0 { expected_magnitude } else { 0.01 };
-        let safe_volume = if expected_volume_usd.is_finite() && expected_volume_usd >= 0.0 { expected_volume_usd } else { 0.0 };
-        let safe_entry = if entry_price.is_finite() && entry_price > 0.0 { entry_price } else { 1.0 };
+        let safe_magnitude = if expected_magnitude.is_finite() && expected_magnitude > 0.0 {
+            expected_magnitude
+        } else {
+            0.01
+        };
+        let safe_volume = if expected_volume_usd.is_finite() && expected_volume_usd >= 0.0 {
+            expected_volume_usd
+        } else {
+            0.0
+        };
+        let safe_entry = if entry_price.is_finite() && entry_price > 0.0 {
+            entry_price
+        } else {
+            1.0
+        };
         Self {
             symbol_id,
             is_long,
@@ -126,11 +143,15 @@ impl TrajectoryAuditor {
         current_time_ms: u64,
     ) -> TrajectoryStatus {
         if symbol_id >= self.num_coins {
-            return TrajectoryStatus::Aligned { coherence_score: 1.0 };
+            return TrajectoryStatus::Aligned {
+                coherence_score: 1.0,
+            };
         }
 
         if !current_price.is_finite() || current_price <= 0.0 {
-            return TrajectoryStatus::Aligned { coherence_score: 1.0 };
+            return TrajectoryStatus::Aligned {
+                coherence_score: 1.0,
+            };
         }
 
         let track_slot = if is_scalp {
@@ -141,16 +162,26 @@ impl TrajectoryAuditor {
 
         let track = match track_slot {
             Some(t) => t,
-            None => return TrajectoryStatus::Aligned { coherence_score: 1.0 },
+            None => {
+                return TrajectoryStatus::Aligned {
+                    coherence_score: 1.0,
+                }
+            }
         };
 
         // FIX #1449: Inmunidad ante NaNs o precios no positivos en evaluación tick-a-tick
         if !current_price.is_finite() || current_price <= 0.0 {
-            return TrajectoryStatus::Aligned { coherence_score: 1.0 };
+            return TrajectoryStatus::Aligned {
+                coherence_score: 1.0,
+            };
         }
 
         // Actualizar métricas acumuladas
-        let safe_vol = if tick_volume_usd.is_finite() && tick_volume_usd >= 0.0 { tick_volume_usd } else { 0.0 };
+        let safe_vol = if tick_volume_usd.is_finite() && tick_volume_usd >= 0.0 {
+            tick_volume_usd
+        } else {
+            0.0
+        };
         track.accumulated_volume_usd += safe_vol;
         track.last_update_ms = current_time_ms;
 
@@ -171,10 +202,13 @@ impl TrajectoryAuditor {
         }
 
         let elapsed_ms = current_time_ms.saturating_sub(track.entry_time_ms);
-        let duration_ratio = (elapsed_ms as f64 / track.expected_duration_ms.max(1) as f64).clamp(0.0, 3.0);
+        let duration_ratio =
+            (elapsed_ms as f64 / track.expected_duration_ms.max(1) as f64).clamp(0.0, 3.0);
 
         if track.entry_price <= 0.0 || !track.entry_price.is_finite() {
-            return TrajectoryStatus::Aligned { coherence_score: 1.0 };
+            return TrajectoryStatus::Aligned {
+                coherence_score: 1.0,
+            };
         }
 
         // 1. Rendimiento del Precio (% de avance hacia la magnitud esperada)
@@ -227,11 +261,19 @@ impl TrajectoryAuditor {
         let time_score = (1.0 - duration_ratio.min(1.0)).max(0.0);
         let coherence = (0.50 * mag_score + 0.30 * vol_score + 0.20 * time_score).clamp(0.0, 1.0);
 
-        TrajectoryStatus::Aligned { coherence_score: coherence }
+        TrajectoryStatus::Aligned {
+            coherence_score: coherence,
+        }
     }
 
     /// Limpia la traza al cerrar posición y devuelve el TCE (Trajectory Calibration Error)
-    pub fn record_exit(&mut self, symbol_id: usize, is_scalp: bool, exit_price: f64, exit_time_ms: u64) -> Option<f64> {
+    pub fn record_exit(
+        &mut self,
+        symbol_id: usize,
+        is_scalp: bool,
+        exit_price: f64,
+        exit_time_ms: u64,
+    ) -> Option<f64> {
         if symbol_id >= self.num_coins {
             return None;
         }
@@ -254,7 +296,8 @@ impl TrajectoryAuditor {
         // Trajectory Calibration Error: diferencia normalizada entre magnitud esperada y real
         let mag_error = (track.expected_magnitude - actual_mag).abs();
         let actual_duration = exit_time_ms.saturating_sub(track.entry_time_ms) as f64;
-        let duration_error = (track.expected_duration_ms as f64 - actual_duration).abs() / track.expected_duration_ms.max(1) as f64;
+        let duration_error = (track.expected_duration_ms as f64 - actual_duration).abs()
+            / track.expected_duration_ms.max(1) as f64;
 
         let tce = (0.70 * mag_error + 0.30 * duration_error).clamp(0.0, 1.0);
         Some(tce)
@@ -269,9 +312,9 @@ mod tests {
     fn test_trajectory_aligned_and_exit() {
         let mut auditor = TrajectoryAuditor::new(5);
         let now_ms = 1_000_000;
-        
+
         auditor.record_entry(0, true, true, 100.0, now_ms, 0.01, 50_000.0, 30_000);
-        
+
         let status = auditor.evaluate_tick(0, true, 100.5, 20_000.0, now_ms + 5_000);
         match status {
             TrajectoryStatus::Aligned { coherence_score } => {
@@ -288,9 +331,9 @@ mod tests {
     fn test_trajectory_momentum_reversal_early_cut() {
         let mut auditor = TrajectoryAuditor::new(5);
         let now_ms = 1_000_000;
-        
+
         auditor.record_entry(1, true, true, 100.0, now_ms, 0.01, 50_000.0, 30_000);
-        
+
         // Caída brusca del precio del -0.7% (< -0.6% threshold)
         let status = auditor.evaluate_tick(1, true, 99.3, 5_000.0, now_ms + 2_000);
         match status {
@@ -305,9 +348,9 @@ mod tests {
     fn test_trajectory_volume_starvation_early_cut() {
         let mut auditor = TrajectoryAuditor::new(5);
         let now_ms = 1_000_000;
-        
+
         auditor.record_entry(2, true, true, 100.0, now_ms, 0.01, 100_000.0, 30_000);
-        
+
         // Ha pasado el 80% del tiempo (24,000ms) pero solo ha habido $500 de volumen (< 1% de $100k) y el precio cayó (-0.01%)
         let status = auditor.evaluate_tick(2, true, 99.99, 500.0, now_ms + 24_000);
         match status {

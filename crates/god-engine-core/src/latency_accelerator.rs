@@ -9,7 +9,10 @@ impl LatencyAcceleratorEngine {
     /// Calcula la diferencia de latencia y aceleración óptima del bucle HFT en O(1)
     #[inline(always)]
     pub fn compute_latency_acceleration_factor(raw_latency_ns: f64, target_latency_ns: f64) -> f64 {
-        if !raw_latency_ns.is_finite() || !target_latency_ns.is_finite() || target_latency_ns <= 0.0 { return 1.0; }
+        if !raw_latency_ns.is_finite() || !target_latency_ns.is_finite() || target_latency_ns <= 0.0
+        {
+            return 1.0;
+        }
         (raw_latency_ns / target_latency_ns).clamp(0.01, 100.0)
     }
 
@@ -33,7 +36,8 @@ mod tests {
         assert_eq!(drift, 150);
 
         // Extreme drift clamped to 5000ms
-        let extreme_drift = LatencyAcceleratorEngine::compute_ntp_clock_drift_correction(local, local + 100_000);
+        let extreme_drift =
+            LatencyAcceleratorEngine::compute_ntp_clock_drift_correction(local, local + 100_000);
         assert_eq!(extreme_drift, 5000);
     }
 
@@ -42,11 +46,11 @@ mod tests {
         let factor = LatencyAcceleratorEngine::compute_latency_acceleration_factor(500.0, 250.0);
         assert_eq!(factor, 2.0);
 
-        let nan_factor = LatencyAcceleratorEngine::compute_latency_acceleration_factor(f64::NAN, 100.0);
+        let nan_factor =
+            LatencyAcceleratorEngine::compute_latency_acceleration_factor(f64::NAN, 100.0);
         assert_eq!(nan_factor, 1.0);
 
         let zero_target = LatencyAcceleratorEngine::compute_latency_acceleration_factor(100.0, 0.0);
         assert_eq!(zero_target, 1.0);
     }
 }
-

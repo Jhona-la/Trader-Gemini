@@ -34,8 +34,16 @@ mod tests {
     fn test_sign_payload_to_buffer_deterministic() {
         let mut buf1 = [0u8; 64];
         let mut buf2 = [0u8; 64];
-        sign_payload_to_buffer("symbol=BTCUSDT&timestamp=1700000000000", "secret_key_123", &mut buf1);
-        sign_payload_to_buffer("symbol=BTCUSDT&timestamp=1700000000000", "secret_key_123", &mut buf2);
+        sign_payload_to_buffer(
+            "symbol=BTCUSDT&timestamp=1700000000000",
+            "secret_key_123",
+            &mut buf1,
+        );
+        sign_payload_to_buffer(
+            "symbol=BTCUSDT&timestamp=1700000000000",
+            "secret_key_123",
+            &mut buf2,
+        );
         assert_eq!(buf1, buf2);
 
         let sig_str = std::str::from_utf8(&buf1).unwrap();
@@ -52,4 +60,3 @@ mod tests {
         assert_ne!(buf1, buf2);
     }
 }
-

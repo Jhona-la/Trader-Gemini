@@ -35,7 +35,7 @@ impl HistoryStore {
         let _ = conn.pragma_update(None, "synchronous", "NORMAL");
         let _ = conn.pragma_update(None, "temp_store", "MEMORY");
         let _ = conn.pragma_update(None, "mmap_size", "67108864"); // 64 MB
-        let _ = conn.pragma_update(None, "cache_size", "-32000");  // 32 MB
+        let _ = conn.pragma_update(None, "cache_size", "-32000"); // 32 MB
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS klines (
@@ -148,38 +148,38 @@ impl HistoryStore {
     pub fn prune_older_than(&self, timestamp_ms: u64) {
         // FIX #701: Sanitizar timestamp_ms para prevenir números negativos
         let safe_ts = (timestamp_ms.min(i64::MAX as u64)) as i64;
-        let _ = self.conn.execute(
-            "DELETE FROM klines WHERE timestamp < ?1",
-            params![safe_ts],
-        );
+        let _ = self
+            .conn
+            .execute("DELETE FROM klines WHERE timestamp < ?1", params![safe_ts]);
     }
 
     /// Extrae las últimas N velas de una moneda de forma segura (sin panic)
-    pub fn try_get_recent_candles(&self, coin_id: usize, limit: usize) -> rusqlite::Result<Vec<KlineRow>> {
+    pub fn try_get_recent_candles(
+        &self,
+        coin_id: usize,
+        limit: usize,
+    ) -> rusqlite::Result<Vec<KlineRow>> {
         // FIX #701: Clampeado defensivo de limit para evitar 0 o desbordamientos de memoria
         let safe_limit = limit.clamp(1, 100_000);
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT coin_id, timestamp, open, high, low, close, volume 
+        let mut stmt = self.conn.prepare(
+            "SELECT coin_id, timestamp, open, high, low, close, volume 
              FROM klines 
              WHERE coin_id = ?1 
              ORDER BY timestamp DESC 
              LIMIT ?2",
-            )?;
+        )?;
 
-        let rows = stmt
-            .query_map(params![coin_id as i64, safe_limit as i64], |row| {
-                Ok(KlineRow {
-                    coin_id: row.get::<_, i64>(0)? as usize,
-                    timestamp: row.get::<_, i64>(1)? as u64,
-                    open: row.get(2)?,
-                    high: row.get(3)?,
-                    low: row.get(4)?,
-                    close: row.get(5)?,
-                    volume: row.get(6)?,
-                })
-            })?;
+        let rows = stmt.query_map(params![coin_id as i64, safe_limit as i64], |row| {
+            Ok(KlineRow {
+                coin_id: row.get::<_, i64>(0)? as usize,
+                timestamp: row.get::<_, i64>(1)? as u64,
+                open: row.get(2)?,
+                high: row.get(3)?,
+                low: row.get(4)?,
+                close: row.get(5)?,
+                volume: row.get(6)?,
+            })
+        })?;
 
         let mut klines = Vec::new();
         for k in rows.flatten() {
@@ -191,7 +191,8 @@ impl HistoryStore {
 
     /// Extrae las últimas N velas de una moneda, ordenadas cronológicamente
     pub fn get_recent_candles(&self, coin_id: usize, limit: usize) -> Vec<KlineRow> {
-        self.try_get_recent_candles(coin_id, limit).unwrap_or_default()
+        self.try_get_recent_candles(coin_id, limit)
+            .unwrap_or_default()
     }
 
     /// Retorna el timestamp de la vela más reciente para un coin_id (para hacer Delta Sync)
@@ -217,17 +218,20 @@ impl HistoryStore {
             Err(_) => return Vec::new(),
         };
 
-        let rows = match stmt.query_map(params![coin_id as i64, start_ts as i64, end_ts as i64], |row| {
-            Ok(KlineRow {
-                coin_id: row.get::<_, i64>(0)? as usize,
-                timestamp: row.get::<_, i64>(1)? as u64,
-                open: row.get(2)?,
-                high: row.get(3)?,
-                low: row.get(4)?,
-                close: row.get(5)?,
-                volume: row.get(6)?,
-            })
-        }) {
+        let rows = match stmt.query_map(
+            params![coin_id as i64, start_ts as i64, end_ts as i64],
+            |row| {
+                Ok(KlineRow {
+                    coin_id: row.get::<_, i64>(0)? as usize,
+                    timestamp: row.get::<_, i64>(1)? as u64,
+                    open: row.get(2)?,
+                    high: row.get(3)?,
+                    low: row.get(4)?,
+                    close: row.get(5)?,
+                    volume: row.get(6)?,
+                })
+            },
+        ) {
             Ok(r) => r,
             Err(_) => return Vec::new(),
         };
@@ -243,8 +247,14 @@ mod tests {
     #[test]
     fn test_history_store_upsert_and_recent() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!("history_test_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
-        
+        let db_path = temp_dir.join(format!(
+            "history_test_{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
         let store = HistoryStore::new(&db_path);
         store.upsert_kline(&KlineRow {
             coin_id: 0,
@@ -267,8 +277,14 @@ mod tests {
     #[test]
     fn test_history_store_batch_insert_and_nan_sanitization() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!("history_test_batch_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
-        
+        let db_path = temp_dir.join(format!(
+            "history_test_batch_{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
         let mut store = HistoryStore::new(&db_path);
         let batch = vec![
             KlineRow {
@@ -302,7 +318,13 @@ mod tests {
     #[test]
     fn test_history_store_prune_older_than() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!("history_test_prune_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let db_path = temp_dir.join(format!(
+            "history_test_prune_{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
 
         let store = HistoryStore::new(&db_path);
         store.upsert_kline(&KlineRow {
@@ -337,14 +359,52 @@ mod tests {
     #[test]
     fn test_history_store_get_range_and_multi_coin_isolation() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!("history_test_range_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let db_path = temp_dir.join(format!(
+            "history_test_range_{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
 
         let mut store = HistoryStore::new(&db_path);
         let batch = vec![
-            KlineRow { coin_id: 0, timestamp: 1000, open: 100.0, high: 105.0, low: 95.0, close: 102.0, volume: 10.0 },
-            KlineRow { coin_id: 0, timestamp: 2000, open: 102.0, high: 108.0, low: 101.0, close: 107.0, volume: 12.0 },
-            KlineRow { coin_id: 0, timestamp: 3000, open: 107.0, high: 110.0, low: 106.0, close: 109.0, volume: 15.0 },
-            KlineRow { coin_id: 1, timestamp: 2000, open: 2000.0, high: 2050.0, low: 1980.0, close: 2030.0, volume: 50.0 },
+            KlineRow {
+                coin_id: 0,
+                timestamp: 1000,
+                open: 100.0,
+                high: 105.0,
+                low: 95.0,
+                close: 102.0,
+                volume: 10.0,
+            },
+            KlineRow {
+                coin_id: 0,
+                timestamp: 2000,
+                open: 102.0,
+                high: 108.0,
+                low: 101.0,
+                close: 107.0,
+                volume: 12.0,
+            },
+            KlineRow {
+                coin_id: 0,
+                timestamp: 3000,
+                open: 107.0,
+                high: 110.0,
+                low: 106.0,
+                close: 109.0,
+                volume: 15.0,
+            },
+            KlineRow {
+                coin_id: 1,
+                timestamp: 2000,
+                open: 2000.0,
+                high: 2050.0,
+                low: 1980.0,
+                close: 2030.0,
+                volume: 50.0,
+            },
         ];
         store.insert_batch(&batch);
 
@@ -362,5 +422,3 @@ mod tests {
         let _ = std::fs::remove_file(db_path);
     }
 }
-
-

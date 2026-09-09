@@ -40,7 +40,16 @@ pub fn parse_binance_depth<'a>(
     let aq = best_ask[1].as_str()?.parse::<f64>().ok()?;
 
     // FIX #1417 / #1472: Data Integrity & Normalization Validation (Descartar precios inválidos, NaNs y libros cruzados bp >= ap)
-    if bp <= 0.0 || ap <= 0.0 || bq < 0.0 || aq < 0.0 || bp >= ap || !bp.is_finite() || !ap.is_finite() || !bq.is_finite() || !aq.is_finite() {
+    if bp <= 0.0
+        || ap <= 0.0
+        || bq < 0.0
+        || aq < 0.0
+        || bp >= ap
+        || !bp.is_finite()
+        || !ap.is_finite()
+        || !bq.is_finite()
+        || !aq.is_finite()
+    {
         return None;
     }
 
@@ -107,7 +116,17 @@ pub fn parse_binance_kline<'a>(json_str: &'a mut str) -> Option<KlineData<'a>> {
     let is_closed = k.get("x")?.as_bool()?;
 
     // FIX #1472: Data Integrity Validation & Finitude
-    if open <= 0.0 || high < low || low <= 0.0 || close <= 0.0 || volume < 0.0 || !open.is_finite() || !high.is_finite() || !low.is_finite() || !close.is_finite() || !volume.is_finite() {
+    if open <= 0.0
+        || high < low
+        || low <= 0.0
+        || close <= 0.0
+        || volume < 0.0
+        || !open.is_finite()
+        || !high.is_finite()
+        || !low.is_finite()
+        || !close.is_finite()
+        || !volume.is_finite()
+    {
         return None; // Protect the engine from absurd or manipulated data
     }
 

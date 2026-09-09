@@ -142,7 +142,10 @@ impl ShadowForest {
 
         // Axioma de Inercia: Solo proponemos cambio si la mutación venció al control
         // significativamente (> 0.5% del capital base) y tiene PnL positivo para evitar inestabilidad del sistema.
-        let winner = if best_idx != 0 && (best_pnl - control_pnl > self.initial_capital * 0.005) && best_pnl > 0.0 {
+        let winner = if best_idx != 0
+            && (best_pnl - control_pnl > self.initial_capital * 0.005)
+            && best_pnl > 0.0
+        {
             Some((self.genomes[best_idx].clone(), best_pnl))
         } else {
             None
@@ -204,12 +207,32 @@ mod tests {
         let main_arena = Arc::new(GlobalArena::new(13.0));
 
         forest.broadcast_tick(
-            0, true, false, false, 50000.0, 1.0, 49999.0, 50001.0, 10.0, 10.0, 0.1, 0.0, 1600000000, &main_arena, &[0.0; 54], false
+            0,
+            true,
+            false,
+            false,
+            50000.0,
+            1.0,
+            49999.0,
+            50001.0,
+            10.0,
+            10.0,
+            0.1,
+            0.0,
+            1600000000,
+            &main_arena,
+            &[0.0; 54],
+            false,
         );
 
         forest.replant(base_genome);
         assert_eq!(forest.engines.len(), 2);
-        assert_eq!(forest.engines[0].arena.unified_capital.load(Ordering::Relaxed), 13.0);
+        assert_eq!(
+            forest.engines[0]
+                .arena
+                .unified_capital
+                .load(Ordering::Relaxed),
+            13.0
+        );
     }
 }
-

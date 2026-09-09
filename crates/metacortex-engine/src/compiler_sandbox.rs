@@ -7,11 +7,11 @@
 //! - Memory footprint monitoring
 //! - Structured error parsing and automatic rollback on failure
 
+use os_guardian;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use os_guardian;
 
 #[derive(Debug, Clone)]
 pub struct CompilationConfig {
@@ -57,18 +57,16 @@ impl CompilerSandbox {
 
     /// Compila de forma asíncrona desacoplada del event loop de Tokio
     pub async fn compile_package_async(self: Arc<Self>, package_name: String) -> CompilationResult {
-        tokio::task::spawn_blocking(move || {
-            self.compile_package(&package_name)
-        })
-        .await
-        .unwrap_or_else(|e| CompilationResult {
-            success: false,
-            duration: Duration::from_secs(0),
-            stdout: String::new(),
-            stderr: format!("Tokio join error: {}", e),
-            artifact_path: None,
-            error_summary: Some("Sandbox task panicked".to_string()),
-        })
+        tokio::task::spawn_blocking(move || self.compile_package(&package_name))
+            .await
+            .unwrap_or_else(|e| CompilationResult {
+                success: false,
+                duration: Duration::from_secs(0),
+                stdout: String::new(),
+                stderr: format!("Tokio join error: {}", e),
+                artifact_path: None,
+                error_summary: Some("Sandbox task panicked".to_string()),
+            })
     }
 
     /// Compiles a target package or the whole workspace in a controlled sandbox
@@ -134,11 +132,31 @@ impl CompilerSandbox {
                             "debug"
                         };
                         let normalized_name = package_name.replace('-', "_");
-                        let p_dll = self.workspace_root.join("target").join(profile).join(format!("{}.dll", normalized_name));
-                        let p_so = self.workspace_root.join("target").join(profile).join(format!("lib{}.so", normalized_name));
-                        let p_dylib = self.workspace_root.join("target").join(profile).join(format!("lib{}.dylib", normalized_name));
-                        let p_exe = self.workspace_root.join("target").join(profile).join(format!("{}.exe", normalized_name));
-                        let p_raw = self.workspace_root.join("target").join(profile).join(&normalized_name);
+                        let p_dll = self
+                            .workspace_root
+                            .join("target")
+                            .join(profile)
+                            .join(format!("{}.dll", normalized_name));
+                        let p_so = self
+                            .workspace_root
+                            .join("target")
+                            .join(profile)
+                            .join(format!("lib{}.so", normalized_name));
+                        let p_dylib = self
+                            .workspace_root
+                            .join("target")
+                            .join(profile)
+                            .join(format!("lib{}.dylib", normalized_name));
+                        let p_exe = self
+                            .workspace_root
+                            .join("target")
+                            .join(profile)
+                            .join(format!("{}.exe", normalized_name));
+                        let p_raw = self
+                            .workspace_root
+                            .join("target")
+                            .join(profile)
+                            .join(&normalized_name);
                         if p_dll.exists() {
                             Some(p_dll)
                         } else if p_so.exists() {
@@ -191,7 +209,9 @@ impl CompilerSandbox {
                                 sys_telemetry.memory_used_mb
                             ),
                             artifact_path: None,
-                            error_summary: Some("Compilation aborted due to RAM threshold".to_string()),
+                            error_summary: Some(
+                                "Compilation aborted due to RAM threshold".to_string(),
+                            ),
                         };
                     }
 

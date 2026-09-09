@@ -27,7 +27,9 @@ impl ResilientStreamManager {
     /// Procesa el timestamp/secuencia de un tick y valida la continuidad sin huecos
     #[inline(always)]
     pub fn validate_and_track_sequence(&self, sequence_id: u64) -> bool {
-        let last = self.last_sequence_id.fetch_max(sequence_id, Ordering::Relaxed);
+        let last = self
+            .last_sequence_id
+            .fetch_max(sequence_id, Ordering::Relaxed);
         if last == 0 {
             // FIX #607: Primer paquete de la sesión; inicializar sin registrar falsos paquetes perdidos
             return true;
@@ -38,7 +40,8 @@ impl ResilientStreamManager {
         }
         if sequence_id > last + 1 {
             let dropped = sequence_id - (last + 1);
-            self.dropped_packets_count.fetch_add(dropped, Ordering::Relaxed);
+            self.dropped_packets_count
+                .fetch_add(dropped, Ordering::Relaxed);
             // Se detectó una brecha de secuencia (desconexión o pérdida de paquete)
             false
         } else {
@@ -73,7 +76,11 @@ impl ResilientStreamManager {
 
         // Pseudo-random deterministic jitter based on fast splitmix cycle
         // FIX #675: Sanitizar jitter_factor
-        let safe_jitter_factor = if jitter_factor.is_finite() { jitter_factor.clamp(0.0, 0.5) } else { 0.1 };
+        let safe_jitter_factor = if jitter_factor.is_finite() {
+            jitter_factor.clamp(0.0, 0.5)
+        } else {
+            0.1
+        };
         let seed = attempt as u64 ^ 0x9E3779B97F4A7C15;
         let rand_norm = ((seed % 1000) as f64 / 500.0) - 1.0; // [-1.0, 1.0]
         let jitter = 1.0 + (rand_norm * safe_jitter_factor);

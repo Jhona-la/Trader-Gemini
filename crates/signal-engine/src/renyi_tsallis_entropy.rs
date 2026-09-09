@@ -21,8 +21,16 @@ impl std::fmt::Debug for RenyiTsallisEntropyEngine {
 impl RenyiTsallisEntropyEngine {
     pub fn new(q_tsallis: f64, alpha_renyi: f64) -> Self {
         // FIX #681: Sanitizar q y alpha
-        let safe_q = if q_tsallis.is_finite() && q_tsallis > 0.0 { q_tsallis } else { 1.5 };
-        let safe_alpha = if alpha_renyi.is_finite() && alpha_renyi > 0.0 { alpha_renyi } else { 2.0 };
+        let safe_q = if q_tsallis.is_finite() && q_tsallis > 0.0 {
+            q_tsallis
+        } else {
+            1.5
+        };
+        let safe_alpha = if alpha_renyi.is_finite() && alpha_renyi > 0.0 {
+            alpha_renyi
+        } else {
+            2.0
+        };
         Self {
             q_tsallis: safe_q.max(0.01),
             alpha_renyi: safe_alpha.max(0.01),
@@ -140,7 +148,10 @@ impl strategy_core::QuantumStrategy for RenyiTsallisEntropyEngine {
         "RenyiTsallisEntropyEngine"
     }
 
-    fn init(&mut self, registry: std::sync::Arc<omniscient_registry::OmniscientRegistry>) -> Result<(), String> {
+    fn init(
+        &mut self,
+        registry: std::sync::Arc<omniscient_registry::OmniscientRegistry>,
+    ) -> Result<(), String> {
         self.registry = Some(registry);
         Ok(())
     }
@@ -160,7 +171,11 @@ impl strategy_core::QuantumStrategy for RenyiTsallisEntropyEngine {
             .unwrap_or(0.0);
 
         // FIX #681: Sanitizar lecturas de registro
-        let safe_tsallis = if tsallis_q.is_finite() && tsallis_q >= 0.0 { tsallis_q } else { 0.5 };
+        let safe_tsallis = if tsallis_q.is_finite() && tsallis_q >= 0.0 {
+            tsallis_q
+        } else {
+            0.5
+        };
         let safe_obi = if obi.is_finite() { obi } else { 0.0 };
 
         // Si la entropía es baja (orden estructurado en el flujo) y hay desequilibrio direccional, amplificar
@@ -243,5 +258,3 @@ mod tests {
         assert!(eval.is_finite());
     }
 }
-
-

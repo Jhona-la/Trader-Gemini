@@ -40,10 +40,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         0.0
     };
 
-    println!(
-        "Num Leaves: {}, Avg Leaf Value: {}",
-        num_leaves,
-        avg_leaf
-    );
+    println!("Num Leaves: {}, Avg Leaf Value: {}", num_leaves, avg_leaf);
     Ok(())
 }

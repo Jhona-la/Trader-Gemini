@@ -50,8 +50,18 @@ impl ValidatedOrder {
 /// 0=flat/coin 1=exposure0 2=correlación 3=spec 4=EV 5=fee_impact
 /// 6=min_notional 7=margen_insuf 8=orchestrator 9=otros
 use std::sync::atomic::AtomicU64;
-pub static REJECT_COUNTERS: [std::sync::atomic::AtomicU64; 10] =
-    [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+pub static REJECT_COUNTERS: [std::sync::atomic::AtomicU64; 10] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+];
 
 fn rej(i: usize) -> ValidatedOrder {
     REJECT_COUNTERS[i].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -59,14 +69,35 @@ fn rej(i: usize) -> ValidatedOrder {
 }
 
 pub fn reject_report() -> String {
-    let names = ["flat/coin", "exposure0", "correlacion", "spec", "EV", "fee_impact", "min_notional", "margen_insuf", "orchestrator", "otros"];
+    let names = [
+        "flat/coin",
+        "exposure0",
+        "correlacion",
+        "spec",
+        "EV",
+        "fee_impact",
+        "min_notional",
+        "margen_insuf",
+        "orchestrator",
+        "otros",
+    ];
     let v: Vec<String> = REJECT_COUNTERS
         .iter()
         .enumerate()
         .filter(|(_i, c)| c.load(std::sync::atomic::Ordering::Relaxed) > 0)
-        .map(|(i, c)| format!("{}={}", names[i], c.load(std::sync::atomic::Ordering::Relaxed)))
+        .map(|(i, c)| {
+            format!(
+                "{}={}",
+                names[i],
+                c.load(std::sync::atomic::Ordering::Relaxed)
+            )
+        })
         .collect();
-    if v.is_empty() { "sin rechazos".into() } else { v.join(" ") }
+    if v.is_empty() {
+        "sin rechazos".into()
+    } else {
+        v.join(" ")
+    }
 }
 
 pub struct RiskEngine {
@@ -165,7 +196,7 @@ impl RiskEngine {
 
         // 2. Comprobar cortafuegos (Drawdown) aislados por TradeHorizon
         let max_dd = arena.config.global_max_drawdown.load(Ordering::Relaxed);
-        
+
         let scalp_drawdown = if self.scalp_peak_capital > 0.0 {
             (self.scalp_peak_capital - scalp_capital) / self.scalp_peak_capital
         } else {
@@ -181,12 +212,14 @@ impl RiskEngine {
         let hard_stop_base = arena.config.hard_stop_base_limit.load(Ordering::Relaxed);
         let hard_stop_decay = arena.config.hard_stop_decay_factor.load(Ordering::Relaxed);
         let scalp_hard_stop_limit = {
-            let capital_ratio = (self.scalp_peak_capital / (base_capital * split).max(1.0)).max(1.0);
+            let capital_ratio =
+                (self.scalp_peak_capital / (base_capital * split).max(1.0)).max(1.0);
             (hard_stop_base / (1.0 + capital_ratio.ln() * hard_stop_decay)).clamp(0.20, 0.95)
         };
 
         let swing_hard_stop_limit = {
-            let capital_ratio = (self.swing_peak_capital / (base_capital * (1.0 - split)).max(1.0)).max(1.0);
+            let capital_ratio =
+                (self.swing_peak_capital / (base_capital * (1.0 - split)).max(1.0)).max(1.0);
             (hard_stop_base / (1.0 + capital_ratio.ln() * hard_stop_decay)).clamp(0.20, 0.95)
         };
 
@@ -202,7 +235,7 @@ impl RiskEngine {
             .guard_dd_sigmoid_steepness
             .load(Ordering::Relaxed);
         let guard_dd_sigmoid_center = arena.config.guard_dd_sigmoid_center.load(Ordering::Relaxed);
-        
+
         if !guard::check_drawdown_limit(
             scalp_capital,
             self.scalp_peak_capital,
@@ -213,7 +246,7 @@ impl RiskEngine {
         ) {
             scalp_valid = false;
         }
-        
+
         if !guard::check_drawdown_limit(
             swing_capital,
             self.swing_peak_capital,
@@ -236,8 +269,6 @@ impl RiskEngine {
             .kelly_survival_cap_ratio
             .load(Ordering::Relaxed);
         let kelly_expansion_mult = arena.config.kelly_expansion_mult.load(Ordering::Relaxed);
-
-
 
         let clamp_min = arena.config.kelly_clamp_min.load(Ordering::Relaxed);
         let clamp_max = arena.config.kelly_clamp_max.load(Ordering::Relaxed);
@@ -372,19 +403,41 @@ impl RiskEngine {
         }
 
         let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
-        let pf = arena.coins[coin_id].metrics.profit_factor.load(Ordering::Relaxed);
-        let clamp_min = arena.config.kelly_clamp_min.load(Ordering::Relaxed).max(0.0);
-        let clamp_max = arena.config.kelly_clamp_max.load(Ordering::Relaxed).clamp(clamp_min, 1.0);
-        let raw_kelly = arena.coins[coin_id].metrics.kelly_fraction.load(Ordering::Relaxed);
+        let pf = arena.coins[coin_id]
+            .metrics
+            .profit_factor
+            .load(Ordering::Relaxed);
+        let clamp_min = arena
+            .config
+            .kelly_clamp_min
+            .load(Ordering::Relaxed)
+            .max(0.0);
+        let clamp_max = arena
+            .config
+            .kelly_clamp_max
+            .load(Ordering::Relaxed)
+            .clamp(clamp_min, 1.0);
+        let raw_kelly = arena.coins[coin_id]
+            .metrics
+            .kelly_fraction
+            .load(Ordering::Relaxed);
 
-        let kelly_cold = arena.config.kelly_bootstrap_cold.load(Ordering::Relaxed).clamp(0.05, 0.35);
+        let kelly_cold = arena
+            .config
+            .kelly_bootstrap_cold
+            .load(Ordering::Relaxed)
+            .clamp(0.05, 0.35);
         let kelly_frac = if raw_kelly <= 0.0 {
             kelly_cold
         } else {
             raw_kelly.clamp(clamp_min, clamp_max)
         };
 
-        let temporal_scale = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
+        let temporal_scale = arena
+            .config
+            .temporal_scale
+            .load(Ordering::Relaxed)
+            .clamp(0.0, 1.0);
         let is_scalp = match intent.horizon {
             TradeHorizon::Scalp => true,
             TradeHorizon::Swing => false,
@@ -443,7 +496,11 @@ impl RiskEngine {
         // de 4-8x en riesgo entre extremos).
         let scalp_sl_ref = arena.config.scalp_sl_base.load(Ordering::Relaxed).max(1e-6);
         let swing_sl_ref = arena.config.swing_sl_base.load(Ordering::Relaxed).max(1e-6);
-        let ts = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.05, 0.95);
+        let ts = arena
+            .config
+            .temporal_scale
+            .load(Ordering::Relaxed)
+            .clamp(0.05, 0.95);
         let sl_interp_est = scalp_sl_ref * (1.0 - ts) + swing_sl_ref * ts;
         let risk_normalizer = (scalp_sl_ref / sl_interp_est).clamp(0.15, 1.0);
         let kelly_adjusted = kelly_fraction * risk_normalizer;
@@ -462,7 +519,10 @@ impl RiskEngine {
                 same_dir_count += 1;
             }
         }
-        let corr_thresh = arena.config.global_correlation_threshold.load(Ordering::Relaxed);
+        let corr_thresh = arena
+            .config
+            .global_correlation_threshold
+            .load(Ordering::Relaxed);
         let max_allowed_cluster = (corr_thresh * 5.0).round() as usize;
         let current_cap = arena.unified_capital.load(Ordering::Relaxed);
         if correlation_guard::CorrelationGuardEngine::is_correlation_vetoed_by_horizon(
@@ -501,7 +561,10 @@ impl RiskEngine {
                 .config
                 .eth_volatility_multiplier
                 .load(Ordering::Relaxed);
-            let btc_price = arena.coins[0].current_price.load(Ordering::Relaxed).max(1e-8);
+            let btc_price = arena.coins[0]
+                .current_price
+                .load(Ordering::Relaxed)
+                .max(1e-8);
             let btc_atr = arena.coins[0].current_atr.load(Ordering::Relaxed);
             let btc_atr_pct = if btc_atr > 0.0 && btc_price > 1e-6 {
                 (btc_atr / btc_price).clamp(0.0005, 0.50)
@@ -563,18 +626,42 @@ impl RiskEngine {
         let per_side_slip = (slip_floor + latency_slip).clamp(0.0, 0.05); // H-9: alineado con física (antes 0.01 < 0.05)
         let roundtrip_fee = (maker_fee + taker_fee) + 2.0 * per_side_slip;
 
-        let temp_scale = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
+        let temp_scale = arena
+            .config
+            .temporal_scale
+            .load(Ordering::Relaxed)
+            .clamp(0.0, 1.0);
         let s_eval = match intent.horizon {
             TradeHorizon::Scalp => 0.0,
             TradeHorizon::Swing => 1.0,
             TradeHorizon::Continuous => temp_scale,
         };
-        let scalp_win = arena.config.scalp_tp_base.load(Ordering::Relaxed).max(0.0010).max(atr_pct * 1.5);
-        let swing_win = arena.config.swing_tp_base.load(Ordering::Relaxed).max(0.0050).max(atr_pct * 3.0);
+        let scalp_win = arena
+            .config
+            .scalp_tp_base
+            .load(Ordering::Relaxed)
+            .max(0.0010)
+            .max(atr_pct * 1.5);
+        let swing_win = arena
+            .config
+            .swing_tp_base
+            .load(Ordering::Relaxed)
+            .max(0.0050)
+            .max(atr_pct * 3.0);
         let expected_win = scalp_win * (1.0 - s_eval) + swing_win * s_eval;
 
-        let scalp_loss = arena.config.scalp_sl_base.load(Ordering::Relaxed).max(0.0005).max(atr_pct * 0.8);
-        let swing_loss = arena.config.swing_sl_base.load(Ordering::Relaxed).max(0.0020).max(atr_pct * 1.5);
+        let scalp_loss = arena
+            .config
+            .scalp_sl_base
+            .load(Ordering::Relaxed)
+            .max(0.0005)
+            .max(atr_pct * 0.8);
+        let swing_loss = arena
+            .config
+            .swing_sl_base
+            .load(Ordering::Relaxed)
+            .max(0.0020)
+            .max(atr_pct * 1.5);
         let expected_loss = scalp_loss * (1.0 - s_eval) + swing_loss * s_eval;
 
         let confidence = intent.confidence.max(0.51);
@@ -586,8 +673,7 @@ impl RiskEngine {
         if confidence < min_required_confidence {
             return rej(4);
         }
-        let expected_value_pct =
-            (confidence * expected_win) - ((1.0 - confidence) * expected_loss);
+        let expected_value_pct = (confidence * expected_win) - ((1.0 - confidence) * expected_loss);
 
         let min_ev_mult = if allocated_capital <= 15.0 {
             1.25 // Micro-cuenta: requiere EV al menos 25% por encima de las comisiones reales
@@ -641,13 +727,14 @@ impl RiskEngine {
             let fee_impact_pct = roundtrip_fee * candidate_leverage;
             if fee_impact_pct > max_fee_limit {
                 if arena.tick_counter.load(Ordering::Relaxed) % 100_000 == 0 {
-                    println!("🔍 [RISK REJECT] FEE_IMPACT: fee_impact={:.6} > limit={:.6}", fee_impact_pct, max_fee_limit);
+                    println!(
+                        "🔍 [RISK REJECT] FEE_IMPACT: fee_impact={:.6} > limit={:.6}",
+                        fee_impact_pct, max_fee_limit
+                    );
                 }
                 return rej(5);
             }
-            dynamic_leverage = candidate_leverage
-                .min(max_exchange_leverage)
-                .min(50.0);
+            dynamic_leverage = candidate_leverage.min(max_exchange_leverage).min(50.0);
         }
 
         // FASE 3 FIX: Micro-Account Notional Safety
@@ -663,11 +750,8 @@ impl RiskEngine {
             final_margin = required_margin_for_min_notional * 1.0005;
         }
 
-        let (meets_min_notional, _) = guard::enforce_minimum_notional(
-            final_margin,
-            safe_min_notional,
-            dynamic_leverage,
-        );
+        let (meets_min_notional, _) =
+            guard::enforce_minimum_notional(final_margin, safe_min_notional, dynamic_leverage);
         if !meets_min_notional {
             if REJECT_COUNTERS[6].load(std::sync::atomic::Ordering::Relaxed) % 200 == 0 {
                 println!(
@@ -690,7 +774,11 @@ impl RiskEngine {
             if final_margin > 0.0 && final_margin * dynamic_leverage < safe_min_notional {
                 let re_lev = (safe_min_notional / final_margin) * 1.01;
                 let fee_impact = roundtrip_fee * re_lev;
-                let max_fee_lim = if allocated_capital <= 15.0 { 0.035 } else { max_acceptable_fee_pct };
+                let max_fee_lim = if allocated_capital <= 15.0 {
+                    0.035
+                } else {
+                    max_acceptable_fee_pct
+                };
                 if fee_impact <= max_fee_lim {
                     dynamic_leverage = re_lev.min(max_exchange_leverage).min(50.0);
                 }
@@ -715,10 +803,15 @@ impl RiskEngine {
             .load(Ordering::Relaxed);
         // FIX #790: Evitar forzar maker_only en cuentas micro (< $1000 USD).
         // En cuentas micro, forzar Post-Only en el precio actual causa rechazos -5022 de Binance y paraliza el bot al llegar a $50.
-        let maker_only = allocated_capital >= maker_capital_threshold && maker_capital_threshold >= 1000.0;
+        let maker_only =
+            allocated_capital >= maker_capital_threshold && maker_capital_threshold >= 1000.0;
 
         // R4.6 / H9: Bases TP y SL desacopladas por horizonte (Scalping vs Swing vs Continuous)
-        let sl_mult = arena.config.sl_atr_multiplier.load(Ordering::Relaxed).clamp(0.5, 5.0);
+        let sl_mult = arena
+            .config
+            .sl_atr_multiplier
+            .load(Ordering::Relaxed)
+            .clamp(0.5, 5.0);
         let temporal_s_eval = arena
             .config
             .temporal_scale
@@ -727,21 +820,53 @@ impl RiskEngine {
 
         let (sl_base, tp_base) = match intent.horizon {
             TradeHorizon::Scalp => {
-                let sl = arena.config.scalp_sl_base.load(Ordering::Relaxed).clamp(0.0005, 0.0100);
-                let tp = arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.0010, 0.0300);
+                let sl = arena
+                    .config
+                    .scalp_sl_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0005, 0.0100);
+                let tp = arena
+                    .config
+                    .scalp_tp_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0010, 0.0300);
                 (sl, tp)
             }
             TradeHorizon::Swing => {
-                let sl = arena.config.swing_sl_base.load(Ordering::Relaxed).clamp(0.0020, 0.0500);
-                let tp = arena.config.swing_tp_base.load(Ordering::Relaxed).clamp(0.0050, 0.1000);
+                let sl = arena
+                    .config
+                    .swing_sl_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0020, 0.0500);
+                let tp = arena
+                    .config
+                    .swing_tp_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0050, 0.1000);
                 (sl, tp)
             }
             TradeHorizon::Continuous => {
                 // D-249: Interpolación lineal continua pura entre scalp y swing según temporal_s_eval
-                let scalp_sl = arena.config.scalp_sl_base.load(Ordering::Relaxed).clamp(0.0005, 0.0100);
-                let swing_sl = arena.config.swing_sl_base.load(Ordering::Relaxed).clamp(0.0020, 0.0500);
-                let scalp_tp = arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.0010, 0.0300);
-                let swing_tp = arena.config.swing_tp_base.load(Ordering::Relaxed).clamp(0.0050, 0.1000);
+                let scalp_sl = arena
+                    .config
+                    .scalp_sl_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0005, 0.0100);
+                let swing_sl = arena
+                    .config
+                    .swing_sl_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0020, 0.0500);
+                let scalp_tp = arena
+                    .config
+                    .scalp_tp_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0010, 0.0300);
+                let swing_tp = arena
+                    .config
+                    .swing_tp_base
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0050, 0.1000);
                 (
                     scalp_sl * (1.0 - temporal_s_eval) + swing_sl * temporal_s_eval,
                     scalp_tp * (1.0 - temporal_s_eval) + swing_tp * temporal_s_eval,
@@ -756,7 +881,8 @@ impl RiskEngine {
             TradeHorizon::Swing => 0.0060,
             TradeHorizon::Continuous => 0.0035 * (1.0 - temporal_s_eval) + 0.0060 * temporal_s_eval,
         };
-        let sl_pct = (current_atr * sl_mult / current_price).clamp(sl_base.max(min_safe_sl), sl_base * 2.5);
+        let sl_pct =
+            (current_atr * sl_mult / current_price).clamp(sl_base.max(min_safe_sl), sl_base * 2.5);
 
         let final_sl = if intent.sl_price_target > 0.0 {
             intent.sl_price_target
@@ -783,12 +909,30 @@ impl RiskEngine {
             current_price * (1.0 - tp_pct)
         };
 
-        let safe_tp = if final_tp.is_finite() && final_tp > 0.0 { final_tp } else { 0.0 };
-        let safe_sl = if final_sl.is_finite() && final_sl > 0.0 { final_sl } else { 0.0 };
-        let safe_vol = if final_margin.is_finite() && final_margin > 0.0 { final_margin } else { 0.0 };
-        let safe_lev = if dynamic_leverage.is_finite() && dynamic_leverage >= 1.0 { dynamic_leverage } else { 1.0 };
+        let safe_tp = if final_tp.is_finite() && final_tp > 0.0 {
+            final_tp
+        } else {
+            0.0
+        };
+        let safe_sl = if final_sl.is_finite() && final_sl > 0.0 {
+            final_sl
+        } else {
+            0.0
+        };
+        let safe_vol = if final_margin.is_finite() && final_margin > 0.0 {
+            final_margin
+        } else {
+            0.0
+        };
+        let safe_lev = if dynamic_leverage.is_finite() && dynamic_leverage >= 1.0 {
+            dynamic_leverage
+        } else {
+            1.0
+        };
 
-        if safe_vol <= 0.0 || (intent.signal != SignalType::Flat && (safe_tp <= 0.0 || safe_sl <= 0.0)) {
+        if safe_vol <= 0.0
+            || (intent.signal != SignalType::Flat && (safe_tp <= 0.0 || safe_sl <= 0.0))
+        {
             return ValidatedOrder::rejected();
         }
 

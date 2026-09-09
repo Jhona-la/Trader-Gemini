@@ -1,12 +1,12 @@
-use std::f64;
 use std::collections::VecDeque;
+use std::f64;
 
 /// 🧬 PREDICCIÓN CONFORMAL NO PARAMÉTRICA (CONFORMAL PREDICTION BANDS)
 /// Construye intervalos de confianza dinámicos con garantía de cobertura probabilística (e.g. 95%).
 /// Elimina límites fijos o estáticos de TP y SL en el sistema.
 #[derive(Debug, Clone)]
 pub struct ConformalPredictor {
-    pub alpha: f64,               // Nivel de significancia (e.g. 0.05 para 95% de cobertura)
+    pub alpha: f64, // Nivel de significancia (e.g. 0.05 para 95% de cobertura)
     pub residual_history: VecDeque<f64>, // Historial circular de residuos no paramétricos
     pub max_history: usize,
 }
@@ -43,31 +43,60 @@ impl ConformalPredictor {
         let mut sorted = [0.0f64; 256];
         let n_clamped = n.min(256);
         // FIX #563: Muestrear los 256 residuos MÁS RECIENTES usando .iter().rev()
-        for (i, &v) in self.residual_history.iter().rev().take(n_clamped).enumerate() {
+        for (i, &v) in self
+            .residual_history
+            .iter()
+            .rev()
+            .take(n_clamped)
+            .enumerate()
+        {
             sorted[i] = v;
         }
         let slice = &mut sorted[..n_clamped];
         slice.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         // Cuantil ajustado por muestra finita: (1 - alpha) * (1 + 1/n)
-        let q_idx = (((1.0 - self.alpha) * (n_clamped as f64 + 1.0)).ceil() as usize).saturating_sub(1);
+        let q_idx =
+            (((1.0 - self.alpha) * (n_clamped as f64 + 1.0)).ceil() as usize).saturating_sub(1);
         slice[q_idx.min(n_clamped - 1)]
     }
 
     /// Retorna los objetivos dinámicos (TP, SL) garantizados probabilísticamente
     #[inline(always)]
-    pub fn compute_dynamic_tp_sl(&self, atr_pct: f64, maker_fee: f64, taker_fee: f64, is_scalp: bool, config: &quantum_arena::config::QuantumConfig) -> (f64, f64) {
-        let safe_atr = if atr_pct.is_finite() && atr_pct > 0.0 { atr_pct } else { 0.005 };
+    pub fn compute_dynamic_tp_sl(
+        &self,
+        atr_pct: f64,
+        maker_fee: f64,
+        taker_fee: f64,
+        is_scalp: bool,
+        config: &quantum_arena::config::QuantumConfig,
+    ) -> (f64, f64) {
+        let safe_atr = if atr_pct.is_finite() && atr_pct > 0.0 {
+            atr_pct
+        } else {
+            0.005
+        };
         let q = self.compute_conformal_quantile();
         let base_vol = safe_atr.max(if q.is_finite() && q > 0.0 { q } else { 0.003 });
 
         // FIX #689: Sanitizar comisiones
-        let safe_maker = if maker_fee.is_finite() && maker_fee >= 0.0 { maker_fee } else { 0.0002 };
-        let safe_taker = if taker_fee.is_finite() && taker_fee >= 0.0 { taker_fee } else { 0.0005 };
+        let safe_maker = if maker_fee.is_finite() && maker_fee >= 0.0 {
+            maker_fee
+        } else {
+            0.0002
+        };
+        let safe_taker = if taker_fee.is_finite() && taker_fee >= 0.0 {
+            taker_fee
+        } else {
+            0.0005
+        };
         let _roundtrip_fee = safe_maker + safe_taker;
 
         use std::sync::atomic::Ordering;
-        let temporal_scale = config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
+        let temporal_scale = config
+            .temporal_scale
+            .load(Ordering::Relaxed)
+            .clamp(0.0, 1.0);
         let s = if is_scalp {
             0.0
         } else {
@@ -75,13 +104,29 @@ impl ConformalPredictor {
         };
 
         let scalp_tp_mult = config.tp_rr_ratio_btc.load(Ordering::Relaxed);
-        let safe_scalp_tp = if scalp_tp_mult.is_finite() && scalp_tp_mult > 0.0 { scalp_tp_mult.max(1.0) } else { 1.5 };
+        let safe_scalp_tp = if scalp_tp_mult.is_finite() && scalp_tp_mult > 0.0 {
+            scalp_tp_mult.max(1.0)
+        } else {
+            1.5
+        };
         let swing_tp_mult = config.swing_trail_atr_mult_base.load(Ordering::Relaxed);
-        let safe_swing_tp = if swing_tp_mult.is_finite() && swing_tp_mult > 0.0 { swing_tp_mult.max(2.0) } else { 3.0 };
+        let safe_swing_tp = if swing_tp_mult.is_finite() && swing_tp_mult > 0.0 {
+            swing_tp_mult.max(2.0)
+        } else {
+            3.0
+        };
 
         let sl_mult = config.sl_atr_multiplier.load(Ordering::Relaxed);
-        let safe_scalp_sl = if sl_mult.is_finite() && sl_mult > 0.0 { sl_mult.max(0.5) } else { 1.0 };
-        let safe_swing_sl = if sl_mult.is_finite() && sl_mult > 0.0 { sl_mult.max(1.0) } else { 1.5 };
+        let safe_scalp_sl = if sl_mult.is_finite() && sl_mult > 0.0 {
+            sl_mult.max(0.5)
+        } else {
+            1.0
+        };
+        let safe_swing_sl = if sl_mult.is_finite() && sl_mult > 0.0 {
+            sl_mult.max(1.0)
+        } else {
+            1.5
+        };
 
         // D-337: Interpolación continua suave en homotopía s in [0, 1]
         let eff_tp_mult = safe_scalp_tp * (1.0 - s) + safe_swing_tp * s;
@@ -124,8 +169,10 @@ mod tests {
         }
         let config = quantum_arena::config::QuantumConfig::new(13.0);
 
-        let (scalp_tp, scalp_sl) = predictor.compute_dynamic_tp_sl(0.005, 0.0002, 0.0005, true, &config);
-        let (swing_tp, swing_sl) = predictor.compute_dynamic_tp_sl(0.005, 0.0002, 0.0005, false, &config);
+        let (scalp_tp, scalp_sl) =
+            predictor.compute_dynamic_tp_sl(0.005, 0.0002, 0.0005, true, &config);
+        let (swing_tp, swing_sl) =
+            predictor.compute_dynamic_tp_sl(0.005, 0.0002, 0.0005, false, &config);
 
         assert!(swing_tp > scalp_tp, "Swing TP must be larger than Scalp TP");
         assert!(scalp_tp > 0.0 && scalp_sl > 0.0);
@@ -144,5 +191,3 @@ mod tests {
         assert!(tp > 0.0 && sl > 0.0);
     }
 }
-
-

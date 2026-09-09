@@ -74,10 +74,26 @@ pub fn load_binary_ticks(path: &Path, coin_id: usize) -> std::io::Result<Vec<Tic
         ticks.push(TickEvent {
             coin_id,
             timestamp: t.timestamp,
-            bid_price: if t.bid_price.is_finite() && t.bid_price > 0.0 { t.bid_price } else { 0.0 },
-            ask_price: if t.ask_price.is_finite() && t.ask_price > 0.0 { t.ask_price } else { 0.0 },
-            bid_qty: if t.bid_qty.is_finite() && t.bid_qty >= 0.0 { t.bid_qty } else { 0.0 },
-            ask_qty: if t.ask_qty.is_finite() && t.ask_qty >= 0.0 { t.ask_qty } else { 0.0 },
+            bid_price: if t.bid_price.is_finite() && t.bid_price > 0.0 {
+                t.bid_price
+            } else {
+                0.0
+            },
+            ask_price: if t.ask_price.is_finite() && t.ask_price > 0.0 {
+                t.ask_price
+            } else {
+                0.0
+            },
+            bid_qty: if t.bid_qty.is_finite() && t.bid_qty >= 0.0 {
+                t.bid_qty
+            } else {
+                0.0
+            },
+            ask_qty: if t.ask_qty.is_finite() && t.ask_qty >= 0.0 {
+                t.ask_qty
+            } else {
+                0.0
+            },
         });
     }
     Ok(ticks)
@@ -113,8 +129,7 @@ mod tests {
             bid_qty: 1.0,
             ask_qty: 2.0,
         };
-        let recs =
-            unsafe { std::slice::from_raw_parts(&tick as *const BinTick as *const u8, 40) };
+        let recs = unsafe { std::slice::from_raw_parts(&tick as *const BinTick as *const u8, 40) };
 
         // Formato versionado: magic + registro.
         let v_path = dir.join("tgm_tick_v1_test.bin");

@@ -62,7 +62,9 @@ async fn main() {
     .to_string();
 
     let executor = Arc::new(execution_engine::executor::OrderExecutor::new(
-        api_key.clone(), api_secret.clone(), is_testnet,
+        api_key.clone(),
+        api_secret.clone(),
+        is_testnet,
     ));
     let genome = quantum_arena::genome::SuperGenotype::load_or_default();
 
@@ -96,7 +98,11 @@ async fn main() {
     let nn = match model_res {
         Ok(mut m) => {
             // Verificar si los pesos contienen NaN o Infinito
-            let is_corrupt = m.layer1.weights.iter().any(|&w| w.is_nan() || w.is_infinite());
+            let is_corrupt = m
+                .layer1
+                .weights
+                .iter()
+                .any(|&w| w.is_nan() || w.is_infinite());
             if is_corrupt {
                 println!("⚠️ [DARK ALPHA] Pesos no finitos detectados en models/DarkAlpha_BTCUSDT.json. Regenerando modelo Xavier 54D.");
                 let clean = dark_alpha_engine::DarkAlphaEngine::default_model();
@@ -109,7 +115,10 @@ async fn main() {
             }
         }
         Err(e) => {
-            println!("⚠️ DarkAlpha_BTCUSDT.json no disponible ({}). Creando modelo 54D inicializado.", e);
+            println!(
+                "⚠️ DarkAlpha_BTCUSDT.json no disponible ({}). Creando modelo 54D inicializado.",
+                e
+            );
             let clean = dark_alpha_engine::DarkAlphaEngine::default_model();
             let _ = clean.save_json("models/DarkAlpha_BTCUSDT.json");
             clean
@@ -249,14 +258,23 @@ async fn main() {
         let price = (t.bid_price + t.ask_price) / 2.0;
         let vol = t.bid_qty + t.ask_qty;
         let is_buyer_maker = t.ask_qty > t.bid_qty;
-        core.arena.update_market_data(0, t.bid_price, t.ask_price, t.bid_qty, t.ask_qty, t.timestamp);
+        core.arena.update_market_data(
+            0,
+            t.bid_price,
+            t.ask_price,
+            t.bid_qty,
+            t.ask_qty,
+            t.timestamp,
+        );
         core.arena.update_agg_trade(0, is_buyer_maker, vol);
         core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);
         core.feature_engines[0].process_tick(price, vol, t.timestamp);
         core.feature_engines[0].update_trade_flow(vol, is_buyer_maker);
         core.feature_engines[0].update_ofi(t.bid_price, t.ask_price, t.bid_qty, t.ask_qty);
     }
-    arena.unified_capital.store(initial_capital, Ordering::Relaxed);
+    arena
+        .unified_capital
+        .store(initial_capital, Ordering::Relaxed);
 
     println!("✅ [WARM-UP] Completado. Los tensores y EMAs están 100% calibrados.");
     println!();
@@ -441,7 +459,7 @@ async fn main() {
         let sim_trade_buyer_maker = price <= sim_bid;
         let (new_ord_2, closed_ord_2) = core.process_event(
             0,
-            true, // is_trade = true for Trade event
+            true,  // is_trade = true for Trade event
             false, // is_kline_closed = false (already processed)
             false, // is_depth = false
             price,

@@ -3,6 +3,7 @@
 pub mod bootloader;
 pub mod conformal;
 pub mod darwin;
+pub mod ensemble;
 pub mod latency_accelerator;
 pub mod math_kernels;
 pub mod ml_inference;
@@ -10,7 +11,9 @@ pub mod orchestrator;
 pub mod order_flow_aggregator;
 pub mod quantum_kelly_risk;
 pub mod reality_physics;
-pub mod reexport_storage { pub use storage_engine::mmap_bus; }
+pub mod reexport_storage {
+    pub use storage_engine::mmap_bus;
+}
 pub mod slippage_predictor;
 pub mod stateful_engine;
 pub mod trailing;
@@ -34,6 +37,13 @@ pub struct GodEngineCore {
     pub tensor_orchestrator: signal_engine::orchestrator::TensorVoteOrchestrator,
     pub scalp_forest: Option<Arc<crate::ml_inference::NanoForest>>,
     pub swing_nn: Option<dark_alpha_engine::DarkAlphaEngine>,
+    /// F4.7: ensamble online — ambos modelos opinan y el peso emerge del
+    /// Brier acumulado (Hedge). Antes: cadena if-else donde el segundo
+    /// modelo solo opinaba si el primero no existía.
+    pub ensemble: crate::ensemble::ModelEnsemble,
+    /// F4.7: último precio de kline CERRADO por coin — para calibrar el
+    /// ensamble con la dirección realizada de cada vela.
+    kline_close_memory: Vec<f64>,
     pub model_rx: Option<std::sync::mpsc::Receiver<dark_alpha_engine::DarkAlphaEngine>>,
     pub last_ml_prob: f32,
     pub flight_recorder: Option<Arc<telemetry_server::FlightRecorder>>,
@@ -70,8 +80,8 @@ pub struct GodEngineCore {
 impl GodEngineCore {
     pub fn new(arena: Arc<GlobalArena>) -> Self {
         let initial_capital = arena.config.base_capital.load(Ordering::Relaxed);
-        let scalp_forest = crate::ml_inference::NanoForest::get_global("BTCUSDT_SCALP")
-            .or_else(|| {
+        let scalp_forest =
+            crate::ml_inference::NanoForest::get_global("BTCUSDT_SCALP").or_else(|| {
                 let path = "models/BTCUSDT_SCALP.json";
                 if std::path::Path::new(path).exists() {
                     let _ = crate::ml_inference::NanoForest::load_global("BTCUSDT_SCALP", path);
@@ -91,21 +101,49 @@ impl GodEngineCore {
 
         let mut tensor_orchestrator =
             signal_engine::orchestrator::TensorVoteOrchestrator::new(Arc::clone(&arena));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::coaxial_breakout::CoaxialBreakoutEngine::new()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::game_theoretic_nash::GameTheoreticNashEngine::new()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::hawkes_bessel::HawkesBesselEngine::new()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::micro_scalp_trigger::MicroScalpTriggerEngine::default()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::perceptron_gate::PerceptronGateEngine::new()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::quantum_oscillator::QuantumOscillatorEngine::new()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::renyi_tsallis_entropy::RenyiTsallisEntropyEngine::default()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::soliton_wave::SolitonWaveEngine::new()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::stochastic_resonance::StochasticResonanceEngine::new()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::supersonic_shockwave::SupersonicShockwaveEngine::new()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::swing_conformal_filter::SwingConformalFilterEngine::default()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::trend_runner::HighPayoffTrendRunner::new()));
-        tensor_orchestrator.add_strategy(Box::new(signal_engine::turbo_scalper::TurboScalpEngine::default()));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::coaxial_breakout::CoaxialBreakoutEngine::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::game_theoretic_nash::GameTheoreticNashEngine::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::hawkes_bessel::HawkesBesselEngine::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::micro_scalp_trigger::MicroScalpTriggerEngine::default(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::perceptron_gate::PerceptronGateEngine::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::quantum_oscillator::QuantumOscillatorEngine::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::renyi_tsallis_entropy::RenyiTsallisEntropyEngine::default(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::soliton_wave::SolitonWaveEngine::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::stochastic_resonance::StochasticResonanceEngine::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::supersonic_shockwave::SupersonicShockwaveEngine::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::swing_conformal_filter::SwingConformalFilterEngine::default(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::trend_runner::HighPayoffTrendRunner::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::turbo_scalper::TurboScalpEngine::default(),
+        ));
         // FIX #781: Registrar JohansenVecmEngine en el orquestador central
-        tensor_orchestrator.add_strategy(Box::new(strategy_core::vecm_arbitrage::JohansenVecmEngine::default()));
+        tensor_orchestrator.add_strategy(Box::new(
+            strategy_core::vecm_arbitrage::JohansenVecmEngine::default(),
+        ));
 
         let swing_nn = if let Ok(json_data) =
             std::fs::read_to_string("models/DarkAlpha_BTCUSDT.json")
@@ -138,8 +176,11 @@ impl GodEngineCore {
             Some(dark_alpha_engine::DarkAlphaEngine::new(54, 64, 32))
         };
 
-        let ppo_engine = dark_alpha_engine::online_ppo::OnlinePpoPolicyEngine::new([0.40, 0.40, 0.20, 0.15, 0.10]);
-        let online_learner = metacortex_engine::online_learning::OnlineLearningModule::new(0.001, 0.9);
+        let ppo_engine = dark_alpha_engine::online_ppo::OnlinePpoPolicyEngine::new([
+            0.40, 0.40, 0.20, 0.15, 0.10,
+        ]);
+        let online_learner =
+            metacortex_engine::online_learning::OnlineLearningModule::new(0.001, 0.9);
 
         Self {
             arena,
@@ -149,6 +190,8 @@ impl GodEngineCore {
             tensor_orchestrator,
             scalp_forest,
             swing_nn,
+            ensemble: crate::ensemble::ModelEnsemble::new(),
+            kline_close_memory: vec![0.0; 30],
             model_rx: None,
             last_ml_prob: 0.5,
             flight_recorder: None,
@@ -210,7 +253,9 @@ impl GodEngineCore {
                 coin.positions.position.close_with_fee();
             if margin_used > 0.0 {
                 let cur = self.arena.used_margin.load(Ordering::Relaxed);
-                self.arena.used_margin.store((cur - margin_used).max(0.0), Ordering::Relaxed);
+                self.arena
+                    .used_margin
+                    .store((cur - margin_used).max(0.0), Ordering::Relaxed);
             }
             if entry_fee > 0.0 {
                 self.arena
@@ -338,7 +383,8 @@ impl GodEngineCore {
             let last = self.applied_generation.load(Ordering::Relaxed);
             if env.generation > last {
                 env.genome.apply_to_arena(&self.arena);
-                self.applied_generation.store(env.generation, Ordering::Relaxed);
+                self.applied_generation
+                    .store(env.generation, Ordering::Relaxed);
             }
             // Generación <= ya aplicada: los hot-swaps en vivo permanecen
             // hasta que el almacén sancione una generación superior.
@@ -352,7 +398,7 @@ impl GodEngineCore {
         &mut self,
         coin_id: usize,
         is_trade: bool,
-        _is_kline_closed: bool,
+        is_kline_closed: bool,
         is_depth: bool,
         current_price: f64,
         trade_qty: f64,
@@ -366,13 +412,13 @@ impl GodEngineCore {
         latency_panic: bool,
         omni_features: &[f64; 54],
         is_buyer_maker: bool,
-    ) -> (
-        Option<(bool, f64, f64, f64, f64)>,
-        Option<(bool, f64, f64)>,
-    ) {
+    ) -> (Option<(bool, f64, f64, f64, f64)>, Option<(bool, f64, f64)>) {
         telemetry_server::profile_node!("GodEngineCore::process_event", {
             // Fast Invariant Check: Zero-cost anomaly rejection for invalid prices or out-of-bounds coin index
-            if current_price <= 0.0 || !current_price.is_finite() || coin_id >= self.arena.coins.len() {
+            if current_price <= 0.0
+                || !current_price.is_finite()
+                || coin_id >= self.arena.coins.len()
+            {
                 return (None, None);
             }
 
@@ -394,18 +440,54 @@ impl GodEngineCore {
                 }
             }
 
+            // F4.7 — CALIBRACIÓN CONTINUA DEL ENSAMBLE: cada kline CERRADO
+            // evalúa las predicciones vivas contra la dirección realizada del
+            // bar (y=1 subió / 0 bajó) y actualiza los pesos Hedge por Brier.
+            // El flag is_kline_closed estaba IGNORADO desde el origen; ahora
+            // es el reloj de calibración del sistema (stream continuo, no la
+            // escasez de trades cerrados).
+            if is_kline_closed && coin_id < self.kline_close_memory.len() {
+                let prev_close = self.kline_close_memory[coin_id];
+                if prev_close > 0.0 {
+                    let y = if current_price > prev_close { 1.0 } else { 0.0 };
+                    self.ensemble.update_with_outcome(y);
+                }
+                self.kline_close_memory[coin_id] = current_price;
+            }
+
             if self.arena.kill_switch_active.load(Ordering::Relaxed) {
                 return (None, None);
             }
 
-            if self.arena.tick_counter.load(Ordering::Relaxed).is_multiple_of(1000) {
+            if self
+                .arena
+                .tick_counter
+                .load(Ordering::Relaxed)
+                .is_multiple_of(1000)
+            {
                 self.refresh_models();
             }
 
-            let eff_bid = if bid > 0.0 { bid } else { current_price * 0.9999 };
-            let eff_ask = if ask > 0.0 { ask } else { current_price * 1.0001 };
-            let eff_bid_qty = if bid_qty > 0.0 { bid_qty } else { trade_qty.max(0.01) };
-            let eff_ask_qty = if ask_qty > 0.0 { ask_qty } else { trade_qty.max(0.01) };
+            let eff_bid = if bid > 0.0 {
+                bid
+            } else {
+                current_price * 0.9999
+            };
+            let eff_ask = if ask > 0.0 {
+                ask
+            } else {
+                current_price * 1.0001
+            };
+            let eff_bid_qty = if bid_qty > 0.0 {
+                bid_qty
+            } else {
+                trade_qty.max(0.01)
+            };
+            let eff_ask_qty = if ask_qty > 0.0 {
+                ask_qty
+            } else {
+                trade_qty.max(0.01)
+            };
 
             if is_depth {
                 self.feature_engines[coin_id].update_macro_features(
@@ -416,15 +498,28 @@ impl GodEngineCore {
                 );
                 let mid_price = (eff_bid + eff_ask) / 2.0;
                 let raw_atr_pct = self.feature_engines[coin_id].get_atr_pct();
-                self.arena.coins[coin_id].current_price.store(mid_price, Ordering::Relaxed);
-                self.arena.coins[coin_id].current_atr.store(raw_atr_pct * mid_price, Ordering::Relaxed);
-                self.arena.update_market_data(coin_id, eff_bid, eff_ask, eff_bid_qty, eff_ask_qty, 0);
+                self.arena.coins[coin_id]
+                    .current_price
+                    .store(mid_price, Ordering::Relaxed);
+                self.arena.coins[coin_id]
+                    .current_atr
+                    .store(raw_atr_pct * mid_price, Ordering::Relaxed);
+                self.arena.update_market_data(
+                    coin_id,
+                    eff_bid,
+                    eff_ask,
+                    eff_bid_qty,
+                    eff_ask_qty,
+                    0,
+                );
             }
 
             if is_trade {
                 // D-220 & D-247: Ingesta física real de microestructura agresora (Taker Buy vs Taker Sell)
                 self.feature_engines[coin_id].update_trade_flow(trade_qty, is_buyer_maker);
-                self.arena.coins[coin_id].current_price.store(current_price, Ordering::Relaxed);
+                self.arena.coins[coin_id]
+                    .current_price
+                    .store(current_price, Ordering::Relaxed);
             }
 
             let (new_order, closed_order, _maker) = self.process_tick_dual(
@@ -465,7 +560,9 @@ impl GodEngineCore {
             let (_, _, _, margin) = coin.positions.position.close();
             if margin > 0.0 {
                 let cur = self.arena.used_margin.load(Ordering::Relaxed);
-                self.arena.used_margin.store((cur - margin).max(0.0), Ordering::Relaxed);
+                self.arena
+                    .used_margin
+                    .store((cur - margin).max(0.0), Ordering::Relaxed);
             }
         }
     }
@@ -523,19 +620,26 @@ impl GodEngineCore {
             let total_vol = bid_qty + ask_qty;
 
             // D-119: cvpin solo debe recibir volumen normalizado o trades reales, no millones de USD de profundidad L2
-            let tick_vol = if total_vol > 0.0 { (total_vol * 0.005).clamp(0.01, 10.0) } else { 0.01 };
+            let tick_vol = if total_vol > 0.0 {
+                (total_vol * 0.005).clamp(0.01, 10.0)
+            } else {
+                0.01
+            };
             let feature_engine = &mut self.feature_engines[coin_id];
             feature_engine.process_tick(mid_price, tick_vol, event_time_ms);
             // D-220 & D-247: Depth snapshots must NOT corrupt OrderFlow with synthetic trades. Real trades update order flow via process_event when is_trade=true.
 
             let ofi_value = feature_engine.update_ofi(bid, ask, bid_qty, ask_qty);
-            let sym = quantum_arena::symbol_registry::try_spec(coin_id).map(|s| s.symbol).unwrap_or_default();
+            let sym = quantum_arena::symbol_registry::try_spec(coin_id)
+                .map(|s| s.symbol)
+                .unwrap_or_default();
             if sym.starts_with("BTC") {
                 self.lead_lag_engine.update_leader(true, ofi_value);
             } else if sym.starts_with("ETH") {
                 self.lead_lag_engine.update_leader(false, ofi_value);
             }
-            let (leader_mom, lead_lag_div) = self.lead_lag_engine.predict_altcoin_impulse(ofi_value);
+            let (leader_mom, lead_lag_div) =
+                self.lead_lag_engine.predict_altcoin_impulse(ofi_value);
 
             let obi = if total_vol > 0.0 {
                 (bid_qty - ask_qty) / total_vol
@@ -547,7 +651,8 @@ impl GodEngineCore {
             let hurst_val = feature_engine.hurst.current();
             let coin = &self.arena.coins[coin_id];
             coin.current_price.store(mid_price, Ordering::Relaxed);
-            coin.current_atr.store(raw_atr_pct * mid_price, Ordering::Relaxed);
+            coin.current_atr
+                .store(raw_atr_pct * mid_price, Ordering::Relaxed);
             coin.hurst_exponent.store(hurst_val, Ordering::Relaxed);
 
             let mut closed_order = None;
@@ -589,13 +694,33 @@ impl GodEngineCore {
                     let pos_h = pos.horizon();
                     let (sl_base, tp_base) = match pos_h {
                         quantum_arena::position::PositionHorizon::Scalping => {
-                            let sl = self.arena.config.scalp_sl_base.load(Ordering::Relaxed).clamp(0.0005, 0.0100);
-                            let tp = self.arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.0010, 0.0300);
+                            let sl = self
+                                .arena
+                                .config
+                                .scalp_sl_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.0005, 0.0100);
+                            let tp = self
+                                .arena
+                                .config
+                                .scalp_tp_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.0010, 0.0300);
                             (sl, tp)
                         }
                         quantum_arena::position::PositionHorizon::Swing => {
-                            let sl = self.arena.config.swing_sl_base.load(Ordering::Relaxed).clamp(0.0020, 0.0500);
-                            let tp = self.arena.config.swing_tp_base.load(Ordering::Relaxed).clamp(0.0050, 0.1000);
+                            let sl = self
+                                .arena
+                                .config
+                                .swing_sl_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.0020, 0.0500);
+                            let tp = self
+                                .arena
+                                .config
+                                .swing_tp_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.0050, 0.1000);
                             (sl, tp)
                         }
                         quantum_arena::position::PositionHorizon::Continuous => {
@@ -605,10 +730,30 @@ impl GodEngineCore {
                                 .temporal_scale
                                 .load(Ordering::Relaxed)
                                 .clamp(0.05, 0.95);
-                            let scalp_sl = self.arena.config.scalp_sl_base.load(Ordering::Relaxed).clamp(0.0005, 0.0100);
-                            let swing_sl = self.arena.config.swing_sl_base.load(Ordering::Relaxed).clamp(0.0020, 0.0500);
-                            let scalp_tp = self.arena.config.scalp_tp_base.load(Ordering::Relaxed).clamp(0.0010, 0.0300);
-                            let swing_tp = self.arena.config.swing_tp_base.load(Ordering::Relaxed).clamp(0.0050, 0.1000);
+                            let scalp_sl = self
+                                .arena
+                                .config
+                                .scalp_sl_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.0005, 0.0100);
+                            let swing_sl = self
+                                .arena
+                                .config
+                                .swing_sl_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.0020, 0.0500);
+                            let scalp_tp = self
+                                .arena
+                                .config
+                                .scalp_tp_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.0010, 0.0300);
+                            let swing_tp = self
+                                .arena
+                                .config
+                                .swing_tp_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.0050, 0.1000);
                             (
                                 scalp_sl * (1.0 - temporal_s) + swing_sl * temporal_s,
                                 scalp_tp * (1.0 - temporal_s) + swing_tp * temporal_s,
@@ -622,12 +767,13 @@ impl GodEngineCore {
                         .tp_rr_ratio_btc
                         .load(Ordering::Relaxed)
                         .clamp(1.0, 10.0);
-                    let fallback_tp = tp_base
-                        .max(fallback_sl * rr_ratio)
-                        .clamp(0.0020, 0.0800);
+                    let fallback_tp = tp_base.max(fallback_sl * rr_ratio).clamp(0.0020, 0.0800);
                     if pos_tp > 0.0 && pos_sl > 0.0 {
                         if entry > 0.0 {
-                            (((entry - pos_sl) / entry).abs(), ((pos_tp - entry) / entry).abs())
+                            (
+                                ((entry - pos_sl) / entry).abs(),
+                                ((pos_tp - entry) / entry).abs(),
+                            )
                         } else {
                             (fallback_sl, fallback_tp)
                         }
@@ -637,9 +783,14 @@ impl GodEngineCore {
                 };
 
                 // Trailing Stop Continuo
-                let live_fee = self.arena.config.live_maker_fee.load(Ordering::Relaxed) + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
-                let trail_activation_pnl = (tp * 0.60).max(pseudo_atr / entry.max(1.0) * 2.5).clamp(0.0050, 0.0300);
-                let trail_active = (position_age_ms > 15_000 || pnl_pct > (live_fee * 3.0).max(0.0030)) && pnl_pct >= trail_activation_pnl;
+                let live_fee = self.arena.config.live_maker_fee.load(Ordering::Relaxed)
+                    + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
+                let trail_activation_pnl = (tp * 0.60)
+                    .max(pseudo_atr / entry.max(1.0) * 2.5)
+                    .clamp(0.0050, 0.0300);
+                let trail_active = (position_age_ms > 15_000
+                    || pnl_pct > (live_fee * 3.0).max(0.0030))
+                    && pnl_pct >= trail_activation_pnl;
 
                 let mut trail_hit = false;
                 let mut force_close_trail = false;
@@ -647,27 +798,104 @@ impl GodEngineCore {
                 if trail_active {
                     let (trail_atr_mult, trail_act, trail_step, trail_max) = match pos.horizon() {
                         quantum_arena::position::PositionHorizon::Scalping => (
-                            self.arena.config.scalp_trail_atr_mult_base.load(Ordering::Relaxed).clamp(0.5, 4.0),
-                            self.arena.config.scalp_trail_act_atr.load(Ordering::Relaxed).clamp(0.5, 4.0),
-                            self.arena.config.scalp_trail_step_atr.load(Ordering::Relaxed).clamp(0.5, 4.0),
-                            self.arena.config.scalp_trail_max_atr.load(Ordering::Relaxed).clamp(0.5, 6.0),
+                            self.arena
+                                .config
+                                .scalp_trail_atr_mult_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0),
+                            self.arena
+                                .config
+                                .scalp_trail_act_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0),
+                            self.arena
+                                .config
+                                .scalp_trail_step_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0),
+                            self.arena
+                                .config
+                                .scalp_trail_max_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 6.0),
                         ),
                         quantum_arena::position::PositionHorizon::Swing => (
-                            self.arena.config.swing_trail_atr_mult_base.load(Ordering::Relaxed).clamp(0.5, 4.0),
-                            self.arena.config.swing_trail_act_atr.load(Ordering::Relaxed).clamp(0.5, 4.0),
-                            self.arena.config.swing_trail_step_atr.load(Ordering::Relaxed).clamp(0.5, 4.0),
-                            self.arena.config.swing_trail_max_atr.load(Ordering::Relaxed).clamp(0.5, 6.0),
+                            self.arena
+                                .config
+                                .swing_trail_atr_mult_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0),
+                            self.arena
+                                .config
+                                .swing_trail_act_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0),
+                            self.arena
+                                .config
+                                .swing_trail_step_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0),
+                            self.arena
+                                .config
+                                .swing_trail_max_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 6.0),
                         ),
                         quantum_arena::position::PositionHorizon::Continuous => {
-                            let s = self.arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.05, 0.95);
-                            let sc_mult = self.arena.config.scalp_trail_atr_mult_base.load(Ordering::Relaxed).clamp(0.5, 4.0);
-                            let sw_mult = self.arena.config.swing_trail_atr_mult_base.load(Ordering::Relaxed).clamp(0.5, 4.0);
-                            let sc_act = self.arena.config.scalp_trail_act_atr.load(Ordering::Relaxed).clamp(0.5, 4.0);
-                            let sw_act = self.arena.config.swing_trail_act_atr.load(Ordering::Relaxed).clamp(0.5, 4.0);
-                            let sc_step = self.arena.config.scalp_trail_step_atr.load(Ordering::Relaxed).clamp(0.5, 4.0);
-                            let sw_step = self.arena.config.swing_trail_step_atr.load(Ordering::Relaxed).clamp(0.5, 4.0);
-                            let sc_max = self.arena.config.scalp_trail_max_atr.load(Ordering::Relaxed).clamp(0.5, 6.0);
-                            let sw_max = self.arena.config.swing_trail_max_atr.load(Ordering::Relaxed).clamp(0.5, 6.0);
+                            let s = self
+                                .arena
+                                .config
+                                .temporal_scale
+                                .load(Ordering::Relaxed)
+                                .clamp(0.05, 0.95);
+                            let sc_mult = self
+                                .arena
+                                .config
+                                .scalp_trail_atr_mult_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0);
+                            let sw_mult = self
+                                .arena
+                                .config
+                                .swing_trail_atr_mult_base
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0);
+                            let sc_act = self
+                                .arena
+                                .config
+                                .scalp_trail_act_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0);
+                            let sw_act = self
+                                .arena
+                                .config
+                                .swing_trail_act_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0);
+                            let sc_step = self
+                                .arena
+                                .config
+                                .scalp_trail_step_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0);
+                            let sw_step = self
+                                .arena
+                                .config
+                                .swing_trail_step_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 4.0);
+                            let sc_max = self
+                                .arena
+                                .config
+                                .scalp_trail_max_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 6.0);
+                            let sw_max = self
+                                .arena
+                                .config
+                                .swing_trail_max_atr
+                                .load(Ordering::Relaxed)
+                                .clamp(0.5, 6.0);
                             (
                                 sc_mult * (1.0 - s) + sw_mult * s,
                                 sc_act * (1.0 - s) + sw_act * s,
@@ -725,9 +953,11 @@ impl GodEngineCore {
                     };
 
                     pos.trail_stop.store(final_stop, Ordering::Relaxed);
-                    pos.trailing_phase.store(trail_res.new_phase as u8, Ordering::Relaxed);
+                    pos.trailing_phase
+                        .store(trail_res.new_phase as u8, Ordering::Relaxed);
                     pos.mfe_atr.store(trail_res.mfe_atr, Ordering::Relaxed);
-                    pos.max_pnl_pct.store(trail_res.max_pnl_pct, Ordering::Relaxed);
+                    pos.max_pnl_pct
+                        .store(trail_res.max_pnl_pct, Ordering::Relaxed);
 
                     trail_hit = (is_long && mid_price <= final_stop)
                         || (!is_long && mid_price >= final_stop && final_stop > 0.0);
@@ -735,12 +965,20 @@ impl GodEngineCore {
                 }
 
                 let macro_t = self.feature_engines[coin_id].get_macro_trend();
-                let trend_reversed = (is_long && macro_t < -0.0020) || (!is_long && macro_t > 0.0020);
-                let temporal_s = self.arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
+                let trend_reversed =
+                    (is_long && macro_t < -0.0020) || (!is_long && macro_t > 0.0020);
+                let temporal_s = self
+                    .arena
+                    .config
+                    .temporal_scale
+                    .load(Ordering::Relaxed)
+                    .clamp(0.0, 1.0);
                 let dynamic_hard_timeout_ms = 1_800_000 + (temporal_s * 12_600_000.0) as u64; // 30m en micro-scalp hasta 4h en swing
                 let dynamic_zombie_debounce_ms = 900_000 + (temporal_s * 900_000.0) as u64; // 15m en micro-scalp hasta 30m en swing
                 let hard_timeout = position_age_ms > dynamic_hard_timeout_ms;
-                let is_zombie = event_time_ms > 0 && position_age_ms > dynamic_zombie_debounce_ms && ((trend_reversed && pnl_pct <= -0.0020) || hard_timeout);
+                let is_zombie = event_time_ms > 0
+                    && position_age_ms > dynamic_zombie_debounce_ms
+                    && ((trend_reversed && pnl_pct <= -0.0020) || hard_timeout);
                 let cur_vpin = self.feature_engines[coin_id].cvpin.current_vpin();
                 let ofi_adverse = (is_long && ofi_value < -0.45) || (!is_long && ofi_value > 0.45);
                 let toxic_flow_exit = ofi_adverse && cur_vpin > 0.70 && pnl_pct < -0.0005;
@@ -809,8 +1047,16 @@ impl GodEngineCore {
                         exit_nominal,
                         exit_is_maker,
                         atr_pct, // fracción (N-01)
-                        self.arena.config.base_slippage_floor.load(Ordering::Relaxed).max(0.00001),
-                        self.arena.config.latency_penalty_ms.load(Ordering::Relaxed).max(0.0),
+                        self.arena
+                            .config
+                            .base_slippage_floor
+                            .load(Ordering::Relaxed)
+                            .max(0.00001),
+                        self.arena
+                            .config
+                            .latency_penalty_ms
+                            .load(Ordering::Relaxed)
+                            .max(0.0),
                     );
                     if phys_exit_price > 0.0 {
                         exit_price = phys_exit_price;
@@ -838,22 +1084,26 @@ impl GodEngineCore {
                         };
                         println!(
                             "🚪 [CLOSE TRACE] #{} reason={} pnl_pct={:.4}% gross_pnl=${:.4} exit={:.2} entry={:.2} h={:?}",
-                            self.diag_close_total, reason, pnl_pct * 100.0, gross_pnl, exit_price, entry, pos.horizon()
+                            self.diag_close_total,
+                            reason,
+                            pnl_pct * 100.0,
+                            gross_pnl,
+                            exit_price,
+                            entry,
+                            pos.horizon()
                         );
                     }
 
-                    let live_taker = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0004);
-                    // D-179 + D-05: TP con trade-through califica como MAKER
-                    // (precio límite exacto — calculate_exit modeló fill
-                    // maker). SL/trailing/zombie son taker (cruce adverso).
-                    // Antes: TODO exit pagaba taker sobre un fill maker.
-                    let live_maker = self.arena.config.live_maker_fee.load(Ordering::Relaxed).max(0.0002);
-                    // H-4: fee de la FÍSICA (calculate_exit ya diferenció maker/taker)
+                    // H-4: fee de la FÍSICA (calculate_exit ya diferenció
+                    // maker/taker según exit_is_maker) — las variables
+                    // live_taker/live_maker quedaron muertas tras la
+                    // consolidación y se eliminan.
                     let close_fee = phys_exit_fee;
 
                     let ml_at_entry = pos.ml_prediction.load(Ordering::Relaxed);
                     let pos_horizon = pos.horizon();
-                    let is_pos_swing = pos_horizon == quantum_arena::position::PositionHorizon::Swing;
+                    let is_pos_swing =
+                        pos_horizon == quantum_arena::position::PositionHorizon::Swing;
                     let (_, _, _, margin_used, entry_fee_paid) = pos.close_with_fee();
 
                     let net_realized_pnl = gross_pnl - close_fee;
@@ -861,20 +1111,31 @@ impl GodEngineCore {
 
                     let current_used = self.arena.used_margin.load(Ordering::Relaxed);
                     if current_used >= margin_used {
-                        self.arena.used_margin.fetch_add(-margin_used, Ordering::Relaxed);
+                        self.arena
+                            .used_margin
+                            .fetch_add(-margin_used, Ordering::Relaxed);
                     } else {
                         self.arena.used_margin.store(0.0, Ordering::Relaxed);
                     }
 
-                    coin.metrics.pnl_realized.fetch_add(net_trade_pnl, Ordering::Relaxed);
+                    coin.metrics
+                        .pnl_realized
+                        .fetch_add(net_trade_pnl, Ordering::Relaxed);
                     if is_pos_swing {
-                        coin.swing.pnl_realized.fetch_add(net_trade_pnl, Ordering::Relaxed);
+                        coin.swing
+                            .pnl_realized
+                            .fetch_add(net_trade_pnl, Ordering::Relaxed);
                     } else {
-                        coin.scalp.pnl_realized.fetch_add(net_trade_pnl, Ordering::Relaxed);
-                        self.feature_engines[coin_id].last_scalp_exit_tick = self.feature_engines[coin_id].tick_count;
+                        coin.scalp
+                            .pnl_realized
+                            .fetch_add(net_trade_pnl, Ordering::Relaxed);
+                        self.feature_engines[coin_id].last_scalp_exit_tick =
+                            self.feature_engines[coin_id].tick_count;
                         self.feature_engines[coin_id].last_scalp_was_loss = net_trade_pnl <= 0.0;
                     }
-                    self.arena.unified_capital.fetch_add(net_realized_pnl, Ordering::Relaxed);
+                    self.arena
+                        .unified_capital
+                        .fetch_add(net_realized_pnl, Ordering::Relaxed);
 
                     let is_win = net_trade_pnl > 0.0;
 
@@ -911,21 +1172,29 @@ impl GodEngineCore {
                     coin.metrics.win_rate.store(new_wr, Ordering::Relaxed);
 
                     if is_pos_swing {
-                        let n_sw = coin.swing.trade_count.fetch_add(1, Ordering::Relaxed) as f64 + 1.0;
+                        let n_sw =
+                            coin.swing.trade_count.fetch_add(1, Ordering::Relaxed) as f64 + 1.0;
                         let old_sw_wr = coin.swing.win_rate.load(Ordering::Relaxed);
-                        let new_sw_wr = old_sw_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sw_wr) / n_sw);
+                        let new_sw_wr =
+                            old_sw_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sw_wr) / n_sw);
                         coin.swing.win_rate.store(new_sw_wr, Ordering::Relaxed);
                     } else {
-                        let n_sc = coin.scalp.trade_count.fetch_add(1, Ordering::Relaxed) as f64 + 1.0;
+                        let n_sc =
+                            coin.scalp.trade_count.fetch_add(1, Ordering::Relaxed) as f64 + 1.0;
                         let old_sc_wr = coin.scalp.win_rate.load(Ordering::Relaxed);
-                        let new_sc_wr = old_sc_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sc_wr) / n_sc);
+                        let new_sc_wr =
+                            old_sc_wr + (((if is_win { 1.0 } else { 0.0 }) - old_sc_wr) / n_sc);
                         coin.scalp.win_rate.store(new_sc_wr, Ordering::Relaxed);
                     }
 
                     if is_win {
-                        coin.metrics.gross_wins.fetch_add(net_trade_pnl, Ordering::Relaxed);
+                        coin.metrics
+                            .gross_wins
+                            .fetch_add(net_trade_pnl, Ordering::Relaxed);
                     } else {
-                        coin.metrics.gross_losses.fetch_add(net_trade_pnl.abs(), Ordering::Relaxed);
+                        coin.metrics
+                            .gross_losses
+                            .fetch_add(net_trade_pnl.abs(), Ordering::Relaxed);
                     }
                     let total_wins = coin.metrics.gross_wins.load(Ordering::Relaxed);
                     let total_losses = coin.metrics.gross_losses.load(Ordering::Relaxed);
@@ -945,14 +1214,28 @@ impl GodEngineCore {
 
                     let curr_cap = self.arena.unified_capital.load(Ordering::Relaxed);
                     let base_cap = self.arena.config.base_capital.load(Ordering::Relaxed);
-                    let survival_ratio = self.arena.config.kelly_survival_cap_ratio.load(Ordering::Relaxed);
-                    let exp_mult = self.arena.config.kelly_expansion_mult.load(Ordering::Relaxed);
+                    let survival_ratio = self
+                        .arena
+                        .config
+                        .kelly_survival_cap_ratio
+                        .load(Ordering::Relaxed);
+                    let exp_mult = self
+                        .arena
+                        .config
+                        .kelly_expansion_mult
+                        .load(Ordering::Relaxed);
                     let clamp_min = self.arena.config.kelly_clamp_min.load(Ordering::Relaxed);
                     let clamp_max = self.arena.config.kelly_clamp_max.load(Ordering::Relaxed);
                     let strategy_base = if is_pos_swing {
-                        self.arena.config.swing_kelly_fraction.load(Ordering::Relaxed)
+                        self.arena
+                            .config
+                            .swing_kelly_fraction
+                            .load(Ordering::Relaxed)
                     } else {
-                        self.arena.config.scalp_kelly_fraction.load(Ordering::Relaxed)
+                        self.arena
+                            .config
+                            .scalp_kelly_fraction
+                            .load(Ordering::Relaxed)
                     };
                     let kelly_f = risk_engine::kelly::calculate_kelly_fraction(
                         new_wr,
@@ -965,12 +1248,16 @@ impl GodEngineCore {
                         clamp_max,
                         strategy_base,
                     );
-                    coin.metrics.kelly_fraction.store(kelly_f, Ordering::Relaxed);
+                    coin.metrics
+                        .kelly_fraction
+                        .store(kelly_f, Ordering::Relaxed);
                     coin.last_close_ts.store(event_time_ms, Ordering::Relaxed);
                     if is_pos_swing {
-                        coin.last_swing_close_ts.store(event_time_ms, Ordering::Relaxed);
+                        coin.last_swing_close_ts
+                            .store(event_time_ms, Ordering::Relaxed);
                     } else {
-                        coin.last_scalp_close_ts.store(event_time_ms, Ordering::Relaxed);
+                        coin.last_scalp_close_ts
+                            .store(event_time_ms, Ordering::Relaxed);
                     }
 
                     // D-181: closed_order debe reflejar el PnL neto definitivo deduciendo ambas comisiones (entry + close)
@@ -980,23 +1267,42 @@ impl GodEngineCore {
                     let realized_ret = net_trade_pnl / notional;
                     if is_pos_swing {
                         if coin_id < self.last_swing_senior_signals.len() {
-                            self.consejo_deliberacion.record_outcome(&self.last_swing_senior_signals[coin_id], realized_ret);
+                            self.consejo_deliberacion.record_outcome(
+                                &self.last_swing_senior_signals[coin_id],
+                                realized_ret,
+                            );
                         }
                     } else {
                         if coin_id < self.last_scalp_senior_signals.len() {
-                            self.consejo_deliberacion.record_outcome(&self.last_scalp_senior_signals[coin_id], realized_ret);
+                            self.consejo_deliberacion.record_outcome(
+                                &self.last_scalp_senior_signals[coin_id],
+                                realized_ret,
+                            );
                         }
                     }
 
                     // D-190: Evitar contaminación cruzada en Hebbian. Escopar por símbolo con fallback global.
                     let hebb_key = format!("{}_hebbian_weight", sym);
-                    let mut cur_hebbian = self.arena.registry.get(&hebb_key, "GodEngineCore")
-                        .or_else(|| self.arena.registry.get("perceptron_hebbian_weight", "GodEngineCore"))
+                    let mut cur_hebbian = self
+                        .arena
+                        .registry
+                        .get(&hebb_key, "GodEngineCore")
+                        .or_else(|| {
+                            self.arena
+                                .registry
+                                .get("perceptron_hebbian_weight", "GodEngineCore")
+                        })
                         .map(|p| p.get_value())
                         .unwrap_or(1.0);
-                    signal_engine::perceptron_gate::PerceptronGateEngine::update_weight(&mut cur_hebbian, net_trade_pnl, atr_pct);
+                    signal_engine::perceptron_gate::PerceptronGateEngine::update_weight(
+                        &mut cur_hebbian,
+                        net_trade_pnl,
+                        atr_pct,
+                    );
                     self.arena.registry.set(&hebb_key, cur_hebbian);
-                    self.arena.registry.set("perceptron_hebbian_weight", cur_hebbian);
+                    self.arena
+                        .registry
+                        .set("perceptron_hebbian_weight", cur_hebbian);
 
                     let hawkes_r = self.feature_engines[coin_id].cvpin.current_vpin();
                     let ppo_close_features = [
@@ -1030,7 +1336,9 @@ impl GodEngineCore {
                 } else {
                     let notional = qty * entry;
                     let unrealized = pnl_pct * notional;
-                    coin.metrics.pnl_unrealized.store(unrealized, Ordering::Relaxed);
+                    coin.metrics
+                        .pnl_unrealized
+                        .store(unrealized, Ordering::Relaxed);
                 }
             }
 
@@ -1053,8 +1361,18 @@ impl GodEngineCore {
             }
 
             let hurst_val = coin.hurst_exponent.load(Ordering::Relaxed);
-            let obi_val = if bid_qty + ask_qty > 0.0 { (bid_qty - ask_qty) / (bid_qty + ask_qty) } else { 0.0 };
-            let flow_dir = if bid_qty > ask_qty { 1.0 } else if ask_qty > bid_qty { -1.0 } else { 0.0 };
+            let obi_val = if bid_qty + ask_qty > 0.0 {
+                (bid_qty - ask_qty) / (bid_qty + ask_qty)
+            } else {
+                0.0
+            };
+            let flow_dir = if bid_qty > ask_qty {
+                1.0
+            } else if ask_qty > bid_qty {
+                -1.0
+            } else {
+                0.0
+            };
             let v_t = self.feature_engines[coin_id].v_t;
             let shannon_ent = self.feature_engines[coin_id].entropy.current();
             let vpin_val = self.feature_engines[coin_id].cvpin.current_vpin();
@@ -1073,7 +1391,11 @@ impl GodEngineCore {
             };
             let dir_v = self.feature_engines[coin_id].dir_velocity;
             let a_t = self.feature_engines[coin_id].a_t;
-            let spread_pct = if mid_price > 0.0 { (ask - bid) / mid_price } else { 0.0002 };
+            let spread_pct = if mid_price > 0.0 {
+                (ask - bid) / mid_price
+            } else {
+                0.0002
+            };
             let spread_val = (spread_pct * mid_price).max(0.0001);
             let speed_of_sound = spread_val.max(micro_v * mid_price);
             set_reg("spread_speed_of_sound", speed_of_sound);
@@ -1081,13 +1403,19 @@ impl GodEngineCore {
             set_reg("order_flow_velocity", dir_v);
             set_reg("price_acceleration", a_t);
             set_reg("atr_1s", (micro_v * mid_price).max(0.0001));
-            set_reg("atr_5s", (self.feature_engines[coin_id].v_t * 0.5 + atr_pct * mid_price * 0.5).max(0.0005));
+            set_reg(
+                "atr_5s",
+                (self.feature_engines[coin_id].v_t * 0.5 + atr_pct * mid_price * 0.5).max(0.0005),
+            );
             set_reg("atr_1m", (atr_pct * mid_price * 7.746).max(0.0020));
             set_reg("order_flow_direction", flow_dir);
             set_reg("order_book_imbalance", obi_val);
             set_reg("orderbook_imbalance", obi_val);
             set_reg("order_flow_imbalance", ofi_value);
-            set_reg("weak_alpha_signal", (ofi_value * 0.5 + obi_val * 0.5).clamp(-1.0, 1.0));
+            set_reg(
+                "weak_alpha_signal",
+                (ofi_value * 0.5 + obi_val * 0.5).clamp(-1.0, 1.0),
+            );
             set_reg("lead_lag_divergence", lead_lag_div);
             set_reg("leader_momentum", leader_mom);
             set_reg("shannon_entropy", shannon_ent);
@@ -1107,19 +1435,33 @@ impl GodEngineCore {
             );
             set_reg("bessel_alpha", 1.5);
             set_reg("hawkes_dt", 0.05);
-            set_reg("microstructure_noise_variance", (atr_pct * 0.1).max(0.00001));
+            set_reg(
+                "microstructure_noise_variance",
+                (atr_pct * 0.1).max(0.00001),
+            );
 
-            let hebbian_mult = self.arena.registry.get_scoped_value_or(&sym, "perceptron_hebbian_weight", 1.0)
+            let hebbian_mult = self
+                .arena
+                .registry
+                .get_scoped_value_or(&sym, "perceptron_hebbian_weight", 1.0)
                 .clamp(0.5, 2.0);
 
             // 34D Macro+Micro Features for NanoForest (Indices 0..24 used by trained trees)
             let features = self.feature_engines[coin_id].get_features();
             let swing_feats = self.feature_engines[coin_id].get_swing_features();
-            let base_ml_prob = if let Some(f) = &self.scalp_forest {
-                f.predict(&swing_feats).unwrap_or(0.5) as f64
-            } else if self.swing_nn.is_some() {
-                let combined = self.build_54d_tensor(coin_id, bid_qty, ask_qty, mid_price, omni_features);
-                let nn = self.swing_nn.as_mut().unwrap();
+
+            // F4.7 — ENSAMBLE REAL: ambos modelos opinan; la probabilidad es
+            // el promedio ponderado con pesos que evolucionan por Brier real.
+            // (Antes: if-else — el NN solo opinaba si el forest NO existía.)
+            let combined_tensor =
+                self.build_54d_tensor(coin_id, bid_qty, ask_qty, mid_price, omni_features);
+            if let Some(f) = &self.scalp_forest {
+                if let Some(p) = f.predict(&swing_feats) {
+                    self.ensemble
+                        .submit(crate::ensemble::ModelId::ScalpForest, p as f64);
+                }
+            }
+            if let Some(nn) = self.swing_nn.as_mut() {
                 let in_dim = nn.layer1.in_features;
                 let p_opt = if in_dim == 34 {
                     let mut swing_feats_f64 = [0.0; 34];
@@ -1134,9 +1476,14 @@ impl GodEngineCore {
                     }
                     nn.predict_for_coin(coin_id, &micro_f64)
                 } else {
-                    nn.predict_for_coin(coin_id, &combined)
+                    nn.predict_for_coin(coin_id, &combined_tensor)
                 };
-                p_opt.unwrap_or(0.5)
+                if let Some(p) = p_opt {
+                    self.ensemble.submit(crate::ensemble::ModelId::SwingNN, p);
+                }
+            }
+            let base_ml_prob = if let Some(p) = self.ensemble.combined() {
+                p
             } else {
                 0.5
             };
@@ -1150,26 +1497,52 @@ impl GodEngineCore {
 
             let current_obi = obi_val;
             let dynamic_atr_min = self.arena.config.dynamic_atr_min.load(Ordering::Relaxed);
-            let dynamic_obi_thr = self.arena.config.dynamic_obi_threshold.load(Ordering::Relaxed).clamp(0.15, 0.95);
+            let dynamic_obi_thr = self
+                .arena
+                .config
+                .dynamic_obi_threshold
+                .load(Ordering::Relaxed)
+                .clamp(0.15, 0.95);
             let dynamic_ema_thr = self.arena.config.dynamic_ema_trend.load(Ordering::Relaxed);
-            let dynamic_ofi_thr = self.arena.config.dynamic_ofi_threshold.load(Ordering::Relaxed).clamp(0.15, 0.95);
+            let dynamic_ofi_thr = self
+                .arena
+                .config
+                .dynamic_ofi_threshold
+                .load(Ordering::Relaxed)
+                .clamp(0.15, 0.95);
 
             let micro_trend = self.feature_engines[coin_id].get_micro_trend();
             let macro_trend = self.feature_engines[coin_id].get_macro_trend();
 
             set_reg("ema_trend", micro_trend);
             set_reg("ema_trend_swing", macro_trend);
-            set_reg("trend_direction", if macro_trend > 0.0 { 1.0 } else if macro_trend < 0.0 { -1.0 } else { 0.0 });
-            let conf_alpha = self.arena.config.conformal_alpha.load(Ordering::Relaxed).clamp(0.01, 0.30);
-            let conformal_p = self.conformal.p_value(
-                coin.ml_prob.load(Ordering::Relaxed),
+            set_reg(
+                "trend_direction",
+                if macro_trend > 0.0 {
+                    1.0
+                } else if macro_trend < 0.0 {
+                    -1.0
+                } else {
+                    0.0
+                },
             );
+            let conf_alpha = self
+                .arena
+                .config
+                .conformal_alpha
+                .load(Ordering::Relaxed)
+                .clamp(0.01, 0.30);
+            let conformal_p = self.conformal.p_value(coin.ml_prob.load(Ordering::Relaxed));
             set_reg("conformal_p_value", conformal_p);
             set_reg("conformal_alpha", conf_alpha);
             let buy_vol = coin.agg_buy_vol.load(Ordering::Relaxed);
             let sell_vol = coin.agg_sell_vol.load(Ordering::Relaxed);
             let total_vol_cvd = buy_vol + sell_vol;
-            let rolling_cvd = if total_vol_cvd > 0.0 { (buy_vol - sell_vol) / total_vol_cvd } else { 0.0 };
+            let rolling_cvd = if total_vol_cvd > 0.0 {
+                (buy_vol - sell_vol) / total_vol_cvd
+            } else {
+                0.0
+            };
             let ofi = self.feature_engines[coin_id].ofi_model.ema_ofi;
 
             let obi_norm = (current_obi / dynamic_obi_thr).clamp(-1.5, 1.5);
@@ -1178,14 +1551,21 @@ impl GodEngineCore {
                 let spot_mid = (spot_bid + spot_ask) / 2.0;
                 ((mid_price - spot_mid) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0)
             } else if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
-                ((mid_price - self.feature_engines[coin_id].kline_ema_slow) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0)
+                ((mid_price - self.feature_engines[coin_id].kline_ema_slow)
+                    / (mid_price * atr_pct.max(0.0005)))
+                .clamp(-3.0, 3.0)
             } else {
                 0.0
             };
             set_reg("vecm_zscore", vecm_basis_z);
             set_reg("cointegration_zscore", leader_mom.clamp(-3.0, 3.0));
-            let ema_macro = if self.feature_engines[coin_id].kline_ema_slow > 0.0 { self.feature_engines[coin_id].kline_ema_slow } else { mid_price };
-            let pos_dev = ((mid_price - ema_macro) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0);
+            let ema_macro = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
+                self.feature_engines[coin_id].kline_ema_slow
+            } else {
+                mid_price
+            };
+            let pos_dev =
+                ((mid_price - ema_macro) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0);
             set_reg("quantum_position_deviation", pos_dev);
             let hawkes_intensity = (1.0 + current_obi.abs() * 2.0).clamp(0.1, 5.0) / 5.0;
             let regime_code = ((hurst_val - 0.50) * 2.0).clamp(-1.0, 1.0);
@@ -1199,12 +1579,16 @@ impl GodEngineCore {
             let ppo_score = self.ppo_engine.evaluate_policy(&ppo_state);
             let micro_score: f64 = (ppo_score * 0.70 + rolling_cvd * 0.30).clamp(-1.0, 1.0);
 
-            let sym = quantum_arena::symbol_registry::try_spec(coin_id).map(|s| s.symbol).unwrap_or_else(|| "BTCUSDT".to_string());
+            let sym = quantum_arena::symbol_registry::try_spec(coin_id)
+                .map(|s| s.symbol)
+                .unwrap_or_else(|| "BTCUSDT".to_string());
             // S-08 — DES-DUPLICACIÓN: scalp y swing son ALIASES del consenso
             // continuo — evaluarlos por separado gastaba 42 evaluaciones de
             // estrategia por tick para obtener 1 señal idéntica. Ahora UNA
             // sola evaluación; las tres referencias son Copys del mismo valor.
-            let tensor_cont = self.tensor_orchestrator.evaluate_continuous_consensus_for_coin(coin_id, &sym);
+            let tensor_cont = self
+                .tensor_orchestrator
+                .evaluate_continuous_consensus_for_coin(coin_id, &sym);
             let tensor_scalp = tensor_cont;
             let tensor_swing = tensor_cont;
 
@@ -1232,11 +1616,18 @@ impl GodEngineCore {
             let composite_score: f64 = (raw_composite * hebbian_mult).clamp(-1.0, 1.0);
 
             let mut scalp_intent = SignalIntent::flat();
-            let spread_pct = if mid_price > 0.0 { (ask - bid) / mid_price } else { 0.0 };
+            let spread_pct = if mid_price > 0.0 {
+                (ask - bid) / mid_price
+            } else {
+                0.0
+            };
             let dynamic_max_spread = (atr_pct * 0.25).clamp(0.0006, 0.0025);
             let spread_ok = spread_pct <= dynamic_max_spread;
 
-            if atr_pct > dynamic_atr_min && spread_ok && self.feature_engines[coin_id].can_open_scalp(250) {
+            if atr_pct > dynamic_atr_min
+                && spread_ok
+                && self.feature_engines[coin_id].can_open_scalp(250)
+            {
                 let is_mean_reverting = hurst_val < 0.45;
                 let is_trending = hurst_val >= 0.50;
 
@@ -1246,7 +1637,11 @@ impl GodEngineCore {
                     self.feature_engines[coin_id].ema_slow
                 };
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
-                let price_stretch = if ema_slow > 0.0 { (mid_price - ema_slow) / cur_atr } else { 0.0 };
+                let price_stretch = if ema_slow > 0.0 {
+                    (mid_price - ema_slow) / cur_atr
+                } else {
+                    0.0
+                };
                 let not_overextended_long = price_stretch <= 1.2;
                 let not_overextended_short = price_stretch >= -1.2;
 
@@ -1256,15 +1651,28 @@ impl GodEngineCore {
                 };
 
                 if is_trending {
-                    let dynamic_tech_thr = self.arena.config.tech_threshold.load(Ordering::Relaxed).max(0.24);
-                    if macro_trend > dynamic_ema_thr && mid_price >= ema_slow && composite_score > dynamic_tech_thr && not_overextended_long {
+                    let dynamic_tech_thr = self
+                        .arena
+                        .config
+                        .tech_threshold
+                        .load(Ordering::Relaxed)
+                        .max(0.24);
+                    if macro_trend > dynamic_ema_thr
+                        && mid_price >= ema_slow
+                        && composite_score > dynamic_tech_thr
+                        && not_overextended_long
+                    {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Scalp,
                             ..Default::default()
                         };
-                    } else if macro_trend < -dynamic_ema_thr && mid_price <= ema_slow && composite_score < -dynamic_tech_thr && not_overextended_short {
+                    } else if macro_trend < -dynamic_ema_thr
+                        && mid_price <= ema_slow
+                        && composite_score < -dynamic_tech_thr
+                        && not_overextended_short
+                    {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score),
@@ -1273,19 +1681,34 @@ impl GodEngineCore {
                         };
                     }
                 } else if is_mean_reverting {
-                    let dynamic_tech_thr = self.arena.config.tech_threshold.load(Ordering::Relaxed).max(0.24);
-                    let allow_long_reversion = macro_trend >= -dynamic_ema_thr && not_overextended_long;
-                    let allow_short_reversion = macro_trend <= dynamic_ema_thr && not_overextended_short;
+                    let dynamic_tech_thr = self
+                        .arena
+                        .config
+                        .tech_threshold
+                        .load(Ordering::Relaxed)
+                        .max(0.24);
+                    let allow_long_reversion =
+                        macro_trend >= -dynamic_ema_thr && not_overextended_long;
+                    let allow_short_reversion =
+                        macro_trend <= dynamic_ema_thr && not_overextended_short;
 
                     // Reversión por estiramiento extremo de precio con confirmación de flujo y filtro macro
-                    if price_stretch > 0.8 && allow_short_reversion && (current_obi < -dynamic_obi_thr * 0.5 || composite_score < -dynamic_tech_thr * 0.8) {
+                    if price_stretch > 0.8
+                        && allow_short_reversion
+                        && (current_obi < -dynamic_obi_thr * 0.5
+                            || composite_score < -dynamic_tech_thr * 0.8)
+                    {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score.abs().max(current_obi.abs())),
                             horizon: strategy_core::TradeHorizon::Scalp,
                             ..Default::default()
                         };
-                    } else if price_stretch < -0.8 && allow_long_reversion && (current_obi > dynamic_obi_thr * 0.5 || composite_score > dynamic_tech_thr * 0.8) {
+                    } else if price_stretch < -0.8
+                        && allow_long_reversion
+                        && (current_obi > dynamic_obi_thr * 0.5
+                            || composite_score > dynamic_tech_thr * 0.8)
+                    {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score.abs().max(current_obi.abs())),
@@ -1296,7 +1719,14 @@ impl GodEngineCore {
                 } else {
                     // Régimen de ruido / random walk (0.45 <= hurst < 0.50)
                     // Exigir alta confluencia técnica, filtro macro y microestructura (OBI)
-                    let noise_thr = (self.arena.config.tech_threshold.load(Ordering::Relaxed).max(0.24) * 1.5).clamp(0.30, 0.60);
+                    let noise_thr = (self
+                        .arena
+                        .config
+                        .tech_threshold
+                        .load(Ordering::Relaxed)
+                        .max(0.24)
+                        * 1.5)
+                        .clamp(0.30, 0.60);
                     let allow_long = macro_trend >= 0.0 && not_overextended_long;
                     let allow_short = macro_trend <= 0.0 && not_overextended_short;
                     if composite_score > noise_thr && allow_long && current_obi > 0.20 {
@@ -1316,7 +1746,10 @@ impl GodEngineCore {
                     }
                 }
 
-                if scalp_intent.signal == SignalType::Flat && tensor_scalp.signal != SignalType::Flat && tensor_scalp.net_confidence.abs() > 0.70 {
+                if scalp_intent.signal == SignalType::Flat
+                    && tensor_scalp.signal != SignalType::Flat
+                    && tensor_scalp.net_confidence.abs() > 0.70
+                {
                     scalp_intent = SignalIntent {
                         signal: tensor_scalp.signal,
                         confidence: tensor_scalp.net_confidence.abs().clamp(0.70, 1.0),
@@ -1327,12 +1760,25 @@ impl GodEngineCore {
 
                 if scalp_intent.signal == SignalType::Flat {
                     let hawkes_r = self.feature_engines[coin_id].cvpin.current_vpin();
-                    if let Some(turbo_intent) = signal_engine::turbo_scalper::TurboScalpEngine::evaluate_turbo_scalp(
-                        &self.arena, current_obi, ofi, hawkes_r, shannon_ent, mid_price, atr_pct, event_time_ms
-                    ) {
+                    if let Some(turbo_intent) =
+                        signal_engine::turbo_scalper::TurboScalpEngine::evaluate_turbo_scalp(
+                            &self.arena,
+                            current_obi,
+                            ofi,
+                            hawkes_r,
+                            shannon_ent,
+                            mid_price,
+                            atr_pct,
+                            event_time_ms,
+                        )
+                    {
                         let turbo_aligned_with_regime = if is_mean_reverting {
-                            (turbo_intent.signal == SignalType::Long && price_stretch < -0.5 && macro_trend >= -dynamic_ema_thr)
-                                || (turbo_intent.signal == SignalType::Short && price_stretch > 0.5 && macro_trend <= dynamic_ema_thr)
+                            (turbo_intent.signal == SignalType::Long
+                                && price_stretch < -0.5
+                                && macro_trend >= -dynamic_ema_thr)
+                                || (turbo_intent.signal == SignalType::Short
+                                    && price_stretch > 0.5
+                                    && macro_trend <= dynamic_ema_thr)
                         } else {
                             (turbo_intent.signal == SignalType::Long && macro_trend >= 0.0)
                                 || (turbo_intent.signal == SignalType::Short && macro_trend <= 0.0)
@@ -1340,7 +1786,8 @@ impl GodEngineCore {
 
                         if turbo_aligned_with_regime
                             && ((turbo_intent.signal == SignalType::Long && not_overextended_long)
-                                || (turbo_intent.signal == SignalType::Short && not_overextended_short))
+                                || (turbo_intent.signal == SignalType::Short
+                                    && not_overextended_short))
                         {
                             scalp_intent = turbo_intent;
                         }
@@ -1380,7 +1827,11 @@ impl GodEngineCore {
                 };
 
                 let cvd_veto = self.arena.config.cvd_veto_threshold.load(Ordering::Relaxed);
-                let wall_veto = self.arena.config.wall_veto_threshold.load(Ordering::Relaxed);
+                let wall_veto = self
+                    .arena
+                    .config
+                    .wall_veto_threshold
+                    .load(Ordering::Relaxed);
 
                 if scalp_intent.signal == SignalType::Long {
                     if cvd_ratio < -cvd_veto {
@@ -1415,7 +1866,8 @@ impl GodEngineCore {
             let hurst_exponent = features[1] as f64;
             let mut swing_nn_pred = coin.ml_prob.load(Ordering::Relaxed);
             if atr_pct > 0.0001 {
-                let combined = self.build_54d_tensor(coin_id, bid_qty, ask_qty, mid_price, omni_features);
+                let combined =
+                    self.build_54d_tensor(coin_id, bid_qty, ask_qty, mid_price, omni_features);
                 let sf = self.feature_engines[coin_id].get_swing_features();
                 if let Some(nn) = &mut self.swing_nn {
                     let in_dim = nn.layer1.in_features;
@@ -1442,19 +1894,35 @@ impl GodEngineCore {
 
             // --- EVALUACIÓN DE SEÑAL SWING / TENDENCIAL NATIVA (MOTOR UNIFICADO CONTINUO) ---
             let mut swing_intent = SignalIntent::flat();
-            let trend_threshold = self.arena.config.trend_threshold.load(Ordering::Relaxed).max(0.52);
+            let trend_threshold = self
+                .arena
+                .config
+                .trend_threshold
+                .load(Ordering::Relaxed)
+                .max(0.52);
 
             let ml_long = self.arena.config.ml_threshold_long.load(Ordering::Relaxed);
             let ml_short = self.arena.config.ml_threshold_short.load(Ordering::Relaxed);
-            let effective_ml_long = if ml_long <= 0.50 { 1.0 - ml_long } else { ml_long }.clamp(0.51, 0.95);
-            let effective_ml_short = if ml_short >= 0.50 { 1.0 - ml_short } else { ml_short }.clamp(0.05, 0.49);
+            let effective_ml_long = if ml_long <= 0.50 {
+                1.0 - ml_long
+            } else {
+                ml_long
+            }
+            .clamp(0.51, 0.95);
+            let effective_ml_short = if ml_short >= 0.50 {
+                1.0 - ml_short
+            } else {
+                ml_short
+            }
+            .clamp(0.05, 0.49);
 
             let raw_base = self.arena.config.base_duration_ms.load(Ordering::Relaxed);
             let swing_duration_ms = if raw_base.is_finite() && raw_base > 0.0 {
                 (raw_base * 60.0) as u64
             } else {
                 3_600_000
-            }.max(1_800_000);
+            }
+            .max(1_800_000);
 
             if hurst_exponent >= trend_threshold {
                 let ema_fast = if self.feature_engines[coin_id].kline_ema_fast > 0.0 {
@@ -1471,14 +1939,21 @@ impl GodEngineCore {
                 if ema_slow > 0.0 {
                     let macd_diff = (ema_fast - ema_slow) / ema_slow;
                     let swing_tp = self.arena.config.swing_tp_base.load(Ordering::Relaxed);
-                    let threshold = (swing_tp * 0.003).max(0.0001) * (1.0 / hurst_exponent.max(0.1));
+                    let threshold =
+                        (swing_tp * 0.003).max(0.0001) * (1.0 / hurst_exponent.max(0.1));
 
                     let is_bull_trend = ema_fast > ema_slow;
                     let is_bear_trend = ema_fast < ema_slow;
 
-                    if macd_diff > threshold && swing_nn_pred >= effective_ml_long && is_bull_trend {
-                        let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0).max((swing_nn_pred - 0.5).max(0.0) * 2.0);
-                        let confidence = if raw_conf.is_finite() { raw_conf.tanh().clamp(0.55, 0.95) } else { 0.55 };
+                    if macd_diff > threshold && swing_nn_pred >= effective_ml_long && is_bull_trend
+                    {
+                        let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
+                            .max((swing_nn_pred - 0.5).max(0.0) * 2.0);
+                        let confidence = if raw_conf.is_finite() {
+                            raw_conf.tanh().clamp(0.55, 0.95)
+                        } else {
+                            0.55
+                        };
                         swing_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence,
@@ -1486,9 +1961,17 @@ impl GodEngineCore {
                             horizon: strategy_core::TradeHorizon::Swing,
                             ..Default::default()
                         };
-                    } else if macd_diff < -threshold && swing_nn_pred <= effective_ml_short && is_bear_trend {
-                        let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0).max((0.5 - swing_nn_pred).max(0.0) * 2.0);
-                        let confidence = if raw_conf.is_finite() { raw_conf.tanh().clamp(0.55, 0.95) } else { 0.55 };
+                    } else if macd_diff < -threshold
+                        && swing_nn_pred <= effective_ml_short
+                        && is_bear_trend
+                    {
+                        let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
+                            .max((0.5 - swing_nn_pred).max(0.0) * 2.0);
+                        let confidence = if raw_conf.is_finite() {
+                            raw_conf.tanh().clamp(0.55, 0.95)
+                        } else {
+                            0.55
+                        };
                         swing_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence,
@@ -1514,28 +1997,44 @@ impl GodEngineCore {
                 let is_bull = ema_fast > ema_slow;
                 let is_bear = ema_fast < ema_slow;
 
-                if hurst_exponent >= 0.50 && tensor_swing.signal == SignalType::Long && is_bull && tensor_swing.net_confidence.abs() > 0.60 {
+                if hurst_exponent >= 0.50
+                    && tensor_swing.signal == SignalType::Long
+                    && is_bull
+                    && tensor_swing.net_confidence.abs() > 0.60
+                {
                     swing_intent = SignalIntent {
                         signal: tensor_swing.signal,
                         confidence: tensor_swing.net_confidence.abs().clamp(0.60, 1.0),
                         horizon: strategy_core::TradeHorizon::Swing,
                         ..Default::default()
                     };
-                } else if hurst_exponent >= 0.50 && tensor_swing.signal == SignalType::Short && is_bear && tensor_swing.net_confidence.abs() > 0.60 {
+                } else if hurst_exponent >= 0.50
+                    && tensor_swing.signal == SignalType::Short
+                    && is_bear
+                    && tensor_swing.net_confidence.abs() > 0.60
+                {
                     swing_intent = SignalIntent {
                         signal: tensor_swing.signal,
                         confidence: tensor_swing.net_confidence.abs().clamp(0.60, 1.0),
                         horizon: strategy_core::TradeHorizon::Swing,
                         ..Default::default()
                     };
-                } else if hurst_exponent >= 0.50 && tensor_cont.signal == SignalType::Long && is_bull && tensor_cont.net_confidence.abs() > 0.65 {
+                } else if hurst_exponent >= 0.50
+                    && tensor_cont.signal == SignalType::Long
+                    && is_bull
+                    && tensor_cont.net_confidence.abs() > 0.65
+                {
                     swing_intent = SignalIntent {
                         signal: tensor_cont.signal,
                         confidence: tensor_cont.net_confidence.abs().clamp(0.65, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
                         ..Default::default()
                     };
-                } else if hurst_exponent >= 0.50 && tensor_cont.signal == SignalType::Short && is_bear && tensor_cont.net_confidence.abs() > 0.65 {
+                } else if hurst_exponent >= 0.50
+                    && tensor_cont.signal == SignalType::Short
+                    && is_bear
+                    && tensor_cont.net_confidence.abs() > 0.65
+                {
                     swing_intent = SignalIntent {
                         signal: tensor_cont.signal,
                         confidence: tensor_cont.net_confidence.abs().clamp(0.65, 1.0),
@@ -1585,7 +2084,12 @@ impl GodEngineCore {
             }
 
             let current_cap = self.arena.unified_capital.load(Ordering::Relaxed);
-            let _global_leverage = self.arena.config.global_leverage.load(Ordering::Relaxed).clamp(1.0, 50.0);
+            let _global_leverage = self
+                .arena
+                .config
+                .global_leverage
+                .load(Ordering::Relaxed)
+                .clamp(1.0, 50.0);
 
             // Zero phantom equity check: si el capital fue liquidado, detener inmediatamente
             if current_cap <= 0.0 {
@@ -1596,17 +2100,22 @@ impl GodEngineCore {
             let mut new_order = None;
 
             // --- APERTURA CONTINUA UNIFICADA (100% CAPITAL ALLOCATION) ---
-            if unified_intent.signal != SignalType::Flat
-                && !coin.positions.position.is_open()
-            {
-                let order = self.risk_engine.evaluate_quantum_order(coin_id, &unified_intent, &self.arena);
+            if unified_intent.signal != SignalType::Flat && !coin.positions.position.is_open() {
+                let order =
+                    self.risk_engine
+                        .evaluate_quantum_order(coin_id, &unified_intent, &self.arena);
                 if order.signal != SignalType::Flat {
                     let drawdown = if self.risk_engine.peak_capital > 0.0 {
-                        ((self.risk_engine.peak_capital - current_cap) / self.risk_engine.peak_capital).clamp(0.0, 1.0)
+                        ((self.risk_engine.peak_capital - current_cap)
+                            / self.risk_engine.peak_capital)
+                            .clamp(0.0, 1.0)
                     } else {
                         0.0
                     };
-                    let vpin_risk = self.feature_engines[coin_id].cvpin.current_vpin().clamp(0.0, 1.0);
+                    let vpin_risk = self.feature_engines[coin_id]
+                        .cvpin
+                        .current_vpin()
+                        .clamp(0.0, 1.0);
                     let (impulse_mom, _) = self.lead_lag_engine.predict_altcoin_impulse(obi);
                     let graph_corr = impulse_mom.clamp(-1.0, 1.0);
 
@@ -1618,23 +2127,32 @@ impl GodEngineCore {
                     let slip_bps = ((current_spread_bps * 0.5) + 0.5).clamp(0.5, 500.0);
 
                     let council_horizon = match unified_intent.horizon {
-                        strategy_core::TradeHorizon::Scalp => metacortex_engine::consejo_seniors::TradingHorizon::Scalping,
-                        strategy_core::TradeHorizon::Swing => metacortex_engine::consejo_seniors::TradingHorizon::Swing,
-                        strategy_core::TradeHorizon::Continuous => metacortex_engine::consejo_seniors::TradingHorizon::Continuous,
+                        strategy_core::TradeHorizon::Scalp => {
+                            metacortex_engine::consejo_seniors::TradingHorizon::Scalping
+                        }
+                        strategy_core::TradeHorizon::Swing => {
+                            metacortex_engine::consejo_seniors::TradingHorizon::Swing
+                        }
+                        strategy_core::TradeHorizon::Continuous => {
+                            metacortex_engine::consejo_seniors::TradingHorizon::Continuous
+                        }
                     };
 
-                    let council_snapshot = metacortex_engine::consejo_seniors::MarketSnapshotPayload {
-                        horizon: council_horizon,
-                        book_imbalance: obi,
-                        hurst_exponent: hurst_val.clamp(0.0, 1.0),
-                        graph_correlation: graph_corr,
-                        do_calculus_risk: vpin_risk,
-                        causal_veto_threshold: 0.75,
-                        current_drawdown_pct: drawdown,
-                        estimated_slippage_bps: slip_bps,
-                    };
+                    let council_snapshot =
+                        metacortex_engine::consejo_seniors::MarketSnapshotPayload {
+                            horizon: council_horizon,
+                            book_imbalance: obi,
+                            hurst_exponent: hurst_val.clamp(0.0, 1.0),
+                            graph_correlation: graph_corr,
+                            do_calculus_risk: vpin_risk,
+                            causal_veto_threshold: 0.75,
+                            current_drawdown_pct: drawdown,
+                            estimated_slippage_bps: slip_bps,
+                        };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
-                    let senior_sigs = self.consejo_deliberacion.extract_senior_signals(&council_snapshot, wr);
+                    let senior_sigs = self
+                        .consejo_deliberacion
+                        .extract_senior_signals(&council_snapshot, wr);
                     if unified_intent.horizon == strategy_core::TradeHorizon::Swing {
                         if coin_id < self.last_swing_senior_signals.len() {
                             self.last_swing_senior_signals[coin_id] = senior_sigs;
@@ -1644,7 +2162,11 @@ impl GodEngineCore {
                             self.last_scalp_senior_signals[coin_id] = senior_sigs;
                         }
                     }
-                    let deliberation = self.consejo_deliberacion.deliberar_with_weights(&council_snapshot, wr, None);
+                    let deliberation = self.consejo_deliberacion.deliberar_with_weights(
+                        &council_snapshot,
+                        wr,
+                        None,
+                    );
                     if !deliberation.approved {
                         self.diag_council_vetoes += 1;
                     }
@@ -1664,9 +2186,13 @@ impl GodEngineCore {
                                 margin_req = max_pos / eff_leverage;
                             }
 
-                            if margin_req * eff_leverage >= 5.0 && total_used + margin_req <= current_cap * 0.98 {
+                            if margin_req * eff_leverage >= 5.0
+                                && total_used + margin_req <= current_cap * 0.98
+                            {
                                 self.diag_opened += 1;
-                                self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
+                                self.arena
+                                    .used_margin
+                                    .fetch_add(margin_req, Ordering::Relaxed);
 
                                 let base_price = if is_long { ask } else { bid };
                                 let nominal_size = margin_req * eff_leverage;
@@ -1698,9 +2224,8 @@ impl GodEngineCore {
                                     .latency_penalty_ms
                                     .load(Ordering::Relaxed)
                                     .max(0.0);
-                                let (real_entry_price, phys_entry_fee) = self
-                                    .reality
-                                    .calculate_market_entry(
+                                let (real_entry_price, phys_entry_fee) =
+                                    self.reality.calculate_market_entry(
                                         base_price,
                                         is_long,
                                         nominal_size,
@@ -1708,18 +2233,30 @@ impl GodEngineCore {
                                         slip_floor,
                                         lat_ms,
                                     );
-                                let real_entry_price = if real_entry_price <= 0.0 { base_price } else { real_entry_price };
+                                let real_entry_price = if real_entry_price <= 0.0 {
+                                    base_price
+                                } else {
+                                    real_entry_price
+                                };
 
                                 // H-4: usar el fee de la FÍSICA — antes se recalculaba aparte
                                 let fee_paid = phys_entry_fee;
-                                self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
+                                self.arena
+                                    .unified_capital
+                                    .fetch_add(-fee_paid, Ordering::Relaxed);
 
                                 let qty = nominal_size / real_entry_price;
 
                                 let pos_h = match unified_intent.horizon {
-                                    strategy_core::TradeHorizon::Scalp => quantum_arena::position::PositionHorizon::Scalping,
-                                    strategy_core::TradeHorizon::Swing => quantum_arena::position::PositionHorizon::Swing,
-                                    strategy_core::TradeHorizon::Continuous => quantum_arena::position::PositionHorizon::Continuous,
+                                    strategy_core::TradeHorizon::Scalp => {
+                                        quantum_arena::position::PositionHorizon::Scalping
+                                    }
+                                    strategy_core::TradeHorizon::Swing => {
+                                        quantum_arena::position::PositionHorizon::Swing
+                                    }
+                                    strategy_core::TradeHorizon::Continuous => {
+                                        quantum_arena::position::PositionHorizon::Continuous
+                                    }
                                 };
 
                                 coin.positions.position.open_with_fee(
@@ -1736,13 +2273,26 @@ impl GodEngineCore {
                                     fee_paid,
                                 );
 
-                                new_order = Some((is_long, real_entry_price, qty, order.tp_target, order.sl_target));
+                                new_order = Some((
+                                    is_long,
+                                    real_entry_price,
+                                    qty,
+                                    order.tp_target,
+                                    order.sl_target,
+                                ));
 
                                 if self.diag_opened <= 10 {
                                     println!(
                                         "🚀 [OPEN TRACE] #{} dir={} h={:?} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sl_target={:.2} tp_target={:.2}",
-                                        self.diag_opened, if is_long { "LONG" } else { "SHORT" }, unified_intent.horizon,
-                                        unified_intent.confidence, eff_leverage, margin_req, nominal_size, order.sl_target, order.tp_target
+                                        self.diag_opened,
+                                        if is_long { "LONG" } else { "SHORT" },
+                                        unified_intent.horizon,
+                                        unified_intent.confidence,
+                                        eff_leverage,
+                                        margin_req,
+                                        nominal_size,
+                                        order.sl_target,
+                                        order.tp_target
                                     );
                                 }
                             }
@@ -1761,7 +2311,8 @@ impl GodEngineCore {
                 let mut inventory_delta_usd = 0.0;
                 if coin.positions.position.is_open() {
                     let is_long = coin.positions.position.is_long.load(Ordering::Relaxed);
-                    let notional = coin.positions.position.quantity.load(Ordering::Relaxed) * mid_price;
+                    let notional =
+                        coin.positions.position.quantity.load(Ordering::Relaxed) * mid_price;
                     inventory_delta_usd += if is_long { notional } else { -notional };
                 }
 
@@ -1789,11 +2340,7 @@ impl GodEngineCore {
                 ));
             }
 
-            (
-                new_order,
-                closed_order,
-                final_maker_quote,
-            )
+            (new_order, closed_order, final_maker_quote)
         })
     }
 

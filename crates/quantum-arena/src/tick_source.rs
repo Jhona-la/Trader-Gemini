@@ -40,7 +40,9 @@ mod tests {
     }
 
     fn dummy_waker() -> Waker {
-        unsafe fn clone(_: *const ()) -> RawWaker { RawWaker::new(std::ptr::null(), &VTABLE) }
+        unsafe fn clone(_: *const ()) -> RawWaker {
+            RawWaker::new(std::ptr::null(), &VTABLE)
+        }
         unsafe fn wake(_: *const ()) {}
         unsafe fn wake_by_ref(_: *const ()) {}
         unsafe fn drop(_: *const ()) {}
@@ -63,16 +65,14 @@ mod tests {
     #[test]
     fn test_mock_tick_source() {
         let mut src = MockTickSource {
-            ticks: vec![
-                TickEvent {
-                    coin_id: 0,
-                    timestamp: 1000,
-                    bid_price: 60000.0,
-                    ask_price: 60001.0,
-                    bid_qty: 1.0,
-                    ask_qty: 1.0,
-                },
-            ],
+            ticks: vec![TickEvent {
+                coin_id: 0,
+                timestamp: 1000,
+                bid_price: 60000.0,
+                ask_price: 60001.0,
+                bid_qty: 1.0,
+                ask_qty: 1.0,
+            }],
             idx: 0,
         };
 

@@ -1,22 +1,26 @@
 /// 🛡️ ALGORITMO #65: GOBERNADOR ANTI-SESGO Y PREVENCIÓN DE CURVE-FITTING
-/// Evalúa a los genomas basándose en propiedades estadísticas profundas 
+/// Evalúa a los genomas basándose en propiedades estadísticas profundas
 /// (P-Value, Kurtosis, y Sharpe Deflation) para evitar el sobreajuste a la curva (Overfitting).
 
 pub struct AntiBiasGovernor;
 
 impl AntiBiasGovernor {
     /// Calcula el Sharpe Ratio Deflactado (DSR - Deflated Sharpe Ratio).
-    /// El DSR penaliza matemáticamente el Sharpe Ratio cuando se han hecho 
+    /// El DSR penaliza matemáticamente el Sharpe Ratio cuando se han hecho
     /// muchas pruebas repetidas (Multiple Testing Bias), lo que es inherente a los Algoritmos Evolutivos (NEAT).
     pub fn calculate_deflated_sharpe(
-        base_sharpe: f64, 
+        base_sharpe: f64,
         num_trials: usize, // Número de mutaciones evaluadas (generaciones * población)
         kurtosis: f64,
         skewness: f64,
         num_trades: usize,
     ) -> f64 {
         // FIX #633: Sanitizar finitud de métricas de Sharpe, kurtosis y skewness
-        if !base_sharpe.is_finite() || !kurtosis.is_finite() || !skewness.is_finite() || num_trades < 30 {
+        if !base_sharpe.is_finite()
+            || !kurtosis.is_finite()
+            || !skewness.is_finite()
+            || num_trades < 30
+        {
             return 0.0; // P-Value estadísticamente nulo si hay muy pocos trades o valores no finitos
         }
 
@@ -25,24 +29,30 @@ impl AntiBiasGovernor {
         let euler_mascheroni = 0.5772156649;
         let t = (num_trials as f64).max(2.0);
         let log_2t = (2.0 * t).ln().max(1e-6);
-        let max_sharpe_expected = ((1.0 - euler_mascheroni) * (1.0 / log_2t).sqrt()) 
-                                  + (2.0 * t.ln().max(1e-6)).sqrt();
+        let max_sharpe_expected =
+            ((1.0 - euler_mascheroni) * (1.0 / log_2t).sqrt()) + (2.0 * t.ln().max(1e-6)).sqrt();
 
         // 2. Varianza de la estimación del Sharpe (considerando no-normalidad: Skewness y Kurtosis)
         let n = num_trades as f64;
-        let sharpe_var = (1.0 - (skewness * base_sharpe) + ((kurtosis - 1.0) / 4.0) * base_sharpe.powi(2)) / (n - 1.0);
+        let sharpe_var = (1.0 - (skewness * base_sharpe)
+            + ((kurtosis - 1.0) / 4.0) * base_sharpe.powi(2))
+            / (n - 1.0);
         let sharpe_std = sharpe_var.max(0.0).sqrt().max(1e-9);
 
         // 3. Probabilidad Deflactada (P-Value aproximado de DSR) usando CDF de la Normal
         // Z = (Observed Sharpe / Std(Sharpe)) - Expected Maximum Z-Score (Bailey & López de Prado)
         let raw_z_score = (base_sharpe / sharpe_std) - max_sharpe_expected;
         let z_score = raw_z_score.clamp(-10.0, 10.0);
-        
+
         // Approximate CDF of Standard Normal via Error Function
         // A simple polynomial approximation for Normal CDF:
-        let cdf = 0.5 * (1.0 + f64::tanh((2.0 / std::f64::consts::PI).sqrt() * (z_score + 0.044715 * z_score.powi(3))));
+        let cdf = 0.5
+            * (1.0
+                + f64::tanh(
+                    (2.0 / std::f64::consts::PI).sqrt() * (z_score + 0.044715 * z_score.powi(3)),
+                ));
         let dsr_prob = cdf;
-        
+
         // Si la probabilidad de que el Sharpe sea genuino es menor al 90%, lo consideramos ruido.
         if !dsr_prob.is_finite() || dsr_prob < 0.90 {
             0.0 // Purga inmediata
@@ -54,10 +64,10 @@ impl AntiBiasGovernor {
     /// Valida un modelo usando el régimen OOS (Out-of-Sample).
     /// Retorna `true` si el modelo pasa la prueba estadística.
     pub fn validate_out_of_sample(
-        is_pnl: f64,     // PnL In-Sample (Entrenamiento)
-        oos_pnl: f64,    // PnL Out-of-Sample (Validación ciega)
+        is_pnl: f64,  // PnL In-Sample (Entrenamiento)
+        oos_pnl: f64, // PnL Out-of-Sample (Validación ciega)
         is_trades: usize,
-        oos_trades: usize
+        oos_trades: usize,
     ) -> bool {
         // FIX #634: Sanitizar finitud de PnLs In-Sample y Out-of-Sample
         if is_trades == 0 || oos_trades == 0 || !is_pnl.is_finite() || !oos_pnl.is_finite() {
@@ -67,7 +77,7 @@ impl AntiBiasGovernor {
         // El rendimiento promedio por trade no debe degradarse drásticamente.
         let avg_is = is_pnl / (is_trades as f64);
         let avg_oos = oos_pnl / (oos_trades as f64);
-        
+
         if avg_oos < 0.0 {
             return false; // Fracaso absoluto en OOS
         }
@@ -75,7 +85,7 @@ impl AntiBiasGovernor {
         // Tolerancia de degradación (Haircut del 50%).
         // Si el OOS es menos de la mitad de bueno que el IS, es sospechoso de Curve Fitting.
         if avg_oos < (avg_is * 0.5) {
-            return false; 
+            return false;
         }
 
         true
@@ -89,12 +99,12 @@ impl AntiBiasGovernor {
         live_trades_count: usize,
     ) -> bool {
         // FIX #712: Validación estricta de finitud y rango [0.0, 1.0] en tasas de acierto
-        if live_trades_count < 10 
-            || !mutant_simulated_winrate.is_finite() 
+        if live_trades_count < 10
+            || !mutant_simulated_winrate.is_finite()
             || !live_demo_winrate.is_finite()
-            || mutant_simulated_winrate < 0.0 
+            || mutant_simulated_winrate < 0.0
             || mutant_simulated_winrate > 1.0
-            || live_demo_winrate < 0.0 
+            || live_demo_winrate < 0.0
             || live_demo_winrate > 1.0
         {
             return false; // Demasiado joven, corrupto o fuera de rango para confirmar
@@ -121,11 +131,17 @@ mod tests {
 
     #[test]
     fn test_anti_bias_governor_validation() {
-        assert!(AntiBiasGovernor::validate_out_of_sample(100.0, 60.0, 50, 50));
-        assert!(!AntiBiasGovernor::validate_out_of_sample(100.0, 20.0, 50, 50));
+        assert!(AntiBiasGovernor::validate_out_of_sample(
+            100.0, 60.0, 50, 50
+        ));
+        assert!(!AntiBiasGovernor::validate_out_of_sample(
+            100.0, 20.0, 50, 50
+        ));
 
         assert!(AntiBiasGovernor::validate_with_live_reality(0.70, 0.65, 20));
-        assert!(!AntiBiasGovernor::validate_with_live_reality(0.80, 0.45, 20));
+        assert!(!AntiBiasGovernor::validate_with_live_reality(
+            0.80, 0.45, 20
+        ));
     }
 
     #[test]
@@ -139,8 +155,8 @@ mod tests {
         assert_eq!(dsr_low_trades, 0.0);
 
         // NaN inputs return 0.0
-        let dsr_nan = AntiBiasGovernor::calculate_deflated_sharpe(f64::NAN, 10, f64::NAN, f64::NAN, 100);
+        let dsr_nan =
+            AntiBiasGovernor::calculate_deflated_sharpe(f64::NAN, 10, f64::NAN, f64::NAN, 100);
         assert_eq!(dsr_nan, 0.0);
     }
 }
-

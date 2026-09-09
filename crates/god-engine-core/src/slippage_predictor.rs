@@ -16,13 +16,21 @@ impl BookDepthSlippagePredictor {
         obi: f64,
         is_long: bool,
     ) -> f64 {
-        if book_depth_usd <= 0.0 || order_notional_usd <= 0.0 || !order_notional_usd.is_finite() || !book_depth_usd.is_finite() || !volatility_atr.is_finite() || !obi.is_finite() {
+        if book_depth_usd <= 0.0
+            || order_notional_usd <= 0.0
+            || !order_notional_usd.is_finite()
+            || !book_depth_usd.is_finite()
+            || !volatility_atr.is_finite()
+            || !obi.is_finite()
+        {
             return 1.5; // Fallback predeterminado de 1.5 bps
         }
 
         let gamma = 0.50; // Constante de impacto microestructural de Kyle
         // FIX #714: Clampear ratio de volumen y ATR para evitar explosión de slippage en libros desiertos
-        let safe_vol_ratio = (order_notional_usd / book_depth_usd.max(100.0)).sqrt().clamp(0.001, 10.0);
+        let safe_vol_ratio = (order_notional_usd / book_depth_usd.max(100.0))
+            .sqrt()
+            .clamp(0.001, 10.0);
         let safe_atr = volatility_atr.clamp(0.00001, 0.50);
         let mut expected_impact_bps = gamma * (safe_atr * 10000.0) * safe_vol_ratio;
 
@@ -57,7 +65,11 @@ impl BookDepthSlippagePredictor {
         urgency_score: f64, // 0.0 (paciente) a 1.0 (inmediata/stop/breakout)
     ) -> bool {
         // FIX #667: Sanitizar parámetros de decisión Maker/Taker
-        if !expected_slippage_bps.is_finite() || !taker_fee_bps.is_finite() || !maker_fee_bps.is_finite() || !urgency_score.is_finite() {
+        if !expected_slippage_bps.is_finite()
+            || !taker_fee_bps.is_finite()
+            || !maker_fee_bps.is_finite()
+            || !urgency_score.is_finite()
+        {
             return false;
         }
 
@@ -76,7 +88,8 @@ mod tests {
 
     #[test]
     fn test_slippage_predictor_and_recommendation() {
-        let slip = BookDepthSlippagePredictor::predict_slippage_bps(100.0, 50000.0, 0.001, 0.2, true);
+        let slip =
+            BookDepthSlippagePredictor::predict_slippage_bps(100.0, 50000.0, 0.001, 0.2, true);
         assert!(slip >= 0.1 && slip <= 35.0);
 
         // Baja urgencia -> Recomienda Maker
@@ -90,11 +103,18 @@ mod tests {
 
     #[test]
     fn test_slippage_predictor_nan_immunity_and_zero_depth() {
-        let slip_nan = BookDepthSlippagePredictor::predict_slippage_bps(f64::NAN, 0.0, f64::NAN, f64::NAN, false);
+        let slip_nan = BookDepthSlippagePredictor::predict_slippage_bps(
+            f64::NAN,
+            0.0,
+            f64::NAN,
+            f64::NAN,
+            false,
+        );
         assert!(slip_nan.is_finite());
         assert!(slip_nan >= 0.1 && slip_nan <= 35.0);
 
-        let maker_nan = BookDepthSlippagePredictor::recommend_maker_execution(f64::NAN, 4.0, 2.0, 0.1);
+        let maker_nan =
+            BookDepthSlippagePredictor::recommend_maker_execution(f64::NAN, 4.0, 2.0, 0.1);
         assert!(!maker_nan);
     }
 }

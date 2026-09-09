@@ -1,9 +1,9 @@
+use crate::lockfree_bus::LockFreeBus;
+use axum::extract::Extension;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::IntoResponse;
-use axum::extract::Extension;
 use serde::Serialize;
 use tokio::sync::broadcast;
-use crate::lockfree_bus::LockFreeBus;
 
 #[derive(Copy, Clone, Default, Serialize)]
 #[repr(C)]
@@ -32,10 +32,14 @@ pub async fn ws_stream_handler(
 
 async fn handle_socket(mut socket: WebSocket, tx: broadcast::Sender<String>) {
     let mut rx = tx.subscribe();
-    
+
     // Send a welcome message
-    let _ = socket.send(Message::Text(r#"{"status": "connected", "message": "Trader Gemini Realtime Feed"}"#.to_string())).await;
-    
+    let _ = socket
+        .send(Message::Text(
+            r#"{"status": "connected", "message": "Trader Gemini Realtime Feed"}"#.to_string(),
+        ))
+        .await;
+
     while let Ok(msg) = rx.recv().await {
         if socket.send(Message::Text(msg)).await.is_err() {
             // Client disconnected
@@ -84,4 +88,3 @@ mod tests {
         assert!(json.contains("\"ml_prob\":0.92"));
     }
 }
-

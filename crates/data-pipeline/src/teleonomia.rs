@@ -1,8 +1,8 @@
+use bytemuck::{Pod, Zeroable};
+use memmap2::MmapMut;
+use std::fs::OpenOptions;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
-use std::fs::OpenOptions;
-use memmap2::MmapMut;
-use bytemuck::{Pod, Zeroable};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -25,7 +25,7 @@ pub struct TeleonomiaState {
     pub omni_features: Vec<Vec<AtomicU64>>,
     pub dt: Vec<AtomicU64>,
     pub current_price: Vec<AtomicU64>,
-    
+
     // Quantum Zero-Alloc Ring Buffer mapped to SSD
     mmap_file: Option<Mutex<MmapMut>>,
     head: AtomicUsize,
@@ -42,29 +42,37 @@ impl TeleonomiaState {
             }
             omni_features.push(coin_feats);
         }
-        
+
         let mut dt = Vec::with_capacity(num_coins);
         let mut current_price = Vec::with_capacity(num_coins);
         for _ in 0..num_coins {
             dt.push(AtomicU64::new(0));
             current_price.push(AtomicU64::new(0));
         }
-        
+
         // Setup Zero-Alloc Ring Buffer on disk
         let capacity = 100_000; // 100k records
         let record_size = std::mem::size_of::<RingBufferRecord>();
         let total_size = capacity * record_size;
-        
+
         let path = "data/lakehouse";
         if std::fs::metadata(path).is_err() {
             let _ = std::fs::create_dir_all(path);
         }
         let ring_file_path = "data/lakehouse/quantum_ring_buffer.bin";
-        let mmap_file = match OpenOptions::new().read(true).write(true).create(true).open(ring_file_path) {
+        let mmap_file = match OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(ring_file_path)
+        {
             Ok(file) => {
                 if file.metadata().map(|m| m.len()).unwrap_or(0) < total_size as u64 {
                     if let Err(e) = file.set_len(total_size as u64) {
-                        eprintln!("⚠️ [TELEONOMIA] Fallo al establecer tamaño del Ring Buffer SSD: {}", e);
+                        eprintln!(
+                            "⚠️ [TELEONOMIA] Fallo al establecer tamaño del Ring Buffer SSD: {}",
+                            e
+                        );
                     }
                 }
                 match unsafe { MmapMut::map_mut(&file) } {
@@ -80,7 +88,7 @@ impl TeleonomiaState {
                 None
             }
         };
-        
+
         Self {
             omni_features,
             dt,
@@ -90,10 +98,12 @@ impl TeleonomiaState {
             capacity,
         }
     }
-    
+
     #[inline(always)]
     pub fn write_features(&self, coin_id: usize, features: &[f64; 54], dt: f64, price: f64) {
-        if coin_id >= self.omni_features.len() { return; }
+        if coin_id >= self.omni_features.len() {
+            return;
+        }
 
         // FIX #695: Sanitizar finitud de los 54 features, dt y precio
         let mut safe_features = *features;
@@ -103,8 +113,12 @@ impl TeleonomiaState {
             }
         }
         let safe_dt = if dt.is_finite() && dt >= 0.0 { dt } else { 0.0 };
-        let safe_price = if price.is_finite() && price > 0.0 { price } else { 0.0 };
-        
+        let safe_price = if price.is_finite() && price > 0.0 {
+            price
+        } else {
+            0.0
+        };
+
         for (i, &val) in safe_features.iter().enumerate() {
             if i < self.omni_features[coin_id].len() {
                 self.omni_features[coin_id][i].store(val.to_bits(), Ordering::Relaxed);
@@ -112,21 +126,24 @@ impl TeleonomiaState {
         }
         self.dt[coin_id].store(safe_dt.to_bits(), Ordering::Relaxed);
         self.current_price[coin_id].store(safe_price.to_bits(), Ordering::Relaxed);
-        
+
         // Persist to SSD via Zero-Alloc Ring Buffer
         if let Some(mmap_mutex) = &self.mmap_file {
             let index = self.head.fetch_add(1, Ordering::Relaxed) % self.capacity;
             let record = RingBufferRecord {
-                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
                 coin_id: coin_id as u64,
                 dt: safe_dt,
                 price: safe_price,
                 features: safe_features,
             };
-            
+
             let bytes = bytemuck::bytes_of(&record);
             let offset = index * std::mem::size_of::<RingBufferRecord>();
-            
+
             // Lock to ensure reliable persistence to disk without dropping telemetry frames
             if let Ok(mut mmap) = mmap_mutex.lock() {
                 let end = offset + bytes.len();
@@ -142,20 +159,29 @@ impl TeleonomiaState {
             }
         }
     }
-    
+
     #[inline(always)]
     pub fn read_features(&self, coin_id: usize) -> ([f64; 54], f64, f64) {
         let mut feats = [0.0; 54];
         if coin_id < self.omni_features.len() {
             for i in 0..54 {
                 if i < self.omni_features[coin_id].len() {
-                    feats[i] = f64::from_bits(self.omni_features[coin_id][i].load(Ordering::Relaxed));
+                    feats[i] =
+                        f64::from_bits(self.omni_features[coin_id][i].load(Ordering::Relaxed));
                 }
             }
         }
-        let dt = if coin_id < self.dt.len() { f64::from_bits(self.dt[coin_id].load(Ordering::Relaxed)) } else { 0.0 };
-        let price = if coin_id < self.current_price.len() { f64::from_bits(self.current_price[coin_id].load(Ordering::Relaxed)) } else { 0.0 };
-        
+        let dt = if coin_id < self.dt.len() {
+            f64::from_bits(self.dt[coin_id].load(Ordering::Relaxed))
+        } else {
+            0.0
+        };
+        let price = if coin_id < self.current_price.len() {
+            f64::from_bits(self.current_price[coin_id].load(Ordering::Relaxed))
+        } else {
+            0.0
+        };
+
         (feats, dt, price)
     }
 }

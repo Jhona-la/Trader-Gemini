@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::mem::MaybeUninit;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const RING_CAPACITY: usize = 65536;
 
@@ -12,7 +12,7 @@ pub struct ZeroCopyRing {
 
 impl ZeroCopyRing {
     pub fn new() -> Self {
-        // Inicializar sin memoria asignada dinámicamente. 
+        // Inicializar sin memoria asignada dinámicamente.
         // Array fijo en la estructura.
         Self {
             head: AtomicUsize::new(0),
@@ -20,7 +20,7 @@ impl ZeroCopyRing {
             buffer: unsafe { MaybeUninit::uninit().assume_init() },
         }
     }
-    
+
     pub fn lock_in_ram(&self) {
         #[cfg(windows)]
         unsafe {
@@ -33,19 +33,19 @@ impl ZeroCopyRing {
     pub fn push(&self, item: (&'static str, u64)) -> Result<(), ()> {
         let head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Acquire);
-        
+
         // Verifica si está lleno
         if head.wrapping_sub(tail) >= RING_CAPACITY {
             return Err(());
         }
-        
+
         let index = head % RING_CAPACITY;
-        
+
         unsafe {
             let ptr = self.buffer[index].as_ptr() as *mut (&'static str, u64);
             ptr.write(item);
         }
-        
+
         self.head.store(head.wrapping_add(1), Ordering::Release);
         Ok(())
     }
@@ -55,19 +55,19 @@ impl ZeroCopyRing {
     pub fn pop(&self) -> Option<(&'static str, u64)> {
         let tail = self.tail.load(Ordering::Relaxed);
         let head = self.head.load(Ordering::Acquire);
-        
+
         // Verifica si está vacío
         if tail == head {
             return None;
         }
-        
+
         let index = tail % RING_CAPACITY;
-        
+
         let item = unsafe {
             let ptr = self.buffer[index].as_ptr();
             ptr.read()
         };
-        
+
         self.tail.store(tail.wrapping_add(1), Ordering::Release);
         Some(item)
     }
@@ -118,4 +118,3 @@ mod tests {
         assert!(ring.pop().is_none());
     }
 }
-

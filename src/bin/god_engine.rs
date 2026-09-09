@@ -62,8 +62,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // H-2: MAINNET_ARMED con path centralizado (antes relativo al CWD —
     // lanzar desde otro directorio degradaba silenciosamente a mainnet-sin-lock)
     let mainnet_armed = std::path::Path::new(
-        &quantum_arena::paths::data_join("../../config_dir/MAINNET_ARMED").replace("data/../../", ""),
-    ).exists()
+        &quantum_arena::paths::data_join("../../config_dir/MAINNET_ARMED")
+            .replace("data/../../", ""),
+    )
+    .exists()
         || std::path::Path::new("config_dir/MAINNET_ARMED").exists();
     let emergency_lock = std::path::Path::new("STOP_TRADING.LOCK").exists();
     let is_demo_mode = if requested_live && mainnet_armed && !emergency_lock {
@@ -164,7 +166,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let side_str = if is_long { "LONG" } else { "SHORT" };
             // FIX #1518: Acceso seguro al símbolo por coin_id para evitar pánicos fuera de límites
             let default_sym = format!("COIN_{}", coin_id);
-            let parsed_sym = symbols_for_log.get(coin_id).map(|s| s.as_str()).unwrap_or(&default_sym);
+            let parsed_sym = symbols_for_log
+                .get(coin_id)
+                .map(|s| s.as_str())
+                .unwrap_or(&default_sym);
             if is_scalp {
                 let _ = dash_tx_clone.send(telemetry_server::TelemetryEvent::LogUpdate(
                     "success".to_string(),
@@ -599,13 +604,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         fn on_capital(&self, usdt: f64) {
             audit_engine::telemetry::update_dynamic_capital(usdt);
             if usdt > 0.0 && usdt.is_finite() {
-                self.unified_capital.store(usdt.to_bits(), Ordering::Relaxed);
+                self.unified_capital
+                    .store(usdt.to_bits(), Ordering::Relaxed);
             }
         }
-        fn on_positions(
-            &self,
-            positions: &[execution_engine::user_data_stream::RemotePosition],
-        ) {
+        fn on_positions(&self, positions: &[execution_engine::user_data_stream::RemotePosition]) {
             if !positions.is_empty() {
                 let summary: Vec<String> = positions
                     .iter()

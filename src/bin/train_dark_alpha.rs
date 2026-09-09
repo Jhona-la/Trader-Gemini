@@ -121,7 +121,10 @@ fn main() {
     let input_dim = inputs[0].len();
 
     // --- ETL: COMPUTE MEAN AND STD DEV ---
-    println!("🧹 Calculating Means and StdDevs for Normalization ({} features)...", input_dim);
+    println!(
+        "🧹 Calculating Means and StdDevs for Normalization ({} features)...",
+        input_dim
+    );
     let mut mean = vec![0.0; input_dim];
     for x in &inputs {
         for i in 0..input_dim {
@@ -232,7 +235,8 @@ fn main() {
                 let pred = 1.0 / (1.0 + (-z3.clamp(-700.0, 700.0)).exp());
 
                 // Binary Cross Entropy Loss
-                let loss = -(y * (pred.max(1e-15)).ln() + (1.0 - y) * ((1.0 - pred).max(1e-15)).ln());
+                let loss =
+                    -(y * (pred.max(1e-15)).ln() + (1.0 - y) * ((1.0 - pred).max(1e-15)).ln());
                 epoch_loss += loss;
 
                 // --- BACKWARD PASS ---

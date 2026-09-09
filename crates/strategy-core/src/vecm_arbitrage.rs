@@ -9,10 +9,10 @@ use std::sync::Arc;
 /// Opera la reversión a la media en nanosegundos cuando el Z-Score supera |Z| > 2.5.
 #[derive(Clone)]
 pub struct JohansenVecmEngine {
-    pub alpha_speed: f64,       // Velocidad de ajuste a la media (speed of adjustment)
-    pub beta_hedge_ratio: f64,  // Ratio de cobertura beta de cointegración
-    pub spread_mean: f64,       // Media móvil del spread cointegrado
-    pub spread_std: f64,        // Desviación estándar del spread
+    pub alpha_speed: f64, // Velocidad de ajuste a la media (speed of adjustment)
+    pub beta_hedge_ratio: f64, // Ratio de cobertura beta de cointegración
+    pub spread_mean: f64, // Media móvil del spread cointegrado
+    pub spread_std: f64,  // Desviación estándar del spread
     pub window_count: f64,
     registry: Option<Arc<OmniscientRegistry>>,
 }
@@ -78,9 +78,18 @@ impl JohansenVecmEngine {
         // Z-Score de la divergencia
         // FIX #780 & #1514: Escribir z-score sanitizado en el OmniscientRegistry
         let raw_z = (spread - self.spread_mean) / self.spread_std;
-        let z = if raw_z.is_finite() { raw_z.clamp(-20.0, 20.0) } else { 0.0 };
+        let z = if raw_z.is_finite() {
+            raw_z.clamp(-20.0, 20.0)
+        } else {
+            0.0
+        };
         if let Some(r) = &self.registry {
-            r.register_or_update("vecm_zscore", ParameterKind::Adaptive, z, "JohansenVecmEngine");
+            r.register_or_update(
+                "vecm_zscore",
+                ParameterKind::Adaptive,
+                z,
+                "JohansenVecmEngine",
+            );
         }
         z
     }
@@ -97,7 +106,8 @@ impl JohansenVecmEngine {
             let beta_err = ln_a - self.beta_hedge_ratio * ln_b;
             if beta_err.is_finite() {
                 let gain = 0.001 / (1.0 + ln_b * ln_b * 0.001);
-                self.beta_hedge_ratio = (self.beta_hedge_ratio + gain * ln_b * beta_err).clamp(0.1, 10.0);
+                self.beta_hedge_ratio =
+                    (self.beta_hedge_ratio + gain * ln_b * beta_err).clamp(0.1, 10.0);
             }
         }
         self.update_and_calculate_zscore(price_a, price_b)
@@ -119,12 +129,27 @@ impl QuantumStrategy for JohansenVecmEngine {
     }
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
-        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
-        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let sym_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(symbol)
+        };
+        let cid_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(coin_id)
+        };
         let z = match self.registry.as_ref() {
             Some(r) => r
                 .get_scoped_parameter(sym_opt, cid_opt, "vecm_zscore", "JohansenVecmEngine")
-                .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "cointegration_zscore", "JohansenVecmEngine"))
+                .or_else(|| {
+                    r.get_scoped_parameter(
+                        sym_opt,
+                        cid_opt,
+                        "cointegration_zscore",
+                        "JohansenVecmEngine",
+                    )
+                })
                 .map(|p| p.get_value())
                 .unwrap_or(0.0),
             None => 0.0,
@@ -216,5 +241,3 @@ mod tests {
         assert!(eval_score < 0.0);
     }
 }
-
-

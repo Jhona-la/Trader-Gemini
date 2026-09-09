@@ -21,7 +21,8 @@ impl PositionLedger {
     /// Inicializa la BD en modo WAL y lanza el hilo de fondo (Zero-Latency)
     pub fn new(db_path: &str) -> Self {
         // FIX #1438: Canal acotado a 100k eventos para protección de RAM
-        let (tx, rx): (Sender<LedgerEvent>, Receiver<LedgerEvent>) = crossbeam_channel::bounded(100_000);
+        let (tx, rx): (Sender<LedgerEvent>, Receiver<LedgerEvent>) =
+            crossbeam_channel::bounded(100_000);
         let db_path = db_path.to_string();
 
         let _ = thread::Builder::new().name("ledger-wal-writer".into()).spawn(move || {
@@ -143,7 +144,11 @@ impl PositionLedger {
     /// Enviar evento al hilo de escritura sin bloquear el Hot-Path
     pub fn push_event(&self, event: LedgerEvent) {
         // FIX #625 & #1548: Sanitización de valores no finitos para proteger la integridad de la base de datos
-        if !event.qty_delta.is_finite() || event.qty_delta.abs() < 1e-12 || !event.price.is_finite() || event.price <= 0.0 {
+        if !event.qty_delta.is_finite()
+            || event.qty_delta.abs() < 1e-12
+            || !event.price.is_finite()
+            || event.price <= 0.0
+        {
             return;
         }
         let _ = self.tx.try_send(event); // No bloqueante para el hot path
@@ -191,7 +196,13 @@ mod tests {
     #[test]
     fn test_position_ledger_crud() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!("ledger_test_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let db_path = temp_dir.join(format!(
+            "ledger_test_{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         let db_str = db_path.to_str().unwrap();
 
         let ledger = PositionLedger::new(db_str);
@@ -214,7 +225,10 @@ mod tests {
                 }
             }
         }
-        assert!(ownership.is_some(), "PositionLedger debe haber persistido la propiedad");
+        assert!(
+            ownership.is_some(),
+            "PositionLedger debe haber persistido la propiedad"
+        );
         let (scalp_qty, scalp_price, _, _) = ownership.unwrap();
         assert!((scalp_qty - 0.1).abs() < 1e-6);
         assert!((scalp_price - 60000.0).abs() < 1e-6);
@@ -225,7 +239,13 @@ mod tests {
     #[test]
     fn test_position_ledger_incremental_delta_and_nan_immunity() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!("ledger_delta_test_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let db_path = temp_dir.join(format!(
+            "ledger_delta_test_{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         let db_str = db_path.to_str().unwrap();
 
         let ledger = PositionLedger::new(db_str);
@@ -271,5 +291,4 @@ mod tests {
         assert!(persisted, "Debe acumular los deltas incrementales correctamente a 1.0 ETH y precio promedio 3050.0");
         let _ = std::fs::remove_file(db_path);
     }
-
 }

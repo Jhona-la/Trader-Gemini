@@ -120,7 +120,11 @@ impl ExecutionProvider for SimulatedExecutor {
         }
         println!(
             "👻 [SHADOW MODE] Executed {} {} @ {:.4} (slip: {:.4}%, delay: {}ms)",
-            side, symbol, exec_price, slippage * 100.0, self.average_latency_ms
+            side,
+            symbol,
+            exec_price,
+            slippage * 100.0,
+            self.average_latency_ms
         );
         Ok(())
     }
@@ -292,7 +296,11 @@ impl ExecutionProvider for SimulatedExecutor {
 
         if let Ok(mut pos_map) = self.open_positions.write() {
             if let Some(pos) = pos_map.remove(symbol) {
-                let exit_price = if is_long_close { pos.entry_price * 1.002 } else { pos.entry_price * 0.998 };
+                let exit_price = if is_long_close {
+                    pos.entry_price * 1.002
+                } else {
+                    pos.entry_price * 0.998
+                };
                 if exit_price.is_finite() && pos.entry_price.is_finite() && quantity.is_finite() {
                     pnl = if pos.is_long {
                         (exit_price - pos.entry_price) * quantity
@@ -330,10 +338,7 @@ impl ExecutionProvider for SimulatedExecutor {
     #[inline(always)]
     async fn cancel_all_symbol_orders(&self, symbol: &str) -> Result<(), String> {
         self.simulate_network_delay().await;
-        println!(
-            "👻 [SHADOW MODE] Cancelled all orders on {}",
-            symbol
-        );
+        println!("👻 [SHADOW MODE] Cancelled all orders on {}", symbol);
         Ok(())
     }
 
@@ -410,7 +415,9 @@ mod tests {
         assert!((positions[0].qty - 0.001).abs() < 1e-6);
 
         // Close position with reduce-only market
-        let res_close = sim.execute_reduce_only_market("BTCUSDT", true, 0.001, 0.001).await;
+        let res_close = sim
+            .execute_reduce_only_market("BTCUSDT", true, 0.001, 0.001)
+            .await;
         assert!(res_close.is_ok());
 
         let positions_after = sim.fetch_open_positions().await.unwrap();
@@ -424,13 +431,34 @@ mod tests {
 
         assert!(sim.set_leverage("BTCUSDT", 20).await.is_ok());
         assert!(sim.fetch_exchange_info("BTCUSDT").await.is_ok());
-        assert!(sim.execute_raw_qty("BTCUSDT", true, 0.002, 0.001).await.is_ok());
-        assert!(sim.execute_limit_order("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "L1").await.is_ok());
-        assert!(sim.execute_maker_chase("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "M1").await.is_ok());
-        assert!(sim.execute_ioc_order("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "I1").await.is_ok());
-        assert!(sim.execute_exchange_trailing_stop("BTCUSDT", true, 0.001, 50000.0, 1.0, 0.001, 0.1, "T1").await.is_ok());
-        assert!(sim.execute_oco_order("BTCUSDT", true, 0.001, 52000.0, 48000.0, 0.001, 0.1, "O1").await.is_ok());
-        assert!(sim.execute_iceberg_limit("BTCUSDT", true, 0.005, 0.001, 50000.0, 0.001, 0.1, "IC1").await.is_ok());
+        assert!(sim
+            .execute_raw_qty("BTCUSDT", true, 0.002, 0.001)
+            .await
+            .is_ok());
+        assert!(sim
+            .execute_limit_order("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "L1")
+            .await
+            .is_ok());
+        assert!(sim
+            .execute_maker_chase("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "M1")
+            .await
+            .is_ok());
+        assert!(sim
+            .execute_ioc_order("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "I1")
+            .await
+            .is_ok());
+        assert!(sim
+            .execute_exchange_trailing_stop("BTCUSDT", true, 0.001, 50000.0, 1.0, 0.001, 0.1, "T1")
+            .await
+            .is_ok());
+        assert!(sim
+            .execute_oco_order("BTCUSDT", true, 0.001, 52000.0, 48000.0, 0.001, 0.1, "O1")
+            .await
+            .is_ok());
+        assert!(sim
+            .execute_iceberg_limit("BTCUSDT", true, 0.005, 0.001, 50000.0, 0.001, 0.1, "IC1")
+            .await
+            .is_ok());
         assert!(sim.cancel_order("BTCUSDT", "L1").await.is_ok());
 
         let server_time = sim.fetch_server_time().await.unwrap();
@@ -440,4 +468,3 @@ mod tests {
         assert_eq!(com.0, 0.0002);
     }
 }
-

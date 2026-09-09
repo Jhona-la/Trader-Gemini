@@ -122,11 +122,19 @@ impl EntropyFitness {
         if total_trades == 0 {
             return gross_pnl;
         }
-        let notional = if avg_notional_usd > 0.0 { avg_notional_usd } else { 35.0 };
+        let notional = if avg_notional_usd > 0.0 {
+            avg_notional_usd
+        } else {
+            35.0
+        };
         let total_volume_usd = total_trades as f64 * notional;
 
         // Fricción base: comisión roundtrip real de Binance VIP0 (0.06% o tasa de cuenta) sobre el volumen
-        let fee_rate = if actual_fee_rate > 0.0 { actual_fee_rate } else { 0.0006 };
+        let fee_rate = if actual_fee_rate > 0.0 {
+            actual_fee_rate
+        } else {
+            0.0006
+        };
         let deterministic_friction = total_volume_usd * fee_rate;
 
         // Fricción estocástica por slippage (distribución de Poisson sobre trades afectados)
@@ -174,7 +182,8 @@ impl EntropyFitness {
     ) -> f64 {
         let real_pnl = Self::reality_slippage_penalty(gross_pnl, total_trades, actual_fee_rate);
         let dd_penalty = Self::drawdown_adversarial_penalty(max_drawdown_pct, max_dd_threshold);
-        let reality_gap = Self::reality_gap_adversarial_score(backtest_sharpe, live_sharpe, total_trades);
+        let reality_gap =
+            Self::reality_gap_adversarial_score(backtest_sharpe, live_sharpe, total_trades);
         let entropy = Self::calculate_shannon_entropy(decisions);
         let entropy_boost = (1.0 + entropy * 0.1).clamp(0.5, 1.5);
 
@@ -217,18 +226,19 @@ mod tests {
 
     #[test]
     fn test_nsga3_hyper_fitness() {
-        let decisions = vec![SignalType::Long, SignalType::Short, SignalType::Flat, SignalType::Long];
+        let decisions = vec![
+            SignalType::Long,
+            SignalType::Short,
+            SignalType::Flat,
+            SignalType::Long,
+        ];
         let fitness = EntropyFitness::compute_nsga3_hyper_fitness(
-            15.0,
-            10,
-            0.0004,
-            0.02,
-            0.05,
-            &decisions,
-            2.5,
-            2.3,
+            15.0, 10, 0.0004, 0.02, 0.05, &decisions, 2.5, 2.3,
         );
-        assert!(fitness > 0.0, "Fitness should be positive for profitable low-drawdown run");
+        assert!(
+            fitness > 0.0,
+            "Fitness should be positive for profitable low-drawdown run"
+        );
     }
 
     #[test]
@@ -246,7 +256,8 @@ mod tests {
         );
         assert!(fitness_nan.is_finite());
 
-        let collapse_nan = EntropyFitness::bayesian_posterior_collapse_penalty(f64::NAN, f64::INFINITY, 50);
+        let collapse_nan =
+            EntropyFitness::bayesian_posterior_collapse_penalty(f64::NAN, f64::INFINITY, 50);
         assert_eq!(collapse_nan, 1.0);
 
         let slippage_nan = EntropyFitness::reality_slippage_penalty(f64::NAN, 10, f64::NAN);
@@ -257,16 +268,9 @@ mod tests {
     fn test_entropy_fitness_extreme_drawdown_penalty() {
         let decisions = vec![SignalType::Long, SignalType::Long];
         let fitness_dd = EntropyFitness::compute_nsga3_hyper_fitness(
-            10.0,
-            50,
-            0.0004,
-            0.50, // 50% max drawdown
-            0.05,
-            &decisions,
-            1.5,
-            0.5,
+            10.0, 50, 0.0004, 0.50, // 50% max drawdown
+            0.05, &decisions, 1.5, 0.5,
         );
         assert!(fitness_dd.is_finite());
     }
 }
-

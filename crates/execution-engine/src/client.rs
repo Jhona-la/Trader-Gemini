@@ -165,7 +165,8 @@ impl BinanceClient {
     }
 
     pub fn update_api_key(&self, new_key: String) {
-        let header_val = HeaderValue::from_str(&new_key).unwrap_or_else(|_| HeaderValue::from_static(""));
+        let header_val =
+            HeaderValue::from_str(&new_key).unwrap_or_else(|_| HeaderValue::from_static(""));
         self.api_key.store(std::sync::Arc::new(header_val));
     }
 
@@ -516,5 +517,3 @@ mod tests {
         assert_eq!(current_key.to_str().unwrap(), "key2");
     }
 }
-
-

@@ -56,13 +56,21 @@ impl OnlineLearningModule {
                 sum += self.weights[i] * f;
             }
         }
-        if sum.is_finite() { sum.clamp(-100.0, 100.0) } else { 0.0 }
+        if sum.is_finite() {
+            sum.clamp(-100.0, 100.0)
+        } else {
+            0.0
+        }
     }
 
     /// Modula el ruido de medición R_noise en función de la volatilidad instantánea
     /// y el exponente de Lyapunov / caos para desacoplar el aprendizaje del ruido de microestructura.
     #[inline(always)]
-    pub fn compute_dynamic_r_noise(&self, instantaneous_volatility: f32, lyapunov_chaos: f32) -> f32 {
+    pub fn compute_dynamic_r_noise(
+        &self,
+        instantaneous_volatility: f32,
+        lyapunov_chaos: f32,
+    ) -> f32 {
         let base_r = if self.r_noise.is_finite() && self.r_noise > 0.0 {
             self.r_noise
         } else {
@@ -223,13 +231,13 @@ pub fn spawn_telemetry_consumer(
                 if !frames.is_empty() {
                     let mut s_mod = scalping_module.lock().await;
                     let mut sw_mod = swing_module.lock().await;
-                    
+
                     for frame in frames {
                         let coin_id = frame.payload[0] as usize;
                         if coin_id >= 30 {
                             continue;
                         }
-                        
+
                         // Infer horizon from payload if possible, for now we will simulate split by bit flag or payload[6] if added.
                         // Assuming payload[6] has the horizon flag (0 = Scalping, 1 = Swing)
                         let horizon = if frame.payload.len() > 6 && frame.payload[6] > 0.0 {
@@ -251,7 +259,7 @@ pub fn spawn_telemetry_consumer(
                                     last_features_scalping[coin_id][1] = entropy;
                                     last_features_scalping[coin_id][2] = ml_prob;
                                     last_entropy_scalping[coin_id] = entropy;
-                                },
+                                }
                                 TradingHorizon::Swing => {
                                     last_features_swing[coin_id][0] = hawkes;
                                     last_features_swing[coin_id][1] = entropy;
@@ -267,14 +275,15 @@ pub fn spawn_telemetry_consumer(
 
                             match horizon {
                                 TradingHorizon::Continuous | TradingHorizon::Scalping => {
-                                    let prior_pred = s_mod.predict(&last_features_scalping[coin_id]);
+                                    let prior_pred =
+                                        s_mod.predict(&last_features_scalping[coin_id]);
                                     let td_error = net_pnl - prior_pred;
                                     s_mod.update_weights_with_kalman(
                                         &last_features_scalping[coin_id],
                                         td_error,
                                         last_entropy_scalping[coin_id],
                                     );
-                                },
+                                }
                                 TradingHorizon::Swing => {
                                     let prior_pred = sw_mod.predict(&last_features_swing[coin_id]);
                                     let td_error = net_pnl - prior_pred;
@@ -312,7 +321,10 @@ mod tests {
         module.update_weights_with_kalman(&features, td_error, 0.2);
 
         let pred_updated = module.predict(&features);
-        assert!(pred_updated > 0.0, "Weight should adapt towards positive reward");
+        assert!(
+            pred_updated > 0.0,
+            "Weight should adapt towards positive reward"
+        );
     }
 
     #[test]

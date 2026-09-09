@@ -142,7 +142,9 @@ impl LakehouseWarehouse {
                                 // FIX #1534: Sanitización de payload de telemetría
                                 let mut safe_data = data;
                                 for d in &mut safe_data {
-                                    if !d.is_finite() { *d = 0.0; }
+                                    if !d.is_finite() {
+                                        *d = 0.0;
+                                    }
                                 }
                                 if let Err(e) = tx.execute(
                                     "INSERT INTO telemetry (subsystem, frame_type, timestamp, d1, d2, d3, d4, d5, d6) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -161,7 +163,11 @@ impl LakehouseWarehouse {
                                 let ts = timestamp as i64;
                                 let bytes: &[u8] = bytemuck::cast_slice(&features);
                                 // FIX #1534: Sanitización de predicción y target
-                                let safe_pred = if prediction.is_finite() { prediction } else { 0.0 };
+                                let safe_pred = if prediction.is_finite() {
+                                    prediction
+                                } else {
+                                    0.0
+                                };
                                 let safe_target = if target.is_finite() { target } else { 0.0 };
                                 if let Err(e) = tx.execute(
                                     "INSERT INTO tensor_state (symbol, timestamp, features, prediction, target) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -184,11 +190,16 @@ impl LakehouseWarehouse {
                     Ok(event) => {
                         let is_flush = matches!(event, LakehouseEvent::FlushAndOptimize);
                         batch.push(event);
-                        if batch.len() >= 1000 || is_flush || last_flush.elapsed() >= std::time::Duration::from_millis(500) {
+                        if batch.len() >= 1000
+                            || is_flush
+                            || last_flush.elapsed() >= std::time::Duration::from_millis(500)
+                        {
                             flush_batch(&mut conn, &mut batch);
                             last_flush = std::time::Instant::now();
                             // FIX #610: Ejecutar PRAGMA optimize sólo en flush explícito o cada 1 hora para evitar contención de lock
-                            if is_flush || last_pragma_opt.elapsed() >= std::time::Duration::from_secs(3600) {
+                            if is_flush
+                                || last_pragma_opt.elapsed() >= std::time::Duration::from_secs(3600)
+                            {
                                 let _ = conn.execute("PRAGMA optimize;", []);
                                 last_pragma_opt = std::time::Instant::now();
                             }
@@ -268,7 +279,11 @@ impl LakehouseWarehouse {
                 *f = 0.0;
             }
         }
-        let safe_pred = if prediction.is_finite() { prediction } else { 0.5 };
+        let safe_pred = if prediction.is_finite() {
+            prediction
+        } else {
+            0.5
+        };
         let safe_target = if target.is_finite() { target } else { 0.0 };
 
         // FIX #1001: Verificar Result de try_send
@@ -330,8 +345,16 @@ impl CompressedTickBatch {
     /// Codifica un tick en bytes compactos: `[delta_time_ms: u32, delta_price: i32, qty: f32]` (12 bytes por tick vs 24 bytes f64)
     #[inline(always)]
     pub fn push_tick(&mut self, timestamp_ms: u64, price: f64, qty: f64) {
-        let safe_price = if price.is_finite() && price > 0.0 { price } else { self.base_price_fixed as f64 / self.price_scale };
-        let safe_qty = if qty.is_finite() && qty >= 0.0 { qty } else { 0.0 };
+        let safe_price = if price.is_finite() && price > 0.0 {
+            price
+        } else {
+            self.base_price_fixed as f64 / self.price_scale
+        };
+        let safe_qty = if qty.is_finite() && qty >= 0.0 {
+            qty
+        } else {
+            0.0
+        };
 
         let dt = (timestamp_ms.saturating_sub(self.base_timestamp_ms)).min(u32::MAX as u64) as u32;
         let p_fixed = (safe_price * self.price_scale).round() as i64;
@@ -385,8 +408,14 @@ mod tests {
     #[test]
     fn test_lakehouse_in_memory_or_temp() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!("lakehouse_test_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
-        
+        let db_path = temp_dir.join(format!(
+            "lakehouse_test_{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
         let warehouse = LakehouseWarehouse::new(&db_path);
         warehouse.record_depth("BTCUSDT".into(), 1700000000000, 60000.0, 60001.0, 0.25);
         warehouse.record_telemetry(1, 2, 1700000000000, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
@@ -431,12 +460,18 @@ mod tests {
         assert_eq!(batch.count, 2);
         let (ts0, p0, q0) = batch.get_tick(0).unwrap();
         assert_eq!(ts0, base_ts + 5);
-        assert!((p0 - 0.00001855).abs() < 1e-8, "Debe preservar 8 decimales en sub-centavos");
+        assert!(
+            (p0 - 0.00001855).abs() < 1e-8,
+            "Debe preservar 8 decimales en sub-centavos"
+        );
         assert!((q0 - 1000000.0).abs() < 1e-1);
 
         let (ts1, p1, q1) = batch.get_tick(1).unwrap();
         assert_eq!(ts1, base_ts + 15);
-        assert!((p1 - 0.00001842).abs() < 1e-8, "Debe preservar 8 decimales en sub-centavos");
+        assert!(
+            (p1 - 0.00001842).abs() < 1e-8,
+            "Debe preservar 8 decimales en sub-centavos"
+        );
         assert!((q1 - 500000.0).abs() < 1e-1);
     }
 

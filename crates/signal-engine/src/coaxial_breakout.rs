@@ -1,6 +1,6 @@
-use strategy_core::{QuantumStrategy, SignalIntent, SignalType};
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
+use strategy_core::{QuantumStrategy, SignalIntent, SignalType};
 
 /// 🎯 ALGORITMO #45: DETECTOR COAXIAL DE COMPRESIÓN DE VOLATILIDAD Y BREAKOUT (COAXIAL BREAKOUT ENGINE)
 /// Monitorea compresión estocástica de ATR en 1s, 5s y 1m simultáneamente.
@@ -58,10 +58,7 @@ impl CoaxialBreakoutEngine {
             .load(Ordering::Relaxed);
         if coaxial_squeeze > squeeze_threshold {
             // FIX #1507: Sanitización de duración de señal
-            let raw_dur = arena
-                .config
-                .base_duration_ms
-                .load(Ordering::Relaxed);
+            let raw_dur = arena.config.base_duration_ms.load(Ordering::Relaxed);
             let duration = if raw_dur.is_finite() && raw_dur > 0.0 {
                 raw_dur as u64
             } else {
@@ -98,8 +95,16 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
     }
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
-        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
-        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let sym_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(symbol)
+        };
+        let cid_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(coin_id)
+        };
         let r = match self.registry.as_ref() {
             Some(reg) => reg,
             None => return 0.0,
@@ -107,7 +112,9 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
 
         let atr_1s = r
             .get_scoped_parameter(sym_opt, cid_opt, "atr_1s", "CoaxialBreakoutEngine")
-            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "atr_pct", "CoaxialBreakoutEngine"))
+            .or_else(|| {
+                r.get_scoped_parameter(sym_opt, cid_opt, "atr_pct", "CoaxialBreakoutEngine")
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.001);
 
@@ -122,9 +129,21 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
             .unwrap_or_else(|| atr_1s * 3.0);
 
         // FIX #682: Sanitizar lecturas de ATR
-        let safe_1s = if atr_1s.is_finite() && atr_1s > 0.0 { atr_1s } else { 0.001 };
-        let safe_5s = if atr_5s.is_finite() && atr_5s > 0.0 { atr_5s } else { 0.005 };
-        let safe_1m = if atr_1m.is_finite() && atr_1m > 0.0 { atr_1m } else { 0.020 };
+        let safe_1s = if atr_1s.is_finite() && atr_1s > 0.0 {
+            atr_1s
+        } else {
+            0.001
+        };
+        let safe_5s = if atr_5s.is_finite() && atr_5s > 0.0 {
+            atr_5s
+        } else {
+            0.005
+        };
+        let safe_1m = if atr_1m.is_finite() && atr_1m > 0.0 {
+            atr_1m
+        } else {
+            0.020
+        };
 
         let norm_atr_1s = safe_1s;
         let norm_atr_5s = safe_5s / 2.2360679775_f64;
@@ -133,15 +152,42 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
         let comp_5s = (1.0_f64 - (norm_atr_5s / norm_atr_1m.max(1e-8))).max(0.0);
 
         let direction = r
-            .get_scoped_parameter(sym_opt, cid_opt, "order_flow_direction", "CoaxialBreakoutEngine")
-            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "CoaxialBreakoutEngine"))
-            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "order_flow_delta", "CoaxialBreakoutEngine"))
-            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "price_velocity", "CoaxialBreakoutEngine"))
-            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "vol_delta", "CoaxialBreakoutEngine"))
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "order_flow_direction",
+                "CoaxialBreakoutEngine",
+            )
+            .or_else(|| {
+                r.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "order_flow_imbalance",
+                    "CoaxialBreakoutEngine",
+                )
+            })
+            .or_else(|| {
+                r.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "order_flow_delta",
+                    "CoaxialBreakoutEngine",
+                )
+            })
+            .or_else(|| {
+                r.get_scoped_parameter(sym_opt, cid_opt, "price_velocity", "CoaxialBreakoutEngine")
+            })
+            .or_else(|| {
+                r.get_scoped_parameter(sym_opt, cid_opt, "vol_delta", "CoaxialBreakoutEngine")
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
 
-        let safe_dir = if direction.is_finite() { direction } else { 0.0 };
+        let safe_dir = if direction.is_finite() {
+            direction
+        } else {
+            0.0
+        };
         if safe_dir.abs() <= 1e-6 {
             return 0.0;
         }
@@ -159,7 +205,7 @@ mod tests {
         let arena = quantum_arena::GlobalArena::new(13.0);
         // Fuerte compresión multiescala: 1s << 5s << 1m
         let signal = CoaxialBreakoutEngine::evaluate_coaxial_breakout(
-            &arena, 0.0005, 0.005, 0.050, 60000.0, true
+            &arena, 0.0005, 0.005, 0.050, 60000.0, true,
         );
         assert!(signal.is_some());
         let s = signal.unwrap();
@@ -172,7 +218,7 @@ mod tests {
         let arena = quantum_arena::GlobalArena::new(13.0);
         // Short con compresión
         let signal_short = CoaxialBreakoutEngine::evaluate_coaxial_breakout(
-            &arena, 0.0005, 0.005, 0.050, 60000.0, false
+            &arena, 0.0005, 0.005, 0.050, 60000.0, false,
         );
         assert!(signal_short.is_some());
         let s = signal_short.unwrap();
@@ -180,7 +226,12 @@ mod tests {
 
         // Inmunidad a NaN
         let signal_nan = CoaxialBreakoutEngine::evaluate_coaxial_breakout(
-            &arena, f64::NAN, 0.005, 0.050, 60000.0, true
+            &arena,
+            f64::NAN,
+            0.005,
+            0.050,
+            60000.0,
+            true,
         );
         assert!(signal_nan.is_none());
     }

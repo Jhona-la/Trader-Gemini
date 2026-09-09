@@ -1,6 +1,5 @@
 /// 🌌 MOTOR DE COINTEGRACIÓN MULTIVARIANTE Y ORNSTEIN-UHLENBECK (MULTIVARIATE COINTEGRATION & OU ENGINE)
 /// Modela clusters de altcoins cointegradas con estimación de vida media de reversión $t_{1/2} = \frac{\ln(2)}{\theta}$ (#83-#95).
-
 use crate::types::{SignalIntent, SignalType, TradeHorizon};
 
 const MAX_ASSETS: usize = 4;
@@ -23,10 +22,18 @@ impl MultivariateCointegrationEngine {
     }
 
     /// Constructor con factor de decaimiento de memoria temporal configurable (Punto #110)
-    pub fn new_with_decay(weights: [f64; MAX_ASSETS], z_score_threshold: f64, memory_decay: f64) -> Self {
+    pub fn new_with_decay(
+        weights: [f64; MAX_ASSETS],
+        z_score_threshold: f64,
+        memory_decay: f64,
+    ) -> Self {
         let mut safe_weights = [0.0; MAX_ASSETS];
         for i in 0..MAX_ASSETS {
-            safe_weights[i] = if weights[i].is_finite() { weights[i] } else { 0.25 };
+            safe_weights[i] = if weights[i].is_finite() {
+                weights[i]
+            } else {
+                0.25
+            };
         }
         Self {
             weights: safe_weights,
@@ -83,13 +90,16 @@ impl MultivariateCointegrationEngine {
         let delta = spread - self.mean_spread;
         self.mean_spread += delta / (self.count as f64).min(500.0);
         let delta2 = spread - self.mean_spread;
-        self.var_spread = (self.memory_decay * self.var_spread + (1.0 - self.memory_decay) * (delta * delta2).max(0.0)).max(1e-6);
+        self.var_spread = (self.memory_decay * self.var_spread
+            + (1.0 - self.memory_decay) * (delta * delta2).max(0.0))
+        .max(1e-6);
 
         // 3. Estimación discreta de velocidad de reversión Ornstein-Uhlenbeck: $\Delta S_t = -\theta (S_{t-1} - \mu) + \epsilon_t$
         let spread_deviation = self.last_spread - self.mean_spread;
         if spread_deviation.abs() > 1e-6 {
             let instantaneous_theta = (-diff_spread / spread_deviation).clamp(0.01, 2.0);
-            self.theta_reversion_speed = 0.95 * self.theta_reversion_speed + 0.05 * instantaneous_theta;
+            self.theta_reversion_speed =
+                0.95 * self.theta_reversion_speed + 0.05 * instantaneous_theta;
         }
         self.last_spread = spread;
 
@@ -265,5 +275,3 @@ mod tests {
         assert_eq!(intent.horizon, TradeHorizon::Swing);
     }
 }
-
-

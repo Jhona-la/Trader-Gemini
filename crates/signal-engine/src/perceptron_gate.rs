@@ -1,6 +1,6 @@
-use strategy_core::QuantumStrategy;
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 /// 🧠 ALGORITMO #96: MOTOR DE COMPUERTA PERCEPTRÓN HEBBIANA ADAPTATIVA (PERCEPTRON GATE ENGINE)
 /// Perceptrón binario ultra-rápido de ciclo único de CPU con regla de actualización Hebbiana adaptativa,
@@ -40,7 +40,11 @@ impl PerceptronGateEngine {
     #[inline(always)]
     pub fn update_weight(weight: &mut f64, recent_pnl: f64, std_dev: f64) {
         // FIX #646: Sanitizar entradas para asegurar estabilidad del perceptrón
-        let safe_std = if std_dev.is_finite() && std_dev >= 0.0 { std_dev } else { 0.01 };
+        let safe_std = if std_dev.is_finite() && std_dev >= 0.0 {
+            std_dev
+        } else {
+            0.01
+        };
         let current_w = if weight.is_finite() { *weight } else { 1.0 };
 
         // Tasa de aprendizaje base (0.05) modulada inversamente por el riesgo (std_dev).
@@ -61,7 +65,6 @@ impl PerceptronGateEngine {
             }
         }
     }
-
 }
 
 impl QuantumStrategy for PerceptronGateEngine {
@@ -79,20 +82,52 @@ impl QuantumStrategy for PerceptronGateEngine {
     }
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
-        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
-        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let sym_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(symbol)
+        };
+        let cid_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(coin_id)
+        };
         let registry = match self.registry.as_ref() {
             Some(r) => r,
             None => return 0.0,
         };
         let signal_score = registry
-            .get_scoped_parameter(sym_opt, cid_opt, "perceptron_candidate_signal", "PerceptronGateEngine")
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "PerceptronGateEngine"))
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "alpha_signal", "PerceptronGateEngine"))
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "perceptron_candidate_signal",
+                "PerceptronGateEngine",
+            )
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "order_flow_imbalance",
+                    "PerceptronGateEngine",
+                )
+            })
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "alpha_signal",
+                    "PerceptronGateEngine",
+                )
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
         let weight = registry
-            .get_scoped_parameter(sym_opt, cid_opt, "perceptron_hebbian_weight", "PerceptronGateEngine")
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "perceptron_hebbian_weight",
+                "PerceptronGateEngine",
+            )
             .map(|p| p.get_value())
             .unwrap_or(1.0);
         if !signal_score.is_finite() || !weight.is_finite() {
@@ -117,7 +152,10 @@ mod tests {
 
         let short_out = PerceptronGateEngine::infer(-0.8, 1.0);
         assert!(short_out < 0.0);
-        assert!((long_out + short_out).abs() < 1e-6, "Debe ser perfectamente simétrico");
+        assert!(
+            (long_out + short_out).abs() < 1e-6,
+            "Debe ser perfectamente simétrico"
+        );
     }
 
     #[test]
@@ -151,5 +189,3 @@ mod tests {
         assert!((-1.0..=1.0).contains(&signal));
     }
 }
-
-

@@ -88,7 +88,10 @@ impl UserDataStreamer {
     /// Loop principal: listenKey → connect WebSocket → lee frames → reintenta
     /// en desconexión. Diseñado para ejecutarse en `tokio::spawn`.
     pub async fn start(&self) {
-        let is_testnet = self.client.is_testnet.load(std::sync::atomic::Ordering::Relaxed);
+        let is_testnet = self
+            .client
+            .is_testnet
+            .load(std::sync::atomic::Ordering::Relaxed);
         let base_ws = if is_testnet {
             "wss://stream.binancefuture.com/ws"
         } else {
@@ -103,16 +106,35 @@ impl UserDataStreamer {
                     k
                 }
                 Ok(_) => {
-                    let jitter_ms = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos() as u64).unwrap_or(42) % 200) + 50;
-                    println!("⚠️ [USER-STREAM] listenKey vacío; reintentando en {}ms...", backoff_ms + jitter_ms);
-                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms + jitter_ms)).await;
+                    let jitter_ms = (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.subsec_nanos() as u64)
+                        .unwrap_or(42)
+                        % 200)
+                        + 50;
+                    println!(
+                        "⚠️ [USER-STREAM] listenKey vacío; reintentando en {}ms...",
+                        backoff_ms + jitter_ms
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms + jitter_ms))
+                        .await;
                     backoff_ms = (backoff_ms * 2).min(30_000);
                     continue;
                 }
                 Err(e) => {
-                    let jitter_ms = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos() as u64).unwrap_or(42) % 200) + 50;
-                    println!("⚠️ [USER-STREAM] create_listen_key falló: {}; reintentando en {}ms...", e, backoff_ms + jitter_ms);
-                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms + jitter_ms)).await;
+                    let jitter_ms = (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.subsec_nanos() as u64)
+                        .unwrap_or(42)
+                        % 200)
+                        + 50;
+                    println!(
+                        "⚠️ [USER-STREAM] create_listen_key falló: {}; reintentando en {}ms...",
+                        e,
+                        backoff_ms + jitter_ms
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms + jitter_ms))
+                        .await;
                     backoff_ms = (backoff_ms * 2).min(30_000);
                     continue;
                 }
@@ -134,7 +156,10 @@ impl UserDataStreamer {
                     stream
                 }
                 Err(e) => {
-                    println!("⚠️ [USER-STREAM] Conexión falló: {}; reintentando en {}ms...", e, backoff_ms);
+                    println!(
+                        "⚠️ [USER-STREAM] Conexión falló: {}; reintentando en {}ms...",
+                        e, backoff_ms
+                    );
                     tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms)).await;
                     backoff_ms = (backoff_ms * 2).min(30_000);
                     continue;
@@ -216,7 +241,9 @@ impl UserDataStreamer {
     }
 
     fn on_listen_key_expired(&self) {
-        println!("🚨 [USER-STREAM] listenKeyExpired recibido de Binance! Forzando renovación inmediata.");
+        println!(
+            "🚨 [USER-STREAM] listenKeyExpired recibido de Binance! Forzando renovación inmediata."
+        );
         self.expired_flag.store(true, Ordering::Relaxed);
     }
 
@@ -286,7 +313,11 @@ impl UserDataStreamer {
             cumulative_filled_qty: o.cumulative_filled_qty,
             last_filled_qty: o.last_filled_qty,
             last_filled_price: o.last_filled_price,
-            avg_price: if o.avg_price > 0.0 { o.avg_price } else { o.last_filled_price },
+            avg_price: if o.avg_price > 0.0 {
+                o.avg_price
+            } else {
+                o.last_filled_price
+            },
             commission: o.commission,
             commission_asset: o.commission_asset.unwrap_or_default(),
             trade_time_ms: o.trade_time_ms,
@@ -313,7 +344,8 @@ impl UserDataStreamer {
         // Soporta tanto identificadores estándar (_TP, _SL) como variantes con retry (_TPR, _SLR).
         // Cancela todas las variantes de la pierna hermana para evitar dobles ejecuciones u órdenes huérfanas.
         if update.status == OrderStatus::Filled {
-            let sister_candidates = if let Some(base) = update.client_order_id.strip_suffix("_TPR") {
+            let sister_candidates = if let Some(base) = update.client_order_id.strip_suffix("_TPR")
+            {
                 vec![format!("{}_SL", base), format!("{}_SLR", base)]
             } else if let Some(base) = update.client_order_id.strip_suffix("_TP") {
                 vec![format!("{}_SL", base), format!("{}_SLR", base)]
@@ -334,13 +366,17 @@ impl UserDataStreamer {
                     let arena_clone = self.arena.clone();
                     tokio::spawn(async move {
                         for sister_id in sister_candidates {
-                            let ts = crate::executor::current_synced_timestamp_ms(arena_clone.as_deref());
+                            let ts = crate::executor::current_synced_timestamp_ms(
+                                arena_clone.as_deref(),
+                            );
                             let mut buf = crate::client::ZeroAllocBuffer::new();
-                            buf.push_str(if client.is_testnet.load(std::sync::atomic::Ordering::Relaxed) {
-                                "https://testnet.binancefuture.com/fapi/v1/order?"
-                            } else {
-                                "https://fapi.binance.com/fapi/v1/order?"
-                            });
+                            buf.push_str(
+                                if client.is_testnet.load(std::sync::atomic::Ordering::Relaxed) {
+                                    "https://testnet.binancefuture.com/fapi/v1/order?"
+                                } else {
+                                    "https://fapi.binance.com/fapi/v1/order?"
+                                },
+                            );
                             let payload_start = buf.as_str().len();
                             buf.push_str("symbol=");
                             buf.push_str(&symbol);
@@ -351,7 +387,11 @@ impl UserDataStreamer {
 
                             let mut sig_buf = [0u8; 64];
                             let payload = &buf.as_str()[payload_start..];
-                            crate::binance_api::sign_payload_to_buffer(payload, &secret, &mut sig_buf);
+                            crate::binance_api::sign_payload_to_buffer(
+                                payload,
+                                &secret,
+                                &mut sig_buf,
+                            );
                             let sig = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
                             buf.push_str("&signature=");
                             buf.push_str(sig);
@@ -415,7 +455,11 @@ impl UserDataStreamer {
         let total_unrealized_pnl: f64 = if let Ok(mut cache) = self.cached_positions.lock() {
             for p in &ev.a.positions {
                 let key = (p.symbol.clone(), p.position_side.clone());
-                let pnl = if p.unrealized_pnl.is_finite() { p.unrealized_pnl } else { 0.0 };
+                let pnl = if p.unrealized_pnl.is_finite() {
+                    p.unrealized_pnl
+                } else {
+                    0.0
+                };
                 if p.position_amt.abs() > 1e-8 {
                     cache.insert(key, pnl);
                 } else {
@@ -424,10 +468,15 @@ impl UserDataStreamer {
             }
             cache.values().sum()
         } else {
-            ev.a
-                .positions
+            ev.a.positions
                 .iter()
-                .map(|p| if p.unrealized_pnl.is_finite() { p.unrealized_pnl } else { 0.0 })
+                .map(|p| {
+                    if p.unrealized_pnl.is_finite() {
+                        p.unrealized_pnl
+                    } else {
+                        0.0
+                    }
+                })
                 .sum()
         };
 
@@ -443,18 +492,35 @@ impl UserDataStreamer {
         }
 
         if !ev.a.positions.is_empty() {
-            let positions: Vec<RemotePosition> =
-                ev.a.positions
-                    .iter()
-                    .map(|p| RemotePosition {
-                        symbol: p.symbol.clone(),
-                        position_amt: if p.position_amt.is_finite() { p.position_amt } else { 0.0 },
-                        entry_price: if p.entry_price.is_finite() && p.entry_price >= 0.0 { p.entry_price } else { 0.0 },
-                        unrealized_pnl: if p.unrealized_pnl.is_finite() { p.unrealized_pnl } else { 0.0 },
-                        isolated_wallet: if p.isolated_wallet.is_finite() && p.isolated_wallet >= 0.0 { p.isolated_wallet } else { 0.0 },
-                        position_side: p.position_side.clone(),
-                    })
-                    .collect();
+            let positions: Vec<RemotePosition> = ev
+                .a
+                .positions
+                .iter()
+                .map(|p| RemotePosition {
+                    symbol: p.symbol.clone(),
+                    position_amt: if p.position_amt.is_finite() {
+                        p.position_amt
+                    } else {
+                        0.0
+                    },
+                    entry_price: if p.entry_price.is_finite() && p.entry_price >= 0.0 {
+                        p.entry_price
+                    } else {
+                        0.0
+                    },
+                    unrealized_pnl: if p.unrealized_pnl.is_finite() {
+                        p.unrealized_pnl
+                    } else {
+                        0.0
+                    },
+                    isolated_wallet: if p.isolated_wallet.is_finite() && p.isolated_wallet >= 0.0 {
+                        p.isolated_wallet
+                    } else {
+                        0.0
+                    },
+                    position_side: p.position_side.clone(),
+                })
+                .collect();
             self.sink.on_positions(&positions);
         }
     }
@@ -533,16 +599,13 @@ mod tests {
         assert_eq!(sink.0.load(std::sync::atomic::Ordering::Relaxed), 10675);
     }
 
-
     #[test]
     fn test_dispatch_order_trade_update_to_registry() {
         let registry = Arc::new(OrderRegistry::new());
         registry.register_intent("ORD_101", "BTCUSDT", "BUY", "LONG", "LIMIT", 1.0, 1000);
 
-        let streamer = UserDataStreamer::new(
-            BinanceClient::new("key".into(), true),
-            registry.clone(),
-        );
+        let streamer =
+            UserDataStreamer::new(BinanceClient::new("key".into(), true), registry.clone());
 
         let trade_event = r#"{"e":"ORDER_TRADE_UPDATE","E":1700000000000,"o":{"s":"BTCUSDT","c":"ORD_101","S":"BUY","ps":"LONG","o":"LIMIT","f":"GTC","q":"1.0","p":"50000","ap":"50000","sp":"0","X":"FILLED","i":10101,"l":"1.0","z":"1.0","L":"50000","n":"0.0001","N":"USDT","T":1700000000000,"t":1,"m":false}}"#;
         streamer.dispatch(trade_event.as_bytes());
@@ -554,15 +617,10 @@ mod tests {
     #[test]
     fn test_listen_key_expired_triggers_flag() {
         let registry = Arc::new(OrderRegistry::new());
-        let streamer = UserDataStreamer::new(
-            BinanceClient::new("key".into(), true),
-            registry,
-        );
+        let streamer = UserDataStreamer::new(BinanceClient::new("key".into(), true), registry);
         assert!(!streamer.expired_flag.load(Ordering::Relaxed));
         let expired_event = r#"{"e":"listenKeyExpired","E":1700000000000}"#;
         streamer.dispatch(expired_event.as_bytes());
         assert!(streamer.expired_flag.load(Ordering::Relaxed));
     }
 }
-
-

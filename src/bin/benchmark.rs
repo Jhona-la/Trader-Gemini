@@ -77,11 +77,7 @@ fn main() {
 
         if scalp_intent.signal != SignalType::Flat {
             // coin_id for bnbusdt is 2
-            let _validated_order = risk_engine.evaluate_quantum_order(
-                2,
-                &scalp_intent,
-                &arena_ptr,
-            );
+            let _validated_order = risk_engine.evaluate_quantum_order(2, &scalp_intent, &arena_ptr);
         }
 
         // --- FIN DEL HOT PATH ---

@@ -1,6 +1,6 @@
-use strategy_core::QuantumStrategy;
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 /// ⚡ ALGORITMO #66: DISPARADOR ADAPTATIVO DE MICRO-SCALPING HAWKES/OBI (MICRO SCALP TRIGGER ENGINE)
 /// Dispara entradas de micro-scalp de alta probabilidad calibrando dinámicamente el umbral a partir del
@@ -87,21 +87,53 @@ impl QuantumStrategy for MicroScalpTriggerEngine {
     }
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
-        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
-        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let sym_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(symbol)
+        };
+        let cid_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(coin_id)
+        };
         let r = match self.registry.as_ref() {
             Some(reg) => reg,
             None => return 0.0,
         };
 
         let hawkes = r
-            .get_scoped_parameter(sym_opt, cid_opt, "hawkes_intensity", "MicroScalpTriggerEngine")
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "hawkes_intensity",
+                "MicroScalpTriggerEngine",
+            )
             .map(|p| p.get_value())
             .unwrap_or(1.0);
         let obi = r
-            .get_scoped_parameter(sym_opt, cid_opt, "order_book_imbalance", "MicroScalpTriggerEngine")
-            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "orderbook_imbalance", "MicroScalpTriggerEngine"))
-            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "MicroScalpTriggerEngine"))
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "order_book_imbalance",
+                "MicroScalpTriggerEngine",
+            )
+            .or_else(|| {
+                r.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "orderbook_imbalance",
+                    "MicroScalpTriggerEngine",
+                )
+            })
+            .or_else(|| {
+                r.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "order_flow_imbalance",
+                    "MicroScalpTriggerEngine",
+                )
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
         let ml_prob = r
@@ -143,9 +175,8 @@ mod tests {
     fn test_micro_scalp_trigger() {
         let arena = quantum_arena::GlobalArena::new(13.0);
         // Condición Long completa: hawkes alto, obi positivo alto, ml_prob alcista
-        let should_trigger = MicroScalpTriggerEngine::should_trigger_micro_scalp(
-            &arena, 3.0, 2.5, 0.85, true
-        );
+        let should_trigger =
+            MicroScalpTriggerEngine::should_trigger_micro_scalp(&arena, 3.0, 2.5, 0.85, true);
         assert!(should_trigger);
     }
 
@@ -154,18 +185,23 @@ mod tests {
         let arena = quantum_arena::GlobalArena::new(13.0);
         // Conformal p-value suficiente (0.85 >= 0.70)
         let ok = MicroScalpTriggerEngine::should_trigger_micro_scalp_conformal(
-            &arena, 3.0, 2.5, 0.85, 0.85, true
+            &arena, 3.0, 2.5, 0.85, 0.85, true,
         );
         assert!(ok);
 
         // Conformal p-value insuficiente o NaN -> rechazar
         let rejected = MicroScalpTriggerEngine::should_trigger_micro_scalp_conformal(
-            &arena, 3.0, 2.5, 0.85, 0.50, true
+            &arena, 3.0, 2.5, 0.85, 0.50, true,
         );
         assert!(!rejected);
 
         let nan_rejected = MicroScalpTriggerEngine::should_trigger_micro_scalp_conformal(
-            &arena, 3.0, 2.5, 0.85, f64::NAN, true
+            &arena,
+            3.0,
+            2.5,
+            0.85,
+            f64::NAN,
+            true,
         );
         assert!(!nan_rejected);
     }
@@ -174,9 +210,8 @@ mod tests {
     fn test_micro_scalp_trigger_short_symmetry() {
         let arena = quantum_arena::GlobalArena::new(13.0);
         // Short con OBI negativo
-        let should_trigger_short = MicroScalpTriggerEngine::should_trigger_micro_scalp(
-            &arena, 3.0, -2.5, 0.15, false
-        );
+        let should_trigger_short =
+            MicroScalpTriggerEngine::should_trigger_micro_scalp(&arena, 3.0, -2.5, 0.15, false);
         assert!(should_trigger_short);
     }
 

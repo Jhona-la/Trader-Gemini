@@ -107,7 +107,13 @@ impl OrderAck {
     pub fn total_commission(&self) -> f64 {
         self.fills
             .iter()
-            .map(|f| if f.commission.is_finite() && f.commission >= 0.0 { f.commission } else { 0.0 })
+            .map(|f| {
+                if f.commission.is_finite() && f.commission >= 0.0 {
+                    f.commission
+                } else {
+                    0.0
+                }
+            })
             .sum()
     }
 }
@@ -190,9 +196,18 @@ mod tests {
             orig_qty: f64::NAN,
             executed_qty: 0.0,
             fills: vec![
-                Fill { commission: f64::NAN, ..Default::default() },
-                Fill { commission: -0.5, ..Default::default() },
-                Fill { commission: 0.05, ..Default::default() },
+                Fill {
+                    commission: f64::NAN,
+                    ..Default::default()
+                },
+                Fill {
+                    commission: -0.5,
+                    ..Default::default()
+                },
+                Fill {
+                    commission: 0.05,
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         };
@@ -200,4 +215,3 @@ mod tests {
         assert!((ack.total_commission() - 0.05).abs() < 1e-12);
     }
 }
-

@@ -4,8 +4,8 @@
 //! Explores 10,000 architecture variants symbolically via Quantum Monte Carlo (QMC) / SPSA
 //! Hamiltonian energy ($\hat{H}$) minimization before collapsing to concrete Rust AST templates.
 
-use serde::{Deserialize, Serialize};
 use crate::consejo_seniors::TradingHorizon;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuantumState {
@@ -72,14 +72,13 @@ impl QuantumState {
         } else {
             f64::MAX
         };
-        
+
         let complexity_penalty = match self.mode {
             TradingHorizon::Scalping => (self.window_size as f64 / 64.0) * 0.1, // Penaltis estrictos por lentitud
             TradingHorizon::Swing => (self.window_size as f64 / 1024.0) * 0.02,
             // U-F: media de los extremos del continuo
             TradingHorizon::Continuous => {
-                ((self.window_size as f64 / 64.0) * 0.1
-                    + (self.window_size as f64 / 1024.0) * 0.02)
+                ((self.window_size as f64 / 64.0) * 0.1 + (self.window_size as f64 / 1024.0) * 0.02)
                     / 2.0
             }
         };
@@ -107,7 +106,12 @@ impl QuantumEvolver {
     }
 
     /// Explores architecture space in superposed Hilbert states and performs annealing measurement
-    pub fn anneal_and_collapse(&self, seed: u64, residual_error: f64, mode: TradingHorizon) -> QuantumState {
+    pub fn anneal_and_collapse(
+        &self,
+        seed: u64,
+        residual_error: f64,
+        mode: TradingHorizon,
+    ) -> QuantumState {
         let mut best_state = QuantumState::random_superposition(seed, mode);
         best_state.compute_hamiltonian(residual_error);
 

@@ -9,7 +9,7 @@ pub struct SimdNeuralNet {
     pub w1: [[f64; 16]; 34],
     // Sesgo Capa 1: 16
     pub b1: [f64; 16],
-    
+
     // Pesos Capa 2: [Ocultas x Salidas] -> [16 x 2] = 32
     pub w2: [[f64; 2]; 16],
     // Sesgo Capa 2: 2
@@ -49,18 +49,22 @@ impl SimdNeuralNet {
     pub fn infer(&self, inputs: &[f64; 34]) -> [f64; 2] {
         let mut clean_inputs = [0.0; 34];
         for (clean, &raw) in clean_inputs.iter_mut().zip(inputs.iter()) {
-            *clean = if raw.is_finite() { raw.clamp(-100.0, 100.0) } else { 0.0 };
+            *clean = if raw.is_finite() {
+                raw.clamp(-100.0, 100.0)
+            } else {
+                0.0
+            };
         }
 
         let mut hidden = [0.0; 16];
-        
+
         // Multiplicación de Matrices Capa 1 (Vectorización SIMD 256-bit Pura vía Iteradores)
         for (&in_val, w1_row) in clean_inputs.iter().zip(self.w1.iter()) {
             for (h, &w) in hidden.iter_mut().zip(w1_row.iter()) {
                 *h += in_val * w;
             }
         }
-        
+
         // Aplicar Sesgo y Activación Leaky ReLU (Capa Oculta) para evitar Fugas de Gradiente (Dying ReLU)
         for (h, &b) in hidden.iter_mut().zip(self.b1.iter()) {
             let raw_h = *h + b;
@@ -68,7 +72,7 @@ impl SimdNeuralNet {
         }
 
         let mut outputs = [0.0; 2];
-        
+
         // Multiplicación Capa 2
         for (&h_val, w2_row) in hidden.iter().zip(self.w2.iter()) {
             for (out, &w) in outputs.iter_mut().zip(w2_row.iter()) {
@@ -79,12 +83,12 @@ impl SimdNeuralNet {
         // Activación de Salida (Softmax Numéricamente Estable para evitar overflow a Inf/NaN)
         outputs[0] += self.b2[0];
         outputs[1] += self.b2[1];
-        
+
         let max_val = outputs[0].max(outputs[1]);
         let exp_0 = (outputs[0] - max_val).exp();
         let exp_1 = (outputs[1] - max_val).exp();
         let sum_exp = exp_0 + exp_1;
-        
+
         if sum_exp > 0.0 && sum_exp.is_finite() {
             [
                 (exp_0 / sum_exp).clamp(0.0001, 0.9999),
@@ -100,13 +104,25 @@ impl SimdNeuralNet {
     pub fn train_step(&mut self, inputs: &[f64; 34], target_idx: usize, learning_rate: f64) {
         let mut clean_inputs = [0.0; 34];
         for (clean, &raw) in clean_inputs.iter_mut().zip(inputs.iter()) {
-            *clean = if raw.is_finite() { raw.clamp(-100.0, 100.0) } else { 0.0 };
+            *clean = if raw.is_finite() {
+                raw.clamp(-100.0, 100.0)
+            } else {
+                0.0
+            };
         }
-        let lr = if learning_rate.is_finite() { learning_rate.clamp(1e-5, 0.1) } else { 0.001 };
+        let lr = if learning_rate.is_finite() {
+            learning_rate.clamp(1e-5, 0.1)
+        } else {
+            0.001
+        };
         let probs = self.infer(&clean_inputs);
 
         // Error de salida con Cross-Entropy
-        let target = if target_idx == 0 { [1.0, 0.0] } else { [0.0, 1.0] };
+        let target = if target_idx == 0 {
+            [1.0, 0.0]
+        } else {
+            [0.0, 1.0]
+        };
         let mut d_out = [0.0; 2];
         for (d, (&p, &t)) in d_out.iter_mut().zip(probs.iter().zip(target.iter())) {
             *d = (p - t).clamp(-2.0, 2.0);
@@ -119,12 +135,16 @@ impl SimdNeuralNet {
                 *h += in_val * w;
             }
         }
-        
+
         // FIX #391: Aislando la derivada transitoria antes de mutar la capa profunda (Fuga de Gradientes)
         let mut d_hidden = [0.0; 16];
-        
+
         // Fase 1: Computar el error que fluye hacia la capa oculta sin mutar pesos (Matemáticamente puro)
-        for ((&h_val, &b1), (d_h, w2_row)) in hidden.iter().zip(self.b1.iter()).zip(d_hidden.iter_mut().zip(self.w2.iter())) {
+        for ((&h_val, &b1), (d_h, w2_row)) in hidden
+            .iter()
+            .zip(self.b1.iter())
+            .zip(d_hidden.iter_mut().zip(self.w2.iter()))
+        {
             let raw_h = h_val + b1;
             let relu_grad = if raw_h > 0.0 { 1.0 } else { 0.01 };
 
@@ -168,7 +188,11 @@ impl SimdNeuralNet {
     pub fn infer_quantized_i8(&self, inputs: &[f64; 34]) -> [f64; 2] {
         let mut clean_inputs = [0i32; 34];
         for (clean, &raw) in clean_inputs.iter_mut().zip(inputs.iter()) {
-            let val = if raw.is_finite() { raw.clamp(-10.0, 10.0) } else { 0.0 };
+            let val = if raw.is_finite() {
+                raw.clamp(-10.0, 10.0)
+            } else {
+                0.0
+            };
             *clean = (val * 12.7) as i32; // Escala fija Q7
         }
 
@@ -185,7 +209,11 @@ impl SimdNeuralNet {
         for (h_act, (&h, &b)) in hidden_act.iter_mut().zip(hidden.iter().zip(self.b1.iter())) {
             let b_scaled = (b * 161.29) as i32;
             let raw_h = h + b_scaled;
-            let val = if raw_h > 0 { raw_h as f64 } else { raw_h as f64 * 0.01 };
+            let val = if raw_h > 0 {
+                raw_h as f64
+            } else {
+                raw_h as f64 * 0.01
+            };
             *h_act = val / 161.29;
         }
 
@@ -226,7 +254,10 @@ mod tests {
 
         assert!(!out[0].is_nan(), "Output 0 must not be NaN");
         assert!(!out[1].is_nan(), "Output 1 must not be NaN");
-        assert!((out[0] + out[1] - 1.0).abs() < 1e-4, "Softmax sum must equal 1.0");
+        assert!(
+            (out[0] + out[1] - 1.0).abs() < 1e-4,
+            "Softmax sum must equal 1.0"
+        );
     }
 
     #[test]
@@ -237,7 +268,10 @@ mod tests {
             net.train_step(&inputs, 0, 0.01);
         }
         let out = net.infer(&inputs);
-        assert!(out[0] > out[1], "Net should learn class 0 probability increase");
+        assert!(
+            out[0] > out[1],
+            "Net should learn class 0 probability increase"
+        );
         assert!(out[0].is_finite() && out[1].is_finite());
     }
 
@@ -274,4 +308,3 @@ mod tests {
         assert!(out[1].is_finite());
     }
 }
-

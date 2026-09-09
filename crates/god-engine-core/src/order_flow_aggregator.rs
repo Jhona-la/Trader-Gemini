@@ -10,8 +10,16 @@ impl OrderFlowAggregatorEngine {
     #[inline(always)]
     pub fn aggregate_order_flow(buy_volume: f64, sell_volume: f64) -> (f64, f64) {
         // FIX #713: Sanitización de positividad y finitud estricta con guarda de volumen nulo
-        let safe_buy = if buy_volume.is_finite() && buy_volume >= 0.0 { buy_volume } else { 0.0 };
-        let safe_sell = if sell_volume.is_finite() && sell_volume >= 0.0 { sell_volume } else { 0.0 };
+        let safe_buy = if buy_volume.is_finite() && buy_volume >= 0.0 {
+            buy_volume
+        } else {
+            0.0
+        };
+        let safe_sell = if sell_volume.is_finite() && sell_volume >= 0.0 {
+            sell_volume
+        } else {
+            0.0
+        };
         let total = safe_buy + safe_sell;
         if total <= 1e-12 {
             return (0.5, 0.0);
@@ -44,4 +52,3 @@ mod tests {
         assert_eq!(delta, 0.0);
     }
 }
-

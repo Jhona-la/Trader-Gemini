@@ -158,5 +158,3 @@ mod tests {
         assert_eq!(clamped_rate, 0.0);
     }
 }
-
-

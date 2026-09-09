@@ -36,11 +36,20 @@ impl CyberneticResilienceShield {
             return (false, "Queue overflow: high dropped event count");
         }
         // FIX #679: Validar finitud y positividad de tasa de error
-        if !metrics.error_rate_pct.is_finite() || metrics.error_rate_pct < 0.0 || metrics.error_rate_pct > 15.0 {
-            return (false, "Error rate invalid or exceeding safety threshold (> 15%)");
+        if !metrics.error_rate_pct.is_finite()
+            || metrics.error_rate_pct < 0.0
+            || metrics.error_rate_pct > 15.0
+        {
+            return (
+                false,
+                "Error rate invalid or exceeding safety threshold (> 15%)",
+            );
         }
         if metrics.consecutive_execution_fails >= 5 {
-            return (false, "Consecutive execution failure circuit breaker tripped");
+            return (
+                false,
+                "Consecutive execution failure circuit breaker tripped",
+            );
         }
         (true, "Systemic cybernetic integrity nominal")
     }
@@ -133,4 +142,3 @@ mod tests {
         assert!(!CyberneticResilienceShield::audit_comprehensive_health(&neg_error).0);
     }
 }
-

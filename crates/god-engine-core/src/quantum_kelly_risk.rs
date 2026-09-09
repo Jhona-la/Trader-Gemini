@@ -3,8 +3,8 @@
 //! Computes mathematical expectancy E[X], dynamic optimal Kelly fraction f*,
 //! and volatility-adaptive compounding position sizes for a dynamically fetched base capital.
 
-use std::sync::atomic::Ordering;
 use quantum_arena::atomic_float::AtomicF64;
+use std::sync::atomic::Ordering;
 
 pub struct QuantumKellyRiskEngine {
     pub rolling_wins: AtomicF64,
@@ -20,12 +20,21 @@ impl std::fmt::Debug for QuantumKellyRiskEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QuantumKellyRiskEngine")
             .field("rolling_wins", &self.rolling_wins.load(Ordering::Relaxed))
-            .field("rolling_losses", &self.rolling_losses.load(Ordering::Relaxed))
+            .field(
+                "rolling_losses",
+                &self.rolling_losses.load(Ordering::Relaxed),
+            )
             .field("sum_win_pct", &self.sum_win_pct.load(Ordering::Relaxed))
             .field("sum_loss_pct", &self.sum_loss_pct.load(Ordering::Relaxed))
             .field("peak_capital", &self.peak_capital.load(Ordering::Relaxed))
-            .field("current_win_streak", &self.current_win_streak.load(Ordering::Relaxed))
-            .field("current_loss_streak", &self.current_loss_streak.load(Ordering::Relaxed))
+            .field(
+                "current_win_streak",
+                &self.current_win_streak.load(Ordering::Relaxed),
+            )
+            .field(
+                "current_loss_streak",
+                &self.current_loss_streak.load(Ordering::Relaxed),
+            )
             .finish()
     }
 }
@@ -63,7 +72,8 @@ impl QuantumKellyRiskEngine {
             self.current_loss_streak.store(0.0, Ordering::Relaxed);
         } else if pnl_pct < 0.0 {
             self.rolling_losses.fetch_add(1.0, Ordering::Relaxed);
-            self.sum_loss_pct.fetch_add(pnl_pct.abs(), Ordering::Relaxed);
+            self.sum_loss_pct
+                .fetch_add(pnl_pct.abs(), Ordering::Relaxed);
             self.current_loss_streak.fetch_add(1.0, Ordering::Relaxed);
             self.current_win_streak.store(0.0, Ordering::Relaxed);
         }
@@ -72,31 +82,66 @@ impl QuantumKellyRiskEngine {
         let wins = self.rolling_wins.load(Ordering::Relaxed);
         let losses = self.rolling_losses.load(Ordering::Relaxed);
         let total_trades = wins + losses;
-        
+
         if total_trades > 100.0 {
             // FIX #573 & #1203: Decaimiento suave atómico mediante fetch_update (elimina races concurrentes)
             let decay = 0.995;
-            let _ = self.rolling_wins.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v * decay));
-            let _ = self.rolling_losses.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v * decay));
-            let _ = self.sum_win_pct.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v * decay));
-            let _ = self.sum_loss_pct.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v * decay));
+            let _ = self
+                .rolling_wins
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v * decay));
+            let _ = self
+                .rolling_losses
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v * decay));
+            let _ = self
+                .sum_win_pct
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v * decay));
+            let _ = self
+                .sum_loss_pct
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v * decay));
         }
     }
 
     /// Computes real-time Kelly optimal fraction f*, Win Rate, and Mathematical Expectancy in bps
     #[inline]
-    pub fn compute_dynamic_kelly(&self, current_capital: f64, base_capital: f64, regime_hurst: f64, global_covariance: f64, neural_confidence: f64) -> (f64, f64, f64) {
+    pub fn compute_dynamic_kelly(
+        &self,
+        current_capital: f64,
+        base_capital: f64,
+        regime_hurst: f64,
+        global_covariance: f64,
+        neural_confidence: f64,
+    ) -> (f64, f64, f64) {
         // FIX #1432: Sanitización de argumentos entrantes para estabilidad matemática cuántica
-        let safe_current_cap = if current_capital.is_finite() && current_capital > 0.0 { current_capital } else { 13.0 };
-        let safe_base_cap = if base_capital.is_finite() && base_capital > 0.0 { base_capital } else { 13.0 };
-        let safe_hurst = if regime_hurst.is_finite() { regime_hurst } else { 0.5 };
-        let safe_cov = if global_covariance.is_finite() { global_covariance } else { 0.0 };
-        let safe_neural = if neural_confidence.is_finite() { neural_confidence } else { 0.5 };
+        let safe_current_cap = if current_capital.is_finite() && current_capital > 0.0 {
+            current_capital
+        } else {
+            13.0
+        };
+        let safe_base_cap = if base_capital.is_finite() && base_capital > 0.0 {
+            base_capital
+        } else {
+            13.0
+        };
+        let safe_hurst = if regime_hurst.is_finite() {
+            regime_hurst
+        } else {
+            0.5
+        };
+        let safe_cov = if global_covariance.is_finite() {
+            global_covariance
+        } else {
+            0.0
+        };
+        let safe_neural = if neural_confidence.is_finite() {
+            neural_confidence
+        } else {
+            0.5
+        };
 
         let wins = self.rolling_wins.load(Ordering::Relaxed);
         let losses = self.rolling_losses.load(Ordering::Relaxed);
         let total_trades = wins + losses;
-        
+
         let neural_directional_wr = if safe_neural > 0.50 {
             safe_neural
         } else {
@@ -108,7 +153,11 @@ impl QuantumKellyRiskEngine {
             let win_sum = self.sum_win_pct.load(Ordering::Relaxed);
             let loss_sum = self.sum_loss_pct.load(Ordering::Relaxed);
             let win = if wins > 0.0 { win_sum / wins } else { 0.0055 };
-            let loss = if losses > 0.0 { loss_sum / losses } else { 0.0035 };
+            let loss = if losses > 0.0 {
+                loss_sum / losses
+            } else {
+                0.0035
+            };
             // Fusión Bayesiana Cuántica: 35% histórico + 65% convicción neuronal instantánea
             let fused_wr = hist_wr * 0.35 + neural_directional_wr * 0.65;
             (fused_wr, win.max(0.0045), loss.max(0.0025))
@@ -120,10 +169,18 @@ impl QuantumKellyRiskEngine {
         let expectancy_bps = (win_rate * avg_win - (1.0 - win_rate) * avg_loss) * 10000.0;
 
         let raw_kelly = (win_rate * win_loss_ratio - (1.0 - win_rate)) / win_loss_ratio;
-        
+
         // Drawdown de-risking multiplier
-        let peak = self.peak_capital.load(Ordering::Relaxed).max(safe_current_cap).max(1.0);
-        let current_dd = if peak > 0.0 { (peak - safe_current_cap) / peak } else { 0.0 };
+        let peak = self
+            .peak_capital
+            .load(Ordering::Relaxed)
+            .max(safe_current_cap)
+            .max(1.0);
+        let current_dd = if peak > 0.0 {
+            (peak - safe_current_cap) / peak
+        } else {
+            0.0
+        };
         let dd_de_risk_factor = (1.0 - (current_dd / 0.85)).clamp(0.15, 1.0);
 
         // --- FASE XLII: Capital Evolutionary Derisking (SRE Growth) ---
@@ -140,7 +197,7 @@ impl QuantumKellyRiskEngine {
         } else {
             1.00
         };
-        
+
         // --- STREAK MULTIPLIER (PHASE 46) ---
         let win_streak = self.current_win_streak.load(Ordering::Relaxed);
         let loss_streak = self.current_loss_streak.load(Ordering::Relaxed);
@@ -166,14 +223,29 @@ impl QuantumKellyRiskEngine {
             1.0
         };
 
-        let optimal_kelly = raw_kelly * dd_de_risk_factor * capital_derisk_factor * regime_mult * streak_mult * topology_attenuation * neural_mult;
-        let safe_expectancy = if expectancy_bps.is_finite() { expectancy_bps } else { 0.0 };
-        let safe_wr = if win_rate.is_finite() { win_rate.clamp(0.0, 1.0) } else { 0.50 };
-        let safe_kelly = if safe_expectancy <= 0.0 || !optimal_kelly.is_finite() || optimal_kelly <= 0.0 {
-            0.0 // Abstinencia matemática estricta cuando no hay ventaja estadística
+        let optimal_kelly = raw_kelly
+            * dd_de_risk_factor
+            * capital_derisk_factor
+            * regime_mult
+            * streak_mult
+            * topology_attenuation
+            * neural_mult;
+        let safe_expectancy = if expectancy_bps.is_finite() {
+            expectancy_bps
         } else {
-            optimal_kelly.clamp(0.0, 0.50)
+            0.0
         };
+        let safe_wr = if win_rate.is_finite() {
+            win_rate.clamp(0.0, 1.0)
+        } else {
+            0.50
+        };
+        let safe_kelly =
+            if safe_expectancy <= 0.0 || !optimal_kelly.is_finite() || optimal_kelly <= 0.0 {
+                0.0 // Abstinencia matemática estricta cuando no hay ventaja estadística
+            } else {
+                optimal_kelly.clamp(0.0, 0.50)
+            };
 
         (safe_expectancy, safe_wr, safe_kelly)
     }
@@ -206,7 +278,8 @@ mod tests {
     #[test]
     fn test_quantum_kelly_risk_nan_and_negative_inputs_immunity() {
         let engine = QuantumKellyRiskEngine::new(13.0);
-        let (exp, wr, kelly) = engine.compute_dynamic_kelly(f64::NAN, -10.0, f64::NAN, f64::NAN, f64::NAN);
+        let (exp, wr, kelly) =
+            engine.compute_dynamic_kelly(f64::NAN, -10.0, f64::NAN, f64::NAN, f64::NAN);
         assert!(exp.is_finite());
         assert!(wr.is_finite());
         assert!(kelly.is_finite());
@@ -236,4 +309,3 @@ mod tests {
         assert_eq!(engine.rolling_losses.load(Ordering::Relaxed), 0.0);
     }
 }
-

@@ -29,8 +29,15 @@ impl QuantumOrderRouter {
         client_order_id: &str,
     ) -> Result<(), String> {
         // FIX #656: Validación previa de precio y cantidad
-        if !current_price.is_finite() || current_price <= 0.0 || !quantity.is_finite() || quantity <= 0.0 {
-            return Err(format!("Invalid order price {} or quantity {} for symbol {}", current_price, quantity, symbol));
+        if !current_price.is_finite()
+            || current_price <= 0.0
+            || !quantity.is_finite()
+            || quantity <= 0.0
+        {
+            return Err(format!(
+                "Invalid order price {} or quantity {} for symbol {}",
+                current_price, quantity, symbol
+            ));
         }
 
         let is_long = match decision.signal {
@@ -71,24 +78,31 @@ impl QuantumOrderRouter {
                 .await;
         }
 
-            // 2. Extrema Convicción / Breakout (Volatilidad Esperada Alta)
-            // FASE 3: umbrales leídos del GENOMA vía el arena del executor —
-            // antes eran los literales 0.85/0.015. La confianza mínima usa el
-            // gen min_confidence_btc; el gate de volatilidad se deriva de
-            // scalp_sl_base: si el movimiento esperado supera la mitad del
-            // stop, un limit arriesga quedarse fuera Y que el stop vuele.
-            let (conf_gate, vol_gate) = {
-                let exec = self.executor.load();
-                match exec.arena.load_full() {
-                    Some(arena) => (
-                        arena.config.min_confidence_btc.load(std::sync::atomic::Ordering::Relaxed),
-                        arena.config.scalp_sl_base.load(std::sync::atomic::Ordering::Relaxed) * 0.5,
-                    ),
-                    // Sin arena inyectada (tests/boot temprano): conserva el
-                    // umbral conservador histórico hasta que el engine lo provea.
-                    None => (0.85, 0.015),
-                }
-            };
+        // 2. Extrema Convicción / Breakout (Volatilidad Esperada Alta)
+        // FASE 3: umbrales leídos del GENOMA vía el arena del executor —
+        // antes eran los literales 0.85/0.015. La confianza mínima usa el
+        // gen min_confidence_btc; el gate de volatilidad se deriva de
+        // scalp_sl_base: si el movimiento esperado supera la mitad del
+        // stop, un limit arriesga quedarse fuera Y que el stop vuele.
+        let (conf_gate, vol_gate) = {
+            let exec = self.executor.load();
+            match exec.arena.load_full() {
+                Some(arena) => (
+                    arena
+                        .config
+                        .min_confidence_btc
+                        .load(std::sync::atomic::Ordering::Relaxed),
+                    arena
+                        .config
+                        .scalp_sl_base
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        * 0.5,
+                ),
+                // Sin arena inyectada (tests/boot temprano): conserva el
+                // umbral conservador histórico hasta que el engine lo provea.
+                None => (0.85, 0.015),
+            }
+        };
         if decision.net_confidence > conf_gate && decision.expected_volatility > vol_gate {
             // El mercado se va a mover rapidísimo. Un Limit no se llenará.
             // Usar IOC (Immediate-Or-Cancel) a un precio ligeramente peor para garantizar la entrada
@@ -141,8 +155,15 @@ impl QuantumOrderRouter {
         client_order_id: &str,
     ) -> Result<(), String> {
         // FIX #656 & #698: Validación previa y clamping estricto de callback rate [0.1, 5.0]
-        if !activation_price.is_finite() || activation_price <= 0.0 || !quantity.is_finite() || quantity <= 0.0 {
-            return Err(format!("Invalid trailing stop activation price {} or quantity {} for symbol {}", activation_price, quantity, symbol));
+        if !activation_price.is_finite()
+            || activation_price <= 0.0
+            || !quantity.is_finite()
+            || quantity <= 0.0
+        {
+            return Err(format!(
+                "Invalid trailing stop activation price {} or quantity {} for symbol {}",
+                activation_price, quantity, symbol
+            ));
         }
 
         let safe_callback_rate = if callback_rate_pct.is_finite() {
@@ -197,17 +218,19 @@ mod tests {
         };
 
         // Flat decision returns Ok(()) immediately without calling executor
-        let res = router.route_order(
-            "BTCUSDT",
-            &flat_decision,
-            50000.0,
-            0.001,
-            0.001,
-            0.1,
-            50,
-            0.0001,
-            "TEST_FLAT_ORDER",
-        ).await;
+        let res = router
+            .route_order(
+                "BTCUSDT",
+                &flat_decision,
+                50000.0,
+                0.001,
+                0.001,
+                0.1,
+                50,
+                0.0001,
+                "TEST_FLAT_ORDER",
+            )
+            .await;
         assert!(res.is_ok());
 
         let long_decision = TensorDecision {
@@ -218,34 +241,36 @@ mod tests {
             horizon: TradeHorizon::Scalp,
         };
 
-
-
         // Invalid price (NaN) returns Err
-        let res_nan_price = router.route_order(
-            "BTCUSDT",
-            &long_decision,
-            f64::NAN,
-            0.001,
-            0.001,
-            0.1,
-            50,
-            0.0001,
-            "TEST_NAN_ORDER",
-        ).await;
+        let res_nan_price = router
+            .route_order(
+                "BTCUSDT",
+                &long_decision,
+                f64::NAN,
+                0.001,
+                0.001,
+                0.1,
+                50,
+                0.0001,
+                "TEST_NAN_ORDER",
+            )
+            .await;
         assert!(res_nan_price.is_err());
 
         // Invalid quantity (0.0) returns Err
-        let res_zero_qty = router.route_order(
-            "BTCUSDT",
-            &long_decision,
-            50000.0,
-            0.0,
-            0.001,
-            0.1,
-            50,
-            0.0001,
-            "TEST_ZERO_QTY",
-        ).await;
+        let res_zero_qty = router
+            .route_order(
+                "BTCUSDT",
+                &long_decision,
+                50000.0,
+                0.0,
+                0.001,
+                0.1,
+                50,
+                0.0001,
+                "TEST_ZERO_QTY",
+            )
+            .await;
         assert!(res_zero_qty.is_err());
     }
 
@@ -259,30 +284,33 @@ mod tests {
         let router = QuantumOrderRouter::new(executor);
 
         // Invalid activation price (NaN) returns Err
-        let res_nan_act = router.route_trailing_stop(
-            "BTCUSDT",
-            true,
-            0.001,
-            f64::NAN,
-            1.0,
-            0.001,
-            0.1,
-            "TEST_TRAILING_NAN",
-        ).await;
+        let res_nan_act = router
+            .route_trailing_stop(
+                "BTCUSDT",
+                true,
+                0.001,
+                f64::NAN,
+                1.0,
+                0.001,
+                0.1,
+                "TEST_TRAILING_NAN",
+            )
+            .await;
         assert!(res_nan_act.is_err());
 
         // Invalid quantity (negative) returns Err
-        let res_neg_qty = router.route_trailing_stop(
-            "BTCUSDT",
-            true,
-            -0.001,
-            50000.0,
-            1.0,
-            0.001,
-            0.1,
-            "TEST_TRAILING_NEG",
-        ).await;
+        let res_neg_qty = router
+            .route_trailing_stop(
+                "BTCUSDT",
+                true,
+                -0.001,
+                50000.0,
+                1.0,
+                0.001,
+                0.1,
+                "TEST_TRAILING_NEG",
+            )
+            .await;
         assert!(res_neg_qty.is_err());
     }
 }
-

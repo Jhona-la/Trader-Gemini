@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use crate::tensor_ring::TensorRing;
+use std::sync::atomic::{AtomicU64, Ordering};
 pub const NUM_TIMEFRAMES: usize = 4;
 pub const NUM_FEATURES: usize = 64;
 
@@ -19,7 +19,10 @@ impl QuantumTensorStore {
         for _ in 0..total_size {
             vec.push(AtomicU64::new(0f64.to_bits()));
         }
-        Self { data: vec.into_boxed_slice(), num_coins }
+        Self {
+            data: vec.into_boxed_slice(),
+            num_coins,
+        }
     }
 
     #[inline(always)]
@@ -61,13 +64,13 @@ impl QuantumTensorStore {
         // Simplificación: desviación estándar de los features a lo largo del tiempo
         let tf0 = self.extract_feature_vector(coin, 0);
         let tf1 = self.extract_feature_vector(coin, 1);
-        
+
         let mut diff_sum = 0.0;
         for (t0, t1) in tf0.iter().zip(tf1.iter()) {
             let diff = t0 - t1;
             diff_sum += diff * diff;
         }
-        
+
         // Retorna una métrica pseudo-Lyapunov (divergencia exponencial)
         (diff_sum / NUM_FEATURES as f64).sqrt()
     }
@@ -77,7 +80,12 @@ impl QuantumTensorStore {
     /// Escribe Velocidad (1ra derivada), Aceleración (2da derivada) y Jerk (3ra derivada)
     /// directamente en las características 0, 1 y 2 del tensor, que luego consumirá la Neural Net.
     #[inline(always)]
-    pub fn update_kinematics_from_ring<const N: usize>(&self, coin: usize, tf: usize, price_ring: &TensorRing<N>) {
+    pub fn update_kinematics_from_ring<const N: usize>(
+        &self,
+        coin: usize,
+        tf: usize,
+        price_ring: &TensorRing<N>,
+    ) {
         let v = price_ring.velocity();
         let a = price_ring.acceleration();
         let j = price_ring.jerk();
@@ -125,4 +133,3 @@ mod tests {
         assert!(chaos > 0.0 && chaos.is_finite());
     }
 }
-

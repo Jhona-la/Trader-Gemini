@@ -1,4 +1,4 @@
-use reqwest::{Client, ClientBuilder, header};
+use reqwest::{header, Client, ClientBuilder};
 use std::time::Duration;
 
 /// Hilo conductor de latencia ultra-baja para inyección directa de órdenes
@@ -13,20 +13,20 @@ pub struct QuantumSocketPool {
 
 impl QuantumSocketPool {
     pub fn new(host: &str, _port: u16, api_key: String) -> Self {
-        
         let clean_api_key = api_key.trim();
         let mut headers = header::HeaderMap::new();
         headers.insert(
             "X-MBX-APIKEY",
-            header::HeaderValue::from_str(clean_api_key).unwrap_or(header::HeaderValue::from_static(""))
+            header::HeaderValue::from_str(clean_api_key)
+                .unwrap_or(header::HeaderValue::from_static("")),
         );
         headers.insert(
             header::CONTENT_TYPE,
-            header::HeaderValue::from_static("application/x-www-form-urlencoded")
+            header::HeaderValue::from_static("application/x-www-form-urlencoded"),
         );
         headers.insert(
             header::CONNECTION,
-            header::HeaderValue::from_static("keep-alive")
+            header::HeaderValue::from_static("keep-alive"),
         );
 
         let client = ClientBuilder::new()
@@ -65,14 +65,18 @@ impl QuantumSocketPool {
     }
 
     /// Dispara el payload usando hiper-conexiones recicladas
-    pub async fn fire_raw_payload(&self, method: &str, path_and_query: &str) -> Result<String, String> {
+    pub async fn fire_raw_payload(
+        &self,
+        method: &str,
+        path_and_query: &str,
+    ) -> Result<String, String> {
         let clean_path = if path_and_query.starts_with('/') {
             path_and_query.to_string()
         } else {
             format!("/{}", path_and_query)
         };
         let url = format!("https://{}{}", self.host, clean_path);
-        
+
         let req = match method {
             "GET" => self.client.get(&url),
             "POST" => self.client.post(&url),
@@ -84,13 +88,13 @@ impl QuantumSocketPool {
         // El cliente de Reqwest ya maneja retries internos de bajo nivel si la conexión dropea en el handshake,
         // pero podemos implementar un soft-retry (1 intento) por si Binance nos manda un 502 repentino o se cae
         // la red del OS antes de salir.
-        
+
         let mut retry_count = 0;
-        
+
         loop {
             // Clonamos el request builder (es ultra ligero)
             let req_clone = req.try_clone().ok_or("No se puede clonar request HTTP")?;
-            
+
             match req_clone.send().await {
                 Ok(response) => {
                     // Hyper se encarga de parsear el Chunked Encoding, Content-Length y descomprimir automáticamente si es necesario.
@@ -104,11 +108,12 @@ impl QuantumSocketPool {
                             return Err(format!("Error leyendo payload: {}", e));
                         }
                     }
-                },
+                }
                 Err(e) => {
                     // Si el error es de conexión inicial (ej. broken pipe, dns) se puede reintentar si el request no se envió.
                     // Para POST con timeout, NO reintentar ciegamente para evitar duplicación de órdenes en Binance.
-                    if (e.is_connect() || (e.is_timeout() && method != "POST")) && retry_count == 0 {
+                    if (e.is_connect() || (e.is_timeout() && method != "POST")) && retry_count == 0
+                    {
                         retry_count += 1;
                         continue;
                     }
@@ -150,7 +155,11 @@ mod tests {
 
     #[test]
     fn test_quantum_socket_pool_headers() {
-        let pool = QuantumSocketPool::new("testnet.binancefuture.com", 443, "  api_key_with_spaces  ".to_string());
+        let pool = QuantumSocketPool::new(
+            "testnet.binancefuture.com",
+            443,
+            "  api_key_with_spaces  ".to_string(),
+        );
         assert_eq!(pool.get_host(), "testnet.binancefuture.com");
     }
 
@@ -165,15 +174,27 @@ mod tests {
         assert!(s2 < shard_count);
         assert!(s3 < shard_count);
         // Determinismo
-        assert_eq!(s1, QuantumSocketPool::compute_symbol_shard_affinity("BTCUSDT", shard_count));
+        assert_eq!(
+            s1,
+            QuantumSocketPool::compute_symbol_shard_affinity("BTCUSDT", shard_count)
+        );
     }
 
     #[test]
     fn test_symbol_shard_affinity_edge_cases() {
-        assert_eq!(QuantumSocketPool::compute_symbol_shard_affinity("BTCUSDT", 0), 0);
-        assert_eq!(QuantumSocketPool::compute_symbol_shard_affinity("BTCUSDT", 1), 0);
+        assert_eq!(
+            QuantumSocketPool::compute_symbol_shard_affinity("BTCUSDT", 0),
+            0
+        );
+        assert_eq!(
+            QuantumSocketPool::compute_symbol_shard_affinity("BTCUSDT", 1),
+            0
+        );
         let default_hash = (0xcbf29ce484222325_u64 as usize) % 4;
-        assert_eq!(QuantumSocketPool::compute_symbol_shard_affinity("", 4), default_hash);
+        assert_eq!(
+            QuantumSocketPool::compute_symbol_shard_affinity("", 4),
+            default_hash
+        );
     }
 
     #[tokio::test]
@@ -184,4 +205,3 @@ mod tests {
         assert!(res.unwrap_err().contains("no soportado"));
     }
 }
-

@@ -63,7 +63,8 @@ impl FaseAutonomousManager {
 
     /// Evaluates epistemic conditions and executes phase transitions
     pub fn evaluate_transition(&mut self, tick: u64, metrics: &HealthMetrics) -> FaseAutonomous {
-        let is_discrepancy_critical = !metrics.auditor_discrepancy_pct.is_finite() || metrics.auditor_discrepancy_pct > 0.10;
+        let is_discrepancy_critical =
+            !metrics.auditor_discrepancy_pct.is_finite() || metrics.auditor_discrepancy_pct > 0.10;
         if is_discrepancy_critical || metrics.self_deception_detected {
             if self.current_phase != FaseAutonomous::Fase10CrisisEpistemica {
                 self.phase_history.push((self.current_phase, tick));
@@ -217,7 +218,10 @@ mod tests {
 
         let p = manager.evaluate_transition(10, &crisis_metrics);
         assert_eq!(p, FaseAutonomous::Fase10CrisisEpistemica);
-        assert_eq!(manager.current_phase, FaseAutonomous::Fase10CrisisEpistemica);
+        assert_eq!(
+            manager.current_phase,
+            FaseAutonomous::Fase10CrisisEpistemica
+        );
     }
 
     #[test]
@@ -239,4 +243,3 @@ mod tests {
         assert_eq!(p, FaseAutonomous::Fase10CrisisEpistemica);
     }
 }
-

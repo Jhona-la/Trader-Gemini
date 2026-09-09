@@ -24,11 +24,10 @@ pub use microstructure::{
     obi_acceleration, order_book_imbalance, AdaptiveResonanceClustering,
     InstitutionalVolumeTracker, OFIModel, OrderFlowTracker,
 };
-pub use multifractal::{MultifractalSpectrumEngine, MultiScaleHurstConfluence};
+pub use multifractal::{MultiScaleHurstConfluence, MultifractalSpectrumEngine};
 pub use normalizer::{GarmanKlassVolatilityEstimator, StatisticalNormalizer};
 pub use omni_strategies::OmniStrategyEngine;
 pub use shannon_entropy::ShannonEntropyEngine;
 pub use simd_neural_network::SimdNeuralNet;
 pub use spectral::SpectralCycleEngine;
 pub use welford::WelfordOnline;
-

@@ -24,24 +24,72 @@ impl OnChainState {
             btc_funding_rate: AtomicU64::new(ZERO_BITS),
             btc_open_interest: AtomicU64::new(ZERO_BITS),
             alt_funding_rates: [
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
             ],
             alt_open_interests: [
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
-                AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS), AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
+                AtomicU64::new(ZERO_BITS),
             ],
         }
     }
@@ -65,7 +113,11 @@ impl OnChainState {
     pub fn set_symbol_funding(&self, coin_id: usize, funding: f64) {
         if coin_id < 32 {
             // FIX #1539: Clamping de tasa de fondeo de altcoins a [-1.0, 1.0]
-            let safe_funding = if funding.is_finite() { funding.clamp(-1.0, 1.0) } else { 0.0 };
+            let safe_funding = if funding.is_finite() {
+                funding.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
             self.alt_funding_rates[coin_id].store(safe_funding.to_bits(), Ordering::Relaxed);
         }
     }
@@ -99,7 +151,11 @@ pub async fn run_onchain_feed(state: Arc<OnChainState>) {
         .trim()
         .to_lowercase()
         == "true"
-        || std::env::var("SHADOW_MODE").unwrap_or_default().trim().to_lowercase() == "true";
+        || std::env::var("SHADOW_MODE")
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase()
+            == "true";
     let base_url = if is_testnet {
         "https://testnet.binancefuture.com"
     } else {
@@ -117,22 +173,29 @@ pub async fn run_onchain_feed(state: Arc<OnChainState>) {
                 if let Some(arr) = json.as_array() {
                     for item in arr {
                         let sym = item.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
-                        if let Some(funding_str) = item.get("lastFundingRate").and_then(|v| v.as_str()) {
+                        if let Some(funding_str) =
+                            item.get("lastFundingRate").and_then(|v| v.as_str())
+                        {
                             if let Ok(funding) = funding_str.parse::<f64>() {
                                 if funding.is_finite() {
                                     // FIX #1539: Clamping de tasa de fondeo a [-1.0, 1.0]
                                     let safe_funding = funding.clamp(-1.0, 1.0);
                                     if sym == "BTCUSDT" {
-                                        state.btc_funding_rate.store(safe_funding.to_bits(), Ordering::Relaxed);
+                                        state
+                                            .btc_funding_rate
+                                            .store(safe_funding.to_bits(), Ordering::Relaxed);
                                     }
-                                    if let Some(coin_id) = quantum_arena::symbols::get_coin_id(sym) {
+                                    if let Some(coin_id) = quantum_arena::symbols::get_coin_id(sym)
+                                    {
                                         state.set_symbol_funding(coin_id, safe_funding);
                                     }
                                 }
                             }
                         }
                     }
-                } else if let Some(funding_str) = json.get("lastFundingRate").and_then(|v| v.as_str()) {
+                } else if let Some(funding_str) =
+                    json.get("lastFundingRate").and_then(|v| v.as_str())
+                {
                     if let Ok(funding) = funding_str.parse::<f64>() {
                         if funding.is_finite() {
                             let safe_funding = funding.clamp(-1.0, 1.0);
@@ -170,8 +233,12 @@ mod tests {
     #[test]
     fn test_onchain_state_get_and_set() {
         let state = OnChainState::new();
-        state.btc_funding_rate.store(0.0001f64.to_bits(), Ordering::Relaxed);
-        state.btc_open_interest.store(50000.0f64.to_bits(), Ordering::Relaxed);
+        state
+            .btc_funding_rate
+            .store(0.0001f64.to_bits(), Ordering::Relaxed);
+        state
+            .btc_open_interest
+            .store(50000.0f64.to_bits(), Ordering::Relaxed);
 
         assert_eq!(state.get_funding(), 0.0001);
         assert_eq!(state.get_oi(), 50000.0);

@@ -49,10 +49,10 @@ impl MultifractalSpectrumEngine {
         } else {
             self.count += 1;
         }
-        
+
         self.returns_history[self.head] = ret;
         self.head = (self.head + 1) % self.window_size;
-        
+
         self.sum_q1 = (self.sum_q1 + ret).max(0.0);
         self.sum_q2 = (self.sum_q2 + ret * ret).max(0.0);
 
@@ -158,9 +158,27 @@ impl MultiScaleHurstConfluence {
         let (h_meso, _) = self.engine_meso.update(price);
         let (h_macro, _) = self.engine_macro.update(price);
 
-        let c_micro: f64 = if h_micro > 0.55 { 1.0 } else if h_micro < 0.45 { -1.0 } else { 0.0 };
-        let c_meso: f64 = if h_meso > 0.55 { 1.0 } else if h_meso < 0.45 { -1.0 } else { 0.0 };
-        let c_macro: f64 = if h_macro > 0.55 { 1.0 } else if h_macro < 0.45 { -1.0 } else { 0.0 };
+        let c_micro: f64 = if h_micro > 0.55 {
+            1.0
+        } else if h_micro < 0.45 {
+            -1.0
+        } else {
+            0.0
+        };
+        let c_meso: f64 = if h_meso > 0.55 {
+            1.0
+        } else if h_meso < 0.45 {
+            -1.0
+        } else {
+            0.0
+        };
+        let c_macro: f64 = if h_macro > 0.55 {
+            1.0
+        } else if h_macro < 0.45 {
+            -1.0
+        } else {
+            0.0
+        };
 
         let confluence_score: f64 = (c_micro * 0.4 + c_meso * 0.3 + c_macro * 0.3).clamp(-1.0, 1.0);
 
@@ -168,7 +186,14 @@ impl MultiScaleHurstConfluence {
         let is_scalp_viable = h_micro > 0.60 || h_micro < 0.40; // Micro-tendencia fuerte o Micro-reversión fuerte
         let is_swing_viable = h_macro > 0.65 || h_macro < 0.35; // Macro-tendencia o Macro-rango
 
-        (h_micro, h_meso, h_macro, confluence_score, is_scalp_viable, is_swing_viable)
+        (
+            h_micro,
+            h_meso,
+            h_macro,
+            confluence_score,
+            is_scalp_viable,
+            is_swing_viable,
+        )
     }
 }
 
@@ -230,4 +255,3 @@ mod tests {
         assert_eq!(swing, false);
     }
 }
-

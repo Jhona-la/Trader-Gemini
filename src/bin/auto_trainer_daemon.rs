@@ -65,7 +65,10 @@ fn main() {
     // Initialize or load existing model for true incremental online learning
     let model_path = format!("models/DarkAlpha_{}.json", symbol);
     let mut engine = DarkAlphaEngine::load_json(&model_path).unwrap_or_else(|_| {
-        println!("🆕 No existing model found for {}. Creating a new DarkAlphaEngine from scratch.", symbol);
+        println!(
+            "🆕 No existing model found for {}. Creating a new DarkAlphaEngine from scratch.",
+            symbol
+        );
         DarkAlphaEngine::new(54, 64, 32)
     });
 
@@ -82,7 +85,10 @@ fn main() {
         let file = match File::open(&dataset_path).or_else(|_| File::open(fallback_path)) {
             Ok(f) => f,
             Err(_) => {
-                println!("❌ Could not open CSV file ({}/{}). Waiting 10s...", dataset_path, fallback_path);
+                println!(
+                    "❌ Could not open CSV file ({}/{}). Waiting 10s...",
+                    dataset_path, fallback_path
+                );
                 std::thread::sleep(std::time::Duration::from_secs(10));
                 continue;
             }

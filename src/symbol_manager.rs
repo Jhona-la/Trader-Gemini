@@ -95,9 +95,15 @@ pub async fn evolve_symbols_daemon() {
     }
 }
 
-pub fn merge_universe_with_hysteresis(current: &[String], top_candidates: &[String], limit: usize) -> Vec<String> {
-    let margin_set: std::collections::HashSet<&String> =
-        top_candidates.iter().take(limit.saturating_add(3)).collect();
+pub fn merge_universe_with_hysteresis(
+    current: &[String],
+    top_candidates: &[String],
+    limit: usize,
+) -> Vec<String> {
+    let margin_set: std::collections::HashSet<&String> = top_candidates
+        .iter()
+        .take(limit.saturating_add(3))
+        .collect();
 
     let mut merged: Vec<String> = Vec::with_capacity(limit);
     for incumbent in current {
@@ -129,7 +135,11 @@ mod tests {
 
     #[test]
     fn test_merge_universe_with_hysteresis() {
-        let current = vec!["BTCUSDT".to_string(), "ETHUSDT".to_string(), "SOLUSDT".to_string()];
+        let current = vec![
+            "BTCUSDT".to_string(),
+            "ETHUSDT".to_string(),
+            "SOLUSDT".to_string(),
+        ];
         let candidates = vec![
             "BTCUSDT".to_string(),
             "BNBUSDT".to_string(), // new entrant

@@ -61,7 +61,13 @@ pub fn evaluate_quantum_trailing_with_fee(
     trail_runner: f64,
     fee_rate: f64,
 ) -> TrailingResult {
-    if current_atr <= 0.0 || !current_atr.is_finite() || entry_price <= 0.0 || !entry_price.is_finite() || current_price <= 0.0 || !current_price.is_finite() {
+    if current_atr <= 0.0
+        || !current_atr.is_finite()
+        || entry_price <= 0.0
+        || !entry_price.is_finite()
+        || current_price <= 0.0
+        || !current_price.is_finite()
+    {
         return TrailingResult {
             stop_price: current_trail_stop,
             force_close: false,
@@ -72,12 +78,36 @@ pub fn evaluate_quantum_trailing_with_fee(
     }
 
     // Sanitizar parámetros de perfil para evitar NaNs en trailing stop
-    let pullback_tol = if pullback_tol.is_finite() && pullback_tol > 0.0 { pullback_tol } else { 1.5 };
-    let trail_f1 = if trail_f1.is_finite() && trail_f1 > 0.0 { trail_f1 } else { 1.5 };
-    let trail_f2 = if trail_f2.is_finite() && trail_f2 > 0.0 { trail_f2 } else { 2.0 };
-    let trail_f3 = if trail_f3.is_finite() && trail_f3 > 0.0 { trail_f3 } else { 2.5 };
-    let trail_runner = if trail_runner.is_finite() && trail_runner > 0.0 { trail_runner } else { 1.5 };
-    let fee_rate = if fee_rate.is_finite() && fee_rate >= 0.0 { fee_rate } else { 0.0006 };
+    let pullback_tol = if pullback_tol.is_finite() && pullback_tol > 0.0 {
+        pullback_tol
+    } else {
+        1.5
+    };
+    let trail_f1 = if trail_f1.is_finite() && trail_f1 > 0.0 {
+        trail_f1
+    } else {
+        1.5
+    };
+    let trail_f2 = if trail_f2.is_finite() && trail_f2 > 0.0 {
+        trail_f2
+    } else {
+        2.0
+    };
+    let trail_f3 = if trail_f3.is_finite() && trail_f3 > 0.0 {
+        trail_f3
+    } else {
+        2.5
+    };
+    let trail_runner = if trail_runner.is_finite() && trail_runner > 0.0 {
+        trail_runner
+    } else {
+        1.5
+    };
+    let fee_rate = if fee_rate.is_finite() && fee_rate >= 0.0 {
+        fee_rate
+    } else {
+        0.0006
+    };
 
     // FIX #666: Sanitizar mfe_atr y max_pnl_pct para evitar propagación de NaNs en trailing stop
     if !mfe_atr.is_finite() {
@@ -178,7 +208,8 @@ pub fn evaluate_quantum_trailing_with_fee(
                 }
             } else {
                 let breakeven_price = entry_price * (1.0 - effective_fee);
-                if (t1_stop == 0.0 || t1_stop > breakeven_price) && breakeven_price > current_price {
+                if (t1_stop == 0.0 || t1_stop > breakeven_price) && breakeven_price > current_price
+                {
                     t1_stop = breakeven_price;
                 }
                 if max_pnl_pct >= profit_lock_trigger {
@@ -256,14 +287,22 @@ pub fn evaluate_quantum_trailing_with_fee(
     if current_phase == 3 || current_phase == 4 {
         current_tol *= 0.8;
     }
-    let safe_tol = if current_tol.is_finite() && current_tol > 0.0 { current_tol.max(0.5) } else { 1.5 };
+    let safe_tol = if current_tol.is_finite() && current_tol > 0.0 {
+        current_tol.max(0.5)
+    } else {
+        1.5
+    };
 
     let mut force_close = false;
     if mfe_atr > 1.0 && dd_atr.is_finite() && dd_atr > safe_tol {
         force_close = true;
     }
 
-    let final_stop = if best_stop.is_finite() && best_stop > 0.0 { best_stop } else { current_trail_stop };
+    let final_stop = if best_stop.is_finite() && best_stop > 0.0 {
+        best_stop
+    } else {
+        current_trail_stop
+    };
 
     TrailingResult {
         stop_price: final_stop,
@@ -281,15 +320,12 @@ mod tests {
     #[test]
     fn test_god_engine_trailing_long_phases_progression() {
         let res1 = evaluate_quantum_trailing(
-            1, // LONG
+            1,       // LONG
             60000.0, // entry
             60050.0, // current
             100.0,   // ATR
             0,       // phase 0
-            0.0,
-            0.0,
-            0.0,
-            1.5, 1.5, 2.0, 2.5, 1.5,
+            0.0, 0.0, 0.0, 1.5, 1.5, 2.0, 2.5, 1.5,
         );
         assert_eq!(res1.new_phase, 1);
         assert!(res1.stop_price > 0.0);
@@ -305,7 +341,11 @@ mod tests {
             res1.mfe_atr,
             res1.max_pnl_pct,
             res1.stop_price,
-            1.5, 1.5, 2.0, 2.5, 1.5,
+            1.5,
+            1.5,
+            2.0,
+            2.5,
+            1.5,
         );
         assert_eq!(res2.new_phase, 2);
 
@@ -319,26 +359,26 @@ mod tests {
             res2.mfe_atr,
             res2.max_pnl_pct,
             res2.stop_price,
-            1.5, 1.5, 2.0, 2.5, 1.5,
+            1.5,
+            1.5,
+            2.0,
+            2.5,
+            1.5,
         );
         assert_eq!(res3.new_phase, 3);
         assert!(res3.stop_price > 60000.0); // Stop locked in profit
     }
-
 
     #[test]
     fn test_god_engine_trailing_short_pullback_force_close() {
         // Short entry at 60000, drops to 59700 (+3 ATR), then bounces back to 59900 (pullback > 1.5 ATR)
         let res = evaluate_quantum_trailing(
             -1, // SHORT
-            60000.0,
-            59900.0, // current
+            60000.0, 59900.0, // current
             100.0,   // ATR
             2,       // phase 2
             3.0,     // mfe_atr was 3.0
-            0.005,
-            59800.0,
-            1.5, 1.5, 2.0, 2.5, 1.5,
+            0.005, 59800.0, 1.5, 1.5, 2.0, 2.5, 1.5,
         );
         // mfe_atr = 3.0, current pnl_atr = 1.0 -> dd_atr = 2.0 > safe_tol (1.5) -> force_close
         assert!(res.force_close);
@@ -355,10 +395,13 @@ mod tests {
             0.0,
             0.0,
             59000.0,
-            1.5, 1.5, 2.0, 2.5, 1.5,
+            1.5,
+            1.5,
+            2.0,
+            2.5,
+            1.5,
         );
         assert_eq!(res_nan.stop_price, 59000.0);
         assert!(!res_nan.force_close);
     }
 }
-

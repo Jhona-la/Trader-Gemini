@@ -67,12 +67,16 @@ impl VerificadorResultados {
     }
 
     /// Computes independent metrics from raw exchange fill records anchored to explicit base capital
-    pub fn compute_metrics_with_capital(fills: &[ExchangeFillRecord], base_capital: f64) -> IndependentMetrics {
+    pub fn compute_metrics_with_capital(
+        fills: &[ExchangeFillRecord],
+        base_capital: f64,
+    ) -> IndependentMetrics {
         if fills.is_empty() {
             return IndependentMetrics::default();
         }
 
-        let closed_fills: Vec<&ExchangeFillRecord> = fills.iter().filter(|f| f.is_closed_position).collect();
+        let closed_fills: Vec<&ExchangeFillRecord> =
+            fills.iter().filter(|f| f.is_closed_position).collect();
         if closed_fills.is_empty() {
             return IndependentMetrics::default();
         }
@@ -81,12 +85,24 @@ impl VerificadorResultados {
         let winning_trades = closed_fills.iter().filter(|f| f.realized_pnl > 0.0).count() as f64;
         let win_rate = winning_trades / total_trades;
 
-        let safe_capital = if base_capital.is_finite() && base_capital > 0.0 { base_capital } else { 13.0 };
+        let safe_capital = if base_capital.is_finite() && base_capital > 0.0 {
+            base_capital
+        } else {
+            13.0
+        };
         let returns: Vec<f64> = closed_fills
             .iter()
             .map(|f| {
-                let pnl = if f.realized_pnl.is_finite() { f.realized_pnl } else { 0.0 };
-                let fee = if f.fee_usd.is_finite() { f.fee_usd } else { 0.0 };
+                let pnl = if f.realized_pnl.is_finite() {
+                    f.realized_pnl
+                } else {
+                    0.0
+                };
+                let fee = if f.fee_usd.is_finite() {
+                    f.fee_usd
+                } else {
+                    0.0
+                };
                 (pnl - fee) / safe_capital
             })
             .collect();
@@ -98,11 +114,13 @@ impl VerificadorResultados {
         };
         let std_dev = variance.sqrt();
 
-        let time_span_days = if let (Some(first), Some(last)) = (closed_fills.first(), closed_fills.last()) {
-            ((last.timestamp_ns.saturating_sub(first.timestamp_ns)) as f64 / (1e9 * 86400.0)).max(1.0 / 24.0)
-        } else {
-            1.0
-        };
+        let time_span_days =
+            if let (Some(first), Some(last)) = (closed_fills.first(), closed_fills.last()) {
+                ((last.timestamp_ns.saturating_sub(first.timestamp_ns)) as f64 / (1e9 * 86400.0))
+                    .max(1.0 / 24.0)
+            } else {
+                1.0
+            };
         let trades_per_year = (total_trades / time_span_days) * 365.0;
 
         let sharpe = if std_dev > 1e-9 {
@@ -122,13 +140,18 @@ impl VerificadorResultados {
             if equity > peak {
                 peak = equity;
             }
-            let dd = if peak > 0.0 { (peak - equity) / peak } else { 0.0 };
+            let dd = if peak > 0.0 {
+                (peak - equity) / peak
+            } else {
+                0.0
+            };
             if dd > max_dd {
                 max_dd = dd;
             }
         }
 
-        let gross_pnl: f64 = closed_fills.iter().map(|f| f.realized_pnl).sum::<f64>() / safe_capital;
+        let gross_pnl: f64 =
+            closed_fills.iter().map(|f| f.realized_pnl).sum::<f64>() / safe_capital;
         let total_fees: f64 = closed_fills.iter().map(|f| f.fee_usd).sum::<f64>() / safe_capital;
         let gross_alpha = gross_pnl / total_trades;
         let fee_drag = total_fees / total_trades;
@@ -172,7 +195,11 @@ impl AuditorInterno {
 
     pub fn record_fill(&mut self, fill: ExchangeFillRecord) {
         // FIX #677: Descartar fills con flotantes no finitos
-        if !fill.price.is_finite() || !fill.qty.is_finite() || !fill.fee_usd.is_finite() || !fill.realized_pnl.is_finite() {
+        if !fill.price.is_finite()
+            || !fill.qty.is_finite()
+            || !fill.fee_usd.is_finite()
+            || !fill.realized_pnl.is_finite()
+        {
             return;
         }
         self.fills_journal.push(fill);
@@ -186,11 +213,26 @@ impl AuditorInterno {
         internal_drawdown: f64,
     ) -> DailyTribunalReport {
         // FIX #677: Sanitizar claims internos
-        let safe_sharpe = if internal_sharpe.is_finite() { internal_sharpe } else { 0.0 };
-        let safe_wr = if internal_win_rate.is_finite() { internal_win_rate } else { 0.0 };
-        let safe_dd = if internal_drawdown.is_finite() { internal_drawdown } else { 0.0 };
+        let safe_sharpe = if internal_sharpe.is_finite() {
+            internal_sharpe
+        } else {
+            0.0
+        };
+        let safe_wr = if internal_win_rate.is_finite() {
+            internal_win_rate
+        } else {
+            0.0
+        };
+        let safe_dd = if internal_drawdown.is_finite() {
+            internal_drawdown
+        } else {
+            0.0
+        };
 
-        let independent = VerificadorResultados::compute_metrics_with_capital(&self.fills_journal, self.base_capital);
+        let independent = VerificadorResultados::compute_metrics_with_capital(
+            &self.fills_journal,
+            self.base_capital,
+        );
 
         let sharpe_disc = if safe_sharpe > 0.0 {
             (safe_sharpe - independent.calculated_sharpe).abs() / safe_sharpe
@@ -219,16 +261,31 @@ impl AuditorInterno {
             sharpe_discrepancy_pct: sharpe_disc,
             justification: format!(
                 "Max discrepancy: {:.2}%. Internal Sharpe={:.2} vs Indep={:.2}",
-                max_disc * 100.0, safe_sharpe, independent.calculated_sharpe
+                max_disc * 100.0,
+                safe_sharpe,
+                independent.calculated_sharpe
             ),
         }
     }
 
     /// Detects cognitive biases in current trading behavior (lookahead-free)
     // FIX #722: Calibrar umbral de complejidad (> 64) para respetar los 54 features nominales y sanitizar retornos
-    pub fn audit_biases(&self, num_features: usize, recent_7d_ret: f64, out_of_sample_ret: f64) -> CognitiveBiasReport {
-        let safe_7d = if recent_7d_ret.is_finite() { recent_7d_ret } else { 0.0 };
-        let safe_oos = if out_of_sample_ret.is_finite() { out_of_sample_ret } else { 0.0 };
+    pub fn audit_biases(
+        &self,
+        num_features: usize,
+        recent_7d_ret: f64,
+        out_of_sample_ret: f64,
+    ) -> CognitiveBiasReport {
+        let safe_7d = if recent_7d_ret.is_finite() {
+            recent_7d_ret
+        } else {
+            0.0
+        };
+        let safe_oos = if out_of_sample_ret.is_finite() {
+            out_of_sample_ret
+        } else {
+            0.0
+        };
         let overfitting = (safe_7d > 0.05) && (safe_oos < -0.01);
         let complexity_inflation = num_features > 64;
 
@@ -302,7 +359,7 @@ mod tests {
                 fee_usd: 0.02,
                 realized_pnl: f64::NAN,
                 is_closed_position: true,
-            }
+            },
         ];
 
         let metrics_nan_cap = VerificadorResultados::compute_metrics_with_capital(&fills, f64::NAN);

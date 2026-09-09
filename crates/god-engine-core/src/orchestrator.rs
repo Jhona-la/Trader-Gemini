@@ -147,4 +147,3 @@ mod tests {
         assert!(!orch.is_paper_trading());
     }
 }
-

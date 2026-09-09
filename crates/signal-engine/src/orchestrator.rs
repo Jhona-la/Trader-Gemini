@@ -99,7 +99,11 @@ impl TensorVoteOrchestrator {
         };
         // FIX #592: Blindaje de finitud numérica para evitar propagación de NaN
         let raw_confidence = (prob_long - prob_short) * effective_conviction;
-        let net_confidence = if raw_confidence.is_finite() { raw_confidence } else { 0.0 };
+        let net_confidence = if raw_confidence.is_finite() {
+            raw_confidence
+        } else {
+            0.0
+        };
         // R1.6 — `expected_volatility` vuelve a ser lo que su nombre promete:
         // VOLATILIDAD DE PRECIO ESPERADA (ATR% del feature engine), no el
         // máximo |peso| de las salidas de estrategia (adimensional 0..1).
@@ -108,10 +112,7 @@ impl TensorVoteOrchestrator {
         // anterior el gate era SIEMPRE verdadero y la defensa anti-slippage
         // por volatilidad no existía. `max_volatility` queda como valor de
         // colas (clamp acotado) solo si el ATR no está disponible.
-        let atr_pct = self
-            .arena
-            .registry
-            .get_value_or("atr_pct", f64::NAN);
+        let atr_pct = self.arena.registry.get_value_or("atr_pct", f64::NAN);
         let expected_volatility = if atr_pct.is_finite() && atr_pct > 0.0 {
             atr_pct
         } else if max_volatility.is_finite() {
@@ -171,8 +172,16 @@ impl TensorVoteOrchestrator {
             .ml_threshold_short
             .load(std::sync::atomic::Ordering::Relaxed);
 
-        let long_dist = if raw_long >= 0.50 { raw_long - 0.50 } else { 0.50 - raw_long };
-        let short_dist = if raw_short >= 0.50 { raw_short - 0.50 } else { 0.50 - raw_short };
+        let long_dist = if raw_long >= 0.50 {
+            raw_long - 0.50
+        } else {
+            0.50 - raw_long
+        };
+        let short_dist = if raw_short >= 0.50 {
+            raw_short - 0.50
+        } else {
+            0.50 - raw_short
+        };
 
         // FASE 2: el piso del cutoff ya no es el literal 0.08 (que dejaba
         // pasar casi cualquier señal cuando el umbral del genoma rondaba
@@ -224,12 +233,20 @@ impl TensorVoteOrchestrator {
     }
 
     /// D-117: Consenso de Scalp escopado por activo real
-    pub fn evaluate_scalp_consensus_for_coin(&self, coin_id: usize, symbol: &str) -> TensorDecision {
+    pub fn evaluate_scalp_consensus_for_coin(
+        &self,
+        coin_id: usize,
+        symbol: &str,
+    ) -> TensorDecision {
         self.evaluate_continuous_consensus_for_coin(coin_id, symbol)
     }
 
     /// D-117: Consenso de Swing escopado por activo real
-    pub fn evaluate_swing_consensus_for_coin(&self, coin_id: usize, symbol: &str) -> TensorDecision {
+    pub fn evaluate_swing_consensus_for_coin(
+        &self,
+        coin_id: usize,
+        symbol: &str,
+    ) -> TensorDecision {
         self.evaluate_continuous_consensus_for_coin(coin_id, symbol)
     }
 
@@ -245,7 +262,11 @@ impl TensorVoteOrchestrator {
 
     /// D-101 & D-111: Consenso continuo multiactivo escopado por símbolo y moneda.
     /// Evita contaminación cruzada y colisiones de estado en el ensamble cuántico.
-    pub fn evaluate_continuous_consensus_for_coin(&self, coin_id: usize, symbol: &str) -> TensorDecision {
+    pub fn evaluate_continuous_consensus_for_coin(
+        &self,
+        coin_id: usize,
+        symbol: &str,
+    ) -> TensorDecision {
         let all: Vec<&Box<dyn QuantumStrategy>> = self.strategies.iter().collect();
         if all.is_empty() {
             return TensorDecision {
@@ -297,7 +318,11 @@ impl TensorVoteOrchestrator {
         // D-101: Normalización continua sin double-squashing cuadrático
         let raw_net = prob_long - prob_short;
         let net_confidence = raw_net * (0.60 + 0.40 * effective_conviction);
-        let net_confidence = if net_confidence.is_finite() { net_confidence } else { 0.0 };
+        let net_confidence = if net_confidence.is_finite() {
+            net_confidence
+        } else {
+            0.0
+        };
 
         let coin_atr_key = format!("{}_atr_pct", symbol);
         let atr_pct = self.arena.registry.get_value_or(&coin_atr_key, f64::NAN);
@@ -365,8 +390,6 @@ impl TensorVoteOrchestrator {
         }
     }
 
-
-
     /// Evalúa de forma desacoplada ambos horizontes simultáneamente (Scalp y Swing) sin supresión mutua (BUG-643)
     pub fn evaluate_dual_consensus(&self) -> (TensorDecision, TensorDecision) {
         let scalp_decision = self.evaluate_scalp_consensus();
@@ -427,13 +450,28 @@ mod tests {
     #[test]
     fn test_tensor_vote_orchestrator_consensus() {
         let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
-        arena.config.ml_threshold_long.store(0.2, std::sync::atomic::Ordering::Relaxed);
-        arena.config.ml_threshold_short.store(0.2, std::sync::atomic::Ordering::Relaxed);
+        arena
+            .config
+            .ml_threshold_long
+            .store(0.2, std::sync::atomic::Ordering::Relaxed);
+        arena
+            .config
+            .ml_threshold_short
+            .store(0.2, std::sync::atomic::Ordering::Relaxed);
 
         let mut orch = TensorVoteOrchestrator::new(arena);
-        orch.add_strategy(Box::new(MockStrategy { name: "Bullish1", value: 0.9 }));
-        orch.add_strategy(Box::new(MockStrategy { name: "Bullish2", value: 0.8 }));
-        orch.add_strategy(Box::new(MockStrategy { name: "Bearish1", value: -0.1 }));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "Bullish1",
+            value: 0.9,
+        }));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "Bullish2",
+            value: 0.8,
+        }));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "Bearish1",
+            value: -0.1,
+        }));
 
         let decision = orch.evaluate_consensus();
         assert_eq!(decision.signal, SignalType::Long);
@@ -444,8 +482,14 @@ mod tests {
     fn test_tensor_vote_orchestrator_nan_and_flat_immunity() {
         let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
         let mut orch = TensorVoteOrchestrator::new(arena);
-        orch.add_strategy(Box::new(MockStrategy { name: "NaN_Strat", value: f64::NAN }));
-        orch.add_strategy(Box::new(MockStrategy { name: "Inf_Strat", value: f64::INFINITY }));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "NaN_Strat",
+            value: f64::NAN,
+        }));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "Inf_Strat",
+            value: f64::INFINITY,
+        }));
 
         let decision = orch.evaluate_consensus();
         assert_eq!(decision.signal, SignalType::Flat);
@@ -479,14 +523,29 @@ mod tests {
     #[test]
     fn test_tensor_vote_orchestrator_continuous_consensus() {
         let arena = Arc::new(quantum_arena::GlobalArena::new(13.0));
-        arena.config.min_confidence_btc.store(0.51, std::sync::atomic::Ordering::Relaxed);
+        arena
+            .config
+            .min_confidence_btc
+            .store(0.51, std::sync::atomic::Ordering::Relaxed);
 
         let mut orch = TensorVoteOrchestrator::new(arena);
-        orch.add_strategy(Box::new(HorizonMockStrategy { name: "Bull1", value: 0.8, horizon: TradeHorizon::Continuous }));
-        orch.add_strategy(Box::new(HorizonMockStrategy { name: "Bull2", value: 0.6, horizon: TradeHorizon::Continuous }));
+        orch.add_strategy(Box::new(HorizonMockStrategy {
+            name: "Bull1",
+            value: 0.8,
+            horizon: TradeHorizon::Continuous,
+        }));
+        orch.add_strategy(Box::new(HorizonMockStrategy {
+            name: "Bull2",
+            value: 0.6,
+            horizon: TradeHorizon::Continuous,
+        }));
 
         let dec = orch.evaluate_continuous_consensus();
-        assert_eq!(dec.signal, SignalType::Long, "Continuous debe resolver Long");
+        assert_eq!(
+            dec.signal,
+            SignalType::Long,
+            "Continuous debe resolver Long"
+        );
         assert_eq!(dec.horizon, TradeHorizon::Continuous);
     }
 }

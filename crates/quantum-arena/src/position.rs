@@ -64,7 +64,16 @@ impl Position {
         tp: f64,
         sl: f64,
     ) {
-        self.open_with_horizon(is_long, price, qty, margin, current_time_ms, tp, sl, PositionHorizon::Continuous);
+        self.open_with_horizon(
+            is_long,
+            price,
+            qty,
+            margin,
+            current_time_ms,
+            tp,
+            sl,
+            PositionHorizon::Continuous,
+        );
     }
 
     #[inline(always)]
@@ -80,7 +89,18 @@ impl Position {
         sl: f64,
         horizon: PositionHorizon,
     ) {
-        self.open_with_full_meta(is_long, price, qty, margin, current_time_ms, tp, sl, horizon, 0.0, 0.0);
+        self.open_with_full_meta(
+            is_long,
+            price,
+            qty,
+            margin,
+            current_time_ms,
+            tp,
+            sl,
+            horizon,
+            0.0,
+            0.0,
+        );
     }
 
     #[inline(always)]
@@ -98,7 +118,19 @@ impl Position {
         ml_pred: f64,
         conf: f64,
     ) {
-        self.open_with_fee(is_long, price, qty, margin, current_time_ms, tp, sl, horizon, ml_pred, conf, 0.0);
+        self.open_with_fee(
+            is_long,
+            price,
+            qty,
+            margin,
+            current_time_ms,
+            tp,
+            sl,
+            horizon,
+            ml_pred,
+            conf,
+            0.0,
+        );
     }
 
     #[inline(always)]
@@ -117,14 +149,34 @@ impl Position {
         conf: f64,
         entry_fee: f64,
     ) {
-        let safe_price = if price.is_finite() && price > 0.0 { price } else { 1.0 };
-        let safe_qty = if qty.is_finite() && qty > 0.0 { qty } else { 0.0 };
-        let safe_margin = if margin.is_finite() && margin >= 0.0 { margin } else { 0.0 };
+        let safe_price = if price.is_finite() && price > 0.0 {
+            price
+        } else {
+            1.0
+        };
+        let safe_qty = if qty.is_finite() && qty > 0.0 {
+            qty
+        } else {
+            0.0
+        };
+        let safe_margin = if margin.is_finite() && margin >= 0.0 {
+            margin
+        } else {
+            0.0
+        };
         let safe_tp = if tp.is_finite() && tp >= 0.0 { tp } else { 0.0 };
         let safe_sl = if sl.is_finite() && sl >= 0.0 { sl } else { 0.0 };
         let safe_ml = if ml_pred.is_finite() { ml_pred } else { 0.5 };
-        let safe_conf = if conf.is_finite() { conf.clamp(0.0, 1.0) } else { 0.5 };
-        let safe_fee = if entry_fee.is_finite() && entry_fee >= 0.0 { entry_fee } else { 0.0 };
+        let safe_conf = if conf.is_finite() {
+            conf.clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+        let safe_fee = if entry_fee.is_finite() && entry_fee >= 0.0 {
+            entry_fee
+        } else {
+            0.0
+        };
 
         self.is_long.store(is_long, Ordering::Relaxed);
         // U-1 — encoding fiel del continuo: Continuous ocupa SU PROPIO slot
@@ -174,7 +226,11 @@ impl Position {
     pub fn close_with_fee(&self) -> (bool, f64, f64, f64, f64) {
         // FIX #902 & #1201: Compare-and-swap atómico para garantizar que solo un hilo cierra la posición.
         // Si is_open ya era false, evita sobreescribir con ceros una nueva posición que se esté abriendo concurrentemente.
-        if self.is_open.compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire).is_err() {
+        if self
+            .is_open
+            .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
             return (false, 0.0, 0.0, 0.0, 0.0);
         }
 
@@ -279,8 +335,17 @@ mod tests {
     fn test_position_atomic_close_idempotency() {
         let pos = Position::default();
         pos.open_with_fee(
-            true, 50000.0, 1.0, 5000.0, 1000, 51000.0, 49000.0,
-            PositionHorizon::Continuous, 0.8, 0.9, 2.5,
+            true,
+            50000.0,
+            1.0,
+            5000.0,
+            1000,
+            51000.0,
+            49000.0,
+            PositionHorizon::Continuous,
+            0.8,
+            0.9,
+            2.5,
         );
 
         let (is_long, p, q, m, f) = pos.close_with_fee();
@@ -302,7 +367,14 @@ mod tests {
 
         // 1. Open Swing Long
         mgr.swing.open_with_horizon(
-            true, 90000.0, 0.1, 900.0, 1000, 91500.0, 89300.0, PositionHorizon::Swing,
+            true,
+            90000.0,
+            0.1,
+            900.0,
+            1000,
+            91500.0,
+            89300.0,
+            PositionHorizon::Swing,
         );
         assert!(mgr.is_swing_open());
         assert!(!mgr.is_scalp_open());
@@ -310,7 +382,14 @@ mod tests {
 
         // 2. Open Scalp Short simultaneously without interfering
         mgr.scalp.open_with_horizon(
-            false, 90200.0, 0.05, 450.0, 1050, 89900.0, 90350.0, PositionHorizon::Scalping,
+            false,
+            90200.0,
+            0.05,
+            450.0,
+            1050,
+            89900.0,
+            90350.0,
+            PositionHorizon::Scalping,
         );
         assert!(mgr.is_swing_open());
         assert!(mgr.is_scalp_open());

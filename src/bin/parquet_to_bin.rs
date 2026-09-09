@@ -52,15 +52,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let close = raw_close;
             let open = opens.as_ref().and_then(|o| o.get(i)).unwrap_or(close);
             let raw_high = highs.get(i).unwrap_or(close);
-            let high = if raw_high.is_finite() { raw_high.max(close).max(open) } else { close };
+            let high = if raw_high.is_finite() {
+                raw_high.max(close).max(open)
+            } else {
+                close
+            };
             let raw_low = lows.get(i).unwrap_or(close);
-            let low = if raw_low.is_finite() { raw_low.min(close).min(open).max(1e-6) } else { close * 0.999 };
+            let low = if raw_low.is_finite() {
+                raw_low.min(close).min(open).max(1e-6)
+            } else {
+                close * 0.999
+            };
             let raw_vol = volumes.get(i).unwrap_or(1.0);
-            let volume = if raw_vol.is_finite() && raw_vol >= 0.0 { raw_vol } else { 1.0 };
+            let volume = if raw_vol.is_finite() && raw_vol >= 0.0 {
+                raw_vol
+            } else {
+                1.0
+            };
             let ts = open_times.get(i).unwrap_or(0);
 
             // Causalidad estricta: determinar la tendencia inicial a partir del paso previo, no del cierre futuro
-            let prev_open = if i > 0 { opens.as_ref().and_then(|o| o.get(i - 1)).unwrap_or(open) } else { open };
+            let prev_open = if i > 0 {
+                opens.as_ref().and_then(|o| o.get(i - 1)).unwrap_or(open)
+            } else {
+                open
+            };
             let initial_trend_up = open >= prev_open;
             let spread = (high - low).max(close * 0.0001);
             let quarter_vol = (volume * 0.25).max(0.001);

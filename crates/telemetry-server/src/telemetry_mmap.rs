@@ -71,7 +71,8 @@ impl MmapTelemetry {
 
         for coin in self.arena.coins.iter() {
             let m_pnl = coin.metrics.pnl_realized.load(Ordering::Relaxed);
-            let leg_pnl = coin.scalp.pnl_realized.load(Ordering::Relaxed) + coin.swing.pnl_realized.load(Ordering::Relaxed);
+            let leg_pnl = coin.scalp.pnl_realized.load(Ordering::Relaxed)
+                + coin.swing.pnl_realized.load(Ordering::Relaxed);
             pnl_realized += if m_pnl.abs() > 0.0 { m_pnl } else { leg_pnl };
 
             ml_prob_sum += coin.ml_prob.load(Ordering::Relaxed);
@@ -130,9 +131,17 @@ impl MmapTelemetry {
 
         // FIX #727: Sanitizar flotantes de snapshot mmap contra NaNs
         let safe_uni = if uni.is_finite() { uni } else { 13.0 };
-        let safe_pnl = if pnl_realized.is_finite() { pnl_realized } else { 0.0 };
+        let safe_pnl = if pnl_realized.is_finite() {
+            pnl_realized
+        } else {
+            0.0
+        };
         let safe_roi = if roi.is_finite() { roi } else { 0.0 };
-        let safe_mem = if os_telemetry.memory_used_mb.is_finite() { os_telemetry.memory_used_mb } else { 0.0 };
+        let safe_mem = if os_telemetry.memory_used_mb.is_finite() {
+            os_telemetry.memory_used_mb
+        } else {
+            0.0
+        };
         let safe_lev = {
             let lev = self.arena.config.global_leverage.load(Ordering::Relaxed);
             if lev.is_finite() { lev } else { 1.0 }
@@ -143,11 +152,23 @@ impl MmapTelemetry {
             unified_capital: safe_uni,
             pnl_realized_scalp: safe_pnl,
             global_leverage: safe_lev,
-            ai_ml_prob: if avg_ml_prob.is_finite() { avg_ml_prob } else { 0.5 },
-            hurst_exponent: if avg_hurst.is_finite() { avg_hurst } else { 0.5 },
+            ai_ml_prob: if avg_ml_prob.is_finite() {
+                avg_ml_prob
+            } else {
+                0.5
+            },
+            hurst_exponent: if avg_hurst.is_finite() {
+                avg_hurst
+            } else {
+                0.5
+            },
             memory_used_mb: safe_mem,
             global_roi: safe_roi,
-            win_rate: if global_wr.is_finite() { global_wr } else { 0.0 },
+            win_rate: if global_wr.is_finite() {
+                global_wr
+            } else {
+                0.0
+            },
             tensor_drift: 0.0,
         };
 
@@ -179,13 +200,19 @@ mod tests {
     #[test]
     fn test_mmap_telemetry_snapshot_binary_readback_and_weighted_wr() {
         let temp_dir = std::env::temp_dir();
-        let unique_id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let path = temp_dir.join(format!("test_mmap_readback_{}.bin", unique_id));
         let path_str = path.to_string_lossy().to_string();
 
         let arena = Arc::new(GlobalArena::new(13.0));
         arena.unified_capital.store(26.0, Ordering::Relaxed);
-        arena.coins[0].scalp.trade_count.store(10, Ordering::Relaxed);
+        arena.coins[0]
+            .scalp
+            .trade_count
+            .store(10, Ordering::Relaxed);
         arena.coins[0].scalp.win_rate.store(0.80, Ordering::Relaxed);
         arena.coins[0].swing.trade_count.store(5, Ordering::Relaxed);
         arena.coins[0].swing.win_rate.store(0.60, Ordering::Relaxed);
@@ -196,7 +223,8 @@ mod tests {
         let data = std::fs::read(&path).expect("read mmap file");
         assert_eq!(data.len(), std::mem::size_of::<TelemetrySnapshot>());
 
-        let snap: TelemetrySnapshot = unsafe { std::ptr::read(data.as_ptr() as *const TelemetrySnapshot) };
+        let snap: TelemetrySnapshot =
+            unsafe { std::ptr::read(data.as_ptr() as *const TelemetrySnapshot) };
         assert_eq!(snap.unified_capital, 26.0);
         // ROI = ((26 - 13) / 13) * 100 = 100%
         assert!((snap.global_roi - 100.0).abs() < 1e-4);
@@ -207,4 +235,3 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 }
-

@@ -186,8 +186,16 @@ mod tests {
         count_reject(RejectReason::CrossedBook);
 
         let snap = reject_snapshot();
-        let finite_count = snap.iter().find(|(r, _)| *r == RejectReason::PriceNotFinite).unwrap().1;
-        let crossed_count = snap.iter().find(|(r, _)| *r == RejectReason::CrossedBook).unwrap().1;
+        let finite_count = snap
+            .iter()
+            .find(|(r, _)| *r == RejectReason::PriceNotFinite)
+            .unwrap()
+            .1;
+        let crossed_count = snap
+            .iter()
+            .find(|(r, _)| *r == RejectReason::CrossedBook)
+            .unwrap()
+            .1;
 
         assert!(finite_count >= 1);
         assert!(crossed_count >= 1);

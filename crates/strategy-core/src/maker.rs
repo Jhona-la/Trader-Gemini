@@ -34,20 +34,58 @@ impl MakerEngine {
         tensor_poly_a: f64,
         tensor_poly_b: f64,
     ) -> MakerQuote {
-        if !bid.is_finite() || !ask.is_finite() || bid <= 0.0 || ask <= bid || !bid_qty.is_finite() || !ask_qty.is_finite() {
+        if !bid.is_finite()
+            || !ask.is_finite()
+            || bid <= 0.0
+            || ask <= bid
+            || !bid_qty.is_finite()
+            || !ask_qty.is_finite()
+        {
             return MakerQuote {
-                bid_price: if bid.is_finite() && bid > 0.0 { bid } else { 1e-8 },
-                ask_price: if ask.is_finite() && ask > 0.0 { ask } else { 2e-8 },
+                bid_price: if bid.is_finite() && bid > 0.0 {
+                    bid
+                } else {
+                    1e-8
+                },
+                ask_price: if ask.is_finite() && ask > 0.0 {
+                    ask
+                } else {
+                    2e-8
+                },
             };
         }
 
         // FIX #690: Sanitizar parámetros flotantes
-        let safe_inv = if inventory_delta_usd.is_finite() { inventory_delta_usd } else { 0.0 };
-        let safe_vol = if volatility.is_finite() && volatility >= 0.0 { volatility } else { 0.0 };
-        let safe_spread = if genome_spread_pct.is_finite() && genome_spread_pct >= 0.0 { genome_spread_pct } else { 0.001 };
-        let safe_obi_th = if genome_obi_threshold.is_finite() { genome_obi_threshold } else { 0.5 };
-        let safe_poly_a = if tensor_poly_a.is_finite() { tensor_poly_a } else { 1.0 };
-        let safe_poly_b = if tensor_poly_b.is_finite() { tensor_poly_b } else { 1.0 };
+        let safe_inv = if inventory_delta_usd.is_finite() {
+            inventory_delta_usd
+        } else {
+            0.0
+        };
+        let safe_vol = if volatility.is_finite() && volatility >= 0.0 {
+            volatility
+        } else {
+            0.0
+        };
+        let safe_spread = if genome_spread_pct.is_finite() && genome_spread_pct >= 0.0 {
+            genome_spread_pct
+        } else {
+            0.001
+        };
+        let safe_obi_th = if genome_obi_threshold.is_finite() {
+            genome_obi_threshold
+        } else {
+            0.5
+        };
+        let safe_poly_a = if tensor_poly_a.is_finite() {
+            tensor_poly_a
+        } else {
+            1.0
+        };
+        let safe_poly_b = if tensor_poly_b.is_finite() {
+            tensor_poly_b
+        } else {
+            1.0
+        };
 
         let _ofi = self.ofi_model.update(bid, ask, bid_qty, ask_qty);
         let total_vol = bid_qty + ask_qty;
@@ -111,12 +149,17 @@ mod tests {
     #[test]
     fn test_maker_engine_generate_quote_nominal() {
         let mut engine = MakerEngine::new(5.0);
-        let quote = engine.generate_quote(
-            100.0, 100.2, 10.0, 10.0, 0.0, 0.01, 0.001, 0.5, 1.0, 1.0
-        );
+        let quote =
+            engine.generate_quote(100.0, 100.2, 10.0, 10.0, 0.0, 0.01, 0.001, 0.5, 1.0, 1.0);
 
-        assert!(quote.bid_price <= 100.0, "Maker bid must not cross best bid");
-        assert!(quote.ask_price >= 100.2, "Maker ask must not cross best ask");
+        assert!(
+            quote.bid_price <= 100.0,
+            "Maker bid must not cross best bid"
+        );
+        assert!(
+            quote.ask_price >= 100.2,
+            "Maker ask must not cross best ask"
+        );
         assert!(quote.bid_price < quote.ask_price);
     }
 
@@ -125,7 +168,7 @@ mod tests {
         let mut engine = MakerEngine::new(5.0);
         // Extreme inventory or OBI skew should still never cross market spread
         let quote = engine.generate_quote(
-            50000.0, 50001.0, 100.0, 1.0, 1000.0, 0.05, 0.005, 0.2, 5.0, 5.0
+            50000.0, 50001.0, 100.0, 1.0, 1000.0, 0.05, 0.005, 0.2, 5.0, 5.0,
         );
 
         assert!(quote.bid_price <= 50000.0);
@@ -135,10 +178,8 @@ mod tests {
     #[test]
     fn test_maker_engine_nan_and_negative_immunity() {
         let mut engine = MakerEngine::new(5.0);
-        let quote = engine.generate_quote(
-            f64::NAN, 100.0, 10.0, 10.0, 0.0, 0.01, 0.001, 0.5, 1.0, 1.0
-        );
+        let quote =
+            engine.generate_quote(f64::NAN, 100.0, 10.0, 10.0, 0.0, 0.01, 0.001, 0.5, 1.0, 1.0);
         assert!(quote.bid_price.is_finite() && quote.ask_price.is_finite());
     }
 }
-

@@ -17,7 +17,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let json_data: god_engine_core::ml_inference::NanoForestData = serde_json::from_reader(reader)?;
     let forest_from_json = god_engine_core::ml_inference::NanoForest::from_data(json_data);
 
-    let forest_from_loader = god_engine_core::ml_inference::NanoForest::load_model("models/BTCUSDT_SCALP.json")?;
+    let forest_from_loader =
+        god_engine_core::ml_inference::NanoForest::load_model("models/BTCUSDT_SCALP.json")?;
 
     let zero_34 = [0.0f32; 34];
     let (s_json, p_json) = forest_from_json.predict_raw(&zero_34);

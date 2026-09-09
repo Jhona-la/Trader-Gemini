@@ -63,7 +63,10 @@ impl MarketContextFetcher {
         let rates: Vec<BinanceFundingRate> = response.json().await?;
 
         if rates.is_empty() {
-            println!("ℹ️ [MarketContextFetcher] No funding rates returned for {}", symbol);
+            println!(
+                "ℹ️ [MarketContextFetcher] No funding rates returned for {}",
+                symbol
+            );
             return Ok(());
         }
 
@@ -73,7 +76,11 @@ impl MarketContextFetcher {
             .map(|r| {
                 // FIX #1538: Sanitización y clamping de tasas de fondeo históricas
                 let parsed = r.funding_rate.parse::<f64>().unwrap_or(0.0);
-                if parsed.is_finite() { parsed.clamp(-1.0, 1.0) } else { 0.0 }
+                if parsed.is_finite() {
+                    parsed.clamp(-1.0, 1.0)
+                } else {
+                    0.0
+                }
             })
             .collect();
 

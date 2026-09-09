@@ -89,4 +89,3 @@ mod tests {
         assert_eq!(optimizer.lowest_latency_ms.load(Ordering::Relaxed), 12);
     }
 }
-

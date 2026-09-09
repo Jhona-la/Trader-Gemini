@@ -129,7 +129,10 @@ impl TrueOnlineRandomForest {
         let class_0 = y_class.iter().filter(|&&c| c == 0).count();
         let class_1 = y_class.iter().filter(|&&c| c == 1).count();
         if class_0 == 0 || class_1 == 0 {
-            return Err("Insuficiente variabilidad de clases (se requieren casos positivos y negativos)".to_string());
+            return Err(
+                "Insuficiente variabilidad de clases (se requieren casos positivos y negativos)"
+                    .to_string(),
+            );
         }
 
         let x_matrix = DenseMatrix::new(data.len(), 6, x_features, false);
@@ -229,7 +232,11 @@ impl TrueOnlineRandomForest {
             } else {
                 0.5
             };
-            let safe_pnl = if expected_pnl.is_finite() { expected_pnl } else { 0.0 };
+            let safe_pnl = if expected_pnl.is_finite() {
+                expected_pnl
+            } else {
+                0.0
+            };
 
             Some((safe_prob, safe_pnl))
         } else {

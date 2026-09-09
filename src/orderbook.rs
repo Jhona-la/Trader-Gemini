@@ -90,7 +90,11 @@ impl OrderBook {
 
         // Micro-price calculation: weighted by opposite volume
         let mp = (bb_price * ba_qty + ba_price * bb_qty) / total_qty;
-        if mp.is_finite() && mp > 0.0 { Some(mp) } else { None }
+        if mp.is_finite() && mp > 0.0 {
+            Some(mp)
+        } else {
+            None
+        }
     }
 
     /// FIX #735: Cálculo de desbalance L2 (Order Book Imbalance) con guardas numéricas
@@ -108,7 +112,11 @@ impl OrderBook {
             return 0.0;
         }
         let obi = (bb_qty - ba_qty) / total_vol;
-        if obi.is_finite() { obi.clamp(-1.0, 1.0) } else { 0.0 }
+        if obi.is_finite() {
+            obi.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
     }
 }
 

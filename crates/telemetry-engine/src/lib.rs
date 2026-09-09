@@ -127,5 +127,3 @@ mod tests {
         assert!(msg2.unwrap().contains("ERROR: TEST_SIMULATED_REJECTION"));
     }
 }
-
-

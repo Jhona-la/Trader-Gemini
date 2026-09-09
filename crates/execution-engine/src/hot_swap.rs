@@ -63,4 +63,3 @@ mod tests {
         assert!(!controller.evaluate_estasis(0.65, 0.03));
     }
 }
-

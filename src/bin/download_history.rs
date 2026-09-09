@@ -139,8 +139,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let close_time = record[6].parse::<u64>().unwrap_or(0);
 
                     // FIX #1527: Validar que los precios y volumenes sean finitos y validos (> 0.0)
-                    if open <= 0.0 || high <= 0.0 || low <= 0.0 || close <= 0.0 || volume < 0.0
-                        || !open.is_finite() || !high.is_finite() || !low.is_finite() || !close.is_finite() || !volume.is_finite() {
+                    if open <= 0.0
+                        || high <= 0.0
+                        || low <= 0.0
+                        || close <= 0.0
+                        || volume < 0.0
+                        || !open.is_finite()
+                        || !high.is_finite()
+                        || !low.is_finite()
+                        || !close.is_finite()
+                        || !volume.is_finite()
+                    {
                         continue;
                     }
 

@@ -59,9 +59,22 @@ impl KalmanFilter1D {
     /// Modula el ruido de medición R en función de la volatilidad instantánea (ej. ATR o Garman-Klass)
     /// para evitar sobreajuste a ruidos de microestructura.
     #[inline(always)]
-    pub fn update_with_instantaneous_volatility(&mut self, measurement: f64, inst_vol: f64, base_r: f64) -> f64 {
-        let safe_vol = if inst_vol.is_finite() && inst_vol > 0.0 { inst_vol } else { 0.001 };
-        let safe_base = if base_r.is_finite() && base_r > 0.0 { base_r } else { self.r };
+    pub fn update_with_instantaneous_volatility(
+        &mut self,
+        measurement: f64,
+        inst_vol: f64,
+        base_r: f64,
+    ) -> f64 {
+        let safe_vol = if inst_vol.is_finite() && inst_vol > 0.0 {
+            inst_vol
+        } else {
+            0.001
+        };
+        let safe_base = if base_r.is_finite() && base_r > 0.0 {
+            base_r
+        } else {
+            self.r
+        };
         let modulated_r = safe_base * (1.0 + (safe_vol * 100.0).clamp(0.0, 100.0));
         self.update_with_dynamic_r(measurement, modulated_r)
     }

@@ -157,7 +157,6 @@ fn main() {
     }
 }
 
-
 // ===================== R2.2: AGGTRADES =====================
 
 #[repr(C)]
@@ -179,8 +178,14 @@ fn aggtrades_main() {
 
     // Un símbolo, un mes por defecto (args: [symbol] [month])
     let args: Vec<String> = std::env::args().collect();
-    let symbol = args.get(2).cloned().unwrap_or_else(|| "BTCUSDT".to_string());
-    let month = args.get(3).cloned().unwrap_or_else(|| "2026-05".to_string());
+    let symbol = args
+        .get(2)
+        .cloned()
+        .unwrap_or_else(|| "BTCUSDT".to_string());
+    let month = args
+        .get(3)
+        .cloned()
+        .unwrap_or_else(|| "2026-05".to_string());
 
     let url = format!(
         "https://data.binance.vision/data/futures/um/monthly/aggTrades/{}/{}-aggTrades-{}.zip",
@@ -205,20 +210,34 @@ fn aggtrades_main() {
     match zip::ZipArchive::new(std::io::Cursor::new(&bytes)) {
         Ok(mut archive) => {
             for i in 0..archive.len() {
-                let mut file = match archive.by_index(i) { Ok(f) => f, Err(_) => continue };
+                let mut file = match archive.by_index(i) {
+                    Ok(f) => f,
+                    Err(_) => continue,
+                };
                 let mut content = String::new();
-                if std::io::Read::read_to_string(&mut file, &mut content).is_err() { continue; }
+                if std::io::Read::read_to_string(&mut file, &mut content).is_err() {
+                    continue;
+                }
                 for line in content.lines().skip(1) {
                     let cols: Vec<&str> = line.split(',').collect();
-                    if cols.len() < 7 { continue; }
+                    if cols.len() < 7 {
+                        continue;
+                    }
                     // S-01 — FIX COLUMNA TIMESTAMP: cols[4] es last_trade_id,
                     // NO transact_time (que es cols[5]). Antes: trade-ID
                     // monótono como tiempo — sort disfrazaba el bug y toda
                     // duración/interpolación temporal quedaba corrupta.
-                    let (Ok(price), Ok(qty), Ok(ts), Ok(is_maker)) =
-                        (cols[1].parse::<f64>(), cols[2].parse::<f64>(), cols[5].parse::<u64>(), cols[6].parse::<bool>())
-                    else { continue };
-                    if !price.is_finite() || price <= 0.0 || !qty.is_finite() || qty <= 0.0 { continue; }
+                    let (Ok(price), Ok(qty), Ok(ts), Ok(is_maker)) = (
+                        cols[1].parse::<f64>(),
+                        cols[2].parse::<f64>(),
+                        cols[5].parse::<u64>(),
+                        cols[6].parse::<bool>(),
+                    ) else {
+                        continue;
+                    };
+                    if !price.is_finite() || price <= 0.0 || !qty.is_finite() || qty <= 0.0 {
+                        continue;
+                    }
 
                     // R2.2/N-09: OBI agrupado — bucket de volumen con mezcla
                     // base para evitar OBI=±1 por trade. is_buyer_maker=true
@@ -242,19 +261,34 @@ fn aggtrades_main() {
                 }
             }
         }
-        Err(e) => { println!("❌ zip: {}", e); return; }
+        Err(e) => {
+            println!("❌ zip: {}", e);
+            return;
+        }
     }
 
     ticks.sort_unstable_by_key(|t| t.timestamp);
     println!("✅ {} ticks reales de aggTrades", ticks.len());
 
     let out = Path::new("data").join(format!("{}_ticks_REAL.bin", symbol));
-    let mut f = match std::fs::File::create(&out) { Ok(f) => f, Err(e) => { println!("❌ {}: {}", out.display(), e); return; } };
+    let mut f = match std::fs::File::create(&out) {
+        Ok(f) => f,
+        Err(e) => {
+            println!("❌ {}: {}", out.display(), e);
+            return;
+        }
+    };
     use std::io::Write;
-    if f.write_all(b"TGMTICK1").is_err() { return; }
+    if f.write_all(b"TGMTICK1").is_err() {
+        return;
+    }
     let blen = ticks.len() * std::mem::size_of::<BinTick>();
     let bslice = unsafe { std::slice::from_raw_parts(ticks.as_ptr() as *const u8, blen) };
     if f.write_all(bslice).is_ok() {
-        println!("💾 {} ({} bytes, magic TGMTICK1 REAL)", out.display(), blen + 8);
+        println!(
+            "💾 {} ({} bytes, magic TGMTICK1 REAL)",
+            out.display(),
+            blen + 8
+        );
     }
 }

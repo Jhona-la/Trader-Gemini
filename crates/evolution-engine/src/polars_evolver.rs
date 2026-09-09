@@ -83,7 +83,14 @@ pub fn start_polars_evolver_daemon(
                     let mut pnl = vec![0.0; n];
                     let mut stats = vec![0.0; backtest_engine::STATS_LEN];
                     let _final_cap = run_backtest_native(
-                        &closes, &highs, &lows, &volumes, &test_cfg, &mut pnl, &mut stats, "SIM",
+                        &closes,
+                        &highs,
+                        &lows,
+                        &volumes,
+                        &test_cfg,
+                        &mut pnl,
+                        &mut stats,
+                        "SIM",
                         initial_cap,
                     );
 
@@ -111,7 +118,11 @@ pub fn start_polars_evolver_daemon(
                     // Pseudo-Sharpe Cuántico con Penalización (Normalizado a retorno relativo - FIX #1408)
                     let ret_pct = (final_capital - initial_cap) / initial_cap.max(1.0);
                     let raw_sharpe = ret_pct * wr * dd_penalty * min_trades_penalty;
-                    let sharpe = if raw_sharpe.is_finite() { raw_sharpe } else { 0.0 };
+                    let sharpe = if raw_sharpe.is_finite() {
+                        raw_sharpe
+                    } else {
+                        0.0
+                    };
 
                     if sharpe > best_sharpe {
                         best_sharpe = sharpe;
@@ -176,4 +187,4 @@ mod tests {
         assert_eq!(de.sharpe_ratio, 2.1);
     }
 }
- // Cierra fn
+// Cierra fn

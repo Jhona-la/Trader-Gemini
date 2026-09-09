@@ -11,7 +11,11 @@ impl StatisticalNormalizer {
     /// Retorna (es_outlier, valor_suavizado_si_es_outlier)
     pub fn filter_outlier(&self, value: f64, rolling_median: f64, rolling_mad: f64) -> (bool, f64) {
         if !value.is_finite() {
-            let safe_med = if rolling_median.is_finite() { rolling_median } else { 0.0 };
+            let safe_med = if rolling_median.is_finite() {
+                rolling_median
+            } else {
+                0.0
+            };
             return (false, safe_med);
         }
         if !rolling_median.is_finite() || !rolling_mad.is_finite() || rolling_mad <= 1e-9 {
@@ -57,9 +61,15 @@ impl GarmanKlassVolatilityEstimator {
 
     #[inline(always)]
     pub fn update(&mut self, open: f64, high: f64, low: f64, close: f64) -> f64 {
-        if open <= 0.0 || high <= 0.0 || low <= 0.0 || close <= 0.0 
-            || !open.is_finite() || !high.is_finite() || !low.is_finite() || !close.is_finite() 
-            || low > high 
+        if open <= 0.0
+            || high <= 0.0
+            || low <= 0.0
+            || close <= 0.0
+            || !open.is_finite()
+            || !high.is_finite()
+            || !low.is_finite()
+            || !close.is_finite()
+            || low > high
         {
             return self.rolling_variance_ema.sqrt();
         }
@@ -76,7 +86,8 @@ impl GarmanKlassVolatilityEstimator {
         let sample_variance = (term1 - term2).max(1e-12);
 
         // Actualización EWMA online O(1)
-        self.rolling_variance_ema = (1.0 - self.alpha) * self.rolling_variance_ema + self.alpha * sample_variance;
+        self.rolling_variance_ema =
+            (1.0 - self.alpha) * self.rolling_variance_ema + self.alpha * sample_variance;
 
         self.rolling_variance_ema.sqrt()
     }

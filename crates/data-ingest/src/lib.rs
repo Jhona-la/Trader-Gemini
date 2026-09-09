@@ -19,7 +19,7 @@ fn get_monotonic_ms() -> u64 {
 
 pub struct TokenBucket {
     capacity: u32,
-    fill_rate: f64, // tokens per millisecond
+    fill_rate: f64,   // tokens per millisecond
     state: AtomicU64, // packed: [32-bit tokens | 32-bit last_update_ms]
 }
 
@@ -38,7 +38,11 @@ impl TokenBucket {
     pub fn new(capacity: u64, fill_rate: f64) -> Self {
         let now_ms = (get_monotonic_ms() & 0xFFFFFFFF) as u32;
         let cap_u32 = capacity.min(u32::MAX as u64).max(1) as u32;
-        let safe_fill_rate = if fill_rate.is_finite() && fill_rate > 0.0 { fill_rate } else { 1.0 };
+        let safe_fill_rate = if fill_rate.is_finite() && fill_rate > 0.0 {
+            fill_rate
+        } else {
+            1.0
+        };
 
         Self {
             capacity: cap_u32,
@@ -58,7 +62,8 @@ impl TokenBucket {
             let elapsed_ms = (now_ms.wrapping_sub(last_ms)) as f64;
             let added_tokens = (elapsed_ms * self.fill_rate) as u32;
 
-            let total_tokens = std::cmp::min(self.capacity, current_tokens.saturating_add(added_tokens));
+            let total_tokens =
+                std::cmp::min(self.capacity, current_tokens.saturating_add(added_tokens));
 
             if total_tokens == 0 {
                 return false;
@@ -187,5 +192,3 @@ mod tests {
         assert!(neg_bucket.try_consume());
     }
 }
-
-

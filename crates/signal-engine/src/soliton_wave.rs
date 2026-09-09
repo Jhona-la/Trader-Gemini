@@ -1,6 +1,6 @@
-use strategy_core::QuantumStrategy;
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 /// 🌊 ALGORITMO #86: MOTOR DE ONDAS SOLITÓN NO-LINEALES DE SCHRÖDINGER (SOLITON WAVE ENGINE)
 /// Modela los impulsos de precio como solitones no-dispersivos de la ecuación NLS (i \psi_t + 1/2 \psi_{xx} + |\psi|^2 \psi = 0),
@@ -31,7 +31,11 @@ impl SolitonWaveEngine {
         t_time: f64,
     ) -> f64 {
         // FIX #645: Sanitizar los parámetros entrantes
-        let safe_amp = if amplitude.is_finite() { amplitude.abs() } else { 0.0 };
+        let safe_amp = if amplitude.is_finite() {
+            amplitude.abs()
+        } else {
+            0.0
+        };
         let safe_vel = if velocity.is_finite() { velocity } else { 0.0 };
         let safe_x = if x_pos.is_finite() { x_pos } else { 0.0 };
         let safe_t = if t_time.is_finite() { t_time } else { 0.0 };
@@ -44,7 +48,11 @@ impl SolitonWaveEngine {
             return 0.0;
         }
         let res = safe_amp / cosh_val;
-        if res.is_finite() { res } else { 0.0 }
+        if res.is_finite() {
+            res
+        } else {
+            0.0
+        }
     }
 
     /// Calcula la potencia de envolvente energética del paquete solitónico (Punto #265)
@@ -73,33 +81,80 @@ impl QuantumStrategy for SolitonWaveEngine {
     }
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
-        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
-        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let sym_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(symbol)
+        };
+        let cid_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(coin_id)
+        };
         let registry = match self.registry.as_ref() {
             Some(r) => r,
             None => return 0.0,
         };
         let amp = registry
             .get_scoped_parameter(sym_opt, cid_opt, "soliton_amplitude", "SolitonWaveEngine")
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "SolitonWaveEngine"))
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "vol_delta", "SolitonWaveEngine"))
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "order_flow_imbalance",
+                    "SolitonWaveEngine",
+                )
+            })
+            .or_else(|| {
+                registry.get_scoped_parameter(sym_opt, cid_opt, "vol_delta", "SolitonWaveEngine")
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
         let vel = registry
             .get_scoped_parameter(sym_opt, cid_opt, "soliton_velocity", "SolitonWaveEngine")
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "price_velocity", "SolitonWaveEngine"))
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "order_flow_velocity", "SolitonWaveEngine"))
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "price_velocity",
+                    "SolitonWaveEngine",
+                )
+            })
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "order_flow_velocity",
+                    "SolitonWaveEngine",
+                )
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
         let pos = registry
             .get_scoped_parameter(sym_opt, cid_opt, "soliton_pos", "SolitonWaveEngine")
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "quantum_position_deviation", "SolitonWaveEngine"))
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "order_book_imbalance", "SolitonWaveEngine"))
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "quantum_position_deviation",
+                    "SolitonWaveEngine",
+                )
+            })
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "order_book_imbalance",
+                    "SolitonWaveEngine",
+                )
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
         let t_time = registry
             .get_scoped_parameter(sym_opt, cid_opt, "soliton_time", "SolitonWaveEngine")
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "hawkes_dt", "SolitonWaveEngine"))
+            .or_else(|| {
+                registry.get_scoped_parameter(sym_opt, cid_opt, "hawkes_dt", "SolitonWaveEngine")
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.05)
             .clamp(0.001, 1.0);
@@ -178,7 +233,10 @@ mod tests {
         assert!(engine.init(registry).is_ok());
 
         let eval = engine.evaluate();
-        assert!(eval > 0.0, "Velocidad positiva y amplitud centrada deben producir señal positiva");
+        assert!(
+            eval > 0.0,
+            "Velocidad positiva y amplitud centrada deben producir señal positiva"
+        );
         assert!(eval <= 1.0);
     }
 }

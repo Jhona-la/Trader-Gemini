@@ -171,7 +171,8 @@ mod tests {
         let json = serde_json::to_string(&res).expect("serialization of PhaseResult");
         assert!(json.contains("Gamma"));
         assert!(json.contains("Signal engine validated"));
-        let restored: PhaseResult = serde_json::from_str(&json).expect("deserialization of PhaseResult");
+        let restored: PhaseResult =
+            serde_json::from_str(&json).expect("deserialization of PhaseResult");
         assert_eq!(restored.phase, Phase::Gamma);
         assert_eq!(restored.severity, "LOW");
     }
@@ -189,5 +190,3 @@ mod tests {
         assert_eq!(timer.base_interval, Duration::from_millis(1));
     }
 }
-
-

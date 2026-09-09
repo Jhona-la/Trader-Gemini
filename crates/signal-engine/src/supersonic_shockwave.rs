@@ -1,6 +1,6 @@
-use strategy_core::QuantumStrategy;
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 /// ⚡ ALGORITMO #82: MOTOR DE ONDA DE CHOQUE SUPERSÓNICA Y NÚMERO DE MACH (SUPERSONIC SHOCKWAVE ENGINE)
 /// Modela el flujo de órdenes como una onda de presión supersónica, calculando el número de Mach M = v_flujo / v_sonido,
@@ -26,8 +26,16 @@ impl SupersonicShockwaveEngine {
     #[inline(always)]
     pub fn compute_mach_number(order_flow_speed: f64, spread_speed_of_sound: f64) -> f64 {
         // FIX #644: Sanitizar parámetros de Mach
-        let safe_speed = if order_flow_speed.is_finite() { order_flow_speed.abs() } else { 0.0 };
-        let safe_sound = if spread_speed_of_sound.is_finite() && spread_speed_of_sound > 0.0 { spread_speed_of_sound.max(1e-6) } else { 0.001 };
+        let safe_speed = if order_flow_speed.is_finite() {
+            order_flow_speed.abs()
+        } else {
+            0.0
+        };
+        let safe_sound = if spread_speed_of_sound.is_finite() && spread_speed_of_sound > 0.0 {
+            spread_speed_of_sound.max(1e-6)
+        } else {
+            0.001
+        };
         safe_speed / safe_sound
     }
 
@@ -35,7 +43,9 @@ impl SupersonicShockwaveEngine {
     #[inline(always)]
     pub fn compute_shockwave_jump(mach: f64) -> f64 {
         if mach.is_finite() && mach > 1.0 {
-            ((mach * mach - 1.0) / (mach * mach + 1.0)).tanh().clamp(0.0, 1.0)
+            ((mach * mach - 1.0) / (mach * mach + 1.0))
+                .tanh()
+                .clamp(0.0, 1.0)
         } else {
             0.0
         }
@@ -57,21 +67,60 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
     }
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
-        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
-        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let sym_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(symbol)
+        };
+        let cid_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(coin_id)
+        };
         let registry = match self.registry.as_ref() {
             Some(r) => r,
             None => return 0.0,
         };
         let speed = registry
-            .get_scoped_parameter(sym_opt, cid_opt, "order_flow_speed", "SupersonicShockwaveEngine")
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "order_flow_velocity", "SupersonicShockwaveEngine"))
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "price_velocity", "SupersonicShockwaveEngine"))
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "order_flow_speed",
+                "SupersonicShockwaveEngine",
+            )
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "order_flow_velocity",
+                    "SupersonicShockwaveEngine",
+                )
+            })
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "price_velocity",
+                    "SupersonicShockwaveEngine",
+                )
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
         let sound = registry
-            .get_scoped_parameter(sym_opt, cid_opt, "spread_speed_of_sound", "SupersonicShockwaveEngine")
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "atr_pct", "SupersonicShockwaveEngine"))
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "spread_speed_of_sound",
+                "SupersonicShockwaveEngine",
+            )
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "atr_pct",
+                    "SupersonicShockwaveEngine",
+                )
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.001);
 
@@ -145,7 +194,10 @@ mod tests {
         assert!(engine.init(registry).is_ok());
 
         let eval = engine.evaluate();
-        assert!(eval > 0.0, "Velocidad supersónica positiva debe generar señal de choque positiva");
+        assert!(
+            eval > 0.0,
+            "Velocidad supersónica positiva debe generar señal de choque positiva"
+        );
         assert!(eval <= 1.0);
     }
 }

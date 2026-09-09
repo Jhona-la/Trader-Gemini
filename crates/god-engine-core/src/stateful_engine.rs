@@ -176,7 +176,7 @@ impl StatefulEngine {
             self.last_entropy = self.entropy.update(norm_return);
             self.spectral.push(norm_return);
             let (_h_mic, _h_mes, _h_mac, _score, scalp, swing) = self.multifractal.update(price);
-            
+
             // Lógica Branchless-like O(1) para discriminar atómicamente el régimen
             self.regime = if scalp {
                 MarketRegime::Scalping
@@ -240,7 +240,11 @@ impl StatefulEngine {
             if event_time_ms.saturating_sub(self.kline_start_ms) >= 60000 {
                 // FIX #608: True Range robusto y no nulo para evitar distorsiones en SL dinámico
                 let tr = (self.kline_high - self.kline_low).max(price * 0.0005);
-                self.v_t = if self.v_t == 0.0 || !self.v_t.is_finite() { tr } else { (self.v_t * 0.85 + tr * 0.15).max(price * 0.0005) };
+                self.v_t = if self.v_t == 0.0 || !self.v_t.is_finite() {
+                    tr
+                } else {
+                    (self.v_t * 0.85 + tr * 0.15).max(price * 0.0005)
+                };
 
                 // Actualizar EMAs de tendencia macro de 1 minuto (EMA 9 y EMA 21)
                 let alpha_k_fast = 2.0 / (9.0 + 1.0);
@@ -249,8 +253,10 @@ impl StatefulEngine {
                     self.kline_ema_fast = price;
                     self.kline_ema_slow = price;
                 } else {
-                    self.kline_ema_fast = (price - self.kline_ema_fast) * alpha_k_fast + self.kline_ema_fast;
-                    self.kline_ema_slow = (price - self.kline_ema_slow) * alpha_k_slow + self.kline_ema_slow;
+                    self.kline_ema_fast =
+                        (price - self.kline_ema_fast) * alpha_k_fast + self.kline_ema_fast;
+                    self.kline_ema_slow =
+                        (price - self.kline_ema_slow) * alpha_k_slow + self.kline_ema_slow;
                 }
 
                 self.kline_start_ms = event_time_ms;
@@ -286,17 +292,26 @@ impl StatefulEngine {
         // FIX: Erradicación del Feature Leakage (Ceguera Causal)
         // Usar los altos y bajos de la vela ANTERIOR para el cálculo actual de features de IA.
         // Si el modelo ve el high/low de esta misma vela, el backtest hace trampa leyendo el futuro.
-        let prev_high = if self.kline_high > 0.0 { self.kline_high } else { high };
-        let prev_low = if self.kline_low > 0.0 { self.kline_low } else { low };
-        
+        let prev_high = if self.kline_high > 0.0 {
+            self.kline_high
+        } else {
+            high
+        };
+        let prev_low = if self.kline_low > 0.0 {
+            self.kline_low
+        } else {
+            low
+        };
+
         self.omni.update(close, prev_high, prev_low);
-        
+
         // Guardar estado futuro para la próxima evaluación causal
         self.kline_high = high;
         self.kline_low = low;
         self.hurst.update(close);
         if self.last_price > 0.0 {
-            self.spectral.push((close - self.last_price) / self.last_price);
+            self.spectral
+                .push((close - self.last_price) / self.last_price);
         }
         let (_h_mic, _h_mes, _h_mac, _score, scalp, swing) = self.multifractal.update(close);
         self.regime = if scalp {
@@ -366,8 +381,16 @@ impl StatefulEngine {
         let hurst = self.hurst.current();
         let ofi = self.ofi_model.ema_ofi;
         let vol_delta = self.order_flow.get_volume_delta_ratio();
-        let norm_vt = if self.last_price > 0.0 { (self.v_t / self.last_price).clamp(0.0, 1.0) } else { 0.005 };
-        let norm_at = if self.last_price > 0.0 { (self.a_t / self.last_price).clamp(-1.0, 1.0) } else { 0.0 };
+        let norm_vt = if self.last_price > 0.0 {
+            (self.v_t / self.last_price).clamp(0.0, 1.0)
+        } else {
+            0.005
+        };
+        let norm_at = if self.last_price > 0.0 {
+            (self.a_t / self.last_price).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
 
         [
             price_change as f32,
@@ -377,7 +400,9 @@ impl StatefulEngine {
             self.obi_accel.prev_obi_velocity as f32,
             self.obi_accel.prev_obi as f32,
             vol_delta as f32,
-            (((self.cvpin.buy_volume - self.cvpin.sell_volume) / (self.cvpin.buy_volume + self.cvpin.sell_volume).max(1e-6)).clamp(-1.0, 1.0)) as f32,
+            (((self.cvpin.buy_volume - self.cvpin.sell_volume)
+                / (self.cvpin.buy_volume + self.cvpin.sell_volume).max(1e-6))
+            .clamp(-1.0, 1.0)) as f32,
             self.last_entropy as f32,
             self.dark_alpha.current_severity as f32,
             self.obi_accel.accel as f32,
@@ -503,7 +528,10 @@ mod tests {
     fn test_stateful_engine_market_regime_classification() {
         let engine = StatefulEngine::new();
         let regime = engine.get_market_regime();
-        assert!(matches!(regime, MarketRegime::Scalping | MarketRegime::Swing | MarketRegime::Neutral));
+        assert!(matches!(
+            regime,
+            MarketRegime::Scalping | MarketRegime::Swing | MarketRegime::Neutral
+        ));
 
         let atr_pct = engine.get_atr_pct();
         assert!(atr_pct.is_finite());

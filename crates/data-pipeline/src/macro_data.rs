@@ -69,11 +69,26 @@ mod tests {
         }
 
         let quotes = vec![
-            MockQuote { timestamp: 1672531200, close: 4000.0 },
-            MockQuote { timestamp: -100, close: 4000.0 }, // Invalid timestamp
-            MockQuote { timestamp: 1672531300, close: f64::NAN }, // Invalid NaN close
-            MockQuote { timestamp: 1672531400, close: -50.0 }, // Invalid negative close
-            MockQuote { timestamp: 1672531500, close: 4050.0 },
+            MockQuote {
+                timestamp: 1672531200,
+                close: 4000.0,
+            },
+            MockQuote {
+                timestamp: -100,
+                close: 4000.0,
+            }, // Invalid timestamp
+            MockQuote {
+                timestamp: 1672531300,
+                close: f64::NAN,
+            }, // Invalid NaN close
+            MockQuote {
+                timestamp: 1672531400,
+                close: -50.0,
+            }, // Invalid negative close
+            MockQuote {
+                timestamp: 1672531500,
+                close: 4050.0,
+            },
         ];
 
         let mut valid_ts = Vec::new();
@@ -92,4 +107,3 @@ mod tests {
         assert_eq!(valid_closes[1], 4050.0);
     }
 }
-

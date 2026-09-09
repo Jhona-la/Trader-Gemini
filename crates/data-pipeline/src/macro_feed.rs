@@ -111,9 +111,14 @@ pub async fn run_macro_feed_poller(state: Arc<MacroState>) {
 
         // Fetch BTC dominance proxy via CoinGecko or DefiLlama global market cap if accessible
         let mut btc_dom = f64::from_bits(state.btc_dominance.load(Ordering::Relaxed));
-        if let Ok(res) = client.get("https://api.coingecko.com/api/v3/global").send().await {
+        if let Ok(res) = client
+            .get("https://api.coingecko.com/api/v3/global")
+            .send()
+            .await
+        {
             if let Ok(json) = res.json::<Value>().await {
-                if let Some(dom) = json.get("data")
+                if let Some(dom) = json
+                    .get("data")
                     .and_then(|d| d.get("market_cap_percentage"))
                     .and_then(|m| m.get("btc"))
                     .and_then(|v| v.as_f64())
@@ -162,4 +167,3 @@ mod tests {
         assert_eq!(state.get_btc_dominance(), old_dom);
     }
 }
-

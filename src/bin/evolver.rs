@@ -43,7 +43,9 @@ async fn main() -> Result<(), String> {
     // FIX #1519: Sanitización estricta de capital inicial finito
     let mut initial_capital: f64 = initial_capital_str.parse().unwrap_or(13.0);
     if !initial_capital.is_finite() || initial_capital <= 0.0 {
-        println!("⚠️ INITIAL_CAPITAL inválido o <= 0.0 detectado. Usando $13.00 como capital base.");
+        println!(
+            "⚠️ INITIAL_CAPITAL inválido o <= 0.0 detectado. Usando $13.00 como capital base."
+        );
         initial_capital = 13.0;
     }
 
@@ -227,15 +229,23 @@ async fn main() -> Result<(), String> {
     }
     islands.push(island_3);
 
-    println!("🚀 Iniciando Co-Evolución por Islas: {} Individuos ({} islas x {}) x {} Generaciones...", 
-        pop_size, num_islands, island_size, generations);
+    println!(
+        "🚀 Iniciando Co-Evolución por Islas: {} Individuos ({} islas x {}) x {} Generaciones...",
+        pop_size, num_islands, island_size, generations
+    );
 
     let mut best_all_time: Option<(SuperGenotype, f64, usize, f64)> = None; // (genome, capital, trades, fitness)
 
     // Cargar modelo DarkAlphaEngine 54D para co-evolución simbiótica
-    let trained_nn = match dark_alpha_engine::DarkAlphaEngine::load_json("models/DarkAlpha_BTCUSDT.json") {
+    let trained_nn = match dark_alpha_engine::DarkAlphaEngine::load_json(
+        "models/DarkAlpha_BTCUSDT.json",
+    ) {
         Ok(mut m) => {
-            let is_corrupt = m.layer1.weights.iter().any(|&w| w.is_nan() || w.is_infinite());
+            let is_corrupt = m
+                .layer1
+                .weights
+                .iter()
+                .any(|&w| w.is_nan() || w.is_infinite());
             if is_corrupt {
                 println!("⚠️ [EVOLVER] Modelo en disco corrupto. Usando default_model 54D.");
                 let mut def = dark_alpha_engine::DarkAlphaEngine::default_model();
@@ -243,7 +253,9 @@ async fn main() -> Result<(), String> {
                 def
             } else {
                 m.init_buffers();
-                println!("🧠 [EVOLVER] DarkAlphaEngine 54D cargado exitosamente para co-evolución.");
+                println!(
+                    "🧠 [EVOLVER] DarkAlphaEngine 54D cargado exitosamente para co-evolución."
+                );
                 m
             }
         }
@@ -259,7 +271,10 @@ async fn main() -> Result<(), String> {
         let progress = (gen as f64 - 1.0) / (generations as f64 - 1.0).max(1.0);
         let mutation_rate = 0.04 + (0.35 - 0.04) * (1.0 - progress).powf(1.5);
 
-        println!("== GENERACIÓN {}/{} (Temp/Mut: {:.4}) ==", gen, generations, mutation_rate);
+        println!(
+            "== GENERACIÓN {}/{} (Temp/Mut: {:.4}) ==",
+            gen, generations, mutation_rate
+        );
 
         // Aplanar tareas de evaluación conservando identidad de isla
         let eval_tasks: Vec<(usize, SuperGenotype)> = islands
@@ -396,14 +411,19 @@ async fn main() -> Result<(), String> {
             .collect();
 
         // Agrupar resultados por isla segregada
-        let mut island_results: Vec<Vec<IslandResult>> = vec![Vec::with_capacity(island_size); num_islands];
+        let mut island_results: Vec<Vec<IslandResult>> =
+            vec![Vec::with_capacity(island_size); num_islands];
         for res in raw_results {
             island_results[res.island_idx].push(res);
         }
 
         // Ordenar internamente cada isla por fitness decreciente
         for isl in 0..num_islands {
-            island_results[isl].sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap_or(std::cmp::Ordering::Equal));
+            island_results[isl].sort_by(|a, b| {
+                b.fitness
+                    .partial_cmp(&a.fitness)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
 
         // Telemetría por Isla y Detección de Mejor Histórico
@@ -422,7 +442,12 @@ async fn main() -> Result<(), String> {
 
         if let Some(best_gen) = global_gen_best {
             if best_all_time.is_none() || best_gen.fitness > best_all_time.as_ref().unwrap().3 {
-                best_all_time = Some((best_gen.genome.clone(), best_gen.final_capital, best_gen.total_trades, best_gen.fitness));
+                best_all_time = Some((
+                    best_gen.genome.clone(),
+                    best_gen.final_capital,
+                    best_gen.total_trades,
+                    best_gen.fitness,
+                ));
             }
             let growth_pct = ((best_gen.final_capital - initial_capital) / initial_capital) * 100.0;
             println!("   ⭐ Campeón Global G{}: Cap ${:.2} ({:+.1}%) | WR: {:.0}% | Trades: {} | DD: {:.1}% | Fitness: {:.2}", 
@@ -459,20 +484,23 @@ async fn main() -> Result<(), String> {
 
                 // Reforzar la especialización fenotípica por nicho de isla
                 match k {
-                    0 => { // Isla 0: Scalp L2
+                    0 => {
+                        // Isla 0: Scalp L2
                         child.capital_split_scalp = child.capital_split_scalp.clamp(0.50, 0.85);
                         child.dynamic_obi_threshold = child.dynamic_obi_threshold.clamp(0.15, 0.45);
                         child.dynamic_ofi_threshold = child.dynamic_ofi_threshold.clamp(0.18, 0.50);
                         child.global_leverage = child.global_leverage.clamp(25.0, 35.0);
                     }
-                    1 => { // Isla 1: Swing Macro
+                    1 => {
+                        // Isla 1: Swing Macro
                         child.capital_split_scalp = child.capital_split_scalp.clamp(0.15, 0.45);
                         child.trend_threshold = child.trend_threshold.clamp(0.15, 0.45);
                         if child.swing_tp_base < child.swing_sl_base * 2.5 {
                             child.swing_tp_base = child.swing_sl_base * 3.5;
                         }
                     }
-                    2 => { // Isla 2: Mean Reversion
+                    2 => {
+                        // Isla 2: Mean Reversion
                         child.capital_split_scalp = 0.50;
                         child.dynamic_ema_trend = child.dynamic_ema_trend.clamp(0.00001, 0.00010);
                         child.range_threshold = child.range_threshold.clamp(0.35, 0.75);
@@ -562,7 +590,9 @@ async fn main() -> Result<(), String> {
                 Err(e) => println!("❌ Error promoviendo genoma al almacén: {}", e),
             }
         } else {
-            println!("⚠️ Ninguna configuración superó el umbral de viabilidad. No se promueve genoma.");
+            println!(
+                "⚠️ Ninguna configuración superó el umbral de viabilidad. No se promueve genoma."
+            );
         }
     } else {
         println!("Ninguna configuración sobrevivió.");

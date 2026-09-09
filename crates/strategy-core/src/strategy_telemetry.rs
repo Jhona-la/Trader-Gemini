@@ -1,5 +1,5 @@
 /// 🔬 TELEMETRÍA ZERO-LATENCY PARA ESTRATEGIAS (V9)
-/// 
+///
 /// Define constantes y funciones de empaquetado para telemetría de estrategias.
 /// El bus de telemetría real se inyecta desde god-engine-core, evitando
 /// dependencias circulares entre crates.
@@ -42,8 +42,12 @@ impl StrategyTelemetryFrame {
     /// payload: [confidence, z_score, obi, spread_bps, coin_id, direction]
     #[inline(always)]
     pub fn scalp_signal(
-        confidence: f64, z_score: f64, obi: f64, spread_bps: f64, 
-        coin_id: usize, direction: f64,
+        confidence: f64,
+        z_score: f64,
+        obi: f64,
+        spread_bps: f64,
+        coin_id: usize,
+        direction: f64,
     ) -> Self {
         Self {
             timestamp_ns: Self::current_time_ns(),
@@ -51,12 +55,24 @@ impl StrategyTelemetryFrame {
             frame_type: FRAME_SIGNAL_GENERATED,
             _reserved: [0; 6],
             payload: [
-                if confidence.is_finite() { confidence } else { 0.0 },
+                if confidence.is_finite() {
+                    confidence
+                } else {
+                    0.0
+                },
                 if z_score.is_finite() { z_score } else { 0.0 },
                 if obi.is_finite() { obi } else { 0.0 },
-                if spread_bps.is_finite() { spread_bps } else { 0.0 },
+                if spread_bps.is_finite() {
+                    spread_bps
+                } else {
+                    0.0
+                },
                 coin_id as f64,
-                if direction.is_finite() { direction } else { 0.0 },
+                if direction.is_finite() {
+                    direction
+                } else {
+                    0.0
+                },
             ],
         }
     }
@@ -65,8 +81,12 @@ impl StrategyTelemetryFrame {
     /// payload: [confidence, hurst, macd_hist, atr_pct, coin_id, direction]
     #[inline(always)]
     pub fn swing_signal(
-        confidence: f64, hurst: f64, macd_hist: f64, atr_pct: f64, 
-        coin_id: usize, direction: f64,
+        confidence: f64,
+        hurst: f64,
+        macd_hist: f64,
+        atr_pct: f64,
+        coin_id: usize,
+        direction: f64,
     ) -> Self {
         Self {
             timestamp_ns: Self::current_time_ns(),
@@ -74,12 +94,24 @@ impl StrategyTelemetryFrame {
             frame_type: FRAME_SIGNAL_GENERATED,
             _reserved: [0; 6],
             payload: [
-                if confidence.is_finite() { confidence } else { 0.0 },
+                if confidence.is_finite() {
+                    confidence
+                } else {
+                    0.0
+                },
                 if hurst.is_finite() { hurst } else { 0.5 },
-                if macd_hist.is_finite() { macd_hist } else { 0.0 },
+                if macd_hist.is_finite() {
+                    macd_hist
+                } else {
+                    0.0
+                },
                 if atr_pct.is_finite() { atr_pct } else { 0.01 },
                 coin_id as f64,
-                if direction.is_finite() { direction } else { 0.0 },
+                if direction.is_finite() {
+                    direction
+                } else {
+                    0.0
+                },
             ],
         }
     }
@@ -88,7 +120,12 @@ impl StrategyTelemetryFrame {
     /// payload: [raw_leverage, final_leverage, capital, volatility, confidence, coin_id]
     #[inline(always)]
     pub fn leverage_computed(
-        raw: f64, final_lev: f64, capital: f64, vol: f64, conf: f64, coin_id: usize,
+        raw: f64,
+        final_lev: f64,
+        capital: f64,
+        vol: f64,
+        conf: f64,
+        coin_id: usize,
     ) -> Self {
         Self {
             timestamp_ns: Self::current_time_ns(),
@@ -97,7 +134,11 @@ impl StrategyTelemetryFrame {
             _reserved: [0; 6],
             payload: [
                 if raw.is_finite() { raw } else { 1.0 },
-                if final_lev.is_finite() { final_lev } else { 1.0 },
+                if final_lev.is_finite() {
+                    final_lev
+                } else {
+                    1.0
+                },
                 if capital.is_finite() { capital } else { 13.0 },
                 if vol.is_finite() { vol } else { 0.01 },
                 if conf.is_finite() { conf } else { 0.5 },
@@ -110,7 +151,12 @@ impl StrategyTelemetryFrame {
     /// payload: [dsr, win_rate, profit_factor, trade_count, drawdown, accepted]
     #[inline(always)]
     pub fn evolution_mutation(
-        dsr: f64, wr: f64, pf: f64, trades: usize, dd: f64, accepted: bool,
+        dsr: f64,
+        wr: f64,
+        pf: f64,
+        trades: usize,
+        dd: f64,
+        accepted: bool,
     ) -> Self {
         Self {
             timestamp_ns: Self::current_time_ns(),
@@ -156,15 +202,28 @@ mod tests {
 
     #[test]
     fn test_strategy_telemetry_nan_sanitization() {
-        let scalp_nan = StrategyTelemetryFrame::scalp_signal(f64::NAN, f64::NAN, f64::NAN, f64::NAN, 0, f64::NAN);
+        let scalp_nan = StrategyTelemetryFrame::scalp_signal(
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            0,
+            f64::NAN,
+        );
         for &p in &scalp_nan.payload {
             assert!(p.is_finite());
         }
 
-        let swing_nan = StrategyTelemetryFrame::swing_signal(f64::NAN, f64::NAN, f64::NAN, f64::NAN, 0, f64::NAN);
+        let swing_nan = StrategyTelemetryFrame::swing_signal(
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            f64::NAN,
+            0,
+            f64::NAN,
+        );
         for &p in &swing_nan.payload {
             assert!(p.is_finite());
         }
     }
 }
-

@@ -88,7 +88,11 @@ impl OmniStrategyEngine {
 
         // Local Extrema Decay (Fibonacci proxy)
         self.local_max = self.local_max.max(high);
-        self.local_min = if self.local_min == 0.0 { low } else { self.local_min.min(low) };
+        self.local_min = if self.local_min == 0.0 {
+            low
+        } else {
+            self.local_min.min(low)
+        };
         // FIX #901 & #1204: Decaimiento ultrasuave (1e-6) para mantener los soportes/resistencias Fibonacci estables en HFT
         if price < self.local_max {
             self.local_max -= (self.local_max - price) * 1e-6;
@@ -175,8 +179,10 @@ impl OmniStrategyEngine {
             dist_min as f32,
             (parkinson_vol.clamp(0.0, 0.1)) as f32,
             (((rsi - 50.0) / 50.0).clamp(-1.0, 1.0)) as f32,
-            (((self.macd_fast.get() - self.macd_slow.get()) / safe_last_price).clamp(-0.1, 0.1)) as f32,
-            (((self.last_price - self.macd_signal.get()) / safe_last_price).clamp(-0.1, 0.1)) as f32,
+            (((self.macd_fast.get() - self.macd_slow.get()) / safe_last_price).clamp(-0.1, 0.1))
+                as f32,
+            (((self.last_price - self.macd_signal.get()) / safe_last_price).clamp(-0.1, 0.1))
+                as f32,
             ((self.bb_stats.variance().sqrt() / safe_last_price).clamp(0.0, 0.1)) as f32,
             (norm_range.clamp(0.0, 0.2)) as f32,
             (((pos_in_range - 0.5) * 2.0).clamp(-1.0, 1.0)) as f32,

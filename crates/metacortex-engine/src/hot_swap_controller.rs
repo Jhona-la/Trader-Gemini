@@ -58,12 +58,36 @@ impl HotSwapController {
             .epigenoma_dir
             .join("activos")
             .join(format!("{}.toml", params.symbol));
-        let scalp_tp = if params.scalp_tp.is_finite() && params.scalp_tp > 0.0 { params.scalp_tp } else { 0.005 };
-        let scalp_sl = if params.scalp_sl.is_finite() && params.scalp_sl > 0.0 { params.scalp_sl } else { 0.002 };
-        let swing_tp = if params.swing_tp.is_finite() && params.swing_tp > 0.0 { params.swing_tp } else { 0.020 };
-        let swing_sl = if params.swing_sl.is_finite() && params.swing_sl > 0.0 { params.swing_sl } else { 0.010 };
-        let min_confidence = if params.min_confidence.is_finite() { params.min_confidence.clamp(0.0, 1.0) } else { 0.60 };
-        let max_leverage = if params.max_leverage.is_finite() && params.max_leverage >= 1.0 { params.max_leverage.clamp(1.0, 100.0) } else { 10.0 };
+        let scalp_tp = if params.scalp_tp.is_finite() && params.scalp_tp > 0.0 {
+            params.scalp_tp
+        } else {
+            0.005
+        };
+        let scalp_sl = if params.scalp_sl.is_finite() && params.scalp_sl > 0.0 {
+            params.scalp_sl
+        } else {
+            0.002
+        };
+        let swing_tp = if params.swing_tp.is_finite() && params.swing_tp > 0.0 {
+            params.swing_tp
+        } else {
+            0.020
+        };
+        let swing_sl = if params.swing_sl.is_finite() && params.swing_sl > 0.0 {
+            params.swing_sl
+        } else {
+            0.010
+        };
+        let min_confidence = if params.min_confidence.is_finite() {
+            params.min_confidence.clamp(0.0, 1.0)
+        } else {
+            0.60
+        };
+        let max_leverage = if params.max_leverage.is_finite() && params.max_leverage >= 1.0 {
+            params.max_leverage.clamp(1.0, 100.0)
+        } else {
+            10.0
+        };
 
         let content = format!(
             r#"# Epigenoma State for {}
@@ -122,14 +146,21 @@ max_leverage = {:.6}
             if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
                 for entry in entries.flatten() {
                     if let Some(name) = entry.file_name().to_str() {
-                        if name.starts_with("cortex_") && (name.ends_with(".dll") || name.ends_with(".so") || name.ends_with(".dylib")) {
+                        if name.starts_with("cortex_")
+                            && (name.ends_with(".dll")
+                                || name.ends_with(".so")
+                                || name.ends_with(".dylib"))
+                        {
                             let _ = std::fs::remove_file(entry.path());
                         }
                     }
                 }
             }
 
-            let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("cortex");
+            let file_stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("cortex");
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("dll");
             let nonce = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -214,14 +245,18 @@ mod tests {
             max_leverage: 10.0,
         };
 
-        let saved_path = controller.save_symbol_epigenoma(&params).expect("Failed to save epigenoma");
+        let saved_path = controller
+            .save_symbol_epigenoma(&params)
+            .expect("Failed to save epigenoma");
         assert!(saved_path.exists());
         let content = std::fs::read_to_string(&saved_path).expect("Failed to read saved file");
         assert!(content.contains("BTCUSDT"));
         assert!(content.contains("0.005000"));
 
         let mmap_data = b"TENSOR_WEIGHTS_V5_MOCK";
-        let mmap_path = controller.write_mmap_state("model_weights.bin", mmap_data).expect("Failed to write mmap state");
+        let mmap_path = controller
+            .write_mmap_state("model_weights.bin", mmap_data)
+            .expect("Failed to write mmap state");
         assert!(mmap_path.exists());
         let read_back = std::fs::read(&mmap_path).expect("Failed to read mmap file");
         assert_eq!(read_back, mmap_data);
@@ -229,4 +264,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(base_path);
     }
 }
-

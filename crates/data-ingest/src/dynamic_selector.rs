@@ -45,7 +45,11 @@ impl DynamicSelector {
             .await
             .map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-        let min_vol_usd = if self.is_testnet { 10_000.0 } else { 1_000_000.0 };
+        let min_vol_usd = if self.is_testnet {
+            10_000.0
+        } else {
+            1_000_000.0
+        };
         let top_10 = Self::parse_and_rank_tickers(&data, min_vol_usd);
         Ok(top_10)
     }
@@ -139,9 +143,24 @@ mod tests {
         assert!(selector.is_testnet);
 
         let mut scores = vec![
-            AssetScore { symbol: "ETHUSDT".to_string(), volume_usd: 500_000.0, volatility_pct: 2.0, score: 11.4 },
-            AssetScore { symbol: "BTCUSDT".to_string(), volume_usd: 2_000_000.0, volatility_pct: 3.5, score: 22.0 },
-            AssetScore { symbol: "SOLUSDT".to_string(), volume_usd: 800_000.0, volatility_pct: 5.0, score: 29.5 },
+            AssetScore {
+                symbol: "ETHUSDT".to_string(),
+                volume_usd: 500_000.0,
+                volatility_pct: 2.0,
+                score: 11.4,
+            },
+            AssetScore {
+                symbol: "BTCUSDT".to_string(),
+                volume_usd: 2_000_000.0,
+                volatility_pct: 3.5,
+                score: 22.0,
+            },
+            AssetScore {
+                symbol: "SOLUSDT".to_string(),
+                volume_usd: 800_000.0,
+                volatility_pct: 5.0,
+                score: 29.5,
+            },
         ];
 
         scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
@@ -175,4 +194,3 @@ mod tests {
         assert_eq!(top[1], "ETHUSDT");
     }
 }
-

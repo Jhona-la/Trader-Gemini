@@ -70,14 +70,22 @@ impl Profiler {
         let safe_gross = if gross.is_finite() { gross } else { 0.0 };
         let safe_net = if net.is_finite() { net } else { 0.0 };
         let safe_win_rate = if win_rate.is_finite() { win_rate } else { 0.0 };
-        let safe_capital = if capital.is_finite() && capital > 0.0 { capital } else { 13.0 };
+        let safe_capital = if capital.is_finite() && capital > 0.0 {
+            capital
+        } else {
+            13.0
+        };
 
         self.total_gross_pnl = safe_gross;
         self.total_fees = safe_gross - safe_net;
         self.win_rate = safe_win_rate;
         // FIX #1530: Clamping de ROI a límites numéricos razonables [-1000.0, 100000.0]
         let raw_roi = (safe_net / safe_capital) * 100.0;
-        self.roi_net = if raw_roi.is_finite() { raw_roi.clamp(-1000.0, 100000.0) } else { 0.0 };
+        self.roi_net = if raw_roi.is_finite() {
+            raw_roi.clamp(-1000.0, 100000.0)
+        } else {
+            0.0
+        };
     }
 }
 
@@ -86,14 +94,22 @@ pub fn update_financials_atomic(gross: f64, net: f64, win_rate: f64, capital: f6
     let safe_gross = if gross.is_finite() { gross } else { 0.0 };
     let safe_net = if net.is_finite() { net } else { 0.0 };
     let safe_win_rate = if win_rate.is_finite() { win_rate } else { 0.0 };
-    let safe_capital = if capital.is_finite() && capital > 0.0 { capital } else { 13.0 };
+    let safe_capital = if capital.is_finite() && capital > 0.0 {
+        capital
+    } else {
+        13.0
+    };
 
     TOTAL_GROSS_PNL.store(safe_gross.to_bits(), Ordering::Relaxed);
     TOTAL_FEES.store((safe_gross - safe_net).to_bits(), Ordering::Relaxed);
     WIN_RATE.store(safe_win_rate.to_bits(), Ordering::Relaxed);
     // FIX #1530: Clamping de ROI a límites numéricos razonables [-1000.0, 100000.0]
     let raw_roi = (safe_net / safe_capital) * 100.0;
-    let safe_roi = if raw_roi.is_finite() { raw_roi.clamp(-1000.0, 100000.0) } else { 0.0 };
+    let safe_roi = if raw_roi.is_finite() {
+        raw_roi.clamp(-1000.0, 100000.0)
+    } else {
+        0.0
+    };
     ROI_NET.store(safe_roi.to_bits(), Ordering::Relaxed);
 }
 
@@ -208,4 +224,3 @@ mod tests {
         assert_eq!(profiler.roi_net, 100_000.0);
     }
 }
-

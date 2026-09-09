@@ -294,10 +294,7 @@ impl SuperGenotype {
             synergy_leverage_boost: arena.config.synergy_leverage_boost.load(Ordering::Relaxed),
             max_fee_pct: arena.config.max_fee_pct.load(Ordering::Relaxed),
             kelly_bootstrap_cold: arena.config.kelly_bootstrap_cold.load(Ordering::Relaxed),
-            latency_penalty_ms: arena
-                .config
-                .latency_penalty_ms
-                .load(Ordering::Relaxed),
+            latency_penalty_ms: arena.config.latency_penalty_ms.load(Ordering::Relaxed),
             base_slippage_floor: arena.config.base_slippage_floor.load(Ordering::Relaxed),
             spot_spread_threshold: arena.config.spot_spread_threshold.load(Ordering::Relaxed),
             spot_bias_value: arena.config.spot_bias_value.load(Ordering::Relaxed),
@@ -432,10 +429,7 @@ impl SuperGenotype {
                 .load(Ordering::Relaxed),
             iceberg_slice_count: arena.config.iceberg_slice_count.load(Ordering::Relaxed),
             swing_obi_threshold: arena.config.swing_obi_threshold.load(Ordering::Relaxed),
-            swing_accel_min_samples: arena
-                .config
-                .swing_accel_min_samples
-                .load(Ordering::Relaxed),
+            swing_accel_min_samples: arena.config.swing_accel_min_samples.load(Ordering::Relaxed),
             temporal_scale: arena.config.temporal_scale.load(Ordering::Relaxed),
         }
     }
@@ -460,7 +454,11 @@ impl SuperGenotype {
         // T-09: el fallback legacy SOLO aplica en entorno compartido — leer
         // el mirror desde un env aislado (TG_GENOME_ENV seteado) sería un
         // bypass de la separación de linajes que E3 existe para garantizar.
-        let legacy_data = if std::env::var("TG_GENOME_ENV").ok().filter(|v| !v.trim().is_empty()).is_none() {
+        let legacy_data = if std::env::var("TG_GENOME_ENV")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .is_none()
+        {
             std::fs::read_to_string("config_dir/genotypes/active_genome.json").ok()
         } else {
             None
@@ -517,7 +515,7 @@ impl SuperGenotype {
             funding_rate_sensitivity: w_base,
             global_correlation_threshold: golden_ratio - 1.0, // 0.618
             trend_threshold: 0.55,
-            range_threshold: e_const / 6.0,                   // ~0.453
+            range_threshold: e_const / 6.0, // ~0.453
             scalp_kelly_fraction: k_scalp,
             swing_kelly_fraction: k_swing,
             scalp_obi_threshold: taker_base * 50.0,
@@ -1301,9 +1299,18 @@ impl SuperGenotype {
             .config
             .scalp_accel_min_samples
             .store(self.scalp_accel_min_samples, Ordering::Relaxed);
-        arena.config.swing_obi_threshold.store(self.swing_obi_threshold, Ordering::Relaxed);
-        arena.config.swing_accel_min_samples.store(self.swing_accel_min_samples, Ordering::Relaxed);
-        arena.config.temporal_scale.store(self.temporal_scale, Ordering::Relaxed);
+        arena
+            .config
+            .swing_obi_threshold
+            .store(self.swing_obi_threshold, Ordering::Relaxed);
+        arena
+            .config
+            .swing_accel_min_samples
+            .store(self.swing_accel_min_samples, Ordering::Relaxed);
+        arena
+            .config
+            .temporal_scale
+            .store(self.temporal_scale, Ordering::Relaxed);
         arena
             .config
             .executor_max_orders_10s
@@ -1854,12 +1861,10 @@ impl SuperGenotype {
         // reparación de mutate_cmaes se aplica aquí — una sola definición.
         let mut g = rebuilt;
         if g.scalp_tp_base < g.scalp_sl_base * Self::MIN_RR_MUTATION {
-            g.scalp_tp_base = (g.scalp_sl_base * Self::MIN_RR_REPAIR)
-                .clamp(lo[13], hi[13]);
+            g.scalp_tp_base = (g.scalp_sl_base * Self::MIN_RR_REPAIR).clamp(lo[13], hi[13]);
         }
         if g.swing_tp_base < g.swing_sl_base * Self::MIN_RR_MUTATION {
-            g.swing_tp_base = (g.swing_sl_base * Self::MIN_RR_REPAIR)
-                .clamp(lo[15], hi[15]);
+            g.swing_tp_base = (g.swing_sl_base * Self::MIN_RR_REPAIR).clamp(lo[15], hi[15]);
         }
         g
     }
@@ -1867,30 +1872,30 @@ impl SuperGenotype {
     pub fn get_lower_bounds() -> Vec<f64> {
         vec![
             0.5, 25.0, 0.5, 0.5, 1.0, 0.5, 0.1, 0.2, 0.52, 0.1, 0.1, 0.01, 0.01, 0.0010, 0.0010,
-            0.0100, 0.0050, 0.5, 1.0, 0.5, 0.5, 0.05, 0.5, 0.05, 0.0001, 0.1, 0.005, 0.0000001, 0.05,
-            0.0000001, 0.05, 0.1, 0.001, 0.1, 1.0, 0.01, 0.8, 10.0, 0.7, 0.1, 0.1, 0.1, 30000.0, 0.5,
-            0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 10000.0, 0.4,
-            0.1, 5.0, 0.05, 500.0, 5.0, 15.0, 0.30, 0.50, 1.0, 1.0, 0.005, 0.1, 5.0, 0.00005, 0.5,
-            0.05, 0.70, 0.01, 0.80, 0.01, 0.001, 0.1, 5.0, 0.05, 0.1, 0.1, 0.2, 0.1, 0.01, 0.5,
-            0.1, 0.1, 0.01, 0.0, 0.01, 0.01, 0.01, 0.01, 0.01, 0.0001, 0.5, 0.001, 0.001, 0.01,
-            0.05, 0.01, 0.1, 0.10, 0.05, 0.01, 1.0, 1.01, 10.0, 0.1, 0.1, 10.0, 10000.0, 1.0, 1.0,
-            1.0, 1.0, 3.0, 5.0, 0.1, 1.1, 0.4, 0.35, 1.0, 10.0, 0.05, 10.0, 0.1, 0.1, 0.1, 0.1,
-            3.0, 10.0, 100.0, 1000.0, 100.0, 2.0, 0.05, 10.0, 0.05,
+            0.0100, 0.0050, 0.5, 1.0, 0.5, 0.5, 0.05, 0.5, 0.05, 0.0001, 0.1, 0.005, 0.0000001,
+            0.05, 0.0000001, 0.05, 0.1, 0.001, 0.1, 1.0, 0.01, 0.8, 10.0, 0.7, 0.1, 0.1, 0.1,
+            30000.0, 0.5, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
+            10000.0, 0.4, 0.1, 5.0, 0.05, 500.0, 5.0, 15.0, 0.30, 0.50, 1.0, 1.0, 0.005, 0.1, 5.0,
+            0.00005, 0.5, 0.05, 0.70, 0.01, 0.80, 0.01, 0.001, 0.1, 5.0, 0.05, 0.1, 0.1, 0.2, 0.1,
+            0.01, 0.5, 0.1, 0.1, 0.01, 0.0, 0.01, 0.01, 0.01, 0.01, 0.01, 0.0001, 0.5, 0.001,
+            0.001, 0.01, 0.05, 0.01, 0.1, 0.10, 0.05, 0.01, 1.0, 1.01, 10.0, 0.1, 0.1, 10.0,
+            10000.0, 1.0, 1.0, 1.0, 1.0, 3.0, 5.0, 0.1, 1.1, 0.4, 0.35, 1.0, 10.0, 0.05, 10.0, 0.1,
+            0.1, 0.1, 0.1, 3.0, 10.0, 100.0, 1000.0, 100.0, 2.0, 0.05, 10.0, 0.05,
         ]
     }
 
     pub fn get_upper_bounds() -> Vec<f64> {
         vec![
             0.99, 35.0, 3.0, 3.0, 50.0, 0.95, 2.0, 0.9, 0.9, 0.9, 2.0, 1.0, 1.0, 0.0500, 0.0200,
-            0.2000, 0.0600, 5.0, 10.0, 0.95, 0.99, 0.30, 0.95, 0.49, 0.01, 0.95, 0.1, 0.01, 0.95, 0.01,
-            0.95, 1.0, 0.1, 1.0, 10.0, 0.5, 0.9999, 125.0, 0.9999, 1.0, 1.0, 1.0, 600000.0, 5.0,
-            20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 3600000.0, 0.8, 2.0, 50.0,
-            0.50, 10000.0, 30.0, 60.0, 0.50, 0.70, 3.0, 2.0, 0.05, 1.0, 100.0, 0.0005, 3.0, 0.30,
-            0.95, 0.20, 0.99, 0.20, 0.05, 0.9, 20.0, 0.30, 0.6, 5.0, 2.0, 0.8, 0.5, 3.0, 0.9, 0.9,
-            0.5, 1000.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.05, 0.99, 0.1, 0.1, 0.2, 0.40, 0.10, 1.0, 0.80,
-            0.30, 0.5, 5.0, 1.20, 5000.0, 1.0, 3.0, 10000000.0, 120000.0, 3.0, 3.0, 5.0, 5.0, 15.0,
-            25.0, 0.5, 3.0, 0.6, 0.55, 20.0, 500.0, 0.5, 500.0, 2.0, 2.0, 0.8, 1.0, 10.0, 50.0,
-            500.0, 5000.0, 100_000.0, 10.0, 1.0, 50.0, 0.95,
+            0.2000, 0.0600, 5.0, 10.0, 0.95, 0.99, 0.30, 0.95, 0.49, 0.01, 0.95, 0.1, 0.01, 0.95,
+            0.01, 0.95, 1.0, 0.1, 1.0, 10.0, 0.5, 0.9999, 125.0, 0.9999, 1.0, 1.0, 1.0, 600000.0,
+            5.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 3600000.0, 0.8, 2.0,
+            50.0, 0.50, 10000.0, 30.0, 60.0, 0.50, 0.70, 3.0, 2.0, 0.05, 1.0, 100.0, 0.0005, 3.0,
+            0.30, 0.95, 0.20, 0.99, 0.20, 0.05, 0.9, 20.0, 0.30, 0.6, 5.0, 2.0, 0.8, 0.5, 3.0, 0.9,
+            0.9, 0.5, 1000.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.05, 0.99, 0.1, 0.1, 0.2, 0.40, 0.10, 1.0,
+            0.80, 0.30, 0.5, 5.0, 1.20, 5000.0, 1.0, 3.0, 10000000.0, 120000.0, 3.0, 3.0, 5.0, 5.0,
+            15.0, 25.0, 0.5, 3.0, 0.6, 0.55, 20.0, 500.0, 0.5, 500.0, 2.0, 2.0, 0.8, 1.0, 10.0,
+            50.0, 500.0, 5000.0, 100_000.0, 10.0, 1.0, 50.0, 0.95,
         ]
     }
 }

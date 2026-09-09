@@ -80,7 +80,11 @@ impl TemporalObjectStore {
                         _mm_stream_si128(dest_ptr.add(i), chunk);
                     } else {
                         // FIX #1533: Uso de safe_data sanitizado en rama no alineada
-                        std::ptr::copy_nonoverlapping(safe_data.as_ptr() as *const u8, base_ptr, 64);
+                        std::ptr::copy_nonoverlapping(
+                            safe_data.as_ptr() as *const u8,
+                            base_ptr,
+                            64,
+                        );
                         break;
                     }
                 }
@@ -104,8 +108,14 @@ mod tests {
     #[test]
     fn test_temporal_object_store_write_tensor() {
         let temp_dir = std::env::temp_dir();
-        let path = temp_dir.join(format!("test_temporal_store_{}.dat", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
-        
+        let path = temp_dir.join(format!(
+            "test_temporal_store_{}.dat",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
         let store = TemporalObjectStore::new(&path, 1024).expect("Failed to create temporal store");
         let tensor = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         assert!(store.write_tensor_block_64(&tensor).is_ok());
@@ -119,8 +129,14 @@ mod tests {
     #[test]
     fn test_temporal_object_store_capacity_overflow_boundary() {
         let temp_dir = std::env::temp_dir();
-        let path = temp_dir.join(format!("test_temporal_overflow_{}.dat", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
-        
+        let path = temp_dir.join(format!(
+            "test_temporal_overflow_{}.dat",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
         // 128 bytes allows exactly 2 blocks of 64 bytes
         let store = TemporalObjectStore::new(&path, 128).expect("Failed to create temporal store");
         let tensor = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0];
@@ -133,5 +149,3 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 }
-
-

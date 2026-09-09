@@ -1,6 +1,6 @@
-use strategy_core::QuantumStrategy;
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
+use strategy_core::QuantumStrategy;
 
 /// ⚡ ALGORITMO #98: FILTRO DE RESONANCIA ESTOCÁSTICA CUÁNTICA (STOCHASTIC RESONANCE ENGINE)
 /// Utiliza el ruido de fondo de microestructura para amplificar señales sub-umbral débiles de Alpha,
@@ -27,13 +27,25 @@ impl StochasticResonanceEngine {
     #[inline(always)]
     pub fn amplify_signal_with_noise(weak_signal: f64, noise_variance: f64) -> f64 {
         // FIX #649: Sanitizar parámetros de resonancia estocástica
-        let safe_signal = if weak_signal.is_finite() { weak_signal } else { 0.0 };
-        let safe_noise = if noise_variance.is_finite() && noise_variance > 0.0 { noise_variance.max(1e-6) } else { 0.0001 };
+        let safe_signal = if weak_signal.is_finite() {
+            weak_signal
+        } else {
+            0.0
+        };
+        let safe_noise = if noise_variance.is_finite() && noise_variance > 0.0 {
+            noise_variance.max(1e-6)
+        } else {
+            0.0001
+        };
 
         let ratio = (-safe_signal.abs() / safe_noise).clamp(-50.0, 50.0);
         let resonance_factor = (1.0 / (1.0 + ratio.exp())).clamp(0.0, 1.0);
         let res = safe_signal * (1.0 + resonance_factor);
-        if res.is_finite() { res } else { 0.0 }
+        if res.is_finite() {
+            res
+        } else {
+            0.0
+        }
     }
 }
 
@@ -52,23 +64,69 @@ impl QuantumStrategy for StochasticResonanceEngine {
     }
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
-        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
-        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let sym_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(symbol)
+        };
+        let cid_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(coin_id)
+        };
         let registry = match self.registry.as_ref() {
             Some(r) => r,
             None => return 0.0,
         };
         let weak_signal = registry
-            .get_scoped_parameter(sym_opt, cid_opt, "weak_alpha_signal", "StochasticResonanceEngine")
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "StochasticResonanceEngine"))
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "alpha_signal", "StochasticResonanceEngine"))
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "weak_alpha_signal",
+                "StochasticResonanceEngine",
+            )
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "order_flow_imbalance",
+                    "StochasticResonanceEngine",
+                )
+            })
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "alpha_signal",
+                    "StochasticResonanceEngine",
+                )
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
 
         let noise_variance = registry
-            .get_scoped_parameter(sym_opt, cid_opt, "microstructure_noise_variance", "StochasticResonanceEngine")
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "tick_variance", "StochasticResonanceEngine"))
-            .or_else(|| registry.get_scoped_parameter(sym_opt, cid_opt, "atr_pct", "StochasticResonanceEngine"))
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "microstructure_noise_variance",
+                "StochasticResonanceEngine",
+            )
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "tick_variance",
+                    "StochasticResonanceEngine",
+                )
+            })
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "atr_pct",
+                    "StochasticResonanceEngine",
+                )
+            })
             .map(|p| p.get_value())
             .unwrap_or(0.0001);
 
@@ -117,9 +175,10 @@ mod tests {
         assert!(engine.init(registry).is_ok());
 
         let eval = engine.evaluate();
-        assert!(eval > 0.2, "Resonancia estocástica debe amplificar la señal sub-umbral");
+        assert!(
+            eval > 0.2,
+            "Resonancia estocástica debe amplificar la señal sub-umbral"
+        );
         assert!(eval <= 1.0);
     }
 }
-
-

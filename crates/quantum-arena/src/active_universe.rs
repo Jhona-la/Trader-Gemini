@@ -23,7 +23,11 @@ pub fn max_active_coins_for_capital(capital: f64) -> usize {
     // Distribución óptima que concentra micro-capital en pocas monedas
     // y expande naturalmente con el interés compuesto.
     // Ej: $13 -> ~2 monedas. $100 -> 5 monedas. $1000 -> 15 monedas.
-    let safe_capital = if capital.is_finite() { capital.max(0.0) } else { 13.0 };
+    let safe_capital = if capital.is_finite() {
+        capital.max(0.0)
+    } else {
+        13.0
+    };
     let base_coins = (safe_capital.max(1.0).sqrt() * 0.5).ceil() as usize;
     let max_universe = crate::symbols::get_active_universe_size();
 
@@ -58,7 +62,11 @@ pub fn calculate_active_universe(
     prices: &[f64],
     forced_coin_ids: &[usize],
 ) -> (Vec<CoinFitness>, u64) {
-    let safe_capital = if capital.is_finite() { capital.max(0.0) } else { 13.0 };
+    let safe_capital = if capital.is_finite() {
+        capital.max(0.0)
+    } else {
+        13.0
+    };
     let max_coins = max_active_coins_for_capital(safe_capital);
     let mut candidates: Vec<CoinFitness> = Vec::with_capacity(prices.len());
 

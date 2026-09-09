@@ -18,7 +18,8 @@ pub struct EvolutionLedger {
 impl EvolutionLedger {
     pub fn new(db_path: &str) -> Self {
         // FIX #1434: Canal acotado (100k eventos) para evitar sobrecarga de memoria en host de 16GB
-        let (tx, rx): (Sender<GenomeUpdateEvent>, Receiver<GenomeUpdateEvent>) = crossbeam_channel::bounded(100_000);
+        let (tx, rx): (Sender<GenomeUpdateEvent>, Receiver<GenomeUpdateEvent>) =
+            crossbeam_channel::bounded(100_000);
         let db_path = db_path.to_string();
 
         let _ = thread::Builder::new()
@@ -158,7 +159,13 @@ mod tests {
     #[test]
     fn test_evolution_ledger_save_and_load_weight() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!("evolution_test_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let db_path = temp_dir.join(format!(
+            "evolution_test_{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         let db_str = db_path.to_str().unwrap();
 
         let ledger = EvolutionLedger::new(db_str);
@@ -178,7 +185,10 @@ mod tests {
         assert_eq!(loaded, Some(1.5));
 
         let all = EvolutionLedger::load_all_weights(db_str);
-        assert_eq!(all.get(&("BTCUSDT".to_string(), "scalp".to_string())), Some(&1.5));
+        assert_eq!(
+            all.get(&("BTCUSDT".to_string(), "scalp".to_string())),
+            Some(&1.5)
+        );
 
         let _ = std::fs::remove_file(db_path);
     }
@@ -186,7 +196,13 @@ mod tests {
     #[test]
     fn test_evolution_ledger_dual_horizon_and_nan_immunity() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!("evolution_dual_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let db_path = temp_dir.join(format!(
+            "evolution_dual_{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         let db_str = db_path.to_str().unwrap();
 
         let ledger = EvolutionLedger::new(db_str);
@@ -203,15 +219,23 @@ mod tests {
         for _ in 0..30 {
             std::thread::sleep(std::time::Duration::from_millis(25));
             if let Some(w) = EvolutionLedger::load_weight(db_str, "SOLUSDT", "scalp") {
-                if (w - 2.8).abs() < 1e-5 { scalp_ok = true; }
+                if (w - 2.8).abs() < 1e-5 {
+                    scalp_ok = true;
+                }
             }
             if let Some(w) = EvolutionLedger::load_weight(db_str, "SOLUSDT", "swing") {
-                if (w - 4.2).abs() < 1e-5 { swing_ok = true; }
+                if (w - 4.2).abs() < 1e-5 {
+                    swing_ok = true;
+                }
             }
             if let Some(w) = EvolutionLedger::load_weight(db_str, "BNBUSDT", "scalp") {
-                if (w - 0.0).abs() < 1e-5 { nan_ok = true; }
+                if (w - 0.0).abs() < 1e-5 {
+                    nan_ok = true;
+                }
             }
-            if scalp_ok && swing_ok && nan_ok { break; }
+            if scalp_ok && swing_ok && nan_ok {
+                break;
+            }
         }
 
         assert!(scalp_ok, "SOL scalp weight must be 2.8");
@@ -221,4 +245,3 @@ mod tests {
         let _ = std::fs::remove_file(db_path);
     }
 }
-

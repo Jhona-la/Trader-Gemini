@@ -5,12 +5,12 @@ use std::f64;
 /// Elimina al 100% la necesidad de umbrales hardcodeados.
 #[derive(Debug, Clone)]
 pub struct P2Quantile {
-    pub p: f64,             // Percentil objetivo (e.g., 0.80 para P80)
-    pub count: u64,         // Número total de observaciones
-    pub q: [f64; 5],        // Alturas de los 5 marcadores
-    pub n: [i64; 5],        // Posiciones actuales de los 5 marcadores
-    pub np: [f64; 5],       // Posiciones deseadas de los 5 marcadores
-    pub dn: [f64; 5],       // Incrementos deseados por cada observación
+    pub p: f64,       // Percentil objetivo (e.g., 0.80 para P80)
+    pub count: u64,   // Número total de observaciones
+    pub q: [f64; 5],  // Alturas de los 5 marcadores
+    pub n: [i64; 5],  // Posiciones actuales de los 5 marcadores
+    pub np: [f64; 5], // Posiciones deseadas de los 5 marcadores
+    pub dn: [f64; 5], // Incrementos deseados por cada observación
     pub initialized: bool,
 }
 
@@ -22,8 +22,20 @@ impl P2Quantile {
             count: 0,
             q: [0.0; 5],
             n: [1, 2, 3, 4, 5],
-            np: [1.0, 1.0 + 2.0 * p_clamped, 1.0 + 4.0 * p_clamped, 3.0 + 2.0 * p_clamped, 5.0],
-            dn: [0.0, p_clamped / 2.0, p_clamped, (1.0 + p_clamped) / 2.0, 1.0],
+            np: [
+                1.0,
+                1.0 + 2.0 * p_clamped,
+                1.0 + 4.0 * p_clamped,
+                3.0 + 2.0 * p_clamped,
+                5.0,
+            ],
+            dn: [
+                0.0,
+                p_clamped / 2.0,
+                p_clamped,
+                (1.0 + p_clamped) / 2.0,
+                1.0,
+            ],
             initialized: false,
         }
     }
@@ -39,7 +51,8 @@ impl P2Quantile {
                 self.q[self.count as usize] = x;
                 self.count += 1;
                 if self.count == 5 {
-                    self.q.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    self.q
+                        .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                     self.initialized = true;
                 }
                 return;
@@ -80,7 +93,9 @@ impl P2Quantile {
         for i in 1..4 {
             let d = self.np[i] - self.n[i] as f64;
 
-            if (d >= 1.0 && self.n[i + 1] - self.n[i] > 1) || (d <= -1.0 && self.n[i - 1] - self.n[i] < -1) {
+            if (d >= 1.0 && self.n[i + 1] - self.n[i] > 1)
+                || (d <= -1.0 && self.n[i - 1] - self.n[i] < -1)
+            {
                 let d_sign = if d > 0.0 { 1 } else { -1 };
                 let q_est = self.parabolic_interpolation(i, d_sign as f64);
 
@@ -122,7 +137,9 @@ impl P2Quantile {
     #[inline(always)]
     pub fn value(&self) -> f64 {
         if !self.initialized {
-            if self.count == 0 { return 0.0; }
+            if self.count == 0 {
+                return 0.0;
+            }
             let mut temp = self.q[..self.count as usize].to_vec();
             temp.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let idx = ((self.count as f64 - 1.0) * self.p) as usize;
@@ -207,7 +224,11 @@ mod tests {
         assert!(p50.initialized);
         let val = p50.value();
         // El percentil 50 de 1..100 debe estar en el rango [40, 60]
-        assert!(val >= 40.0 && val <= 60.0, "P50 converge cerca de 50: {}", val);
+        assert!(
+            val >= 40.0 && val <= 60.0,
+            "P50 converge cerca de 50: {}",
+            val
+        );
     }
 
     #[test]

@@ -58,7 +58,11 @@ impl ShadowGraphAuditor {
         let mut current_bits = self.aggregate_drift.load(Ordering::Acquire);
         loop {
             let current_drift = f64::from_bits(current_bits);
-            let safe_current = if current_drift.is_finite() { current_drift } else { 0.0 };
+            let safe_current = if current_drift.is_finite() {
+                current_drift
+            } else {
+                0.0
+            };
             let new_drift = safe_current + event.pnl_drift;
             if !new_drift.is_finite() {
                 break;
@@ -128,7 +132,7 @@ mod tests {
             expected_prob: 0.80,
             actual_slippage: 0.005,
             latency_ms: 150, // Triggers alarm
-            pnl_drift: -6.0,  // Triggers drift threshold
+            pnl_drift: -6.0, // Triggers drift threshold
         };
         auditor.record_event(event_bad);
 
@@ -152,4 +156,3 @@ mod tests {
         assert_eq!(agg, 0.0);
     }
 }
-

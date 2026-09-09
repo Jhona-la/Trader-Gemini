@@ -24,7 +24,11 @@ pub fn check_drawdown_limit(
     // Large capital (> $50) → strict institutional limit approaching genome_max_drawdown_pct (0.02-0.05)
     let capital_ratio = (current_capital / base_capital.max(1.0)).max(0.0);
     let raw_input = guard_dd_sigmoid_steepness * (capital_ratio - guard_dd_sigmoid_center);
-    let sigmoid_input = if raw_input.is_finite() { raw_input.clamp(-20.0, 20.0) } else { 0.0 };
+    let sigmoid_input = if raw_input.is_finite() {
+        raw_input.clamp(-20.0, 20.0)
+    } else {
+        0.0
+    };
     let sigmoid_val = (1.0 / (1.0 + sigmoid_input.exp())).clamp(0.0, 1.0);
     let dynamic_max_drawdown = if current_capital <= 50.0 {
         0.75_f64.max(genome_max_drawdown_pct)
@@ -87,7 +91,11 @@ pub fn enforce_minimum_notional(
     min_notional: f64,
     available_leverage: f64,
 ) -> (bool, f64) {
-    if !intended_volume.is_finite() || intended_volume <= 0.0 || !available_leverage.is_finite() || available_leverage <= 0.0 {
+    if !intended_volume.is_finite()
+        || intended_volume <= 0.0
+        || !available_leverage.is_finite()
+        || available_leverage <= 0.0
+    {
         return (false, 0.0);
     }
     // Binance exige un nominal mínimo de $5.00 USD por orden
@@ -103,10 +111,7 @@ pub fn enforce_minimum_notional(
 
 /// Protege la cuenta ante rachas de pérdidas consecutivas (Punto #211)
 #[inline(always)]
-pub fn check_streak_drawdown_limit(
-    consecutive_losses: u32,
-    max_allowed_streak: u32,
-) -> bool {
+pub fn check_streak_drawdown_limit(consecutive_losses: u32, max_allowed_streak: u32) -> bool {
     let allowed = max_allowed_streak.max(2);
     consecutive_losses < allowed
 }
