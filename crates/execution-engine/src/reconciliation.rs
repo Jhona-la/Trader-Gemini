@@ -272,6 +272,8 @@ pub fn reconcile_arena(
                 };
                 let pos_horizon = coin.positions.position.horizon();
                 let is_pos_swing = pos_horizon == quantum_arena::position::PositionHorizon::Swing;
+                let is_pos_scalp =
+                    pos_horizon == quantum_arena::position::PositionHorizon::Scalping;
                 let (was_long, entry_p, qty, m, entry_fee_paid) =
                     coin.positions.position.close_with_fee();
                 if m > 0.0 {
@@ -296,6 +298,7 @@ pub fn reconcile_arena(
                     let net_realized_pnl = gross_pnl - close_fee;
                     let net_trade_pnl = net_realized_pnl - entry_fee_paid;
 
+                    // D-447: coin.metrics es la fuente unificada para Continuous
                     coin.metrics
                         .pnl_realized
                         .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
@@ -303,7 +306,7 @@ pub fn reconcile_arena(
                         coin.swing
                             .pnl_realized
                             .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
-                    } else {
+                    } else if is_pos_scalp {
                         coin.scalp
                             .pnl_realized
                             .fetch_add(net_trade_pnl, std::sync::atomic::Ordering::Relaxed);
@@ -344,7 +347,7 @@ pub fn reconcile_arena(
                         coin.swing
                             .win_rate
                             .store(new_sw_wr, std::sync::atomic::Ordering::Relaxed);
-                    } else {
+                    } else if is_pos_scalp {
                         let n_sc = coin
                             .scalp
                             .trade_count

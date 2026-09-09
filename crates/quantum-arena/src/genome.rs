@@ -939,22 +939,12 @@ impl SuperGenotype {
             .config
             .scalp_obi_threshold
             .store(self.scalp_obi_threshold, Ordering::Relaxed);
-        arena
-            .config
-            .scalp_tp_base
-            .store(self.scalp_tp_base, Ordering::Relaxed);
-        arena
-            .config
-            .scalp_sl_base
-            .store(self.scalp_sl_base, Ordering::Relaxed);
-        arena
-            .config
-            .swing_tp_base
-            .store(self.swing_tp_base, Ordering::Relaxed);
-        arena
-            .config
-            .swing_sl_base
-            .store(self.swing_sl_base, Ordering::Relaxed);
+        // X-003 (REHAB-1): los stores de anclas scalp/swing tp/sl fueron
+        // ELIMINADOS — pisaban los valores derivados de las CURVAS escritos
+        // al inicio de este método (última escritura ganaba: el continuo era
+        // decorativo). Las curvas son ahora la única fuente que llega al arena;
+        // los campos ancla del struct quedan como vistas de compatibilidad
+        // (se re-derivan de las curvas en mutación/carga/serialización).
         arena
             .config
             .sl_atr_mult_btc
@@ -1486,14 +1476,14 @@ impl SuperGenotype {
             scalp_kelly_fraction: mutate_val(self.scalp_kelly_fraction, 0.1, 2.0),
             swing_kelly_fraction: mutate_val(self.swing_kelly_fraction, 0.01, 1.0),
             scalp_obi_threshold: mutate_val(self.scalp_obi_threshold, 0.05, 1.0),
-            scalp_tp_base: mutate_val(self.scalp_tp_base, 0.0060, 0.0350),
-            scalp_sl_base: mutate_val(self.scalp_sl_base, 0.0025, 0.0120),
+            scalp_tp_base: self.scalp_tp_base, // X-005: vista — re-derivada de curvas post-literal
+            scalp_sl_base: self.scalp_sl_base, // X-005: vista
             // F8: el GA evoluciona los COEFICIENTES de las curvas (a,b) — la
             // pendiente b controla cómo escala el parámetro con el horizonte.
             tp_horizon_curve: mutated_tp_curve,
             sl_horizon_curve: mutated_sl_curve,
-            swing_tp_base: mutate_val(self.swing_tp_base, 0.0300, 0.1500),
-            swing_sl_base: mutate_val(self.swing_sl_base, 0.0100, 0.0450),
+            swing_tp_base: self.swing_tp_base, // X-005: vista
+            swing_sl_base: self.swing_sl_base, // X-005: vista
             sl_atr_mult_btc: mutate_val(self.sl_atr_mult_btc, 0.5, 5.0),
             tp_rr_ratio_btc: mutate_val(self.tp_rr_ratio_btc, 1.0, 10.0),
             min_confidence_btc: mutate_val(self.min_confidence_btc, 0.5, 0.95),
@@ -1651,21 +1641,77 @@ impl SuperGenotype {
             temporal_scale: mutate_val(self.temporal_scale, 0.05, 0.95),
         };
 
-        // R1.2 — INVARIANTE RR UNIFICADA (una sola definición en el sistema):
-        // ver `MIN_RR_GATE` / `MIN_RR_MUTATION` más abajo. La mutación exige
-        // margen sobre el gate; la reparación añade holgura adicional.
-        if mutated.scalp_tp_base < mutated.scalp_sl_base * Self::MIN_RR_MUTATION {
-            mutated.scalp_tp_base = mutated.scalp_sl_base * Self::MIN_RR_REPAIR;
-        }
-        if mutated.swing_tp_base < mutated.swing_sl_base * Self::MIN_RR_MUTATION {
-            mutated.swing_tp_base = mutated.swing_sl_base * Self::MIN_RR_REPAIR;
-        }
+        // X-005 (REHAB-1) — FUENTE ÚNICA: el reparo RR vive SOBRE LAS CURVAS
+        // (en todo el espectro, no en dos puntos) y las anclas se derivan
+        // después. La versión anterior reparaba las anclas del literal — que
+        // ya no son genes (son vistas) — dejando a las curvas libres de
+        // violar TP(τ)>SL(τ) fuera de los dos puntos de anclaje.
+        mutated.enforce_curve_rr();
+        mutated.derive_anchors_from_curves();
 
         mutated
     }
 
     // Generated extensions
-    pub const DIMENSION: usize = 140;
+    /// X-004: 140 anclas legacy + 4 coeficientes de curvas (tp_a, tp_b, sl_a, sl_b).
+    pub const DIMENSION: usize = 144;
+
+    /// X-004/X-005 (REHAB-1): las anclas legacy se RE-DERIVAN de las curvas —
+    /// vistas de compatibilidad, jamás fuente independiente. Todo camino que
+    /// construya o mute un genoma debe terminar llamando a esto.
+    pub fn derive_anchors_from_curves(&mut self) {
+        use crate::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+        self.scalp_tp_base = self.tp_horizon_curve.eval(TAU_ANCHOR_FAST_MS);
+        self.swing_tp_base = self.tp_horizon_curve.eval(TAU_ANCHOR_SLOW_MS);
+        self.scalp_sl_base = self.sl_horizon_curve.eval(TAU_ANCHOR_FAST_MS);
+        self.swing_sl_base = self.sl_horizon_curve.eval(TAU_ANCHOR_SLOW_MS);
+    }
+
+    /// Bandas evolutivas de los coeficientes de curva — FUENTE ÚNICA de las
+    /// cotas (los bounds del vector las leen; el reparo RR clampa contra ellas).
+    pub const TP_A_BOUNDS: (f64, f64) = (-9.5, -2.0);
+    pub const TP_B_BOUNDS: (f64, f64) = (-0.2, 0.35);
+    pub const SL_A_BOUNDS: (f64, f64) = (-10.5, -3.0);
+    pub const SL_B_BOUNDS: (f64, f64) = (-0.2, 0.35);
+
+    /// X-005 (REHAB-1): invariante RR SOBRE CURVAS — TP(τ) ≥ SL(τ)·MIN_RR_MUTATION
+    /// en ambas anclas del espectro. Estrategia: (1) deprimir a_sl (escala
+    /// uniforme de SL sin tocar pendiente); (2) re-clamp a banda evolutiva;
+    /// (3) si la pendiente evolucionada hace la violación irrepurable dentro
+    /// de bandas, fallback determinista: SL paralelo a TP con RR=REPAIR en
+    /// TODO el espectro (matemáticamente seguro por construcción).
+    pub fn enforce_curve_rr(&mut self) {
+        use crate::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+        let taus = [TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS];
+        let violated = |g: &Self| {
+            taus.iter().any(|&tau| {
+                g.sl_horizon_curve.eval(tau) > g.tp_horizon_curve.eval(tau) / Self::MIN_RR_MUTATION
+            })
+        };
+        if !violated(self) {
+            return;
+        }
+        // (1)+(2): deprimir a_sl lo necesario en la ancla que manda y clamp.
+        for &tau in taus.iter() {
+            let tp = self.tp_horizon_curve.eval(tau);
+            let sl = self.sl_horizon_curve.eval(tau);
+            if sl > tp / Self::MIN_RR_MUTATION {
+                let target = tp / Self::MIN_RR_REPAIR;
+                self.sl_horizon_curve.a -= (sl / target).ln();
+            }
+        }
+        self.sl_horizon_curve.a = self
+            .sl_horizon_curve
+            .a
+            .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+        // (3): pendiente adversa (b_sl ≫ b_tp) puede violar en la OTRA ancla
+        // incluso con a_sl en su floor — curva paralela determinista.
+        if violated(self) {
+            self.sl_horizon_curve.b = self.tp_horizon_curve.b;
+            self.sl_horizon_curve.a = (self.tp_horizon_curve.a - Self::MIN_RR_REPAIR.ln())
+                .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+        }
+    }
 
     /// R1.2 — RR mínimo que el GATE de promoción exige (GenomeStore::validate).
     /// Derivación: para que una operación sea EV-positiva tras fees se
@@ -1823,6 +1869,11 @@ impl SuperGenotype {
         vec.push(self.swing_obi_threshold);
         vec.push(self.swing_accel_min_samples);
         vec.push(self.temporal_scale);
+        // X-004: coeficientes de curvas como genes de pleno derecho.
+        vec.push(self.tp_horizon_curve.a);
+        vec.push(self.tp_horizon_curve.b);
+        vec.push(self.sl_horizon_curve.a);
+        vec.push(self.sl_horizon_curve.b);
         vec
     }
 
@@ -2013,68 +2064,335 @@ impl SuperGenotype {
             swing_obi_threshold: vec[137].clamp(lo[137], hi[137]),
             swing_accel_min_samples: vec[138].clamp(lo[138], hi[138]),
             temporal_scale: vec[139].clamp(lo[139], hi[139]),
-            // F8: valores provisionales — se derivan de las anclas finales tras
-            // el reparo RR (abajo), única fuente coherente para el continuo.
-            tp_horizon_curve: default_tp_curve(),
-            sl_horizon_curve: default_sl_curve(),
+            // X-004 (REHAB-1): las CURVAS son genes del vector (slots 140-143).
+            // Son la FUENTE ÚNICA: las anclas del literal se sobrescriben con
+            // vistas derivadas de las curvas abajo (derive_anchors), y el
+            // reparo RR opera SOBRE CURVAS — nunca más doble verdad.
+            tp_horizon_curve: crate::temporal_spectrum::HorizonCurve {
+                a: vec[140].clamp(lo[140], hi[140]),
+                b: vec[141].clamp(lo[141], hi[141]),
+            },
+            sl_horizon_curve: crate::temporal_spectrum::HorizonCurve {
+                a: vec[142].clamp(lo[142], hi[142]),
+                b: vec[143].clamp(lo[143], hi[143]),
+            },
         };
 
-        // N-02 — INVARIANTE RR TAMBIÉN EN LA RECONSTRUCCIÓN POR VECTOR: el
-        // clamping por-gen es independiente y puede producir tp=en-lo con
-        // sl=en-hi (RR 0.05) que el gate de promoción rechazaría (bloqueando
-        // la evolución) o que vías sin embudo aplicarían inválido. La MISMA
-        // reparación de mutate_cmaes se aplica aquí — una sola definición.
         let mut g = rebuilt;
-        if g.scalp_tp_base < g.scalp_sl_base * Self::MIN_RR_MUTATION {
-            g.scalp_tp_base = (g.scalp_sl_base * Self::MIN_RR_REPAIR).clamp(lo[13], hi[13]);
-        }
-        if g.swing_tp_base < g.swing_sl_base * Self::MIN_RR_MUTATION {
-            g.swing_tp_base = (g.swing_sl_base * Self::MIN_RR_REPAIR).clamp(lo[15], hi[15]);
-        }
-        // F8: curvas de horizonte derivadas de las anclas FINALES (post-reparo
-        // RR) — el continuo siempre coherente con los valores efectivos.
-        g.tp_horizon_curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
-            crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
-            g.scalp_tp_base,
-            crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
-            g.swing_tp_base,
-        );
-        g.sl_horizon_curve = crate::temporal_spectrum::HorizonCurve::through_two_points(
-            crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
-            g.scalp_sl_base,
-            crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
-            g.swing_sl_base,
-        );
+        // N-02 evolucionado a nivel CURVA: si el clamping independiente de
+        // (a_tp,b_tp) y (a_sl,b_sl) produce TP(τ) ≤ SL(τ)·MIN_RR en alguna
+        // ancla, se deprime el INTERCEPTO de la curva SL (escala uniforme de
+        // SL(τ) en todo el espectro: a_sl -= ln(factor)) hasta restablecer el
+        // invariante — determinista y sin tocar la pendiente evolucionada.
+        g.enforce_curve_rr();
+        g.derive_anchors_from_curves();
         g
     }
 
     pub fn get_lower_bounds() -> Vec<f64> {
         vec![
-            0.5, 25.0, 0.5, 0.5, 1.0, 0.5, 0.1, 0.2, 0.52, 0.1, 0.1, 0.01, 0.01, 0.0010, 0.0010,
-            0.0100, 0.0050, 0.5, 1.0, 0.5, 0.5, 0.05, 0.5, 0.05, 0.0001, 0.1, 0.005, 0.0000001,
-            0.05, 0.0000001, 0.05, 0.1, 0.001, 0.1, 1.0, 0.01, 0.8, 10.0, 0.7, 0.1, 0.1, 0.1,
-            30000.0, 0.5, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
-            10000.0, 0.4, 0.1, 5.0, 0.05, 500.0, 5.0, 15.0, 0.30, 0.50, 1.0, 1.0, 0.005, 0.1, 5.0,
-            0.00005, 0.5, 0.05, 0.70, 0.01, 0.80, 0.01, 0.001, 0.1, 5.0, 0.05, 0.1, 0.1, 0.2, 0.1,
-            0.01, 0.5, 0.1, 0.1, 0.01, 0.0, 0.01, 0.01, 0.01, 0.01, 0.01, 0.0001, 0.5, 0.001,
-            0.001, 0.01, 0.05, 0.01, 0.1, 0.10, 0.05, 0.01, 1.0, 1.01, 10.0, 0.1, 0.1, 10.0,
-            10000.0, 1.0, 1.0, 1.0, 1.0, 3.0, 5.0, 0.1, 1.1, 0.4, 0.35, 1.0, 10.0, 0.05, 10.0, 0.1,
-            0.1, 0.1, 0.1, 3.0, 10.0, 100.0, 1000.0, 100.0, 2.0, 0.05, 10.0, 0.05,
+            0.5,
+            25.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.1,
+            0.2,
+            0.52,
+            0.1,
+            0.1,
+            0.01,
+            0.01,
+            // X-004: anclas tp/sl (13-16) son VISTAS de las curvas — sus bounds
+            // cubren el sobre alcanzable por (a,b) evolucionables, no cotas
+            // evolutivas por sí mismas (las cotas reales viven en 140-143).
+            0.0000005,
+            0.0000005,
+            0.0000005,
+            0.0000005,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            0.05,
+            0.5,
+            0.05,
+            0.0001,
+            0.1,
+            0.005,
+            0.0000001,
+            0.05,
+            0.0000001,
+            0.05,
+            0.1,
+            0.001,
+            0.1,
+            1.0,
+            0.01,
+            0.8,
+            10.0,
+            0.7,
+            0.1,
+            0.1,
+            0.1,
+            30000.0,
+            0.5,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            0.001,
+            10000.0,
+            0.4,
+            0.1,
+            5.0,
+            0.05,
+            500.0,
+            5.0,
+            15.0,
+            0.30,
+            0.50,
+            1.0,
+            1.0,
+            0.005,
+            0.1,
+            5.0,
+            0.00005,
+            0.5,
+            0.05,
+            0.70,
+            0.01,
+            0.80,
+            0.01,
+            0.001,
+            0.1,
+            5.0,
+            0.05,
+            0.1,
+            0.1,
+            0.2,
+            0.1,
+            0.01,
+            0.5,
+            0.1,
+            0.1,
+            0.01,
+            0.0,
+            0.01,
+            0.01,
+            0.01,
+            0.01,
+            0.01,
+            0.0001,
+            0.5,
+            0.001,
+            0.001,
+            0.01,
+            0.05,
+            0.01,
+            0.1,
+            0.10,
+            0.05,
+            0.01,
+            1.0,
+            1.01,
+            10.0,
+            0.1,
+            0.1,
+            10.0,
+            10000.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            3.0,
+            5.0,
+            0.1,
+            1.1,
+            0.4,
+            0.35,
+            1.0,
+            10.0,
+            0.05,
+            10.0,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            3.0,
+            10.0,
+            100.0,
+            1000.0,
+            100.0,
+            2.0,
+            0.05,
+            10.0,
+            0.05,
+            // X-004: bounds de coeficientes de curvas (tp_a, tp_b, sl_a, sl_b)
+            // — mismas bandas que mutate_curve (una sola definición a mantener).
+            Self::TP_A_BOUNDS.0,
+            Self::TP_B_BOUNDS.0,
+            Self::SL_A_BOUNDS.0,
+            Self::SL_B_BOUNDS.0,
         ]
     }
 
     pub fn get_upper_bounds() -> Vec<f64> {
         vec![
-            0.99, 35.0, 3.0, 3.0, 50.0, 0.95, 2.0, 0.9, 0.9, 0.9, 2.0, 1.0, 1.0, 0.0500, 0.0200,
-            0.2000, 0.0600, 5.0, 10.0, 0.95, 0.99, 0.30, 0.95, 0.49, 0.01, 0.95, 0.1, 0.01, 0.95,
-            0.01, 0.95, 1.0, 0.1, 1.0, 10.0, 0.5, 0.9999, 125.0, 0.9999, 1.0, 1.0, 1.0, 600000.0,
-            5.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 3600000.0, 0.8, 2.0,
-            50.0, 0.50, 10000.0, 30.0, 60.0, 0.50, 0.70, 3.0, 2.0, 0.05, 1.0, 100.0, 0.0005, 3.0,
-            0.30, 0.95, 0.20, 0.99, 0.20, 0.05, 0.9, 20.0, 0.30, 0.6, 5.0, 2.0, 0.8, 0.5, 3.0, 0.9,
-            0.9, 0.5, 1000.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.05, 0.99, 0.1, 0.1, 0.2, 0.40, 0.10, 1.0,
-            0.80, 0.30, 0.5, 5.0, 1.20, 5000.0, 1.0, 3.0, 10000000.0, 120000.0, 3.0, 3.0, 5.0, 5.0,
-            15.0, 25.0, 0.5, 3.0, 0.6, 0.55, 20.0, 500.0, 0.5, 500.0, 2.0, 2.0, 0.8, 1.0, 10.0,
-            50.0, 500.0, 5000.0, 100_000.0, 10.0, 1.0, 50.0, 0.95,
+            0.99,
+            35.0,
+            3.0,
+            3.0,
+            50.0,
+            0.95,
+            2.0,
+            0.9,
+            0.9,
+            0.9,
+            2.0,
+            1.0,
+            1.0,
+            // X-004: techos de VISTAS — sobre máximo alcanzable por las curvas
+            // en el ancla LENTA (exp(a_hi + b_hi·ln τ_slow): tp≈63.7, sl≈23.3),
+            // con holgura. Las cotas evolutivas reales viven en 140-143.
+            70.0,
+            30.0,
+            70.0,
+            30.0,
+            5.0,
+            10.0,
+            0.95,
+            0.99,
+            0.30,
+            0.95,
+            0.49,
+            0.01,
+            0.95,
+            0.1,
+            0.01,
+            0.95,
+            0.01,
+            0.95,
+            1.0,
+            0.1,
+            1.0,
+            10.0,
+            0.5,
+            0.9999,
+            125.0,
+            0.9999,
+            1.0,
+            1.0,
+            1.0,
+            600000.0,
+            5.0,
+            20.0,
+            20.0,
+            20.0,
+            20.0,
+            20.0,
+            20.0,
+            20.0,
+            20.0,
+            20.0,
+            20.0,
+            3600000.0,
+            0.8,
+            2.0,
+            50.0,
+            0.50,
+            10000.0,
+            30.0,
+            60.0,
+            0.50,
+            0.70,
+            3.0,
+            2.0,
+            0.05,
+            1.0,
+            100.0,
+            0.0005,
+            3.0,
+            0.30,
+            0.95,
+            0.20,
+            0.99,
+            0.20,
+            0.05,
+            0.9,
+            20.0,
+            0.30,
+            0.6,
+            5.0,
+            2.0,
+            0.8,
+            0.5,
+            3.0,
+            0.9,
+            0.9,
+            0.5,
+            1000.0,
+            0.5,
+            0.5,
+            0.5,
+            0.5,
+            0.5,
+            0.05,
+            0.99,
+            0.1,
+            0.1,
+            0.2,
+            0.40,
+            0.10,
+            1.0,
+            0.80,
+            0.30,
+            0.5,
+            5.0,
+            1.20,
+            5000.0,
+            1.0,
+            3.0,
+            10000000.0,
+            120000.0,
+            3.0,
+            3.0,
+            5.0,
+            5.0,
+            15.0,
+            25.0,
+            0.5,
+            3.0,
+            0.6,
+            0.55,
+            20.0,
+            500.0,
+            0.5,
+            500.0,
+            2.0,
+            2.0,
+            0.8,
+            1.0,
+            10.0,
+            50.0,
+            500.0,
+            5000.0,
+            100_000.0,
+            10.0,
+            1.0,
+            50.0,
+            0.95,
+            // X-004: techo de coeficientes de curvas.
+            Self::TP_A_BOUNDS.1,
+            Self::TP_B_BOUNDS.1,
+            Self::SL_A_BOUNDS.1,
+            Self::SL_B_BOUNDS.1,
         ]
     }
 }

@@ -279,6 +279,11 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
     let mut active_swing_coins = 0.0;
 
     for coin in arena.coins.iter() {
+        let m_realized = coin.metrics.pnl_realized.load(Ordering::Relaxed);
+        let m_gross = coin.metrics.pnl_gross.load(Ordering::Relaxed);
+        let m_unrealized = coin.metrics.pnl_unrealized.load(Ordering::Relaxed);
+        let m_wr = coin.metrics.win_rate.load(Ordering::Relaxed);
+
         let sc_realized = coin.scalp.pnl_realized.load(Ordering::Relaxed);
         let sw_realized = coin.swing.pnl_realized.load(Ordering::Relaxed);
         let sc_gross = coin.scalp.pnl_gross.load(Ordering::Relaxed);
@@ -290,11 +295,34 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
 
         let ml = coin.ml_prob.load(Ordering::Relaxed); // Phase 22: ml_prob
         let hurst = coin.hurst_exponent.load(Ordering::Relaxed);
-        let zombies = coin.scalp.zombie_promotions.load(Ordering::Relaxed);
+        let zombies = coin.scalp.zombie_promotions.load(Ordering::Relaxed)
+            + coin.metrics.zombie_promotions.load(Ordering::Relaxed);
 
-        pnl_realized_scalp += sc_realized;
-        pnl_gross_scalp += sc_gross;
-        pnl_unrealized_scalp += sc_unrealized;
+        // D-441: Unificar telemetría con coin.metrics
+        let eff_sc_realized = if m_realized.abs() > 0.0 && sc_realized == 0.0 {
+            m_realized
+        } else {
+            sc_realized
+        };
+        let eff_sc_gross = if m_gross.abs() > 0.0 && sc_gross == 0.0 {
+            m_gross
+        } else {
+            sc_gross
+        };
+        let eff_sc_unrealized = if m_unrealized.abs() > 0.0 && sc_unrealized == 0.0 {
+            m_unrealized
+        } else {
+            sc_unrealized
+        };
+        let eff_wr_scalp = if m_wr > 0.0 && wr_scalp == 0.0 {
+            m_wr
+        } else {
+            wr_scalp
+        };
+
+        pnl_realized_scalp += eff_sc_realized;
+        pnl_gross_scalp += eff_sc_gross;
+        pnl_unrealized_scalp += eff_sc_unrealized;
         pnl_realized_swing += sw_realized;
         pnl_gross_swing += sw_gross;
         pnl_unrealized_swing += sw_unrealized;
@@ -303,11 +331,12 @@ async fn get_state(State(arena): State<Arc<GlobalArena>>) -> Json<SystemState> {
         ml_prob_sum += ml;
         hurst_sum += hurst;
 
-        if sc_realized != 0.0
-            || sc_unrealized != 0.0
+        if eff_sc_realized != 0.0
+            || eff_sc_unrealized != 0.0
             || coin.scalp.active_positions.load(Ordering::Relaxed) > 0
+            || coin.metrics.active_positions.load(Ordering::Relaxed) > 0
         {
-            win_rate_scalp_sum += wr_scalp;
+            win_rate_scalp_sum += eff_wr_scalp;
             active_scalp_coins += 1.0;
         }
         if sw_realized != 0.0

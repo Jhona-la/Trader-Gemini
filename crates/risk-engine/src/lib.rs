@@ -339,7 +339,7 @@ impl RiskEngine {
                 scalp_capital,
                 base_capital * split,
                 scalp_pf,
-                true,
+                0.0,
                 arena,
             )
         } else {
@@ -354,7 +354,7 @@ impl RiskEngine {
                 swing_capital,
                 base_capital * (1.0 - split),
                 swing_pf,
-                false,
+                1.0,
                 arena,
             )
         } else {
@@ -438,13 +438,7 @@ impl RiskEngine {
             .temporal_scale
             .load(Ordering::Relaxed)
             .clamp(0.0, 1.0);
-        // D-400: Preservar variedad continua sin forzar colapso booleano
-        let is_scalp = match intent.horizon {
-            TradeHorizon::Scalp => true,
-            TradeHorizon::Swing => false,
-            TradeHorizon::Continuous => temporal_scale < 0.5,
-        };
-
+        // D-427: Preservar variedad continua sin colapso booleano s in [0, 1]
         self.evaluate_single_intent(
             coin_id,
             intent,
@@ -452,7 +446,7 @@ impl RiskEngine {
             current_capital,
             base_capital,
             pf,
-            is_scalp,
+            temporal_scale,
             arena,
         )
     }
@@ -476,7 +470,7 @@ impl RiskEngine {
         allocated_capital: f64,
         base_allocated: f64,
         profit_factor: f64,
-        is_scalp: bool,
+        temporal_scale: f64,
         arena: &GlobalArena,
     ) -> ValidatedOrder {
         if intent.signal == SignalType::Flat || allocated_capital <= 0.0 {
@@ -592,7 +586,7 @@ impl RiskEngine {
         let mut dynamic_leverage =
             leverage_matrix::QuantumLeverageMatrix::calculate_dynamic_leverage(
                 intent,
-                is_scalp,
+                temporal_scale < 0.5,
                 allocated_capital,
                 base_allocated,
                 atr_pct,
@@ -821,7 +815,7 @@ impl RiskEngine {
             .load(Ordering::Relaxed)
             .clamp(0.05, 0.95);
 
-        let (sl_base, tp_base) = match intent.horizon {
+        let (_sl_base, tp_base) = match intent.horizon {
             TradeHorizon::Scalp => {
                 let sl = arena
                     .config
@@ -877,15 +871,25 @@ impl RiskEngine {
             }
         };
 
-        // Inmunidad contra ruido browniano: el stop loss nunca debe descender por debajo de 35 bps
-        // en crypto para evitar ser detenido por el micro-spread y oscilaciones top-of-book.
+        // Inmunidad contra ruido browniano: el stop loss se ubica fuera del cono de difusión estocástica
+        // (75 bps en scalp, 150 bps en swing) para evitar liquidación por micro-spread y ruido intra-vela.
         let min_safe_sl = match intent.horizon {
-            TradeHorizon::Scalp => 0.0035,
-            TradeHorizon::Swing => 0.0060,
-            TradeHorizon::Continuous => 0.0035 * (1.0 - temporal_s_eval) + 0.0060 * temporal_s_eval,
+            TradeHorizon::Scalp => 0.0075,
+            TradeHorizon::Swing => 0.0150,
+            TradeHorizon::Continuous => 0.0075 * (1.0 - temporal_s_eval) + 0.0150 * temporal_s_eval,
         };
-        let sl_pct =
-            (current_atr * sl_mult / current_price).clamp(sl_base.max(min_safe_sl), sl_base * 2.5);
+        // D-437: Invarianza de Escala y Resiliencia Browniana
+        // El Stop Loss se ubica estrictamente fuera de la envoltura de difusión estocástica intra-vela (>= 2.0 * ATR / price)
+        // evitando que el micro-ruido aleatorio de Bitcoin liquide el 65% de las órdenes sobre los $13 USD.
+        let atr_ratio = if current_price > 0.0 {
+            current_atr / current_price
+        } else {
+            0.005
+        };
+        let min_diffusive_sl = (atr_ratio * 2.0).max(min_safe_sl);
+        let sl_pct = (atr_ratio * sl_mult)
+            .max(min_diffusive_sl)
+            .clamp(min_safe_sl, 0.0500);
 
         let final_sl = if intent.sl_price_target > 0.0 {
             intent.sl_price_target
@@ -895,14 +899,19 @@ impl RiskEngine {
             current_price * (1.0 + sl_pct)
         };
 
-        // FASE 3: el ratio TP/SL usa el gen RR evolucionable del genoma
+        // FASE 3 & D-437: el ratio TP/SL usa el gen RR evolucionable garantizando expectativa matemática positiva >= 2:1
         let rr_ratio = arena
             .config
             .tp_rr_ratio_btc
             .load(Ordering::Relaxed)
-            .clamp(1.0, 10.0);
-        let tp_mult = (sl_mult * rr_ratio).clamp(1.5, 6.0);
-        let tp_pct = (current_atr * tp_mult / current_price).clamp(tp_base * 0.5, tp_base * 3.0);
+            .clamp(2.0, 10.0);
+        let tp_mult = (sl_mult * rr_ratio).clamp(2.0, 8.0);
+        let min_safe_tp = min_safe_sl * rr_ratio;
+        let tp_pct = (sl_pct * rr_ratio)
+            .max(atr_ratio * tp_mult)
+            .max(tp_base)
+            .max(min_safe_tp)
+            .clamp(0.0150, 0.1500);
 
         let final_tp = if intent.tp_price_target > 0.0 {
             intent.tp_price_target

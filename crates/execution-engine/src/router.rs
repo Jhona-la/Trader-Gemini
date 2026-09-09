@@ -106,8 +106,9 @@ impl QuantumOrderRouter {
         if decision.net_confidence > conf_gate && decision.expected_volatility > vol_gate {
             // El mercado se va a mover rapidísimo. Un Limit no se llenará.
             // Usar IOC (Immediate-Or-Cancel) a un precio ligeramente peor para garantizar la entrada
-            // pero con un techo (Slippage protection).
-            let slippage_allowance = if is_long { 0.001 } else { -0.001 }; // 10 bps max slippage
+            // Tolerancia de slippage adaptativa a la volatilidad esperada (D-448)
+            let dyn_slip = (decision.expected_volatility * 0.5).clamp(0.0008, 0.0035);
+            let slippage_allowance = if is_long { dyn_slip } else { -dyn_slip };
             let raw_ioc_price = current_price * (1.0 + slippage_allowance);
             let min_price = tick_size.max(1e-8);
             let ioc_price = if tick_size > 0.0 {

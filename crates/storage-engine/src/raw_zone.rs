@@ -16,7 +16,9 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
+#[allow(dead_code)]
 const MAGIC: u32 = 0x54524757; // "TGRW"
+#[allow(dead_code)]
 const VERSION: u16 = 1;
 
 #[repr(C)]

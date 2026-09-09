@@ -31,6 +31,9 @@ impl TensorVoteOrchestrator {
     /// FIX #407: Evalúa el consenso bayesiano para un horizonte temporal específico (Scalp vs Swing),
     /// evitando la aniquilación mutua de estrategias con diferentes frecuencias operativas.
     pub fn evaluate_horizon_consensus(&self, target_horizon: TradeHorizon) -> TensorDecision {
+        if target_horizon == TradeHorizon::Continuous {
+            return self.evaluate_continuous_consensus();
+        }
         let horizon_strategies: Vec<&Box<dyn QuantumStrategy>> = self
             .strategies
             .iter()

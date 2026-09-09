@@ -57,5 +57,43 @@ fn main() {
         println!("⚠️ nano_forest.json not found.");
     }
 
+    // Sincronizar Genoma Campeón a todos los entornos (active.json, active_genome.json, backtest/active.json)
+    println!("🧬 [CONFIG COMPILER] Synchronizing Champion Genome...");
+    if let Ok(data) = std::fs::read_to_string("config_dir/genotypes/quantum_champion.json") {
+        if let Ok(genome) = serde_json::from_str::<quantum_arena::genome::SuperGenotype>(&data) {
+            let sanitized = quantum_arena::genome::SuperGenotype::from_vector(&genome.to_vector());
+            // 1. Entorno default (escribe active.json y active_genome.json)
+            std::env::remove_var("TG_GENOME_ENV");
+            match quantum_arena::genome_store::GenomeEnvelope::promote(
+                sanitized.clone(),
+                "quantum_champion_sync",
+                "Sincronización de genoma calibrado sin ruido browniano (RR >= 2.25, SL 0.80%)",
+            ) {
+                Ok(env) => println!(
+                    "✅ Default GenomeEnvelope promovido a generación {}",
+                    env.generation
+                ),
+                Err(e) => eprintln!("❌ Error promoviendo genoma default: {}", e),
+            }
+            // 2. Entorno backtest
+            std::env::set_var("TG_GENOME_ENV", "backtest");
+            match quantum_arena::genome_store::GenomeEnvelope::promote(
+                sanitized,
+                "quantum_champion_sync",
+                "Sincronización de genoma calibrado para backtest forense 1:1",
+            ) {
+                Ok(env) => println!(
+                    "✅ Backtest GenomeEnvelope promovido a generación {}",
+                    env.generation
+                ),
+                Err(e) => eprintln!("❌ Error promoviendo genoma backtest: {}", e),
+            }
+        } else {
+            eprintln!("⚠️ quantum_champion.json no pudo deserializarse como SuperGenotype.");
+        }
+    } else {
+        eprintln!("⚠️ config_dir/genotypes/quantum_champion.json no encontrado.");
+    }
+
     println!("🏁 Compilation Finished.");
 }

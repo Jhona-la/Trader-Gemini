@@ -978,18 +978,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
 
-        // FASE 33: Iniciar Motor Evolutivo en Tiempo Real (Grafo Silencioso Erradicado)
-        let daemon = god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&arena_real));
-        rt_for_darwin.spawn(async move {
-            telemetry_server::telemetry_log!("🧬 [DARWIN-DAEMON] Iniciando Motor Cuántico Evolutivo...");
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-                let daemon_clone = god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&daemon.live_arena));
-                let _ = tokio::task::spawn_blocking(move || {
-                    daemon_clone.evolve_online();
-                }).await;
-            }
-        });
+        // D-433: Erradicación de la Guerra de Demonios Evolutivos
+        // LiveEvolutionDaemon es el motor evolutivo primario (CMA-ES 140D continuo).
+        // DarwinDaemon legacy solo se activa si se solicita explícitamente vía variable de entorno,
+        // eliminando la colisión y sobrescritura concurrente sobre active_genome.json.
+        let enable_legacy_darwin = std::env::var("ENABLE_LEGACY_DARWIN_DAEMON")
+            .map(|v| v.trim() == "true")
+            .unwrap_or(false);
+        if enable_legacy_darwin {
+            let daemon = god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&arena_real));
+            rt_for_darwin.spawn(async move {
+                telemetry_server::telemetry_log!("🧬 [DARWIN-DAEMON] Iniciando Motor Cuántico Evolutivo Legacy...");
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                    let daemon_clone = god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&daemon.live_arena));
+                    let _ = tokio::task::spawn_blocking(move || {
+                        daemon_clone.evolve_online();
+                    }).await;
+                }
+            });
+        }
 
         // F4.7 — ONLINE LEARNING DAEMON CABLEADO (era fantasma desde su creación):
         // ingesta telemetría mmap → shadow forest → umbrales ML vivos →
@@ -1586,13 +1594,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let cap_now = (engine_real.arena.unified_capital.load(Ordering::Relaxed) - total_margin_used).max(0.0);
 
                     if let Some((is_long, entry_price, _qty, core_tp, core_sl)) = new_order {
-                        let stop_pct = engine_real
-                            .arena
-                            .config
-                            .scalp_sl_base
-                            .load(Ordering::Relaxed)
-                            .max(engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0) * 1.5)
-                            .max(0.0015);
+                        // D-442: Usar la distancia de stop real de la orden (core_sl) para dimensionar la envolvente de riesgo
+                        let stop_pct = if core_sl > 0.0 && entry_price > 0.0 {
+                            ((entry_price - core_sl).abs() / entry_price).max(0.0015)
+                        } else {
+                            engine_real
+                                .arena
+                                .config
+                                .scalp_sl_base
+                                .load(Ordering::Relaxed)
+                                .max(engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0) * 1.5)
+                                .max(0.0015)
+                        };
                         let (env_lev, operable) = if cap_now <= 50.0 {
                             // Calibración adaptativa micro-cuenta ($13 USD bootstrap): z = 0.85, k = 10.0
                             risk_envelope.max_leverage(cap_now, stop_pct, 5.0, 0.85, 10.0)
@@ -1620,9 +1633,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             is_high_confidence = true;
                         }
 
-                        // D-108: Sincronización 1:1 OCO — Consumir directamente los targets calculados por RiskEngine
-                        order_tp_price = if core_tp > 0.0 { core_tp } else if is_long { entry_price * 1.004 } else { entry_price * 0.996 };
-                        order_sl_price = if core_sl > 0.0 { core_sl } else if is_long { entry_price * 0.997 } else { entry_price * 1.003 };
+                        // D-108: Sincronización 1:1 OCO — Consumir directamente los targets calculados por RiskEngine.
+                        // X-030/X-016 (REHAB-1): el fallback YA NO es ±40/±30 bps
+                        // fijos (arbitrariedad que ignoraba τ y ATR): reconstruye
+                        // la CURVA de horizonte desde las vistas vivas del arena
+                        // (ambas son derivados de la misma curva post X-003) y la
+                        // evalúa en la τ DOMINANTE del espectro de este símbolo.
+                        // Sin espectro aún ⇒ ancla rápida (comportamiento scalp).
+                        if core_tp > 0.0 || core_sl > 0.0 {
+                            order_tp_price = if core_tp > 0.0 { core_tp } else { order_tp_price };
+                            order_sl_price = if core_sl > 0.0 { core_sl } else { order_sl_price };
+                        } else {
+                            let tau_eff = engine_real
+                                .temporal_spectrum
+                                .get(coin_id)
+                                .filter(|s| s.dominant_tau_ms > 0.0)
+                                .map(|s| s.dominant_tau_ms)
+                                .unwrap_or(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS);
+                            let tp_frac = quantum_arena::temporal_spectrum::HorizonCurve::through_two_points(
+                                quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                                engine_real.arena.config.scalp_tp_base.load(Ordering::Relaxed),
+                                quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                                engine_real.arena.config.swing_tp_base.load(Ordering::Relaxed),
+                            ).eval(tau_eff);
+                            let sl_frac = quantum_arena::temporal_spectrum::HorizonCurve::through_two_points(
+                                quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                                engine_real.arena.config.scalp_sl_base.load(Ordering::Relaxed),
+                                quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                                engine_real.arena.config.swing_sl_base.load(Ordering::Relaxed),
+                            ).eval(tau_eff);
+                            order_tp_price = if is_long { entry_price * (1.0 + tp_frac) } else { entry_price * (1.0 - tp_frac) };
+                            order_sl_price = if is_long { entry_price * (1.0 - sl_frac) } else { entry_price * (1.0 + sl_frac) };
+                        }
 
                         // F4.8: nace el track de trayectoria — expectativas
                         // REALES del genoma (magnitud=distancia al TP del core,
@@ -1735,7 +1777,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 entry_result = exec_clone.load().execute_iceberg_limit(&parsed_sym_str, final_is_long, final_qty, maker_price, iceberg_qty, dyn_step_size, dyn_tick_size, "iceberg_01").await;
                             } else {
                                 let side_tag = if final_is_long { "L" } else { "S" };
-                                let client_id = format!("CONT_{}_{}", side_tag, uuid::Uuid::now_v7().simple());
+                                let mut client_id = String::with_capacity(40);
+                                use std::fmt::Write as _;
+                                let _ = write!(&mut client_id, "CONT_{}_{}", side_tag, uuid::Uuid::now_v7().simple());
                                 entry_result = exec_clone.load().execute_raw_qty_with_client_id(&parsed_sym_str, final_is_long, final_qty, dyn_step_size, &client_id).await;
                             }
 
@@ -1792,6 +1836,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 exec.load().set_rate_limit_thresholds(limit_w1m, limit_10s, 1100);
 
                 let lat = start.elapsed().as_nanos();
+
+                // X-016/X-044 (REHAB-1): el espectro respira en telemetría —
+                // fusión y τ dominante por símbolo. Primera visibilidad del
+                // continuo en operación (antes: cero consumidores visibles).
+                if let Some(last_sym) = symbols_clone.last() {
+                    let _ = last_sym;
+                }
+                for (ci, sym) in symbols_clone.iter().enumerate() {
+                    if let Some(spec) = engine_real.temporal_spectrum.get(ci) {
+                        if ci < 3 || spec.fused_score.abs() > 0.5 {
+                            telemetry_engine::telemetry!(
+                                "🌈 [ESPECTRO] {} fusión {:+.3} τ_dom {}ms pers[{:.2},{:.2}] (escalas 1ms→2.18a)",
+                                sym,
+                                spec.fused_score,
+                                format_tau(spec.dominant_tau_ms),
+                                spec.scales[8].persistence,
+                                spec.scales[14].persistence
+                            );
+                        }
+                    }
+                }
 
                 let mut total_unrealized_pnl = 0.0;
 
@@ -2055,4 +2120,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = unified_handle.join();
 
     Ok(())
+}
+
+/// X-016: tau legible para telemetría (ms → s/min/h/d legible).
+fn format_tau(tau_ms: f64) -> String {
+    if tau_ms <= 0.0 {
+        "-".to_string()
+    } else if tau_ms < 1000.0 {
+        format!("{}ms", tau_ms as u64)
+    } else if tau_ms < 60_000.0 {
+        format!("{:.0}s", tau_ms / 1000.0)
+    } else if tau_ms < 3_600_000.0 {
+        format!("{:.0}min", tau_ms / 60_000.0)
+    } else if tau_ms < 86_400_000.0 {
+        format!("{:.1}h", tau_ms / 3_600_000.0)
+    } else {
+        format!("{:.1}d", tau_ms / 86_400_000.0)
+    }
 }

@@ -175,6 +175,13 @@ impl StatefulEngine {
             let norm_return = (price - self.last_price) / self.last_price;
             self.last_entropy = self.entropy.update(norm_return);
             self.spectral.push(norm_return);
+            // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
+            if self.tick_count % 64 == 0 {
+                let (_dominant_bin, max_power, centroid) = self.spectral.analyze_spectrum();
+                if max_power > 0.0 && centroid.is_finite() {
+                    self.a_t = self.a_t * 0.95 + (centroid * 0.001) * 0.05;
+                }
+            }
             let (_h_mic, _h_mes, _h_mac, _score, scalp, swing) = self.multifractal.update(price);
 
             // Lógica Branchless-like O(1) para discriminar atómicamente el régimen
@@ -236,14 +243,20 @@ impl StatefulEngine {
             // FIX #1206: Actualizar features Omni en tiempo real en cada tick para eliminar desfase de 59s en la inferencia HFT
             self.omni.update(price, self.kline_high, self.kline_low);
 
+            // D-435 & D-437: Actualización continua intra-vela del True Range (captura expansiones de volatilidad sin colapso a spread de tick)
+            let intra_candle_tr = (self.kline_high - self.kline_low).max(price * 0.0010);
+            if intra_candle_tr > self.v_t || self.v_t == 0.0 || !self.v_t.is_finite() {
+                self.v_t = intra_candle_tr;
+            }
+
             // Generate 1-minute Kline internally (60,000 ms) and update True Range EMA & Trend EMAs
             if event_time_ms.saturating_sub(self.kline_start_ms) >= 60000 {
                 // FIX #608: True Range robusto y no nulo para evitar distorsiones en SL dinámico
-                let tr = (self.kline_high - self.kline_low).max(price * 0.0005);
+                let tr = (self.kline_high - self.kline_low).max(price * 0.0010);
                 self.v_t = if self.v_t == 0.0 || !self.v_t.is_finite() {
                     tr
                 } else {
-                    (self.v_t * 0.85 + tr * 0.15).max(price * 0.0005)
+                    (self.v_t * 0.85 + tr * 0.15).max(price * 0.0010)
                 };
 
                 // Actualizar EMAs de tendencia macro de 1 minuto (EMA 9 y EMA 21)

@@ -459,38 +459,43 @@ mod tests {
         let v_floor = floor_g.to_vector();
         let v_ceil = ceil_g.to_vector();
         // N-02: los genes de TP (13, 15) tienen un floor efectivo mayor que
-        // su bound — la reparación RR obliga tp >= sl_floor * MIN_RR_MUTATION
-        // (con sl en su floor). El resto clampa exacto.
-        // La reparación dispara solo si el TP-floor viola MIN_RR_MUTATION;
-        // en ese caso el valor es sl_floor * MIN_RR_REPAIR (clamped al box).
-        let tp_floor_13 = if lo[13] < lo[14] * SuperGenotype::MIN_RR_MUTATION {
-            (lo[14] * SuperGenotype::MIN_RR_REPAIR).clamp(lo[13], hi[13])
-        } else {
-            lo[13]
-        };
-        let tp_floor_15 = if lo[15] < lo[16] * SuperGenotype::MIN_RR_MUTATION {
-            (lo[16] * SuperGenotype::MIN_RR_REPAIR).clamp(lo[15], hi[15])
-        } else {
-            lo[15]
-        };
+        // X-004 (REHAB-1): los genes 13-16 (anclas tp/sl) son VISTAS derivadas
+        // de las curvas — ya no reciben reparación de ancla ni clamp exacto:
+        // valen lo que valgan las curvas clamped en sus propios genes
+        // (140-143). Se verifica que sean finitos, dentro de bounds, y que la
+        // invariante RR (ahora sobre CURVAS) se cumpla en las vistas.
         for i in 0..n {
-            let expected_floor = match i {
-                13 => tp_floor_13,
-                15 => tp_floor_15,
-                _ => lo[i],
-            };
-            assert!(
-                (v_floor[i] - expected_floor).abs() < 1e-9,
-                "gen {} no clampa al floor esperado",
-                i
-            );
-            assert!(
-                (v_ceil[i] - hi[i]).abs() < 1e-12,
-                "gen {} no clampa al techo",
-                i
-            );
+            if (13..=16).contains(&i) {
+                assert!(
+                    v_floor[i].is_finite() && v_floor[i] >= lo[i] && v_floor[i] <= hi[i],
+                    "vista {} fuera de bounds en floor: {}",
+                    i,
+                    v_floor[i]
+                );
+            } else {
+                assert!(
+                    (v_floor[i] - lo[i]).abs() < 1e-9,
+                    "gen {} no clampa al floor esperado",
+                    i
+                );
+            }
+            if (13..=16).contains(&i) {
+                assert!(
+                    v_ceil[i].is_finite() && v_ceil[i] >= lo[i] && v_ceil[i] <= hi[i],
+                    "vista {} fuera de bounds en ceil: {}",
+                    i,
+                    v_ceil[i]
+                );
+            } else {
+                assert!(
+                    (v_ceil[i] - hi[i]).abs() < 1e-12,
+                    "gen {} no clampa al techo",
+                    i
+                );
+            }
         }
-        // La invariante RR se preserva incluso en los extremos del box.
+        // La invariante RR se preserva incluso en los extremos del box
+        // (las vistas la heredan de las curvas reparadas).
         assert!(v_floor[13] >= v_floor[14] * SuperGenotype::MIN_RR_GATE);
         assert!(v_floor[15] >= v_floor[16] * SuperGenotype::MIN_RR_GATE);
         // Caja RR factible (indices: 13=scalp_tp, 14=scalp_sl, 15=swing_tp, 16=swing_sl)
@@ -527,6 +532,24 @@ mod tests {
             roundtrip_val.is_ok(),
             "roundtrip de baseline debe pasar el gate: {:?}",
             roundtrip_val.err()
+        );
+    }
+
+    #[test]
+    fn test_quantum_champion_passes_validation() {
+        let path = "../../config_dir/genotypes/quantum_champion.json";
+        let alt_path = "config_dir/genotypes/quantum_champion.json";
+        let data = std::fs::read_to_string(path)
+            .or_else(|_| std::fs::read_to_string(alt_path))
+            .expect("quantum_champion.json debe existir");
+        let g: SuperGenotype = serde_json::from_str(&data)
+            .expect("quantum_champion.json debe deserializarse como SuperGenotype");
+        let sanitized = SuperGenotype::from_vector(&g.to_vector());
+        let validation = GenomeEnvelope::validate(&sanitized);
+        assert!(
+            validation.is_ok(),
+            "quantum_champion.json debe pasar el gate de promoción: {:?}",
+            validation.err()
         );
     }
 }

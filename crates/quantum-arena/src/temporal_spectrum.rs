@@ -115,7 +115,14 @@ impl TemporalSpectrum {
             self.last_ts_ms = ts_ms;
             return;
         }
-        let dt = ts_ms.saturating_sub(self.last_ts_ms).max(1) as f64;
+        // Idempotencia parcial de X-035: dt=0 (mismo evento por dos caminos,
+        // p.ej. process_event→dual) NO re-pesa; ts hacia atrás se descarta.
+        // GAPS grandes siguen siendo ceguera conocida (X-035: reset explícito
+        // pendiente).
+        if ts_ms <= self.last_ts_ms {
+            return;
+        }
+        let dt = (ts_ms - self.last_ts_ms) as f64;
         self.last_ts_ms = ts_ms;
 
         let mut w_sum = 0.0;

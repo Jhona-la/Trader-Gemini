@@ -41,6 +41,9 @@ pub struct GodEngineCore {
     /// Brier acumulado (Hedge). Antes: cadena if-else donde el segundo
     /// modelo solo opinaba si el primero no existía.
     pub ensemble: crate::ensemble::ModelEnsemble,
+    /// D-432: Ensamble bayesiano escopado por símbolo (1 por moneda) para evitar
+    /// contaminación cruzada causal entre activos del universo.
+    pub ensembles: Vec<crate::ensemble::ModelEnsemble>,
     /// F8 — ESPECTRO TEMPORAL CONTINUO por símbolo: 19 escalas log-espaciadas
     /// (1ms → ~2.18 años) actualizadas en CADA evento. Reemplaza la visión
     /// binaria scalp/swing: el motor observa todas las escalas a la vez, con
@@ -196,6 +199,9 @@ impl GodEngineCore {
             scalp_forest,
             swing_nn,
             ensemble: crate::ensemble::ModelEnsemble::new(),
+            ensembles: (0..30)
+                .map(|_| crate::ensemble::ModelEnsemble::new())
+                .collect(),
             temporal_spectrum: (0..30)
                 .map(|_| quantum_arena::temporal_spectrum::TemporalSpectrum::new())
                 .collect(),
@@ -470,7 +476,11 @@ impl GodEngineCore {
                 let prev_close = self.kline_close_memory[coin_id];
                 if prev_close > 0.0 {
                     let y = if current_price > prev_close { 1.0 } else { 0.0 };
-                    self.ensemble.update_with_outcome(y);
+                    if coin_id < self.ensembles.len() {
+                        self.ensembles[coin_id].update_with_outcome(y);
+                    } else {
+                        self.ensemble.update_with_outcome(y);
+                    }
                 }
                 self.kline_close_memory[coin_id] = current_price;
             }
@@ -530,7 +540,7 @@ impl GodEngineCore {
                     eff_ask,
                     eff_bid_qty,
                     eff_ask_qty,
-                    0,
+                    event_time_ms,
                 );
 
                 if coin_id == 0 {
@@ -628,6 +638,15 @@ impl GodEngineCore {
         Option<MakerQuote>,
     ) {
         telemetry_server::profile_node!("GodEngineCore::process_tick_dual", {
+            // X-016 (REHAB-1): el espectro se actualiza TAMBIÉN aquí — los
+            // callers directos de dual (backtests) congelaban el espectro al
+            // no pasar por process_event. Idempotente para producción (process_
+            // event ya actualizó con el mismo tick: dt=0 ⇒ α=0, sin doble peso).
+            if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
+                let mid = (bid + ask) * 0.5;
+                spec.update(mid, event_time_ms);
+            }
+
             // 1. Quantum Kill-Switch Check
             if self.arena.kill_switch_active.load(Ordering::Relaxed) {
                 return (None, None, None);
@@ -828,12 +847,11 @@ impl GodEngineCore {
                 // Trailing Stop Continuo
                 let live_fee = self.arena.config.live_maker_fee.load(Ordering::Relaxed)
                     + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
-                let trail_activation_pnl = (tp * 0.60)
-                    .max(pseudo_atr / entry.max(1.0) * 2.5)
-                    .clamp(0.0050, 0.0300);
-                let trail_active = (position_age_ms > 15_000
-                    || pnl_pct > (live_fee * 3.0).max(0.0030))
-                    && pnl_pct >= trail_activation_pnl;
+                // D-461: Trailing stop desasfixiado con ratio de captura asimétrico.
+                // No activar el trailing hasta que la posición alcance al menos el 55% del Take Profit (o mínimo 110 bps),
+                // evitando truncar artificialmente los beneficios a +0.55% cuando el SL arriesga -0.80% a -1.20%.
+                let trail_activation_pnl = (tp * 0.55).clamp(0.0110, 0.0350);
+                let trail_active = pnl_pct >= trail_activation_pnl;
 
                 let mut trail_hit = false;
                 let mut force_close_trail = false;
@@ -845,44 +863,44 @@ impl GodEngineCore {
                                 .config
                                 .scalp_trail_atr_mult_base
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0),
+                                .clamp(1.8, 5.0),
                             self.arena
                                 .config
                                 .scalp_trail_act_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0),
+                                .clamp(1.8, 5.0),
                             self.arena
                                 .config
                                 .scalp_trail_step_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0),
+                                .clamp(0.8, 4.0),
                             self.arena
                                 .config
                                 .scalp_trail_max_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 6.0),
+                                .clamp(1.5, 6.0),
                         ),
                         quantum_arena::position::PositionHorizon::Swing => (
                             self.arena
                                 .config
                                 .swing_trail_atr_mult_base
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0),
+                                .clamp(2.5, 6.0),
                             self.arena
                                 .config
                                 .swing_trail_act_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0),
+                                .clamp(2.5, 6.0),
                             self.arena
                                 .config
                                 .swing_trail_step_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0),
+                                .clamp(1.0, 4.0),
                             self.arena
                                 .config
                                 .swing_trail_max_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 6.0),
+                                .clamp(2.0, 6.0),
                         ),
                         quantum_arena::position::PositionHorizon::Continuous => {
                             let s = self
@@ -896,49 +914,49 @@ impl GodEngineCore {
                                 .config
                                 .scalp_trail_atr_mult_base
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0);
+                                .clamp(1.8, 5.0);
                             let sw_mult = self
                                 .arena
                                 .config
                                 .swing_trail_atr_mult_base
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0);
+                                .clamp(2.5, 6.0);
                             let sc_act = self
                                 .arena
                                 .config
                                 .scalp_trail_act_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0);
+                                .clamp(1.8, 5.0);
                             let sw_act = self
                                 .arena
                                 .config
                                 .swing_trail_act_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0);
+                                .clamp(2.5, 6.0);
                             let sc_step = self
                                 .arena
                                 .config
                                 .scalp_trail_step_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0);
+                                .clamp(0.8, 4.0);
                             let sw_step = self
                                 .arena
                                 .config
                                 .swing_trail_step_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 4.0);
+                                .clamp(1.0, 4.0);
                             let sc_max = self
                                 .arena
                                 .config
                                 .scalp_trail_max_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 6.0);
+                                .clamp(1.5, 6.0);
                             let sw_max = self
                                 .arena
                                 .config
                                 .swing_trail_max_atr
                                 .load(Ordering::Relaxed)
-                                .clamp(0.5, 6.0);
+                                .clamp(2.0, 6.0);
                             (
                                 sc_mult * (1.0 - s) + sw_mult * s,
                                 sc_act * (1.0 - s) + sw_act * s,
@@ -1008,20 +1026,23 @@ impl GodEngineCore {
                 }
 
                 let macro_t = self.feature_engines[coin_id].get_macro_trend();
+                // D-455: Inversión de tendencia genuina (60 bps de pendiente EMA) en lugar de ruido browniano de 20 bps
                 let trend_reversed =
-                    (is_long && macro_t < -0.0020) || (!is_long && macro_t > 0.0020);
+                    (is_long && macro_t < -0.0060) || (!is_long && macro_t > 0.0060);
                 let temporal_s = self
                     .arena
                     .config
                     .temporal_scale
                     .load(Ordering::Relaxed)
                     .clamp(0.0, 1.0);
-                let dynamic_hard_timeout_ms = 1_800_000 + (temporal_s * 12_600_000.0) as u64; // 30m en micro-scalp hasta 4h en swing
-                let dynamic_zombie_debounce_ms = 900_000 + (temporal_s * 900_000.0) as u64; // 15m en micro-scalp hasta 30m en swing
-                let hard_timeout = position_age_ms > dynamic_hard_timeout_ms;
+                let dynamic_hard_timeout_ms = 43_200_000 + (temporal_s * 43_200_000.0) as u64; // 12h en scalp hasta 24h en swing continuo
+                let dynamic_zombie_debounce_ms = 7_200_000 + (temporal_s * 14_400_000.0) as u64; // 2h a 6h
+                // D-452 & D-459: Erradicación de liquidaciones zombies en consolidación.
+                // Un trade nunca se liquida como timeout salvo estancamiento de 12h-24h con pérdida real (<= -30 bps).
+                let hard_timeout = position_age_ms > dynamic_hard_timeout_ms && pnl_pct <= -0.0030;
                 let is_zombie = event_time_ms > 0
                     && position_age_ms > dynamic_zombie_debounce_ms
-                    && ((trend_reversed && pnl_pct <= -0.0020) || hard_timeout);
+                    && ((trend_reversed && pnl_pct <= -0.0050) || hard_timeout);
                 let cur_vpin = self.feature_engines[coin_id].cvpin.current_vpin();
                 let ofi_adverse = (is_long && ofi_value < -0.45) || (!is_long && ofi_value > 0.45);
                 let toxic_flow_exit = ofi_adverse && cur_vpin > 0.70 && pnl_pct < -0.0005;
@@ -1504,10 +1525,14 @@ impl GodEngineCore {
             let coin_model_key = format!("{}_SCALP", sym);
             let active_forest = crate::ml_inference::NanoForest::get_global(&coin_model_key)
                 .or_else(|| self.scalp_forest.clone());
+            let coin_ensemble = if coin_id < self.ensembles.len() {
+                &mut self.ensembles[coin_id]
+            } else {
+                &mut self.ensemble
+            };
             if let Some(f) = &active_forest {
                 if let Some(p) = f.predict(&swing_feats) {
-                    self.ensemble
-                        .submit(crate::ensemble::ModelId::ScalpForest, p as f64);
+                    coin_ensemble.submit(crate::ensemble::ModelId::ScalpForest, p as f64);
                 }
             }
             if let Some(nn) = self.swing_nn.as_mut() {
@@ -1528,10 +1553,10 @@ impl GodEngineCore {
                     nn.predict_for_coin(coin_id, &combined_tensor)
                 };
                 if let Some(p) = p_opt {
-                    self.ensemble.submit(crate::ensemble::ModelId::SwingNN, p);
+                    coin_ensemble.submit(crate::ensemble::ModelId::SwingNN, p);
                 }
             }
-            let base_ml_prob = if let Some(p) = self.ensemble.combined() {
+            let base_ml_prob = if let Some(p) = coin_ensemble.combined() {
                 p
             } else {
                 0.5
@@ -1678,7 +1703,6 @@ impl GodEngineCore {
                 && self.feature_engines[coin_id].can_open_scalp(250)
             {
                 let is_mean_reverting = hurst_val < 0.45;
-                let is_trending = hurst_val >= 0.50;
 
                 let ema_slow = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
@@ -1691,61 +1715,36 @@ impl GodEngineCore {
                 } else {
                     0.0
                 };
-                let not_overextended_long = price_stretch <= 1.2;
-                let not_overextended_short = price_stretch >= -1.2;
+                let not_overextended_long = price_stretch <= 2.5;
+                let not_overextended_short = price_stretch >= -2.5;
 
                 // D-105: Mapeo de convicción Bayesiana calibrada para Kelly sizing realista
                 let sig_conf = |score: f64| -> f64 {
                     (0.50 + 0.40 * score.abs().clamp(0.0, 1.0)).clamp(0.51, 0.90)
                 };
 
-                if is_trending {
-                    let dynamic_tech_thr = self
-                        .arena
-                        .config
-                        .tech_threshold
-                        .load(Ordering::Relaxed)
-                        .max(0.24);
-                    if macro_trend > dynamic_ema_thr
-                        && mid_price >= ema_slow
-                        && composite_score > dynamic_tech_thr
-                        && not_overextended_long
-                    {
-                        scalp_intent = SignalIntent {
-                            signal: SignalType::Long,
-                            confidence: sig_conf(composite_score),
-                            horizon: strategy_core::TradeHorizon::Scalp,
-                            ..Default::default()
-                        };
-                    } else if macro_trend < -dynamic_ema_thr
-                        && mid_price <= ema_slow
-                        && composite_score < -dynamic_tech_thr
-                        && not_overextended_short
-                    {
+                let dynamic_tech_thr = self
+                    .arena
+                    .config
+                    .tech_threshold
+                    .load(Ordering::Relaxed)
+                    .max(0.24);
+
+                // D-460: Unificación Continua del Generador de Señales (Multiscale Vector Field).
+                // Erradicación de la compartimentación excluyente por Hurst que congelaba el 90% de operaciones.
+                if macro_trend < -dynamic_ema_thr {
+                    // RÉGIMEN BAJISTA (DOWNTREND MACRO)
+                    // 1. Tendencial Short: Flujo institucional y ML apuntan a la baja con margen de movimiento
+                    if composite_score < -dynamic_tech_thr && not_overextended_short {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Scalp,
                             ..Default::default()
                         };
-                    }
-                } else if is_mean_reverting {
-                    let dynamic_tech_thr = self
-                        .arena
-                        .config
-                        .tech_threshold
-                        .load(Ordering::Relaxed)
-                        .max(0.24);
-                    let allow_long_reversion =
-                        macro_trend >= -dynamic_ema_thr && not_overextended_long;
-                    let allow_short_reversion =
-                        macro_trend <= dynamic_ema_thr && not_overextended_short;
-
-                    // Reversión por estiramiento extremo de precio con confirmación de flujo y filtro macro
-                    if price_stretch > 0.8
-                        && allow_short_reversion
-                        && (current_obi < -dynamic_obi_thr * 0.5
-                            || composite_score < -dynamic_tech_thr * 0.8)
+                    // 2. Pullback Short: Rebote hacia ema_slow vendido agresivamente
+                    } else if price_stretch > -0.2
+                        && (current_obi < -0.15 || composite_score < -0.15)
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
@@ -1753,42 +1752,80 @@ impl GodEngineCore {
                             horizon: strategy_core::TradeHorizon::Scalp,
                             ..Default::default()
                         };
-                    } else if price_stretch < -0.8
-                        && allow_long_reversion
-                        && (current_obi > dynamic_obi_thr * 0.5
-                            || composite_score > dynamic_tech_thr * 0.8)
+                    // 3. Reversión Long: Solo permitida ante pánico extremo (capitulación profunda) con absorción institucional L2
+                    } else if price_stretch < -2.0
+                        && current_obi > dynamic_obi_thr * 0.7
+                        && composite_score > dynamic_tech_thr
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
+                            confidence: sig_conf(composite_score.abs().max(current_obi.abs())),
+                            horizon: strategy_core::TradeHorizon::Scalp,
+                            ..Default::default()
+                        };
+                    }
+                } else if macro_trend > dynamic_ema_thr {
+                    // RÉGIMEN ALCISTA (UPTREND MACRO)
+                    // 1. Tendencial Long: Flujo institucional y ML apuntan al alza con margen de movimiento
+                    if composite_score > dynamic_tech_thr && not_overextended_long {
+                        scalp_intent = SignalIntent {
+                            signal: SignalType::Long,
+                            confidence: sig_conf(composite_score),
+                            horizon: strategy_core::TradeHorizon::Scalp,
+                            ..Default::default()
+                        };
+                    // 2. Dip Long: Corrección hacia ema_slow comprada agresivamente
+                    } else if price_stretch < 0.2 && (current_obi > 0.15 || composite_score > 0.15)
+                    {
+                        scalp_intent = SignalIntent {
+                            signal: SignalType::Long,
+                            confidence: sig_conf(composite_score.abs().max(current_obi.abs())),
+                            horizon: strategy_core::TradeHorizon::Scalp,
+                            ..Default::default()
+                        };
+                    // 3. Reversión Short: Solo permitida ante euforia parabólica extrema con ventas masivas L2
+                    } else if price_stretch > 2.0
+                        && current_obi < -dynamic_obi_thr * 0.7
+                        && composite_score < -dynamic_tech_thr
+                    {
+                        scalp_intent = SignalIntent {
+                            signal: SignalType::Short,
                             confidence: sig_conf(composite_score.abs().max(current_obi.abs())),
                             horizon: strategy_core::TradeHorizon::Scalp,
                             ..Default::default()
                         };
                     }
                 } else {
-                    // Régimen de ruido / random walk (0.45 <= hurst < 0.50)
-                    // Exigir alta confluencia técnica, filtro macro y microestructura (OBI)
-                    let noise_thr = (self
-                        .arena
-                        .config
-                        .tech_threshold
-                        .load(Ordering::Relaxed)
-                        .max(0.24)
-                        * 1.5)
-                        .clamp(0.30, 0.60);
-                    let allow_long = macro_trend >= 0.0 && not_overextended_long;
-                    let allow_short = macro_trend <= 0.0 && not_overextended_short;
-                    if composite_score > noise_thr && allow_long && current_obi > 0.20 {
+                    // RÉGIMEN NEUTRO / RANGO LATERAL
+                    let range_thr = dynamic_tech_thr * 1.1;
+                    if composite_score > range_thr && current_obi > 0.15 && price_stretch <= 1.2 {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence: sig_conf(composite_score),
                             horizon: strategy_core::TradeHorizon::Scalp,
                             ..Default::default()
                         };
-                    } else if composite_score < -noise_thr && allow_short && current_obi < -0.20 {
+                    } else if composite_score < -range_thr
+                        && current_obi < -0.15
+                        && price_stretch >= -1.2
+                    {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence: sig_conf(composite_score),
+                            horizon: strategy_core::TradeHorizon::Scalp,
+                            ..Default::default()
+                        };
+                    } else if price_stretch > 1.0 && current_obi < -0.20 {
+                        scalp_intent = SignalIntent {
+                            signal: SignalType::Short,
+                            confidence: sig_conf(current_obi.abs()),
+                            horizon: strategy_core::TradeHorizon::Scalp,
+                            ..Default::default()
+                        };
+                    } else if price_stretch < -1.0 && current_obi > 0.20 {
+                        scalp_intent = SignalIntent {
+                            signal: SignalType::Long,
+                            confidence: sig_conf(current_obi.abs()),
                             horizon: strategy_core::TradeHorizon::Scalp,
                             ..Default::default()
                         };
@@ -1973,18 +2010,25 @@ impl GodEngineCore {
             }
             .max(1_800_000);
 
-            if hurst_exponent >= trend_threshold {
-                let ema_fast = if self.feature_engines[coin_id].kline_ema_fast > 0.0 {
-                    self.feature_engines[coin_id].kline_ema_fast
-                } else {
-                    self.feature_engines[coin_id].ema_fast
-                };
-                let ema_slow = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
-                    self.feature_engines[coin_id].kline_ema_slow
-                } else {
-                    self.feature_engines[coin_id].ema_slow
-                };
+            let ema_fast = if self.feature_engines[coin_id].kline_ema_fast > 0.0 {
+                self.feature_engines[coin_id].kline_ema_fast
+            } else {
+                self.feature_engines[coin_id].ema_fast
+            };
+            let ema_slow = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
+                self.feature_engines[coin_id].kline_ema_slow
+            } else {
+                self.feature_engines[coin_id].ema_slow
+            };
+            let ma_trend_strength = if ema_slow > 0.0 {
+                ((ema_fast - ema_slow) / ema_slow).abs()
+            } else {
+                0.0
+            };
+            let is_trend_candidate =
+                hurst_exponent >= trend_threshold || ma_trend_strength > 0.0015;
 
+            if is_trend_candidate {
                 if ema_slow > 0.0 {
                     let macd_diff = (ema_fast - ema_slow) / ema_slow;
                     let swing_tp = self.arena.config.swing_tp_base.load(Ordering::Relaxed);
@@ -2046,8 +2090,8 @@ impl GodEngineCore {
                 let is_bull = ema_fast > ema_slow;
                 let is_bear = ema_fast < ema_slow;
 
-                if hurst_exponent >= 0.50
-                    && tensor_swing.signal == SignalType::Long
+                // D-458: Desbloquear consenso continuo y swing alineado a la tendencia real
+                if tensor_swing.signal == SignalType::Long
                     && is_bull
                     && tensor_swing.net_confidence.abs() > 0.60
                 {
@@ -2057,8 +2101,7 @@ impl GodEngineCore {
                         horizon: strategy_core::TradeHorizon::Swing,
                         ..Default::default()
                     };
-                } else if hurst_exponent >= 0.50
-                    && tensor_swing.signal == SignalType::Short
+                } else if tensor_swing.signal == SignalType::Short
                     && is_bear
                     && tensor_swing.net_confidence.abs() > 0.60
                 {
@@ -2068,25 +2111,23 @@ impl GodEngineCore {
                         horizon: strategy_core::TradeHorizon::Swing,
                         ..Default::default()
                     };
-                } else if hurst_exponent >= 0.50
-                    && tensor_cont.signal == SignalType::Long
+                } else if tensor_cont.signal == SignalType::Long
                     && is_bull
-                    && tensor_cont.net_confidence.abs() > 0.65
+                    && tensor_cont.net_confidence.abs() > 0.60
                 {
                     swing_intent = SignalIntent {
                         signal: tensor_cont.signal,
-                        confidence: tensor_cont.net_confidence.abs().clamp(0.65, 1.0),
+                        confidence: tensor_cont.net_confidence.abs().clamp(0.60, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
                         ..Default::default()
                     };
-                } else if hurst_exponent >= 0.50
-                    && tensor_cont.signal == SignalType::Short
+                } else if tensor_cont.signal == SignalType::Short
                     && is_bear
-                    && tensor_cont.net_confidence.abs() > 0.65
+                    && tensor_cont.net_confidence.abs() > 0.60
                 {
                     swing_intent = SignalIntent {
                         signal: tensor_cont.signal,
-                        confidence: tensor_cont.net_confidence.abs().clamp(0.65, 1.0),
+                        confidence: tensor_cont.net_confidence.abs().clamp(0.60, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
                         ..Default::default()
                     };
@@ -2111,25 +2152,62 @@ impl GodEngineCore {
                 self.last_swing_intent[coin_id] = swing_intent;
             }
 
-            // Unificación continua de intenciones
+            // D-431: Composición de onda multiescala no destructiva (Continuous Wave Mechanics).
+            // Evita el canibalismo ciego donde una discrepancia de 0.01 abre operaciones contratendencia.
             let mut unified_intent = SignalIntent::flat();
             if scalp_intent.signal != SignalType::Flat && swing_intent.signal != SignalType::Flat {
                 if scalp_intent.signal == swing_intent.signal {
+                    // Interferencia constructiva perfecta: coherencia de onda máxima
+                    let boosted_conf = (scalp_intent.confidence.max(swing_intent.confidence)
+                        * 1.10)
+                        .clamp(0.60, 1.0);
                     unified_intent = SignalIntent {
                         signal: scalp_intent.signal,
-                        confidence: scalp_intent.confidence.max(swing_intent.confidence),
+                        confidence: boosted_conf,
                         horizon: strategy_core::TradeHorizon::Continuous,
                         ..scalp_intent
                     };
-                } else if scalp_intent.confidence >= swing_intent.confidence {
-                    unified_intent = scalp_intent;
                 } else {
-                    unified_intent = swing_intent;
+                    // Señales opuestas: modulación vectorial. La macro-onda (swing) tiene inercia física 1.5x
+                    let dir_scalp = if scalp_intent.signal == SignalType::Long {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    let dir_swing = if swing_intent.signal == SignalType::Long {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    let net_vector = dir_scalp * scalp_intent.confidence
+                        + dir_swing * (swing_intent.confidence * 1.50);
+                    if net_vector.abs() > 0.35 {
+                        let (sig, conf) = if net_vector > 0.0 {
+                            (SignalType::Long, (net_vector / 2.50).clamp(0.55, 1.0))
+                        } else {
+                            (SignalType::Short, ((-net_vector) / 2.50).clamp(0.55, 1.0))
+                        };
+                        unified_intent = SignalIntent {
+                            signal: sig,
+                            confidence: conf,
+                            horizon: strategy_core::TradeHorizon::Continuous,
+                            ..scalp_intent
+                        };
+                    } else {
+                        // Interferencia destructiva (conflicto intra-régimen): preservar capital -> Flat
+                        unified_intent = SignalIntent::flat();
+                    }
                 }
             } else if scalp_intent.signal != SignalType::Flat {
-                unified_intent = scalp_intent;
+                unified_intent = SignalIntent {
+                    horizon: strategy_core::TradeHorizon::Continuous,
+                    ..scalp_intent
+                };
             } else if swing_intent.signal != SignalType::Flat {
-                unified_intent = swing_intent;
+                unified_intent = SignalIntent {
+                    horizon: strategy_core::TradeHorizon::Continuous,
+                    ..swing_intent
+                };
             }
 
             let current_cap = self.arena.unified_capital.load(Ordering::Relaxed);

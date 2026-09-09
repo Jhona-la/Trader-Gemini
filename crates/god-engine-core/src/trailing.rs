@@ -138,14 +138,18 @@ pub fn evaluate_quantum_trailing_with_fee(
         max_pnl_pct = pnl_pct;
     }
 
-    // 3. Phase Transitions
-    if current_phase == 0 && pnl_atr >= 0.5 {
+    // Escudo Cuántico (Breakeven Lock adaptativo para Scalp y Swing - FIX #1404, D-453, D-454 & D-461)
+    let effective_fee = fee_rate.max(0.0004);
+    let be_trigger = (effective_fee * 15.0).clamp(0.0100, 0.0200);
+
+    // 3. Phase Transitions (Desasfixiadas: permiten que el trade desarrolle su ciclo hasta TP)
+    if current_phase == 0 && (pnl_atr >= 2.0 || max_pnl_pct >= be_trigger) {
         current_phase = 1;
-    } else if current_phase == 1 && pnl_atr >= 1.5 {
+    } else if current_phase == 1 && (pnl_atr >= 3.5 || max_pnl_pct >= be_trigger * 1.5) {
         current_phase = 2;
-    } else if current_phase == 2 && pnl_atr >= 3.0 {
+    } else if current_phase == 2 && pnl_atr >= 5.0 {
         current_phase = 3;
-    } else if current_phase == 3 && mfe_atr >= 4.0 {
+    } else if current_phase == 3 && mfe_atr >= 6.0 {
         current_phase = 4;
     }
 
@@ -188,11 +192,11 @@ pub fn evaluate_quantum_trailing_with_fee(
             current_price + (dist_atr * current_atr)
         };
 
-        // Escudo Cuántico (Breakeven Lock adaptativo para Scalp y Swing - FIX #1404)
+        // Escudo Cuántico (Breakeven Lock adaptativo para Scalp y Swing - FIX #1404, D-453, D-454 & D-461)
         let effective_fee = fee_rate.max(0.0004);
-        let be_trigger = (effective_fee * 2.5).clamp(0.0015, 0.01);
-        let profit_lock_trigger = (effective_fee * 4.0).clamp(0.0030, 0.015);
-        let profit_lock_gain = (effective_fee * 1.5).clamp(0.0010, 0.0050);
+        let be_trigger = (effective_fee * 15.0).clamp(0.0100, 0.0200);
+        let profit_lock_trigger = (effective_fee * 25.0).clamp(0.0150, 0.0350);
+        let profit_lock_gain = (effective_fee * 12.0).clamp(0.0080, 0.0200);
 
         if max_pnl_pct >= be_trigger {
             if pos_side == 1 {

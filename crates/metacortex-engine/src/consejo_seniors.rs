@@ -140,28 +140,25 @@ impl SeniorAgent for SeniorSeriesTemporales {
         let hurst = payload.hurst_exponent;
         let flow_dir = safe_signum(payload.book_imbalance);
 
-        let (trend_threshold, mean_reversion_threshold) = match payload.horizon {
-            TradingHorizon::Continuous => (0.52, 0.45),
-            TradingHorizon::Scalping => (0.55, 0.42),
-            TradingHorizon::Swing => (0.65, 0.35),
+        // D-438: Transición continua y suave C^inf mediante activación sigmoide/tanh,
+        // eliminando los saltos escalonados artificiales y modulando la sensibilidad por horizonte.
+        let sensitivity = match payload.horizon {
+            TradingHorizon::Continuous => 25.0,
+            TradingHorizon::Scalping => 20.0,
+            TradingHorizon::Swing => 10.0,
         };
-
-        // FIX #571: Adaptativo por horizonte.
-        let signal = if hurst > trend_threshold {
-            flow_dir
-        } else if hurst < mean_reversion_threshold {
-            -flow_dir
-        } else {
-            0.0
-        };
+        let hurst_dev = hurst - 0.50;
+        let smooth_activation = (hurst_dev * sensitivity).tanh();
+        let signal = smooth_activation * flow_dir;
+        let confidence = ((hurst - 0.5).abs() * 2.0).clamp(0.0, 1.0);
         SeniorOpinion {
             role: self.role(),
             signal_direction: signal,
-            confidence: (hurst - 0.5).abs() * 2.0,
+            confidence,
             weight: 1.0,
             is_veto: false,
             justification: format!(
-                "Hurst exponent: {:.4} (dir={:.1}, mode={:?})",
+                "Hurst exponent: {:.4} (dir={:.3}, mode={:?})",
                 hurst, signal, payload.horizon
             ),
         }
@@ -324,7 +321,8 @@ impl SeniorAgent for SeniorMetacognitivo {
         let effective_wr = if wr > 0.0 { wr.clamp(0.20, 1.0) } else { 0.50 };
         let adjusted_confidence = (effective_wr - dd_penalty).clamp(0.05, 1.0);
         let dir = safe_signum(payload.book_imbalance);
-        let weight = if wr >= 0.50 { 2.0 } else { 1.0 };
+        // D-438: Ponderación adaptativa suave C^inf en función del WR efectivo
+        let weight = (1.0 + (effective_wr - 0.20) / 0.80).clamp(1.0, 2.0);
         SeniorOpinion {
             role: self.role(),
             signal_direction: dir,
