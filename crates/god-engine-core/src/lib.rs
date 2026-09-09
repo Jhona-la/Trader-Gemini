@@ -820,8 +820,12 @@ impl GodEngineCore {
                     }
 
                     let live_taker = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0004);
-                    // D-179: En producción, salidas a mercado (TP/SL/Trailing) son Taker
-                    let close_fee_rate = live_taker;
+                    // D-179 + D-05: TP con trade-through califica como MAKER
+                    // (precio límite exacto — calculate_exit modeló fill
+                    // maker). SL/trailing/zombie son taker (cruce adverso).
+                    // Antes: TODO exit pagaba taker sobre un fill maker.
+                    let live_maker = self.arena.config.live_maker_fee.load(Ordering::Relaxed).max(0.0002);
+                    let close_fee_rate = if exit_is_maker { live_maker } else { live_taker };
                     let close_fee = (qty * exit_price) * close_fee_rate;
 
                     let ml_at_entry = pos.ml_prediction.load(Ordering::Relaxed);

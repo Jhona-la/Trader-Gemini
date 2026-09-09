@@ -1905,14 +1905,66 @@ impl ExecutionProvider for OrderExecutor {
                 "⚠️ [OCO] Pierna(s) fallida(s) (SL={}, TP={}). Reintentando...",
                 sl_down, tp_down
             );
+            // D-02 — RETRY CON REGENERACIÓN COMPLETA (5º informe): el retry
+            // anterior reenviaba el MISMO buffer firmado — timestamp vencido
+            // (-1021) o coid duplicado (-4116) garantizados. Ahora: nuevo
+            // timestamp NTP, nuevo clientOrderId (sufijo _R), nueva firma
+            // HMAC. Mismo patrón que el flatten retry (línea ~519).
+            let ts_retry = self.get_synced_timestamp();
+            let retry_secret = self.api_secret.load().to_string();
+
             if sl_down {
-                sl_res = self.client.execute_order_payload(sl_buf.as_str()).await;
+                let mut rb = ZeroAllocBuffer::new();
+                rb.push_str(base_url);
+                let rp = rb.as_str().len();
+                rb.push_str("symbol=");
+                rb.push_str(symbol);
+                rb.push_str("&side=");
+                rb.push_str(side);
+                rb.push_str(&position_side_q);
+                rb.push_str(&reduce_only_q);
+                rb.push_str("&type=STOP_MARKET");
+                rb.push_str("&quantity=");
+                rb.push_f64(final_quantity);
+                rb.push_str("&stopPrice=");
+                rb.push_f64(final_sl);
+                rb.push_str("&newClientOrderId=");
+                rb.push_str(&format!("{}_SLR", base_client_id));
+                rb.push_str("&timestamp=");
+                rb.push_u64(ts_retry);
+                let mut rsb = [0u8; 64];
+                sign_payload_to_buffer(&rb.as_str()[rp..], &retry_secret, &mut rsb);
+                rb.push_str("&signature=");
+                rb.push_str(unsafe { std::str::from_utf8_unchecked(&rsb) });
+                sl_res = self.client.execute_order_payload(rb.as_str()).await;
                 if let Ok(limits) = &sl_res {
                     self.update_limits(limits);
                 }
             }
             if tp_down {
-                tp_res = self.client.execute_order_payload(tp_buf.as_str()).await;
+                let mut rb = ZeroAllocBuffer::new();
+                rb.push_str(base_url);
+                let rp = rb.as_str().len();
+                rb.push_str("symbol=");
+                rb.push_str(symbol);
+                rb.push_str("&side=");
+                rb.push_str(side);
+                rb.push_str(&position_side_q);
+                rb.push_str(&reduce_only_q);
+                rb.push_str("&type=TAKE_PROFIT_MARKET");
+                rb.push_str("&quantity=");
+                rb.push_f64(final_quantity);
+                rb.push_str("&stopPrice=");
+                rb.push_f64(final_tp);
+                rb.push_str("&newClientOrderId=");
+                rb.push_str(&format!("{}_TPR", base_client_id));
+                rb.push_str("&timestamp=");
+                rb.push_u64(ts_retry);
+                let mut rsb = [0u8; 64];
+                sign_payload_to_buffer(&rb.as_str()[rp..], &retry_secret, &mut rsb);
+                rb.push_str("&signature=");
+                rb.push_str(unsafe { std::str::from_utf8_unchecked(&rsb) });
+                tp_res = self.client.execute_order_payload(rb.as_str()).await;
                 if let Ok(limits) = &tp_res {
                     self.update_limits(limits);
                 }

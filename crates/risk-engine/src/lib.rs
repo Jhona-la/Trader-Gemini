@@ -279,8 +279,8 @@ impl RiskEngine {
             .load(Ordering::Relaxed);
 
         if current_ratio < kelly_bootstrap_ratio_threshold {
-            scalp_kelly = (kelly_cold * split.max(0.1)).clamp(0.01, 0.50);
-            swing_kelly = (kelly_cold * (1.0 - split).max(0.1)).clamp(0.01, 0.50);
+            scalp_kelly = (kelly_cold * split.max(0.1)).clamp(0.05, 0.35);
+            swing_kelly = (kelly_cold * (1.0 - split).max(0.1)).clamp(0.05, 0.35);
         } else {
             let spec = match quantum_arena::symbol_registry::try_spec(coin_id) {
                 Some(s) => s,
@@ -542,7 +542,26 @@ impl RiskEngine {
 
         let maker_fee = arena.config.live_maker_fee.load(Ordering::Relaxed);
         let taker_fee = arena.config.live_taker_fee.load(Ordering::Relaxed);
-        let roundtrip_fee = maker_fee + taker_fee;
+        // D-01 — FRICCIÓN REAL EN EL EV GATE: antes el gate comparaba contra
+        // solo maker+taker (~7bps), pero el motor EJECUTA 2×(taker + slippage)
+        // por roundtrip bajo HyperRealistic. El gate subestimaba la fricción
+        // 40-70% y certificaba como EV-positivos trades que la física del
+        // propio motor volvía negativos. Ahora incluimos la fricción de
+        // física que el fill path aplica (entrada taker + salida mayormente
+        // taker, cada una con max(impacto_cuadrático+latency, floor)).
+        let slip_floor = arena
+            .config
+            .base_slippage_floor
+            .load(Ordering::Relaxed)
+            .max(0.00001);
+        let lat_ms = arena
+            .config
+            .latency_penalty_ms
+            .load(Ordering::Relaxed)
+            .max(0.0);
+        let latency_slip = atr_pct * (lat_ms / 150.0);
+        let per_side_slip = (slip_floor + latency_slip).clamp(0.0, 0.01);
+        let roundtrip_fee = (maker_fee + taker_fee) + 2.0 * per_side_slip;
 
         let temp_scale = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);
         let scalp_win = arena.config.scalp_tp_base.load(Ordering::Relaxed).max(0.0010).max(atr_pct * 1.5);
