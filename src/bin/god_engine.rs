@@ -1628,8 +1628,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                         if !oco_success {
-                                            telemetry_engine::telemetry_err!("🚨 [EMERGENCY CLOSE] Fallaron 3 intentos OCO para {}. Cerrando posición a mercado para proteger micro-capital ($13 USD).", parsed_sym_str);
+                                            telemetry_engine::telemetry_err!("🚨 [EMERGENCY CLOSE] Fallaron 3 intentos OCO para {}. Cancelando órdenes huérfanas y cerrando posición a mercado para proteger micro-capital ($13 USD).", parsed_sym_str);
                                             let is_long_close = final_is_long;
+                                            // D-180: Limpiar primero cualquier orden remanente en Binance antes de aplanar
+                                            let _ = exec_clone.load().cancel_all_symbol_orders(&parsed_sym_str).await;
                                             let _ = exec_clone.load().execute_reduce_only_market(&parsed_sym_str, is_long_close, final_qty, dyn_step_size).await;
                                             rollback_positions(&arena_clone);
                                         }

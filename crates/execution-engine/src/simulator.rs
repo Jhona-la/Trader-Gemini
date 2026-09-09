@@ -9,6 +9,10 @@ pub struct SimulatedExecutor {
     pub average_latency_ms: u64,
     pub simulated_capital: RwLock<f64>,
     pub open_positions: RwLock<HashMap<String, ActivePosition>>,
+    /// D-04 — FILL MODEL: mid del último tick por símbolo (para distancia
+    /// al mid en fills de limit/maker) y floor de slippage para market/IOC.
+    pub last_mids: RwLock<HashMap<String, f64>>,
+    pub base_slippage_bps: f64,
 }
 
 impl SimulatedExecutor {
@@ -17,7 +21,26 @@ impl SimulatedExecutor {
             average_latency_ms: 3, // Binance FAPI Latency (3ms)
             simulated_capital: RwLock::new(simulated_capital),
             open_positions: RwLock::new(HashMap::new()),
+            last_mids: RwLock::new(HashMap::new()),
+            base_slippage_bps: 1.0, // floor conservador: 1 bps mínimo
         }
+    }
+
+    /// D-04 — Fill probability para limit/maker: decrece exponencialmente
+    /// con la distancia agresiva al mid (0 bps = 95%, 10+ bps = <30%).
+    fn fill_probability(&self, order_price: f64, symbol: &str) -> f64 {
+        let mid = *self.last_mids.read().unwrap().get(symbol).unwrap_or(&0.0);
+        if mid <= 0.0 || order_price <= 0.0 {
+            return 0.5; // sin datos de mid: 50/50
+        }
+        let dist_bps = ((order_price - mid).abs() / mid) * 10_000.0;
+        0.95 * (-dist_bps / 8.0).exp()
+    }
+
+    /// D-04 — Slippage para market/IOC: floor + impacto cuadrático por tamaño.
+    fn market_slippage(&self, nominal_usd: f64) -> f64 {
+        let impact = (nominal_usd / 1_000_000.0).powf(1.2) * 0.0005;
+        (impact + self.base_slippage_bps / 10_000.0).clamp(0.0001, 0.01)
     }
 
     async fn simulate_network_delay(&self) {
@@ -125,10 +148,23 @@ impl ExecutionProvider for SimulatedExecutor {
         client_order_id: &str,
     ) -> Result<(), String> {
         self.simulate_network_delay().await;
+        // D-04: fill probabilístico basado en distancia al mid
+        let fill_prob = self.fill_probability(price, symbol);
+        let roll = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos() as f64)
+            / 1_000_000_000.0;
+        if roll > fill_prob {
+            return Err(format!(
+                "[SIM] Limit no llenado (fill_prob={:.2}, roll={:.2}) — como en live",
+                fill_prob, roll
+            ));
+        }
         let side = if is_long { "BUY" } else { "SELL" };
         println!(
-            "👻 [SHADOW MODE] Limit {} {:.4} {} @ {} (ID: {})",
-            side, quantity, symbol, price, client_order_id
+            "👻 [SHADOW MODE] Limit {} {:.4} {} @ {} (ID: {}, fill_prob={:.2})",
+            side, quantity, symbol, price, client_order_id, fill_prob
         );
         Ok(())
     }

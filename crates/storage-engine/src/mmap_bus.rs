@@ -24,6 +24,39 @@ pub const SUBSYSTEM_RISK_KELLY: u8 = 0;
 pub const SUBSYSTEM_TENSOR_ML: u8 = 1;
 pub const SUBSYSTEM_QUANT_MATH: u8 = 2;
 pub const SUBSYSTEM_OS_MEM: u8 = 3;
+/// Feedback de autoevolución: predicción ML vs resultado real.
+/// Consumido por online_daemon para el Shadow Forest.
+pub const SUBSYSTEM_TENSOR_PREDICTOR: u8 = 12;
+pub const FRAME_PREDICTION_VS_REALITY: u8 = 30;
+
+/// Writer global lazy: el hot path del god-engine escribe frames de
+/// predicción-vs-realidad sin construir el bus cada tick.
+static GLOBAL_TELEMETRY_WRITER: std::sync::OnceLock<Option<MmapTelemetryBus>> =
+    std::sync::OnceLock::new();
+
+/// Inicializa el bus global (llamar UNA vez al arranque desde god_engine).
+pub fn init_global_telemetry(path: &str) {
+    match MmapTelemetryBus::new(path) {
+        Ok(bus) => {
+            let _ = GLOBAL_TELEMETRY_WRITER.set(Some(bus));
+        }
+        Err(_) => {
+            let _ = GLOBAL_TELEMETRY_WRITER.set(None);
+        }
+    }
+}
+
+/// Escribe un frame de predicción-vs-realidad al bus global (si inicializado).
+/// No-op si el bus no existe (compatible con tests y backtests sin telemetría).
+pub fn write_prediction_vs_reality(ml_prob: f64, is_long: bool, net_pnl_pct: f64, atr_pct: f64) {
+    if let Some(Some(bus)) = GLOBAL_TELEMETRY_WRITER.get() {
+        bus.write_trace(
+            SUBSYSTEM_TENSOR_PREDICTOR,
+            FRAME_PREDICTION_VS_REALITY,
+            [ml_prob, if is_long { 1.0 } else { 0.0 }, 0.0, net_pnl_pct, atr_pct, 0.0],
+        );
+    }
+}
 
 // Tipos de frames Multiplexados
 pub const FRAME_TYPE_TENSOR_ENTROPY: u8 = 10;

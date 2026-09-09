@@ -6,6 +6,23 @@ use std::fs;
     pub struct EnvManager;
 
     impl EnvManager {
+        /// D-07 — RAÍZ DE DATOS centralizada: resuelve TGM_DATA_DIR o el
+        /// default "data" relativo al CWD. Todos los paths de datos deben
+        /// usar esto para eliminar la dependencia del directorio de
+        /// lanzamiento (Docker, Task Scheduler, servicio).
+        pub fn data_root() -> String {
+            std::env::var("TGM_DATA_DIR")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| "data".to_string())
+        }
+
+        /// Helper: unir la raíz con un subpath ("historical/BTCUSDT.parquet").
+        pub fn data_join(sub: &str) -> String {
+            let root = Self::data_root();
+            format!("{}/{}", root, sub)
+        }
+
         /// Determines if the system is currently running in a Demo/Shadow environment
         #[inline(always)]
         pub fn is_demo_env() -> bool {

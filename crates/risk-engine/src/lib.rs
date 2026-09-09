@@ -585,22 +585,27 @@ impl RiskEngine {
         };
 
         let confidence = intent.confidence.max(0.51);
-        if allocated_capital <= 15.0 && confidence < 0.58 {
+        let min_required_confidence = if allocated_capital <= 15.0 {
+            0.78 // Sniper threshold para micro-cuenta ($13 USD bootstrap): elimina ruido y preserva capital
+        } else {
+            0.62
+        };
+        if confidence < min_required_confidence {
             return rej(4);
         }
         let expected_value_pct =
             (confidence * expected_win) - ((1.0 - confidence) * expected_loss);
 
         let min_ev_mult = if allocated_capital <= 15.0 {
-            1.005 // Micro-cuenta ($13 USD bootstrap): buffer 0.5% sobre comisiones para desbloquear oportunidades legítimas
+            1.25 // Micro-cuenta: requiere EV al menos 25% por encima de las comisiones reales
         } else {
-            1.02
+            1.05
         };
         let ev_fee_multiplier = arena
             .config
             .ev_fee_multiplier
             .load(Ordering::Relaxed)
-            .clamp(min_ev_mult, 1.30);
+            .clamp(min_ev_mult, 1.80);
         if expected_value_pct <= (roundtrip_fee * ev_fee_multiplier) {
             return rej(4);
         }
@@ -683,7 +688,16 @@ impl RiskEngine {
         let safe_limit = (allocated_capital * safe_cushion).min(current_cap * 0.90);
         if final_margin > safe_limit {
             final_margin = safe_limit;
+            if final_margin > 0.0 && final_margin * dynamic_leverage < safe_min_notional {
+                let re_lev = (safe_min_notional / final_margin) * 1.01;
+                let fee_impact = roundtrip_fee * re_lev;
+                let max_fee_lim = if allocated_capital <= 15.0 { 0.035 } else { max_acceptable_fee_pct };
+                if fee_impact <= max_fee_lim {
+                    dynamic_leverage = re_lev.min(max_exchange_leverage).min(50.0);
+                }
+            }
         }
+        let required_margin_for_min_notional = safe_min_notional / dynamic_leverage;
         if final_margin < required_margin_for_min_notional {
             return rej(7);
         }

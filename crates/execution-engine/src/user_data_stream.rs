@@ -164,6 +164,11 @@ impl UserDataStreamer {
                 match msg {
                     Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                         self.route_event(&text);
+                        // D-198: Salida inmediata tras procesar listenKeyExpired para no colgar en read.next()
+                        if self.expired_flag.swap(false, Ordering::Relaxed) {
+                            println!("🔄 [USER-STREAM] listenKeyExpired recibido y procesado: cerrando WebSocket inmediatamente para renovación.");
+                            break;
+                        }
                     }
                     Ok(tokio_tungstenite::tungstenite::Message::Ping(_)) => {
                         // Tungstenite responde auto-PONG.
@@ -304,52 +309,60 @@ impl UserDataStreamer {
         }
         self.registry.apply_trade_update(&update, now);
 
-        // K-04 / R3.1: Motor de cancelación automática de pierna hermana OCO
-        // Cuando una pierna de OCO ({base}_TP o {base}_SL) alcanza estado FILLED,
-        // cancela de inmediato la pierna hermana para no dejar órdenes huérfanas en el exchange.
+        // K-04 / R3.1 / D-179: Motor de cancelación automática de pierna hermana OCO
+        // Soporta tanto identificadores estándar (_TP, _SL) como variantes con retry (_TPR, _SLR).
+        // Cancela todas las variantes de la pierna hermana para evitar dobles ejecuciones u órdenes huérfanas.
         if update.status == OrderStatus::Filled {
-            let sister_id_opt = if let Some(base) = update.client_order_id.strip_suffix("_TP") {
-                Some(format!("{}_SL", base))
+            let sister_candidates = if let Some(base) = update.client_order_id.strip_suffix("_TPR") {
+                vec![format!("{}_SL", base), format!("{}_SLR", base)]
+            } else if let Some(base) = update.client_order_id.strip_suffix("_TP") {
+                vec![format!("{}_SL", base), format!("{}_SLR", base)]
+            } else if let Some(base) = update.client_order_id.strip_suffix("_SLR") {
+                vec![format!("{}_TP", base), format!("{}_TPR", base)]
             } else if let Some(base) = update.client_order_id.strip_suffix("_SL") {
-                Some(format!("{}_TP", base))
+                vec![format!("{}_TP", base), format!("{}_TPR", base)]
             } else {
-                None
+                Vec::new()
             };
 
-            if let (Some(sister_id), Some(ref secret)) = (sister_id_opt, &self.api_secret) {
-                let client = self.client.clone();
-                let symbol = update.symbol.clone();
-                let secret = secret.clone();
-                let filled_id = update.client_order_id.clone();
-                let arena_clone = self.arena.clone();
-                tokio::spawn(async move {
-                    let ts = crate::executor::current_synced_timestamp_ms(arena_clone.as_deref());
-                    let mut buf = crate::client::ZeroAllocBuffer::new();
-                    buf.push_str(if client.is_testnet.load(std::sync::atomic::Ordering::Relaxed) {
-                        "https://testnet.binancefuture.com/fapi/v1/order?"
-                    } else {
-                        "https://fapi.binance.com/fapi/v1/order?"
+            if !sister_candidates.is_empty() {
+                if let Some(ref secret) = self.api_secret {
+                    let client = self.client.clone();
+                    let symbol = update.symbol.clone();
+                    let secret = secret.clone();
+                    let filled_id = update.client_order_id.clone();
+                    let arena_clone = self.arena.clone();
+                    tokio::spawn(async move {
+                        for sister_id in sister_candidates {
+                            let ts = crate::executor::current_synced_timestamp_ms(arena_clone.as_deref());
+                            let mut buf = crate::client::ZeroAllocBuffer::new();
+                            buf.push_str(if client.is_testnet.load(std::sync::atomic::Ordering::Relaxed) {
+                                "https://testnet.binancefuture.com/fapi/v1/order?"
+                            } else {
+                                "https://fapi.binance.com/fapi/v1/order?"
+                            });
+                            let payload_start = buf.as_str().len();
+                            buf.push_str("symbol=");
+                            buf.push_str(&symbol);
+                            buf.push_str("&origClientOrderId=");
+                            buf.push_str(&sister_id);
+                            buf.push_str("&timestamp=");
+                            buf.push_u64(ts);
+
+                            let mut sig_buf = [0u8; 64];
+                            let payload = &buf.as_str()[payload_start..];
+                            crate::binance_api::sign_payload_to_buffer(payload, &secret, &mut sig_buf);
+                            let sig = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+                            buf.push_str("&signature=");
+                            buf.push_str(sig);
+
+                            match client.cancel_order_payload(buf.as_str()).await {
+                                Ok(_) => println!("🎯 [OCO MOTOR] Pierna hermana {} cancelada exitosamente tras fill de {}.", sister_id, filled_id),
+                                Err(e) => println!("ℹ️ [OCO MOTOR] Pierna hermana {} ya resuelta o cancelada: {}", sister_id, e),
+                            }
+                        }
                     });
-                    let payload_start = buf.as_str().len();
-                    buf.push_str("symbol=");
-                    buf.push_str(&symbol);
-                    buf.push_str("&origClientOrderId=");
-                    buf.push_str(&sister_id);
-                    buf.push_str("&timestamp=");
-                    buf.push_u64(ts);
-
-                    let mut sig_buf = [0u8; 64];
-                    let payload = &buf.as_str()[payload_start..];
-                    crate::binance_api::sign_payload_to_buffer(payload, &secret, &mut sig_buf);
-                    let sig = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
-                    buf.push_str("&signature=");
-                    buf.push_str(sig);
-
-                    match client.cancel_order_payload(buf.as_str()).await {
-                        Ok(_) => println!("🎯 [OCO MOTOR] Pierna hermana {} cancelada exitosamente tras fill de {}.", sister_id, filled_id),
-                        Err(e) => println!("ℹ️ [OCO MOTOR] Pierna hermana {} ya resuelta o cancelada: {}", sister_id, e),
-                    }
-                });
+                }
             }
         }
     }

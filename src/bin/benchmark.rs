@@ -1,7 +1,7 @@
 use execution_engine::executor::OrderExecutor;
 use quantum_arena::GlobalArena;
 use risk_engine::RiskEngine;
-use signal_engine::{ScalpEngine, SignalType, SwingEngine};
+use signal_engine::{SignalIntent, SignalType, TradeHorizon};
 use std::env;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use std::time::Instant;
 
 fn main() {
     println!("===========================================================");
-    println!("🔬 TRADER GEMINI V5 - QUANTUM PROFILER (LABORATORY)");
+    println!("🔬 TRADER GEMINI V7 - QUANTUM PROFILER (LABORATORY)");
     println!("===========================================================");
 
     let initial_capital: f64 = std::env::var("INITIAL_CAPITAL")
@@ -29,8 +29,6 @@ fn main() {
         .store(0.15, Ordering::Relaxed);
 
     let arena_ptr = Arc::new(arena);
-    let mut scalp_engine = ScalpEngine::new();
-    let _swing_engine = SwingEngine::default();
     // FIX #1526: Inicializar RiskEngine con safe_capital validado
     let mut risk_engine = RiskEngine::new(safe_capital);
     let api_key = "LAB_DUMMY_KEY".to_string();
@@ -58,20 +56,30 @@ fn main() {
 
         // --- INICIO DEL HOT PATH ---
 
-        let obi_threshold = arena_ptr.config.scalp_obi_threshold.load(Ordering::Relaxed);
-        let scalp_intent = scalp_engine.evaluate_microstructure(
-            fake_bid_vol,
-            fake_ask_vol,
-            obi_threshold,
-            &arena_ptr,
-        );
+        let obi = (fake_bid_vol - fake_ask_vol) / (fake_bid_vol + fake_ask_vol);
+        let scalp_intent = if obi > 0.20 {
+            SignalIntent {
+                signal: SignalType::Long,
+                confidence: obi.abs(),
+                horizon: TradeHorizon::Scalp,
+                ..Default::default()
+            }
+        } else if obi < -0.20 {
+            SignalIntent {
+                signal: SignalType::Short,
+                confidence: obi.abs(),
+                horizon: TradeHorizon::Scalp,
+                ..Default::default()
+            }
+        } else {
+            SignalIntent::flat()
+        };
 
         if scalp_intent.signal != SignalType::Flat {
             // coin_id for bnbusdt is 2
-            let _validated_order = risk_engine.evaluate_order(
+            let _validated_order = risk_engine.evaluate_quantum_order(
                 2,
-                scalp_intent,
-                signal_engine::SignalIntent::flat(),
+                &scalp_intent,
                 &arena_ptr,
             );
         }

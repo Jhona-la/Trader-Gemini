@@ -207,7 +207,12 @@ async fn main() {
     }
 
     let tick_size = std::mem::size_of::<BinTick>();
-    let num_ticks = bytes_len / tick_size;
+    let total_file_ticks = bytes_len / tick_size;
+    let max_ticks_env = std::env::var("MAX_TICKS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(total_file_ticks);
+    let num_ticks = total_file_ticks.min(max_ticks_env);
 
     if num_ticks < 1000 {
         println!("❌ Datos insuficientes: {} ticks (mínimo 1000)", num_ticks);

@@ -471,7 +471,7 @@ impl SuperGenotype {
                 return genome;
             }
         }
-        if let Ok(data) = std::fs::read_to_string("data/genesis_genome.json") {
+        if let Ok(data) = std::fs::read_to_string(crate::paths::data_join("genesis_genome.json")) {
             if let Ok(genome) = serde_json::from_str::<Self>(&data) {
                 telemetry_engine::telemetry!(
                     "🧬 [GENOMA] Loaded surviving SuperGenotype from genesis_genome.json"
@@ -485,7 +485,7 @@ impl SuperGenotype {
 
     pub fn save(&self) {
         if let Ok(data) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write("data/genesis_genome.json", data);
+            let _ = std::fs::write(crate::paths::data_join("genesis_genome.json"), data);
         }
     }
 

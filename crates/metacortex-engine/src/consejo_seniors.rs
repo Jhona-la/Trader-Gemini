@@ -199,7 +199,7 @@ impl SeniorAgent for SeniorCausal {
         // D-112: El umbral causal protege contra toxicidad extrema (>0.85) sin asfixiar
         // los breakouts institucionales legítimos (VPIN entre 0.60 y 0.80).
         let effective_threshold = payload.causal_veto_threshold.clamp(0.60, 0.90);
-        let is_aligned_breakout = payload.book_imbalance.abs() > 0.40 && do_calculus_risk < 0.85;
+        let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25 || matches!(payload.horizon, TradingHorizon::Scalping)) && do_calculus_risk < 0.88;
         let is_veto = do_calculus_risk > effective_threshold && !is_aligned_breakout; 
         SeniorOpinion {
             role: self.role(),
@@ -365,8 +365,13 @@ impl SeniorAgent for SeniorAuditorInterno {
         SeniorRole::AuditorInterno
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        // Umbral de drawdown adaptativo: hasta 75% para micro-cuentas ($13 USD bootstrap)
-        let is_veto = payload.do_calculus_risk > 0.90 || payload.current_drawdown_pct > 0.75;
+        // Umbral de drawdown adaptativo alineado con SeniorRiesgo para evitar vetos contradictorios
+        let max_dd = match payload.horizon {
+            TradingHorizon::Continuous => 0.90,
+            TradingHorizon::Scalping => 0.95,
+            TradingHorizon::Swing => 0.85,
+        };
+        let is_veto = payload.do_calculus_risk > 0.92 || payload.current_drawdown_pct > max_dd;
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent

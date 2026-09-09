@@ -96,7 +96,7 @@ impl LiveEvolutionDaemon {
     /// el resto del daemon (umbrales, drift) sigue vivo.
     pub async fn run_online_learning_loop(&mut self) {
         let mut telemetry_reader =
-            Some(storage_engine::MmapTelemetryReader::new("data/telemetry.mmap"));
+            Some(storage_engine::MmapTelemetryReader::new(quantum_arena::paths::data_join("telemetry.mmap")));
 
         let mut pending_new_obs = 0;
 
