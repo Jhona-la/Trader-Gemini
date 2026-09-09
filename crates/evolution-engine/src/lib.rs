@@ -145,7 +145,8 @@ impl EvolutionEngine {
                     mutation_rate,
                     Some(pop_size),
                 );
-                opt.mean = current_alpha.to_vector(); // Center around current alpha
+                // D-405: Centroide en hipercubo canónico unitario [0.0, 1.0]^DIMENSION
+                opt.mean = current_alpha.to_normalized_vector();
                 opt.global_best = opt.mean.clone();
                 opt
             });
@@ -167,9 +168,9 @@ impl EvolutionEngine {
             let cma_samples = optimizer.sample_population(w, c1, c2);
             let mut population: Vec<Genotype> = Vec::with_capacity(pop_size);
 
-            // Generate genotypes from CMA-ES vectors
+            // Generate genotypes from CMA-ES vectors via proyección afín canónica (D-405)
             for vec in &cma_samples {
-                population.push(Genotype::from_vector(vec));
+                population.push(Genotype::from_normalized_vector(vec));
             }
             // FIX BLOQUEO #1: El Alpha ya es el centroide del CMA-ES (mean).
             // NO sobrescribimos la población manualmente para no destruir la matriz de covarianza

@@ -512,6 +512,29 @@ impl GodEngineCore {
                     eff_ask_qty,
                     0,
                 );
+
+                if coin_id == 0 {
+                    // D-404: Conectar actualización en caliente de arena.market_regime basada en microestructura y tendencia de BTC
+                    let btc_fe = &self.feature_engines[0];
+                    let btc_trend = if btc_fe.ema_slow > 0.0 {
+                        (btc_fe.ema_fast - btc_fe.ema_slow) / btc_fe.ema_slow
+                    } else {
+                        0.0
+                    };
+                    let btc_hurst = btc_fe.hurst.current();
+                    let new_regime = if btc_trend > 0.015 && btc_hurst > 0.52 {
+                        1u8 // BullRun
+                    } else if btc_trend < -0.015 && btc_hurst > 0.52 {
+                        2u8 // Crash
+                    } else if btc_hurst < 0.42 {
+                        3u8 // Chaotic / Mean Reverting
+                    } else {
+                        0u8 // Range
+                    };
+                    self.arena
+                        .market_regime
+                        .store(new_regime, Ordering::Relaxed);
+                }
             }
 
             if is_trade {
@@ -1455,7 +1478,13 @@ impl GodEngineCore {
             // (Antes: if-else — el NN solo opinaba si el forest NO existía.)
             let combined_tensor =
                 self.build_54d_tensor(coin_id, bid_qty, ask_qty, mid_price, omni_features);
-            if let Some(f) = &self.scalp_forest {
+            // D-406 & D-407: Soporte para modelo por activo ({sym}_SCALP) con fallback a BTCUSDT_SCALP
+            let sym = quantum_arena::symbol_registry::try_symbol(coin_id)
+                .unwrap_or_else(|| "BTCUSDT".to_string());
+            let coin_model_key = format!("{}_SCALP", sym);
+            let active_forest = crate::ml_inference::NanoForest::get_global(&coin_model_key)
+                .or_else(|| self.scalp_forest.clone());
+            if let Some(f) = &active_forest {
                 if let Some(p) = f.predict(&swing_feats) {
                     self.ensemble
                         .submit(crate::ensemble::ModelId::ScalpForest, p as f64);

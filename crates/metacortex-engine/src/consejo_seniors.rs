@@ -576,7 +576,8 @@ impl ConsejoDeliberacion {
         let mut vetoed_by = None;
         if !vetoes.is_empty() {
             let top_consensus = long_consensus_pct.max(short_consensus_pct);
-            if vetoes.len() == 1 && top_consensus >= 0.80 && final_signal.abs() >= 0.35 {
+            // D-342 & D-425: Quórum Bayesiano con escala alineada a la convicción continua del tensor (>= 0.28)
+            if vetoes.len() == 1 && top_consensus >= 0.80 && final_signal.abs() >= 0.28 {
                 final_signal *= 0.75; // Penalización del 25% por disenso de 1 senior
             } else {
                 vetoed_by = Some(vetoes[0].role);

@@ -1111,6 +1111,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // backtest→live que este auditor existe para detectar).
         let drift_auditor = audit_engine::drift_auditor::DriftAuditor::new(0.05);
 
+        // F4.8 — TrajectoryAuditor CONECTADO (era fantasma: solo sus tests lo
+        // usaban): track por posición viva de la coherencia entre la
+        // trayectoria esperada (magnitud/volumen/duración del genoma) y la
+        // REALIDAD tick a tick. Detecta VolumeStarvation, MomentumReversal y
+        // TimeExhaustion mientras la posición está abierta — no después, cuando
+        // el PnL ya se perdió.
+        let mut trajectory_auditor =
+            audit_engine::trajectory_auditor::TrajectoryAuditor::new(30);
+
         let instant_baseline = std::time::Instant::now();
         let local_ms_now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
         let epoch_baseline_ms = local_ms_now + ntp_offset_ms;
@@ -1305,6 +1314,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     is_buyer_maker,
                 );
 
+                // F4.8 — TRAYECTORIA VIVA: mientras la posición está abierta,
+                // cada tick evalúa coherencia esperado-vs-real. Divergencia =
+                // alerta ANTES de que el SL la cobre (VolumeStarvation /
+                // MomentumReversal / TimeExhaustion).
+                {
+                    let ts_traj = event_time as u64;
+                    for is_scalp in [true, false] {
+                        let status = trajectory_auditor.evaluate_tick(
+                            coin_id,
+                            is_scalp,
+                            current_price,
+                            qty * current_price,
+                            ts_traj,
+                        );
+                        if let audit_engine::trajectory_auditor::TrajectoryStatus::Divergent { reason, score } = status {
+                            telemetry_engine::telemetry!(
+                                "📉 [TRAYECTORIA] {} {} divergente ({:?}, score {:.2}) — la tesis se está rompiendo EN VIVO",
+                                parsed_sym,
+                                if is_scalp { "scalp" } else { "swing" },
+                                reason,
+                                score
+                            );
+                        }
+                    }
+                }
+
                 // --- 2. EXECUTE ORDERS ---
                 let current_phase: god_engine_core::orchestrator::SystemPhase;
                 let is_trading_allowed: bool;
@@ -1465,6 +1500,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .store(true, Ordering::SeqCst);
                             }
                         }
+
+                        // F4.8: cierra el track de trayectoria — el score final
+                        // resume cuán fiel fue la realidad a la tesis del entry.
+                        {
+                            let ts_exit = event_time as u64;
+                            let s_scalp = trajectory_auditor.record_exit(coin_id, true, current_price, ts_exit);
+                            let s_swing = trajectory_auditor.record_exit(coin_id, false, current_price, ts_exit);
+                            if let Some(s) = s_scalp.or(s_swing) {
+                                telemetry_engine::telemetry!(
+                                    "🎯 [TRAYECTORIA CIERRE] {} score fidelidad {:.2} (1.0 = la realidad siguió la tesis)",
+                                    parsed_sym, s
+                                );
+                            }
+                        }
                         let live_maker_fee = engine_real.arena.config.live_maker_fee.load(Ordering::Relaxed);
                         let live_taker_fee = engine_real.arena.config.live_taker_fee.load(Ordering::Relaxed);
                         let fee = (qty * current_price) * (live_maker_fee + live_taker_fee);
@@ -1574,6 +1623,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // D-108: Sincronización 1:1 OCO — Consumir directamente los targets calculados por RiskEngine
                         order_tp_price = if core_tp > 0.0 { core_tp } else if is_long { entry_price * 1.004 } else { entry_price * 0.996 };
                         order_sl_price = if core_sl > 0.0 { core_sl } else if is_long { entry_price * 0.997 } else { entry_price * 1.003 };
+
+                        // F4.8: nace el track de trayectoria — expectativas
+                        // REALES del genoma (magnitud=distancia al TP del core,
+                        // volumen=notional, duración=base_duration_ms evolucionable).
+                        {
+                            let expected_mag = ((core_tp - entry_price) / entry_price).abs();
+                            let dur_ms = engine_real
+                                .arena
+                                .config
+                                .base_duration_ms
+                                .load(Ordering::Relaxed)
+                                .max(1.0) as u64;
+                            trajectory_auditor.record_entry(
+                                coin_id,
+                                is_long,
+                                true,
+                                entry_price,
+                                event_time as u64,
+                                expected_mag,
+                                _qty.abs() * entry_price,
+                                dur_ms,
+                            );
+                        }
                     }
 
                     if let Some((final_is_long, _entry_price, final_qty, _, _)) = new_order {

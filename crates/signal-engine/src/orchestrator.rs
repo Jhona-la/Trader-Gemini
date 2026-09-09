@@ -315,9 +315,9 @@ impl TensorVoteOrchestrator {
         } else {
             0.5
         };
-        // D-101: Normalización continua sin double-squashing cuadrático
+        // D-101 & D-425: Normalización continua sin double-squashing cuadrático y alineada con el quórum bayesiano
         let raw_net = prob_long - prob_short;
-        let net_confidence = raw_net * (0.60 + 0.40 * effective_conviction);
+        let net_confidence = raw_net * (0.70 + 0.30 * effective_conviction);
         let net_confidence = if net_confidence.is_finite() {
             net_confidence
         } else {
@@ -392,15 +392,29 @@ impl TensorVoteOrchestrator {
 
     /// Evalúa de forma desacoplada ambos horizontes simultáneamente (Scalp y Swing) sin supresión mutua (BUG-643)
     pub fn evaluate_dual_consensus(&self) -> (TensorDecision, TensorDecision) {
-        let scalp_decision = self.evaluate_scalp_consensus();
-        let swing_decision = self.evaluate_swing_consensus();
+        self.evaluate_dual_consensus_for_coin(0, "BTCUSDT")
+    }
+
+    /// D-424: Consenso dual desacoplado escopado por activo real
+    pub fn evaluate_dual_consensus_for_coin(
+        &self,
+        coin_id: usize,
+        symbol: &str,
+    ) -> (TensorDecision, TensorDecision) {
+        let scalp_decision = self.evaluate_scalp_consensus_for_coin(coin_id, symbol);
+        let swing_decision = self.evaluate_swing_consensus_for_coin(coin_id, symbol);
         (scalp_decision, swing_decision)
     }
 
     /// Evalúa todas las estrategias preservando la señal de mayor convicción según su horizonte
     pub fn evaluate_consensus(&self) -> TensorDecision {
-        let scalp_decision = self.evaluate_scalp_consensus();
-        let swing_decision = self.evaluate_swing_consensus();
+        self.evaluate_consensus_for_coin(0, "BTCUSDT")
+    }
+
+    /// D-424: Consenso global preservando mayor convicción escopado por activo real
+    pub fn evaluate_consensus_for_coin(&self, coin_id: usize, symbol: &str) -> TensorDecision {
+        let scalp_decision = self.evaluate_scalp_consensus_for_coin(coin_id, symbol);
+        let swing_decision = self.evaluate_swing_consensus_for_coin(coin_id, symbol);
 
         if scalp_decision.signal != SignalType::Flat && swing_decision.signal != SignalType::Flat {
             // FIX #599 & #1542: Ponderar convicción Swing (1.2x) por persistencia temporal macro con finitud estricta

@@ -658,20 +658,10 @@ impl DarkAlphaEngine {
                     };
                 }
 
-                // 2. Auto Layer-Norm: normalización espacial sobre el vector normalizado por canal
-                let mut sum = 0.0;
-                for &v in &self.buf_scaled[..in_dim] {
-                    sum += v;
-                }
-                let mean = sum / (in_dim as f64);
-                let mut var = 0.0;
-                for &v in &self.buf_scaled[..in_dim] {
-                    let diff = v - mean;
-                    var += diff * diff;
-                }
-                let std = (var / (in_dim as f64)).sqrt().max(1e-4);
+                // D-411: Preservar Z-scores causales individuales por canal Welford acotados en [-3.0, 3.0]
+                // sin contaminación espacial transversal que comprima canales técnicos ante picos de volumen.
                 for v in self.buf_scaled[..in_dim].iter_mut() {
-                    *v = ((*v - mean) / std).clamp(-3.0, 3.0);
+                    *v = (*v).clamp(-3.0, 3.0);
                 }
             }
 
@@ -752,19 +742,10 @@ impl DarkAlphaEngine {
                 };
             }
 
-            let mut sum = 0.0;
-            for &v in &self.buf_scaled[..in_dim] {
-                sum += v;
-            }
-            let mean = sum / (in_dim as f64);
-            let mut var = 0.0;
-            for &v in &self.buf_scaled[..in_dim] {
-                let diff = v - mean;
-                var += diff * diff;
-            }
-            let std = (var / (in_dim as f64)).sqrt().max(1e-4);
+            // D-411: Preservar Z-scores causales individuales por canal Welford acotados en [-3.0, 3.0]
+            // sin contaminación espacial transversal que comprima canales técnicos ante picos de volumen.
             for v in self.buf_scaled[..in_dim].iter_mut() {
-                *v = ((*v - mean) / std).clamp(-3.0, 3.0);
+                *v = (*v).clamp(-3.0, 3.0);
             }
         }
 
@@ -848,19 +829,9 @@ impl DarkAlphaEngine {
                         };
                         scaled_features[i] = self.channel_normalizers[i].normalize(raw);
                     }
-                    let mut sum = 0.0;
-                    for &v in &scaled_features[..in_dim] {
-                        sum += v;
-                    }
-                    let mean = sum / (in_dim as f64);
-                    let mut var = 0.0;
-                    for &v in &scaled_features[..in_dim] {
-                        let diff = v - mean;
-                        var += diff * diff;
-                    }
-                    let std = (var / (in_dim as f64)).sqrt().max(1e-4);
+                    // D-411: Preservar Z-scores causales individuales por canal Welford acotados en [-3.0, 3.0]
                     for v in scaled_features[..in_dim].iter_mut() {
-                        *v = ((*v - mean) / std).clamp(-3.0, 3.0);
+                        *v = (*v).clamp(-3.0, 3.0);
                     }
                 }
 

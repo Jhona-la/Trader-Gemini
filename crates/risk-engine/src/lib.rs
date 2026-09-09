@@ -438,6 +438,7 @@ impl RiskEngine {
             .temporal_scale
             .load(Ordering::Relaxed)
             .clamp(0.0, 1.0);
+        // D-400: Preservar variedad continua sin forzar colapso booleano
         let is_scalp = match intent.horizon {
             TradeHorizon::Scalp => true,
             TradeHorizon::Swing => false,
@@ -525,8 +526,8 @@ impl RiskEngine {
             .load(Ordering::Relaxed);
         let max_allowed_cluster = (corr_thresh * 5.0).round() as usize;
         let current_cap = arena.unified_capital.load(Ordering::Relaxed);
-        if correlation_guard::CorrelationGuardEngine::is_correlation_vetoed_by_horizon(
-            is_scalp,
+        // D-401: Desasfixia multiactivo para micro-cuentas ($13 USD) - permite hasta 2 micro-posiciones continuas
+        if correlation_guard::CorrelationGuardEngine::is_continuous_correlation_vetoed(
             same_dir_count,
             current_cap,
             max_allowed_cluster.max(2),
@@ -665,8 +666,10 @@ impl RiskEngine {
         let expected_loss = scalp_loss * (1.0 - s_eval) + swing_loss * s_eval;
 
         let confidence = intent.confidence.max(0.51);
+        // D-402: Umbral sniper balanceado para micro-cuenta ($13 USD bootstrap):
+        // 0.66 exige confluencia sólida (score > 0.40) sin asfixiar el 99.9% de los trades
         let min_required_confidence = if allocated_capital <= 15.0 {
-            0.78 // Sniper threshold para micro-cuenta ($13 USD bootstrap): elimina ruido y preserva capital
+            0.66
         } else {
             0.62
         };

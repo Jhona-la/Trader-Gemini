@@ -94,16 +94,16 @@ pub struct AggTradeEvent {
 impl AggTradeEvent {
     #[inline(always)]
     pub fn parse_from_json(bytes: &[u8]) -> Option<Self> {
-        // En un aggTrade, extraemos p (price), q (qty) y m (is_buyer_maker)
-        let (price, i) = BookTickerEvent::extract_f64_from(bytes, 0, b"\"p\":\"")?;
-        let (qty, i) = BookTickerEvent::extract_f64_from(bytes, i, b"\"q\":\"")?;
+        // D-413: Búsqueda independiente por campo desde offset 0 (tolerante a permutación de claves JSON)
+        let (price, _) = BookTickerEvent::extract_f64_from(bytes, 0, b"\"p\":\"")?;
+        let (qty, _) = BookTickerEvent::extract_f64_from(bytes, 0, b"\"q\":\"")?;
 
         if !price.is_finite() || !qty.is_finite() || price <= 0.0 || qty < 0.0 {
             return None;
         }
 
-        let m_idx = memchr::memmem::find(&bytes[i..], b"\"m\":")?;
-        let after_m = &bytes[i + m_idx + 4..];
+        let m_idx = memchr::memmem::find(bytes, b"\"m\":")?;
+        let after_m = &bytes[m_idx + 4..];
         let first_non_ws = after_m.iter().position(|&b| b != b' ' && b != b'\t')?;
         let is_buyer_maker = after_m.get(first_non_ws) == Some(&b't'); // "t"rue or "f"alse
 
@@ -121,55 +121,105 @@ pub struct DepthEvent {
 }
 
 impl DepthEvent {
+    #[inline(always)]
+    fn extract_wall_sum(bytes: &[u8], key: &[u8]) -> f64 {
+        let key_idx = match memchr::memmem::find(bytes, key) {
+            Some(idx) => idx + key.len(),
+            None => return 0.0,
+        };
+        let slice = &bytes[key_idx..];
+        // Scan until matching closing bracket ]]
+        let end_idx = match memchr::memmem::find(slice, b"]]") {
+            Some(idx) => idx + 1,
+            None => slice.len(),
+        };
+        let arr_slice = &slice[..end_idx];
+
+        let mut total_qty = 0.0;
+        let mut cursor = 0;
+        while let Some(open_rel) = memchr::memchr(b'[', &arr_slice[cursor..]) {
+            let item_start = cursor + open_rel + 1;
+            let item_end = match memchr::memchr(b']', &arr_slice[item_start..]) {
+                Some(idx) => item_start + idx,
+                None => break,
+            };
+            let item_bytes = &arr_slice[item_start..item_end];
+            // Format: "price","qty"
+            if let Some(q1) = memchr::memchr(b'"', item_bytes) {
+                if let Some(q2) = memchr::memchr(b'"', &item_bytes[q1 + 1..]) {
+                    let after_price = q1 + 1 + q2 + 1;
+                    if let Some(q3) = memchr::memchr(b'"', &item_bytes[after_price..]) {
+                        let qty_start = after_price + q3 + 1;
+                        if let Some(q4) = memchr::memchr(b'"', &item_bytes[qty_start..]) {
+                            let qty_bytes = &item_bytes[qty_start..qty_start + q4];
+                            if let Ok(qty) = fast_float::parse(qty_bytes) {
+                                if qty > 0.0 && f64::is_finite(qty) {
+                                    total_qty += qty;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            cursor = item_end + 1;
+        }
+        total_qty
+    }
+
+    #[inline(always)]
     pub fn parse_from_json(bytes: &[u8]) -> Option<Self> {
-        // Para depth@100ms usamos serde_json porque solo llega 10 veces por segundo,
-        // a diferencia del tick que llega miles de veces por segundo.
-        // Binance @depth10 stream no manda "e":"depthUpdate", manda "bids" y "asks"
+        // D-422: Parser zero-allocation para DepthEvent sin serde_json::Value
         if memchr::memmem::find(bytes, b"\"bids\"").is_none()
             || memchr::memmem::find(bytes, b"\"asks\"").is_none()
         {
             return None;
         }
 
-        if let Ok(json) = serde_json::from_slice::<serde_json::Value>(bytes) {
-            let data = if json.get("data").is_some() && !json["data"].is_null() {
-                &json["data"]
+        let bid_wall = Self::extract_wall_sum(bytes, b"\"bids\":[");
+        let ask_wall = Self::extract_wall_sum(bytes, b"\"asks\":[");
+
+        if bid_wall > 0.0 || ask_wall > 0.0 {
+            Some(Self { bid_wall, ask_wall })
+        } else {
+            // Fallback en caso de espaciado no canónico (e.g. `"bids" : [`)
+            if let Ok(json) = serde_json::from_slice::<serde_json::Value>(bytes) {
+                let data = if json.get("data").is_some() && !json["data"].is_null() {
+                    &json["data"]
+                } else {
+                    &json
+                };
+                let mut b_wall = 0.0;
+                let mut a_wall = 0.0;
+                if let Some(bids) = data["bids"].as_array() {
+                    for bid in bids {
+                        if let Some(qty_str) = bid.get(1).and_then(|v| v.as_str()) {
+                            if let Ok(q) = qty_str.parse::<f64>() {
+                                if q.is_finite() && q > 0.0 {
+                                    b_wall += q;
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some(asks) = data["asks"].as_array() {
+                    for ask in asks {
+                        if let Some(qty_str) = ask.get(1).and_then(|v| v.as_str()) {
+                            if let Ok(q) = qty_str.parse::<f64>() {
+                                if q.is_finite() && q > 0.0 {
+                                    a_wall += q;
+                                }
+                            }
+                        }
+                    }
+                }
+                Some(Self {
+                    bid_wall: b_wall,
+                    ask_wall: a_wall,
+                })
             } else {
-                &json
-            };
-            let mut bid_wall = 0.0;
-            let mut ask_wall = 0.0;
-
-            if let Some(bids) = data["bids"].as_array() {
-                for bid in bids {
-                    if let Some(qty_val) = bid.get(1) {
-                        if let Some(qty_str) = qty_val.as_str() {
-                            if let Ok(qty) = qty_str.parse::<f64>() {
-                                if qty.is_finite() && qty > 0.0 {
-                                    bid_wall += qty;
-                                }
-                            }
-                        }
-                    }
-                }
+                None
             }
-            if let Some(asks) = data["asks"].as_array() {
-                for ask in asks {
-                    if let Some(qty_val) = ask.get(1) {
-                        if let Some(qty_str) = qty_val.as_str() {
-                            if let Ok(qty) = qty_str.parse::<f64>() {
-                                if qty.is_finite() && qty > 0.0 {
-                                    ask_wall += qty;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            return Some(Self { bid_wall, ask_wall });
         }
-        None
     }
 }
 

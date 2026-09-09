@@ -71,12 +71,19 @@ pub struct ReconciliationReport {
     /// Órdenes activas en el registro local SIN posición remota asociada
     /// (sospecha de fill perdido o cancel no confirmado).
     pub suspicious_active_orders: Vec<String>,
+    /// D-417: Órdenes abiertas en el exchange (GET /fapi/v1/openOrders) que no están en el registro local
+    /// (órdenes resting huérfanas en Binance tras reinicio o desconexión).
+    pub orphan_remote_orders: Vec<crate::order_types::OrderAck>,
     /// Resumen humano para telemetría/decisiones.
     pub summary: String,
 }
 
-/// Diff puro (testeable sin red): posición remota como fuente de verdad.
-pub fn reconcile(remote: &[PositionRiskEntry], registry: &OrderRegistry) -> ReconciliationReport {
+/// D-417: Reconciliación omnisciente completa incluyendo posiciones y órdenes resting abiertas en Binance.
+pub fn reconcile_with_orders(
+    remote: &[PositionRiskEntry],
+    remote_orders: &[crate::order_types::OrderAck],
+    registry: &OrderRegistry,
+) -> ReconciliationReport {
     let mut report = ReconciliationReport::default();
     report.open_positions = remote.iter().filter(|p| p.is_open()).cloned().collect();
 
@@ -119,10 +126,24 @@ pub fn reconcile(remote: &[PositionRiskEntry], registry: &OrderRegistry) -> Reco
         }
     }
 
+    // D-417: Detectar órdenes resting en Binance no reconocidas en el registro local
+    let local_active_ids: std::collections::HashSet<String> = registry
+        .active_orders()
+        .into_iter()
+        .map(|o| o.client_order_id)
+        .collect();
+
+    for ro in remote_orders {
+        if !local_active_ids.contains(&ro.client_order_id) {
+            report.orphan_remote_orders.push(ro.clone());
+        }
+    }
+
     report.summary = format!(
-        "reconciliación: {} posiciones abiertas en exchange, {} órdenes locales sospechosas [{}]",
+        "reconciliación: {} posiciones abiertas en exchange, {} órdenes locales sospechosas, {} órdenes remotas huérfanas [{}]",
         report.open_positions.len(),
         report.suspicious_active_orders.len(),
+        report.orphan_remote_orders.len(),
         report
             .open_positions
             .iter()
@@ -131,6 +152,11 @@ pub fn reconcile(remote: &[PositionRiskEntry], registry: &OrderRegistry) -> Reco
             .join(", ")
     );
     report
+}
+
+/// Diff puro (testeable sin red): posición remota como fuente de verdad.
+pub fn reconcile(remote: &[PositionRiskEntry], registry: &OrderRegistry) -> ReconciliationReport {
+    reconcile_with_orders(remote, &[], registry)
 }
 
 impl ReconciliationReport {

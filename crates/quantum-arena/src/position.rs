@@ -182,10 +182,11 @@ impl Position {
         // U-1 — encoding fiel del continuo: Continuous ocupa SU PROPIO slot
         // (2). Antes colisionaba con Swing (=1): una posición continua era
         // indistinguible de un swing al leer (la auditoría T-08/K-17).
+        // D-419: encoding canónico unificado: 0 = Continuous, 1 = Scalping, 2 = Swing
         let h_val = match horizon {
-            PositionHorizon::Scalping => 0,
-            PositionHorizon::Swing => 1,
-            PositionHorizon::Continuous => 2,
+            PositionHorizon::Continuous => 0,
+            PositionHorizon::Scalping => 1,
+            PositionHorizon::Swing => 2,
         };
         self.horizon.store(h_val, Ordering::Relaxed);
         self.entry_price.store(safe_price, Ordering::Relaxed);
@@ -207,9 +208,9 @@ impl Position {
     #[inline(always)]
     pub fn horizon(&self) -> PositionHorizon {
         match self.horizon.load(Ordering::Acquire) {
-            1 => PositionHorizon::Swing,
-            2 => PositionHorizon::Continuous,
-            _ => PositionHorizon::Scalping,
+            1 => PositionHorizon::Scalping,
+            2 => PositionHorizon::Swing,
+            _ => PositionHorizon::Continuous,
         }
     }
 

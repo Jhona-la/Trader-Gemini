@@ -25,12 +25,18 @@ impl LakehouseMmap {
             .read(true)
             .write(true)
             .create(true)
-            .truncate(true)
             .open(path)
             .map_err(|e| format!("Failed to open mmap file: {}", e))?;
 
-        file.set_len(capacity as u64)
-            .map_err(|e| format!("Failed to set file size: {}", e))?;
+        if let Ok(metadata) = file.metadata() {
+            if (metadata.len() as usize) < capacity {
+                file.set_len(capacity as u64)
+                    .map_err(|e| format!("Failed to set file size: {}", e))?;
+            }
+        } else {
+            file.set_len(capacity as u64)
+                .map_err(|e| format!("Failed to set file size: {}", e))?;
+        }
 
         let mmap = unsafe {
             MmapOptions::new()
@@ -57,7 +63,7 @@ impl LakehouseMmap {
         })
     }
 
-    /// Escribe un tensor float al lakehouse crudo
+    /// Escribe un tensor float al lakehouse crudo con rotación circular lock-free
     #[inline(always)]
     pub fn append_tensor(
         &self,
@@ -68,15 +74,32 @@ impl LakehouseMmap {
         // Calculate needed bytes
         // 8 bytes (timestamp) + 4 bytes (features len) + 4 bytes (probs len) + arrays
         let needed = 8 + 4 + 4 + (features.len() * 8) + (probabilities.len() * 8);
-
-        let current_offset = self.offset.fetch_add(needed, Ordering::SeqCst);
-        if current_offset + needed > self.capacity {
-            return Err("Lakehouse Mmap is full. Need rotation.");
+        if needed > self.capacity {
+            return Err("Tensor size exceeds entire lakehouse mmap capacity");
         }
+
+        // D-409: Rotación circular lock-free sin asfixia permanente
+        let mut current_offset = self.offset.load(Ordering::Relaxed);
+        let write_offset = loop {
+            let next_offset = if current_offset + needed > self.capacity {
+                0
+            } else {
+                current_offset
+            };
+            match self.offset.compare_exchange_weak(
+                current_offset,
+                next_offset + needed,
+                Ordering::SeqCst,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break next_offset,
+                Err(actual) => current_offset = actual,
+            }
+        };
 
         // Get mutable reference to the slice in memory without locking (since offset is unique to this caller)
         let ptr = self.mmap.as_ptr() as *mut u8;
-        let mut cursor = current_offset;
+        let mut cursor = write_offset;
 
         unsafe {
             // Write timestamp

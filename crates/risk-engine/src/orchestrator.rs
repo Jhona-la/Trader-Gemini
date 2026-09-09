@@ -110,9 +110,8 @@ impl<'a> PortfolioOrchestrator<'a> {
         if regime == crate::regime::MarketRegime::Crash && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.
         }
-        if regime == crate::regime::MarketRegime::BullRun && !intent_is_long {
-            return false; // Bloqueo absoluto de cortos en pleno Bull Run.
-        }
+        // D-403: Permitir operaciones Short durante BullRun (scalping contratendencia con stops ceñidos)
+        // en cumplimiento del mandato supremo: operar Long y Short simétricamente.
 
         let mut total_long_margin = 0.0;
         let mut total_short_margin = 0.0;

@@ -1702,6 +1702,43 @@ impl SuperGenotype {
         vec
     }
 
+    /// Convierte el genoma a un vector normalizado en el hipercubo canónico unitario [0.0, 1.0]^DIMENSION.
+    /// D-405: Erradica el desfase de 9 órdenes de magnitud en optimizadores gaussianos / CMA-ES.
+    pub fn to_normalized_vector(&self) -> Vec<f64> {
+        let raw = self.to_vector();
+        let lo = Self::get_lower_bounds();
+        let hi = Self::get_upper_bounds();
+        let mut norm = Vec::with_capacity(raw.len());
+        for i in 0..raw.len() {
+            let span = hi[i] - lo[i];
+            let val = if span > 1e-12 {
+                ((raw[i] - lo[i]) / span).clamp(0.0, 1.0)
+            } else {
+                0.5
+            };
+            norm.push(val);
+        }
+        norm
+    }
+
+    /// Reconstruye el genoma a partir de un vector unitario normalizado [0.0, 1.0]^DIMENSION.
+    /// D-405: Aplica mapeo afín exacto x = lo + u * (hi - lo) previo a la reconstrucción física.
+    pub fn from_normalized_vector(u: &[f64]) -> Self {
+        let lo = Self::get_lower_bounds();
+        let hi = Self::get_upper_bounds();
+        let mut raw = Vec::with_capacity(u.len());
+        for i in 0..u.len() {
+            let span = hi[i] - lo[i];
+            let u_clamped = if u[i].is_finite() {
+                u[i].clamp(0.0, 1.0)
+            } else {
+                0.5
+            };
+            raw.push(lo[i] + u_clamped * span);
+        }
+        Self::from_vector(&raw)
+    }
+
     pub fn from_vector(vec: &[f64]) -> Self {
         // R1.1 — FUENTE ÚNICA DE VERDAD: los clamps se leen de los arrays de
         // bounds (las mismas cotas que GenomeStore::validate usa como gate y

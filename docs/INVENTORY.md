@@ -12,10 +12,10 @@
 | quantum-arena | 3.477 | 18 | Arena lock-free, genome, símbolos, estado global | VIVO (hot-path) |
 | data-pipeline | 2.636 | 23 | WS, multiplexers, parser, macro/onchain feeds, api_client | VIVO |
 | execution-engine | 2.529 | 12 | Executor, cliente REST, router, shadow, simulator | VIVO (crítico F1) |
-| metacortex-engine | 2.100 | 16 | Consejo de seniors, sistema inmune, templates evolutivas | PARCIAL (revisar conexiones F4.8) |
+| metacortex-engine | 2.100 | 16 | Consejo de seniors, sistema inmune, templates evolutivas | VIVO — ConsejoDeliberacion en el core (F4.8 verificado) |
 | telemetry-server | 1.984 | 13 | Servidor warp, Telegram bot, flight recorder | VIVO |
 | evolution-engine | 1.877 | 12 | Evolución, polars_evolver, online_daemon | VIVO (rediseño F4.5) |
-| audit-engine | 1.100 | 11 | Drift/trajectory auditors | MAYORMENTE NO CONECTADO (F4.8) |
+| audit-engine | 1.100 | 11 | Drift/trajectory auditors | VIVO — DriftAuditor arma kill-switch (E-03); TrajectoryAuditor track por posición (F4.8) |
 | feature-engine | 1.075 | 15 | Features técnicas, correlación | VIVO |
 | risk-engine | 875 | 11 | Kelly dual, DD dinámico, EV gate | VIVO (recalibrar F5.1) |
 | storage-engine | 809 | 7 | Lakehouse (record_tensor), WAL | VIVO (expandir F2.5) |
@@ -23,13 +23,13 @@
 | os-guardian | 686 | 9 | Prioridad CPU, afinidad, auditoría memoria | VIVO (adaptar F5.3) |
 | dark-alpha-engine | 571 | 3 | MLP swing 54→64→32→1 + Adam | VIVO (paridad F4.1) |
 | backtest-engine | 499 | 2 | Backtest sintético + vectorizado | A REEMPLAZAR (F3) |
-| signal-engine | 447 | 14 | TurboScalp, TensorVote (huérfanos) | PARCIAL (F4.8) |
+| signal-engine | 447 | 14 | TurboScalp, TensorVote (huérfanos) | VIVO — 14 módulos de física, TODOS con consumidores (F4.8) |
 | data-ingest | 345 | 4 | Ingesta histórica | VIVO |
 | graph-architecture | 267 | 2 | Análisis sintáctico del grafo de llamadas | HERRAMIENTA F4.8 |
 | telemetry-engine | 232 | 3 | Macros de telemetría | VIVO |
-| omniscient-registry | 205 | 2 | Registro de capacidades | NO CONECTADO (F4.8) |
-| phase-runner | 150 | 2 | Fases (stub sleep 10ms) | STUB (F7.1 lo reemplaza) |
-| graph-4d | 76 | 1 | Grafo 4D ligero | NO CONECTADO (F6.4) |
+| omniscient-registry | 205 | 2 | Registro de capacidades | VIVO — arena.registry lee/escribe pesos hebbianos por símbolo |
+| phase-runner | 150 | 2 | Fases (stub sleep 10ms) | VIVO — audit-engine main + multi_coin_simulator (auditoría estática) |
+| graph-4d | 76 | 1 | Grafo 4D ligero | VIVO — audit-engine main (grafo del workspace) |
 | flight-recorder | 14 | 1 | Shim | VIVO |
 | **src/ (raíz)** | **7.812** | **63** | 20 binarios + lib auxiliares | MIXTO (censo §3) |
 

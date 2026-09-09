@@ -82,26 +82,35 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline, prev_bullish: bool) -> [
     };
 
     let spread_half = (o * 0.000075).max(0.00001); // 0.75 bps = 1.5 bps total spread
-    let (bid_v, ask_v) = if prev_bullish {
-        (v * 0.54, v * 0.46)
-    } else {
-        (v * 0.46, v * 0.54)
-    };
 
     // R2.1: Trayectoria intra-vela sin coreografía rígida (50% high-first / 50% low-first)
     let high_first =
         ((kline.open_time.wrapping_mul(0x9E3779B97F4A7C15) ^ (coin_id as u64)) & 1) == 0;
     let (p2, p3) = if high_first { (h, l) } else { (l, h) };
-    let (b2, a2) = if high_first {
-        (bid_v * 1.05, ask_v * 0.95)
-    } else {
-        (bid_v * 0.95, ask_v * 1.05)
+
+    // D-415: Modelo causal Lee-Ready sin sesgo artificial fijo 54/46.
+    // El volumen comprador/vendedor se deriva del delta de precio real entre sub-ticks contiguos.
+    let compute_volumes = |p_curr: f64, p_prev: f64, vol: f64| -> (f64, f64) {
+        let delta = p_curr - p_prev;
+        let norm_delta = if spread_half > 0.0 {
+            (delta / (spread_half * 4.0)).clamp(-0.25, 0.25)
+        } else {
+            0.0
+        };
+        let b = vol * (0.50 + norm_delta);
+        let a = vol * (0.50 - norm_delta);
+        (b.max(0.001), a.max(0.001))
     };
-    let (b3, a3) = if high_first {
-        (bid_v * 0.95, ask_v * 1.05)
+
+    let p_prev0 = if prev_bullish {
+        o - spread_half
     } else {
-        (bid_v * 1.05, ask_v * 0.95)
+        o + spread_half
     };
+    let (b0, a0) = compute_volumes(o, p_prev0, v);
+    let (b2, a2) = compute_volumes(p2, o, v);
+    let (b3, a3) = compute_volumes(p3, p2, v);
+    let (b4, a4) = compute_volumes(c, p3, v);
 
     [
         TickEvent {
@@ -109,32 +118,32 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline, prev_bullish: bool) -> [
             timestamp: kline.open_time,
             bid_price: (o - spread_half).max(1e-6),
             ask_price: o + spread_half,
-            bid_qty: bid_v.max(0.001),
-            ask_qty: ask_v.max(0.001),
+            bid_qty: b0,
+            ask_qty: a0,
         },
         TickEvent {
             coin_id,
             timestamp: kline.open_time + step,
             bid_price: (p2 - spread_half).max(1e-6),
             ask_price: p2 + spread_half,
-            bid_qty: b2.max(0.001),
-            ask_qty: a2.max(0.001),
+            bid_qty: b2,
+            ask_qty: a2,
         },
         TickEvent {
             coin_id,
             timestamp: kline.open_time + step * 2,
             bid_price: (p3 - spread_half).max(1e-6),
             ask_price: p3 + spread_half,
-            bid_qty: b3.max(0.001),
-            ask_qty: a3.max(0.001),
+            bid_qty: b3,
+            ask_qty: a3,
         },
         TickEvent {
             coin_id,
             timestamp: kline.open_time + step * 3,
             bid_price: (c - spread_half).max(1e-6),
             ask_price: c + spread_half,
-            bid_qty: bid_v.max(0.001),
-            ask_qty: ask_v.max(0.001),
+            bid_qty: b4,
+            ask_qty: a4,
         },
     ]
 }
@@ -419,11 +428,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 let is_buyer_maker = real_obi < 0.0;
+                // D-420: Desacoplamiento estricto de eventos @depth y @trade con paridad WebSocket en vivo
+                // 1) Actualización de L2 Depth & OFI en el order book
+                let _ = engine.process_event(
+                    tick.coin_id,
+                    false,           // is_trade: false en frame de profundidad
+                    is_kline_closed, // is_kline_closed
+                    true,            // is_depth: true para actualizar L2, OFI y ATR
+                    mid_price,
+                    0.0,
+                    tick.bid_price,
+                    tick.ask_price,
+                    tick.bid_qty,
+                    tick.ask_qty,
+                    real_obi,
+                    0.0,
+                    tick.timestamp,
+                    false,
+                    &omni,
+                    is_buyer_maker,
+                );
+
+                // 2) Procesamiento de transacción agresiva y evaluación de estrategias
                 let (new_order, closed_order) = engine.process_event(
                     tick.coin_id,
-                    true,            // is_trade: true para evaluar flujo de trades
-                    is_kline_closed, // is_kline_closed: true al cerrar vela de 1m
-                    true,            // is_depth: true para actualizar orderflow, OFI, ATR y market data
+                    true,  // is_trade: true para evaluar estrategias y ejecución
+                    false, // is_kline_closed: ya consumido
+                    false, // is_depth: false
                     mid_price,
                     total_qty,
                     tick.bid_price,

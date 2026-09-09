@@ -97,10 +97,12 @@ impl ConformalPredictor {
             .temporal_scale
             .load(Ordering::Relaxed)
             .clamp(0.0, 1.0);
+        // D-412: Variedad continua suave; si se invoca con polaridad discreta (is_scalp),
+        // se modula el continuo hacia el polo correspondiente (scalp <= 0.20, swing >= 0.80)
         let s = if is_scalp {
-            0.0
+            temporal_scale.min(0.20)
         } else {
-            temporal_scale.max(0.5)
+            temporal_scale.max(0.80)
         };
 
         let scalp_tp_mult = config.tp_rr_ratio_btc.load(Ordering::Relaxed);
@@ -129,6 +131,64 @@ impl ConformalPredictor {
         };
 
         // D-337: Interpolación continua suave en homotopía s in [0, 1]
+        let eff_tp_mult = safe_scalp_tp * (1.0 - s) + safe_swing_tp * s;
+        let eff_sl_mult = safe_scalp_sl * (1.0 - s) + safe_swing_sl * s;
+
+        let raw_tp = (base_vol * eff_tp_mult).clamp(0.001, 0.50);
+        let raw_sl = (base_vol * eff_sl_mult).clamp(0.001, 0.50);
+        (raw_tp, raw_sl)
+    }
+
+    /// D-412: Cálculo de TP/SL sobre la variedad continua pura s in [0, 1] sin polaridad discreta
+    #[inline(always)]
+    pub fn compute_continuous_tp_sl(
+        &self,
+        atr_pct: f64,
+        maker_fee: f64,
+        taker_fee: f64,
+        config: &quantum_arena::config::QuantumConfig,
+    ) -> (f64, f64) {
+        let safe_atr = if atr_pct.is_finite() && atr_pct > 0.0 {
+            atr_pct
+        } else {
+            0.005
+        };
+        let q = self.compute_conformal_quantile();
+        let base_vol = safe_atr.max(if q.is_finite() && q > 0.0 { q } else { 0.003 });
+
+        let _ = maker_fee + taker_fee;
+
+        use std::sync::atomic::Ordering;
+        let s = config
+            .temporal_scale
+            .load(Ordering::Relaxed)
+            .clamp(0.0, 1.0);
+
+        let scalp_tp_mult = config.tp_rr_ratio_btc.load(Ordering::Relaxed);
+        let safe_scalp_tp = if scalp_tp_mult.is_finite() && scalp_tp_mult > 0.0 {
+            scalp_tp_mult.max(1.0)
+        } else {
+            1.5
+        };
+        let swing_tp_mult = config.swing_trail_atr_mult_base.load(Ordering::Relaxed);
+        let safe_swing_tp = if swing_tp_mult.is_finite() && swing_tp_mult > 0.0 {
+            swing_tp_mult.max(2.0)
+        } else {
+            3.0
+        };
+
+        let sl_mult = config.sl_atr_multiplier.load(Ordering::Relaxed);
+        let safe_scalp_sl = if sl_mult.is_finite() && sl_mult > 0.0 {
+            sl_mult.max(0.5)
+        } else {
+            1.0
+        };
+        let safe_swing_sl = if sl_mult.is_finite() && sl_mult > 0.0 {
+            sl_mult.max(1.0)
+        } else {
+            1.5
+        };
+
         let eff_tp_mult = safe_scalp_tp * (1.0 - s) + safe_swing_tp * s;
         let eff_sl_mult = safe_scalp_sl * (1.0 - s) + safe_swing_sl * s;
 

@@ -29,9 +29,17 @@ impl BinanceStreamer {
         }
     }
 
-    pub async fn start<F>(&self, mut callback: F)
+    pub async fn start<F>(&self, callback: F)
     where
         F: FnMut(BookTickerEvent) + Send + 'static,
+    {
+        self.start_with_trade_handler(callback, |_| {}).await;
+    }
+
+    pub async fn start_with_trade_handler<F, T>(&self, mut callback: F, mut trade_callback: T)
+    where
+        F: FnMut(BookTickerEvent) + Send + 'static,
+        T: FnMut(crate::parser::AggTradeEvent) + Send + 'static,
     {
         // Latency Accelerator: Endpoint Pool (AWS, Tokyo routing emulation)
         let endpoints = if self.is_testnet {
@@ -307,7 +315,7 @@ impl BinanceStreamer {
                                                             if consecutive_anomalies < 3
                                                                 || is_extreme_glitch
                                                             {
-                                                                println!("🛡️ [BAYESIAN STASIS] Anomalía temporal ({}/3) en {}: Precio {}, Media {:.4}, Umbral {:.4}", consecutive_anomalies, self.symbol, current_price, mean, dynamic_threshold);
+                                                                // D-423: Erradicado println! bloqueante en hot path para garantizar latencia determinista en nanosegundos
                                                                 continue; // Glitch aislado, descartar
                                                             } else {
                                                                 // Transición de régimen de precio confirmada: resetear contador y aceptar
@@ -367,6 +375,8 @@ impl BinanceStreamer {
                                                 agg_event.qty,
                                             );
                                             self.arena.increment_tick();
+                                            // D-421: Notificar callback ante transacciones AggTrade
+                                            trade_callback(agg_event);
                                         }
                                         // Finalmente, intentar parsear como DepthEvent
                                         else if let Some(depth_event) =

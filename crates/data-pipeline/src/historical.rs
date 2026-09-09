@@ -278,11 +278,28 @@ impl HistoricalLoader {
                             let base_depth = ((batch_buy_vol + batch_sell_vol) * 0.25).max(1.0);
                             let b_qty = batch_buy_vol + base_depth;
                             let a_qty = batch_sell_vol + base_depth;
+                            let raw_bid = batch_last_price - spread / 2.0;
+                            let raw_ask = batch_last_price + spread / 2.0;
+                            let bid_price = if tick_size > 0.0 {
+                                (raw_bid / tick_size).floor() * tick_size
+                            } else {
+                                raw_bid
+                            };
+                            let ask_price = if tick_size > 0.0 {
+                                let q_ask = (raw_ask / tick_size).ceil() * tick_size;
+                                if q_ask <= bid_price {
+                                    bid_price + tick_size
+                                } else {
+                                    q_ask
+                                }
+                            } else {
+                                raw_ask
+                            };
                             all_ticks.push(quantum_arena::TickEvent {
                                 coin_id,
                                 timestamp: batch_start,
-                                bid_price: batch_last_price - spread / 2.0,
-                                ask_price: batch_last_price + spread / 2.0,
+                                bid_price,
+                                ask_price,
                                 bid_qty: b_qty,
                                 ask_qty: a_qty,
                             });
@@ -311,11 +328,28 @@ impl HistoricalLoader {
                 let base_depth = ((batch_buy_vol + batch_sell_vol) * 0.25).max(1.0);
                 let b_qty = batch_buy_vol + base_depth;
                 let a_qty = batch_sell_vol + base_depth;
+                let raw_bid = batch_last_price - spread / 2.0;
+                let raw_ask = batch_last_price + spread / 2.0;
+                let bid_price = if tick_size > 0.0 {
+                    (raw_bid / tick_size).floor() * tick_size
+                } else {
+                    raw_bid
+                };
+                let ask_price = if tick_size > 0.0 {
+                    let q_ask = (raw_ask / tick_size).ceil() * tick_size;
+                    if q_ask <= bid_price {
+                        bid_price + tick_size
+                    } else {
+                        q_ask
+                    }
+                } else {
+                    raw_ask
+                };
                 all_ticks.push(quantum_arena::TickEvent {
                     coin_id,
                     timestamp: batch_start,
-                    bid_price: batch_last_price - spread / 2.0,
-                    ask_price: batch_last_price + spread / 2.0,
+                    bid_price,
+                    ask_price,
                     bid_qty: b_qty,
                     ask_qty: a_qty,
                 });

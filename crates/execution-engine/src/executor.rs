@@ -343,7 +343,7 @@ impl OrderExecutor {
             return Ok(true);
         }
         let timestamp = self.get_synced_timestamp();
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
 
         // 1) Modo actual (GET firmado)
         let mut buf = ZeroAllocBuffer::new();
@@ -410,7 +410,7 @@ impl OrderExecutor {
             return Ok((0, 0));
         }
         let timestamp = self.get_synced_timestamp();
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
 
         // Modo de la cuenta (dual=hedge) — determina si se envía positionSide.
         let mut buf = ZeroAllocBuffer::new();
@@ -621,7 +621,7 @@ impl OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -892,7 +892,7 @@ impl OrderExecutor {
 
         // Firmar
         let mut sig_buf = [0u8; 64];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(&signed_query, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) }.to_string();
 
@@ -1103,7 +1103,7 @@ impl ExecutionProvider for OrderExecutor {
                     .to_str()
                     .unwrap_or("")
                     .to_string();
-                let api_secret = self.api_secret.load().to_string();
+                let api_secret = self.api_secret.load();
                 let time_in_force_opt = if payload.time_in_force.is_empty() {
                     None
                 } else {
@@ -1288,7 +1288,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
 
         // WS Execution Routing (Zero-TLS overhead)
         if self.ws.is_connected() {
@@ -1412,7 +1412,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
 
         // WS Execution Routing (Zero-TLS overhead)
         if self.ws.is_connected() {
@@ -1614,7 +1614,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1694,7 +1694,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1763,7 +1763,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1839,7 +1839,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -1947,7 +1947,10 @@ impl ExecutionProvider for OrderExecutor {
         tp_buf.push_str("&timestamp=");
         tp_buf.push_u64(timestamp);
 
-        let api_secret = self.api_secret.load().to_string();
+        let mut confirmed_sl_id: Option<String> = None;
+        let mut confirmed_tp_id: Option<String> = None;
+
+        let api_secret = self.api_secret.load();
 
         let mut sig_buf_sl = [0u8; 64];
         let sl_payload = &sl_buf.as_str()[sl_payload_start..];
@@ -1969,9 +1972,11 @@ impl ExecutionProvider for OrderExecutor {
 
         if let Ok(limits) = &sl_res {
             self.update_limits(limits);
+            confirmed_sl_id = Some(format!("{}_SL", base_client_id));
         }
         if let Ok(limits) = &tp_res {
             self.update_limits(limits);
+            confirmed_tp_id = Some(format!("{}_TP", base_client_id));
         }
 
         // F1.9 — FIX OCO PARCIAL: antes, una pierna fallida devolvía Ok(())
@@ -1992,7 +1997,7 @@ impl ExecutionProvider for OrderExecutor {
             // timestamp NTP, nuevo clientOrderId (sufijo _R), nueva firma
             // HMAC. Mismo patrón que el flatten retry (línea ~519).
             let ts_retry = self.get_synced_timestamp();
-            let retry_secret = self.api_secret.load().to_string();
+            let retry_secret = self.api_secret.load();
 
             if sl_down {
                 let mut rb = ZeroAllocBuffer::new();
@@ -2020,6 +2025,7 @@ impl ExecutionProvider for OrderExecutor {
                 sl_res = self.client.execute_order_payload(rb.as_str()).await;
                 if let Ok(limits) = &sl_res {
                     self.update_limits(limits);
+                    confirmed_sl_id = Some(format!("{}_SLR", base_client_id));
                 }
             }
             if tp_down {
@@ -2048,6 +2054,7 @@ impl ExecutionProvider for OrderExecutor {
                 tp_res = self.client.execute_order_payload(rb.as_str()).await;
                 if let Ok(limits) = &tp_res {
                     self.update_limits(limits);
+                    confirmed_tp_id = Some(format!("{}_TPR", base_client_id));
                 }
             }
         }
@@ -2056,15 +2063,23 @@ impl ExecutionProvider for OrderExecutor {
             return Err("Ambas órdenes OCO fallaron.".to_string());
         }
         if sl_res.is_err() || tp_res.is_err() {
-            let good_id = if sl_res.is_ok() {
-                format!("{}_SL", base_client_id)
-            } else {
-                format!("{}_TP", base_client_id)
-            };
-            let _ = self.cancel_order(symbol, &good_id).await;
+            // D-416: Cancelar el client_order_id exacto que fue confirmado en Binance (sea _SL, _SLR, _TP o _TPR)
+            let mut cancelled_ids = Vec::new();
+            if sl_res.is_ok() {
+                if let Some(ref sl_id) = confirmed_sl_id {
+                    let _ = self.cancel_order(symbol, sl_id).await;
+                    cancelled_ids.push(sl_id.clone());
+                }
+            }
+            if tp_res.is_ok() {
+                if let Some(ref tp_id) = confirmed_tp_id {
+                    let _ = self.cancel_order(symbol, tp_id).await;
+                    cancelled_ids.push(tp_id.clone());
+                }
+            }
             return Err(format!(
-                "OCO PARCIAL: pierna fallida tras retry; pierna buena {} cancelada. Posición SIN protección — aplanar o alertar.",
-                good_id
+                "OCO PARCIAL: pierna fallida tras retry; pierna(s) confirmada(s) [{}] cancelada(s). Posición SIN protección — aplanar o alertar.",
+                cancelled_ids.join(", ")
             ));
         }
         Ok(())
@@ -2102,7 +2117,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -2144,7 +2159,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -2219,7 +2234,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -2271,7 +2286,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -2332,7 +2347,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -2387,7 +2402,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load().to_string();
+        let api_secret = self.api_secret.load();
         sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
@@ -2423,7 +2438,7 @@ impl ExecutionProvider for OrderExecutor {
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
-        sign_payload_to_buffer(payload, &self.api_secret.load().to_string(), &mut sig_buf);
+        sign_payload_to_buffer(payload, &self.api_secret.load(), &mut sig_buf);
         let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
         buf.push_str("&signature=");
         buf.push_str(signature);
