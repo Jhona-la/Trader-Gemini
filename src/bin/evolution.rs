@@ -520,6 +520,44 @@ fn main() {
     );
     println!("============================================================");
 
+    // X-014 (REHAB-2): el campeón del SA se promueve por el EMBUDO del
+    // almacén de genomas (raíz demo por defecto — circuito vivo: god_engine
+    // demo lo recarga vía refresh_models cada 1000 ticks). Antes: 8 campos
+    // exportados a data/dynamic_config.json que NADIE leía en runtime — el
+    // campeón moría con el proceso. Gate de honestidad: solo se promueve si
+    // el OOS es positivo NETO (jamás promover un perdedor de walk-forward).
+    if oos_net_pnl > 0.0 && oos_trades >= 15.0 {
+        match quantum_arena::genome_store::GenomeEnvelope::promote(
+            best_config.clone(),
+            "sa_evolver",
+            &format!(
+                "SA campeón: IS {:+.2}% / OOS {:+.2}% neto, WR OOS {:.1}%, {} trades OOS, sharpe IS {:.2}",
+                (best_is_net_pnl / initial_capital) * 100.0,
+                (oos_net_pnl / initial_capital) * 100.0,
+                oos_net_win_rate * 100.0,
+                oos_trades as u64,
+                best_is_sharpe
+            ),
+        ) {
+            Ok(env) => println!(
+                "🧬 ✅ [X-014] Campeón SA promovido al almacén (generación {}, fuente {}, raíz {}) — god_engine demo lo absorberá en vivo.",
+                env.generation,
+                env.source,
+                if std::env::var("TG_GENOME_ENV").unwrap_or_default().trim().is_empty() {
+                    "demo (default)"
+                } else {
+                    "explícita"
+                }
+            ),
+            Err(e) => println!("❌ [X-014] Promoción al almacén falló: {}", e),
+        }
+    } else {
+        println!(
+            "🛡️ [X-014] Campeón NO promovido: OOS neto {:+.4} ({} trades) — walk-forward insuficiente o negativo.",
+            oos_net_pnl, oos_trades as u64
+        );
+    }
+
     // Read existing config to preserve fields we don't optimize (symbols, leverage)
     let existing_json: serde_json::Value = std::fs::read_to_string("data/dynamic_config.json")
         .ok()

@@ -70,3 +70,6 @@ Thumbs.db
 
 # Sesión ZCode (planes internos del agente)
 .zcode/
+
+# Historial del almacén de genomas: ilimitado, runtime-only (active.json SÍ se trackea)
+config_dir/genomes/*/history/

@@ -24,20 +24,27 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// que termina promueve su overfit al MISMO active.json del que bootea
 /// producción (contaminación bidireccional silenciosa).
 ///
-/// Variable TG_GENOME_ENV: "backtest" | "demo" | "prod". Por defecto (ausente
-/// o vacía) se conserva la ruta compartida histórica para no romper estados
-/// existentes — los lanzadores DEBEN fijarla.
+/// Variable TG_GENOME_ENV: "backtest" | "demo" | "prod".
 ///
-/// Promoción cruzada deliberada (p.ej. promover el campeón de backtest a
-/// producción): exportar TG_GENOME_ENV=prod en el proceso promotor, o copiar
-/// el envelope con `promote` desde el entorno destino — nunca implícitamente.
+/// X-001 (REHAB-2) — CIRCUITO VIVO EN DEMO: el default de procesos SIN la
+/// variable (evolvers standalone) ahora es **demo** — NO la raíz compartida.
+/// Antes: los evolvers promovían a la raíz compartida que producción jamás
+/// releía (trapdoor de un sentido: herencia única al primer arranque,
+/// promociones invisibles para siempre — hallazgo X-001). Ahora:
+///   - evolver/evolution/polars (sin env) → promueven a `demo`.
+///   - god_engine demo (TG_GENOME_ENV=demo) → refresh_models() releé el
+///     almacén demo cada 1000 ticks ⇒ circuito evolución→demo CERRADO y VIVO
+///     en el entorno de certificación.
+///   - prod sigue siendo promoción EXPLÍCITA humana (misma filosofía que
+///     MAINNET_ARMED): exportar TG_GENOME_ENV=prod en el proceso promotor.
+///   - la raíz compartida queda como patrimonio de SOLO LECTURA (fallback 2).
 fn env_root() -> String {
     match std::env::var("TG_GENOME_ENV")
         .ok()
         .filter(|v| !v.trim().is_empty())
     {
         Some(env) => format!("config_dir/genomes/{}", env.trim().to_lowercase()),
-        None => "config_dir/genomes".to_string(),
+        None => "config_dir/genomes/demo".to_string(),
     }
 }
 
@@ -49,19 +56,12 @@ fn history_dir() -> String {
     format!("{}/history", env_root())
 }
 
-/// Espejo legacy: el loader viejo y el watcher leen esta ruta. Solo se
-/// escribe/lee en el entorno compartido (sin TG_GENOME_ENV) para no cruzar
-/// linajes entre entornos.
+/// Espejo legacy: el loader viejo lee esta ruta en arranques fríos.
+/// X-001 (REHAB-2): se escribe SIEMPRE — es una VISTA de compatibilidad, no
+/// un linaje. Antes solo en entorno compartido: con default demo, los
+/// loaders legacy habrían quedado congelados en el último estado compartido.
 fn legacy_mirror() -> Option<String> {
-    if std::env::var("TG_GENOME_ENV")
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .is_some()
-    {
-        None
-    } else {
-        Some("config_dir/genotypes/active_genome.json".to_string())
-    }
+    Some("config_dir/genotypes/active_genome.json".to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,9 +128,13 @@ impl GenomeEnvelope {
             let bt_path = "config_dir/genomes/backtest/active.json";
             if let Ok(data) = std::fs::read_to_string(bt_path) {
                 if let Ok(bt_env) = serde_json::from_str::<GenomeEnvelope>(&data) {
-                    let sanitized = SuperGenotype::from_vector(&bt_env.genome.to_vector());
+                    // X-001 (REHAB-2): SIN lavado from_vector — el genoma se
+                    // promueve tal como fue evolucionado (las curvas ya
+                    // sobreviven al vector desde REHAB-1a, pero el lavado
+                    // re-numeraba generación y era un punto de mutación
+                    // silenciosa adicional).
                     if let Ok(env) = Self::promote(
-                        sanitized,
+                        bt_env.genome.clone(),
                         "backtest_heritage",
                         &format!(
                             "herencia automática del campeón de backtest al entorno {}",
@@ -148,13 +152,13 @@ impl GenomeEnvelope {
             }
         }
 
-        // 2. Intentar linaje compartido
+        // 2. Intentar linaje compartido (patrimonio de solo-lectura)
         let shared = "config_dir/genomes/active.json";
         if let Ok(data) = std::fs::read_to_string(shared) {
             if let Ok(shared_env) = serde_json::from_str::<GenomeEnvelope>(&data) {
-                let sanitized = SuperGenotype::from_vector(&shared_env.genome.to_vector());
+                // X-001 (REHAB-2): sin lavado — migración fiel del patrimonio.
                 if let Ok(env) = Self::promote(
-                    sanitized,
+                    shared_env.genome.clone(),
                     "shared_migration",
                     &format!(
                         "migración del linaje compartido al entorno {}",
