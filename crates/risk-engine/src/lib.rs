@@ -685,7 +685,13 @@ impl RiskEngine {
             return rej(6);
         }
 
-        let safe_limit = (allocated_capital * safe_cushion).min(current_cap * 0.90);
+        let safe_limit = if allocated_capital <= 15.0 {
+            // Micro-cuenta ($13 USD): Permitir hasta 20-25% de margen ($1.50 a $2.60)
+            // para que con apalancamiento prudente (2x - 5x) cubra los $5.10 de Binance sin rej(7).
+            (allocated_capital * 0.25).clamp(1.20, 2.60)
+        } else {
+            (allocated_capital * safe_cushion).min(current_cap * 0.90)
+        };
         if final_margin > safe_limit {
             final_margin = safe_limit;
             if final_margin > 0.0 && final_margin * dynamic_leverage < safe_min_notional {
@@ -750,7 +756,10 @@ impl RiskEngine {
             }
         };
 
-        let sl_pct = (current_atr * sl_mult / current_price).clamp(sl_base * 0.5, sl_base * 2.5);
+        // Inmunidad contra ruido browniano: el stop loss nunca debe descender por debajo de 35 bps
+        // en crypto para evitar ser detenido por el micro-spread y oscilaciones top-of-book.
+        let min_safe_sl = if intent.horizon == TradeHorizon::Scalp { 0.0035 } else { 0.0060 };
+        let sl_pct = (current_atr * sl_mult / current_price).clamp(sl_base.max(min_safe_sl), sl_base * 2.5);
 
         let final_sl = if intent.sl_price_target > 0.0 {
             intent.sl_price_target

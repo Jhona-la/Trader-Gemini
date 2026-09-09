@@ -168,9 +168,9 @@ impl QuantumConfig {
         let genome = crate::genome::SuperGenotype::load_or_default();
         Self {
             base_capital: AtomicF64::new(initial_capital),
-            min_notional: AtomicF64::new(0.0),
-            live_maker_fee: AtomicF64::new(0.0),
-            live_taker_fee: AtomicF64::new(0.0),
+            min_notional: AtomicF64::new(5.0),
+            live_maker_fee: AtomicF64::new(0.0002), // Binance VIP0 Maker: 0.02%
+            live_taker_fee: AtomicF64::new(0.0005), // Binance VIP0 Taker: 0.05%
             global_max_drawdown: AtomicF64::new(genome.global_max_drawdown),
             global_leverage: AtomicF64::new(genome.global_leverage),
             btc_volatility_multiplier: AtomicF64::new(genome.btc_volatility_multiplier),

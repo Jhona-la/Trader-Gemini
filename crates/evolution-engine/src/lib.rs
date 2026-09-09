@@ -175,12 +175,17 @@ impl EvolutionEngine {
 
             let initial_capital = self.arena.unified_capital.load(Ordering::Relaxed);
 
-            let mut results: Vec<_> = population
-                .par_iter()
-                .enumerate()
-                .map(|(i, genome)| {
-                    let genome_clone = genome.clone();
-                    let test_arena = Arc::new(GlobalArena::new(initial_capital));
+            let chunk_size = rayon::current_num_threads().max(1);
+            let mut results: Vec<_> = Vec::with_capacity(population.len());
+
+            for (chunk_idx, chunk) in population.chunks(chunk_size).enumerate() {
+                let chunk_res: Vec<_> = chunk
+                    .par_iter()
+                    .enumerate()
+                    .map(|(local_i, genome)| {
+                        let i = chunk_idx * chunk_size + local_i;
+                        let genome_clone = genome.clone();
+                        let test_arena = Arc::new(GlobalArena::new(initial_capital));
 
                     genome_clone.apply_to_arena(&test_arena);
                     // Note: apply_to_arena already stores global_max_drawdown — no duplicate needed
@@ -374,10 +379,11 @@ impl EvolutionEngine {
                     // Normalización logarítmica simétrica para estabilizar matriz de covarianza CMA-ES
                     let normalized_fitness = raw_fitness.signum() * (1.0 + raw_fitness.abs()).ln();
 
-                    // D-136: Empaquetar velocity real en el índice 5 en lugar de duplicar sharpe
                     (i, normalized_fitness, pnl, total_trades as usize, sharpe, velocity)
                 })
                 .collect();
+                results.extend(chunk_res);
+            }
 
             // Apply CMA-ES Update (D-140: Preservar matriz de covarianza viva)
             let actual_fee_rate = self.arena.config.max_fee_pct.load(Ordering::Relaxed);

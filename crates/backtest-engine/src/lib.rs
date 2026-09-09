@@ -73,8 +73,8 @@ pub fn run_backtest_native(
     let mut net_pnl_sum = 0.0;
     let mut fees_est_sum = 0.0;
     // Fee estimado por trade: qty × precio_barra × fee medio.
-    // Floor realista Binance futures VIP0 (0.02% maker + 0.04% taker = 0.06% blended roundtrip).
-    let avg_fee_est = 0.0006;
+    // D-394: Binance VIP0 Taker roundtrip real (0.05% in + 0.05% out = 0.10% total).
+    let avg_fee_est = 0.0010;
 
     let mut peak_capital = initial_capital;
     let mut max_dd = 0.0;

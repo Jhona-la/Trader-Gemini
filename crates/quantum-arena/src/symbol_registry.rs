@@ -103,6 +103,40 @@ pub fn spec(coin_id: usize) -> SymbolSpec {
     }
 }
 
+pub fn get_official_binance_spec(symbol: &str) -> SymbolSpec {
+    let sym_upper = symbol.to_uppercase();
+    let (step_size, tick_size, min_qty) = match sym_upper.as_str() {
+        "BTCUSDT" => (0.001, 0.1, 0.001),
+        "ETHUSDT" => (0.01, 0.01, 0.01),
+        "SOLUSDT" => (0.1, 0.01, 0.1),
+        "BNBUSDT" => (0.01, 0.01, 0.01),
+        "DOGEUSDT" => (1.0, 0.00001, 1.0),
+        "XRPUSDT" => (0.1, 0.0001, 0.1),
+        "ADAUSDT" => (1.0, 0.0001, 1.0),
+        "AVAXUSDT" => (0.01, 0.001, 0.01),
+        "LINKUSDT" => (0.01, 0.001, 0.01),
+        "SUIUSDT" => (0.1, 0.0001, 0.1),
+        "NEARUSDT" => (0.1, 0.001, 0.1),
+        "APTUSDT" => (0.1, 0.001, 0.1),
+        "ARBUSDT" => (0.1, 0.0001, 0.1),
+        "OPUSDT" => (0.1, 0.0001, 0.1),
+        "MATICUSDT" | "POLUSDT" => (1.0, 0.0001, 1.0),
+        "DOTUSDT" => (0.1, 0.001, 0.1),
+        _ => (0.01, 0.001, 0.01),
+    };
+    SymbolSpec {
+        symbol: sym_upper,
+        step_size,
+        tick_size,
+        min_qty,
+        min_notional: 5.0, // Binance USDⓈ-M Futures Official Min Notional
+        max_leverage: 20,
+        maker_fee: 0.0002, // 0.02%
+        taker_fee: 0.0005, // 0.05%
+        is_shadow: false,
+    }
+}
+
 fn get_default_specs() -> Vec<SymbolSpec> {
     Vec::new()
 }

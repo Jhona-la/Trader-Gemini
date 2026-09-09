@@ -29,6 +29,30 @@ pub struct CmaEsOptimizer {
     pub personal_best_fitnesses: Vec<f64>,
 }
 
+/// D-387: Proyección de barrera reflectiva para variables acotadas a [lower, upper].
+/// Previene el Boundary Drift del centroide de CMA-ES hacia el infinito o valores negativos no físicos.
+#[inline(always)]
+fn reflective_boundary(mut val: f64, lower: f64, upper: f64) -> f64 {
+    if !val.is_finite() {
+        return (lower + upper) * 0.5;
+    }
+    let range = upper - lower;
+    if range <= 1e-12 {
+        return lower;
+    }
+    let mut iterations = 0;
+    while (val < lower || val > upper) && iterations < 10 {
+        if val < lower {
+            val = lower + (lower - val);
+        }
+        if val > upper {
+            val = upper - (val - upper);
+        }
+        iterations += 1;
+    }
+    val.clamp(lower, upper)
+}
+
 impl CmaEsOptimizer {
     pub fn new(dimension: usize, initial_sigma: f64, override_lambda: Option<usize>) -> Self {
         let lambda =

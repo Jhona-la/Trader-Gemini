@@ -117,20 +117,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🛡️ AUDIT FORENSIC ENGINE — Full process_event Pipeline & VIP0 Fees");
     println!("============================================================");
 
-    // 1. Inicialización de especificaciones de símbolos con comisiones Binance VIP0 (Maker: 0.02%, Taker: 0.05%)
+    // 1. Inicialización de especificaciones oficiales de símbolos Binance VIP0 (D-391 paridad estricta 1:1)
     let mut specs = Vec::with_capacity(COINS.len());
     for symbol in COINS.iter() {
-        specs.push(quantum_arena::symbol_registry::SymbolSpec {
-            symbol: symbol.to_string(),
-            step_size: 0.00000001, // ultra fine to prevent issues
-            tick_size: 0.00001,
-            min_qty: 0.0001,
-            min_notional: 1.0,
-            max_leverage: 20,
-            maker_fee: 0.0002, // Binance VIP0 Maker: 0.02%
-            taker_fee: 0.0005, // Binance VIP0 Taker: 0.05%
-            is_shadow: false,
-        });
+        specs.push(quantum_arena::symbol_registry::get_official_binance_spec(symbol));
     }
     quantum_arena::symbol_registry::update_registry(specs);
 

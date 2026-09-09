@@ -412,7 +412,8 @@ impl DarwinDaemon {
             best_all_time.1 > baseline_fitness && best_all_time.1 > (baseline_fitness * 0.95)
         };
 
-        if is_significantly_better {
+        let allow_hotswap = std::env::var("ENABLE_ONLINE_DARWIN_MUTATION").map(|v| v == "true" || v == "1").unwrap_or(false);
+        if is_significantly_better && allow_hotswap {
             println!("[Darwin] 🧬 HOT-SWAPPING ACTIVE GENOME! Market regime shift detected.");
             best_all_time.0.apply_to_arena(&self.live_arena);
 

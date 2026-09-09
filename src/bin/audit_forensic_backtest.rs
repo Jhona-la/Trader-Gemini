@@ -495,8 +495,8 @@ async fn main() {
             total_closes += 1;
             total_trades += 1;
 
-            let live_maker = arena.config.live_maker_fee.load(Ordering::Relaxed);
-            let exit_fee_est = qty * price * live_maker;
+            let live_taker = arena.config.live_taker_fee.load(Ordering::Relaxed);
+            let exit_fee_est = qty * price * live_taker;
             let gross_pnl = net_close_pnl + exit_fee_est;
             let true_net_pnl = net_close_pnl;
 

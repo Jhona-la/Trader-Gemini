@@ -91,43 +91,40 @@ fn main() {
             let short_sl = mid_price * (1.0 + sl_pct);
 
             let mut barrier_label: f64 = 0.5; // 0.5 = Neutral
-            let mut long_alive = true;
-            let mut short_alive = true;
 
             for f in 1..=500 {
                 let fut_mid = (ticks[i + f].bid_price + ticks[i + f].ask_price) / 2.0;
 
-                // 1) Verificar si tocan Stop Loss primero (invalida la pierna correspondiente)
+                // D-329: Causalidad estricta Triple Barrier (López de Prado)
+                // 1) Si toca el Stop Loss de Long (-0.15%), la hipótesis alcista fracasa inmediatamente
                 if fut_mid <= long_sl {
-                    long_alive = false;
+                    barrier_label = 0.0; // Pérdida en Long / Victoria en Short
+                    break;
                 }
+                // 2) Si toca el Stop Loss de Short (+0.15%), la hipótesis bajista fracasa inmediatamente
                 if fut_mid >= short_sl {
-                    short_alive = false;
-                }
-
-                // 2) Si ambas piernas fueron liquidadas/stopeadas por volatilidad, abortar
-                if !long_alive && !short_alive {
+                    barrier_label = 1.0; // Victoria en Long / Pérdida en Short
                     break;
                 }
-
-                // 3) Solo premiar con TP si la pierna no ha tocado su Stop Loss
-                if long_alive && fut_mid >= long_tp {
-                    barrier_label = 1.0; // Long TP limpio alcanzado sin tocar SL
+                // 3) Si toca Take Profit de Long (+0.30%) sin haber tocado SL previo
+                if fut_mid >= long_tp {
+                    barrier_label = 1.0;
                     break;
                 }
-                if short_alive && fut_mid <= short_tp {
-                    barrier_label = 0.0; // Short TP limpio alcanzado sin tocar SL
+                // 4) Si toca Take Profit de Short (-0.30%) sin haber tocado SL previo
+                if fut_mid <= short_tp {
+                    barrier_label = 0.0;
                     break;
                 }
             }
 
-            // Si ninguna barrera tocó en 500 ticks, usar signo de retorno terminal si la pierna sobrevivió
+            // Si ninguna barrera horizontal se tocó en 500 ticks (barrera vertical), usar retorno terminal
             if barrier_label == 0.5 {
                 let end_mid = (ticks[i + 500].bid_price + ticks[i + 500].ask_price) / 2.0;
                 let end_ret = (end_mid - mid_price) / mid_price;
-                if end_ret > 0.0010 && long_alive {
+                if end_ret > 0.0010 {
                     barrier_label = 1.0;
-                } else if end_ret < -0.0010 && short_alive {
+                } else if end_ret < -0.0010 {
                     barrier_label = 0.0;
                 }
             }

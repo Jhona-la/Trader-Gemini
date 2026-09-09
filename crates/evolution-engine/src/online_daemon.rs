@@ -109,7 +109,10 @@ impl LiveEvolutionDaemon {
                     for f in frames {
                         // SUBSYSTEM_TENSOR_PREDICTOR = 12, FRAME_PREDICTION_VS_REALITY = 30
                         if f.subsystem_id == 12 && f.frame_type == 30 {
-                            let ml_prob = f.payload[1];
+                            // E-02 — FIX ÍNDICE: el productor pone ml_prob
+                            // en payload[0]; payload[1] contiene is_long (0/1).
+                            // Antes: el forest aprendía "los longs ganan".
+                            let ml_prob = f.payload[0];
                             let net_pnl_pct = f.payload[3];
                             // If we are evaluating a long or short based on the prob:
                             let is_long = ml_prob > 0.5;
@@ -296,7 +299,7 @@ impl LiveEvolutionDaemon {
             *sr = current_shadow_sharpe;
         }
 
-        // --- FASE 9 / HC-08: DRIFT DETECTION & KILL SWITCH (EWMA ADAPTIVE) ---
+        // --- FASE 9 / HC-08: DRIFT DETECTION & KILL SWITCH (EWMA ADAPTIVE - D-389) ---
         // N-01: Se evalúa siempre sobre muestra representativa (>= 25 trades) sin importar el Sharpe puntual
         if self.returns_history.len() >= 25 {
             if self.ewma_sharpe == 0.0 {
@@ -305,10 +308,20 @@ impl LiveEvolutionDaemon {
                 self.ewma_sharpe = 0.1 * current_shadow_sharpe + 0.9 * self.ewma_sharpe;
             }
 
-            if self.ewma_sharpe < 0.5 && !self.is_demo && !self.arena.kill_switch_active.load(Ordering::Relaxed) {
-                println!("⚠️ [DRIFT DETECTION] Sharpe EWMA desplomado a {:.2} sobre {} trades. Activando Kill Switch para detener ejecuciones hasta reentrenar.", self.ewma_sharpe, self.returns_history.len());
+            // D-389: calculate_ransac_sharpe retorna el t-statistic de Student (inlier_mean / inlier_std * sqrt(N)).
+            // Un t-stat entre 0.0 y +1.0 representa retornos positivos leves en muestras pequeñas.
+            // Para activar Kill Switch por degradación del edge, el t-stat debe ser estadísticamente NEGATIVO
+            // con significancia (t < -1.50, p < 0.07 de que el edge negativo sea casual).
+            if self.ewma_sharpe < -1.50 && !self.is_demo && !self.arena.kill_switch_active.load(Ordering::Relaxed) {
+                println!("🚨 [DRIFT DETECTION] t-stat EWMA degradado significativamente a {:.2} sobre {} trades. Activando Kill Switch para detener ejecuciones hasta reentrenar.", self.ewma_sharpe, self.returns_history.len());
                 self.arena.kill_switch_active.store(true, Ordering::Relaxed);
                 return;
+            }
+
+            // Auto-reset / reactivación si el edge se estabiliza (t-stat > -0.50)
+            if self.arena.kill_switch_active.load(Ordering::Relaxed) && self.ewma_sharpe > -0.50 {
+                println!("✅ [DRIFT RECOVERY] t-stat EWMA recuperado a {:.2}. Reactivando operaciones (Kill Switch desactivado).", self.ewma_sharpe);
+                self.arena.kill_switch_active.store(false, Ordering::Relaxed);
             }
         }
 
@@ -349,13 +362,44 @@ impl LiveEvolutionDaemon {
                 .cloned()
                 .collect();
             
-            let best_genome = tokio::task::spawn_blocking(move || {
+                        // E-04 — FRICCIÓN COHERENTE CON EL EV GATE: antes fee fijo
+            // 0.0008 mientras el gate real incluye maker+taker+2×slip.
+            // Leído ANTES del closure para evitar borrow de self.
+            let slip_floor_g = self
+                .arena
+                .config
+                .base_slippage_floor
+                .load(Ordering::Relaxed)
+                .max(0.00001);
+            let lat_g = self
+                .arena
+                .config
+                .latency_penalty_ms
+                .load(Ordering::Relaxed)
+                .max(0.0);
+            let atr_g = 0.002_f64;
+            let lat_slip_g = atr_g * (lat_g / 150.0);
+            let maker_g = self
+                .arena
+                .config
+                .live_maker_fee
+                .load(Ordering::Relaxed)
+                .max(0.0002);
+            let taker_g = self
+                .arena
+                .config
+                .live_taker_fee
+                .load(Ordering::Relaxed)
+                .max(0.0004);
+            let roundtrip_fee =
+                (maker_g + taker_g) + 2.0 * (slip_floor_g + lat_slip_g).clamp(0.0, 0.01);
+
+let best_genome = tokio::task::spawn_blocking(move || {
                 let mut best = current_genome.clone();
                 let mut best_score = -999.0;
                 // FASE 2: roundtrip completo a taker (0.04% x 2 piernas),
                 // consistente con el simulador y con el costo real de una
                 // entrada de mercado + salida no-maker.
-                let roundtrip_fee = 0.0008;
                 
                 // Mutation scales dynamically based on real-time market entropy
                 let dynamic_mutation_rate = (volatility * 50.0).clamp(0.01, 0.25);

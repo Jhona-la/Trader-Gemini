@@ -10,6 +10,7 @@ pub mod orchestrator;
 pub mod order_flow_aggregator;
 pub mod quantum_kelly_risk;
 pub mod reality_physics;
+pub mod reexport_storage { pub use storage_engine::mmap_bus; }
 pub mod slippage_predictor;
 pub mod stateful_engine;
 pub mod trailing;
@@ -1238,9 +1239,9 @@ impl GodEngineCore {
                 let not_overextended_long = price_stretch <= 1.2;
                 let not_overextended_short = price_stretch >= -1.2;
 
-                // D-105: Mapeo continuo sigmoidal de convicción con pendiente calibrada para filtrar micro-ruido
+                // D-105: Mapeo de convicción Bayesiana calibrada para Kelly sizing realista
                 let sig_conf = |score: f64| -> f64 {
-                    (1.0 / (1.0 + (-6.0 * score.abs()).exp())).clamp(0.51, 0.99)
+                    (0.50 + 0.40 * score.abs().clamp(0.0, 1.0)).clamp(0.51, 0.90)
                 };
 
                 if is_trending {

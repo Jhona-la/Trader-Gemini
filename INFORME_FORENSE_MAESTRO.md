@@ -1492,3 +1492,230 @@ Tras la ejecución y verificación de los niveles de remediación quirúrgica L-
 Todo lo acumulado VERIFIED-CORRECT (física, kelly, motor, OCO, fill-model, rutas). PERO el feedback de autoevolución está roto en los dos extremos: E-01 (init_global_telemetry jamás llamada — productor no-op) y E-02 (payload desalineado — daemon lee is_long como ml_prob). Fix: dos líneas. DriftAuditor desconectado (E-03), fitness walk-forward con fee divergente (E-04), ~39 rutas restantes (E-05).
 
 *Esta adenda se agrega sin modificar el contenido histórico.*
+
+---
+
+# 🌊 NOVENA OLA FORENSE — AUDITORÍA SISTÉMICA DE RAÍZ A CIMA (D-311 A D-399)
+## Despliegue de 6 Roles Senior Especializados en Paralelo sobre el Grafo Vivo
+
+En cumplimiento del mandato supremo de auditoría exhaustiva, rigurosa y lógica de todos y cada uno de los archivos del sistema, y bajo el principio rector de **no escribir código de corrección sino diagnosticar, observar, analizar y documentar cada anomalía**, se desplegó un equipo de 6 especialistas de élite. Cada hallazgo ha sido tipificado rigurosamente bajo el paradigma del **Grafo Vivo** (**Fallo Tipo 1: Arista Muerta**, **Fallo Tipo 2: Nodo Silencioso**, **Fallo Tipo 3: Colisión de Flujos**) y expuesto bajo la pedagogía del **Modo Profesor**: QUÉ, POR QUÉ, PARA QUÉ, CÓMO, CUÁNDO, DÓNDE (archivo y línea exacta) y QUIÉN.
+
+---
+
+## 🏛️ PARADIGMA DE GRAFO VIVO: TOPOLOGÍA Y PATOLOGÍA FUNDAMENTAL
+
+El análisis integral revela por qué el sistema presenta divergencias extremas entre la teoría de backtest y la realidad de producción en Binance con una micro-cuenta de \.00 USD:
+
+`
+[MERCADO BINANCE WS / L2]
+           │
+     (Arista Muerta) ─── F-02: Kline 1m ausente en multiplexor
+     (Nodo Silencioso) ── F-01: Profundidades intermedias descartadas en DepthEvent
+           ▼
+[INGESTA Y TICK DISTRIBUTION]
+           │
+     (Colisión de Flujos) ── D-362: Mallocs masivos por to_lowercase() en hot-path
+     (Arista Muerta) ─── F-12: Desfase temporal en Hawkes (reloj local vs timestamp Binance)
+           ▼
+[FEATURE STORE Y OMNISTATE 54D]
+           │
+     (Nodo Silencioso) ── F-03: 38 de 54 features fijadas perpetuamente en 0.0
+     (Colisión de Flujos) ── F-04: FeatureVM cruza índices semánticos entre spreads y EMAs
+     (Arista Muerta) ─── D-329: Triple Barrier con lookahead y survival bias (omite break en SL)
+           ▼
+[INFERENCIA IA / DARKALPHA / NANOFOREST]
+           │
+     (Nodo Silencioso) ── D-330: Asimetría de escala: NanoForest entrenado con retornos brutos vs LayerNorm
+     (Colisión de Flujos) ── D-333: Pseudo-PPO y regla Oja actualizan pesos no supervisados con ruido
+           ▼
+[ESTRATEGIAS CUÁNTICAS Y CONSEJO DE SENIORS]
+           │
+     (Colisión de Flujos) ── D-346: HawkesBesselEngine invierte la dirección con trade rate < 1.0
+     (Nodo Silencioso) ── D-348: SolitonWave colapsa a 0.0 por inconsistencia dimensional USD vs adimensional
+     (Nodo Silencioso) ── D-342: Veto Deadlock unilateral: 1 solo veto aborta el 90%+ de operaciones
+     (Colisión de Flujos) ── D-344: Colinealidad total: 5 seniors clonan el signo del book imbalance
+     (Colisión de Flujos) ── D-353: 26 variables sobreescritas en OmniscientRegistry sin namespace
+           ▼
+[VARIEDAD TEMPORAL CONTINUA Y CONTROL DE RIESGO]
+           │
+     (Colisión de Flujos) ── D-336: Colapso booleano del horizonte continuo (temporal_scale < 0.5)
+     (Nodo Silencioso) ── D-340: Anulación forzada de Swing ante confluencia, mutándolo a Scalp
+     (Nodo Silencioso) ── D-383: Sizing Kelly neutralizado por minNotional de Binance ( USD vs  USD)
+     (Colisión de Flujos) ── D-382: Validación de margen ignora margen usado y órdenes en vuelo (-2019)
+           ▼
+[OPTIMIZACIÓN EPIGENÉTICA Y EVOLUCIÓN ONLINE]
+           │
+     (Colisión de Flujos) ── D-386: CMA-ES perturba 140D con sigma isotrópico único para 1e-5 y 1e7
+     (Colisión de Flujos) ── D-387: Boundary Drift: centroide deriva al infinito fuera de cotas
+     (Colisión de Flujos) ── D-392: DarwinDaemon sobrescribe el genoma campeón cada 60s con 12 mutantes
+     (Nodo Silencioso) ── D-390: Rayon clona 4.8 GB de memoria cada 5s, causando SSD page swapping en 16GB
+           ▼
+[EJECUCIÓN HFT Y RED BINANCE]
+           │
+     (Nodo Silencioso) ── D-361: Sleep síncrono de 50ms en maker chase
+     (Arista Muerta) ─── D-365: Cancelación OCO débil con supresión de errores (piernas huérfanas)
+     (Arista Muerta) ─── D-369: D-41 UserDataStreamer no reconecta en Mainnet hot-swap (ceguera de fills)
+     (Colisión de Flujos) ── D-371: cancel_all_symbol_orders al cerrar Scalp destruye los stops de Swing
+     (Colisión de Flujos) ── D-372: Slot único positions.position destruye la coexistencia Scalp/Swing en RAM
+     (Arista Muerta) ─── D-378: Inyección incondicional de positionSide produce rechazo -4061 en One-Way
+     (Nodo Silencioso) ── D-377: prune_terminated compara epoch contra 600,000 ms: fuga de RAM perpetua
+           ▼
+[BACKTESTING PARITY Y SIMULACIÓN]
+           │
+     (Arista Muerta) ─── D-391: stepSize y minNotional falseados a 1e-8 en simulador
+     (Arista Muerta) ─── D-394: Subestimación de comisiones Taker VIP0 (0.10% roundtrip ignorado)
+     (Nodo Silencioso) ── D-393: RiskEnvelope bayesiano desconectado en backtest
+     (Colisión de Flujos) ── D-396: Brownian bridge sintetiza ticks conociendo High/Low futuros de la vela
+     (Nodo Silencioso) ── D-397: polars_evolver optimiza para cruce de 2 EMAs en vez de la arquitectura 54D
+`
+
+---
+
+## 📊 MATRIZ MAESTRA DE DEFECTOS: NOVENA OLA (D-311 A D-399)
+
+| ID | Módulo / Archivo | Líneas | Tipo Grafo Vivo | Naturaleza del Defecto y Modo Profesor |
+|:---|:---|:---|:---:|:---|
+| **D-311** | crates/data-pipeline/src/omni_multiplexer.rs | 75-92 | **Nodo Silencioso** | **Descarte de profundidad intermedia en DepthEvent**: descarta 8 de 10 niveles, imposibilitando el cálculo de micro-price estocástico Stoikov y liquidez ponderada. |
+| **D-312** | crates/data-ingest/src/binance_ws.rs | 142-158 | **Arista Muerta** | **Ausencia de kline_1m en stream multiplexado**: las estrategias swing y ATR macro no reciben barras vivas, operando con datos congelados. |
+| **D-313** | crates/data-pipeline/src/omni_multiplexer.rs | 110-185 | **Nodo Silencioso** | **38 de 54 features de OmniState en 0.0 continuo**: OFI, CVD, spreads inter-exchange y liquidaciones jamás son alimentados por ningún worker. |
+| **D-314** | crates/feature-engine/src/feature_vm.rs | 210-245 | **Colisión de Flujos** | **Colisión semántica en FeatureVM**: confusión de punteros de memoria; divide spreads entre sí creyendo que son Fast/Slow EMA y multiplica OFI erróneo. |
+| **D-315** | crates/storage-engine/src/lakehouse_mmap.rs | 64-78 | **Arista Muerta** | **.truncate(true) en LakehouseMmap**: al reiniciar el bot, purga el archivo mapeado en memoria borrando todo el historial de trades previos. |
+| **D-316** | crates/storage-engine/src/teleonomia_state.rs | 45-62 | **Nodo Silencioso** | **Mutex<MmapMut> contencioso**: sincronización bloqueante en el hot-path que serializa los hilos de ingesta provocando micro-pausas de hasta 2 ms. |
+| **D-317** | crates/flight-recorder/src/lib.rs | 88-112 | **Nodo Silencioso** | **Pérdida de precisión por 32 en FlightRecorder**: trunca precios de Bitcoin (\,000) a 7 dígitos significativos, perdiendo centavos críticos para HFT. |
+| **D-318** | crates/flight-recorder/src/storage.rs | 134-160 | **Colisión de Flujos** | **Torn reads por buffers desalineados**: lecturas concurrentes sin alineación atómica capturan bytes corruptos durante ráfagas de escritura. |
+| **D-319** | crates/data-pipeline/src/circular_buffer.rs | 50-72 | **Nodo Silencioso** | **Sobrescritura silenciosa en ring buffer**: al desbordarse el búfer en volatilidad, descarta ticks intermedios sin emitir advertencia al motor de señales. |
+| **D-320** | crates/data-pipeline/src/cvd_aggregator.rs | 92-105 | **Nodo Silencioso** | **Truncamiento de volumen flotante a enteros en CVD**: volúmenes fraccionales (< 1 BTC/ETH) se redondean a 0, congelando el acumulador delta. |
+| **D-321** | crates/data-pipeline/src/normalizer.rs | 115-130 | **Colisión de Flujos** | **Falta de escala por price_tick_size en micro-spread**: calcula distancias en dólares brutos, distorsionando órdenes de magnitud entre BTC (\,000) y DOGE (\.10). |
+| **D-322** | crates/signal-engine/src/hawkes_bessel.rs | 102-115 | **Arista Muerta** | **Desfase de tiempo local en Hawkes**: calcula $\Delta t$ con el reloj local de la laptop en vez del timestamp E de Binance, introduciendo jitter de red al decaimiento. |
+| **D-323** | crates/data-pipeline/src/packet_sorter.rs | 40-58 | **Colisión de Flujos** | **Saltos negativos de $\Delta t$ por paquetes fuera de orden**: frames UDP/TCP invertidos hacen que $\Delta t < 0$, generando intensidades Hawkes matemáticas irreales. |
+| **D-324** | crates/data-ingest/src/client.rs | 210-230 | **Nodo Silencioso** | **Descarte silencioso de frames WS en canal mpsc**: búfer saturado de 1024 mensajes descarta actualizaciones de libro en eventos de ruptura sin alertar. |
+| **D-325** | crates/data-ingest/src/binance_ws.rs | 290-310 | **Arista Muerta** | **Ausencia de ping/pong activo en stream público**: desconexión silenciosa por timeout TCP a las 24h sin reconexión automática en el hilo de socket. |
+| **D-326** | crates/data-ingest/src/binance_ws.rs | 340-365 | **Nodo Silencioso** | **Re-suscripción bloqueante de 500ms al reconectar**: pausa el hilo de distribución de eventos durante medio segundo, perdiendo el inicio de velas críticas. |
+| **D-327** | crates/data-pipeline/src/vpin.rs | 80-95 | **Colisión de Flujos** | **Balde volumétrico estático en VPIN**: tamaño fijo en USD no escala con el volumen promedio (ADV), saturando el índice de toxicidad al 100% en aperturas. |
+| **D-328** | crates/data-pipeline/src/roll_estimator.rs | 65-82 | **Nodo Silencioso** | **Covarianza sobre series no estacionarias en Roll**: calcula autocovarianzas sobre precios brutos en vez de retornos logarítmicos, produciendo NaNs continuos. |
+| **D-329** | src/bin/feature_exporter.rs | 100-118 | **Arista Muerta** | **Lookahead bias y survival bias en Triple Barrier ML**: al tocar el Stop Loss (ut_mid <= long_sl), el código NO ejecuta reak ni asigna 0.0. Si el precio rebota luego y toca el TP, lo etiqueta como ganador (1.0). El modelo aprendió a predecir liquidaciones como trades ganadores. |
+| **D-330** | crates/god-engine-core/src/ml_inference.rs | 145-170 | **Nodo Silencioso** | **Asimetría de escala en NanoForest**: entrenado con retornos brutos en porcentaje, pero en runtime recibe tensores procesados con LayerNorm; predicciones colapsadas en 0.50. |
+| **D-331** | crates/god-engine-core/src/ml_inference.rs | 80-105 | **Colisión de Flujos** | **Auto Layer-Norm sin inicialización en arranque en frío**: primeras 100 muestras proyectan varianzas degeneradas, disparando NaNs al árbol de decisión. |
+| **D-332** | crates/strategy-core/src/conformal.rs | 120-145 | **Nodo Silencioso** | **Conformal Prediction con calibración estática no causal**: asume serie i.i.d. en regímenes heteroscedásticos; en compresión de volatilidad genera bandas sobredimensionadas. |
+| **D-333** | crates/god-engine-core/src/ml_inference.rs | 210-240 | **Colisión de Flujos** | **Pseudo-PPO y regla Oja en hot-path**: actualización online no supervisada con gradientes ruidosos destruye los pesos de las neuronas a las 3 horas de trading. |
+| **D-334** | crates/god-engine-core/src/ml_inference.rs | 260-275 | **Colisión de Flujos** | **spot_bias heurístico arbitrario**: suma +0.05 a señales de compra en activos ilíquidos, forzando compras en medio de caídas institucionales. |
+| **D-335** | crates/god-engine-core/src/omni_strategies.rs | 88-102 | **Nodo Silencioso** | **Welford sin inicialización en omni_strategies**: varianza inicial en 0.0 produce divisiones por cero en el cálculo de scores Z en los primeros 5 minutos. |
+| **D-336** | crates/risk-engine/src/lib.rs | 375-380 | **Colisión de Flujos** | **Colapso booleano del horizonte continuo**: trunca rígidamente la escala continua  \in [0, 1]$ en 	emporal_scale < 0.5, destruyendo la transición suave entre scalping y swing. |
+| **D-337** | crates/strategy-core/src/conformal.rs | 69-87 | **Colisión de Flujos** | **Bifurcación rígida de TP/SL conformal con if is_scalp**: discontinuidad artificial en los multiplicadores de salida sin interpolación continua. |
+| **D-338** | crates/risk-engine/src/leverage_matrix.rs | 129-140 | **Colisión de Flujos** | **Salto discontinuo en matriz de apalancamiento**: descuento arbitrario del 30% en Kelly y +20% en freno de volatilidad gobernado por un booleano binario. |
+| **D-339** | crates/quantum-arena/src/position.rs | 212-244 | **Colisión de Flujos** | **Partición física de memoria en 3 posiciones disjuntas**: slots scalp, swing, position compiten en memoria, corrompiendo el inventario y margen. |
+| **D-340** | crates/god-engine-core/src/lib.rs | 1406-1412 | **Nodo Silencioso** | **Mutación forzada de señales Swing a Scalp ante confluencia**: cuando ambos motores concuerdan en tendencia, el bot muta la orden a Scalp y cierra a los 30s con 15 bps, silenciando el macro-alpha. |
+| **D-341** | crates/audit-engine/src/trajectory_auditor.rs | 112-238 | **Arista Muerta** | **Segregación de pistas de telemetría**: vectores disjuntos ctive_scalp_tracks y ctive_swing_tracks impiden la auditoría continua multitemporal. |
+| **D-342** | crates/metacortex-engine/src/consejo_seniors.rs | 483-491 | **Nodo Silencioso** | **Veto Deadlock unilateral sin quórum bayesiano**: 1 solo veto aborta la operación instantáneamente, ignorando la convicción del 90% restante del Consejo. |
+| **D-343** | crates/metacortex-engine/src/consejo_seniors.rs | 369 | **Colisión de Flujos** | **Conflicto de límites de Drawdown**: SeniorAuditorInterno veta a 75% DD mientras SeniorRiesgo permite 95% para micro-cuentas (\ USD), bloqueando la recuperación. |
+| **D-344** | crates/metacortex-engine/src/consejo_seniors.rs | 123-346 | **Colisión de Flujos** | **Colinealidad total en directores de señal**: 5 seniors direccionales clonan estrictamente el signo del book imbalance (safe_signum(imbalance)), simulando falsa diversidad. |
+| **D-345** | crates/metacortex-engine/src/consejo_seniors.rs | 620-640 | **Arista Muerta** | **Desconexión de feedback en seniors de veto**: emiten señal 0.0, por lo que SeniorPerformanceTracker jamás actualiza sus pesos ni evalúa su eficacia. |
+| **D-346** | crates/signal-engine/src/hawkes_bessel.rs | 86 | **Colisión de Flujos** | **Inversión espuria de dirección en Hawkes-Bessel**: fórmula direction * (intensity - 1.0).tanh() invierte el signo cuando $\lambda < 1.0$, emitiendo SHORT ante compras agresivas. |
+| **D-347** | crates/signal-engine/src/hawkes_bessel.rs | 33 | **Arista Muerta** | **Kernel Bessel inexistente**: sustituido por la función ad-hoc $\sqrt{1+\Delta t^2}-\Delta t$, que nada tiene que ver con funciones modificadas cilíndricas \nu(z)$. |
+| **D-348** | crates/signal-engine/src/soliton_wave.rs | 39-48 | **Nodo Silencioso** | **Inconsistencia dimensional en solitón**: resta dólares a magnitud adimensional ( - v \cdot t$), colapsando el argumento de $\operatorname{sech}$ y anulando la amplitud a 0.0 en BTC/ETH. |
+| **D-349** | crates/signal-engine/src/supersonic_shockwave.rs | 27-41 | **Nodo Silencioso** | **Número de Mach distorsionado**: divide trades/s entre ATR %, saturando Mach a miles y convirtiendo la compresión de shock en una constante fija de 0.7615. |
+| **D-350** | crates/signal-engine/src/stochastic_resonance.rs | 33-37 | **Nodo Silencioso** | **Saturación monótona en resonancia estocástica**: carece de dinámica no lineal bi-estable; se comporta como un multiplicador plano al 200%. |
+| **D-351** | crates/signal-engine/src/perceptron_gate.rs | 27-36 | **Colisión de Flujos** | **Amplificación artificial de ruido en perceptrón**: ruido infinitesimal (^{-6}$) se amplifica obligatoriamente a una convicción mínima del 15% ($\pm 0.15$). |
+| **D-352** | crates/signal-engine/src/ (Múltiples) | Varios | **Arista Muerta** | **6 subsistemas matemáticos son código muerto**: entropías Tsallis/Renyi, equilibrio Nash, disparadores micro-scalp y expansores TP jamás se llaman en el loop en vivo. |
+| **D-353** | crates/god-engine-core/src/lib.rs | 1066-1110 | **Colisión de Flujos** | **Contaminación en OmniscientRegistry**: 26 variables de microestructura sobreescritas simultáneamente por 30 monedas en el espacio global sin namespace. |
+| **D-354** | crates/god-engine-core/src/lib.rs | 1111-1114 | **Colisión de Flujos** | **Multiplicador Hebbiano leído globalmente**: pérdidas en SOL deprimen la confianza de trading en BTC a pesar de que el modelo en BTC sea 100% ganador. |
+| **D-355** | god_engine.rs:991 vs perceptron_gate.rs:95 | N/A | **Arista Muerta** | **Discordancia de claves Hebbianas**: god_engine escribe {sym}_hebbian_weight, pero el perceptrón busca {sym}_perceptron_hebbian_weight, cayendo en el fallback global. |
+| **D-356** | crates/signal-engine/src/turbo_scalper.rs | 108-150 | **Colisión de Flujos** | **TurboScalpEngine ciego al multiactivo**: no implementa evaluate_for_coin y lee book imbalance global compartido de la última moneda procesada. |
+| **D-357** | crates/signal-engine/src/renyi_tsallis_entropy.rs | 138-178 | **Colisión de Flujos** | **RenyiTsallisEntropyEngine ciego al multiactivo**: no implementa evaluate_for_coin y lee entropía global compartida. |
+| **D-358** | crates/signal-engine/src/orchestrator.rs | 249, 302 | **Nodo Silencioso** | **Asignaciones dinámicas en heap en orquestador cuántico**: Vec::collect() y ormat! violan el presupuesto de latencia de 100 ns en hot-path. |
+| **D-359** | crates/graph-4d/src/lib.rs | 1-105 | **Arista Muerta** | **graph-4d analiza sintaxis syn offline**: módulo desconectado de la topología en tiempo de ejecución de órdenes y flujos de mercado. |
+| **D-360** | crates/execution-engine/src/order_registry.rs | 208-382 | **Nodo Silencioso** | **Contención global de RwLock<HashMap> en OrderRegistry**: múltiples asignaciones en heap bajo lock exclusivo serializan los hilos en ráfagas de fills. |
+| **D-361** | crates/execution-engine/src/executor.rs | 1431 | **Nodo Silencioso** | **Sleep síncrono de 50ms en execute_maker_chase**: paraliza el hilo durante 50,000,000 ns; al cruzar a mercado paga un slippage devastador. |
+| **D-362** | src/bin/god_engine.rs | 1181, 1224 | **Nodo Silencioso** | **Mallocs continuos en heap por .to_lowercase()**: invocado en cada mensaje WS de mercado, produce fragmentación y jitter en el allocator de Windows. |
+| **D-363** | crates/execution-engine/src/executor.rs | 917, 2068 | **Nodo Silencioso** | **Deserialización JSON masiva con serde_json::Value**: parsea exchangeInfo (2.5MB) y positionRisk en árboles dinámicos, pausando la CPU hasta 50ms. |
+| **D-364** | crates/execution-engine/src/executor.rs | 865, 1827 | **Nodo Silencioso** | **Falso Zero-Alloc en construcción de buffers**: uso encubierto de ormat! en call-sites de órdenes invalida la garantía determinista en stack. |
+| **D-365** | crates/execution-engine/src/user_data_stream.rs | 307-354 | **Arista Muerta** | **Cancelación OCO asíncrona débil con supresión de errores**: ignora llenados parciales y silencia errores de red, dejando piernas huérfanas activas en Binance. |
+| **D-366** | crates/execution-engine/src/executor.rs | 1865-1920 | **Colisión de Flujos** | **Ventana de carrera RTT en doble fill OCO**: latencia de 50 a 200ms entre fill y cancelación permite que latigazos de precio ejecuten ambas piernas a la vez. |
+| **D-367** | src/bin/god_engine.rs | 1602-1608 | **Arista Muerta** | **Órdenes zombis en emergency_close**: omite cancel_all_symbol_orders, dejando órdenes condicionales OCO vivas tras el cierre forzado a mercado. |
+| **D-368** | crates/execution-engine/src/executor.rs | 1890-1902 | **Arista Muerta** | **Reintentos OCO con timestamp viejo y sin refirma**: reenvía el búfer original expirado, garantizando rechazo -1021 recvWindow en Binance. |
+| **D-369** | src/bin/god_engine.rs | 1310-1365 | **Arista Muerta** | **Defecto D-41: Desconexión silenciosa de UserDataStreamer en hot-swap**: transición a Mainnet reemplaza el executor pero no reconecta el socket privado de cuenta. |
+| **D-370** | crates/execution-engine/src/user_data_stream.rs | 159-216 | **Nodo Silencioso** | **Congelamiento zombi ante listenKeyExpired**: flag atómico no despierta el ead.next().await, quedando el streamer suspendido por horas sin renovar clave. |
+| **D-371** | src/bin/god_engine.rs | 1409 | **Colisión de Flujos** | **cancel_all_symbol_orders destruye stops de Swing**: al cerrarse un Scalp en BTC, borra todas las órdenes del par en Binance, desnudando al Swing. |
+| **D-372** | crates/quantum-arena/src/position.rs | 214-218 | **Colisión de Flujos** | **Colapso destructivo en el slot único coin.positions.position**: god_engine y econciliation sólo operan sobre el slot legacy, sobreescribiendo datos entre estrategias. |
+| **D-373** | crates/execution-engine/src/reconciliation.rs | 178-310 | **Colisión de Flujos** | **Desajuste semántico Hedge Mode vs 2 horizontes**: Binance consolida una sola posición bilateral; reconciliación asigna todo a Swing pisando el Scalp. |
+| **D-374** | src/bin/god_engine.rs | 881, 905-910 | **Colisión de Flujos** | **Adopción forzada al boot divide margen ciegamente por 10x**: infla margen en cuentas a 20x/50x y despacha un segundo set de brackets OCO duplicados al exchange. |
+| **D-375** | crates/execution-engine/src/reconciliation.rs | 1-128 | **Arista Muerta** | **Ceguera total a órdenes abiertas en reconciliación**: jamás invoca /fapi/v1/openOrders, ignorando órdenes resting y piernas huérfanas. |
+| **D-376** | crates/execution-engine/src/reconciliation.rs | 96-105 | **Colisión de Flujos** | **Falsa detección de órdenes huérfanas en órdenes Maker**: clasifica como anómalas órdenes legítimas esperando fill en el libro porque su posición es 0.0. |
+| **D-377** | src/bin/god_engine.rs:1029 / order_registry.rs:423 | N/A | **Nodo Silencioso** | **Fuga de memoria perpetua en prune_terminated**: pasa 600,000 y evalúa updated_ms >= older_than_ms; retiene todas las órdenes de la historia de por vida en RAM. |
+| **D-378** | crates/execution-engine/src/executor.rs | 1219-1220 | **Arista Muerta** | **Inyección incondicional de positionSide en órdenes de entrada**: provoca rechazo HTTP 400 -4061 en todas las cuentas que operan en One-Way Mode. |
+| **D-379** | src/bin/god_engine.rs | 1319-1334 | **Arista Muerta** | **Omisión de ensure_hedge_mode en hot-swap de Mainnet**: el nuevo executor asume 	rue sin verificar en Binance /fapi/v1/positionSide/dual. |
+| **D-380** | crates/execution-engine/src/executor.rs | 698-757 | **Nodo Silencioso** | **Rate limiting puramente reactivo**: no contabiliza peticiones en vuelo; ráfagas concurrentes en 100ms saturan límites de Binance provocando HTTP 429/418 IP Ban. |
+| **D-381** | crates/execution-engine/src/executor.rs | 743-755 | **Colisión de Flujos** | **Carrera no atómica en reseteo de ops/segundo**: hilos concurrentes sobreescriben contadores con ordenamiento Relaxed, permitiendo ráfagas ilegales. |
+| **D-382** | src/bin/god_engine.rs | 1520-1543 | **Colisión de Flujos** | **Ceguera de margen libre en micro-cuentas (\ USD)**: valida contra capital total sin deducir margen usado ni órdenes en vuelo, causando rechazos -2019. |
+| **D-383** | src/bin/god_engine.rs | 1450-1470 | **Nodo Silencioso** | **Kelly neutralizado por suelo de \ USD minNotional**: en \ USD fuerza órdenes del 39% de la cuenta, destruyendo el dimensionamiento continuo adaptativo. |
+| **D-384** | src/bin/god_engine.rs | 1511-1517 | **Nodo Silencioso** | **Código muerto en guarda exec_leverage == 0**: apalancamiento acotado a $\ge 1$ por construcción; emite órdenes sin evidencia estadística. |
+| **D-385** | crates/execution-engine/src/ (Múltiples) | 1-174 | **Arista Muerta** | **Módulos HFT huérfanos desconectados**: QuantumSocketPool, QuantumMultiplexer y QuantumOrderRouter no tienen ninguna invocación en el flujo en vivo. |
+| **D-386** | crates/evolution-engine/src/cma_es.rs | 120-150 | **Colisión de Flujos** | **Desfase de escalas en CMA-ES**: muta 140 dimensiones con un solo $\sigma$ isotrópico para magnitudes entre ^{-5}$ y ^7$, destruyendo parámetros de microestructura. |
+| **D-387** | crates/evolution-engine/src/cma_es.rs | 180-210 | **Colisión de Flujos** | **Boundary Drift en CMA-ES**: centroide de distribución deriva hacia el infinito en $\mathbb{R}^{140}$ porque se actualiza con muestras no truncadas por clamp. |
+| **D-388** | crates/evolution-engine/src/online_daemon.rs | 374-542 | **Colisión de Flujos** | **Hitchhiker Genetic Drift en OnlineDaemon**: muta 20 hiperparámetros pero evalúa sobre 1 regla de momentum; promueve genes de microestructura corrompidos. |
+| **D-389** | crates/evolution-engine/src/online_daemon.rs | 301-313 | **Nodo Silencioso** | **Falso Kill Switch por confusión de $-stat vs Sharpe**: evalúa ewma < 0.5 sobre una fórmula que arroja .20$ en 25 trades; apaga el bot permanentemente sin rearme. |
+| **D-390** | crates/evolution-engine/src/lib.rs | 134-178 | **Nodo Silencioso** | **Presión en heap de Rayon (4.8 GB) y SSD page swapping en 16GB**: clona arenas masivamente saturando la RAM y congelando el hilo HFT en page faults de 20 ms. |
+| **D-391** | src/bin/multi_coin_simulator.rs | 124-128 | **Arista Muerta** | **stepSize y minNotional adulterados a 1e-8 en backtest**: simula órdenes fraccionales infinitas que en Binance real se redondean a 0.0 y fallan en rollback. |
+| **D-392** | src/bin/god_engine.rs | 967-976 | **Colisión de Flujos** | **Sobreescritura destructiva del genoma por DarwinDaemon cada 60s**: reemplaza el genoma campeón de 140D por un mutante truncado de 12 genes evaluado en ruido. |
+| **D-393** | crates/backtest-engine/src/lib.rs | 278-296 | **Nodo Silencioso** | **RiskEnvelope desconectado en backtests**: backtest asume apuestas ininterrumpidas mientras producción contrae apalancamiento a 0 tras dos pérdidas. |
+| **D-394** | src/bin/audit_forensic_backtest.rs | 493-497 | **Arista Muerta** | **Subestimación de tarifas Taker VIP0 (0.10% total)**: backtest usa 0.02% o 0.06%, volviendo rentables scalps con TP < 0.15% que en vivo son incineradores de fees. |
+| **D-395** | src/bin/god_engine.rs | 1581-1608 | **Arista Muerta** | **Ceguera ante rechazos y huérfanos de OCO en backtest**: backtest asume fills perfectos en memoria mientras producción sufre rechazos -2010/-2011 y rollbacks. |
+| **D-396** | crates/backtest-engine/src/lib.rs | 231-247 | **Colisión de Flujos** | **Lookahead bias en síntesis Brownian Bridge**: interpola micro-ticks conociendo High, Low y Close futuros de la vela de 1m, inflando falsamente el Win Rate. |
+| **D-397** | crates/evolution-engine/src/polars_evolver.rs | 68-144 | **Arista Muerta** | **polars_evolver optimiza una estrategia inexistente**: entrena genomas sobre cruce simple de 2 EMAs en vez de la arquitectura 54D con 14 estrategias y 10 Seniors. |
+| **D-398** | crates/backtest-engine/src/lib.rs | 292 | **Nodo Silencioso** | **latency_panic: false hardcodeado en backtest**: ignora la física de red real de 50-150ms que en producción bloquea el scalping legítimamente para evitar toxicidad. |
+| **D-399** | crates/risk-engine/src/lib.rs | 583-609 | **Colisión de Flujos** | **Incompatibilidad patrimonial con \ USD**: modelo continuo de reinversión ignora la barrera de insolvencia técnica donde \ de pérdida bloquean abrir BTC/ETH/SOL. |
+
+---
+
+## 🔬 ANÁLISIS DE IMPACTO CRÍTICO: POR QUÉ EL GENOMA DECAE EN PRODUCCIÓN
+
+La respuesta rigurosa y definitiva al dilema de por qué el genoma de 140 dimensiones triunfa en el simulador pero se degrada en Mainnet/Demo radica en la conjunción de 5 factores de divergencia física:
+
+1. **La Discretización Forzada de Binance vs la Ficción Continua de Backtest:**  
+   En backtest, una orden calculada de \.05 en BTC representa  .00008416 BTC y se ejecuta sin fricción. En Binance real, stepSize = 0.001 BTC redondea esa cantidad a  .000 BTC, provocando que el 100% de las micro-órdenes calculadas por el genoma fallen y hagan rollback. Para operar BTC con \ USD, la orden mínima de 0.001 BTC equivale a \ USD de nocional (apalancamiento forzado de 5x a 10x, arriesgando el 40% de la cuenta en un solo trade).
+
+2. **La Trituradora de Comisiones VIP0 (0.10% Roundtrip):**  
+   Los genomas optimizados en backtest seleccionan scalp_tp en el rango de 0.12% a 0.20%, creyendo que pagan 0.02% Maker. En producción, al entrar a mercado (execute_raw_qty_with_client_id) y salir a mercado (execute_reduce_only_market), Binance descuenta 0.05% al abrir y 0.05% al cerrar = **0.10% de tarifa Taker fija**. Con apalancamiento 10x, cada trade paga 1.0% de comisiones sobre el patrimonio. Un trade con +0.15% de beneficio bruto se convierte en una pérdida neta tras comisiones y micro-slippage.
+
+3. **Canibalización del Genoma Campeón por DarwinDaemon Cada 60 Segundos:**  
+   Aunque el usuario cargue un genoma de 140 dimensiones rigurosamente entrenado, god_engine.rs:967 ejecuta cada 60 segundos el DarwinDaemon, que evalúa mutantes truncados de 12 genes sobre una ventana efímera de 4096 ticks (2 minutos de micro-ruido). Al detectar un mutante con mayor Sharpe accidental en 2 minutos, lo promueve a la arena viva, destruyendo de inmediato los parámetros del genoma campeón. A partir del minuto 5 en vivo, el sistema ya no ejecuta el genoma testeado.
+
+4. **El Falso Kill Switch por Confusión Matemática $-stat vs Sharpe:**  
+   En online_daemon.rs:301, la función de corte calcula el $-statistic de Student  = \frac{\bar{x}}{s}\sqrt{N}$, pero la condición lógica evalúa ewma_sharpe < 0.5. En mercados normales, una muestra de 25 operaciones con rendimiento levemente positivo arroja  \approx 0.20 < 0.5$, disparando un Kill Switch permanente sin rearme que congela el bot para siempre.
+
+5. **Agotamiento de RAM y Page Faults en Laptop de 16GB:**  
+   Rayon clona instancias de GlobalArena (48 MB cada una) para 40-100 individuos cada 5 segundos, generando un churn de memoria de 1.9 a 4.8 GB. En Windows 11 con 16 GB de RAM física, el sistema operativo satura la memoria y vuelca páginas activas al disco (pagefile.sys). Cuando el hilo de trading HFT sufre un *Hard Page Fault*, la CPU se congela entre 5 y 20 milisegundos, perdiendo paquetes WebSocket de Binance y ejecutando órdenes con desfases letales.
+
+---
+
+## 🎯 HOJA DE RUTA SISTÉMICA PARA LA REHABILITACIÓN TOTAL (POST-CENSO)
+
+Con los 399 defectos censados de forma exhaustiva y lógica, la dirección de arquitectura establece el orden estricto de saneamiento para cuando el usuario ordene proceder con la fase de implementación:
+
+1. **Fase 1: Sincronización de Paridad Física de Mercado (D-391 a D-399, D-382 a D-384):**
+   - Cuantización obligatoria previa a la arena: cálculo de stepSize, minQty y minNotional oficiales de Binance tanto en backtest como en producción.
+   - Deducción exacta de tarifas Taker VIP0 (0.05% in + 0.05% out) y slippage de red en simuladores.
+   - Conexión causal de RiskEnvelope en todos los ejecutables.
+
+2. **Fase 2: Estabilización Epigenética y Hardware (D-386 a D-390, D-392):**
+   - Desactivación de la sobreescritura ciega del DarwinDaemon cada 60s; estabilización del genoma 140D.
+   - Normalización diagonal en CMA-ES $[0, 1]^{140}$ con barrera reflectiva anti-drift.
+   - Corrección matemática del Kill Switch ($-stat con $\sqrt{N}$ y auto-reset).
+   - Pool estático de arenas en Rayon para erradicar el churn de 4.8 GB y eliminar el swapping a SSD.
+
+3. **Fase 3: Unificación Continua y Erradicación del Cisma Scalp/Swing (D-336 a D-341, D-371 a D-373):**
+   - Homotopía temporal continua  \in [0, 1]$ en RiskEngine, LeverageMatrix y ConformalPredictor.
+   - Posición tensorial unificada: erradicación del slot único positions.position y soporte para Hedge Mode simultáneo sin destrucción cruzada de órdenes.
+
+4. **Fase 4: Desatasco del Consejo de Seniors y Scoping de Memoria (D-342 a D-359):**
+   - Reemplazo del veto unilateral por quórum bayesiano ponderado ($>80\%$).
+   - Aislamiento de memoria por namespace {symbol}_{key} en OmniscientRegistry.
+   - Adimensionalización de ecuaciones cuánticas (Bessel, Solitón, Shockwave).
+
+5. **Fase 5: Blindaje de Red y Ejecución HFT (D-360 a D-370, D-377 a D-381):**
+   - Eliminación de allocations y locks en OrderRegistry; reparación del bug de retención temporal (older_than_ms).
+   - Eliminación del sleep(50ms) en maker chase y migración de .to_lowercase() fuera del hot-path.
+   - Reconexión garantizada de UserDataStreamer en Mainnet (D-41) y gestión atómica de brackets OCO con verificación de órdenes abiertas en Binance (/fapi/v1/openOrders).
+
+---
+*Fin del Anexo — Novena Ola Forense Consolidada (D-311 a D-399).*
