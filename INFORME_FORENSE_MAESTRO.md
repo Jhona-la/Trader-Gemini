@@ -435,3 +435,19 @@ La remediación debe ejecutarse de forma estrictamente secuencial, verificando l
 Verificados correctos: O-03 (kelly escalado), O-04 (drawdown breaker), Lagged fix, D-171 hedge-mode, D-110 Lee-Ready, D-112/D-113 Consejo, D-117 parser, D-134 labels. Working tree: 20+ D-IDs de la sesión concurrente evaluados completos pero SIN COMMIT.
 
 *Esta adenda se agrega sin modificar el contenido histórico.*
+
+---
+
+## 22. 🆕 DÉCIMA ADENDA DE ASEGURAMIENTO (2026-09-08, post todos los fixes)
+
+➡️ **[INFORME_ASEGURAMIENTO_DECIMO.md](INFORME_ASEGURAMIENTO_DECIMO.md)** — D-01..D-07.
+
+**D-01 CRÍTICO**: EV gate desacoplado de la física — compara EV contra ~7bps de fees mientras la fricción real es ~12bps+ (2×(taker+impacto+latency)). El gate certifica como EV-positivos trades que la propia física del motor vuelve negativos. El edge certificado es 5-8bps/día más optimista que el realizable.
+
+**D-02 CRÍTICO (5º informe consecutivo)**: OCO retry reusa buffer firmado — el único defecto que puede dejar capital real sin protección.
+
+**D-03 ALTO**: genoma commiteado con literales sin re-certificar (trend_threshold 0.55 vs π/10, dinámica mutacional cambiada).
+
+Verificados correctos: N-01/N-02 física simétrica, S-08 ensamble 16/tick, SegQueue RESUELTO (ArrayQueue), feature-engine VIVO, arranque sin crash, hedge-mode completo. Working tree limpio.
+
+*Esta adenda se agrega sin modificar el contenido histórico.*
