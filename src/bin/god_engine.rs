@@ -59,7 +59,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // STOP_TRADING.LOCK. Un flag de CLI jamás volverá a ser suficiente para
     // tocar capital real — el audit halló mainnet alcanzable tras 120 ticks.
     let requested_live = args.contains(&"--force-live".to_string());
-    let mainnet_armed = std::path::Path::new("config_dir/MAINNET_ARMED").exists();
+    // H-2: MAINNET_ARMED con path centralizado (antes relativo al CWD —
+    // lanzar desde otro directorio degradaba silenciosamente a mainnet-sin-lock)
+    let mainnet_armed = std::path::Path::new(
+        &quantum_arena::paths::data_join("../../config_dir/MAINNET_ARMED").replace("data/../../", ""),
+    ).exists()
+        || std::path::Path::new("config_dir/MAINNET_ARMED").exists();
     let emergency_lock = std::path::Path::new("STOP_TRADING.LOCK").exists();
     let is_demo_mode = if requested_live && mainnet_armed && !emergency_lock {
         telemetry_server::telemetry_log!(
@@ -1448,8 +1453,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             };
                             if drift_auditor.audit_execution(&real_tr, &shadow_tr).is_err() {
                                 telemetry_engine::telemetry!(
-                                    "🚨 [DRIFT] Divergencia acumulada excede umbral — backtest→live drift detectado"
+                                    "🚨 [DRIFT] Divergencia acumulada excede umbral — KILL-SWITCH ARMADO"
                                 );
+                                // H-1: el drift excedido ARMAR el kill-switch — antes era solo log
+                                engine_real
+                                    .arena
+                                    .kill_switch_active
+                                    .store(true, Ordering::SeqCst);
                             }
                         }
                         let live_maker_fee = engine_real.arena.config.live_maker_fee.load(Ordering::Relaxed);

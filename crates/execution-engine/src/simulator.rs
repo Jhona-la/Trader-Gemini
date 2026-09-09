@@ -13,6 +13,9 @@ pub struct SimulatedExecutor {
     /// al mid en fills de limit/maker) y floor de slippage para market/IOC.
     pub last_mids: RwLock<HashMap<String, f64>>,
     pub base_slippage_bps: f64,
+    /// H-3: RNG con estado para fills — subsec_nanos era determinista
+    /// y correlacionado con el ritmo de ticks.
+    pub fill_rng_state: std::sync::atomic::AtomicU64,
 }
 
 impl SimulatedExecutor {
@@ -23,6 +26,7 @@ impl SimulatedExecutor {
             open_positions: RwLock::new(HashMap::new()),
             last_mids: RwLock::new(HashMap::new()),
             base_slippage_bps: 1.0, // floor conservador: 1 bps mínimo
+            fill_rng_state: std::sync::atomic::AtomicU64::new(0x9E3779B97F4A7C15),
         }
     }
 
@@ -165,11 +169,17 @@ impl ExecutionProvider for SimulatedExecutor {
         self.simulate_network_delay().await;
         // D-04: fill probabilístico basado en distancia al mid
         let fill_prob = self.fill_probability(price, symbol);
-        let roll = (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .subsec_nanos() as f64)
-            / 1_000_000_000.0;
+        // H-3: SplitMix64 desde el estado atómico — RNG con estado real,
+        // no correlacionado con el reloj del sistema.
+        let z = self
+            .fill_rng_state
+            .fetch_add(0x9E3779B97F4A7C15, std::sync::atomic::Ordering::Relaxed)
+            .wrapping_add(0x9E3779B97F4A7C15);
+        let mut h = z;
+        h = (h ^ (h >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        h = (h ^ (h >> 27)).wrapping_mul(0x94D049BB133111EB);
+        h ^= h >> 31;
+        let roll = (h % 1_000_000) as f64 / 1_000_000.0;
         if roll > fill_prob {
             return Err(format!(
                 "[SIM] Limit no llenado (fill_prob={:.2}, roll={:.2}) — como en live",
