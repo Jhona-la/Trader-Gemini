@@ -560,7 +560,7 @@ impl RiskEngine {
             .load(Ordering::Relaxed)
             .max(0.0);
         let latency_slip = atr_pct * (lat_ms / 150.0);
-        let per_side_slip = (slip_floor + latency_slip).clamp(0.0, 0.01);
+        let per_side_slip = (slip_floor + latency_slip).clamp(0.0, 0.05); // H-9: alineado con física (antes 0.01 < 0.05)
         let roundtrip_fee = (maker_fee + taker_fee) + 2.0 * per_side_slip;
 
         let temp_scale = arena.config.temporal_scale.load(Ordering::Relaxed).clamp(0.0, 1.0);

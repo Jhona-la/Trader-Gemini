@@ -528,7 +528,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let fitness = if m_trades == 0 {
                 safe_pnl
             } else {
-                let activity_bonus = ((m_trades as f64) * 0.015).min(0.06);
+                let activity_bonus = 0.0; // H-8: neutralizado — premiaba churn no edge
                 safe_pnl + activity_bonus
             };
 

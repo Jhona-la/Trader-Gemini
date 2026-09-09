@@ -803,7 +803,7 @@ impl GodEngineCore {
                     // el edge de scalps con TP estrecho.
                     let exit_is_maker = pnl_pct >= tp;
                     let exit_nominal = qty * exit_price;
-                    let (phys_exit_price, _phys_exit_fee) = self.reality.calculate_exit(
+                    let (phys_exit_price, phys_exit_fee) = self.reality.calculate_exit(
                         exit_price,
                         is_long,
                         exit_nominal,
@@ -848,8 +848,8 @@ impl GodEngineCore {
                     // maker). SL/trailing/zombie son taker (cruce adverso).
                     // Antes: TODO exit pagaba taker sobre un fill maker.
                     let live_maker = self.arena.config.live_maker_fee.load(Ordering::Relaxed).max(0.0002);
-                    let close_fee_rate = if exit_is_maker { live_maker } else { live_taker };
-                    let close_fee = (qty * exit_price) * close_fee_rate;
+                    // H-4: fee de la FÍSICA (calculate_exit ya diferenció maker/taker)
+                    let close_fee = phys_exit_fee;
 
                     let ml_at_entry = pos.ml_prediction.load(Ordering::Relaxed);
                     let pos_horizon = pos.horizon();
@@ -1215,7 +1215,20 @@ impl GodEngineCore {
             };
 
             // Unified Bayesian Fusion: 40% Microstructure L2 (OBI/OFI/CVD) + 35% DarkAlpha ML + 25% Tensor Consensus
-            let raw_composite = micro_score * 0.40 + nn_score * 0.35 + tensor_boost * 0.25;
+            // H-6: pesos GENÓMICOS en vez de literales — el gen weight_obi
+            // ya existe y es evolucionable; los otros dos se normalizan para
+            // sumar 1.0 con él. La evolución puede ahora optimizar el núcleo
+            // de la decisión (antes: 0.40/0.35/0.25 congelados).
+            let w_micro = self
+                .arena
+                .config
+                .weight_obi
+                .load(Ordering::Relaxed)
+                .clamp(0.1, 0.8);
+            let remaining = 1.0 - w_micro;
+            let w_nn = remaining * 0.6; // 60% del resto a ML (derivación fija dentro del residuo)
+            let w_tensor = remaining * 0.4; // 40% del resto al consenso tensor
+            let raw_composite = micro_score * w_micro + nn_score * w_nn + tensor_boost * w_tensor;
             let composite_score: f64 = (raw_composite * hebbian_mult).clamp(-1.0, 1.0);
 
             let mut scalp_intent = SignalIntent::flat();
@@ -1685,7 +1698,7 @@ impl GodEngineCore {
                                     .latency_penalty_ms
                                     .load(Ordering::Relaxed)
                                     .max(0.0);
-                                let (real_entry_price, _phys_fee) = self
+                                let (real_entry_price, phys_entry_fee) = self
                                     .reality
                                     .calculate_market_entry(
                                         base_price,
@@ -1697,8 +1710,8 @@ impl GodEngineCore {
                                     );
                                 let real_entry_price = if real_entry_price <= 0.0 { base_price } else { real_entry_price };
 
-                                let entry_fee_rate = self.arena.config.live_taker_fee.load(Ordering::Relaxed).max(0.0002);
-                                let fee_paid = nominal_size * entry_fee_rate;
+                                // H-4: usar el fee de la FÍSICA — antes se recalculaba aparte
+                                let fee_paid = phys_entry_fee;
                                 self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
 
                                 let qty = nominal_size / real_entry_price;

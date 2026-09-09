@@ -1,6 +1,7 @@
 
-#[cfg(test)]
-mod tests {
+// H-7: forensics disponible en builds de producción (antes: cfg(test)
+// — la auditoría forense de datos solo existía bajo cargo test)
+pub mod tests {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
 
