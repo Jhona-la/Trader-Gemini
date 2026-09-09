@@ -594,7 +594,51 @@ impl OrderExecutor {
                         ack.status
                     );
                 }
-                Err(e) => println!("⚠️ [FLATTEN] {} NO cerrada tras reintento: {}", p.symbol, e),
+                Err(e) if e.contains("-2022") || e.contains("-4061") => {
+                    // X-026 (REHAB-3): ReduceOnly rechazado — un TP llenó (o el
+                    // modo cambió) ENTRE el snapshot y el close. Antes: println
+                    // + Ok(...) ⇒ el inmune reportaba "Aplanado" con posición
+                    // viva. Ahora: RE-SNAPSHOT del símbolo y reintento con la
+                    // cantidad FRESCA; qty≈0 ⇒ ya plana (cuenta como cerrada).
+                    println!(
+                        "♻️ [X-026] {} -2022: re-snapshot fresco (TP pudo llenar entre snapshot y close)…",
+                        p.symbol
+                    );
+                    let fresh = self.fetch_position_risk().await.ok().and_then(|entries| {
+                        entries
+                            .into_iter()
+                            .find(|e2| e2.symbol == p.symbol && e2.is_open())
+                    });
+                    match fresh {
+                        Some(f) => {
+                            let fq = f.position_amt.abs();
+                            let retry = self
+                                .execute_reduce_only_market(&p.symbol, f.is_long(), fq, 0.001)
+                                .await;
+                            match retry {
+                                Ok(()) => {
+                                    closed += 1;
+                                    println!("🧹 [X-026] {} cerrada con qty fresca {}", p.symbol, fq);
+                                }
+                                Err(e3) => println!(
+                                    "🚨 [X-026] {} sigue ABIERTA (qty {}) tras re-snapshot+retry: {} — INTERVENCIÓN MANUAL",
+                                    p.symbol, fq, e3
+                                ),
+                            }
+                        }
+                        None => {
+                            closed += 1; // ya no existe con qty>0: estaba plana
+                            println!(
+                                "🧹 [X-026] {} ya plana en el exchange (snapshot fresco)",
+                                p.symbol
+                            );
+                        }
+                    }
+                }
+                Err(e) => println!(
+                    "🚨 [FLATTEN] {} NO cerrada tras reintento: {} — INTERVENCIÓN MANUAL",
+                    p.symbol, e
+                ),
             }
         }
         Ok((cancelled, closed))

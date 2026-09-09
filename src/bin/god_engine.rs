@@ -1598,20 +1598,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             ml_prob,
                         });
 
-                        // FIX #590: Despacho directo de cierre en Binance Hedge Mode sin pasar por execute_raw_qty
+                        // FIX #590 + X-008 (REHAB-3): despacho de cierre con
+                        // protocolo CORRECTO — CERRAR PRIMERO, purgar brackets
+                        // DESPUÉS. Antes se cancelaba el OCO primero: si el close
+                        // fallaba, la posición quedaba naked (sin TP/SL) con el
+                        // core ya cerrado localmente. Ahora la protección vive
+                        // hasta que la posición está plana en el exchange.
                         let parsed_sym_str = parsed_sym.to_string();
                         let exec_clone = Arc::clone(&exec);
                         let is_long_close = is_long;
                         rt_handle.spawn(async move {
-                            // D-371: Purgar quirúrgicamente brackets OCO (TP/SL) de la posición que cierra sin afectar otras órdenes
-                            if let Err(e) = exec_clone.load().cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
-                                telemetry_engine::telemetry_err!("⚠️ [CANCEL OCO ERROR] Fallo al cancelar órdenes OCO previas en {}: {}", parsed_sym_str, e);
-                            }
                             let sym_filter = exec_clone.load().get_symbol_filter(&parsed_sym_str).await;
-                            if let Err(e) = exec_clone.load().execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size).await {
-                                telemetry_engine::telemetry_err!("🚨 [CLOSE ERROR] Error al cerrar posición {} en Binance: {}", parsed_sym_str, e);
-                            } else {
-                                telemetry_engine::telemetry!("🛡️ [CLOSE SUCCESS] Posición {} cerrada con éxito en Binance.", parsed_sym_str);
+                            let close_res = exec_clone
+                                .load()
+                                .execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size)
+                                .await;
+                            let close_res = match close_res {
+                                Ok(()) => Ok(()),
+                                Err(e1) => {
+                                    // Retry único: glitches transitorios de red.
+                                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                                    exec_clone
+                                        .load()
+                                        .execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size)
+                                        .await
+                                        .map_err(|e2| format!("{} / retry: {}", e1, e2))
+                                }
+                            };
+                            match close_res {
+                                Ok(()) => {
+                                    // Posición plana en el exchange: purgar los
+                                    // brackets huérfanos (ya sin subyacente).
+                                    if let Err(e) = exec_clone.load().cancel_position_oco_orders(&parsed_sym_str, is_long_close).await {
+                                        telemetry_engine::telemetry_err!("⚠️ [PURGE OCO] {} cerrada pero brackets sin purgar: {}", parsed_sym_str, e);
+                                    } else {
+                                        telemetry_engine::telemetry!("🛡️ [CLOSE SUCCESS] {} cerrada y brackets purgados.", parsed_sym_str);
+                                    }
+                                }
+                                Err(es) => {
+                                    // Close fallido: brackets NO se tocan — siguen
+                                    // protegiendo la posición viva. El core ya cerró
+                                    // local: el ciclo de reconciliación/inmune adoptará
+                                    // o aplanará. Alerta crítica (no silencio).
+                                    telemetry_engine::telemetry_err!(
+                                        "🚨 [X-008 CLOSE FALLIDO] {} no cerró ({}): BRACKETS CONSERVADOS como protección. Reconciliación tomará el mando.",
+                                        parsed_sym_str, es
+                                    );
+                                }
                             }
                         });
                     }
@@ -1758,7 +1791,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if coin.positions.position.is_open() {
                                     let (_, _, _, margin_used, entry_fee) = coin.positions.position.close_with_fee();
                                     if margin_used > 0.0 {
-                                        arena.used_margin.fetch_add(-margin_used, Ordering::Relaxed);
+                                        // X-027 (REHAB-3): clamp como el core —
+                                        // fetch_add negativo podía dejar margen <0
+                                        // (margen libre inflado ⇒ sobre-exposición).
+                                        let cur = arena.used_margin.load(Ordering::Relaxed);
+                                        arena
+                                            .used_margin
+                                            .store((cur - margin_used).max(0.0), Ordering::Relaxed);
                                     }
                                     if entry_fee > 0.0 {
                                         arena.unified_capital.fetch_add(entry_fee, Ordering::Relaxed);
@@ -1834,6 +1873,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
 
                             match entry_result {
+                                Err(e) if e.starts_with("AMBIGUOUS") => {
+                                    // X-007 (REHAB-3): RECONCILE-THEN-ROLLBACK. Un
+                                    // timeout de transporte NO es un rechazo: la orden
+                                    // PUEDE existir en el exchange. Antes se hacía
+                                    // rollback local a ciegas — posición viva en el
+                                    // exchange con estado local "limpio" (fantasma).
+                                    // Ahora: consultar la verdad del exchange PRIMERO.
+                                    telemetry_engine::telemetry!(
+                                        "⏳ [ENTRY AMBIGUA] {} timeout de transporte — reconciliando con el exchange ANTES de tocar estado local…",
+                                        parsed_sym_str
+                                    );
+                                    let adopted = match exec_clone.load().fetch_open_positions().await {
+                                        Ok(positions) => {
+                                            let ghost = positions.iter().find(|p| p.symbol == parsed_sym_str);
+                                            if let Some(pos) = ghost {
+                                                telemetry_engine::telemetry!(
+                                                    "👻 [GHOST DETECTADO] {} TIENE posición real en el exchange (qty {}) — ADOPTANDO en estado local (sin rollback).",
+                                                    parsed_sym_str, pos.qty
+                                                );
+                                                true
+                                            } else {
+                                                telemetry_engine::telemetry!(
+                                                    "✅ [RECONCILE] {} sin posición en el exchange — la orden jamás aterrizó. Rollback local seguro.",
+                                                    parsed_sym_str
+                                                );
+                                                false
+                                            }
+                                        }
+                                        Err(qe) => {
+                                            // Ni siquiera podemos reconciliar: NO
+                                            // rollback (podría ser fantasma). El
+                                            // ciclo de reconciliación del arranque
+                                            // y el inmune lo resolverán; alertamos.
+                                            telemetry_engine::telemetry_err!(
+                                                "🚨 [X-007] Reconciliación imposible ({}): estado local CONSERVADO por seguridad — verificar {} manualmente.",
+                                                qe, parsed_sym_str
+                                            );
+                                            true
+                                        }
+                                    };
+                                    if !adopted {
+                                        rollback_positions(&arena_clone);
+                                    }
+                                }
                                 Err(e) => {
                                     telemetry_engine::telemetry!(
                                         "❌ [ENTRY] {} rechazada: {} — Ejecutando Rollback de posición local.",
@@ -1864,12 +1947,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                         if !oco_success {
-                                            telemetry_engine::telemetry_err!("🚨 [EMERGENCY CLOSE] Fallaron 3 intentos OCO para {}. Cancelando órdenes huérfanas y cerrando posición a mercado para proteger micro-capital ($13 USD).", parsed_sym_str);
+                                            // X-009 (REHAB-3): protocolo de emergencia
+                                            // CORRECTO: cerrar PRIMERO (la protección
+                                            // sigue viva hasta el aterrizaje del close),
+                                            // purgar órdenes después, y ESCALAR si el
+                                            // cierre falla — antes los errores se
+                                            // tragaban con `let _` dejando posiciones
+                                            // naked en el exchange con estado local limpio.
+                                            telemetry_engine::telemetry_err!("🚨 [EMERGENCY CLOSE] Fallaron 3 intentos OCO para {}. Cerrando posición a mercado ANTES de purgar órdenes.", parsed_sym_str);
                                             let is_long_close = final_is_long;
-                                            // D-180: Limpiar primero cualquier orden remanente en Binance antes de aplanar
-                                            let _ = exec_clone.load().cancel_all_symbol_orders(&parsed_sym_str).await;
-                                            let _ = exec_clone.load().execute_reduce_only_market(&parsed_sym_str, is_long_close, final_qty, dyn_step_size).await;
-                                            rollback_positions(&arena_clone);
+                                            let close_res = exec_clone
+                                                .load()
+                                                .execute_reduce_only_market(&parsed_sym_str, is_long_close, final_qty, dyn_step_size)
+                                                .await;
+                                            let close_res = match close_res {
+                                                Ok(()) => Ok(()),
+                                                Err(e1) => {
+                                                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                                                    exec_clone
+                                                        .load()
+                                                        .execute_reduce_only_market(&parsed_sym_str, is_long_close, final_qty, dyn_step_size)
+                                                        .await
+                                                        .map_err(|e2| format!("{} / retry: {}", e1, e2))
+                                                }
+                                            };
+                                            // Purgar órdenes restantes (haya cerrado o no:
+                                            // si no cerró, reduceOnly sigue siendo válida).
+                                            if let Err(ce) = exec_clone.load().cancel_all_symbol_orders(&parsed_sym_str).await {
+                                                telemetry_engine::telemetry_err!("⚠️ [EMERGENCY] Purga de órdenes de {} falló: {}", parsed_sym_str, ce);
+                                            }
+                                            match close_res {
+                                                Ok(()) => {
+                                                    rollback_positions(&arena_clone);
+                                                }
+                                                Err(es) => {
+                                                    // ESCALADA X-009: posición viva en el
+                                                    // exchange SIN protección y sin estado
+                                                    // local — esto es incidente, no log.
+                                                    telemetry_engine::telemetry_err!(
+                                                        "🚨🚨 [X-009 ESCALADA] {} SIN CERRAR tras retry ({}): posición potencialmente naked en el exchange. Kill-switch ARMADO + estado local conservado para el ciclo de reconciliación.",
+                                                        parsed_sym_str, es
+                                                    );
+                                                    exec_clone.load().trigger_kill_switch();
+                                                    arena_clone.kill_switch_active.store(true, Ordering::SeqCst);
+                                                    // SIN rollback: el estado local refleja la
+                                                    // posición que el exchange aún sostiene.
+                                                }
+                                            }
                                         }
                                     }
                                 }

@@ -1140,20 +1140,21 @@ impl GodEngineCore {
                         (entry - exit_price) * qty
                     };
 
+                    let (reason_code, reason) = if tp_traded_through {
+                        (1u8, "TP")
+                    } else if pnl_pct <= -sl {
+                        (2u8, "SL")
+                    } else if trail_hit {
+                        (3u8, "TRAIL_HIT")
+                    } else if force_close_trail {
+                        (4u8, "FORCE_TRAIL")
+                    } else if is_zombie {
+                        (5u8, "ZOMBIE")
+                    } else {
+                        (6u8, "TOXIC_FLOW")
+                    };
+
                     if self.diag_close_total < 10 {
-                        let reason = if tp_traded_through {
-                            "TP"
-                        } else if pnl_pct <= -sl {
-                            "SL"
-                        } else if trail_hit {
-                            "TRAIL_HIT"
-                        } else if force_close_trail {
-                            "FORCE_TRAIL"
-                        } else if is_zombie {
-                            "ZOMBIE"
-                        } else {
-                            "TOXIC_FLOW"
-                        };
                         println!(
                             "🚪 [CLOSE TRACE] #{} reason={} pnl_pct={:.4}% gross_pnl=${:.4} exit={:.2} entry={:.2} h={:?}",
                             self.diag_close_total,
@@ -1324,6 +1325,9 @@ impl GodEngineCore {
                         .kelly_fraction
                         .store(kelly_f, Ordering::Relaxed);
                     coin.last_close_ts.store(event_time_ms, Ordering::Relaxed);
+                    coin.last_close_is_long.store(is_long, Ordering::Relaxed);
+                    coin.last_close_was_win.store(is_win, Ordering::Relaxed);
+                    coin.last_close_reason.store(reason_code, Ordering::Relaxed);
                     if is_pos_swing {
                         coin.last_swing_close_ts
                             .store(event_time_ms, Ordering::Relaxed);
@@ -1730,8 +1734,8 @@ impl GodEngineCore {
                 } else {
                     0.0
                 };
-                let not_overextended_long = price_stretch <= 2.5;
-                let not_overextended_short = price_stretch >= -2.5;
+                let not_overextended_long = price_stretch <= 0.65;
+                let not_overextended_short = price_stretch >= -0.65;
 
                 // D-105: Mapeo de convicción Bayesiana calibrada para Kelly sizing realista
                 let sig_conf = |score: f64| -> f64 {
@@ -2045,6 +2049,11 @@ impl GodEngineCore {
 
             if is_trend_candidate {
                 if ema_slow > 0.0 {
+                    let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                    let price_stretch = (mid_price - ema_slow) / cur_atr;
+                    let not_chasing_swing_long = price_stretch <= 0.75;
+                    let not_chasing_swing_short = price_stretch >= -0.75;
+
                     let macd_diff = (ema_fast - ema_slow) / ema_slow;
                     let swing_tp = self.arena.config.swing_tp_base.load(Ordering::Relaxed);
                     let threshold =
@@ -2053,7 +2062,10 @@ impl GodEngineCore {
                     let is_bull_trend = ema_fast > ema_slow;
                     let is_bear_trend = ema_fast < ema_slow;
 
-                    if macd_diff > threshold && swing_nn_pred >= effective_ml_long && is_bull_trend
+                    if macd_diff > threshold
+                        && swing_nn_pred >= effective_ml_long
+                        && is_bull_trend
+                        && not_chasing_swing_long
                     {
                         let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
                             .max((swing_nn_pred - 0.5).max(0.0) * 2.0);
@@ -2072,6 +2084,7 @@ impl GodEngineCore {
                     } else if macd_diff < -threshold
                         && swing_nn_pred <= effective_ml_short
                         && is_bear_trend
+                        && not_chasing_swing_short
                     {
                         let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
                             .max((0.5 - swing_nn_pred).max(0.0) * 2.0);
@@ -2250,6 +2263,66 @@ impl GodEngineCore {
             if current_cap <= 0.0 {
                 self.arena.kill_switch_active.store(true, Ordering::SeqCst);
                 return (None, closed_order, None);
+            }
+
+            // D-463: Unified Anti-Whiplash & Cycle Reset Guard (Erradicación del Chopping Post-Salida)
+            if unified_intent.signal != SignalType::Flat {
+                let last_close = coin.last_close_ts.load(Ordering::Relaxed);
+                if last_close > 0 {
+                    let elapsed_ms = event_time_ms.saturating_sub(last_close);
+                    let last_is_long = coin.last_close_is_long.load(Ordering::Relaxed);
+                    let last_was_win = coin.last_close_was_win.load(Ordering::Relaxed);
+                    let is_same_dir = (unified_intent.signal == SignalType::Long && last_is_long)
+                        || (unified_intent.signal == SignalType::Short && !last_is_long);
+
+                    let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                    let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
+                        self.feature_engines[coin_id].kline_ema_slow
+                    } else {
+                        self.feature_engines[coin_id].ema_slow
+                    };
+                    let p_stretch = if ema_ref > 0.0 {
+                        (mid_price - ema_ref) / cur_atr
+                    } else {
+                        0.0
+                    };
+
+                    let whiplash_veto = if last_was_win {
+                        // POST-WIN: La pata impulsiva se monetizó con éxito.
+                        // Prohibido comprar el techo del rally o vender el piso del dump recién tomado.
+                        if is_same_dir {
+                            if elapsed_ms < 180_000 {
+                                (unified_intent.signal == SignalType::Long && p_stretch > 0.25)
+                                    || (unified_intent.signal == SignalType::Short
+                                        && p_stretch < -0.25)
+                                    || elapsed_ms < 45_000
+                            } else {
+                                false
+                            }
+                        } else {
+                            // Giro a contratendencia post-win: requiere al menos 60s de confirmación
+                            elapsed_ms < 60_000
+                        }
+                    } else {
+                        // POST-LOSS (SL): El trade fue liquidado por movimiento adverso brusco.
+                        // Prohibido vender en capitulación tras saltar stop de Long o comprar en euforia tras stop de Short.
+                        if !is_same_dir {
+                            if elapsed_ms < 180_000 {
+                                true
+                            } else {
+                                (unified_intent.signal == SignalType::Short && p_stretch < -0.30)
+                                    || (unified_intent.signal == SignalType::Long
+                                        && p_stretch > 0.30)
+                            }
+                        } else {
+                            elapsed_ms < 180_000
+                        }
+                    };
+
+                    if whiplash_veto {
+                        unified_intent = SignalIntent::flat();
+                    }
+                }
             }
 
             let mut new_order = None;

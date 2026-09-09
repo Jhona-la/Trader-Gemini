@@ -2,7 +2,7 @@ use crate::atomic_float::AtomicF64;
 use crate::config::QuantumConfig;
 use omniscient_registry::OmniscientRegistry;
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /// Axioma V: Cohesión Celular Absoluta.
@@ -237,6 +237,9 @@ pub struct CoinArena {
     pub last_close_ts: AtomicU64,
     pub last_scalp_close_ts: AtomicU64,
     pub last_swing_close_ts: AtomicU64,
+    pub last_close_is_long: AtomicBool,
+    pub last_close_was_win: AtomicBool,
+    pub last_close_reason: AtomicU8,
 }
 
 impl CoinArena {
@@ -323,6 +326,9 @@ impl CoinArena {
             last_close_ts: AtomicU64::new(0),
             last_scalp_close_ts: AtomicU64::new(0),
             last_swing_close_ts: AtomicU64::new(0),
+            last_close_is_long: AtomicBool::new(false),
+            last_close_was_win: AtomicBool::new(false),
+            last_close_reason: AtomicU8::new(0),
         }
     }
 }
