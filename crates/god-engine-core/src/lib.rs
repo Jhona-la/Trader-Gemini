@@ -1803,6 +1803,16 @@ impl GodEngineCore {
                 } else {
                     dir_flow_sign
                 });
+            // REHAB-7: gate tensorial desde el GENOMA (min_confidence_btc —
+            // existía evolucionable y estaba huérfano de este uso). Banda
+            // [0.55,0.90]: lo bastante alto para exigir convicción, lo
+            // bastante ancho para que la evolución respire.
+            let tensor_min_conf = self
+                .arena
+                .config
+                .min_confidence_btc
+                .load(Ordering::Relaxed)
+                .clamp(0.55, 0.90);
             let ppo_state = [
                 ofi_norm,
                 obi_norm,
@@ -1811,7 +1821,16 @@ impl GodEngineCore {
                 dir_regime,
             ];
             let ppo_score = self.ppo_engine.evaluate_policy(&ppo_state);
-            let micro_score: f64 = (ppo_score * 0.70 + rolling_cvd * 0.30).clamp(-1.0, 1.0);
+            // REHAB-7: peso PPO-vs-CVD del GENOMA (weight_vpin reutilizado
+            // como share de la microestructura — antes 70/30 congelado).
+            let ppo_share = self
+                .arena
+                .config
+                .weight_vpin
+                .load(Ordering::Relaxed)
+                .clamp(0.2, 0.8);
+            let micro_score: f64 =
+                (ppo_score * ppo_share + rolling_cvd * (1.0 - ppo_share)).clamp(-1.0, 1.0);
 
             let sym = quantum_arena::symbol_registry::try_spec(coin_id)
                 .map(|s| s.symbol)
@@ -1844,8 +1863,15 @@ impl GodEngineCore {
                 .load(Ordering::Relaxed)
                 .clamp(0.1, 0.8);
             let remaining = 1.0 - w_micro;
-            let w_nn = remaining * 0.6; // 60% del resto a ML (derivación fija dentro del residuo)
-            let w_tensor = remaining * 0.4; // 40% del resto al consenso tensor
+            // REHAB-7: el split del residuo Bayes es GENÓMICO — antes 60/40
+            // congelado. El gen ml_threshold_long existente vive en [0.5,0.95]:
+            // re-mapeado a share del residuo, la evolución controla cuánto
+            // pesa el ML vs el consenso tensor en el núcleo de la decisión.
+            let nn_share = ((self.arena.config.ml_threshold_long.load(Ordering::Relaxed) - 0.50)
+                / 0.45)
+                .clamp(0.2, 0.8);
+            let w_nn = remaining * nn_share;
+            let w_tensor = remaining * (1.0 - nn_share);
             let raw_composite = micro_score * w_micro + nn_score * w_nn + tensor_boost * w_tensor;
             let composite_score: f64 = (raw_composite * hebbian_mult).clamp(-1.0, 1.0);
 
@@ -1907,7 +1933,7 @@ impl GodEngineCore {
                     // 1. Tendencial Short: Flujo institucional, confluencia L2 y ML apuntan a la baja
                     if composite_score < -dynamic_tech_thr
                         && not_overextended_short
-                        && current_obi < -0.10
+                        && current_obi < -0.16
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
@@ -1944,7 +1970,7 @@ impl GodEngineCore {
                     // 1. Tendencial Long: Flujo institucional, confluencia L2 y ML apuntan al alza
                     if composite_score > dynamic_tech_thr
                         && not_overextended_long
-                        && current_obi > 0.10
+                        && current_obi > 0.16
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
@@ -2016,7 +2042,8 @@ impl GodEngineCore {
 
                 if scalp_intent.signal == SignalType::Flat
                     && tensor_scalp.signal != SignalType::Flat
-                    && tensor_scalp.net_confidence.abs() > 0.70
+                    // REHAB-7: gate tensorial del GENOMA (antes 0.70 congelado)
+                    && tensor_scalp.net_confidence.abs() > tensor_min_conf
                 {
                     let tensor_allowed = (tensor_scalp.signal == SignalType::Long
                         && !is_confirmed_downtrend)
@@ -2024,7 +2051,10 @@ impl GodEngineCore {
                     if tensor_allowed {
                         scalp_intent = SignalIntent {
                             signal: tensor_scalp.signal,
-                            confidence: tensor_scalp.net_confidence.abs().clamp(0.70, 1.0),
+                            confidence: tensor_scalp
+                                .net_confidence
+                                .abs()
+                                .clamp(tensor_min_conf, 1.0),
                             horizon: strategy_core::TradeHorizon::Scalp,
                             ..Default::default()
                         };
@@ -2079,16 +2109,16 @@ impl GodEngineCore {
                 }
 
                 // D-473 & D-477: Escudo Invariante Neuronal DarkAlpha Calibrado (ML Directional Filter)
-                // Prohibir compras Long si la red neuronal tiene convicción bajista (ml_prob < 0.495),
-                // y ventas Short si la red neuronal tiene convicción alcista (ml_prob > 0.505),
+                // Prohibir compras Long si la red neuronal tiene convicción bajista (ml_prob < 0.510),
+                // y ventas Short si la red neuronal tiene convicción alcista (ml_prob > 0.490),
                 // salvo capitulación/euforia estadística extrema (price_stretch < -2.5 o > 2.5).
                 if scalp_intent.signal == SignalType::Long
-                    && ml_prob < 0.495
+                    && ml_prob < 0.510
                     && price_stretch >= -2.5
                 {
                     scalp_intent = SignalIntent::flat();
                 } else if scalp_intent.signal == SignalType::Short
-                    && ml_prob > 0.505
+                    && ml_prob > 0.490
                     && price_stretch <= 2.5
                 {
                     scalp_intent = SignalIntent::flat();
@@ -2309,44 +2339,56 @@ impl GodEngineCore {
                 if tensor_swing.signal == SignalType::Long
                     && is_bull
                     && not_chasing_long
-                    && tensor_swing.net_confidence.abs() > 0.65
+                    && tensor_swing.net_confidence.abs() > tensor_min_conf * 0.95
                 {
                     swing_intent = SignalIntent {
                         signal: tensor_swing.signal,
-                        confidence: tensor_swing.net_confidence.abs().clamp(0.65, 1.0),
+                        confidence: tensor_swing
+                            .net_confidence
+                            .abs()
+                            .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Swing,
                         ..Default::default()
                     };
                 } else if tensor_swing.signal == SignalType::Short
                     && is_bear
                     && not_chasing_short
-                    && tensor_swing.net_confidence.abs() > 0.65
+                    && tensor_swing.net_confidence.abs() > tensor_min_conf * 0.95
                 {
                     swing_intent = SignalIntent {
                         signal: tensor_swing.signal,
-                        confidence: tensor_swing.net_confidence.abs().clamp(0.65, 1.0),
+                        confidence: tensor_swing
+                            .net_confidence
+                            .abs()
+                            .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Swing,
                         ..Default::default()
                     };
                 } else if tensor_cont.signal == SignalType::Long
                     && is_bull
                     && not_chasing_long
-                    && tensor_cont.net_confidence.abs() > 0.65
+                    && tensor_cont.net_confidence.abs() > tensor_min_conf * 0.95
                 {
                     swing_intent = SignalIntent {
                         signal: tensor_cont.signal,
-                        confidence: tensor_cont.net_confidence.abs().clamp(0.65, 1.0),
+                        confidence: tensor_cont
+                            .net_confidence
+                            .abs()
+                            .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
                         ..Default::default()
                     };
                 } else if tensor_cont.signal == SignalType::Short
                     && is_bear
                     && not_chasing_short
-                    && tensor_cont.net_confidence.abs() > 0.65
+                    && tensor_cont.net_confidence.abs() > tensor_min_conf * 0.95
                 {
                     swing_intent = SignalIntent {
                         signal: tensor_cont.signal,
-                        confidence: tensor_cont.net_confidence.abs().clamp(0.65, 1.0),
+                        confidence: tensor_cont
+                            .net_confidence
+                            .abs()
+                            .clamp(tensor_min_conf * 0.95, 1.0),
                         horizon: strategy_core::TradeHorizon::Continuous,
                         ..Default::default()
                     };
@@ -2637,7 +2679,7 @@ impl GodEngineCore {
             }
 
             // D-473 & D-477: Escudo Invariante Neuronal DarkAlpha Universal (Cross-Horizon ML Filter)
-            if unified_intent.signal == SignalType::Long && ml_prob < 0.495 {
+            if unified_intent.signal == SignalType::Long && ml_prob < 0.510 {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
@@ -2652,7 +2694,7 @@ impl GodEngineCore {
                 if p_stretch >= -2.5 {
                     unified_intent = SignalIntent::flat();
                 }
-            } else if unified_intent.signal == SignalType::Short && ml_prob > 0.505 {
+            } else if unified_intent.signal == SignalType::Short && ml_prob > 0.490 {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow

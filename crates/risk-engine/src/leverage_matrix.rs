@@ -154,11 +154,15 @@ impl QuantumLeverageMatrix {
         };
 
         // Techo dinámico logarítmico: capitales bajos permiten leverages guiados por EV pero acotados para micro-cuentas ($13 USD)
-        let raw_ceiling = 50.0 * (1.0 - (log_cap / (log_divisor * 2.0)).min(0.8));
-        let dynamic_ceiling = if raw_ceiling.is_finite() {
-            raw_ceiling.clamp(5.0, 50.0)
+        let raw_ceiling = if safe_curr_cap <= 20.0 {
+            4.0 // Micro-cuenta: techo estricto de 4.0x para inmunidad absoluta contra pérdidas abultadas por SL
         } else {
-            20.0
+            50.0 * (1.0 - (log_cap / (log_divisor * 2.0)).min(0.8))
+        };
+        let dynamic_ceiling = if raw_ceiling.is_finite() {
+            raw_ceiling.clamp(1.0, 50.0)
+        } else {
+            4.0
         };
         let effective_max_leverage = safe_max_lev.clamp(1.0, dynamic_ceiling);
 

@@ -735,7 +735,10 @@ impl RiskEngine {
                 }
                 return rej(5);
             }
-            dynamic_leverage = candidate_leverage.min(max_exchange_leverage).min(50.0);
+            let max_lev_cap = if allocated_capital <= 20.0 { 5.0 } else { 50.0 };
+            dynamic_leverage = candidate_leverage
+                .min(max_exchange_leverage)
+                .min(max_lev_cap);
         }
 
         // FASE 3 FIX: Micro-Account Notional Safety
