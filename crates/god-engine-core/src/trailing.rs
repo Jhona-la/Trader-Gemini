@@ -323,10 +323,20 @@ mod tests {
 
     #[test]
     fn test_god_engine_trailing_long_phases_progression() {
+        // FIX #1404 (D-453/454/461): la fase 0→1 YA NO dispara a 0.5 ATR —
+        // exige 2.0 ATR de pnl O MFE ≥ be_trigger (1-2%). Un movimiento de
+        // solo +0.5 ATR debe DEJAR la posición en fase 0 (desarrollo del
+        // ciclo; el breakeven temprano asfixiaba los trades).
+        let res_early = evaluate_quantum_trailing(
+            1, 60000.0, 60050.0, 100.0, 0, 0.0, 0.0, 0.0, 1.5, 1.5, 2.0, 2.5, 1.5,
+        );
+        assert_eq!(res_early.new_phase, 0, "+0.5 ATR ya no promueve a fase 1");
+
+        // Entrada a fase 1 por MFE porcentual (60600 = +1.0% ≥ be_trigger):
         let res1 = evaluate_quantum_trailing(
             1,       // LONG
             60000.0, // entry
-            60050.0, // current
+            60600.0, // current (+1.0% MFE dispara be_trigger)
             100.0,   // ATR
             0,       // phase 0
             0.0, 0.0, 0.0, 1.5, 1.5, 2.0, 2.5, 1.5,
@@ -335,11 +345,12 @@ mod tests {
         assert!(res1.stop_price > 0.0);
         assert!(!res1.force_close);
 
-        // Price reaches Phase 2 (+2.0 ATR)
+        // Price reaches Phase 2: nueva puerta 1→2 exige pnl_atr ≥ 3.5
+        // (FIX #1404; +2.0 ATR ya NO promueve) o MFE ≥ 1.5×be_trigger.
         let res2 = evaluate_quantum_trailing(
             1,
             60000.0,
-            60200.0,
+            60350.0, // +3.5 ATR
             100.0,
             1,
             res1.mfe_atr,
@@ -353,11 +364,11 @@ mod tests {
         );
         assert_eq!(res2.new_phase, 2);
 
-        // Price advances to Phase 3 (+3.5 ATR)
+        // Price advances to Phase 3: puerta 2→3 exige pnl_atr ≥ 5.0
         let res3 = evaluate_quantum_trailing(
             1,
             60000.0,
-            60350.0,
+            60500.0, // +5.0 ATR
             100.0,
             2,
             res2.mfe_atr,
