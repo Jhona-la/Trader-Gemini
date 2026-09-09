@@ -2864,3 +2864,12 @@ graph TD
 
 ---
 *Fin del Informe Forense Maestro — Undécima Ola Forense (D-426 a D-450+).*
+
+---
+
+# 🌊 ANEXO — DUODÉCIMA OLA FORENSE (X-001 a X-045)
+
+> Auditoría de aseguramiento integral post-F8 (raíz a cima, solo lectura, dos sesiones concurrentes verificadas). 45 hallazgos: 12 CRÍTICOS, 15 HIGH, 12 MED, 6 LOW — incluye la **respuesta causal completa a "genoma funciona en backtest pero no en producción"** (6 eslabones rotos), el censo de rigidez scalp/swing (qué es VISTA vs RÍGIDO), 18 filtros arbitrarios sin teoría, 8 bloqueos de inteligencia, y la hoja de ruta 1-a-1 por dependencia causal.
+> **Documento completo:** [`INFORME_ASEGURAMIENTO_DUODECIMA_OLA_X.md`](INFORME_ASEGURAMIENTO_DUODECIMA_OLA_X.md)
+
+*Fin del anexo de la Duodécima Ola — la numeración D continúa reservada a las olas D; la serie X pertenece a esta ola y sus re-verificaciones.*
