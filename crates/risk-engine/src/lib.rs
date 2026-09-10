@@ -899,8 +899,8 @@ impl RiskEngine {
                         .load(Ordering::Relaxed)
                         .clamp(2.0, 10.0);
                     let s = sl_b.max(atr_ratio * 1.5).clamp(0.0045, 0.0065);
-                    let t = (s * 2.0).clamp(0.0100, 0.0160);
-                    (s, 0.0068, t, 0.0100, 0.0160)
+                    let t = (s * 1.80).clamp(0.0080, 0.0135);
+                    (s, 0.0068, t, 0.0080, 0.0135)
                 }
                 TradeHorizon::Swing => {
                     let sl_b = arena
@@ -954,9 +954,9 @@ impl RiskEngine {
         let tp_mult = (sl_mult * rr_ratio).clamp(2.0, 8.0);
         let tp_pct = match intent.horizon {
             TradeHorizon::Scalp => {
-                // Scalp: objetivo táctico directo (100-160 bps) con RR >= 2.0:1 estricto sobre SL
+                // Scalp: objetivo táctico directo (80-135 bps) con RR >= 1.8:1 estricto sobre SL
                 // para captura Maker ágil con fee rebate y asimetría matemática positiva sobre ruido browniano.
-                (sl_pct * 2.0).clamp(min_tp_clamp, max_tp_clamp)
+                (sl_pct * 1.80).clamp(min_tp_clamp, max_tp_clamp)
             }
             TradeHorizon::Swing | TradeHorizon::Continuous => (sl_pct * rr_ratio)
                 .max(atr_ratio * tp_mult)

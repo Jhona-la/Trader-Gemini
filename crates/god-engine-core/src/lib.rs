@@ -917,7 +917,7 @@ impl GodEngineCore {
                 // Activa cuando el trade ha alcanzado al menos 2.0 ATR o el 55% de su TP objetivo (mínimo 70 bps).
                 // Proporciona un colchón de >= 50 bps sobre el ruido estocástico de velas de 1m, permitiendo correr al TP.
                 // En cuanto el trade demuestra inercia direccional probada, el stop se ajusta a Entry + buffer (+18 a +30 bps).
-                let be_activation = (tp * 0.55).max(atr_pct_live * 2.0).clamp(0.0070, 0.0200);
+                let be_activation = (tp * 0.50).max(atr_pct_live * 1.8).clamp(0.0055, 0.0180);
                 if peak_pnl >= be_activation {
                     let be_buffer = (live_fee * 2.5).clamp(0.0018, 0.0030);
                     let be_stop = if is_long {
@@ -937,9 +937,9 @@ impl GodEngineCore {
                     }
                 }
 
-                // 2. Trailing Stop Ratchet Dinámico: activa cuando el pico alcanza >= 75% de TP (o mínimo 90 bps)
+                // 2. Trailing Stop Ratchet Dinámico: activa cuando el pico alcanza >= 70% de TP (o mínimo 75 bps)
                 let trail_activation_pnl =
-                    (tp * 0.75).max(be_activation * 1.25).clamp(0.0090, 0.0280);
+                    (tp * 0.70).max(be_activation * 1.20).clamp(0.0075, 0.0240);
                 let trail_active = peak_pnl >= trail_activation_pnl;
 
                 let mut force_close_trail = false;
@@ -1803,16 +1803,14 @@ impl GodEngineCore {
                 } else {
                     dir_flow_sign
                 });
-            // REHAB-7: gate tensorial desde el GENOMA (min_confidence_btc —
-            // existía evolucionable y estaba huérfano de este uso). Banda
-            // [0.55,0.90]: lo bastante alto para exigir convicción, lo
-            // bastante ancho para que la evolución respire.
+            // Gate tensorial de alta convicción: mínimo 0.70 para filtrar señales débiles
             let tensor_min_conf = self
                 .arena
                 .config
                 .min_confidence_btc
                 .load(Ordering::Relaxed)
-                .clamp(0.55, 0.90);
+                .max(0.70)
+                .clamp(0.70, 0.90);
             let ppo_state = [
                 ofi_norm,
                 obi_norm,
@@ -1821,16 +1819,8 @@ impl GodEngineCore {
                 dir_regime,
             ];
             let ppo_score = self.ppo_engine.evaluate_policy(&ppo_state);
-            // REHAB-7: peso PPO-vs-CVD del GENOMA (weight_vpin reutilizado
-            // como share de la microestructura — antes 70/30 congelado).
-            let ppo_share = self
-                .arena
-                .config
-                .weight_vpin
-                .load(Ordering::Relaxed)
-                .clamp(0.2, 0.8);
-            let micro_score: f64 =
-                (ppo_score * ppo_share + rolling_cvd * (1.0 - ppo_share)).clamp(-1.0, 1.0);
+            // 70% política PPO aprendida + 30% flujo acumulado CVD
+            let micro_score: f64 = (ppo_score * 0.70 + rolling_cvd * 0.30).clamp(-1.0, 1.0);
 
             let sym = quantum_arena::symbol_registry::try_spec(coin_id)
                 .map(|s| s.symbol)
@@ -1851,11 +1841,7 @@ impl GodEngineCore {
                 SignalType::Flat => 0.0,
             };
 
-            // Unified Bayesian Fusion: 40% Microstructure L2 (OBI/OFI/CVD) + 35% DarkAlpha ML + 25% Tensor Consensus
-            // H-6: pesos GENÓMICOS en vez de literales — el gen weight_obi
-            // ya existe y es evolucionable; los otros dos se normalizan para
-            // sumar 1.0 con él. La evolución puede ahora optimizar el núcleo
-            // de la decisión (antes: 0.40/0.35/0.25 congelados).
+            // Fusión Bayesiana Calibrada: w_micro (L2) + 60% del residuo a DarkAlpha ML + 40% al consenso tensorial
             let w_micro = self
                 .arena
                 .config
@@ -1863,15 +1849,8 @@ impl GodEngineCore {
                 .load(Ordering::Relaxed)
                 .clamp(0.1, 0.8);
             let remaining = 1.0 - w_micro;
-            // REHAB-7: el split del residuo Bayes es GENÓMICO — antes 60/40
-            // congelado. El gen ml_threshold_long existente vive en [0.5,0.95]:
-            // re-mapeado a share del residuo, la evolución controla cuánto
-            // pesa el ML vs el consenso tensor en el núcleo de la decisión.
-            let nn_share = ((self.arena.config.ml_threshold_long.load(Ordering::Relaxed) - 0.50)
-                / 0.45)
-                .clamp(0.2, 0.8);
-            let w_nn = remaining * nn_share;
-            let w_tensor = remaining * (1.0 - nn_share);
+            let w_nn = remaining * 0.60;
+            let w_tensor = remaining * 0.40;
             let raw_composite = micro_score * w_micro + nn_score * w_nn + tensor_boost * w_tensor;
             let composite_score: f64 = (raw_composite * hebbian_mult).clamp(-1.0, 1.0);
 
@@ -1919,12 +1898,20 @@ impl GodEngineCore {
                     (0.50 + 0.40 * score.abs().clamp(0.0, 1.0)).clamp(0.51, 0.90)
                 };
 
-                let dynamic_tech_thr = self
+                let is_anti_persistent = hurst_val < 0.42;
+                let mut dynamic_tech_thr = self
                     .arena
                     .config
                     .tech_threshold
                     .load(Ordering::Relaxed)
                     .max(0.24);
+
+                if is_anti_persistent {
+                    dynamic_tech_thr *= 1.20; // Elevar exigencia analítica 20% en régimen de ruido/chop
+                }
+
+                let min_obi_trend = if is_anti_persistent { 0.22 } else { 0.16 };
+                let min_obi_pullback = if is_anti_persistent { 0.22 } else { 0.18 };
 
                 // D-460 & D-466: Unificación Continua del Generador de Señales (Multiscale Vector Field).
                 // Confluencia de triple escala temporal: Micro (1m ticks), Intermedio (EMA 9 vs 21), y Macro Superior (2-Hour EMA 120).
@@ -1933,7 +1920,7 @@ impl GodEngineCore {
                     // 1. Tendencial Short: Flujo institucional, confluencia L2 y ML apuntan a la baja
                     if composite_score < -dynamic_tech_thr
                         && not_overextended_short
-                        && current_obi < -0.16
+                        && current_obi < -min_obi_trend
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Short,
@@ -1944,7 +1931,7 @@ impl GodEngineCore {
                     // 2. Pullback Short: Rebote hacia ema_slow vendido con confluencia estricta de flujo L2 Y composite score
                     } else if price_stretch >= 0.15
                         && price_stretch <= 1.20
-                        && current_obi < -0.18
+                        && current_obi < -min_obi_pullback
                         && composite_score < -0.12
                     {
                         scalp_intent = SignalIntent {
@@ -1970,7 +1957,7 @@ impl GodEngineCore {
                     // 1. Tendencial Long: Flujo institucional, confluencia L2 y ML apuntan al alza
                     if composite_score > dynamic_tech_thr
                         && not_overextended_long
-                        && current_obi > 0.16
+                        && current_obi > min_obi_trend
                     {
                         scalp_intent = SignalIntent {
                             signal: SignalType::Long,
@@ -1981,7 +1968,7 @@ impl GodEngineCore {
                     // 2. Dip Long: Corrección hacia ema_slow comprada con confluencia estricta de flujo L2 Y composite score
                     } else if price_stretch <= -0.15
                         && price_stretch >= -1.20
-                        && current_obi > 0.18
+                        && current_obi > min_obi_pullback
                         && composite_score > 0.12
                     {
                         scalp_intent = SignalIntent {
@@ -2042,12 +2029,19 @@ impl GodEngineCore {
 
                 if scalp_intent.signal == SignalType::Flat
                     && tensor_scalp.signal != SignalType::Flat
-                    // REHAB-7: gate tensorial del GENOMA (antes 0.70 congelado)
+                    && !is_anti_persistent
                     && tensor_scalp.net_confidence.abs() > tensor_min_conf
                 {
                     let tensor_allowed = (tensor_scalp.signal == SignalType::Long
-                        && !is_confirmed_downtrend)
-                        || (tensor_scalp.signal == SignalType::Short && !is_confirmed_uptrend);
+                        && !is_confirmed_downtrend
+                        && composite_score > 0.08
+                        && current_obi > 0.12
+                        && not_overextended_long)
+                        || (tensor_scalp.signal == SignalType::Short
+                            && !is_confirmed_uptrend
+                            && composite_score < -0.08
+                            && current_obi < -0.12
+                            && not_overextended_short);
                     if tensor_allowed {
                         scalp_intent = SignalIntent {
                             signal: tensor_scalp.signal,
@@ -2125,8 +2119,13 @@ impl GodEngineCore {
                 }
 
                 let last_close = coin.last_close_ts.load(Ordering::Relaxed);
+                let is_high_vol = atr_pct > 0.0015 || self.feature_engines[coin_id].v_t > 0.0015;
                 let min_cooldown_ms = if self.feature_engines[coin_id].last_scalp_was_loss {
-                    90_000
+                    if is_high_vol {
+                        180_000 // 3 minutos de cooldown tras pérdida en alta volatilidad para absorber cascadas
+                    } else {
+                        90_000
+                    }
                 } else {
                     20_000
                 };

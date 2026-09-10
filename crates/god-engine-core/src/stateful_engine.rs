@@ -112,7 +112,11 @@ impl StatefulEngine {
     #[inline(always)]
     pub fn can_open_scalp(&self, min_cooldown: u64) -> bool {
         let required = if self.last_scalp_was_loss {
-            min_cooldown * 2
+            if self.v_t > 0.0015 {
+                min_cooldown * 4
+            } else {
+                min_cooldown * 2
+            }
         } else {
             min_cooldown
         };
