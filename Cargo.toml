@@ -198,3 +198,7 @@ path = "src/bin/test_forest2.rs"
 [[bin]]
 name = "income_report"
 path = "src/bin/income_report.rs"
+
+[[bin]]
+name = "system_health"
+path = "src/bin/system_health.rs"
