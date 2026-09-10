@@ -709,6 +709,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let loop_streams_str = streams_str.clone();
         let historical_klines = historical_klines.clone();
         let omni_state_hot = Arc::clone(&omni_state_live);
+        let rt_handle_for_thread = rt_handle.clone();
         move || {
         if let Some(core_ids) = core_affinity::get_core_ids() {
             if core_ids.len() > 1 {
@@ -881,7 +882,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         exec.load().arena.store(Some(Arc::clone(&arena_real)));
 
         // Spawn NTP Synchronizer for live timestamp drift correction
-        tokio::spawn(execution_engine::ntp::start_ntp_synchronizer(
+        rt_handle_for_thread.spawn(execution_engine::ntp::start_ntp_synchronizer(
             Arc::new(exec.load().client().clone()),
             Arc::clone(&arena_real),
         ));
@@ -1444,7 +1445,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // (spawn async — el closure del thread no es async)
                         if !target_is_testnet && !is_paper_trading {
                             let exec_for_hedge = Arc::clone(&new_exec_arc);
-                            tokio::spawn(async move {
+                            rt_handle.spawn(async move {
                                 match exec_for_hedge.ensure_hedge_mode().await {
                                     Ok(true) => telemetry_server::telemetry_log!("🔀 [TRANSITION] Cuenta Mainnet migrada a modo HEDGE exitosamente"),
                                     Ok(false) => telemetry_server::telemetry_log!("🔀 [TRANSITION] Cuenta Mainnet ya se encuentra en modo HEDGE"),
@@ -1471,7 +1472,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         telemetry_server::telemetry_log!(
                             "🔌 [USER-DATA] Streamer de era demo marcado para apagado"
                         );
-                        tokio::spawn(async move {
+                        rt_handle.spawn(async move {
                             mainnet_streamer.start().await;
                         });
                         telemetry_server::telemetry_log!(
@@ -1479,7 +1480,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
 
                         // Re-spawn NTP synchronizer con el nuevo cliente para mantener sincronizado el reloj en mainnet
-                        tokio::spawn(execution_engine::ntp::start_ntp_synchronizer(
+                        rt_handle.spawn(execution_engine::ntp::start_ntp_synchronizer(
                             Arc::new(new_exec_arc.client().clone()),
                             Arc::clone(&arena_real),
                         ));
