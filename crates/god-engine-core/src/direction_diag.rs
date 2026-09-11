@@ -60,6 +60,8 @@ const RESIDUAL_BINS: usize = 10;
 const RESIDUAL_BOUND: f64 = 0.15;
 /// Celdas del histograma del error de entrenamiento del residuo, sobre [−1, 1].
 const UPDATE_BINS: usize = 10;
+/// Celdas del histograma de confianza en la compuerta del risk-engine, sobre [0, 1].
+const RISK_CONF_BINS: usize = 20;
 const LONG: usize = 0;
 const SHORT: usize = 1;
 
@@ -90,6 +92,9 @@ pub struct DirectionDiag {
     /// Rechazos del risk-engine y del consejo.
     pub risk_rejected: [u64; 2],
     pub council_vetoed: [u64; 2],
+    /// Confianza con la que la intención llega al risk-engine:
+    /// [dirección][0 rechazada, 1 aceptada][celda].
+    pub risk_confidence_hist: [[[u64; RISK_CONF_BINS]; 2]; 2],
     /// Aperturas por dirección.
     pub opened: [u64; 2],
     /// D-695: evaluaciones en que el modelo iba contra la intención, y cuántas
@@ -250,9 +255,13 @@ impl DirectionDiag {
     }
 
     #[inline]
-    pub fn record_risk(&mut self, is_long: bool, accepted: bool) {
+    pub fn record_risk(&mut self, is_long: bool, confidence: f64, accepted: bool) {
+        let d = if is_long { LONG } else { SHORT };
         if !accepted {
-            self.risk_rejected[if is_long { LONG } else { SHORT }] += 1;
+            self.risk_rejected[d] += 1;
+        }
+        if confidence.is_finite() {
+            self.risk_confidence_hist[d][accepted as usize][bin(confidence, 0.0, 1.0, RISK_CONF_BINS)] += 1;
         }
     }
 
@@ -356,6 +365,12 @@ impl DirectionDiag {
             self.council_vetoed[LONG],
             self.council_vetoed[SHORT],
         ));
+        for (d, name) in [(LONG, "largo"), (SHORT, "corto")] {
+            out.push_str(&format!(
+                "DIRECTION_DIAG risk_confianza {} celdas de 0,05 · rechazadas={:?} · aceptadas={:?}\n",
+                name, self.risk_confidence_hist[d][0], self.risk_confidence_hist[d][1],
+            ));
+        }
         out.push_str(&format!(
             "DIRECTION_DIAG escudo_neuronal en contra · largo={} (con habilidad {}) · corto={} (con habilidad {})\n",
             self.neural_against[LONG],
@@ -451,9 +466,12 @@ mod tests {
         assert_eq!(d.funnel_veto[LONG][STAGE_MACRO], 0);
         assert_eq!(d.funnel_survived, [0, 1]);
 
-        d.record_risk(true, false);
+        d.record_risk(true, 0.72, false);
+        d.record_risk(true, 0.80, true);
         d.record_council(false, false);
         assert_eq!(d.risk_rejected, [1, 0]);
+        assert_eq!(d.risk_confidence_hist[LONG][0][14], 1);
+        assert_eq!(d.risk_confidence_hist[LONG][1][16], 1);
         assert_eq!(d.council_vetoed, [0, 1]);
         assert!(d.report().contains("veto[6] escudo neuronal"));
     }

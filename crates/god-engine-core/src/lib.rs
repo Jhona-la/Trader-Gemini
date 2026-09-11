@@ -2926,6 +2926,7 @@ impl GodEngineCore {
                         .evaluate_quantum_order(coin_id, &calibrated_intent, &self.arena);
                 self.diag_dir.record_risk(
                     calibrated_intent.signal == SignalType::Long,
+                    calibrated_intent.confidence,
                     order.signal != SignalType::Flat,
                 );
                 if order.signal != SignalType::Flat {
