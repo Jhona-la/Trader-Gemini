@@ -887,6 +887,8 @@ async fn main() {
     );
     // Diagnóstico por dirección del embudo de entrada (sólo telemetría).
     println!("{}", core.diag_dir.report());
+    // Rechazos del risk-engine por compuerta y dirección (sólo telemetría).
+    println!("RISK_REJECT {}", risk_engine::reject_report());
 
     println!();
     println!("🛡️ ═══════════════════════════════════════════════════════════════");

@@ -51,46 +51,75 @@ impl ValidatedOrder {
 /// evaluate_single_intent. Índices:
 /// 0=flat/coin 1=exposure0 2=correlación 3=spec 4=EV 5=fee_impact
 /// 6=min_notional 7=margen_insuf 8=orchestrator 9=otros
+/// 10=drawdown 11=suelo TP/SL 12=confianza. Antes el drawdown compartía el
+/// índice 2 con la correlación, y el suelo TP/SL y la confianza el 4 con el EV:
+/// la telemetría no podía decir qué compuerta rechazaba.
 use std::sync::atomic::AtomicU64;
-pub static REJECT_COUNTERS: [std::sync::atomic::AtomicU64; 10] = [
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-];
+pub const REJECT_SLOTS: usize = 13;
+pub const REJ_DRAWDOWN: usize = 10;
+pub const REJ_TP_SL_FLOOR: usize = 11;
+pub const REJ_CONFIDENCE: usize = 12;
+
+#[allow(clippy::declare_interior_mutable_const)]
+const REJECT_ZERO: AtomicU64 = AtomicU64::new(0);
+#[allow(clippy::declare_interior_mutable_const)]
+const REJECT_ZERO_ROW: [AtomicU64; REJECT_SLOTS] = [REJECT_ZERO; REJECT_SLOTS];
+
+pub static REJECT_COUNTERS: [AtomicU64; REJECT_SLOTS] = [REJECT_ZERO; REJECT_SLOTS];
+
+/// Rechazos atribuidos a la dirección de la intención evaluada: [largo, corto].
+pub static REJECT_COUNTERS_DIR: [[AtomicU64; REJECT_SLOTS]; 2] = [REJECT_ZERO_ROW; 2];
+
+thread_local! {
+    /// Dirección de la intención en evaluación: 0 largo, 1 corto, 2 sin dirección.
+    static REJECT_DIR: std::cell::Cell<usize> = const { std::cell::Cell::new(2) };
+}
+
+/// Fija la dirección con la que se atribuyen los rechazos siguientes del hilo.
+pub fn set_reject_direction(signal: SignalType) {
+    let d = match signal {
+        SignalType::Long => 0,
+        SignalType::Short => 1,
+        SignalType::Flat => 2,
+    };
+    REJECT_DIR.with(|cell| cell.set(d));
+}
 
 fn rej(i: usize) -> ValidatedOrder {
     REJECT_COUNTERS[i].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let d = REJECT_DIR.with(|cell| cell.get());
+    if d < 2 {
+        REJECT_COUNTERS_DIR[d][i].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
     ValidatedOrder::rejected()
 }
 
-pub fn reject_report() -> String {
-    let names = [
-        "flat/coin",
-        "exposure0",
-        "correlacion",
-        "spec",
-        "EV",
-        "fee_impact",
-        "min_notional",
-        "margen_insuf",
-        "orchestrator",
-        "otros",
-    ];
-    let v: Vec<String> = REJECT_COUNTERS
+/// Nombre de cada compuerta de rechazo, por índice.
+pub const REJECT_NAMES: [&str; REJECT_SLOTS] = [
+    "flat/coin",
+    "exposure0",
+    "correlacion",
+    "spec",
+    "EV",
+    "fee_impact",
+    "min_notional",
+    "margen_insuf",
+    "orchestrator",
+    "otros",
+    "drawdown",
+    "suelo_tp_sl",
+    "confianza",
+];
+
+fn format_reject_counters(counters: &[AtomicU64; REJECT_SLOTS]) -> String {
+    let v: Vec<String> = counters
         .iter()
         .enumerate()
         .filter(|(_i, c)| c.load(std::sync::atomic::Ordering::Relaxed) > 0)
         .map(|(i, c)| {
             format!(
                 "{}={}",
-                names[i],
+                REJECT_NAMES[i],
                 c.load(std::sync::atomic::Ordering::Relaxed)
             )
         })
@@ -100,6 +129,16 @@ pub fn reject_report() -> String {
     } else {
         v.join(" ")
     }
+}
+
+/// Rechazos globales y por dirección de la intención evaluada.
+pub fn reject_report() -> String {
+    format!(
+        "{} · largo: {} · corto: {}",
+        format_reject_counters(&REJECT_COUNTERS),
+        format_reject_counters(&REJECT_COUNTERS_DIR[0]),
+        format_reject_counters(&REJECT_COUNTERS_DIR[1]),
+    )
 }
 
 pub struct RiskEngine {
@@ -381,6 +420,7 @@ impl RiskEngine {
         intent: &SignalIntent,
         arena: &GlobalArena,
     ) -> ValidatedOrder {
+        set_reject_direction(intent.signal);
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
             return rej(0);
         }
@@ -421,7 +461,7 @@ impl RiskEngine {
         if self.peak_capital > 0.0 && max_dd > 0.0 && max_dd < 1.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
             if dd >= max_dd {
-                return rej(2); // correlación bucket para no crear índice nuevo
+                return rej(REJ_DRAWDOWN);
             }
         }
 
@@ -496,6 +536,7 @@ impl RiskEngine {
         temporal_scale: f64,
         arena: &GlobalArena,
     ) -> ValidatedOrder {
+        set_reject_direction(intent.signal);
         if intent.signal == SignalType::Flat || allocated_capital <= 0.0 {
             return ValidatedOrder::rejected();
         }
@@ -745,7 +786,7 @@ impl RiskEngine {
         // Horizonte no operable: la dispersión esperada a esa tau no cubre la
         // fricción. Se RECHAZA en lugar de acotar y fingir que es viable.
         if tpsl_gate.below_tradeable_floor {
-            return rej(4);
+            return rej(REJ_TP_SL_FLOOR);
         }
         let expected_win = tpsl_gate.tp_pct;
         let expected_loss = tpsl_gate.sl_pct;
@@ -786,7 +827,7 @@ impl RiskEngine {
             crate::capital_regime::lerp(base_conf_gate, base_conf_gate * (0.66 / 0.62), scarcity)
                 .clamp(0.05, 0.98);
         if confidence < min_required_confidence {
-            return rej(4);
+            return rej(REJ_CONFIDENCE);
         }
 
         let expected_value_pct = (confidence * expected_win) - ((1.0 - confidence) * expected_loss);
@@ -1012,4 +1053,26 @@ fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
             .clamp(0.0, 1.0),
     };
     quantum_arena::temporal_spectrum::operating_tau_ms(intent.expected_duration_ms, s)
+}
+
+#[cfg(test)]
+mod reject_direction_tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn rechazos_se_atribuyen_a_la_direccion_evaluada() {
+        let long0 = REJECT_COUNTERS_DIR[0][REJ_CONFIDENCE].load(Ordering::Relaxed);
+        let short0 = REJECT_COUNTERS_DIR[1][REJ_CONFIDENCE].load(Ordering::Relaxed);
+        set_reject_direction(SignalType::Long);
+        let _ = rej(REJ_CONFIDENCE);
+        set_reject_direction(SignalType::Short);
+        let _ = rej(REJ_CONFIDENCE);
+        let _ = rej(REJ_CONFIDENCE);
+        set_reject_direction(SignalType::Flat);
+        let _ = rej(REJ_CONFIDENCE);
+        assert!(REJECT_COUNTERS_DIR[0][REJ_CONFIDENCE].load(Ordering::Relaxed) >= long0 + 1);
+        assert!(REJECT_COUNTERS_DIR[1][REJ_CONFIDENCE].load(Ordering::Relaxed) >= short0 + 2);
+        assert!(reject_report().contains("confianza="));
+    }
 }
