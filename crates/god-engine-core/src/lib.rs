@@ -3,6 +3,7 @@
 pub mod bootloader;
 pub mod conformal;
 pub mod darwin;
+pub mod diffusion;
 pub mod ensemble;
 pub mod latency_accelerator;
 pub mod math_kernels;
@@ -1710,14 +1711,14 @@ impl GodEngineCore {
                 } else {
                     dir_flow_sign
                 });
-            // Gate tensorial de alta convicción: mínimo 0.70 para filtrar señales débiles
+            // D-643 (DÉCIMA OLA): el gen `min_confidence_btc` entra acotado a sus
+            // bounds [0,50; 0,95] (`clamp_slot`). El `.max(0.70).clamp(0.70, 0.90)`
+            // de lectura anulaba la parte de la banda que la evolución explora.
             let tensor_min_conf = self
                 .arena
                 .config
                 .min_confidence_btc
-                .load(Ordering::Relaxed)
-                .max(0.70)
-                .clamp(0.70, 0.90);
+                .load(Ordering::Relaxed);
             let ppo_state = [
                 ofi_norm,
                 obi_norm,
@@ -1795,10 +1796,18 @@ impl GodEngineCore {
                 } else {
                     (0.00, 0.00)
                 };
+                // D-621 (DÉCIMA OLA): la cota de magnitud era ±1,50 ATR. Se expresa
+                // en desviaciones típicas de la distancia a la EMA de 21 velas: más
+                // allá del 95 % el desplazamiento es significativo y deja de ser un
+                // retroceso que se pueda operar.
+                let stretch_z = crate::diffusion::atr_stretch_z(
+                    price_stretch,
+                    crate::diffusion::EMA_SLOW_BARS,
+                );
                 let not_overextended_long =
-                    price_stretch <= max_stretch_long && price_stretch >= -1.50;
+                    price_stretch <= max_stretch_long && stretch_z >= -crate::diffusion::Z95;
                 let not_overextended_short =
-                    price_stretch >= min_stretch_short && price_stretch <= 1.50;
+                    price_stretch >= min_stretch_short && stretch_z <= crate::diffusion::Z95;
 
                 // D-105: Mapeo de convicción Bayesiana calibrada para Kelly sizing realista
                 let sig_conf = |score: f64| -> f64 {
@@ -2238,8 +2247,18 @@ impl GodEngineCore {
                 if ema_slow > 0.0 {
                     let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                     let price_stretch = (mid_price - ema_slow) / cur_atr;
-                    let not_chasing_swing_long = price_stretch <= 0.20 && price_stretch >= -1.50;
-                    let not_chasing_swing_short = price_stretch >= -0.20 && price_stretch <= 1.50;
+                    // D-621 (DÉCIMA OLA): antes 0,20 ATR a favor y 1,50 ATR en contra, una
+                    // asimetría de 7,5× sin derivación. La regla declarada es no comprar
+                    // por encima de la media ni vender por debajo (cota 0), y no
+                    // entrar si el desplazamiento en contra ya es significativo (z95).
+                    let swing_stretch_z = crate::diffusion::atr_stretch_z(
+                        price_stretch,
+                        crate::diffusion::EMA_SLOW_BARS,
+                    );
+                    let not_chasing_swing_long =
+                        swing_stretch_z <= 0.0 && swing_stretch_z >= -crate::diffusion::Z95;
+                    let not_chasing_swing_short =
+                        swing_stretch_z >= 0.0 && swing_stretch_z <= crate::diffusion::Z95;
 
                     let macd_diff = (ema_fast - ema_slow) / ema_slow;
                     let swing_tp = self.arena.config.swing_tp_base.load(Ordering::Relaxed);
@@ -2315,8 +2334,15 @@ impl GodEngineCore {
                 } else {
                     0.0
                 };
-                let not_chasing_long = price_stretch <= 0.20 && price_stretch >= -1.50;
-                let not_chasing_short = price_stretch >= -0.20 && price_stretch <= 1.50;
+                // D-621 (DÉCIMA OLA): mismas cotas en z que el camino de tendencia.
+                let consensus_stretch_z = crate::diffusion::atr_stretch_z(
+                    price_stretch,
+                    crate::diffusion::EMA_SLOW_BARS,
+                );
+                let not_chasing_long =
+                    consensus_stretch_z <= 0.0 && consensus_stretch_z >= -crate::diffusion::Z95;
+                let not_chasing_short =
+                    consensus_stretch_z >= 0.0 && consensus_stretch_z <= crate::diffusion::Z95;
 
                 // D-458 & D-462: Desbloquear consenso continuo evitando la persecución tardía (anti-chase guard)
                 if tensor_swing.signal == SignalType::Long
@@ -2403,10 +2429,13 @@ impl GodEngineCore {
             let mut unified_intent = SignalIntent::flat();
             if scalp_intent.signal != SignalType::Flat && swing_intent.signal != SignalType::Flat {
                 if scalp_intent.signal == swing_intent.signal {
-                    // Interferencia constructiva perfecta: coherencia de onda máxima
-                    let boosted_conf = (scalp_intent.confidence.max(swing_intent.confidence)
-                        * 1.10)
-                        .clamp(0.60, 1.0);
+                    // D-623 (DÉCIMA OLA): antes `máx(p₁, p₂)·1,10` con suelo 0,60. Dos
+                    // evidencias sólo se combinan sumando log-odds si son
+                    // condicionalmente independientes, y éstas no lo son: ambas leen el
+                    // mismo consenso tensorial (`tensor_scalp` y `tensor_swing` son copias
+                    // de `tensor_cont`). Con evidencia dependiente, la combinación que no
+                    // inventa certeza es el máximo.
+                    let boosted_conf = scalp_intent.confidence.max(swing_intent.confidence);
                     unified_intent = SignalIntent {
                         signal: scalp_intent.signal,
                         confidence: boosted_conf,
@@ -2479,7 +2508,31 @@ impl GodEngineCore {
 
             // D-467, D-472, D-488 & D-496: Escudo Invariante Macro Multiescala (Secular 12h, Superior 2h y Macro 1m/15m).
             // Erradica operaciones a contratendencia del régimen mayor (e.g. comprar Longs en caída o vender Shorts en rally)
-            if (is_confirmed_downtrend || secular_trend < -0.0003 || higher_trend < -0.0008 || macro_trend < -0.0006)
+            // D-624 (DÉCIMA OLA): antes −3, −8 y −6 pb para tres horizontes (0,04 σ,
+            // 0,24 σ y 0,87 σ con ATR del 0,10 %): el escudo bloqueaba largos en
+            // cuanto el precio bajaba unos puntos básicos de la EMA de 12 h. Cada
+            // tendencia se estandariza con su propia desviación de difusión y se
+            // exige significación al 95 %, el mismo criterio para los tres horizontes.
+            let shield_atr_ratio =
+                self.feature_engines[coin_id].v_t.max(mid_price * 0.001) / mid_price.max(1e-12);
+            let z_secular = crate::diffusion::ema_distance_z(
+                secular_trend,
+                shield_atr_ratio,
+                crate::diffusion::EMA_MACRO_BARS,
+            );
+            let z_higher = crate::diffusion::ema_distance_z(
+                higher_trend,
+                shield_atr_ratio,
+                crate::diffusion::EMA_TREND_BARS,
+            );
+            let z_macro = crate::diffusion::ema_spread_z(
+                macro_trend,
+                shield_atr_ratio,
+                crate::diffusion::EMA_FAST_BARS,
+                crate::diffusion::EMA_SLOW_BARS,
+            );
+            let z95 = crate::diffusion::Z95;
+            if (is_confirmed_downtrend || z_secular < -z95 || z_higher < -z95 || z_macro < -z95)
                 && unified_intent.signal == SignalType::Long
             {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
@@ -2498,13 +2551,14 @@ impl GodEngineCore {
                     .config
                     .tech_threshold
                     .load(Ordering::Relaxed);
-                let extreme_capitulation = p_stretch < -2.5
+                // D-624: capitulación = desplazamiento significativo bajo la EMA de 21 velas.
+                let extreme_capitulation = crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) < -z95
                     && current_obi > dynamic_obi_thr * 0.8
                     && composite_score > dynamic_tech_thr;
                 if !extreme_capitulation {
                     unified_intent = SignalIntent::flat();
                 }
-            } else if (is_confirmed_uptrend || secular_trend > 0.0003 || higher_trend > 0.0008 || macro_trend > 0.0006)
+            } else if (is_confirmed_uptrend || z_secular > z95 || z_higher > z95 || z_macro > z95)
                 && unified_intent.signal == SignalType::Short
             {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
@@ -2523,7 +2577,8 @@ impl GodEngineCore {
                     .config
                     .tech_threshold
                     .load(Ordering::Relaxed);
-                let extreme_blowoff = p_stretch > 2.5
+                // D-624: euforia = desplazamiento significativo sobre la EMA de 21 velas.
+                let extreme_blowoff = crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) > z95
                     && current_obi < -dynamic_obi_thr * 0.8
                     && composite_score < -dynamic_tech_thr;
                 if !extreme_blowoff {
@@ -2821,17 +2876,27 @@ impl GodEngineCore {
                         let free_cap = (current_cap - total_used).max(0.0);
 
                         let eff_leverage = order.leverage.clamp(1.0, 50.0);
-                        let min_margin = 5.05 / eff_leverage;
-                        let max_margin = (free_cap * 0.95).max(0.0);
-                        if min_margin <= max_margin {
-                            let mut margin_req = order.volume_usd.clamp(min_margin, max_margin);
-                            let max_pos = 50000.0;
-                            if margin_req * eff_leverage > max_pos {
-                                margin_req = max_pos / eff_leverage;
-                            }
-
-                            if margin_req * eff_leverage >= 5.0
-                                && total_used + margin_req <= current_cap * 0.98
+                        // D-634/D-635 (DÉCIMA OLA): aquí se revalidaba la orden con
+                        // literales propios —notional 5,05, techo de 50 000 y colchón
+                        // 0,98— que ignoraban el gen `margin_cushion_pct` que el
+                        // risk-engine acababa de respetar, y ganaba el más permisivo.
+                        // El risk-engine valida notional mínimo, colchón y límite por
+                        // operación con UNA función compartida; aquí sólo queda lo que
+                        // él no puede ver: el margen que otras monedas hayan comprometido
+                        // desde que validó la orden.
+                        let min_notional = risk_engine::capital_regime::effective_min_notional(
+                            quantum_arena::symbol_registry::try_spec(coin_id)
+                                .map(|s| s.min_notional)
+                                .unwrap_or(0.0),
+                        );
+                        let cushion = risk_engine::capital_regime::margin_cushion(
+                            self.arena.config.margin_cushion_pct.load(Ordering::Relaxed),
+                            risk_engine::capital_regime::micro_weight(current_cap, min_notional),
+                        );
+                        let margin_req = order.volume_usd;
+                        if margin_req > 0.0 && margin_req <= free_cap {
+                            if margin_req * eff_leverage >= min_notional
+                                && total_used + margin_req <= current_cap * cushion
                             {
                                 self.diag_opened += 1;
                                 self.arena

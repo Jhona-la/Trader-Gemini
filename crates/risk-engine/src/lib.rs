@@ -327,7 +327,7 @@ impl RiskEngine {
                 Some(s) => s,
                 None => return (ValidatedOrder::rejected(), ValidatedOrder::rejected()),
             };
-            let dynamic_min_notional = spec.min_notional.max(5.0);
+            let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
 
             let safe_bootstrap_scalp = (dynamic_min_notional / scalp_capital.max(1.0))
                 .clamp(kelly_bootstrap_min_exposure * 0.5, 0.4);
@@ -810,7 +810,7 @@ impl RiskEngine {
         } else {
             100.0
         };
-        let dynamic_min_notional = spec.min_notional.max(5.0);
+        let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
 
         let bounded_exposure = raw_exposure.clamp(-allocated_capital, allocated_capital);
         let mut final_margin = bounded_exposure.abs();
@@ -820,13 +820,9 @@ impl RiskEngine {
         // 0,98 anulaba el gen precisamente en el entorno de capital real, de
         // modo que un gen evolucionado para la prudencia quedaba inerte en
         // producción.
-        let genomic_cushion = if margin_cushion_pct.is_finite() && margin_cushion_pct > 0.0 {
-            margin_cushion_pct.clamp(0.50, 0.98)
-        } else {
-            0.80
-        };
-        let safe_cushion =
-            (genomic_cushion + (0.98 - genomic_cushion) * scarcity).clamp(0.50, 0.98);
+        // D-634/D-635: la fórmula vive en `capital_regime::margin_cushion`,
+        // compartida con la comprobación de margen libre del núcleo.
+        let safe_cushion = crate::capital_regime::margin_cushion(margin_cushion_pct, scarcity);
 
         // D-130: Evaluar si el notional real de la orden (final_margin * dynamic_leverage) cumple con el mínimo
         if final_margin > 0.0 && final_margin * dynamic_leverage < dynamic_min_notional {

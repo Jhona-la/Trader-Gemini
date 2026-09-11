@@ -226,7 +226,10 @@ impl QuantumConfig {
             swing_sl_base: AtomicF64::new(genome.swing_sl_base),
             sl_atr_mult_btc: AtomicF64::new(genome.sl_atr_mult_btc),
             tp_rr_ratio_btc: AtomicF64::new(genome.tp_rr_ratio_btc),
-            min_confidence_btc: AtomicF64::new(genome.min_confidence_btc),
+            min_confidence_btc: AtomicF64::new(crate::genome::SuperGenotype::clamp_slot(
+                genome.min_confidence_btc,
+                crate::genome::SuperGenotype::SLOT_MIN_CONFIDENCE,
+            )),
             veto_threshold_btc: AtomicF64::new(genome.veto_threshold_btc),
             tech_threshold: AtomicF64::new(crate::genome::SuperGenotype::clamp_slot(
                 genome.tech_threshold,
@@ -320,7 +323,10 @@ impl QuantumConfig {
             kelly_bootstrap_ratio_threshold: AtomicF64::new(genome.kelly_bootstrap_ratio_threshold),
             kelly_bootstrap_min_exposure: AtomicF64::new(genome.kelly_bootstrap_min_exposure),
             ev_fee_multiplier: AtomicF64::new(genome.ev_fee_multiplier),
-            margin_cushion_pct: AtomicF64::new(genome.margin_cushion_pct),
+            margin_cushion_pct: AtomicF64::new(crate::genome::SuperGenotype::clamp_slot(
+                genome.margin_cushion_pct,
+                crate::genome::SuperGenotype::SLOT_MARGIN_CUSHION,
+            )),
             maker_only_capital_threshold: AtomicF64::new(genome.maker_only_capital_threshold),
             hawkes_scalp_threshold: AtomicF64::new(genome.hawkes_scalp_threshold),
             obi_zscore_threshold: AtomicF64::new(genome.obi_zscore_threshold),

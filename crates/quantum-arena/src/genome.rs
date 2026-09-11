@@ -785,7 +785,7 @@ impl SuperGenotype {
             kelly_bootstrap_ratio_threshold: taker_base * 200.0,
             kelly_bootstrap_min_exposure: taker_base * 200.0,
             ev_fee_multiplier: 1.1,
-            margin_cushion_pct: 1.0 + (taker_base * 100.0),
+            margin_cushion_pct: 0.98, // D-687: el efectivo de `1 + taker·100` tras el acotado
             maker_only_capital_threshold: taker_base * 100000.0,
 
             kelly_survival_cap_ratio: golden_ratio,
@@ -983,7 +983,7 @@ impl SuperGenotype {
             kelly_bootstrap_ratio_threshold: rand::rng().random_range(0.05..0.30),
             kelly_bootstrap_min_exposure: rand::rng().random_range(0.01..0.5),
             ev_fee_multiplier: rand::rng().random_range(1.05..2.0),
-            margin_cushion_pct: rand::rng().random_range(1.01..1.20),
+            margin_cushion_pct: rand::rng().random_range(0.50..0.98),
             maker_only_capital_threshold: rand::rng().random_range(10.0..200.0),
 
             kelly_survival_cap_ratio: rand::rng().random_range(1.0..3.0),
@@ -1139,7 +1139,7 @@ impl SuperGenotype {
         arena
             .config
             .min_confidence_btc
-            .store(self.min_confidence_btc, Ordering::Relaxed);
+            .store(Self::clamp_slot(self.min_confidence_btc, Self::SLOT_MIN_CONFIDENCE), Ordering::Relaxed);
         arena
             .config
             .veto_threshold_btc
@@ -1463,7 +1463,7 @@ impl SuperGenotype {
         arena
             .config
             .margin_cushion_pct
-            .store(self.margin_cushion_pct, Ordering::Relaxed);
+            .store(Self::clamp_slot(self.margin_cushion_pct, Self::SLOT_MARGIN_CUSHION), Ordering::Relaxed);
         arena
             .config
             .maker_only_capital_threshold
@@ -1814,7 +1814,7 @@ impl SuperGenotype {
             ),
             kelly_bootstrap_min_exposure: mutate_val(self.kelly_bootstrap_min_exposure, 0.01, 0.5),
             ev_fee_multiplier: mutate_val(self.ev_fee_multiplier, 1.0, 5.0),
-            margin_cushion_pct: mutate_val(self.margin_cushion_pct, 1.01, 1.20),
+            margin_cushion_pct: mutate_val(self.margin_cushion_pct, 0.50, 0.98),
             maker_only_capital_threshold: 50.0,
             hawkes_scalp_threshold: mutate_val(self.hawkes_scalp_threshold, 0.1, 1.0),
             obi_zscore_threshold: mutate_val(self.obi_zscore_threshold, 0.1, 3.0),
@@ -2673,6 +2673,14 @@ impl SuperGenotype {
     /// caducidad absoluta `12g·(1+s)` de posiciones huérfanas— y el gen queda
     /// evolucionable dentro de una banda con sentido.
     pub const SLOT_ZOMBIE_TIMEOUT: usize = 54;
+    /// D-643: umbral de confianza, acotado en la entrada en lugar de en la lectura.
+    pub const SLOT_MIN_CONFIDENCE: usize = 19;
+    /// D-687 (DÉCIMA OLA): fracción del capital comprometible como margen. Sus
+    /// bounds eran [1,01; 1,20] mientras el único consumidor lo acotaba a
+    /// [0,50; 0,98]: el gen valía siempre 0,98 y la evolución nunca pudo
+    /// moverlo. La banda pasa a la del consumidor; los genomas existentes
+    /// (> 0,98) entran en 0,98, su valor efectivo de siempre.
+    pub const SLOT_MARGIN_CUSHION: usize = 107;
 
     /// Acota un gen a sus bounds evolutivos.
     ///
@@ -2806,7 +2814,7 @@ impl SuperGenotype {
             0.05,
             0.01,
             1.0,
-            1.01,
+            0.50, // D-687: fracción del capital comprometible
             10.0,
             0.1,
             0.1,
@@ -2960,7 +2968,7 @@ impl SuperGenotype {
             0.30,
             0.5,
             5.0,
-            1.20,
+            0.98, // D-687: MAX_MARGIN_UTILIZATION
             5000.0,
             1.0,
             3.0,

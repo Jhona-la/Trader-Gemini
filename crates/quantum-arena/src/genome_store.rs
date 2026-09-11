@@ -493,6 +493,25 @@ mod tests {
         assert!((swap.config.tech_threshold.load(Ordering::Relaxed) - 0.24).abs() < 1e-12);
     }
 
+    /// D-643/D-687: los genes de confianza y colchón entran acotados a sus
+    /// bounds, y el colchón del genoma de producción conserva su valor efectivo.
+    #[test]
+    fn d687_colchon_y_confianza_se_acotan_al_entrar_al_arena() {
+        use std::sync::atomic::Ordering;
+        let mut g = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let v = g.to_vector();
+        assert_eq!(v[SuperGenotype::SLOT_MIN_CONFIDENCE], g.min_confidence_btc);
+        assert_eq!(v[SuperGenotype::SLOT_MARGIN_CUSHION], g.margin_cushion_pct);
+        g.margin_cushion_pct = 1.092_219_631_099_718;
+        g.min_confidence_btc = 0.30;
+        let frio = crate::state::GlobalArena::from_genome(13.0, &g);
+        assert_eq!(frio.config.margin_cushion_pct.load(Ordering::Relaxed), 0.98);
+        assert_eq!(frio.config.min_confidence_btc.load(Ordering::Relaxed), 0.50);
+        let swap = crate::state::GlobalArena::new(13.0);
+        g.apply_to_arena(&swap);
+        assert_eq!(swap.config.margin_cushion_pct.load(Ordering::Relaxed), 0.98);
+    }
+
     #[test]
     fn t2_simetria_from_genome_vs_apply_to_arena() {
         use crate::GlobalArena;

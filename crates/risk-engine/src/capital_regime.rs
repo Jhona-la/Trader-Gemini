@@ -128,6 +128,43 @@ pub fn log_lerp(standard: f64, micro: f64, w: f64) -> f64 {
     (standard.ln() * (1.0 - w) + micro.ln() * w).exp()
 }
 
+/// Fracción máxima del capital comprometible como margen. Deja el 2 % para
+/// comisiones de salida y redondeos del exchange; es el valor que el sistema ya
+/// usaba como máximo operativo en régimen micro.
+pub const MAX_MARGIN_UTILIZATION: f64 = 0.98;
+
+/// Colchón mínimo que un genoma puede fijar: la mitad del capital.
+pub const MIN_MARGIN_UTILIZATION: f64 = 0.50;
+
+/// Colchón que se aplica si el gen no es un número utilizable.
+pub const FALLBACK_MARGIN_UTILIZATION: f64 = 0.80;
+
+/// D-634/D-635 (DÉCIMA OLA): FUENTE ÚNICA del colchón de margen. El gen
+/// `margin_cushion_pct` fija la fracción del capital comprometible; la escasez
+/// de capital la relaja de forma continua hacia el máximo operativo. La usan el
+/// risk-engine al validar la orden y el núcleo al comprobar el margen libre.
+#[inline]
+pub fn margin_cushion(gene: f64, scarcity: f64) -> f64 {
+    let genomic = if gene.is_finite() && gene > 0.0 {
+        gene.clamp(MIN_MARGIN_UTILIZATION, MAX_MARGIN_UTILIZATION)
+    } else {
+        FALLBACK_MARGIN_UTILIZATION
+    };
+    lerp(genomic, MAX_MARGIN_UTILIZATION, scarcity)
+        .clamp(MIN_MARGIN_UTILIZATION, MAX_MARGIN_UTILIZATION)
+}
+
+/// D-635: notional mínimo efectivo de un símbolo. El del exchange cuando se
+/// conoce, nunca por debajo del mínimo universal de Binance USDⓈ-M.
+#[inline]
+pub fn effective_min_notional(spec_min_notional: f64) -> f64 {
+    if spec_min_notional.is_finite() && spec_min_notional > 0.0 {
+        spec_min_notional.max(DEFAULT_MIN_NOTIONAL)
+    } else {
+        DEFAULT_MIN_NOTIONAL
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,6 +229,21 @@ mod tests {
         assert_eq!(micro_weight(f64::NAN, 5.0), 1.0);
         assert_eq!(micro_weight(-10.0, 5.0), 1.0);
         assert_eq!(micro_weight(13.0, f64::NAN), 1.0);
+    }
+
+    #[test]
+    fn el_colchon_sale_del_gen_y_la_escasez_lo_relaja() {
+        assert!((margin_cushion(0.70, 0.0) - 0.70).abs() < 1e-12);
+        assert!((margin_cushion(0.70, 1.0) - MAX_MARGIN_UTILIZATION).abs() < 1e-12);
+        assert!((margin_cushion(1.09, 0.0) - MAX_MARGIN_UTILIZATION).abs() < 1e-12);
+        assert!((margin_cushion(f64::NAN, 0.0) - FALLBACK_MARGIN_UTILIZATION).abs() < 1e-12);
+    }
+
+    #[test]
+    fn el_notional_minimo_respeta_el_del_exchange() {
+        assert_eq!(effective_min_notional(100.0), 100.0);
+        assert_eq!(effective_min_notional(1.0), DEFAULT_MIN_NOTIONAL);
+        assert_eq!(effective_min_notional(f64::NAN), DEFAULT_MIN_NOTIONAL);
     }
 
     #[test]
