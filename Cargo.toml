@@ -202,3 +202,7 @@ path = "src/bin/income_report.rs"
 [[bin]]
 name = "system_health"
 path = "src/bin/system_health.rs"
+
+[[bin]]
+name = "backtest_windows"
+path = "src/bin/backtest_windows.rs"

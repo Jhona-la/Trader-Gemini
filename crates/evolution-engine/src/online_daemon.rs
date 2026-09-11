@@ -619,8 +619,19 @@ impl LiveEvolutionDaemon {
                         } // Skip: no signal
 
                         let trade_ret = r * entry_bias; // positive = correct direction
-                        let clamped_ret = trade_ret.clamp(-sl, tp);
-                        let net_ret = clamped_ret - roundtrip_fee;
+
+                        // D-513: Modelo Estocástico de Barrera (Brownian Bridge First-Passage Time)
+                        // Previene que la evolución premie stops parásitos infinitesimales (sl << sigma)
+                        // que en trading real son ejecutados con 100% de probabilidad por el ruido microestructural.
+                        let eff_sigma = volatility.max(0.0005); // Piso de volatilidad de 5 bps
+                        let p_stop = if trade_ret <= -sl {
+                            1.0
+                        } else {
+                            let arg = (2.0 * sl * (sl + trade_ret)) / (eff_sigma * eff_sigma);
+                            (-arg.clamp(0.0, 50.0)).exp().clamp(0.0, 1.0)
+                        };
+                        let effective_ret = (-sl) * p_stop + trade_ret.min(tp) * (1.0 - p_stop);
+                        let net_ret = effective_ret - roundtrip_fee;
 
                         wf_pnl +=
                             net_ret * wf_capital * candidate.scalp_kelly_fraction.clamp(0.05, 0.50);

@@ -504,7 +504,18 @@ impl RiskEngine {
         let risk_normalizer = (scalp_sl_ref / sl_interp_est).clamp(0.15, 1.0);
         let kelly_adjusted = kelly_fraction * risk_normalizer;
 
-        let raw_exposure = dir * intent.confidence * kelly_adjusted * allocated_capital;
+        // D-494: Micro-Account Kelly Scaler. En micro-cuentas ($13 USD), la fracción base (0.10)
+        // produce $0.91 de margen (subcrítico, por debajo de Binance $5 min notional a 5x).
+        // Escalamos adaptativamente con la convicción Bayesiana para operar entre $1.15 y $1.80 de margen,
+        // dentro del límite seguro del 25% del capital ($2.60).
+        let kelly_for_scale = if allocated_capital <= 20.0 {
+            (kelly_adjusted.max(0.12) * (1.0 + (intent.confidence - 0.65).max(0.0) * 1.5))
+                .clamp(0.10, 0.20)
+        } else {
+            kelly_adjusted
+        };
+
+        let raw_exposure = dir * intent.confidence * kelly_for_scale * allocated_capital;
         if raw_exposure == 0.0 {
             return rej(1);
         }
@@ -590,7 +601,7 @@ impl RiskEngine {
         let mut dynamic_leverage =
             leverage_matrix::QuantumLeverageMatrix::calculate_dynamic_leverage(
                 intent,
-                temporal_scale < 0.5,
+                temporal_scale, // D-509: Variedad temporal continua sin colapso discreto
                 allocated_capital,
                 base_allocated,
                 atr_pct,
@@ -735,7 +746,17 @@ impl RiskEngine {
                 }
                 return rej(5);
             }
-            let max_lev_cap = if allocated_capital <= 20.0 { 5.0 } else { 50.0 };
+            let max_lev_cap = if allocated_capital <= 20.0 {
+                if intent.confidence >= 0.75 {
+                    6.5
+                } else if intent.confidence >= 0.70 {
+                    5.8
+                } else {
+                    5.0
+                }
+            } else {
+                50.0
+            };
             dynamic_leverage = candidate_leverage
                 .min(max_exchange_leverage)
                 .min(max_lev_cap);
@@ -898,9 +919,9 @@ impl RiskEngine {
                         .tp_rr_ratio_btc
                         .load(Ordering::Relaxed)
                         .clamp(2.0, 10.0);
-                    let s = sl_b.max(atr_ratio * 1.5).clamp(0.0045, 0.0065);
-                    let t = (s * 1.80).clamp(0.0080, 0.0135);
-                    (s, 0.0068, t, 0.0080, 0.0135)
+                    let s = sl_b.max(atr_ratio * 1.4).clamp(0.0040, 0.0058);
+                    let t = (s * 1.65).clamp(0.0070, 0.0115);
+                    (s, 0.0060, t, 0.0070, 0.0115)
                 }
                 TradeHorizon::Swing => {
                     let sl_b = arena
@@ -924,8 +945,19 @@ impl RiskEngine {
                 }
                 TradeHorizon::Continuous => {
                     let ts = temporal_s_eval;
-                    let s = 0.0040 * (1.0 - ts) + 0.0080 * ts;
-                    let t = 0.0100 * (1.0 - ts) + 0.0250 * ts;
+                    // D-508 & D-518: Invarianza de Escala Universal según Mandelbrot (tau^H)
+                    let safe_h = if hurst_exponent.is_finite() {
+                        hurst_exponent.clamp(0.30, 0.75)
+                    } else {
+                        0.50
+                    };
+                    // Tau escala continuamente desde 1.0 (micro) hasta 10.0 (macro)
+                    let tau = 1.0 + 9.0 * ts;
+                    let fractal_scale = tau.powf(safe_h); // Difusión anómala Mandelbrot
+                    let norm_scale = (fractal_scale / 10.0f64.powf(safe_h)).clamp(0.0, 1.0);
+
+                    let s = 0.0040 * (1.0 - norm_scale) + 0.0080 * norm_scale;
+                    let t = 0.0100 * (1.0 - norm_scale) + 0.0250 * norm_scale;
                     let s_eff = s.max(atr_ratio * 1.5).clamp(0.0040, 0.0090);
                     (s_eff, 0.0120, t, 0.0090, 0.0450)
                 }

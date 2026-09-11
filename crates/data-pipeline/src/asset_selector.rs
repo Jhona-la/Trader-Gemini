@@ -56,8 +56,11 @@ pub async fn fetch_top_dynamic_assets(
         "AEURUSDT",
     ];
 
-    let min_vol = if is_testnet { 0.0 } else { 1_000_000.0 };
-    let min_pct = if is_testnet { 0.0 } else { 0.1 };
+    // F-003 FIX: Deterministic filtering — use production-grade thresholds in ALL environments
+    // to guarantee backtest/testnet parity with production asset universe.
+    // The is_testnet flag only controls the API endpoint URL, NOT the quality filters.
+    let min_vol = 1_000_000.0;
+    let min_pct = 0.1;
 
     let mut valid_assets: Vec<SelectedAsset> = tickers
         .into_iter()
@@ -65,7 +68,7 @@ pub async fn fetch_top_dynamic_assets(
         .filter_map(|t| {
             let vol = t.quote_volume.parse::<f64>().unwrap_or(0.0);
             let pct = t.price_change_percent.parse::<f64>().unwrap_or(0.0).abs();
-            // FIX #1422: Umbral sensible al entorno (Testnet vs Mainnet)
+            // F-003: Deterministic production-grade filtering across all environments
             if vol >= min_vol && pct >= min_pct {
                 Some(SelectedAsset {
                     symbol: t.symbol,

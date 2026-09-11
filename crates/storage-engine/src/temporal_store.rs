@@ -54,12 +54,14 @@ impl TemporalObjectStore {
             }
         }
 
-        let current_offset = self.write_cursor.fetch_add(64, Ordering::AcqRel);
-
-        if current_offset + 64 > self.capacity {
-            // Buffer lleno (En un entorno real implementaríamos Rotación Log-Structured)
-            return Err("TemporalObjectStore capacity exceeded");
+        let usable_capacity = (self.capacity / 64) * 64;
+        if usable_capacity == 0 {
+            return Err("TemporalObjectStore capacity is zero");
         }
+        // D-517: Rotación circular lock-free (Ring Wrap-Around) permanente
+        // Evita agotar el buffer de 1GB y previene panics/errores en producción 24/7.
+        let raw_offset = self.write_cursor.fetch_add(64, Ordering::AcqRel);
+        let current_offset = raw_offset % usable_capacity;
 
         unsafe {
             // FIX #660: Puntero base a memoria mapeada y memory fence _mm_sfence()

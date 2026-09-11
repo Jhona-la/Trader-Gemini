@@ -377,6 +377,28 @@ pub fn reconcile_arena(
                 }
                 adjustments += 1;
             }
+
+            // D-510: Purgar posiciones fantasma también en los slots scalp y swing si Binance está plano
+            if coin.positions.scalp.is_open() {
+                let (_was_long, _entry_p, _qty, m, _fee) = coin.positions.scalp.close_with_fee();
+                if m > 0.0 {
+                    let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
+                    arena
+                        .used_margin
+                        .store((cur_u - m).max(0.0), std::sync::atomic::Ordering::Relaxed);
+                }
+                adjustments += 1;
+            }
+            if coin.positions.swing.is_open() {
+                let (_was_long, _entry_p, _qty, m, _fee) = coin.positions.swing.close_with_fee();
+                if m > 0.0 {
+                    let cur_u = arena.used_margin.load(std::sync::atomic::Ordering::Relaxed);
+                    arena
+                        .used_margin
+                        .store((cur_u - m).max(0.0), std::sync::atomic::Ordering::Relaxed);
+                }
+                adjustments += 1;
+            }
         } else {
             // Exchange tiene posición abierta
             if !cont_open {

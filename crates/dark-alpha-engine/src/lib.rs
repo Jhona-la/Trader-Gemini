@@ -11,15 +11,16 @@
 //! - Inferencia en ~50-100 nanosegundos vs ~1ms con candle en CPU
 //!
 //! ## PARA QUÉ
-//! Capa de confluencia final para operaciones de Swing. El GodEngineCore consulta
-//! `DarkAlphaEngine::predict()` antes de abrir posiciones de horizonte largo.
+//! Capa de confluencia neuronal profunda para todo el espectro temporal continuo [1 ns, 100 a].
+//! El GodEngineCore consulta `DarkAlphaEngine::predict_for_coin()` integrando la inferencia
+//! en el ensamble Brier multidimensional tanto en micro-ticks como en macro-ciclos.
 //!
 //! ## CÓMO
 //! Forward pass: Input → Linear(ReLU) → Linear(ReLU) → Linear(Sigmoid) → Output
 //! Pesos almacenados en layout contiguo para locality de cache L1.
 //!
 //! ## CUÁNDO
-//! Se invoca en cada tick de Swing (no en cada tick de scalping).
+//! Se invoca de manera continua y unificada en cada evento de mercado procesado por GodEngineCore.
 //!
 //! ## DÓNDE
 //! `crates/dark-alpha-engine/src/lib.rs`

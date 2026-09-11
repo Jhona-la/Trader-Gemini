@@ -489,21 +489,15 @@ impl SuperGenotype {
             );
             return envelope.genome;
         }
-        // T-09: el fallback legacy SOLO aplica en entorno compartido — leer
-        // el mirror desde un env aislado (TG_GENOME_ENV seteado) sería un
-        // bypass de la separación de linajes que E3 existe para garantizar.
-        let legacy_data = if std::env::var("TG_GENOME_ENV")
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .is_none()
-        {
-            std::fs::read_to_string("config_dir/genotypes/active_genome.json").ok()
-        } else {
-            None
-        };
+        // D-507: Fallback de emergencia a active_genome.json si el envelope del entorno no resolvió.
+        // Previene que producción (TG_GENOME_ENV=prod) caiga a new_baseline si prod/active.json
+        // no se ha creado aún, garantizando que el genoma validado en backtest opere siempre.
+        let legacy_data = std::fs::read_to_string("config_dir/genotypes/active_genome.json")
+            .or_else(|_| std::fs::read_to_string("config_dir/genotypes/quantum_champion.json"))
+            .ok();
         if let Some(data) = legacy_data {
             if let Ok(genome) = serde_json::from_str::<Self>(&data) {
-                telemetry_engine::telemetry!("🧬 [GENOMA] Loaded evolved SuperGenotype from config_dir/genotypes/active_genome.json");
+                telemetry_engine::telemetry!("🧬 [GENOMA] Loaded evolved SuperGenotype from config_dir/genotypes/active_genome.json (Emergency Fallback)");
                 return genome;
             }
         }
@@ -532,18 +526,30 @@ impl SuperGenotype {
         let e_const = std::f64::consts::E;
         let golden_ratio = 1.618033988749895_f64;
 
-        let scalp_tp_math = taker_base * 6.0;
-        let scalp_sl_math = scalp_tp_math / 2.0;
-        let swing_tp_math = taker_base * 30.0;
-        let swing_sl_math = swing_tp_math / 2.0;
+        // D-636 (DÉCIMA OLA) — EL BASELINE DERIVA SU RR DE LA FRICCIÓN.
+        // Antes: `sl = tp / 2.0` fijaba RR = 2,0 por un literal, sin relación
+        // con el coste real. Como 2,0 quedaba por debajo del mínimo correcto
+        // en la banda corta, el propio genoma de arranque era EV-negativo.
+        //
+        // Ahora: el stop parte del mínimo viable impuesto por la fricción
+        // (nunca por debajo: ahí ninguna RR alcanzable supera el coste) y el
+        // objetivo se deriva del RR que ese stop exige.
+        let roundtrip = 2.0 * taker_base; // D-645: la física aplica 2xtaker
+        let scalp_sl_math = (taker_base * 3.0).max(Self::min_viable_sl(roundtrip) * 1.15);
+        let swing_sl_math = (taker_base * 15.0).max(scalp_sl_math * 2.0);
 
-        let r_scalp = scalp_tp_math / scalp_sl_math;
-        let r_swing = swing_tp_math / swing_sl_math;
+        // Holgura del 15 % sobre el mínimo: el baseline no debe nacer pegado
+        // al límite del gate, o la primera mutación lo saca de bounds.
+        let r_scalp = Self::min_rr_for(w_base, roundtrip, scalp_sl_math) * 1.15;
+        let r_swing = Self::min_rr_for(w_base, roundtrip, swing_sl_math) * 1.15;
+
+        let scalp_tp_math = scalp_sl_math * r_scalp;
+        let swing_tp_math = swing_sl_math * r_swing;
 
         let k_scalp = w_base - ((1.0 - w_base) / r_scalp);
         let k_swing = w_base - ((1.0 - w_base) / r_swing);
 
-        Self {
+        let mut g = Self {
             global_max_drawdown: 1.0 - (taker_base * 100.0).clamp(0.01, 0.10), // Derivado del costo del mercado
             global_leverage: 30.0, // Apalancamiento para cuentas pequeñas futures
             btc_volatility_multiplier: 1.0,
@@ -706,11 +712,16 @@ impl SuperGenotype {
             swing_obi_threshold: 0.5,
             swing_accel_min_samples: 30.0,
             temporal_scale: 0.5,
-        }
+        };
+        // D-636/D-608: el baseline se somete al MISMO invariante que cualquier
+        // mutante — nace dentro de la banda operable y con RR suficiente.
+        g.enforce_curve_rr();
+        g.derive_anchors_from_curves();
+        g
     }
 
     pub fn new_random() -> Self {
-        Self {
+        let mut g = Self {
             global_max_drawdown: rand::rng().random_range(0.5..0.99),
             global_leverage: rand::rng().random_range(25.0..35.0),
             btc_volatility_multiplier: rand::rng().random_range(0.5..3.0),
@@ -867,7 +878,10 @@ impl SuperGenotype {
             swing_obi_threshold: rand::rng().random_range(0.05..1.0),
             swing_accel_min_samples: rand::rng().random_range(10.0..50.0),
             temporal_scale: rand::rng().random_range(0.05..0.95),
-        }
+        };
+        g.enforce_curve_rr();
+        g.derive_anchors_from_curves();
+        g
     }
 
     /// Applica el genoma completo directamente al Arena lock-free
@@ -1681,51 +1695,289 @@ impl SuperGenotype {
     /// de bandas, fallback determinista: SL paralelo a TP con RR=REPAIR en
     /// TODO el espectro (matemáticamente seguro por construcción).
     pub fn enforce_curve_rr(&mut self) {
-        use crate::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
-        let taus = [TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS];
+        let fee = Self::REFERENCE_ROUNDTRIP_FEE;
+        let scales = crate::temporal_spectrum::SPECTRUM_SCALES_MS;
+        let hi_spec = scales[scales.len() - 1];
+        let sl_floor = Self::min_viable_sl(fee);
+
+        // PASO 0 — GARANTIZAR BANDA OPERABLE. Si la curva de SL nunca alcanza
+        // el mínimo viable, el genoma no puede operar en ninguna escala:
+        // se eleva el intercepto de SL hasta que el extremo largo del
+        // espectro sí lo alcance (D-636b).
+        if self.tradeable_band_ms(fee).is_none() {
+            let sl_hi = self.sl_horizon_curve.eval(hi_spec).max(1e-12);
+            let target = sl_floor * 1.10;
+            self.sl_horizon_curve.a = (self.sl_horizon_curve.a + (target / sl_hi).ln())
+                .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+        }
+
+        // RR exigido a cada tau (D-636): crece cuando el stop se estrecha,
+        // porque la fricción pesa más sobre un riesgo menor. Se añade un 10 %
+        // de holgura para que la mutación no quede pegada al límite del gate.
+        let required_at = |g: &Self, tau: f64| -> f64 {
+            let sl = g.sl_horizon_curve.eval(tau);
+            Self::min_rr_for(Self::WORST_TOLERATED_WR, fee, sl) * 1.10
+        };
+        let band_taus = |g: &Self| -> [f64; 2] {
+            match g.tradeable_band_ms(fee) {
+                Some((lo, hi)) => [lo, hi],
+                None => [hi_spec, hi_spec],
+            }
+        };
         let violated = |g: &Self| {
-            taus.iter().any(|&tau| {
-                g.sl_horizon_curve.eval(tau) > g.tp_horizon_curve.eval(tau) / Self::MIN_RR_MUTATION
+            band_taus(g).iter().any(|&tau| {
+                let tp = g.tp_horizon_curve.eval(tau);
+                let sl = g.sl_horizon_curve.eval(tau);
+                !tp.is_finite() || !sl.is_finite() || tp < sl * required_at(g, tau)
             })
         };
         if !violated(self) {
             return;
         }
-        // (1)+(2): deprimir a_sl lo necesario en la ancla que manda y clamp.
-        for &tau in taus.iter() {
-            let tp = self.tp_horizon_curve.eval(tau);
-            let sl = self.sl_horizon_curve.eval(tau);
-            if sl > tp / Self::MIN_RR_MUTATION {
-                let target = tp / Self::MIN_RR_REPAIR;
-                self.sl_horizon_curve.a -= (sl / target).ln();
+
+        // PASO 1 — ELEVAR EL TP, NO DEPRIMIR EL SL.
+        //
+        // En el borde inferior de la banda el SL está PINNED al mínimo viable
+        // por definición: deprimirlo solo desplaza el borde a la derecha y
+        // deja el mismo conflicto en el borde nuevo (punto fijo que nunca
+        // converge — el bug de la versión anterior de esta reparación).
+        // La lectura económica correcta es la contraria: si la fricción exige
+        // más recompensa por el mismo riesgo, lo que sube es la recompensa.
+        // Escala uniforme de TP(τ) en TODO el espectro sin tocar pendiente.
+        for _ in 0..6 {
+            let mut worst = 1.0f64;
+            for &tau in band_taus(self).iter() {
+                let tp = self.tp_horizon_curve.eval(tau);
+                let sl = self.sl_horizon_curve.eval(tau);
+                let req = required_at(self, tau);
+                if tp > 0.0 && sl > 0.0 && tp < sl * req {
+                    worst = worst.max(sl * req / tp);
+                }
+            }
+            if worst <= 1.0 {
+                break;
+            }
+            self.tp_horizon_curve.a = (self.tp_horizon_curve.a + worst.ln())
+                .clamp(Self::TP_A_BOUNDS.0, Self::TP_A_BOUNDS.1);
+            if !violated(self) {
+                break;
             }
         }
-        self.sl_horizon_curve.a = self
-            .sl_horizon_curve
-            .a
-            .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
-        // (3): pendiente adversa (b_sl ≫ b_tp) puede violar en la OTRA ancla
-        // incluso con a_sl en su floor — curva paralela determinista.
-        if violated(self) {
-            self.sl_horizon_curve.b = self.tp_horizon_curve.b;
-            self.sl_horizon_curve.a = (self.tp_horizon_curve.a - Self::MIN_RR_REPAIR.ln())
+
+        // PASO 2 — SI EL TP TOPÓ CON SU BANDA EVOLUTIVA, ESTRECHAR EL RIESGO.
+        // Con a_tp en su techo la única salida es reducir SL; eso encoge la
+        // banda operable por abajo (menos escalas operables), que es el
+        // resultado honesto: ese genoma solo puede operar horizontes largos.
+        for _ in 0..6 {
+            if !violated(self) {
+                break;
+            }
+            let mut worst = 1.0f64;
+            for &tau in band_taus(self).iter() {
+                let tp = self.tp_horizon_curve.eval(tau);
+                let sl = self.sl_horizon_curve.eval(tau);
+                let req = required_at(self, tau);
+                if tp > 0.0 && sl > 0.0 && tp < sl * req {
+                    worst = worst.max(sl * req / tp);
+                }
+            }
+            if worst <= 1.0 {
+                break;
+            }
+            self.sl_horizon_curve.a = (self.sl_horizon_curve.a - worst.ln())
                 .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+        }
+
+        // PASO 3 — FALLBACK DETERMINISTA. Curvas paralelas con RR constante
+        // igual al peor exigido en la banda: segura por construcción en todo
+        // el espectro, sea cual sea la pendiente evolucionada.
+        if violated(self) {
+            let req = band_taus(self)
+                .iter()
+                .map(|&t| required_at(self, t))
+                .fold(Self::MIN_RR_REPAIR, f64::max);
+            self.sl_horizon_curve.b = self.tp_horizon_curve.b;
+            self.sl_horizon_curve.a =
+                (self.tp_horizon_curve.a - req.ln()).clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+            // Re-garantizar la banda tras el paralelizado.
+            if self.tradeable_band_ms(fee).is_none() {
+                let sl_hi = self.sl_horizon_curve.eval(hi_spec).max(1e-12);
+                let target = sl_floor * 1.10;
+                self.sl_horizon_curve.a = (self.sl_horizon_curve.a + (target / sl_hi).ln())
+                    .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+                self.tp_horizon_curve.a = (self.sl_horizon_curve.a + req.ln())
+                    .clamp(Self::TP_A_BOUNDS.0, Self::TP_A_BOUNDS.1);
+            }
         }
     }
 
-    /// R1.2 — RR mínimo que el GATE de promoción exige (GenomeStore::validate).
-    /// Derivación: para que una operación sea EV-positiva tras fees se
-    /// requiere TP/SL >= ((1-w)/w)·((1+f)/(1-f)) con w el win rate y f el
-    /// fee roundtrip. Con el peor WR tolerado por el sistema w = 0.40 y
-    /// f = 2×0.0004 (taker en ambas piernas): (0.6/0.4)·(1.0008/0.9992)
-    /// ≈ 1.502. Se toma 1.5 como piso del gate.
-    pub const MIN_RR_GATE: f64 = 1.5;
-    /// RR mínimo que la MUTACIÓN exige: el gate + margen por spread y
-    /// slippage no modelados (~1% del PnL por trade a estos tamaños).
-    pub const MIN_RR_MUTATION: f64 = 1.8;
-    /// Objetivo de reparación al violar la invariante durante la mutación:
-    /// mutación + holgura (0.4) para no operar pegado al límite.
-    pub const MIN_RR_REPAIR: f64 = 2.2;
+    /// D-636 (DÉCIMA OLA) — RR MÍNIMO CORRECTAMENTE DERIVADO.
+    ///
+    /// LA DERIVACIÓN ANTERIOR ERA DIMENSIONALMENTE ERRÓNEA. Escribía el
+    /// término de comisión como el FACTOR multiplicativo (1+f)/(1−f), que
+    /// compara `f` con la UNIDAD (el nocional completo). El término correcto
+    /// es ADITIVO y compara `f` con `SL`, que es la magnitud de la pérdida.
+    /// Con SL ≈ 0,005 el peso real de la comisión es f/SL ≈ 0,16, mientras
+    /// que la fórmula vieja lo estimaba en f/1 ≈ 0,0008: un factor 200×.
+    ///
+    /// DERIVACIÓN CORRECTA. Con TP y SL movimientos fraccionales de precio y
+    /// `f` la comisión de ida y vuelta como fracción del nocional:
+    ///
+    /// ```text
+    /// EV = w·(TP − f) − (1 − w)·(SL + f) ≥ 0
+    /// w·TP ≥ (1 − w)·SL + f
+    /// RR = TP/SL ≥ (1 − w)/w + f/(w·SL)
+    ///              └─ equilibrio   └─ término de FRICCIÓN, el que faltaba
+    ///                 sin fees
+    /// ```
+    ///
+    /// El valor viejo 1,5 es EXACTAMENTE (1−w)/w con w=0,40: el equilibrio
+    /// SIN comisiones. Evaluando el EV en ese límite se obtiene el resultado
+    /// analítico `EV = −f` — independiente del nivel de SL. Es decir: un
+    /// genoma que pasaba el gate en el límite pagaba la comisión íntegra en
+    /// cada operación y no capturaba ningún edge (−8 bps por trade con
+    /// f = 0,0008).
+    ///
+    /// Al ser función de SL, el mínimo ya NO puede ser una constante:
+    /// `min_rr_for()` lo calcula por nivel de stop.
+    #[inline]
+    pub fn min_rr_for(win_rate: f64, roundtrip_fee: f64, sl: f64) -> f64 {
+        // Saneamiento: fuera de rango se cae al peor caso tolerado, nunca a
+        // un valor permisivo.
+        let w = if win_rate.is_finite() {
+            win_rate.clamp(0.05, 0.95)
+        } else {
+            Self::WORST_TOLERATED_WR
+        };
+        let f = if roundtrip_fee.is_finite() && roundtrip_fee >= 0.0 {
+            roundtrip_fee
+        } else {
+            Self::REFERENCE_ROUNDTRIP_FEE
+        };
+        let sl_eff = if sl.is_finite() && sl > 1e-9 {
+            sl
+        } else {
+            Self::REFERENCE_SL
+        };
+        (1.0 - w) / w + f / (w * sl_eff)
+    }
+
+    /// Peor win rate que el sistema tolera — el punto de diseño conservador
+    /// desde el que se dimensiona el gate.
+    pub const WORST_TOLERATED_WR: f64 = 0.40;
+    /// Fricción de referencia de ida y vuelta. D-645: la física del motor
+    /// aplica 2×taker + deslizamiento, NO maker+taker. Con taker = 5 bps por
+    /// pierna: 2 × 0,0005 = 0,0010.
+    pub const REFERENCE_ROUNDTRIP_FEE: f64 = 0.0010;
+    /// SL de referencia para las cotas estáticas (el centro de la banda
+    /// operativa real del sistema, 40–60 bps → 50 bps).
+    pub const REFERENCE_SL: f64 = 0.0050;
+
+    /// D-636b (DÉCIMA OLA) — BANDA OPERABLE DERIVADA DE LA FRICCIÓN.
+    ///
+    /// Al corregir la derivación del RR emergió un hecho físico que el
+    /// sistema nunca había representado: `RR_req(SL) = (1−w)/w + f/(w·SL)`
+    /// DIVERGE cuando SL → 0. A un stop de 1,5 bps con una fricción de ida y
+    /// vuelta de 10 bps se exigiría RR ≈ 17,8 — un recorrido que el mercado
+    /// no entrega antes de tocar el stop. **No es que el sistema no deba
+    /// operar a 1 ms: es que a 1 ms no existe operación rentable posible.**
+    ///
+    /// Esto NO reintroduce un bucket arbitrario. La frontera se DERIVA: una
+    /// operación es viable mientras la fricción no domine el riesgo asumido.
+    /// Expresado como presupuesto de fricción sobre el riesgo:
+    ///
+    /// ```text
+    /// f ≤ MAX_FRICTION_SHARE_OF_RISK · SL
+    /// ```
+    ///
+    /// Si la fricción supera el riesgo, la posición deja de ser una tesis de
+    /// mercado y pasa a ser una máquina de generar comisiones: su resultado
+    /// esperado lo fija el coste, no el análisis. La mitad es la línea
+    /// conservadora natural — el punto en que el coste iguala a la mitad de
+    /// lo que se arriesga conscientemente.
+    ///
+    /// El espectro sigue OBSERVÁNDOSE completo (las 19 escalas alimentan el
+    /// score espectral); lo que la banda acota es dónde se ABRE posición.
+    pub const MAX_FRICTION_SHARE_OF_RISK: f64 = 0.50;
+
+    /// SL mínimo con el que una operación puede ser rentable dada la fricción.
+    /// Derivado, no elegido: `SL_min = f / MAX_FRICTION_SHARE_OF_RISK`.
+    #[inline]
+    pub fn min_viable_sl(roundtrip_fee: f64) -> f64 {
+        let f = if roundtrip_fee.is_finite() && roundtrip_fee > 0.0 {
+            roundtrip_fee
+        } else {
+            Self::REFERENCE_ROUNDTRIP_FEE
+        };
+        f / Self::MAX_FRICTION_SHARE_OF_RISK
+    }
+
+    /// Horizonte mínimo OPERABLE de ESTE genoma: la τ a la que su propia
+    /// curva de SL alcanza el mínimo viable. Como `SL(τ) = exp(a + b·ln τ)`
+    /// es monótona, se despeja en forma cerrada:
+    ///
+    /// ```text
+    /// ln τ_min = (ln SL_min − a) / b        (b > 0)
+    /// ```
+    ///
+    /// Con `b ≤ 0` (SL que no crece con el horizonte) la curva es plana o
+    /// decreciente: o bien todo el espectro es operable, o ninguno lo es.
+    pub fn min_tradeable_tau_ms(&self, roundtrip_fee: f64) -> f64 {
+        let scales = crate::temporal_spectrum::SPECTRUM_SCALES_MS;
+        let (lo, hi) = (scales[0], scales[scales.len() - 1]);
+        let sl_min = Self::min_viable_sl(roundtrip_fee);
+        let b = self.sl_horizon_curve.b;
+        if b.abs() < 1e-12 {
+            return if self.sl_horizon_curve.eval(lo) >= sl_min {
+                lo
+            } else {
+                f64::INFINITY
+            };
+        }
+        let ln_tau = (sl_min.ln() - self.sl_horizon_curve.a) / b;
+        if !ln_tau.is_finite() {
+            return f64::INFINITY;
+        }
+        let tau = ln_tau.exp();
+        if b > 0.0 {
+            tau.clamp(lo, f64::INFINITY)
+        } else {
+            // SL decrece con tau: lo operable está por DEBAJO de tau; si ni
+            // siquiera la escala mas corta es viable, nada lo es.
+            if self.sl_horizon_curve.eval(lo) >= sl_min {
+                lo
+            } else {
+                f64::INFINITY
+            }
+        }
+        .min(if b > 0.0 { f64::INFINITY } else { hi })
+    }
+
+    /// Extremos de la banda operable sobre los que se verifica la invariante
+    /// RR. Devuelve `None` si el genoma no tiene NINGUNA escala operable —
+    /// condición que el gate de promoción rechaza explícitamente.
+    pub fn tradeable_band_ms(&self, roundtrip_fee: f64) -> Option<(f64, f64)> {
+        let scales = crate::temporal_spectrum::SPECTRUM_SCALES_MS;
+        let hi = scales[scales.len() - 1];
+        let lo = self.min_tradeable_tau_ms(roundtrip_fee);
+        if !lo.is_finite() || lo > hi {
+            return None;
+        }
+        Some((lo.max(scales[0]), hi))
+    }
+
+    /// RR mínimo que el GATE de promoción exige, evaluado en el punto de
+    /// referencia. Antes 1,5 (equilibrio sin fees); ahora ≈ 2,00.
+    pub const MIN_RR_GATE: f64 =
+        (1.0 - Self::WORST_TOLERATED_WR) / Self::WORST_TOLERATED_WR
+            + Self::REFERENCE_ROUNDTRIP_FEE / (Self::WORST_TOLERATED_WR * Self::REFERENCE_SL);
+    /// RR mínimo que la MUTACIÓN exige: el gate + 10 % de holgura por spread
+    /// y deslizamiento no modelados, para que el operador de mutación no
+    /// produzca sistemáticamente genomas que el gate rechazará.
+    pub const MIN_RR_MUTATION: f64 = Self::MIN_RR_GATE * 1.10;
+    /// Objetivo de reparación al violar la invariante: mutación + 10 % más,
+    /// para no reparar pegado al límite y volver a violarlo al mutar.
+    pub const MIN_RR_REPAIR: f64 = Self::MIN_RR_MUTATION * 1.10;
 
     pub fn to_vector(&self) -> Vec<f64> {
         let mut vec = Vec::with_capacity(Self::DIMENSION);

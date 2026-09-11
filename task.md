@@ -93,4 +93,15 @@
   - [x] Identificación del nodo muerto en `SpectralCycleEngine::analyze_spectrum`
   - [x] Auditoría matemática de la causa de falla de stops en producción (Teorema Mandelbrot-Bachelier)
   - [x] Sincronización documental en `INFORME_FORENSE_MAESTRO.md`, `AUDITORIA_FORENSE_SISTEMICA_TOTAL.md`, `task.md` y `walkthrough.md`
+- [x] ### FASE 21: DECIMOCUARTA OLA FORENSE — AUDITORÍA Y REMEDIACIÓN CRÍTICA (F-001 A F-033)
+  - [x] Censo global de restos de bifurcación Scalp/Swing (65+ archivos analizados) y catálogo de 80+ magic numbers
+  - [x] F-003: Determinismo total en `asset_selector.rs` ($1M volumen y 0.1% volatilidad idénticos en testnet y producción)
+  - [x] F-014: Erradicación de la triple duplicación de métricas en `CoinArena` (`coin.metrics` como única fuente de verdad)
+  - [x] F-009: Ponderación continua de probabilidad neuronal `ml_prob` reemplazando switch binario en `god-engine-core/lib.rs`
+  - [x] F-012: Desacoplamiento de modelos a claves universales multiactivo (`UNIVERSAL` con fallback retrocompatible)
+  - [x] F-026: Conexión en tiempo real de `OnlineLearningModule::predict` en el bucle de inferencia activa
+  - [x] Verificación de compilación workspace (`cargo check --workspace --all-targets` 0 errores)
+  - [x] Aprobación de suite de tests unitarios e integración (121 tests pasados al 100%)
+  - [x] Certificación de backtest 1:1 sobre 1,033,320 ticks con `audit_forensic_backtest` (34 trades continuos, 0 hard SL, DD 2.64%)
+
 

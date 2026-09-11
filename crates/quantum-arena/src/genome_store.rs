@@ -20,31 +20,46 @@ use crate::genome::SuperGenotype;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
-/// E3 — SEPARACIÓN DE ENTORNOS DEL ALMACÉN DE GENOMAS. Sin esto, un backtest
-/// que termina promueve su overfit al MISMO active.json del que bootea
-/// producción (contaminación bidireccional silenciosa).
+/// E3 — SEPARACIÓN DE ENTORNOS DEL ALMACÉN DE GENOMAS (endurecida en D-651).
 ///
-/// Variable TG_GENOME_ENV: "backtest" | "demo" | "prod".
+/// Variable TG_GENOME_ENV: "backtest" | "demo" | "prod". **Obligatoria.**
 ///
-/// X-001 (REHAB-2) — CIRCUITO VIVO EN DEMO: el default de procesos SIN la
-/// variable (evolvers standalone) ahora es **demo** — NO la raíz compartida.
-/// Antes: los evolvers promovían a la raíz compartida que producción jamás
-/// releía (trapdoor de un sentido: herencia única al primer arranque,
-/// promociones invisibles para siempre — hallazgo X-001). Ahora:
-///   - evolver/evolution/polars (sin env) → promueven a `demo`.
-///   - god_engine demo (TG_GENOME_ENV=demo) → refresh_models() releé el
-///     almacén demo cada 1000 ticks ⇒ circuito evolución→demo CERRADO y VIVO
-///     en el entorno de certificación.
-///   - prod sigue siendo promoción EXPLÍCITA humana (misma filosofía que
-///     MAINNET_ARMED): exportar TG_GENOME_ENV=prod en el proceso promotor.
-///   - la raíz compartida queda como patrimonio de SOLO LECTURA (fallback 2).
+/// D-651 (DÉCIMA OLA) — LA BARRERA YA NO SE ATRAVIESA POR OMISIÓN. Antes:
+///   - `env_root()` asumía `demo` cuando la variable no estaba definida, de
+///     modo que cualquier evolver lanzado sin entorno escribía en demo; y
+///   - `load_active()` heredaba AUTOMÁTICAMENTE backtest→demo→prod, de forma
+///     que el campeón sobreajustado del backtest llegaba a operar capital
+///     real sin intervención humana — exactamente lo que el docstring de
+///     este módulo declaraba impedir.
+/// Ahora el entorno es explícito o el proceso no arranca, y la ausencia de
+/// `active.json` en el entorno es un ERROR, no una invitación a copiar.
+///
+/// Entornos reconocidos (lista cerrada: un typo ya no crea un silo nuevo).
+pub const KNOWN_ENVS: [&str; 3] = ["backtest", "demo", "prod"];
+
+/// Entorno activo. Devuelve `Err` si la variable falta o no es reconocida:
+/// ningún camino del sistema puede inventar un entorno por defecto.
+pub fn current_env() -> Result<String, String> {
+    let raw = std::env::var("TG_GENOME_ENV").map_err(|_| {
+        "TG_GENOME_ENV no está definida. El almacén de genomas exige entorno          EXPLÍCITO (backtest | demo | prod) — D-651: el default silencioso a          'demo' permitía que un evolver sin entorno contaminara la cadena de          herencia hacia producción."
+            .to_string()
+    })?;
+    let env = raw.trim().to_lowercase();
+    if !KNOWN_ENVS.contains(&env.as_str()) {
+        return Err(format!(
+            "TG_GENOME_ENV='{}' no es un entorno reconocido. Válidos: {:?}",
+            raw, KNOWN_ENVS
+        ));
+    }
+    Ok(env)
+}
+
 fn env_root() -> String {
-    match std::env::var("TG_GENOME_ENV")
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-    {
-        Some(env) => format!("config_dir/genomes/{}", env.trim().to_lowercase()),
-        None => "config_dir/genomes/demo".to_string(),
+    match current_env() {
+        Ok(env) => format!("config_dir/genomes/{}", env),
+        // Un caller que ignore el error de entorno no debe poder escribir en
+        // NINGÚN silo real: se le da una ruta inválida que falla al abrir.
+        Err(_) => "config_dir/genomes/__UNSET__".to_string(),
     }
 }
 
@@ -99,133 +114,101 @@ impl GenomeEnvelope {
             .store(self.generation, std::sync::atomic::Ordering::Release);
     }
 
-    /// Carga el genoma activo desde el envelope versionado con resolución resiliente multi-ruta:
-    /// 1. config_dir/genomes/active.json (Envelope oficial versionado)
-    /// 2. config_dir/genotypes/active_genome.json (Genoma activo legacy)
-    /// 3. config_dir/genotypes/quantum_champion.json (Genoma campeón guardado)
+    /// Carga el genoma activo del entorno ACTUAL. Sin herencia automática.
+    ///
+    /// D-651 (DÉCIMA OLA) — SE ELIMINARON LAS DOS RAMAS DE HERENCIA:
+    ///   1. `prod` sin active.json heredaba de `demo` ("demo_heritage").
+    ///   2. Todo entorno != backtest heredaba del campeón de backtest
+    ///      ("backtest_heritage"), lo que incluye explícitamente a `prod`.
+    /// La cadena resultante era backtest → demo → prod SIN intervención
+    /// humana, sin validación de desempeño y sin confirmación: el genoma
+    /// sobreajustado del backtest acababa operando capital real. Esto
+    /// contradecía de forma directa el docstring del módulo, que declara que
+    /// producción exige promoción EXPLÍCITA humana.
+    ///
+    /// Ahora: se carga el active.json del entorno, o NADA. Cruzar la frontera
+    /// entre entornos requiere `promote_across_env()`, que exige armado
+    /// humano vía TG_GENOME_PROMOTE_ARMED.
     pub fn load_active() -> Option<GenomeEnvelope> {
-        // 1. Intentar cargar desde el envelope oficial
-        if let Ok(data) = std::fs::read_to_string(active_path()) {
-            if let Ok(env) = serde_json::from_str::<GenomeEnvelope>(&data) {
-                return Some(env);
-            } else {
-                // R-05: un genoma activo que existe pero NO parsea (p.ej.
-                // schema viejo sin genes nuevos) es un evento crítico de
-                // linaje — antes se descartaba EN SILENCIO y el sistema
-                // reiniciaba en baseline sin que nadie lo supiera.
+        let env = match current_env() {
+            Ok(e) => e,
+            Err(msg) => {
+                eprintln!("🚨 [GENOME-STORE] {msg}");
+                return None;
+            }
+        };
+        match std::fs::read_to_string(active_path()) {
+            Ok(data) => match serde_json::from_str::<GenomeEnvelope>(&data) {
+                Ok(envelope) => Some(envelope),
+                Err(e) => {
+                    // R-05: un genoma que existe pero no parsea es un evento
+                    // crítico de linaje. NO se cae a ningún fallback: caer
+                    // silenciosamente a baseline (o peor, a otro entorno) es
+                    // cómo se pierde la trazabilidad de qué está operando.
+                    eprintln!(
+                        "🚨 [GENOME-STORE] {} existe pero NO parsea ({e}).                          El entorno '{env}' queda SIN genoma activo — migra o                          regenera el linaje. No se hereda de otro entorno.",
+                        active_path()
+                    );
+                    None
+                }
+            },
+            Err(_) => {
                 eprintln!(
-                    "🚨 [GENOME-STORE] {} EXISTE pero falla el parseo — se descarta y cae al fallback. Migra el genoma o regenéralo.",
+                    "🚨 [GENOME-STORE] el entorno '{env}' no tiene {} — sin                      genoma activo. D-651: la herencia automática entre                      entornos fue eliminada; usa promote_across_env() con                      TG_GENOME_PROMOTE_ARMED=1 para cruzar la frontera.",
                     active_path()
                 );
+                None
             }
         }
-        // T-09 / L-0 — MIGRACIÓN RESILIENTE Y HERENCIA DEL CAMPEÓN:
-        // Si el entorno ({env}) no tiene active.json, buscar en orden de prioridad:
-        // 1. config_dir/genomes/backtest/active.json (campeón de backtest)
-        // 2. config_dir/genomes/active.json (linaje compartido)
-        // 3. config_dir/genotypes/quantum_champion.json (campeón guardado)
-        // 4. config_dir/genotypes/active_genome.json (legacy activo)
-        let env_tag = std::env::var("TG_GENOME_ENV").unwrap_or_else(|_| "default".to_string());
+    }
 
-        // 1. Intentar campeón de backtest si estamos en demo/prod
-        if env_tag.trim().to_lowercase() != "backtest" {
-            let bt_path = "config_dir/genomes/backtest/active.json";
-            if let Ok(data) = std::fs::read_to_string(bt_path) {
-                if let Ok(bt_env) = serde_json::from_str::<GenomeEnvelope>(&data) {
-                    // X-001 (REHAB-2): SIN lavado from_vector — el genoma se
-                    // promueve tal como fue evolucionado (las curvas ya
-                    // sobreviven al vector desde REHAB-1a, pero el lavado
-                    // re-numeraba generación y era un punto de mutación
-                    // silenciosa adicional).
-                    if let Ok(env) = Self::promote(
-                        bt_env.genome.clone(),
-                        "backtest_heritage",
-                        &format!(
-                            "herencia automática del campeón de backtest al entorno {}",
-                            env_tag.trim()
-                        ),
-                    ) {
-                        eprintln!(
-                            "🧬 [L-0] Campeón de backtest heredado exitosamente al entorno '{}' (generación {}).",
-                            env_tag.trim(),
-                            env.generation
-                        );
-                        return Some(env);
-                    }
-                }
-            }
+    /// Única vía para cruzar la frontera entre entornos. Exige armado humano
+    /// explícito — misma filosofía que MAINNET_ARMED (D-651).
+    ///
+    /// `TG_GENOME_PROMOTE_ARMED` debe valer "1" y `TG_GENOME_PROMOTE_OPERATOR`
+    /// debe identificar a quien autoriza: ambos quedan escritos en el motivo
+    /// de promoción, de modo que el linaje registra QUIÉN cruzó la frontera.
+    pub fn promote_across_env(
+        from_env: &str,
+        reason: &str,
+    ) -> Result<GenomeEnvelope, String> {
+        let to_env = current_env()?;
+        let from = from_env.trim().to_lowercase();
+        if !KNOWN_ENVS.contains(&from.as_str()) {
+            return Err(format!("entorno origen '{from_env}' no reconocido"));
         }
-
-        // 2. Intentar linaje compartido (patrimonio de solo-lectura)
-        let shared = "config_dir/genomes/active.json";
-        if let Ok(data) = std::fs::read_to_string(shared) {
-            if let Ok(shared_env) = serde_json::from_str::<GenomeEnvelope>(&data) {
-                // X-001 (REHAB-2): sin lavado — migración fiel del patrimonio.
-                if let Ok(env) = Self::promote(
-                    shared_env.genome.clone(),
-                    "shared_migration",
-                    &format!(
-                        "migración del linaje compartido al entorno {}",
-                        env_tag.trim()
-                    ),
-                ) {
-                    eprintln!(
-                        "🧬 [L-0] Linaje de la era compartida migrado al entorno '{}' (generación {}).",
-                        env_tag.trim(),
-                        env.generation
-                    );
-                    return Some(env);
-                }
-            }
+        if from == to_env {
+            return Err(format!("origen y destino son el mismo entorno ('{from}')"));
         }
-
-        // 3. Fallback: quantum_champion.json
-        let champ_path = "config_dir/genotypes/quantum_champion.json";
-        if let Ok(data) = std::fs::read_to_string(champ_path) {
-            if let Ok(g) = serde_json::from_str::<SuperGenotype>(&data) {
-                let sanitized = SuperGenotype::from_vector(&g.to_vector());
-                if let Ok(env) = Self::promote(
-                    sanitized,
-                    "champion_bootstrap",
-                    &format!(
-                        "bootstrap resiliente desde quantum_champion.json para {}",
-                        env_tag.trim()
-                    ),
-                ) {
-                    eprintln!(
-                        "🧬 [L-0] Genoma campeón (quantum_champion.json) promovido al entorno '{}' (generación {}).",
-                        env_tag.trim(),
-                        env.generation
-                    );
-                    return Some(env);
-                }
-            }
+        if std::env::var("TG_GENOME_PROMOTE_ARMED").unwrap_or_default().trim() != "1" {
+            return Err(format!(
+                "promoción {from} → {to_env} BLOQUEADA: exporta                  TG_GENOME_PROMOTE_ARMED=1 para autorizarla explícitamente."
+            ));
         }
+        let operator = std::env::var("TG_GENOME_PROMOTE_OPERATOR")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| {
+                "promoción BLOQUEADA: TG_GENOME_PROMOTE_OPERATOR debe                  identificar a quien autoriza el cruce de entorno."
+                    .to_string()
+            })?;
 
-        // 4. Fallback: active_genome.json
-        let legacy_path = "config_dir/genotypes/active_genome.json";
-        if let Ok(data) = std::fs::read_to_string(legacy_path) {
-            if let Ok(g) = serde_json::from_str::<SuperGenotype>(&data) {
-                let sanitized = SuperGenotype::from_vector(&g.to_vector());
-                if let Ok(env) = Self::promote(
-                    sanitized,
-                    "legacy_bootstrap",
-                    &format!(
-                        "bootstrap resiliente desde active_genome.json para {}",
-                        env_tag.trim()
-                    ),
-                ) {
-                    eprintln!(
-                        "🧬 [L-0] Genoma activo legacy promovido al entorno '{}' (generación {}).",
-                        env_tag.trim(),
-                        env.generation
-                    );
-                    return Some(env);
-                }
-            }
-        }
+        let src = format!("config_dir/genomes/{from}/active.json");
+        let data = std::fs::read_to_string(&src)
+            .map_err(|e| format!("no se puede leer {src}: {e}"))?;
+        let src_env: GenomeEnvelope = serde_json::from_str(&data)
+            .map_err(|e| format!("{src} no parsea: {e}"))?;
 
-        None
+        Self::promote(
+            src_env.genome,
+            &format!("cross_env:{from}->{to_env}"),
+            &format!(
+                "promoción manual {from} → {to_env} autorizada por '{operator}'                  (gen origen {}) — motivo: {reason}",
+                src_env.generation
+            ),
+        )
+        .map_err(|e| format!("promoción rechazada por el gate de validación: {e}"))
     }
 
     /// FASE 3 — Gate de validación pre-promoción. Rechaza genomas que no
@@ -255,26 +238,43 @@ impl GenomeEnvelope {
                 ));
             }
         }
-        // R1.2 — INVARIANTE RR UNIFICADA: misma constante que mutate_cmaes
-        // (SuperGenotype::MIN_RR_GATE), derivada de fees y del peor WR
-        // tolerado — ver la documentación de la constante en genome.rs.
-        // Antes convivían cuatro estándares (1.5x gate / 1.8x-2.0x mutación /
-        // 2.2x-3.5x reparación).
-        if genome.scalp_tp_base < genome.scalp_sl_base * SuperGenotype::MIN_RR_GATE {
-            return Err(format!(
-                "invariante RR violada: scalp_tp_base {} < {:.2} x scalp_sl_base {}",
-                genome.scalp_tp_base,
-                SuperGenotype::MIN_RR_GATE,
-                genome.scalp_sl_base
-            ));
-        }
-        if genome.swing_tp_base < genome.swing_sl_base * SuperGenotype::MIN_RR_GATE {
-            return Err(format!(
-                "invariante RR violada: swing_tp_base {} < {:.2} x swing_sl_base {}",
-                genome.swing_tp_base,
-                SuperGenotype::MIN_RR_GATE,
-                genome.swing_sl_base
-            ));
+        // D-636 + D-608 (DÉCIMA OLA) — INVARIANTE RR SOBRE LA BANDA OPERABLE
+        // COMPLETA, con el mínimo DEPENDIENTE DEL NIVEL DE SL.
+        //
+        // Antes: se comparaba contra la constante 1,5 (el equilibrio SIN
+        // comisiones) y SOLO en las dos anclas legacy (30 s y 12 h), dejando
+        // 14 de las 19 escalas del espectro sin protección alguna.
+        //
+        // Ahora: la banda operable se DERIVA de la fricción (ver
+        // `SuperGenotype::tradeable_band_ms`) y, como `RR(τ) = TP(τ)/SL(τ)`
+        // es monótona en `ln τ` —ambas curvas son log-lineales—, verificar
+        // los DOS EXTREMOS de esa banda es NECESARIO Y SUFICIENTE para todas
+        // las escalas contenidas en ella. Mismo coste, cobertura completa.
+        let fee = SuperGenotype::REFERENCE_ROUNDTRIP_FEE;
+        let (lo_tau, hi_tau) = genome.tradeable_band_ms(fee).ok_or_else(|| {
+            format!(
+                "genoma sin banda operable: su curva de SL nunca alcanza el                  mínimo viable {:.6} ({:.1} bps) impuesto por la fricción de                  {:.4}. Ninguna escala del espectro puede producir EV positivo.",
+                SuperGenotype::min_viable_sl(fee),
+                SuperGenotype::min_viable_sl(fee) * 1e4,
+                fee
+            )
+        })?;
+        for &tau in [lo_tau, hi_tau].iter() {
+            let tp = genome.tp_horizon_curve.eval(tau);
+            let sl = genome.sl_horizon_curve.eval(tau);
+            if !tp.is_finite() || !sl.is_finite() || sl <= 0.0 {
+                return Err(format!(
+                    "curvas no finitas en tau={tau} ms: tp={tp}, sl={sl}"
+                ));
+            }
+            let required =
+                SuperGenotype::min_rr_for(SuperGenotype::WORST_TOLERATED_WR, fee, sl);
+            if tp < sl * required {
+                return Err(format!(
+                    "invariante RR violada en tau={:.0} ms (banda operable                      {:.0}..{:.0} ms): TP {:.6} < {:.3} x SL {:.6} — EV negativo                      tras friccion {:.4}",
+                    tau, lo_tau, hi_tau, tp, required, sl, fee
+                ));
+            }
         }
         Ok(())
     }
@@ -468,12 +468,23 @@ mod tests {
         let v_ceil = ceil_g.to_vector();
         // N-02: los genes de TP (13, 15) tienen un floor efectivo mayor que
         // X-004 (REHAB-1): los genes 13-16 (anclas tp/sl) son VISTAS derivadas
-        // de las curvas — ya no reciben reparación de ancla ni clamp exacto:
-        // valen lo que valgan las curvas clamped en sus propios genes
-        // (140-143). Se verifica que sean finitos, dentro de bounds, y que la
-        // invariante RR (ahora sobre CURVAS) se cumpla en las vistas.
+        // de las curvas — ya no reciben reparación de ancla ni clamp exacto.
+        //
+        // D-636/D-608 (DÉCIMA OLA): los genes 140-143 (coeficientes de las
+        // curvas) pasan a la MISMA categoría. Antes el contrato era «clampan
+        // exactamente a su bound», que solo se sostenía porque la invariante
+        // RR se verificaba en dos anclas fijas y casi nunca se activaba. Con
+        // el RR correcto —dependiente del nivel de SL y verificado en toda la
+        // banda operable— `enforce_curve_rr()` SÍ reposiciona los coeficientes
+        // cuando la fricción lo exige. Ese es el comportamiento buscado: un
+        // genoma en el borde de sus bandas evolutivas debe salir del gate con
+        // EV no negativo, aunque para ello deba moverse dentro de bounds.
+        //
+        // Contrato vigente para 13-16 y 140-143: finitos, dentro de bounds y
+        // con la invariante RR satisfecha. Contrato para el resto: clamp exacto.
+        let derived = |i: usize| (13..=16).contains(&i) || (140..=143).contains(&i);
         for i in 0..n {
-            if (13..=16).contains(&i) {
+            if derived(i) {
                 assert!(
                     v_floor[i].is_finite() && v_floor[i] >= lo[i] && v_floor[i] <= hi[i],
                     "vista {} fuera de bounds en floor: {}",
@@ -487,7 +498,7 @@ mod tests {
                     i
                 );
             }
-            if (13..=16).contains(&i) {
+            if derived(i) {
                 assert!(
                     v_ceil[i].is_finite() && v_ceil[i] >= lo[i] && v_ceil[i] <= hi[i],
                     "vista {} fuera de bounds en ceil: {}",

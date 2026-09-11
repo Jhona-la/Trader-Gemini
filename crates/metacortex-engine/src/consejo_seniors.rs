@@ -138,7 +138,13 @@ impl SeniorAgent for SeniorSeriesTemporales {
     #[inline(always)]
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let hurst = payload.hurst_exponent;
-        let flow_dir = safe_signum(payload.book_imbalance);
+        // D-512: Desacoplar colinealidad. La dirección tendencial temporal de largo plazo
+        // proviene del impulso del grafo temporal (graph_correlation), no del libro L2.
+        let trend_dir = if payload.graph_correlation.abs() > 1e-4 {
+            safe_signum(payload.graph_correlation)
+        } else {
+            safe_signum(payload.book_imbalance)
+        };
 
         // D-438: Transición continua y suave C^inf mediante activación sigmoide/tanh,
         // eliminando los saltos escalonados artificiales y modulando la sensibilidad por horizonte.
@@ -149,7 +155,7 @@ impl SeniorAgent for SeniorSeriesTemporales {
         };
         let hurst_dev = hurst - 0.50;
         let smooth_activation = (hurst_dev * sensitivity).tanh();
-        let signal = smooth_activation * flow_dir;
+        let signal = smooth_activation * trend_dir;
         let confidence = ((hurst - 0.5).abs() * 2.0).clamp(0.0, 1.0);
         SeniorOpinion {
             role: self.role(),
@@ -158,8 +164,8 @@ impl SeniorAgent for SeniorSeriesTemporales {
             weight: 1.0,
             is_veto: false,
             justification: format!(
-                "Hurst exponent: {:.4} (dir={:.3}, mode={:?})",
-                hurst, signal, payload.horizon
+                "Hurst exponent: {:.4} (dir={:.3}, trend_dir={:.1}, mode={:?})",
+                hurst, signal, trend_dir, payload.horizon
             ),
         }
     }
@@ -280,20 +286,23 @@ impl SeniorAgent for SeniorEjecucion {
     }
 }
 
-// 7. Senior Cuantico — Analiza la interacción entre book_imbalance y slippage
-// para evaluar si la microestructura permite una ejecución rentable en la dirección del flujo.
+// 7. Senior Cuantico — Analiza la superposición cuántica entre microestructura (L2)
+// y el estado topológico de grafo (macro), penalizando la decoherencia por impacto y toxicidad.
 pub struct SeniorCuantico;
 impl SeniorAgent for SeniorCuantico {
     fn role(&self) -> SeniorRole {
         SeniorRole::Cuantico
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        // FIX #387: Usar directamente puntos básicos sin distorsión de escala
         let slippage_bps = payload.estimated_slippage_bps.max(0.0);
-        let slippage_impact = slippage_bps / 100.0; // 10 bps = 0.10 impact
-        let execution_quality = (payload.book_imbalance.abs() - slippage_impact).clamp(0.0, 1.0);
-        let signal = safe_signum(payload.book_imbalance) * execution_quality;
-        let confidence = (execution_quality * 2.0).clamp(0.0, 1.0);
+        let slippage_impact = slippage_bps / 100.0;
+        // D-512: Superposición cuántica |psi> = (micro + macro) / sqrt(2)
+        // Interferencia constructiva si tienen el mismo signo; destructiva si colisionan.
+        let psi = (payload.book_imbalance + payload.graph_correlation) / std::f64::consts::SQRT_2;
+        let decoherence = (slippage_impact + payload.do_calculus_risk * 0.30).clamp(0.0, 1.0);
+        let coherence = (1.0 - decoherence).max(0.0);
+        let signal = (psi * coherence).clamp(-1.0, 1.0);
+        let confidence = (signal.abs() * 1.5).clamp(0.0, 1.0);
         SeniorOpinion {
             role: self.role(),
             signal_direction: signal,
@@ -301,14 +310,15 @@ impl SeniorAgent for SeniorCuantico {
             weight: 1.0,
             is_veto: false,
             justification: format!(
-                "Quantum exec quality: {:.4} (imb={:.4}, slip={:.2} bps)",
-                execution_quality, payload.book_imbalance, slippage_bps
+                "Quantum superposition: psi={:.4}, coherence={:.4}, signal={:.4}",
+                psi, coherence, signal
             ),
         }
     }
 }
 
-// 8. Senior Metacognitivo — Pondera historial (wr) contra riesgo actual y valida la dirección.
+// 8. Senior Metacognitivo — Evalúa la resonancia y consistencia cognitiva entre modelos,
+// moderando la convicción según el rendimiento histórico y la humildad epistémica.
 pub struct SeniorMetacognitivo;
 impl SeniorAgent for SeniorMetacognitivo {
     fn role(&self) -> SeniorRole {
@@ -316,58 +326,72 @@ impl SeniorAgent for SeniorMetacognitivo {
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, wr: f64) -> SeniorOpinion {
         let dd_penalty = (payload.current_drawdown_pct * 5.0).clamp(0.0, 0.5);
-        // D-122: Respetar RULE[growth_over_wr]. Nunca invertir la dirección (-dir) de la microestructura por WR temporal.
-        // Se modula la convicción y el peso proporcionalmente al rendimiento, protegiendo las rachas iniciales.
         let effective_wr = if wr > 0.0 { wr.clamp(0.20, 1.0) } else { 0.50 };
         let adjusted_confidence = (effective_wr - dd_penalty).clamp(0.05, 1.0);
-        let dir = safe_signum(payload.book_imbalance);
-        // D-438: Ponderación adaptativa suave C^inf en función del WR efectivo
+
+        // D-512: Resonancia cognitiva rho = micro * macro.
+        // Si micro y macro apuntan a la misma dirección, hay resonancia cognitiva (rho > 0).
+        // Si se contradicen (rho <= 0), impera la humildad epistémica: voto neutral (0.0).
+        let resonance = payload.book_imbalance * payload.graph_correlation;
+        let signal_dir = if resonance > 0.0 {
+            safe_signum(payload.book_imbalance + payload.graph_correlation)
+                * resonance.abs().sqrt().clamp(0.1, 1.0)
+        } else {
+            0.0 // Disonancia cognitiva: abstención / neutralidad
+        };
+
         let weight = (1.0 + (effective_wr - 0.20) / 0.80).clamp(1.0, 2.0);
         SeniorOpinion {
             role: self.role(),
-            signal_direction: dir,
+            signal_direction: signal_dir,
             confidence: adjusted_confidence,
             weight,
             is_veto: false,
             justification: format!(
-                "Metacognitive WR={:.4}, DD_penalty={:.4}, adj_conf={:.4}, weight={:.1}",
-                wr, dd_penalty, adjusted_confidence, weight
+                "Metacognitive WR={:.4}, resonance={:.4}, sig={:.4}, weight={:.1}",
+                wr, resonance, signal_dir, weight
             ),
         }
     }
 }
 
 // 9. Senior Teleonomia (VETO ON UTILITY)
-// Evalúa si la operación tiene utilidad futura positiva considerando
-// el contexto macro completo del payload en la dirección del flujo.
+// Evalúa la función de utilidad teleonómica futura esperada J(pi) considerando
+// fricción, memoria fractal y confluencia macro/micro.
 pub struct SeniorTeleonomia;
 impl SeniorAgent for SeniorTeleonomia {
     fn role(&self) -> SeniorRole {
         SeniorRole::Teleonomia
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, wr: f64) -> SeniorOpinion {
-        // FIX #572: Normalizar slippage en bps respecto a 50 bps sin saturación prematura
         let slippage_penalty = (payload.estimated_slippage_bps / 50.0).clamp(0.0, 1.0);
         let execution_quality = 1.0 - slippage_penalty;
-        let utility = payload.graph_correlation.abs() * 0.3
-            + (payload.hurst_exponent - 0.5).abs() * 0.4
-            + execution_quality * 0.3;
-        // Solo vetar si la utilidad teleonómica es prácticamente nula y el WR colapsó por debajo del umbral crítico (35%)
-        let is_veto = utility < 0.05 && wr < 0.35;
-        let dir = safe_signum(payload.book_imbalance);
+
+        // D-512: Utilidad teleonómica sintética con signo intrínseco:
+        // Contribución macro guiada por predictabilidad de Hurst + flujo micro penalizado por toxicidad.
+        let macro_contribution =
+            payload.graph_correlation * ((payload.hurst_exponent - 0.5).abs() * 2.0);
+        let micro_contribution = payload.book_imbalance * (1.0 - payload.do_calculus_risk);
+        let expected_utility =
+            (macro_contribution * 0.5 + micro_contribution * 0.5) * execution_quality;
+
+        let is_veto = expected_utility.abs() < 0.02 && wr < 0.35;
+        let signal = if is_veto {
+            0.0
+        } else {
+            expected_utility.clamp(-1.0, 1.0)
+        };
+        let confidence = expected_utility.abs().clamp(0.0, 1.0);
+
         SeniorOpinion {
             role: self.role(),
-            signal_direction: if is_veto {
-                0.0
-            } else {
-                dir * utility.clamp(0.0, 1.0)
-            },
-            confidence: utility.clamp(0.0, 1.0),
+            signal_direction: signal,
+            confidence,
             weight: 1.0,
             is_veto,
             justification: format!(
-                "Teleonomic utility={:.4}, wr={:.4}, veto={}",
-                utility, wr, is_veto
+                "Teleonomic utility={:.4}, signal={:.4}, wr={:.4}, veto={}",
+                expected_utility, signal, wr, is_veto
             ),
         }
     }

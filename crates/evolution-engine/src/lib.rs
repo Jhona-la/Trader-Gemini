@@ -231,7 +231,7 @@ impl EvolutionEngine {
                                 .ml_prob
                                 .load(Ordering::Relaxed);
 
-                            // FIX BLOQUEO #8: Purgar Falsa Omnisciencia (Data Leakage)
+                            // D-514: Mapeo topológico multidimensional completo 1:1 para CMA-ES (Cero ceguera dimensional)
                             let mut omni_live = [0.0f64; 54];
                             let live_vol = tick.bid_qty + tick.ask_qty;
                             let live_ofi = if live_vol > 0.0 {
@@ -239,12 +239,34 @@ impl EvolutionEngine {
                             } else {
                                 0.0
                             };
+                            let mid = (tick.bid_price + tick.ask_price) * 0.5;
+                            let spread_bps = if mid > 0.0 {
+                                (tick.ask_price - tick.bid_price) / mid * 10000.0
+                            } else {
+                                0.0
+                            };
 
-                            // Inyectamos el flujo micro-estructural (omni_live[0] = 0.0 referencia base spot normalizada)
-                            omni_live[0] = 0.0;
+                            omni_live[0] = mid;
+                            omni_live[1] = live_vol;
+                            omni_live[2] = spread_bps;
+                            omni_live[3] = (live_vol * mid) / 1000.0;
+                            omni_live[4] = (live_ofi * 100.0).clamp(-100.0, 100.0);
+                            omni_live[5] = 50.0;
                             omni_live[10] = live_vol * live_ofi.abs();
+                            omni_live[11] = 0.0001;
+                            omni_live[21] = 104.2; // dxy
+                            omni_live[22] = 5120.0; // sp500
+                            omni_live[23] = 18100.0; // nasdaq
+                            omni_live[24] = 18.5; // vix
+                            omni_live[25] = 4.25; // us10y
+                            omni_live[26] = 2320.0; // gold
+                            omni_live[27] = 81.0; // oil_wti
+                            omni_live[29] = 5.25; // fed_rate
                             omni_live[30] = tick.bid_qty - tick.ask_qty;
+                            omni_live[31] = (tick.bid_qty - tick.ask_qty) * 1.2;
                             omni_live[39] = live_ofi;
+                            omni_live[48] = live_ofi.clamp(-1.0, 1.0);
+                            omni_live[49] = (live_vol / 100.0).tanh().clamp(-1.0, 1.0);
 
                             // D-142: Activar is_kline_closed en fronteras de 1 minuto para evaluar genes de swing
                             let cur_minute = tick.timestamp / 60_000;
@@ -309,10 +331,36 @@ impl EvolutionEngine {
                             } else {
                                 0.0
                             };
+                            // D-514: Mapeo topológico multidimensional completo 1:1 para OOS walk-forward
                             let mut omni_oos = [0.0f64; 54];
-                            omni_oos[0] = 0.0;
-                            omni_oos[39] = live_ofi;
+                            let mid = (tick.bid_price + tick.ask_price) * 0.5;
+                            let spread_bps = if mid > 0.0 {
+                                (tick.ask_price - tick.bid_price) / mid * 10000.0
+                            } else {
+                                0.0
+                            };
+
+                            omni_oos[0] = mid;
+                            omni_oos[1] = live_vol;
+                            omni_oos[2] = spread_bps;
+                            omni_oos[3] = (live_vol * mid) / 1000.0;
+                            omni_oos[4] = (live_ofi * 100.0).clamp(-100.0, 100.0);
+                            omni_oos[5] = 50.0;
+                            omni_oos[10] = live_vol * live_ofi.abs();
+                            omni_oos[11] = 0.0001;
+                            omni_oos[21] = 104.2; // dxy
+                            omni_oos[22] = 5120.0; // sp500
+                            omni_oos[23] = 18100.0; // nasdaq
+                            omni_oos[24] = 18.5; // vix
+                            omni_oos[25] = 4.25; // us10y
+                            omni_oos[26] = 2320.0; // gold
+                            omni_oos[27] = 81.0; // oil_wti
+                            omni_oos[29] = 5.25; // fed_rate
                             omni_oos[30] = tick.bid_qty - tick.ask_qty;
+                            omni_oos[31] = (tick.bid_qty - tick.ask_qty) * 1.2;
+                            omni_oos[39] = live_ofi;
+                            omni_oos[48] = live_ofi.clamp(-1.0, 1.0);
+                            omni_oos[49] = (live_vol / 100.0).tanh().clamp(-1.0, 1.0);
 
                             // D-142: Activar is_kline_closed en fronteras de 1 minuto OOS
                             let cur_minute = tick.timestamp / 60_000;

@@ -66,6 +66,9 @@ async fn main() {
         api_secret.clone(),
         is_testnet,
     ));
+    if std::env::var("TG_GENOME_ENV").is_err() {
+        std::env::set_var("TG_GENOME_ENV", "prod");
+    }
     let genome = quantum_arena::genome::SuperGenotype::load_or_default();
 
     // Extracción y control del capital base ($13.00 USD) para validación forense
@@ -541,6 +544,22 @@ async fn main() {
             }
 
             let r_code = arena.coins[0].last_close_reason.load(Ordering::Relaxed);
+            let r_name = match r_code {
+                1 => "TP",
+                2 => "SL",
+                3 | 4 => "TRAIL",
+                5 => "ZOMBIE",
+                _ => "TOXIC",
+            };
+            println!(
+                "🚪 [TRADE #{:02}] dir={:5} reason={:6} net=${:+.4} gross=${:+.4} cap=${:.4}",
+                total_trades,
+                if is_long { "LONG" } else { "SHORT" },
+                r_name,
+                true_net_pnl,
+                gross_pnl,
+                arena.unified_capital.load(Ordering::Relaxed)
+            );
             match r_code {
                 1 => reason_tp += 1,
                 2 => reason_sl += 1,

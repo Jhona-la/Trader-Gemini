@@ -208,14 +208,13 @@ use tokio::sync::Mutex;
 
 use crate::consejo_seniors::TradingHorizon;
 
-/// Inicia el consumidor asíncrono en background para autoevolucionar leyendo el MmapTelemetryBus.
-pub fn spawn_telemetry_consumer(
+pub fn spawn_telemetry_consumer<P: AsRef<std::path::Path> + Send + 'static>(
     scalping_module: Arc<Mutex<OnlineLearningModule>>,
     swing_module: Arc<Mutex<OnlineLearningModule>>,
-    mmap_path: &'static str,
+    mmap_path: P,
 ) {
     tokio::spawn(async move {
-        let mut reader = MmapTelemetryReader::new(mmap_path);
+        let mut reader = MmapTelemetryReader::new(mmap_path.as_ref());
 
         // FASE 23: Stateful Correlation Buffer for True PnL Online Learning
         // Correlate Decision features (Frame 1) with their actual market results (Frame 13)

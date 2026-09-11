@@ -192,13 +192,17 @@ pub fn evaluate_quantum_trailing_with_fee(
             current_price + (dist_atr * current_atr)
         };
 
-        // Escudo Cuántico (Breakeven Lock adaptativo para Scalp y Swing - D-472 & D-474)
-        // El breakeven debe garantizar beneficio NETO post-fees (+20 a +35 bps) para erradicar pérdidas por fricción.
+        // Escudo Cuántico (Breakeven Lock adaptativo para Scalp y Swing - D-472, D-474, D-485 & D-495)
+        // El breakeven garantiza beneficio NETO post-fees (+10 a +18 bps) con 40-45 bps de respiración.
         let effective_fee = fee_rate.max(0.0004);
-        let be_trigger = (effective_fee * 8.0).clamp(0.0065, 0.0180);
-        let be_buffer = (effective_fee * 3.5).clamp(0.0020, 0.0035);
-        let profit_lock_trigger = (effective_fee * 15.0).clamp(0.0100, 0.0250);
-        let profit_lock_gain = (effective_fee * 8.0).clamp(0.0050, 0.0120);
+        let be_trigger = (effective_fee * 8.0).clamp(0.0055, 0.0160);
+        let be_buffer = (effective_fee * 2.0).clamp(0.0010, 0.0018);
+        let half_lock_trigger = (be_trigger * 1.45).clamp(0.0080, 0.0200);
+        let half_lock_gain = (effective_fee * 6.0).clamp(0.0036, 0.0055);
+        let profit_lock_trigger = (effective_fee * 18.0).clamp(0.0105, 0.0250);
+        let profit_lock_gain = (effective_fee * 11.0).clamp(0.0068, 0.0110);
+        let runner_lock_trigger = (effective_fee * 25.0).clamp(0.0140, 0.0300);
+        let runner_lock_gain = (effective_fee * 17.0).clamp(0.0100, 0.0180);
 
         if max_pnl_pct >= be_trigger {
             if pos_side == 1 {
@@ -206,10 +210,22 @@ pub fn evaluate_quantum_trailing_with_fee(
                 if t1_stop < breakeven_price {
                     t1_stop = breakeven_price;
                 }
+                if max_pnl_pct >= half_lock_trigger {
+                    let half_lock = entry_price * (1.0 + half_lock_gain);
+                    if t1_stop < half_lock {
+                        t1_stop = half_lock;
+                    }
+                }
                 if max_pnl_pct >= profit_lock_trigger {
                     let profit_lock = entry_price * (1.0 + profit_lock_gain);
                     if t1_stop < profit_lock {
                         t1_stop = profit_lock;
+                    }
+                }
+                if max_pnl_pct >= runner_lock_trigger {
+                    let runner_lock = entry_price * (1.0 + runner_lock_gain);
+                    if t1_stop < runner_lock {
+                        t1_stop = runner_lock;
                     }
                 }
             } else {
@@ -218,11 +234,23 @@ pub fn evaluate_quantum_trailing_with_fee(
                 {
                     t1_stop = breakeven_price;
                 }
+                if max_pnl_pct >= half_lock_trigger {
+                    let half_lock = entry_price * (1.0 - half_lock_gain);
+                    if (t1_stop == 0.0 || t1_stop > half_lock) && half_lock > current_price {
+                        t1_stop = half_lock;
+                    }
+                }
                 if max_pnl_pct >= profit_lock_trigger {
                     let profit_lock = entry_price * (1.0 - profit_lock_gain);
                     // FIX #600: Garantizar que profit_lock esté por encima del precio actual de mercado para cortos
                     if (t1_stop == 0.0 || t1_stop > profit_lock) && profit_lock > current_price {
                         t1_stop = profit_lock;
+                    }
+                }
+                if max_pnl_pct >= runner_lock_trigger {
+                    let runner_lock = entry_price * (1.0 - runner_lock_gain);
+                    if (t1_stop == 0.0 || t1_stop > runner_lock) && runner_lock > current_price {
+                        t1_stop = runner_lock;
                     }
                 }
             }

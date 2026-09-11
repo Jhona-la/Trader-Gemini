@@ -55,6 +55,9 @@ pub struct StatefulEngine {
     pub ml_prob_var: f64,
     pub last_scalp_exit_tick: u64,
     pub last_scalp_was_loss: bool,
+    pub scalp_loss_streak: u32,
+    pub scalp_short_loss_streak: u32,
+    pub scalp_long_loss_streak: u32,
     pub last_trade_is_sell: bool,
 }
 
@@ -104,23 +107,56 @@ impl StatefulEngine {
             ml_prob_var: 0.01,
             last_scalp_exit_tick: 0,
             last_scalp_was_loss: false,
+            scalp_loss_streak: 0,
+            scalp_short_loss_streak: 0,
+            scalp_long_loss_streak: 0,
             last_trade_is_sell: false,
         }
     }
 
-    /// Smart cooldown per asset: evita sobre-operar niveles fallidos
+    /// Smart cooldown per asset con decaimiento temporal: evita parálisis eterna por rachas pasadas
     #[inline(always)]
     pub fn can_open_scalp(&self, min_cooldown: u64) -> bool {
-        let required = if self.last_scalp_was_loss {
-            if self.v_t > 0.0015 {
-                min_cooldown * 4
-            } else {
-                min_cooldown * 2
-            }
+        let elapsed = self.tick_count.saturating_sub(self.last_scalp_exit_tick);
+        let active_streak = if elapsed > 18_000 {
+            0
+        } else if elapsed > 7_200 {
+            self.scalp_loss_streak.saturating_sub(1)
         } else {
-            min_cooldown
+            self.scalp_loss_streak
         };
-        self.tick_count >= self.last_scalp_exit_tick + required
+        let required = match active_streak {
+            0 => min_cooldown,
+            1 => {
+                if self.v_t > 0.0015 {
+                    min_cooldown * 4
+                } else {
+                    min_cooldown * 2
+                }
+            }
+            2 => min_cooldown * 6,   // ~3,600 ticks (~15-20 min)
+            3 => min_cooldown * 15,  // ~9,000 ticks (~40 min)
+            _ => min_cooldown * 30,  // ~18,000 ticks (~1.5 horas)
+        };
+        elapsed >= required
+    }
+
+    /// Obtiene la racha de pérdidas activa para una dirección (long/short), considerando el decaimiento temporal
+    #[inline(always)]
+    pub fn get_active_directional_streak(&self, is_long: bool) -> u32 {
+        let elapsed = self.tick_count.saturating_sub(self.last_scalp_exit_tick);
+        let raw = if is_long {
+            self.scalp_long_loss_streak
+        } else {
+            self.scalp_short_loss_streak
+        };
+        if elapsed > 18_000 {
+            0
+        } else if elapsed > 7_200 {
+            raw.saturating_sub(1)
+        } else {
+            raw
+        }
     }
 
     /// Normaliza adaptativamente las predicciones ML en O(1) centradas en 0.50 con rango [-1.0, 1.0]
@@ -540,16 +576,18 @@ impl StatefulEngine {
         }
     }
 
-    /// Determina si la estructura de mercado es inequívocamente bajista (Secular Bear o Death Cross de orden superior)
+    /// Determina si la estructura de mercado es inequívocamente bajista (Death Cross de orden superior y precio bajo EMA de tendencia)
     #[inline(always)]
     pub fn is_macro_bear(&self) -> bool {
+        if self.kline_ema_fast > 0.0 && self.kline_ema_slow > 0.0 && self.kline_ema_fast > self.kline_ema_slow {
+            return false; // El momentum rápido (EMA 9 > EMA 21) es alcista: régimen no bajista
+        }
         if self.kline_ema_macro > 0.0 && self.kline_ema_trend > 0.0 {
-            self.last_price < self.kline_ema_macro
-                || self.kline_ema_trend < self.kline_ema_macro
-                || (self.last_price < self.kline_ema_trend
-                    && self.kline_ema_slow < self.kline_ema_trend)
+            self.last_price < self.kline_ema_trend
+                && self.kline_ema_slow < self.kline_ema_trend
+                && (self.last_price < self.kline_ema_macro || self.kline_ema_trend < self.kline_ema_macro)
         } else if self.kline_ema_trend > 0.0 && self.kline_ema_slow > 0.0 {
-            self.last_price < self.kline_ema_trend || self.kline_ema_slow < self.kline_ema_trend
+            self.last_price < self.kline_ema_trend && self.kline_ema_slow < self.kline_ema_trend
         } else if self.kline_ema_slow > 0.0 {
             self.last_price < self.kline_ema_slow
         } else {
@@ -560,10 +598,13 @@ impl StatefulEngine {
     /// Determina si la estructura de mercado es inequívocamente alcista (Golden Cross y Precio sobre EMA 120 y 720)
     #[inline(always)]
     pub fn is_macro_bull(&self) -> bool {
+        if self.kline_ema_fast > 0.0 && self.kline_ema_slow > 0.0 && self.kline_ema_fast < self.kline_ema_slow {
+            return false; // El momentum rápido (EMA 9 < EMA 21) es bajista: régimen no alcista
+        }
         if self.kline_ema_macro > 0.0 && self.kline_ema_trend > 0.0 {
-            self.last_price > self.kline_ema_macro
-                && self.kline_ema_trend > self.kline_ema_macro
-                && self.last_price > self.kline_ema_trend
+            self.last_price > self.kline_ema_trend
+                && self.kline_ema_slow > self.kline_ema_trend
+                && (self.last_price > self.kline_ema_macro || self.kline_ema_trend > self.kline_ema_macro)
         } else if self.kline_ema_trend > 0.0 && self.kline_ema_slow > 0.0 {
             self.last_price > self.kline_ema_trend && self.kline_ema_slow > self.kline_ema_trend
         } else if self.kline_ema_slow > 0.0 {

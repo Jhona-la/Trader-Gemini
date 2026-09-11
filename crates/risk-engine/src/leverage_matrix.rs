@@ -24,7 +24,7 @@ impl QuantumLeverageMatrix {
     /// Fórmula: L = T1(kelly) × T2(conviction) × T3(vol_brake) × T4(growth) × T5(hurst)
     pub fn calculate_dynamic_leverage(
         signal: &SignalIntent,
-        _is_scalp: bool,
+        temporal_scale: f64, // D-509: Variedad temporal continua s in [0.0, 1.0] sin colapso booleano
         current_capital: f64,
         base_capital: f64, // Capital base real (extraído de API)
         tick_volatility: f64,
@@ -190,15 +190,19 @@ impl QuantumLeverageMatrix {
             0.1
         };
 
-        let temporal_scale = arena
-            .config
-            .temporal_scale
-            .load(Ordering::Relaxed)
-            .clamp(0.0, 1.0);
+        let effective_temporal_scale = if temporal_scale.is_finite() {
+            temporal_scale.clamp(0.0, 1.0)
+        } else {
+            arena
+                .config
+                .temporal_scale
+                .load(Ordering::Relaxed)
+                .clamp(0.0, 1.0)
+        };
         let s = match signal.horizon {
             signal_engine::TradeHorizon::Scalp => 0.0,
             signal_engine::TradeHorizon::Swing => 1.0,
-            signal_engine::TradeHorizon::Continuous => temporal_scale,
+            signal_engine::TradeHorizon::Continuous => effective_temporal_scale,
         };
 
         // D-338: Homotopía continua y diferenciable s in [0, 1].
