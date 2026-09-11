@@ -2754,10 +2754,18 @@ impl GodEngineCore {
             }
 
             // D-475: Escudo Invariante de Microestructura L2 Universal (Cross-Horizon OBI Veto)
-            // Prohibido abrir Long si el libro L2 muestra presión vendedora pasiva (current_obi < -0.10)
-            // y prohibido abrir Short si el libro muestra soporte comprador pasivo (current_obi > 0.10),
-            // salvo capitulación/euforia estadística extrema (|Z| > 2.5).
-            if unified_intent.signal == SignalType::Long && current_obi < -0.10 {
+            // Prohibido abrir Long si el libro L2 muestra presión vendedora pasiva y prohibido abrir
+            // Short si muestra soporte comprador pasivo, salvo capitulación/euforia estadística.
+            // D-688 (DÉCIMA OLA): la presión se exigía con |OBI| > 0,10 y la excepción con
+            // «|Z| > 2,5», que en realidad eran 2,5 ATR. Ahora la presión debe superar z95 veces
+            // la desviación del ruido del propio libro, y la excepción es el mismo z95 sobre la
+            // distancia a la EMA de 21 velas. Durante el calentamiento del ruido no hay veto.
+            let obi_pressure_threshold = self.feature_engines[coin_id]
+                .obi_noise
+                .sd()
+                .map(|sd| crate::diffusion::Z95 * sd)
+                .unwrap_or(f64::INFINITY);
+            if unified_intent.signal == SignalType::Long && current_obi < -obi_pressure_threshold {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
@@ -2769,10 +2777,10 @@ impl GodEngineCore {
                 } else {
                     0.0
                 };
-                if p_stretch >= -2.5 {
+                if crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) >= -crate::diffusion::Z95 {
                     unified_intent = SignalIntent::flat();
                 }
-            } else if unified_intent.signal == SignalType::Short && current_obi > 0.10 {
+            } else if unified_intent.signal == SignalType::Short && current_obi > obi_pressure_threshold {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
@@ -2784,14 +2792,17 @@ impl GodEngineCore {
                 } else {
                     0.0
                 };
-                if p_stretch <= 2.5 {
+                if crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) <= crate::diffusion::Z95 {
                     unified_intent = SignalIntent::flat();
                 }
             }
 
             // D-473 & D-477: Escudo Invariante Neuronal DarkAlpha Universal (Cross-Horizon ML Filter)
             // Veto estricto si el modelo ML predice activamente en contra de la dirección deseada
-            if unified_intent.signal == SignalType::Long && ml_prob < 0.460 {
+            // D-688 (DÉCIMA OLA): «en contra» era una banda 0,460/0,540 sin derivación. La regla
+            // declarada es que el modelo prediga contra la dirección: P(sube) < ½ para un largo y
+            // > ½ para un corto. La excepción de extensión pasa a z95, como el resto del motor.
+            if unified_intent.signal == SignalType::Long && ml_prob < 0.5 {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
@@ -2803,10 +2814,10 @@ impl GodEngineCore {
                 } else {
                     0.0
                 };
-                if p_stretch >= -2.5 {
+                if crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) >= -crate::diffusion::Z95 {
                     unified_intent = SignalIntent::flat();
                 }
-            } else if unified_intent.signal == SignalType::Short && ml_prob > 0.540 {
+            } else if unified_intent.signal == SignalType::Short && ml_prob > 0.5 {
                 let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
@@ -2818,7 +2829,7 @@ impl GodEngineCore {
                 } else {
                     0.0
                 };
-                if p_stretch <= 2.5 {
+                if crate::diffusion::atr_stretch_z(p_stretch, crate::diffusion::EMA_SLOW_BARS) <= crate::diffusion::Z95 {
                     unified_intent = SignalIntent::flat();
                 }
             }

@@ -30,6 +30,8 @@ pub struct StatefulEngine {
     pub tick_count: u64,
     pub hurst: RecursiveHurst,
     pub obi_accel: ObiAcceleration,
+    /// D-688: media y varianza exponenciales del OBI (ruido del libro).
+    pub obi_noise: ObiNoise,
     pub fr_elasticity: FundingRateElasticity,
     pub cvpin: ContinuousVPIN,
     pub entropy: ShannonEntropy,
@@ -84,6 +86,7 @@ impl StatefulEngine {
             tick_count: 0,
             hurst: RecursiveHurst::new(),
             obi_accel: ObiAcceleration::new(),
+            obi_noise: ObiNoise::new(),
             fr_elasticity: FundingRateElasticity::new(),
             cvpin: ContinuousVPIN::new(10_000.0), // $10,000 USD rolling bucket size
             entropy: ShannonEntropy::new(),
@@ -187,6 +190,7 @@ impl StatefulEngine {
         self.tick_count = 0;
         self.hurst = RecursiveHurst::new();
         self.obi_accel = ObiAcceleration::new();
+        self.obi_noise = ObiNoise::new();
         self.fr_elasticity = FundingRateElasticity::new();
         self.cvpin = ContinuousVPIN::new(10_000.0);
         self.entropy = ShannonEntropy::new();
@@ -435,6 +439,7 @@ impl StatefulEngine {
         }
 
         self.obi_accel.update(obi);
+        self.obi_noise.update(obi);
         self.fr_elasticity.update(funding_rate, self.last_price);
         self.dark_alpha.apply_event(dex_severity, ts_ms);
     }
@@ -640,6 +645,67 @@ impl StatefulEngine {
     }
 }
 
+/// D-688 (DÉCIMA OLA) — RUIDO DEL DESEQUILIBRIO DEL LIBRO.
+///
+/// El escudo de libro L2 vetaba con `|OBI| > 0,10`: un umbral absoluto que
+/// significa cosas distintas en un libro profundo y estable y en uno fino y
+/// ruidoso. La desviación típica del OBI se estima con una media y una varianza
+/// exponenciales sobre `OBI_NOISE_EVENTS` eventos —la misma escala que la EMA
+/// lenta de ticks del motor (α = 2/201)— y el escudo exige que la presión sea
+/// significativa frente a ese ruido.
+#[derive(Debug, Clone, Copy)]
+pub struct ObiNoise {
+    mean: f64,
+    var: f64,
+    count: u32,
+}
+
+/// Eventos de la ventana exponencial y mínimo para considerar la estimación.
+pub const OBI_NOISE_EVENTS: u32 = 200;
+
+impl Default for ObiNoise {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ObiNoise {
+    pub fn new() -> Self {
+        Self {
+            mean: 0.0,
+            var: 0.0,
+            count: 0,
+        }
+    }
+
+    #[inline]
+    pub fn update(&mut self, obi: f64) {
+        if !obi.is_finite() {
+            return;
+        }
+        if self.count == 0 {
+            self.mean = obi;
+            self.var = 0.0;
+        } else {
+            let alpha = 2.0 / (OBI_NOISE_EVENTS as f64 + 1.0);
+            let delta = obi - self.mean;
+            self.mean += alpha * delta;
+            self.var = (1.0 - alpha) * (self.var + alpha * delta * delta);
+        }
+        self.count = self.count.saturating_add(1);
+    }
+
+    /// Desviación típica del OBI, o `None` durante el calentamiento.
+    #[inline]
+    pub fn sd(&self) -> Option<f64> {
+        if self.count < OBI_NOISE_EVENTS {
+            None
+        } else {
+            Some(self.var.max(0.0).sqrt())
+        }
+    }
+}
+
 impl Drop for StatefulEngine {
     fn drop(&mut self) {
         DROP_COUNTER.fetch_sub(1, Ordering::SeqCst);
@@ -711,6 +777,27 @@ mod tests {
             "3 cierres de minuto no pueden producir {} retornos",
             rapido.hurst.samples()
         );
+    }
+
+    /// D-688: la desviación estimada del OBI converge a la del ruido real y
+    /// no se publica antes del calentamiento.
+    #[test]
+    fn d688_ruido_del_obi_se_estima_y_espera_al_calentamiento() {
+        let mut n = ObiNoise::new();
+        let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+        for i in 0..20_000u32 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let u = ((state >> 11) as f64 + 0.5) / (1u64 << 53) as f64;
+            // Uniforme en [−0,3; 0,3]: σ = 0,6/√12 ≈ 0,1732.
+            n.update(-0.3 + 0.6 * u);
+            if i + 1 < OBI_NOISE_EVENTS {
+                assert!(n.sd().is_none());
+            }
+        }
+        let sd = n.sd().expect("calentado");
+        assert!((sd - 0.1732).abs() < 0.03, "σ estimada {sd}");
     }
 
     #[test]
