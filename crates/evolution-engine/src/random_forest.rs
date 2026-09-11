@@ -3,6 +3,13 @@ use quantum_arena::{GlobalArena, genome::SuperGenotype};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+/// D-689 (DÉCIMA OLA): operaciones cerradas mínimas del universo ganador desde
+/// la última replantación antes de comparar su PnL con el control. Es la misma
+/// regla que la aptitud unificada (X-014): por debajo de 15 operaciones la
+/// evidencia es inviable. Antes bastaba una ventaja de 6,5 céntimos sobre $13,
+/// alcanzable con una sola operación afortunada.
+pub const MIN_HARVEST_TRADES: usize = 15;
+
 /// ShadowForest mantiene N motores en la sombra (universos paralelos)
 /// procesando el flujo en vivo (NO backtest, NO datos pasados) para encontrar
 /// el genoma que mejor resuena con el micro-régimen actual.
@@ -10,6 +17,18 @@ pub struct ShadowForest {
     pub initial_capital: f64,
     pub engines: Vec<GodEngineCore>,
     pub genomes: Vec<SuperGenotype>,
+    /// D-689: operaciones cerradas de cada universo en la última replantación.
+    pub trades_at_replant: Vec<usize>,
+}
+
+/// Operaciones cerradas acumuladas por un universo (todas las monedas).
+fn closed_trades(engine: &GodEngineCore) -> usize {
+    engine
+        .arena
+        .coins
+        .iter()
+        .map(|c| c.metrics.trade_count.load(Ordering::Relaxed))
+        .sum()
 }
 
 impl ShadowForest {
@@ -50,11 +69,20 @@ impl ShadowForest {
             genomes.push(mutation);
         }
 
+        let trades_at_replant = engines.iter().map(closed_trades).collect();
+
         Self {
             initial_capital,
             engines,
             genomes,
+            trades_at_replant,
         }
+    }
+
+    /// D-689: operaciones cerradas por el universo `i` desde la última replantación.
+    pub fn closed_since_replant(&self, i: usize) -> usize {
+        closed_trades(&self.engines[i])
+            .saturating_sub(self.trades_at_replant.get(i).copied().unwrap_or(0))
     }
 
     /// Alimenta un evento en vivo a todos los universos paralelos en la sombra
@@ -142,7 +170,10 @@ impl ShadowForest {
 
         // Axioma de Inercia: Solo proponemos cambio si la mutación venció al control
         // significativamente (> 0.5% del capital base) y tiene PnL positivo para evitar inestabilidad del sistema.
+        // D-689: y si el ganador acumula una muestra mínima de operaciones cerradas.
+        let enough_sample = self.closed_since_replant(best_idx) >= MIN_HARVEST_TRADES;
         let winner = if best_idx != 0
+            && enough_sample
             && (best_pnl - control_pnl > self.initial_capital * 0.005)
             && best_pnl > 0.0
         {
@@ -181,6 +212,8 @@ impl ShadowForest {
             mutation.apply_to_arena(&engine.arena);
             self.genomes[i] = mutation;
         }
+        // D-689: la muestra de la siguiente cosecha empieza aquí.
+        self.trades_at_replant = self.engines.iter().map(closed_trades).collect();
     }
 }
 
@@ -198,6 +231,40 @@ mod tests {
         let (winner, leaderboard) = forest.harvest_best_genome();
         assert_eq!(leaderboard.len(), 3);
         assert!(winner.is_none());
+    }
+
+    /// D-689: una ventaja de capital sin muestra mínima no se cosecha; con la
+    /// muestra, sí. La replantación reinicia la cuenta.
+    #[test]
+    fn d689_cosecha_exige_muestra_minima_de_operaciones() {
+        let base_genome = SuperGenotype::default();
+        let mut forest = ShadowForest::new(13.0, base_genome.clone(), 2);
+        forest.engines[1]
+            .arena
+            .unified_capital
+            .store(14.0, Ordering::Relaxed);
+        forest.engines[1].arena.coins[0]
+            .metrics
+            .trade_count
+            .store(MIN_HARVEST_TRADES - 1, Ordering::Relaxed);
+        let (winner, _) = forest.harvest_best_genome();
+        assert!(winner.is_none(), "ventaja sin muestra mínima no debe cosecharse");
+
+        forest.engines[1].arena.coins[0]
+            .metrics
+            .trade_count
+            .store(MIN_HARVEST_TRADES, Ordering::Relaxed);
+        let (winner, _) = forest.harvest_best_genome();
+        assert!(winner.is_some(), "con muestra mínima y ventaja, se cosecha");
+
+        forest.replant(base_genome);
+        assert_eq!(forest.closed_since_replant(1), 0);
+        forest.engines[1]
+            .arena
+            .unified_capital
+            .store(14.0, Ordering::Relaxed);
+        let (winner, _) = forest.harvest_best_genome();
+        assert!(winner.is_none(), "tras replantar la muestra vuelve a empezar");
     }
 
     #[test]

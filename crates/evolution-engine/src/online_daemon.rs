@@ -30,6 +30,22 @@ impl Default for QuantumHotSwapState {
 use quantum_arena::GlobalArena;
 use quantum_arena::genome::SuperGenotype;
 
+/// D-689 (DÉCIMA OLA) — ARMADO EXPLÍCITO DE LA EVOLUCIÓN EN VIVO.
+///
+/// Los promotores en vivo cambiaban umbrales y genoma con evidencia de minutos:
+/// la cosecha del Shadow Forest con 6,5 céntimos de ventaja sobre $13 y sin
+/// mínimo de operaciones, y este daemon con una «confianza bayesiana» que con
+/// N < 10 pasa casi siempre. La puerta del almacén valida sanidad (bounds y
+/// RR), no rendimiento. Con la filosofía de D-651 y `MAINNET_ARMED`, ningún
+/// proceso en vivo cambia umbrales ni genoma sin
+/// `TG_LIVE_GENOME_EVOLUTION_ARMED=1`. La detección de deriva, el kill-switch
+/// y el rollback post-promoción no dependen de este armado.
+pub fn live_evolution_armed() -> bool {
+    std::env::var("TG_LIVE_GENOME_EVOLUTION_ARMED")
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false)
+}
+
 pub struct LiveEvolutionDaemon {
     pub state: QuantumHotSwapState,
     pub arena: Arc<GlobalArena>,
@@ -159,7 +175,9 @@ impl LiveEvolutionDaemon {
             }
 
             // Aplicar thresholds óptimos del Shadow Forest a la Arena ÚNICAMENTE cuando está entrenado
-            if self.forest.is_trained() {
+            // D-689: y sólo con la evolución en vivo armada; sin armar, el bosque
+            // aprende pero no sobrescribe los umbrales del genoma validado.
+            if self.forest.is_trained() && live_evolution_armed() {
                 let (opt_l, opt_s) = self.forest.get_optimal_thresholds();
                 self.arena
                     .config
@@ -390,6 +408,12 @@ impl LiveEvolutionDaemon {
                     .kill_switch_active
                     .store(false, Ordering::Relaxed);
             }
+        }
+
+        // D-689: la deriva y el kill-switch de arriba son protección y siguen
+        // siempre activos; la búsqueda y promoción de mutaciones en vivo no.
+        if !live_evolution_armed() {
+            return;
         }
 
         println!(

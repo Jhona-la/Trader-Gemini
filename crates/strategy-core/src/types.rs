@@ -27,6 +27,10 @@ pub struct SignalIntent {
     pub sl_price_target: f64,
     pub trajectory_volatility: f64,
     pub horizon: TradeHorizon,
+    /// D-690: probabilidad de ganar calibrada con resultados reales, sólo para
+    /// el dimensionado. `0.0` significa «sin calibrar»: el consumidor usa
+    /// `confidence`. La selección nunca la lee (etiquetas selectivas).
+    pub win_probability: f64,
 }
 
 impl SignalIntent {

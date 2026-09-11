@@ -2838,15 +2838,19 @@ impl GodEngineCore {
 
             // --- APERTURA CONTINUA UNIFICADA (100% CAPITAL ALLOCATION) ---
             if unified_intent.signal != SignalType::Flat && !coin.positions.position.is_open() {
-                // D-619 (DÉCIMA OLA): la confianza que entra en el Kelly y en el valor
-                // esperado era una puntuación heurística tratada como probabilidad.
-                // El risk-engine recibe ahora la probabilidad calibrada con los
-                // resultados reales; la posición guarda la puntuación cruda para que
-                // el calibrador aprenda de ella. Sin historial, el mapa es la
-                // identidad y nada cambia.
+                // D-619 (DÉCIMA OLA): la confianza que entra en el Kelly era una
+                // puntuación heurística tratada como probabilidad. La posición guarda
+                // la puntuación cruda para que el calibrador aprenda de ella.
+                // D-690: la probabilidad calibrada NO sustituye a la puntuación. Con
+                // ella en `confidence`, el gate del risk-engine (en la escala de la
+                // puntuación) lo rechazaba todo tras las primeras pérdidas y el
+                // calibrador —que sólo aprende de lo ejecutado— dejaba de recibir
+                // datos: 2 operaciones por ventana frente a 56 y 40. Viaja aparte y
+                // sólo alimenta el Kelly, donde reducir tamaño no crea un estado
+                // absorbente. Calibrar la selección exige resultados contrafactuales.
                 let raw_confidence_score = unified_intent.confidence;
                 let mut calibrated_intent = unified_intent;
-                calibrated_intent.confidence =
+                calibrated_intent.win_probability =
                     self.confidence_calibrator.calibrate(raw_confidence_score);
                 let order =
                     self.risk_engine

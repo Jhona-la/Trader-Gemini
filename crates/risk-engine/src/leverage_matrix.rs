@@ -81,10 +81,17 @@ impl QuantumLeverageMatrix {
         // TENSOR 1: Full Fractional Kelly (con profit_factor y win_rate REAL)
         // ═══════════════════════════════════════════════════════
         // Fusión Bayesiana: si hay historial (WR > 0.05), pondera 70% historia + 30% convicción puntual
-        let prob_win = if safe_wr > 0.05 {
-            (safe_wr * 0.70 + signal.confidence.clamp(0.1, 1.0) * 0.30).clamp(0.10, 0.95)
+        // D-690: la convicción puntual es la probabilidad calibrada cuando existe;
+        // la puntuación cruda sólo cuando el núcleo no la ha calibrado.
+        let signal_probability = if signal.win_probability > 0.0 {
+            signal.win_probability
         } else {
-            signal.confidence.clamp(0.10, 0.95)
+            signal.confidence
+        };
+        let prob_win = if safe_wr > 0.05 {
+            (safe_wr * 0.70 + signal_probability.clamp(0.1, 1.0) * 0.30).clamp(0.10, 0.95)
+        } else {
+            signal_probability.clamp(0.10, 0.95)
         };
         let pf = safe_pf; // PF real, fallback si no hay historial
         let kelly = (prob_win - (1.0 - prob_win) / pf).max(0.01);
@@ -253,5 +260,42 @@ impl QuantumLeverageMatrix {
         // );
 
         clamped
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn leverage_for(signal: &SignalIntent, arena: &GlobalArena) -> f64 {
+        QuantumLeverageMatrix::calculate_dynamic_leverage(
+            signal, 0.0, 10_000.0, 10_000.0, 0.001, 1.0, 0.5, 1.0, 0.0, 20.0, arena,
+        )
+    }
+
+    /// D-690: el Kelly usa la probabilidad calibrada cuando existe y la
+    /// puntuación cruda sólo cuando no la hay.
+    #[test]
+    fn d690_kelly_usa_la_probabilidad_calibrada() {
+        let arena = quantum_arena::GlobalArena::new(10_000.0);
+        let uncalibrated = SignalIntent {
+            signal: signal_engine::SignalType::Long,
+            confidence: 0.9,
+            ..Default::default()
+        };
+        let calibrated_same = SignalIntent {
+            win_probability: 0.9,
+            ..uncalibrated
+        };
+        let calibrated_low = SignalIntent {
+            win_probability: 0.3,
+            ..uncalibrated
+        };
+        let base = leverage_for(&uncalibrated, &arena);
+        assert_eq!(base, leverage_for(&calibrated_same, &arena));
+        assert!(
+            leverage_for(&calibrated_low, &arena) < base,
+            "una probabilidad calibrada baja debe reducir el apalancamiento"
+        );
     }
 }

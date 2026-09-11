@@ -1029,6 +1029,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &ledger_path,
                 "config_dir/genotypes/online_champion.json",
             );
+            if !evolution_engine::online_daemon::live_evolution_armed() {
+                telemetry_server::telemetry_log!(
+                    "🔒 [D-689] Evolución en vivo DESARMADA: umbrales ML y genoma sólo cambian por promoción validada (TG_LIVE_GENOME_EVOLUTION_ARMED=1 para armarla). Deriva, kill-switch y rollback siguen activos."
+                );
+            }
             rt_for_darwin.spawn(async move {
                 telemetry_server::telemetry_log!(
                     "🌐 [ONLINE-DAEMON] Aprendizaje online vivo (shadow forest + drift EWMA)"
@@ -2182,6 +2187,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // FASE 12: Cosecha Cuántica en vivo (ShadowForest)
                 let (winner, leaderboard) = shadow_forest.harvest_best_genome();
                 let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::ShadowLeaderboard(leaderboard));
+                // D-689: la cosecha sólo cambia el genoma de producción con la
+                // evolución en vivo armada explícitamente.
+                let winner = winner.filter(|_| evolution_engine::online_daemon::live_evolution_armed());
 
                 if let Some((new_alpha, pnl_gained)) = winner {
                     telemetry!("🧬 [SHADOW FOREST] ¡Cosecha Exitosa! Universo Mutante generó +${:.2} extra. Aplicando Hot-Swap...", pnl_gained);
