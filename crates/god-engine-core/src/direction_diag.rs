@@ -4,9 +4,11 @@
 //! unas 140 operaciones, también en la ventana de validación, en la que BTC
 //! sube un 4 %. Las compuertas del núcleo están escritas en espejo, así que el
 //! sesgo tiene que venir de sus entradas. Este módulo cuenta, por dirección, qué
-//! propone el consenso tensorial, qué condición del gate de la rama 11 falla y
-//! qué se abre, junto con la distribución de `composite_score` y `ml_prob` y la
-//! contribución media de cada término. No participa en ninguna decisión.
+//! propone el consenso tensorial, qué condición del gate de la rama 11 falla,
+//! qué escudo del embudo unificado veta la intención, qué rechaza el risk-engine
+//! o el consejo y qué se abre, junto con la distribución de `composite_score` y
+//! `ml_prob` y la contribución media de cada término. No participa en ninguna
+//! decisión.
 
 use strategy_core::SignalType;
 
@@ -25,6 +27,28 @@ pub const BRANCH11_CONDITIONS: [&str; N_BRANCH11_CONDITIONS] = [
     "OBI supera el umbral de rango",
     "sin sobreextensión",
 ];
+
+/// Número de etapas del embudo unificado entre la intención y la orden.
+pub const N_FUNNEL_STAGES: usize = 7;
+
+/// Etapas del embudo unificado, en el orden en que el núcleo las aplica.
+pub const FUNNEL_STAGES: [&str; N_FUNNEL_STAGES] = [
+    "escudo macro (D-624)",
+    "acondicionamiento espectral (X-016)",
+    "anti-whiplash (D-463)",
+    "convicción bayesiana (D-472)",
+    "racha direccional (D-499)",
+    "escudo de libro L2 (D-475/D-688)",
+    "escudo neuronal (D-473/D-688)",
+];
+
+pub const STAGE_MACRO: usize = 0;
+pub const STAGE_SPECTRAL: usize = 1;
+pub const STAGE_WHIPLASH: usize = 2;
+pub const STAGE_BAYES: usize = 3;
+pub const STAGE_STREAK: usize = 4;
+pub const STAGE_L2: usize = 5;
+pub const STAGE_NEURAL: usize = 6;
 
 const COMPOSITE_BINS: usize = 20;
 const ML_BINS: usize = 10;
@@ -49,8 +73,28 @@ pub struct DirectionDiag {
     pub gate_failed: [[u64; N_BRANCH11_CONDITIONS]; 2],
     /// Veces que la condición fue la única en fallar.
     pub gate_sole_failure: [[u64; N_BRANCH11_CONDITIONS]; 2],
+    /// Intenciones que llegan al embudo unificado sin posición abierta.
+    pub funnel_entered: [u64; 2],
+    /// Vetos de cada etapa del embudo unificado.
+    pub funnel_veto: [[u64; N_FUNNEL_STAGES]; 2],
+    /// Intenciones que atraviesan todo el embudo unificado.
+    pub funnel_survived: [u64; 2],
+    /// Rechazos del risk-engine y del consejo.
+    pub risk_rejected: [u64; 2],
+    pub council_vetoed: [u64; 2],
     /// Aperturas por dirección.
     pub opened: [u64; 2],
+    /// Estado de la evaluación en curso del embudo unificado.
+    funnel_active: bool,
+    funnel_last: SignalType,
+}
+
+fn dir_index(signal: SignalType) -> Option<usize> {
+    match signal {
+        SignalType::Long => Some(LONG),
+        SignalType::Short => Some(SHORT),
+        SignalType::Flat => None,
+    }
 }
 
 impl DirectionDiag {
@@ -102,6 +146,53 @@ impl DirectionDiag {
         }
     }
 
+    /// Abre la evaluación del embudo unificado. Sólo cuenta si hay intención y
+    /// no hay posición abierta: con posición abierta nada podría abrirse.
+    #[inline]
+    pub fn funnel_begin(&mut self, signal: SignalType, book_flat: bool) {
+        self.funnel_active = book_flat && dir_index(signal).is_some();
+        self.funnel_last = signal;
+        if let (true, Some(d)) = (self.funnel_active, dir_index(signal)) {
+            self.funnel_entered[d] += 1;
+        }
+    }
+
+    /// Registra el estado tras la etapa `stage`: si la intención pasó de tener
+    /// dirección a plana, esa etapa la vetó.
+    #[inline]
+    pub fn funnel_checkpoint(&mut self, signal: SignalType, stage: usize) {
+        if !self.funnel_active || stage >= N_FUNNEL_STAGES {
+            return;
+        }
+        if let Some(d) = dir_index(self.funnel_last) {
+            if signal == SignalType::Flat {
+                self.funnel_veto[d][stage] += 1;
+                self.funnel_active = false;
+            }
+        }
+        self.funnel_last = signal;
+        if stage == N_FUNNEL_STAGES - 1 {
+            if let (true, Some(d)) = (self.funnel_active, dir_index(signal)) {
+                self.funnel_survived[d] += 1;
+            }
+            self.funnel_active = false;
+        }
+    }
+
+    #[inline]
+    pub fn record_risk(&mut self, is_long: bool, accepted: bool) {
+        if !accepted {
+            self.risk_rejected[if is_long { LONG } else { SHORT }] += 1;
+        }
+    }
+
+    #[inline]
+    pub fn record_council(&mut self, is_long: bool, approved: bool) {
+        if !approved {
+            self.council_vetoed[if is_long { LONG } else { SHORT }] += 1;
+        }
+    }
+
     #[inline]
     pub fn record_open(&mut self, is_long: bool) {
         self.opened[if is_long { LONG } else { SHORT }] += 1;
@@ -144,6 +235,25 @@ impl DirectionDiag {
             ));
         }
         out.push_str(&format!(
+            "DIRECTION_DIAG embudo entradas sin posición · largo={} corto={}\n",
+            self.funnel_entered[LONG], self.funnel_entered[SHORT]
+        ));
+        for (i, name) in FUNNEL_STAGES.iter().enumerate() {
+            out.push_str(&format!(
+                "DIRECTION_DIAG veto[{}] {} · largo={} corto={}\n",
+                i, name, self.funnel_veto[LONG][i], self.funnel_veto[SHORT][i],
+            ));
+        }
+        out.push_str(&format!(
+            "DIRECTION_DIAG embudo superado · largo={} corto={} · rechazo risk-engine largo={} corto={} · veto consejo largo={} corto={}\n",
+            self.funnel_survived[LONG],
+            self.funnel_survived[SHORT],
+            self.risk_rejected[LONG],
+            self.risk_rejected[SHORT],
+            self.council_vetoed[LONG],
+            self.council_vetoed[SHORT],
+        ));
+        out.push_str(&format!(
             "DIRECTION_DIAG aperturas largo={} corto={}",
             self.opened[LONG], self.opened[SHORT]
         ));
@@ -184,5 +294,46 @@ mod tests {
         d.record_open(false);
         assert_eq!(d.opened, [0, 1]);
         assert!(d.report().contains("DIRECTION_DIAG aperturas largo=0 corto=1"));
+    }
+
+    #[test]
+    fn diag_atribuye_cada_veto_a_la_etapa_que_lo_produce() {
+        let mut d = DirectionDiag::default();
+
+        // Largo vetado por el escudo neuronal.
+        d.funnel_begin(SignalType::Long, true);
+        for stage in 0..STAGE_NEURAL {
+            d.funnel_checkpoint(SignalType::Long, stage);
+        }
+        d.funnel_checkpoint(SignalType::Flat, STAGE_NEURAL);
+
+        // Corto vetado por el escudo macro: las etapas siguientes no cuentan.
+        d.funnel_begin(SignalType::Short, true);
+        d.funnel_checkpoint(SignalType::Flat, STAGE_MACRO);
+        for stage in 1..N_FUNNEL_STAGES {
+            d.funnel_checkpoint(SignalType::Flat, stage);
+        }
+
+        // Corto que supera todo el embudo.
+        d.funnel_begin(SignalType::Short, true);
+        for stage in 0..N_FUNNEL_STAGES {
+            d.funnel_checkpoint(SignalType::Short, stage);
+        }
+
+        // Con posición abierta no se cuenta nada.
+        d.funnel_begin(SignalType::Long, false);
+        d.funnel_checkpoint(SignalType::Flat, STAGE_MACRO);
+
+        assert_eq!(d.funnel_entered, [1, 2]);
+        assert_eq!(d.funnel_veto[LONG][STAGE_NEURAL], 1);
+        assert_eq!(d.funnel_veto[SHORT][STAGE_MACRO], 1);
+        assert_eq!(d.funnel_veto[LONG][STAGE_MACRO], 0);
+        assert_eq!(d.funnel_survived, [0, 1]);
+
+        d.record_risk(true, false);
+        d.record_council(false, false);
+        assert_eq!(d.risk_rejected, [1, 0]);
+        assert_eq!(d.council_vetoed, [0, 1]);
+        assert!(d.report().contains("veto[6] escudo neuronal"));
     }
 }

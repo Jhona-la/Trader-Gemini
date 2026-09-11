@@ -2578,6 +2578,8 @@ impl GodEngineCore {
                 crate::diffusion::EMA_FAST_BARS,
                 crate::diffusion::EMA_SLOW_BARS,
             );
+            self.diag_dir
+                .funnel_begin(unified_intent.signal, !coin.positions.position.is_open());
             let z95 = crate::diffusion::Z95;
             if (is_confirmed_downtrend || z_secular < -z95 || z_higher < -z95 || z_macro < -z95)
                 && unified_intent.signal == SignalType::Long
@@ -2633,6 +2635,7 @@ impl GodEngineCore {
                 }
             }
 
+            self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_MACRO);
             // X-016 plenitud (REHAB-1b): ACONDICIONAMIENTO ESPECTRAL de la
             // entrada unificada. La persistencia de la escala dominante
             // (medida: autocorrelación de sorpresas — tendencia +1, reversión
@@ -2670,6 +2673,7 @@ impl GodEngineCore {
                 return (None, closed_order, None);
             }
 
+            self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_SPECTRAL);
             // D-463: Unified Anti-Whiplash & Cycle Reset Guard (Erradicación del Chopping Post-Salida)
             if unified_intent.signal != SignalType::Flat {
                 let last_close = coin.last_close_ts.load(Ordering::Relaxed);
@@ -2747,6 +2751,7 @@ impl GodEngineCore {
                 }
             }
 
+            self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_WHIPLASH);
             // D-472: Invariante Bayesiano Absoluto Universal (Cross-Horizon)
             // Ninguna orden unificada puede entrar si contradice la convicción Bayesiana (composite_score)
             if unified_intent.signal == SignalType::Long && composite_score < 0.0 {
@@ -2755,6 +2760,7 @@ impl GodEngineCore {
                 unified_intent = SignalIntent::flat();
             }
 
+            self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_BAYES);
             // D-499: Invariante de Convicción Post-Racha Direccional Universal (Cross-Horizon Directional Loss Streak Firewall)
             // Si el activo acumula una racha de 2 o más pérdidas consecutivas activas en su dirección (short/long),
             // se exige convicción Bayesiana institucional (|score| >= 0.28, |current_obi| >= 0.18).
@@ -2785,6 +2791,7 @@ impl GodEngineCore {
                 }
             }
 
+            self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_STREAK);
             // D-475: Escudo Invariante de Microestructura L2 Universal (Cross-Horizon OBI Veto)
             // Prohibido abrir Long si el libro L2 muestra presión vendedora pasiva y prohibido abrir
             // Short si muestra soporte comprador pasivo, salvo capitulación/euforia estadística.
@@ -2829,6 +2836,7 @@ impl GodEngineCore {
                 }
             }
 
+            self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_L2);
             // D-473 & D-477: Escudo Invariante Neuronal DarkAlpha Universal (Cross-Horizon ML Filter)
             // Veto estricto si el modelo ML predice activamente en contra de la dirección deseada
             // D-688 (DÉCIMA OLA): «en contra» era una banda 0,460/0,540 sin derivación. La regla
@@ -2866,6 +2874,7 @@ impl GodEngineCore {
                 }
             }
 
+            self.diag_dir.funnel_checkpoint(unified_intent.signal, direction_diag::STAGE_NEURAL);
             let mut new_order = None;
 
             // --- APERTURA CONTINUA UNIFICADA (100% CAPITAL ALLOCATION) ---
@@ -2887,6 +2896,10 @@ impl GodEngineCore {
                 let order =
                     self.risk_engine
                         .evaluate_quantum_order(coin_id, &calibrated_intent, &self.arena);
+                self.diag_dir.record_risk(
+                    calibrated_intent.signal == SignalType::Long,
+                    order.signal != SignalType::Flat,
+                );
                 if order.signal != SignalType::Flat {
                     let drawdown = if self.risk_engine.peak_capital > 0.0 {
                         ((self.risk_engine.peak_capital - current_cap)
@@ -2940,6 +2953,8 @@ impl GodEngineCore {
                     );
                     if !deliberation.approved {
                         self.diag_council_vetoes += 1;
+                        self.diag_dir
+                            .record_council(order.signal == SignalType::Long, false);
                     }
 
                     if deliberation.approved {
