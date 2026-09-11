@@ -116,10 +116,12 @@ impl GodEngineCore {
                 }
             });
 
-        let mut maker_engines = Vec::with_capacity(30);
-        let mut feature_engines = Vec::with_capacity(30);
+        // D-605: una entrada por moneda del arena, con su misma capacidad.
+        let n_coins = quantum_arena::state::MAX_COINS;
+        let mut maker_engines = Vec::with_capacity(n_coins);
+        let mut feature_engines = Vec::with_capacity(n_coins);
 
-        for _ in 0..30 {
+        for _ in 0..n_coins {
             maker_engines.push(MakerEngine::new(0.0005));
             feature_engines.push(StatefulEngine::new());
         }
@@ -216,21 +218,21 @@ impl GodEngineCore {
             scalp_forest,
             swing_nn,
             ensemble: crate::ensemble::ModelEnsemble::new(),
-            ensembles: (0..30)
+            ensembles: (0..n_coins)
                 .map(|_| crate::ensemble::ModelEnsemble::new())
                 .collect(),
-            temporal_spectrum: (0..30)
+            temporal_spectrum: (0..n_coins)
                 .map(|_| quantum_arena::temporal_spectrum::TemporalSpectrum::new())
                 .collect(),
-            kline_close_memory: vec![0.0; 30],
+            kline_close_memory: vec![0.0; n_coins],
             model_rx: None,
             last_ml_prob: 0.5,
             flight_recorder: None,
             reality: reality_physics::RealityPhysics::default(),
-            last_scalp_intent: vec![SignalIntent::flat(); 30],
-            last_swing_intent: vec![SignalIntent::flat(); 30],
-            last_scalp_senior_signals: vec![[0.0; 10]; 30],
-            last_swing_senior_signals: vec![[0.0; 10]; 30],
+            last_scalp_intent: vec![SignalIntent::flat(); n_coins],
+            last_swing_intent: vec![SignalIntent::flat(); n_coins],
+            last_scalp_senior_signals: vec![[0.0; 10]; n_coins],
+            last_swing_senior_signals: vec![[0.0; 10]; n_coins],
             lakehouse: None,
             consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion::new(),
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
@@ -257,7 +259,7 @@ impl GodEngineCore {
     }
 
     pub fn reset_engines(&mut self) {
-        for i in 0..30 {
+        for i in 0..quantum_arena::state::MAX_COINS {
             self.feature_engines[i] = StatefulEngine::new();
         }
         let init_cap = self.arena.config.base_capital.load(Ordering::Relaxed);

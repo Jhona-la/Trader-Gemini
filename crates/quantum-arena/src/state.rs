@@ -8,6 +8,12 @@ use std::sync::Arc;
 /// Axioma V: Cohesión Celular Absoluta.
 /// Los motores Scalp y Swing no se pisan porque operan en structs aislados,
 /// pero unidos dentro del mismo bloque contiguo de RAM (GlobalArena).
+/// D-605 (DÉCIMA OLA): capacidad de monedas del arena. El arena es un bloque
+/// contiguo de tamaño fijo (`Box<[CoinArena; MAX_COINS]>`, bloqueado en RAM), y
+/// el núcleo dimensionaba sus vectores por moneda con su propio literal 30. Una
+/// sola constante evita que ambos diverjan.
+pub const MAX_COINS: usize = 30;
+
 #[repr(C, align(64))]
 pub struct ScalpState {
     pub pnl_realized: AtomicF64,
@@ -339,7 +345,7 @@ impl CoinArena {
 #[repr(C, align(64))]
 pub struct GlobalArena {
     pub config: QuantumConfig,
-    pub coins: Box<[CoinArena; 30]>,
+    pub coins: Box<[CoinArena; MAX_COINS]>,
     pub tensor_arena: Option<Box<CoinTensorArena>>, // FASE 8: SIMD Layer
 
     // Portfolio & Risk
@@ -381,11 +387,11 @@ impl GlobalArena {
         // libro de órdenes, no una tasa de acierto: antes de su primera
         // operación el sistema se creía acertando el 95 %.
         let w_base = crate::genome::SuperGenotype::WORST_TOLERATED_WR;
-        let mut coins_vec = Vec::with_capacity(30);
-        for _ in 0..30 {
+        let mut coins_vec = Vec::with_capacity(MAX_COINS);
+        for _ in 0..MAX_COINS {
             coins_vec.push(CoinArena::new(w_base));
         }
-        let coins: Box<[CoinArena; 30]> = coins_vec
+        let coins: Box<[CoinArena; MAX_COINS]> = coins_vec
             .into_boxed_slice()
             .try_into()
             .unwrap_or_else(|_| panic!("Box conversion failed"));
@@ -481,7 +487,7 @@ impl GlobalArena {
 
     #[inline(always)]
     pub fn update_agg_trade(&self, coin_id: usize, is_buyer_maker: bool, qty: f64) {
-        if coin_id < 30 {
+        if coin_id < MAX_COINS {
             let decay = 0.995; // EWMA decay for real-time microstructural order flow (Axioma II)
             let current_buy = self.coins[coin_id].agg_buy_vol.load(Ordering::Relaxed) * decay;
             let current_sell = self.coins[coin_id].agg_sell_vol.load(Ordering::Relaxed) * decay;
@@ -511,7 +517,7 @@ impl GlobalArena {
 
     #[inline(always)]
     pub fn update_l2_depth(&self, coin_id: usize, bid_wall: f64, ask_wall: f64) {
-        if coin_id < 30 {
+        if coin_id < MAX_COINS {
             self.coins[coin_id]
                 .l2_bid_wall
                 .store(bid_wall, Ordering::Relaxed);
