@@ -1143,14 +1143,47 @@ impl GodEngineCore {
                 let trend_reversed =
                     (is_long && macro_t < -0.0045) || (!is_long && macro_t > 0.0045);
 
-                // D-484 & D-493: Calibración de Timeouts y Debounce Zombi por Horizonte
-                // Un trade de Bitcoin requiere de 4 a 12 horas para desarrollar su ciclo sin asfixia prematura.
-                let dynamic_hard_timeout_ms = 43_200_000 + (temporal_s * 43_200_000.0) as u64; // 12h en scalp hasta 24h en swing continuo
-                let dynamic_zombie_debounce_ms = 14_400_000 + (temporal_s * 14_400_000.0) as u64; // 4h a 8h
+                // D-649 (DÉCIMA OLA) — EL GEN `zombie_timeout_ms` ENTRA EN SERVICIO.
+                //
+                // El gen existía, se escribía en el arena y NINGÚN consumidor lo
+                // leía: la caducidad de posiciones se regía por dos literales
+                // (43_200_000 y 14_400_000). Peor: toda la lógica de zombi estaba
+                // condicionada a `pnl_pct <= -0.0050` o a inversión de tendencia,
+                // de modo que **una posición plana y antigua no expiraba nunca**.
+                // Eso dejaba al sistema sin red de seguridad frente a posiciones
+                // huérfanas tras una desconexión.
+                //
+                // Ahora el gen define la escala temporal de caducidad y existe un
+                // TECHO ABSOLUTO independiente del PnL.
+                let zombie_gene_ms = self
+                    .arena
+                    .config
+                    .zombie_timeout_ms
+                    .load(Ordering::Relaxed);
+                let zombie_base_ms = if zombie_gene_ms.is_finite() && zombie_gene_ms > 0.0 {
+                    zombie_gene_ms
+                } else {
+                    3_600_000.0
+                };
+                // El horizonte continuo dilata la caducidad: una tesis larga
+                // necesita más tiempo que una corta. Factor continuo en s.
+                let horizon_dilation = 1.0 + temporal_s;
+                let dynamic_zombie_debounce_ms =
+                    (zombie_base_ms * horizon_dilation) as u64;
+                let dynamic_hard_timeout_ms =
+                    (zombie_base_ms * 3.0 * horizon_dilation) as u64;
+                // TECHO ABSOLUTO: ninguna posición sobrevive más de 12x la escala
+                // genómica, gane, pierda o esté plana. Es la red de seguridad que
+                // faltaba — la única defensa contra una posición que quedó viva
+                // por una desconexión, un fill perdido o un estado corrupto.
+                let absolute_expiry_ms = (zombie_base_ms * 12.0 * horizon_dilation) as u64;
+                let expired_by_age =
+                    event_time_ms > 0 && position_age_ms > absolute_expiry_ms;
                 let hard_timeout = position_age_ms > dynamic_hard_timeout_ms && pnl_pct <= -0.0050;
-                let is_zombie = event_time_ms > 0
-                    && position_age_ms > dynamic_zombie_debounce_ms
-                    && ((trend_reversed && pnl_pct <= -0.0050) || hard_timeout);
+                let is_zombie = expired_by_age
+                    || (event_time_ms > 0
+                        && position_age_ms > dynamic_zombie_debounce_ms
+                        && ((trend_reversed && pnl_pct <= -0.0050) || hard_timeout));
 
                 // D-492: Dynamic Adverse Order Flow Stop Cutting (Toxic Flow Cutoff)
                 // Se activa cuando el trade está profundamente en pérdida (pnl_pct <= -48 bps)

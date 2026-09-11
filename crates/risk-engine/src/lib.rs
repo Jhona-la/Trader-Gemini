@@ -9,6 +9,7 @@ pub mod leverage_matrix;
 pub mod macro_regime_swing_optimizer;
 pub mod orchestrator;
 pub mod regime;
+pub mod tp_sl;
 
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
 
@@ -632,66 +633,120 @@ impl RiskEngine {
             .latency_penalty_ms
             .load(Ordering::Relaxed)
             .max(0.0);
-        let latency_slip = atr_pct * (lat_ms / 150.0);
-        let per_side_slip = (slip_floor + latency_slip).clamp(0.0, 0.05); // H-9: alineado con física (antes 0.01 < 0.05)
-        let roundtrip_fee = (maker_fee + taker_fee) + 2.0 * per_side_slip;
+        // D-635: el umbral de maker-only sale del gen; se elimina el segundo
+        // literal (`>= 1000.0`) que lo anulaba y dejaba muerta la ruta maker
+        // en toda cuenta pequeña, con independencia de lo que evolucionara.
+        let maker_capital_threshold = arena
+            .config
+            .maker_only_capital_threshold
+            .load(Ordering::Relaxed);
+        let maker_only = maker_capital_threshold.is_finite()
+            && maker_capital_threshold > 0.0
+            && allocated_capital >= maker_capital_threshold;
 
-        let temp_scale = arena
-            .config
-            .temporal_scale
-            .load(Ordering::Relaxed)
-            .clamp(0.0, 1.0);
-        let s_eval = match intent.horizon {
-            TradeHorizon::Scalp => 0.0,
-            TradeHorizon::Swing => 1.0,
-            TradeHorizon::Continuous => temp_scale,
-        };
-        let scalp_win = arena
-            .config
-            .scalp_tp_base
-            .load(Ordering::Relaxed)
-            .max(0.0010)
-            .max(atr_pct * 1.5);
-        let swing_win = arena
-            .config
-            .swing_tp_base
-            .load(Ordering::Relaxed)
-            .max(0.0050)
-            .max(atr_pct * 3.0);
-        let expected_win = scalp_win * (1.0 - s_eval) + swing_win * s_eval;
+        // D-645 (DÉCIMA OLA) — EL MODELO DE FRICCIÓN COINCIDE CON LA FÍSICA.
+        //
+        // El modelo asumía UNA pierna maker y UNA taker, mientras el comentario
+        // inmediatamente superior reconocía que «el motor EJECUTA 2×(taker +
+        // slippage) por roundtrip». El defecto estaba documentado en el propio
+        // código y sin corregir: subestimaba (taker − maker) ≈ 3 bps por
+        // operación, un 6 % del margen bruto sobre un edge objetivo de 50 bps.
+        //
+        // La salida es taker salvo que la entrada fuera maker Y el cierre sea
+        // por objetivo; como las salidas por stop, trailing, zombi y timeout
+        // son TODAS taker, el caso conservador —y el que la física aplica— es
+        // taker en ambas piernas.
+        let entry_fee_rate = if maker_only { maker_fee } else { taker_fee };
+        let exit_fee_rate = taker_fee;
 
-        let scalp_loss = arena
+        // La normalización de la latencia deja de ser un literal: se compara
+        // contra el umbral de pánico de latencia, que es el gen que define
+        // qué cuenta como «lento» para este sistema.
+        let latency_ref_ms = arena
             .config
-            .scalp_sl_base
+            .latency_ms_panic_threshold
             .load(Ordering::Relaxed)
-            .max(0.0005)
-            .max(atr_pct * 0.8);
-        let swing_loss = arena
-            .config
-            .swing_sl_base
-            .load(Ordering::Relaxed)
-            .max(0.0020)
-            .max(atr_pct * 1.5);
-        let expected_loss = scalp_loss * (1.0 - s_eval) + swing_loss * s_eval;
+            .clamp(10.0, 5_000.0);
+        let latency_slip = atr_pct * (lat_ms / latency_ref_ms);
+        let per_side_slip = (slip_floor + latency_slip).clamp(0.0, 0.05);
+        let roundtrip_fee = entry_fee_rate + exit_fee_rate + 2.0 * per_side_slip;
 
-        let confidence = intent.confidence.max(0.51);
-        // D-402: Umbral sniper balanceado para micro-cuenta ($13 USD bootstrap):
-        // 0.66 exige confluencia sólida (score > 0.40) sin asfixiar el 99.9% de los trades
-        let min_required_confidence = if allocated_capital <= 15.0 {
-            0.66
+        // D-637 (DÉCIMA OLA) — EL GATE EVALÚA EL TRADE QUE SE VA A EJECUTAR.
+        //
+        // Antes existían DOS cálculos independientes de la misma magnitud: el
+        // gate estimaba `expected_win` como `max(tp_base, atr·1,5)` —sin techo—
+        // mientras la orden se construía con un TP acotado a 115 bps. Con ATR
+        // del 2 % el EV se sobreestimaba 2,61× y con ATR del 5 %, 6,52×. Como
+        // la barrera de comisiones sí era real, la condición efectiva sobre el
+        // trade real era `EV_real > hurdle/k`: la fricción se desactivaba justo
+        // en los regímenes volátiles, donde el deslizamiento es mayor.
+        //
+        // Ahora ambos caminos llaman a la MISMA función pura con las MISMAS
+        // entradas: la identidad es estructural, no disciplinaria.
+        let tau_for_sizing = horizon_tau_ms(intent, arena);
+        let tpsl_gate = crate::tp_sl::compute_tp_sl(crate::tp_sl::TpSlInputs {
+            tau_ms: tau_for_sizing,
+            atr_ratio: atr_pct,
+            hurst: hurst_exponent,
+            roundtrip_fee,
+            win_rate: real_win_rate,
+            sl_atr_multiplier: arena
+                .config
+                .sl_atr_multiplier
+                .load(Ordering::Relaxed),
+        });
+        // Horizonte no operable: la dispersión esperada a esa tau no cubre la
+        // fricción. Se RECHAZA en lugar de acotar y fingir que es viable.
+        if tpsl_gate.below_tradeable_floor {
+            return rej(4);
+        }
+        let expected_win = tpsl_gate.tp_pct;
+        let expected_loss = tpsl_gate.sl_pct;
+
+        // D-642 (DÉCIMA OLA): la confianza entra tal cual. El suelo `.max(0.51)`
+        // falseaba la probabilidad que alimenta a Kelly y al EV, inflando el
+        // tamaño de posición precisamente en las señales más débiles.
+        let confidence = intent.confidence.clamp(0.0, 1.0);
+
+        // D-641 (DÉCIMA OLA) — SE ELIMINA EL ACANTILADO EN capital = $15.
+        //
+        // Antes había TRES discontinuidades en el mismo flujo con el mismo
+        // umbral literal: confianza (0,66 / 0,62), barrera de comisiones
+        // (1,25 / 1,05) y colchón de margen (0,98 / gen). Con $15,00 el sistema
+        // se comportaba de un modo y con $15,01 de otro.
+        //
+        // Lo grave no era la discontinuidad sino que los dos entornos vivían en
+        // LADOS OPUESTOS de la frontera: la evolución corre con capital de
+        // backtest (rama estándar) y producción con ~$13 (rama micro). Ningún
+        // genoma fue jamás evaluado contra los umbrales que lo gobiernan en vivo.
+        //
+        // La magnitud que de verdad importa no es el capital absoluto sino
+        // cuántas operaciones de tamaño mínimo caben en la cuenta.
+        let min_notional_ref = spec.min_notional.max(5.0);
+        let trades_of_room = if min_notional_ref > 0.0 {
+            (allocated_capital / min_notional_ref).max(0.0)
         } else {
-            0.62
+            0.0
         };
+        // scarcity ∈ (0,1]: 1 cuando la cuenta apenas cubre una operación
+        // mínima, → 0 cuando la cubre muchas veces. Continua y derivable.
+        let scarcity = 1.0 / (1.0 + (trades_of_room / 3.0).max(0.0));
+        let base_conf_gate = arena
+            .config
+            .min_confidence_btc
+            .load(Ordering::Relaxed)
+            .clamp(0.05, 0.95);
+        let min_required_confidence = (base_conf_gate * (1.0 + 0.10 * scarcity)).clamp(0.05, 0.98);
         if confidence < min_required_confidence {
             return rej(4);
         }
+
         let expected_value_pct = (confidence * expected_win) - ((1.0 - confidence) * expected_loss);
 
-        let min_ev_mult = if allocated_capital <= 15.0 {
-            1.25 // Micro-cuenta: requiere EV al menos 25% por encima de las comisiones reales
-        } else {
-            1.05
-        };
+        // D-641: misma transición continua para la barrera de comisiones.
+        // Con la cuenta al límite se exige hasta un 25 % de margen sobre la
+        // fricción; con holgura, un 5 %. Sin escalón.
+        let min_ev_mult = 1.05 + 0.20 * scarcity;
         let ev_fee_multiplier = arena
             .config
             .ev_fee_multiplier
@@ -712,13 +767,18 @@ impl RiskEngine {
         let bounded_exposure = raw_exposure.clamp(-allocated_capital, allocated_capital);
         let mut final_margin = bounded_exposure.abs();
         let margin_cushion_pct = arena.config.margin_cushion_pct.load(Ordering::Relaxed);
-        let safe_cushion = if allocated_capital <= 15.0 {
-            0.98 // Permitir hasta 98% en bootstrap micro-capital ($13 USD) para cumplir con el piso notional de Binance
-        } else if margin_cushion_pct.is_finite() && margin_cushion_pct > 0.0 {
-            margin_cushion_pct
+        // D-641: el colchón de margen sale SIEMPRE del gen; la escasez sólo lo
+        // relaja de forma continua hacia el máximo operativo. Antes el literal
+        // 0,98 anulaba el gen precisamente en el entorno de capital real, de
+        // modo que un gen evolucionado para la prudencia quedaba inerte en
+        // producción.
+        let genomic_cushion = if margin_cushion_pct.is_finite() && margin_cushion_pct > 0.0 {
+            margin_cushion_pct.clamp(0.50, 0.98)
         } else {
             0.80
         };
+        let safe_cushion =
+            (genomic_cushion + (0.98 - genomic_cushion) * scarcity).clamp(0.50, 0.98);
 
         // D-130: Evaluar si el notional real de la orden (final_margin * dynamic_leverage) cumple con el mínimo
         if final_margin > 0.0 && final_margin * dynamic_leverage < dynamic_min_notional {
@@ -822,152 +882,32 @@ impl RiskEngine {
             return rej(8);
         }
 
-        let maker_capital_threshold = arena
-            .config
-            .maker_only_capital_threshold
-            .load(Ordering::Relaxed);
-        // FIX #790: Evitar forzar maker_only en cuentas micro (< $1000 USD).
-        // En cuentas micro, forzar Post-Only en el precio actual causa rechazos -5022 de Binance y paraliza el bot al llegar a $50.
-        let maker_only =
-            allocated_capital >= maker_capital_threshold && maker_capital_threshold >= 1000.0;
-
-        // R4.6 / H9: Bases TP y SL desacopladas por horizonte (Scalping vs Swing vs Continuous)
-        let sl_mult = arena
-            .config
-            .sl_atr_multiplier
-            .load(Ordering::Relaxed)
-            .clamp(0.5, 5.0);
-        let temporal_s_eval = arena
-            .config
-            .temporal_scale
-            .load(Ordering::Relaxed)
-            .clamp(0.05, 0.95);
-
-        let (_sl_base, tp_base) = match intent.horizon {
-            TradeHorizon::Scalp => {
-                let sl = arena
+        // D-637/D-638/D-639/D-640 — LA ORDEN USA LA MISMA FUENTE QUE EL GATE.
+        //
+        // Sustituye a dos `match intent.horizon` encadenados (uno de los
+        // cuales descartaba su propio SL con `_sl_base`), al piso difusivo que
+        // se anulaba con el `clamp` que le seguía, y a la banda literal que
+        // confinaba el stop entre 40 y 60 bps con independencia de la
+        // volatilidad, del horizonte y de los genes.
+        let tpsl = crate::tp_sl::compute_tp_sl_with_target_rr(
+            crate::tp_sl::TpSlInputs {
+                tau_ms: tau_for_sizing,
+                atr_ratio: atr_pct,
+                hurst: hurst_exponent,
+                roundtrip_fee,
+                win_rate: real_win_rate,
+                sl_atr_multiplier: arena
                     .config
-                    .scalp_sl_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0005, 0.0100);
-                let tp = arena
-                    .config
-                    .scalp_tp_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0010, 0.0300);
-                (sl, tp)
-            }
-            TradeHorizon::Swing => {
-                let sl = arena
-                    .config
-                    .swing_sl_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0020, 0.0500);
-                let tp = arena
-                    .config
-                    .swing_tp_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0050, 0.1000);
-                (sl, tp)
-            }
-            TradeHorizon::Continuous => {
-                // D-249: Interpolación lineal continua pura entre scalp y swing según temporal_s_eval
-                let scalp_sl = arena
-                    .config
-                    .scalp_sl_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0005, 0.0100);
-                let swing_sl = arena
-                    .config
-                    .swing_sl_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0020, 0.0500);
-                let scalp_tp = arena
-                    .config
-                    .scalp_tp_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0010, 0.0300);
-                let swing_tp = arena
-                    .config
-                    .swing_tp_base
-                    .load(Ordering::Relaxed)
-                    .clamp(0.0050, 0.1000);
-                (
-                    scalp_sl * (1.0 - temporal_s_eval) + swing_sl * temporal_s_eval,
-                    scalp_tp * (1.0 - temporal_s_eval) + swing_tp * temporal_s_eval,
-                )
-            }
-        };
-
-        let atr_ratio = if current_price > 0.0 {
-            current_atr / current_price
-        } else {
-            0.005
-        };
-
-        // Inmunidad contra ruido browniano calibrada por horizonte real (Scalp vs Swing vs Continuous)
-        let (min_safe_sl, max_safe_sl, min_safe_tp, min_tp_clamp, max_tp_clamp) =
-            match intent.horizon {
-                TradeHorizon::Scalp => {
-                    let sl_b = arena
-                        .config
-                        .scalp_sl_base
-                        .load(Ordering::Relaxed)
-                        .clamp(0.0030, 0.0065);
-                    let _rr = arena
-                        .config
-                        .tp_rr_ratio_btc
-                        .load(Ordering::Relaxed)
-                        .clamp(2.0, 10.0);
-                    let s = sl_b.max(atr_ratio * 1.4).clamp(0.0040, 0.0058);
-                    let t = (s * 1.65).clamp(0.0070, 0.0115);
-                    (s, 0.0060, t, 0.0070, 0.0115)
-                }
-                TradeHorizon::Swing => {
-                    let sl_b = arena
-                        .config
-                        .swing_sl_base
-                        .load(Ordering::Relaxed)
-                        .clamp(0.0050, 0.0150);
-                    let tp_b = arena
-                        .config
-                        .swing_tp_base
-                        .load(Ordering::Relaxed)
-                        .clamp(0.0150, 0.0450);
-                    let rr = arena
-                        .config
-                        .tp_rr_ratio_btc
-                        .load(Ordering::Relaxed)
-                        .clamp(2.0, 10.0);
-                    let s = sl_b.max(atr_ratio * 1.8).clamp(0.0060, 0.0120);
-                    let t = tp_b.max(s * rr).clamp(0.0150, 0.0450);
-                    (s, 0.0180, t, 0.0150, 0.0600)
-                }
-                TradeHorizon::Continuous => {
-                    let ts = temporal_s_eval;
-                    // D-508 & D-518: Invarianza de Escala Universal según Mandelbrot (tau^H)
-                    let safe_h = if hurst_exponent.is_finite() {
-                        hurst_exponent.clamp(0.30, 0.75)
-                    } else {
-                        0.50
-                    };
-                    // Tau escala continuamente desde 1.0 (micro) hasta 10.0 (macro)
-                    let tau = 1.0 + 9.0 * ts;
-                    let fractal_scale = tau.powf(safe_h); // Difusión anómala Mandelbrot
-                    let norm_scale = (fractal_scale / 10.0f64.powf(safe_h)).clamp(0.0, 1.0);
-
-                    let s = 0.0040 * (1.0 - norm_scale) + 0.0080 * norm_scale;
-                    let t = 0.0100 * (1.0 - norm_scale) + 0.0250 * norm_scale;
-                    let s_eff = s.max(atr_ratio * 1.5).clamp(0.0040, 0.0090);
-                    (s_eff, 0.0120, t, 0.0090, 0.0450)
-                }
-            };
-
-        // D-437 & D-474: Invarianza de Escala y Techo de Riesgo Asimétrico por Horizonte
-        let min_diffusive_sl = (atr_ratio * 1.5).max(min_safe_sl);
-        let sl_pct = (atr_ratio * sl_mult)
-            .max(min_diffusive_sl)
-            .clamp(min_safe_sl, max_safe_sl);
+                    .sl_atr_multiplier
+                    .load(Ordering::Relaxed),
+            },
+            // El RR genómico puede ser MÁS ambicioso que el mínimo exigido por
+            // la fricción, nunca menor: el mínimo es una restricción de
+            // rentabilidad, no una preferencia de estilo.
+            arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
+        );
+        let sl_pct = tpsl.sl_pct;
+        let tp_pct = tpsl.tp_pct;
 
         let final_sl = if intent.sl_price_target > 0.0 {
             intent.sl_price_target
@@ -975,26 +915,6 @@ impl RiskEngine {
             current_price * (1.0 - sl_pct)
         } else {
             current_price * (1.0 + sl_pct)
-        };
-
-        // FASE 3 & D-437: el ratio TP/SL usa el gen RR evolucionable garantizando expectativa matemática positiva >= 2:1
-        let rr_ratio = arena
-            .config
-            .tp_rr_ratio_btc
-            .load(Ordering::Relaxed)
-            .clamp(2.0, 10.0);
-        let tp_mult = (sl_mult * rr_ratio).clamp(2.0, 8.0);
-        let tp_pct = match intent.horizon {
-            TradeHorizon::Scalp => {
-                // Scalp: objetivo táctico directo (80-135 bps) con RR >= 1.8:1 estricto sobre SL
-                // para captura Maker ágil con fee rebate y asimetría matemática positiva sobre ruido browniano.
-                (sl_pct * 1.80).clamp(min_tp_clamp, max_tp_clamp)
-            }
-            TradeHorizon::Swing | TradeHorizon::Continuous => (sl_pct * rr_ratio)
-                .max(atr_ratio * tp_mult)
-                .max(tp_base)
-                .max(min_safe_tp)
-                .clamp(min_tp_clamp, max_tp_clamp),
         };
 
         let final_tp = if intent.tp_price_target > 0.0 {
@@ -1042,4 +962,34 @@ impl RiskEngine {
             fee_buffer_multiplier: ev_fee_multiplier,
         }
     }
+}
+
+/// D-637 — HORIZONTE OPERATIVO EN MILISEGUNDOS.
+///
+/// Puente temporal mientras `SignalIntent` conserva el enum `TradeHorizon`
+/// (D-602). El orden de preferencia respeta la jerarquía correcta:
+///   1. la duración esperada que la señal declara — información real;
+///   2. el eje temporal continuo del arena, mapeado log-linealmente sobre el
+///      espectro, cuando la señal no declara duración.
+///
+/// En ningún caso se consulta la etiqueta discreta para elegir parámetros:
+/// ésta sólo desempata el extremo del continuo cuando no hay nada mejor.
+fn horizon_tau_ms(intent: &SignalIntent, arena: &GlobalArena) -> f64 {
+    if intent.expected_duration_ms > 0 {
+        return intent.expected_duration_ms as f64;
+    }
+    let scales = quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS;
+    let (lo, hi) = (scales[0], scales[scales.len() - 1]);
+    let s = match intent.horizon {
+        TradeHorizon::Scalp => 0.0,
+        TradeHorizon::Swing => 1.0,
+        TradeHorizon::Continuous => arena
+            .config
+            .temporal_scale
+            .load(Ordering::Relaxed)
+            .clamp(0.0, 1.0),
+    };
+    // Interpolación en log(tau): el espectro es log-espaciado, de modo que el
+    // punto medio del eje debe ser la media GEOMÉTRICA, no la aritmética.
+    (lo.ln() + s * (hi.ln() - lo.ln())).exp()
 }
