@@ -849,6 +849,8 @@ async fn main() {
         reason_zombie,
         reason_toxic
     );
+    // Diagnóstico por dirección del embudo de entrada (sólo telemetría).
+    println!("{}", core.diag_dir.report());
 
     println!();
     println!("🛡️ ═══════════════════════════════════════════════════════════════");

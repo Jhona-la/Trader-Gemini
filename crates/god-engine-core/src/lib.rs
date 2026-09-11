@@ -5,6 +5,7 @@ pub mod calibration;
 pub mod conformal;
 pub mod darwin;
 pub mod diffusion;
+pub mod direction_diag;
 pub mod ensemble;
 pub mod latency_accelerator;
 pub mod math_kernels;
@@ -91,6 +92,8 @@ pub struct GodEngineCore {
     pub diag_notional_sum: f64,
     pub diag_notional_max: f64,
     pub diag_pnl_sum: f64,
+    /// Diagnóstico por dirección del embudo de entrada (sólo telemetría).
+    pub diag_dir: direction_diag::DirectionDiag,
 }
 
 impl GodEngineCore {
@@ -251,6 +254,7 @@ impl GodEngineCore {
             diag_notional_sum: 0.0,
             diag_notional_max: 0.0,
             diag_pnl_sum: 0.0,
+            diag_dir: direction_diag::DirectionDiag::default(),
         }
     }
 
@@ -1776,6 +1780,16 @@ impl GodEngineCore {
             let w_tensor = remaining * 0.40;
             let raw_composite = micro_score * w_micro + nn_score * w_nn + tensor_boost * w_tensor;
             let composite_score: f64 = (raw_composite * hebbian_mult).clamp(-1.0, 1.0);
+            self.diag_dir.record_evaluation(
+                composite_score,
+                ml_prob,
+                [
+                    micro_score * w_micro * hebbian_mult,
+                    nn_score * w_nn * hebbian_mult,
+                    tensor_boost * w_tensor * hebbian_mult,
+                ],
+                tensor_cont.signal,
+            );
 
             let mut scalp_intent = SignalIntent::flat();
             let spread_pct = if mid_price > 0.0 {
@@ -2019,26 +2033,42 @@ impl GodEngineCore {
                     let tensor_tech_thr = (dynamic_tech_thr * 0.90).max(0.22);
                     let range_obi = (dynamic_obi_thr * 0.85).clamp(0.12, 0.35);
 
-                    let tensor_allowed = (tensor_scalp.signal == SignalType::Long
-                        && long_streak < 2
-                        && !is_confirmed_downtrend
-                        && !is_adverse_momentum_long
-                        && !(higher_trend < -0.0002 && secular_trend < 0.0)
-                        && !(price_stretch < -0.80 && secular_trend < 0.0010)
-                        && higher_trend >= -0.0008
-                        && composite_score >= tensor_tech_thr
-                        && current_obi > range_obi
-                        && not_overextended_long)
-                        || (tensor_scalp.signal == SignalType::Short
-                            && short_streak < 2
-                            && !is_confirmed_uptrend
-                            && !is_adverse_momentum_short
-                            && !(higher_trend > 0.0002 && secular_trend > 0.0)
-                            && !(price_stretch > 0.80 && secular_trend > -0.0010)
-                            && higher_trend <= 0.0008
-                            && composite_score <= -tensor_tech_thr
-                            && current_obi < -range_obi
-                            && not_overextended_short);
+                    // Diagnóstico por dirección: las condiciones del gate se nombran una
+                    // sola vez y el diagnóstico cuenta cuál falla. La semántica es la de la
+                    // conjunción anterior: comparaciones puras, sin efectos laterales.
+                    let long_conditions = [
+                        long_streak < 2,
+                        !is_confirmed_downtrend,
+                        !is_adverse_momentum_long,
+                        !(higher_trend < -0.0002 && secular_trend < 0.0),
+                        !(price_stretch < -0.80 && secular_trend < 0.0010),
+                        higher_trend >= -0.0008,
+                        composite_score >= tensor_tech_thr,
+                        current_obi > range_obi,
+                        not_overextended_long,
+                    ];
+                    let short_conditions = [
+                        short_streak < 2,
+                        !is_confirmed_uptrend,
+                        !is_adverse_momentum_short,
+                        !(higher_trend > 0.0002 && secular_trend > 0.0),
+                        !(price_stretch > 0.80 && secular_trend > -0.0010),
+                        higher_trend <= 0.0008,
+                        composite_score <= -tensor_tech_thr,
+                        current_obi < -range_obi,
+                        not_overextended_short,
+                    ];
+                    let tensor_allowed = match tensor_scalp.signal {
+                        SignalType::Long => {
+                            self.diag_dir.record_gate(true, &long_conditions);
+                            long_conditions.iter().all(|&ok| ok)
+                        }
+                        SignalType::Short => {
+                            self.diag_dir.record_gate(false, &short_conditions);
+                            short_conditions.iter().all(|&ok| ok)
+                        }
+                        SignalType::Flat => false,
+                    };
                     if tensor_allowed {
                         scalp_intent = SignalIntent {
                             signal: tensor_scalp.signal,
@@ -2941,6 +2971,7 @@ impl GodEngineCore {
                                 && total_used + margin_req <= current_cap * cushion
                             {
                                 self.diag_opened += 1;
+                                self.diag_dir.record_open(is_long);
                                 self.arena
                                     .used_margin
                                     .fetch_add(margin_req, Ordering::Relaxed);
