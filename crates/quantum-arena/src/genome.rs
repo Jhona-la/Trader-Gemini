@@ -1667,10 +1667,28 @@ impl SuperGenotype {
     fn mutate_with_rng<R: rand::Rng>(&self, rate: f64, rng: &mut R) -> Self {
         // F8: las curvas se mutan ANTES del literal (el closure mutate_val
         // captura rng por referencia única — no puede compartirse inline).
-        let mutated_tp_curve =
-            self.mutate_curve(self.tp_horizon_curve, -9.0, -2.0, -0.2, 0.35, rng, rate);
-        let mutated_sl_curve =
-            self.mutate_curve(self.sl_horizon_curve, -10.0, -3.0, -0.2, 0.35, rng, rate);
+        // D-658 (DÉCIMA OLA): las bandas eran literales [−9; −2] y [−10; −3],
+        // más estrechas que los `*_BOUNDS` que se declaran fuente única: toda
+        // mutación de un genoma con `a` en [−9,5; −9) o [−10,5; −10) lo empujaba
+        // hacia arriba aunque la tasa fuese cero. Ahora se leen las constantes.
+        let mutated_tp_curve = self.mutate_curve(
+            self.tp_horizon_curve,
+            Self::TP_A_BOUNDS.0,
+            Self::TP_A_BOUNDS.1,
+            Self::TP_B_BOUNDS.0,
+            Self::TP_B_BOUNDS.1,
+            rng,
+            rate,
+        );
+        let mutated_sl_curve = self.mutate_curve(
+            self.sl_horizon_curve,
+            Self::SL_A_BOUNDS.0,
+            Self::SL_A_BOUNDS.1,
+            Self::SL_B_BOUNDS.0,
+            Self::SL_B_BOUNDS.1,
+            rng,
+            rate,
+        );
         let mut mutate_val = |base: f64, min_val: f64, max_val: f64| -> f64 {
             let range = max_val - min_val;
             let change = range * rate * rng.random_range(-0.5..0.5);
@@ -3034,5 +3052,49 @@ mod tests {
         let reconstructed = SuperGenotype::from_vector(&vec);
         let vec2 = reconstructed.to_vector();
         assert_eq!(vec.len(), vec2.len());
+    }
+
+    /// D-658: la mutación lee las cotas de las curvas de `*_BOUNDS`. Con tasa
+    /// cero, interceptos en la franja que las bandas literales no alcanzaban
+    /// deben conservarse (antes se empujaban a −9,0 y −10,0).
+    ///
+    /// Genoma factible por construcción: curvas paralelas (b = 0,35) con
+    /// RR = e^1,3 ≈ 3,67 en todo el espectro. En el extremo inferior de la banda
+    /// operable (SL = f/0,5 = 0,002) el RR exigido es 1,1·(1,5 + 1,25) ≈ 3,03,
+    /// así que el reparo RR no toca las curvas.
+    #[test]
+    fn d658_mutacion_de_curvas_respeta_las_cotas_declaradas() {
+        let mut g = SuperGenotype::load_or_baseline(0.0002, 0.0005);
+        g.tp_horizon_curve = crate::temporal_spectrum::HorizonCurve { a: -9.2, b: 0.35 };
+        g.sl_horizon_curve = crate::temporal_spectrum::HorizonCurve { a: -10.5, b: 0.35 };
+        g.enforce_curve_rr();
+        assert_eq!(g.tp_horizon_curve.a, -9.2, "precondición: el reparo RR no debe mover TP");
+        assert_eq!(g.sl_horizon_curve.a, -10.5, "precondición: el reparo RR no debe mover SL");
+        let m = g.mutate_cmaes_seeded(0.0, 7);
+        assert_eq!(m.tp_horizon_curve.a, g.tp_horizon_curve.a);
+        assert_eq!(m.sl_horizon_curve.a, g.sl_horizon_curve.a);
+        assert_eq!(m.tp_horizon_curve.b, g.tp_horizon_curve.b);
+        assert_eq!(m.sl_horizon_curve.b, g.sl_horizon_curve.b);
+    }
+
+    /// D-656: los slots 13–16 (anclas TP/SL) son vistas de las curvas. Un
+    /// optimizador vectorial que los perturbe no cambia el genoma: debe
+    /// excluirlos de su espacio de búsqueda.
+    #[test]
+    fn d656_anclas_tp_sl_son_vistas_en_el_vector() {
+        let g = SuperGenotype::load_or_baseline(0.0002, 0.0005);
+        let mut v = g.to_vector();
+        let base = SuperGenotype::from_vector(&v).to_vector();
+        let lo = SuperGenotype::get_lower_bounds();
+        let hi = SuperGenotype::get_upper_bounds();
+        for slot in 13..=16 {
+            v[slot] = if v[slot] > 0.5 * (lo[slot] + hi[slot]) {
+                lo[slot]
+            } else {
+                hi[slot]
+            };
+        }
+        let altered = SuperGenotype::from_vector(&v).to_vector();
+        assert_eq!(base, altered);
     }
 }
