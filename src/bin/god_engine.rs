@@ -1057,7 +1057,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(positions) => {
                             let registry = executor.registry();
                             let report = execution_engine::reconciliation::reconcile(&positions, &registry);
-                            let adopted = report.apply_to_registry(&registry);
+                            let adopted = report.apply_to_registry(
+                                &registry,
+                                arena_reconcile
+                                    .config
+                                    .live_taker_fee
+                                    .load(std::sync::atomic::Ordering::Relaxed),
+                            );
                             let now_ms = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
@@ -1617,7 +1623,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let exec_clone = Arc::clone(&exec);
                         let is_long_close = is_long;
                         rt_handle.spawn(async move {
-                            let sym_filter = exec_clone.load().get_symbol_filter(&parsed_sym_str).await;
+                            let sym_filter = match exec_clone.load().get_symbol_filter(&parsed_sym_str).await {
+                                Ok(f) => f,
+                                Err(e) => {
+                                    // D-631: sin filtro real no se envía un cierre con la
+                                    // precisión de otro activo. Mismo protocolo que un
+                                    // cierre fallido: los brackets siguen protegiendo y la
+                                    // reconciliación toma el mando.
+                                    telemetry_engine::telemetry_err!(
+                                        "🚨 [X-008 CLOSE FALLIDO] {} sin filtro de precisión ({}): BRACKETS CONSERVADOS como protección. Reconciliación tomará el mando.",
+                                        parsed_sym_str, e
+                                    );
+                                    return;
+                                }
+                            };
                             let close_res = exec_clone
                                 .load()
                                 .execute_reduce_only_market(&parsed_sym_str, is_long_close, qty, sym_filter.step_size)
@@ -1861,7 +1880,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if effective_leverage > 1 {
                                 let _ = exec_clone.load().set_leverage(&parsed_sym_str, effective_leverage).await;
                             }
-                            let sym_filter = exec_clone.load().get_symbol_filter(&parsed_sym_str).await;
+                            let sym_filter = match exec_clone.load().get_symbol_filter(&parsed_sym_str).await {
+                                Ok(f) => f,
+                                Err(e) => {
+                                    // D-631: una entrada sin filtro real se aborta antes de
+                                    // tocar el exchange y se revierte el estado local.
+                                    telemetry_engine::telemetry_err!(
+                                        "❌ [ENTRY] {} abortada: {} — Rollback de posición local.",
+                                        parsed_sym_str, e
+                                    );
+                                    rollback_positions(&arena_clone);
+                                    return;
+                                }
+                            };
                             let dyn_step_size = sym_filter.step_size;
                             let dyn_tick_size = sym_filter.tick_size;
 

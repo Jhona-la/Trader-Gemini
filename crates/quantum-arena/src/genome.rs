@@ -834,7 +834,8 @@ impl SuperGenotype {
     pub fn new_random() -> Self {
         let mut g = Self {
             global_max_drawdown: rand::rng().random_range(0.5..0.99),
-            global_leverage: rand::rng().random_range(25.0..35.0),
+            // D-644: misma banda que la mutación y los bounds.
+            global_leverage: rand::rng().random_range(1.0..50.0),
             btc_volatility_multiplier: rand::rng().random_range(0.5..3.0),
             eth_volatility_multiplier: rand::rng().random_range(0.5..3.0),
             min_trades_per_day: rand::rng().random_range(1.0..50.0),
@@ -1668,7 +1669,13 @@ impl SuperGenotype {
 
         let mut mutated = Self {
             global_max_drawdown: mutate_val(self.global_max_drawdown, 0.5, 0.99),
-            global_leverage: mutate_val(self.global_leverage, 25.0, 35.0),
+            // D-644 (DÉCIMA OLA): la banda era [25, 35] en inicialización,
+            // mutación y validación. La evolución NO PODÍA bajar de 25×: un
+            // genoma prudente con 5× era empujado a 25× en su primera mutación,
+            // una decisión de diseño disfrazada de resultado evolutivo. La banda
+            // pasa a [1, 50], la misma que aplica el motor al leer el gen, de
+            // modo que la prudencia vuelve a ser explorable y seleccionable.
+            global_leverage: mutate_val(self.global_leverage, 1.0, 50.0),
             btc_volatility_multiplier: mutate_val(self.btc_volatility_multiplier, 0.5, 3.0),
             eth_volatility_multiplier: mutate_val(self.eth_volatility_multiplier, 0.5, 3.0),
             min_trades_per_day: mutate_val(self.min_trades_per_day, 1.0, 50.0),
@@ -2611,7 +2618,7 @@ impl SuperGenotype {
     pub fn get_lower_bounds() -> Vec<f64> {
         vec![
             0.5,
-            25.0,
+            1.0, // D-644: antes 25.0 — la evolución no podía bajar de 25×
             0.5,
             0.5,
             1.0,
@@ -2765,7 +2772,7 @@ impl SuperGenotype {
     pub fn get_upper_bounds() -> Vec<f64> {
         vec![
             0.99,
-            35.0,
+            50.0, // D-644: antes 35.0 — alineado con el clamp del motor
             3.0,
             3.0,
             50.0,

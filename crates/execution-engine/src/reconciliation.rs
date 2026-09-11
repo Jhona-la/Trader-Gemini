@@ -161,9 +161,26 @@ pub fn reconcile(remote: &[PositionRiskEntry], registry: &OrderRegistry) -> Reco
 
 impl ReconciliationReport {
     /// Adopta automáticamente las posiciones del exchange al OrderRegistry y reconcilia el estado local (#121-#140, #1405)
-    pub fn apply_to_registry(&self, registry: &OrderRegistry) -> usize {
+    ///
+    /// D-632 (DÉCIMA OLA): `taker_fee_rate` es la comisión taker vigente de la
+    /// cuenta. Se usa para imputar la comisión de entrada de la posición
+    /// adoptada, que antes entraba con `fills` vacío y por tanto con comisión
+    /// cero: un sesgo optimista permanente en su PnL que se propagaba al win
+    /// rate, al profit factor, al dimensionamiento de Kelly y a la aptitud del
+    /// daemon online. La entrada real pudo ser maker, así que la imputación
+    /// taker es la cota conservadora.
+    pub fn apply_to_registry(&self, registry: &OrderRegistry, taker_fee_rate: f64) -> usize {
+        // Tarifa taker VIP0 de Binance USDT-M como último recurso si la cuenta
+        // no aportó la suya: mismo valor inicial que usa QuantumConfig.
+        let fee = if taker_fee_rate.is_finite() && taker_fee_rate > 0.0 {
+            taker_fee_rate
+        } else {
+            0.0005
+        };
         let mut adopted = 0;
         for pos in &self.open_positions {
+            let qty = pos.position_amt.abs();
+            let imputed_commission = qty * pos.entry_price * fee;
             let side = if pos.is_long() { "BUY" } else { "SELL" };
             let client_id = format!("adopted_{}_{}", pos.symbol, pos.update_time);
             let ack = crate::order_types::OrderAck {
@@ -179,7 +196,17 @@ impl ReconciliationReport {
                 status: "FILLED".to_string(),
                 order_id: 0,
                 update_time: pos.update_time,
-                fills: Vec::new(),
+                fills: vec![crate::order_types::Fill {
+                    price: pos.entry_price,
+                    qty,
+                    commission: if imputed_commission.is_finite() {
+                        imputed_commission
+                    } else {
+                        0.0
+                    },
+                    commission_asset: "USDT".to_string(),
+                    trade_id: 0,
+                }],
             };
             registry.apply_ack(&ack, pos.update_time);
             adopted += 1;
@@ -503,8 +530,25 @@ mod tests {
             .any(|s| s.contains("ETHUSDT") && s.contains("plana")));
         assert!(report.summary.contains("BTCUSDT"));
 
-        let adopted = report.apply_to_registry(&registry);
+        let adopted = report.apply_to_registry(&registry, 0.0005);
         assert_eq!(adopted, 1);
+
+        // D-632: la posición adoptada lleva su comisión de entrada imputada.
+        let adoptada = registry
+            .get("adopted_BTCUSDT_1700000000000")
+            .expect("la posición BTCUSDT debe quedar registrada");
+        let esperada = 0.5 * 60000.0 * 0.0005;
+        assert!(
+            (adoptada.total_commission - esperada).abs() < 1e-9,
+            "comisión imputada {} en lugar de {}",
+            adoptada.total_commission,
+            esperada
+        );
+
+        // Reconciliar de nuevo el mismo estado no duplica la comisión.
+        report.apply_to_registry(&registry, 0.0005);
+        let otra_vez = registry.get("adopted_BTCUSDT_1700000000000").unwrap();
+        assert!((otra_vez.total_commission - esperada).abs() < 1e-9);
     }
 
     #[test]

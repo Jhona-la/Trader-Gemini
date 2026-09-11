@@ -45,6 +45,17 @@ pub struct DenseLayer {
 }
 
 impl DenseLayer {
+    /// D-613 (DÉCIMA OLA): coherencia estructural de la capa. Una capa
+    /// deserializada desde disco no pasa por `new()`, de modo que nada
+    /// garantizaba que `weights` tuviera exactamente `in × out` elementos antes
+    /// de que el forward los recorriera con `get_unchecked`.
+    pub fn is_valid(&self) -> bool {
+        self.in_features > 0
+            && self.out_features > 0
+            && self.in_features.checked_mul(self.out_features) == Some(self.weights.len())
+            && self.biases.len() == self.out_features
+    }
+
     /// Crear capa con pesos inicializados con He initialization (óptimo para ReLU)
     pub fn new(in_features: usize, out_features: usize) -> Self {
         // He initialization: sqrt(2/n_in)
@@ -113,16 +124,20 @@ impl DenseLayer {
     #[inline(always)]
     pub fn forward_relu(&self, input: &[f64], output: &mut [f64]) {
         // FIX #355: Active bounds check for --release safety
-        assert_eq!(
-            input.len(),
-            self.in_features,
-            "DarkAlpha Layer: input dimension mismatch"
-        );
-        assert_eq!(
-            output.len(),
-            self.out_features,
-            "DarkAlpha Layer: output dimension mismatch"
-        );
+        // D-613/D-614 (DÉCIMA OLA): guarda de memoria y de proceso. Antes:
+        // `assert_eq!` sobre entrada y salida —que con `panic = "abort"` mata el
+        // motor con posiciones abiertas— y ninguna comprobación de pesos y sesgos
+        // antes de indexarlos: una capa deserializada con el tensor truncado
+        // producía lectura fuera de límites. Ahora una capa o unos buffers
+        // incoherentes producen salida NaN y retorno inmediato; el motor
+        // comprueba `layers_valid()` antes de inferir y responde `None`.
+        if input.len() < self.in_features
+            || output.len() < self.out_features
+            || !self.is_valid()
+        {
+            output.iter_mut().for_each(|o| *o = f64::NAN);
+            return;
+        }
 
         for i in 0..self.out_features {
             let row_offset = i * self.in_features;
@@ -163,16 +178,20 @@ impl DenseLayer {
     /// Forward pass con Tanh activation (óptimo para señales simétricas y bidireccionales Long/Short)
     #[inline(always)]
     pub fn forward_tanh(&self, input: &[f64], output: &mut [f64]) {
-        assert_eq!(
-            input.len(),
-            self.in_features,
-            "DarkAlpha Layer: input dimension mismatch"
-        );
-        assert_eq!(
-            output.len(),
-            self.out_features,
-            "DarkAlpha Layer: output dimension mismatch"
-        );
+        // D-613/D-614 (DÉCIMA OLA): guarda de memoria y de proceso. Antes:
+        // `assert_eq!` sobre entrada y salida —que con `panic = "abort"` mata el
+        // motor con posiciones abiertas— y ninguna comprobación de pesos y sesgos
+        // antes de indexarlos: una capa deserializada con el tensor truncado
+        // producía lectura fuera de límites. Ahora una capa o unos buffers
+        // incoherentes producen salida NaN y retorno inmediato; el motor
+        // comprueba `layers_valid()` antes de inferir y responde `None`.
+        if input.len() < self.in_features
+            || output.len() < self.out_features
+            || !self.is_valid()
+        {
+            output.iter_mut().for_each(|o| *o = f64::NAN);
+            return;
+        }
 
         for i in 0..self.out_features {
             let row_offset = i * self.in_features;
@@ -209,16 +228,20 @@ impl DenseLayer {
     #[inline(always)]
     pub fn forward_sigmoid(&self, input: &[f64], output: &mut [f64]) {
         // FIX #355: Active bounds check for --release safety
-        assert_eq!(
-            input.len(),
-            self.in_features,
-            "DarkAlpha Layer: input dimension mismatch"
-        );
-        assert_eq!(
-            output.len(),
-            self.out_features,
-            "DarkAlpha Layer: output dimension mismatch"
-        );
+        // D-613/D-614 (DÉCIMA OLA): guarda de memoria y de proceso. Antes:
+        // `assert_eq!` sobre entrada y salida —que con `panic = "abort"` mata el
+        // motor con posiciones abiertas— y ninguna comprobación de pesos y sesgos
+        // antes de indexarlos: una capa deserializada con el tensor truncado
+        // producía lectura fuera de límites. Ahora una capa o unos buffers
+        // incoherentes producen salida NaN y retorno inmediato; el motor
+        // comprueba `layers_valid()` antes de inferir y responde `None`.
+        if input.len() < self.in_features
+            || output.len() < self.out_features
+            || !self.is_valid()
+        {
+            output.iter_mut().for_each(|o| *o = f64::NAN);
+            return;
+        }
 
         for i in 0..self.out_features {
             let row_offset = i * self.in_features;
@@ -291,18 +314,31 @@ pub struct QuantizedDenseLayer {
 }
 
 impl QuantizedDenseLayer {
+    /// D-613 (DÉCIMA OLA): coherencia estructural de la capa cuantizada.
+    pub fn is_valid(&self) -> bool {
+        self.in_features > 0
+            && self.out_features > 0
+            && self.in_features.checked_mul(self.out_features) == Some(self.weights_q.len())
+            && self.biases.len() == self.out_features
+            && self.scale_w.is_finite()
+    }
+
     #[inline(always)]
     pub fn forward_relu(&self, input: &[f64], output: &mut [f64]) {
-        assert_eq!(
-            input.len(),
-            self.in_features,
-            "QuantizedDarkAlpha Layer: input dimension mismatch"
-        );
-        assert_eq!(
-            output.len(),
-            self.out_features,
-            "QuantizedDarkAlpha Layer: output dimension mismatch"
-        );
+        // D-613/D-614 (DÉCIMA OLA): guarda de memoria y de proceso. Antes:
+        // `assert_eq!` sobre entrada y salida —que con `panic = "abort"` mata el
+        // motor con posiciones abiertas— y ninguna comprobación de pesos y sesgos
+        // antes de indexarlos: una capa deserializada con el tensor truncado
+        // producía lectura fuera de límites. Ahora una capa o unos buffers
+        // incoherentes producen salida NaN y retorno inmediato; el motor
+        // comprueba `layers_valid()` antes de inferir y responde `None`.
+        if input.len() < self.in_features
+            || output.len() < self.out_features
+            || !self.is_valid()
+        {
+            output.iter_mut().for_each(|o| *o = f64::NAN);
+            return;
+        }
 
         let scale = self.scale_w;
         for i in 0..self.out_features {
@@ -330,16 +366,20 @@ impl QuantizedDenseLayer {
 
     #[inline(always)]
     pub fn forward_sigmoid(&self, input: &[f64], output: &mut [f64]) {
-        assert_eq!(
-            input.len(),
-            self.in_features,
-            "QuantizedDarkAlpha Layer: input dimension mismatch"
-        );
-        assert_eq!(
-            output.len(),
-            self.out_features,
-            "QuantizedDarkAlpha Layer: output dimension mismatch"
-        );
+        // D-613/D-614 (DÉCIMA OLA): guarda de memoria y de proceso. Antes:
+        // `assert_eq!` sobre entrada y salida —que con `panic = "abort"` mata el
+        // motor con posiciones abiertas— y ninguna comprobación de pesos y sesgos
+        // antes de indexarlos: una capa deserializada con el tensor truncado
+        // producía lectura fuera de límites. Ahora una capa o unos buffers
+        // incoherentes producen salida NaN y retorno inmediato; el motor
+        // comprueba `layers_valid()` antes de inferir y responde `None`.
+        if input.len() < self.in_features
+            || output.len() < self.out_features
+            || !self.is_valid()
+        {
+            output.iter_mut().for_each(|o| *o = f64::NAN);
+            return;
+        }
 
         let scale = self.scale_w;
         for i in 0..self.out_features {
@@ -539,6 +579,37 @@ pub struct DarkAlphaEngine {
 }
 
 impl DarkAlphaEngine {
+    /// D-613 (DÉCIMA OLA): las tres capas son coherentes por dentro y encadenan
+    /// entre sí (la salida de cada una alimenta exactamente a la siguiente).
+    pub fn layers_valid(&self) -> bool {
+        self.layer1.is_valid()
+            && self.layer2.is_valid()
+            && self.layer3.is_valid()
+            && self.layer2.in_features == self.layer1.out_features
+            && self.layer3.in_features == self.layer2.out_features
+    }
+
+    /// Valida un modelo recién cargado. Un archivo truncado, de otra versión o
+    /// corrupto se rechaza en la carga, no en mitad de una inferencia en vivo.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.layers_valid() {
+            Ok(())
+        } else {
+            Err(format!(
+                "modelo DarkAlpha incoherente: capas {}x{} ({} pesos), {}x{} ({} pesos), {}x{} ({} pesos)",
+                self.layer1.in_features,
+                self.layer1.out_features,
+                self.layer1.weights.len(),
+                self.layer2.in_features,
+                self.layer2.out_features,
+                self.layer2.weights.len(),
+                self.layer3.in_features,
+                self.layer3.out_features,
+                self.layer3.weights.len(),
+            ))
+        }
+    }
+
     /// Congela los normalizadores para inferencia determinista sin drift
     pub fn freeze(&mut self) {
         self.freeze_normalizers = true;
@@ -622,6 +693,12 @@ impl DarkAlphaEngine {
             if features.len() < in_dim {
                 return None; // Fallo explícito si faltan datos (Leakage prevent)
             }
+            // D-613: un modelo incoherente no infiere. ReLU convierte NaN en 0,
+            // así que sin esta comprobación la salida sería un 0,5 plausible y
+            // falso en lugar de una ausencia de predicción.
+            if !self.layers_valid() {
+                return None;
+            }
 
             // Invariante de seguridad: asegurar que los buffers y normalizadores estén inicializados
             if self.buf_scaled.len() < in_dim
@@ -686,6 +763,9 @@ impl DarkAlphaEngine {
     pub fn predict_for_coin(&mut self, coin_id: usize, features: &[f64]) -> Option<f64> {
         let in_dim = self.layer1.in_features;
         if features.len() < in_dim {
+            return None;
+        }
+        if !self.layers_valid() {
             return None;
         }
 
@@ -801,6 +881,11 @@ impl DarkAlphaEngine {
         {
             return;
         }
+        // D-613: entrenar sobre capas incoherentes escribiría gradientes en
+        // índices que no existen.
+        if !self.layers_valid() {
+            return;
+        }
 
         let start = std::time::Instant::now();
         let mut h1 = vec![0.0; self.layer1.out_features];
@@ -909,6 +994,7 @@ impl DarkAlphaEngine {
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let data = std::fs::read(path)?;
         let mut model: Self = bincode::deserialize(&data)?;
+        model.validate()?;
         model.init_buffers();
         Ok(model)
     }
@@ -917,6 +1003,7 @@ impl DarkAlphaEngine {
     pub fn load_json(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path)?;
         let mut model: Self = serde_json::from_str(&content)?;
+        model.validate()?;
         model.init_buffers();
         Ok(model)
     }
@@ -984,6 +1071,46 @@ pub type MoENeatEngine = DarkAlphaEngine;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// D-613 (DÉCIMA OLA): un modelo con el tensor de pesos truncado —el caso de
+    /// un archivo cortado a mitad de escritura— no lee fuera de límites, no
+    /// aborta el proceso y no finge una predicción.
+    #[test]
+    fn d613_modelo_con_pesos_truncados_no_infiere_ni_aborta() {
+        let mut m = DarkAlphaEngine::new(8, 16, 8);
+        m.init_buffers();
+        m.layer2.weights.truncate(3);
+        assert!(!m.layers_valid());
+        assert!(m.validate().is_err());
+        let features = vec![0.1f64; 8];
+        assert_eq!(m.predict(&features), None);
+        assert_eq!(m.predict_for_coin(0, &features), None);
+    }
+
+    /// D-614 (DÉCIMA OLA): dimensiones incoherentes ya no disparan `assert_eq!`
+    /// (que con `panic = "abort"` mataba el motor): la capa devuelve NaN.
+    #[test]
+    fn d614_dimensiones_incoherentes_no_abortan_el_proceso() {
+        let layer = DenseLayer::new(4, 2);
+        let input = vec![1.0f64; 3];
+        let mut out = vec![0.0f64; 2];
+        layer.forward_relu(&input, &mut out);
+        assert!(out.iter().all(|v| v.is_nan()));
+        let q = layer.quantize_int8();
+        let mut out_q = vec![0.0f64; 2];
+        q.forward_sigmoid(&input, &mut out_q);
+        assert!(out_q.iter().all(|v| v.is_nan()));
+    }
+
+    /// Las guardas no alteran a un modelo sano.
+    #[test]
+    fn d613_modelo_valido_sigue_prediciendo() {
+        let mut m = DarkAlphaEngine::new(8, 16, 8);
+        m.init_buffers();
+        assert!(m.layers_valid());
+        assert!(m.validate().is_ok());
+        assert!(m.predict(&vec![0.1f64; 8]).is_some());
+    }
 
     #[test]
     fn test_forward_pass_returns_valid_probability() {

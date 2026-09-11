@@ -13,6 +13,87 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::client::{BinanceClient, ZeroAllocBuffer};
 
+/// Inverso de un paso de precio o cantidad, ajustado al entero más cercano
+/// cuando el paso es una potencia de diez fraccionaria (0,1 … 1e-12).
+///
+/// D-629 (DÉCIMA OLA): `1/paso` no es exacto para pasos como 1e-5 (da
+/// 99999,99999999999). Como `ZeroAllocBuffer::push_f64` imprime la
+/// representación mínima de `ryu`, el residuo de `k / inverso` llegaba
+/// literalmente al query de la orden y Binance la rechazaba por precisión.
+#[inline(always)]
+fn exact_inverse(step: f64) -> f64 {
+    let inv = 1.0 / step;
+    let r = inv.round();
+    if r >= 1.0 && (inv - r).abs() <= 1e-6 * r {
+        r
+    } else {
+        inv
+    }
+}
+
+/// Tolerancia RELATIVA para considerar que un valor escalado ya es múltiplo
+/// exacto del paso.
+///
+/// D-629 (DÉCIMA OLA): el épsilon anterior era ABSOLUTO (1e-9) y se sumaba al
+/// valor escalado. Su efecto relativo dependía de la magnitud: con 1.500.000
+/// unidades quedaba por debajo de la resolución de f64 y dejaba de corregir
+/// nada, de modo que un 2999,9999999 se truncaba a 2999 en algunos símbolos.
+const STEP_SNAP_REL_TOL: f64 = 1e-9;
+
+#[inline(always)]
+fn snap_floor(scaled: f64) -> f64 {
+    let r = scaled.round();
+    if (scaled - r).abs() <= STEP_SNAP_REL_TOL * r.abs().max(1.0) {
+        r
+    } else {
+        scaled.floor()
+    }
+}
+
+#[inline(always)]
+fn snap_ceil(scaled: f64) -> f64 {
+    let r = scaled.round();
+    if (scaled - r).abs() <= STEP_SNAP_REL_TOL * r.abs().max(1.0) {
+        r
+    } else {
+        scaled.ceil()
+    }
+}
+
+/// D-628 (DÉCIMA OLA): precio límite pasivo que se UNE al mejor nivel del
+/// propio lado a partir del precio medio.
+///
+/// El cálculo anterior desplazaba un tick COMPLETO desde el medio. Con spread
+/// de un tick —el régimen dominante en los pares líquidos— eso colocaba la
+/// orden un nivel por DETRÁS del mejor bid (compra) o del mejor ask (venta):
+/// peor prioridad de cola, menos ejecución y selección adversa en las que sí
+/// se llenaban. Desplazar MEDIO tick y redondear hacia el propio lado da:
+///
+/// ```text
+/// spread 1 tick: compra = bid,        venta = ask
+/// spread 2 ticks: compra = bid,       venta = ask
+/// spread 3 ticks: compra = bid + 1t,  venta = ask − 1t   (dentro del spread)
+/// ```
+///
+/// Nunca cruza: bajo GTX el exchange rechaza cualquier orden que tomaría
+/// liquidez, y ese rechazo es la señal correcta, no un fallo a esquivar
+/// alejándose del libro.
+#[inline(always)]
+pub(crate) fn passive_join_price(mid: f64, tick: f64, is_sell: bool) -> f64 {
+    if !mid.is_finite() || mid <= 0.0 || !tick.is_finite() || tick <= 0.0 {
+        return 0.0;
+    }
+    let half = 0.5 * tick;
+    let target = if is_sell { mid + half } else { (mid - half).max(tick) };
+    let inv = exact_inverse(tick);
+    let scaled = target * inv;
+    if is_sell {
+        snap_ceil(scaled) / inv
+    } else {
+        snap_floor(scaled) / inv
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct SymbolFilter {
     pub step_size: f64,
@@ -888,25 +969,48 @@ impl OrderExecutor {
     /// Redondea la cantidad a los decimales permitidos (step_size).
     #[inline(always)]
     fn round_to_step_size(quantity: f64, step_size: f64) -> f64 {
-        if step_size <= 0.0 {
-            return quantity;
+        // D-629: un paso inválido devuelve 0, que todos los llamadores tratan
+        // como «volumen 0» y abortan. Antes devolvía la cantidad sin redondear
+        // (paso ≤ 0) o NaN (paso NaN), y ambas llegaban al exchange.
+        if !step_size.is_finite() || step_size <= 0.0 || !quantity.is_finite() {
+            return 0.0;
         }
-        let inv = 1.0 / step_size;
-        ((quantity * inv) + 1e-9).floor() / inv
+        let inv = exact_inverse(step_size);
+        snap_floor(quantity * inv) / inv
     }
 
     // FIX #738: Redondeo direccional de precio: ceil para SELL, floor para BUY
     #[inline(always)]
     fn round_price_to_tick(price: f64, tick_size: f64, is_sell: bool) -> f64 {
-        if tick_size <= 0.0 {
-            return price;
+        if !tick_size.is_finite() || tick_size <= 0.0 || !price.is_finite() {
+            return 0.0;
         }
-        let inv = 1.0 / tick_size;
+        let inv = exact_inverse(tick_size);
+        let scaled = price * inv;
         if is_sell {
-            ((price * inv) - 1e-9).ceil() / inv
+            snap_ceil(scaled) / inv
         } else {
-            ((price * inv) + 1e-9).floor() / inv
+            snap_floor(scaled) / inv
         }
+    }
+
+    /// D-630 (DÉCIMA OLA): redondeo de un STOP de protección.
+    ///
+    /// Un stop redondeado hacia la entrada queda más ajustado que la distancia
+    /// mínima que calcula `risk-engine::tp_sl` —el piso anti-difusivo— y la
+    /// posición sale por ruido. Se redondea ALEJÁNDOSE de la entrada: hacia
+    /// abajo en un largo, hacia arriba en un corto.
+    #[inline(always)]
+    fn round_stop_away_from_entry(price: f64, tick_size: f64, position_is_long: bool) -> f64 {
+        Self::round_price_to_tick(price, tick_size, !position_is_long)
+    }
+
+    /// Redondeo de un OBJETIVO, también alejándose de la entrada (hacia arriba
+    /// en un largo, hacia abajo en un corto): así el ratio beneficio/riesgo
+    /// aplicado nunca queda por debajo del que exige la fricción (D-636).
+    #[inline(always)]
+    fn round_target_away_from_entry(price: f64, tick_size: f64, position_is_long: bool) -> f64 {
+        Self::round_price_to_tick(price, tick_size, position_is_long)
     }
 
     /// Toma la orden validada por el Risk Engine, calcula el lote de cripto exacto
@@ -954,12 +1058,9 @@ impl OrderExecutor {
             // Si colocamos una orden al precio actual exacto, Binance la rechaza con -5022.
             // Para ser Maker pasivo: BUY debe estar al menos 1 tick por debajo del ask actual,
             // y SELL debe estar al menos 1 tick por encima del bid actual.
-            let passive_price = if is_sell {
-                current_price + tick_size
-            } else {
-                (current_price - tick_size).max(tick_size)
-            };
-            let final_price = Self::round_price_to_tick(passive_price, tick_size, is_sell);
+            // D-628: unirse al mejor nivel propio (medio tick desde el mid), no
+            // quedar un nivel por detrás.
+            let final_price = passive_join_price(current_price, tick_size, is_sell);
             (
                 ORDER_TYPE_LIMIT,
                 crate::binance_api::TIME_IN_FORCE_GTX,
@@ -1016,12 +1117,7 @@ impl OrderExecutor {
             },
             price: if order.maker_only {
                 let is_sell = side == SIDE_SELL;
-                let passive_price = if is_sell {
-                    current_price + tick_size
-                } else {
-                    (current_price - tick_size).max(tick_size)
-                };
-                Some(Self::round_price_to_tick(passive_price, tick_size, is_sell))
+                Some(passive_join_price(current_price, tick_size, is_sell))
             } else {
                 None
             },
@@ -1052,19 +1148,32 @@ impl OrderExecutor {
                         for sym_info in symbols {
                             if let Some(sym) = sym_info["symbol"].as_str() {
                                 let mut filter = SymbolFilter::default();
+                                // D-631 (DÉCIMA OLA): un paso o tick que no parsea ya
+                                // no se sustituye por los de BTCUSDT; el símbolo sólo
+                                // entra en el mapa si ambos se leyeron de verdad.
+                                let mut step_ok = false;
+                                let mut tick_ok = false;
                                 if let Some(filters) = sym_info["filters"].as_array() {
                                     for f in filters {
                                         match f["filterType"].as_str() {
                                             Some("LOT_SIZE") => {
-                                                if let Some(s) = f["stepSize"].as_str() {
-                                                    filter.step_size =
-                                                        s.parse::<f64>().unwrap_or(0.001);
+                                                if let Some(v) = f["stepSize"]
+                                                    .as_str()
+                                                    .and_then(|s| s.parse::<f64>().ok())
+                                                    .filter(|v| v.is_finite() && *v > 0.0)
+                                                {
+                                                    filter.step_size = v;
+                                                    step_ok = true;
                                                 }
                                             }
                                             Some("PRICE_FILTER") => {
-                                                if let Some(t) = f["tickSize"].as_str() {
-                                                    filter.tick_size =
-                                                        t.parse::<f64>().unwrap_or(0.1);
+                                                if let Some(v) = f["tickSize"]
+                                                    .as_str()
+                                                    .and_then(|t| t.parse::<f64>().ok())
+                                                    .filter(|v| v.is_finite() && *v > 0.0)
+                                                {
+                                                    filter.tick_size = v;
+                                                    tick_ok = true;
                                                 }
                                             }
                                             Some("MIN_NOTIONAL") => {
@@ -1077,7 +1186,9 @@ impl OrderExecutor {
                                         }
                                     }
                                 }
-                                map.insert(sym.to_string(), filter);
+                                if step_ok && tick_ok {
+                                    map.insert(sym.to_string(), filter);
+                                }
                             }
                         }
                     }
@@ -1088,32 +1199,48 @@ impl OrderExecutor {
         }
     }
 
-    pub async fn get_symbol_filter(&self, symbol: &str) -> SymbolFilter {
+    /// Filtros reales de precisión de un símbolo.
+    ///
+    /// D-631 (DÉCIMA OLA): el último recurso era `SymbolFilter::default()` —paso
+    /// 0,001 y tick 0,1, los de BTCUSDT— devuelto en silencio. Para un símbolo con
+    /// tick 0,00001 eso produce precios cuatro órdenes de magnitud fuera de
+    /// escala: el fallo aparecía como un rechazo del exchange en lugar de como el
+    /// error de configuración que realmente era, y un cierre de emergencia podía
+    /// enviarse con la precisión de otro activo. Ahora un símbolo sin filtro real
+    /// es un ERROR que el llamador debe manejar.
+    pub async fn get_symbol_filter(&self, symbol: &str) -> Result<SymbolFilter, String> {
         {
             let cache = self.symbol_filters.load();
-            if true {
-                if let Some(f) = cache.get(symbol) {
-                    return *f;
-                }
+            if let Some(f) = cache.get(symbol) {
+                return Ok(*f);
             }
         }
         if let Ok(filters) = self.fetch_all_symbol_filters().await {
             let res = filters.get(symbol).copied();
             self.symbol_filters.store(Arc::new(filters));
             if let Some(f) = res {
-                return f;
+                return Ok(f);
             }
         }
         if let Some(coin_id) = quantum_arena::symbol_registry::try_index(symbol) {
             if let Some(spec) = quantum_arena::symbol_registry::try_spec(coin_id) {
-                return SymbolFilter {
-                    step_size: spec.step_size,
-                    tick_size: spec.tick_size,
-                    min_notional: spec.min_notional,
-                };
+                if spec.step_size.is_finite()
+                    && spec.step_size > 0.0
+                    && spec.tick_size.is_finite()
+                    && spec.tick_size > 0.0
+                {
+                    return Ok(SymbolFilter {
+                        step_size: spec.step_size,
+                        tick_size: spec.tick_size,
+                        min_notional: spec.min_notional,
+                    });
+                }
             }
         }
-        SymbolFilter::default()
+        Err(format!(
+            "filtro de precisión desconocido para {symbol}: ni exchangeInfo ni el \
+             registro de símbolos lo aportan; no se opera con los pasos de otro símbolo"
+        ))
     }
 
     #[inline(always)]
@@ -1180,7 +1307,7 @@ impl ExecutionProvider for OrderExecutor {
         self.check_rate_limits(timestamp)?;
 
         // F1.4: tickSize real del símbolo consultado en cache O(1) (< 5 ns)
-        let filter = self.get_symbol_filter(symbol).await;
+        let filter = self.get_symbol_filter(symbol).await?;
         let tick_size = filter.tick_size;
 
         if let Some(payload) =
@@ -1973,8 +2100,14 @@ impl ExecutionProvider for OrderExecutor {
             return Err("Volumen 0".to_string());
         }
 
-        let final_tp = Self::round_price_to_tick(take_profit_price, tick_size, is_long_close);
-        let final_sl = Self::round_price_to_tick(stop_loss_price, tick_size, is_long_close);
+        // D-630 (DÉCIMA OLA): ambas piernas usaban la misma dirección de
+        // redondeo. Eso dejaba el TP alejándose de la entrada (correcto) y el SL
+        // ACERCÁNDOSE a ella (incorrecto: más ajustado que el piso
+        // anti-difusivo). La ruta de reintento reutiliza estos dos valores.
+        let final_tp =
+            Self::round_target_away_from_entry(take_profit_price, tick_size, is_long_close);
+        let final_sl =
+            Self::round_stop_away_from_entry(stop_loss_price, tick_size, is_long_close);
 
         if self.is_paper_trading {
             println!("📝 [PAPER TRADING LOCAL] OCO Limit/Stop interceptada para {} @ TP: {} / SL: {}. Se maneja localmente.", symbol, final_tp, final_sl);
@@ -2572,7 +2705,77 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     async fn fetch_exchange_info(&self, symbol: &str) -> Result<f64, String> {
-        let filter = self.get_symbol_filter(symbol).await;
+        let filter = self.get_symbol_filter(symbol).await?;
         Ok(filter.min_notional)
+    }
+}
+
+#[cfg(test)]
+mod tests_decima_ola {
+    use super::*;
+
+    /// D-628: con spread de 1 y 2 ticks el precio pasivo se une al mejor nivel
+    /// propio; con 3 ticks mejora dentro del spread sin cruzarlo.
+    #[test]
+    fn d628_precio_pasivo_se_une_al_mejor_nivel() {
+        let t = 0.1;
+        // spread 1 tick
+        let (bid, ask) = (60_000.0, 60_000.1);
+        let mid = (bid + ask) / 2.0;
+        assert!((passive_join_price(mid, t, false) - bid).abs() < 1e-9);
+        assert!((passive_join_price(mid, t, true) - ask).abs() < 1e-9);
+        // spread 2 ticks
+        let (bid, ask) = (60_000.0, 60_000.2);
+        let mid = (bid + ask) / 2.0;
+        assert!((passive_join_price(mid, t, false) - bid).abs() < 1e-9);
+        assert!((passive_join_price(mid, t, true) - ask).abs() < 1e-9);
+        // spread 3 ticks: dentro del spread y sin cruzar
+        let (bid, ask) = (60_000.0, 60_000.3);
+        let mid = (bid + ask) / 2.0;
+        let buy = passive_join_price(mid, t, false);
+        let sell = passive_join_price(mid, t, true);
+        assert!(buy >= bid - 1e-9 && buy < ask - 1e-9);
+        assert!(sell <= ask + 1e-9 && sell > bid + 1e-9);
+    }
+
+    /// D-629: el redondeo no deja residuo flotante que `ryu` imprima.
+    #[test]
+    fn d629_redondeo_sin_residuo_flotante() {
+        let q = OrderExecutor::round_to_step_size(0.123456, 0.00001);
+        assert_eq!(ryu::Buffer::new().format(q), "0.12345");
+        let p = OrderExecutor::round_price_to_tick(0.30000000000000004, 0.1, false);
+        assert_eq!(ryu::Buffer::new().format(p), "0.3");
+    }
+
+    /// D-629: el ajuste a múltiplo exacto es relativo, no absoluto.
+    #[test]
+    fn d629_redondeo_invariante_de_escala() {
+        let casi = 3_000.0 - 3_000.0 * 1e-13;
+        assert_eq!(OrderExecutor::round_to_step_size(casi, 1.0), 3_000.0);
+        let grande = 1_500_000.0 - 1_500_000.0 * 1e-13;
+        assert_eq!(OrderExecutor::round_to_step_size(grande, 1.0), 1_500_000.0);
+        // un valor genuinamente por debajo del múltiplo sí se trunca
+        assert_eq!(OrderExecutor::round_to_step_size(2_999.5, 1.0), 2_999.0);
+    }
+
+    /// D-630: stops y objetivos se redondean ALEJÁNDOSE de la entrada.
+    #[test]
+    fn d630_stops_y_objetivos_se_alejan_de_la_entrada() {
+        let t = 0.1;
+        // largo: stop hacia abajo, objetivo hacia arriba
+        assert!((OrderExecutor::round_stop_away_from_entry(59_000.05, t, true) - 59_000.0).abs() < 1e-9);
+        assert!((OrderExecutor::round_target_away_from_entry(61_000.05, t, true) - 61_000.1).abs() < 1e-9);
+        // corto: stop hacia arriba, objetivo hacia abajo
+        assert!((OrderExecutor::round_stop_away_from_entry(61_000.05, t, false) - 61_000.1).abs() < 1e-9);
+        assert!((OrderExecutor::round_target_away_from_entry(59_000.05, t, false) - 59_000.0).abs() < 1e-9);
+    }
+
+    /// D-629: pasos o precios inválidos no producen cantidades enviables.
+    #[test]
+    fn d629_entradas_invalidas_devuelven_cero() {
+        assert_eq!(OrderExecutor::round_to_step_size(1.0, 0.0), 0.0);
+        assert_eq!(OrderExecutor::round_to_step_size(1.0, f64::NAN), 0.0);
+        assert_eq!(OrderExecutor::round_price_to_tick(60_000.0, f64::NAN, true), 0.0);
+        assert_eq!(passive_join_price(f64::NAN, 0.1, false), 0.0);
     }
 }

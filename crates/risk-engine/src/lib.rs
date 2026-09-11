@@ -646,7 +646,7 @@ impl RiskEngine {
                 arena,
             );
 
-        let maker_fee = arena.config.live_maker_fee.load(Ordering::Relaxed);
+        let _maker_fee = arena.config.live_maker_fee.load(Ordering::Relaxed);
         let taker_fee = arena.config.live_taker_fee.load(Ordering::Relaxed);
         // D-01 — FRICCIÓN REAL EN EL EV GATE: antes el gate comparaba contra
         // solo maker+taker (~7bps), pero el motor EJECUTA 2×(taker + slippage)
@@ -688,7 +688,14 @@ impl RiskEngine {
         // por objetivo; como las salidas por stop, trailing, zombi y timeout
         // son TODAS taker, el caso conservador —y el que la física aplica— es
         // taker en ambas piernas.
-        let entry_fee_rate = if maker_only { maker_fee } else { taker_fee };
+        // D-645 (revisado): la ENTRADA también es taker. El binario de producción
+        // envía la entrada como orden MARKET —la ruta maker está desactivada con
+        // `force_maker = false` en god_engine.rs y el iceberg sólo actúa por
+        // encima del umbral genómico de nocional—, sin consultar `maker_only`.
+        // Modelar la entrada como maker cuando `maker_only` subestimaba la
+        // fricción en (taker − maker) precisamente en las cuentas que superan el
+        // umbral maker.
+        let entry_fee_rate = taker_fee;
         let exit_fee_rate = taker_fee;
 
         // La normalización de la latencia deja de ser un literal: se compara
