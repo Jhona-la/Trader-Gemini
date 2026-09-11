@@ -32,7 +32,7 @@
 
 15. [🌌 Octava Ola: Post-Remediación L-0 a L-4 (Censo D-227 a D-310)](#-13-octava-ola-forense-auditoría-sistémica-integral-post-remediación-l-0-a-l-4-y-mapeo-de-desconexiones-remanentes-censo-completo-d-227-a-d-310)
 16. [🌊 Novena Ola: Raíz a Cima con 6 Roles Senior (Censo D-311 a D-399)](#-novena-ola-forense--auditoría-sistémica-de-raíz-a-cima-d-311-a-d-399)
-17. **[🌊 DÉCIMA OLA: Auditoría de Raíz a Cima post-F8/REHAB-7 (Censo D-600 a D-675)](#-décima-ola-forense--auditoría-de-raíz-a-cima-post-rehabilitación-f8rehab-7)** ← *más reciente (2026-09-10)*
+17. **[🌊 DÉCIMA OLA: Auditoría de Raíz a Cima post-F8/REHAB-7 (Censo D-600 a D-675)](#-décima-ola-forense--auditoría-de-raíz-a-cima-post-rehabilitación-f8rehab-7)** ← *(2026-09-10)*
     - [0. Paradigma de Grafo Vivo: Diagnóstico Topológico Central](#️-0-paradigma-de-grafo-vivo-el-diagnóstico-topológico-central)
     - [1. Resumen Ejecutivo y Cadena Causal Backtest↔Producción](#-1-resumen-ejecutivo-de-estado--décima-ola)
     - [2. Matriz Maestra Consolidada D-600 a D-675](#-2-matriz-maestra-consolidada--censo-d-600-a-d-675)
@@ -46,6 +46,7 @@
     - [10. Módulo 7: Señales Cuánticas, Orquestación y Confluencia](#️-10-módulo-7--señales-cuánticas-orquestación-y-confluencia)
     - [11. Módulo 8: Backtesting, Auditoría Interna y Gobernanza](#-11-módulo-8--backtesting-auditoría-interna-y-gobernanza)
     - [12. Hoja de Ruta de Rehabilitación L-5 a L-10](#-12-hoja-de-ruta-sistémica-de-rehabilitación--décima-ola)
+18. **[🔁 Décima Ola — Adenda de verificación forense: bisección, atribución y correcciones (D-677 a D-685)](#-décima-ola--adenda-de-verificación-forense-bisección-atribución-correcciones-y-rectificaciones-2026-09-11)** ← *más reciente (2026-09-11)*
 
 ---
 
@@ -5598,3 +5599,172 @@ Se ejecutó la prueba formal de certificación sobre 1,033,320 ticks (`cargo run
 
 ---
 
+---
+
+# 🔁 DÉCIMA OLA — ADENDA DE VERIFICACIÓN FORENSE: BISECCIÓN, ATRIBUCIÓN, CORRECCIONES Y RECTIFICACIONES (2026-09-11)
+
+> Esta adenda NO sustituye ninguna entrada anterior. Registra la verificación
+> empírica de los cambios aplicados tras el censo D-600…D-675: la regresión que
+> destapó, su atribución, nueve defectos nuevos con su corrección, y los
+> errores de diagnóstico propios que la medición obligó a rectificar. Toda
+> cifra procede de una corrida reproducible; ninguna es una estimación.
+
+## A.1 Método
+
+- **Instrumento:** `audit_forensic_backtest`, 1 048 320 ticks cargados / 1 033 320 procesados de BTCUSDT (2025-12-03 → 2026-05-31), capital $13, comisiones VIP0 offline (maker 0,02 %, taker 0,05 %).
+- **Aislamiento:** worktree git en detached HEAD, sin `.env` ni credenciales; cada variante se compila y ejecuta por separado desde el mismo commit base.
+- **Control del genoma:** `config_dir/genomes` está versionado y cambia con cada checkout. Se verificó que el genoma efectivo es el mismo en todos los commits: en 48b5e753 `load_active` aún heredaba el campeón de backtest (`877f60f9`) y desde 90b0e1c2 carga `prod/active.json` (`cf412692`); ambos difieren en **un único dígito final** de `tp_horizon_curve.b`. Las diferencias medidas son de código, no de genoma.
+- **Atribución por rama:** cada apertura `#k` se empareja con su cierre `TRADE #k`. La etiqueta de rama es `volume_flow_rate` (ver D-678).
+
+## A.2 Bisección
+
+| Commit | Contenido | NET ROI | GROSS ROI | Trades | WR neto | TP / SL / TRAIL / ZOMBIE / TOXIC | DD máx |
+|---|---|---|---|---|---|---|---|
+| 48b5e753 | previo a la sesión | −4,22 % | −2,28 % | 91 | 48,4 % | 2 / 31 / 52 / 6 / 0 | 5,43 % |
+| 90b0e1c2 | L-5 contención | **−1,46 %** | −0,59 % | 34 | 44,1 % | 1 / 0 / 16 / 1 / 16 | 2,64 % |
+| 220b7433 | TP/SL fuente única | 0,00 % | 0,00 % | **0** | — | — | 0 % |
+| b4611d9c | L-6 (+ ediciones paralelas) | −0,44 % | **+0,16 %** | 22 | 31,8 % | 2 / 10 / 3 / 6 / 1 | 1,80 % |
+| 44c263b7 | integración FASE 22 + D-650/D-603/D-615 | **−9,41 %** | −8,77 % | 30 | 13,3 % | 0 / 21 / 4 / 5 / 0 | 10,11 % |
+| 88055584 | D-641/D-638b | −8,93 % | −8,16 % | 31 | 19,4 % | 0 / 15 / 4 / 12 / 0 | 9,63 % |
+| ffb73c2a | ejecución/memoria | −8,93 % | −8,16 % | 31 | 19,4 % | 0 / 15 / 4 / 12 / 0 | 9,63 % |
+| c5562b7a | conformal/libro (HEAD) | −8,93 % | −8,16 % | 31 | 19,4 % | 0 / 15 / 4 / 12 / 0 | 9,63 % |
+
+**Lectura.** El sistema ya perdía antes de la sesión (−4,22 %). La contención L-5 lo llevó a −1,46 % y b4611d9c a −0,44 % con PnL bruto positivo. **Toda la regresión entra en 44c263b7** y se mantiene idéntica en los tres commits siguientes. 220b7433 no abrió ninguna posición; b4611d9c —que incorporó además ediciones de la sesión paralela— recuperó la operativa, sin que ese cambio pueda atribuirse a una sola edición.
+
+## A.3 Atribución por rama de entrada
+
+| Corrida | Rama 11 — tensor con puerta de Hurst | Rama 0 — consenso tensorial sin etiqueta |
+|---|---|---|
+| 90b0e1c2 | 30 ops · 50 % · −$0,022 · \|st\| 0,30 % | 4 ops · 0 % · −$0,168 · \|st\| 3,19 % |
+| b4611d9c | 21 ops · 33 % · +$0,001 · \|st\| 0,32 % | 1 op · 0 % · −$0,058 · \|st\| 5,47 % |
+| A (HEAD) | 7 ops · 29 % · −$0,185 · \|st\| 0,31 % | **24 ops · 17 % · −$0,976** · \|st\| 1,61 % |
+| R | 24 ops · 38 % · −$0,083 · \|st\| 0,30 % | 24 ops · 21 % · −$1,195 · \|st\| 1,80 % |
+| B | 39 ops · 23 % · −$0,992 · \|st\| 0,25 % | 12 ops · 8 % · −$0,835 · \|st\| 1,58 % |
+| C | 30 ops · 13 % · −$1,053 · \|st\| 0,19 % | 22 ops · 23 % · −$1,164 · \|st\| 1,81 % |
+| D | 31 ops · 13 % · −$0,720 · \|st\| 0,24 % | 22 ops · 23 % · −$1,587 · \|st\| 1,78 % |
+| E | 33 ops · 12 % · −$0,875 · \|st\| 0,27 % | 23 ops · 22 % · −$1,738 · \|st\| 1,76 % |
+| F | 41 ops · 22 % · −$1,051 · \|st\| 0,26 % | 25 ops · 24 % · −$1,364 · \|st\| 1,69 % |
+| G | 8 ops · 25 % · −$0,255 · \|st\| 0,34 % | 24 ops · 25 % · −$0,867 · \|st\| 1,61 % |
+| H | 42 ops · 38 % · −$0,387 · \|st\| 0,44 % | 27 ops · 22 % · −$1,863 · \|st\| 2,01 % |
+| I | 5 ops · 20 % · +$0,059 · \|st\| 0,23 % | 25 ops · 16 % · −$1,021 · \|st\| 1,77 % |
+
+(\|st\| = magnitud de la tendencia secular en la apertura.)
+
+**Conclusiones.**
+1. **La rama 0 pierde en las doce corridas medidas** y entra siempre en tendencias ya extendidas (\|st\| 1,6–5,5 %, cinco a dieciocho veces la de la rama 11). En 44c263b7 su volumen pasó de 1–4 operaciones a 24: es el **motor principal de la regresión**. Ver D-685.
+2. **La rama 11 está en torno al empate con la geometría de TP/SL anterior** (90b0e1c2, b4611d9c, R) y pierde con la geometría corregida (C–F), donde domina el SL: los genes del genoma se seleccionaron contra la geometría defectuosa. Ver A.6.
+
+## A.4 Defectos nuevos y correcciones
+
+### D-615b · S0 — El Hurst medía el feed, no el mercado
+
+`StatefulEngine::process_tick` alimentaba el estimador en cada evento. Sobre los mismos datos:
+
+| Estimador y muestreo | H observado |
+|---|---|
+| R/S de una ventana, por evento (hasta b4611d9c) | 0,38 – 0,44 |
+| DFA, por evento (D-615, desde 44c263b7) | 0,21 – 0,36 |
+| DFA, cierre de vela de 1 min (D-615b) | 0,48 – 0,59 |
+
+En producción los eventos llegan cada ~100 ms y en el forense son barras de ~15 s: **el mismo mercado producía exponentes distintos en cada entorno**. El exponente gobierna al menos nueve decisiones: bloqueo de la rama tensorial (`H < 0,42`), exigencia de lado de EMA (`H < 0,45`), camino de tendencia (`H ≥ 0,48`), `trend_runner` (`H ≤ 0,52`), multiplicador de Kelly (0,55 / 0,42), bono de apalancamiento, régimen del arena, exponente de la ley de escala del TP/SL y modulación de duración (D-609).
+
+**Corrección:** muestreo al cierre de la vela interna de 1 minuto —la escala del ATR y de las velas REST `interval=1m` del calentamiento—, idéntico en producción y backtest. Test `d615b_hurst_se_muestrea_por_reloj_no_por_evento`.
+
+**Efecto medido (etapa B):** la rama 11 deja de estar bloqueada (7 → 39 operaciones) y, con la geometría actual, pierde. La etapa R (solo el R/S restaurado sobre HEAD) da −9,83 %: **D-615 no es la causa principal del salto de 44c263b7**.
+
+### D-609 (ampliado) · S1 — Horizonte fabricado de 15 segundos
+
+Las intenciones del consenso tensorial no declaran duración (`expected_duration_ms = 0`) y la modulación D-474 hacía `(0 / 2).max(15_000)` cuando `H < 0,48`: una duración desconocida se convertía en un horizonte de 15 s que alimentaba TP/SL, Kelly y apalancamiento. **Corrección:** `hurst_duration_modulation`, continua en H y neutra para duraciones no declaradas. Tests `tests_d609`.
+
+### D-677 · S0 — Error de unidades en la ley de escala del TP/SL
+
+`tp_sl.rs` usaba `σ(τ) = ATR · (τ / 1 s)^H`, pero el ATR es la EMA del true range de la **vela de 1 minuto**: la dispersión quedaba sobrestimada por 60^H (×3,4 a H = 0,30; ×7,7 a H = 0,50). **Corrección:** `TAU_REFERENCE_MS = 60_000`. Test `d677_la_referencia_temporal_es_la_escala_del_atr`.
+
+**Efecto medido (etapas B y C):** con el Hurst correcto pero la referencia aún en 1 s, el stop a τ ≈ 19 min salía ≈ 2,6 % (etapa B: 37 salidas ZOMBIE de 51). Al corregir las unidades (etapa C) el stop se estrecha y las salidas por SL pasan de 13 a 32. **El resultado no mejora**: el gen `sl_atr_multiplier = 0,767` se seleccionó contra fórmulas de stop anteriores.
+
+### D-649b · S1 — Caducidad de posiciones con un valor nunca seleccionado
+
+D-649 conectó el gen muerto `zombie_timeout_ms` con el valor que tenía el genoma (35 min): debounce de 4–8 h → ~52 min, hard-timeout de 12–24 h → ~2,6 h. Además bajó el umbral de la rama de inversión de −0,60 % a −0,50 %. **Corrección:** banda [4 h, 8 h] acotada en la entrada al arena (`clamp_slot`) y umbral −0,60 %; en el suelo se reproducen exactamente las fórmulas previas y se conserva la caducidad absoluta `12g·(1+s)`. Test `d649b_zombie_se_acota_a_la_banda_de_diseno`. **Efecto medido (etapa D):** ZOMBIE 16 → 2; esas posiciones terminan por SL.
+
+### D-680 · S0 — El prior del win rate era un umbral de OBI y la primera operación lo destruía
+
+`GlobalArena::build` hacía `w_base = config.maker_obi_threshold` (**0,95** en el genoma de producción): antes de su primera operación el sistema se creía acertando el 95 %. Y la actualización `w += (x − w)/n` con `n` empezando en 1 sobrescribía el prior entero con la primera observación: tras una pérdida inicial, **w = 0**. **Corrección:** prior = win rate de diseño (0,40) y media posterior con pseudo-conteo `z² = 3,8415` (corrección de Wilson / Agresti–Coull). Test `d680_prior_del_win_rate_y_media_posterior`.
+
+### D-681 · S0 — Geometría de la orden autorreferente
+
+El TP se colocaba en `SL · RR_req(w)` con `w` el win rate observado. Cada pérdida bajaba `w`, subía `RR_req = (1−w)/w + f/(w·SL)`, alejaba el TP y reducía su probabilidad de alcance: con `w = 0` (acotado a 0,05) el TP quedaba a 19 stops o más, porque `RR_req ≥ (1−w)/w = 19` con independencia del SL. **0 salidas por TP en todas las corridas desde 220b7433**. Y como breakeven y trailing se arman en fracción del TP (`tp·0,55`, `tp·0,70`, con techos de 1,6 % y 2 %), el único motor real de beneficio —TRAIL, 52 salidas antes de la sesión— dejaba de activarse. **Corrección:** la geometría usa el win rate de diseño; la evidencia observada pertenece al gate y al Kelly. Test `d681_el_objetivo_no_depende_del_desempeno_observado`.
+
+### D-682 · S1 — El gate de EV seguía evaluando otra operación
+
+El gate llamaba a `compute_tp_sl` (TP = SL·RR_req) y la orden a `compute_tp_sl_with_target_rr` (TP = SL·máx(RR_req, gen 2,25)): la identidad que D-637 prometía seguía rota. **Corrección:** se calcula una vez y la orden reutiliza exactamente lo evaluado.
+
+**Efecto medido de D-680/681/682 aislados (etapa G):** −8,93 % → −8,63 %; TP 0 → 2; TRAIL 4 → 7; DD 9,63 % → 8,86 %.
+
+### D-683 · S0 — Producción ejecutaba parámetros que la evolución nunca evaluó
+
+Las curvas continuas de Kelly, trailing y OBI **no están en el vector de genes**. `from_vector`, `mutate`, los constructores y `from_arena` las derivan de los genes scalp/swing con `sync_continuous_curves()`. Pero el genoma que se carga desde disco pasa por serde, que rellena las curvas ausentes con **literales**: OBI 0,25–0,40, Kelly 0,20–0,15, trailing 2,5–3,5 ATR. El comentario del código afirmaba «carga vieja = mismo comportamiento, sin ruptura», y era falso para cualquier genoma cuyos genes difirieran de esos literales. En el genoma de producción, el umbral dinámico de OBI de las ramas pasó de `0,473 → 0,35` (gen) a `~0,21` (literal): **la exigencia de desequilibrio del libro bajó un 40 %** en 44c263b7; la fracción Kelly base subió de 0,157/0,112 a 0,20/0,15; y los genes de trailing evolucionados dejaron de leerse. Es literalmente «funciona en backtest y no en producción»: el evolver evalúa curvas derivadas de los genes y producción ejecuta los literales. **Corrección:** las curvas se derivan de los genes en los dos puntos de entrada al arena (`apply_to_arena`, `QuantumConfig::from_genome`). Test `d683_curvas_continuas_se_derivan_de_los_genes_al_entrar_al_arena`.
+
+**Efecto medido:** la etapa I (solo D-683 sobre HEAD) da −8,30 % de NET ROI frente a −8,93 % de A, con 32 operaciones (TP 0 · SL 17 · TRAIL 4 · ZOMBIE 11) y 15,6 % de acierto. Sobre las demás correcciones (etapa H) el resultado pasa de −18,58 % a −17,76 %, el acierto de 22,7 % a 31,9 % y las salidas por TP de 3 a 12: con los genes reales de OBI y trailing, el sistema alcanza objetivos.
+
+### D-684 · S1 — Desbordamiento de pila latente al construir el arena
+
+Cada `CoinArena` lleva en línea un ring de 32 768 ticks de 40 bytes: **~1,25 MiB por moneda**. Un solo temporal de `CoinArena::new()` supera la pila de 1 MiB del hilo principal en Windows. El forense, `benchmark` y `latency_flow_audit` solo funcionaban porque el optimizador construía in situ; un cambio de una línea en `GlobalArena::build` bastó para desbordarla. Producción (`god_engine`, 32 MiB), el evolver y el simulador (64 MiB) ya construían el arena en un hilo con pila ampliada. **Corrección:** los tres binarios siguen el mismo patrón. Con ello el forense gana además la paridad de pila que declaraba.
+
+### D-678 · S2 — La telemetría no puede atribuir operaciones por rama
+
+La traza de apertura rotula `volume_flow_rate` como `gen=`, y el consenso tensorial y el camino de tendencia no etiquetan sus intenciones (0). Esta verificación tuvo que reconstruir la atribución leyendo el árbol de decisión.
+
+### D-679 · S1 — Umbrales de Hurst fijos calibrados sobre un estimador sesgado
+
+Los cortes 0,42 / 0,45 / 0,48 / 0,52 / 0,55 se fijaron sobre el nivel del R/S por evento. Con un estimador insesgado a la escala correcta conservan su sentido teórico en torno a 0,5, pero deben derivarse del error estándar del estimador y no fijarse a mano.
+
+### D-685 · S0 — El consenso tensorial abre sin guarda de extensión (PENDIENTE DE DISEÑO)
+
+La rama 0 (`lib.rs`, consenso tensorial) exige tendencia confirmada, EMAs ordenadas, no perseguir respecto a la EMA lenta y confianza, pero **no limita cuánto se ha extendido ya la tendencia a favor**. Pierde en las doce corridas medidas (A.3). Las guardas de la rama 11 (D-502/503/505) no bastan: impiden operar contra tendencia, no llegar tarde a ella. La corrección exige una regla de extensión en unidades de volatilidad del horizonte, y **no se aplica a mano**: debe diseñarse y validarse con evolución y walk-forward, no ajustarse sobre un único backtest.
+
+## A.5 Verificación por etapas sobre c5562b7a
+
+| Etapa | Cambios | NET ROI | GROSS ROI | Trades | WR neto | TP / SL / TRAIL / ZOMBIE / TOXIC | DD máx |
+|---|---|---|---|---|---|---|---|
+| A | HEAD | −8,93 % | −8,16 % | 31 | 19,4 % | 0 / 15 / 4 / 12 / 0 | 9,63 % |
+| R | HEAD + solo R/S previo (experimento) | −9,83 % | −8,44 % | 48 | 29,2 % | 3 / 27 / 12 / 6 / 0 | 11,03 % |
+| G | HEAD + D-680/681/682 (+D-684) | **−8,63 %** | −7,84 % | 32 | 25,0 % | 2 / 14 / 7 / 9 / 0 | **8,86 %** |
+| I | HEAD + D-683 (+D-684) | −8,30 % | −7,54 % | 32 | 15,6 % | 0 / 17 / 4 / 11 / 0 | 9,00 % |
+| B | + D-615b | −14,05 % | −12,44 % | 51 | 19,6 % | 0 / 13 / 1 / 37 / 0 | 15,54 % |
+| C | + D-677 | −17,05 % | −15,48 % | 52 | 17,3 % | 0 / 32 / 4 / 16 / 0 | 18,14 % |
+| D | + D-649b | −17,75 % | −16,11 % | 53 | 17,0 % | 0 / 40 / 11 / 2 / 0 | 17,75 % |
+| E | + D-609 | −20,10 % | −18,41 % | 56 | 16,1 % | 0 / 44 / 8 / 4 / 0 | 20,10 % |
+| F | + D-680/681/682 (+D-684) | −18,58 % | −16,60 % | 66 | 22,7 % | 3 / 45 / 17 / 1 / 0 | 19,89 % |
+| H | + D-683 (todo) | −17,76 % | −15,67 % | 72 | 31,9 % | 12 / 41 / 17 / 2 / 0 | 18,80 % |
+
+## A.6 Lectura honesta
+
+1. **Las correcciones son mecánicamente correctas y están probadas**, pero con el genoma actual el resultado forense empeora al acumularlas (A −8,93 % → F −18,58 %). No es una contradicción: el genoma se seleccionó contra un motor con errores que se compensaban —un Hurst hundido que bloqueaba ramas, un stop 3–8 veces más ancho, un TP autorreferente, literales en lugar de genes—. Corregir el motor sin re-evolucionar el genoma deja genes calibrados para una física que ya no existe.
+2. Las únicas correcciones que mejoran el resultado aisladas son las del bucle del TP (G) y la derivación de las curvas desde los genes (I: −8,30 %).
+3. **El motor principal de la pérdida es la rama 0 (D-685)**, presente en todas las variantes. Ninguna corrección de esta adenda la resuelve, porque su defecto es de diseño de entrada.
+4. Ninguna cifra de esta adenda autoriza a operar en demo ni en producción.
+
+## A.7 Rectificaciones a entradas anteriores de esta ola
+
+| Entrada | Lo que se afirmó | Lo que la verificación mostró |
+|---|---|---|
+| D-615 | El R/S «mide curtosis»; su sesgo (0,524 sobre ruido blanco en test) hacía clasificar ruido como tendencia. | El reemplazo por DFA era correcto como estimador pero incompleto: el muestreo por evento hacía que cualquier estimador midiera el feed, y sobre los datos forenses el R/S daba 0,38–0,44, no >0,52. Revertirlo solo (etapa R) no recupera el resultado: no es la causa principal del salto. Ver D-615b. |
+| D-638 / D-639 / D-640 | Fuente única de TP/SL con ley de escala difusiva. | La fuente única era correcta; la ley tenía un error de unidades (D-677), la geometría dependía del win rate observado (D-681) y el gate seguía evaluando otro TP (D-682). |
+| D-637 | Gate y orden idénticos por construcción. | No lo eran (D-682). |
+| D-649 | Conectar el gen zombie restaura la red de seguridad. | Lo conectó con un valor no seleccionado y cambió un umbral (D-649b). |
+| D-609 | Remapeo rígido Swing→Scalp por umbral de Hurst. | La sesión paralela ya lo había convertido en modulación de duración (D-474); el defecto vigente era fabricar 15 s para duraciones no declaradas. |
+| D-648 | Los promotores de fitness leen 6 de 144 genes. | Falso para los promotores, que usan el genoma completo; lo cierto era que la FFI de backtest no pasaba por el motor real (corregido). |
+| D-669 | El backtest vectorizado no reserva margen. | La corrección era un no-op y el diagnóstico, erróneo; retirada con comentario honesto. |
+| D-628 | Precio pasivo derivado del mid en maker. | No aplica a producción: las entradas son MARKET. |
+| D-630 | Redondeo incorrecto para SL y TP. | El redondeo del TP era correcto; solo se corrigió el SL. |
+| D-634 | Validación de margen duplicada. | Descripción inexacta; corregida en código y commit. |
+| D-641 | Tres acantilados en $15. | Alcance mayor: cuatro sitios más; resuelto con el módulo `capital_regime`. |
+| D-645 | Ceguera a comisiones. | Primera corrección incompleta (entrada maker); la física aplica taker en ambas piernas. |
+| Capítulo XII | Alpha neto positivo (+0,04 %) en este forense. | Medido con taker 0,04 %; la física actual cobra 0,05 % por pierna. No comparable; otra sección del informe registra −1,46 % con 34 operaciones (el estado de 90b0e1c2). |
+| Borrador previo de esta adenda | D-677 corregiría el resultado. | Refutado por la etapa C. |
+
+## A.8 Estado y decisiones pendientes
+
+- **Genoma de producción:** `config_dir/genomes/prod/active.json` tiene `source = backtest_heritage`; nació de la herencia automática que D-651 eliminó, nunca fue promovido explícitamente y fue seleccionado contra el motor defectuoso. **Debe re-evolucionarse contra el motor corregido** antes de cualquier uso.
+- **Correcciones de esta adenda:** quedan en el árbol de trabajo, con tests en verde, **sin commit**. Commitearlas sin re-evolución empeora el forense con el genoma actual; no commitearlas deja defectos S0 activos. Es una decisión del propietario.
+- **D-685:** contener (desactivar la rama 0 hasta rediseñarla) o rediseñar con validación evolutiva.
