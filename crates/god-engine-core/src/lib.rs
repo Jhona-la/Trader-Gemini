@@ -1,6 +1,7 @@
 #![feature(portable_simd)]
 
 pub mod bootloader;
+pub mod calibration;
 pub mod conformal;
 pub mod darwin;
 pub mod diffusion;
@@ -77,6 +78,9 @@ pub struct GodEngineCore {
     genomes_mtime: Option<std::time::SystemTime>,
     /// R4.3 — calibrador conformal real (antes: constante 0.95).
     pub conformal: conformal::ConformalCalibrator,
+    /// D-619 (DÉCIMA OLA): mapa aprendido de la puntuación de confianza a la
+    /// probabilidad real de acierto (escalado de Platt con prior identidad).
+    pub confidence_calibrator: calibration::PlattCalibrator,
     /// DIAG R4 (transitorio): cuello post-orden.
     pub diag_council_vetoes: u64,
     pub diag_opened: u64,
@@ -235,6 +239,7 @@ impl GodEngineCore {
             applied_generation: std::sync::atomic::AtomicU64::new(0),
             genomes_mtime: None,
             conformal: conformal::ConformalCalibrator::new(),
+            confidence_calibrator: calibration::PlattCalibrator::new(),
             diag_council_vetoes: 0,
             diag_opened: 0,
             diag_swing_vetoes: 0,
@@ -1158,6 +1163,9 @@ impl GodEngineCore {
                     let close_fee = phys_exit_fee;
 
                     let ml_at_entry = pos.ml_prediction.load(Ordering::Relaxed);
+                    // D-619: puntuación cruda con la que se abrió (se lee antes de
+                    // que `close_with_fee` limpie la posición).
+                    let score_at_entry = pos.confidence.load(Ordering::Relaxed);
                     let (_, _, _, margin_used, entry_fee_paid) = pos.close_with_fee();
 
                     let net_realized_pnl = gross_pnl - close_fee;
@@ -1240,6 +1248,11 @@ impl GodEngineCore {
                         // de todas las operaciones.
                         let p_win_at_entry = if is_long { ml_at_entry } else { 1.0 - ml_at_entry };
                         self.conformal.update(p_win_at_entry, is_win);
+                    }
+                    // D-619: el calibrador aprende de la puntuación CRUDA y del
+                    // resultado neto de comisiones. Nunca de su propia salida.
+                    if score_at_entry > 0.0 {
+                        self.confidence_calibrator.update(score_at_entry, is_win);
                     }
 
                     // D-680 (DÉCIMA OLA): media posterior con prior de diseño. Antes
@@ -2314,7 +2327,9 @@ impl GodEngineCore {
                 }
             }
 
-            if swing_intent.signal == SignalType::Flat {
+            // D-685: rama de consenso tensorial contenida (ver
+            // `CONSENSUS_BRANCH_ENABLED`).
+            if CONSENSUS_BRANCH_ENABLED && swing_intent.signal == SignalType::Flat {
                 let ema_fast = if self.feature_engines[coin_id].kline_ema_fast > 0.0 {
                     self.feature_engines[coin_id].kline_ema_fast
                 } else {
@@ -2812,9 +2827,19 @@ impl GodEngineCore {
 
             // --- APERTURA CONTINUA UNIFICADA (100% CAPITAL ALLOCATION) ---
             if unified_intent.signal != SignalType::Flat && !coin.positions.position.is_open() {
+                // D-619 (DÉCIMA OLA): la confianza que entra en el Kelly y en el valor
+                // esperado era una puntuación heurística tratada como probabilidad.
+                // El risk-engine recibe ahora la probabilidad calibrada con los
+                // resultados reales; la posición guarda la puntuación cruda para que
+                // el calibrador aprenda de ella. Sin historial, el mapa es la
+                // identidad y nada cambia.
+                let raw_confidence_score = unified_intent.confidence;
+                let mut calibrated_intent = unified_intent;
+                calibrated_intent.confidence =
+                    self.confidence_calibrator.calibrate(raw_confidence_score);
                 let order =
                     self.risk_engine
-                        .evaluate_quantum_order(coin_id, &unified_intent, &self.arena);
+                        .evaluate_quantum_order(coin_id, &calibrated_intent, &self.arena);
                 if order.signal != SignalType::Flat {
                     let drawdown = if self.risk_engine.peak_capital > 0.0 {
                         ((self.risk_engine.peak_capital - current_cap)
@@ -2968,7 +2993,7 @@ impl GodEngineCore {
                                     order.sl_target,
                                     pos_h,
                                     ml_prob,
-                                    unified_intent.confidence,
+                                    raw_confidence_score,
                                     fee_paid,
                                 );
                                 // REHAB-1b: la posición NACE con su τ dominante
@@ -3145,3 +3170,29 @@ mod tests_d609 {
         assert_eq!(hurst_duration_modulation(10_000, 0.40), 10_000);
     }
 }
+
+/// D-685 (DÉCIMA OLA) — CONTENCIÓN DE LA RAMA DE CONSENSO TENSORIAL (rama 14).
+///
+/// Cuando ninguna otra rama emite señal, el consenso tensorial abre una
+/// posición si hay tendencia confirmada, EMAs ordenadas y confianza suficiente,
+/// sin ninguna medida de cuánto se ha extendido ya la tendencia. En la
+/// verificación forense perdió en todas las corridas medidas, con aperturas en
+/// tendencias ya desplazadas (|st| medio 1,6–5,5 %).
+///
+/// Una guarda de extensión en unidades de difusión (z > 1,96 respecto a la EMA
+/// de 12 h) resultó inerte: sus aperturas quedan justo por debajo del umbral, y
+/// bajarlo sería ajustar un literal al backtest. La decisión se tomó con una
+/// regla fijada antes de ver los datos —elegir por aptitud en entrenamiento
+/// (ticks [0, 628 992)) y adoptar sólo si la validación ([628 992, 1 048 320))
+/// no empeora—, y se repitió sobre el motor con el lote de literales:
+///
+/// | Motor | Variante | Entrenamiento (aptitud) | Validación (aptitud) |
+/// |---|---|---|---|
+/// | 16f37ccd | activa | −17,92 % · 65 ops · DD 17,9 % (−0,287) | −5,15 % · 37 ops (−0,070) |
+/// | 16f37ccd | contenida | −5,15 % · 45 ops · DD 6,0 % (−0,063) | −4,84 % · 36 ops (−0,061) |
+/// | 3f484361 | activa | −14,86 % · 64 ops · DD 15,3 % (−0,226) | −8,04 % · 41 ops (−0,108) |
+/// | 3f484361 | contenida | −5,62 % · 56 ops · DD 6,7 % (−0,070) | −7,14 % · 40 ops (−0,090) |
+///
+/// El código se conserva para su rediseño: una entrada de consenso necesita
+/// una medida de ventaja propia, validada del mismo modo, antes de reactivarse.
+const CONSENSUS_BRANCH_ENABLED: bool = false;

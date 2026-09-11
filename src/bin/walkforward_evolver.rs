@@ -184,6 +184,16 @@ fn fitness(train: &Eval, min_trades: u32, oos: Option<&Eval>) -> f64 {
     })
 }
 
+/// Proyecta un genoma a los bounds del almacén. `from_vector` acota cada gen,
+/// re-deriva vistas y curvas continuas y restablece la invariante RR. Todo
+/// candidato —semilla incluida— se evalúa ya proyectado, de modo que lo evaluado
+/// es exactamente lo que podría promoverse: el gate de validación del almacén no
+/// puede rechazar al campeón por un gen fuera de banda (las bandas de mutación
+/// no siempre coinciden con los bounds, D-644).
+fn sanitize(genome: SuperGenotype) -> SuperGenotype {
+    SuperGenotype::from_vector(&genome.to_vector())
+}
+
 fn fmt_fit(f: f64) -> String {
     if f.is_finite() {
         format!("{f:+.4}")
@@ -236,7 +246,7 @@ fn main() {
 
     let seed_env = std::env::var("WF_SEED_ENV").unwrap_or_else(|_| "prod".to_string());
     std::env::set_var("TG_GENOME_ENV", &seed_env);
-    let seed = SuperGenotype::load_or_default();
+    let seed = sanitize(SuperGenotype::load_or_default());
 
     println!("════════════════════════════════════════════════════════════════════");
     println!("🧬 EVOLUCIONADOR WALK-FORWARD · evaluador: {}", bin.display());
@@ -248,9 +258,10 @@ fn main() {
     );
     println!("════════════════════════════════════════════════════════════════════");
 
-    let mut candidates: Vec<SuperGenotype> = vec![seed.clone(), SuperGenotype::new_baseline(0.0002, 0.0005)];
+    let mut candidates: Vec<SuperGenotype> =
+        vec![seed.clone(), sanitize(SuperGenotype::new_baseline(0.0002, 0.0005))];
     while candidates.len() < population {
-        candidates.push(seed.mutate_cmaes(0.20));
+        candidates.push(sanitize(seed.mutate_cmaes(0.20)));
     }
 
     let mut ranked: Vec<(SuperGenotype, Eval, f64)> = Vec::new();
@@ -291,7 +302,9 @@ fn main() {
             break;
         }
         let parents = elite.min(ranked.len());
-        candidates = (0..population).map(|i| ranked[i % parents].0.mutate_cmaes(rate)).collect();
+        candidates = (0..population)
+            .map(|i| sanitize(ranked[i % parents].0.mutate_cmaes(rate)))
+            .collect();
     }
 
     // ── Validación: finalistas y semilla sobre datos que la selección no vio ──
