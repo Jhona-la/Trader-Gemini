@@ -133,9 +133,117 @@ pub fn parse_binance_kline<'a>(json_str: &'a mut str) -> Option<KlineData<'a>> {
     Some((e, s, open, high, low, close, volume, is_closed))
 }
 
+/// Veredicto de la guardia de secuencia del libro.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeqVerdict {
+    /// Mensaje nuevo: se procesa.
+    Accept,
+    /// `update_id` no posterior al último aceptado: rancio, duplicado o fuera
+    /// de orden. Se descarta.
+    Stale,
+    /// Tras una racha de descartes se asume un reinicio de la secuencia del
+    /// exchange y se acepta este mensaje como nuevo origen.
+    Resync,
+}
+
+/// D-610 (DÉCIMA OLA) — GUARDIA DE SECUENCIA DEL LIBRO POR SÍMBOLO.
+///
+/// `parse_binance_depth` extraía el `u` (final update id) de cada mensaje y el
+/// despacho del motor lo descartaba. Sin comprobar su monotonía el motor no
+/// podía detectar tres fallos silenciosos: libro rancio tras una reconexión,
+/// mensajes reordenados por la multiplexación —el precio «retrocede» y OBI,
+/// OFI y microprecio se calculan sobre un estado viejo— y mensajes duplicados.
+///
+/// Una guardia estrictamente monótona tiene un modo de fallo propio: si el
+/// exchange reiniciara su secuencia, descartaría ese símbolo para siempre. Por
+/// eso, tras `RESYNC_AFTER` descartes consecutivos, acepta y resincroniza.
+pub struct BookSequenceGuard {
+    last: Vec<i64>,
+    stale_streak: Vec<u32>,
+    /// Mensajes descartados por no ser posteriores al último aceptado.
+    pub dropped: u64,
+    /// Resincronizaciones por racha de descartes.
+    pub resyncs: u64,
+}
+
+impl BookSequenceGuard {
+    /// Descartes consecutivos tras los que se asume un reinicio de la
+    /// secuencia: 50 mensajes del stream `depth@100ms` son 5 segundos sin un
+    /// solo `update_id` nuevo, mucho más de lo que dura un reordenamiento
+    /// transitorio de la multiplexación.
+    pub const RESYNC_AFTER: u32 = 50;
+
+    pub fn new(symbols: usize) -> Self {
+        Self {
+            last: vec![i64::MIN; symbols],
+            stale_streak: vec![0; symbols],
+            dropped: 0,
+            resyncs: 0,
+        }
+    }
+
+    pub fn check(&mut self, symbol_id: usize, update_id: i64) -> SeqVerdict {
+        if symbol_id >= self.last.len() {
+            // Símbolo fuera del universo custodiado: no hay estado que comparar.
+            return SeqVerdict::Accept;
+        }
+        if update_id > self.last[symbol_id] {
+            self.last[symbol_id] = update_id;
+            self.stale_streak[symbol_id] = 0;
+            return SeqVerdict::Accept;
+        }
+        self.stale_streak[symbol_id] += 1;
+        if self.stale_streak[symbol_id] >= Self::RESYNC_AFTER {
+            self.last[symbol_id] = update_id;
+            self.stale_streak[symbol_id] = 0;
+            self.resyncs += 1;
+            return SeqVerdict::Resync;
+        }
+        self.dropped += 1;
+        SeqVerdict::Stale
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn d610_acepta_secuencia_creciente_y_descarta_rancios() {
+        let mut g = BookSequenceGuard::new(2);
+        assert_eq!(g.check(0, 100), SeqVerdict::Accept);
+        assert_eq!(g.check(0, 101), SeqVerdict::Accept);
+        assert_eq!(g.check(0, 101), SeqVerdict::Stale, "duplicado");
+        assert_eq!(g.check(0, 99), SeqVerdict::Stale, "fuera de orden");
+        assert_eq!(g.check(0, 102), SeqVerdict::Accept);
+        assert_eq!(g.dropped, 2);
+    }
+
+    #[test]
+    fn d610_cada_simbolo_tiene_su_propia_secuencia() {
+        let mut g = BookSequenceGuard::new(2);
+        assert_eq!(g.check(0, 500), SeqVerdict::Accept);
+        assert_eq!(g.check(1, 10), SeqVerdict::Accept, "otro símbolo, otra secuencia");
+        assert_eq!(g.check(1, 9), SeqVerdict::Stale);
+    }
+
+    #[test]
+    fn d610_resincroniza_tras_un_reinicio_de_la_secuencia() {
+        let mut g = BookSequenceGuard::new(1);
+        assert_eq!(g.check(0, 1_000_000), SeqVerdict::Accept);
+        for i in 0..(BookSequenceGuard::RESYNC_AFTER - 1) {
+            assert_eq!(g.check(0, 10 + i as i64), SeqVerdict::Stale);
+        }
+        assert_eq!(g.check(0, 60), SeqVerdict::Resync, "no puede quedar ciego para siempre");
+        assert_eq!(g.check(0, 61), SeqVerdict::Accept);
+        assert_eq!(g.resyncs, 1);
+    }
+
+    #[test]
+    fn d610_simbolo_fuera_del_universo_no_se_bloquea() {
+        let mut g = BookSequenceGuard::new(1);
+        assert_eq!(g.check(7, 1), SeqVerdict::Accept);
+    }
 
     #[test]
     fn test_parse_binance_depth_valid_and_crossed_book_rejection() {

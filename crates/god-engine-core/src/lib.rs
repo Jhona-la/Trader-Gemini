@@ -1629,9 +1629,18 @@ impl GodEngineCore {
                 .conformal_alpha
                 .load(Ordering::Relaxed)
                 .clamp(0.01, 0.30);
-            let conformal_p = self.conformal.p_value(coin.ml_prob.load(Ordering::Relaxed));
+            // D-617/D-618: el calibrador recibe el nivel objetivo del genoma y
+            // decide con la regla selectiva conformal (conjunto = {gana}) sobre
+            // su nivel efectivo corregido por ACI. `conformal_accept` es lo que
+            // consume el filtro; el p-valor queda para telemetría.
+            self.conformal.set_target_alpha(conf_alpha);
+            let ml_prob_now = coin.ml_prob.load(Ordering::Relaxed);
+            let conformal_p = self.conformal.p_value(ml_prob_now);
+            let conformal_accept = self.conformal.accepts(ml_prob_now);
             set_reg("conformal_p_value", conformal_p);
             set_reg("conformal_alpha", conf_alpha);
+            set_reg("conformal_alpha_eff", self.conformal.effective_alpha());
+            set_reg("conformal_accept", if conformal_accept { 1.0 } else { 0.0 });
             let buy_vol = coin.agg_buy_vol.load(Ordering::Relaxed);
             let sell_vol = coin.agg_sell_vol.load(Ordering::Relaxed);
             let total_vol_cvd = buy_vol + sell_vol;

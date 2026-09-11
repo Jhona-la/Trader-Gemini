@@ -1163,6 +1163,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|s| quantum_engine::orderbook::OrderBook::new(s.clone()))
             .collect();
         let mut msg_count: u64 = 0;
+        // D-610: guardia de secuencia del libro, un estado por símbolo del
+        // universo (misma indexación que `local_orderbooks`).
+        let mut book_seq_guard = parsers::BookSequenceGuard::new(local_orderbooks.len());
         let mut consecutive_slow_ticks = 0;
 
         // FASE 6 (EVENT LOOP)
@@ -1235,7 +1238,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     is_kline_closed = c;
                 }
             } else if is_depth {
-                if let Some((e, sym, _, bp, bq, ap, aq)) = parsers::parse_binance_depth(msg_str) {
+                if let Some((e, sym, update_id, bp, bq, ap, aq)) = parsers::parse_binance_depth(msg_str) {
+                    // D-610 (DÉCIMA OLA): el `u` del libro se extraía y se descartaba.
+                    // Un mensaje no posterior al último aceptado —rancio tras una
+                    // reconexión, reordenado o duplicado— ya no actualiza el libro
+                    // local ni alimenta OBI, OFI y microprecio.
+                    if let Some(sym_id) = symbol_to_id.get(sym).copied() {
+                        match book_seq_guard.check(sym_id, update_id) {
+                            parsers::SeqVerdict::Accept => {}
+                            parsers::SeqVerdict::Stale => {
+                                if book_seq_guard.dropped.is_power_of_two() {
+                                    telemetry_engine::telemetry_err!(
+                                        "⚠️ [D-610 LIBRO] {} update_id {} no posterior al último aceptado: mensaje rancio, duplicado o fuera de orden descartado ({} descartes).",
+                                        sym, update_id, book_seq_guard.dropped
+                                    );
+                                }
+                                msg_count += 1;
+                                continue;
+                            }
+                            parsers::SeqVerdict::Resync => {
+                                telemetry_engine::telemetry_err!(
+                                    "🔄 [D-610 LIBRO] {} secuencia resincronizada en update_id {} tras {} descartes consecutivos (reinicio de secuencia del exchange).",
+                                    sym, update_id, parsers::BookSequenceGuard::RESYNC_AFTER
+                                );
+                            }
+                        }
+                    }
                     event_time = e;
                     parsed_sym_opt = Some(sym);
                     dbp = bp; dap = ap; dbq = bq; daq = aq;

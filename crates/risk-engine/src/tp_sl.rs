@@ -10,8 +10,8 @@
 //! | 1 | `risk-engine` `match` #1 | `[0,0005 … 0,0100]` — y su SL se DESCARTABA (`_sl_base`) |
 //! | 2 | `risk-engine` `match` #2 | `[0,0040 … 0,0058]` |
 //! | 3 | `risk-engine` gate de EV | sin techo |
-//! | 4 | `conformal::compute_dynamic_tp_sl` | `[0,001 … 0,50]` |
-//! | 5 | `conformal::compute_continuous_tp_sl` | `[0,001 … 0,50]` |
+//! | 4 | `conformal::compute_dynamic_tp_sl` (sin llamadores; eliminado) | `[0,001 … 0,50]` |
+//! | 5 | `conformal::compute_continuous_tp_sl` (sin llamadores; eliminado) | `[0,001 … 0,50]` |
 //!
 //! De ahí nacían tres defectos encadenados:
 //!
