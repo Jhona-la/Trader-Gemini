@@ -6,8 +6,10 @@
 //! sesgo tiene que venir de sus entradas. Este módulo cuenta, por dirección, qué
 //! propone el consenso tensorial, qué condición del gate de la rama 11 falla,
 //! qué escudo del embudo unificado veta la intención, qué rechaza el risk-engine
-//! o el consejo y qué se abre, junto con la distribución de `composite_score` y
-//! `ml_prob` y la contribución media de cada término. No participa en ninguna
+//! o el consejo y qué se abre. También registra la distribución de
+//! `composite_score` y `ml_prob`, la contribución media de cada término, la
+//! descomposición de `ml_prob` (base del ensamble, residuo online, bosque y red)
+//! y el error con el que se entrena el residuo online. No participa en ninguna
 //! decisión.
 
 use strategy_core::SignalType;
@@ -52,6 +54,12 @@ pub const STAGE_NEURAL: usize = 6;
 
 const COMPOSITE_BINS: usize = 20;
 const ML_BINS: usize = 10;
+/// Celdas del histograma del residuo online, sobre la cota con la que el núcleo
+/// lo suma a `ml_prob` (±0,15).
+const RESIDUAL_BINS: usize = 10;
+const RESIDUAL_BOUND: f64 = 0.15;
+/// Celdas del histograma del error de entrenamiento del residuo, sobre [−1, 1].
+const UPDATE_BINS: usize = 10;
 const LONG: usize = 0;
 const SHORT: usize = 1;
 
@@ -84,6 +92,20 @@ pub struct DirectionDiag {
     pub council_vetoed: [u64; 2],
     /// Aperturas por dirección.
     pub opened: [u64; 2],
+    /// Descomposición de `ml_prob`: base del ensamble y residuo online acotado.
+    pub ml_components_n: u64,
+    pub ml_base_hist: [u64; ML_BINS],
+    pub ml_residual_hist: [u64; RESIDUAL_BINS],
+    pub ml_residual_sum: f64,
+    /// Predicciones de cada modelo del ensamble cuando opinan.
+    pub forest_n: u64,
+    pub forest_hist: [u64; ML_BINS],
+    pub nn_n: u64,
+    pub nn_hist: [u64; ML_BINS],
+    /// Error con el que se entrena el residuo online en cada cierre.
+    pub online_update_n: u64,
+    pub online_update_sum: f64,
+    pub online_update_hist: [u64; UPDATE_BINS],
     /// Estado de la evaluación en curso del embudo unificado.
     funnel_active: bool,
     funnel_last: SignalType,
@@ -95,6 +117,16 @@ fn dir_index(signal: SignalType) -> Option<usize> {
         SignalType::Short => Some(SHORT),
         SignalType::Flat => None,
     }
+}
+
+/// Celda de un histograma de `bins` celdas iguales sobre [lo, hi].
+fn bin(value: f64, lo: f64, hi: f64, bins: usize) -> usize {
+    let x = ((value.clamp(lo, hi) - lo) / (hi - lo) * bins as f64) as usize;
+    x.min(bins - 1)
+}
+
+fn share(hist: &[u64], from: usize, n: u64) -> f64 {
+    100.0 * hist[from..].iter().sum::<u64>() as f64 / n.max(1) as f64
 }
 
 impl DirectionDiag {
@@ -110,10 +142,8 @@ impl DirectionDiag {
             return;
         }
         self.evaluations += 1;
-        let c = ((composite.clamp(-1.0, 1.0) + 1.0) * 0.5 * COMPOSITE_BINS as f64) as usize;
-        self.composite_hist[c.min(COMPOSITE_BINS - 1)] += 1;
-        let m = (ml_prob.clamp(0.0, 1.0) * ML_BINS as f64) as usize;
-        self.ml_prob_hist[m.min(ML_BINS - 1)] += 1;
+        self.composite_hist[bin(composite, -1.0, 1.0, COMPOSITE_BINS)] += 1;
+        self.ml_prob_hist[bin(ml_prob, 0.0, 1.0, ML_BINS)] += 1;
         for (sum, value) in self.contribution_sum.iter_mut().zip(contributions) {
             if value.is_finite() {
                 *sum += value;
@@ -125,6 +155,42 @@ impl DirectionDiag {
             SignalType::Flat => 2,
         };
         self.tensor_signal[idx] += 1;
+    }
+
+    /// Descompone `ml_prob = base + residuo acotado + sesgo spot`.
+    #[inline]
+    pub fn record_ml_components(
+        &mut self,
+        base: f64,
+        residual: f64,
+        forest: Option<f64>,
+        nn: Option<f64>,
+    ) {
+        if base.is_finite() && residual.is_finite() {
+            self.ml_components_n += 1;
+            self.ml_base_hist[bin(base, 0.0, 1.0, ML_BINS)] += 1;
+            self.ml_residual_hist[bin(residual, -RESIDUAL_BOUND, RESIDUAL_BOUND, RESIDUAL_BINS)] += 1;
+            self.ml_residual_sum += residual;
+        }
+        if let Some(p) = forest.filter(|p| p.is_finite()) {
+            self.forest_n += 1;
+            self.forest_hist[bin(p, 0.0, 1.0, ML_BINS)] += 1;
+        }
+        if let Some(p) = nn.filter(|p| p.is_finite()) {
+            self.nn_n += 1;
+            self.nn_hist[bin(p, 0.0, 1.0, ML_BINS)] += 1;
+        }
+    }
+
+    /// Error con el que se actualiza el residuo online al cerrar una operación.
+    #[inline]
+    pub fn record_online_update(&mut self, td_error: f64) {
+        if !td_error.is_finite() {
+            return;
+        }
+        self.online_update_n += 1;
+        self.online_update_sum += td_error;
+        self.online_update_hist[bin(td_error, -1.0, 1.0, UPDATE_BINS)] += 1;
     }
 
     #[inline]
@@ -201,14 +267,12 @@ impl DirectionDiag {
     /// Informe legible, una línea por hecho, con el prefijo `DIRECTION_DIAG`.
     pub fn report(&self) -> String {
         let n = self.evaluations.max(1) as f64;
-        let positive: u64 = self.composite_hist[COMPOSITE_BINS / 2..].iter().sum();
-        let ml_up: u64 = self.ml_prob_hist[ML_BINS / 2..].iter().sum();
         let mut out = String::new();
         out.push_str(&format!(
             "DIRECTION_DIAG evaluaciones={} · composite≥0 {:.1} % · ml_prob≥0,5 {:.1} % · contribución media micro={:+.4} red={:+.4} tensor={:+.4}\n",
             self.evaluations,
-            100.0 * positive as f64 / n,
-            100.0 * ml_up as f64 / n,
+            share(&self.composite_hist, COMPOSITE_BINS / 2, self.evaluations),
+            share(&self.ml_prob_hist, ML_BINS / 2, self.evaluations),
             self.contribution_sum[0] / n,
             self.contribution_sum[1] / n,
             self.contribution_sum[2] / n,
@@ -219,6 +283,32 @@ impl DirectionDiag {
         ));
         out.push_str(&format!("DIRECTION_DIAG composite_hist={:?}\n", self.composite_hist));
         out.push_str(&format!("DIRECTION_DIAG ml_prob_hist={:?}\n", self.ml_prob_hist));
+        out.push_str(&format!(
+            "DIRECTION_DIAG ml_componentes n={} · base≥0,5 {:.1} % base_hist={:?} · residuo medio={:+.4} en el suelo −0,15 {:.1} % residuo_hist={:?}\n",
+            self.ml_components_n,
+            share(&self.ml_base_hist, ML_BINS / 2, self.ml_components_n),
+            self.ml_base_hist,
+            self.ml_residual_sum / self.ml_components_n.max(1) as f64,
+            100.0 * self.ml_residual_hist[0] as f64 / self.ml_components_n.max(1) as f64,
+            self.ml_residual_hist,
+        ));
+        out.push_str(&format!(
+            "DIRECTION_DIAG ml_modelos bosque n={} ≥0,5 {:.1} % hist={:?} · red n={} ≥0,5 {:.1} % hist={:?}\n",
+            self.forest_n,
+            share(&self.forest_hist, ML_BINS / 2, self.forest_n),
+            self.forest_hist,
+            self.nn_n,
+            share(&self.nn_hist, ML_BINS / 2, self.nn_n),
+            self.nn_hist,
+        ));
+        out.push_str(&format!(
+            "DIRECTION_DIAG residuo_online actualizaciones={} · error medio={:+.4} · error<0 {:.1} % · hist[−1,1]={:?}\n",
+            self.online_update_n,
+            self.online_update_sum / self.online_update_n.max(1) as f64,
+            100.0 * self.online_update_hist[..UPDATE_BINS / 2].iter().sum::<u64>() as f64
+                / self.online_update_n.max(1) as f64,
+            self.online_update_hist,
+        ));
         out.push_str(&format!(
             "DIRECTION_DIAG gate_rama11 largo alcanzado={} pasado={} · corto alcanzado={} pasado={}\n",
             self.gate_reached[LONG], self.gate_passed[LONG], self.gate_reached[SHORT], self.gate_passed[SHORT]
@@ -335,5 +425,29 @@ mod tests {
         assert_eq!(d.risk_rejected, [1, 0]);
         assert_eq!(d.council_vetoed, [0, 1]);
         assert!(d.report().contains("veto[6] escudo neuronal"));
+    }
+
+    #[test]
+    fn diag_descompone_ml_prob_y_el_error_del_residuo() {
+        let mut d = DirectionDiag::default();
+        d.record_ml_components(0.45, -0.15, Some(0.6), None);
+        d.record_ml_components(0.55, 0.15, None, Some(0.2));
+        d.record_ml_components(f64::NAN, 0.0, None, None);
+        assert_eq!(d.ml_components_n, 2);
+        assert_eq!(d.ml_base_hist[4], 1);
+        assert_eq!(d.ml_base_hist[5], 1);
+        assert_eq!(d.ml_residual_hist[0], 1);
+        assert_eq!(d.ml_residual_hist[RESIDUAL_BINS - 1], 1);
+        assert_eq!((d.forest_n, d.nn_n), (1, 1));
+        assert_eq!(d.forest_hist[6], 1);
+        assert_eq!(d.nn_hist[2], 1);
+
+        d.record_online_update(-0.4);
+        d.record_online_update(0.01);
+        d.record_online_update(f64::INFINITY);
+        assert_eq!(d.online_update_n, 2);
+        assert_eq!(d.online_update_hist[3], 1);
+        assert_eq!(d.online_update_hist[5], 1);
+        assert!(d.report().contains("DIRECTION_DIAG residuo_online actualizaciones=2"));
     }
 }

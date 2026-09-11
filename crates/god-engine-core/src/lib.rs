@@ -1414,6 +1414,7 @@ impl GodEngineCore {
                     for (idx, &f) in cur_features.iter().enumerate().take(64) {
                         online_feat[idx] = f;
                     }
+                    self.diag_dir.record_online_update(realized_ret - ml_at_entry);
                     self.online_learner.update_weights_with_kalman_adaptive_vol(
                         &online_feat,
                         (realized_ret - ml_at_entry) as f32,
@@ -1560,8 +1561,12 @@ impl GodEngineCore {
             } else {
                 &mut self.ensemble
             };
+            // Diagnóstico: predicción de cada modelo del ensamble (sólo telemetría).
+            let mut diag_forest_p: Option<f64> = None;
+            let mut diag_nn_p: Option<f64> = None;
             if let Some(f) = &active_forest {
                 if let Some(p) = f.predict(&swing_feats) {
+                    diag_forest_p = Some(p as f64);
                     coin_ensemble.submit(crate::ensemble::ModelId::ScalpForest, p as f64);
                 }
             }
@@ -1583,6 +1588,7 @@ impl GodEngineCore {
                     nn.predict_for_coin(coin_id, &combined_tensor)
                 };
                 if let Some(p) = p_opt {
+                    diag_nn_p = Some(p);
                     coin_ensemble.submit(crate::ensemble::ModelId::SwingNN, p);
                 }
             }
@@ -1598,6 +1604,12 @@ impl GodEngineCore {
                 0.5
             };
             let ml_prob = (base_ml_prob + online_residual.clamp(-0.15, 0.15) + spot_bias).clamp(0.0, 1.0);
+            self.diag_dir.record_ml_components(
+                base_ml_prob,
+                online_residual.clamp(-0.15, 0.15),
+                diag_forest_p,
+                diag_nn_p,
+            );
             self.last_ml_prob = ml_prob as f32;
             coin.ml_prob.store(ml_prob, Ordering::Relaxed);
             set_reg("ml_prob", ml_prob);
